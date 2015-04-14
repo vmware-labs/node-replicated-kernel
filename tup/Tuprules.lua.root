@@ -1,0 +1,7 @@
+TOP = tup.getcwd()
+if tup.getconfig("ARCHITECTURE") == "" then
+    error("CONFIG_ARCHITECTURE not set, you must add a variant first!")
+end
+tup.include("whitelist.lua")
+tup.include("blacklist.lua")
+tup.include("tup/"..tup.getconfig("ARCHITECTURE")..".lua")

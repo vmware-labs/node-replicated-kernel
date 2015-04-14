@@ -1,0 +1,6 @@
+timeout 0
+
+title	Bespin
+root    (nd)
+kernel	/x86_64/sbin/kernel
+module	/x86_64/sbin/cpu loglevel=4

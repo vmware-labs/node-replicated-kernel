@@ -1,0 +1,17 @@
+# Binaries
+kernel.bin*
+*.o
+*.rlib
+
+# Builds
+build*/
+
+# tup
+.tup
+bin/
+/Tuprules.lua
+/Tupfile.lua
+/whitelist.lua
+/blacklist.lua
+/logs
+/lib/core/*

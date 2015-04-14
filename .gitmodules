@@ -1,0 +1,18 @@
+[submodule "lib/multiboot"]
+	path = lib/multiboot
+	url = https://github.com/gz/rust-multiboot.git
+[submodule "lib/cpuid"]
+	path = lib/cpuid
+	url = git@github.com:gz/rust-cpuid.git
+[submodule "lib/x86"]
+	path = lib/x86
+	url = git@github.com:gz/rust-x86.git
+[submodule "lib/rlib"]
+	path = lib/rlib
+	url = git@github.com:rust-lang/rlibc.git
+[submodule "lib/bitflags"]
+	path = lib/bitflags
+	url = git@github.com:rust-lang/bitflags.git
+[submodule "lib/klogger"]
+	path = lib/klogger
+	url = git@github.com:gz/rust-klogger.git

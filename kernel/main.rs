@@ -33,6 +33,7 @@ mod prelude;
 pub mod unwind;
 use core::mem::{transmute, size_of};
 use core::raw;
+use core::slice;
 
 
 #[cfg(target_arch="x86_64")] #[path="arch/x86_64/mod.rs"]
@@ -75,12 +76,20 @@ pub fn kmain()
         let mod_cb = | name, start, end | {
             log!("Found module {}: {:x} - {:x}", name, start, end);
 
-            let slice = unsafe { raw::Slice { data: transmute::<u64, *const u8>(start), len: (start as usize) - (end as usize) } };
-            let byte_array: &'static [u8] = unsafe { transmute(slice) };
-            elfloader::parse_elf(byte_array);
+            let binary: &'static [u8] = unsafe {
+                core::slice::from_raw_parts(
+                    transmute::<u64, *const u8>(start),
+                    (start as usize) - (end as usize))
+            };
+            let elf = elfloader::ElfBinary::new(name, binary);
+            match elf {
+                Some(e) => e.print_headers(),
+                None => ()
+            }
         };
         multiboot.find_modules(mod_cb);
     }
+
     fm.clean_regions();
     fm.print_regions();
 

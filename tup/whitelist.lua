@@ -5,7 +5,7 @@
 -- Note: whitelist is only valid for applications atm.
 whitelist = {}
 
-tup.include("tup/helpers.lua")
+tup.include("helpers.lua")
 
 
 if tup.getconfig("WHITELISTING_ENABLED") == "y" then

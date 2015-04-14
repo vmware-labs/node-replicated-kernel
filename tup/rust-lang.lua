@@ -133,6 +133,7 @@ local function makeRustLibrary(name, objects, libraries, flags)
         inputs.extra_inputs += libpath
         cmd += "--extern "..lib.."="..libpath
     end
+    cmd += "-L dependency="..TOP.."/lib/"
 
     return tup.frule{
         input = inputs,

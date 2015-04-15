@@ -9,7 +9,7 @@ Currently this is known to work on latest Ubuntu 14.04 using rust-nightly (rust
 beta will not work due to use of unstable features).
 
 ### Pre-requisites
-* We build bespin using the tup build system. You can find information on
+* We build bespin with help of the tup build system. You can find information on
   how to obtain tup for your platform here: http://gittup.org/tup/
   On Ubuntu Linux, just do:
 ```

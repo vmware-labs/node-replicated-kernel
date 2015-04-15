@@ -52,6 +52,8 @@ use arch::apic;
 use arch::memory::{PAddr, VAddr};
 use arch::irq::{setup_idt};
 use arch::debug;
+use arch::process::{Process};
+use elfloader::{ElfLoader};
 
 extern {
     #[no_mangle]
@@ -73,6 +75,7 @@ pub fn kmain()
         let multiboot = Multiboot::new(mboot_ptr,  mm::paddr_to_kernel_vaddr);
         let cb = | base, size, mtype | { fm.add_multiboot_region(base, size, mtype); };
         multiboot.find_memory(cb);
+
         let mod_cb = | name, start, end | {
             log!("Found module {}: {:x} - {:x}", name, start, end);
 
@@ -82,8 +85,10 @@ pub fn kmain()
                     (start as usize) - (end as usize))
             };
             let elf = elfloader::ElfBinary::new(name, binary);
+            let p = Process{pid: 0};
+
             match elf {
-                Some(e) => e.print_headers(),
+                Some(e) => e.load(&p),
                 None => ()
             }
         };

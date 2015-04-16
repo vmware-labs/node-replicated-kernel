@@ -77,7 +77,7 @@ function buildRustKernel(app)
     end
 
     sanityCheck(app)
-    local compiler_directives = {"--emit=obj"}
+    local compiler_directives = {"--emit=obj", "-L dependency="..TOP.."/lib/"}
     tup.append_table(compiler_directives, RSFLAGS_KERNEL)
     if app.addRSFlags then
         tup.append_table(compiler_directives, app.addRSFlags)
@@ -157,6 +157,7 @@ function buildRustLibrary(lib)
     if lib.addRSFlags then
         tup.append_table(compiler_directives, lib.addRSFlags)
     end
+    compiler_directives += "--crate-name "..lib.target
 
     local name = "lib"..lib.target
     bin = makeRustLibrary(name, lib.rsFile, lib.addLibraries, compiler_directives)

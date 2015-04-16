@@ -12,7 +12,7 @@
 	url = git@github.com:rust-lang/rlibc.git
 [submodule "lib/bitflags"]
 	path = lib/bitflags
-	url = git@github.com:rust-lang/bitflags.git
+	url = git@github.com:gz/bitflags.git
 [submodule "lib/klogger"]
 	path = lib/klogger
 	url = git@github.com:gz/rust-klogger.git

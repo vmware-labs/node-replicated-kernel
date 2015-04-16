@@ -4,19 +4,25 @@ buildCoreLibrary{
 }
 
 buildRustLibrary{
+    target = "bitflags",
+    rsFile = "bitflags/src/lib.rs",
+    addLibraries = {"core"}
+}
+
+buildRustLibrary{
     target = "x86",
     rsFile = "x86/src/lib.rs",
-    addLibraries = {"core"}
+    addLibraries = {"core", "bitflags"}
 }
 
 buildRustLibrary{
     target = "klogger",
     rsFile = "klogger/src/lib.rs",
-    addLibraries = {"core", "x86"}
+    addLibraries = {"x86", "core"}
 }
 
 buildRustLibrary{
-    target = "cpuid",
+    target = "raw_cpuid",
     rsFile = "cpuid/src/lib.rs",
     addLibraries = {"core"}
 }

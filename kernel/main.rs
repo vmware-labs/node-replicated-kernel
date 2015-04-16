@@ -14,7 +14,7 @@ extern crate rlib;
 #[cfg(target_arch="x86_64")]
 extern crate multiboot;
 #[cfg(target_arch="x86_64")]
-extern crate cpuid;
+extern crate raw_cpuid;
 #[cfg(target_arch="x86_64")]
 #[macro_use]
 extern crate x86;
@@ -102,7 +102,7 @@ pub fn kmain()
     log!("frame = {:?}", frame);
     fm.print_regions();
 
-    let cpuid = cpuid::CpuId::new();
+    let cpuid = raw_cpuid::CpuId::new();
 
 
     unsafe {

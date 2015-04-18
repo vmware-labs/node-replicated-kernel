@@ -1,5 +1,12 @@
+use core::prelude::*;
+use core::slice;
+
 use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE};
+use core::mem::{transmute, size_of};
 use multiboot;
+use std::fmt;
+use x86::mem::{PML4, PML4Entry};
+
 
 const KERNEL_BASE: u64 = 0xFFFFFFFF80000000;
 const MAX_FRAME_REGIONS: usize = 5;
@@ -11,28 +18,47 @@ pub struct FrameManager {
 }
 
 /// Represents a physical region of memory.
-#[derive(Debug)]
 pub struct Frame {
     pub base: PAddr,
     pub size: u64,
 }
 
-/// Internal bookkeeping about regions of memory.
+impl Frame {
+    fn zero(&self) {
+        let buf: &mut [u8] = unsafe {
+            slice::from_raw_parts_mut(
+                transmute(paddr_to_kernel_vaddr(self.base)),
+                self.size as usize)
+        };
+
+        for b in buf.iter_mut() {
+            *b = 0 as u8;
+        }
+    }
+}
+
+impl fmt::Debug for Frame {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:x} {}", self.base, self.size)
+    }
+}
+
+/// Represents a physical region of memory.
 #[derive(Debug, Copy)]
 struct MemoryRegion {
     base: PAddr, ///< Physical base address of the region.
     size: u64, ///< Size of the region.
-    index: u64 
+    index: u64
 }
 
 /// Translate a kernel 'virtual' address to the physical address of the memory.
 pub fn kernel_vaddr_to_paddr(v: VAddr) -> PAddr {
-    v - KERNEL_BASE
+    v as PAddr - KERNEL_BASE
 }
 
 /// Translate a physical memory address into a kernel addressable location.
 pub fn paddr_to_kernel_vaddr(p: PAddr) -> VAddr {
-    p + KERNEL_BASE
+    (p + KERNEL_BASE) as VAddr
 }
 
 
@@ -59,22 +85,35 @@ impl FrameManager {
         self.count += 1;
     }
 
-    pub fn allocate_frame(&mut self) -> Frame {
-        let page_size = BASE_PAGE_SIZE;
-        
-        let mut i = self.count;
-        while i > 0 {
-            if (self.regions[i].index + page_size) < (self.regions[i].base + self.regions[i].size) {
-                let f = Frame { base: self.regions[i].base + self.regions[i].index, size: page_size };
-                self.regions[i].index += page_size;
-                return f;
+    pub fn allocate_pml4<'b>(&mut self) -> Option<&'b mut PML4> {
+        let f = self.allocate_frame(BASE_PAGE_SIZE);
+        match f {
+            Some(frame) => {
+                unsafe {
+                    let pheaders: &'b mut [PML4Entry; 512] = unsafe {
+                        transmute(paddr_to_kernel_vaddr(frame.base))
+                    };
+                    Some(pheaders)
+                }
             }
+            None => None
+        }
+    }
 
-            i -= 1;
+    pub fn allocate_frame(&mut self, size: u64) -> Option<Frame> {
+        let page_size = BASE_PAGE_SIZE;
+        assert!(size % BASE_PAGE_SIZE == 0);
+
+        for r in &mut self.regions[..] {
+            if size < r.size - r.index {
+                let f = Frame { base: r.base + r.index, size: size };
+                (*r).index += size;
+                f.zero();
+                return Some(f);
+            }
         }
 
-        // XXX: error handling
-        Frame {base: 0, size: 0}
+        None
     }
 
     fn sort_regions(&mut self) {

@@ -1,3 +1,4 @@
+#![feature(box_syntax)]
 #![feature(no_std)]
 #![feature(lang_items)]
 #![feature(asm)]
@@ -39,29 +40,57 @@ use core::slice;
 #[cfg(target_arch="x86_64")] #[path="arch/x86_64/mod.rs"]
 pub mod arch;
 
+#[macro_use]
+mod helper;
+
 mod mm;
 
-use multiboot::{SIGNATURE_RAX, Multiboot};
+//#[macro_use]
+//use utils;
 
-use x86::msr::{wrmsr, rdmsr};
-use x86::time::{rdtsc};
+use multiboot::{Multiboot};
+
+//use x86::msr::{wrmsr, rdmsr};
+//use x86::time::{rdtsc};
 use x86::irq;
-use x86::controlregs;
+//use x86::controlregs;
 
 use arch::apic;
-use arch::memory::{PAddr, VAddr};
+use arch::memory::{PAddr};
 use arch::irq::{setup_idt};
 use arch::debug;
 use arch::process::{Process};
 use elfloader::{ElfLoader};
 
+#[cfg(not(test))]
+mod std {
+    pub use core::fmt;
+    pub use core::cmp;
+    pub use core::ops;
+    pub use core::iter;
+    pub use core::option;
+    pub use core::marker;
+}
+
 extern {
     #[no_mangle]
     static mboot_ptr: PAddr;
 
-    #[no_mangle]
-    static mboot_sig: PAddr;
+    //#[no_mangle]
+    //static mboot_sig: PAddr;
 }
+
+#[lang="exchange_malloc"]
+unsafe fn allocate(size: usize, _align: usize) -> *mut u8 {
+    log!("allocate {} {}", size, _align);
+    &mut 0
+}
+
+#[lang="exchange_free"]
+unsafe fn deallocate(ptr: *mut u8, _size: usize, _align: usize) {
+    log!("ignore deallocation");
+}
+
 
 /// Kernel entrypoint
 #[lang="start"]
@@ -71,36 +100,43 @@ pub fn kmain()
     log!("Started");
 
     let mut fm = mm::FrameManager::new();
-    if mboot_sig == SIGNATURE_RAX {
-        let multiboot = Multiboot::new(mboot_ptr,  mm::paddr_to_kernel_vaddr);
+    //if mboot_sig == SIGNATURE_RAX {
+    let multiboot = Multiboot::new(mboot_ptr,  mm::paddr_to_kernel_vaddr);
+
+    {
         let cb = | base, size, mtype | { fm.add_multiboot_region(base, size, mtype); };
         multiboot.find_memory(cb);
-
-        let mod_cb = | name, start, end | {
-            log!("Found module {}: {:x} - {:x}", name, start, end);
-
-            let binary: &'static [u8] = unsafe {
-                core::slice::from_raw_parts(
-                    transmute::<u64, *const u8>(start),
-                    (start as usize) - (end as usize))
-            };
-            let elf = elfloader::ElfBinary::new(name, binary);
-            let p = Process{pid: 0};
-
-            match elf {
-                Some(e) => e.load(&p),
-                None => ()
-            }
-        };
-        multiboot.find_modules(mod_cb);
+    }
+    {
+        fm.clean_regions();
+        fm.print_regions();
     }
 
-    fm.clean_regions();
-    fm.print_regions();
+    let mod_cb = | name, start, end | {
+        log!("Found module {}: {:x} - {:x}", name, start, end);
 
-    let frame = fm.allocate_frame();
-    log!("frame = {:?}", frame);
-    fm.print_regions();
+        let binary: &'static [u8] = unsafe {
+            core::slice::from_raw_parts(
+                transmute::<usize, *const u8>(start),
+                start - end)
+        };
+
+        match elfloader::ElfBinary::new(name, binary) {
+            Some(e) =>
+            {
+                let mut p = Process::new(&mut fm).unwrap();
+                e.load(&mut p);
+            },
+            None => ()
+        }
+    };
+    multiboot.find_modules(mod_cb);
+
+
+
+    //let frame = fm.allocate_frame();
+    //log!("frame = {:?}", frame);
+    //fm.print_regions();
 
     let cpuid = raw_cpuid::CpuId::new();
 

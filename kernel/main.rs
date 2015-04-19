@@ -40,9 +40,6 @@ use core::slice;
 #[cfg(target_arch="x86_64")] #[path="arch/x86_64/mod.rs"]
 pub mod arch;
 
-#[macro_use]
-mod helper;
-
 mod mm;
 
 //#[macro_use]
@@ -72,9 +69,13 @@ mod std {
     pub use core::marker;
 }
 
+use x86::mem;
 extern {
     #[no_mangle]
     static mboot_ptr: PAddr;
+
+    #[no_mangle]
+    static mut init_pd: mem::PD;
 
     //#[no_mangle]
     //static mboot_sig: PAddr;
@@ -98,6 +99,13 @@ unsafe fn deallocate(ptr: *mut u8, _size: usize, _align: usize) {
 pub fn kmain()
 {
     log!("Started");
+    unsafe {
+        let mut base = 0x0;
+        for e in &mut init_pd.iter_mut() {
+            (*e) = mem::PDEntry::new(base, mem::PD_P | mem::PD_RW | mem::PD_PS);
+            base += 1024*1024*2;
+        }
+    }
 
     let mut fm = mm::FrameManager::new();
     //if mboot_sig == SIGNATURE_RAX {

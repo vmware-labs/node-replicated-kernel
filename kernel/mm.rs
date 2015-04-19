@@ -39,17 +39,24 @@ impl Frame {
 
 impl fmt::Debug for Frame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:x} {}", self.base, self.size)
+        write!(f, "Frame: 0x{:x} -- 0x{:x} (size = {})", self.base, self.base+self.size, self.size)
     }
 }
 
 /// Represents a physical region of memory.
-#[derive(Debug, Copy)]
+#[derive(Copy)]
 struct MemoryRegion {
     base: PAddr, ///< Physical base address of the region.
     size: u64, ///< Size of the region.
     index: u64
 }
+
+impl fmt::Debug for MemoryRegion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "MemoryRegion: 0x{:x} -- 0x{:x} (size = {})\n", self.base, self.base+self.size, self.size)
+    }
+}
+
 
 /// Translate a kernel 'virtual' address to the physical address of the memory.
 pub fn kernel_vaddr_to_paddr(v: VAddr) -> PAddr {
@@ -90,10 +97,10 @@ impl FrameManager {
         match f {
             Some(frame) => {
                 unsafe {
-                    let pheaders: &'b mut [PML4Entry; 512] = unsafe {
+                    let pml4: &'b mut [PML4Entry; 512] = unsafe {
                         transmute(paddr_to_kernel_vaddr(frame.base))
                     };
-                    Some(pheaders)
+                    Some(pml4)
                 }
             }
             None => None
@@ -101,13 +108,15 @@ impl FrameManager {
     }
 
     pub fn allocate_frame(&mut self, size: u64) -> Option<Frame> {
-        let page_size = BASE_PAGE_SIZE;
         assert!(size % BASE_PAGE_SIZE == 0);
+        log!("regions = {:?}", self.regions);
 
-        for r in &mut self.regions[..] {
+        for r in &mut self.regions.iter_mut().rev() {
             if size < r.size - r.index {
-                let f = Frame { base: r.base + r.index, size: size };
                 (*r).index += size;
+                let f = Frame { base: (r.base+r.size) - r.index, size: size };
+
+                log!("f = {:?}",f);
                 f.zero();
                 return Some(f);
             }

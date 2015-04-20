@@ -45,14 +45,14 @@ $ sudo apt-get install qemu qemu-kvm
 1. tup variant tup/x86_64.config
 
 ## Running Bespin
-Build Bespin using tup:
-1. `tup`
-Next, run Bespin on Qemu:
-1. `./run.sh`
+1. Build Bespin using tup:
+`tup`
+2. Next, run Bespin on Qemu:
+`./run.sh`
 
 ## Future Work
-Milestone 1: Running libcore user-space program
-Milestone 2: ACPI Integration
-Milestone 3: Multiprocessor support
-Milestone 4: PCI support
-Milestone 5: Rust standard library port
+* Milestone 1: Running libcore user-space program
+* Milestone 2: ACPI Integration
+* Milestone 3: Multiprocessor support
+* Milestone 4: PCI support
+* Milestone 5: Rust standard library port

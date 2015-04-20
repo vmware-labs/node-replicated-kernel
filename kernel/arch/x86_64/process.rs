@@ -76,6 +76,28 @@ impl<'a> VSpace<'a> {
         }
     }
 
+    /// Do page-table walk to find physical address of a page.
+    pub fn resolve(&self, base: VAddr) -> Option<PAddr> {
+        let pml4_idx = pml4_index(base);
+        if self.pml4[pml4_idx].contains(mem::PML4_P) {
+            let pdpt_idx = pdpt_index(base);
+            let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+            if pdpt[pdpt_idx].contains(mem::PDPT_P) {
+                let pd_idx = pd_index(base);
+                let pd = self.get_pd(pdpt[pdpt_idx]);
+                if pd[pd_idx].contains(mem::PD_P) {
+                    let pt_idx = pt_index(base);
+                    let pt = self.get_pt(pd[pd_idx]);
+                    if pt[pt_idx].contains(mem::PT_P) {
+                        return Some(pt[pt_idx].get_address());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
 
     pub fn map(&mut self, base: VAddr, size: usize) {
         let pml4_idx = pml4_index(base);
@@ -99,13 +121,24 @@ impl<'a> VSpace<'a> {
         assert!(pd[pd_idx].contains(mem::PD_P));
 
         let pt = self.get_pt(pd[pd_idx]);
-        let pt_idx = pt_index(base);
 
-        // TODO: Now back stuff with pages until we need another PD/PDPT etc.
-        if !pt[pt_idx].contains(mem::PT_P) {
-            pt[pt_idx] = self.new_page().unwrap();
+        let mut pt_idx = pt_index(base);
+        let mut mapped = 0;
+        while mapped < size && pt_idx < 512 {
+            if !pt[pt_idx].contains(mem::PT_P) {
+                pt[pt_idx] = self.new_page().unwrap();
+                log!("Mapped 4KiB page: {:?}", pt[pt_idx]);
+            }
+            assert!(pt[pt_idx].contains(mem::PT_P));
+
+            pt_idx += 1;
+            mapped += mem::BASE_PAGE_SIZE as usize;
         }
-        assert!(pt[pt_idx].contains(mem::PT_P));
+
+        // Need go to different PD/PDPT/PML4 slot
+        if (mapped < size) {
+            self.map(base + mapped, size - mapped);
+        }
     }
 }
 
@@ -129,18 +162,13 @@ impl<'a> Process<'a> {
 
 impl<'a> ElfLoader for Process<'a> {
     fn allocate(&mut self, base: VAddr, size: usize, flags: elf::ProgFlag) {
+        log!("allocate: 0x{:x} -- 0x{:x}", base, base+size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
-        let frame = self.vspace.fm.allocate_frame(rsize as u64);
-
-        match frame {
-            Some(f) => log!("frame = {:?}", f),
-            None => log!("Not enough mem")
-        };
-
         self.vspace.map(base, size);
     }
 
     fn load(&mut self, destination: VAddr, region: &'static [u8]) {
-        log!("load: {}", destination);
+        log!("load: 0x{:x} -- 0x{:x}", destination, destination+region.len());
+
     }
 }

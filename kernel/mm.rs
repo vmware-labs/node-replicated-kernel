@@ -109,14 +109,14 @@ impl FrameManager {
 
     pub fn allocate_frame(&mut self, size: u64) -> Option<Frame> {
         assert!(size % BASE_PAGE_SIZE == 0);
-        log!("regions = {:?}", self.regions);
+        //log!("regions = {:?}", self.regions);
 
         for r in &mut self.regions.iter_mut().rev() {
             if size < r.size - r.index {
                 (*r).index += size;
                 let f = Frame { base: (r.base+r.size) - r.index, size: size };
 
-                log!("f = {:?}",f);
+                //log!("f = {:?}",f);
                 f.zero();
                 return Some(f);
             }

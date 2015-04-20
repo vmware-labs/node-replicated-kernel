@@ -42,15 +42,9 @@ pub mod arch;
 
 mod mm;
 
-//#[macro_use]
-//use utils;
+use x86::irq;
 
 use multiboot::{Multiboot};
-
-//use x86::msr::{wrmsr, rdmsr};
-//use x86::time::{rdtsc};
-use x86::irq;
-//use x86::controlregs;
 
 use arch::apic;
 use arch::memory::{PAddr};
@@ -79,17 +73,6 @@ extern {
 
     //#[no_mangle]
     //static mboot_sig: PAddr;
-}
-
-#[lang="exchange_malloc"]
-unsafe fn allocate(size: usize, _align: usize) -> *mut u8 {
-    log!("allocate {} {}", size, _align);
-    &mut 0
-}
-
-#[lang="exchange_free"]
-unsafe fn deallocate(ptr: *mut u8, _size: usize, _align: usize) {
-    log!("ignore deallocation");
 }
 
 

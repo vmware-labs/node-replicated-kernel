@@ -12,11 +12,26 @@ cxxcompiler = "g++"
 linker = "ld"
 
 --
+-- User-space
+--
+RSFLAGS_USER  = "-O"
+RSFLAGS_USER += "--cfg arch__x86_64"
+RSFLAGS_USER += "--target=target.json"
+RSFLAGS_USER += "-C soft-float"
+RSFLAGS_USER += "-C target-feature=-3dnow,-avx,-avx2,-sse,-sse2,-sse3,-sse4.1,-sse4.2,-mmx"
+RSFLAGS_USER += "-g"
+RSFLAGS_USER += "-L "..TOP.."/lib/"
+RSFLAGS_USER += "--extern core="..TOP.."/lib/libcore.rlib"
+RSFLAGS_USER += "--emit=obj"
+
+LDFLAGS_USER = {}
+
+--
 -- Kernel-space
 --
 RSFLAGS_KERNEL  = "-O"
 RSFLAGS_KERNEL += "--cfg arch__x86_64"
-RSFLAGS_KERNEL += "--target="..TOP.."/kernel/arch/x86_64/target.json"
+RSFLAGS_KERNEL += "--target=target.json"
 RSFLAGS_KERNEL += "-C soft-float"
 RSFLAGS_KERNEL += "-C target-feature=-3dnow,-avx,-avx2,-sse,-sse2,-sse3,-sse4.1,-sse4.2,-mmx"
 RSFLAGS_KERNEL += "-g"

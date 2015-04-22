@@ -17,6 +17,7 @@ static mut irq_handlers: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [
 
 unsafe fn unhandled_irq(a: &ExceptionArguments) {
     log!("Got UNHANDLED IRQ: {}", a);
+    loop {}
 }
 
 /// Import the ISR assembly handler and add it to our IDT (see isr.S).
@@ -26,7 +27,7 @@ macro_rules! idt_set {
             extern "C" {
                 #[no_mangle]
                 fn $f();
-            }            
+            }
 
             let base = $f as u64;
             idt[$num].sel = $sel;
@@ -62,16 +63,16 @@ pub struct ExceptionArguments {
 
 impl fmt::Display for ExceptionArguments {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, 
+        write!(f,
 "vec = {} ex={}
-rax = {:>16x} rcx = {:>16x} 
-rbx = {:>16x} rdx = {:>16x} 
+rax = {:>16x} rcx = {:>16x}
+rbx = {:>16x} rdx = {:>16x}
 rsi = {:>16x} rdi = {:>16x}
-rbp = {:>16x} r8  = {:>16x} 
-r9  = {:>16x} r10 = {:>16x} 
+rbp = {:>16x} r8  = {:>16x}
+r9  = {:>16x} r10 = {:>16x}
 r11 = {:>16x} r12 = {:>16x}
-r13 = {:>16x} r14 = {:>16x} 
-r15 = {:>16x}", 
+r13 = {:>16x} r14 = {:>16x}
+r15 = {:>16x}",
             self.vector,
             self.exception,
             self.rax,
@@ -111,7 +112,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
 
         // ACK the interrupt
         // TODO: Disable the PIC and get rid of this.
-        io::outb(0x20,0x20); 
+        io::outb(0x20,0x20);
         // TODO: Need ACPI to disable PIC first before this does anything.
         msr::wrmsr(0x800+0xb, 0);
     }
@@ -156,11 +157,11 @@ pub unsafe fn setup_idt() {
     irq::lidt(&idtptr);
 
     // Note everything is declared as interrupt gates for now.
-    // Trap and Interrupt gates are similar, 
-    // and their descriptors are structurally the same, 
-    // they differ only in the "type" field. 
-    // The difference is that for interrupt gates, 
-    // interrupts are automatically disabled upon entry 
+    // Trap and Interrupt gates are similar,
+    // and their descriptors are structurally the same,
+    // they differ only in the "type" field.
+    // The difference is that for interrupt gates,
+    // interrupts are automatically disabled upon entry
     // and re-enabled upon IRET which restores the saved EFLAGS.
     log!("Install IRQ handler");
     idt_set!(0, isr_handler0, 0x08, 0x8E);

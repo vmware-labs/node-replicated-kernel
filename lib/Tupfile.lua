@@ -1,3 +1,10 @@
+
+tup.frule{
+    input = {TOP.."/"..tup.getconfig("TARGET_FILE")},
+    command = "^ ln %o^ ln -s %f %o",
+    output = "target.json"
+}
+
 buildCoreLibrary{
     target = "core",
     rsFile = "core/lib.rs"

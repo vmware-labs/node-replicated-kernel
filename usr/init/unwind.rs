@@ -1,4 +1,4 @@
-use prelude::*;
+pub use core::prelude::*;
 
 #[lang="panic_fmt"]
 #[no_mangle]

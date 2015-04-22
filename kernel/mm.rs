@@ -100,6 +100,7 @@ impl FrameManager {
                     let pml4: &'b mut [PML4Entry; 512] = unsafe {
                         transmute(paddr_to_kernel_vaddr(frame.base))
                     };
+                    log!("allocate pml4 at 0x{:x}", frame.base);
                     Some(pml4)
                 }
             }

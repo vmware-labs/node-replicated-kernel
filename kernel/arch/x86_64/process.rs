@@ -1,13 +1,16 @@
 use prelude::*;
 
 use core::mem::{transmute};
+use core::fmt;
 use super::memory::{PAddr, VAddr};
-use ::mm::{FrameManager, paddr_to_kernel_vaddr};
+use ::mm::{FrameManager, paddr_to_kernel_vaddr, kernel_vaddr_to_paddr};
 
 use elfloader::{ElfLoader};
 use elfloader::elf;
 use x86::mem::{PML4, PML4Entry, BASE_PAGE_SIZE, pml4_index, pdpt_index, pd_index, pt_index};
 use x86::mem;
+use x86::rflags;
+use x86::controlregs;
 //use std::option;
 
 macro_rules! round_up {
@@ -25,7 +28,7 @@ impl<'a> VSpace<'a> {
     fn new_pdpt(&mut self) -> Option<PML4Entry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(PML4Entry::new(frame.base, mem::PML4_P))
+                Some(PML4Entry::new(frame.base, mem::PML4_P | mem::PML4_RW | mem::PML4_US))
             },
             None => None
         }
@@ -42,7 +45,7 @@ impl<'a> VSpace<'a> {
     fn new_pd(&mut self) -> Option<mem::PDPTEntry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(mem::PDPTEntry::new(frame.base, mem::PDPT_P))
+                Some(mem::PDPTEntry::new(frame.base, mem::PDPT_P | mem::PDPT_RW | mem::PDPT_US))
             },
             None => None
         }
@@ -59,7 +62,7 @@ impl<'a> VSpace<'a> {
     fn new_pt(&mut self) -> Option<mem::PDEntry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(mem::PDEntry::new(frame.base, mem::PD_P))
+                Some(mem::PDEntry::new(frame.base, mem::PD_P | mem::PD_RW | mem::PD_US))
             },
             None => None
         }
@@ -76,7 +79,7 @@ impl<'a> VSpace<'a> {
     fn new_page(&mut self) -> Option<mem::PTEntry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(mem::PTEntry::new(frame.base, mem::PT_P))
+                Some(mem::PTEntry::new(frame.base, mem::PT_P | mem::PT_RW | mem::PT_US))
             },
             None => None
         }
@@ -191,6 +194,26 @@ impl<'a> Process<'a> {
             }
             None => None
         }
+    }
+
+    pub fn start(&self, entry_point: VAddr) {
+        log!("ABOUT TO GO TO USER-SPACE");
+        let user_flags = rflags::RFlags::new() | rflags::RFlags_IF;
+        unsafe {
+            let pml4_phys: PAddr = kernel_vaddr_to_paddr(transmute::<&PML4Entry, VAddr>(&self.vspace.pml4[0]));
+            log!("switching to 0x{:x}", pml4_phys);
+            controlregs::cr3_write(pml4_phys as PAddr);
+        };
+        unsafe {
+            asm!("jmp exec" :: "{ecx}" (entry_point as u64) "{r11}" (user_flags));
+        }
+        log!("Should not come here!");
+    }
+}
+
+impl<'a> fmt::Debug for Process<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Process: {}", self.pid)
     }
 }
 

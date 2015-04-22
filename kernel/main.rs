@@ -41,6 +41,7 @@ use core::slice;
 pub mod arch;
 
 mod mm;
+mod scheduler;
 
 use x86::irq;
 
@@ -71,6 +72,9 @@ extern {
     #[no_mangle]
     static mut init_pd: mem::PD;
 
+    #[no_mangle]
+    static mut init_pml4: mem::PML4;
+
     //#[no_mangle]
     //static mboot_sig: PAddr;
 }
@@ -82,6 +86,15 @@ extern {
 pub fn kmain()
 {
     log!("Started");
+    let cpuid = raw_cpuid::CpuId::new();
+    unsafe {
+        log!("Set-up IDT");
+        setup_idt();
+        log!("IRQ enable");
+        irq::enable();
+        debug::init();
+    }
+
     unsafe {
         let mut base = 0x0;
         for e in &mut init_pd.iter_mut() {
@@ -116,7 +129,11 @@ pub fn kmain()
             Some(e) =>
             {
                 let mut p = Process::new(&mut fm).unwrap();
+                // Patch in the kernel tables...
+                unsafe { p.vspace.pml4[511] = init_pml4[511]; }
                 e.load(&mut p);
+                p.start(0x4000f0);
+                //scheduler::schedule(p);
             },
             None => ()
         }
@@ -128,20 +145,6 @@ pub fn kmain()
     //let frame = fm.allocate_frame();
     //log!("frame = {:?}", frame);
     //fm.print_regions();
-
-    let cpuid = raw_cpuid::CpuId::new();
-
-
-    unsafe {
-        log!("set-up IDT");
-        setup_idt();
-
-        log!("irq enable");
-
-
-        irq::enable();
-        debug::init();
-    }
 
     log!("cpuid[1] = {:?}", cpuid.get(1));
     let has_x2apic = cpuid.get(1).ecx & 1<<21 > 0;

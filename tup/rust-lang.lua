@@ -24,7 +24,7 @@ end
 
 local function makeRustObjectFile(name, objects, libraries, flags)
     local inputs = {objects}
-    inputs.extra_inputs = {TOP.."/<lib>", TOP.."/<libcore>"}
+    inputs.extra_inputs = {TOP.."/<lib>", TOP.."/<libcore>", "target.json"}
     local outputs = {name..".o"}
     outputs.extra_outputs = {TOP.."/<sbin>"}
 
@@ -49,6 +49,70 @@ end
 
 local function notSupportedOnArchitecture(app)
     return app.architectures and not table.toSet(app.architectures)[arch]
+end
+
+function makeAssemblyFile(source, extra_inputs, group)
+    local inputs = {source}
+    inputs.extra_inputs = extra_inputs
+
+    local outputs = {"%B.o"}
+    outputs.extra_outputs = {group}
+
+    return tup.frule{
+        input = inputs,
+        command = "^ AS %f^ as -o %o %f",
+        output = outputs
+    }
+end
+
+function buildRustApplication(app)
+    if notSupportedOnArchitecture(app) then
+        return -- unsupported architecture
+    end
+    if isBlacklisted(app) then
+        return -- blacklisted application
+    end
+    if isWhitelisted(app) then
+        return -- not in whitelist application
+    end
+
+    sanityCheck(app)
+
+    local compiler_directives = {}
+    tup.append_table(compiler_directives, RSFLAGS_USER)
+    if app.addRSFlags then
+        tup.append_table(compiler_directives, app.addRSFlags)
+    end
+
+    all_objects = {}
+
+    tup.frule{
+        input = {TOP.."/"..tup.getconfig("TARGET_FILE")},
+        command = "^ ln %o^ ln -s %f %o",
+        output = "target.json"
+    }
+
+    -- Build the assembly files
+    for i, f in pairs(app.assemblyFiles) do
+        all_objects += makeAssemblyFile(f, {})
+    end
+
+    -- Build the rust files
+    all_objects += makeRustObjectFile(app.target, app.rsFile, app.addLibraries, compiler_directives)
+
+    for i, lib in ipairs(app.addLibraries) do
+        libpath = TOP.."/lib/lib"..lib..".rlib"
+        all_objects += libpath
+    end
+
+    cmd = {linker}
+    tup.append_table(cmd, LDFLAGS_USER)
+    tup.frule{
+        input = all_objects,
+        command = "^ LD %o^ "..table.concat(cmd, " ").." -o %o %f",
+        output = TOP.."/"..arch.."/sbin/"..app.target
+    }
+
 end
 
 function makeKernelAssemblyFile(source, extra_inputs, group)
@@ -85,6 +149,12 @@ function buildRustKernel(app)
 
     all_objects = {}
 
+    tup.frule{
+        input = {TOP.."/"..tup.getconfig("TARGET_FILE")},
+        command = "^ ln %o^ ln -s %f %o",
+        output = "target.json"
+    }
+
     -- Build the assembly files
     for i, f in pairs(app.assemblyFiles) do
         all_objects += makeKernelAssemblyFile(f, {})
@@ -116,11 +186,11 @@ function buildRustKernel(app)
 
 end
 
-local function makeRustLibrary(name, objects, libraries, flags)
+local function makeRustLibrary(name, objects, libraries, flags, input_group, output_group)
     local inputs = {objects}
-    inputs.extra_inputs = {TOP.."/<libcore>"}
+    inputs.extra_inputs = input_group
     local outputs = {TOP.."/lib/"..name..".rlib"}
-    outputs.extra_outputs = {TOP.."/<lib>"}
+    outputs.extra_outputs = output_group
 
     local cmd = {rustcompiler, "--crate-type=lib", "--emit=link"}
     if flags then
@@ -142,7 +212,7 @@ local function makeRustLibrary(name, objects, libraries, flags)
     }
 end
 
-function buildRustLibrary(lib)
+local function buildGenericRustLibrary(lib, input_group, output_group)
     if notSupportedOnArchitecture(lib) then
         return -- unsupported architecture
     end
@@ -160,51 +230,13 @@ function buildRustLibrary(lib)
     compiler_directives += "--crate-name "..lib.target
 
     local name = "lib"..lib.target
-    bin = makeRustLibrary(name, lib.rsFile, lib.addLibraries, compiler_directives)
+    bin = makeRustLibrary(name, lib.rsFile, lib.addLibraries, compiler_directives, input_group, output_group)
 end
 
-
-local function makeCoreLibrary(name, objects, libraries, flags)
-    local inputs = {objects}
-    inputs.extra_inputs = {}
-    local outputs = {TOP.."/lib/"..name..".rlib"}
-    outputs.extra_outputs = {TOP.."/<libcore>"}
-
-    local cmd = {rustcompiler, "--crate-type=lib", "--emit=link"}
-    if flags then
-        tup.append_table(cmd, flags)
-    end
-    cmd += "%f"
-
-    for i, lib in ipairs(libraries) do
-        libpath = TOP.."/lib/lib"..lib..".rlib"
-        inputs.extra_inputs += libpath
-        cmd += "--extern "..lib.."="..libpath
-    end
-
-    return tup.frule{
-        input = inputs,
-        command = ""..table.concat(cmd, " ").." -o %o",
-        output = outputs
-    }
+function buildRustLibrary(lib)
+     buildGenericRustLibrary(lib, {"target.json", TOP.."/<libcore>"}, {TOP.."/<lib>"})
 end
 
 function buildCoreLibrary(lib)
-    if notSupportedOnArchitecture(lib) then
-        return -- unsupported architecture
-    end
-    if isBlacklisted(lib) then
-        return -- blacklisted application
-    end
-
-    sanityCheck(lib)
-
-    local compiler_directives = {}
-    tup.append_table(compiler_directives, RSFLAGS_KERNEL)
-    if lib.addRSFlags then
-        tup.append_table(compiler_directives, lib.addRSFlags)
-    end
-
-    local name = "lib"..lib.target
-    bin = makeCoreLibrary(name, lib.rsFile, lib.addLibraries, compiler_directives)
+    buildGenericRustLibrary(lib, {"target.json"}, {TOP.."/<libcore>"})
 end

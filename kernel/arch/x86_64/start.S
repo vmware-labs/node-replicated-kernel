@@ -133,6 +133,7 @@ start64.loop:
 /* === Page-aligned data === */
 .section .padata
 .globl init_pd
+.globl init_pml4
 /* Initial paging structures, four levels */
 /* The +3 for sub-pages indicates "present (1) + writable (2)" */
 init_pml4:

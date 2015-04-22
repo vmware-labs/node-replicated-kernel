@@ -1,9 +1,0 @@
-FLAGS  = -O
-FLAGS += --cfg arch__x86_64
-FLAGS += --target=../../kernel/arch/x86_64/target.json
-FLAGS += -C soft-float
-FLAGS += -C target-feature=-3dnow,-avx,-avx2,-sse,-sse2,-sse3,-sse4.1,-sse4.2,-mmx
-FLAGS += -g
-FLAGS += --extern core=../../lib/libcore.rlib
-
-

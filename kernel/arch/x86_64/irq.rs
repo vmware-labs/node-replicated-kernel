@@ -22,6 +22,26 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
     loop {}
 }
 
+unsafe fn pf_handler(a: &ExceptionArguments) {
+    log!("Got page-fault: {}", a);
+    loop {}
+}
+
+unsafe fn gp_handler(a: &ExceptionArguments) {
+    let desc = &irq::EXCEPTIONS[a.vector as usize];
+    log!("Source: {}", desc.source);
+
+    if a.exception > 0 {
+        log!("Error value: {:?}", segmentation::SegmentSelector::from_raw(a.exception as u16));
+    }
+    else {
+        log!("No error!");
+    }
+    log!("{}", a);
+    loop {}
+}
+
+
 /// Import the ISR assembly handler and add it to our IDT (see isr.S).
 macro_rules! idt_set {
     ( $num:expr, $f:ident, $sel:expr, $flags:expr ) => {
@@ -188,6 +208,9 @@ pub unsafe fn setup_idt() {
     idt_set!(34, isr_handler34, 0x08, 0x8E);
     idt_set!(35, isr_handler35, 0x08, 0x8E);
     idt_set!(36, isr_handler36, 0x08, 0x8E);
+
+    register_handler(13, gp_handler);
+    register_handler(14, pf_handler);
 
     pic_remap();
 }

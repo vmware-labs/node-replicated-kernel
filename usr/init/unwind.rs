@@ -1,10 +1,19 @@
 pub use core::prelude::*;
 
+#[macro_export]
+macro_rules! int {
+    ( $x:expr ) => {
+        {
+            asm!("int $0" :: "N" ($x));
+        }
+    };
+}
+
 #[lang="panic_fmt"]
 #[no_mangle]
 pub fn rust_begin_unwind(args: ::core::fmt::Arguments, file: &str, line: usize) -> !
 {
-	// 'args' will print to the formatted string passed to panic!
+    unsafe { int!(99); }
 	loop {}
 }
 
@@ -12,6 +21,7 @@ pub fn rust_begin_unwind(args: ::core::fmt::Arguments, file: &str, line: usize) 
 #[no_mangle]
 pub fn __morestack() -> !
 {
+    unsafe { int!(98); }
 	loop {}
 }
 
@@ -58,6 +68,7 @@ pub fn rust_eh_personality(
 	_exception_object: &_Unwind_Exception, _context: &_Unwind_Context
 	) -> _Unwind_Reason_Code
 {
+    unsafe { int!(97); }
 	loop{}
 }
 
@@ -65,6 +76,7 @@ pub fn rust_eh_personality(
 #[allow(non_snake_case)]
 pub fn _Unwind_Resume()
 {
+    unsafe { int!(96); }
 	loop{}
 }
 

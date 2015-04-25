@@ -4,6 +4,8 @@ use core::fmt;
 use x86::irq;
 use x86::msr;
 use x86::io;
+use x86::segmentation;
+use x86::dtables;
 
 const IDT_SIZE: usize = 256;
 
@@ -64,7 +66,7 @@ pub struct ExceptionArguments {
 impl fmt::Display for ExceptionArguments {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
-"vec = {} ex={}
+"vec = 0x{:x} ex=0x{:x}
 rax = {:>16x} rcx = {:>16x}
 rbx = {:>16x} rdx = {:>16x}
 rsi = {:>16x} rdi = {:>16x}
@@ -150,11 +152,11 @@ pub unsafe fn register_handler(vector: usize, handler: unsafe fn(&ExceptionArgum
 /// Initializes and loads the IDT into the CPU.
 pub unsafe fn setup_idt() {
 
-    let idtptr = irq::IdtPointer {
+    let idtptr = dtables::DescriptorTablePointer {
         limit: ((size_of::<irq::IdtEntry>() * 256) - 1) as u16,
         base: transmute::<&[irq::IdtEntry; 256], u64>(&idt)
     };
-    irq::lidt(&idtptr);
+    dtables::lidt(&idtptr);
 
     // Note everything is declared as interrupt gates for now.
     // Trap and Interrupt gates are similar,

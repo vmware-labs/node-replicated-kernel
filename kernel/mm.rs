@@ -5,7 +5,7 @@ use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE};
 use core::mem::{transmute, size_of};
 use multiboot;
 use std::fmt;
-use x86::mem::{PML4, PML4Entry};
+use x86::paging::{PML4, PML4Entry};
 
 
 const KERNEL_BASE: u64 = 0xFFFFFFFF80000000;

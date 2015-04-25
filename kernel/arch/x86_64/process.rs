@@ -7,8 +7,8 @@ use ::mm::{FrameManager, paddr_to_kernel_vaddr, kernel_vaddr_to_paddr};
 
 use elfloader::{ElfLoader};
 use elfloader::elf;
-use x86::mem::{PML4, PML4Entry, BASE_PAGE_SIZE, pml4_index, pdpt_index, pd_index, pt_index};
-use x86::mem;
+use x86::paging::{PML4, PML4Entry, BASE_PAGE_SIZE, pml4_index, pdpt_index, pd_index, pt_index};
+use x86::paging;
 use x86::rflags;
 use x86::controlregs;
 //use std::option;
@@ -28,58 +28,58 @@ impl<'a> VSpace<'a> {
     fn new_pdpt(&mut self) -> Option<PML4Entry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(PML4Entry::new(frame.base, mem::PML4_P | mem::PML4_RW | mem::PML4_US))
+                Some(PML4Entry::new(frame.base, paging::PML4_P | paging::PML4_RW | paging::PML4_US))
             },
             None => None
         }
     }
 
     /// Resolve a PML4Entry to a PDPT.
-    fn get_pdpt<'b>(&self, entry: PML4Entry) -> &'b mut mem::PDPT {
+    fn get_pdpt<'b>(&self, entry: PML4Entry) -> &'b mut paging::PDPT {
         unsafe {
-            transmute::<VAddr, &mut mem::PDPT>(paddr_to_kernel_vaddr(entry.get_address()))
+            transmute::<VAddr, &mut paging::PDPT>(paddr_to_kernel_vaddr(entry.get_address()))
         }
     }
 
     /// Allocate a new page directory and return a pdpt entry for it.
-    fn new_pd(&mut self) -> Option<mem::PDPTEntry> {
+    fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(mem::PDPTEntry::new(frame.base, mem::PDPT_P | mem::PDPT_RW | mem::PDPT_US))
+                Some(paging::PDPTEntry::new(frame.base, paging::PDPT_P | paging::PDPT_RW | paging::PDPT_US))
             },
             None => None
         }
     }
 
     /// Resolve a PDPTEntry to a page directory.
-    fn get_pd<'b>(&self, entry: mem::PDPTEntry) -> &'b mut mem::PD {
+    fn get_pd<'b>(&self, entry: paging::PDPTEntry) -> &'b mut paging::PD {
         unsafe {
-            transmute::<VAddr, &mut mem::PD>(paddr_to_kernel_vaddr(entry.get_address()))
+            transmute::<VAddr, &mut paging::PD>(paddr_to_kernel_vaddr(entry.get_address()))
         }
     }
 
     /// Allocate a new page-directory and return a page directory entry for it.
-    fn new_pt(&mut self) -> Option<mem::PDEntry> {
+    fn new_pt(&mut self) -> Option<paging::PDEntry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(mem::PDEntry::new(frame.base, mem::PD_P | mem::PD_RW | mem::PD_US))
+                Some(paging::PDEntry::new(frame.base, paging::PD_P | paging::PD_RW | paging::PD_US))
             },
             None => None
         }
     }
 
     /// Resolve a PDEntry to a page table.
-    fn get_pt<'b>(&self, entry: mem::PDEntry) -> &'b mut mem::PT {
+    fn get_pt<'b>(&self, entry: paging::PDEntry) -> &'b mut paging::PT {
         unsafe {
-            transmute::<VAddr, &mut mem::PT>(paddr_to_kernel_vaddr(entry.get_address()))
+            transmute::<VAddr, &mut paging::PT>(paddr_to_kernel_vaddr(entry.get_address()))
         }
     }
 
     /// Allocate a new (4KiB) page and map it.
-    fn new_page(&mut self) -> Option<mem::PTEntry> {
+    fn new_page(&mut self) -> Option<paging::PTEntry> {
         match self.fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-                Some(mem::PTEntry::new(frame.base, mem::PT_P | mem::PT_RW | mem::PT_US))
+                Some(paging::PTEntry::new(frame.base, paging::PT_P | paging::PT_RW | paging::PT_US))
             },
             None => None
         }
@@ -138,38 +138,38 @@ impl<'a> VSpace<'a> {
     /// Back a region of virtual address space with physical memory.
     pub fn map(&mut self, base: VAddr, size: usize) {
         let pml4_idx = pml4_index(base);
-        if !self.pml4[pml4_idx].contains(mem::PML4_P) {
+        if !self.pml4[pml4_idx].contains(paging::PML4_P) {
             self.pml4[pml4_idx] = self.new_pdpt().unwrap();
         }
-        assert!(self.pml4[pml4_idx].contains(mem::PML4_P));
+        assert!(self.pml4[pml4_idx].contains(paging::PML4_P));
 
         let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
         let pdpt_idx = pdpt_index(base);
-        if !pdpt[pdpt_idx].contains(mem::PDPT_P) {
+        if !pdpt[pdpt_idx].contains(paging::PDPT_P) {
             pdpt[pdpt_idx] = self.new_pd().unwrap();
         }
-        assert!(pdpt[pdpt_idx].contains(mem::PDPT_P));
+        assert!(pdpt[pdpt_idx].contains(paging::PDPT_P));
 
         let pd = self.get_pd(pdpt[pdpt_idx]);
         let pd_idx = pd_index(base);
-        if !pd[pd_idx].contains(mem::PD_P) {
+        if !pd[pd_idx].contains(paging::PD_P) {
             pd[pd_idx] = self.new_pt().unwrap();
         }
-        assert!(pd[pd_idx].contains(mem::PD_P));
+        assert!(pd[pd_idx].contains(paging::PD_P));
 
         let pt = self.get_pt(pd[pd_idx]);
 
         let mut pt_idx = pt_index(base);
         let mut mapped = 0;
         while mapped < size && pt_idx < 512 {
-            if !pt[pt_idx].contains(mem::PT_P) {
+            if !pt[pt_idx].contains(paging::PT_P) {
                 pt[pt_idx] = self.new_page().unwrap();
                 log!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             }
-            assert!(pt[pt_idx].contains(mem::PT_P));
+            assert!(pt[pt_idx].contains(paging::PT_P));
 
             pt_idx += 1;
-            mapped += mem::BASE_PAGE_SIZE as usize;
+            mapped += paging::BASE_PAGE_SIZE as usize;
         }
 
         // Need go to different PD/PDPT/PML4 slot
@@ -198,7 +198,7 @@ impl<'a> Process<'a> {
 
     pub fn start(&self, entry_point: VAddr) {
         log!("ABOUT TO GO TO USER-SPACE");
-        let user_flags = rflags::RFlags::new() | rflags::RFlags_IF;
+        let user_flags = rflags::RFLAGS_A1 | rflags::RFLAGS_IF;
         unsafe {
             let pml4_phys: PAddr = kernel_vaddr_to_paddr(transmute::<&PML4Entry, VAddr>(&self.vspace.pml4[0]));
             log!("switching to 0x{:x}", pml4_phys);

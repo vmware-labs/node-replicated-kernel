@@ -44,6 +44,7 @@ mod mm;
 mod scheduler;
 
 use x86::irq;
+use x86::paging;
 
 use multiboot::{Multiboot};
 
@@ -52,6 +53,7 @@ use arch::memory::{PAddr};
 use arch::irq::{setup_idt};
 use arch::debug;
 use arch::process::{Process};
+use arch::gdt;
 use elfloader::{ElfLoader};
 
 #[cfg(not(test))]
@@ -64,16 +66,15 @@ mod std {
     pub use core::marker;
 }
 
-use x86::mem;
 extern {
     #[no_mangle]
     static mboot_ptr: PAddr;
 
     #[no_mangle]
-    static mut init_pd: mem::PD;
+    static mut init_pd: paging::PD;
 
     #[no_mangle]
-    static mut init_pml4: mem::PML4;
+    static mut init_pml4: paging::PML4;
 
     //#[no_mangle]
     //static mboot_sig: PAddr;
@@ -94,11 +95,33 @@ pub fn kmain()
         irq::enable();
         debug::init();
     }
+    gdt::set_up_gdt();
+
+
+
+
+    log!("cpuid[1] = {:?}", cpuid.get(1));
+    let has_x2apic = cpuid.get(1).ecx & 1<<21 > 0;
+    let has_tsc = cpuid.get(1).ecx & 1<<24 > 0;
+    if has_x2apic && has_tsc {
+
+        log!("x2APIC / deadline TSC supported!");
+        unsafe {
+            log!("enable APIC");
+            let apic = apic::x2APIC::new();
+            //apic.enable_tsc();
+            //apic.set_tsc(rdtsc()+1000);
+            log!("APIC is bsp: {}", apic.is_bsp());
+        }
+    }
+    else {
+        log!("no x2APIC support. Continuing without interrupts.")
+    }
 
     unsafe {
         let mut base = 0x0;
         for e in &mut init_pd.iter_mut() {
-            (*e) = mem::PDEntry::new(base, mem::PD_P | mem::PD_RW | mem::PD_PS);
+            (*e) = paging::PDEntry::new(base, paging::PD_P | paging::PD_RW | paging::PD_PS);
             base += 1024*1024*2;
         }
     }
@@ -141,31 +164,8 @@ pub fn kmain()
     multiboot.find_modules(mod_cb);
 
 
-
-    //let frame = fm.allocate_frame();
-    //log!("frame = {:?}", frame);
-    //fm.print_regions();
-
-    log!("cpuid[1] = {:?}", cpuid.get(1));
-    let has_x2apic = cpuid.get(1).ecx & 1<<21 > 0;
-    let has_tsc = cpuid.get(1).ecx & 1<<24 > 0;
-    if has_x2apic && has_tsc {
-
-        log!("x2APIC / deadline TSC supported!");
-        unsafe {
-            log!("enable APIC");
-            let apic = apic::x2APIC::new();
-            //apic.enable_tsc();
-            //apic.set_tsc(rdtsc()+1000);
-            log!("APIC is bsp: {}", apic.is_bsp());
-        }
-    }
-    else {
-        log!("no x2APIC support. Continuing without interrupts.")
-    }
-
     unsafe {
-        int!(3);
+        //int!(0xe);
 
         loop {
             //for i in 1..100000000 { }

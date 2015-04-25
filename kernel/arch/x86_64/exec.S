@@ -16,6 +16,5 @@ exec:
     movq       $0, %rbx
     movq       $0, %rbp
     movq       $0, %rsp
-    mov        %dx, %fs
-    mov        %dx, %gs
     sysretq
+

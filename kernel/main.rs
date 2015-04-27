@@ -4,6 +4,7 @@
 #![feature(asm)]
 #![feature(core)]
 #![feature(intrinsics)]
+#![feature(unsafe_destructor)]
 #![no_std]
 
 use prelude::*;
@@ -28,6 +29,9 @@ extern crate klogger;
 #[macro_use]
 extern crate elfloader;
 
+#[macro_use]
+pub mod mutex;
+
 pub use klogger::*;
 
 mod prelude;
@@ -35,6 +39,7 @@ pub mod unwind;
 use core::mem::{transmute, size_of};
 use core::raw;
 use core::slice;
+use core::ops::DerefMut;
 
 
 #[cfg(target_arch="x86_64")] #[path="arch/x86_64/mod.rs"]
@@ -43,6 +48,7 @@ pub mod arch;
 mod mm;
 mod scheduler;
 
+use mm::{fmanager};
 use x86::irq;
 use x86::paging;
 
@@ -52,7 +58,7 @@ use arch::apic;
 use arch::memory::{PAddr};
 use arch::irq::{setup_idt};
 use arch::debug;
-use arch::process::{Process};
+use arch::process::{Process, current_process};
 use arch::gdt;
 use elfloader::{ElfLoader};
 
@@ -97,9 +103,6 @@ pub fn kmain()
     }
     gdt::set_up_gdt();
 
-
-
-
     log!("cpuid[1] = {:?}", cpuid.get(1));
     let has_x2apic = cpuid.get(1).ecx & 1<<21 > 0;
     let has_tsc = cpuid.get(1).ecx & 1<<24 > 0;
@@ -126,10 +129,10 @@ pub fn kmain()
         }
     }
 
-    let mut fm = mm::FrameManager::new();
+
+    let mut fm = fmanager.lock();
     //if mboot_sig == SIGNATURE_RAX {
     let multiboot = Multiboot::new(mboot_ptr,  mm::paddr_to_kernel_vaddr);
-
     {
         let cb = | base, size, mtype | { fm.add_multiboot_region(base, size, mtype); };
         multiboot.find_memory(cb);
@@ -139,30 +142,35 @@ pub fn kmain()
         fm.print_regions();
     }
 
-    let mod_cb = | name, start, end | {
-        log!("Found module {}: {:x} - {:x}", name, start, end);
 
-        let binary: &'static [u8] = unsafe {
-            core::slice::from_raw_parts(
-                transmute::<usize, *const u8>(start),
-                start - end)
-        };
+    let mut cp = current_process.lock();
+    (*cp) = Process::new(0);
+    match *cp.deref_mut() {
+        Some(ref mut p) => {
+            let mod_cb = | name, start, end | {
+                log!("Found module {}: {:x} - {:x}", name, start, end);
 
-        match elfloader::ElfBinary::new(name, binary) {
-            Some(e) =>
-            {
-                let mut p = Process::new(&mut fm).unwrap();
-                // Patch in the kernel tables...
-                unsafe { p.vspace.pml4[511] = init_pml4[511]; }
-                e.load(&mut p);
-                p.start(0x4000f0);
-                //scheduler::schedule(p);
-            },
-            None => ()
+                let binary: &'static [u8] = unsafe {
+                    core::slice::from_raw_parts(
+                        transmute::<usize, *const u8>(start),
+                        start - end)
+                };
+
+                match elfloader::ElfBinary::new(name, binary) {
+                    Some(e) =>
+                    {
+                        // Patch in the kernel tables...
+                        unsafe { p.vspace.pml4[511] = init_pml4[511]; }
+                        e.load(p);
+                        p.start(0x4000f0);
+                    },
+                    None => ()
+                };
+            };
+            multiboot.find_modules(mod_cb);
         }
+        None => ()
     };
-    multiboot.find_modules(mod_cb);
-
 
     unsafe {
         //int!(0xe);

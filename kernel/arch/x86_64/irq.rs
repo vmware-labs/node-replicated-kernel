@@ -62,7 +62,7 @@ macro_rules! idt_set {
 
 /// Arguments as provided by the ISR generic call handler (see isr.S).
 #[derive(Debug)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct ExceptionArguments {
     rax: u64,
     rcx: u64,

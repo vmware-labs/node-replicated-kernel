@@ -1,9 +1,9 @@
 use prelude::*;
 
+use core::cell::RefCell;
+use core::default::{Default};
 use core::mem::{transmute};
 use core::fmt;
-use super::memory::{PAddr, VAddr};
-use ::mm::{FrameManager, paddr_to_kernel_vaddr, kernel_vaddr_to_paddr};
 
 use elfloader::{ElfLoader};
 use elfloader::elf;
@@ -11,22 +11,28 @@ use x86::paging::{PML4, PML4Entry, BASE_PAGE_SIZE, pml4_index, pdpt_index, pd_in
 use x86::paging;
 use x86::rflags;
 use x86::controlregs;
-//use std::option;
+
+use super::gdt;
+use super::memory::{PAddr, VAddr};
+use ::mm::{paddr_to_kernel_vaddr, kernel_vaddr_to_paddr, fmanager};
+use ::mutex::{Mutex};
 
 macro_rules! round_up {
    ( $num:expr, $s:expr ) => { (($num + $s - 1) / $s) * $s }
 }
 
+pub static current_process: Mutex<Option<Process<'static>>> = mutex!(None);
+
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
-    fm: &'a mut FrameManager,
 }
 
 impl<'a> VSpace<'a> {
 
     /// Allocate a new page directory and return a PML4 entry for it.
     fn new_pdpt(&mut self) -> Option<PML4Entry> {
-        match self.fm.allocate_frame(BASE_PAGE_SIZE) {
+        let mut fm = fmanager.lock();
+        match fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
                 Some(PML4Entry::new(frame.base, paging::PML4_P | paging::PML4_RW | paging::PML4_US))
             },
@@ -43,7 +49,8 @@ impl<'a> VSpace<'a> {
 
     /// Allocate a new page directory and return a pdpt entry for it.
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
-        match self.fm.allocate_frame(BASE_PAGE_SIZE) {
+        let mut fm = fmanager.lock();
+        match fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
                 Some(paging::PDPTEntry::new(frame.base, paging::PDPT_P | paging::PDPT_RW | paging::PDPT_US))
             },
@@ -60,7 +67,8 @@ impl<'a> VSpace<'a> {
 
     /// Allocate a new page-directory and return a page directory entry for it.
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
-        match self.fm.allocate_frame(BASE_PAGE_SIZE) {
+        let mut fm = fmanager.lock();
+        match fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
                 Some(paging::PDEntry::new(frame.base, paging::PD_P | paging::PD_RW | paging::PD_US))
             },
@@ -77,7 +85,8 @@ impl<'a> VSpace<'a> {
 
     /// Allocate a new (4KiB) page and map it.
     fn new_page(&mut self) -> Option<paging::PTEntry> {
-        match self.fm.allocate_frame(BASE_PAGE_SIZE) {
+        let mut fm = fmanager.lock();
+        match fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
                 Some(paging::PTEntry::new(frame.base, paging::PT_P | paging::PT_RW | paging::PT_US))
             },
@@ -179,18 +188,43 @@ impl<'a> VSpace<'a> {
     }
 }
 
+#[derive(Default)]
+#[repr(C, packed)]
+pub struct SaveArea {
+    rax: u64,
+    rbx: u64,
+    rcx: u64,
+    rdx: u64,
+    rsi: u64,
+    rdi: u64,
+    rbp: u64,
+    rsp: u64,
+    r8:  u64,
+    r9:  u64,
+    r10: u64,
+    r11: u64,
+    r12: u64,
+    r13: u64,
+    r14: u64,
+    r15: u64,
+    rip: u64,
+    rflags: u64,
+}
+
 pub struct Process<'a> {
+    pub save_area: SaveArea,
     pub pid: u64,
     pub vspace: VSpace<'a>,
 }
 
 impl<'a> Process<'a> {
-    pub fn new<'b>(fm: &'b mut FrameManager) -> Option<Process> {
+    pub fn new<'b>(pid: u64) -> Option<Process<'a>> {
+        let mut fm = fmanager.lock();
         let pml4 = fm.allocate_pml4();
         match pml4 {
 
             Some(table) => {
-                Some(Process{pid: 0, vspace: VSpace{fm: fm, pml4: table} })
+                Some(Process{pid: pid, vspace: VSpace{pml4: table}, save_area: Default::default() })
             }
             None => None
         }
@@ -207,7 +241,26 @@ impl<'a> Process<'a> {
         unsafe {
             asm!("jmp exec" :: "{ecx}" (entry_point as u64) "{r11}" (user_flags));
         }
-        log!("Should not come here!");
+        panic!("Should not come here!");
+    }
+
+    pub fn resume(&self) {
+        let user_ss = 0;
+        let user_cs = 0;
+        let user_rflags = self.save_area.rflags;
+        unsafe {
+            // %rbx points to save_area
+            // %r8 points to ss
+            // %r9 points to cs
+            // %r10 points to rflags
+
+            asm!("jmp resume" ::
+                 "{rbx}" (&self.save_area)
+                 "{r8}"  (gdt::get_user_stack_selector())
+                 "{r9}"  (gdt::get_user_code_selector())
+                 "{r10}" (user_rflags));
+        }
+        panic!("Should not come here!");
     }
 }
 

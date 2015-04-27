@@ -1,15 +1,20 @@
 use core::prelude::*;
 use core::slice;
-
-use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE};
 use core::mem::{transmute, size_of};
-use multiboot;
+
 use std::fmt;
+
+use multiboot;
 use x86::paging::{PML4, PML4Entry};
 
+use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE};
+use mutex::{Mutex};
 
 const KERNEL_BASE: u64 = 0xFFFFFFFF80000000;
 const MAX_FRAME_REGIONS: usize = 5;
+
+pub static fmanager: Mutex<FrameManager> =
+    mutex!(FrameManager { count: 0, regions: [MemoryRegion{base: 0, size: 0, index: 0}; MAX_FRAME_REGIONS] });
 
 #[derive(Debug)]
 pub struct FrameManager {

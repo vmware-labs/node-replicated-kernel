@@ -5,6 +5,8 @@ use x86::segmentation::*;
 use x86::dtables::*;
 use x86::task::*;
 
+use super::syscall;
+
 const NULL_INDEX: usize = 0;
 const CS_KERNEL_INDEX: usize = 1;
 const SS_KERNEL_INDEX: usize = 2;
@@ -21,6 +23,14 @@ const GDT_SIZE: usize = 512;
 
 #[no_mangle]
 static mut gdt: [u64; GDT_SIZE] = [0; GDT_SIZE ];
+
+pub fn get_user_code_selector() -> SegmentSelector {
+    SegmentSelector::new(CS_USER_INDEX as u16) | RPL_3 | TI_GDT
+}
+
+pub fn get_user_stack_selector() -> SegmentSelector {
+    SegmentSelector::new(SS_USER_INDEX as u16) | RPL_3 | TI_GDT
+}
 
 #[no_mangle]
 static mut tss: TaskStateSegment = TaskStateSegment{
@@ -58,12 +68,19 @@ pub fn set_up_gdt() {
         lgdt(&gdtptr);
 
         // We need to re-load segments now with a new GDT:
-        load_ss(SegmentSelector::new(SS_KERNEL_INDEX as u16) | RPL_0 | TI_GDT);
+        let cs_selector = SegmentSelector::new(CS_KERNEL_INDEX as u16) | RPL_0 | TI_GDT;
+        let ss_selector = SegmentSelector::new(SS_KERNEL_INDEX as u16) | RPL_0 | TI_GDT;
+
+        load_ss(ss_selector);
         load_ds(SegmentSelector::new(0));
         load_es(SegmentSelector::new(0));
         load_fs(SegmentSelector::new(0));
         load_gs(SegmentSelector::new(0));
-        load_cs(SegmentSelector::new(CS_KERNEL_INDEX as u16) | RPL_0 | TI_GDT);
+        load_cs(cs_selector);
+
+        let cs_user_selector = SegmentSelector::new(CS_USER_INDEX as u16) | RPL_3 | TI_GDT;
+
+        syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
     }
 
     log!("Segments reloaded");

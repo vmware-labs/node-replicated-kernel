@@ -24,25 +24,28 @@ exec:
 /// %r8 points to ss
 /// %r9 points to cs
 /// %r10 points to rflags
+.global resume
 resume:
-    pushq      %r8                  /* ss */
-    pushq       7*8(%rbx)           /* rip */
-    pushq      %r10                 /* rflags */
-    pushq      %r9                  /* cs */
-    pushq      16*8(%rbx)
-    movq        0*8(%rbx), %rax
-    movq        2*8(%rbx), %rcx
-    movq        3*8(%rbx), %rdx
-    movq        4*8(%rbx), %rsi
-    movq        5*8(%rbx), %rdi
-    movq        6*8(%rbx), %rbp
-    movq        8*8(%rbx), %r8
-    movq        9*8(%rbx), %r9
-    movq       10*8(%rbx), %r10
-    movq       11*8(%rbx), %r11
-    movq       12*8(%rbx), %r12
-    movq       13*8(%rbx), %r13
-    movq       14*8(%rbx), %r14
-    movq       15*8(%rbx), %r15
-    movq        1*8(%rbx), %rbx     /* rbx was SaveArea */
+    pushq      %r8                 /* ss */
+    pushq      $0x600640           /* TODO: stack */
+    pushq      %r10                /* rflags */
+    pushq      %r9                 /* cs */
+    pushq      $0x400190           /* TODO: rip */
+    /* restore process registers */
+    movq $current_process, %r15
+    movq  0*8(%r15), %rax
+    movq  1*8(%r15), %rbx
+    movq  2*8(%r15), %rcx
+    movq  3*8(%r15), %rdx
+    movq  4*8(%r15), %rsi
+    movq  5*8(%r15), %rdi
+    movq  6*8(%r15), %rbp
+    movq  8*8(%r15), %r8
+    movq  9*8(%r15), %r9
+    movq 10*8(%r15), %r10
+    movq 11*8(%r15), %r11
+    movq 12*8(%r15), %r12
+    movq 13*8(%r15), %r13
+    movq 14*8(%r15), %r14
+    movq 15*8(%r15), %r15
     iretq

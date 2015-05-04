@@ -65,12 +65,13 @@ macro_rules! idt_set {
 #[repr(C, packed)]
 pub struct ExceptionArguments {
     rax: u64,
-    rcx: u64,
     rbx: u64,
+    rcx: u64,
     rdx: u64,
     rsi: u64,
     rdi: u64,
     rbp: u64,
+    rsp: u64,
     r8:  u64,
     r9:  u64,
     r10: u64,
@@ -130,13 +131,14 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
 
     unsafe {
         assert!(a.vector < 256);
-        irq_handlers[a.vector as usize](&a);
-
         // ACK the interrupt
         // TODO: Disable the PIC and get rid of this.
         io::outb(0x20,0x20);
         // TODO: Need ACPI to disable PIC first before this does anything.
         msr::wrmsr(0x800+0xb, 0);
+
+        irq_handlers[a.vector as usize](&a);
+
     }
 }
 

@@ -1,4 +1,5 @@
 use prelude::*;
+use core::ops::{DerefMut, Deref};
 use x86::io;
 use super::irq;
 
@@ -24,12 +25,12 @@ pub fn init() {
 }
 
 unsafe fn receive_serial_irq(a: &irq::ExceptionArguments) {
-    while io::inb(PORT0 + 5) & 0x1 > 0 {
-        let scancode = io::inb(PORT0 + 0);
-        //let mut cp = current_process.lock();
-        //log!("{:?}", *cp);
-        putb(scancode);
-    }
+    let scancode = io::inb(PORT0 + 0);
+    let cp = current_process.lock();
+    match *cp.deref() {
+        Some(ref p) => { log!("p = {:?}", p); putb(scancode); p.resume(); },
+        None => log!("No process"),
+    };
     //loop {}
 }
 

@@ -142,6 +142,9 @@ pub fn kmain()
         fm.print_regions();
     }
 
+    unsafe {
+        //int!(0x3);
+    }
 
     let mut cp = current_process.lock();
     (*cp) = Process::new(0);
@@ -160,7 +163,9 @@ pub fn kmain()
                     Some(e) =>
                     {
                         // Patch in the kernel tables...
-                        unsafe { p.vspace.pml4[511] = init_pml4[511]; }
+                        unsafe {
+                            p.vspace.pml4[511] = init_pml4[511];
+                        }
                         e.load(p);
                         p.start(0x4000f0);
                     },

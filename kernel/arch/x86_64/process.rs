@@ -21,6 +21,7 @@ macro_rules! round_up {
    ( $num:expr, $s:expr ) => { (($num + $s - 1) / $s) * $s }
 }
 
+#[no_mangle]
 pub static current_process: Mutex<Option<Process<'static>>> = mutex!(None);
 
 pub struct VSpace<'a> {
@@ -247,7 +248,8 @@ impl<'a> Process<'a> {
     pub fn resume(&self) {
         let user_ss = 0;
         let user_cs = 0;
-        let user_rflags = self.save_area.rflags;
+        let user_rflags = rflags::RFLAGS_A1 | rflags::RFLAGS_IF;
+        log!("resuming User-space");
         unsafe {
             // %rbx points to save_area
             // %r8 points to ss
@@ -255,7 +257,6 @@ impl<'a> Process<'a> {
             // %r10 points to rflags
 
             asm!("jmp resume" ::
-                 "{rbx}" (&self.save_area)
                  "{r8}"  (gdt::get_user_stack_selector())
                  "{r9}"  (gdt::get_user_code_selector())
                  "{r10}" (user_rflags));
@@ -266,9 +267,39 @@ impl<'a> Process<'a> {
 
 impl<'a> fmt::Debug for Process<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Process: {}", self.pid)
+        write!(f, "Process: {}\nSaveArea: {:?}", self.pid, self.save_area)
     }
 }
+
+impl fmt::Debug for SaveArea {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f,
+"rax = {:>16x} rcx = {:>16x}
+rbx = {:>16x} rdx = {:>16x}
+rsi = {:>16x} rdi = {:>16x}
+rbp = {:>16x} r8  = {:>16x}
+r9  = {:>16x} r10 = {:>16x}
+r11 = {:>16x} r12 = {:>16x}
+r13 = {:>16x} r14 = {:>16x}
+r15 = {:>16x}",
+            self.rax,
+            self.rcx,
+            self.rbx,
+            self.rdx,
+            self.rsi,
+            self.rdi,
+            self.rbp,
+            self.r8,
+            self.r9,
+            self.r10,
+            self.r11,
+            self.r12,
+            self.r13,
+            self.r14,
+            self.r15)
+    }
+}
+
 
 impl<'a> ElfLoader for Process<'a> {
 

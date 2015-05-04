@@ -10,8 +10,8 @@ use super::syscall;
 const NULL_INDEX: usize = 0;
 const CS_KERNEL_INDEX: usize = 1;
 const SS_KERNEL_INDEX: usize = 2;
-const CS_USER_INDEX: usize = 3;
-const SS_USER_INDEX: usize = 4;
+const SS_USER_INDEX: usize = 3;
+const CS_USER_INDEX: usize = 4;
 
 const TSS_LOW_INDEX: usize = 5;
 const TSS_HIGH_INDEX: usize = 6;
@@ -47,7 +47,7 @@ pub fn set_up_gdt() {
     // 64 bit code
     let cs = DESC_P | DESC_L | DESC_S | DESC_DPL0 | TYPE_C_ER;
     // 64 bit stack
-    let ss = DESC_P | DESC_S | DESC_DPL0 | TYPE_D_RW;
+    let ss = SegmentDescriptor::new(0,0) | DESC_P | DESC_L | DESC_S | DESC_DPL0 | TYPE_D_RW;
     // 64 bit user code
     let cs_user = cs | DESC_DPL3;
     // 64 bit user stack
@@ -71,16 +71,15 @@ pub fn set_up_gdt() {
         let cs_selector = SegmentSelector::new(CS_KERNEL_INDEX as u16) | RPL_0 | TI_GDT;
         let ss_selector = SegmentSelector::new(SS_KERNEL_INDEX as u16) | RPL_0 | TI_GDT;
 
-        load_ss(ss_selector);
         load_ds(SegmentSelector::new(0));
         load_es(SegmentSelector::new(0));
         load_fs(SegmentSelector::new(0));
         load_gs(SegmentSelector::new(0));
         load_cs(cs_selector);
+        load_ss(ss_selector);
 
-        let cs_user_selector = SegmentSelector::new(CS_USER_INDEX as u16) | RPL_3 | TI_GDT;
-
-        syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
+        //let cs_user_selector = SegmentSelector::new(CS_USER_INDEX as u16) | RPL_3 | TI_GDT;
+        //syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
     }
 
     log!("Segments reloaded");

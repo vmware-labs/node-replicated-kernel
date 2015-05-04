@@ -9,24 +9,48 @@ isr_handler\ex:
     pushq $0                    /* Dummy error code for this type */
 .endif
     pushq $\ex
-    /* Can we be more efficient here? */
-    subq $120, %rsp              /* Make space for 8*15 bytes */
+    /* XXX: push to stack, only CPL=0! */
+    subq $16*8, %rsp              /* Make space for 16 registers */
     movq %rax,  0*8(%rsp)
-    movq %rcx,  1*8(%rsp)
-    movq %rbx,  2*8(%rsp)
+    movq %rbx,  1*8(%rsp)
+    movq %rcx,  2*8(%rsp)
     movq %rdx,  3*8(%rsp)
     movq %rsi,  4*8(%rsp)
     movq %rdi,  5*8(%rsp)
     movq %rbp,  6*8(%rsp)
-    movq %r8,   7*8(%rsp)
-    movq %r9,   8*8(%rsp)
-    movq %r10, 9*8(%rsp)
-    movq %r11, 10*8(%rsp)
-    movq %r12, 11*8(%rsp)
-    movq %r13, 12*8(%rsp)
-    movq %r14, 13*8(%rsp)
-    movq %r15, 14*8(%rsp)
+    movq %rsp,  7*8(%rsp)
+    movq %r8,   8*8(%rsp)
+    movq %r9,   9*8(%rsp)
+    movq %r10, 10*8(%rsp)
+    movq %r11, 11*8(%rsp)
+    movq %r12, 12*8(%rsp)
+    movq %r13, 13*8(%rsp)
+    movq %r14, 14*8(%rsp)
+    movq %r15, 15*8(%rsp)
+
+    pushq %r15
+    movq $current_process, %r15
+    movq %rax,  0*8(%r15)
+    movq %rbx,  1*8(%r15)
+    movq %rcx,  2*8(%r15)
+    movq %rdx,  3*8(%r15)
+    movq %rsi,  4*8(%r15)
+    movq %rdi,  5*8(%r15)
+    movq %rbp,  6*8(%r15)
+    movq %rsp,  7*8(%r15)
+    movq %r8,   8*8(%r15)
+    movq %r9,   9*8(%r15)
+    movq %r10, 10*8(%r15)
+    movq %r11, 11*8(%r15)
+    movq %r12, 12*8(%r15)
+    movq %r13, 13*8(%r15)
+    movq %r14, 14*8(%r15)
+    movq %r15, %rax
+    popq %r15
+    movq %r15, 15*8(%rsp)
+
     callq handle_generic_exception
+    /* XXX: pop from stack, only if CPL=0 */
     popq %rax
     popq %rcx
     popq %rbx
@@ -42,6 +66,25 @@ isr_handler\ex:
     popq %r13
     popq %r14
     popq %r15
+    /* Get stuff from process save area */
+    movq $current_process, %r15
+    movq  0*8(%r15), %rax
+    movq  1*8(%r15), %rbx
+    movq  2*8(%r15), %rcx
+    movq  3*8(%r15), %rdx
+    movq  4*8(%r15), %rsi
+    movq  5*8(%r15), %rdi
+    movq  6*8(%r15), %rbp
+    movq  7*8(%r15), %rsp
+    movq  8*8(%r15), %r8
+    movq  9*8(%r15), %r9
+    movq 10*8(%r15), %r10
+    movq 11*8(%r15), %r11
+    movq 12*8(%r15), %r12
+    movq 13*8(%r15), %r13
+    movq 14*8(%r15), %r14
+    movq 15*8(%r15), %r15
+
     add $16, %rsp /* Get rid of \ex and dummy error */
     iretq
 .endm

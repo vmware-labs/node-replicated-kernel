@@ -5,7 +5,7 @@ use prelude::*;
 pub fn rust_begin_unwind(args: ::core::fmt::Arguments, file: &str, line: usize) -> !
 {
 	// 'args' will print to the formatted string passed to panic!
-	log!("line={} :: {}", line, args);
+	log!("line={} {}", line, args);
     log!("panic!");
 	loop {}
 }

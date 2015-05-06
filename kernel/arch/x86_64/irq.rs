@@ -12,18 +12,17 @@ const IDT_SIZE: usize = 256;
 #[no_mangle]
 static mut idt: [irq::IdtEntry; IDT_SIZE] = [ irq::IdtEntry {base_lo: 0, sel: 0, res0: 0, flags: 0, base_hi: 0, res1: 0}; IDT_SIZE];
 
-
 static mut irq_handlers: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [
     unhandled_irq; IDT_SIZE
 ];
 
 unsafe fn unhandled_irq(a: &ExceptionArguments) {
-    log!("Got UNHANDLED IRQ: {}", a);
+    log!("Got UNHANDLED IRQ: {:?}", a);
     loop {}
 }
 
 unsafe fn pf_handler(a: &ExceptionArguments) {
-    log!("Got page-fault: {}", a);
+    log!("Got page-fault: {:?}", a);
     loop {}
 }
 
@@ -37,7 +36,7 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     else {
         log!("No error!");
     }
-    log!("{}", a);
+    log!("{:?}", a);
     loop {}
 }
 
@@ -61,58 +60,23 @@ macro_rules! idt_set {
 }
 
 /// Arguments as provided by the ISR generic call handler (see isr.S).
-#[derive(Debug)]
 #[repr(C, packed)]
 pub struct ExceptionArguments {
-    rax: u64,
-    rbx: u64,
-    rcx: u64,
-    rdx: u64,
-    rsi: u64,
-    rdi: u64,
-    rbp: u64,
-    rsp: u64,
-    r8:  u64,
-    r9:  u64,
-    r10: u64,
-    r11: u64,
-    r12: u64,
-    r13: u64,
-    r14: u64,
-    r15: u64,
     vector: u64,
-    exception: u64
+    exception: u64,
+    eip: u64,
+    cs: u64,
+    eflags: u64,
 }
 
-impl fmt::Display for ExceptionArguments {
+impl fmt::Debug for ExceptionArguments {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-"vec = 0x{:x} ex=0x{:x}
-rax = {:>16x} rcx = {:>16x}
-rbx = {:>16x} rdx = {:>16x}
-rsi = {:>16x} rdi = {:>16x}
-rbp = {:>16x} r8  = {:>16x}
-r9  = {:>16x} r10 = {:>16x}
-r11 = {:>16x} r12 = {:>16x}
-r13 = {:>16x} r14 = {:>16x}
-r15 = {:>16x}",
+        write!(f, "vec = 0x{:x} ex = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x}",
             self.vector,
             self.exception,
-            self.rax,
-            self.rcx,
-            self.rbx,
-            self.rdx,
-            self.rsi,
-            self.rdi,
-            self.rbp,
-            self.r8,
-            self.r9,
-            self.r10,
-            self.r11,
-            self.r12,
-            self.r13,
-            self.r14,
-            self.r15)
+            self.eip,
+            self.cs,
+            self.eflags)
     }
 }
 
@@ -122,24 +86,26 @@ r15 = {:>16x}",
 #[inline(never)]
 #[no_mangle]
 pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
-    //log!("IRQ:\n {}", a);
-
     if a.vector < 16 {
         let desc = &irq::EXCEPTIONS[a.vector as usize];
         log!("{}", desc);
     }
+    log!("{:?}", a);
 
     unsafe {
         assert!(a.vector < 256);
-        // ACK the interrupt
-        // TODO: Disable the PIC and get rid of this.
-        io::outb(0x20,0x20);
-        // TODO: Need ACPI to disable PIC first before this does anything.
-        msr::wrmsr(0x800+0xb, 0);
-
+        acknowledge();
         irq_handlers[a.vector as usize](&a);
 
     }
+}
+
+pub unsafe fn acknowledge() {
+    // ACK the interrupt
+    // TODO: Disable the PIC and get rid of this.
+    io::outb(0x20,0x20);
+    // TODO: Need ACPI to disable PIC first before this does anything.
+    msr::wrmsr(0x800+0xb, 0);
 }
 
 /// Work around for Intel quirk. Remap PIC vectors 0-16 to 32-48.

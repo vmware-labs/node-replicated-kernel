@@ -1,6 +1,7 @@
 /// Goes from kernel to user-space.
-/// This routine expects program entry point in %rcx
-/// and RFlags in %r11
+/// This routine (sysretq really) expects
+/// %rcx program entry point
+/// %r11 RFlags
 .global exec
 exec:
     movq       $0, %rsi
@@ -26,13 +27,13 @@ exec:
 /// %r10 points to rflags
 .global resume
 resume:
+    movq $current_process, %r15
     pushq      %r8                 /* ss */
-    pushq      $0x600640           /* TODO: stack */
+    pushq      7*8(%r15)           /* rsp */
     pushq      %r10                /* rflags */
     pushq      %r9                 /* cs */
-    pushq      $0x400190           /* TODO: rip */
-    /* restore process registers */
-    movq $current_process, %r15
+    pushq      16*8(%r15)          /* rip */
+    /* restore SaveArea */
     movq  0*8(%r15), %rax
     movq  1*8(%r15), %rbx
     movq  2*8(%r15), %rcx

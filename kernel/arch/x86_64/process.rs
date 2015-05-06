@@ -281,7 +281,7 @@ rbp = {:>16x} r8  = {:>16x}
 r9  = {:>16x} r10 = {:>16x}
 r11 = {:>16x} r12 = {:>16x}
 r13 = {:>16x} r14 = {:>16x}
-r15 = {:>16x}",
+r15 = {:>16x} rip = {:>16x}",
             self.rax,
             self.rcx,
             self.rbx,
@@ -296,7 +296,8 @@ r15 = {:>16x}",
             self.r12,
             self.r13,
             self.r14,
-            self.r15)
+            self.r15,
+            self.rip)
     }
 }
 

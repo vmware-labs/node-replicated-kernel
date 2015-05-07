@@ -78,8 +78,8 @@ pub fn set_up_gdt() {
         load_cs(cs_selector);
         load_ss(ss_selector);
 
-        //let cs_user_selector = SegmentSelector::new(CS_USER_INDEX as u16) | RPL_3 | TI_GDT;
-        //syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
+        let cs_user_selector = SegmentSelector::new(CS_USER_INDEX as u16) | RPL_3 | TI_GDT;
+        syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
     }
 
     log!("Segments reloaded");

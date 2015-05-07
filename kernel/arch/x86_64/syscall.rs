@@ -1,6 +1,21 @@
+use core::mem::{transmute};
+use ::mm::{paddr_to_kernel_vaddr};
+
 use x86::msr::{wrmsr, rdmsr, IA32_EFER, IA32_STAR, IA32_LSTAR, IA32_FMASK};
 use x86::segmentation::*;
 use x86::rflags::{RFlags};
+
+extern "C" {
+    #[no_mangle]
+    fn syscall_enter();
+}
+
+#[inline(never)]
+#[no_mangle]
+pub extern "C" fn syscall_handle() {
+    log!("got syscall");
+    loop {}
+}
 
 /// Enables syscall/sysret functionality.
 pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
@@ -17,7 +32,9 @@ pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
         log!("IA32_star: 0x{:x}", star);
 
         // System call RIP, currently 0
-        wrmsr(IA32_LSTAR, 0);
+        let rip = syscall_enter as usize as u64;
+        log!("set rip to {:x}", rip);
+        wrmsr(IA32_LSTAR, rip);
 
         wrmsr(IA32_FMASK, !(RFlags::new().bits()) );
 

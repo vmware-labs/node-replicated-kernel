@@ -50,3 +50,16 @@ resume:
     movq 14*8(%r15), %r14
     movq 15*8(%r15), %r15
     iretq
+
+
+.extern syscall_handle
+.global syscall_enter
+syscall_enter:
+    movq $syscall_stack, %rsp
+    callq syscall_handle
+
+syscall_stack_base:
+    .rept 0x1000 * 60
+        .byte 0
+    .endr
+syscall_stack:

@@ -29,12 +29,6 @@ buildRustLibrary{
 }
 
 buildRustLibrary{
-    target = "raw_cpuid",
-    rsFile = "cpuid/src/lib.rs",
-    addLibraries = {"core"}
-}
-
-buildRustLibrary{
     target = "multiboot",
     rsFile = "multiboot/src/lib.rs",
     addLibraries = {"core"}

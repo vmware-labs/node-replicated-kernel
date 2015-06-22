@@ -51,6 +51,7 @@ mod scheduler;
 use mm::{fmanager};
 use x86::irq;
 use x86::paging;
+use x86::cpuid;
 
 use multiboot::{Multiboot};
 
@@ -88,12 +89,16 @@ extern {
 
 
 /// Kernel entrypoint
+
+#[cfg(target_arch="x86_64")]
 #[lang="start"]
 #[no_mangle]
 pub fn kmain()
 {
+    //arch_init();
+
     log!("Started");
-    let cpuid = raw_cpuid::CpuId::new();
+    let cpuid = cpuid::CpuId::new();
     unsafe {
         log!("Set-up IDT");
         setup_idt();

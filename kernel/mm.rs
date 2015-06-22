@@ -49,7 +49,7 @@ impl fmt::Debug for Frame {
 }
 
 /// Represents a physical region of memory.
-#[derive(Copy)]
+#[derive(Clone, Copy)]
 struct MemoryRegion {
     base: PAddr, ///< Physical base address of the region.
     size: u64, ///< Size of the region.

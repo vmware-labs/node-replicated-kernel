@@ -191,6 +191,7 @@ local function makeRustLibrary(name, objects, libraries, flags, input_group, out
     inputs.extra_inputs = input_group
     local outputs = {TOP.."/lib/"..name..".rlib"}
     outputs.extra_outputs = output_group
+    outputs.extra_outputs += TOP.."/lib/"..name..".o"
 
     local cmd = {rustcompiler, "--crate-type=lib", "--emit=link"}
     if flags then
@@ -223,7 +224,7 @@ local function buildGenericRustLibrary(lib, input_group, output_group)
     sanityCheck(lib)
 
     local compiler_directives = {}
-    tup.append_table(compiler_directives, RSFLAGS_KERNEL)
+    tup.append_table(compiler_directives, RSFLAGS_USER)
     if lib.addRSFlags then
         tup.append_table(compiler_directives, lib.addRSFlags)
     end

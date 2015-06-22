@@ -27,13 +27,10 @@ pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
         let mut star = rdmsr(IA32_STAR);
         star |= (cs_selector.bits() as u64) << 32;
         star |= (ss_selector.bits() as u64) << 48;
-
         wrmsr(IA32_STAR, star);
-        log!("IA32_star: 0x{:x}", star);
 
-        // System call RIP, currently 0
+        // System call RIP
         let rip = syscall_enter as usize as u64;
-        log!("set rip to {:x}", rip);
         wrmsr(IA32_LSTAR, rip);
 
         wrmsr(IA32_FMASK, !(RFlags::new().bits()) );

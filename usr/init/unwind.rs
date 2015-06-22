@@ -28,7 +28,6 @@ pub fn __morestack() -> !
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Copy)]
 pub enum _Unwind_Reason_Code
 {
 	_URC_NO_REASON = 0,
@@ -43,7 +42,6 @@ pub enum _Unwind_Reason_Code
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Copy)]
 pub struct _Unwind_Context;
 
 #[allow(non_camel_case_types)]
@@ -52,7 +50,6 @@ static _UA_SEARCH_PHASE: _Unwind_Action = 1;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[derive(Copy)]
 #[allow(raw_pointer_derive)]
 pub struct _Unwind_Exception
 {

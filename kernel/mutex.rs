@@ -41,7 +41,6 @@ impl<'lock, T> DerefMut for HeldMutex<'lock, T> {
     }
 }
 
-#[unsafe_destructor]
 impl<'lock, T> Drop for HeldMutex<'lock, T> {
     fn drop(&mut self) {
         self.mutex.unlock();

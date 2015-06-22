@@ -1,7 +1,6 @@
 use prelude::*;
 
 use core::cell::RefCell;
-use core::default::{Default};
 use core::mem::{transmute};
 use core::fmt;
 

@@ -17,9 +17,7 @@ use x86::syscall;
 #[no_mangle]
 pub fn main() {
 
-    unsafe {
-        syscall!(1, 1);
-    }
+    unsafe { syscall!(1, 1); }
 
     loop {};
 }

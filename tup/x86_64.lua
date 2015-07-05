@@ -22,7 +22,6 @@ RSFLAGS_USER += "-C target-feature=-3dnow,-avx,-avx2,-sse,-sse2,-sse3,-sse4.1,-s
 RSFLAGS_USER += "-g"
 RSFLAGS_USER += "-L "..TOP.."/lib/"
 RSFLAGS_USER += "--extern core="..TOP.."/lib/libcore.rlib"
-RSFLAGS_USER += "--emit=obj"
 
 LDFLAGS_USER = {}
 

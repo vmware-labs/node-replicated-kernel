@@ -1,7 +1,7 @@
 #![feature(no_std)]
 #![feature(lang_items)]
 #![feature(asm)]
-#![feature(core)]
+#![feature(core, core_prelude)]
 #![no_std]
 
 use core::prelude::*;

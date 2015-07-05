@@ -7,7 +7,27 @@ tup.frule{
 
 buildCoreLibrary{
     target = "core",
-    rsFile = "core/lib.rs"
+    rsFile = "core/lib.rs",
+    addRSFlags = {"--cfg", "disable_float"}
+}
+
+buildRustLibrary{
+    target = "rustc_unicode",
+    rsFile = "rustc_unicode/lib.rs",
+    addLibraries = {"core"}
+}
+
+buildRustLibrary{
+    target = "alloc",
+    rsFile = "alloc/lib.rs",
+    addRSFlags = {'--cfg feature=\\"external_funcs\\"'},
+    addLibraries = {"core", "rustc_unicode"}
+}
+
+buildRustLibrary{
+    target = "collections",
+    rsFile = "collections/lib.rs",
+    addLibraries = {"core", "rustc_unicode", "alloc"}
 }
 
 buildRustLibrary{

@@ -15,10 +15,10 @@ local function sanityCheck(app)
         error("Argument 'addIncludes' must be a table!")
     end
 
-    if not app.addRFlags then
+    if not app.addRSFlags then
         app.addRSFlags = {}
-    elseif type(app.addCFlags) != "table" then
-        error("Argument 'addCFlags' must be a table!")
+    elseif type(app.addRSFlags) != "table" then
+        error("Argument 'addRSFlags' must be a table!")
     end
 end
 
@@ -28,7 +28,7 @@ local function makeRustObjectFile(name, objects, libraries, flags)
     local outputs = {name..".o"}
     outputs.extra_outputs = {TOP.."/<sbin>"}
 
-    local cmd = {rustcompiler}
+    local cmd = {rustcompiler, "--emit obj"}
     if flags then
         tup.append_table(cmd, flags)
     end
@@ -191,7 +191,6 @@ local function makeRustLibrary(name, objects, libraries, flags, input_group, out
     inputs.extra_inputs = input_group
     local outputs = {TOP.."/lib/"..name..".rlib"}
     outputs.extra_outputs = output_group
-    outputs.extra_outputs += TOP.."/lib/"..name..".o"
 
     local cmd = {rustcompiler, "--crate-type=lib", "--emit=link"}
     if flags then

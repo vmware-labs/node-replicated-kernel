@@ -2,7 +2,7 @@
 #![feature(no_std)]
 #![feature(lang_items)]
 #![feature(asm)]
-#![feature(core)]
+#![feature(core, core_prelude, raw, core_str_ext, core_slice_ext)]
 #![feature(intrinsics)]
 #![feature(unsafe_destructor)]
 #![no_std]
@@ -15,8 +15,6 @@ extern crate rlib;
 
 #[cfg(target_arch="x86_64")]
 extern crate multiboot;
-#[cfg(target_arch="x86_64")]
-extern crate raw_cpuid;
 #[cfg(target_arch="x86_64")]
 #[macro_use]
 extern crate x86;

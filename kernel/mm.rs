@@ -7,11 +7,10 @@ use std::fmt;
 use multiboot;
 use x86::paging::{PML4, PML4Entry};
 
-use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE};
+use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE, paddr_to_kernel_vaddr, kernel_vaddr_to_paddr};
 use mutex::{Mutex};
 
-const KERNEL_BASE: u64 = 0xFFFFFFFF80000000;
-const MAX_FRAME_REGIONS: usize = 5;
+const MAX_FRAME_REGIONS: usize = 10;
 
 pub static fmanager: Mutex<FrameManager> =
     mutex!(FrameManager { count: 0, regions: [MemoryRegion{base: 0, size: 0, index: 0}; MAX_FRAME_REGIONS] });
@@ -63,17 +62,6 @@ impl fmt::Debug for MemoryRegion {
 }
 
 
-/// Translate a kernel 'virtual' address to the physical address of the memory.
-pub fn kernel_vaddr_to_paddr(v: VAddr) -> PAddr {
-    v as PAddr - KERNEL_BASE
-}
-
-/// Translate a physical memory address into a kernel addressable location.
-pub fn paddr_to_kernel_vaddr(p: PAddr) -> VAddr {
-    (p + KERNEL_BASE) as VAddr
-}
-
-
 impl FrameManager {
 
     pub fn new() -> FrameManager {
@@ -95,22 +83,6 @@ impl FrameManager {
         self.regions[self.count].base = base;
         self.regions[self.count].size = size;
         self.count += 1;
-    }
-
-    pub fn allocate_pml4<'b>(&mut self) -> Option<&'b mut PML4> {
-        let f = self.allocate_frame(BASE_PAGE_SIZE);
-        match f {
-            Some(frame) => {
-                unsafe {
-                    let pml4: &'b mut [PML4Entry; 512] = unsafe {
-                        transmute(paddr_to_kernel_vaddr(frame.base))
-                    };
-                    log!("allocate pml4 at 0x{:x}", frame.base);
-                    Some(pml4)
-                }
-            }
-            None => None
-        }
     }
 
     pub fn allocate_frame(&mut self, size: u64) -> Option<Frame> {
@@ -153,7 +125,6 @@ impl FrameManager {
     }
 
     /// Make sure our regions are sorted and consecutive entires are merged.
-    /// TODO: Can we have overlapping entries?
     pub fn clean_regions(&mut self) {
 
         self.sort_regions();
@@ -180,4 +151,20 @@ impl FrameManager {
         }
     }
 
+    /// XXX: should not be here
+    pub fn allocate_pml4<'b>(&mut self) -> Option<&'b mut PML4> {
+        let f = self.allocate_frame(BASE_PAGE_SIZE);
+        match f {
+            Some(frame) => {
+                unsafe {
+                    let pml4: &'b mut [PML4Entry; 512] = unsafe {
+                        transmute(paddr_to_kernel_vaddr(frame.base))
+                    };
+                    log!("allocate pml4 at 0x{:x}", frame.base);
+                    Some(pml4)
+                }
+            }
+            None => None
+        }
+    }
 }

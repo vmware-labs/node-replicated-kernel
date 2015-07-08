@@ -138,47 +138,56 @@ pub unsafe fn register_handler(vector: usize, handler: unsafe fn(&ExceptionArgum
 }
 
 /// Initializes and loads the IDT into the CPU.
-pub unsafe fn setup_idt() {
+pub fn setup_idt() {
+    unsafe {
+        let idtptr = dtables::DescriptorTablePointer {
+            limit: ((size_of::<irq::IdtEntry>() * 256) - 1) as u16,
+            base: transmute::<&[irq::IdtEntry; 256], u64>(&idt)
+        };
+        dtables::lidt(&idtptr);
 
-    let idtptr = dtables::DescriptorTablePointer {
-        limit: ((size_of::<irq::IdtEntry>() * 256) - 1) as u16,
-        base: transmute::<&[irq::IdtEntry; 256], u64>(&idt)
-    };
-    dtables::lidt(&idtptr);
+        // Note everything is declared as interrupt gates for now.
+        // Trap and Interrupt gates are similar,
+        // and their descriptors are structurally the same,
+        // they differ only in the "type" field.
+        // The difference is that for interrupt gates,
+        // interrupts are automatically disabled upon entry
+        // and re-enabled upon IRET which restores the saved EFLAGS.
+        log!("Install IRQ handler");
+        idt_set!(0, isr_handler0, 0x08, 0x8E);
+        idt_set!(1, isr_handler1, 0x08, 0x8E);
+        idt_set!(2, isr_handler2, 0x08, 0x8E);
+        idt_set!(3, isr_handler3, 0x08, 0x8E);
+        idt_set!(4, isr_handler4, 0x08, 0x8E);
+        idt_set!(5, isr_handler5, 0x08, 0x8E);
+        idt_set!(6, isr_handler6, 0x08, 0x8E);
+        idt_set!(7, isr_handler7, 0x08, 0x8E);
+        idt_set!(8, isr_handler8, 0x08, 0x8E);
+        idt_set!(9, isr_handler9, 0x08, 0x8E);
+        idt_set!(10, isr_handler10, 0x08, 0x8E);
+        idt_set!(11, isr_handler11, 0x08, 0x8E);
+        idt_set!(12, isr_handler12, 0x08, 0x8E);
+        idt_set!(13, isr_handler13, 0x08, 0x8E);
+        idt_set!(14, isr_handler14, 0x08, 0x8E);
+        idt_set!(15, isr_handler15, 0x08, 0x8E);
 
-    // Note everything is declared as interrupt gates for now.
-    // Trap and Interrupt gates are similar,
-    // and their descriptors are structurally the same,
-    // they differ only in the "type" field.
-    // The difference is that for interrupt gates,
-    // interrupts are automatically disabled upon entry
-    // and re-enabled upon IRET which restores the saved EFLAGS.
-    log!("Install IRQ handler");
-    idt_set!(0, isr_handler0, 0x08, 0x8E);
-    idt_set!(1, isr_handler1, 0x08, 0x8E);
-    idt_set!(2, isr_handler2, 0x08, 0x8E);
-    idt_set!(3, isr_handler3, 0x08, 0x8E);
-    idt_set!(4, isr_handler4, 0x08, 0x8E);
-    idt_set!(5, isr_handler5, 0x08, 0x8E);
-    idt_set!(6, isr_handler6, 0x08, 0x8E);
-    idt_set!(7, isr_handler7, 0x08, 0x8E);
-    idt_set!(8, isr_handler8, 0x08, 0x8E);
-    idt_set!(9, isr_handler9, 0x08, 0x8E);
-    idt_set!(10, isr_handler10, 0x08, 0x8E);
-    idt_set!(11, isr_handler11, 0x08, 0x8E);
-    idt_set!(12, isr_handler12, 0x08, 0x8E);
-    idt_set!(13, isr_handler13, 0x08, 0x8E);
-    idt_set!(14, isr_handler14, 0x08, 0x8E);
-    idt_set!(15, isr_handler15, 0x08, 0x8E);
+        idt_set!(32, isr_handler32, 0x08, 0x8E);
+        idt_set!(33, isr_handler33, 0x08, 0x8E);
+        idt_set!(34, isr_handler34, 0x08, 0x8E);
+        idt_set!(35, isr_handler35, 0x08, 0x8E);
+        idt_set!(36, isr_handler36, 0x08, 0x8E);
 
-    idt_set!(32, isr_handler32, 0x08, 0x8E);
-    idt_set!(33, isr_handler33, 0x08, 0x8E);
-    idt_set!(34, isr_handler34, 0x08, 0x8E);
-    idt_set!(35, isr_handler35, 0x08, 0x8E);
-    idt_set!(36, isr_handler36, 0x08, 0x8E);
+        register_handler(13, gp_handler);
+        register_handler(14, pf_handler);
 
-    register_handler(13, gp_handler);
-    register_handler(14, pf_handler);
+        pic_remap();
+    }
+}
 
-    pic_remap();
+pub fn enable() {
+    unsafe { irq::enable(); }
+}
+
+pub fn disable() {
+    unsafe { irq::disable(); }
 }

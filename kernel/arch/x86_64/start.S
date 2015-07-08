@@ -102,7 +102,7 @@ start64:
 	jmp *%rax
 
 .section .text
-.extern kmain
+.extern arch_init
 .globl start64_high
 start64_high:
 	/* and clear low-memory mapping */
@@ -121,7 +121,7 @@ start64_high:
 	mov $init_stack, %rsp
 
 	/* call the rust code */
-	call kmain
+	call arch_init
 
 	/* and if that returns (it shouldn't) loop forever */
 start64.loop:

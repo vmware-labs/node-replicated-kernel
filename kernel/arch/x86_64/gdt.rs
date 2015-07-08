@@ -43,7 +43,7 @@ static mut tss: TaskStateSegment = TaskStateSegment{
     iomap_base: 0,
 };
 
-pub fn set_up_gdt() {
+pub fn setup_gdt() {
     // 64 bit code
     let cs = DESC_P | DESC_L | DESC_S | DESC_DPL0 | TYPE_C_ER;
     // 64 bit stack
@@ -83,14 +83,14 @@ pub fn set_up_gdt() {
     }
 
     log!("Segments reloaded");
-    set_up_tss();
+    setup_tss();
     log!("TSS enabled");
 
 }
 
 static mut syscall_stack: [u64; 512] = [0; 512];
 
-pub fn set_up_tss() {
+fn setup_tss() {
     unsafe {
         // Complete setup of TSS descriptor (by inserting base address of TSS)
         let tss_ptr = transmute::<&TaskStateSegment, u64>(&tss);

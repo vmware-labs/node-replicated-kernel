@@ -1,9 +1,11 @@
 use core::mem::{transmute};
-use ::mm::{paddr_to_kernel_vaddr};
 
 use x86::msr::{wrmsr, rdmsr, IA32_EFER, IA32_STAR, IA32_LSTAR, IA32_FMASK};
 use x86::segmentation::*;
 use x86::rflags::{RFlags};
+
+use super::memory::{paddr_to_kernel_vaddr};
+
 
 extern "C" {
     #[no_mangle]

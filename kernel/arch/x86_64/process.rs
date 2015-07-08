@@ -12,8 +12,9 @@ use x86::rflags;
 use x86::controlregs;
 
 use super::gdt;
-use super::memory::{PAddr, VAddr};
-use ::mm::{paddr_to_kernel_vaddr, kernel_vaddr_to_paddr, fmanager};
+use super::memory::{paddr_to_kernel_vaddr, kernel_vaddr_to_paddr, PAddr, VAddr};
+
+use ::mm::{fmanager};
 use ::mutex::{Mutex};
 
 macro_rules! round_up {
@@ -239,7 +240,7 @@ impl<'a> Process<'a> {
             controlregs::cr3_write(pml4_phys as PAddr);
         };
         unsafe {
-            asm!("jmp exec" :: "{ecx}" (entry_point as u64) "{r11}" (user_flags));
+            asm!("jmp exec" :: "{rcx}" (entry_point as u64) "{r11}" (user_flags));
         }
         panic!("Should not come here!");
     }
@@ -256,9 +257,9 @@ impl<'a> Process<'a> {
             // %r10 points to rflags
 
             asm!("jmp resume" ::
-                 "{r8}"  (gdt::get_user_stack_selector())
-                 "{r9}"  (gdt::get_user_code_selector())
-                 "{r10}" (user_rflags));
+                 "{r8}"  (gdt::get_user_stack_selector().bits() as u64)
+                 "{r9}"  (gdt::get_user_code_selector().bits() as u64)
+                 "{r10}" (user_rflags.bits() as u64));
         }
         panic!("Should not come here!");
     }

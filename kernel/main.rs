@@ -6,6 +6,7 @@
 #![feature(asm)]
 #![feature(intrinsics)]
 #![feature(unsafe_destructor)]
+#![feature(ptr_as_ref)]
 #![no_std]
 
 use prelude::*;

@@ -68,7 +68,7 @@ impl<'a> SlabAllocator<'a> {
 
         match fm.allocate_frame(BASE_PAGE_SIZE) {
             Some(frame) => {
-
+                log!("Add new frame {:?}", frame);
                 let mut new_head = unsafe {
                     mem::transmute::<VAddr, &'a mut SlabPage>(
                         paddr_to_kernel_vaddr(frame.base))
@@ -85,9 +85,11 @@ impl<'a> SlabAllocator<'a> {
 
         let mut full_page = None;
         for slab_page in self.allocateable.iter_mut() {
-            match slab_page.allocate(alignment) {
-                None => { () },
+            log!("slab page");
+            match slab_page.allocate(self.size, alignment) {
+                None => { log!("got nothing"); () },
                 Some(obj) => {
+                    log!("got something");
                     if slab_page.is_full() {
                         full_page = Some(slab_page);
                     }
@@ -114,7 +116,7 @@ impl<'a> SlabAllocator<'a> {
 
     }
 
-    fn insert_front(head: &'a mut Option<&'a mut SlabPage<'a>>, new_head: &'a mut SlabPage<'a>) {
+    fn insert_front<'b>(head: &'b mut Option<&'a mut SlabPage<'a>>, new_head: &'a mut SlabPage<'a>) {
 
         match *head {
             None => { *head = Some(new_head); }
@@ -198,16 +200,41 @@ pub struct SlabPage<'a> {
 
 impl<'a> SlabPage<'a> {
 
-    pub fn can_allocate(&self, alignment: usize) -> bool {
-        false
-    }
+    fn first_fit(&self, size: usize, alignment: usize) -> Option<(usize, usize)> {
+        for (base_idx, b) in self.meta.bitfield.iter().enumerate() {
+            for bit_idx in 0..8 {
+                let idx: usize = base_idx * 8 + bit_idx;
+                let addr: usize = ((self as *const SlabPage) as usize) + idx * size;
+                log!("{} {} {:x} {}", idx, b, addr, addr % alignment == 0);
 
-    pub fn allocate(&self, alignment: usize) -> Option<*mut u8> {
+                let alignment_ok = addr % alignment == 0;
+                let block_is_free = b & (1 << bit_idx) == 0;
+                if alignment_ok && block_is_free {
+                    return Some((idx, addr));
+                }
+            }
+        }
         None
     }
 
+    fn set_bit(&mut self, idx: usize) {
+        let base_idx = idx / 8;
+        let bit_idx = idx % 8;
+        self.meta.bitfield[base_idx] |= 1 << bit_idx;
+    }
+
+    pub fn allocate(&mut self, size: usize, alignment: usize) -> Option<*mut u8> {
+        match self.first_fit(size, alignment) {
+            Some((idx, addr)) => {
+                self.set_bit(idx);
+                Some(unsafe { mem::transmute::<usize, *mut u8>(addr) })
+            }
+            None => None
+        }
+    }
+
     pub fn is_full(&self) -> bool {
-        true
+        self.meta.bitfield.iter().filter(|&x| *x != 0xff).count() == 0
     }
 
 }
@@ -235,6 +262,7 @@ pub struct SlabPageMeta<'a> {
 #[no_mangle]
 fn rust_allocate(size: usize, align: usize) -> *mut u8 {
     log!("size {} align {}", size, align);
+    assert!(align.is_power_of_two());
     let mut allocator = SlabAllocator{
         size: 40,
         allocateable_elements: 0,

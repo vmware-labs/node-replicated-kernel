@@ -14,6 +14,9 @@ use prelude::*;
 #[macro_use]
 extern crate core;
 extern crate rlib;
+#[macro_use]
+pub mod mutex;
+
 pub mod allocator;
 
 #[macro_use]
@@ -36,8 +39,6 @@ extern crate elfloader;
 #[cfg(target_arch="x86_64")]
 extern crate multiboot;
 
-#[macro_use]
-pub mod mutex;
 
 pub use klogger::*;
 
@@ -50,7 +51,6 @@ use core::slice;
 
 #[cfg(target_arch="x86_64")] #[path="arch/x86_64/mod.rs"]
 pub mod arch;
-
 
 mod mm;
 mod scheduler;

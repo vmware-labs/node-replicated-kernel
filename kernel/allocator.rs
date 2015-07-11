@@ -56,14 +56,11 @@ pub struct SlabAllocator<'a> {
 
     allocateable_elements: usize,
     allocateable: Option<&'a mut SlabPage<'a>>,
-
-    full_pages: usize,
-    full: Option<&'a mut SlabPage<'a>>,
 }
 
 impl<'a> SlabAllocator<'a> {
 
-    fn add<'b>(&'b mut self, amount: usize) {
+    fn refill_slab<'b>(&'b mut self, amount: usize) {
         let mut fm = mm::fmanager.lock();
 
         match fm.allocate_frame(BASE_PAGE_SIZE) {
@@ -81,39 +78,49 @@ impl<'a> SlabAllocator<'a> {
         }
     }
 
-    pub fn allocate(&'a mut self, alignment: usize) -> *mut u8 {
+    fn try_allocate<'b>(&'b mut self, alignment: usize) -> Option<*mut u8> {
 
-        let mut full_page = None;
         for slab_page in self.allocateable.iter_mut() {
             log!("slab page");
             match slab_page.allocate(self.size, alignment) {
-                None => { log!("got nothing"); () },
+                None => { () },
                 Some(obj) => {
                     log!("got something");
-                    if slab_page.is_full() {
-                        full_page = Some(slab_page);
-                    }
-
-                    return (obj as *mut u8);
+                    return Some(obj as *mut u8);
                 }
             };
         }
 
-        match full_page {
-            Some(page) => {
-                //self.remove_from_list(page);
-                SlabAllocator::insert_front(&mut self.full, page);
-            },
-            None => ()
-        };
-
-        (EMPTY as *mut u8)
-
-
+        None
     }
 
-    fn remove_from_list(&mut self, p: &mut SlabPage) {
+    pub fn allocate(&'a mut self, alignment: usize) -> Option<*mut u8> {
+        match self.try_allocate(alignment) {
+            None => {
+                self.refill_slab(1);
+                self.try_allocate(alignment)
+            }
+            Some(obj) => Some(obj)
+        }
+    }
 
+    fn remove_from_list<'b>(head: &'b mut Option<&'a mut SlabPage<'a>>, p: &'a mut SlabPage<'a>) {
+        unsafe {
+            match p.meta.prev.resolve_mut() {
+                None => {
+                    match p.meta.next.resolve_mut() {
+                        None => { *head = None; },
+                        Some(next_page) => { *head = Some(next_page) }
+                    }
+                },
+                Some(prev_page) => {
+                    match p.meta.next.resolve_mut() {
+                        None => { prev_page.meta.next = Rawlink::none(); },
+                        Some(next_page) => { prev_page.meta.next = Rawlink::some(next_page) }
+                    }
+                }
+            }
+        }
     }
 
     fn insert_front<'b>(head: &'b mut Option<&'a mut SlabPage<'a>>, new_head: &'a mut SlabPage<'a>) {
@@ -127,36 +134,6 @@ impl<'a> SlabAllocator<'a> {
             }
         }
     }
-
-    /*    return buf ;
-
-        match self.allocateable {
-            None => { return EMPTY as *mut u8; }
-            Some(p) => {
-                if p.can_allocate(alignment) {
-                    let buf = p.allocate(alignment);
-                    if p.is_full() {
-                        // Move out of list
-                        match p.meta.prev {
-                            Some(prev) => { prev.meta.next = p.meta.next }
-                            None => { self.allocateable = p.meta.next }
-                        };
-                        match p.meta.next {
-                            Some(next) => { next.meta.prev = p.meta.prev }
-                            None => { p.meta.prev = None }
-                        };
-
-                        // Add to allocated
-                        self.allocated = Some(p);
-                    }
-
-                    return buf as *mut u8;
-                }
-
-                return EMPTY as *mut u8;
-            }
-        }
-    }*/
 
     pub fn deallocate(ptr: *mut u8, alignment: usize) {
 
@@ -267,12 +244,12 @@ fn rust_allocate(size: usize, align: usize) -> *mut u8 {
         size: 40,
         allocateable_elements: 0,
         allocateable: None,
-        full_pages: 0,
-        full: None
     };
 
-    allocator.add(4);
-    allocator.allocate(align)
+    match allocator.allocate(align) {
+        Some(buf) => buf,
+        None => EMPTY as *mut u8
+    }
 }
 
 

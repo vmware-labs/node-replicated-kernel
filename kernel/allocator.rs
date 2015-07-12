@@ -9,7 +9,7 @@ pub const EMPTY: *mut () = 0x1 as *mut ();
 
 use mutex::{Mutex};
 
-pub static zone_allocator: Mutex<ZoneAllocator<'static>> =
+static zone_allocator: Mutex<ZoneAllocator> =
     mutex!(ZoneAllocator { slabs: [
         SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
         SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
@@ -20,14 +20,14 @@ pub static zone_allocator: Mutex<ZoneAllocator<'static>> =
         SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
         SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
         SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-]});
+    ]});
 
 
-pub struct ZoneAllocator<'a> {
-    slabs: [SlabAllocator<'a>; 9]
+pub struct ZoneAllocator {
+    slabs: [SlabAllocator<'static>; 9]
 }
 
-impl<'a> ZoneAllocator<'a> {
+impl ZoneAllocator{
 
     /// Round-up the requested size to fit one of the slab allocators.
     fn get_size_class(requested_size: usize) -> Option<usize> {
@@ -50,7 +50,7 @@ impl<'a> ZoneAllocator<'a> {
         Some(size_class.trailing_zeros() as usize - 3)
     }
 
-    fn try_acquire_slab(&'a mut self, size: usize) -> Option<&mut SlabAllocator<'a>> {
+    fn try_acquire_slab(&mut self, size: usize) -> Option<usize> {
         match ZoneAllocator::get_size_class(size) {
             None => None,
             Some(size_class) => match ZoneAllocator::get_slab_idx(size_class) {
@@ -60,21 +60,24 @@ impl<'a> ZoneAllocator<'a> {
                         log!("Initialize slab at idx {} / size_class {}", idx, size_class);
                         self.slabs[idx].size = size_class;
                     }
-                    Some(&mut self.slabs[idx])
+                    Some(idx)
                 }
             }
         }
     }
 
-    pub fn allocate(&'a mut self, size: usize, align: usize) -> Option<*mut u8> {
+    pub fn allocate(&mut self, size: usize, align: usize) -> Option<*mut u8> {
         match self.try_acquire_slab(size) {
-            Some(slab) => slab.allocate(align),
+            Some(idx) => self.slabs[idx].allocate(align),
             None => None
         }
     }
 
-    pub fn deallocate(&'a mut self, ptr: *mut u8) {
-
+    pub fn deallocate<'a>(&'a mut self, ptr: *mut u8, old_size: usize, align: usize) {
+        match self.try_acquire_slab(old_size) {
+            Some(idx) => self.slabs[idx].deallocate(ptr),
+            None => panic!("Unable to find slab allocator for size ({}) with ptr {:?}", old_size, ptr)
+        }
     }
 }
 
@@ -118,7 +121,7 @@ impl<'a> SlabAllocator<'a> {
         None
     }
 
-    pub fn allocate(&'a mut self, alignment: usize) -> Option<*mut u8> {
+    pub fn allocate<'b>(&'b mut self, alignment: usize) -> Option<*mut u8> {
         match self.try_allocate(alignment) {
             None => {
                 self.refill_slab(1);
@@ -354,7 +357,8 @@ fn rust_allocate(size: usize, align: usize) -> *mut u8 {
 /// any value in range_inclusive(requested_size, usable_size).
 #[no_mangle]
 fn rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
-
+    let mut za = zone_allocator.lock();
+    za.deallocate(ptr, old_size, align);
 }
 
 /// Resize the allocation referenced by `ptr` to `size` bytes.

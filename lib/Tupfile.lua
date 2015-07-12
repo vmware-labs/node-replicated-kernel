@@ -43,6 +43,12 @@ buildRustLibrary{
 }
 
 buildRustLibrary{
+    target = "slabmalloc",
+    rsFile = "slabmalloc/src/lib.rs",
+    addLibraries = {"core", "x86"}
+}
+
+buildRustLibrary{
     target = "klogger",
     rsFile = "klogger/src/lib.rs",
     addLibraries = {"x86", "core"}

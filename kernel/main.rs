@@ -29,6 +29,9 @@ extern crate collections;
 extern crate x86;
 
 #[cfg(target_arch="x86_64")]
+extern crate slabmalloc;
+
+#[cfg(target_arch="x86_64")]
 #[macro_use]
 extern crate klogger;
 

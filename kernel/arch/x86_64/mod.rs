@@ -46,10 +46,6 @@ pub fn arch_init() {
     log!("Started");
     let cpuid = cpuid::CpuId::new();
 
-    assert_eq!(64, size_of::<allocator::SlabPageMeta>());
-    assert_eq!(4096, size_of::<allocator::SlabPage>());
-
-
     debug::init();
     irq::setup_idt();
     irq::enable();

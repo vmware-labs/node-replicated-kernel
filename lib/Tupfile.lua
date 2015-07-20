@@ -37,9 +37,15 @@ buildRustLibrary{
 }
 
 buildRustLibrary{
+    target = "raw_cpuid",
+    rsFile = "cpuid/src/lib.rs",
+    addLibraries = {"core", "bitflags"}
+}
+
+buildRustLibrary{
     target = "x86",
     rsFile = "x86/src/lib.rs",
-    addLibraries = {"core", "bitflags"}
+    addLibraries = {"core", "bitflags", "raw_cpuid"}
 }
 
 buildRustLibrary{

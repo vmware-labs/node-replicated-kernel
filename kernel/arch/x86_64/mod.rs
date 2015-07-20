@@ -37,7 +37,7 @@ use mm;
 use x86::cpuid;
 use elfloader;
 use collections::{Vec};
-use allocator;
+//use allocator;
 
 #[cfg(target_arch="x86_64")]
 #[lang="start"]
@@ -51,9 +51,16 @@ pub fn arch_init() {
     irq::enable();
     gdt::setup_gdt();
 
-    log!("cpuid[1] = {:?}", cpuid.get(1));
-    let has_x2apic = cpuid.get(1).ecx & 1<<21 > 0;
-    let has_tsc = cpuid.get(1).ecx & 1<<24 > 0;
+    let fi = cpuid.get_feature_info();
+    let has_x2apic = match fi {
+        Some(ref fi) => fi.has_x2apic(),
+        None => false,
+    };
+    let has_tsc = match fi {
+        Some(ref fi) => fi.has_tsc(),
+        None => false,
+    };
+
     if has_x2apic && has_tsc {
 
         log!("x2APIC / deadline TSC supported!");
@@ -93,8 +100,8 @@ pub fn arch_init() {
         //int!(0x3);
     }
 
-    let mut entries = Vec::with_capacity(10);
-    entries.push(1);
+    //let mut entries = Vec::with_capacity(10);
+    //entries.push(1);
 
     let mut cp = process::current_process.lock();
     (*cp) = process::Process::new(0);

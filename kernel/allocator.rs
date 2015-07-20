@@ -11,15 +11,15 @@ use mutex::{Mutex};
 
 static zone_allocator: Mutex<ZoneAllocator> =
     mutex!(ZoneAllocator { slabs: [
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
+        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
     ]});
 
 

@@ -17,7 +17,7 @@ extern crate rlib;
 #[macro_use]
 pub mod mutex;
 
-pub mod allocator;
+//pub mod allocator;
 
 #[macro_use]
 extern crate alloc;

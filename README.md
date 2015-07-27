@@ -21,8 +21,7 @@ $ sudo apt-get install tup
 ```
 $ curl -s https://static.rust-lang.org/rustup.sh | sudo sh -s -- --channel=nightly
 ```
-Bespin uses rust libcore, so you will also need the libcore sources
-to build and link with Bespin.
+Bespin uses rust libcore and liballoc and rustc_unicode library from the rust language. Currently you still need to download the rust sources manually, and we will copy the relevant directories later in the install description:
 ```
 $ wget https://static.rust-lang.org/dist/rustc-nightly-src.tar.gz
 $ tar zxvf rustc-nightly-src.tar.gz
@@ -39,6 +38,8 @@ $ sudo apt-get install qemu qemu-kvm
 1. git submodule init
 1. git submodule update
 1. cp -rf ../rustc-nightly/src/libcore lib/core
+1. cp -rf ../rustc-nightly/src/liballoc lib/alloc
+1. cp -rf ../rustc-nightly/src/librustc_unicode lib/rustc_unicode
 
 ### Set-up build
 1. tup init

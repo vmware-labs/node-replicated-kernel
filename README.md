@@ -52,8 +52,8 @@ $ sudo apt-get install qemu qemu-kvm
 `./run.sh`
 
 ## Future Work
- [x] Milestone 1: Running libcore user-space program
- [ ] Milestone 2: ACPI Integration
- [ ] Milestone 3: Multiprocessor support
- [ ] Milestone 4: PCI support
- [ ] Milestone 5: Rust standard library port
+ * [x] Milestone 1: Running libcore user-space program
+ * [ ] Milestone 2: ACPI Integration
+ * [ ] Milestone 3: Multiprocessor support
+ * [ ] Milestone 4: PCI support
+ * [ ] Milestone 5: Rust standard library port

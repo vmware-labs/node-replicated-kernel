@@ -4,7 +4,6 @@ use core::mem::{transmute, size_of};
 
 use std::fmt;
 
-use multiboot;
 use x86::paging::{PML4, PML4Entry};
 
 use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE, paddr_to_kernel_vaddr, kernel_vaddr_to_paddr};
@@ -68,13 +67,8 @@ impl FrameManager {
         FrameManager { count: 0, regions: [MemoryRegion{base: 0, size: 0, index: 0}; MAX_FRAME_REGIONS] }
     }
 
-    /// Adds a multiboot region to our FrameManager.
-    pub fn add_multiboot_region(&mut self, base: PAddr, size: u64, mtype: multiboot::MemType) {
-        if mtype == multiboot::MemType::Unusable {
-            log!("ignore unusable memory",);
-            return
-        }
-
+    /// Adds a region of physical memory to our FrameManager.
+    pub fn add_region(&mut self, base: PAddr, size: u64) {
         if self.count >= MAX_FRAME_REGIONS {
             log!("Not enough space in FrameManager. Increase MAX_FRAME_REGIONS!");
             return;

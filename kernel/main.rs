@@ -69,10 +69,7 @@ mod std {
     pub use core::marker;
 }
 
-
-
-
-/// Kernel entrypoint
+/// Kernel entry-point
 pub fn kkmain()
 {
 

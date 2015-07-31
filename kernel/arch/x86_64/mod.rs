@@ -16,7 +16,7 @@ use core::slice;
 use core::ops::DerefMut;
 
 use x86::paging;
-use multiboot::{Multiboot};
+use multiboot::{Multiboot, MemoryType};
 
 extern {
     #[no_mangle]
@@ -44,6 +44,7 @@ use collections::{Vec};
 #[no_mangle]
 pub fn arch_init() {
     log!("Started");
+
     let cpuid = cpuid::CpuId::new();
 
     debug::init();
@@ -62,7 +63,6 @@ pub fn arch_init() {
     };
 
     if has_x2apic && has_tsc {
-
         log!("x2APIC / deadline TSC supported!");
         unsafe {
             log!("enable APIC");
@@ -86,25 +86,51 @@ pub fn arch_init() {
 
 
     let mut fm = mm::fmanager.lock();
-    let multiboot = Multiboot::new(mboot_ptr,  memory::paddr_to_kernel_vaddr);
-    {
-        let cb = | base, size, mtype | { fm.add_multiboot_region(base, size, mtype); };
-        multiboot.find_memory(cb);
-    }
-    {
-        fm.clean_regions();
-        fm.print_regions();
-    }
-
-    unsafe {
-        //int!(0x3);
-    }
+    let mb = Multiboot::new(mboot_ptr,  memory::paddr_to_kernel_vaddr);
+    mb.memory_regions().map(|regions| {
+        for region in regions {
+            if region.memory_type() == MemoryType::RAM {
+                fm.add_region(region.base_address(), region.length());
+            }
+        }
+    });
+    fm.clean_regions();
+    fm.print_regions();
 
     //let mut entries = Vec::with_capacity(10);
     //entries.push(1);
 
-    let mut cp = process::current_process.lock();
-    (*cp) = process::Process::new(0);
+
+
+    mb.modules().map(|modules| {
+        for module in modules {
+            log!("Found module {:?}", module);
+            let binary: &'static [u8] = unsafe {
+                core::slice::from_raw_parts(
+                    transmute::<usize, *const u8>(module.start),
+                    module.start - module.end)
+            };
+
+            let mut cp = process::current_process.lock();
+            (*cp) = process::Process::new(0);
+
+            match *cp.deref_mut() {
+                Some(ref mut p) => {
+                    elfloader::ElfBinary::new(module.string, binary).map(|e| {
+                        // Patch in the kernel tables...
+                        unsafe {
+                            p.vspace.pml4[511] = init_pml4[511];
+                        }
+                        e.load(p);
+                        p.start(0x4000f0);
+                    });
+                },
+                None => (),
+            }
+        }
+    });
+
+/*
     match *cp.deref_mut() {
         Some(ref mut p) => {
             let mod_cb = | name, start, end | {
@@ -129,19 +155,11 @@ pub fn arch_init() {
                     None => ()
                 };
             };
-            multiboot.find_modules(mod_cb);
+            //multiboot.find_modules(mod_cb);
         }
         None => ()
-    };
-
-    unsafe {
-        //int!(0xe);
-
-        loop {
-            //for i in 1..100000000 { }
-            //log!("doing stuff... {}", controlregs::cr3());
-        }
-    }
+    };*/
 
 
+    loop {}
 }

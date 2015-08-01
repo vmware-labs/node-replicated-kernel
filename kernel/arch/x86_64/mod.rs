@@ -15,6 +15,7 @@ use core::mem::{transmute, size_of};
 use core::slice;
 use core::ops::DerefMut;
 
+use ::{kmain};
 use x86::paging;
 use multiboot::{Multiboot, MemoryType};
 
@@ -39,6 +40,7 @@ use x86::cpuid;
 use elfloader;
 use collections::{Vec};
 use allocator;
+use alloc::boxed::Box;
 
 fn initialize_memory(mb: &Multiboot) {
     unsafe {
@@ -112,24 +114,12 @@ pub fn arch_init() {
         allocator::zone_allocator = Some(allocator);
     }
 
-    {
-        let mut entries = Vec::with_capacity(10);
-        entries.push(1);
-        entries.push(2);
-        entries.push(3);
-        entries.push(4);
-        entries.push(5);
-        entries.push(6);
-        entries.push(7);
-        entries.push(8);
-        entries.push(9);
-        entries.push(10);
-        entries.push(11);
+    let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
+    let mut init = Box::new(process::Process::new(1).unwrap());
 
-        for e in entries {
-            log!("{}", e);
-        }
-    }
+    process_list.push(init);
+
+
     mb.modules().map(|modules| {
         for module in modules {
             log!("Found module {:?}", module);
@@ -158,36 +148,9 @@ pub fn arch_init() {
         }
     });
 
-/*
-    match *cp.deref_mut() {
-        Some(ref mut p) => {
-            let mod_cb = | name, start, end | {
-                log!("Found module {}: {:x} - {:x}", name, start, end);
+    // No we go in the arch-independent part
+    kmain();
 
-                let binary: &'static [u8] = unsafe {
-                    core::slice::from_raw_parts(
-                        transmute::<usize, *const u8>(start),
-                        start - end)
-                };
-
-                match elfloader::ElfBinary::new(name, binary) {
-                    Some(e) =>
-                    {
-                        // Patch in the kernel tables...
-                        unsafe {
-                            p.vspace.pml4[511] = init_pml4[511];
-                        }
-                        e.load(p);
-                        p.start(0x4000f0);
-                    },
-                    None => ()
-                };
-            };
-            //multiboot.find_modules(mod_cb);
-        }
-        None => ()
-    };*/
-
-
-    loop {}
+    // and never return from there
+    unreachable!();
 }

@@ -67,10 +67,12 @@ mod std {
 }
 
 /// Kernel entry-point
-pub fn kkmain()
+pub fn kmain()
 {
+    log!("Reached architecture independent area");
 
+    loop {}
 
-
+    unreachable!();
 }
 

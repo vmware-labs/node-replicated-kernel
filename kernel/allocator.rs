@@ -9,19 +9,7 @@ pub const EMPTY: *mut () = 0x1 as *mut ();
 use slabmalloc::{ZoneAllocator, SlabAllocator};
 use mutex::{Mutex};
 
-static zone_allocator: Mutex<ZoneAllocator> =
-    mutex!(ZoneAllocator { slabs: [
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-        SlabAllocator{size: 0, allocateable_elements: 0, allocateable: None, pager: None},
-    ]});
-
+pub static mut zone_allocator: Option<&'static mut ZoneAllocator<'static>> = None;
 
 /// Return a pointer to `size` bytes of memory aligned to `align`.
 ///
@@ -35,10 +23,16 @@ fn rust_allocate(size: usize, align: usize) -> *mut u8 {
     log!("size {} align {}", size, align);
     assert!(align.is_power_of_two());
 
-    let mut za = zone_allocator.lock();
-    match za.allocate(size, align) {
-        Some(buf) => buf,
-        None => EMPTY as *mut u8
+    unsafe {
+        match zone_allocator.as_mut() {
+            Some(z) => {
+                match z.allocate(size, align) {
+                    Some(buf) => buf,
+                    None => EMPTY as *mut u8,
+                }
+            },
+            None => EMPTY as *mut u8,
+        }
     }
 }
 
@@ -52,8 +46,9 @@ fn rust_allocate(size: usize, align: usize) -> *mut u8 {
 /// any value in range_inclusive(requested_size, usable_size).
 #[no_mangle]
 fn rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
-    let mut za = zone_allocator.lock();
-    za.deallocate(ptr, old_size, align);
+    unsafe {
+        zone_allocator.as_mut().map(|z| { z.deallocate(ptr, old_size, align); });
+    }
 }
 
 /// Resize the allocation referenced by `ptr` to `size` bytes.

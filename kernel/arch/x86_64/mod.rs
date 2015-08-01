@@ -33,13 +33,28 @@ extern {
 }
 
 use elfloader::{ElfLoader};
-use mm;
+use mm::{fmanager, BespinSlabsProvider};
+use slabmalloc::{ZoneAllocator, SlabPageProvider};
 use x86::cpuid;
 use elfloader;
 use collections::{Vec};
-//use allocator;
+use allocator;
 
-#[cfg(target_arch="x86_64")]
+fn initialize_memory(mb: &Multiboot) {
+    unsafe {
+        mb.memory_regions().map(|regions| {
+            for region in regions {
+                if region.memory_type() == MemoryType::RAM {
+                    fmanager.add_region(region.base_address(), region.length());
+                }
+            }
+        });
+
+        fmanager.clean_regions();
+        fmanager.print_regions();
+    }
+}
+
 #[lang="start"]
 #[no_mangle]
 pub fn arch_init() {
@@ -84,23 +99,21 @@ pub fn arch_init() {
         }
     }
 
-
-    let mut fm = mm::fmanager.lock();
     let mb = Multiboot::new(mboot_ptr,  memory::paddr_to_kernel_vaddr);
-    mb.memory_regions().map(|regions| {
-        for region in regions {
-            if region.memory_type() == MemoryType::RAM {
-                fm.add_region(region.base_address(), region.length());
-            }
-        }
-    });
-    fm.clean_regions();
-    fm.print_regions();
+    initialize_memory(&mb);
+
+    let mut bp = BespinSlabsProvider;
+    let mut za: ZoneAllocator;
+
+    unsafe {
+        let provider = transmute::<&mut BespinSlabsProvider, &'static mut BespinSlabsProvider>(&mut bp);
+        za = ZoneAllocator::new(Some(provider));
+        let allocator = transmute::<&mut ZoneAllocator, &'static mut ZoneAllocator>(&mut za);
+        allocator::zone_allocator = Some(allocator);
+    }
 
     //let mut entries = Vec::with_capacity(10);
     //entries.push(1);
-
-
 
     mb.modules().map(|modules| {
         for module in modules {

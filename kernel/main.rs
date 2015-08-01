@@ -1,10 +1,6 @@
 #![feature(no_std)]
 #![feature(alloc, collections)]
-#![feature(core, core_prelude, raw, core_str_ext, core_slice_ext)]
-#![feature(box_syntax)]
-#![feature(lang_items)]
-#![feature(asm)]
-#![feature(intrinsics)]
+#![feature(intrinsics, asm, lang_items, const_fn, core, core_prelude, raw, core_str_ext, core_slice_ext, box_syntax)]
 #![feature(unsafe_destructor)]
 #![feature(ptr_as_ref)]
 #![no_std]
@@ -57,6 +53,7 @@ pub mod arch;
 
 mod mm;
 mod scheduler;
+mod allocator;
 
 
 #[cfg(not(test))]

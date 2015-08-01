@@ -4,15 +4,17 @@ use core::mem::{transmute, size_of};
 
 use std::fmt;
 
-use x86::paging::{PML4, PML4Entry};
+use x86::paging;
+
 
 use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE, paddr_to_kernel_vaddr, kernel_vaddr_to_paddr};
 use mutex::{Mutex};
+use slabmalloc::{SlabPageProvider, SlabPage};
 
 const MAX_FRAME_REGIONS: usize = 10;
 
-pub static fmanager: Mutex<FrameManager> =
-    mutex!(FrameManager { count: 0, regions: [MemoryRegion{base: 0, size: 0, index: 0}; MAX_FRAME_REGIONS] });
+pub static mut fmanager: FrameManager =
+    FrameManager { count: 0, regions: [MemoryRegion{base: 0, size: 0, index: 0}; MAX_FRAME_REGIONS] };
 
 #[derive(Debug)]
 pub struct FrameManager {
@@ -144,21 +146,103 @@ impl FrameManager {
             log!("Region {} = {:?}", i, self.regions[i]);
         }
     }
+}
 
-    /// XXX: should not be here
-    pub fn allocate_pml4<'b>(&mut self) -> Option<&'b mut PML4> {
-        let f = self.allocate_frame(BASE_PAGE_SIZE);
-        match f {
-            Some(frame) => {
-                unsafe {
-                    let pml4: &'b mut [PML4Entry; 512] = unsafe {
-                        transmute(paddr_to_kernel_vaddr(frame.base))
-                    };
-                    log!("allocate pml4 at 0x{:x}", frame.base);
-                    Some(pml4)
-                }
-            }
-            None => None
+pub trait PageTableProvider<'a> {
+    fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4>;
+    fn new_pdpt(&mut self) -> Option<paging::PML4Entry>;
+    fn new_pd(&mut self) -> Option<paging::PDPTEntry>;
+    fn new_pt(&mut self) -> Option<paging::PDEntry>;
+    fn new_page(&mut self) -> Option<paging::PTEntry>;
+}
+
+pub struct BespinPageTableProvider;
+
+impl BespinPageTableProvider {
+    pub const fn new() -> BespinPageTableProvider {
+        BespinPageTableProvider
+    }
+}
+
+impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
+
+    /// Allocate a PML4 table.
+    fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
+        unsafe {
+            let f = fmanager.allocate_frame(BASE_PAGE_SIZE);
+            f.map(|frame| {
+                let pml4: &'b mut [paging::PML4Entry; 512] = unsafe {
+                    transmute(paddr_to_kernel_vaddr(frame.base))
+                };
+                pml4
+            })
         }
     }
+
+    /// Allocate a new page directory and return a PML4 entry for it.
+    fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
+        unsafe {
+            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+                paging::PML4Entry::new(frame.base, paging::PML4_P | paging::PML4_RW | paging::PML4_US)
+            })
+        }
+    }
+
+
+    /// Allocate a new page directory and return a pdpt entry for it.
+    fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
+        unsafe {
+            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+                paging::PDPTEntry::new(frame.base, paging::PDPT_P | paging::PDPT_RW | paging::PDPT_US)
+            })
+        }
+    }
+
+
+    /// Allocate a new page-directory and return a page directory entry for it.
+    fn new_pt(&mut self) -> Option<paging::PDEntry> {
+        unsafe {
+            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+                paging::PDEntry::new(frame.base, paging::PD_P | paging::PD_RW | paging::PD_US)
+            })
+        }
+    }
+
+    /// Allocate a new (4KiB) page and map it.
+    fn new_page(&mut self) -> Option<paging::PTEntry> {
+        unsafe {
+            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+                paging::PTEntry::new(frame.base, paging::PT_P | paging::PT_RW | paging::PT_US)
+            })
+        }
+    }
+}
+
+
+pub struct BespinSlabsProvider;
+
+impl BespinSlabsProvider {
+    pub const fn new() -> BespinSlabsProvider {
+        BespinSlabsProvider
+    }
+}
+
+impl<'a> SlabPageProvider<'a> for BespinSlabsProvider {
+
+    fn allocate_slabpage(&mut self) -> Option<&'a mut SlabPage<'a>> {
+        let f = unsafe { fmanager.allocate_frame(BASE_PAGE_SIZE) };
+        f.map(|frame| {
+            unsafe {
+                let sp: &'a mut SlabPage = unsafe {
+                    transmute(paddr_to_kernel_vaddr(frame.base))
+                };
+                sp
+            }
+        })
+    }
+
+    fn release_slabpage(&mut self, p: &'a mut SlabPage<'a>) {
+        log!("TODO!");
+    }
+
 }

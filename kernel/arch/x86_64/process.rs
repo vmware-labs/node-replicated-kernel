@@ -14,7 +14,7 @@ use x86::controlregs;
 use super::gdt;
 use super::memory::{paddr_to_kernel_vaddr, kernel_vaddr_to_paddr, PAddr, VAddr};
 
-use ::mm::{fmanager};
+use ::mm::{BespinPageTableProvider, PageTableProvider};
 use ::mutex::{Mutex};
 
 macro_rules! round_up {
@@ -26,36 +26,15 @@ pub static current_process: Mutex<Option<Process<'static>>> = mutex!(None);
 
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
+    pager: BespinPageTableProvider
 }
 
 impl<'a> VSpace<'a> {
-
-    /// Allocate a new page directory and return a PML4 entry for it.
-    fn new_pdpt(&mut self) -> Option<PML4Entry> {
-        let mut fm = fmanager.lock();
-        match fm.allocate_frame(BASE_PAGE_SIZE) {
-            Some(frame) => {
-                Some(PML4Entry::new(frame.base, paging::PML4_P | paging::PML4_RW | paging::PML4_US))
-            },
-            None => None
-        }
-    }
 
     /// Resolve a PML4Entry to a PDPT.
     fn get_pdpt<'b>(&self, entry: PML4Entry) -> &'b mut paging::PDPT {
         unsafe {
             transmute::<VAddr, &mut paging::PDPT>(paddr_to_kernel_vaddr(entry.get_address()))
-        }
-    }
-
-    /// Allocate a new page directory and return a pdpt entry for it.
-    fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
-        let mut fm = fmanager.lock();
-        match fm.allocate_frame(BASE_PAGE_SIZE) {
-            Some(frame) => {
-                Some(paging::PDPTEntry::new(frame.base, paging::PDPT_P | paging::PDPT_RW | paging::PDPT_US))
-            },
-            None => None
         }
     }
 
@@ -66,32 +45,10 @@ impl<'a> VSpace<'a> {
         }
     }
 
-    /// Allocate a new page-directory and return a page directory entry for it.
-    fn new_pt(&mut self) -> Option<paging::PDEntry> {
-        let mut fm = fmanager.lock();
-        match fm.allocate_frame(BASE_PAGE_SIZE) {
-            Some(frame) => {
-                Some(paging::PDEntry::new(frame.base, paging::PD_P | paging::PD_RW | paging::PD_US))
-            },
-            None => None
-        }
-    }
-
     /// Resolve a PDEntry to a page table.
     fn get_pt<'b>(&self, entry: paging::PDEntry) -> &'b mut paging::PT {
         unsafe {
             transmute::<VAddr, &mut paging::PT>(paddr_to_kernel_vaddr(entry.get_address()))
-        }
-    }
-
-    /// Allocate a new (4KiB) page and map it.
-    fn new_page(&mut self) -> Option<paging::PTEntry> {
-        let mut fm = fmanager.lock();
-        match fm.allocate_frame(BASE_PAGE_SIZE) {
-            Some(frame) => {
-                Some(paging::PTEntry::new(frame.base, paging::PT_P | paging::PT_RW | paging::PT_US))
-            },
-            None => None
         }
     }
 
@@ -149,21 +106,21 @@ impl<'a> VSpace<'a> {
     pub fn map(&mut self, base: VAddr, size: usize) {
         let pml4_idx = pml4_index(base);
         if !self.pml4[pml4_idx].contains(paging::PML4_P) {
-            self.pml4[pml4_idx] = self.new_pdpt().unwrap();
+            self.pml4[pml4_idx] = self.pager.new_pdpt().unwrap();
         }
         assert!(self.pml4[pml4_idx].contains(paging::PML4_P));
 
         let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
         let pdpt_idx = pdpt_index(base);
         if !pdpt[pdpt_idx].contains(paging::PDPT_P) {
-            pdpt[pdpt_idx] = self.new_pd().unwrap();
+            pdpt[pdpt_idx] = self.pager.new_pd().unwrap();
         }
         assert!(pdpt[pdpt_idx].contains(paging::PDPT_P));
 
         let pd = self.get_pd(pdpt[pdpt_idx]);
         let pd_idx = pd_index(base);
         if !pd[pd_idx].contains(paging::PD_P) {
-            pd[pd_idx] = self.new_pt().unwrap();
+            pd[pd_idx] = self.pager.new_pt().unwrap();
         }
         assert!(pd[pd_idx].contains(paging::PD_P));
 
@@ -173,7 +130,7 @@ impl<'a> VSpace<'a> {
         let mut mapped = 0;
         while mapped < size && pt_idx < 512 {
             if !pt[pt_idx].contains(paging::PT_P) {
-                pt[pt_idx] = self.new_page().unwrap();
+                pt[pt_idx] = self.pager.new_page().unwrap();
                 log!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             }
             assert!(pt[pt_idx].contains(paging::PT_P));
@@ -220,15 +177,14 @@ pub struct Process<'a> {
 
 impl<'a> Process<'a> {
     pub fn new<'b>(pid: u64) -> Option<Process<'a>> {
-        let mut fm = fmanager.lock();
-        let pml4 = fm.allocate_pml4();
-        match pml4 {
-
-            Some(table) => {
-                Some(Process{pid: pid, vspace: VSpace{pml4: table}, save_area: Default::default() })
+        let mut pager = BespinPageTableProvider::new();
+        pager.allocate_pml4().map(|pml4| {
+            Process{
+                pid: pid,
+                vspace: VSpace{pml4: pml4, pager: pager},
+                save_area: Default::default(),
             }
-            None => None
-        }
+        })
     }
 
     pub fn start(&self, entry_point: VAddr) {

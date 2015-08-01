@@ -5,9 +5,7 @@ use core::ptr;
 use mm;
 
 pub const EMPTY: *mut () = 0x1 as *mut ();
-
 use slabmalloc::{ZoneAllocator, SlabAllocator};
-use mutex::{Mutex};
 
 pub static mut zone_allocator: Option<&'static mut ZoneAllocator<'static>> = None;
 
@@ -46,6 +44,7 @@ fn rust_allocate(size: usize, align: usize) -> *mut u8 {
 /// any value in range_inclusive(requested_size, usable_size).
 #[no_mangle]
 fn rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
+    log!("deallocate old_size={}", old_size);
     unsafe {
         zone_allocator.as_mut().map(|z| { z.deallocate(ptr, old_size, align); });
     }
@@ -67,7 +66,18 @@ fn rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
 /// any value in range_inclusive(requested_size, usable_size).
 #[no_mangle]
 fn rust_reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
-    EMPTY as *mut u8
+    log!("reallocate old={} new={}", old_size, size);
+    unsafe {
+        match zone_allocator.as_mut() {
+            Some(z) => {
+                match z.reallocate(ptr, old_size, size, align) {
+                    Some(buf) => buf,
+                    None => EMPTY as *mut u8,
+                }
+            },
+            None => EMPTY as *mut u8,
+        }
+    }
 }
 
 /// Resize the allocation referenced by `ptr` to `size` bytes.
@@ -85,12 +95,16 @@ fn rust_reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> 
 #[no_mangle]
 fn rust_reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
                            align: usize) -> usize {
+    log!("reallocate inplcae");
+
     0
 }
 
 
 #[no_mangle]
 fn rust_usable_size(size: usize, align: usize) -> usize {
+    log!("usable size");
+
     0
 }
 

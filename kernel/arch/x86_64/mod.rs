@@ -112,9 +112,24 @@ pub fn arch_init() {
         allocator::zone_allocator = Some(allocator);
     }
 
-    //let mut entries = Vec::with_capacity(10);
-    //entries.push(1);
+    {
+        let mut entries = Vec::with_capacity(10);
+        entries.push(1);
+        entries.push(2);
+        entries.push(3);
+        entries.push(4);
+        entries.push(5);
+        entries.push(6);
+        entries.push(7);
+        entries.push(8);
+        entries.push(9);
+        entries.push(10);
+        entries.push(11);
 
+        for e in entries {
+            log!("{}", e);
+        }
+    }
     mb.modules().map(|modules| {
         for module in modules {
             log!("Found module {:?}", module);

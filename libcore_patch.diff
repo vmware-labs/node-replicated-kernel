@@ -1,0 +1,401 @@
+From 8bcd344c6d68b0294d5cea715cc03354d379aed3 Mon Sep 17 00:00:00 2001
+From: John Hodge <tpg@mutabah.net>
+Date: Thu, 2 Jul 2015 21:34:53 -0700
+Subject: [PATCH 1/5] Add disable_float cfg target for #26449.
+
+This allows to compile libcore on architectures that lack floating point support
+or to use libcore in kernel code without worrying about saving and restoring
+the floating point register state inside the kernel.
+---
+ src/libcore/clone.rs               |  2 ++
+ src/libcore/default.rs             |  2 ++
+ src/libcore/fmt/mod.rs             |  2 ++
+ src/libcore/intrinsics.rs          |  5 +++++
+ src/libcore/lib.rs                 |  3 +++
+ src/libcore/num/flt2dec/decoder.rs |  3 +++
+ src/libcore/num/mod.rs             |  3 +++
+ src/libcore/ops.rs                 | 21 +++++++++++++++++----
+ 8 files changed, 37 insertions(+), 4 deletions(-)
+
+diff --git a/src/libcore/clone.rs b/src/libcore/clone.rs
+index a13160b..bdc3094 100644
+--- a/src/libcore/clone.rs
++++ b/src/libcore/clone.rs
+@@ -80,7 +80,9 @@ clone_impl! { u16 }
+ clone_impl! { u32 }
+ clone_impl! { u64 }
+ 
++#[cfg(not(disable_float))]
+ clone_impl! { f32 }
++#[cfg(not(disable_float))]
+ clone_impl! { f64 }
+ 
+ clone_impl! { () }
+diff --git a/src/libcore/default.rs b/src/libcore/default.rs
+index f5103d3..24f9d78 100644
+--- a/src/libcore/default.rs
++++ b/src/libcore/default.rs
+@@ -153,5 +153,7 @@ default_impl! { i16, 0 }
+ default_impl! { i32, 0 }
+ default_impl! { i64, 0 }
+ 
++#[cfg(not(disable_float))]
+ default_impl! { f32, 0.0f32 }
++#[cfg(not(disable_float))]
+ default_impl! { f64, 0.0f64 }
+diff --git a/src/libcore/fmt/mod.rs b/src/libcore/fmt/mod.rs
+index 32a5aed..082678f 100644
+--- a/src/libcore/fmt/mod.rs
++++ b/src/libcore/fmt/mod.rs
+@@ -1468,7 +1468,9 @@ macro_rules! floating { ($ty:ident) => {
+         }
+     }
+ } }
++#[cfg(not(disable_float))]
+ floating! { f32 }
++#[cfg(not(disable_float))]
+ floating! { f64 }
+ 
+ // Implementation of Display/Debug for various core types
+diff --git a/src/libcore/intrinsics.rs b/src/libcore/intrinsics.rs
+index 5cbca1b..54302c8 100644
+--- a/src/libcore/intrinsics.rs
++++ b/src/libcore/intrinsics.rs
+@@ -393,7 +393,10 @@ extern "rust-intrinsic" {
+     pub fn volatile_load<T>(src: *const T) -> T;
+     /// Perform a volatile store to the `dst` pointer.
+     pub fn volatile_store<T>(dst: *mut T, val: T);
++}
+ 
++#[cfg(not(disable_float))]
++extern "rust-intrinsic" {
+     /// Returns the square root of an `f32`
+     pub fn sqrtf32(x: f32) -> f32;
+     /// Returns the square root of an `f64`
+@@ -490,7 +493,9 @@ extern "rust-intrinsic" {
+     pub fn roundf32(x: f32) -> f32;
+     /// Returns the nearest integer to an `f64`. Rounds half-way cases away from zero.
+     pub fn roundf64(x: f64) -> f64;
++}
+ 
++extern "rust-intrinsic" {
+     /// Returns the number of bits set in a `u8`.
+     pub fn ctpop8(x: u8) -> u8;
+     /// Returns the number of bits set in a `u16`.
+diff --git a/src/libcore/lib.rs b/src/libcore/lib.rs
+index ae85e27..fa75880 100644
+--- a/src/libcore/lib.rs
++++ b/src/libcore/lib.rs
+@@ -112,7 +112,9 @@ mod uint_macros;
+ #[path = "num/u32.rs"]  pub mod u32;
+ #[path = "num/u64.rs"]  pub mod u64;
+ 
++#[cfg(not(disable_float))]
+ #[path = "num/f32.rs"]   pub mod f32;
++#[cfg(not(disable_float))]
+ #[path = "num/f64.rs"]   pub mod f64;
+ 
+ #[macro_use]
+@@ -150,6 +152,7 @@ pub mod iter;
+ pub mod option;
+ pub mod raw;
+ pub mod result;
++#[cfg(not(disable_float))]
+ pub mod simd;
+ pub mod slice;
+ pub mod str;
+diff --git a/src/libcore/num/flt2dec/decoder.rs b/src/libcore/num/flt2dec/decoder.rs
+index a292ffa..4acca19 100644
+--- a/src/libcore/num/flt2dec/decoder.rs
++++ b/src/libcore/num/flt2dec/decoder.rs
+@@ -12,6 +12,7 @@
+ 
+ use prelude::v1::*;
+ 
++#[cfg(not(disable_float))]
+ use {f32, f64};
+ use num::{Float, FpCategory};
+ 
+@@ -60,11 +61,13 @@ pub trait DecodableFloat: Float + Copy {
+     fn min_pos_norm_value() -> Self;
+ }
+ 
++#[cfg(not(disable_float))]
+ impl DecodableFloat for f32 {
+     fn ldexpi(f: i64, exp: isize) -> Self { f as Self * (exp as Self).exp2() }
+     fn min_pos_norm_value() -> Self { f32::MIN_POSITIVE }
+ }
+ 
++#[cfg(not(disable_float))]
+ impl DecodableFloat for f64 {
+     fn ldexpi(f: i64, exp: isize) -> Self { f as Self * (exp as Self).exp2() }
+     fn min_pos_norm_value() -> Self { f64::MIN_POSITIVE }
+diff --git a/src/libcore/num/mod.rs b/src/libcore/num/mod.rs
+index 0864374..a3d7383 100644
+--- a/src/libcore/num/mod.rs
++++ b/src/libcore/num/mod.rs
+@@ -96,6 +96,7 @@ macro_rules! zero_one_impl_float {
+         }
+     )*)
+ }
++#[cfg(not(disable_float))]
+ zero_one_impl_float! { f32 f64 }
+ 
+ macro_rules! checked_op {
+@@ -1403,7 +1404,9 @@ macro_rules! from_str_float_impl {
+         }
+     }
+ }
++#[cfg(not(disable_float))]
+ from_str_float_impl!(f32, to_f32);
++#[cfg(not(disable_float))]
+ from_str_float_impl!(f64, to_f64);
+ 
+ macro_rules! from_str_radix_int_impl {
+diff --git a/src/libcore/ops.rs b/src/libcore/ops.rs
+index 6d522ad..e77eed3 100644
+--- a/src/libcore/ops.rs
++++ b/src/libcore/ops.rs
+@@ -203,7 +203,9 @@ macro_rules! add_impl {
+     )*)
+ }
+ 
+-add_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
++add_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
++#[cfg(not(disable_float))]
++add_impl! { f32 f64 }
+ 
+ /// The `Sub` trait is used to specify the functionality of `-`.
+ ///
+@@ -257,7 +259,9 @@ macro_rules! sub_impl {
+     )*)
+ }
+ 
+-sub_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
++sub_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
++#[cfg(not(disable_float))]
++sub_impl! { f32 f64 }
+ 
+ /// The `Mul` trait is used to specify the functionality of `*`.
+ ///
+@@ -311,7 +315,9 @@ macro_rules! mul_impl {
+     )*)
+ }
+ 
+-mul_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 f32 f64 }
++mul_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
++#[cfg(not(disable_float))]
++mul_impl! { f32 f64 }
+ 
+ /// The `Div` trait is used to specify the functionality of `/`.
+ ///
+@@ -383,6 +389,7 @@ macro_rules! div_impl_float {
+     )*)
+ }
+ 
++#[cfg(not(disable_float))]
+ div_impl_float! { f32 f64 }
+ 
+ /// The `Rem` trait is used to specify the functionality of `%`.
+@@ -441,6 +448,7 @@ macro_rules! rem_impl {
+ 
+ rem_impl! { usize u8 u16 u32 u64 isize i8 i16 i32 i64 }
+ 
++#[cfg(not(disable_float))]
+ #[stable(feature = "rust1", since = "1.0.0")]
+ impl Rem for f32 {
+     type Output = f32;
+@@ -460,6 +468,7 @@ impl Rem for f32 {
+     }
+ }
+ 
++#[cfg(not(disable_float))]
+ #[stable(feature = "rust1", since = "1.0.0")]
+ impl Rem for f64 {
+     type Output = f64;
+@@ -471,7 +480,9 @@ impl Rem for f64 {
+     }
+ }
+ 
++#[cfg(not(disable_float))]
+ forward_ref_binop! { impl Rem, rem for f64, f64 }
++#[cfg(not(disable_float))]
+ forward_ref_binop! { impl Rem, rem for f32, f32 }
+ 
+ /// The `Neg` trait is used to specify the functionality of unary `-`.
+@@ -542,7 +553,9 @@ macro_rules! neg_impl_unsigned {
+ }
+ 
+ // neg_impl_unsigned! { usize u8 u16 u32 u64 }
+-neg_impl_numeric! { isize i8 i16 i32 i64 f32 f64 }
++neg_impl_numeric! { isize i8 i16 i32 i64 }
++#[cfg(not(disable_float))]
++neg_impl_numeric! { f32 f64 }
+ 
+ /// The `Not` trait is used to specify the functionality of unary `!`.
+ ///
+-- 
+1.9.1
+
+
+From a2915cb221c0e32b4c5e091767e52fd73f4556d2 Mon Sep 17 00:00:00 2001
+From: Gerd Zellweger <mail@gerdzellweger.com>
+Date: Thu, 2 Jul 2015 21:42:10 -0700
+Subject: [PATCH 2/5] Added test for #26449.
+
+---
+ src/test/run-make/issue-26449/Makefile | 6 ++++++
+ 1 file changed, 6 insertions(+)
+ create mode 100644 src/test/run-make/issue-26449/Makefile
+
+diff --git a/src/test/run-make/issue-26449/Makefile b/src/test/run-make/issue-26449/Makefile
+new file mode 100644
+index 0000000..08f8687
+--- /dev/null
++++ b/src/test/run-make/issue-26449/Makefile
+@@ -0,0 +1,6 @@
++-include ../tools.mk
++
++all:
++	$(RUSTC) -C target-feature=-mmx,-sse,-sse2 ../../../libcore/lib.rs 2>&1 | \
++		grep "LLVM ERROR: SSE register return with SSE disabled"
++	$(RUSTC) --cfg disable_float -C target-feature=-mmx,-sse,-sse2 ../../../libcore/lib.rs
+-- 
+1.9.1
+
+
+From b5e404de40b646a6a26fa47d3f0952a0822df293 Mon Sep 17 00:00:00 2001
+From: Gerd Zellweger <mail@gerdzellweger.com>
+Date: Thu, 2 Jul 2015 21:47:54 -0700
+Subject: [PATCH 3/5] No warnings for compiling disable_float config #26449.
+
+---
+ src/libcore/fmt/mod.rs | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/libcore/fmt/mod.rs b/src/libcore/fmt/mod.rs
+index 082678f..af12b0f 100644
+--- a/src/libcore/fmt/mod.rs
++++ b/src/libcore/fmt/mod.rs
+@@ -17,6 +17,7 @@ use prelude::v1::*;
+ use cell::{Cell, RefCell, Ref, RefMut, BorrowState};
+ use marker::PhantomData;
+ use mem;
++#[cfg(not(disable_float))]
+ use num::flt2dec;
+ use ops::Deref;
+ use result;
+@@ -991,6 +992,7 @@ impl<'a> Formatter<'a> {
+     /// Takes the formatted parts and applies the padding.
+     /// Assumes that the caller already has rendered the parts with required precision,
+     /// so that `self.precision` can be ignored.
++    #[cfg(not(disable_float))]
+     fn pad_formatted_parts(&mut self, formatted: &flt2dec::Formatted) -> Result {
+         if let Some(mut width) = self.width {
+             // for the sign-aware zero padding, we render the sign first and
+@@ -1027,6 +1029,7 @@ impl<'a> Formatter<'a> {
+         }
+     }
+ 
++    #[cfg(not(disable_float))]
+     fn write_formatted_parts(&mut self, formatted: &flt2dec::Formatted) -> Result {
+         fn write_bytes(buf: &mut Write, s: &[u8]) -> Result {
+             buf.write_str(unsafe { str::from_utf8_unchecked(s) })
+@@ -1391,6 +1394,7 @@ impl<'a, T> Pointer for &'a mut T {
+     }
+ }
+ 
++#[cfg(not(disable_float))]
+ // Common code of floating point Debug and Display.
+ fn float_to_decimal_common<T>(fmt: &mut Formatter, num: &T, negative_zero: bool) -> Result
+     where T: flt2dec::DecodableFloat
+@@ -1415,6 +1419,7 @@ fn float_to_decimal_common<T>(fmt: &mut Formatter, num: &T, negative_zero: bool)
+     fmt.pad_formatted_parts(&formatted)
+ }
+ 
++#[cfg(not(disable_float))]
+ // Common code of floating point LowerExp and UpperExp.
+ fn float_to_exponential_common<T>(fmt: &mut Formatter, num: &T, upper: bool) -> Result
+     where T: flt2dec::DecodableFloat
+-- 
+1.9.1
+
+
+From ad18dd9675c5751b1ab17278b88afb7b52a0278a Mon Sep 17 00:00:00 2001
+From: Gerd Zellweger <mail@gerdzellweger.com>
+Date: Mon, 17 Aug 2015 17:17:00 -0700
+Subject: [PATCH 4/5] More disable float directives.
+
+---
+ src/libcore/num/dec2flt/algorithm.rs | 2 +-
+ src/libcore/num/dec2flt/mod.rs       | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/libcore/num/dec2flt/algorithm.rs b/src/libcore/num/dec2flt/algorithm.rs
+index f166bb9..aa54c4e 100644
+--- a/src/libcore/num/dec2flt/algorithm.rs
++++ b/src/libcore/num/dec2flt/algorithm.rs
+@@ -282,7 +282,7 @@ fn quick_start<T: RawFloat>(u: &mut Big, v: &mut Big, k: &mut i16) {
+     // The target ratio is one where u/v is in an in-range significand. Thus our termination
+     // condition is log2(u / v) being the significand bits, plus/minus one.
+     // FIXME Looking at the second bit could improve the estimate and avoid some more divisions.
+-    let target_ratio = f64::sig_bits() as i16;
++    let target_ratio = 0;
+     let log2_u = u.bit_length() as i16;
+     let log2_v = v.bit_length() as i16;
+     let mut u_shift: i16 = 0;
+diff --git a/src/libcore/num/dec2flt/mod.rs b/src/libcore/num/dec2flt/mod.rs
+index 7c3c384..46d6205 100644
+--- a/src/libcore/num/dec2flt/mod.rs
++++ b/src/libcore/num/dec2flt/mod.rs
+@@ -111,11 +111,13 @@ pub mod rawfp;
+ pub mod parse;
+ 
+ /// Entry point for decimal-to-f32 conversion.
++#[cfg(not(disable_float))]
+ pub fn to_f32(s: &str) -> Result<f32, PFE> {
+     dec2flt(s)
+ }
+ 
+ /// Entry point for decimal-to-f64 conversion.
++#[cfg(not(disable_float))]
+ pub fn to_f64(s: &str) -> Result<f64, PFE> {
+     dec2flt(s)
+ }
+-- 
+1.9.1
+
+
+From 46d70348084552da13663e76178d6318fb7969aa Mon Sep 17 00:00:00 2001
+From: Gerd Zellweger <mail@gerdzellweger.com>
+Date: Mon, 17 Aug 2015 17:34:00 -0700
+Subject: [PATCH 5/5] Remove trait for f64, f32.
+
+---
+ src/libcore/num/dec2flt/rawfp.rs | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/libcore/num/dec2flt/rawfp.rs b/src/libcore/num/dec2flt/rawfp.rs
+index 830d2da..fa14ea7 100644
+--- a/src/libcore/num/dec2flt/rawfp.rs
++++ b/src/libcore/num/dec2flt/rawfp.rs
+@@ -141,6 +141,7 @@ pub trait RawFloat : Float + Copy + Debug + LowerExp
+     }
+ }
+ 
++#[cfg(not(disable_float))]
+ impl RawFloat for f32 {
+     fn sig_bits() -> u8 {
+         24
+@@ -188,7 +189,7 @@ impl RawFloat for f32 {
+     }
+ }
+ 
+-
++#[cfg(not(disable_float))]
+ impl RawFloat for f64 {
+     fn sig_bits() -> u8 {
+         53
+-- 
+1.9.1
+

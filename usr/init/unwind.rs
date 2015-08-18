@@ -1,5 +1,3 @@
-pub use core::prelude::*;
-
 #[macro_export]
 macro_rules! int {
     ( $x:expr ) => {

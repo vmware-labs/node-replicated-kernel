@@ -3,12 +3,11 @@
 #![feature(intrinsics, asm, lang_items, const_fn, core, core_prelude, raw, core_str_ext, core_slice_ext, box_syntax)]
 #![feature(unsafe_destructor)]
 #![feature(ptr_as_ref)]
+
 #![no_std]
 
 use prelude::*;
 
-#[macro_use]
-extern crate core;
 extern crate rlib;
 #[macro_use]
 pub mod mutex;

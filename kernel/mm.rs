@@ -1,4 +1,3 @@
-use core::prelude::*;
 use core::slice;
 use core::mem::{transmute, size_of};
 

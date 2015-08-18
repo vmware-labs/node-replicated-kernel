@@ -17,7 +17,7 @@ pub static mut zone_allocator: Option<&'static mut ZoneAllocator<'static>> = Non
 /// power of 2. The alignment must be no larger than the largest supported page
 /// size on the platform.
 #[no_mangle]
-fn rust_allocate(size: usize, align: usize) -> *mut u8 {
+pub extern fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
     log!("size {} align {}", size, align);
     assert!(align.is_power_of_two());
 
@@ -43,7 +43,7 @@ fn rust_allocate(size: usize, align: usize) -> *mut u8 {
 /// create the allocation referenced by `ptr`. The `old_size` parameter may be
 /// any value in range_inclusive(requested_size, usable_size).
 #[no_mangle]
-fn rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
+pub extern fn __rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
     log!("deallocate old_size={}", old_size);
     unsafe {
         zone_allocator.as_mut().map(|z| { z.deallocate(ptr, old_size, align); });
@@ -65,7 +65,7 @@ fn rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
 /// create the allocation referenced by `ptr`. The `old_size` parameter may be
 /// any value in range_inclusive(requested_size, usable_size).
 #[no_mangle]
-fn rust_reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
+pub extern fn __rust_reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
     log!("reallocate old={} new={}", old_size, size);
     unsafe {
         match zone_allocator.as_mut() {
@@ -93,7 +93,7 @@ fn rust_reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> 
 /// create the allocation referenced by `ptr`. The `old_size` parameter may be
 /// any value in range_inclusive(requested_size, usable_size).
 #[no_mangle]
-fn rust_reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
+pub extern fn __rust_reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
                            align: usize) -> usize {
     log!("reallocate inplcae");
 
@@ -102,13 +102,13 @@ fn rust_reallocate_inplace(ptr: *mut u8, old_size: usize, size: usize,
 
 
 #[no_mangle]
-fn rust_usable_size(size: usize, align: usize) -> usize {
+pub extern fn __rust_usable_size(size: usize, align: usize) -> usize {
     log!("usable size");
 
     0
 }
 
 #[no_mangle]
-fn rust_stats_print() {
+fn __rust_stats_print() {
     log!("rust stats?");
 }

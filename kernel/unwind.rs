@@ -1,5 +1,3 @@
-use prelude::*;
-
 #[lang="panic_fmt"]
 #[no_mangle]
 pub fn rust_begin_unwind(args: ::core::fmt::Arguments, file: &str, line: usize) -> !

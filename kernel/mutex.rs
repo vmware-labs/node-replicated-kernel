@@ -51,10 +51,10 @@ impl<'lock, T> Drop for HeldMutex<'lock, T> {
 macro_rules! mutex {
     ($val:expr) => (
         $crate::mutex::Mutex {
-            data: ::core::cell::UnsafeCell { value: $val }
+            data: ::core::cell::UnsafeCell::new($val)
         });
     ($ty:ty, $val:expr) => (
         $crate::mutex::Mutex<$ty> {
-            data: ::core::cell::UnsafeCell<$ty> { value: $val }
+            data: ::core::cell::UnsafeCell<$ty>::new($val)
         });
 }

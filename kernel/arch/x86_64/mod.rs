@@ -117,8 +117,8 @@ pub fn arch_init() {
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
     let mut init = Box::new(process::Process::new(1).unwrap());
 
-    process_list.push(init);
 
+    process_list.push(init);
 
     mb.modules().map(|modules| {
         for module in modules {

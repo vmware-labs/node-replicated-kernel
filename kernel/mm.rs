@@ -1,13 +1,11 @@
 use core::slice;
-use core::mem::{transmute, size_of};
+use core::mem::{transmute};
 
 use std::fmt;
 
 use x86::paging;
 
-
-use ::arch::memory::{VAddr, PAddr, BASE_PAGE_SIZE, paddr_to_kernel_vaddr, kernel_vaddr_to_paddr};
-use mutex::{Mutex};
+use ::arch::memory::{PAddr, BASE_PAGE_SIZE, paddr_to_kernel_vaddr};
 use slabmalloc::{SlabPageProvider, SlabPage};
 
 const MAX_FRAME_REGIONS: usize = 10;
@@ -244,4 +242,33 @@ impl<'a> SlabPageProvider<'a> for BespinSlabsProvider {
         log!("TODO!");
     }
 
+}
+
+use arch::threads::stack::{StackProvider, StackMemory};
+
+pub struct BespinStackProvider;
+
+impl BespinStackProvider {
+    pub const fn new() -> BespinStackProvider {
+        BespinStackProvider
+    }
+}
+
+impl<'a> StackProvider<'a> for BespinStackProvider {
+
+    fn allocate_stack<'b>(&mut self) -> Option<&'b mut StackMemory> {
+        let f = unsafe { fmanager.allocate_frame(BASE_PAGE_SIZE*32) };
+        f.map(|frame| {
+            unsafe {
+                let stack: &'b mut StackMemory = unsafe {
+                    transmute(paddr_to_kernel_vaddr(frame.base))
+                };
+                stack
+            }
+        })
+    }
+
+    fn release_stack(&mut self, stack: &mut StackMemory) {
+        log!("TODO!");
+    }
 }

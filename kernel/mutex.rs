@@ -1,7 +1,5 @@
-use core::prelude::*;
 use core::cell::UnsafeCell;
 use core::ops::{Deref,DerefMut};
-use core::atomic::{fence, Ordering, AtomicBool};
 
 pub struct Mutex<T> {
     pub data: UnsafeCell<T>,
@@ -10,7 +8,7 @@ pub struct Mutex<T> {
 unsafe impl<T: Send> Send for Mutex<T> { }
 unsafe impl<T: Send> Sync for Mutex<T> { }
 
-pub struct HeldMutex<'a, T: 'a> {
+pub struct HeldMutex<'a, T: 'a> { 
     mutex: &'a Mutex<T>,
 }
 

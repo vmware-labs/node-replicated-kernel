@@ -1,11 +1,8 @@
-use prelude::*;
-
 use core::mem;
 use core::ptr;
-use mm;
 
 pub const EMPTY: *mut () = 0x1 as *mut ();
-use slabmalloc::{ZoneAllocator, SlabAllocator};
+use slabmalloc::{ZoneAllocator};
 
 pub static mut zone_allocator: Option<&'static mut ZoneAllocator<'static>> = None;
 

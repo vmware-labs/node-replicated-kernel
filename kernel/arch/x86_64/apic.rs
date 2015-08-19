@@ -58,20 +58,20 @@ const X2APIC_MSR_BASE: u32 = 0x800;
 */
 
 #[derive(Debug)]
-pub struct x2APIC {
+pub struct X2APIC {
     base: u64,
     id: u32,
     version: u32
 }
 
-impl x2APIC {
-    pub fn new() -> x2APIC {
-        let mut apic = x2APIC { base: 0, id: 0, version: 0 };
+impl X2APIC {
+    pub fn new() -> X2APIC {
+        let mut apic = X2APIC { base: 0, id: 0, version: 0 };
         unsafe {
 
             // Enable
             let mut base: u64 = rdmsr(IA32_APIC_BASE);
-            base |= 1 << 10; // Enable x2APIC
+            base |= 1 << 10; // Enable X2APIC
             base |= 1 << 11; // Enable APIC
 
             wrmsr(IA32_APIC_BASE, base);

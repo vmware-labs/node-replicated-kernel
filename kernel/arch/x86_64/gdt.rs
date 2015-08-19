@@ -1,5 +1,4 @@
 use core::mem::{transmute, size_of};
-use core::fmt;
 
 use x86::segmentation::*;
 use x86::dtables::*;
@@ -16,12 +15,11 @@ const CS_USER_INDEX: usize = 4;
 const TSS_LOW_INDEX: usize = 5;
 const TSS_HIGH_INDEX: usize = 6;
 
-const LDT_LOW_INDEX: usize = 7;
-const LDT_HIGH_INDEX: usize = 8;
+//const LDT_LOW_INDEX: usize = 7;
+//const LDT_HIGH_INDEX: usize = 8;
 
 const GDT_SIZE: usize = 512;
 
-#[no_mangle]
 static mut gdt: [u64; GDT_SIZE] = [0; GDT_SIZE ];
 
 pub fn get_user_code_selector() -> SegmentSelector {
@@ -32,7 +30,6 @@ pub fn get_user_stack_selector() -> SegmentSelector {
     SegmentSelector::new(SS_USER_INDEX as u16) | RPL_3 | TI_GDT
 }
 
-#[no_mangle]
 static mut tss: TaskStateSegment = TaskStateSegment{
     reserved: 0,
     rsp: [0,0,0],

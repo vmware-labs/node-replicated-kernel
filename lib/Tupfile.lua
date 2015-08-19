@@ -20,7 +20,6 @@ buildRustLibrary{
 buildRustLibrary{
     target = "alloc",
     rsFile = "alloc/lib.rs",
-    addRSFlags = {'--cfg feature=\\"external_funcs\\"'},
     addLibraries = {"core", "rustc_unicode"}
 }
 

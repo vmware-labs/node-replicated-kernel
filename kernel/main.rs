@@ -1,12 +1,8 @@
 #![feature(no_std)]
 #![feature(alloc, collections)]
-#![feature(intrinsics, asm, lang_items, const_fn, core, core_prelude, raw, core_str_ext, core_slice_ext, box_syntax)]
-#![feature(unsafe_destructor)]
-#![feature(ptr_as_ref)]
+#![feature(intrinsics, asm, lang_items, const_fn, core, raw, box_syntax)]
 
 #![no_std]
-
-use prelude::*;
 
 extern crate rlib;
 #[macro_use]
@@ -42,10 +38,6 @@ pub use klogger::*;
 
 mod prelude;
 pub mod unwind;
-use core::mem::{transmute, size_of};
-use core::raw;
-use core::slice;
-
 
 #[cfg(target_arch="x86_64")] #[path="arch/x86_64/mod.rs"]
 pub mod arch;

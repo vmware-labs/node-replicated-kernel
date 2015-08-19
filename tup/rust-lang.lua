@@ -124,7 +124,7 @@ function makeKernelAssemblyFile(source, extra_inputs, group)
 
     return tup.frule{
         input = inputs,
-        command = "^ AS %f^ as -o %o %f",
+        command = "^ AS %f^ as -am -o %o %f",
         output = outputs
     }
 end

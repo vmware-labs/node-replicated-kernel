@@ -27,7 +27,7 @@ exec:
 /// %r10 points to rflags
 .global resume
 resume:
-    movq $current_process, %r15
+    movq $CURRENT_PROCESS, %r15
     pushq      %r8                 /* ss */
     pushq      7*8(%r15)           /* rsp */
     pushq      %r10                /* rflags */

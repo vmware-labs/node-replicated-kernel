@@ -1,9 +1,8 @@
-use prelude::*;
-use core::ops::{DerefMut, Deref};
+use core::ops::{Deref};
 use x86::io;
 use super::irq;
 
-use super::process::{current_process};
+use super::process::{CURRENT_PROCESS};
 
 static PORT0: u16 = 0x3f8;   /* COM1 */
 static COM1_IRQ: usize = 4+32;
@@ -26,7 +25,7 @@ pub fn init() {
 
 unsafe fn receive_serial_irq(a: &irq::ExceptionArguments) {
     let scancode = io::inb(PORT0 + 0);
-    let cp = current_process.lock();
+    let cp = CURRENT_PROCESS.lock();
     match *cp.deref() {
         Some(ref p) => { log!("p = {:?}", p); putb(scancode); p.resume(); },
         None => log!("No process"),

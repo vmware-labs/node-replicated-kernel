@@ -1,5 +1,7 @@
-#[macro_use]
-pub use ::mutex;
+//#[macro_use]
+//pub use ::mutex;
+
+extern crate core;
 
 pub mod memory;
 pub mod debug;
@@ -8,18 +10,17 @@ pub mod irq;
 pub mod process;
 pub mod gdt;
 pub mod syscall;
+pub mod threads;
 
-extern crate core;
-use prelude::*;
-use core::mem::{transmute, size_of};
-use core::slice;
+
+use core::mem::{transmute};
 use core::ops::DerefMut;
 
 use ::{kmain};
 use x86::paging;
 use multiboot::{Multiboot, MemoryType};
 
-extern {
+extern "C" {
     #[no_mangle]
     static mboot_ptr: memory::PAddr;
 
@@ -35,7 +36,7 @@ extern {
 
 use elfloader::{ElfLoader};
 use mm::{fmanager, BespinSlabsProvider};
-use slabmalloc::{ZoneAllocator, SlabPageProvider};
+use slabmalloc::{ZoneAllocator};
 use x86::cpuid;
 use elfloader;
 use collections::{Vec};
@@ -83,7 +84,7 @@ pub fn arch_init() {
         log!("x2APIC / deadline TSC supported!");
         unsafe {
             log!("enable APIC");
-            let apic = apic::x2APIC::new();
+            let apic = apic::X2APIC::new();
             //apic.enable_tsc();
             //apic.set_tsc(rdtsc()+1000);
             log!("APIC is bsp: {}", apic.is_bsp());
@@ -115,7 +116,7 @@ pub fn arch_init() {
     }
 
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
-    let mut init = Box::new(process::Process::new(1).unwrap());
+    let init = Box::new(process::Process::new(1).unwrap());
 
 
     process_list.push(init);
@@ -129,7 +130,7 @@ pub fn arch_init() {
                     module.start - module.end)
             };
 
-            let mut cp = process::current_process.lock();
+            let mut cp = process::CURRENT_PROCESS.lock();
             (*cp) = process::Process::new(0);
 
             match *cp.deref_mut() {

@@ -9,7 +9,6 @@ use x86::dtables;
 
 const IDT_SIZE: usize = 256;
 
-#[no_mangle]
 static mut idt: [irq::IdtEntry; IDT_SIZE] = [ irq::IdtEntry {base_lo: 0, sel: 0, res0: 0, flags: 0, base_hi: 0, res1: 0}; IDT_SIZE];
 
 static mut irq_handlers: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [

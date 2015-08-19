@@ -1,6 +1,3 @@
-use prelude::*;
-
-use core::cell::RefCell;
 use core::mem::{transmute};
 use core::fmt;
 
@@ -22,7 +19,7 @@ macro_rules! round_up {
 }
 
 #[no_mangle]
-pub static current_process: Mutex<Option<Process<'static>>> = mutex!(None);
+pub static CURRENT_PROCESS: Mutex<Option<Process<'static>>> = mutex!(None);
 
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
@@ -140,7 +137,7 @@ impl<'a> VSpace<'a> {
         }
 
         // Need go to different PD/PDPT/PML4 slot
-        if (mapped < size) {
+        if mapped < size {
             self.map(base + mapped, size - mapped);
         }
     }
@@ -202,8 +199,6 @@ impl<'a> Process<'a> {
     }
 
     pub fn resume(&self) {
-        let user_ss = 0;
-        let user_cs = 0;
         let user_rflags = rflags::RFLAGS_A1 | rflags::RFLAGS_IF;
         log!("resuming User-space");
         unsafe {
@@ -264,7 +259,7 @@ impl<'a> ElfLoader for Process<'a> {
     fn allocate(&mut self, base: VAddr, size: usize, flags: elf::ProgFlag) {
         log!("allocate: 0x{:x} -- 0x{:x}", base, base+size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
-        self.vspace.map(base, size);
+        self.vspace.map(base, rsize);
     }
 
     /// Load a region of bytes into the virtual address space of the process.

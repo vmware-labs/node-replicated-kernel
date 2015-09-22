@@ -1,8 +1,12 @@
 use core::mem;
 use core::ptr;
+use slabmalloc::{ZoneAllocator};
+
+use ::prelude::*;
+use ::arch::memory::{BASE_PAGE_SIZE, CACHE_LINE_SIZE, paddr_to_kernel_vaddr};
+use ::mm::{fmanager};
 
 pub const EMPTY: *mut () = 0x1 as *mut ();
-use slabmalloc::{ZoneAllocator};
 
 pub static mut zone_allocator: Option<&'static mut ZoneAllocator<'static>> = None;
 
@@ -17,6 +21,16 @@ pub static mut zone_allocator: Option<&'static mut ZoneAllocator<'static>> = Non
 pub extern fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
     log!("size {} align {}", size, align);
     assert!(align.is_power_of_two());
+
+    if size >= BASE_PAGE_SIZE as usize - CACHE_LINE_SIZE {
+        unsafe {
+            let frame = fmanager.allocate_frame(round_up!(size as u64, BASE_PAGE_SIZE)).unwrap();
+            let buffer: *mut u8 = unsafe {
+                mem::transmute(paddr_to_kernel_vaddr(frame.base))
+            };
+            return buffer;
+        }
+    }
 
     unsafe {
         match zone_allocator.as_mut() {
@@ -42,6 +56,12 @@ pub extern fn __rust_allocate(size: usize, align: usize) -> *mut u8 {
 #[no_mangle]
 pub extern fn __rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
     log!("deallocate old_size={}", old_size);
+    if old_size >= BASE_PAGE_SIZE as usize - CACHE_LINE_SIZE {
+        log!("BAD deallocate");
+        return;
+    }
+
+
     unsafe {
         zone_allocator.as_mut().map(|z| { z.deallocate(ptr, old_size, align); });
     }
@@ -64,6 +84,13 @@ pub extern fn __rust_deallocate(ptr: *mut u8, old_size: usize, align: usize) {
 #[no_mangle]
 pub extern fn __rust_reallocate(ptr: *mut u8, old_size: usize, size: usize, align: usize) -> *mut u8 {
     log!("reallocate old={} new={}", old_size, size);
+
+    if size >= BASE_PAGE_SIZE as usize - CACHE_LINE_SIZE {
+        log!("BAD reallocate");
+        panic!("bad");
+    }
+
+
     unsafe {
         match zone_allocator.as_mut() {
             Some(z) => {

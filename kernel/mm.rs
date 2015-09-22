@@ -243,32 +243,3 @@ impl<'a> SlabPageProvider<'a> for BespinSlabsProvider {
     }
 
 }
-
-use arch::threads::stack::{StackProvider, StackMemory};
-
-pub struct BespinStackProvider;
-
-impl BespinStackProvider {
-    pub const fn new() -> BespinStackProvider {
-        BespinStackProvider
-    }
-}
-
-impl<'a> StackProvider<'a> for BespinStackProvider {
-
-    fn allocate_stack<'b>(&mut self) -> Option<&'b mut StackMemory> {
-        let f = unsafe { fmanager.allocate_frame(BASE_PAGE_SIZE*32) };
-        f.map(|frame| {
-            unsafe {
-                let stack: &'b mut StackMemory = unsafe {
-                    transmute(paddr_to_kernel_vaddr(frame.base))
-                };
-                stack
-            }
-        })
-    }
-
-    fn release_stack(&mut self, stack: &mut StackMemory) {
-        log!("TODO!");
-    }
-}

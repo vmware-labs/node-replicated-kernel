@@ -36,6 +36,7 @@ extern crate multiboot;
 
 pub use klogger::*;
 
+#[macro_use]
 mod prelude;
 pub mod unwind;
 

@@ -15,10 +15,21 @@ pub mod threads;
 
 use core::mem::{transmute};
 use core::ops::DerefMut;
+use alloc::boxed::Box;
+use collections::{Vec};
 
-use ::{kmain};
 use x86::paging;
+use x86::cpuid;
 use multiboot::{Multiboot, MemoryType};
+use elfloader;
+use elfloader::{ElfLoader};
+use slabmalloc::{ZoneAllocator};
+
+use allocator;
+use mm::{fmanager, BespinSlabsProvider};
+use self::threads::stack::Stack;
+use self::threads::context::Context;
+use ::{kmain};
 
 extern "C" {
     #[no_mangle]
@@ -34,14 +45,6 @@ extern "C" {
     //static mboot_sig: PAddr;
 }
 
-use elfloader::{ElfLoader};
-use mm::{fmanager, BespinSlabsProvider};
-use slabmalloc::{ZoneAllocator};
-use x86::cpuid;
-use elfloader;
-use collections::{Vec};
-use allocator;
-use alloc::boxed::Box;
 
 fn initialize_memory(mb: &Multiboot) {
     unsafe {
@@ -117,9 +120,11 @@ pub fn arch_init() {
 
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
     let init = Box::new(process::Process::new(1).unwrap());
-
-
     process_list.push(init);
+
+    let mut s = Stack::new();
+    log!("s.start {:?}, s.end {:?}", s.start(), s.end());
+    //let c = Context::new(init, arg, start, s);
 
     mb.modules().map(|modules| {
         for module in modules {

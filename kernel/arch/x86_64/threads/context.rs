@@ -1,4 +1,5 @@
 use core::ops::{FnOnce};
+use core::ptr;
 use super::stack::{Stack};
 
 macro_rules! rtdebug{
@@ -19,6 +20,15 @@ pub struct Context {
 pub type InitFn = extern "C" fn(usize, *mut (), *mut ()) -> !;
 pub type ThreadFn = FnOnce(usize) -> usize;
 
+extern fn bootstrap_green_task<F>(task: *const F)  -> !
+									where F: FnOnce(usize) -> usize {
+    let start: ThreadFn = unsafe { ptr::read(task) };
+
+    log!("About to start...");
+    start();
+    log!("Returned here");
+}
+
 impl Context {
     pub fn empty() -> Context {
         Context {
@@ -32,7 +42,7 @@ impl Context {
     /// The `init` function will be run with `arg` and the `start` procedure
     /// split up into code and env pointers. It is required that the `init`
     /// function never return.
-    pub fn new(init: InitFn, arg: usize, start: fn(usize) -> usize, stack: &mut Stack) -> Context {
+    pub fn new(arg: usize, start: fn(usize) -> usize, stack: &mut Stack) -> Context {
 
         let sp: *const usize = stack.end();
         let sp: *mut usize = sp as *mut usize;
@@ -40,7 +50,7 @@ impl Context {
         // which we will then modify to call the given function when restored
         let mut regs = new_regs();
 
-        initialize_call_frame(&mut regs, init, arg, start, sp);
+        initialize_call_frame(&mut regs, bootstrap_green_task, arg, start, sp);
 
         // Scheduler tasks don't have a stack in the "we allocated it" sense,
         // but rather they run on pthreads stacks. We have complete control over
@@ -163,11 +173,7 @@ fn initialize_call_frame<F>(regs: &mut Registers, fptr: InitFn, arg: usize,
     // These registers are frobbed by rust_bootstrap_green_task into the right
     // location so we can invoke the "real init function", `fptr`.
     regs.gpr[RUSTRT_R12] = arg as u64;
-
-    //assert!("fixme {}", arg);
-    //regs.gpr[RUSTRT_R13] = procedure.code as u64;
-    //regs.gpr[RUSTRT_R14] = procedure.env as u64;
-    
+    regs.gpr[RUSTRT_R13] = &procedure as *const F as u64;
     regs.gpr[RUSTRT_R15] = fptr as u64;
 
     // These registers are picked up by the regular context switch paths. These

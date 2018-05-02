@@ -18,6 +18,7 @@ rust. It currently does not do much except for serial output, interrupt handling
 1. `cargo install xargo`
 
 ### Build and run
+1. `cd kernel`
 1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
 1. `bash -x ./run.sh`
 

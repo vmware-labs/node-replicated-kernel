@@ -42,4 +42,3 @@ SECTIONS {
 		*(.note .note.*)
 	}
 }
-

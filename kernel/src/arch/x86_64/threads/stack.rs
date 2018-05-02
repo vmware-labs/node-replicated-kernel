@@ -1,6 +1,3 @@
-use core::ptr;
-use core::raw;
-use core::raw::{Repr};
 use alloc::boxed::Box;
 
 use ::arch::memory::{BASE_PAGE_SIZE};
@@ -32,15 +29,14 @@ impl Stack {
 
     /// Point to the low end of the allocated stack
     pub fn start(&self) -> *const usize {
-        let repr: raw::Slice<u8> = (*self.buf).repr();
-        repr.data as *const usize
+        self.buf.as_ptr() as *const usize
     }
 
     /// Point one usize beyond the high end of the allocated stack
-    pub fn end(&self) -> *const usize {
+    pub fn end(&self) -> *const u8 {
         unsafe {
-            let repr: raw::Slice<u8> = (*self.buf).repr();
-            repr.data.offset(repr.len as isize) as *const usize
+            let ptr = self.buf.as_ptr();
+            ptr.offset(self.buf.len() as isize)
         }
     }
 }

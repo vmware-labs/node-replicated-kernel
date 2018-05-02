@@ -1,0 +1,10 @@
+[workspace]
+
+members = [
+    "kernel",
+    "lib/x86",
+    "lib/slabmalloc",
+    "lib/klogger",
+    "lib/elfloader",
+    "lib/bitflags"
+]

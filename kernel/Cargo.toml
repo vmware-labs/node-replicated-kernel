@@ -1,0 +1,30 @@
+[package]
+name = "bespin"
+version = "0.0.1"
+authors = [
+  "Gerd Zellweger <mail@gerdzellweger.com>",
+]
+
+description = "Experimental OS kernel"
+readme = "README.md"
+license = "MIT"
+
+[lib]
+crate-type = ["staticlib"]
+
+# disable stack unwinding on panic for now
+[profile.dev]
+panic = "abort"
+[profile.release]
+panic = "abort"
+
+[dependencies]
+x86 = { path = "../lib/x86" }
+multiboot = { path = "../lib/multiboot" }
+raw-cpuid = { path = "../lib/cpuid" }
+rlibc = { path = "../lib/rlib" }
+#bitflags = { path = "../lib/bitflags" }
+klogger = { path = "../lib/klogger" }
+slabmalloc = { path = "../lib/slabmalloc" }
+elfloader = { path = "../lib/elfloader" }
+spin = "0.4.8"

@@ -1,41 +1,41 @@
-use core::mem::{transmute, size_of};
 use core::fmt;
 
+use x86::Ring;
+use x86::io;
 use x86::irq;
 use x86::msr;
-use x86::io;
-use x86::segmentation;
 use x86::dtables;
+use x86::segmentation::{SegmentSelector, GateDescriptorBuilder, DescriptorBuilder, BuildDescriptor};
+use x86::bits64::segmentation::{Descriptor64};
 
 const IDT_SIZE: usize = 256;
-
-static mut idt: [irq::IdtEntry; IDT_SIZE] = [ irq::IdtEntry {base_lo: 0, sel: 0, res0: 0, flags: 0, base_hi: 0, res1: 0}; IDT_SIZE];
+static mut idt: [Descriptor64; IDT_SIZE] = [ Descriptor64::NULL; IDT_SIZE];
 
 static mut irq_handlers: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [
     unhandled_irq; IDT_SIZE
 ];
 
 unsafe fn unhandled_irq(a: &ExceptionArguments) {
-    log!("Got UNHANDLED IRQ: {:?}", a);
+    slog!("Got UNHANDLED IRQ: {:?}", a);
     loop {}
 }
 
 unsafe fn pf_handler(a: &ExceptionArguments) {
-    log!("Got page-fault: {:?}", a);
+    slog!("Got page-fault: {:?}", a);
     loop {}
 }
 
 unsafe fn gp_handler(a: &ExceptionArguments) {
     let desc = &irq::EXCEPTIONS[a.vector as usize];
-    log!("Source: {}", desc.source);
+    slog!("Source: {}", desc.source);
 
     if a.exception > 0 {
-        log!("Error value: {:?}", segmentation::SegmentSelector::from_raw(a.exception as u16));
+        slog!("Error value: {:?}", SegmentSelector::from_raw(a.exception as u16));
     }
     else {
-        log!("No error!");
+        slog!("No error!");
     }
-    log!("{:?}", a);
+    slog!("{:?}", a);
     loop {}
 }
 
@@ -49,11 +49,7 @@ macro_rules! idt_set {
                 fn $f();
             }
 
-            let base = $f as u64;
-            idt[$num].sel = $sel;
-            idt[$num].flags = $flags;
-            idt[$num].base_hi = base >> 16;
-            idt[$num].base_lo = (base & ((1 << 16) - 1)) as u16;
+            idt[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64).dpl(Ring::Ring0).present().finish();
         }
     };
 }
@@ -70,12 +66,14 @@ pub struct ExceptionArguments {
 
 impl fmt::Debug for ExceptionArguments {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "vec = 0x{:x} ex = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x}",
-            self.vector,
-            self.exception,
-            self.eip,
-            self.cs,
-            self.eflags)
+        unsafe {
+            write!(f, "vec = 0x{:x} ex = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x}",
+                self.vector,
+                self.exception,
+                self.eip,
+                self.cs,
+                self.eflags)
+        }
     }
 }
 
@@ -87,9 +85,9 @@ impl fmt::Debug for ExceptionArguments {
 pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
     if a.vector < 16 {
         let desc = &irq::EXCEPTIONS[a.vector as usize];
-        log!("{}", desc);
+        slog!("{}", desc);
     }
-    log!("{:?}", a);
+    slog!("{:?}", a);
 
     unsafe {
         assert!(a.vector < 256);
@@ -129,7 +127,7 @@ pub unsafe fn pic_remap() {
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(vector: usize, handler: unsafe fn(&ExceptionArguments)) {
     if vector > IDT_SIZE-1 {
-        log!("Invalid vector!");
+        slog!("Invalid vector!");
         return
     }
 
@@ -139,10 +137,7 @@ pub unsafe fn register_handler(vector: usize, handler: unsafe fn(&ExceptionArgum
 /// Initializes and loads the IDT into the CPU.
 pub fn setup_idt() {
     unsafe {
-        let idtptr = dtables::DescriptorTablePointer {
-            limit: ((size_of::<irq::IdtEntry>() * 256) - 1) as u16,
-            base: transmute::<&[irq::IdtEntry; 256], u64>(&idt)
-        };
+        let idtptr = dtables::DescriptorTablePointer::new_from_slice(&idt);
         dtables::lidt(&idtptr);
 
         // Note everything is declared as interrupt gates for now.
@@ -152,29 +147,30 @@ pub fn setup_idt() {
         // The difference is that for interrupt gates,
         // interrupts are automatically disabled upon entry
         // and re-enabled upon IRET which restores the saved EFLAGS.
-        log!("Install IRQ handler");
-        idt_set!(0, isr_handler0, 0x08, 0x8E);
-        idt_set!(1, isr_handler1, 0x08, 0x8E);
-        idt_set!(2, isr_handler2, 0x08, 0x8E);
-        idt_set!(3, isr_handler3, 0x08, 0x8E);
-        idt_set!(4, isr_handler4, 0x08, 0x8E);
-        idt_set!(5, isr_handler5, 0x08, 0x8E);
-        idt_set!(6, isr_handler6, 0x08, 0x8E);
-        idt_set!(7, isr_handler7, 0x08, 0x8E);
-        idt_set!(8, isr_handler8, 0x08, 0x8E);
-        idt_set!(9, isr_handler9, 0x08, 0x8E);
-        idt_set!(10, isr_handler10, 0x08, 0x8E);
-        idt_set!(11, isr_handler11, 0x08, 0x8E);
-        idt_set!(12, isr_handler12, 0x08, 0x8E);
-        idt_set!(13, isr_handler13, 0x08, 0x8E);
-        idt_set!(14, isr_handler14, 0x08, 0x8E);
-        idt_set!(15, isr_handler15, 0x08, 0x8E);
+        slog!("Install IRQ handler");
+        let seg = SegmentSelector::new(1, Ring::Ring0);
+        idt_set!(0, isr_handler0, seg, 0x8E);
+        idt_set!(1, isr_handler1, seg, 0x8E);
+        idt_set!(2, isr_handler2, seg, 0x8E);
+        idt_set!(3, isr_handler3, seg, 0x8E);
+        idt_set!(4, isr_handler4, seg, 0x8E);
+        idt_set!(5, isr_handler5, seg, 0x8E);
+        idt_set!(6, isr_handler6, seg, 0x8E);
+        idt_set!(7, isr_handler7, seg, 0x8E);
+        idt_set!(8, isr_handler8, seg, 0x8E);
+        idt_set!(9, isr_handler9, seg, 0x8E);
+        idt_set!(10, isr_handler10, seg, 0x8E);
+        idt_set!(11, isr_handler11, seg, 0x8E);
+        idt_set!(12, isr_handler12, seg, 0x8E);
+        idt_set!(13, isr_handler13, seg, 0x8E);
+        idt_set!(14, isr_handler14, seg, 0x8E);
+        idt_set!(15, isr_handler15, seg, 0x8E);
 
-        idt_set!(32, isr_handler32, 0x08, 0x8E);
-        idt_set!(33, isr_handler33, 0x08, 0x8E);
-        idt_set!(34, isr_handler34, 0x08, 0x8E);
-        idt_set!(35, isr_handler35, 0x08, 0x8E);
-        idt_set!(36, isr_handler36, 0x08, 0x8E);
+        idt_set!(32, isr_handler32, seg, 0x8E);
+        idt_set!(33, isr_handler33, seg, 0x8E);
+        idt_set!(34, isr_handler34, seg, 0x8E);
+        idt_set!(35, isr_handler35, seg, 0x8E);
+        idt_set!(36, isr_handler36, seg, 0x8E);
 
         register_handler(13, gp_handler);
         register_handler(14, pf_handler);

@@ -3,10 +3,12 @@ use core::fmt;
 
 use elfloader::{ElfLoader};
 use elfloader::elf;
-use x86::paging::{PML4, PML4Entry, BASE_PAGE_SIZE, pml4_index, pdpt_index, pd_index, pt_index};
-use x86::paging;
-use x86::rflags;
+
+
 use x86::controlregs;
+use x86::bits64::rflags;
+use x86::bits64::paging;
+use x86::bits64::paging::{PML4, PML4Entry, BASE_PAGE_SIZE, pml4_index, pdpt_index, pd_index, pt_index};
 
 use super::gdt;
 use super::memory::{paddr_to_kernel_vaddr, kernel_vaddr_to_paddr, PAddr, VAddr};
@@ -95,42 +97,42 @@ impl<'a> VSpace<'a> {
                 }
                 true
             }
-            None => { log!("Unable to resolve {:?}", address); false }
+            None => { slog!("Unable to resolve {:?}", address); false }
         }
     }
 
     /// Back a region of virtual address space with physical memory.
     pub fn map(&mut self, base: VAddr, size: usize) {
         let pml4_idx = pml4_index(base);
-        if !self.pml4[pml4_idx].contains(paging::PML4_P) {
+        if !self.pml4[pml4_idx].contains(paging::PML4Entry::P) {
             self.pml4[pml4_idx] = self.pager.new_pdpt().unwrap();
         }
-        assert!(self.pml4[pml4_idx].contains(paging::PML4_P));
+        assert!(self.pml4[pml4_idx].contains(paging::PML4Entry::P));
 
         let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
         let pdpt_idx = pdpt_index(base);
-        if !pdpt[pdpt_idx].contains(paging::PDPT_P) {
+        if !pdpt[pdpt_idx].contains(paging::PDPTEntry::P) {
             pdpt[pdpt_idx] = self.pager.new_pd().unwrap();
         }
-        assert!(pdpt[pdpt_idx].contains(paging::PDPT_P));
+        assert!(pdpt[pdpt_idx].contains(paging::PDPTEntry::P));
 
         let pd = self.get_pd(pdpt[pdpt_idx]);
         let pd_idx = pd_index(base);
-        if !pd[pd_idx].contains(paging::PD_P) {
+        if !pd[pd_idx].contains(paging::PDEntry::P) {
             pd[pd_idx] = self.pager.new_pt().unwrap();
         }
-        assert!(pd[pd_idx].contains(paging::PD_P));
+        assert!(pd[pd_idx].contains(paging::PDEntry::P));
 
         let pt = self.get_pt(pd[pd_idx]);
 
         let mut pt_idx = pt_index(base);
         let mut mapped = 0;
         while mapped < size && pt_idx < 512 {
-            if !pt[pt_idx].contains(paging::PT_P) {
+            if !pt[pt_idx].contains(paging::PTEntry::P) {
                 pt[pt_idx] = self.pager.new_page().unwrap();
-                log!("Mapped 4KiB page: {:?}", pt[pt_idx]);
+                slog!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             }
-            assert!(pt[pt_idx].contains(paging::PT_P));
+            assert!(pt[pt_idx].contains(paging::PTEntry::P));
 
             pt_idx += 1;
             mapped += paging::BASE_PAGE_SIZE as usize;
@@ -185,11 +187,11 @@ impl<'a> Process<'a> {
     }
 
     pub fn start(&self, entry_point: VAddr) {
-        log!("ABOUT TO GO TO USER-SPACE");
-        let user_flags = rflags::RFLAGS_A1 | rflags::RFLAGS_IF;
+        slog!("ABOUT TO GO TO USER-SPACE");
+        let user_flags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
         unsafe {
             let pml4_phys: PAddr = kernel_vaddr_to_paddr(transmute::<&PML4Entry, VAddr>(&self.vspace.pml4[0]));
-            log!("switching to 0x{:x}", pml4_phys);
+            slog!("switching to 0x{:x}", pml4_phys);
             controlregs::cr3_write(pml4_phys as PAddr);
         };
         unsafe {
@@ -199,8 +201,8 @@ impl<'a> Process<'a> {
     }
 
     pub fn resume(&self) {
-        let user_rflags = rflags::RFLAGS_A1 | rflags::RFLAGS_IF;
-        log!("resuming User-space");
+        let user_rflags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
+        slog!("resuming User-space");
         unsafe {
             // %rbx points to save_area
             // %r8 points to ss
@@ -224,7 +226,8 @@ impl<'a> fmt::Debug for Process<'a> {
 
 impl fmt::Debug for SaveArea {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
+        unsafe {
+            write!(f,
 "rax = {:>16x} rcx = {:>16x}
 rbx = {:>16x} rdx = {:>16x}
 rsi = {:>16x} rdi = {:>16x}
@@ -233,22 +236,23 @@ r9  = {:>16x} r10 = {:>16x}
 r11 = {:>16x} r12 = {:>16x}
 r13 = {:>16x} r14 = {:>16x}
 r15 = {:>16x} rip = {:>16x}",
-            self.rax,
-            self.rcx,
-            self.rbx,
-            self.rdx,
-            self.rsi,
-            self.rdi,
-            self.rbp,
-            self.r8,
-            self.r9,
-            self.r10,
-            self.r11,
-            self.r12,
-            self.r13,
-            self.r14,
-            self.r15,
-            self.rip)
+                self.rax,
+                self.rcx,
+                self.rbx,
+                self.rdx,
+                self.rsi,
+                self.rdi,
+                self.rbp,
+                self.r8,
+                self.r9,
+                self.r10,
+                self.r11,
+                self.r12,
+                self.r13,
+                self.r14,
+                self.r15,
+                self.rip)
+        }
     }
 }
 
@@ -256,16 +260,16 @@ r15 = {:>16x} rip = {:>16x}",
 impl<'a> ElfLoader for Process<'a> {
 
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
-    fn allocate(&mut self, base: VAddr, size: usize, flags: elf::ProgFlag) {
-        log!("allocate: 0x{:x} -- 0x{:x}", base, base+size);
+    fn allocate(&mut self, base: usize, size: usize, flags: elf::ProgFlag) {
+        slog!("allocate: 0x{:x} -- 0x{:x}", base, base+size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
         self.vspace.map(base, rsize);
     }
 
     /// Load a region of bytes into the virtual address space of the process.
     /// XXX: Report error if that region is not backed by memory (i.e., allocate was not called).
-    fn load(&mut self, destination: VAddr, region: &'static [u8]) {
-        log!("load: 0x{:x} -- 0x{:x}", destination, destination+region.len());
+    fn load(&mut self, destination: usize, region: &'static [u8]) {
+        slog!("load: 0x{:x} -- 0x{:x}", destination, destination+region.len());
 
         for (idx, subregion) in region.chunks(BASE_PAGE_SIZE as usize).enumerate() {
             let base_vaddr = destination + idx*BASE_PAGE_SIZE as usize;

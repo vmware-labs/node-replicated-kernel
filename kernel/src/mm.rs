@@ -3,7 +3,7 @@ use core::mem::{transmute};
 
 use std::fmt;
 
-use x86::paging;
+use x86::bits64::paging;
 
 use ::arch::memory::{PAddr, BASE_PAGE_SIZE, paddr_to_kernel_vaddr};
 use slabmalloc::{SlabPageProvider, SlabPage};
@@ -69,7 +69,7 @@ impl FrameManager {
     /// Adds a region of physical memory to our FrameManager.
     pub fn add_region(&mut self, base: PAddr, size: u64) {
         if self.count >= MAX_FRAME_REGIONS {
-            log!("Not enough space in FrameManager. Increase MAX_FRAME_REGIONS!");
+            slog!("Not enough space in FrameManager. Increase MAX_FRAME_REGIONS!");
             return;
         }
 
@@ -80,14 +80,14 @@ impl FrameManager {
 
     pub fn allocate_frame(&mut self, size: u64) -> Option<Frame> {
         assert!(size % BASE_PAGE_SIZE == 0);
-        //log!("regions = {:?}", self.regions);
+        //slog!("regions = {:?}", self.regions);
 
         for r in &mut self.regions.iter_mut().rev() {
             if size < r.size - r.index {
                 (*r).index += size;
                 let f = Frame { base: (r.base+r.size) - r.index, size: size };
 
-                //log!("f = {:?}",f);
+                //slog!("f = {:?}",f);
                 f.zero();
                 return Some(f);
             }
@@ -140,7 +140,7 @@ impl FrameManager {
 
     pub fn print_regions(&self) {
         for i in 0..self.count {
-            log!("Region {} = {:?}", i, self.regions[i]);
+            slog!("Region {} = {:?}", i, self.regions[i]);
         }
     }
 }
@@ -168,9 +168,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
         unsafe {
             let f = fmanager.allocate_frame(BASE_PAGE_SIZE);
             f.map(|frame| {
-                let pml4: &'b mut [paging::PML4Entry; 512] = unsafe {
-                    transmute(paddr_to_kernel_vaddr(frame.base))
-                };
+                let pml4: &'b mut [paging::PML4Entry; 512] = transmute(paddr_to_kernel_vaddr(frame.base));
                 pml4
             })
         }
@@ -180,7 +178,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PML4Entry::new(frame.base, paging::PML4_P | paging::PML4_RW | paging::PML4_US)
+                paging::PML4Entry::new(frame.base, paging::PML4Entry::P | paging::PML4Entry::RW | paging::PML4Entry::US)
             })
         }
     }
@@ -190,7 +188,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PDPTEntry::new(frame.base, paging::PDPT_P | paging::PDPT_RW | paging::PDPT_US)
+                paging::PDPTEntry::new(frame.base, paging::PDPTEntry::P | paging::PDPTEntry::RW | paging::PDPTEntry::US)
             })
         }
     }
@@ -200,7 +198,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PDEntry::new(frame.base, paging::PD_P | paging::PD_RW | paging::PD_US)
+                paging::PDEntry::new(frame.base, paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::US)
             })
         }
     }
@@ -209,7 +207,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_page(&mut self) -> Option<paging::PTEntry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PTEntry::new(frame.base, paging::PT_P | paging::PT_RW | paging::PT_US)
+                paging::PTEntry::new(frame.base, paging::PTEntry::P | paging::PTEntry::RW | paging::PTEntry::US)
             })
         }
     }
@@ -230,16 +228,14 @@ impl<'a> SlabPageProvider<'a> for BespinSlabsProvider {
         let f = unsafe { fmanager.allocate_frame(BASE_PAGE_SIZE) };
         f.map(|frame| {
             unsafe {
-                let sp: &'a mut SlabPage = unsafe {
-                    transmute(paddr_to_kernel_vaddr(frame.base))
-                };
+                let sp: &'a mut SlabPage = transmute(paddr_to_kernel_vaddr(frame.base));
                 sp
             }
         })
     }
 
     fn release_slabpage(&mut self, p: &'a mut SlabPage<'a>) {
-        log!("TODO!");
+        slog!("TODO!");
     }
 
 }

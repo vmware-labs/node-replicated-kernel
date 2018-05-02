@@ -24,9 +24,9 @@ extern fn bootstrap_green_task<F>(task: *const F)  -> !
 									where F: FnOnce(usize) -> usize {
     let start: ThreadFn = unsafe { ptr::read(task) };
 
-    log!("About to start...");
+    slog!("About to start...");
     start();
-    log!("Returned here");
+    slog!("Returned here");
 }
 
 impl Context {

@@ -1,0 +1,24 @@
+{
+	"env": "",
+	"dynamic-linking": true,
+	"llvm-target": "x86_64-unknown-none",
+	"data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
+	"target-endian": "little",
+	"target-pointer-width": "64",
+	"target-c-int-width": "32",
+	"linker-flavor": "gcc",
+	"os": "none",
+	"arch": "x86_64",
+	"no-compiler-rt": true,
+	"disable-redzone": true,
+	"eliminate-frame-pointer": false,
+	"morestack": false,
+	"features": "-mmx,-sse,+soft-float",
+	"position-independent-executables": false,
+	"executables": true,
+	"pre-link-args": {
+    "gcc": [
+      "-m64"
+		]
+	}  
+}

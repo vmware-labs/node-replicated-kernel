@@ -4,15 +4,8 @@ kernel.bin*
 *.rlib
 
 # Builds
-build*/
-
-# tup
+target/
 .tup
-bin/
-/logs
-/lib/core/*
 
-# Directories that come directly from rust source
-lib/alloc
-lib/collections
-lib/rustc_unicode
+# Editor configs
+.vscode

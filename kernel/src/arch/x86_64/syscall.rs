@@ -1,7 +1,7 @@
 use x86::msr::{wrmsr, rdmsr, IA32_EFER, IA32_STAR, IA32_LSTAR, IA32_FMASK};
-use x86::segmentation::*;
-use x86::rflags::{RFlags};
-
+use x86::segmentation::{SegmentSelector};
+use x86::bits64::rflags::{RFlags};
+use x86::Ring;
 
 extern "C" {
     #[no_mangle]
@@ -11,15 +11,15 @@ extern "C" {
 #[inline(never)]
 #[no_mangle]
 pub extern "C" fn syscall_handle() {
-    log!("got syscall");
+    slog!("got syscall");
     loop {}
 }
 
 /// Enables syscall/sysret functionality.
 pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
 
-    let cs_selector = SegmentSelector::new(1 as u16) | RPL_0 | TI_GDT;
-    let ss_selector = SegmentSelector::new(2 as u16) | RPL_3 | TI_GDT;
+    let cs_selector = SegmentSelector::new(1 as u16, Ring::Ring0) | SegmentSelector::TI_GDT;
+    let ss_selector = SegmentSelector::new(2 as u16, Ring::Ring3) | SegmentSelector::TI_GDT;
 
     unsafe {
         let mut star = rdmsr(IA32_STAR);
@@ -38,5 +38,5 @@ pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
         wrmsr(IA32_EFER, efer);
     }
 
-    log!("Fast syscalls enabled!");
+    slog!("Fast syscalls enabled!");
 }

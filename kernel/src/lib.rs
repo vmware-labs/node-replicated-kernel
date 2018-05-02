@@ -1,22 +1,18 @@
-#![feature(no_std)]
-#![feature(alloc, collections)]
-#![feature(intrinsics, asm, lang_items, const_fn, core, raw, box_syntax)]
-
+#![feature(intrinsics, asm, lang_items, const_fn, core, raw, box_syntax, start)]
+#![feature(alloc, global_allocator, allocator_api, heap_api)]
+#![feature(global_asm)]
 #![no_std]
+#![no_main]
 
-extern crate rlib;
+extern crate spin;
+
+extern crate rlibc;
 #[macro_use]
 pub mod mutex;
 
-//pub mod allocator;
-
-#[macro_use]
 extern crate alloc;
-#[macro_use]
-extern crate collections;
 
 #[cfg(target_arch="x86_64")]
-#[macro_use]
 extern crate x86;
 
 #[cfg(target_arch="x86_64")]
@@ -27,7 +23,6 @@ extern crate slabmalloc;
 extern crate klogger;
 
 #[cfg(target_arch="x86_64")]
-#[macro_use]
 extern crate elfloader;
 
 #[cfg(target_arch="x86_64")]
@@ -47,6 +42,17 @@ mod mm;
 mod scheduler;
 mod allocator;
 
+use slabmalloc::{SafeZoneAllocator};
+use spin::Mutex;
+use mm::{BespinSlabsProvider};
+
+unsafe impl Send for BespinSlabsProvider { }
+unsafe impl Sync for BespinSlabsProvider { }
+
+static PAGER: Mutex<BespinSlabsProvider> = Mutex::new(BespinSlabsProvider::new());
+#[global_allocator]
+static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
+
 
 #[cfg(not(test))]
 mod std {
@@ -59,12 +65,14 @@ mod std {
 }
 
 /// Kernel entry-point
-pub fn kmain()
+pub fn main()
 {
-    log!("Reached architecture independent area");
+    slog!("Reached architecture independent area");
 
     loop {}
-
-    unreachable!();
 }
 
+pub fn oom() {
+	slog!("oom");
+	loop{}
+}

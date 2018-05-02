@@ -3,18 +3,18 @@
 pub fn rust_begin_unwind(args: ::core::fmt::Arguments, file: &str, line: usize) -> !
 {
 	// 'args' will print to the formatted string passed to panic!
-	log!("line={} {}", line, args);
-    log!("panic!");
+	slog!("line={} {}", line, args);
+    slog!("panic!");
 	loop {}
 }
 
-#[lang="stack_exhausted"]
+/*#[lang="stack_exhausted"]
 #[no_mangle]
 pub fn __morestack() -> !
 {
 	loop {}
 }
-
+*/
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -40,7 +40,6 @@ static _UA_SEARCH_PHASE: _Unwind_Action = 1;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
-#[allow(raw_pointer_derive)]
 pub struct _Unwind_Exception
 {
 	exception_class: u64,
@@ -55,6 +54,13 @@ pub fn rust_eh_personality(
 	_exception_object: &_Unwind_Exception, _context: &_Unwind_Context
 	) -> _Unwind_Reason_Code
 {
+	loop{}
+}
+
+#[no_mangle]
+#[lang="oom"]
+pub fn oom() {
+	slog!("oom");
 	loop{}
 }
 

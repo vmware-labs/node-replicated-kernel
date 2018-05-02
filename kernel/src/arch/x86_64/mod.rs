@@ -1,8 +1,6 @@
 //#[macro_use]
 //pub use ::mutex;
 
-extern crate core;
-
 pub mod memory;
 pub mod debug;
 pub mod apic;
@@ -12,24 +10,28 @@ pub mod gdt;
 pub mod syscall;
 pub mod threads;
 
+mod start;
+mod isr;
+mod exec;
 
+use core::slice;
 use core::mem::{transmute};
 use core::ops::DerefMut;
 use alloc::boxed::Box;
-use collections::{Vec};
+use alloc::{Vec};
 
-use x86::paging;
 use x86::cpuid;
+use x86::bits64::paging;
+
 use multiboot::{Multiboot, MemoryType};
 use elfloader;
 use elfloader::{ElfLoader};
-use slabmalloc::{ZoneAllocator};
 
-use allocator;
-use mm::{fmanager, BespinSlabsProvider};
+use mm::fmanager;
 use self::threads::stack::Stack;
-use self::threads::context::Context;
-use ::{kmain};
+
+//use self::threads::context::Context;
+use ::{main};
 
 extern "C" {
     #[no_mangle]
@@ -45,26 +47,25 @@ extern "C" {
     //static mboot_sig: PAddr;
 }
 
-
-fn initialize_memory(mb: &Multiboot) {
-    unsafe {
-        mb.memory_regions().map(|regions| {
-            for region in regions {
-                if region.memory_type() == MemoryType::RAM {
-                    fmanager.add_region(region.base_address(), region.length());
-                }
+/*
+unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Multiboot<F>) {
+    mb.memory_regions().map(|regions| {
+        for region in regions {
+            if region.memory_type() == MemoryType::RAM {
+                fmanager.add_region(region.base_address(), region.length());
             }
-        });
+        }
+    });
 
-        fmanager.clean_regions();
-        fmanager.print_regions();
-    }
-}
+    fmanager.clean_regions();
+    fmanager.print_regions();
+}*/
 
 #[lang="start"]
 #[no_mangle]
+#[start]
 pub fn arch_init() {
-    log!("Started");
+    slog!("Started");
 
     let cpuid = cpuid::CpuId::new();
 
@@ -84,55 +85,61 @@ pub fn arch_init() {
     };
 
     if has_x2apic && has_tsc {
-        log!("x2APIC / deadline TSC supported!");
-        unsafe {
-            log!("enable APIC");
-            let apic = apic::X2APIC::new();
-            //apic.enable_tsc();
-            //apic.set_tsc(rdtsc()+1000);
-            log!("APIC is bsp: {}", apic.is_bsp());
-        }
+        slog!("x2APIC / deadline TSC supported!");
+        slog!("enable APIC");
+        let apic = apic::X2APIC::new();
+        //apic.enable_tsc();
+        //apic.set_tsc(rdtsc()+1000);
+        slog!("APIC is bsp: {}", apic.is_bsp());
     }
     else {
-        log!("no x2APIC support. Continuing without interrupts.")
+        slog!("no x2APIC support. Continuing without interrupts.")
     }
 
     unsafe {
         let mut base = 0x0;
         for e in &mut init_pd.iter_mut() {
-            (*e) = paging::PDEntry::new(base, paging::PD_P | paging::PD_RW | paging::PD_PS);
+            (*e) = paging::PDEntry::new(base, paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::PS);
             base += 1024*1024*2;
         }
     }
 
-    let mb = Multiboot::new(mboot_ptr,  memory::paddr_to_kernel_vaddr);
-    initialize_memory(&mb);
-
-    let mut bp = BespinSlabsProvider;
-    let mut za: ZoneAllocator;
+    let mb = unsafe {
+        Multiboot::new(mboot_ptr, |base, size| { 
+            let vbase = memory::paddr_to_kernel_vaddr(base) as *const u8; 
+            Some(slice::from_raw_parts(vbase, size))
+        }).unwrap()
+    };
 
     unsafe {
-        let provider = transmute::<&mut BespinSlabsProvider, &'static mut BespinSlabsProvider>(&mut bp);
-        za = ZoneAllocator::new(Some(provider));
-        let allocator = transmute::<&mut ZoneAllocator, &'static mut ZoneAllocator>(&mut za);
-        allocator::zone_allocator = Some(allocator);
+        mb.memory_regions().map(|regions| {
+        for region in regions {
+            if region.memory_type() == MemoryType::Available {
+                fmanager.add_region(region.base_address(), region.length());
+            }
+        }
+        });
+
+        fmanager.clean_regions();
+        fmanager.print_regions();
     }
+
 
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
     let init = Box::new(process::Process::new(1).unwrap());
     process_list.push(init);
 
-    let mut s = Stack::new();
-    log!("s.start {:?}, s.end {:?}", s.start(), s.end());
+    let s = Stack::new();
+    slog!("s.start {:?}, s.end {:?}", s.start(), s.end());
     //let c = Context::new(init, arg, start, s);
 
     mb.modules().map(|modules| {
         for module in modules {
-            log!("Found module {:?}", module);
+            slog!("Found module {:?}", module);
             let binary: &'static [u8] = unsafe {
-                core::slice::from_raw_parts(
-                    transmute::<usize, *const u8>(module.start),
-                    module.start - module.end)
+                slice::from_raw_parts(
+                    transmute::<u64, *const u8>(module.start),
+                    (module.start - module.end) as usize)
             };
 
             let mut cp = process::CURRENT_PROCESS.lock();
@@ -140,7 +147,7 @@ pub fn arch_init() {
 
             match *cp.deref_mut() {
                 Some(ref mut p) => {
-                    elfloader::ElfBinary::new(module.string, binary).map(|e| {
+                    elfloader::ElfBinary::new(module.string.unwrap(), binary).map(|e| {
                         // Patch in the kernel tables...
                         unsafe {
                             p.vspace.pml4[511] = init_pml4[511];
@@ -155,7 +162,7 @@ pub fn arch_init() {
     });
 
     // No we go in the arch-independent part
-    kmain();
+    main();
 
     // and never return from there
     unreachable!();

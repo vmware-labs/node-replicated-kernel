@@ -6,7 +6,8 @@
 	"target-endian": "little",
 	"target-pointer-width": "64",
 	"target-c-int-width": "32",
-	"linker-flavor": "gcc",
+	"linker": "ld",
+	"linker-flavor": "ld",
 	"os": "none",
 	"arch": "x86_64",
 	"no-compiler-rt": true,
@@ -15,10 +16,5 @@
 	"morestack": false,
 	"features": "-mmx,-sse,+soft-float",
 	"position-independent-executables": false,
-	"executables": true,
-	"pre-link-args": {
-    "gcc": [
-      "-m64"
-		]
-	}  
+	"executables": true
 }

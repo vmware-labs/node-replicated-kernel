@@ -4,7 +4,7 @@
 sudo apt-get update
 sudo apt-get install qemu qemu-kvm
 
-curl https://sh.rustup.rs -sSf | sh
+curl https://sh.rustup.rs -sSf | sh -s -- -y
 rustup default nightly
 rustup component add rust-src
 rustup update

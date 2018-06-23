@@ -9,6 +9,9 @@ description = "Experimental OS kernel"
 readme = "README.md"
 license = "MIT"
 
+[lib]
+crate-type = ["staticlib"]
+
 # disable stack unwinding on panic for now
 [profile.dev]
 panic = "abort"

@@ -1,20 +1,11 @@
-#[lang="panic_fmt"]
-#[no_mangle]
-pub fn rust_begin_unwind(args: ::core::fmt::Arguments, file: &str, line: usize) -> !
-{
-	// 'args' will print to the formatted string passed to panic!
-	slog!("line={} {}", line, args);
-    slog!("panic!");
-	loop {}
-}
+use core::panic::PanicInfo;
 
-/*#[lang="stack_exhausted"]
+#[panic_implementation]
 #[no_mangle]
-pub fn __morestack() -> !
-{
-	loop {}
+pub fn panic_impl(info: &PanicInfo) -> ! {
+	slog!("panic={:?}", info);
+    loop {}
 }
-*/
 
 #[allow(non_camel_case_types)]
 #[repr(C)]

@@ -1,6 +1,5 @@
-#![feature(intrinsics, asm, lang_items, const_fn, core, raw, box_syntax, start)]
-#![feature(alloc, global_allocator, allocator_api, heap_api)]
-#![feature(global_asm)]
+#![feature(intrinsics, asm, lang_items, const_fn, core, raw, box_syntax, start, panic_implementation)]
+#![feature(alloc, global_allocator, allocator_api, heap_api, global_asm)]
 #![no_std]
 #![no_main]
 

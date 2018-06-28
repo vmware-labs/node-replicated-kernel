@@ -61,14 +61,17 @@ const X2APIC_MSR_BASE: u32 = 0x800;
 pub struct X2APIC {
     base: u64,
     id: u32,
-    version: u32
+    version: u32,
 }
 
 impl X2APIC {
     pub fn new() -> X2APIC {
-        let mut apic = X2APIC { base: 0, id: 0, version: 0 };
+        let mut apic = X2APIC {
+            base: 0,
+            id: 0,
+            version: 0,
+        };
         unsafe {
-
             // Enable
             let mut base: u64 = rdmsr(IA32_APIC_BASE);
             base |= 1 << 10; // Enable X2APIC
@@ -77,8 +80,8 @@ impl X2APIC {
             wrmsr(IA32_APIC_BASE, base);
             apic.base = base;
 
-            apic.id = rdmsr(X2APIC_MSR_BASE+0x02) as u32;
-            apic.version = rdmsr(X2APIC_MSR_BASE+0x03) as u32;
+            apic.id = rdmsr(X2APIC_MSR_BASE + 0x02) as u32;
+            apic.version = rdmsr(X2APIC_MSR_BASE + 0x03) as u32;
         }
 
         apic
@@ -98,10 +101,10 @@ impl X2APIC {
 
     pub unsafe fn enable_tsc(&self) {
         // Enable TSC timer
-        let mut lvt: u64 = rdmsr(X2APIC_MSR_BASE+0x32);
+        let mut lvt: u64 = rdmsr(X2APIC_MSR_BASE + 0x32);
         lvt |= 0 << 17;
         lvt |= 1 << 18;
-        wrmsr(X2APIC_MSR_BASE+0x32, lvt);            
+        wrmsr(X2APIC_MSR_BASE + 0x32, lvt);
     }
 
     pub unsafe fn set_tsc(&self, value: u64) {
@@ -109,6 +112,6 @@ impl X2APIC {
     }
 
     pub unsafe fn send_self_ipi(&self, vector: u64) {
-        wrmsr(X2APIC_MSR_BASE+0x83, vector);
+        wrmsr(X2APIC_MSR_BASE + 0x83, vector);
     }
 }

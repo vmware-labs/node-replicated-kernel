@@ -1,22 +1,28 @@
+use core::mem::transmute;
 use core::slice;
-use core::mem::{transmute};
 
 use std::fmt;
 
 use x86::bits64::paging;
 
-use ::arch::memory::{PAddr, BASE_PAGE_SIZE, paddr_to_kernel_vaddr};
-use slabmalloc::{SlabPageProvider, SlabPage};
+use arch::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
+use slabmalloc::{ObjectPage, PageProvider};
 
 const MAX_FRAME_REGIONS: usize = 10;
 
-pub static mut fmanager: FrameManager =
-    FrameManager { count: 0, regions: [MemoryRegion{base: 0, size: 0, index: 0}; MAX_FRAME_REGIONS] };
+pub static mut fmanager: FrameManager = FrameManager {
+    count: 0,
+    regions: [MemoryRegion {
+        base: 0,
+        size: 0,
+        index: 0,
+    }; MAX_FRAME_REGIONS],
+};
 
 #[derive(Debug)]
 pub struct FrameManager {
     count: usize,
-    regions: [ MemoryRegion; MAX_FRAME_REGIONS ]
+    regions: [MemoryRegion; MAX_FRAME_REGIONS],
 }
 
 /// Represents a physical region of memory.
@@ -30,7 +36,8 @@ impl Frame {
         let buf: &mut [u8] = unsafe {
             slice::from_raw_parts_mut(
                 transmute(paddr_to_kernel_vaddr(self.base)),
-                self.size as usize)
+                self.size as usize,
+            )
         };
 
         for b in buf.iter_mut() {
@@ -41,29 +48,48 @@ impl Frame {
 
 impl fmt::Debug for Frame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Frame: 0x{:x} -- 0x{:x} (size = {})", self.base, self.base+self.size, self.size)
+        write!(
+            f,
+            "Frame: 0x{:x} -- 0x{:x} (size = {})",
+            self.base,
+            self.base + self.size,
+            self.size
+        )
     }
 }
 
 /// Represents a physical region of memory.
 #[derive(Clone, Copy)]
 struct MemoryRegion {
-    base: PAddr, ///< Physical base address of the region.
-    size: u64, ///< Size of the region.
-    index: u64
+    base: PAddr,
+    ///< Physical base address of the region.
+    size: u64,
+    ///< Size of the region.
+    index: u64,
 }
 
 impl fmt::Debug for MemoryRegion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "MemoryRegion: 0x{:x} -- 0x{:x} (size = {})\n", self.base, self.base+self.size, self.size)
+        write!(
+            f,
+            "MemoryRegion: 0x{:x} -- 0x{:x} (size = {})",
+            self.base,
+            self.base + self.size,
+            self.size
+        )
     }
 }
 
-
 impl FrameManager {
-
     pub fn new() -> FrameManager {
-        FrameManager { count: 0, regions: [MemoryRegion{base: 0, size: 0, index: 0}; MAX_FRAME_REGIONS] }
+        FrameManager {
+            count: 0,
+            regions: [MemoryRegion {
+                base: 0,
+                size: 0,
+                index: 0,
+            }; MAX_FRAME_REGIONS],
+        }
     }
 
     /// Adds a region of physical memory to our FrameManager.
@@ -85,7 +111,10 @@ impl FrameManager {
         for r in &mut self.regions.iter_mut().rev() {
             if size < r.size - r.index {
                 (*r).index += size;
-                let f = Frame { base: (r.base+r.size) - r.index, size: size };
+                let f = Frame {
+                    base: (r.base + r.size) - r.index,
+                    size: size,
+                };
 
                 //slog!("f = {:?}",f);
                 f.zero();
@@ -104,9 +133,9 @@ impl FrameManager {
             let mut i = 1;
 
             while i < n {
-                if self.regions[i-1].base > self.regions[i].base {
-                    let tmp: MemoryRegion = self.regions[i-1];
-                    self.regions[i-1] = self.regions[i];
+                if self.regions[i - 1].base > self.regions[i].base {
+                    let tmp: MemoryRegion = self.regions[i - 1];
+                    self.regions[i - 1] = self.regions[i];
                     self.regions[i] = tmp;
 
                     newn = i;
@@ -119,19 +148,17 @@ impl FrameManager {
 
     /// Make sure our regions are sorted and consecutive entires are merged.
     pub fn clean_regions(&mut self) {
-
         self.sort_regions();
 
         // Merge consecutive entries
         for i in 0..self.count {
             let end = self.regions[i].base + self.regions[i].size;
-            if end == self.regions[i+1].base {
-
-                self.regions[i].size += self.regions[i+1].size;
+            if end == self.regions[i + 1].base {
+                self.regions[i].size += self.regions[i + 1].size;
 
                 // Mark region invalid (this is now merged with previous)
-                self.regions[i+1].base = 0xFFFFFFFFFFFFFFFF;
-                self.regions[i+1].size = 0;
+                self.regions[i + 1].base = 0xFFFFFFFFFFFFFFFF;
+                self.regions[i + 1].size = 0;
             }
 
             self.sort_regions();
@@ -162,13 +189,13 @@ impl BespinPageTableProvider {
 }
 
 impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
-
     /// Allocate a PML4 table.
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
         unsafe {
             let f = fmanager.allocate_frame(BASE_PAGE_SIZE);
             f.map(|frame| {
-                let pml4: &'b mut [paging::PML4Entry; 512] = transmute(paddr_to_kernel_vaddr(frame.base));
+                let pml4: &'b mut [paging::PML4Entry; 512] =
+                    transmute(paddr_to_kernel_vaddr(frame.base));
                 pml4
             })
         }
@@ -178,27 +205,34 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PML4Entry::new(frame.base, paging::PML4Entry::P | paging::PML4Entry::RW | paging::PML4Entry::US)
+                paging::PML4Entry::new(
+                    frame.base,
+                    paging::PML4Entry::P | paging::PML4Entry::RW | paging::PML4Entry::US,
+                )
             })
         }
     }
-
 
     /// Allocate a new page directory and return a pdpt entry for it.
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PDPTEntry::new(frame.base, paging::PDPTEntry::P | paging::PDPTEntry::RW | paging::PDPTEntry::US)
+                paging::PDPTEntry::new(
+                    frame.base,
+                    paging::PDPTEntry::P | paging::PDPTEntry::RW | paging::PDPTEntry::US,
+                )
             })
         }
     }
-
 
     /// Allocate a new page-directory and return a page directory entry for it.
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PDEntry::new(frame.base, paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::US)
+                paging::PDEntry::new(
+                    frame.base,
+                    paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::US,
+                )
             })
         }
     }
@@ -207,12 +241,14 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_page(&mut self) -> Option<paging::PTEntry> {
         unsafe {
             fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PTEntry::new(frame.base, paging::PTEntry::P | paging::PTEntry::RW | paging::PTEntry::US)
+                paging::PTEntry::new(
+                    frame.base,
+                    paging::PTEntry::P | paging::PTEntry::RW | paging::PTEntry::US,
+                )
             })
         }
     }
 }
-
 
 pub struct BespinSlabsProvider;
 
@@ -222,20 +258,16 @@ impl BespinSlabsProvider {
     }
 }
 
-impl<'a> SlabPageProvider<'a> for BespinSlabsProvider {
-
-    fn allocate_slabpage(&mut self) -> Option<&'a mut SlabPage<'a>> {
+impl<'a> PageProvider<'a> for BespinSlabsProvider {
+    fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
         let f = unsafe { fmanager.allocate_frame(BASE_PAGE_SIZE) };
-        f.map(|frame| {
-            unsafe {
-                let sp: &'a mut SlabPage = transmute(paddr_to_kernel_vaddr(frame.base));
-                sp
-            }
+        f.map(|frame| unsafe {
+            let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
+            sp
         })
     }
 
-    fn release_slabpage(&mut self, p: &'a mut SlabPage<'a>) {
+    fn release_page(&mut self, p: &'a mut ObjectPage<'a>) {
         slog!("TODO!");
     }
-
 }

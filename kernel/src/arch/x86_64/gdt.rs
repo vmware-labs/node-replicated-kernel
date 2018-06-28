@@ -1,14 +1,13 @@
-use core::mem::{transmute, size_of};
+use core::mem::{size_of, transmute};
 
-use x86::Ring;
+use x86::bits64::segmentation::{load_cs, Descriptor64};
+use x86::bits64::task::*;
 use x86::dtables::*;
 use x86::segmentation::*;
-use x86::bits64::segmentation::{Descriptor64, load_cs};
-use x86::bits64::task::*;
 use x86::task::load_tr;
+use x86::Ring;
 
 use super::syscall;
-
 
 const GDT_SIZE: usize = 512;
 
@@ -23,7 +22,7 @@ struct GdtTable {
     code_user: Descriptor,
     /// 64 bit user stack
     stack_user: Descriptor,
-    tss_segment: Descriptor64
+    tss_segment: Descriptor64,
 }
 
 impl GdtTable {
@@ -52,11 +51,11 @@ pub fn get_user_stack_selector() -> SegmentSelector {
     SegmentSelector::new(GdtTable::SS_USER_INDEX as u16, Ring::Ring3) | SegmentSelector::TI_GDT
 }
 
-static mut tss: TaskStateSegment = TaskStateSegment{
+static mut tss: TaskStateSegment = TaskStateSegment {
     reserved: 0,
-    rsp: [0,0,0],
+    rsp: [0, 0, 0],
     reserved2: 0,
-    ist: [0,0,0,0,0,0,0],
+    ist: [0, 0, 0, 0, 0, 0, 0],
     reserved3: 0,
     reserved4: 0,
     iomap_base: 0,
@@ -66,17 +65,33 @@ pub fn setup_gdt() {
     // Put these in our new GDT, load the new GDT, then re-load the segments
     unsafe {
         gdt.null = Default::default();
-        gdt.code_kernel = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead).present().l().dpl(Ring::Ring0).finish();
-        gdt.stack_kernel = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite).present().dpl(Ring::Ring0).finish();
-        gdt.code_user = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead).present().l().dpl(Ring::Ring3).finish();
-        gdt.stack_user = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite).present().dpl(Ring::Ring3).finish();
+        gdt.code_kernel = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
+            .present()
+            .l()
+            .dpl(Ring::Ring0)
+            .finish();
+        gdt.stack_kernel = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
+            .present()
+            .dpl(Ring::Ring0)
+            .finish();
+        gdt.code_user = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
+            .present()
+            .l()
+            .dpl(Ring::Ring3)
+            .finish();
+        gdt.stack_user = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
+            .present()
+            .dpl(Ring::Ring3)
+            .finish();
 
         let gdtptr = DescriptorTablePointer::new(&gdt);
         lgdt(&gdtptr);
 
         // We need to re-load segments now with a new GDT:
-        let cs_selector = SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT;
-        let ss_selector = SegmentSelector::new(GdtTable::SS_KERNEL_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT;
+        let cs_selector = SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0)
+            | SegmentSelector::TI_GDT;
+        let ss_selector = SegmentSelector::new(GdtTable::SS_KERNEL_INDEX as u16, Ring::Ring0)
+            | SegmentSelector::TI_GDT;
 
         load_ds(SegmentSelector::new(0, Ring::Ring0));
         load_es(SegmentSelector::new(0, Ring::Ring0));
@@ -85,7 +100,8 @@ pub fn setup_gdt() {
         load_cs(cs_selector);
         load_ss(ss_selector);
 
-        let cs_user_selector = SegmentSelector::new(GdtTable::CS_USER_INDEX as u16, Ring::Ring3) | SegmentSelector::TI_GDT;
+        let cs_user_selector = SegmentSelector::new(GdtTable::CS_USER_INDEX as u16, Ring::Ring3)
+            | SegmentSelector::TI_GDT;
         syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
     }
 
@@ -102,11 +118,18 @@ fn setup_tss() {
         let tss_ptr = transmute::<&TaskStateSegment, u64>(&tss);
         slog!("tss = 0x{:x}", tss_ptr);
 
-        gdt.tss_segment = <DescriptorBuilder as GateDescriptorBuilder<u64>>::tss_descriptor(tss_ptr as u64, size_of::<TaskStateSegment>() as u64, true).present().dpl(Ring::Ring0).finish();
+        gdt.tss_segment = <DescriptorBuilder as GateDescriptorBuilder<u64>>::tss_descriptor(
+            tss_ptr as u64,
+            size_of::<TaskStateSegment>() as u64,
+            true,
+        ).present()
+            .dpl(Ring::Ring0)
+            .finish();
         tss.rsp[0] = transmute::<&[u64; 512], u64>(&syscall_stack) + 4096;
         slog!("tss.rsp[0] = 0x{:x}", tss.rsp[0]);
 
-        load_tr(SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT);
+        load_tr(
+            SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT,
+        );
     }
-
 }

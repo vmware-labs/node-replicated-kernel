@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 
-use ::arch::memory::{BASE_PAGE_SIZE};
+use arch::memory::BASE_PAGE_SIZE;
 
 pub type StackMemory = [u8; BASE_PAGE_SIZE as usize * 32];
 
@@ -15,7 +15,6 @@ pub struct Stack {
 }
 
 impl Stack {
-    
     /// Allocate a new stack of `size`. If size = 0, this will fail. Use
     /// `dummy_stack` if you want a zero-sized stack.
     pub fn new() -> Stack {

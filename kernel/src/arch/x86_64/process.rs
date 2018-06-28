@@ -1,23 +1,26 @@
-use core::mem::{transmute};
 use core::fmt;
+use core::mem::transmute;
 
-use elfloader::{ElfLoader};
 use elfloader::elf;
+use elfloader::ElfLoader;
 
-
-use x86::controlregs;
-use x86::bits64::rflags;
 use x86::bits64::paging;
-use x86::bits64::paging::{PML4, PML4Entry, BASE_PAGE_SIZE, pml4_index, pdpt_index, pd_index, pt_index};
+use x86::bits64::paging::{
+    pd_index, pdpt_index, pml4_index, pt_index, PML4, PML4Entry, BASE_PAGE_SIZE,
+};
+use x86::bits64::rflags;
+use x86::controlregs;
 
 use super::gdt;
-use super::memory::{paddr_to_kernel_vaddr, kernel_vaddr_to_paddr, PAddr, VAddr};
+use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 
-use ::mm::{BespinPageTableProvider, PageTableProvider};
-use ::mutex::{Mutex};
+use mm::{BespinPageTableProvider, PageTableProvider};
+use mutex::Mutex;
 
 macro_rules! round_up {
-   ( $num:expr, $s:expr ) => { (($num + $s - 1) / $s) * $s }
+    ($num:expr, $s:expr) => {
+        (($num + $s - 1) / $s) * $s
+    };
 }
 
 #[no_mangle]
@@ -25,30 +28,23 @@ pub static CURRENT_PROCESS: Mutex<Option<Process<'static>>> = mutex!(None);
 
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
-    pager: BespinPageTableProvider
+    pager: BespinPageTableProvider,
 }
 
 impl<'a> VSpace<'a> {
-
     /// Resolve a PML4Entry to a PDPT.
     fn get_pdpt<'b>(&self, entry: PML4Entry) -> &'b mut paging::PDPT {
-        unsafe {
-            transmute::<VAddr, &mut paging::PDPT>(paddr_to_kernel_vaddr(entry.get_address()))
-        }
+        unsafe { transmute::<VAddr, &mut paging::PDPT>(paddr_to_kernel_vaddr(entry.get_address())) }
     }
 
     /// Resolve a PDPTEntry to a page directory.
     fn get_pd<'b>(&self, entry: paging::PDPTEntry) -> &'b mut paging::PD {
-        unsafe {
-            transmute::<VAddr, &mut paging::PD>(paddr_to_kernel_vaddr(entry.get_address()))
-        }
+        unsafe { transmute::<VAddr, &mut paging::PD>(paddr_to_kernel_vaddr(entry.get_address())) }
     }
 
     /// Resolve a PDEntry to a page table.
     fn get_pt<'b>(&self, entry: paging::PDEntry) -> &'b mut paging::PT {
-        unsafe {
-            transmute::<VAddr, &mut paging::PT>(paddr_to_kernel_vaddr(entry.get_address()))
-        }
+        unsafe { transmute::<VAddr, &mut paging::PT>(paddr_to_kernel_vaddr(entry.get_address())) }
     }
 
     /// Do page-table walk to find physical address of a page.
@@ -77,12 +73,11 @@ impl<'a> VSpace<'a> {
     /// kernel accessible page to it.
     fn resolve_to_page(&self, base: VAddr) -> Option<&mut [u8]> {
         match self.resolve(base) {
-            Some(paddr) =>
-            {
+            Some(paddr) => {
                 let kernel_addr = paddr_to_kernel_vaddr(paddr);
                 Some(unsafe { transmute::<VAddr, &mut [u8; BASE_PAGE_SIZE as usize]>(kernel_addr) })
             }
-            None => None
+            None => None,
         }
     }
 
@@ -90,14 +85,16 @@ impl<'a> VSpace<'a> {
     /// XXX: Check that region length <= page length...
     pub fn fill(&self, address: VAddr, region: &[u8]) -> bool {
         match self.resolve_to_page(address) {
-            Some(page) =>
-            {
+            Some(page) => {
                 for (idx, b) in region.iter().enumerate() {
                     page[idx] = *b;
                 }
                 true
             }
-            None => { slog!("Unable to resolve {:?}", address); false }
+            None => {
+                slog!("Unable to resolve {:?}", address);
+                false
+            }
         }
     }
 
@@ -156,8 +153,8 @@ pub struct SaveArea {
     rdi: u64,
     rbp: u64,
     rsp: u64,
-    r8:  u64,
-    r9:  u64,
+    r8: u64,
+    r9: u64,
     r10: u64,
     r11: u64,
     r12: u64,
@@ -177,12 +174,13 @@ pub struct Process<'a> {
 impl<'a> Process<'a> {
     pub fn new<'b>(pid: u64) -> Option<Process<'a>> {
         let mut pager = BespinPageTableProvider::new();
-        pager.allocate_pml4().map(|pml4| {
-            Process{
-                pid: pid,
-                vspace: VSpace{pml4: pml4, pager: pager},
-                save_area: Default::default(),
-            }
+        pager.allocate_pml4().map(|pml4| Process {
+            pid: pid,
+            vspace: VSpace {
+                pml4: pml4,
+                pager: pager,
+            },
+            save_area: Default::default(),
         })
     }
 
@@ -190,7 +188,8 @@ impl<'a> Process<'a> {
         slog!("ABOUT TO GO TO USER-SPACE");
         let user_flags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
         unsafe {
-            let pml4_phys: PAddr = kernel_vaddr_to_paddr(transmute::<&PML4Entry, VAddr>(&self.vspace.pml4[0]));
+            let pml4_phys: PAddr =
+                kernel_vaddr_to_paddr(transmute::<&PML4Entry, VAddr>(&self.vspace.pml4[0]));
             slog!("switching to 0x{:x}", pml4_phys);
             controlregs::cr3_write(pml4_phys as PAddr);
         };
@@ -227,8 +226,9 @@ impl<'a> fmt::Debug for Process<'a> {
 impl fmt::Debug for SaveArea {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         unsafe {
-            write!(f,
-"rax = {:>16x} rcx = {:>16x}
+            write!(
+                f,
+                "rax = {:>16x} rcx = {:>16x}
 rbx = {:>16x} rdx = {:>16x}
 rsi = {:>16x} rdi = {:>16x}
 rbp = {:>16x} r8  = {:>16x}
@@ -251,17 +251,16 @@ r15 = {:>16x} rip = {:>16x}",
                 self.r13,
                 self.r14,
                 self.r15,
-                self.rip)
+                self.rip
+            )
         }
     }
 }
 
-
 impl<'a> ElfLoader for Process<'a> {
-
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
     fn allocate(&mut self, base: usize, size: usize, flags: elf::ProgFlag) {
-        slog!("allocate: 0x{:x} -- 0x{:x}", base, base+size);
+        slog!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
         self.vspace.map(base, rsize);
     }
@@ -269,12 +268,15 @@ impl<'a> ElfLoader for Process<'a> {
     /// Load a region of bytes into the virtual address space of the process.
     /// XXX: Report error if that region is not backed by memory (i.e., allocate was not called).
     fn load(&mut self, destination: usize, region: &'static [u8]) {
-        slog!("load: 0x{:x} -- 0x{:x}", destination, destination+region.len());
+        slog!(
+            "load: 0x{:x} -- 0x{:x}",
+            destination,
+            destination + region.len()
+        );
 
         for (idx, subregion) in region.chunks(BASE_PAGE_SIZE as usize).enumerate() {
-            let base_vaddr = destination + idx*BASE_PAGE_SIZE as usize;
+            let base_vaddr = destination + idx * BASE_PAGE_SIZE as usize;
             self.vspace.fill(base_vaddr, subregion);
         }
-
     }
 }

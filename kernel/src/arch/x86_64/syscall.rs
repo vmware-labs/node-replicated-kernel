@@ -1,6 +1,6 @@
-use x86::msr::{wrmsr, rdmsr, IA32_EFER, IA32_STAR, IA32_LSTAR, IA32_FMASK};
-use x86::segmentation::{SegmentSelector};
-use x86::bits64::rflags::{RFlags};
+use x86::bits64::rflags::RFlags;
+use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
+use x86::segmentation::SegmentSelector;
 use x86::Ring;
 
 extern "C" {
@@ -17,7 +17,6 @@ pub extern "C" fn syscall_handle() {
 
 /// Enables syscall/sysret functionality.
 pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
-
     let cs_selector = SegmentSelector::new(1 as u16, Ring::Ring0) | SegmentSelector::TI_GDT;
     let ss_selector = SegmentSelector::new(2 as u16, Ring::Ring3) | SegmentSelector::TI_GDT;
 
@@ -31,7 +30,7 @@ pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
         let rip = syscall_enter as usize as u64;
         wrmsr(IA32_LSTAR, rip);
 
-        wrmsr(IA32_FMASK, !(RFlags::new().bits()) );
+        wrmsr(IA32_FMASK, !(RFlags::new().bits()));
 
         // Enable fast syscalls
         let efer = rdmsr(IA32_EFER) | 0b1;

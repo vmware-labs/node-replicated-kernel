@@ -1,2 +1,3 @@
 [dependencies]
 alloc = {}
+core = {}

@@ -1,37 +1,37 @@
 //#[macro_use]
 //pub use ::mutex;
 
-pub mod memory;
-pub mod debug;
 pub mod apic;
-pub mod irq;
-pub mod process;
+pub mod debug;
 pub mod gdt;
+pub mod irq;
+pub mod memory;
+pub mod process;
 pub mod syscall;
 pub mod threads;
 
-mod start;
-mod isr;
 mod exec;
+mod isr;
+mod start;
 
-use core::slice;
-use core::mem::{transmute};
-use core::ops::DerefMut;
 use alloc::boxed::Box;
-use alloc::{Vec};
+use alloc::Vec;
+use core::mem::transmute;
+use core::ops::DerefMut;
+use core::slice;
 
-use x86::cpuid;
 use x86::bits64::paging;
+use x86::cpuid;
 
-use multiboot::{Multiboot, MemoryType};
 use elfloader;
-use elfloader::{ElfLoader};
+use elfloader::ElfLoader;
+use multiboot::{MemoryType, Multiboot};
 
-use mm::fmanager;
 use self::threads::stack::Stack;
+use mm::fmanager;
 
 //use self::threads::context::Context;
-use ::{main};
+use main;
 
 extern "C" {
     #[no_mangle]
@@ -43,8 +43,8 @@ extern "C" {
     #[no_mangle]
     static mut init_pml4: paging::PML4;
 
-    //#[no_mangle]
-    //static mboot_sig: PAddr;
+//#[no_mangle]
+//static mboot_sig: PAddr;
 }
 
 /*
@@ -61,7 +61,7 @@ unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Mult
     fmanager.print_regions();
 }*/
 
-#[lang="start"]
+#[lang = "start"]
 #[no_mangle]
 #[start]
 pub fn arch_init() {
@@ -91,46 +91,51 @@ pub fn arch_init() {
         //apic.enable_tsc();
         //apic.set_tsc(rdtsc()+1000);
         slog!("APIC is bsp: {}", apic.is_bsp());
-    }
-    else {
+    } else {
         slog!("no x2APIC support. Continuing without interrupts.")
     }
 
     unsafe {
         let mut base = 0x0;
         for e in &mut init_pd.iter_mut() {
-            (*e) = paging::PDEntry::new(base, paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::PS);
-            base += 1024*1024*2;
+            (*e) = paging::PDEntry::new(
+                base,
+                paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::PS,
+            );
+            base += 1024 * 1024 * 2;
         }
     }
+    slog!("mb init");
 
     let mb = unsafe {
-        Multiboot::new(mboot_ptr, |base, size| { 
-            let vbase = memory::paddr_to_kernel_vaddr(base) as *const u8; 
+        Multiboot::new(mboot_ptr, |base, size| {
+            let vbase = memory::paddr_to_kernel_vaddr(base) as *const u8;
             Some(slice::from_raw_parts(vbase, size))
         }).unwrap()
     };
 
+    slog!("checking memory regions");
     unsafe {
         mb.memory_regions().map(|regions| {
-        for region in regions {
-            if region.memory_type() == MemoryType::Available {
-                fmanager.add_region(region.base_address(), region.length());
+            for region in regions {
+                if region.memory_type() == MemoryType::Available {
+                    fmanager.add_region(region.base_address(), region.length());
+                }
             }
-        }
         });
-
+        slog!("cleaning memory regions");
         fmanager.clean_regions();
+        slog!("print regions");
         fmanager.print_regions();
     }
 
-
+    slog!("allocation should work here...");
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
     let init = Box::new(process::Process::new(1).unwrap());
     process_list.push(init);
 
-    let s = Stack::new();
-    slog!("s.start {:?}, s.end {:?}", s.start(), s.end());
+    //let s = Stack::new();
+    //slog!("s.start {:?}, s.end {:?}", s.start(), s.end());
     //let c = Context::new(init, arg, start, s);
 
     mb.modules().map(|modules| {
@@ -139,7 +144,8 @@ pub fn arch_init() {
             let binary: &'static [u8] = unsafe {
                 slice::from_raw_parts(
                     transmute::<u64, *const u8>(module.start),
-                    (module.start - module.end) as usize)
+                    (module.start - module.end) as usize,
+                )
             };
 
             let mut cp = process::CURRENT_PROCESS.lock();
@@ -155,7 +161,7 @@ pub fn arch_init() {
                         e.load(p);
                         p.start(0x4000f0);
                     });
-                },
+                }
                 None => (),
             }
         }

@@ -1,19 +1,19 @@
 use core::fmt;
 
-use x86::Ring;
+use x86::bits64::segmentation::Descriptor64;
+use x86::dtables;
 use x86::io;
 use x86::irq;
 use x86::msr;
-use x86::dtables;
-use x86::segmentation::{SegmentSelector, GateDescriptorBuilder, DescriptorBuilder, BuildDescriptor};
-use x86::bits64::segmentation::{Descriptor64};
+use x86::segmentation::{
+    BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
+};
+use x86::Ring;
 
 const IDT_SIZE: usize = 256;
-static mut idt: [Descriptor64; IDT_SIZE] = [ Descriptor64::NULL; IDT_SIZE];
+static mut idt: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
 
-static mut irq_handlers: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [
-    unhandled_irq; IDT_SIZE
-];
+static mut irq_handlers: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [unhandled_irq; IDT_SIZE];
 
 unsafe fn unhandled_irq(a: &ExceptionArguments) {
     slog!("Got UNHANDLED IRQ: {:?}", a);
@@ -30,28 +30,30 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     slog!("Source: {}", desc.source);
 
     if a.exception > 0 {
-        slog!("Error value: {:?}", SegmentSelector::from_raw(a.exception as u16));
-    }
-    else {
+        slog!(
+            "Error value: {:?}",
+            SegmentSelector::from_raw(a.exception as u16)
+        );
+    } else {
         slog!("No error!");
     }
     slog!("{:?}", a);
     loop {}
 }
 
-
 /// Import the ISR assembly handler and add it to our IDT (see isr.S).
 macro_rules! idt_set {
-    ( $num:expr, $f:ident, $sel:expr, $flags:expr ) => {
-        {
-            extern "C" {
-                #[no_mangle]
-                fn $f();
-            }
-
-            idt[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64).dpl(Ring::Ring0).present().finish();
+    ($num:expr, $f:ident, $sel:expr, $flags:expr) => {{
+        extern "C" {
+            #[no_mangle]
+            fn $f();
         }
-    };
+
+        idt[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64)
+            .dpl(Ring::Ring0)
+            .present()
+            .finish();
+    }};
 }
 
 /// Arguments as provided by the ISR generic call handler (see isr.S).
@@ -67,16 +69,14 @@ pub struct ExceptionArguments {
 impl fmt::Debug for ExceptionArguments {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         unsafe {
-            write!(f, "vec = 0x{:x} ex = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x}",
-                self.vector,
-                self.exception,
-                self.eip,
-                self.cs,
-                self.eflags)
+            write!(
+                f,
+                "vec = 0x{:x} ex = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x}",
+                self.vector, self.exception, self.eip, self.cs, self.eflags
+            )
         }
     }
 }
-
 
 /// Rust entry point for exception handling (see isr.S).
 /// TODO: does this need to be extern?
@@ -93,16 +93,15 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
         assert!(a.vector < 256);
         acknowledge();
         irq_handlers[a.vector as usize](&a);
-
     }
 }
 
 pub unsafe fn acknowledge() {
     // ACK the interrupt
     // TODO: Disable the PIC and get rid of this.
-    io::outb(0x20,0x20);
+    io::outb(0x20, 0x20);
     // TODO: Need ACPI to disable PIC first before this does anything.
-    msr::wrmsr(0x800+0xb, 0);
+    msr::wrmsr(0x800 + 0xb, 0);
 }
 
 /// Work around for Intel quirk. Remap PIC vectors 0-16 to 32-48.
@@ -120,15 +119,15 @@ pub unsafe fn pic_remap() {
     io::outb(0xA1, 0x0);
 
     // Keyboard interrupts only
-    io::outb(0x21,0b00000001);
-    io::outb(0xa1,0xff);
+    io::outb(0x21, 0b00000001);
+    io::outb(0xa1, 0xff);
 }
 
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(vector: usize, handler: unsafe fn(&ExceptionArguments)) {
-    if vector > IDT_SIZE-1 {
+    if vector > IDT_SIZE - 1 {
         slog!("Invalid vector!");
-        return
+        return;
     }
 
     irq_handlers[vector] = handler;
@@ -180,9 +179,13 @@ pub fn setup_idt() {
 }
 
 pub fn enable() {
-    unsafe { irq::enable(); }
+    unsafe {
+        irq::enable();
+    }
 }
 
 pub fn disable() {
-    unsafe { irq::disable(); }
+    unsafe {
+        irq::disable();
+    }
 }

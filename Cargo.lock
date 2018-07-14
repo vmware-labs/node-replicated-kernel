@@ -101,7 +101,7 @@ dependencies = [
 [[package]]
 name = "klogger"
 version = "0.0.2"
-source = "git+https://github.com/gz/rust-klogger.git#22dc35aa8fbadfac7a197d4bde238bbc89933cbc"
+source = "git+https://github.com/gz/rust-klogger.git#1d83b93be447eda914f042036e331ab4440375ea"
 dependencies = [
  "x86 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]

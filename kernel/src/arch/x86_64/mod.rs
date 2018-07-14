@@ -24,13 +24,10 @@ use x86::bits64::paging;
 use x86::cpuid;
 
 use elfloader;
-use elfloader::ElfLoader;
 use multiboot::{MemoryType, Multiboot};
 
-use mm::fmanager;
-
-//use self::threads::context::Context;
 use main;
+use mm::FMANAGER;
 
 extern "C" {
     #[no_mangle]
@@ -118,14 +115,14 @@ pub fn arch_init() {
         mb.memory_regions().map(|regions| {
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
-                    fmanager.add_region(region.base_address(), region.length());
+                    FMANAGER.add_region(region.base_address(), region.length());
                 }
             }
         });
         slog!("cleaning memory regions");
-        fmanager.clean_regions();
+        FMANAGER.clean_regions();
         slog!("print regions");
-        fmanager.print_regions();
+        FMANAGER.print_regions();
     }
 
     slog!("allocation should work here...");

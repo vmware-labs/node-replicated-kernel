@@ -16,7 +16,7 @@ pub extern "C" fn syscall_handle() {
 }
 
 /// Enables syscall/sysret functionality.
-pub fn enable_fast_syscalls(cs: SegmentSelector, cs_user: SegmentSelector) {
+pub fn enable_fast_syscalls(_cs: SegmentSelector, _cs_user: SegmentSelector) {
     let cs_selector = SegmentSelector::new(1 as u16, Ring::Ring0) | SegmentSelector::TI_GDT;
     let ss_selector = SegmentSelector::new(2 as u16, Ring::Ring3) | SegmentSelector::TI_GDT;
 

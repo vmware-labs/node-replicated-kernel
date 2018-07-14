@@ -259,7 +259,7 @@ r15 = {:>16x} rip = {:>16x}",
 
 impl<'a> ElfLoader for Process<'a> {
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
-    fn allocate(&mut self, base: usize, size: usize, flags: elf::ProgFlag) {
+    fn allocate(&mut self, base: usize, size: usize, _flags: elf::ProgFlag) {
         slog!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
         self.vspace.map(base, rsize);

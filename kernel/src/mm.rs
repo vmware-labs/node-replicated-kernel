@@ -10,7 +10,7 @@ use slabmalloc::{ObjectPage, PageProvider};
 
 const MAX_FRAME_REGIONS: usize = 10;
 
-pub static mut fmanager: FrameManager = FrameManager {
+pub static mut FMANAGER: FrameManager = FrameManager {
     count: 0,
     regions: [MemoryRegion {
         base: 0,
@@ -81,7 +81,7 @@ impl fmt::Debug for MemoryRegion {
 }
 
 impl FrameManager {
-    pub fn new() -> FrameManager {
+    fn _new() -> FrameManager {
         FrameManager {
             count: 0,
             regions: [MemoryRegion {
@@ -192,7 +192,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a PML4 table.
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
         unsafe {
-            let f = fmanager.allocate_frame(BASE_PAGE_SIZE);
+            let f = FMANAGER.allocate_frame(BASE_PAGE_SIZE);
             f.map(|frame| {
                 let pml4: &'b mut [paging::PML4Entry; 512] =
                     transmute(paddr_to_kernel_vaddr(frame.base));
@@ -204,7 +204,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a new page directory and return a PML4 entry for it.
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
         unsafe {
-            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
                 paging::PML4Entry::new(
                     frame.base,
                     paging::PML4Entry::P | paging::PML4Entry::RW | paging::PML4Entry::US,
@@ -216,7 +216,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a new page directory and return a pdpt entry for it.
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
         unsafe {
-            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
                 paging::PDPTEntry::new(
                     frame.base,
                     paging::PDPTEntry::P | paging::PDPTEntry::RW | paging::PDPTEntry::US,
@@ -228,7 +228,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a new page-directory and return a page directory entry for it.
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
         unsafe {
-            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
                 paging::PDEntry::new(
                     frame.base,
                     paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::US,
@@ -240,7 +240,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a new (4KiB) page and map it.
     fn new_page(&mut self) -> Option<paging::PTEntry> {
         unsafe {
-            fmanager.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
+            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
                 paging::PTEntry::new(
                     frame.base,
                     paging::PTEntry::P | paging::PTEntry::RW | paging::PTEntry::US,
@@ -260,14 +260,14 @@ impl BespinSlabsProvider {
 
 impl<'a> PageProvider<'a> for BespinSlabsProvider {
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
-        let f = unsafe { fmanager.allocate_frame(BASE_PAGE_SIZE) };
+        let f = unsafe { FMANAGER.allocate_frame(BASE_PAGE_SIZE) };
         f.map(|frame| unsafe {
             let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
             sp
         })
     }
 
-    fn release_page(&mut self, p: &'a mut ObjectPage<'a>) {
+    fn release_page(&mut self, _p: &'a mut ObjectPage<'a>) {
         slog!("TODO!");
     }
 }

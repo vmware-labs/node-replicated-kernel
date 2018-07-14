@@ -11,9 +11,9 @@ use x86::segmentation::{
 use x86::Ring;
 
 const IDT_SIZE: usize = 256;
-static mut idt: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
+static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
 
-static mut irq_handlers: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [unhandled_irq; IDT_SIZE];
+static mut IRQ_HANDLERS: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [unhandled_irq; IDT_SIZE];
 
 unsafe fn unhandled_irq(a: &ExceptionArguments) {
     slog!("Got UNHANDLED IRQ: {:?}", a);
@@ -49,7 +49,7 @@ macro_rules! idt_set {
             fn $f();
         }
 
-        idt[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64)
+        IDT[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64)
             .dpl(Ring::Ring0)
             .present()
             .finish();
@@ -92,7 +92,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
     unsafe {
         assert!(a.vector < 256);
         acknowledge();
-        irq_handlers[a.vector as usize](&a);
+        IRQ_HANDLERS[a.vector as usize](&a);
     }
 }
 
@@ -130,13 +130,13 @@ pub unsafe fn register_handler(vector: usize, handler: unsafe fn(&ExceptionArgum
         return;
     }
 
-    irq_handlers[vector] = handler;
+    IRQ_HANDLERS[vector] = handler;
 }
 
 /// Initializes and loads the IDT into the CPU.
 pub fn setup_idt() {
     unsafe {
-        let idtptr = dtables::DescriptorTablePointer::new_from_slice(&idt);
+        let idtptr = dtables::DescriptorTablePointer::new_from_slice(&IDT);
         dtables::lidt(&idtptr);
 
         // Note everything is declared as interrupt gates for now.

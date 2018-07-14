@@ -24,7 +24,7 @@ pub fn init() {
     }
 }
 
-unsafe fn receive_serial_irq(a: &irq::ExceptionArguments) {
+unsafe fn receive_serial_irq(_a: &irq::ExceptionArguments) {
     let scancode = io::inb(PORT0 + 0);
     let cp = CURRENT_PROCESS.lock();
     match *cp.deref() {

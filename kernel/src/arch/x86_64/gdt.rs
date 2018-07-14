@@ -9,8 +9,6 @@ use x86::Ring;
 
 use super::syscall;
 
-const GDT_SIZE: usize = 512;
-
 #[derive(Default)]
 #[repr(C)]
 struct GdtTable {
@@ -26,6 +24,7 @@ struct GdtTable {
 }
 
 impl GdtTable {
+    #[allow(dead_code)]
     const NULL_INDEX: usize = 0;
     const CS_KERNEL_INDEX: usize = 1;
     const SS_KERNEL_INDEX: usize = 2;
@@ -34,7 +33,7 @@ impl GdtTable {
     const TSS_INDEX: usize = 5;
 }
 
-static mut gdt: GdtTable = GdtTable {
+static mut GDT: GdtTable = GdtTable {
     null: Descriptor::NULL,
     code_kernel: Descriptor::NULL,
     stack_kernel: Descriptor::NULL,
@@ -51,7 +50,7 @@ pub fn get_user_stack_selector() -> SegmentSelector {
     SegmentSelector::new(GdtTable::SS_USER_INDEX as u16, Ring::Ring3) | SegmentSelector::TI_GDT
 }
 
-static mut tss: TaskStateSegment = TaskStateSegment {
+static mut TSS: TaskStateSegment = TaskStateSegment {
     reserved: 0,
     rsp: [0, 0, 0],
     reserved2: 0,
@@ -64,27 +63,27 @@ static mut tss: TaskStateSegment = TaskStateSegment {
 pub fn setup_gdt() {
     // Put these in our new GDT, load the new GDT, then re-load the segments
     unsafe {
-        gdt.null = Default::default();
-        gdt.code_kernel = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
+        GDT.null = Default::default();
+        GDT.code_kernel = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
             .present()
             .l()
             .dpl(Ring::Ring0)
             .finish();
-        gdt.stack_kernel = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
+        GDT.stack_kernel = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
             .present()
             .dpl(Ring::Ring0)
             .finish();
-        gdt.code_user = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
+        GDT.code_user = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
             .present()
             .l()
             .dpl(Ring::Ring3)
             .finish();
-        gdt.stack_user = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
+        GDT.stack_user = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
             .present()
             .dpl(Ring::Ring3)
             .finish();
 
-        let gdtptr = DescriptorTablePointer::new(&gdt);
+        let gdtptr = DescriptorTablePointer::new(&GDT);
         lgdt(&gdtptr);
 
         // We need to re-load segments now with a new GDT:
@@ -110,23 +109,23 @@ pub fn setup_gdt() {
     slog!("TSS enabled");
 }
 
-static mut syscall_stack: [u64; 512] = [0; 512];
+static mut SYSCALL_STACK: [u64; 512] = [0; 512];
 
 fn setup_tss() {
     unsafe {
         // Complete setup of TSS descriptor (by inserting base address of TSS)
-        let tss_ptr = transmute::<&TaskStateSegment, u64>(&tss);
+        let tss_ptr = transmute::<&TaskStateSegment, u64>(&TSS);
         slog!("tss = 0x{:x}", tss_ptr);
 
-        gdt.tss_segment = <DescriptorBuilder as GateDescriptorBuilder<u64>>::tss_descriptor(
+        GDT.tss_segment = <DescriptorBuilder as GateDescriptorBuilder<u64>>::tss_descriptor(
             tss_ptr as u64,
             size_of::<TaskStateSegment>() as u64,
             true,
         ).present()
             .dpl(Ring::Ring0)
             .finish();
-        tss.rsp[0] = transmute::<&[u64; 512], u64>(&syscall_stack) + 4096;
-        slog!("tss.rsp[0] = 0x{:x}", tss.rsp[0]);
+        TSS.rsp[0] = transmute::<&[u64; 512], u64>(&SYSCALL_STACK) + 4096;
+        slog!("tss.rsp[0] = 0x{:x}", TSS.rsp[0]);
 
         load_tr(
             SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT,

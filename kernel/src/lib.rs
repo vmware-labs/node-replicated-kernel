@@ -1,18 +1,7 @@
 #![deny(warnings)]
 #![feature(
-    intrinsics,
-    asm,
-    lang_items,
-    const_fn,
-    core,
-    raw,
-    box_syntax,
-    start,
-    panic_implementation,
-    alloc,
-    allocator_api,
-    heap_api,
-    global_asm
+    intrinsics, asm, lang_items, const_fn, core, raw, box_syntax, start, panic_implementation,
+    alloc, allocator_api, heap_api, global_asm
 )]
 #![no_std]
 

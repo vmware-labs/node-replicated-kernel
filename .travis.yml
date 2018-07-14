@@ -36,5 +36,6 @@ before_script:
   - bash setup.sh
 
 script:
-  - cd kernel && RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin
-  - cd kernel && bash run.sh
+  - cd kernel
+  - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin
+  - bash run.sh

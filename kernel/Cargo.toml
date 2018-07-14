@@ -23,7 +23,6 @@ x86 = { path = "../lib/x86" }
 multiboot = { path = "../lib/multiboot" }
 raw-cpuid = { path = "../lib/cpuid" }
 rlibc = { path = "../lib/rlib" }
-#bitflags = { path = "../lib/bitflags" }
 klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }

@@ -10,9 +10,6 @@
 [submodule "lib/rlib"]
 	path = lib/rlib
 	url = git@github.com:rust-lang/rlibc.git
-[submodule "lib/bitflags"]
-	path = lib/bitflags
-	url = git@github.com:gz/bitflags.git
 [submodule "lib/klogger"]
 	path = lib/klogger
 	url = git@github.com:gz/rust-klogger.git

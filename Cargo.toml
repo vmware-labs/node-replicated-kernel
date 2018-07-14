@@ -7,5 +7,4 @@ members = [
     "lib/slabmalloc",
     "lib/klogger",
     "lib/elfloader",
-    "lib/bitflags"
 ]

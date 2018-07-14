@@ -10,12 +10,12 @@ rust. It currently does not do much except for serial output, interrupt handling
 1. `git submodule update`
 
 ### Install dependencies
-Run `bash -x setup.sh`
+Run `bash setup.sh`
 
 ### Build and run
 1. `cd kernel`
 1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
-1. `bash -x ./run.sh`
+1. `bash ./run.sh`
 
 ## Future Work
  * [x] Milestone 1: Running libcore user-space program

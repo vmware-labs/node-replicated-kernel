@@ -1,6 +1,5 @@
 language: rust
-
-sudo: false
+sudo: required
 
 notifications:
     email:

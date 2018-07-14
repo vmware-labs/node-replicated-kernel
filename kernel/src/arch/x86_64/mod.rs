@@ -15,7 +15,7 @@ mod isr;
 mod start;
 
 use alloc::boxed::Box;
-use alloc::Vec;
+use alloc::vec::Vec;
 use core::mem::transmute;
 use core::ops::DerefMut;
 use core::slice;
@@ -27,7 +27,6 @@ use elfloader;
 use elfloader::ElfLoader;
 use multiboot::{MemoryType, Multiboot};
 
-use self::threads::stack::Stack;
 use mm::fmanager;
 
 //use self::threads::context::Context;

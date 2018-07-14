@@ -1,5 +1,7 @@
 use core::panic::PanicInfo;
 
+use core::alloc::Layout;
+
 #[panic_implementation]
 #[no_mangle]
 pub fn panic_impl(info: &PanicInfo) -> ! {
@@ -50,7 +52,7 @@ pub fn rust_eh_personality(
 
 #[no_mangle]
 #[lang = "oom"]
-pub fn oom() -> ! {
+pub fn oom(_: Layout) -> ! {
     slog!("oom");
     loop {}
 }

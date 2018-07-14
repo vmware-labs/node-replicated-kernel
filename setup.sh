@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-set -ex
+set -exu
 
 # Install QEMU
-if [ ! -x "$(command -v qemu-system-x86_64)"]; then
+if [ ! -x "$(command -v qemu-system-x86_64)" ]; then
     if [ "$(uname)" == "Darwin" ]; then
         brew install qemu
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then

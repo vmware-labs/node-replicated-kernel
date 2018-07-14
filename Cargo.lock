@@ -4,8 +4,9 @@ version = "0.0.1"
 dependencies = [
  "elfloader 0.0.5",
  "klogger 0.0.2",
- "multiboot 0.4.0",
+ "multiboot 0.5.0",
  "raw-cpuid 5.0.0",
+ "rlibc 1.0.0",
  "slabmalloc 0.3.0",
  "spin 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86 0.9.0",
@@ -100,7 +101,7 @@ dependencies = [
 [[package]]
 name = "klogger"
 version = "0.0.2"
-source = "git+https://github.com/gz/rust-klogger.git#1d83b93be447eda914f042036e331ab4440375ea"
+source = "git+https://github.com/gz/rust-klogger.git#b125b1c3b9099789b92055dc2f39035b283bab1b"
 dependencies = [
  "x86 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -158,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "multiboot"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "num"
@@ -320,6 +321,10 @@ dependencies = [
  "serde 1.0.70 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.70 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "rlibc"
+version = "1.0.0"
 
 [[package]]
 name = "rustc-serialize"

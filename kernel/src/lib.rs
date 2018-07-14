@@ -1,4 +1,3 @@
-#![deny(warnings)]
 #![feature(
     intrinsics,
     asm,
@@ -17,6 +16,8 @@
 #![no_std]
 
 extern crate spin;
+
+extern crate rlibc;
 
 #[macro_use]
 pub mod mutex;

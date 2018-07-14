@@ -32,7 +32,7 @@ pub struct Frame {
 }
 
 impl Frame {
-    fn zero(&self) {
+    fn zero(&mut self) {
         let buf: &mut [u8] = unsafe {
             slice::from_raw_parts_mut(
                 transmute(paddr_to_kernel_vaddr(self.base)),
@@ -111,7 +111,7 @@ impl FrameManager {
         for r in &mut self.regions.iter_mut().rev() {
             if size < r.size - r.index {
                 (*r).index += size;
-                let f = Frame {
+                let mut f = Frame {
                     base: (r.base + r.size) - r.index,
                     size: size,
                 };
@@ -166,6 +166,7 @@ impl FrameManager {
     }
 
     pub fn print_regions(&self) {
+        slog!("self.count = {}", self.count);
         for i in 0..self.count {
             slog!("Region {} = {:?}", i, self.regions[i]);
         }

@@ -114,6 +114,7 @@ pub fn arch_init() {
         mb.memory_regions().map(|regions| {
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
+                    slog!("ADding region {:?}", region);
                     FMANAGER.add_region(region.base_address(), region.length());
                 }
             }

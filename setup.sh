@@ -6,7 +6,6 @@ if [ ! -x "$(command -v qemu-system-x86_64)"]; then
     if [ "$(uname)" == "Darwin" ]; then
         brew install qemu
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
-        sudo apt-get update
         sudo apt-get install qemu qemu-kvm
     fi
 fi

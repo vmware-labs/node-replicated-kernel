@@ -31,8 +31,6 @@ git:
 before_install:
   - sed -i 's/git@github.com:/https:\/\/github.com\//' .gitmodules
   - git submodule update --init --recursive
-
-before_script:
   - bash setup.sh
 
 script:

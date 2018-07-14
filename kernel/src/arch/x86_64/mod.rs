@@ -8,7 +8,6 @@ pub mod irq;
 pub mod memory;
 pub mod process;
 pub mod syscall;
-pub mod threads;
 
 mod exec;
 mod isr;

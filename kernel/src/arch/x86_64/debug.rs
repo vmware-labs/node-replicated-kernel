@@ -53,3 +53,8 @@ pub unsafe fn putb(b: u8) {
     // Send the byte out the serial PORT0
     io::outb(PORT0, b);
 }
+
+pub unsafe fn shutdown() {
+    // Ok for QEMU with debug-exit,iobase=0xf4,iosize=0x04
+    io::outb(0xf4, 0x00);
+}

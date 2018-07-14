@@ -1,13 +1,23 @@
 #![deny(warnings)]
 #![feature(
-    intrinsics, asm, lang_items, const_fn, core, raw, box_syntax, start, panic_implementation,
-    alloc, allocator_api, heap_api, global_asm
+    intrinsics,
+    asm,
+    lang_items,
+    const_fn,
+    core,
+    raw,
+    box_syntax,
+    start,
+    panic_implementation,
+    alloc,
+    allocator_api,
+    heap_api,
+    global_asm
 )]
 #![no_std]
 
 extern crate spin;
 
-extern crate rlibc;
 #[macro_use]
 pub mod mutex;
 
@@ -89,7 +99,10 @@ mod std {
 pub fn main() {
     slog!("Reached architecture independent area");
 
-    loop {}
+    slog!("Shutting down...");
+    unsafe {
+        arch::debug::shutdown();
+    }
 }
 
 pub fn oom() {

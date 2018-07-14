@@ -2,6 +2,7 @@
 
 members = [
     "kernel",
+    "bootloader",
     "lib/x86",
     "lib/slabmalloc",
     "lib/klogger",

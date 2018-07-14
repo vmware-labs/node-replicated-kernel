@@ -3,7 +3,7 @@
 [build]
 rustflags = [
   "-C", "link-arg=-T./kernel/src/arch/x86_64/link.ld",
-  "-C", "link-arg=-n",
+  #"-C", "link-arg=-n",
   "-C", "target-feature=+soft-float",
 ]
 

@@ -50,7 +50,7 @@ pub fn rust_eh_personality(
 
 #[no_mangle]
 #[lang = "oom"]
-pub fn oom() {
+pub fn oom() -> ! {
     slog!("oom");
     loop {}
 }

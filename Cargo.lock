@@ -27,6 +27,17 @@ version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "bootloader"
+version = "0.0.1"
+dependencies = [
+ "elfloader 0.0.4",
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uefi 0.1.0",
+ "uefi-services 0.1.0",
+ "uefi-utils 0.1.0",
+]
+
+[[package]]
 name = "byteorder"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -327,6 +338,11 @@ name = "rlibc"
 version = "1.0.0"
 
 [[package]]
+name = "rlibc"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "rustc-serialize"
 version = "0.3.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -413,6 +429,47 @@ dependencies = [
  "quote 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "test 0.0.1",
+]
+
+[[package]]
+name = "uefi"
+version = "0.1.0"
+dependencies = [
+ "bitflags 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "uefi-alloc"
+version = "0.1.0"
+dependencies = [
+ "uefi 0.1.0",
+]
+
+[[package]]
+name = "uefi-logger"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uefi 0.1.0",
+]
+
+[[package]]
+name = "uefi-services"
+version = "0.1.0"
+dependencies = [
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "uefi 0.1.0",
+ "uefi-alloc 0.1.0",
+ "uefi-logger 0.1.0",
+]
+
+[[package]]
+name = "uefi-utils"
+version = "0.1.0"
+dependencies = [
+ "uefi 0.1.0",
+ "uefi-services 0.1.0",
 ]
 
 [[package]]
@@ -518,6 +575,7 @@ dependencies = [
 "checksum rand 0.3.22 (registry+https://github.com/rust-lang/crates.io-index)" = "15a732abf9d20f0ad8eeb6f909bf6868722d9a06e1e50802b6a70351f40b4eb1"
 "checksum rand 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "eba5f8cb59cc50ed56be8880a5c7b496bfd9bd26394e176bc67884094145c2c5"
 "checksum raw-cpuid 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "13b844e4049605ff38fed943f5c7b2c691fad68d9d5bf074d2720554c4e48246"
+"checksum rlibc 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "fc874b127765f014d792f16763a81245ab80500e2ad921ed4ee9e82481ee08fe"
 "checksum rustc-serialize 0.3.24 (registry+https://github.com/rust-lang/crates.io-index)" = "dcf128d1287d2ea9d80910b5f1120d0b8eede3fbf1abe91c40d39ea7d51e6fda"
 "checksum serde 0.6.15 (registry+https://github.com/rust-lang/crates.io-index)" = "c97b18e9e53de541f11e497357d6c5eaeb39f0cb9c8734e274abe4935f6991fa"
 "checksum serde_json 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b5aaee47e038bf9552d30380d3973fff2593ee0a76d81ad4c581f267cdcadf36"

@@ -1,7 +1,7 @@
 use core::mem::transmute;
 use core::slice;
 
-use std::fmt;
+use core::fmt;
 
 use x86::bits64::paging;
 

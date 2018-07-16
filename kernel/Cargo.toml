@@ -26,4 +26,5 @@ rlibc = { path = "../lib/rlib" }
 klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }
+backtracer = { path = "../lib/backtracer/" }
 spin = "0.4.8"

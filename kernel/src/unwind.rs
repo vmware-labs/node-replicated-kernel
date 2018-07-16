@@ -1,11 +1,30 @@
 use core::panic::PanicInfo;
 
+use backtracer;
 use core::alloc::Layout;
 
 #[panic_implementation]
 #[no_mangle]
 pub fn panic_impl(info: &PanicInfo) -> ! {
     slog!("panic={:?}", info);
+
+    backtracer::trace(|frame| {
+        let ip = frame.ip();
+        let symbol_address = frame.symbol_address();
+
+        // Resolve this instruction pointer to a symbol name
+        backtracer::resolve(ip, |symbol| {
+            if let Some(name) = symbol.name() {
+                // ...
+            }
+            if let Some(filename) = symbol.filename() {
+                // ...
+            }
+        });
+
+        true // keep going to the next frame
+    });
+
     loop {}
 }
 

@@ -40,6 +40,8 @@ extern crate elfloader;
 #[cfg(target_arch = "x86_64")]
 extern crate multiboot;
 
+extern crate backtracer;
+
 pub use klogger::*;
 
 #[macro_use]
@@ -99,6 +101,29 @@ mod std {
 /// Kernel entry-point
 pub fn main() {
     slog!("Reached architecture independent area");
+
+    slog!(
+        "rip = {} rsp = {} rbp = {}",
+        x86::current::registers::rip(),
+        x86::current::registers::rbp(),
+        x86::current::registers::rsp()
+    );
+    let mut i = 0;
+    backtracer::trace(|frame| {
+        let ip = frame.ip();
+        slog!("Got frame = {:?}", frame);
+        /*
+        // Resolve this instruction pointer to a symbol name
+        backtracer::resolve(ip, |symbol| {
+            if let Some(name) = symbol.name() {
+                // ...
+            }
+            if let Some(filename) = symbol.filename() {
+                // ...
+            }
+        });*/
+        true
+    });
 
     slog!("Shutting down...");
     unsafe {

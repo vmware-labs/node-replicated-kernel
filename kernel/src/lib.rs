@@ -108,9 +108,8 @@ pub fn main() {
         x86::current::registers::rbp(),
         x86::current::registers::rsp()
     );
-    let mut i = 0;
     backtracer::trace(|frame| {
-        let ip = frame.ip();
+        //let ip = frame.ip();
         slog!("Got frame = {:?}", frame);
         /*
         // Resolve this instruction pointer to a symbol name
@@ -124,8 +123,9 @@ pub fn main() {
         });*/
         true
     });
+
     unsafe {
-        arch::debug::shutdown(0x0);
+        arch::debug::shutdown(arch::debug::ExitReason::Ok);
     }
 }
 

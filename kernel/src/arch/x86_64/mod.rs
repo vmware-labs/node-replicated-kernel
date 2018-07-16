@@ -168,7 +168,7 @@ pub fn arch_init() {
 
     slog!("Returned from main, shutting down...");
     unsafe {
-        debug::shutdown(0x1);
+        debug::shutdown(debug::ExitReason::ReturnFromMain);
     }
 
     // and never return from there

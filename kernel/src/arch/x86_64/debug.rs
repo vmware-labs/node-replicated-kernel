@@ -54,8 +54,18 @@ pub unsafe fn putb(b: u8) {
     io::outb(PORT0, b);
 }
 
-pub unsafe fn shutdown(val: u8) {
+#[repr(u8)]
+pub enum ExitReason {
+    Ok = 0,
+    ReturnFromMain = 1,
+}
+
+/// Shutdown the processor.
+///
+/// Currently we only support the debug exit method from qemu, which conveniently
+/// allows us to supply an exit code for testing purposes.
+pub unsafe fn shutdown(val: ExitReason) {
     // Ok for QEMU with debug-exit,iobase=0xf4,iosize=0x04
     // qemu will call: exit((val << 1) | 1);
-    io::outb(0xf4, val);
+    io::outb(0xf4, val as u8);
 }

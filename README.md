@@ -1,5 +1,7 @@
 # Bespin
 
+[![Build Status](https://travis-ci.org/gz/bespin.svg)](https://travis-ci.org/gz/bespin) 
+
 Bespin is an (experimental) OS kernel for x86-64 (amd64) machines written in
 rust. It currently does not do much except for serial output, interrupt handling and loading ELF binaries.
 

@@ -10,12 +10,21 @@ rust. It currently does not do much except for serial output, interrupt handling
 1. `git submodule update`
 
 ### Install dependencies
-Run `bash setup.sh`
+Run `bash setup.sh` this will install rust (nightly), xargo (rust cross compilation tool), 
+and QEMU on Linux or Mac.
+
+### Install binutils for Mac
+If you are testing on Mac OS you have to compile and install your own binutils 
+to link ELF files. You can execute `bash setup_mac_binutils.sh` to download and compile binutils.
 
 ### Build and run
 1. `cd kernel`
-1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
 1. `bash ./run.sh`
+
+If you just want to compile the code you can also execute:
+1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
+in the kernel directory (run.sh will do that on your behalf).
+
 
 ## Future Work
  * [x] Milestone 1: Running libcore user-space program

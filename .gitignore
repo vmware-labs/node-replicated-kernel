@@ -2,10 +2,13 @@
 kernel.bin*
 *.o
 *.rlib
+kernel/kernel
+kernel/mbkernel
 
 # Builds
 target/
-.tup
 
 # Editor configs
 .vscode
+
+binutils-*

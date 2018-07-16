@@ -12,4 +12,14 @@ else
     objcopy kernel -F elf32-i386 mbkernel
 fi
 
+set +e
 qemu-system-x86_64 -m 1024 -d int -smp 1 -kernel ./mbkernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04
+QEMU_EXIT=$?
+if [ $QEMU_EXIT -eq 1 ]; then
+    echo "Success."
+else
+    # qemu will do exit((val << 1) | 1);
+    BESPIN_EXIT=$((0xFE & $QEMU_EXIT))
+    echo "Kernel exited with error status $BESPIN_EXIT"
+    exit $BESPIN_EXIT
+fi

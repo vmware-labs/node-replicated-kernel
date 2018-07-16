@@ -54,7 +54,8 @@ pub unsafe fn putb(b: u8) {
     io::outb(PORT0, b);
 }
 
-pub unsafe fn shutdown() {
+pub unsafe fn shutdown(val: u8) {
     // Ok for QEMU with debug-exit,iobase=0xf4,iosize=0x04
-    io::outb(0xf4, 0x00);
+    // qemu will call: exit((val << 1) | 1);
+    io::outb(0xf4, val);
 }

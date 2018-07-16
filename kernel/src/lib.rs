@@ -124,10 +124,8 @@ pub fn main() {
         });*/
         true
     });
-
-    slog!("Shutting down...");
     unsafe {
-        arch::debug::shutdown();
+        arch::debug::shutdown(0x0);
     }
 }
 

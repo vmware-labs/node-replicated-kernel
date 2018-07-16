@@ -166,6 +166,11 @@ pub fn arch_init() {
     // No we go in the arch-independent part
     main();
 
+    slog!("Returned from main, shutting down...");
+    unsafe {
+        debug::shutdown(0x1);
+    }
+
     // and never return from there
     unreachable!();
 }

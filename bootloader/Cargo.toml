@@ -1,0 +1,12 @@
+[package]
+name = "bootloader"
+version = "0.0.1"
+authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+
+[dependencies]
+uefi = { path = "../../uefi-rs" }
+uefi-services = { path = "../../uefi-rs/uefi-services" }
+uefi-utils = { path = "../../uefi-rs/uefi-utils" }
+elfloader = { path = "../lib/elfloader" }
+
+log = { version = "0.4", default-features = false }

@@ -20,7 +20,7 @@ else
 KVM_ARG=''
 fi
 
-qemu-system-x86_64 $KVM_ARG -m 2048 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04
+qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04
 QEMU_EXIT=$?
 # qemu will do exit((val << 1) | 1);
 BESPIN_EXIT=$(($QEMU_EXIT >> 1))

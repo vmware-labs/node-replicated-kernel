@@ -10,7 +10,7 @@ use x86::Ring;
 use super::syscall;
 
 #[derive(Default)]
-#[repr(C)]
+#[repr(packed)]
 struct GdtTable {
     null: Descriptor,
     /// 64 bit code
@@ -64,22 +64,29 @@ pub fn setup_gdt() {
     // Put these in our new GDT, load the new GDT, then re-load the segments
     unsafe {
         GDT.null = Default::default();
-        GDT.code_kernel = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
+        GDT.code_kernel =
+            DescriptorBuilder::code_descriptor(0, 0xFFFFF, CodeSegmentType::ExecuteRead)
+                .present()
+                .dpl(Ring::Ring0)
+                .limit_granularity_4kb()
+                .l()
+                .finish();
+        GDT.stack_kernel =
+            DescriptorBuilder::data_descriptor(0, 0xFFFFF, DataSegmentType::ReadWrite)
+                .present()
+                .dpl(Ring::Ring0)
+                .limit_granularity_4kb()
+                .finish();
+        GDT.code_user =
+            DescriptorBuilder::code_descriptor(0, 0xFFFFF, CodeSegmentType::ExecuteRead)
+                .present()
+                .limit_granularity_4kb()
+                .l()
+                .dpl(Ring::Ring3)
+                .finish();
+        GDT.stack_user = DescriptorBuilder::data_descriptor(0, 0xFFFFF, DataSegmentType::ReadWrite)
             .present()
-            .l()
-            .dpl(Ring::Ring0)
-            .finish();
-        GDT.stack_kernel = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
-            .present()
-            .dpl(Ring::Ring0)
-            .finish();
-        GDT.code_user = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
-            .present()
-            .l()
-            .dpl(Ring::Ring3)
-            .finish();
-        GDT.stack_user = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
-            .present()
+            .limit_granularity_4kb()
             .dpl(Ring::Ring3)
             .finish();
 

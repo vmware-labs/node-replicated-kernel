@@ -7,30 +7,31 @@ use ExitReason;
 
 fn backtrace_format(count: usize, frame: &backtracer::Frame) -> bool {
     let kernel_binary = arch::KERNEL_BINARY.lock();
-    let kernel_unwrapped = &*kernel_binary.unwrap();
     let ip = frame.ip();
 
     sprint!("frame #{:<2} - {:#02$x}", count, ip as usize, 20);
     let mut resolved = false;
 
     // Resolve this instruction pointer to a symbol name
-    backtracer::resolve(kernel_unwrapped, ip, |symbol| {
-        if !resolved {
-            resolved = true;
-        } else {
-            sprint!("                                ");
-        }
-        if let Some(name) = symbol.name() {
-            if name.as_bytes().len() == 0 {
-                sprint!(" - <empty>");
+    if kernel_binary.is_some() {
+        backtracer::resolve(&*kernel_binary.unwrap(), ip, |symbol| {
+            if !resolved {
+                resolved = true;
             } else {
-                sprint!(" - {}", name);
+                sprint!("                                ");
             }
-        } else {
-            sprint!(" - <unknown>");
-        }
-        sprintln!("");
-    });
+            if let Some(name) = symbol.name() {
+                if name.as_bytes().len() == 0 {
+                    sprint!(" - <empty>");
+                } else {
+                    sprint!(" - {}", name);
+                }
+            } else {
+                sprint!(" - <unknown>");
+            }
+            sprintln!("");
+        });
+    }
     if !resolved {
         sprintln!(" - <no info>");
     }

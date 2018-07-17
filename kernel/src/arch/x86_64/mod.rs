@@ -107,6 +107,22 @@ pub fn arch_init() {
         }).unwrap()
     };
 
+    if mb.modules().is_some() {
+        for module in mb.modules().unwrap() {
+            slog!("Found module {:?}", module);
+            if module.string.is_some() && module.string.unwrap() == "kernel" {
+                unsafe {
+                    let mut k = KERNEL_BINARY.lock();
+                    let binary = slice::from_raw_parts(
+                        transmute::<usize, *const u8>(memory::paddr_to_kernel_vaddr(module.start)),
+                        (module.end - module.start) as usize,
+                    );
+                    *k = Some(binary);
+                }
+            }
+        }
+    }
+
     slog!("checking memory regions");
     unsafe {
         mb.memory_regions().map(|regions| {
@@ -127,22 +143,6 @@ pub fn arch_init() {
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
     let init = Box::new(process::Process::new(1).unwrap());
     process_list.push(init);
-
-    if mb.modules().is_some() {
-        for module in mb.modules().unwrap() {
-            slog!("Found module {:?}", module);
-            if module.string.is_some() && module.string.unwrap() == "kernel" {
-                unsafe {
-                    let mut k = KERNEL_BINARY.lock();
-                    let binary = slice::from_raw_parts(
-                        transmute::<usize, *const u8>(memory::paddr_to_kernel_vaddr(module.start)),
-                        (module.end - module.start) as usize,
-                    );
-                    *k = Some(binary);
-                }
-            }
-        }
-    }
 
     // No we go in the arch-independent part
     main();

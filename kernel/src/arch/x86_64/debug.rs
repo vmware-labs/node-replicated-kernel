@@ -1,6 +1,8 @@
-use super::irq;
 use core::ops::Deref;
 use x86::io;
+
+use super::irq;
+use super::ExitReason;
 
 use super::process::CURRENT_PROCESS;
 
@@ -52,12 +54,6 @@ pub unsafe fn putb(b: u8) {
 
     // Send the byte out the serial PORT0
     io::outb(PORT0, b);
-}
-
-#[repr(u8)]
-pub enum ExitReason {
-    Ok = 0,
-    ReturnFromMain = 1,
 }
 
 /// Shutdown the processor.

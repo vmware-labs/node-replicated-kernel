@@ -13,13 +13,27 @@ else
 fi
 
 set +e
-qemu-system-x86_64 -m 1024 -d int -smp 1 -kernel ./mbkernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04
+qemu-system-x86_64 -m 1024 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04
 QEMU_EXIT=$?
-if [ $QEMU_EXIT -eq 1 ]; then
-    echo "Success."
-else
-    # qemu will do exit((val << 1) | 1);
-    BESPIN_EXIT=$((0xFE & $QEMU_EXIT))
-    echo "Kernel exited with error status $BESPIN_EXIT"
-    exit $BESPIN_EXIT
-fi
+# qemu will do exit((val << 1) | 1);
+BESPIN_EXIT=$(($QEMU_EXIT >> 1))
+echo ""
+case "$BESPIN_EXIT" in
+    0)
+    MESSAGE="[SUCCESS]"
+    ;;
+    1)
+    MESSAGE="[FAIL] ReturnFromMain: main() function returned to arch_indepdendent part."
+    ;;
+    2)
+    MESSAGE="[FAIL] Encountered kernel panic."
+    ;;
+    3)
+    MESSAGE="[FAIL] Encountered OOM."
+    ;;
+    *)
+    MESSAGE="[FAIL] Kernel exited with unknown error status $BESPIN_EXIT... Update the script!"
+    ;;
+esac
+echo $MESSAGE
+exit $BESPIN_EXIT

@@ -8,6 +8,7 @@
     box_syntax,
     start,
     panic_implementation,
+    panic_info_message,
     alloc,
     allocator_api,
     heap_api,
@@ -46,7 +47,7 @@ pub use klogger::*;
 
 #[macro_use]
 mod prelude;
-pub mod unwind;
+pub mod panic;
 
 #[cfg(target_arch = "x86_64")]
 #[path = "arch/x86_64/mod.rs"]
@@ -75,12 +76,14 @@ impl SafeZoneAllocator {
 
 unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        slog!("alloc {:?}", layout);
         assert!(layout.align().is_power_of_two());
-        self.0.lock().allocate(layout)
+        let ptr = self.0.lock().allocate(layout);
+        slog!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
+        ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        slog!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
         self.0.lock().deallocate(ptr, layout);
     }
 }
@@ -98,34 +101,19 @@ mod std {
     pub use core::option;
 }
 
+#[repr(u8)]
+pub enum ExitReason {
+    Ok = 0,
+    ReturnFromMain = 1,
+    KernelPanic = 2,
+    OutOfMemory = 3,
+}
+
 /// Kernel entry-point
 pub fn main() {
     slog!("Reached architecture independent area");
-
-    slog!(
-        "rip = {} rsp = {} rbp = {}",
-        x86::current::registers::rip(),
-        x86::current::registers::rbp(),
-        x86::current::registers::rsp()
-    );
-    backtracer::trace(|frame| {
-        //let ip = frame.ip();
-        slog!("Got frame = {:?}", frame);
-        /*
-        // Resolve this instruction pointer to a symbol name
-        backtracer::resolve(ip, |symbol| {
-            if let Some(name) = symbol.name() {
-                // ...
-            }
-            if let Some(filename) = symbol.filename() {
-                // ...
-            }
-        });*/
-        true
-    });
-
     unsafe {
-        arch::debug::shutdown(arch::debug::ExitReason::Ok);
+        arch::debug::shutdown(ExitReason::Ok);
     }
 }
 

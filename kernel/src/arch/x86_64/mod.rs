@@ -1,5 +1,11 @@
-//#[macro_use]
-//pub use ::mutex;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::mem::transmute;
+use core::slice;
+
+use multiboot::{MemoryType, Multiboot};
+use x86::bits64::paging;
+use x86::cpuid;
 
 pub mod apic;
 pub mod debug;
@@ -13,20 +19,9 @@ mod exec;
 mod isr;
 mod start;
 
-use alloc::boxed::Box;
-use alloc::vec::Vec;
-use core::mem::transmute;
-use core::ops::DerefMut;
-use core::slice;
-
-use x86::bits64::paging;
-use x86::cpuid;
-
-use elfloader;
-use multiboot::{MemoryType, Multiboot};
-
 use main;
 use mm::FMANAGER;
+use ExitReason;
 
 extern "C" {
     #[no_mangle]
@@ -55,6 +50,8 @@ unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Mult
     fmanager.clean_regions();
     fmanager.print_regions();
 }*/
+use spin::Mutex;
+pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
 #[lang = "start"]
 #[no_mangle]
@@ -130,45 +127,28 @@ pub fn arch_init() {
     let init = Box::new(process::Process::new(1).unwrap());
     process_list.push(init);
 
-    //let s = Stack::new();
-    //slog!("s.start {:?}, s.end {:?}", s.start(), s.end());
-    //let c = Context::new(init, arg, start, s);
-
-    mb.modules().map(|modules| {
-        for module in modules {
+    if mb.modules().is_some() {
+        for module in mb.modules().unwrap() {
             slog!("Found module {:?}", module);
-            let binary: &'static [u8] = unsafe {
-                slice::from_raw_parts(
-                    transmute::<u64, *const u8>(module.start),
-                    (module.start - module.end) as usize,
-                )
-            };
-
-            let mut cp = process::CURRENT_PROCESS.lock();
-            (*cp) = process::Process::new(0);
-
-            match *cp.deref_mut() {
-                Some(ref mut p) => {
-                    elfloader::ElfBinary::new(module.string.unwrap(), binary).map(|e| {
-                        // Patch in the kernel tables...
-                        unsafe {
-                            p.vspace.pml4[511] = init_pml4[511];
-                        }
-                        e.load(p);
-                        p.start(0x4000f0);
-                    });
+            if module.string.is_some() && module.string.unwrap() == "kernel" {
+                unsafe {
+                    let mut k = KERNEL_BINARY.lock();
+                    let binary = slice::from_raw_parts(
+                        transmute::<usize, *const u8>(memory::paddr_to_kernel_vaddr(module.start)),
+                        (module.end - module.start) as usize,
+                    );
+                    *k = Some(binary);
                 }
-                None => (),
             }
         }
-    });
+    }
 
     // No we go in the arch-independent part
     main();
 
     slog!("Returned from main, shutting down...");
     unsafe {
-        debug::shutdown(debug::ExitReason::ReturnFromMain);
+        debug::shutdown(ExitReason::ReturnFromMain);
     }
 
     // and never return from there

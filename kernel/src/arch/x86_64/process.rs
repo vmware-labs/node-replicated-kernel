@@ -14,6 +14,7 @@ use x86::controlregs;
 use super::gdt;
 use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 
+use arch::irq;
 use mm::{BespinPageTableProvider, PageTableProvider};
 use mutex::Mutex;
 
@@ -142,31 +143,8 @@ impl<'a> VSpace<'a> {
     }
 }
 
-#[derive(Default)]
-#[repr(C, packed)]
-pub struct SaveArea {
-    rax: u64,
-    rbx: u64,
-    rcx: u64,
-    rdx: u64,
-    rsi: u64,
-    rdi: u64,
-    rbp: u64,
-    rsp: u64,
-    r8: u64,
-    r9: u64,
-    r10: u64,
-    r11: u64,
-    r12: u64,
-    r13: u64,
-    r14: u64,
-    r15: u64,
-    rip: u64,
-    rflags: u64,
-}
-
 pub struct Process<'a> {
-    pub save_area: SaveArea,
+    pub save_area: irq::SaveArea,
     pub pid: u64,
     pub vspace: VSpace<'a>,
 }
@@ -220,40 +198,6 @@ impl<'a> Process<'a> {
 impl<'a> fmt::Debug for Process<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Process: {}\nSaveArea: {:?}", self.pid, self.save_area)
-    }
-}
-
-impl fmt::Debug for SaveArea {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            write!(
-                f,
-                "rax = {:>16x} rcx = {:>16x}
-rbx = {:>16x} rdx = {:>16x}
-rsi = {:>16x} rdi = {:>16x}
-rbp = {:>16x} r8  = {:>16x}
-r9  = {:>16x} r10 = {:>16x}
-r11 = {:>16x} r12 = {:>16x}
-r13 = {:>16x} r14 = {:>16x}
-r15 = {:>16x} rip = {:>16x}",
-                self.rax,
-                self.rcx,
-                self.rbx,
-                self.rdx,
-                self.rsi,
-                self.rdi,
-                self.rbp,
-                self.r8,
-                self.r9,
-                self.r10,
-                self.r11,
-                self.r12,
-                self.r13,
-                self.r14,
-                self.r15,
-                self.rip
-            )
-        }
     }
 }
 

@@ -5,40 +5,55 @@ use arch;
 use backtracer;
 use ExitReason;
 
+fn backtrace_format(count: usize, frame: &backtracer::Frame) -> bool {
+    let kernel_binary = arch::KERNEL_BINARY.lock();
+    let kernel_unwrapped = &*kernel_binary.unwrap();
+    let ip = frame.ip();
+
+    sprint!("frame #{:<2} - {:#02$x}", count, ip as usize, 20);
+    let mut resolved = false;
+
+    // Resolve this instruction pointer to a symbol name
+    backtracer::resolve(kernel_unwrapped, ip, |symbol| {
+        if !resolved {
+            resolved = true;
+        } else {
+            sprint!("                                ");
+        }
+        if let Some(name) = symbol.name() {
+            if name.as_bytes().len() == 0 {
+                sprint!(" - <empty>");
+            } else {
+                sprint!(" - {}", name);
+            }
+        } else {
+            sprint!(" - <unknown>");
+        }
+        sprintln!("");
+    });
+    if !resolved {
+        sprintln!(" - <no info>");
+    }
+    true
+}
+
+#[inline(always)]
+pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
+    sprintln!("Backtrace:");
+    let mut count = 0;
+    backtracer::trace_from(backtracer::EntryPoint::new(rbp, rsp, rip), |frame| {
+        count += 1;
+        backtrace_format(count, frame)
+    });
+}
+
 #[inline(always)]
 fn backtrace() {
     sprintln!("Backtrace:");
-    let mut cnt = 0;
+    let mut count = 0;
     backtracer::trace(|frame| {
-        let kernel_binary = arch::KERNEL_BINARY.lock();
-        let kernel_unwrapped = &*kernel_binary.unwrap();
-        let ip = frame.ip();
-        sprint!("frame #{:<2} - {:#02$x}", cnt, ip as usize, 20);
-        cnt += 1;
-        let mut resolved = false;
-
-        // Resolve this instruction pointer to a symbol name
-        backtracer::resolve(kernel_unwrapped, ip, |symbol| {
-            if !resolved {
-                resolved = true;
-            } else {
-                sprint!("                                ");
-            }
-            if let Some(name) = symbol.name() {
-                if name.as_bytes().len() == 0 {
-                    sprint!(" - <empty>");
-                } else {
-                    sprint!(" - {}", name);
-                }
-            } else {
-                sprint!(" - <unknown>");
-            }
-            sprintln!("");
-        });
-        if !resolved {
-            sprintln!(" - <no info>");
-        }
-        true
+        count += 1;
+        backtrace_format(count, frame)
     });
 }
 

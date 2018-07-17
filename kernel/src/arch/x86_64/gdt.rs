@@ -10,7 +10,7 @@ use x86::Ring;
 use super::syscall;
 
 #[derive(Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 struct GdtTable {
     null: Descriptor,
     /// 64 bit code
@@ -100,7 +100,13 @@ pub fn setup_gdt() {
         load_es(SegmentSelector::new(0, Ring::Ring0));
         load_fs(SegmentSelector::new(0, Ring::Ring0));
         load_gs(SegmentSelector::new(0, Ring::Ring0));
+        slog!(
+            "load cs: cs_selector={} -> GDT.code_kernel={:#b}",
+            cs_selector,
+            GDT.code_kernel.as_u64()
+        );
         load_cs(cs_selector);
+        slog!("loaded cs");
         load_ss(ss_selector);
 
         let cs_user_selector = SegmentSelector::new(GdtTable::CS_USER_INDEX as u16, Ring::Ring3)

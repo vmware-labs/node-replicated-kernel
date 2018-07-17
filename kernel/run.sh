@@ -13,7 +13,14 @@ else
 fi
 
 set +e
-qemu-system-x86_64 -m 1024 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04
+cat /proc/modules  | grep kvm_intel
+if [ $? -eq 0 ]; then
+KVM_ARG='-enable-kvm'
+else
+KVM_ARG=''
+fi
+
+qemu-system-x86_64 $KVM_ARG -m 2048 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04
 QEMU_EXIT=$?
 # qemu will do exit((val << 1) | 1);
 BESPIN_EXIT=$(($QEMU_EXIT >> 1))
@@ -30,6 +37,15 @@ case "$BESPIN_EXIT" in
     ;;
     3)
     MESSAGE="[FAIL] Encountered OOM."
+    ;;
+    4)
+    MESSAGE="[FAIL] Encountered unexpected Interrupt."
+    ;;
+    5)
+    MESSAGE="[FAIL] General Protection Fault."
+    ;;
+    6)
+    MESSAGE="[FAIL] Unexpected Page Fault."
     ;;
     *)
     MESSAGE="[FAIL] Kernel exited with unknown error status $BESPIN_EXIT... Update the script!"

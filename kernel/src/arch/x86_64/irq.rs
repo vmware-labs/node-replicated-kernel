@@ -1,14 +1,106 @@
 use core::fmt;
+use core::mem;
 
+use x86::bits64::rflags;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
 use x86::io;
 use x86::irq;
 use x86::msr;
+
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
 use x86::Ring;
+
+use arch::debug;
+use mutex::Mutex;
+use panic::backtrace_from;
+use ExitReason;
+
+#[derive(Default)]
+#[repr(C, packed)]
+pub struct SaveArea {
+    rax: u64,
+    rbx: u64,
+    rcx: u64,
+    rdx: u64,
+    rsi: u64,
+    rdi: u64,
+    rbp: u64,
+    rsp: u64,
+    r8: u64,
+    r9: u64,
+    r10: u64,
+    r11: u64,
+    r12: u64,
+    r13: u64,
+    r14: u64,
+    r15: u64,
+    rip: u64,
+    rflags: u64,
+}
+
+impl SaveArea {
+    const fn empty() -> SaveArea {
+        SaveArea {
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
+            rbp: 0,
+            rsp: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+            rip: 0,
+            rflags: 0,
+        }
+    }
+}
+
+impl fmt::Debug for SaveArea {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            write!(
+                f,
+                "rax = {:>#18x} rbx = {:>#18x} rcx = {:>#18x} rdx = {:>#18x}
+rsi = {:>#18x} rdi = {:>#18x} rbp = {:>#18x} rsp = {:>#18x}
+r8  = {:>#18x} r9  = {:>#18x} r10 = {:>#18x} r11 = {:>#18x} 
+r12 = {:>#18x} r13 = {:>#18x} r14 = {:>#18x} r15 = {:>#18x} 
+rip = {:>#18x} rflags = {:?}",
+                self.rax,
+                self.rcx,
+                self.rbx,
+                self.rdx,
+                self.rsi,
+                self.rdi,
+                self.rbp,
+                self.rsp,
+                self.r8,
+                self.r9,
+                self.r10,
+                self.r11,
+                self.r12,
+                self.r13,
+                self.r14,
+                self.r15,
+                self.rip,
+                rflags::RFlags::from_raw(self.rflags)
+            )
+        }
+    }
+}
+
+#[no_mangle]
+pub static CURRENT_SAVE_AREA: Mutex<SaveArea> = mutex!(SaveArea::empty());
 
 const IDT_SIZE: usize = 256;
 static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
@@ -16,28 +108,53 @@ static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
 static mut IRQ_HANDLERS: [unsafe fn(&ExceptionArguments); IDT_SIZE] = [unhandled_irq; IDT_SIZE];
 
 unsafe fn unhandled_irq(a: &ExceptionArguments) {
-    slog!("Got UNHANDLED IRQ: {:?}", a);
+    sprint!("\n[IRQ] UNHANDLED:");
+    if a.vector < 16 {
+        let desc = &irq::EXCEPTIONS[a.vector as usize];
+        sprintln!(" {}", desc);
+    } else {
+        sprintln!(" Unknown vector {}", a.vector);
+    }
+    sprintln!("{:?}", a);
+    let csa = CURRENT_SAVE_AREA.lock();
+    sprintln!("Register State:\n{:?}", *csa);
+    backtrace_from(csa.rbp, csa.rsp, csa.rip);
+
+    debug::shutdown(ExitReason::UnhandledInterrupt);
     loop {}
 }
 
 unsafe fn pf_handler(a: &ExceptionArguments) {
-    slog!("Got page-fault: {:?}", a);
+    sprintln!("[IRQ] Page Fault");
+
+    sprintln!("{:?}", a);
+    let csa = CURRENT_SAVE_AREA.lock();
+    sprintln!("Register State:\n{:?}", *csa);
+    backtrace_from(csa.rbp, csa.rsp, csa.rip);
+
+    debug::shutdown(ExitReason::PageFault);
     loop {}
 }
 
 unsafe fn gp_handler(a: &ExceptionArguments) {
     let desc = &irq::EXCEPTIONS[a.vector as usize];
-    slog!("Source: {}", desc.source);
+    sprint!("\n[IRQ] GENERAL PROTECTION FAULT: ");
+    sprintln!("From {}", desc.source);
 
     if a.exception > 0 {
-        slog!(
+        sprintln!(
             "Error value: {:?}",
             SegmentSelector::from_raw(a.exception as u16)
         );
     } else {
-        slog!("No error!");
+        sprintln!("No error!");
     }
-    slog!("{:?}", a);
+    sprintln!("{:?}", a);
+    let csa = CURRENT_SAVE_AREA.lock();
+    sprintln!("Register State:\n{:?}", *csa);
+    backtrace_from(csa.rbp, csa.rsp, csa.rip);
+
+    debug::shutdown(ExitReason::GeneralProtectionFault);
     loop {}
 }
 
@@ -71,7 +188,7 @@ impl fmt::Debug for ExceptionArguments {
         unsafe {
             write!(
                 f,
-                "vec = 0x{:x} ex = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x}",
+                "ExceptionArguments {{ vec = 0x{:x} exception = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x} }}",
                 self.vector, self.exception, self.eip, self.cs, self.eflags
             )
         }
@@ -83,12 +200,6 @@ impl fmt::Debug for ExceptionArguments {
 #[inline(never)]
 #[no_mangle]
 pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
-    if a.vector < 16 {
-        let desc = &irq::EXCEPTIONS[a.vector as usize];
-        slog!("{}", desc);
-    }
-    slog!("{:?}", a);
-
     unsafe {
         assert!(a.vector < 256);
         acknowledge();

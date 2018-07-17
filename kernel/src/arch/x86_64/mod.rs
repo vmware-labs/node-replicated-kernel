@@ -57,6 +57,7 @@ pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 #[no_mangle]
 #[start]
 pub fn arch_init() {
+    sprint!("\n\n");
     slog!("Started");
 
     let cpuid = cpuid::CpuId::new();

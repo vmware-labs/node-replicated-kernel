@@ -26,6 +26,7 @@ pub mod mutex;
 extern crate alloc;
 
 #[cfg(target_arch = "x86_64")]
+#[macro_use]
 extern crate x86;
 
 #[cfg(target_arch = "x86_64")]
@@ -102,11 +103,15 @@ mod std {
 }
 
 #[repr(u8)]
+// If this type is modified, update run.sh script as well.
 pub enum ExitReason {
     Ok = 0,
     ReturnFromMain = 1,
     KernelPanic = 2,
     OutOfMemory = 3,
+    UnhandledInterrupt = 4,
+    GeneralProtectionFault = 5,
+    PageFault = 6,
 }
 
 /// Kernel entry-point

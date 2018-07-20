@@ -1,18 +1,6 @@
 #![feature(
-    intrinsics,
-    asm,
-    lang_items,
-    const_fn,
-    core,
-    raw,
-    box_syntax,
-    start,
-    panic_implementation,
-    panic_info_message,
-    alloc,
-    allocator_api,
-    heap_api,
-    global_asm
+    intrinsics, asm, lang_items, const_fn, core, raw, box_syntax, start, panic_implementation,
+    panic_info_message, alloc, allocator_api, heap_api, global_asm
 )]
 #![no_std]
 
@@ -26,7 +14,6 @@ pub mod mutex;
 extern crate alloc;
 
 #[cfg(target_arch = "x86_64")]
-#[macro_use]
 extern crate x86;
 
 #[cfg(target_arch = "x86_64")]

@@ -1,5 +1,4 @@
 use core::fmt;
-use core::mem;
 
 use x86::bits64::rflags;
 use x86::bits64::segmentation::Descriptor64;

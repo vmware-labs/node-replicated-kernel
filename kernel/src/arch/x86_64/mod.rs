@@ -30,8 +30,8 @@ extern "C" {
     #[no_mangle]
     static mut init_pd: paging::PD;
 
-    #[no_mangle]
-    static mut init_pml4: paging::PML4;
+//#[no_mangle]
+//static mut init_pml4: paging::PML4;
 
 //#[no_mangle]
 //static mboot_sig: PAddr;

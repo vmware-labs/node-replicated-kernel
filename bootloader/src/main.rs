@@ -65,13 +65,13 @@ pub extern "C" fn uefi_start(_handle: Handle, st: &'static table::SystemTable) -
 
     let map_sz = bt.memory_map_size();
     info!("map_sz is : {} in pages {}", map_sz, map_sz / 4096);
-    let mut buffer = alloc::Vec::with_capacity(map_sz + 4096 * 2);
+    let mut buffer = alloc::vec::Vec::with_capacity(map_sz + 4096 * 2);
     buffer.resize(map_sz + 4096 * 2, 0);
     let (key, mut desc_iter) = bt
         .memory_map(buffer.as_mut_slice())
         .expect("Retrieve memory map");
     info!("Memory map key {:?}", key);
-    let all_conv_mem_pages = 0;
+    let mut all_conv_mem_pages = 0;
     for (idx, mminfo) in desc_iter
         .filter(|mm| mm.ty == uefi::table::boot::MemoryType::Conventional)
         .enumerate()
@@ -164,7 +164,7 @@ pub extern "C" fn uefi_start(_handle: Handle, st: &'static table::SystemTable) -
             let kernel_size = kernel_file.get_position().expect("Get size of kernel") as usize;
             kernel_file.set_position(0).expect("Set position failed");
 
-            let mut kernel_blob = alloc::Vec::with_capacity(kernel_size);
+            let mut kernel_blob = alloc::vec::Vec::with_capacity(kernel_size);
             kernel_blob.resize(kernel_size, 0);
             kernel_file
                 .read(kernel_blob.as_mut_slice())

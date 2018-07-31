@@ -9,7 +9,7 @@
 	"target_family": "thefuture",
 	"linker": "ld",
 	"linker-flavor": "ld",
-	"os": "none",
+	"os": "bespin",
 	"arch": "x86_64",
 	"no-compiler-rt": true,
 	"disable-redzone": true,

@@ -1,6 +1,19 @@
 #![feature(
-    intrinsics, asm, lang_items, const_fn, core, raw, box_syntax, start, panic_implementation,
-    panic_info_message, alloc, allocator_api, heap_api, global_asm
+    intrinsics,
+    asm,
+    lang_items,
+    const_fn,
+    core,
+    raw,
+    box_syntax,
+    start,
+    panic_implementation,
+    panic_info_message,
+    alloc,
+    allocator_api,
+    heap_api,
+    global_asm,
+    linkage
 )]
 #![no_std]
 
@@ -14,6 +27,7 @@ pub mod mutex;
 extern crate alloc;
 
 #[cfg(target_arch = "x86_64")]
+#[macro_use]
 extern crate x86;
 
 #[cfg(target_arch = "x86_64")]
@@ -31,13 +45,15 @@ extern crate multiboot;
 
 extern crate backtracer;
 
+//extern crate termstyle;
+
 pub use klogger::*;
 
 #[macro_use]
 mod prelude;
 pub mod panic;
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64"))]
 #[path = "arch/x86_64/mod.rs"]
 pub mod arch;
 
@@ -102,6 +118,7 @@ pub enum ExitReason {
 }
 
 /// Kernel entry-point
+#[cfg(not(feature = "integration-tests"))]
 pub fn main() {
     slog!("Reached architecture independent area");
     unsafe {
@@ -109,7 +126,18 @@ pub fn main() {
     }
 }
 
-pub fn oom() {
-    slog!("oom");
-    loop {}
+#[cfg(all(feature = "integration-tests", feature = "test-exit"))]
+#[no_mangle]
+pub fn main() {
+    unsafe {
+        arch::debug::shutdown(ExitReason::Ok);
+    }
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
+#[no_mangle]
+pub fn main() {
+    unsafe {
+        int!(0xe);
+    }
 }

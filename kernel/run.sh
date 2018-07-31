@@ -2,7 +2,7 @@
 set -ex
 export PATH=../binutils-2.30.90/bin:$PATH
 
-RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin
+RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin "$@"
 
 if [ -x "$(command -v x86_64-elf-ld)" ] ; then
     x86_64-elf-ld -n --gc-sections -Tsrc/arch/x86_64/link.ld -o kernel ../target/bespin/debug/libbespin.a

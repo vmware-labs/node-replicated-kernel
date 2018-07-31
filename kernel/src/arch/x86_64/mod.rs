@@ -53,6 +53,7 @@ unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Mult
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
+#[cfg(not(test))]
 #[lang = "start"]
 #[no_mangle]
 #[start]

@@ -12,6 +12,11 @@ license = "MIT"
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+integration-tests = []
+test-exit = []
+test-pfault = []
+
 # disable stack unwinding on panic for now
 [profile.dev]
 panic = "abort"
@@ -27,4 +32,13 @@ klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
+#termstyle = { path = "../lib/termstyle" }
 spin = "0.4.8"
+
+[dev-dependencies]
+rexpect = "0.3"
+matches = "0.1"
+
+[[test]]
+name = "integration-test"
+path = "tests/integration-test.rs"

@@ -60,8 +60,12 @@ pub unsafe fn putb(b: u8) {
 ///
 /// Currently we only support the debug exit method from qemu, which conveniently
 /// allows us to supply an exit code for testing purposes.
-pub unsafe fn shutdown(val: ExitReason) {
+pub fn shutdown(val: ExitReason) -> ! {
     // Ok for QEMU with debug-exit,iobase=0xf4,iosize=0x04
     // qemu will call: exit((val << 1) | 1);
-    io::outb(0xf4, val as u8);
+    unsafe {
+        io::outb(0xf4, val as u8);
+    }
+    // In case this doesn't work we hang.
+    loop {}
 }

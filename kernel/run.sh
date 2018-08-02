@@ -5,12 +5,16 @@ export PATH=../binutils-2.30.90/bin:$PATH
 RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin "$@"
 
 if [ -x "$(command -v x86_64-elf-ld)" ] ; then
-    x86_64-elf-ld -n --gc-sections -Tsrc/arch/x86_64/link.ld -o kernel ../target/bespin/debug/libbespin.a
-    x86_64-elf-objcopy kernel -F elf32-i386 mbkernel
+    LD=x86_64-elf-ld
+    OBJCOPY=x86_64-elf-objcopy
 else
-    ld -n --gc-sections -Tsrc/arch/x86_64/link.ld -o kernel ../target/bespin/debug/libbespin.a
-    objcopy kernel -F elf32-i386 mbkernel
+    LD=ld
+    OBJCOPY=objcopy
 fi
+
+$LD -n --gc-sections -Tsrc/arch/x86_64/link.ld -o kernel ../target/bespin/debug/libbespin.a
+$OBJCOPY kernel -F elf32-i386 mbkernel
+
 
 set +e
 cat /proc/modules  | grep kvm_intel

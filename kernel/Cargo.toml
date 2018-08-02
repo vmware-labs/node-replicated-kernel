@@ -16,6 +16,8 @@ crate-type = ["staticlib"]
 integration-tests = []
 test-exit = []
 test-pfault = []
+test-gpfault = []
+test-alloc = []
 
 # disable stack unwinding on panic for now
 [profile.dev]

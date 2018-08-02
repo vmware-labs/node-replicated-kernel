@@ -121,23 +121,44 @@ pub enum ExitReason {
 #[cfg(not(feature = "integration-tests"))]
 pub fn main() {
     slog!("Reached architecture independent area");
-    unsafe {
-        arch::debug::shutdown(ExitReason::Ok);
-    }
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-exit"))]
 #[no_mangle]
 pub fn main() {
-    unsafe {
-        arch::debug::shutdown(ExitReason::Ok);
-    }
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
 #[no_mangle]
 pub fn main() {
     unsafe {
-        int!(0xe);
+        let ptr = 0x8000000 as *mut u8;
+        let val = *ptr;
     }
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-gpfault"))]
+#[no_mangle]
+pub fn main() {
+    // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
+    // So we cause a GP by loading garbage in the ss segment register.
+    use x86::segmentation::{load_ss, SegmentSelector};
+    unsafe {
+        load_ss(SegmentSelector::new(99, x86::Ring::Ring3));
+    }
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-alloc"))]
+#[no_mangle]
+pub fn main() {
+    use alloc::vec::Vec;
+    let mut buf: Vec<u8> = Vec::with_capacity(1024);
+    for i in 0..1024 {
+        buf.push(i);
+    }
+
+    slog!("1024 bytes allocated.");
+    arch::debug::shutdown(ExitReason::Ok);
 }

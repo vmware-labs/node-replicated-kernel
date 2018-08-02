@@ -27,6 +27,11 @@ If you just want to compile the code you can also execute:
 1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
 in the kernel directory (run.sh will do that on your behalf).
 
+## Testing
+1. `cd kernel`
+1. `RUST_TEST_THREADS=1 cargo test --test integration-test`
+
+Note: Parallel testing is not possible at the moment due to reliance on build flags for testing.
 
 ## Future Work
  * [x] Milestone 1: Running libcore user-space program

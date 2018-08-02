@@ -18,7 +18,7 @@ use panic::backtrace_from;
 use ExitReason;
 
 #[derive(Default)]
-#[repr(C, packed)]
+#[repr(packed)]
 pub struct SaveArea {
     rax: u64,
     rbx: u64,
@@ -120,7 +120,6 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
     backtrace_from(csa.rbp, csa.rsp, csa.rip);
 
     debug::shutdown(ExitReason::UnhandledInterrupt);
-    loop {}
 }
 
 unsafe fn pf_handler(a: &ExceptionArguments) {
@@ -132,7 +131,6 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     backtrace_from(csa.rbp, csa.rsp, csa.rip);
 
     debug::shutdown(ExitReason::PageFault);
-    loop {}
 }
 
 unsafe fn gp_handler(a: &ExceptionArguments) {
@@ -154,7 +152,6 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     backtrace_from(csa.rbp, csa.rsp, csa.rip);
 
     debug::shutdown(ExitReason::GeneralProtectionFault);
-    loop {}
 }
 
 /// Import the ISR assembly handler and add it to our IDT (see isr.S).
@@ -173,13 +170,16 @@ macro_rules! idt_set {
 }
 
 /// Arguments as provided by the ISR generic call handler (see isr.S).
-#[repr(C, packed)]
+/// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
+#[repr(packed)]
 pub struct ExceptionArguments {
     vector: u64,
     exception: u64,
     eip: u64,
     cs: u64,
     eflags: u64,
+    rsp: u64,
+    ss: u64,
 }
 
 impl fmt::Debug for ExceptionArguments {
@@ -187,8 +187,8 @@ impl fmt::Debug for ExceptionArguments {
         unsafe {
             write!(
                 f,
-                "ExceptionArguments {{ vec = 0x{:x} exception = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x} }}",
-                self.vector, self.exception, self.eip, self.cs, self.eflags
+                "ExceptionArguments {{ vec = 0x{:x} exception = 0x{:x} rip = 0x{:x}, cs = 0x{:x} eflags = 0x{:x} rsp = 0x{:x} ss = 0x{:x} }}",
+                self.vector, self.exception, self.eip, self.cs, self.eflags, self.rsp, self.ss
             )
         }
     }

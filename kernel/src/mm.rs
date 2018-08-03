@@ -13,7 +13,7 @@ const MAX_FRAME_REGIONS: usize = 10;
 pub static mut FMANAGER: FrameManager = FrameManager {
     count: 0,
     regions: [MemoryRegion {
-        base: 0,
+        base: PAddr::from_u64(0),
         size: 0,
         index: 0,
     }; MAX_FRAME_REGIONS],
@@ -85,7 +85,7 @@ impl FrameManager {
         FrameManager {
             count: 0,
             regions: [MemoryRegion {
-                base: 0,
+                base: PAddr::from(0),
                 size: 0,
                 index: 0,
             }; MAX_FRAME_REGIONS],
@@ -157,7 +157,7 @@ impl FrameManager {
                 self.regions[i].size += self.regions[i + 1].size;
 
                 // Mark region invalid (this is now merged with previous)
-                self.regions[i + 1].base = 0xFFFFFFFFFFFFFFFF;
+                self.regions[i + 1].base = PAddr::from(0xFFFFFFFFFFFFFFFF);
                 self.regions[i + 1].size = 0;
             }
 

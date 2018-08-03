@@ -169,10 +169,10 @@ impl<'a> Process<'a> {
             let pml4_phys: PAddr =
                 kernel_vaddr_to_paddr(transmute::<&PML4Entry, VAddr>(&self.vspace.pml4[0]));
             slog!("switching to 0x{:x}", pml4_phys);
-            controlregs::cr3_write(pml4_phys as PAddr);
+            controlregs::cr3_write(pml4_phys.into());
         };
         unsafe {
-            asm!("jmp exec" :: "{rcx}" (entry_point as u64) "{r11}" (user_flags));
+            asm!("jmp exec" :: "{rcx}" (entry_point) "{r11}" (user_flags));
         }
         panic!("Should not come here!");
     }
@@ -206,7 +206,7 @@ impl<'a> ElfLoader for Process<'a> {
     fn allocate(&mut self, base: usize, size: usize, _flags: elf::ProgFlag) {
         slog!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
-        self.vspace.map(base, rsize);
+        self.vspace.map(VAddr::from(base), rsize);
     }
 
     /// Load a region of bytes into the virtual address space of the process.
@@ -220,7 +220,7 @@ impl<'a> ElfLoader for Process<'a> {
 
         for (idx, subregion) in region.chunks(BASE_PAGE_SIZE as usize).enumerate() {
             let base_vaddr = destination + idx * BASE_PAGE_SIZE as usize;
-            self.vspace.fill(base_vaddr, subregion);
+            self.vspace.fill(VAddr::from(base_vaddr), subregion);
         }
     }
 }

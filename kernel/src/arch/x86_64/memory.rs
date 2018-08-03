@@ -6,10 +6,12 @@ const KERNEL_BASE: u64 = 0xFFFFFFFF80000000;
 
 /// Translate a kernel 'virtual' address to the physical address of the memory.
 pub fn kernel_vaddr_to_paddr(v: VAddr) -> PAddr {
-    v as PAddr - KERNEL_BASE
+    let vaddr_val: usize = v.into();
+    PAddr::from(vaddr_val as u64 - KERNEL_BASE)
 }
 
 /// Translate a physical memory address into a kernel addressable location.
 pub fn paddr_to_kernel_vaddr(p: PAddr) -> VAddr {
-    (p + KERNEL_BASE) as VAddr
+    let paddr_val: u64 = p.into();
+    VAddr::from((paddr_val + KERNEL_BASE) as usize)
 }

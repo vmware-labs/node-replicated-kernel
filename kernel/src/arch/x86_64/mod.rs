@@ -5,6 +5,7 @@ use core::slice;
 
 use multiboot::{MemoryType, Multiboot};
 use x86::bits64::paging;
+use x86::bits64::paging::{PAddr, VAddr};
 use x86::cpuid;
 
 pub mod apic;
@@ -90,7 +91,7 @@ pub fn arch_init() {
     }
 
     unsafe {
-        let mut base = 0x0;
+        let mut base = PAddr::from(0x0);
         for e in &mut init_pd.iter_mut() {
             (*e) = paging::PDEntry::new(
                 base,
@@ -102,9 +103,9 @@ pub fn arch_init() {
     slog!("mb init");
 
     let mb = unsafe {
-        Multiboot::new(mboot_ptr, |base, size| {
-            let vbase = memory::paddr_to_kernel_vaddr(base) as *const u8;
-            Some(slice::from_raw_parts(vbase, size))
+        Multiboot::new(mboot_ptr.into(), |base, size| {
+            let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
+            Some(slice::from_raw_parts(vbase.into(), size))
         }).unwrap()
     };
 
@@ -115,7 +116,7 @@ pub fn arch_init() {
                 unsafe {
                     let mut k = KERNEL_BINARY.lock();
                     let binary = slice::from_raw_parts(
-                        transmute::<usize, *const u8>(memory::paddr_to_kernel_vaddr(module.start)),
+                        memory::paddr_to_kernel_vaddr(PAddr::from(module.start)).as_ptr(),
                         (module.end - module.start) as usize,
                     );
                     *k = Some(binary);
@@ -130,7 +131,7 @@ pub fn arch_init() {
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
                     slog!("ADding region {:?}", region);
-                    FMANAGER.add_region(region.base_address(), region.length());
+                    FMANAGER.add_region(PAddr::from(region.base_address()), region.length());
                 }
             }
         });

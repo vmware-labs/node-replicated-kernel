@@ -112,6 +112,8 @@ pub fn arch_init() {
         }).unwrap()
     };
 
+    trace!("{}", mb.command_line().unwrap_or("def"));
+
     if mb.modules().is_some() {
         for module in mb.modules().unwrap() {
             debug!("Found module {:?}", module);

@@ -176,7 +176,7 @@ pub fn main() {
 pub fn main() {
     use alloc::vec::Vec;
     {
-        let mut buf: Vec<u8> = Vec::with_capacity(1024);
+        let mut buf: Vec<u8> = Vec::with_capacity(0);
         for i in 0..1024 {
             buf.push(i);
         }
@@ -184,12 +184,15 @@ pub fn main() {
     slog!("small allocations work.");
 
     {
-        let mut buf: Vec<u8> = Vec::with_capacity(4096 * 10);
-        for i in 0..4096 * 10 {
-            buf.push(i);
+        let size: usize = x86::bits64::paging::BASE_PAGE_SIZE;
+        let mut buf: Vec<u8> = Vec::with_capacity(size);
+        for i in 0..size {
+            buf.push(0);
         }
-        let mut buf: Vec<u8> = Vec::with_capacity(4096 * 9);
-        for i in 0..4096 * 10 {
+
+        let size: usize = x86::bits64::paging::BASE_PAGE_SIZE * 256;
+        let mut buf: Vec<usize> = Vec::with_capacity(size);
+        for i in 0..size {
             buf.push(i);
         }
     } // Make sure we drop here.

@@ -55,6 +55,8 @@ impl BumpFrameAllocator {
                 unsafe {
                     region.zero();
                 }
+                assert!(region.base % BASE_PAGE_SIZE == 0);
+
                 return Some(region);
             }
         }
@@ -151,7 +153,14 @@ impl PhysicalRegion {
 
     /// Set the memory represented by this region to zero.
     unsafe fn zero(&self) {
-        // TODO!
+        assert!(self.size() % 8 == 0);
+        let buf: &mut [u64] = slice::from_raw_parts_mut(
+            transmute(self.kernel_vaddr().as_ptr()),
+            self.size() as usize,
+        );
+        for b in buf.iter_mut() {
+            *b = 0 as u64;
+        }
     }
 }
 
@@ -269,6 +278,7 @@ impl<'a> PageProvider<'a> for BespinSlabsProvider {
             FMANAGER.allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
         };
         f.map(|frame| unsafe {
+            slog!("slabmalloc allocate frame.base = {:x}", frame.base);
             let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
             sp
         })

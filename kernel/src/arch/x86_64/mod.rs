@@ -132,7 +132,11 @@ pub fn arch_init() {
                 if region.memory_type() == MemoryType::Available {
                     if region.base_address() > 0 {
                         slog!("Adding {:?}", region);
-                        FMANAGER.add_region(PAddr::from(region.base_address()), region.length());
+                        FMANAGER.add_region(
+                            // XXX: Regions contain kernel image as well insetad of just RAM, that's why we add 10 MiB to it...
+                            PAddr::from(region.base_address() + 1024 * 1024 * 10),
+                            region.length(),
+                        );
                     } else {
                         slog!("Ignore BIOS mappings at {:?}", region);
                     }

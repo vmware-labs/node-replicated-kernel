@@ -64,7 +64,8 @@ fn gpfault() {
 fn alloc() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu("test-alloc")?;
-        p.exp_string("1024 bytes allocated.")?;
+        p.exp_string("small allocations work.")?;
+        p.exp_string("large allocations work.")?;
         p.exp_eof()?;
         p.process.exit()
     };

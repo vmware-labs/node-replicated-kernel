@@ -9,5 +9,5 @@ members = [
     "lib/klogger",
     "lib/elfloader",
     #"lib/processor-trace",
-    #"lib/termstyle",
+    "lib/termcodes",
 ]

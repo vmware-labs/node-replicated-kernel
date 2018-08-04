@@ -93,7 +93,7 @@ impl<'a> VSpace<'a> {
                 true
             }
             None => {
-                slog!("Unable to resolve {:?}", address);
+                debug!("Unable to resolve {:?}", address);
                 false
             }
         }
@@ -128,7 +128,7 @@ impl<'a> VSpace<'a> {
         while mapped < size && pt_idx < 512 {
             if !pt[pt_idx].contains(paging::PTEntry::P) {
                 pt[pt_idx] = self.pager.new_page().unwrap();
-                slog!("Mapped 4KiB page: {:?}", pt[pt_idx]);
+                debug!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             }
             assert!(pt[pt_idx].contains(paging::PTEntry::P));
 
@@ -163,12 +163,12 @@ impl<'a> Process<'a> {
     }
 
     pub fn start(&self, entry_point: VAddr) {
-        slog!("ABOUT TO GO TO USER-SPACE");
+        debug!("ABOUT TO GO TO USER-SPACE");
         let user_flags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
         unsafe {
             let pml4_phys: PAddr =
                 kernel_vaddr_to_paddr(transmute::<&PML4Entry, VAddr>(&self.vspace.pml4[0]));
-            slog!("switching to 0x{:x}", pml4_phys);
+            debug!("switching to 0x{:x}", pml4_phys);
             controlregs::cr3_write(pml4_phys.into());
         };
         unsafe {
@@ -179,7 +179,7 @@ impl<'a> Process<'a> {
 
     pub fn resume(&self) {
         let user_rflags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
-        slog!("resuming User-space");
+        debug!("resuming User-space");
         unsafe {
             // %rbx points to save_area
             // %r8 points to ss
@@ -204,7 +204,7 @@ impl<'a> fmt::Debug for Process<'a> {
 impl<'a> ElfLoader for Process<'a> {
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
     fn allocate(&mut self, base: usize, size: usize, _flags: elf::ProgFlag) {
-        slog!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
+        debug!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
         self.vspace.map(VAddr::from(base), rsize);
     }
@@ -212,7 +212,7 @@ impl<'a> ElfLoader for Process<'a> {
     /// Load a region of bytes into the virtual address space of the process.
     /// XXX: Report error if that region is not backed by memory (i.e., allocate was not called).
     fn load(&mut self, destination: usize, region: &'static [u8]) {
-        slog!(
+        debug!(
             "load: 0x{:x} -- 0x{:x}",
             destination,
             destination + region.len()

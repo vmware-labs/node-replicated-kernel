@@ -11,7 +11,7 @@ extern "C" {
 #[inline(never)]
 #[no_mangle]
 pub extern "C" fn syscall_handle() {
-    slog!("got syscall");
+    debug!("got syscall");
     loop {}
 }
 
@@ -37,5 +37,5 @@ pub fn enable_fast_syscalls(_cs: SegmentSelector, _cs_user: SegmentSelector) {
         wrmsr(IA32_EFER, efer);
     }
 
-    slog!("Fast syscalls enabled!");
+    debug!("Fast syscalls enabled!");
 }

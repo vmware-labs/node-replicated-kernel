@@ -236,7 +236,7 @@ pub unsafe fn pic_remap() {
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(vector: usize, handler: unsafe fn(&ExceptionArguments)) {
     if vector > IDT_SIZE - 1 {
-        slog!("Invalid vector!");
+        debug!("Invalid vector!");
         return;
     }
 
@@ -256,7 +256,7 @@ pub fn setup_idt() {
         // The difference is that for interrupt gates,
         // interrupts are automatically disabled upon entry
         // and re-enabled upon IRET which restores the saved EFLAGS.
-        slog!("Install IRQ handler");
+        debug!("Install IRQ handler");
         let seg = SegmentSelector::new(1, Ring::Ring0);
         idt_set!(0, isr_handler0, seg, 0x8E);
         idt_set!(1, isr_handler1, seg, 0x8E);

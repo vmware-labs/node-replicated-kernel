@@ -30,7 +30,7 @@ impl BumpFrameAllocator {
         assert!(size % BASE_PAGE_SIZE as u64 == 0);
 
         if self.count >= MAX_FRAME_REGIONS {
-            slog!("Not enough space in BumpFrameAllocator. Increase MAX_FRAME_REGIONS!");
+            debug!("Not enough space in BumpFrameAllocator. Increase MAX_FRAME_REGIONS!");
             return;
         }
 
@@ -105,9 +105,9 @@ impl BumpFrameAllocator {
     }
 
     pub fn print_regions(&self) {
-        slog!("self.count = {}", self.count);
+        debug!("self.count = {}", self.count);
         for i in 0..self.count {
-            slog!("Region {} = {:?}", i, self.regions[i]);
+            debug!("Region {} = {:?}", i, self.regions[i]);
         }
     }
 }
@@ -278,13 +278,13 @@ impl<'a> PageProvider<'a> for BespinSlabsProvider {
             FMANAGER.allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
         };
         f.map(|frame| unsafe {
-            slog!("slabmalloc allocate frame.base = {:x}", frame.base);
+            debug!("slabmalloc allocate frame.base = {:x}", frame.base);
             let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
             sp
         })
     }
 
     fn release_page(&mut self, _p: &'a mut ObjectPage<'a>) {
-        slog!("TODO!");
+        debug!("TODO!");
     }
 }

@@ -22,3 +22,6 @@
 [submodule "lib/backtracer"]
 	path = lib/backtracer
 	url = git@github.com:gz/backtracer
+[submodule "lib/termcodes"]
+	path = lib/termcodes
+	url = git@github.com:gz/termcodes.git

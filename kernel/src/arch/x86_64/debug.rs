@@ -20,7 +20,7 @@ pub fn init() {
         io::outb(PORT0 + 1, 0x01); // Enable receive data IRQ
                                    //io::outb(PORT0 + 1, 0x00);    // Disable receive data IRQ
     }
-    slog!("serial initialized");
+    debug!("serial initialized");
     unsafe {
         irq::register_handler(COM1_IRQ, receive_serial_irq);
     }
@@ -31,11 +31,11 @@ unsafe fn receive_serial_irq(_a: &irq::ExceptionArguments) {
     let cp = CURRENT_PROCESS.lock();
     match *cp.deref() {
         Some(ref p) => {
-            slog!("p = {:?}", p);
+            debug!("p = {:?}", p);
             putb(scancode);
             p.resume();
         }
-        None => slog!("No process"),
+        None => debug!("No process"),
     };
     //loop {}
 }

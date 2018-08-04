@@ -20,6 +20,8 @@ mod exec;
 mod isr;
 mod start;
 
+use klogger;
+use log::Level;
 use main;
 use mm::FMANAGER;
 use ExitReason;
@@ -60,7 +62,8 @@ pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 #[start]
 pub fn arch_init() {
     sprint!("\n\n");
-    slog!("Started");
+    klogger::init(Level::Trace).expect("Can't set-up logging");
+    debug!("Started");
 
     let cpuid = cpuid::CpuId::new();
 
@@ -80,14 +83,14 @@ pub fn arch_init() {
     };
 
     if has_x2apic && has_tsc {
-        slog!("x2APIC / deadline TSC supported!");
-        slog!("enable APIC");
+        debug!("x2APIC / deadline TSC supported!");
+        debug!("enable APIC");
         let apic = apic::X2APIC::new();
         //apic.enable_tsc();
         //apic.set_tsc(rdtsc()+1000);
-        slog!("APIC is bsp: {}", apic.is_bsp());
+        debug!("APIC is bsp: {}", apic.is_bsp());
     } else {
-        slog!("no x2APIC support. Continuing without interrupts.")
+        debug!("no x2APIC support. Continuing without interrupts.")
     }
 
     unsafe {
@@ -100,7 +103,7 @@ pub fn arch_init() {
             base += 1024 * 1024 * 2;
         }
     }
-    slog!("mb init");
+    debug!("mb init");
 
     let mb = unsafe {
         Multiboot::new(mboot_ptr.into(), |base, size| {
@@ -111,7 +114,7 @@ pub fn arch_init() {
 
     if mb.modules().is_some() {
         for module in mb.modules().unwrap() {
-            slog!("Found module {:?}", module);
+            debug!("Found module {:?}", module);
             if module.string.is_some() && module.string.unwrap() == "kernel" {
                 unsafe {
                     let mut k = KERNEL_BINARY.lock();
@@ -125,31 +128,31 @@ pub fn arch_init() {
         }
     }
 
-    slog!("checking memory regions");
+    debug!("checking memory regions");
     unsafe {
         mb.memory_regions().map(|regions| {
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
                     if region.base_address() > 0 {
-                        slog!("Adding {:?}", region);
+                        debug!("Adding {:?}", region);
                         FMANAGER.add_region(
                             // XXX: Regions contain kernel image as well insetad of just RAM, that's why we add 10 MiB to it...
                             PAddr::from(region.base_address() + 1024 * 1024 * 10),
                             region.length(),
                         );
                     } else {
-                        slog!("Ignore BIOS mappings at {:?}", region);
+                        debug!("Ignore BIOS mappings at {:?}", region);
                     }
                 }
             }
         });
-        slog!("cleaning memory regions");
+        debug!("cleaning memory regions");
         FMANAGER.clean_regions();
-        slog!("print regions");
+        debug!("print regions");
         FMANAGER.print_regions();
     }
 
-    slog!("allocation should work here...");
+    debug!("allocation should work here...");
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
     let init = Box::new(process::Process::new(1).unwrap());
     process_list.push(init);
@@ -157,7 +160,7 @@ pub fn arch_init() {
     // No we go in the arch-independent part
     main();
 
-    slog!("Returned from main, shutting down...");
+    debug!("Returned from main, shutting down...");
     debug::shutdown(ExitReason::ReturnFromMain);
 
     // and never return from there

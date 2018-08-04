@@ -100,13 +100,13 @@ pub fn setup_gdt() {
         load_es(SegmentSelector::new(0, Ring::Ring0));
         load_fs(SegmentSelector::new(0, Ring::Ring0));
         load_gs(SegmentSelector::new(0, Ring::Ring0));
-        slog!(
+        debug!(
             "load cs: cs_selector={} -> GDT.code_kernel={:#b}",
             cs_selector,
             GDT.code_kernel.as_u64()
         );
         load_cs(cs_selector);
-        slog!("loaded cs");
+        debug!("loaded cs");
         load_ss(ss_selector);
 
         let cs_user_selector = SegmentSelector::new(GdtTable::CS_USER_INDEX as u16, Ring::Ring3)
@@ -114,9 +114,9 @@ pub fn setup_gdt() {
         syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
     }
 
-    slog!("Segments reloaded");
+    debug!("Segments reloaded");
     setup_tss();
-    slog!("TSS enabled");
+    debug!("TSS enabled");
 }
 
 static mut SYSCALL_STACK: [u64; 512] = [0; 512];
@@ -125,7 +125,7 @@ fn setup_tss() {
     unsafe {
         // Complete setup of TSS descriptor (by inserting base address of TSS)
         let tss_ptr = transmute::<&TaskStateSegment, u64>(&TSS);
-        slog!("tss = 0x{:x}", tss_ptr);
+        debug!("tss = 0x{:x}", tss_ptr);
 
         GDT.tss_segment = <DescriptorBuilder as GateDescriptorBuilder<u64>>::tss_descriptor(
             tss_ptr as u64,
@@ -135,7 +135,7 @@ fn setup_tss() {
             .dpl(Ring::Ring0)
             .finish();
         TSS.rsp[0] = transmute::<&[u64; 512], u64>(&SYSCALL_STACK) + 4096;
-        slog!("tss.rsp[0] = 0x{:x}", TSS.rsp[0]);
+        debug!("tss.rsp[0] = 0x{:x}", TSS.rsp[0]);
 
         load_tr(
             SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT,

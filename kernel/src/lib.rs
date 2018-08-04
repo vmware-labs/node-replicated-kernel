@@ -26,6 +26,9 @@ pub mod mutex;
 
 extern crate alloc;
 
+#[macro_use]
+extern crate log;
+
 #[cfg(target_arch = "x86_64")]
 #[macro_use]
 extern crate x86;
@@ -82,18 +85,15 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
             let ptr = self.0.lock().allocate(layout);
-            slog!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
+            debug!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
             ptr
         } else {
             use mm::FMANAGER;
-
             let f = FMANAGER.allocate_region(layout);
-            let region = f.unwrap();
             let ptr = f.map_or(0 as *mut u8, |region| region.kernel_vaddr().as_ptr());
-            slog!(
+            debug!(
                 "allocated big region ptr=0x{:x} layout={:?}",
-                ptr as usize,
-                layout
+                ptr as usize, layout
             );
             ptr
         }
@@ -101,13 +101,12 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            slog!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
+            debug!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
             self.0.lock().deallocate(ptr, layout);
         } else {
-            slog!(
+            debug!(
                 "WARN lost big allocation at 0x{:x} layout={:?}",
-                ptr as usize,
-                layout
+                ptr as usize, layout
             );
         }
     }
@@ -141,7 +140,13 @@ pub enum ExitReason {
 /// Kernel entry-point
 #[cfg(not(feature = "integration-tests"))]
 pub fn main() {
-    slog!("Reached architecture independent area");
+    debug!("Reached architecture independent area");
+    error!("error");
+    warn!("warning");
+    info!("info");
+    debug!("debug");
+    trace!("trace");
+
     arch::debug::shutdown(ExitReason::Ok);
 }
 
@@ -181,7 +186,7 @@ pub fn main() {
             buf.push(i);
         }
     } // Make sure we drop here.
-    slog!("small allocations work.");
+    debug!("small allocations work.");
 
     {
         let size: usize = x86::bits64::paging::BASE_PAGE_SIZE;
@@ -196,7 +201,7 @@ pub fn main() {
             buf.push(i);
         }
     } // Make sure we drop here.
-    slog!("large allocations work.");
+    debug!("large allocations work.");
 
     arch::debug::shutdown(ExitReason::Ok);
 }

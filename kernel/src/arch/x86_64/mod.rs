@@ -5,7 +5,7 @@ use core::slice;
 
 use multiboot::{MemoryType, Multiboot};
 use x86::bits64::paging;
-use x86::bits64::paging::{PAddr, VAddr};
+use x86::bits64::paging::PAddr;
 use x86::cpuid;
 
 pub mod apic;
@@ -105,7 +105,7 @@ pub fn arch_init() {
     let mb = unsafe {
         Multiboot::new(mboot_ptr.into(), |base, size| {
             let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
-            Some(slice::from_raw_parts(vbase.into(), size))
+            Some(slice::from_raw_parts(vbase, size))
         }).unwrap()
     };
 
@@ -130,8 +130,12 @@ pub fn arch_init() {
         mb.memory_regions().map(|regions| {
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
-                    slog!("ADding region {:?}", region);
-                    FMANAGER.add_region(PAddr::from(region.base_address()), region.length());
+                    if region.base_address() > 0 {
+                        slog!("Adding {:?}", region);
+                        FMANAGER.add_region(PAddr::from(region.base_address()), region.length());
+                    } else {
+                        slog!("Ignore BIOS mappings at {:?}", region);
+                    }
                 }
             }
         });

@@ -76,8 +76,6 @@ pub fn panic_impl(info: &PanicInfo) -> ! {
     unsafe {
         arch::debug::shutdown(ExitReason::KernelPanic);
     }
-
-    loop {}
 }
 
 #[allow(non_camel_case_types)]
@@ -134,7 +132,6 @@ pub fn oom(layout: Layout) -> ! {
     unsafe {
         arch::debug::shutdown(ExitReason::OutOfMemory);
     }
-    loop {}
 }
 
 #[no_mangle]

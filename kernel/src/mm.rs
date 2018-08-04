@@ -1,3 +1,4 @@
+use core::alloc::Layout;
 use core::mem::transmute;
 use core::slice;
 
@@ -5,120 +6,56 @@ use core::fmt;
 
 use x86::bits64::paging;
 
-use arch::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
+use arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE};
 use slabmalloc::{ObjectPage, PageProvider};
 
 const MAX_FRAME_REGIONS: usize = 10;
 
-pub static mut FMANAGER: FrameManager = FrameManager {
+pub static mut FMANAGER: BumpFrameAllocator = BumpFrameAllocator {
     count: 0,
-    regions: [MemoryRegion {
-        base: PAddr::from_u64(0),
-        size: 0,
-        index: 0,
-    }; MAX_FRAME_REGIONS],
+    regions: [PhysicalRegion::empty(); MAX_FRAME_REGIONS],
 };
 
 #[derive(Debug)]
-pub struct FrameManager {
+pub struct BumpFrameAllocator {
     count: usize,
-    regions: [MemoryRegion; MAX_FRAME_REGIONS],
+    regions: [PhysicalRegion; MAX_FRAME_REGIONS],
 }
 
-/// Represents a physical region of memory.
-pub struct Frame {
-    pub base: PAddr,
-    pub size: u64,
-}
-
-impl Frame {
-    fn zero(&mut self) {
-        let buf: &mut [u8] = unsafe {
-            slice::from_raw_parts_mut(
-                transmute(paddr_to_kernel_vaddr(self.base)),
-                self.size as usize,
-            )
-        };
-
-        for b in buf.iter_mut() {
-            *b = 0 as u8;
-        }
-    }
-}
-
-impl fmt::Debug for Frame {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Frame: 0x{:x} -- 0x{:x} (size = {})",
-            self.base,
-            self.base + self.size,
-            self.size
-        )
-    }
-}
-
-/// Represents a physical region of memory.
-#[derive(Clone, Copy)]
-struct MemoryRegion {
-    base: PAddr,
-    ///< Physical base address of the region.
-    size: u64,
-    ///< Size of the region.
-    index: u64,
-}
-
-impl fmt::Debug for MemoryRegion {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "MemoryRegion: 0x{:x} -- 0x{:x} (size = {})",
-            self.base,
-            self.base + self.size,
-            self.size
-        )
-    }
-}
-
-impl FrameManager {
-    fn _new() -> FrameManager {
-        FrameManager {
-            count: 0,
-            regions: [MemoryRegion {
-                base: PAddr::from(0),
-                size: 0,
-                index: 0,
-            }; MAX_FRAME_REGIONS],
-        }
-    }
-
-    /// Adds a region of physical memory to our FrameManager.
+impl BumpFrameAllocator {
+    /// Adds a region of physical memory to our BumpFrameAllocator.
+    /// Note that `size` must be a multiple of BASE_PAGE_SIZE (4 KiB).
     pub fn add_region(&mut self, base: PAddr, size: u64) {
+        assert!(base.as_u64() != 0);
+        assert!(size % BASE_PAGE_SIZE as u64 == 0);
+
         if self.count >= MAX_FRAME_REGIONS {
-            slog!("Not enough space in FrameManager. Increase MAX_FRAME_REGIONS!");
+            slog!("Not enough space in BumpFrameAllocator. Increase MAX_FRAME_REGIONS!");
             return;
         }
 
-        self.regions[self.count].base = base;
-        self.regions[self.count].size = size;
+        self.regions[self.count] = PhysicalRegion::new(base, size / BASE_PAGE_SIZE as u64);
         self.count += 1;
     }
 
-    pub fn allocate_frame(&mut self, size: u64) -> Option<Frame> {
-        assert!(size % BASE_PAGE_SIZE == 0);
-        //slog!("regions = {:?}", self.regions);
+    /// Allocate a region of memory.
+    /// Note that `size` must be a multiple of BASE_PAGE_SIZE (4 KiB).
+    pub fn allocate_region(&mut self, layout: Layout) -> Option<PhysicalRegion> {
+        let page_size: usize = BASE_PAGE_SIZE as usize;
+        assert!(layout.size() % page_size == 0);
+        // TODO: make sure alignment is ok
 
-        for r in &mut self.regions.iter_mut().rev() {
-            if size < r.size - r.index {
-                (*r).index += size;
-                let mut f = Frame {
-                    base: (r.base + r.size) - r.index,
-                    size: size,
-                };
+        let pages = (layout.size() / page_size) as u64;
 
-                //slog!("f = {:?}",f);
-                f.zero();
-                return Some(f);
+        for r in self.regions.iter_mut().rev() {
+            if pages < r.pages() {
+                let region = PhysicalRegion::new(r.base, pages);
+                r.base = r.base + layout.size();
+                r.count -= pages;
+                unsafe {
+                    region.zero();
+                }
+                return Some(region);
             }
         }
 
@@ -134,7 +71,7 @@ impl FrameManager {
 
             while i < n {
                 if self.regions[i - 1].base > self.regions[i].base {
-                    let tmp: MemoryRegion = self.regions[i - 1];
+                    let tmp: PhysicalRegion = self.regions[i - 1];
                     self.regions[i - 1] = self.regions[i];
                     self.regions[i] = tmp;
 
@@ -152,13 +89,13 @@ impl FrameManager {
 
         // Merge consecutive entries
         for i in 0..self.count {
-            let end = self.regions[i].base + self.regions[i].size;
+            let end = self.regions[i].base + self.regions[i].size();
             if end == self.regions[i + 1].base {
-                self.regions[i].size += self.regions[i + 1].size;
+                self.regions[i].count += self.regions[i + 1].pages();
 
                 // Mark region invalid (this is now merged with previous)
                 self.regions[i + 1].base = PAddr::from(0xFFFFFFFFFFFFFFFF);
-                self.regions[i + 1].size = 0;
+                self.regions[i + 1].count = 0;
             }
 
             self.sort_regions();
@@ -170,6 +107,64 @@ impl FrameManager {
         for i in 0..self.count {
             slog!("Region {} = {:?}", i, self.regions[i]);
         }
+    }
+}
+
+/// Wrapper for a physical memory region
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct PhysicalRegion {
+    /// Base address of physical region
+    base: PAddr,
+    /// Size of the region (in 4K pages)
+    count: u64,
+}
+
+impl PhysicalRegion {
+    const fn empty() -> PhysicalRegion {
+        PhysicalRegion {
+            base: PAddr::from_u64(0),
+            count: 0,
+        }
+    }
+
+    fn new(base: PAddr, pages: u64) -> PhysicalRegion {
+        PhysicalRegion {
+            base: base,
+            count: pages,
+        }
+    }
+
+    /// Size of the region (in 4K pages).
+    pub fn pages(&self) -> u64 {
+        self.count
+    }
+
+    /// Size of the region (in bytes).
+    pub fn size(&self) -> u64 {
+        self.count * BASE_PAGE_SIZE as u64
+    }
+
+    /// The kernel virtual address for this region.
+    pub fn kernel_vaddr(&self) -> VAddr {
+        paddr_to_kernel_vaddr(self.base)
+    }
+
+    /// Set the memory represented by this region to zero.
+    unsafe fn zero(&self) {
+        // TODO!
+    }
+}
+
+impl fmt::Debug for PhysicalRegion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "PhysicalRegion {{ 0x{:x} -- 0x{:x} (size = {}, pages = {} }}",
+            self.base.as_u64(),
+            self.base + self.size(),
+            self.size(),
+            self.pages()
+        )
     }
 }
 
@@ -193,7 +188,8 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a PML4 table.
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
         unsafe {
-            let f = FMANAGER.allocate_frame(BASE_PAGE_SIZE);
+            let f =
+                FMANAGER.allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE));
             f.map(|frame| {
                 let pml4: &'b mut [paging::PML4Entry; 512] =
                     transmute(paddr_to_kernel_vaddr(frame.base));
@@ -205,48 +201,56 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a new page directory and return a PML4 entry for it.
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
         unsafe {
-            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PML4Entry::new(
-                    frame.base,
-                    paging::PML4Entry::P | paging::PML4Entry::RW | paging::PML4Entry::US,
-                )
-            })
+            FMANAGER
+                .allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .map(|frame| {
+                    paging::PML4Entry::new(
+                        frame.base,
+                        paging::PML4Entry::P | paging::PML4Entry::RW | paging::PML4Entry::US,
+                    )
+                })
         }
     }
 
     /// Allocate a new page directory and return a pdpt entry for it.
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
         unsafe {
-            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PDPTEntry::new(
-                    frame.base,
-                    paging::PDPTEntry::P | paging::PDPTEntry::RW | paging::PDPTEntry::US,
-                )
-            })
+            FMANAGER
+                .allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .map(|frame| {
+                    paging::PDPTEntry::new(
+                        frame.base,
+                        paging::PDPTEntry::P | paging::PDPTEntry::RW | paging::PDPTEntry::US,
+                    )
+                })
         }
     }
 
     /// Allocate a new page-directory and return a page directory entry for it.
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
         unsafe {
-            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PDEntry::new(
-                    frame.base,
-                    paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::US,
-                )
-            })
+            FMANAGER
+                .allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .map(|frame| {
+                    paging::PDEntry::new(
+                        frame.base,
+                        paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::US,
+                    )
+                })
         }
     }
 
     /// Allocate a new (4KiB) page and map it.
     fn new_page(&mut self) -> Option<paging::PTEntry> {
         unsafe {
-            FMANAGER.allocate_frame(BASE_PAGE_SIZE).map(|frame| {
-                paging::PTEntry::new(
-                    frame.base,
-                    paging::PTEntry::P | paging::PTEntry::RW | paging::PTEntry::US,
-                )
-            })
+            FMANAGER
+                .allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .map(|frame| {
+                    paging::PTEntry::new(
+                        frame.base,
+                        paging::PTEntry::P | paging::PTEntry::RW | paging::PTEntry::US,
+                    )
+                })
         }
     }
 }
@@ -261,7 +265,9 @@ impl BespinSlabsProvider {
 
 impl<'a> PageProvider<'a> for BespinSlabsProvider {
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
-        let f = unsafe { FMANAGER.allocate_frame(BASE_PAGE_SIZE) };
+        let f = unsafe {
+            FMANAGER.allocate_region(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+        };
         f.map(|frame| unsafe {
             let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
             sp

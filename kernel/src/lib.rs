@@ -80,15 +80,36 @@ impl SafeZoneAllocator {
 
 unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        assert!(layout.align().is_power_of_two());
-        let ptr = self.0.lock().allocate(layout);
-        slog!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
-        ptr
+        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
+            let ptr = self.0.lock().allocate(layout);
+            slog!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
+            ptr
+        } else {
+            use mm::FMANAGER;
+
+            let f = FMANAGER.allocate_region(layout);
+            let region = f.unwrap();
+            let ptr = f.map_or(0 as *mut u8, |region| region.kernel_vaddr().as_ptr());
+            slog!(
+                "allocated big region ptr=0x{:x} layout={:?}",
+                ptr as usize,
+                layout
+            );
+            ptr
+        }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        slog!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
-        self.0.lock().deallocate(ptr, layout);
+        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
+            slog!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
+            self.0.lock().deallocate(ptr, layout);
+        } else {
+            slog!(
+                "WARN lost big allocation at 0x{:x} layout={:?}",
+                ptr as usize,
+                layout
+            );
+        }
     }
 }
 
@@ -154,11 +175,25 @@ pub fn main() {
 #[no_mangle]
 pub fn main() {
     use alloc::vec::Vec;
-    let mut buf: Vec<u8> = Vec::with_capacity(1024);
-    for i in 0..1024 {
-        buf.push(i);
-    }
+    {
+        let mut buf: Vec<u8> = Vec::with_capacity(1024);
+        for i in 0..1024 {
+            buf.push(i);
+        }
+    } // Make sure we drop here.
+    slog!("small allocations work.");
 
-    slog!("1024 bytes allocated.");
+    {
+        let mut buf: Vec<u8> = Vec::with_capacity(4096 * 10);
+        for i in 0..4096 * 10 {
+            buf.push(i);
+        }
+        let mut buf: Vec<u8> = Vec::with_capacity(4096 * 9);
+        for i in 0..4096 * 10 {
+            buf.push(i);
+        }
+    } // Make sure we drop here.
+    slog!("large allocations work.");
+
     arch::debug::shutdown(ExitReason::Ok);
 }

@@ -17,7 +17,7 @@ fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
 fn exit() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu("test-exit")?;
-        p.exp_string("[bespin::arch] Started")?;
+        p.exp_string("Started")?;
         p.exp_eof()?;
         p.process.exit()
     };

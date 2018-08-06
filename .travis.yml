@@ -27,7 +27,7 @@ git:
   submodules: false
 
 before_install:
-  - sed -i 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+  - sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
   - git submodule update --init --recursive
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then bash setup_mac_binutils.sh; fi
   - bash setup.sh

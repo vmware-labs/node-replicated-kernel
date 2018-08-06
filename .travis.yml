@@ -36,3 +36,4 @@ script:
   - cd kernel
   - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
   - bash run.sh
+  - RUST_TEST_THREADS=1 cargo test --test integration-test

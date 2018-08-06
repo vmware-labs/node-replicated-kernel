@@ -3,20 +3,19 @@ sudo: required
 
 notifications:
     email:
-        on_success: never
-        on_failure: change
+      on_success: never
+      on_failure: change
 
 branches:
   except:
     - staging.tmp
 
 rust:
-    - nightly
+  - nightly
 
 os:
   - linux
-# Linker currently not working on OSX
-# - osx
+  - osx
 
 cache:
   directories:
@@ -30,6 +29,7 @@ git:
 before_install:
   - sed -i 's/git@github.com:/https:\/\/github.com\//' .gitmodules
   - git submodule update --init --recursive
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then bash setup_mac_binutils.sh; fi
   - bash setup.sh
 
 script:

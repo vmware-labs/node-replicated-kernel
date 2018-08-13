@@ -68,6 +68,8 @@ use mm::BespinSlabsProvider;
 use slabmalloc::{PageProvider, ZoneAllocator};
 use spin::Mutex;
 
+use core::num::NonZeroUsize;
+
 unsafe impl Send for BespinSlabsProvider {}
 unsafe impl Sync for BespinSlabsProvider {}
 
@@ -146,6 +148,9 @@ pub fn main() {
     info!("info");
     debug!("debug");
     trace!("trace");
+
+    debug!("allocating a region of mem");
+    unsafe { MEM_PROVIDER.alloc(Layout::from_size_align_unchecked(8192, 4096)); }
 
     arch::debug::shutdown(ExitReason::Ok);
 }

@@ -97,6 +97,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                 "allocated big region ptr=0x{:x} layout={:?}",
                 ptr as usize, layout
             );
+            
             ptr
         }
     }
@@ -150,7 +151,21 @@ pub fn main() {
     trace!("trace");
 
     debug!("allocating a region of mem");
-    unsafe { MEM_PROVIDER.alloc(Layout::from_size_align_unchecked(8192, 4096)); }
+    unsafe {
+        let new_region : *mut u8 = MEM_PROVIDER.alloc(Layout::from_size_align_unchecked(8192, 4096));        
+        let p = new_region.offset(0);
+        *p = 1;
+
+        if(*p == 1) {
+            debug!("written to newly mapped page");
+        } else {
+            debug!("*failed* to write to newly mapped memory");
+        }
+
+        // print current regions        
+        use mm::FMANAGER;
+        FMANAGER.print_regions();        
+    }
 
     arch::debug::shutdown(ExitReason::Ok);
 }

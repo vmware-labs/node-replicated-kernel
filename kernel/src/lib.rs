@@ -152,20 +152,14 @@ pub fn main() {
 
     debug!("allocating a region of mem");
     unsafe {
+        use mm::FMANAGER;
+        FMANAGER.print_regions();        
+
         let new_region : *mut u8 = MEM_PROVIDER.alloc(Layout::from_size_align_unchecked(8192, 4096));
-        let p : *mut u8 = new_region.offset(0);
-        //assert!(p.is_null()); // funny: fails this assertion but no exception
-
-        *p = 1;
-
-        if(*p == 1) {
-            debug!("written to newly mapped page");
-        } else {
-            debug!("*failed* to write to newly mapped memory");
-        }
+        let p : *mut u8 = new_region.offset(4096);
+        assert!(!p.is_null());
 
         // print current regions        
-        use mm::FMANAGER;
         FMANAGER.print_regions();        
     }
 

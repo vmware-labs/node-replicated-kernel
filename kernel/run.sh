@@ -19,12 +19,12 @@ $OBJCOPY kernel -F elf32-i386 mbkernel
 set +e
 cat /proc/modules  | grep kvm_intel
 if [ $? -eq 0 ]; then
-KVM_ARG='-enable-kvm'
+# vmware-cpuid-freq=on
+KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
 else
 KVM_ARG=''
 fi
-# $KVM_ARG
-qemu-system-x86_64 -m 1024 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 -append "debug"
+qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 -append "debug"
 QEMU_EXIT=$?
 # qemu will do exit((val << 1) | 1);
 BESPIN_EXIT=$(($QEMU_EXIT >> 1))

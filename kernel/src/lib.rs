@@ -3,7 +3,6 @@
     asm,
     lang_items,
     const_fn,
-    core,
     raw,
     box_syntax,
     start,
@@ -11,7 +10,6 @@
     panic_info_message,
     alloc,
     allocator_api,
-    heap_api,
     global_asm,
     linkage
 )]
@@ -97,7 +95,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                 "allocated big region ptr=0x{:x} layout={:?}",
                 ptr as usize, layout
             );
-            
+
             ptr
         }
     }
@@ -153,14 +151,14 @@ pub fn main() {
     debug!("allocating a region of mem");
     unsafe {
         use mm::FMANAGER;
-        FMANAGER.print_regions();        
+        FMANAGER.print_regions();
 
-        let new_region : *mut u8 = MEM_PROVIDER.alloc(Layout::from_size_align_unchecked(8192, 4096));
-        let p : *mut u8 = new_region.offset(4096);
+        let new_region: *mut u8 = MEM_PROVIDER.alloc(Layout::from_size_align_unchecked(8192, 4096));
+        let p: *mut u8 = new_region.offset(4096);
         assert!(!p.is_null());
 
-        // print current regions        
-        FMANAGER.print_regions();        
+        // print current regions
+        FMANAGER.print_regions();
     }
 
     arch::debug::shutdown(ExitReason::Ok);

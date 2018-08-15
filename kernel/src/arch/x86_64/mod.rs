@@ -95,15 +95,22 @@ pub fn arch_init() {
 
     unsafe {
         let mut base = PAddr::from(0x0);
+        let mut page_cnt = 0;
+
         for e in &mut init_pd.iter_mut() {
             (*e) = paging::PDEntry::new(
                 base,
                 paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::PS,
             );
             base += 1024 * 1024 * 2;
+            
+            page_cnt += 1;
+            
+            //debug!("e ptr {:p}", e);            
         }
+
+        debug!("mb init. allocated {:?} PDE pages; base offset {:?}", page_cnt, base);
     }
-    debug!("mb init");
 
     let mb = unsafe {
         Multiboot::new(mboot_ptr.into(), |base, size| {

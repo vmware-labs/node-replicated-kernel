@@ -1,6 +1,5 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::mem::transmute;
 use core::slice;
 
 use multiboot::{MemoryType, Multiboot};
@@ -56,8 +55,7 @@ unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Mult
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
-#[cfg(not(test))]
-#[lang = "start"]
+#[cfg_attr(target_os = "bespin", lang = "start")]
 #[no_mangle]
 #[start]
 pub fn arch_init() {
@@ -174,7 +172,4 @@ pub fn arch_init() {
 
     debug!("Returned from main, shutting down...");
     debug::shutdown(ExitReason::ReturnFromMain);
-
-    // and never return from there
-    unreachable!();
 }

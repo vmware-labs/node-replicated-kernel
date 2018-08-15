@@ -9,6 +9,7 @@ notifications:
 branches:
   except:
     - staging.tmp
+    - trying.tmp
 
 rust:
   - nightly
@@ -22,6 +23,7 @@ cache:
     - $HOME/.cargo
     - $HOME/.xargo
     - $TRAVIS_BUILD_DIR/target
+    - $TRAVIS_BUILD_DIR/binutils-2.30.90
 
 git:
   submodules: false
@@ -29,11 +31,23 @@ git:
 before_install:
   - sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
   - git submodule update --init --recursive
+
+install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then bash setup_mac_binutils.sh; fi
   - bash setup.sh
 
 script:
   - cd kernel
-  - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
+  - RUSTFLAGS="-D warnings" RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
   - bash run.sh
+  - cargo +nightly fmt --package bespin -- --check
+  - cargo +nightly fmt --package backtracer -- --check
+  - cargo +nightly fmt --package raw-cpuid -- --check
+  - cargo +nightly fmt --package elfloader -- --check
+  - cargo +nightly fmt --package klogger -- --check
+  - cargo +nightly fmt --package multiboot -- --check
+  - cargo +nightly fmt --package termcodes -- --check
+  - cargo +nightly fmt --package slabmalloc -- --check
+  - cargo +nightly fmt --package x86 -- --check
+
   - RUST_TEST_THREADS=1 cargo test --test integration-test

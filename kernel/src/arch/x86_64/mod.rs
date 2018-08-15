@@ -103,13 +103,16 @@ pub fn arch_init() {
                 paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::PS,
             );
             base += 1024 * 1024 * 2;
-            
+
             page_cnt += 1;
-            
-            //debug!("e ptr {:p}", e);            
+
+            //debug!("e ptr {:p}", e);
         }
 
-        debug!("mb init. allocated {:?} PDE pages; base offset {:?}", page_cnt, base);
+        debug!(
+            "mb init. allocated {:?} PDE pages; base offset {:?}",
+            page_cnt, base
+        );
     }
 
     let mb = unsafe {

@@ -1,17 +1,6 @@
 #![feature(
-    intrinsics,
-    asm,
-    lang_items,
-    const_fn,
-    raw,
-    box_syntax,
-    start,
-    panic_implementation,
-    panic_info_message,
-    alloc,
-    allocator_api,
-    global_asm,
-    linkage
+    intrinsics, asm, lang_items, const_fn, raw, box_syntax, start, panic_implementation,
+    panic_info_message, alloc, allocator_api, global_asm, linkage
 )]
 #![no_std]
 

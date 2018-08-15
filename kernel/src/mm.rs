@@ -108,8 +108,11 @@ impl BumpFrameAllocator {
         debug!("self.count = {}", self.count);
         for i in 0..self.count {
             debug!("Region {} = {:?}", i, self.regions[i]);
-            debug!("Region PADDR base: {}; Region KVADDR base: {:?}",
-                   self.regions[i].base, self.regions[i].kernel_vaddr().as_ptr());
+            debug!(
+                "Region PADDR base: {}; Region KVADDR base: {:?}",
+                self.regions[i].base,
+                self.regions[i].kernel_vaddr().as_ptr()
+            );
         }
     }
 }

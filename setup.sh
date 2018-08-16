@@ -11,14 +11,15 @@ if [ ! -x "$(command -v qemu-system-x86_64)" ]; then
     fi
 fi
 
-
+if [ -f $HOME/.cargo/env ]; then
+    source $HOME/.cargo/env
+fi
 # Make sure rust is up-to-date
 if [ ! -x "$(command -v rustup)" ] ; then
     curl https://sh.rustup.rs -sSf | sh -s -- -y
 fi
 
 source $HOME/.cargo/env
-
 rustup default nightly
 rustup component add rust-src
 rustup component add rustfmt-preview --toolchain nightly

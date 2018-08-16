@@ -1,6 +1,17 @@
 #![feature(
-    intrinsics, asm, lang_items, const_fn, raw, box_syntax, start, panic_implementation,
-    panic_info_message, alloc, allocator_api, global_asm, linkage
+    intrinsics,
+    asm,
+    lang_items,
+    const_fn,
+    raw,
+    box_syntax,
+    start,
+    panic_implementation,
+    panic_info_message,
+    alloc,
+    allocator_api,
+    global_asm,
+    linkage
 )]
 #![no_std]
 
@@ -17,7 +28,6 @@ extern crate alloc;
 extern crate log;
 
 #[cfg(target_arch = "x86_64")]
-#[macro_use]
 extern crate x86;
 
 #[cfg(target_arch = "x86_64")]
@@ -54,8 +64,6 @@ use core::alloc::{GlobalAlloc, Layout};
 use mm::BespinSlabsProvider;
 use slabmalloc::{PageProvider, ZoneAllocator};
 use spin::Mutex;
-
-use core::num::NonZeroUsize;
 
 unsafe impl Send for BespinSlabsProvider {}
 unsafe impl Sync for BespinSlabsProvider {}
@@ -164,7 +172,8 @@ pub fn main() {
 pub fn main() {
     unsafe {
         let ptr = 0x8000000 as *mut u8;
-        let val = *ptr;
+        let val = *ptr; // page-fault
+        assert!(val != 0);
     }
 }
 
@@ -186,7 +195,7 @@ pub fn main() {
     {
         let mut buf: Vec<u8> = Vec::with_capacity(0);
         for i in 0..1024 {
-            buf.push(i);
+            buf.push(i as u8);
         }
     } // Make sure we drop here.
     debug!("small allocations work.");
@@ -195,13 +204,13 @@ pub fn main() {
         let size: usize = x86::bits64::paging::BASE_PAGE_SIZE;
         let mut buf: Vec<u8> = Vec::with_capacity(size);
         for i in 0..size {
-            buf.push(0);
+            buf.push(i as u8);
         }
 
         let size: usize = x86::bits64::paging::BASE_PAGE_SIZE * 256;
         let mut buf: Vec<usize> = Vec::with_capacity(size);
         for i in 0..size {
-            buf.push(i);
+            buf.push(i as usize);
         }
     } // Make sure we drop here.
     debug!("large allocations work.");

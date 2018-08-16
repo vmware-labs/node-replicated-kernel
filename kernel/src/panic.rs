@@ -58,7 +58,7 @@ fn backtrace() {
     });
 }
 
-#[panic_implementation]
+#[cfg_attr(target_os = "bespin", panic_implementation)]
 #[no_mangle]
 pub fn panic_impl(info: &PanicInfo) -> ! {
     sprint!("System panic encountered");
@@ -73,9 +73,7 @@ pub fn panic_impl(info: &PanicInfo) -> ! {
 
     backtrace();
 
-    unsafe {
-        arch::debug::shutdown(ExitReason::KernelPanic);
-    }
+    arch::debug::shutdown(ExitReason::KernelPanic);
 }
 
 #[allow(non_camel_case_types)]
@@ -107,7 +105,7 @@ pub struct _Unwind_Exception {
     private: [u64; 2],
 }
 
-#[lang = "eh_personality"]
+#[cfg_attr(target_os = "bespin", lang = "eh_personality")]
 #[no_mangle]
 pub fn rust_eh_personality(
     _version: isize,
@@ -120,7 +118,7 @@ pub fn rust_eh_personality(
 }
 
 #[no_mangle]
-#[lang = "oom"]
+#[cfg_attr(target_os = "bespin", lang = "oom")]
 pub fn oom(layout: Layout) -> ! {
     sprintln!(
         "OOM: Unable to satisfy allocation request for size {} with alignment {}.",
@@ -129,9 +127,7 @@ pub fn oom(layout: Layout) -> ! {
     );
     backtrace();
 
-    unsafe {
-        arch::debug::shutdown(ExitReason::OutOfMemory);
-    }
+    arch::debug::shutdown(ExitReason::OutOfMemory);
 }
 
 #[no_mangle]

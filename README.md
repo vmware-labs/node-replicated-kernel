@@ -33,6 +33,14 @@ in the kernel directory (run.sh will do that on your behalf).
 
 Note: Parallel testing is not possible at the moment due to reliance on build flags for testing.
 
+## Submitting a new pull-request
+Make sure that the code compiles without warnings, is properly formatted and passes tests:
+
+1. `cd kernel`
+1. `cargo +nightly fmt`
+1. `RUSTFLAGS='-D warnings' bash ./run.sh`
+1. `RUSTFLAGS='-D warnings' RUST_TEST_THREADS=1 cargo test --test integration-test`
+
 ## Future Work
  * [x] Milestone 1: Running libcore user-space program
  * [ ] Milestone 2: ACPI Integration

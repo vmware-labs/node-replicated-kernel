@@ -39,7 +39,7 @@ install:
 script:
   - cd kernel
   - RUSTFLAGS="-D warnings" RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
-  - bash run.sh
+  - RUSTFLAGS="-D warnings" bash run.sh
   - cargo +nightly fmt --package bespin -- --check
   - cargo +nightly fmt --package backtracer -- --check
   - cargo +nightly fmt --package raw-cpuid -- --check
@@ -49,5 +49,4 @@ script:
   - cargo +nightly fmt --package termcodes -- --check
   - cargo +nightly fmt --package slabmalloc -- --check
   - cargo +nightly fmt --package x86 -- --check
-
-  - RUST_TEST_THREADS=1 cargo test --test integration-test
+  - RUSTFLAGS="-D warnings" RUST_TEST_THREADS=1 cargo test --test integration-test

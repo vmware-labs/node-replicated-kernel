@@ -15,7 +15,6 @@ fi
 $LD -n --gc-sections -Tsrc/arch/x86_64/link.ld -o kernel ../target/bespin/debug/libbespin.a
 $OBJCOPY kernel -F elf32-i386 mbkernel
 
-
 set +e
 cat /proc/modules  | grep kvm_intel
 if [ $? -eq 0 ]; then

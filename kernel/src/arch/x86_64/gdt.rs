@@ -132,8 +132,8 @@ fn setup_tss() {
             size_of::<TaskStateSegment>() as u64,
             true,
         ).present()
-            .dpl(Ring::Ring0)
-            .finish();
+        .dpl(Ring::Ring0)
+        .finish();
         TSS.rsp[0] = transmute::<&[u64; 512], u64>(&SYSCALL_STACK) + 4096;
         debug!("tss.rsp[0] = 0x{:x}", TSS.rsp[0]);
 

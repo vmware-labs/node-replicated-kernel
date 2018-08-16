@@ -6,7 +6,7 @@ use elfloader::ElfLoader;
 
 use x86::bits64::paging;
 use x86::bits64::paging::{
-    pd_index, pdpt_index, pml4_index, pt_index, PML4Entry, BASE_PAGE_SIZE, PML4,
+    pd_index, pdpt_index, pml4_index, pt_index, PML4, PML4Entry, BASE_PAGE_SIZE,
 };
 use x86::bits64::rflags;
 use x86::controlregs;

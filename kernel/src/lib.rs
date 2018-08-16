@@ -170,9 +170,38 @@ pub fn main() {
 #[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
 #[no_mangle]
 pub fn main() {
+    use arch::init_pd;
+    use arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+    use x86::bits64::paging;
+    use x86::tlb;
+
     unsafe {
-        let ptr = 0x8000000 as *mut u8;
-        let val = *ptr; // page-fault
+        let paddr = PAddr::from(2 * 1024 * 1024 * 2);
+
+        let mut kernel_vaddr = paddr_to_kernel_vaddr(paddr);
+
+        let mut ptr = kernel_vaddr.as_ptr();
+
+        let mut val = *ptr; // page-fault
+                            //assert!(val != 0);
+
+        debug!("no page fault {}", val);
+
+        init_pd[2] = paging::PDEntry::new(paddr, paging::PDEntry::empty());
+
+        debug!("unmapped page 2");
+
+        tlb::flush_all();
+
+        debug!("flushed TLB");
+
+        //let ptr = 0x8000000 as *mut u8;
+
+        let mut kernel_vaddr = paddr_to_kernel_vaddr(paddr);
+
+        let mut ptr = kernel_vaddr.as_ptr();
+
+        let mut val = *ptr; // page-fault
         assert!(val != 0);
     }
 }

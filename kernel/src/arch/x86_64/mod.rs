@@ -7,9 +7,6 @@ use x86::bits64::paging;
 use x86::bits64::paging::PAddr;
 use x86::cpuid;
 
-use core::ptr;
-//use std::mem;
-
 pub mod apic;
 pub mod debug;
 pub mod gdt;

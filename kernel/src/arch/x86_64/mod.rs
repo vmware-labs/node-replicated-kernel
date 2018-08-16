@@ -30,7 +30,7 @@ extern "C" {
     static mboot_ptr: memory::PAddr;
 
     #[no_mangle]
-    static mut init_pd: paging::PD;
+    pub static mut init_pd: paging::PD;
 
 //#[no_mangle]
 //static mut init_pml4: paging::PML4;
@@ -100,10 +100,12 @@ pub fn arch_init() {
                 base,
                 paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::PS,
             );
+
             base += 1024 * 1024 * 2;
 
             page_cnt += 1;
 
+            //debug!("{:?}", (*e) );
             //debug!("e ptr {:p}", e);
         }
 

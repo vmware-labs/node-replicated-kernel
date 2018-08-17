@@ -33,13 +33,28 @@ in the kernel directory (run.sh will do that on your behalf).
 
 Note: Parallel testing is not possible at the moment due to reliance on build flags for testing.
 
-## Submitting a new pull-request
-Make sure that the code compiles without warnings, is properly formatted and passes tests:
+## Submitting a change
 
+Update latest master:
+1. `git checkout master`
+1. `git pull`
+1. `git submodule update --init`
+
+Create a new feature branch:
+1. `git checkout -b <BRANCH-NAME>`
+1. Make changes in code.
+
+Make sure that the code compiles without warnings, is properly formatted and passes tests:
 1. `cd kernel`
 1. `cargo +nightly fmt`
 1. `RUSTFLAGS='-D warnings' bash ./run.sh`
 1. `RUSTFLAGS='-D warnings' RUST_TEST_THREADS=1 cargo test --test integration-test`
+
+Commit changes and push
+1. `git add <CHANGED-FILES>`
+1. `git commit`
+1. `git push -u origin <BRANCH-NAME>`
+1. Create a Pull Request on GitHub.
 
 ## Future Work
  * [x] Milestone 1: Running libcore user-space program

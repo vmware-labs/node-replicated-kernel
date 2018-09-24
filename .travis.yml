@@ -40,6 +40,7 @@ script:
   - cd kernel
   - RUSTFLAGS="-D warnings" RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
   - RUSTFLAGS="-D warnings" bash run.sh
+  - cargo +nightly fmt --version
   - cargo +nightly fmt --package bespin -- --check
   - cargo +nightly fmt --package backtracer -- --check
   - cargo +nightly fmt --package raw-cpuid -- --check

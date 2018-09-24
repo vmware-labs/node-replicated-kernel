@@ -58,7 +58,7 @@ fn backtrace() {
     });
 }
 
-#[cfg_attr(target_os = "bespin", panic_implementation)]
+#[cfg_attr(target_os = "bespin", panic_handler)]
 #[no_mangle]
 pub fn panic_impl(info: &PanicInfo) -> ! {
     sprint!("System panic encountered");

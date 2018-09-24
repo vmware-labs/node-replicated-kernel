@@ -40,7 +40,7 @@ log = "0.4"
 
 [dev-dependencies]
 rexpect = "0.3"
-matches = "0.1"
+matches = "0.1.8"
 
 [[test]]
 name = "integration-test"

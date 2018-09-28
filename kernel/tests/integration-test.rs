@@ -9,7 +9,7 @@ use rexpect::spawn;
 fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
     spawn(
         format!("bash run.sh --features integration-tests,{}", test).as_str(),
-        Some(20000),
+        Some(25000),
     )
 }
 

@@ -119,7 +119,8 @@ pub fn arch_init() {
         Multiboot::new(mboot_ptr.into(), |base, size| {
             let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
             Some(slice::from_raw_parts(vbase, size))
-        }).unwrap()
+        })
+        .unwrap()
     };
 
     trace!("{}", mb.command_line().unwrap_or("def"));

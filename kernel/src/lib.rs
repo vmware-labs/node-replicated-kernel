@@ -11,7 +11,7 @@
     alloc,
     allocator_api,
     global_asm,
-    linkage,
+    linkage
 )]
 #![no_std]
 

@@ -279,7 +279,13 @@ pub fn main() {
     s.run();
     s.run();
 
-    debug!("floating division = {}", 10.0 / 2.19);
+    arch::debug::shutdown(ExitReason::Ok);
+}
 
+#[cfg(all(feature = "integration-tests", feature = "test-sse"))]
+#[no_mangle]
+pub fn main() {
+    info!("division = {}", 10.0 / 2.19);
+    info!("division by zero = {}", 10.0 / 0.0);
     arch::debug::shutdown(ExitReason::Ok);
 }

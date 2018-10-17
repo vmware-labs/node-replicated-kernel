@@ -75,3 +75,19 @@ fn alloc() {
         WaitStatus::Exited(_, 0)
     );
 }
+
+#[test]
+fn sse() {
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_qemu("test-sse")?;
+        p.exp_string("division = 4.566210045662101")?;
+        p.exp_string("division by zero = inf")?;
+        p.exp_eof()?;
+        p.process.exit()
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Exited(_, 0)
+    );
+}

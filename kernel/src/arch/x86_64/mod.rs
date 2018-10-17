@@ -17,6 +17,7 @@ pub mod syscall;
 
 mod exec;
 mod isr;
+mod sse;
 mod start;
 
 use klogger;
@@ -59,6 +60,7 @@ pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 #[no_mangle]
 #[start]
 pub fn arch_init() {
+    sse::initialize();
     sprint!("\n\n");
     klogger::init(Level::Trace).expect("Can't set-up logging");
     debug!("Started");

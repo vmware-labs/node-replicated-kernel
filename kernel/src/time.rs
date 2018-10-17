@@ -4,7 +4,7 @@ use core::fmt;
 use core::ops;
 
 pub use core::time::Duration;
-pub use x86::cpuid::cpuid;
+pub use x86::cpuid;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant(u128);
@@ -22,7 +22,7 @@ lazy_static! {
             .get_extended_function_info()
             .map_or(false, |efinfo| efinfo.has_invariant_tsc());
         assert!(has_tsc && has_invariant_tsc);
-        let hypervisor_base = cpuid!(0x40000000, 0);
+        let hypervisor_base = raw_cpuid::cpuid!(0x40000000, 0);
         let is_kvm = hypervisor_base.eax >= 0x40000010
             && hypervisor_base.ebx == 0x4b4d564b
             && hypervisor_base.ecx == 0x564b4d56
@@ -31,9 +31,10 @@ lazy_static! {
         if cpuid.get_tsc_info().is_some() {
             debug!("TSC Info found");
             // Nominal TSC frequency = ( CPUID.15H.ECX[31:0] * CPUID.15H.EBX[31:0] ) ÷ CPUID.15H.EAX[31:0]
-            return cpuid
+            panic!("TODO -- update x86 lib");
+            /*return cpuid
                 .get_tsc_info()
-                .map_or(1, |tinfo| tinfo.tsc_frequency());
+                .map_or(1, |tinfo| tinfo.tsc_frequency());*/
         } else if cpuid.get_processor_frequency_info().is_some() {
             debug!("Processor frequency found");
             return cpuid
@@ -45,7 +46,7 @@ lazy_static! {
             // # EAX: (Virtual) TSC frequency in kHz.
             // # EBX: (Virtual) Bus (local apic timer) frequency in kHz.
             // # ECX, EDX: RESERVED (Per above, reserved fields are set to zero).
-            let virt_tinfo = cpuid!(0x40000010, 0);
+            let virt_tinfo = raw_cpuid::cpuid!(0x40000010, 0);
             return virt_tinfo.eax as u64 * 1000;
         } else {
             warn!("Can't determine TSC frequency, we assume 2 GHz. All timing information is inaccurate.");

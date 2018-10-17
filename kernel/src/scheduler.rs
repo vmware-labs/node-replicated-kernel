@@ -1,3 +1,4 @@
+#![allow(unused)]
 extern crate fringe;
 
 use self::fringe::generator::{Generator, Yielder};

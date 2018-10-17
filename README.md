@@ -1,6 +1,6 @@
 # Bespin
 
-[![Build Status](https://travis-ci.org/gz/bespin.svg)](https://travis-ci.org/gz/bespin) 
+[![Build Status](https://travis-ci.org/gz/bespin.svg)](https://travis-ci.org/gz/bespin)
 
 Bespin is an (experimental) OS kernel for x86-64 (amd64) machines written in
 rust. It currently does not do much except for serial output, interrupt handling and loading ELF binaries.
@@ -12,11 +12,11 @@ rust. It currently does not do much except for serial output, interrupt handling
 1. `git submodule update`
 
 ### Install dependencies
-Run `bash setup.sh` this will install rust (nightly), xargo (rust cross compilation tool), 
+Run `bash setup.sh` this will install rust (nightly), xargo (rust cross compilation tool),
 and QEMU on Linux or Mac.
 
 ### Install binutils for Mac
-If you are testing on Mac OS you have to compile and install your own binutils 
+If you are testing on Mac OS you have to compile and install your own binutils
 to link ELF files. You can execute `bash setup_mac_binutils.sh` to download and compile binutils.
 
 ### Build and run
@@ -27,13 +27,15 @@ If you just want to compile the code you can also execute:
 1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
 in the kernel directory (run.sh will do that on your behalf).
 
-## Testing
+## Development
+
+### Testing
 1. `cd kernel`
 1. `RUST_TEST_THREADS=1 cargo test --test integration-test`
 
 Note: Parallel testing is not possible at the moment due to reliance on build flags for testing.
 
-## Submitting a change
+### Submitting a change
 
 Update latest master:
 1. `git checkout master`
@@ -56,7 +58,11 @@ Commit changes and push
 1. `git push -u origin <BRANCH-NAME>`
 1. Create a Pull Request on GitHub.
 
-## Future Work
+### Adding a new submodule
+1. `cd lib`
+1. `git submodule add <path-to-repo> <foldername>`
+
+### Future Work
  * [x] Milestone 1: Running libcore user-space program
  * [ ] Milestone 2: ACPI Integration
  * [ ] Milestone 3: Multiprocessor support

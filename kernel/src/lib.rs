@@ -11,13 +11,17 @@
     alloc,
     allocator_api,
     global_asm,
-    linkage
+    linkage,
+    duration_as_u128
 )]
 #![no_std]
 
 extern crate spin;
 
 extern crate rlibc;
+
+#[macro_use]
+extern crate lazy_static;
 
 #[macro_use]
 pub mod mutex;
@@ -45,6 +49,8 @@ extern crate multiboot;
 
 extern crate backtracer;
 
+extern crate fringe;
+
 //extern crate termstyle;
 
 pub use klogger::*;
@@ -59,6 +65,8 @@ pub mod arch;
 
 mod allocator;
 mod mm;
+mod scheduler;
+mod time;
 
 use core::alloc::{GlobalAlloc, Layout};
 use mm::BespinSlabsProvider;
@@ -242,6 +250,36 @@ pub fn main() {
         }
     } // Make sure we drop here.
     debug!("large allocations work.");
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-scheduler"))]
+#[no_mangle]
+pub fn main() {
+    debug!("tsc_frequency = {:?}", *time::TSC_FREQUENCY);
+
+    let mut s = scheduler::Scheduler::new();
+    unsafe {
+        s.spawn(4096, |_yielder| {
+            debug!("test from lwt1");
+        });
+        s.spawn(4096, |_yielder| {
+            debug!("test from lwt2");
+        });
+
+        s.spawn(4096, |mut yielder| {
+            debug!("test from lwt3");
+            let _r = yielder.sleep(time::Duration::new(5, 0));
+            debug!("lwt3 sleep done");
+        });
+    }
+    s.run();
+    s.run();
+    s.run();
+    s.run();
+
+    debug!("floating division = {}", 10.0 / 2.19);
 
     arch::debug::shutdown(ExitReason::Ok);
 }

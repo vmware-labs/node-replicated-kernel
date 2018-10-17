@@ -18,6 +18,7 @@ test-exit = []
 test-pfault = []
 test-gpfault = []
 test-alloc = []
+test-scheduler = []
 
 # disable stack unwinding on panic for now
 [profile.dev]
@@ -35,8 +36,13 @@ slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
 #termstyle = { path = "../lib/termstyle" }
+lazy_static = { version = "1.1", features = ["nightly", "spin_no_std"] }
 spin = "0.4.8"
 log = "0.4"
+
+[dependencies.fringe]
+path = "../lib/libfringe/"
+no-default-features = true
 
 [dev-dependencies]
 rexpect = "0.3"

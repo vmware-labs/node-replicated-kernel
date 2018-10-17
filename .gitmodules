@@ -25,3 +25,12 @@
 [submodule "lib/termcodes"]
 	path = lib/termcodes
 	url = git@github.com:gz/termcodes.git
+[submodule "lib/libfringe"]
+	path = lib/libfringe
+	url = git@github.com:gz/libfringe.git
+[submodule "lib/processortrace"]
+	path = lib/processortrace
+	url = git@github.com:gz/rust-processortrace.git
+[submodule "lib/driverkit"]
+	path = lib/driverkit
+	url = git@github.com:gz/rust-driverkit.git

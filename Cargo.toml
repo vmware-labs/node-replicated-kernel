@@ -8,6 +8,7 @@ members = [
     "lib/slabmalloc",
     "lib/klogger",
     "lib/elfloader",
-    #"lib/processor-trace",
+    "lib/processortrace",
     "lib/termcodes",
+    "lib/libfringe"
 ]

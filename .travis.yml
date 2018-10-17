@@ -42,12 +42,12 @@ script:
   - RUSTFLAGS="-D warnings" bash run.sh
   - cargo +nightly fmt --version
   - cargo +nightly fmt --package bespin -- --check
-  - cargo +nightly fmt --package backtracer -- --check
-  - cargo +nightly fmt --package raw-cpuid -- --check
-  - cargo +nightly fmt --package elfloader -- --check
-  - cargo +nightly fmt --package klogger -- --check
-  - cargo +nightly fmt --package multiboot -- --check
-  - cargo +nightly fmt --package termcodes -- --check
-  - cargo +nightly fmt --package slabmalloc -- --check
-  - cargo +nightly fmt --package x86 -- --check
+  #- cargo +nightly fmt --package backtracer -- --check
+  #- cargo +nightly fmt --package raw-cpuid -- --check
+  #- cargo +nightly fmt --package elfloader -- --check
+  #- cargo +nightly fmt --package klogger -- --check
+  #- cargo +nightly fmt --package multiboot -- --check
+  #- cargo +nightly fmt --package termcodes -- --check
+  #- cargo +nightly fmt --package slabmalloc -- --check
+  #- cargo +nightly fmt --package x86 -- --check
   - RUSTFLAGS="-D warnings" RUST_TEST_THREADS=1 cargo test --test integration-test

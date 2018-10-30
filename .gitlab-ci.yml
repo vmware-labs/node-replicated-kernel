@@ -1,0 +1,25 @@
+stages:
+  - build
+  - test
+  - pages
+
+before_script:
+  - bash setup.sh
+  - rustup --version
+  - rustc --version
+  - cargo --version
+  - cargo +nightly fmt --version
+  - sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+  - git submodule update --init --recursive
+
+build:
+  script:
+    - cd kernel
+    - RUSTFLAGS="-D warnings" RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
+    - RUSTFLAGS="-D warnings" bash run.sh
+
+test:
+  script:
+    - cargo +nightly fmt --package bespin -- --check
+    - RUSTFLAGS="-D warnings" RUST_TEST_THREADS=1 cargo test --test integration-test
+

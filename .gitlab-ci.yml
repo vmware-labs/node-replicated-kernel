@@ -32,6 +32,11 @@ pages:
   script:
     - cd doc
     - mdbook build -d ../public
+    - cd ..
+    - mkdir -p /home/gitlab/pages-root/bespin/
+    - cp -rf public /home/gitlab/pages-root/bespin/book/
+    - cargo doc
+    - cp -rf target/doc /home/gitlab/pages-root/bespin/doc/
   artifacts:
     paths:
       - public

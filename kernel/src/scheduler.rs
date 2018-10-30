@@ -75,19 +75,11 @@ impl<'a> Scheduler<'a> {
                     WaitRequest {
                         timeout: Some(instant),
                         ..
-                    }
-                        if now >= instant =>
-                    {
-                        thread.generator.resume(WaitResult::TimedOut)
-                    }
+                    } if now >= instant => thread.generator.resume(WaitResult::TimedOut),
                     WaitRequest {
                         event: Some(ref event),
                         ..
-                    }
-                        if event.completed() =>
-                    {
-                        thread.generator.resume(WaitResult::Completed)
-                    }
+                    } if event.completed() => thread.generator.resume(WaitResult::Completed),
                     WaitRequest {
                         timeout: None,
                         event: None,

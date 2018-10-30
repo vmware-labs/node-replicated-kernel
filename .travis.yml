@@ -36,18 +36,20 @@ install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then bash setup_mac_binutils.sh; fi
   - bash setup.sh
 
+before_script:
+  - (test -x $HOME/.cargo/bin/cargo-install-update || cargo install cargo-update)
+  - (test -x $HOME/.cargo/bin/mdbook || cargo install mdbook)
+  - cargo install-update -a
+
 script:
   - cd kernel
   - RUSTFLAGS="-D warnings" RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
   - RUSTFLAGS="-D warnings" bash run.sh
   - cargo +nightly fmt --version
   - cargo +nightly fmt --package bespin -- --check
-  #- cargo +nightly fmt --package backtracer -- --check
-  #- cargo +nightly fmt --package raw-cpuid -- --check
-  #- cargo +nightly fmt --package elfloader -- --check
-  #- cargo +nightly fmt --package klogger -- --check
-  #- cargo +nightly fmt --package multiboot -- --check
-  #- cargo +nightly fmt --package termcodes -- --check
-  #- cargo +nightly fmt --package slabmalloc -- --check
-  #- cargo +nightly fmt --package x86 -- --check
   - RUSTFLAGS="-D warnings" RUST_TEST_THREADS=1 cargo test --test integration-test
+  - cd ../doc && mdbook build
+  - bash deploy.sh
+
+after_success:
+  - test $TRAVIS_PULL_REQUEST == "false" && test $TRAVIS_BRANCH == "master" && cd .. && bash deploy.sh

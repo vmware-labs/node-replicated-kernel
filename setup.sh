@@ -26,6 +26,10 @@ rustup component add rustfmt-preview --toolchain nightly
 rustup update
 
 # Install xargo
-if [ ! -x "$(command -v xargo)" ]; then 
+if [ ! -x "$(command -v xargo)" ]; then
     cargo install xargo
+fi
+
+if [ ! -x "$(command -v mdbook)" ]; then
+    cargo install mdbook
 fi

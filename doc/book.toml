@@ -1,0 +1,5 @@
+[book]
+authors = ["Gerd Zellweger"]
+multilingual = false
+src = "src"
+title = "bespin"

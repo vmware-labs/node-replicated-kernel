@@ -1,5 +1,6 @@
 stages:
   - build
+  - run
   - test
   - pages
 
@@ -16,6 +17,10 @@ build:
   script:
     - cd kernel
     - RUSTFLAGS="-D warnings" RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
+
+run:
+  script:
+    - cd kernel
     - RUSTFLAGS="-D warnings" bash run.sh
 
 test:
@@ -23,3 +28,10 @@ test:
     - cargo +nightly fmt --package bespin -- --check
     - RUSTFLAGS="-D warnings" RUST_TEST_THREADS=1 cargo test --test integration-test
 
+pages:
+  script:
+    - cd doc
+    - mdbook build -d ../public
+  artifacts:
+    paths:
+      - public

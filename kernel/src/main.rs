@@ -14,7 +14,11 @@
     linkage,
     duration_as_u128
 )]
-#![no_std]
+#![cfg_attr(not(target_os = "none"), feature(libc, extern_crate_item_prelude))]
+#![cfg_attr(target_os = "none", no_std)]
+
+#[cfg(not(target_os = "none"))]
+extern crate libc;
 
 extern crate spin;
 
@@ -57,11 +61,20 @@ pub use klogger::*;
 
 #[macro_use]
 mod prelude;
+
+#[cfg(target_os = "none")]
 pub mod panic;
 
-#[cfg(all(target_arch = "x86_64"))]
+#[cfg(all(target_arch = "x86_64", target_os = "none"))]
 #[path = "arch/x86_64/mod.rs"]
 pub mod arch;
+
+#[cfg(all(target_arch = "x86_64", target_family = "unix"))]
+#[path = "arch/unix/mod.rs"]
+pub mod arch;
+
+#[cfg(all(target_arch = "x86_64", target_family = "unix"))]
+extern crate core;
 
 mod allocator;
 mod mm;
@@ -118,10 +131,10 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     }
 }
 
-#[global_allocator]
+#[cfg_attr(target_os = "none", global_allocator)]
 static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
 
-#[cfg(not(test))]
+#[cfg(not(any(test, target_family = "unix")))]
 mod std {
     pub use core::cmp;
     pub use core::fmt;
@@ -158,7 +171,8 @@ pub fn main() {
         use mm::FMANAGER;
         FMANAGER.print_regions();
 
-        let new_region: *mut u8 = MEM_PROVIDER.alloc(Layout::from_size_align_unchecked(8192, 4096));
+        let new_region: *mut u8 =
+            alloc::alloc::alloc(Layout::from_size_align_unchecked(8192, 4096));
         let p: *mut u8 = new_region.offset(4096);
         assert!(!p.is_null());
 
@@ -170,13 +184,11 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-exit"))]
-#[no_mangle]
 pub fn main() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
-#[no_mangle]
 pub fn main() {
     use arch::init_pd;
     use arch::memory::{paddr_to_kernel_vaddr, PAddr};
@@ -214,7 +226,6 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-gpfault"))]
-#[no_mangle]
 pub fn main() {
     // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
     // So we cause a GP by loading garbage in the ss segment register.
@@ -225,7 +236,6 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-alloc"))]
-#[no_mangle]
 pub fn main() {
     use alloc::vec::Vec;
     {
@@ -255,7 +265,6 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-scheduler"))]
-#[no_mangle]
 pub fn main() {
     debug!("tsc_frequency = {:?}", *time::TSC_FREQUENCY);
 
@@ -283,7 +292,6 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-sse"))]
-#[no_mangle]
 pub fn main() {
     info!("division = {}", 10.0 / 2.19);
     info!("division by zero = {}", 10.0 / 0.0);

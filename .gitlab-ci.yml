@@ -3,6 +3,7 @@ stages:
   - run
   - test
   - pages
+  - unix
 
 before_script:
   - bash setup.sh
@@ -16,17 +17,30 @@ before_script:
 build:
   script:
     - cd kernel
-    - RUSTFLAGS="-D warnings" RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -q --target=bespin
+    - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -vv --target=x86_64-bespin
+  variables:
+    # RUSTFLAGS env variable will override kernel/.config/cargo (https://github.com/rust-lang/cargo/issues/5376)
+    CARGO_TARGET_X86_64_BESPIN_RUSTFLAGS: "-D warnings -C link-arg=-T./kernel/src/arch/x86_64/link.ld -C link-arg=-n -C target-feature=+sse"
 
 run:
   script:
     - cd kernel
-    - RUSTFLAGS="-D warnings" bash run.sh
+    - bash run.sh
+  variables:
+    CARGO_TARGET_X86_64_BESPIN_RUSTFLAGS: "-D warnings -C link-arg=-T./kernel/src/arch/x86_64/link.ld -C link-arg=-n -C target-feature=+sse"
+
+unix:
+  script:
+    - cd kernel
+    - cargo run
 
 test:
   script:
+    - cd kernel
     - cargo +nightly fmt --package bespin -- --check
-    - RUSTFLAGS="-D warnings" RUST_TEST_THREADS=1 cargo test --test integration-test
+    - RUST_TEST_THREADS=1 cargo test --test integration-test
+  variables:
+    CARGO_TARGET_X86_64_BESPIN_RUSTFLAGS: "-D warnings -C link-arg=-T./kernel/src/arch/x86_64/link.ld -C link-arg=-n -C target-feature=+sse"
 
 pages:
   script:

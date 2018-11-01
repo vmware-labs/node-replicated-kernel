@@ -56,10 +56,10 @@ unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Mult
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
-#[cfg_attr(target_os = "bespin", lang = "start")]
+#[cfg_attr(target_os = "baremetal", lang = "start")]
 #[no_mangle]
 #[start]
-pub fn arch_init() {
+pub fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
     sse::initialize();
     sprint!("\n\n");
     klogger::init(Level::Trace).expect("Can't set-up logging");

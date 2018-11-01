@@ -18,7 +18,7 @@ pub static mut FMANAGER: BumpFrameAllocator = BumpFrameAllocator {
 
 #[derive(Debug)]
 pub struct BumpFrameAllocator {
-    count: usize,
+    pub count: usize,
     regions: [PhysicalRegion; MAX_FRAME_REGIONS],
 }
 

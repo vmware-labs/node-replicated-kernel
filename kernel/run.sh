@@ -1,33 +1,32 @@
 #!/bin/bash
 set -ex
-export PATH=../binutils-2.30.90/bin:$PATH
+BESPIN_TARGET=x86_64-bespin
 
-RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin "$@"
-
+export PATH=`pwd`/../binutils-2.30.90/bin:$PATH
 if [ -x "$(command -v x86_64-elf-ld)" ] ; then
-    LD=x86_64-elf-ld
+    # On non-Linux system we should use the cross-compiled linker from binutils
+    export CARGO_TARGET_X86_64_BESPIN_LINKER=x86_64-elf-ld
     OBJCOPY=x86_64-elf-objcopy
 else
-    LD=ld
     OBJCOPY=objcopy
 fi
 
-$LD -n --gc-sections -Tsrc/arch/x86_64/link.ld -o kernel ../target/bespin/debug/libbespin.a
-$OBJCOPY kernel -F elf32-i386 mbkernel
+RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -vv --target=$BESPIN_TARGET "$@"
+cp ../target/$BESPIN_TARGET/debug/bespin kernel
+$OBJCOPY ../target/$BESPIN_TARGET/debug/bespin -F elf32-i386 mbkernel
 
 set +e
-cat /proc/modules  | grep kvm_intel
+cat /proc/modules | grep kvm_intel
 if [ $? -eq 0 ]; then
-# vmware-cpuid-freq=on
 KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
 else
 KVM_ARG=''
 fi
 qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 -append "debug"
 QEMU_EXIT=$?
+set +ex
 # qemu will do exit((val << 1) | 1);
 BESPIN_EXIT=$(($QEMU_EXIT >> 1))
-echo ""
 case "$BESPIN_EXIT" in
     0)
     MESSAGE="[SUCCESS]"

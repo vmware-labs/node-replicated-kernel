@@ -58,7 +58,7 @@ fn backtrace() {
     });
 }
 
-#[cfg_attr(target_os = "bespin", panic_handler)]
+#[cfg_attr(target_os = "none", panic_handler)]
 #[no_mangle]
 pub fn panic_impl(info: &PanicInfo) -> ! {
     sprint!("System panic encountered");
@@ -105,7 +105,7 @@ pub struct _Unwind_Exception {
     private: [u64; 2],
 }
 
-#[cfg_attr(target_os = "bespin", lang = "eh_personality")]
+#[cfg_attr(target_os = "none", lang = "eh_personality")]
 #[no_mangle]
 pub fn rust_eh_personality(
     _version: isize,
@@ -118,7 +118,7 @@ pub fn rust_eh_personality(
 }
 
 #[no_mangle]
-#[cfg_attr(target_os = "bespin", lang = "oom")]
+#[cfg_attr(target_os = "none", lang = "oom")]
 pub fn oom(layout: Layout) -> ! {
     sprintln!(
         "OOM: Unable to satisfy allocation request for size {} with alignment {}.",

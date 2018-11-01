@@ -9,24 +9,6 @@ description = "Experimental OS kernel"
 readme = "README.md"
 license = "MIT"
 
-[lib]
-crate-type = ["staticlib"]
-
-[features]
-integration-tests = []
-test-exit = []
-test-pfault = []
-test-gpfault = []
-test-alloc = []
-test-scheduler = []
-test-sse = []
-
-# disable stack unwinding on panic for now
-[profile.dev]
-panic = "abort"
-[profile.release]
-panic = "abort"
-
 [dependencies]
 x86 = { path = "../lib/x86" }
 multiboot = { path = "../lib/multiboot" }
@@ -38,17 +20,25 @@ elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
 #termstyle = { path = "../lib/termstyle" }
 lazy_static = { version = "1.1", features = ["nightly", "spin_no_std"] }
+fringe = { path = "../lib/libfringe", default-features = false, features = ["alloc"] }
 spin = "0.4.8"
 log = "0.4"
-
-[dependencies.fringe]
-path = "../lib/libfringe/"
-no-default-features = true
 
 [dev-dependencies]
 rexpect = "0.3"
 matches = "0.1.8"
 
-[[test]]
-name = "integration-test"
-path = "tests/integration-test.rs"
+[features]
+avc = []
+integration-tests = []
+test-exit = []
+test-pfault = []
+test-gpfault = []
+test-alloc = []
+test-scheduler = []
+test-sse = []
+
+
+#[[test]]
+#name = "integration-test"
+#path = "tests/integration-test.rs"

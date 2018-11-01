@@ -12,3 +12,9 @@ members = [
     "lib/termcodes",
     "lib/libfringe"
 ]
+
+# disable stack unwinding on panic for now
+[profile.dev]
+panic = "abort"
+[profile.release]
+panic = "abort"

@@ -13,3 +13,5 @@ Cargo.lock
 .vscode
 
 binutils-*
+public
+.gdb_history

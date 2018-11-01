@@ -49,7 +49,7 @@ fn gpfault() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu("test-gpfault")?;
         p.exp_string("[IRQ] GENERAL PROTECTION FAULT")?;
-        p.exp_regex("frame #2  - 0x[0-9a-fA-F]+ - main")?;
+        p.exp_regex("frame #2  - 0x[0-9a-fA-F]+ - bespin::main")?;
         p.exp_eof()?;
         p.process.exit()
     };

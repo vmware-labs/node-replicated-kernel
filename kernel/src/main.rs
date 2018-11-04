@@ -15,7 +15,8 @@
     duration_as_u128
 )]
 #![cfg_attr(not(target_os = "none"), feature(libc, extern_crate_item_prelude))]
-#![cfg_attr(target_os = "none", no_std)]
+#![no_std]
+#![cfg_attr(target_os = "none", no_main)]
 
 #[cfg(not(target_os = "none"))]
 extern crate libc;
@@ -55,8 +56,6 @@ extern crate backtracer;
 
 extern crate fringe;
 
-//extern crate termstyle;
-
 pub use klogger::*;
 
 #[macro_use]
@@ -72,9 +71,6 @@ pub mod arch;
 #[cfg(all(target_arch = "x86_64", target_family = "unix"))]
 #[path = "arch/unix/mod.rs"]
 pub mod arch;
-
-#[cfg(all(target_arch = "x86_64", target_family = "unix"))]
-extern crate core;
 
 mod allocator;
 mod mm;
@@ -206,7 +202,7 @@ pub fn main() {
 
         debug!("no page fault {}", val);
 
-        init_pd[4] = paging::PDEntry::new(paddr, paging::PDEntry::empty());
+        init_pd[4] = paging::PDEntry::new(paddr, paging::PDFlags::empty());
 
         debug!("unmapped page 2");
 

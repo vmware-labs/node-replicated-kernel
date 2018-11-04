@@ -53,13 +53,13 @@ unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Mult
     fmanager.clean_regions();
     fmanager.print_regions();
 }*/
+
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
-#[cfg_attr(target_os = "baremetal", lang = "start")]
+#[lang = "start"]
 #[no_mangle]
-#[start]
-pub fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
+fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
     sse::initialize();
     sprint!("\n\n");
     klogger::init(Level::Trace).expect("Can't set-up logging");
@@ -100,7 +100,7 @@ pub fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
         for e in &mut init_pd.iter_mut() {
             (*e) = paging::PDEntry::new(
                 base,
-                paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::PS,
+                paging::PDFlags::P | paging::PDFlags::RW | paging::PDFlags::PS,
             );
 
             base += 1024 * 1024 * 2;

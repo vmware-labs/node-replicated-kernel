@@ -18,18 +18,19 @@ klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
-#termstyle = { path = "../lib/termstyle" }
 lazy_static = { version = "1.1", features = ["nightly", "spin_no_std"] }
 fringe = { path = "../lib/libfringe", default-features = false, features = ["alloc"] }
 spin = "0.4.8"
 log = "0.4"
 
-[dev-dependencies]
+[target.'cfg(not(target_os = "none"))'.dependencies]
+libc = "*"
+
+[target.'cfg(not(target_os = "none"))'.dev-dependencies]
 rexpect = "0.3"
 matches = "0.1.8"
 
 [features]
-avc = []
 integration-tests = []
 test-exit = []
 test-pfault = []
@@ -37,8 +38,3 @@ test-gpfault = []
 test-alloc = []
 test-scheduler = []
 test-sse = []
-
-
-#[[test]]
-#name = "integration-test"
-#path = "tests/integration-test.rs"

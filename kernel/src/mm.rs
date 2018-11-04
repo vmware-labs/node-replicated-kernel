@@ -220,7 +220,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                 .map(|frame| {
                     paging::PML4Entry::new(
                         frame.base,
-                        paging::PML4Entry::P | paging::PML4Entry::RW | paging::PML4Entry::US,
+                        paging::PML4Flags::P | paging::PML4Flags::RW | paging::PML4Flags::US,
                     )
                 })
         }
@@ -234,7 +234,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                 .map(|frame| {
                     paging::PDPTEntry::new(
                         frame.base,
-                        paging::PDPTEntry::P | paging::PDPTEntry::RW | paging::PDPTEntry::US,
+                        paging::PDPTFlags::P | paging::PDPTFlags::RW | paging::PDPTFlags::US,
                     )
                 })
         }
@@ -248,7 +248,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                 .map(|frame| {
                     paging::PDEntry::new(
                         frame.base,
-                        paging::PDEntry::P | paging::PDEntry::RW | paging::PDEntry::US,
+                        paging::PDFlags::P | paging::PDFlags::RW | paging::PDFlags::US,
                     )
                 })
         }
@@ -262,7 +262,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                 .map(|frame| {
                     paging::PTEntry::new(
                         frame.base,
-                        paging::PTEntry::P | paging::PTEntry::RW | paging::PTEntry::US,
+                        paging::PTFlags::P | paging::PTFlags::RW | paging::PTFlags::US,
                     )
                 })
         }

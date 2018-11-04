@@ -1,5 +1,4 @@
 # .cargo/config
-
 [target.x86_64-bespin]
 # Update flags gitlab-ci.yml as well if this is changed (https://github.com/rust-lang/cargo/issues/5376)
 rustflags = [

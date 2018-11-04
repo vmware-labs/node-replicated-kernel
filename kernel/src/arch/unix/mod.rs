@@ -19,7 +19,8 @@ pub mod debug {
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
 #[start]
-fn start(_argc: isize, _argv: *const *const u8) -> isize {
+#[no_mangle]
+fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
     klogger::init(Level::Trace).expect("Can't set-up logging");
     main();
 

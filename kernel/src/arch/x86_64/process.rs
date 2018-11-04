@@ -35,17 +35,17 @@ pub struct VSpace<'a> {
 impl<'a> VSpace<'a> {
     /// Resolve a PML4Entry to a PDPT.
     fn get_pdpt<'b>(&self, entry: PML4Entry) -> &'b mut paging::PDPT {
-        unsafe { transmute::<VAddr, &mut paging::PDPT>(paddr_to_kernel_vaddr(entry.get_address())) }
+        unsafe { transmute::<VAddr, &mut paging::PDPT>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
     /// Resolve a PDPTEntry to a page directory.
     fn get_pd<'b>(&self, entry: paging::PDPTEntry) -> &'b mut paging::PD {
-        unsafe { transmute::<VAddr, &mut paging::PD>(paddr_to_kernel_vaddr(entry.get_address())) }
+        unsafe { transmute::<VAddr, &mut paging::PD>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
     /// Resolve a PDEntry to a page table.
     fn get_pt<'b>(&self, entry: paging::PDEntry) -> &'b mut paging::PT {
-        unsafe { transmute::<VAddr, &mut paging::PT>(paddr_to_kernel_vaddr(entry.get_address())) }
+        unsafe { transmute::<VAddr, &mut paging::PT>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
     /// Do page-table walk to find physical address of a page.
@@ -61,7 +61,7 @@ impl<'a> VSpace<'a> {
                     let pt_idx = pt_index(base);
                     let pt = self.get_pt(pd[pd_idx]);
                     if pt[pt_idx].is_present() {
-                        return Some(pt[pt_idx].get_address());
+                        return Some(pt[pt_idx].address());
                     }
                 }
             }
@@ -102,38 +102,42 @@ impl<'a> VSpace<'a> {
     /// Back a region of virtual address space with physical memory.
     pub fn map(&mut self, base: VAddr, size: usize) {
         let pml4_idx = pml4_index(base);
-        if !self.pml4[pml4_idx].contains(paging::PML4Entry::P) {
+        info!(
+            "map base {:x} to pml4 {:p} @ pml4_idx {}",
+            base, self.pml4, pml4_idx
+        );
+        if !self.pml4[pml4_idx].is_present() {
             self.pml4[pml4_idx] = self.pager.new_pdpt().unwrap();
         }
-        assert!(self.pml4[pml4_idx].contains(paging::PML4Entry::P));
+        assert!(self.pml4[pml4_idx].is_present());
 
         let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
         let pdpt_idx = pdpt_index(base);
-        if !pdpt[pdpt_idx].contains(paging::PDPTEntry::P) {
+        if !pdpt[pdpt_idx].is_present() {
             pdpt[pdpt_idx] = self.pager.new_pd().unwrap();
         }
-        assert!(pdpt[pdpt_idx].contains(paging::PDPTEntry::P));
+        assert!(pdpt[pdpt_idx].is_present());
 
         let pd = self.get_pd(pdpt[pdpt_idx]);
         let pd_idx = pd_index(base);
-        if !pd[pd_idx].contains(paging::PDEntry::P) {
+        if !pd[pd_idx].is_present() {
             pd[pd_idx] = self.pager.new_pt().unwrap();
         }
-        assert!(pd[pd_idx].contains(paging::PDEntry::P));
+        assert!(pd[pd_idx].is_present());
 
         let pt = self.get_pt(pd[pd_idx]);
 
         let mut pt_idx = pt_index(base);
         let mut mapped = 0;
         while mapped < size && pt_idx < 512 {
-            if !pt[pt_idx].contains(paging::PTEntry::P) {
+            if !pt[pt_idx].is_present() {
                 pt[pt_idx] = self.pager.new_page().unwrap();
                 debug!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             }
-            assert!(pt[pt_idx].contains(paging::PTEntry::P));
+            assert!(pt[pt_idx].is_present());
 
             pt_idx += 1;
-            mapped += paging::BASE_PAGE_SIZE as usize;
+            mapped += BASE_PAGE_SIZE as usize;
         }
 
         // Need go to different PD/PDPT/PML4 slot

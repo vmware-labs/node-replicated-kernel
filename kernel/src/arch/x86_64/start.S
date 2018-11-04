@@ -31,8 +31,8 @@ mboot:
 .code32
 start:
 	/* The kernel starts in protected mode (32-bit mode, we want to switch to long mode) */
-	mov $0x3f8, %dx 
-	mov $0x26, %al 
+	mov $0x3f8, %dx
+	mov $0x26, %al
 	outb %al, %dx
 
 	/* 1. Save multiboot state */

@@ -10,7 +10,7 @@ members = [
     "lib/elfloader",
     "lib/processortrace",
     "lib/termcodes",
-    "lib/libfringe"
+    "lib/libfringe",
 ]
 
 # disable stack unwinding on panic for now

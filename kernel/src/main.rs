@@ -21,6 +21,8 @@
 #[cfg(not(target_os = "none"))]
 extern crate libc;
 
+extern crate driverkit;
+
 extern crate spin;
 
 extern crate rlibc;
@@ -38,6 +40,9 @@ extern crate log;
 
 #[cfg(target_arch = "x86_64")]
 extern crate x86;
+
+#[cfg(target_arch = "x86_64")]
+extern crate apic;
 
 #[cfg(target_arch = "x86_64")]
 extern crate slabmalloc;

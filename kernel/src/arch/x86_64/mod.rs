@@ -2,12 +2,17 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::slice;
 
+use driverkit::DriverControl;
+
 use multiboot::{MemoryType, Multiboot};
 use x86::bits64::paging;
-use x86::bits64::paging::PAddr;
+use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, PML4};
+use x86::controlregs;
 use x86::cpuid;
 
-pub mod apic;
+use apic::x2apic;
+use apic::xapic;
+
 pub mod debug;
 pub mod gdt;
 pub mod irq;
@@ -19,6 +24,11 @@ mod exec;
 mod isr;
 mod sse;
 mod start;
+
+use core::mem::transmute;
+
+use self::memory::paddr_to_kernel_vaddr;
+use self::process::VSpace;
 
 use klogger;
 use log::Level;
@@ -65,33 +75,10 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
     klogger::init(Level::Trace).expect("Can't set-up logging");
     debug!("Started");
 
-    let cpuid = cpuid::CpuId::new();
-
     debug::init();
     irq::setup_idt();
     irq::enable();
     gdt::setup_gdt();
-
-    let fi = cpuid.get_feature_info();
-    let has_x2apic = match fi {
-        Some(ref fi) => fi.has_x2apic(),
-        None => false,
-    };
-    let has_tsc = match fi {
-        Some(ref fi) => fi.has_tsc(),
-        None => false,
-    };
-
-    if has_x2apic && has_tsc {
-        debug!("x2APIC / deadline TSC supported!");
-        debug!("enable APIC");
-        let apic = apic::X2APIC::new();
-        //apic.enable_tsc();
-        //apic.set_tsc(rdtsc()+1000);
-        debug!("APIC is bsp: {}", apic.is_bsp());
-    } else {
-        debug!("no x2APIC support. Continuing without interrupts.")
-    }
 
     unsafe {
         let mut base = PAddr::from(0x0);
@@ -166,6 +153,64 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
         debug!("print regions");
         FMANAGER.print_regions();
     }
+
+    let cpuid = cpuid::CpuId::new();
+    let fi = cpuid.get_feature_info();
+    let has_x2apic = match fi {
+        Some(ref fi) => fi.has_x2apic(),
+        None => false,
+    };
+    let has_tsc = match fi {
+        Some(ref fi) => fi.has_tsc(),
+        None => false,
+    };
+
+    if has_x2apic && has_tsc {
+        debug!("x2APIC / deadline TSC supported!");
+        debug!("enable APIC");
+        let mut apic = x2apic::X2APIC::new();
+        apic.attach();
+        //apic.enable_tsc();
+        //apic.set_tsc(rdtsc()+1000);
+        debug!(
+            "xAPIC id: {}, version: {}, is bsp: {}",
+            apic.id(),
+            apic.version(),
+            apic.bsp()
+        );
+    } else {
+        debug!("no x2APIC support. Use xAPIC instead.");
+        use mm::BespinPageTableProvider;
+        use x86::msr::{rdmsr, IA32_APIC_BASE};
+
+        let cr_three: u64 = unsafe { controlregs::cr3() };
+        let pml4: PAddr = PAddr::from_u64(cr_three);
+        let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
+        let mut vspace: VSpace = VSpace {
+            pml4: pml4_table,
+            pager: BespinPageTableProvider::new(),
+        };
+
+        let base = unsafe {
+            let mut base = rdmsr(IA32_APIC_BASE);
+            debug!("xAPIC MMIO base is at {:x}", base & !0xfff);
+            base & !0xfff
+        };
+
+        vspace.map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
+
+        let regs: &'static mut [u32] =
+            unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
+
+        let mut apic = xapic::XAPIC::new(regs);
+        apic.attach();
+        debug!(
+            "xAPIC id: {}, version: {:#x}, is bsp: {}",
+            apic.id(),
+            apic.version(),
+            apic.bsp()
+        );
+    };
 
     debug!("allocation should work here...");
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);

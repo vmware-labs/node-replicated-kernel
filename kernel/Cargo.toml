@@ -18,6 +18,8 @@ klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
+apic = { path = "../lib/apic/" }
+driverkit = { path = "../lib/driverkit/" }
 lazy_static = { version = "1.1", features = ["nightly", "spin_no_std"] }
 fringe = { path = "../lib/libfringe", default-features = false, features = ["alloc"] }
 spin = "0.4.8"

@@ -6,5 +6,6 @@
 - [Memory](./Memory.md)
 - [Network](./Communication.md)
 - [Tracing](./Tracing.md)
-- [Tracing](./Testing.md)
+- [Testing](./Testing.md)
+- [Configuration](./Configuration.md)
 - [Glossary](./Glossary.md)

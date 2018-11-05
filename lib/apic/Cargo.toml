@@ -1,0 +1,16 @@
+[package]
+name = "apic"
+version = "0.0.1"
+authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+description = "ACPI drivers."
+readme = "README.md"
+license = "MIT"
+keywords = ["os", "acpi", "irq", "driver", "x86"]
+
+[dependencies]
+driverkit = { path = "../driverkit" }
+x86 = { path = "../x86" }
+log = "*"
+
+[target.'cfg(unix)'.dev-dependencies]
+env_logger = "0.5"

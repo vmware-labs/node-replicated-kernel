@@ -11,6 +11,8 @@ members = [
     "lib/processortrace",
     "lib/termcodes",
     "lib/libfringe",
+    "lib/driverkit",
+    "lib/apic",
 ]
 
 # disable stack unwinding on panic for now

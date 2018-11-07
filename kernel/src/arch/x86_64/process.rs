@@ -10,10 +10,10 @@ use x86::bits64::rflags;
 use x86::controlregs;
 
 use super::gdt;
-use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
+use arch::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 
 use arch::irq;
-use mm::{BespinPageTableProvider, PageTableProvider};
+use memory::{BespinPageTableProvider, PageTableProvider};
 use mutex::Mutex;
 
 const GIB_512: usize = 512 * 512 * 512 * 0x1000;

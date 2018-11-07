@@ -6,7 +6,6 @@
     raw,
     box_syntax,
     start,
-    panic_implementation,
     panic_info_message,
     alloc,
     allocator_api,
@@ -63,9 +62,6 @@ extern crate fringe;
 
 pub use klogger::*;
 
-#[macro_use]
-mod prelude;
-
 #[cfg(target_os = "none")]
 pub mod panic;
 
@@ -77,18 +73,15 @@ pub mod arch;
 #[path = "arch/unix/mod.rs"]
 pub mod arch;
 
-mod allocator;
-mod mm;
+mod memory;
+mod prelude;
 mod scheduler;
 mod time;
 
 use core::alloc::{GlobalAlloc, Layout};
-use mm::BespinSlabsProvider;
+use memory::{BespinSlabsProvider, PhysicalAllocator};
 use slabmalloc::{PageProvider, ZoneAllocator};
 use spin::Mutex;
-
-unsafe impl Send for BespinSlabsProvider {}
-unsafe impl Sync for BespinSlabsProvider {}
 
 static PAGER: Mutex<BespinSlabsProvider> = Mutex::new(BespinSlabsProvider::new());
 
@@ -107,9 +100,11 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             debug!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
             ptr
         } else {
-            use mm::FMANAGER;
-            let f = FMANAGER.allocate_region(layout);
-            let ptr = f.map_or(0 as *mut u8, |region| region.kernel_vaddr().as_ptr());
+            use memory::FMANAGER;
+            let f = FMANAGER.allocate(layout);
+            let ptr = f.map_or(core::ptr::null_mut(), |region| {
+                region.kernel_vaddr().as_mut_ptr()
+            });
             debug!(
                 "allocated big region ptr=0x{:x} layout={:?}",
                 ptr as usize, layout
@@ -169,8 +164,8 @@ pub fn main() {
 
     debug!("allocating a region of mem");
     unsafe {
-        use mm::FMANAGER;
-        FMANAGER.print_regions();
+        use memory::FMANAGER;
+        FMANAGER.print_info();
 
         let new_region: *mut u8 =
             alloc::alloc::alloc(Layout::from_size_align_unchecked(8192, 4096));
@@ -178,8 +173,23 @@ pub fn main() {
         assert!(!p.is_null());
 
         // print current regions
-        FMANAGER.print_regions();
+        FMANAGER.print_info();
     }
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-buddy"))]
+pub fn main() {
+    use buddy::FreeBlock;
+    use buddy::Heap;
+    let mut heap = Heap::new(
+        heap_base: *mut u8,
+        heap_size: usize,
+        free_lists: &mut [*mut FreeBlock],
+    );
+
+    let b = heap.allocate(4096, 4096);
 
     arch::debug::shutdown(ExitReason::Ok);
 }
@@ -200,27 +210,17 @@ pub fn main() {
         let paddr = PAddr::from(4 * 1024 * 1024 * 2);
 
         let kernel_vaddr = paddr_to_kernel_vaddr(paddr);
-
-        let ptr = kernel_vaddr.as_ptr();
-
+        let ptr: *mut u64 = kernel_vaddr.as_mut_ptr();
         let val = *ptr;
 
         debug!("no page fault {}", val);
-
         init_pd[4] = paging::PDEntry::new(paddr, paging::PDFlags::empty());
-
         debug!("unmapped page 2");
-
         tlb::flush_all();
-
         debug!("flushed TLB");
 
-        //let ptr = 0x8000000 as *mut u8;
-
         let kernel_vaddr = paddr_to_kernel_vaddr(paddr);
-
-        let ptr = kernel_vaddr.as_ptr();
-
+        let ptr: *mut u64 = kernel_vaddr.as_mut_ptr();
         let val = *ptr; // page-fault
         assert!(val != 0);
     }

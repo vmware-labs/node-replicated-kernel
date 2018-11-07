@@ -33,7 +33,7 @@ use self::process::VSpace;
 use klogger;
 use log::Level;
 use main;
-use mm::FMANAGER;
+use memory::{Frame, PhysicalAllocator, FMANAGER};
 use ExitReason;
 
 extern "C" {
@@ -136,22 +136,25 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
                     if region.base_address() > 0 {
-                        debug!("Adding {:?}", region);
-                        FMANAGER.add_region(
-                            // XXX: Regions contain kernel image as well insetad of just RAM, that's why we add 10 MiB to it...
-                            PAddr::from(region.base_address() + 1024 * 1024 * 10),
-                            region.length(),
-                        );
+                        // XXX: Regions contain kernel image as well insetad of just RAM, that's why we add 10 MiB to it...
+                        let offset = 1024 * 1024 * 10;
+                        let base = PAddr::from(region.base_address() + offset);
+                        let size = region.length() - offset;
+                        debug!("Traing to add base {:?} size {:?}", base, size);
+                        if FMANAGER.add_memory(Frame::new(base, size as usize)) {
+                            debug!("Added {:?}", region);
+                        } else {
+                            warn!("Unable to add {:?}", region)
+                        }
                     } else {
                         debug!("Ignore BIOS mappings at {:?}", region);
                     }
                 }
             }
         });
-        debug!("cleaning memory regions");
-        FMANAGER.clean_regions();
-        debug!("print regions");
-        FMANAGER.print_regions();
+
+        FMANAGER.init();
+        FMANAGER.print_info();
     }
 
     let cpuid = cpuid::CpuId::new();
@@ -180,7 +183,7 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
         );
     } else {
         debug!("no x2APIC support. Use xAPIC instead.");
-        use mm::BespinPageTableProvider;
+        use memory::BespinPageTableProvider;
         use x86::msr::{rdmsr, IA32_APIC_BASE};
 
         let cr_three: u64 = unsafe { controlregs::cr3() };

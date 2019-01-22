@@ -18,9 +18,6 @@ build:
   script:
     - cd kernel
     - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -vv --target=x86_64-bespin
-  variables:
-    # RUSTFLAGS env variable will override kernel/.config/cargo (https://github.com/rust-lang/cargo/issues/5376)
-    RUSTFLAGS: "-D warnings -C link-arg=-T./kernel/src/arch/x86_64/link.ld -C link-arg=-n -C target-feature=+sse"
 
 run:
   script:

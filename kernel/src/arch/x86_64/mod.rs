@@ -19,6 +19,7 @@ pub mod irq;
 pub mod memory;
 pub mod process;
 pub mod syscall;
+pub mod time;
 
 mod exec;
 mod isr;
@@ -50,20 +51,6 @@ extern "C" {
 //static mboot_sig: PAddr;
 }
 
-/*
-unsafe fn initialize_memory<'a, F: Fn(u64, usize) -> Option<&'a [u8]>>(mb: &Multiboot<F>) {
-    mb.memory_regions().map(|regions| {
-        for region in regions {
-            if region.memory_type() == MemoryType::RAM {
-                fmanager.add_region(region.base_address(), region.length());
-            }
-        }
-    });
-
-    fmanager.clean_regions();
-    fmanager.print_regions();
-}*/
-
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
@@ -72,8 +59,19 @@ pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
     sse::initialize();
     sprint!("\n\n");
+    assert!(
+        *time::tsc::TSC_FREQUENCY > 0,
+        "TSC_FREQUENCY has valid value." // Don't remove since it also initializes TSC_FREQUENCY
+    );
+
     klogger::init(Level::Trace).expect("Can't set-up logging");
-    debug!("Started");
+
+    // It's important that these two constructs get evaluated early during boot.
+    info!(
+        "Started at {} with {:?} since CPU startup",
+        *crate::time::WALL_TIME_ANCHOR,
+        *crate::time::BOOT_TIME_ANCHOR
+    );
 
     debug::init();
     irq::setup_idt();

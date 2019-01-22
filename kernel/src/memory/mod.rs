@@ -125,9 +125,11 @@ pub trait PageTableProvider<'a> {
     fn new_page(&mut self) -> Option<paging::PTEntry>;
 }
 
+#[allow(dead_code)]
 pub struct BespinPageTableProvider;
 
 impl BespinPageTableProvider {
+    #[allow(dead_code)]
     pub const fn new() -> BespinPageTableProvider {
         BespinPageTableProvider
     }
@@ -137,7 +139,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a PML4 table.
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
         unsafe {
-            let f = FMANAGER.allocate(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE));
+            let f = FMANAGER.allocate(
+                Layout::new::<paging::Page>()
+                    .align_to(BASE_PAGE_SIZE)
+                    .unwrap(),
+            );
             f.map(|frame| {
                 let pml4: &'b mut [paging::PML4Entry; 512] =
                     transmute(paddr_to_kernel_vaddr(frame.base));
@@ -150,7 +156,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
         unsafe {
             FMANAGER
-                .allocate(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .allocate(
+                    Layout::new::<paging::Page>()
+                        .align_to(BASE_PAGE_SIZE)
+                        .unwrap(),
+                )
                 .map(|frame| {
                     paging::PML4Entry::new(
                         frame.base,
@@ -164,7 +174,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
         unsafe {
             FMANAGER
-                .allocate(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .allocate(
+                    Layout::new::<paging::Page>()
+                        .align_to(BASE_PAGE_SIZE)
+                        .unwrap(),
+                )
                 .map(|frame| {
                     paging::PDPTEntry::new(
                         frame.base,
@@ -178,7 +192,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
         unsafe {
             FMANAGER
-                .allocate(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .allocate(
+                    Layout::new::<paging::Page>()
+                        .align_to(BASE_PAGE_SIZE)
+                        .unwrap(),
+                )
                 .map(|frame| {
                     paging::PDEntry::new(
                         frame.base,
@@ -192,7 +210,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     fn new_page(&mut self) -> Option<paging::PTEntry> {
         unsafe {
             FMANAGER
-                .allocate(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE))
+                .allocate(
+                    Layout::new::<paging::Page>()
+                        .align_to(BASE_PAGE_SIZE)
+                        .unwrap(),
+                )
                 .map(|frame| {
                     paging::PTEntry::new(
                         frame.base,
@@ -216,8 +238,13 @@ impl BespinSlabsProvider {
 
 impl<'a> PageProvider<'a> for BespinSlabsProvider {
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
-        let f =
-            unsafe { FMANAGER.allocate(Layout::new::<paging::Page>().align_to(BASE_PAGE_SIZE)) };
+        let f = unsafe {
+            FMANAGER.allocate(
+                Layout::new::<paging::Page>()
+                    .align_to(BASE_PAGE_SIZE)
+                    .unwrap(),
+            )
+        };
         f.map(|frame| unsafe {
             debug!("slabmalloc allocate frame.base = {:x}", frame.base);
             let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));

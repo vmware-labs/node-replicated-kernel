@@ -5,6 +5,11 @@ kernel.bin*
 kernel/kernel
 kernel/mbkernel
 
+# rump
+rump/binutils-2.30.90
+rump/gcc-8.2.0
+gcc-8.2.0.tar.gz
+
 # Builds
 target/
 Cargo.lock

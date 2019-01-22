@@ -34,3 +34,6 @@
 [submodule "lib/driverkit"]
 	path = lib/driverkit
 	url = git@github.com:gz/rust-driverkit.git
+[submodule "lib/rumpkernel"]
+	path = lib/rumpkernel
+	url = git@github.com:gz/rust-rumpkernel.git

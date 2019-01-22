@@ -387,7 +387,7 @@ mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let mut heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
             let power_of_twos: [usize; 21] = [
                 0,
                 1,
@@ -445,7 +445,7 @@ mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let mut heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
 
             // Block orders.
             assert_eq!(
@@ -489,7 +489,7 @@ mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let mut heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
 
             let block_16_0 = mem as *mut FreeBlock;
             let block_16_1 = mem.offset(16) as *mut FreeBlock;

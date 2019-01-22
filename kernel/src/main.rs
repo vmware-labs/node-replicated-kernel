@@ -11,20 +11,24 @@
     allocator_api,
     global_asm,
     linkage,
-    duration_as_u128
+    c_variadic,
+    alloc_layout_extra
 )]
-#![cfg_attr(not(target_os = "none"), feature(libc, extern_crate_item_prelude))]
 #![no_std]
 #![cfg_attr(target_os = "none", no_main)]
 
 #[cfg(not(target_os = "none"))]
 extern crate libc;
 
+extern crate rumpkernel;
+
 extern crate driverkit;
 
 extern crate spin;
 
 extern crate rlibc;
+
+extern crate cstr_core;
 
 #[macro_use]
 extern crate lazy_static;
@@ -75,6 +79,7 @@ pub mod arch;
 
 mod memory;
 mod prelude;
+pub mod rumprt;
 mod scheduler;
 mod time;
 
@@ -83,8 +88,10 @@ use memory::{BespinSlabsProvider, PhysicalAllocator};
 use slabmalloc::{PageProvider, ZoneAllocator};
 use spin::Mutex;
 
+#[allow(dead_code)]
 static PAGER: Mutex<BespinSlabsProvider> = Mutex::new(BespinSlabsProvider::new());
 
+#[allow(dead_code)]
 pub struct SafeZoneAllocator(Mutex<ZoneAllocator<'static>>);
 
 impl SafeZoneAllocator {
@@ -105,10 +112,10 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             let ptr = f.map_or(core::ptr::null_mut(), |region| {
                 region.kernel_vaddr().as_mut_ptr()
             });
-            debug!(
+            /*debug!(
                 "allocated big region ptr=0x{:x} layout={:?}",
                 ptr as usize, layout
-            );
+            );*/
 
             ptr
         }
@@ -127,6 +134,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     }
 }
 
+#[allow(dead_code)]
 #[cfg_attr(target_os = "none", global_allocator)]
 static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
 
@@ -179,6 +187,49 @@ pub fn main() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+#[cfg(all(feature = "integration-tests", feature = "test-time"))]
+pub fn main() {
+    unsafe {
+        let tsc = x86::time::rdtsc();
+        let tsc2 = x86::time::rdtsc();
+
+        let start = time::Instant::now();
+        let done = start.elapsed().as_nanos();
+        // We do this twice because I think it traps the first time?
+        let start = time::Instant::now();
+        let done = start.elapsed().as_nanos();
+        sprintln!("rdtsc overhead: {:?} cycles", tsc2 - tsc);
+        sprintln!("Instant overhead: {:?} ns", done);
+
+        if cfg!(debug_assertions) {
+            assert!(tsc2 - tsc <= 100, "rdtsc overhead big?");
+            // TODO: should be less:
+            assert!(done <= 100, "Instant overhead big?");
+        } else {
+            assert!(tsc2 - tsc <= 50);
+            // TODO: should be less:
+            assert!(done <= 100);
+        }
+    }
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-rump"))]
+pub fn main() {
+    extern "C" {
+        fn rump_boot_setsigmodel(sig: usize);
+        fn rump_init();
+    }
+
+    unsafe {
+        let start = time::Instant::now();
+        rump_boot_setsigmodel(1);
+        rump_init();
+        sprintln!("rump_init done in {:?}", start.elapsed());
+    }
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 #[cfg(all(feature = "integration-tests", feature = "test-buddy"))]
 pub fn main() {
     use buddy::FreeBlock;
@@ -201,27 +252,13 @@ pub fn main() {
 
 #[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
 pub fn main() {
-    use arch::init_pd;
     use arch::memory::{paddr_to_kernel_vaddr, PAddr};
-    use x86::bits64::paging;
-    use x86::tlb;
 
     unsafe {
-        let paddr = PAddr::from(4 * 1024 * 1024 * 2);
-
+        let paddr = PAddr::from(1024 * 1024 * 1024 * 1);
         let kernel_vaddr = paddr_to_kernel_vaddr(paddr);
         let ptr: *mut u64 = kernel_vaddr.as_mut_ptr();
         let val = *ptr;
-
-        debug!("no page fault {}", val);
-        init_pd[4] = paging::PDEntry::new(paddr, paging::PDFlags::empty());
-        debug!("unmapped page 2");
-        tlb::flush_all();
-        debug!("flushed TLB");
-
-        let kernel_vaddr = paddr_to_kernel_vaddr(paddr);
-        let ptr: *mut u64 = kernel_vaddr.as_mut_ptr();
-        let val = *ptr; // page-fault
         assert!(val != 0);
     }
 }

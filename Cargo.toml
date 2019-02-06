@@ -14,6 +14,8 @@ members = [
     "lib/driverkit",
     "lib/apic",
     "lib/rumpkernel",
+    "lib/lineup",
+    "lib/rawtime",
 ]
 
 # disable stack unwinding on panic for now

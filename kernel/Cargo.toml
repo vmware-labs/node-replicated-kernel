@@ -21,8 +21,9 @@ backtracer = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
 driverkit = { path = "../lib/driverkit/" }
 lazy_static = { version = "1.1", features = ["nightly", "spin_no_std"] }
-fringe = { path = "../lib/libfringe", default-features = false, features = ["alloc"] }
 rumpkernel = { path = "../lib/rumpkernel" }
+lineup = { path = "../lib/lineup" }
+rawtime = { path = "../lib/rawtime" }
 spin = "0.4"
 log = "0.4"
 # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
@@ -31,11 +32,9 @@ cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = fa
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = "0.2"
 
-
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
 rexpect = "0.3"
 matches = "0.1.8"
-
 
 [features]
 integration-tests = []
@@ -43,8 +42,9 @@ test-exit = []
 test-pfault = []
 test-gpfault = []
 test-alloc = []
-test-scheduler = []
 test-sse = []
 test-rump = []
+test-rump2 = []
 test-time = []
-
+test-scheduler = []
+test-scheduler-mutex = []

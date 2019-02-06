@@ -61,8 +61,8 @@ extern crate elfloader;
 extern crate multiboot;
 
 extern crate backtracer;
-
 extern crate fringe;
+extern crate rawtime;
 
 pub use klogger::*;
 
@@ -80,8 +80,6 @@ pub mod arch;
 mod memory;
 mod prelude;
 pub mod rumprt;
-mod scheduler;
-mod time;
 
 use core::alloc::{GlobalAlloc, Layout};
 use memory::{BespinSlabsProvider, PhysicalAllocator};
@@ -104,7 +102,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
             let ptr = self.0.lock().allocate(layout);
-            debug!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
+            //debug!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
             ptr
         } else {
             use memory::FMANAGER;
@@ -112,23 +110,25 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             let ptr = f.map_or(core::ptr::null_mut(), |region| {
                 region.kernel_vaddr().as_mut_ptr()
             });
-            /*debug!(
-                "allocated big region ptr=0x{:x} layout={:?}",
-                ptr as usize, layout
-            );*/
 
             ptr
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        debug!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            debug!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
+            //debug!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
             self.0.lock().deallocate(ptr, layout);
         } else {
-            debug!(
-                "WARN lost big allocation at 0x{:x} layout={:?}",
-                ptr as usize, layout
+            use arch::memory::{kernel_vaddr_to_paddr, VAddr};
+            use memory::FMANAGER;
+            FMANAGER.deallocate(
+                memory::Frame::new(
+                    kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
+                    layout.size(),
+                ),
+                layout,
             );
         }
     }
@@ -193,10 +193,10 @@ pub fn main() {
         let tsc = x86::time::rdtsc();
         let tsc2 = x86::time::rdtsc();
 
-        let start = time::Instant::now();
+        let start = rawtime::Instant::now();
         let done = start.elapsed().as_nanos();
         // We do this twice because I think it traps the first time?
-        let start = time::Instant::now();
+        let start = rawtime::Instant::now();
         let done = start.elapsed().as_nanos();
         sprintln!("rdtsc overhead: {:?} cycles", tsc2 - tsc);
         sprintln!("Instant overhead: {:?} ns", done);
@@ -214,6 +214,29 @@ pub fn main() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+#[cfg(all(feature = "integration-tests", feature = "test-rump2"))]
+pub fn main() {
+    extern "C" {
+        fn rump_boot_setsigmodel(sig: usize);
+        fn rump_init();
+    }
+
+    let mut s = scheduler2::Scheduler::new();
+
+    unsafe {
+        s.spawn(20480, |_yielder| {
+            let start = rawtime::Instant::now();
+            rump_boot_setsigmodel(1);
+            rump_init();
+            sprintln!("rump_init done in {:?}", start.elapsed());
+        });
+    }
+
+    s.run();
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 #[cfg(all(feature = "integration-tests", feature = "test-rump"))]
 pub fn main() {
     extern "C" {
@@ -222,7 +245,7 @@ pub fn main() {
     }
 
     unsafe {
-        let start = time::Instant::now();
+        let start = rawtime::Instant::now();
         rump_boot_setsigmodel(1);
         rump_init();
         sprintln!("rump_init done in {:?}", start.elapsed());
@@ -304,23 +327,83 @@ pub fn main() {
 
 #[cfg(all(feature = "integration-tests", feature = "test-scheduler"))]
 pub fn main() {
-    debug!("tsc_frequency = {:?}", *time::TSC_FREQUENCY);
+    use alloc::boxed::Box;
+    use alloc::sync::Arc;
+    use core::sync::atomic::AtomicBool;
+    use core::sync::atomic::Ordering;
 
+    let mut s = scheduler2::Scheduler::new();
+    let mut a = Arc::new(AtomicBool::new(false));
+
+    unsafe {
+        s.spawn(4096, |yielder| {
+            debug!("test from lwt1");
+        });
+    }
+    s.run();
+    s.run();
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-scheduler-mutex"))]
+pub fn main() {
+    use alloc::boxed::Box;
+    use alloc::sync::Arc;
+    use core::sync::atomic::AtomicBool;
+    use core::sync::atomic::Ordering;
+
+    let mut s = scheduler2::Scheduler::new();
+
+    unsafe {
+        s.spawn(4096, |yielder| {
+            debug!("test from lwt1");
+            //yielder.lock(mutex);
+        });
+
+        //let mut a1 = a.clone();
+        s.spawn(4096, move |yielder| {
+            //let m = yielder.lock(mutex);
+            let r = yielder.sleep(rawtime::Duration::from_nanos(100));
+        });
+
+        //let mut a2 = a.clone();
+        s.spawn(4096, move |mut yielder| {
+            debug!("test from lwt3");
+            let r = yielder.sleep(rawtime::Duration::from_nanos(100));
+            debug!("test from lwt3");
+            //(*a2).store(true, Ordering::Relaxed);
+            //debug!("lwt3 sleep done {:?}", r.ok());
+        });
+    }
+
+    s.run();
+    s.run();
+    s.run();
+    s.run();
+    s.run();
+    s.run();
+    s.run();
+    s.run();
+    s.run();
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-scheduler-yield"))]
+pub fn main() {
     let mut s = scheduler::Scheduler::new();
     unsafe {
         s.spawn(4096, |_yielder| {
             debug!("test from lwt1");
-        });
-        s.spawn(4096, |_yielder| {
-            debug!("test from lwt2");
+            let r = yielder.wait_for();
         });
 
         s.spawn(4096, |mut yielder| {
-            debug!("test from lwt3");
-            let _r = yielder.sleep(time::Duration::new(5, 0));
-            debug!("lwt3 sleep done");
+            debug!("test from lwt2");
         });
     }
+
     s.run();
     s.run();
     s.run();

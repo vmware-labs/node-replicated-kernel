@@ -25,9 +25,6 @@
 [submodule "lib/termcodes"]
 	path = lib/termcodes
 	url = git@github.com:gz/termcodes.git
-[submodule "lib/libfringe"]
-	path = lib/libfringe
-	url = git@github.com:gz/libfringe.git
 [submodule "lib/processortrace"]
 	path = lib/processortrace
 	url = git@github.com:gz/rust-processortrace.git
@@ -37,3 +34,6 @@
 [submodule "lib/rumpkernel"]
 	path = lib/rumpkernel
 	url = git@github.com:gz/rust-rumpkernel.git
+[submodule "lib/rawtime"]
+	path = lib/rawtime
+	url = https://github.com/gz/rawtime.git

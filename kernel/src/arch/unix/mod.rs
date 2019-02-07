@@ -5,7 +5,6 @@ use main;
 use ExitReason;
 
 pub mod memory;
-pub mod time;
 
 pub mod debug {
     use crate::ExitReason;
@@ -25,8 +24,8 @@ fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
     klogger::init(Level::Trace).expect("Can't set-up logging");
     info!(
         "Started at {} with {:?} since CPU startup",
-        *crate::time::WALL_TIME_ANCHOR,
-        *crate::time::BOOT_TIME_ANCHOR
+        *rawtime::WALL_TIME_ANCHOR,
+        *rawtime::BOOT_TIME_ANCHOR
     );
 
     main();

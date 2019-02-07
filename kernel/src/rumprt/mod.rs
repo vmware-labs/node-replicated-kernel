@@ -6,8 +6,6 @@ use core::slice;
 
 use cstr_core::CStr;
 
-use time;
-
 pub mod locking;
 pub mod threads;
 
@@ -151,7 +149,7 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
     const RUMPUSER_CLOCK_RELWALL: u64 = 0;
     const RUMPUSER_CLOCK_ABSMONO: u64 = 1;
 
-    let boot_time = time::duration_since_boot();
+    let boot_time = rawtime::duration_since_boot();
 
     match enum_rumpclock {
         RUMPUSER_CLOCK_ABSMONO => {
@@ -160,7 +158,7 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
             0
         }
         RUMPUSER_CLOCK_RELWALL => {
-            *sec = ((*time::WALL_TIME_ANCHOR).as_unix_time() + boot_time.as_secs()) as i64;
+            *sec = ((*rawtime::WALL_TIME_ANCHOR).as_unix_time() + boot_time.as_secs()) as i64;
             *nsec = boot_time.subsec_nanos() as u64;
             0
         }
@@ -176,7 +174,7 @@ pub unsafe extern "C" fn rumpuser_clock_sleep(_enum_rumpclock: u64, sec: i64, ns
         _enum_rumpclock, sec, nsec
     );
     /*
-    let start = time::Instant::now();
+    let start = rawtime::Instant::now();
     while start.elapsed().as_secs() >= sec as u64 && start.elapsed().subsec_nanos() > nsec as u32 {}
     0
     */

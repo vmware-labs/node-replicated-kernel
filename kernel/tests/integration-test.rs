@@ -116,3 +116,19 @@ fn rump() {
         WaitStatus::Exited(_, 0)
     );
 }
+
+#[test]
+fn scheduler() {
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_qemu("test-scheduler")?;
+        p.exp_string("lwt2")?;
+        p.exp_string("lwt1")?;
+        p.exp_eof()?;
+        p.process.exit()
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Exited(_, 0)
+    );
+}

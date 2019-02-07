@@ -20,7 +20,6 @@ elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
 driverkit = { path = "../lib/driverkit/" }
-lazy_static = { version = "1.1", features = ["nightly", "spin_no_std"] }
 rumpkernel = { path = "../lib/rumpkernel" }
 lineup = { path = "../lib/lineup" }
 rawtime = { path = "../lib/rawtime" }
@@ -28,6 +27,7 @@ spin = "0.4"
 log = "0.4"
 # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
+#lazy_static = { version = "1.1", features = ["nightly", "spin_no_std"] }
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = "0.2"
@@ -47,4 +47,3 @@ test-rump = []
 test-rump2 = []
 test-time = []
 test-scheduler = []
-test-scheduler-mutex = []

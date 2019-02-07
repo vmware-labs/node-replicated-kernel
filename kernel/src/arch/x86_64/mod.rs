@@ -19,7 +19,6 @@ pub mod irq;
 pub mod memory;
 pub mod process;
 pub mod syscall;
-pub mod time;
 
 mod exec;
 mod isr;
@@ -60,7 +59,7 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
     sse::initialize();
     sprint!("\n\n");
     assert!(
-        *time::tsc::TSC_FREQUENCY > 0,
+        *rawtime::arch::tsc::TSC_FREQUENCY > 0,
         "TSC_FREQUENCY has valid value." // Don't remove since it also initializes TSC_FREQUENCY
     );
 
@@ -69,8 +68,8 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
     // It's important that these two constructs get evaluated early during boot.
     info!(
         "Started at {} with {:?} since CPU startup",
-        *crate::time::WALL_TIME_ANCHOR,
-        *crate::time::BOOT_TIME_ANCHOR
+        *rawtime::WALL_TIME_ANCHOR,
+        *rawtime::BOOT_TIME_ANCHOR
     );
 
     debug::init();

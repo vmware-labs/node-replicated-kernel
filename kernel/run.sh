@@ -11,7 +11,7 @@ else
     OBJCOPY=objcopy
 fi
 
-BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=$BESPIN_TARGET "$@"
+BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=$BESPIN_TARGET "$@"
 
 cp ../target/$BESPIN_TARGET/debug/bespin kernel
 $OBJCOPY ../target/$BESPIN_TARGET/debug/bespin -F elf32-i386 mbkernel

@@ -40,19 +40,15 @@ pub mod condvar;
 pub mod mutex;
 pub mod rwlock;
 
-#[cfg(test)]
 fn noop_curlwp() -> u64 {
     0
 }
 
-#[cfg(test)]
 fn noop_unschedule(_nlocks: &mut u64, _mtx: Option<&mutex::Mutex>) {}
 
-#[cfg(test)]
 fn noop_schedule(_nlocks: &u64, _mtx: Option<&mutex::Mutex>) {}
 
-#[cfg(test)]
-static DEFAULT_UPCALLS: Upcalls = Upcalls {
+pub static DEFAULT_UPCALLS: Upcalls = Upcalls {
     curlwp: noop_curlwp,
     schedule: noop_schedule,
     deschedule: noop_unschedule,

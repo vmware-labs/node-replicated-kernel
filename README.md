@@ -64,7 +64,7 @@ Commit changes and push
 
 ### Removing a submodule
 1. Delete the relevant section from the .gitmodules file.
-1. Stage the .gitmodules changes git add .gitmodules.
+1. Stage the .gitmodules changes: git add .gitmodules.
 1. Delete the relevant section from .git/config.
 1. Run git rm --cached path_to_submodule (no trailing slash).
 1. Run rm -rf .git/modules/path_to_submodule (no trailing slash).

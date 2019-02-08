@@ -1,5 +1,7 @@
-use crate::{ds, SchedControl, Scheduler, ThreadId, ENV};
 use core::cell::UnsafeCell;
+
+use crate::tls::Environment;
+use crate::{ds, Scheduler, ThreadId, ThreadState};
 
 #[derive(Debug)]
 pub struct Mutex {
@@ -31,24 +33,24 @@ impl Mutex {
         mtx.is_spin
     }
 
-    pub fn try_enter(&self, yielder: &mut SchedControl) -> bool {
+    pub fn try_enter(&self) -> bool {
         let mtx = unsafe { &mut *self.inner.get() };
-        mtx.try_enter(yielder)
+        mtx.try_enter()
     }
 
-    pub fn enter(&self, yielder: &mut SchedControl) {
+    pub fn enter(&self) {
         let mtx = unsafe { &mut *self.inner.get() };
-        mtx.enter(yielder);
+        mtx.enter();
     }
 
-    pub fn enter_nowrap(&self, yielder: &mut SchedControl) {
+    pub fn enter_nowrap(&self) {
         let mtx = unsafe { &mut *self.inner.get() };
-        mtx.enter_nowrap(yielder);
+        mtx.enter_nowrap();
     }
 
-    pub fn exit(&self, yielder: &mut SchedControl) {
+    pub fn exit(&self) {
         let mtx = unsafe { &mut *self.inner.get() };
-        mtx.exit(yielder);
+        mtx.exit();
     }
 
     pub fn owner(&self) -> u64 {
@@ -67,12 +69,13 @@ struct MutexInner {
 }
 
 impl MutexInner {
-    fn try_enter(&mut self, yielder: &mut SchedControl) -> bool {
-        let tid = unsafe { ENV.current_tid().expect("Can't lock without tid.") };
+    fn try_enter(&mut self) -> bool {
+        let tid = Environment::tid();
         assert!(self.owner != Some(tid), "Locking mutex against itself.");
 
         if self.owner.is_none() {
             self.owner = Some(tid);
+            let yielder: &mut ThreadState = Environment::thread();
             self.lwp_ptr = Some((yielder.upcalls.curlwp)());
             true
         } else {
@@ -80,28 +83,30 @@ impl MutexInner {
         }
     }
 
-    fn enter(&mut self, yielder: &mut SchedControl) {
-        let tid = unsafe { ENV.current_tid().expect("Can't lock without tid.") };
+    fn enter(&mut self) {
+        let tid = Environment::tid();
+        let yielder: &mut ThreadState = Environment::thread();
 
-        if !self.try_enter(yielder) {
+        if !self.try_enter() {
             let mut rid: u64 = 0;
             (yielder.upcalls.deschedule)(&mut rid, None);
             self.waitlist.push(tid);
             yielder.make_unrunnable(tid);
-            assert!(self.try_enter(yielder));
+            assert!(self.try_enter());
             (yielder.upcalls.schedule)(&rid, None)
         }
     }
 
-    fn enter_nowrap(&mut self, yielder: &mut SchedControl) {
+    fn enter_nowrap(&mut self) {
         // one VCPU supported, no preemption so it must succeed
-        assert!(self.try_enter(yielder));
+        assert!(self.try_enter());
     }
 
-    fn exit(&mut self, yielder: &mut SchedControl) {
-        let tid = unsafe { ENV.current_tid() };
-        assert!(tid.is_some(), "Need to have scheduler thread");
-        assert!(self.owner == tid, "Only owner can exit mutex.");
+    fn exit(&mut self) {
+        let tid = Environment::tid();
+        let yielder: &mut ThreadState = Environment::thread();
+
+        assert!(self.owner == Some(tid), "Only owner can exit mutex.");
         self.owner = None;
         self.lwp_ptr = None;
 
@@ -164,19 +169,19 @@ fn test_mutex() {
 
     s.spawn(4096, move |mut yielder| {
         for _i in 0..5 {
-            m2.enter(&mut yielder);
+            m2.enter();
             assert!(counter_1.read() >= 5);
             counter_1.increment();
-            m2.exit(&mut yielder);
+            m2.exit();
         }
     });
 
     s.spawn(4096, move |mut yielder| {
         for _i in 0..5 {
-            m1.enter(&mut yielder);
+            m1.enter();
             assert!(counter_2.read() < 5);
             counter_2.increment();
-            m1.exit(&mut yielder);
+            m1.exit();
         }
     });
 

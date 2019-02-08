@@ -1,6 +1,8 @@
-use crate::{ds, SchedControl, Scheduler, ThreadId, ENV};
 use core::cell::UnsafeCell;
 use either::{Either, Left, Right};
+
+use crate::tls::Environment;
+use crate::{ds, Scheduler, ThreadId, ThreadState};
 
 #[derive(Debug, Clone, Copy)]
 enum RwLockIntent {
@@ -23,9 +25,9 @@ impl RwLock {
         }
     }
 
-    pub fn enter(&self, flags: RwLockIntent, yielder: &mut SchedControl) {
+    pub fn enter(&self, flags: RwLockIntent) {
         let rw = unsafe { &mut *self.inner.get() };
-        rw.enter(flags, yielder)
+        rw.enter(flags)
     }
 
     pub fn try_enter(&self, flags: RwLockIntent) -> bool {
@@ -38,14 +40,14 @@ impl RwLock {
         rw.try_upgrade()
     }
 
-    pub fn downgrade(&self, yielder: &mut SchedControl) {
+    pub fn downgrade(&self) {
         let rw = unsafe { &mut *self.inner.get() };
-        rw.downgrade(yielder)
+        rw.downgrade()
     }
 
-    pub fn exit(&self, yielder: &mut SchedControl) {
+    pub fn exit(&self) {
         let rw = unsafe { &mut *self.inner.get() };
-        rw.exit(yielder)
+        rw.exit()
     }
 
     pub fn held(&self, flags: RwLockIntent) -> bool {
@@ -71,7 +73,8 @@ impl RwLockInner {
     }
 
     pub fn held(&self, opt: RwLockIntent) -> bool {
-        let tid = unsafe { ENV.current_tid().expect("Can't enter without tid") };
+        let tid = Environment::tid();
+
         match (opt, self.owner) {
             (_, None) => false,
             (RwLockIntent::Read, Some(Left(_))) => false,
@@ -83,8 +86,9 @@ impl RwLockInner {
         }
     }
 
-    pub fn enter(&mut self, opt: RwLockIntent, yielder: &mut SchedControl) {
-        let tid = unsafe { ENV.current_tid().expect("Can't enter without tid") };
+    pub fn enter(&mut self, opt: RwLockIntent) {
+        let tid = Environment::tid();
+        let yielder: &mut ThreadState = Environment::thread();
 
         let mut rid: u64 = 0;
         match (self.try_enter(opt), opt) {
@@ -107,7 +111,7 @@ impl RwLockInner {
     }
 
     pub fn try_enter(&mut self, opt: RwLockIntent) -> bool {
-        let tid = unsafe { ENV.current_tid().expect("Can't enter without tid") };
+        let tid = Environment::tid();
 
         match (opt, self.owner) {
             (RwLockIntent::Read, Some(Left(_owner))) => false,
@@ -133,7 +137,9 @@ impl RwLockInner {
     }
 
     // Wake-up strategy prioritize writers over readers to avoid starvations of writes.
-    fn wakeup_writer_then_readers(&mut self, tid: ThreadId, yielder: &mut SchedControl) {
+    fn wakeup_writer_then_readers(&mut self, tid: ThreadId) {
+        let yielder: &mut ThreadState = Environment::thread();
+
         if self.wait_for_write.len() > 0 {
             self.owner = Some(Left(tid));
             yielder.make_runnable(tid);
@@ -145,20 +151,20 @@ impl RwLockInner {
         }
     }
 
-    pub fn exit(&mut self, yielder: &mut SchedControl) {
-        let tid = unsafe { ENV.current_tid().expect("Can't enter without tid") };
+    pub fn exit(&mut self) {
+        let tid = Environment::tid();
 
         match self.owner {
             Some(Left(_owner)) => {
                 self.owner = None;
-                self.wakeup_writer_then_readers(tid, yielder);
+                self.wakeup_writer_then_readers(tid);
             }
             Some(Right(reader_count)) => {
                 if reader_count > 1 {
                     self.owner = Some(Right(reader_count - 1));
                 } else {
                     self.owner = None;
-                    self.wakeup_writer_then_readers(tid, yielder);
+                    self.wakeup_writer_then_readers(tid);
                 }
             }
             None => {
@@ -167,8 +173,8 @@ impl RwLockInner {
         }
     }
 
-    pub fn downgrade(&mut self, yielder: &mut SchedControl) {
-        let tid = unsafe { ENV.current_tid().expect("Need tid set.") };
+    pub fn downgrade(&mut self) {
+        let tid = Environment::tid();
 
         let owner = self.owner.unwrap().left();
         assert_eq!(owner, Some(tid), "Need to own the lock!");
@@ -177,12 +183,14 @@ impl RwLockInner {
         if self.wait_for_read.len() > 0 {
             let wait_for_read = self.wait_for_read.clone();
             self.wait_for_read.clear();
+
+            let yielder: &mut ThreadState = Environment::thread();
             yielder.make_all_runnable(wait_for_read);
         }
     }
 
     pub fn try_upgrade(&mut self) -> bool {
-        let tid = unsafe { ENV.current_tid().expect("Need tid set.") };
+        let tid = Environment::tid();
 
         let can_upgrade = match self.owner {
             Some(Right(reader_count)) => reader_count == 1, // TODO: This assume we're the reader...
@@ -209,17 +217,17 @@ fn test_rwlock() {
 
     s.spawn(4096, move |mut yielder| {
         for _i in 0..5 {
-            rwlock1.enter(RwLockIntent::Read, &mut yielder);
+            rwlock1.enter(RwLockIntent::Read);
             assert!(!rwlock1.try_upgrade());
         }
     });
 
     s.spawn(4096, move |mut yielder| {
         for i in 0..5 {
-            rwlock2.enter(RwLockIntent::Read, &mut yielder);
+            rwlock2.enter(RwLockIntent::Read);
             if i == 0 {
                 assert!(rwlock2.try_upgrade());
-                rwlock2.downgrade(&mut yielder);
+                rwlock2.downgrade();
             } else {
                 assert!(!rwlock2.try_upgrade());
             }

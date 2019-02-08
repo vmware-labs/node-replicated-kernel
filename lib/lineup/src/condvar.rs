@@ -1,8 +1,10 @@
-use crate::mutex::Mutex;
-use crate::{ds, SchedControl, Scheduler, ThreadId, ENV};
 use core::cell::UnsafeCell;
 use core::time::Duration;
 use log::trace;
+
+use crate::mutex::Mutex;
+use crate::tls::Environment;
+use crate::{ds, Scheduler, ThreadId, ThreadState};
 
 #[derive(Debug)]
 struct CondVar {
@@ -19,14 +21,14 @@ impl CondVar {
         }
     }
 
-    pub fn wait(&self, mtx: &Mutex, yielder: &mut SchedControl) {
+    pub fn wait(&self, mtx: &Mutex) {
         let cv = unsafe { &mut *self.inner.get() };
-        cv.wait(mtx, yielder);
+        cv.wait(mtx);
     }
 
-    pub fn wait_nowrap(&self, mtx: &Mutex, yielder: &mut SchedControl) {
+    pub fn wait_nowrap(&self, mtx: &Mutex) {
         let cv = unsafe { &mut *self.inner.get() };
-        cv.wait_nowrap(mtx, yielder);
+        cv.wait_nowrap(mtx);
     }
 
     pub fn timed_wait(&self, mtx: &Mutex, d: Duration) {
@@ -34,14 +36,14 @@ impl CondVar {
         cv.timed_wait(mtx, d);
     }
 
-    pub fn signal(&self, yielder: &mut SchedControl) {
+    pub fn signal(&self) {
         let cv = unsafe { &mut *self.inner.get() };
-        cv.signal(yielder);
+        cv.signal();
     }
 
-    pub fn broadcast(&self, yielder: &mut SchedControl) {
+    pub fn broadcast(&self) {
         let cv = unsafe { &mut *self.inner.get() };
-        cv.broadcast(yielder);
+        cv.broadcast();
     }
 
     pub fn has_waiters(&self) {
@@ -71,56 +73,63 @@ impl CondVarInner {
         }
     }
 
-    fn cv_unschedule(&mut self, mtx: &Mutex, rid: &mut u64, yielder: &mut SchedControl) {
+    fn cv_unschedule(&mut self, mtx: &Mutex, rid: &mut u64) {
+        let yielder: &mut ThreadState = Environment::thread();
         (yielder.upcalls.schedule)(&rid, Some(mtx));
-
-        mtx.exit(yielder);
+        mtx.exit();
     }
 
-    fn cv_reschedule(&mut self, mtx: &Mutex, rid: &u64, yielder: &mut SchedControl) {
+    fn cv_reschedule(&mut self, mtx: &Mutex, rid: &u64) {
+        let yielder: &mut ThreadState = Environment::thread();
+
         if mtx.is_spin() || mtx.is_kmutex() {
             (yielder.upcalls.schedule)(&rid, Some(mtx));
-            mtx.enter_nowrap(yielder);
+            mtx.enter_nowrap();
         } else {
-            mtx.enter_nowrap(yielder);
+            mtx.enter_nowrap();
             (yielder.upcalls.schedule)(&rid, Some(mtx));
         }
     }
 
-    pub fn wait(&mut self, mtx: &Mutex, yielder: &mut SchedControl) {
-        let tid = unsafe { ENV.current_tid().expect("Need tid set.") };
+    pub fn wait(&mut self, mtx: &Mutex) {
+        let tid = Environment::tid();
+        let yielder: &mut ThreadState = Environment::thread();
 
         let mut rid: u64 = 0;
-        self.cv_unschedule(mtx, &mut rid, yielder);
+        self.cv_unschedule(mtx, &mut rid);
         self.waiters.push(tid);
         trace!("waiting for {:?}", tid);
         yielder.make_unrunnable(tid);
-        self.cv_reschedule(mtx, &rid, yielder);
+        self.cv_reschedule(mtx, &rid);
     }
 
-    pub fn wait_nowrap(&mut self, mtx: &Mutex, yielder: &mut SchedControl) {
-        let tid = unsafe { ENV.current_tid().expect("Need tid set.") };
+    pub fn wait_nowrap(&mut self, mtx: &Mutex) {
+        let tid = Environment::tid();
+        let yielder: &mut ThreadState = Environment::thread();
 
-        mtx.exit(yielder);
+        mtx.exit();
         self.waiters.push(tid);
         yielder.make_unrunnable(tid);
-        mtx.enter(yielder);
+        mtx.enter();
     }
 
     pub fn timed_wait(&mut self, _mutex: &Mutex, _d: Duration) {
         unreachable!("CV timedwaits")
     }
 
-    pub fn signal(&mut self, yielder: &mut SchedControl) {
+    pub fn signal(&mut self) {
         let waking_tid = self.waiters.pop();
+
         waking_tid.map(|tid| {
+            let yielder: &mut ThreadState = Environment::thread();
             yielder.make_runnable(tid);
         });
     }
 
-    pub fn broadcast(&mut self, yielder: &mut SchedControl) {
+    pub fn broadcast(&mut self) {
         let waiters = self.waiters.clone();
         self.waiters.clear();
+        let yielder: &mut ThreadState = Environment::thread();
         yielder.make_all_runnable(waiters);
     }
 
@@ -144,15 +153,15 @@ fn test_condvar() {
 
     s.spawn(4096, move |mut yielder| {
         for _i in 0..12 {
-            cv1.signal(&mut yielder);
+            cv1.signal();
         }
     });
 
     s.spawn(4096, move |mut yielder| {
         for _i in 0..5 {
-            m2.enter(&mut yielder);
-            cv2.wait(&m2, &mut yielder);
-            m2.exit(&mut yielder);
+            m2.enter();
+            cv2.wait(&m2);
+            m2.exit();
         }
     });
 

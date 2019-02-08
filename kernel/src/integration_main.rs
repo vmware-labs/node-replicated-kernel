@@ -82,14 +82,14 @@ pub fn main() {
         fn rump_init();
     }
 
-    let mut s = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
-    s.spawn(28 * 4096, |_yielder| unsafe {
+    let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
+    scheduler.spawn(32 * 4096, |_yielder| unsafe {
         let start = rawtime::Instant::now();
         rump_boot_setsigmodel(1);
         rump_init();
         sprintln!("rump_init done in {:?}", start.elapsed());
     });
-    s.run();
+    scheduler.run();
     arch::debug::shutdown(ExitReason::Ok);
 }
 
@@ -166,14 +166,23 @@ pub fn main() {
 
 #[cfg(all(feature = "integration-tests", feature = "test-scheduler"))]
 pub fn main() {
+    let cpuid = x86::cpuid::CpuId::new();
+    assert!(
+        cpuid
+            .get_extended_feature_info()
+            .map_or(false, |ef| ef.has_fsgsbase()),
+        "FS/GS base instructions supported"
+    );
+    use lineup::tls::Environment;
+
     let mut s = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
     s.spawn(4096, |yielder| {
         let _r = yielder.relinquish();
-        debug!("lwt1");
+        debug!("lwt1 {:?}", Environment::tid());
     });
 
     s.spawn(4096, |_yielder| {
-        debug!("lwt2");
+        debug!("lwt2 {:?}", Environment::tid());
     });
 
     s.run();

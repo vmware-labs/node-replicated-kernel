@@ -72,6 +72,11 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
         *rawtime::BOOT_TIME_ANCHOR
     );
 
+    // For lineup scheduler enable fs/gs base instructions (Thread local storage implementation).
+    let mut cr4: controlregs::Cr4 = unsafe { controlregs::cr4() };
+    cr4 |= controlregs::Cr4::CR4_ENABLE_FSGSBASE;
+    unsafe { controlregs::cr4_write(cr4) };
+
     debug::init();
     irq::setup_idt();
     irq::enable();

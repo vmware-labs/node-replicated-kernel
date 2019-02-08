@@ -10,7 +10,6 @@ members = [
     "lib/elfloader",
     #"lib/processortrace",
     "lib/termcodes",
-    "lib/libfringe",
     "lib/driverkit",
     "lib/apic",
     "lib/rumpkernel",

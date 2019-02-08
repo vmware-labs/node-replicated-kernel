@@ -30,6 +30,8 @@ extern crate rlibc;
 
 extern crate cstr_core;
 
+extern crate lineup;
+
 #[macro_use]
 pub mod mutex;
 

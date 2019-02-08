@@ -7,6 +7,7 @@ extern crate fringe;
 extern crate hashmap_core;
 extern crate log;
 extern crate rawtime;
+extern crate x86;
 
 use rawtime::Instant;
 
@@ -30,6 +31,7 @@ mod ds {
 
 use core::hash::{Hash, Hasher};
 use core::ops::Add;
+use core::ptr;
 use core::time::Duration;
 use log::*;
 
@@ -39,6 +41,7 @@ use fringe::OwnedStack;
 pub mod condvar;
 pub mod mutex;
 pub mod rwlock;
+pub mod tls;
 
 fn noop_curlwp() -> u64 {
     0
@@ -98,6 +101,7 @@ pub struct Thread {
     id: ThreadId,
     wait_until: Option<Instant>,
     interrupted: bool,
+    state: *mut ThreadState<'static>, // TODO: not really static, but keeps it easier for now
 }
 
 impl Thread {
@@ -108,23 +112,30 @@ impl Thread {
         upcalls: Upcalls,
     ) -> (Thread, Generator<'a, YieldResume, YieldRequest, OwnedStack>)
     where
-        F: 'static + FnOnce(SchedControl) + Send,
+        F: 'static + FnOnce(ThreadState) + Send,
     {
         let stack = OwnedStack::new(stack_size);
 
-        (
-            Thread {
-                id: tid,
-                wait_until: None,
-                interrupted: false,
-            },
-            Generator::unsafe_new(stack, move |yielder, _| {
-                f(SchedControl {
-                    yielder: Some(yielder),
-                    upcalls: upcalls,
-                })
-            }),
-        )
+        let thread = Thread {
+            id: tid,
+            wait_until: None,
+            interrupted: false,
+            state: ptr::null_mut(),
+        };
+
+        let generator = Generator::unsafe_new(stack, move |yielder, _| {
+            let mut ts = ThreadState {
+                tid: tid,
+                yielder: yielder,
+                upcalls: upcalls,
+            };
+            tls::set_thread_state((&mut ts) as *mut ThreadState);
+            let r = f(ts);
+            tls::set_thread_state(ptr::null_mut() as *mut ThreadState);
+            r
+        });
+
+        (thread, generator)
     }
 
     pub fn interrupt(&mut self) {
@@ -169,7 +180,7 @@ impl<'a> Scheduler<'a> {
 
     pub fn spawn<F>(&mut self, stack_size: usize, f: F) -> ThreadId
     where
-        F: 'static + FnOnce(SchedControl) + Send,
+        F: 'static + FnOnce(ThreadState) + Send,
     {
         let tid = ThreadId(self.tid_counter);
         let (handle, generator) = unsafe { Thread::new(tid, stack_size, f, self.upcalls) };
@@ -197,13 +208,13 @@ impl<'a> Scheduler<'a> {
             );
             self.run_idx = (self.run_idx + 1) % self.runnable.len();
             let tid = self.runnable[self.run_idx];
-
             let action: YieldResume = {
                 let thread: &mut Thread = &mut self
                     .threads
                     .get_mut(&tid)
                     .expect("Can't find thread state?")
                     .0;
+
                 if thread.interrupted {
                     thread.interrupted = false;
                     YieldResume::Interrupted
@@ -225,11 +236,23 @@ impl<'a> Scheduler<'a> {
             };
 
             unsafe {
-                ENV.tid = Some(tid);
+                let thread: &mut Thread = &mut self
+                    .threads
+                    .get_mut(&tid)
+                    .expect("Can't find thread state?")
+                    .0;
+                // if this is the first time we run this,
+                // we should not overwrite thread state
+                // the thread will do it for us.
+                if !thread.state.is_null() {
+                    tls::set_thread_state(thread.state);
+                }
             }
 
-            let generator = &mut self.threads.get_mut(&tid).unwrap().1;
-            let result = generator.resume(action);
+            let result = {
+                let generator = &mut self.threads.get_mut(&tid).unwrap().1;
+                generator.resume(action)
+            };
 
             match result {
                 None => {
@@ -237,10 +260,14 @@ impl<'a> Scheduler<'a> {
                     self.threads.remove(&tid);
                     self.runnable.remove(self.run_idx);
                     self.run_idx = 0;
+                    unsafe {
+                        tls::set_thread_state(ptr::null_mut());
+                    }
                 }
                 Some(YieldRequest::None) => {}
                 Some(YieldRequest::Runnable(rtid)) => {
                     assert!(self.threads.contains_key(&rtid));
+
                     self.runnable.push(rtid);
                 }
                 Some(YieldRequest::Unrunnable(rtid)) => {
@@ -259,20 +286,36 @@ impl<'a> Scheduler<'a> {
                 }
             }
 
+            // If thread is not done we need to preserve TLS
+            // TODO: I modified libfringe to do this, but not sure if llvm actually does it, check assembly!
+            if result.is_some() {
+                let thread: &mut Thread = &mut self
+                    .threads
+                    .get_mut(&tid)
+                    .expect("Can't find thread state?")
+                    .0;
+
+                unsafe {
+                    thread.state = tls::get_thread_state();
+                    tls::set_thread_state(ptr::null_mut());
+                }
+            }
+
             break;
         }
     }
 }
 
 #[derive(Clone)]
-pub struct SchedControl<'a> {
-    yielder: Option<&'a Yielder<YieldResume, YieldRequest>>,
+pub struct ThreadState<'a> {
+    yielder: &'a Yielder<YieldResume, YieldRequest>,
+    tid: ThreadId,
     pub upcalls: Upcalls,
 }
 
-impl<'a> SchedControl<'a> {
+impl<'a> ThreadState<'a> {
     fn yielder(&self) -> &'a Yielder<YieldResume, YieldRequest> {
-        self.yielder.expect("Can not suspend origin thread")
+        self.yielder
     }
 
     pub fn sleep(&self, d: Duration) {
@@ -303,14 +346,14 @@ impl<'a> SchedControl<'a> {
     }
 }
 
-pub struct Environment {
-    tid: Option<ThreadId>,
+#[test]
+fn has_fs_gs_base_instructions() {
+    env_logger::init();
+    let cpuid = x86::cpuid::CpuId::new();
+    assert!(cpuid
+        .get_extended_feature_info()
+        .map_or(false, |ef| ef.has_fsgsbase()));
+    /*debug!("gsbase is {}", unsafe {
+        x86::bits64::segmentation::rdgsbase()
+    });*/
 }
-
-impl Environment {
-    pub fn current_tid(&self) -> Option<ThreadId> {
-        self.tid
-    }
-}
-
-static mut ENV: Environment = Environment { tid: None };

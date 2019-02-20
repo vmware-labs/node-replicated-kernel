@@ -75,21 +75,104 @@ pub fn main() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+#[repr(C)]
+struct tmpfs_args {
+    ta_version: u64, // c_int
+    /* Size counters. */
+    ta_nodes_max: u64, // ino_t			ta_nodes_max;
+    ta_size_max: i64,  // off_t			ta_size_max;
+    /* Root node attributes. */
+    ta_root_uid: u32,  // uid_t			ta_root_uid;
+    ta_root_gid: u32,  // gid_t			ta_root_gid;
+    ta_root_mode: u32, // mode_t			ta_root_mode;
+}
+
 #[cfg(all(feature = "integration-tests", feature = "test-rump"))]
 pub fn main() {
+    use cstr_core::CStr;
+
     extern "C" {
         fn rump_boot_setsigmodel(sig: usize);
-        fn rump_init();
+        fn rump_init() -> u64;
+        fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
+        fn rump_component_count(fac: u64) -> u64;
+        fn open(path: *const i8, opt: u64) -> i64;
+        fn read(fd: i64, buf: *mut i8, bytes: u64) -> i64;
+        fn write(fd: i64, buf: *const i8, bytes: u64) -> i64;
     }
 
-    let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
-    scheduler.spawn(32 * 4096, |_yielder| unsafe {
-        let start = rawtime::Instant::now();
-        rump_boot_setsigmodel(1);
-        rump_init();
-        sprintln!("rump_init done in {:?}", start.elapsed());
-    });
-    scheduler.run();
+    let up = lineup::Upcalls {
+        curlwp: rumprt::rumpkern_curlwp,
+        deschedule: rumprt::rumpkern_unsched,
+        schedule: rumprt::rumpkern_sched,
+    };
+
+    let mut scheduler = lineup::Scheduler::new(up);
+    scheduler.spawn(
+        32 * 4096,
+        |_yielder| unsafe {
+            let start = rawtime::Instant::now();
+            rump_boot_setsigmodel(0);
+            let ri = rump_init();
+            assert_eq!(ri, 0);
+
+            let TMPFS_ARGS_VERSION: u64 = 1;
+
+            let tfsa = tmpfs_args {
+                ta_version: TMPFS_ARGS_VERSION,
+                ta_nodes_max: 0,
+                ta_size_max: 1 * 1024 * 1024,
+                ta_root_uid: 0,
+                ta_root_gid: 0,
+                ta_root_mode: 0o1777,
+            };
+
+            let path = CStr::from_bytes_with_nul(b"/tmp\0");
+            let MOUNT_TMPFS = CStr::from_bytes_with_nul(b"tmpfs\0");
+            info!("mounting tmpfs");
+            let r = mount(
+                MOUNT_TMPFS.unwrap().as_ptr(),
+                path.unwrap().as_ptr(),
+                0,
+                &tfsa,
+                core::mem::size_of::<tmpfs_args>(),
+            );
+            info!("rump___sysimpl_mount50: {:?}", r);
+
+            //assert_eq!(r, 0, "Successfully mounted tmpfs");
+
+            let path = CStr::from_bytes_with_nul(b"/tmp/bla\0");
+            let fd = open(path.unwrap().as_ptr(), 0x00000202);
+            info!("fd: {:?}", fd);
+
+            let wbuf: [i8; 12] = [0xa; 12];
+            let bytes_written = write(fd, wbuf.as_ptr(), 12);
+            info!("bytes_written: {:?}", bytes_written);
+
+            let path = CStr::from_bytes_with_nul(b"/tmp/bla\0");
+            let fd = open(path.unwrap().as_ptr(), 0x00000002);
+            let mut rbuf: [i8; 12] = [0x00; 12];
+            let read_bytes = read(fd, rbuf.as_mut_ptr(), 12);
+            info!("read_bytes: {:?}", read_bytes);
+            info!("rbuf: {:?}", rbuf);
+
+            //info!("rump_component_count(5)={}", rump_component_count(1));
+            ///info!("rump_component_count(6)={}", rump_component_count(2));
+            //info!("rump_component_count(7)={}", rump_component_count(3));
+
+            info!(
+                "rump_init({}) done in {:?}, mounted tmpfs",
+                ri,
+                start.elapsed()
+            );
+        },
+        core::ptr::null_mut(),
+    );
+
+    for i in 0..150 {
+        scheduler.run();
+    }
+
     arch::debug::shutdown(ExitReason::Ok);
 }
 

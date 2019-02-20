@@ -20,7 +20,7 @@
 #[cfg(not(target_os = "none"))]
 extern crate libc;
 
-extern crate rumpkernel;
+//extern crate rumpkernel;
 
 extern crate driverkit;
 

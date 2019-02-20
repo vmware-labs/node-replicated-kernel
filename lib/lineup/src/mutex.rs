@@ -3,6 +3,8 @@ use core::cell::UnsafeCell;
 use crate::tls::Environment;
 use crate::{ds, Scheduler, ThreadId, ThreadState};
 
+use log::*;
+
 #[derive(Debug)]
 pub struct Mutex {
     inner: UnsafeCell<MutexInner>,
@@ -53,7 +55,7 @@ impl Mutex {
         mtx.exit();
     }
 
-    pub fn owner(&self) -> u64 {
+    pub fn owner(&self) -> *const u64 {
         let mtx = unsafe { &mut *self.inner.get() };
         mtx.owner()
     }
@@ -65,7 +67,7 @@ struct MutexInner {
     waitlist: ds::Vec<ThreadId>,
     is_kmutex: bool,
     is_spin: bool,
-    lwp_ptr: Option<u64>,
+    lwp_ptr: Option<*const u64>,
 }
 
 impl MutexInner {
@@ -75,10 +77,16 @@ impl MutexInner {
 
         if self.owner.is_none() {
             self.owner = Some(tid);
-            let yielder: &mut ThreadState = Environment::thread();
-            self.lwp_ptr = Some((yielder.upcalls.curlwp)());
+            let thread_state = crate::tls::Environment::thread();
+            self.lwp_ptr = Some(thread_state.rump_lwp);
             true
         } else {
+            trace!(
+                "Mutex {:p} try_enter failed by {:?}, currently owned by {:?}",
+                self,
+                crate::tls::Environment::tid(),
+                self.owner
+            );
             false
         }
     }
@@ -89,6 +97,7 @@ impl MutexInner {
 
         if !self.try_enter() {
             let mut rid: u64 = 0;
+            info!("try_enter failed deschedule");
             (yielder.upcalls.deschedule)(&mut rid, None);
             self.waitlist.push(tid);
             yielder.make_unrunnable(tid);
@@ -98,15 +107,17 @@ impl MutexInner {
     }
 
     fn enter_nowrap(&mut self) {
-        // one VCPU supported, no preemption so it must succeed
-        assert!(self.try_enter());
+        assert!(
+            self.try_enter(),
+            "one VCPU supported, no preemption so it must succeed"
+        );
     }
 
     fn exit(&mut self) {
         let tid = Environment::tid();
         let yielder: &mut ThreadState = Environment::thread();
 
-        assert!(self.owner == Some(tid), "Only owner can exit mutex.");
+        //assert!(self.owner == Some(tid), "Only owner can exit mutex.");
         self.owner = None;
         self.lwp_ptr = None;
 
@@ -116,8 +127,8 @@ impl MutexInner {
         }
     }
 
-    fn owner(&self) -> u64 {
-        self.lwp_ptr.unwrap_or(0)
+    fn owner(&self) -> *const u64 {
+        self.lwp_ptr.unwrap_or(core::ptr::null())
     }
 }
 

@@ -2,10 +2,14 @@ use alloc::alloc;
 use core::alloc::Layout;
 use core::arch::x86_64::_rdrand16_step;
 use core::ffi::VaList;
+use core::ptr;
 use core::slice;
 
 use cstr_core::CStr;
 
+use crate::lineup::mutex::Mutex;
+
+pub mod io;
 pub mod locking;
 pub mod threads;
 
@@ -23,6 +27,9 @@ pub enum RumpError {
     ENOSYS = 78,
 }
 
+const RUMPUSER_CLOCK_RELWALL: u64 = 0;
+const RUMPUSER_CLOCK_ABSMONO: u64 = 1;
+
 #[allow(non_camel_case_types)]
 pub type pid_t = u64;
 #[allow(non_camel_case_types)]
@@ -33,6 +40,12 @@ pub type c_long = u64;
 pub type c_void = u64;
 #[allow(non_camel_case_types)]
 pub type c_char = u8;
+#[allow(non_camel_case_types)]
+pub type c_size_t = u64;
+
+/// typedef void (*rump_biodone_fn)(void *, size_t, int);
+#[allow(non_camel_case_types)]
+type rump_biodone_fn = Option<unsafe extern "C" fn(*mut c_void, c_size_t, c_int)>;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -40,8 +53,8 @@ pub struct RumpHyperUpcalls {
     pub hyp_schedule: Option<unsafe extern "C" fn()>,
     pub hyp_unschedule: Option<unsafe extern "C" fn()>,
     pub hyp_backend_unschedule:
-        Option<unsafe extern "C" fn(arg1: c_int, arg2: *mut c_int, arg3: *mut c_void)>,
-    pub hyp_backend_schedule: Option<unsafe extern "C" fn(arg1: c_int, arg2: *mut c_void)>,
+        Option<unsafe extern "C" fn(arg1: c_int, arg2: *mut c_int, arg3: *const c_void)>,
+    pub hyp_backend_schedule: Option<unsafe extern "C" fn(arg1: c_int, arg2: *const c_void)>,
     pub hyp_lwproc_switch: Option<unsafe extern "C" fn(arg1: *mut threads::lwp)>,
     pub hyp_lwproc_release: Option<unsafe extern "C" fn()>,
     pub hyp_lwproc_rfork:
@@ -56,13 +69,48 @@ pub struct RumpHyperUpcalls {
     pub hyp_extra: [*mut c_void; 8usize],
 }
 
-static mut UPCALL_FNS: Option<*const RumpHyperUpcalls> = None;
+pub(crate) fn rumpkern_curlwp() -> u64 {
+    unsafe { threads::rumpuser_curlwp() as *const _ as u64 }
+}
+
+pub(crate) fn rumpkern_unsched(nlocks: &mut u64, mtx: Option<&Mutex>) {
+    let s = lineup::tls::Environment::scheduler();
+    let upcalls = s.rump_upcalls as *const RumpHyperUpcalls;
+
+    let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
+    unsafe {
+        trace!(
+            "rumpkern_unsched {:p} lwp={:p}",
+            mtx,
+            threads::rumpuser_curlwp()
+        );
+        (*upcalls)
+            .hyp_backend_unschedule
+            .map(|unschedule| unschedule(0, nlocks as *mut c_int, mtx as *const u64));
+    }
+}
+
+pub(crate) fn rumpkern_sched(nlocks: &u64, mtx: Option<&Mutex>) {
+    let s = lineup::tls::Environment::scheduler();
+    let upcalls = s.rump_upcalls as *const RumpHyperUpcalls;
+
+    let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
+    trace!("rumpkern_sched {:p}", mtx);
+    unsafe {
+        (*upcalls)
+            .hyp_backend_schedule
+            .map(|schedule| schedule(*nlocks, mtx as *const u64));
+    }
+}
 
 // int rumpuser_init(int version, struct rump_hyperup *hyp)
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_init(_version: i64, hyp: *const RumpHyperUpcalls) -> i64 {
-    trace!("rumpuser_init");
-    UPCALL_FNS = Some(hyp);
+pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *const RumpHyperUpcalls) -> i64 {
+    trace!("rumpuser_init ver {} {:p}", version, hyp);
+
+    let s = lineup::tls::Environment::scheduler();
+    s.set_rump_context(version, hyp as *const u64);
+
     0
 }
 
@@ -146,9 +194,6 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
 ) -> i64 {
     trace!("rumpuser_clock_gettime");
 
-    const RUMPUSER_CLOCK_RELWALL: u64 = 0;
-    const RUMPUSER_CLOCK_ABSMONO: u64 = 1;
-
     let boot_time = rawtime::duration_since_boot();
 
     match enum_rumpclock {
@@ -164,20 +209,6 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
         }
         _ => 1,
     }
-}
-
-/// int rumpuser_clock_sleep(int enum_rumpclock, int64_t sec, long nsec)
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_clock_sleep(_enum_rumpclock: u64, sec: i64, nsec: u64) -> isize {
-    unreachable!(
-        "rumpuser_clock_sleep({}, {}, {})",
-        _enum_rumpclock, sec, nsec
-    );
-    /*
-    let start = rawtime::Instant::now();
-    while start.elapsed().as_secs() >= sec as u64 && start.elapsed().subsec_nanos() > nsec as u32 {}
-    0
-    */
 }
 
 /// int rumpuser_getparam(const char *name, void *buf, size_t buflen)
@@ -246,16 +277,6 @@ pub unsafe extern "C" fn rumpuser_dl_bootstrap() -> i64 {
     trace!("rumpuser_dl_bootstrap");
     0
 }
-
-/*
-int rumpuser_open(const char *name, int mode, int *fdp)
-int rumpuser_close(int fd)
-int rumpuser_getfileinfo(const char *name, uint64_t *size, int *type)
-void rumpuser_bio(int fd, int op, void *data, size_t dlen, int64_t off, rump_biodone_fn biodone, void *donearg)
-int rumpuser_iovread(int fd, struct rumpuser_iovec *ruiov, size_t iovlen, int64_t off, size_t *retv)
-int rumpuser_iovwrite(int fd, struct rumpuser_iovec *ruiov, size_t iovlen, int64_t off, size_t *retv)
-int rumpuser_syncfd(int fd, int flags, uint64_t start, uint64_t len)
-*/
 
 #[cfg(test)]
 mod test {

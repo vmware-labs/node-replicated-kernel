@@ -8,6 +8,7 @@ authors = [
 description = "Experimental OS kernel"
 readme = "README.md"
 license = "MIT"
+build = "build.rs"
 
 [dependencies]
 x86 = { path = "../lib/x86" }

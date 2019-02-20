@@ -1,13 +1,13 @@
 use core::cell::UnsafeCell;
 use core::time::Duration;
-use log::trace;
+use log::{info, trace};
 
 use crate::mutex::Mutex;
 use crate::tls::Environment;
 use crate::{ds, Scheduler, ThreadId, ThreadState};
 
 #[derive(Debug)]
-struct CondVar {
+pub struct CondVar {
     inner: UnsafeCell<CondVarInner>,
 }
 
@@ -31,24 +31,27 @@ impl CondVar {
         cv.wait_nowrap(mtx);
     }
 
-    pub fn timed_wait(&self, mtx: &Mutex, d: Duration) {
+    // Returns false on time out
+    pub fn timed_wait(&self, mtx: &Mutex, d: Duration) -> bool {
         let cv = unsafe { &mut *self.inner.get() };
-        cv.timed_wait(mtx, d);
+        cv.timed_wait(mtx, d)
     }
 
     pub fn signal(&self) {
+        trace!("CondVar signal {:p}", self);
         let cv = unsafe { &mut *self.inner.get() };
         cv.signal();
     }
 
     pub fn broadcast(&self) {
+        trace!("{:?} CondVar broadcast {:p}", Environment::tid(), self);
         let cv = unsafe { &mut *self.inner.get() };
         cv.broadcast();
     }
 
-    pub fn has_waiters(&self) {
+    pub fn has_waiters(&self) -> bool {
         let cv = unsafe { &mut *self.inner.get() };
-        cv.has_waiters();
+        cv.has_waiters()
     }
 }
 
@@ -74,12 +77,14 @@ impl CondVarInner {
     }
 
     fn cv_unschedule(&mut self, mtx: &Mutex, rid: &mut u64) {
+        trace!("cv_unschedule");
         let yielder: &mut ThreadState = Environment::thread();
-        (yielder.upcalls.schedule)(&rid, Some(mtx));
+        (yielder.upcalls.deschedule)(rid, Some(mtx));
         mtx.exit();
     }
 
     fn cv_reschedule(&mut self, mtx: &Mutex, rid: &u64) {
+        trace!("cv_reschedule");
         let yielder: &mut ThreadState = Environment::thread();
 
         if mtx.is_spin() || mtx.is_kmutex() {
@@ -110,15 +115,22 @@ impl CondVarInner {
         mtx.exit();
         self.waiters.push(tid);
         yielder.make_unrunnable(tid);
-        mtx.enter();
+        mtx.enter_nowrap();
+        self.waiters.remove_item(&tid);
     }
 
-    pub fn timed_wait(&mut self, _mutex: &Mutex, _d: Duration) {
-        unreachable!("CV timedwaits")
+    pub fn timed_wait(&mut self, _mutex: &Mutex, _d: Duration) -> bool {
+        unreachable!("CV timedwaits");
+        false
     }
 
     pub fn signal(&mut self) {
         let waking_tid = self.waiters.pop();
+        trace!(
+            "{:?} CondVarInner.signal {:?}",
+            Environment::tid(),
+            waking_tid
+        );
 
         waking_tid.map(|tid| {
             let yielder: &mut ThreadState = Environment::thread();
@@ -129,8 +141,16 @@ impl CondVarInner {
     pub fn broadcast(&mut self) {
         let waiters = self.waiters.clone();
         self.waiters.clear();
+        trace!(
+            "{:?} CondVarInner.broadcast {:?}",
+            Environment::tid(),
+            waiters
+        );
+
         let yielder: &mut ThreadState = Environment::thread();
-        yielder.make_all_runnable(waiters);
+        if !waiters.is_empty() {
+            yielder.make_all_runnable(waiters);
+        }
     }
 
     pub fn has_waiters(&self) -> bool {

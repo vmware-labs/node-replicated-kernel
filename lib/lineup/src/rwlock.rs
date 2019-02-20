@@ -5,13 +5,13 @@ use crate::tls::Environment;
 use crate::{ds, Scheduler, ThreadId, ThreadState};
 
 #[derive(Debug, Clone, Copy)]
-enum RwLockIntent {
+pub enum RwLockIntent {
     Read,
     Write,
 }
 
 #[derive(Debug)]
-struct RwLock {
+pub struct RwLock {
     inner: UnsafeCell<RwLockInner>,
 }
 
@@ -58,7 +58,7 @@ impl RwLock {
 
 #[derive(Debug)]
 struct RwLockInner {
-    owner: Option<Either<ThreadId, usize>>,
+    owner: Option<Either<*const u64, usize>>,
     wait_for_read: ds::Vec<ThreadId>,
     wait_for_write: ds::Vec<ThreadId>,
 }
@@ -74,15 +74,15 @@ impl RwLockInner {
 
     pub fn held(&self, opt: RwLockIntent) -> bool {
         let tid = Environment::tid();
+        let thread = Environment::thread();
 
         match (opt, self.owner) {
             (_, None) => false,
             (RwLockIntent::Read, Some(Left(_))) => false,
             (RwLockIntent::Write, Some(Right(_))) => false,
-            // This is a bit weird, but apparently as long as we have readers,
-            // we assume held() -> true
+            // If we have readers and our intent is read, we 'own' the lock
             (RwLockIntent::Read, Some(Right(_readers))) => true,
-            (RwLockIntent::Write, Some(Left(owner))) => tid == owner,
+            (RwLockIntent::Write, Some(Left(owner))) => thread.rump_lwp == owner,
         }
     }
 
@@ -130,7 +130,7 @@ impl RwLockInner {
                 }
             }
             (RwLockIntent::Write, None) => {
-                self.owner = Some(Left(tid));
+                self.owner = Some(Left(Environment::thread().rump_lwp));
                 true
             }
         }
@@ -141,7 +141,7 @@ impl RwLockInner {
         let yielder: &mut ThreadState = Environment::thread();
 
         if self.wait_for_write.len() > 0 {
-            self.owner = Some(Left(tid));
+            self.owner = Some(Left(yielder.rump_lwp));
             yielder.make_runnable(tid);
         } else if self.wait_for_read.len() > 0 {
             self.owner = Some(Right(self.wait_for_read.len()));
@@ -177,7 +177,11 @@ impl RwLockInner {
         let tid = Environment::tid();
 
         let owner = self.owner.unwrap().left();
-        assert_eq!(owner, Some(tid), "Need to own the lock!");
+        assert_eq!(
+            owner,
+            Some(Environment::thread().rump_lwp),
+            "Need to own the lock!"
+        );
 
         self.owner = Some(Right(self.wait_for_read.len() + 1));
         if self.wait_for_read.len() > 0 {
@@ -198,7 +202,7 @@ impl RwLockInner {
         };
 
         if can_upgrade {
-            self.owner = Some(Left(tid));
+            self.owner = Some(Left(Environment::thread().rump_lwp));
             true
         } else {
             false

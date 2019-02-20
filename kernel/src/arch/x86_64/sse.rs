@@ -35,7 +35,7 @@ pub fn initialize() {
             cr0 |= controlregs::Cr0::CR0_MONITOR_COPROCESSOR;
             controlregs::cr0_write(cr0);
         }
-        info!("Enabled SSE support");
+    //info!("Enabled SSE support");
     } else {
         warn!("SSE not supported, system probably not very useful");
     }

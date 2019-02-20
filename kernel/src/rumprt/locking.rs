@@ -1,97 +1,103 @@
 use super::threads;
 use super::RumpError;
-use super::UPCALL_FNS;
 use alloc::boxed::Box;
-use alloc::vec::Vec;
+use core::ops::Add;
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct rumpuser_mtx {
-    waiter: Vec<u64>,
-    //lwp: lwp,
-    locked: bool,
-    owner: u64,
-    kthread: u64,
-    flags: i64,
-}
+use rawtime::Duration;
 
-impl rumpuser_mtx {
-    fn new(flags: i64) -> rumpuser_mtx {
-        rumpuser_mtx {
-            waiter: Vec::with_capacity(24),
-            locked: false,
-            owner: 0,
-            kthread: 0,
-            flags: flags,
-        }
-    }
-}
+use lineup::condvar::CondVar;
+use lineup::mutex::Mutex;
+use lineup::rwlock::{RwLock, RwLockIntent};
+use lineup::tls::Environment;
 
-#[repr(C)]
-#[derive(Debug, Default)]
-pub struct rumpuser_cv {
-    waiters: Vec<u64>,
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct rumpuser_rw {
-    _unused: [u8; 0],
-}
-pub const RUMPRWLOCK_RUMPUSER_RW_READER: rumprwlock = 0;
-pub const RUMPRWLOCK_RUMPUSER_RW_WRITER: rumprwlock = 1;
-
-#[allow(non_camel_case_types)]
-pub type rumprwlock = u32;
-
-impl rumpuser_cv {
-    fn new() -> rumpuser_cv {
-        rumpuser_cv {
-            waiters: Vec::with_capacity(24),
-        }
-    }
-}
-
-//#define RUMPUSER_MTX_SPIN	0x01
-//#define RUMPUSER_MTX_KMUTEX 	0x02
+const RUMPUSER_MTX_SPIN: i64 = 0x01;
+const RUMPUSER_MTX_KMUTEX: i64 = 0x02;
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_init(new_mtx: *mut *mut rumpuser_mtx, flag: i64) {
-    let alloc_mtx: Box<rumpuser_mtx> = Box::new(rumpuser_mtx::new(flag));
+pub unsafe extern "C" fn rumpuser_mutex_init(new_mtx: *mut *mut Mutex, flag: i64) {
+    let is_spin = flag & RUMPUSER_MTX_SPIN > 0;
+    let is_kmutex = flag & RUMPUSER_MTX_KMUTEX > 0;
+
+    let alloc_mtx: Box<Mutex> = Box::new(Mutex::new(is_spin, is_kmutex));
     *new_mtx = Box::into_raw(alloc_mtx);
+
     trace!("rumpuser_mutex_init {:p} {}", *new_mtx, flag);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_enter(mtx: *mut rumpuser_mtx) {
-    trace!("rumpuser_mutex_enter {:p}", mtx);
-    if rumpuser_mutex_tryenter(mtx) == 0 {
-        return;
-    } else {
-        unreachable!("Locked mutex")
-        //let nlocks: u64 = 0;
-        //(*UPCALL_FNS).hyp_backend_unschedule(&nlocks, 0);
-        //(*UPCALL_FNS).hyp_backend_schedule(nlocks, 0);
-    }
+pub unsafe extern "C" fn rumpuser_mutex_enter(mtx: *mut Mutex) {
+    trace!("{:?} rumpuser_mutex_enter {:p}", Environment::tid(), mtx);
+    (*mtx).enter();
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_enter_nowrap(mtx: *mut rumpuser_mtx) {
+pub unsafe extern "C" fn rumpuser_mutex_enter_nowrap(mtx: *mut Mutex) {
     //trace!("rumpuser_mutex_enter_nowrap");
-    if (*mtx).locked == false {
-        (*mtx).locked = true;
+    (*mtx).enter_nowrap();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_mutex_tryenter(mtx: *mut Mutex) -> i64 {
+    trace!("rumpuser_mutex_tryenter {:p}", mtx);
+    if (*mtx).try_enter() {
+        0i64
     } else {
-        unreachable!("mutex locked");
+        RumpError::EBUSY as i64
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_tryenter(mtx: *mut rumpuser_mtx) -> i64 {
-    let _l: *mut threads::lwp = threads::rumpuser_curlwp();
-    if (*mtx).locked == false {
-        (*mtx).locked = true;
-        (*mtx).owner = 1;
-        (*mtx).kthread = 1;
+pub unsafe extern "C" fn rumpuser_mutex_exit(mtx: *mut Mutex) {
+    trace!(
+        "{:?} rumpuser_mutex_exit {:p}",
+        lineup::tls::Environment::tid(),
+        mtx
+    );
+    (*mtx).exit();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_mutex_destroy(mtx: *mut Mutex) {
+    trace!("rumpuser_mutex_destroy {:p}", mtx);
+    let to_free = Box::from_raw(mtx);
+    drop(to_free);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_mutex_owner(mtx: *mut Mutex, lwp: *mut *mut threads::lwp) {
+    trace!("rumpuser_mutex_owner {:p}", mtx);
+    let owner = (*mtx).owner();
+    *lwp = owner as *mut threads::lwp;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_rw_init(rw: *mut *mut RwLock) {
+    let alloc_rwlock: Box<RwLock> = Box::new(RwLock::new());
+    *rw = Box::into_raw(alloc_rwlock);
+    trace!("rumpuser_rw_init {:p}", *rw);
+}
+
+fn flag_to_intent(flag: i64) -> RwLockIntent {
+    pub const RUMPRWLOCK_RUMPUSER_RW_READER: i64 = 0;
+    pub const RUMPRWLOCK_RUMPUSER_RW_WRITER: i64 = 1;
+
+    match flag {
+        RUMPRWLOCK_RUMPUSER_RW_READER => RwLockIntent::Read,
+        RUMPRWLOCK_RUMPUSER_RW_WRITER => RwLockIntent::Write,
+        _ => unreachable!("RwLock didn't understant the intent!"), // TODO
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_rw_enter(flag: i64, rw: *mut RwLock) {
+    trace!("rumpuser_rw_enter {:p}", rw);
+    (*rw).enter(flag_to_intent(flag));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_rw_tryenter(flag: i64, rw: *mut RwLock) -> i64 {
+    trace!("rumpuser_rw_tryenter {:p}", rw);
+    if (*rw).try_enter(flag_to_intent(flag)) {
         0
     } else {
         RumpError::EBUSY as i64
@@ -99,132 +105,104 @@ pub unsafe extern "C" fn rumpuser_mutex_tryenter(mtx: *mut rumpuser_mtx) -> i64 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_exit(mtx: *mut rumpuser_mtx) {
-    //trace!("rumpuser_mutex_exit {:p}", mtx);
-    (*mtx).locked = false;
-    (*mtx).owner = 0;
-    (*mtx).kthread = 0;
+pub unsafe extern "C" fn rumpuser_rw_tryupgrade(rw: *mut RwLock) -> i64 {
+    trace!("rumpuser_rw_tryupgrade {:p}", rw);
+    if (*rw).try_upgrade() {
+        0
+    } else {
+        RumpError::EBUSY as i64
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_destroy(mtx: *mut rumpuser_mtx) {
-    trace!("rumpuser_mutex_destroy");
-    let to_free = Box::from_raw(mtx);
+pub unsafe extern "C" fn rumpuser_rw_downgrade(rw: *mut RwLock) {
+    trace!("rumpuser_rw_downgrade {:p}", rw);
+    (*rw).downgrade();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_rw_exit(rw: *mut RwLock) {
+    trace!("rumpuser_rw_exit");
+    (*rw).exit();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rumpuser_rw_destroy(rw: *mut RwLock) {
+    trace!("rumpuser_rw_destroy {:p}", rw);
+    let to_free = Box::from_raw(rw);
     drop(to_free);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_owner(
-    _mtx: *mut rumpuser_mtx,
-    lwp: *mut *mut threads::lwp,
-) {
-    trace!("rumpuser_mutex_owner");
-    *lwp = threads::rumpuser_curlwp();
+pub unsafe extern "C" fn rumpuser_rw_held(typ: i64, rw: *mut RwLock, rvp: *mut i64) {
+    trace!("rumpuser_rw_held {:p}", rw);
+    *rvp = (*rw).held(flag_to_intent(typ)) as i64;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_init(_rw: *mut *mut rumpuser_rw) {
-    trace!("rumpuser_rw_init");
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_enter(_flag: i64, _rw: *mut rumpuser_rw) {
-    trace!("rumpuser_rw_enter");
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_tryenter(_flag: i64, _rw: *mut rumpuser_rw) -> i64 {
-    trace!("rumpuser_rw_tryenter");
-
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_tryupgrade(_rw: *mut rumpuser_rw) -> i64 {
-    trace!("rumpuser_rw_tryupgrade");
-
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_downgrade(_rw: *mut rumpuser_rw) {
-    trace!("rumpuser_rw_downgrade");
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_exit(_rw: *mut rumpuser_rw) {
-    trace!("rumpuser_rw_exit");
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_destroy(_rw: *mut rumpuser_rw) {
-    trace!("rumpuser_rw_destroy");
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_held(_rwtype: i64, _rw: *mut rumpuser_rw, rvp: *mut i64) {
-    trace!("rumpuser_rw_held");
-    *rvp = threads::rumpuser_curlwp() as i64;
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_cv_init(cv: *mut *mut rumpuser_cv) {
-    let alloc_cv: Box<rumpuser_cv> = Box::new(rumpuser_cv::new());
+pub unsafe extern "C" fn rumpuser_cv_init(cv: *mut *mut CondVar) {
+    let alloc_cv: Box<CondVar> = Box::new(CondVar::new());
     *cv = Box::into_raw(alloc_cv);
     trace!("rumpuser_cv_init {:p}", *cv);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_cv_destroy(cv: *mut rumpuser_cv) {
-    trace!("rumpuser_cv_destroy");
+pub unsafe extern "C" fn rumpuser_cv_destroy(cv: *mut CondVar) {
+    trace!("rumpuser_cv_destroy {:p}", cv);
     let to_free = Box::from_raw(cv);
     drop(to_free);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_cv_wait(cv: *mut rumpuser_cv, mtx: *mut rumpuser_mtx) {
+pub unsafe extern "C" fn rumpuser_cv_wait(cv: *mut CondVar, mtx: *mut Mutex) {
     trace!("rumpuser_cv_wait {:p} {:p}", cv, mtx);
 
-    (*cv).waiters.push(mtx as u64);
-
-    let mut nlocks: u64 = 0;
-    trace!("hyp_backend_unschedule");
-    (*UPCALL_FNS.unwrap()).hyp_backend_unschedule.unwrap()(0, &mut nlocks, mtx as *mut u64);
-    rumpuser_mutex_exit(mtx);
+    (*cv).wait(&*mtx);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_cv_wait_nowrap(_cv: *mut rumpuser_cv, _mtx: *mut rumpuser_mtx) {
-    trace!("rumpuser_cv_wait_nowrap");
+pub unsafe extern "C" fn rumpuser_cv_wait_nowrap(cv: *mut CondVar, mtx: *mut Mutex) {
+    trace!(
+        "{:?} rumpuser_cv_wait_nowrap {:p} {:p}",
+        lineup::tls::Environment::tid(),
+        cv,
+        mtx
+    );
+    (*cv).wait_nowrap(&*mtx);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_cv_timedwait(
-    _cv: *mut rumpuser_cv,
-    _mtx: *mut rumpuser_mtx,
-    _arg3: i64,
-    _arg4: i64,
+    cv: *mut CondVar,
+    mtx: *mut Mutex,
+    sec: u64,
+    nanos: u64,
 ) -> i64 {
-    trace!("rumpuser_cv_timedwait");
-
-    0
+    trace!("rumpuser_cv_timedwait {:p} {:p} {} {}", cv, mtx, sec, nanos);
+    let d = Duration::from_secs(sec).add(Duration::from_nanos(nanos));
+    if (*cv).timed_wait(&*mtx, d) {
+        0
+    } else {
+        RumpError::ETIMEDOUT as i64
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_cv_signal(cv: *mut rumpuser_cv) {
-    trace!(
-        "rumpuser_cv_signal {:p} waiter cnt {}",
-        cv,
-        (*cv).waiters.len()
-    );
+pub unsafe extern "C" fn rumpuser_cv_signal(cv: *mut CondVar) {
+    trace!("rumpuser_cv_signal {:p}", cv);
+    (*cv).signal();
+    trace!("rumpuser_cv_signal completed {:p}", cv);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_cv_broadcast(_cv: *mut rumpuser_cv) {
-    trace!("rumpuser_cv_broadcast");
+pub unsafe extern "C" fn rumpuser_cv_broadcast(cv: *mut CondVar) {
+    trace!("rumpuser_cv_broadcast {:p}", cv);
+    (*cv).broadcast();
+    trace!("rumpuser_cv_broadcast completed");
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_cv_has_waiters(_cv: *mut rumpuser_cv, _arg2: *mut i64) {
-    trace!("rumpuser_cv_has_waiters");
+pub unsafe extern "C" fn rumpuser_cv_has_waiters(cv: *mut CondVar, waiters: *mut i64) {
+    trace!("rumpuser_cv_has_waiters {:p}", cv);
+    *waiters = (*cv).has_waiters() as i64;
 }

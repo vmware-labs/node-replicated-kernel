@@ -124,7 +124,7 @@ start64_high:
 	mov $init_stack, %rsp
 
 	/* call the rust code */
-	call arch_init
+	call bespin_arch_init
 
 	/* and if that returns (it shouldn't) loop forever */
 start64.loop:

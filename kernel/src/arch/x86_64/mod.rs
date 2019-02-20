@@ -55,7 +55,7 @@ pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
 #[lang = "start"]
 #[no_mangle]
-fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
+fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
     sse::initialize();
     sprint!("\n\n");
     assert!(
@@ -138,8 +138,8 @@ fn arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> is
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
                     if region.base_address() > 0 {
-                        // XXX: Regions contain kernel image as well insetad of just RAM, that's why we add 10 MiB to it...
-                        let offset = 1024 * 1024 * 10;
+                        // XXX: Regions contain kernel image as well insetad of just RAM, that's why we add 20 MiB to it...
+                        let offset = 1024 * 1024 * 30;
                         let base = PAddr::from(region.base_address() + offset);
                         let size = region.length() - offset;
                         debug!("Traing to add base {:?} size {:?}", base, size);

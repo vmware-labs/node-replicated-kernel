@@ -12,8 +12,13 @@ fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
     let features = format!("integration-tests,{}", test);
 
     process::Command::new("bash")
-        .args(&["run.sh", "--features", features.as_str(), "--log trace"])
-        .env("NORUN", "1")
+        .args(&[
+            "run.sh",
+            "--features",
+            features.as_str(),
+            "--log trace",
+            "--norun",
+        ])
         .output()
         .expect("failed to build");
 

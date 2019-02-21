@@ -30,11 +30,11 @@ use core::mem::transmute;
 use self::memory::paddr_to_kernel_vaddr;
 use self::process::VSpace;
 
+use crate::main;
+use crate::memory::{Frame, PhysicalAllocator, FMANAGER};
+use crate::ExitReason;
 use klogger;
 use log::Level;
-use main;
-use memory::{Frame, PhysicalAllocator, FMANAGER};
-use ExitReason;
 
 extern "C" {
     #[no_mangle]
@@ -53,17 +53,78 @@ extern "C" {
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
+use logos::Logos;
+
+#[derive(Logos, Debug, PartialEq, Clone, Copy)]
+enum CmdToken {
+    // Logos requires that we define two default variants,
+    // one for end of input source,
+    #[end]
+    End,
+
+    #[regex = "./[a-zA-Z]+"]
+    Binary,
+
+    #[token = " "]
+    ArgSeparator,
+
+    // Anything not properly encoded
+    #[error]
+    Error,
+
+    // Tokens can be literal strings, of any length.
+    #[token = "log="]
+    Log,
+
+    // Or regular expressions.
+    #[regex = "[a-zA-Z]+"]
+    Text,
+}
+
 #[lang = "start"]
 #[no_mangle]
 fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
-    sse::initialize();
     sprint!("\n\n");
+    sse::initialize();
     assert!(
         *rawtime::arch::tsc::TSC_FREQUENCY > 0,
         "TSC_FREQUENCY has valid value." // Don't remove since it also initializes TSC_FREQUENCY
     );
+    let mb = unsafe {
+        Multiboot::new(mboot_ptr.into(), |base, size| {
+            let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
+            Some(slice::from_raw_parts(vbase, size))
+        })
+        .unwrap()
+    };
 
-    klogger::init(Level::Trace).expect("Can't set-up logging");
+    let args = mb.command_line().unwrap_or("./mbkernel");
+    let mut lexer = CmdToken::lexer(args);
+
+    let level: Level = loop {
+        let mut level = Level::Info;
+        lexer.advance();
+        match (lexer.token, lexer.slice()) {
+            (CmdToken::Binary, bin) => assert_eq!(bin, "./mbkernel"),
+            (CmdToken::Log, _) => {
+                lexer.advance();
+                level = match (lexer.token, lexer.slice()) {
+                    (CmdToken::Text, "trace") => Level::Debug,
+                    (CmdToken::Text, "debug") => Level::Debug,
+                    (CmdToken::Text, "info") => Level::Info,
+                    (CmdToken::Text, "warn") => Level::Warn,
+                    (CmdToken::Text, "error") => Level::Error,
+                    (_, _) => Level::Error,
+                };
+            }
+            (CmdToken::End, _) => level = Level::Error,
+            (_, _) => continue,
+        };
+
+        break level;
+    };
+
+    klogger::init(level).expect("Can't set-up logging");
 
     // It's important that these two constructs get evaluated early during boot.
     info!(
@@ -105,16 +166,6 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
             page_cnt, base
         );
     }
-
-    let mb = unsafe {
-        Multiboot::new(mboot_ptr.into(), |base, size| {
-            let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
-            Some(slice::from_raw_parts(vbase, size))
-        })
-        .unwrap()
-    };
-
-    trace!("{}", mb.command_line().unwrap_or("def"));
 
     if mb.modules().is_some() {
         for module in mb.modules().unwrap() {
@@ -185,7 +236,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         );
     } else {
         debug!("no x2APIC support. Use xAPIC instead.");
-        use memory::BespinPageTableProvider;
+        use crate::memory::BespinPageTableProvider;
         use x86::msr::{rdmsr, IA32_APIC_BASE};
 
         let cr_three: u64 = unsafe { controlregs::cr3() };

@@ -268,13 +268,13 @@ impl<'a> Scheduler<'a> {
     }
 
     pub fn run(&mut self) {
-        if self.runnable.is_empty() {
-            return;
-        }
-
         let start_idx = self.run_idx;
         let now = Instant::now();
         loop {
+            if self.runnable.is_empty() {
+                return;
+            }
+
             trace!(
                 "self.runnable({}) = {:?}",
                 self.runnable.len(),
@@ -417,7 +417,7 @@ impl<'a> Scheduler<'a> {
                 }
             }
 
-            if cycle_to_next_thread {
+            if !self.runnable.is_empty() && cycle_to_next_thread {
                 self.run_idx = (self.run_idx + 1) % self.runnable.len();
                 trace!("Try to schedule self.run_idx {} next.", self.run_idx);
                 if self.run_idx == start_idx {

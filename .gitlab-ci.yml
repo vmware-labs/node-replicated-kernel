@@ -22,7 +22,7 @@ build:
 run:
   script:
     - cd kernel
-    - bash run.sh
+    - bash run.sh --log trace
 
 unix:
   script:

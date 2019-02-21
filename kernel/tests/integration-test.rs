@@ -12,13 +12,13 @@ fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
     let features = format!("integration-tests,{}", test);
 
     process::Command::new("bash")
-        .args(&["run.sh", "--features", features.as_str()])
+        .args(&["run.sh", "--features", features.as_str(), "--log trace"])
         .env("NORUN", "1")
         .output()
         .expect("failed to build");
 
     spawn(
-        format!("bash run.sh --features {}", features).as_str(),
+        format!("bash run.sh --features {} --log trace", features).as_str(),
         Some(15000),
     )
 }
@@ -106,7 +106,7 @@ fn sse() {
 fn rump() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu("test-rump")?;
-        p.exp_string("rump_init done")?;
+        p.exp_string("rump_init(0) done")?;
         p.exp_eof()?;
         p.process.exit()
     };
@@ -121,8 +121,8 @@ fn rump() {
 fn scheduler() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu("test-scheduler")?;
-        p.exp_string("lwt2")?;
-        p.exp_string("lwt1")?;
+        p.exp_string("lwt2 ThreadId(1)")?;
+        p.exp_string("lwt1 ThreadId(0)")?;
         p.exp_eof()?;
         p.process.exit()
     };

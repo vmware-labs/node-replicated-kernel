@@ -13,8 +13,8 @@ use core::ptr;
 
 use crate::prelude::*;
 
-use arch::memory::{kernel_vaddr_to_paddr, BASE_PAGE_SIZE};
-use memory::{Frame, PAddr, PhysicalAllocator, VAddr};
+use super::{Frame, PAddr, PhysicalAllocator, VAddr};
+use crate::arch::memory::{kernel_vaddr_to_paddr, BASE_PAGE_SIZE};
 
 pub static mut FMANAGER: BuddyFrameAllocator = BuddyFrameAllocator {
     region: Frame {
@@ -377,8 +377,8 @@ impl BuddyFrameAllocator {
 mod test {
     use super::*;
 
-    use alloc::alloc;
-    use arch::memory::{kernel_vaddr_to_paddr, VAddr};
+    use crate::alloc::alloc;
+    use crate::arch::memory::{kernel_vaddr_to_paddr, VAddr};
     use core::alloc::Layout;
 
     #[test]
@@ -587,10 +587,10 @@ mod test {
         ($test:ident, $size:expr, $alignment:expr, $allocations:expr) => {
             #[test]
             fn $test() {
-                use arch::memory::{kernel_vaddr_to_paddr, VAddr};
+                use crate::arch::memory::{kernel_vaddr_to_paddr, VAddr};
 
-                use alloc::alloc;
-                use alloc::vec::Vec;
+                use crate::alloc::alloc;
+                use crate::alloc::vec::Vec;
                 use core::arch::x86_64::_rdrand64_step;
 
                 unsafe {
@@ -669,8 +669,8 @@ mod test {
     #[test]
     fn random_size_allocation() {
         // A silly pattern right now, will start of with big chunks and run out of space quickly
-        use alloc::alloc;
-        use alloc::vec::Vec;
+        use crate::alloc::alloc;
+        use crate::alloc::vec::Vec;
         use core::arch::x86_64::{_rdrand32_step, _rdrand64_step};
 
         unsafe {

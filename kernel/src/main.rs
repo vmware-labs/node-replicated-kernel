@@ -22,15 +22,7 @@ extern crate libc;
 
 //extern crate rumpkernel;
 
-extern crate driverkit;
-
-extern crate spin;
-
 extern crate rlibc;
-
-extern crate cstr_core;
-
-extern crate lineup;
 
 #[macro_use]
 pub mod mutex;
@@ -156,6 +148,33 @@ pub enum ExitReason {
     UnhandledInterrupt = 4,
     GeneralProtectionFault = 5,
     PageFault = 6,
+}
+
+/// Kernel entry-point
+#[cfg(not(feature = "integration-tests"))]
+pub fn main() {
+    debug!("Reached architecture independent area");
+    error!("error");
+    warn!("warning");
+    info!("info");
+    debug!("debug");
+    trace!("trace");
+
+    debug!("allocating a region of mem");
+    unsafe {
+        use memory::FMANAGER;
+        FMANAGER.print_info();
+
+        let new_region: *mut u8 =
+            alloc::alloc::alloc(Layout::from_size_align_unchecked(8192, 4096));
+        let p: *mut u8 = new_region.offset(4096);
+        assert!(!p.is_null());
+
+        // print current regions
+        FMANAGER.print_info();
+    }
+
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 include!("integration_main.rs");

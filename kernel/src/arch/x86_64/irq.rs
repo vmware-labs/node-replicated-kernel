@@ -12,10 +12,12 @@ use x86::segmentation::{
 };
 use x86::Ring;
 
-use arch::debug;
-use mutex::Mutex;
-use panic::backtrace_from;
-use ExitReason;
+use crate::arch::debug;
+use crate::mutex::Mutex;
+use crate::panic::backtrace_from;
+use crate::ExitReason;
+
+use log::debug;
 
 #[derive(Default)]
 #[repr(packed)]

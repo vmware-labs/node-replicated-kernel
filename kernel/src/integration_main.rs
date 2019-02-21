@@ -1,30 +1,3 @@
-/// Kernel entry-point
-#[cfg(not(feature = "integration-tests"))]
-pub fn main() {
-    debug!("Reached architecture independent area");
-    error!("error");
-    warn!("warning");
-    info!("info");
-    debug!("debug");
-    trace!("trace");
-
-    debug!("allocating a region of mem");
-    unsafe {
-        use memory::FMANAGER;
-        FMANAGER.print_info();
-
-        let new_region: *mut u8 =
-            alloc::alloc::alloc(Layout::from_size_align_unchecked(8192, 4096));
-        let p: *mut u8 = new_region.offset(4096);
-        assert!(!p.is_null());
-
-        // print current regions
-        FMANAGER.print_info();
-    }
-
-    arch::debug::shutdown(ExitReason::Ok);
-}
-
 #[cfg(all(feature = "integration-tests", feature = "test-time"))]
 pub fn main() {
     unsafe {
@@ -51,30 +24,7 @@ pub fn main() {
     }
     arch::debug::shutdown(ExitReason::Ok);
 }
-
-#[cfg(all(feature = "integration-tests", feature = "test-rump2"))]
-pub fn main() {
-    extern "C" {
-        fn rump_boot_setsigmodel(sig: usize);
-        fn rump_init();
-    }
-
-    let mut s = scheduler2::Scheduler::new();
-
-    unsafe {
-        s.spawn(20480, |_yielder| {
-            let start = rawtime::Instant::now();
-            rump_boot_setsigmodel(1);
-            rump_init();
-            sprintln!("rump_init done in {:?}", start.elapsed());
-        });
-    }
-
-    s.run();
-
-    arch::debug::shutdown(ExitReason::Ok);
-}
-
+#[cfg(all(feature = "integration-tests", feature = "test-rump"))]
 #[repr(C)]
 struct tmpfs_args {
     ta_version: u64, // c_int
@@ -143,22 +93,19 @@ pub fn main() {
 
             let path = CStr::from_bytes_with_nul(b"/tmp/bla\0");
             let fd = open(path.unwrap().as_ptr(), 0x00000202);
-            info!("fd: {:?}", fd);
+            assert_eq!(fd, 3, "Proper FD was returned");
 
             let wbuf: [i8; 12] = [0xa; 12];
             let bytes_written = write(fd, wbuf.as_ptr(), 12);
+            assert_eq!(bytes_written, 12, "Write successful");
             info!("bytes_written: {:?}", bytes_written);
 
             let path = CStr::from_bytes_with_nul(b"/tmp/bla\0");
             let fd = open(path.unwrap().as_ptr(), 0x00000002);
             let mut rbuf: [i8; 12] = [0x00; 12];
             let read_bytes = read(fd, rbuf.as_mut_ptr(), 12);
-            info!("read_bytes: {:?}", read_bytes);
-            info!("rbuf: {:?}", rbuf);
-
-            //info!("rump_component_count(5)={}", rump_component_count(1));
-            ///info!("rump_component_count(6)={}", rump_component_count(2));
-            //info!("rump_component_count(7)={}", rump_component_count(3));
+            assert_eq!(read_bytes, 12, "Read successful");
+            assert_eq!(rbuf[0], 0xa, "Read matches write");
 
             info!(
                 "rump_init({}) done in {:?}, mounted tmpfs",
@@ -259,14 +206,22 @@ pub fn main() {
     use lineup::tls::Environment;
 
     let mut s = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
-    s.spawn(4096, |yielder| {
-        let _r = yielder.relinquish();
-        debug!("lwt1 {:?}", Environment::tid());
-    });
+    s.spawn(
+        4096,
+        |arg| {
+            let _r = Environment::thread().relinquish();
+            debug!("lwt1 {:?}", Environment::tid());
+        },
+        core::ptr::null_mut(),
+    );
 
-    s.spawn(4096, |_yielder| {
-        debug!("lwt2 {:?}", Environment::tid());
-    });
+    s.spawn(
+        4096,
+        |arg| {
+            debug!("lwt2 {:?}", Environment::tid());
+        },
+        core::ptr::null_mut(),
+    );
 
     s.run();
     s.run();

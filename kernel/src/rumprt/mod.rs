@@ -1,4 +1,4 @@
-use alloc::alloc;
+use crate::alloc::alloc;
 use core::alloc::Layout;
 use core::arch::x86_64::_rdrand16_step;
 use core::ffi::VaList;
@@ -7,7 +7,7 @@ use core::slice;
 
 use cstr_core::CStr;
 
-use crate::lineup::mutex::Mutex;
+use lineup::mutex::Mutex;
 
 pub mod io;
 pub mod locking;

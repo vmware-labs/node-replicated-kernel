@@ -1,6 +1,6 @@
 use core::alloc::Layout;
 
-use memory::{Frame, PAddr, PhysicalAllocator, BASE_PAGE_SIZE};
+use crate::memory::{Frame, PAddr, PhysicalAllocator, BASE_PAGE_SIZE};
 
 #[allow(unused)]
 pub static mut FMANAGER: FrameAllocator = FrameAllocator {

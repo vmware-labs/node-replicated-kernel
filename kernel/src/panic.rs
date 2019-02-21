@@ -1,9 +1,9 @@
 use core::alloc::Layout;
 use core::panic::PanicInfo;
 
-use arch;
+use crate::arch;
+use crate::ExitReason;
 use backtracer;
-use ExitReason;
 
 fn backtrace_format(count: usize, frame: &backtracer::Frame) -> bool {
     let kernel_binary = arch::KERNEL_BINARY.lock();

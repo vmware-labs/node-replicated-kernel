@@ -1,8 +1,8 @@
 use log::Level;
 use spin::Mutex;
 
-use main;
-use ExitReason;
+use crate::main;
+use crate::ExitReason;
 
 pub mod memory;
 

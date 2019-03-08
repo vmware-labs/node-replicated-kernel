@@ -1,8 +1,9 @@
 use driverkit::bitops::BitField;
 use driverkit::{DriverControl, DriverState};
-use log::trace;
+use log::{debug, info, trace};
 use x86::msr::{
-    rdmsr, wrmsr, IA32_APIC_BASE, IA32_TSC_DEADLINE, IA32_X2APIC_APICID, IA32_X2APIC_LVT_TIMER,
+    rdmsr, wrmsr, IA32_APIC_BASE, IA32_TSC_DEADLINE, IA32_X2APIC_APICID, IA32_X2APIC_ESR,
+    IA32_X2APIC_LVT_ERROR, IA32_X2APIC_LVT_LINT0, IA32_X2APIC_LVT_LINT1, IA32_X2APIC_LVT_TIMER,
     IA32_X2APIC_SELF_IPI, IA32_X2APIC_VERSION,
 };
 
@@ -62,6 +63,14 @@ impl DriverControl for X2APIC {
             self.base.set_bit(10, true); // Enable x2APIC
             self.base.set_bit(11, true); // Enable xAPIC
             wrmsr(IA32_APIC_BASE, self.base);
+
+            let mut lint0 = rdmsr(IA32_X2APIC_LVT_LINT0);
+            debug!("lint 0 is {:#b}", lint0);
+            lint0 = 1 << 16 | (1 << 15) | (0b111 << 8) | 0x20;
+            wrmsr(IA32_X2APIC_LVT_LINT0, lint0);
+
+            let esr = rdmsr(IA32_X2APIC_ESR);
+            debug!("esr is {:#b}", esr);
             trace!("Enabled x2APIC");
         }
     }

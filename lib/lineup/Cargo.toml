@@ -11,6 +11,7 @@ log = "0.4.6"
 hashmap_core = "0.1.10"
 rawtime = { path = "../rawtime" }
 x86 = { path = "../x86" }
+backtracer = { path = "../backtracer" }
 
 [target.'cfg(target_family = "unix")'.dev-dependencies]
 env_logger = "*"

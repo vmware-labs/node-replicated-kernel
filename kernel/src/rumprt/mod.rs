@@ -9,7 +9,8 @@ use cstr_core::CStr;
 
 use lineup::mutex::Mutex;
 
-pub mod io;
+pub mod dev;
+pub mod fs;
 pub mod locking;
 pub mod threads;
 
@@ -33,9 +34,13 @@ const RUMPUSER_CLOCK_ABSMONO: u64 = 1;
 #[allow(non_camel_case_types)]
 pub type pid_t = u64;
 #[allow(non_camel_case_types)]
-pub type c_int = u64;
+pub type c_int = i32;
 #[allow(non_camel_case_types)]
-pub type c_long = u64;
+pub type c_uint = u32;
+#[allow(non_camel_case_types)]
+pub type c_long = i64;
+#[allow(non_camel_case_types)]
+pub type c_ulong = u64;
 #[allow(non_camel_case_types)]
 pub type c_void = u64;
 #[allow(non_camel_case_types)]
@@ -73,7 +78,7 @@ pub(crate) fn rumpkern_curlwp() -> u64 {
     unsafe { threads::rumpuser_curlwp() as *const _ as u64 }
 }
 
-pub(crate) fn rumpkern_unsched(nlocks: &mut u64, mtx: Option<&Mutex>) {
+pub(crate) fn rumpkern_unsched(nlocks: &mut i32, mtx: Option<&Mutex>) {
     let s = lineup::tls::Environment::scheduler();
     let upcalls = s.rump_upcalls as *const RumpHyperUpcalls;
 
@@ -84,29 +89,25 @@ pub(crate) fn rumpkern_unsched(nlocks: &mut u64, mtx: Option<&Mutex>) {
             mtx,
             threads::rumpuser_curlwp()
         );
-        (*upcalls)
-            .hyp_backend_unschedule
-            .map(|unschedule| unschedule(0, nlocks as *mut c_int, mtx as *const u64));
+        (*upcalls).hyp_backend_unschedule.unwrap()(0, nlocks as *mut c_int, mtx as *const u64);
     }
 }
 
-pub(crate) fn rumpkern_sched(nlocks: &u64, mtx: Option<&Mutex>) {
+pub(crate) fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
     let s = lineup::tls::Environment::scheduler();
     let upcalls = s.rump_upcalls as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     trace!("rumpkern_sched {:p}", mtx);
     unsafe {
-        (*upcalls)
-            .hyp_backend_schedule
-            .map(|schedule| schedule(*nlocks, mtx as *const u64));
+        (*upcalls).hyp_backend_schedule.unwrap()(*nlocks, mtx as *const u64);
     }
 }
 
 // int rumpuser_init(int version, struct rump_hyperup *hyp)
 #[no_mangle]
 pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *const RumpHyperUpcalls) -> i64 {
-    trace!("rumpuser_init ver {} {:p}", version, hyp);
+    info!("rumpuser_init ver {} {:p}", version, hyp);
 
     let s = lineup::tls::Environment::scheduler();
     s.set_rump_context(version, hyp as *const u64);
@@ -150,8 +151,9 @@ pub unsafe extern "C" fn rumpuser_getrandom(
 
     let region: &mut [u8] = slice::from_raw_parts_mut(buf, buflen);
     for (i, mut ptr) in region.iter_mut().enumerate() {
-        let mut rnd: u16 = 0;
-        let ret = _rdrand16_step(&mut rnd);
+        let mut rnd: u16 = 0xba;
+        // let ret = _rdrand16_step(&mut rnd);
+        let ret = 1;
         if ret == 1 {
             *ptr = rnd as u8;
         } else {

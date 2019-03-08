@@ -24,7 +24,7 @@ pub fn main() {
     }
     arch::debug::shutdown(ExitReason::Ok);
 }
-#[cfg(all(feature = "integration-tests", feature = "test-rump"))]
+
 #[repr(C)]
 struct tmpfs_args {
     ta_version: u64, // c_int
@@ -37,7 +37,7 @@ struct tmpfs_args {
     ta_root_mode: u32, // mode_t			ta_root_mode;
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-rump"))]
+#[cfg(all(feature = "integration-tests", feature = "test-rump-tmpfs"))]
 pub fn main() {
     use cstr_core::CStr;
 
@@ -49,6 +49,7 @@ pub fn main() {
         fn open(path: *const i8, opt: u64) -> i64;
         fn read(fd: i64, buf: *mut i8, bytes: u64) -> i64;
         fn write(fd: i64, buf: *const i8, bytes: u64) -> i64;
+        fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
     }
 
     let up = lineup::Upcalls {
@@ -116,7 +117,133 @@ pub fn main() {
         core::ptr::null_mut(),
     );
 
-    for i in 0..150 {
+    for i in 0..9999 {
+        scheduler.run();
+    }
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-rump"))]
+pub fn main() {
+    use cstr_core::CStr;
+
+    extern "C" {
+        fn rump_boot_setsigmodel(sig: usize);
+        fn rump_init() -> u64;
+        fn rump_pub_netconfig_ifcreate(iface: *const i8) -> i64;
+        fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
+        fn rump_pub_netconfig_ipv4_gw(addr: *const i8) -> i64;
+        fn rump_pub_netconfig_ipv4_ifaddr_cidr(iface: *const i8, addr: *const i8, mask: u32)
+            -> i64;
+        fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
+
+        fn sysctlbyname(
+            name: *const i8,
+            oldp: *mut rumprt::c_void,
+            oldlenp: *mut rumprt::c_size_t,
+            newp: *const rumprt::c_void,
+            newlen: rumprt::c_size_t,
+        ) -> rumprt::c_int;
+    }
+
+    let up = lineup::Upcalls {
+        curlwp: rumprt::rumpkern_curlwp,
+        deschedule: rumprt::rumpkern_unsched,
+        schedule: rumprt::rumpkern_sched,
+    };
+
+    let mut scheduler = lineup::Scheduler::new(up);
+    scheduler.spawn(
+        32 * 4096,
+        |_yielder| unsafe {
+            let start = rawtime::Instant::now();
+            rump_boot_setsigmodel(0);
+            let ri = rump_init();
+            assert_eq!(ri, 0);
+            let TMPFS_ARGS_VERSION: u64 = 1;
+
+            let tfsa = tmpfs_args {
+                ta_version: TMPFS_ARGS_VERSION,
+                ta_nodes_max: 0,
+                ta_size_max: 1 * 1024 * 1024,
+                ta_root_uid: 0,
+                ta_root_gid: 0,
+                ta_root_mode: 0o1777,
+            };
+
+            let path = CStr::from_bytes_with_nul(b"/tmp\0");
+            let MOUNT_TMPFS = CStr::from_bytes_with_nul(b"tmpfs\0");
+            info!("mounting tmpfs");
+            let r = mount(
+                MOUNT_TMPFS.unwrap().as_ptr(),
+                path.unwrap().as_ptr(),
+                0,
+                &tfsa,
+                core::mem::size_of::<tmpfs_args>(),
+            );
+            info!("rump___sysimpl_mount50: {:?}", r);
+
+            //const char network_format_string[] = "\"net\" :  {,,\"if\":\"wm0\",, \"type\":\"inet\",,\"method\":\"dhcp\",,},,";
+
+            /*let path = CStr::from_bytes_with_nul(b"wm0\0");
+            let r = rump_pub_netconfig_ifcreate(path.unwrap().as_ptr());
+            assert_eq!(r, 0, "rump_pub_netconfig_ifcreate");*/
+
+            /*use core::mem;
+            use core::ptr;
+            let dad_count = CStr::from_bytes_with_nul(b"net.inet.ip.dad_count\0");
+            let x: rumprt::c_size_t = 0;
+            sysctlbyname(
+                dad_count.unwrap().as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &x as *const rumprt::c_size_t as *const rumprt::c_void,
+                mem::size_of::<rumprt::c_size_t>() as rumprt::c_size_t,
+            );*/
+
+            let path = CStr::from_bytes_with_nul(b"wm0\0");
+            let r = rump_pub_netconfig_dhcp_ipv4_oneshot(path.unwrap().as_ptr());
+            assert_eq!(r, 0, "rump_pub_netconfig_dhcp_ipv4_oneshot");
+
+            /*let path = CStr::from_bytes_with_nul(b"wm0\0");
+            let addr = CStr::from_bytes_with_nul(b"10.0.120.101/24\0");
+            let r = rump_pub_netconfig_ipv4_ifaddr_cidr(
+                path.unwrap().as_ptr(),
+                addr.unwrap().as_ptr(),
+                0,
+            );
+            assert_eq!(r, 0, "rump_pub_netconfig_ipv4_ifaddr_cidr");
+            unreachable!();*/
+
+            /*let gw = CStr::from_bytes_with_nul(b"10.0.120.100/24\0");
+            let r = rump_pub_netconfig_ipv4_gw(gw.unwrap().as_ptr());
+            assert_eq!(r, 0, "rump_pub_netconfig_ipv4_gw");*/
+
+            info!(
+                "rump_init({}) done in {:?}, mounted tmpfs",
+                ri,
+                start.elapsed()
+            );
+            loop {
+                lineup::tls::Environment::thread().sleep(rawtime::Duration::from_secs(1));
+            }
+        },
+        core::ptr::null_mut(),
+    );
+
+    scheduler
+        .spawn(
+            32 * 1024,
+            |_yielder| unsafe {
+                rumprt::dev::irq_handler(core::ptr::null_mut());
+            },
+            core::ptr::null_mut(),
+        )
+        .expect("Can't create IRQ thread?");
+
+    //for _i in 0..99999 {
+    loop {
         scheduler.run();
     }
 

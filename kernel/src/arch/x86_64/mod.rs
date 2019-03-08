@@ -109,7 +109,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
             (CmdToken::Log, _) => {
                 lexer.advance();
                 level = match (lexer.token, lexer.slice()) {
-                    (CmdToken::Text, "trace") => Level::Debug,
+                    (CmdToken::Text, "trace") => Level::Trace,
                     (CmdToken::Text, "debug") => Level::Debug,
                     (CmdToken::Text, "info") => Level::Info,
                     (CmdToken::Text, "warn") => Level::Warn,
@@ -139,9 +139,6 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     unsafe { controlregs::cr4_write(cr4) };
 
     debug::init();
-    irq::setup_idt();
-    irq::enable();
-    gdt::setup_gdt();
 
     unsafe {
         let mut base = PAddr::from(0x0);
@@ -154,7 +151,6 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
             );
 
             base += 1024 * 1024 * 2;
-
             page_cnt += 1;
 
             //debug!("{:?}", (*e) );
@@ -221,21 +217,19 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         None => false,
     };
 
+    /*
     if has_x2apic && has_tsc {
-        debug!("x2APIC / deadline TSC supported!");
-        debug!("enable APIC");
+        //info!("x2APIC / deadline TSC supported!");
         let mut apic = x2apic::X2APIC::new();
         apic.attach();
-        //apic.enable_tsc();
-        //apic.set_tsc(rdtsc()+1000);
-        debug!(
+        info!(
             "xAPIC id: {}, version: {}, is bsp: {}",
             apic.id(),
             apic.version(),
             apic.bsp()
         );
     } else {
-        debug!("no x2APIC support. Use xAPIC instead.");
+        info!("no x2APIC support. Use xAPIC instead.");
         use crate::memory::BespinPageTableProvider;
         use x86::msr::{rdmsr, IA32_APIC_BASE};
 
@@ -260,13 +254,18 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
 
         let mut apic = xapic::XAPIC::new(regs);
         apic.attach();
-        debug!(
+        info!(
             "xAPIC id: {}, version: {:#x}, is bsp: {}",
             apic.id(),
             apic.version(),
             apic.bsp()
         );
     };
+    */
+
+    irq::setup_idt();
+    irq::enable();
+    gdt::setup_gdt();
 
     debug!("allocation should work here...");
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);

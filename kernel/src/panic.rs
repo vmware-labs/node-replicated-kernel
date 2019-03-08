@@ -49,7 +49,7 @@ pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
 }
 
 #[inline(always)]
-fn backtrace() {
+pub fn backtrace() {
     sprintln!("Backtrace:");
     let mut count = 0;
     backtracer::trace(|frame| {

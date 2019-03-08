@@ -1,4 +1,5 @@
-use super::{c_char, c_int, c_size_t, c_void, rump_biodone_fn};
+use super::{c_char, c_int, c_size_t, c_void, rump_biodone_fn, RumpError};
+use cstr_core::CStr;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -14,23 +15,26 @@ pub unsafe extern "C" fn rumpuser_open(
     mode: c_int,
     fdp: *const c_int,
 ) -> c_int {
-    0
+    unimplemented!();
 }
 
 /// int rumpuser_close(int fd)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_close(fd: c_int) -> c_int {
-    0
+    unimplemented!();
 }
 
 /// int rumpuser_getfileinfo(const char *name, uint64_t *size, int *type)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_getfileinfo(
-    name: *const c_char,
+    name: *const i8,
     size: *const u64,
     typ: *const c_int,
 ) -> c_int {
-    0
+    let param_name = CStr::from_ptr(name).to_str().unwrap_or("unknown");
+    error!("rumpuser_getfileinfo {}", param_name);
+
+    RumpError::ENOENT as c_int
 }
 
 /// void rumpuser_bio(int fd, int op, void *data, size_t dlen, int64_t off, rump_biodone_fn biodone, void *donearg)
@@ -44,7 +48,7 @@ pub unsafe extern "C" fn rumpuser_bio(
     biodone: rump_biodone_fn,
     done_arg: *const c_void,
 ) {
-
+    unimplemented!();
 }
 
 /// int rumpuser_iovread(int fd, struct rumpuser_iovec *ruiov, size_t iovlen, int64_t off, size_t *retv)
@@ -56,7 +60,7 @@ pub unsafe extern "C" fn rumpuser_iovread(
     off: i64,
     retv: *const c_size_t,
 ) -> c_int {
-    0
+    unimplemented!();
 }
 
 /// int rumpuser_iovwrite(int fd, struct rumpuser_iovec *ruiov, size_t iovlen, int64_t off, size_t *retv)
@@ -68,11 +72,11 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
     off: i64,
     retv: *const c_size_t,
 ) -> c_int {
-    0
+    unimplemented!();
 }
 
 /// int rumpuser_syncfd(int fd, int flags, uint64_t start, uint64_t len)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_syncfd(fd: c_int, flags: c_int, start: u64, len: u64) -> c_int {
-    0
+    unimplemented!();
 }

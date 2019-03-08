@@ -1,4 +1,4 @@
-#![feature(vec_remove_item, linkage, alloc)]
+#![feature(vec_remove_item, linkage, alloc, drain_filter)]
 #![cfg_attr(not(test), no_std)]
 #![allow(unused)]
 
@@ -49,9 +49,9 @@ fn noop_curlwp() -> u64 {
     0
 }
 
-fn noop_unschedule(_nlocks: &mut u64, _mtx: Option<&mutex::Mutex>) {}
+fn noop_unschedule(_nlocks: &mut i32, _mtx: Option<&mutex::Mutex>) {}
 
-fn noop_schedule(_nlocks: &u64, _mtx: Option<&mutex::Mutex>) {}
+fn noop_schedule(_nlocks: &i32, _mtx: Option<&mutex::Mutex>) {}
 
 pub static DEFAULT_UPCALLS: Upcalls = Upcalls {
     curlwp: noop_curlwp,
@@ -62,8 +62,8 @@ pub static DEFAULT_UPCALLS: Upcalls = Upcalls {
 #[derive(Debug, Clone, Copy)]
 pub struct Upcalls {
     pub curlwp: fn() -> u64,
-    pub schedule: fn(&u64, Option<&mutex::Mutex>),
-    pub deschedule: fn(&mut u64, Option<&mutex::Mutex>),
+    pub schedule: fn(&i32, Option<&mutex::Mutex>),
+    pub deschedule: fn(&mut i32, Option<&mutex::Mutex>),
 }
 
 #[derive(Debug)]
@@ -87,8 +87,9 @@ enum YieldRequest {
 
 unsafe impl Send for YieldRequest {}
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum YieldResume {
+    Started,
     Completed,
     TimedOut,
     Interrupted,
@@ -96,7 +97,7 @@ enum YieldResume {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ThreadId(usize);
+pub struct ThreadId(pub usize);
 
 impl Hash for ThreadId {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -113,8 +114,7 @@ impl fmt::Display for ThreadId {
 #[derive(Debug)]
 pub struct Thread {
     id: ThreadId,
-    wait_until: Option<Instant>,
-    interrupted: bool,
+    return_with: Option<YieldResume>,
     state: *mut ThreadState<'static>, // TODO: not really static, but keeps it easier for now
 }
 
@@ -133,8 +133,7 @@ impl Thread {
 
         let thread = Thread {
             id: tid,
-            wait_until: None,
-            interrupted: false,
+            return_with: None,
             state: ptr::null_mut(),
         };
 
@@ -152,10 +151,6 @@ impl Thread {
         });
 
         (thread, generator)
-    }
-
-    pub fn interrupt(&mut self) {
-        self.interrupted = true
     }
 }
 
@@ -176,9 +171,11 @@ impl Hash for Thread {
 pub struct Scheduler<'a> {
     threads: ds::HashMap<ThreadId, (Thread, Generator<'a, YieldResume, YieldRequest, OwnedStack>)>,
     runnable: ds::Vec<ThreadId>,
+    waiting: ds::Vec<(ThreadId, Instant)>,
     run_idx: usize,
     tid_counter: usize,
     upcalls: Upcalls,
+    tls: tls::ThreadLocalStorage<'static>,
     state: tls::SchedulerState,
 }
 
@@ -189,9 +186,11 @@ impl<'a> Scheduler<'a> {
         Scheduler {
             threads: ds::HashMap::with_capacity(Scheduler::MAX_THREADS),
             runnable: ds::Vec::with_capacity(Scheduler::MAX_THREADS),
+            waiting: ds::Vec::with_capacity(Scheduler::MAX_THREADS),
             run_idx: 0,
             tid_counter: 0,
             upcalls: upcalls,
+            tls: tls::ThreadLocalStorage::new(),
             state: tls::SchedulerState::new(),
         }
     }
@@ -212,6 +211,7 @@ impl<'a> Scheduler<'a> {
             self.threads.insert(tid, (handle, generator));
             Some(tid)
         } else {
+            error!("too many threads");
             return None;
         }
     }
@@ -222,12 +222,14 @@ impl<'a> Scheduler<'a> {
             "Thread {} does not exist?",
             tid
         );
-        assert!(
+        /*assert!(
             !self.runnable.contains(&tid),
             "Thread {} is already runnable?",
             tid
-        );
-        self.runnable.push(tid);
+        );*/
+        if !self.runnable.contains(&tid) {
+            self.runnable.push(tid);
+        }
     }
 
     fn mark_unrunnable(&mut self, tid: ThreadId) {
@@ -244,9 +246,7 @@ impl<'a> Scheduler<'a> {
             tid
         );
 
-        self.runnable
-            .remove_item(&tid)
-            .expect("Thread is not runnable?");
+        while let Some(_) = self.runnable.remove_item(&tid) {}
     }
 
     fn reset_run_index(&mut self) {
@@ -268,25 +268,41 @@ impl<'a> Scheduler<'a> {
     }
 
     pub fn run(&mut self) {
-        let start_idx = self.run_idx;
-        let now = Instant::now();
         loop {
+            // Try to add any threads in SchedulerState to runlist
+
+            for tid in self.state.make_runnable.iter() {
+                info!("making {:?} from mark_runnable runnable!", tid);
+                if !self.runnable.contains(&tid) {
+                    self.runnable.push(*tid);
+                }
+            }
+            self.state.make_runnable.clear();
+
+            // Try to find anything waiting threads that have timeouts
+            let now = Instant::now();
+
+            // TODO: Don't have to pay 2n for this
+            for (tid, timeout) in self.waiting.iter() {
+                if *timeout <= now {
+                    self.runnable.push(*tid);
+                }
+            }
+            self.waiting.drain_filter(|(tid, timeout)| *timeout <= now);
+
+            // If there is nothing to run anymore, we are done.
             if self.runnable.is_empty() {
                 return;
             }
 
-            trace!(
-                "self.runnable({}) = {:?}",
-                self.runnable.len(),
-                self.runnable
-            );
+            // Start off where we left off last
             let tid = self.runnable[self.run_idx];
 
-            trace!(
-                "self.runnable({}) = {:?}, dispatching {:?}",
+            info!(
+                "dispatching {:?}, self.runnable({}) = {:?}",
+                tid,
                 self.runnable.len(),
                 self.runnable,
-                tid
             );
 
             let action: YieldResume = {
@@ -296,29 +312,10 @@ impl<'a> Scheduler<'a> {
                     .expect("Can't find thread state?")
                     .0;
 
-                if thread.interrupted {
-                    thread.interrupted = false;
-                    YieldResume::Interrupted
-                } else if thread.wait_until == None {
-                    YieldResume::Completed
-                } else if thread
-                    .wait_until
-                    .map(|instant| now >= instant)
-                    .unwrap_or(false)
-                {
-                    thread.wait_until = None;
-                    YieldResume::TimedOut
-                } else {
-                    self.run_idx = (self.run_idx + 1) % self.runnable.len();
-                    if self.run_idx == start_idx {
-                        trace!("Checked all threads in runnable.");
-                        break;
-                    }
-                    continue;
-                }
+                info!("thread = {:?}", thread);
+                thread.return_with.unwrap_or(YieldResume::Completed)
             };
 
-            let mut tls = tls::ThreadLocalStorage::new();
             unsafe {
                 let thread: &mut Thread = &mut self
                     .threads
@@ -326,7 +323,7 @@ impl<'a> Scheduler<'a> {
                     .expect("Can't find thread state?")
                     .0;
 
-                tls::arch::set_tls((&mut tls) as *mut tls::ThreadLocalStorage);
+                tls::arch::set_tls((&mut self.tls) as *mut tls::ThreadLocalStorage);
                 tls::set_scheduler_state((&mut self.state) as *mut tls::SchedulerState);
 
                 // if this is the first time we run this,
@@ -337,67 +334,68 @@ impl<'a> Scheduler<'a> {
                 }
             }
 
+            unsafe {
+                x86::irq::enable();
+            }
             let result = {
                 let generator = &mut self.threads.get_mut(&tid).unwrap().1;
                 generator.resume(action)
             };
+            unsafe {
+                x86::irq::disable();
+            }
 
-            let (is_done, cycle_to_next_thread) = match result {
+            let (is_done, cycle_to_next_thread, retresult) = match result {
                 None => {
                     trace!("Thread {} has terminated.", tid);
                     self.mark_unrunnable(tid);
                     self.threads.remove(&tid);
-                    self.reset_run_index();
                     unsafe {
                         tls::arch::set_tls(ptr::null_mut());
                     }
-                    (true, true)
+                    (true, true, YieldResume::Completed)
                 }
-                Some(YieldRequest::None) => (false, true),
+                Some(YieldRequest::None) => (false, true, YieldResume::Completed),
                 Some(YieldRequest::Runnable(rtid)) => {
                     trace!("YieldRequest::Runnable {:?}", rtid);
                     self.mark_runnable(rtid);
-                    self.run_idx -= 1;
-                    (false, false)
+                    (false, false, YieldResume::Completed)
                 }
                 Some(YieldRequest::Unrunnable(rtid)) => {
                     trace!("YieldRequest::Unrunnable {:?}", rtid);
                     self.mark_unrunnable(rtid);
-                    self.reset_run_index();
-                    (false, rtid == tid)
+                    (false, rtid == tid, YieldResume::Completed)
                 }
                 Some(YieldRequest::RunnableList(rtids)) => {
                     trace!("YieldRequest::RunnableList {:?}", rtids);
                     for rtid in rtids.iter() {
                         self.mark_runnable(*rtid);
                     }
-                    //self.reset_run_index();
-                    self.run_idx = self.runnable.len() - 1;
-                    (false, rtids.contains(&tid))
+                    (false, false, YieldResume::Completed)
                 }
                 Some(YieldRequest::Timeout(instant)) => {
-                    // The thread has suspended itself.
-                    let thread: &mut Thread = &mut self
-                        .threads
-                        .get_mut(&tid)
-                        .expect("Can't find thread state?")
-                        .0;
-                    thread.wait_until = Some(instant);
-                    (false, true)
+                    error!(
+                        "The thread #{:?} has suspended itself until {:?}. now is {:?}.",
+                        tid,
+                        instant,
+                        Instant::now()
+                    );
+                    self.waiting.push((tid, instant));
+                    self.mark_unrunnable(tid);
+                    (false, true, YieldResume::Completed)
                 }
                 Some(YieldRequest::Spawn(function, arg)) => {
                     trace!("self.spawn {:?} {:p}", function, arg);
-                    self.spawn(
-                        64 * 4096,
-                        move |arg| unsafe {
-                            (function.unwrap())(arg);
-                        },
-                        arg,
-                    )
-                    .map(|tid| {
-                        trace!("self.spawned {:?}", tid);
-                    });
-                    (false, false)
+                    let tid = self
+                        .spawn(
+                            64 * 4096,
+                            move |arg| unsafe {
+                                (function.unwrap())(arg);
+                            },
+                            arg,
+                        )
+                        .expect("Can't spawn the thread");
+                    (false, false, YieldResume::Spawned(tid))
                 }
             };
 
@@ -405,24 +403,17 @@ impl<'a> Scheduler<'a> {
             // TODO: I modified libfringe to do this, but not
             // sure if llvm actually does it, check assembly!
             if !is_done {
+                warn!("tid {:?} not done, getting thread state", tid);
                 let thread: &mut Thread = &mut self
                     .threads
                     .get_mut(&tid)
-                    .expect("Can't find thread state?")
+                    .expect("Can't find thread state for tid?")
                     .0;
+                thread.return_with = Some(retresult);
 
                 unsafe {
                     thread.state = tls::get_thread_state();
-                    tls::arch::set_tls(ptr::null_mut());
-                }
-            }
-
-            if !self.runnable.is_empty() && cycle_to_next_thread {
-                self.run_idx = (self.run_idx + 1) % self.runnable.len();
-                trace!("Try to schedule self.run_idx {} next.", self.run_idx);
-                if self.run_idx == start_idx {
-                    trace!("Checked all threads in runnable.");
-                    break;
+                    //tls::arch::set_tls(ptr::null_mut());
                 }
             }
         }
@@ -463,7 +454,12 @@ impl<'a> ThreadState<'a> {
         self.yielder().suspend(request);
     }
 
-    fn make_runnable(&self, tid: ThreadId) {
+    pub fn block(&self) {
+        let request = YieldRequest::Unrunnable(tls::Environment::tid());
+        self.yielder().suspend(request);
+    }
+
+    pub fn make_runnable(&self, tid: ThreadId) {
         let request = YieldRequest::Runnable(tid);
         self.yielder().suspend(request);
     }

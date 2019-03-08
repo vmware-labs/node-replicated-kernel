@@ -32,13 +32,17 @@ pub unsafe extern "C" fn rumpuser_mutex_enter(mtx: *mut Mutex) {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_mutex_enter_nowrap(mtx: *mut Mutex) {
-    //trace!("rumpuser_mutex_enter_nowrap");
+    trace!(
+        "{:?} rumpuser_mutex_enter_nowrap {:p}",
+        Environment::tid(),
+        mtx
+    );
     (*mtx).enter_nowrap();
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_mutex_tryenter(mtx: *mut Mutex) -> i64 {
-    trace!("rumpuser_mutex_tryenter {:p}", mtx);
+    trace!("{:?} rumpuser_mutex_tryenter {:p}", Environment::tid(), mtx);
     if (*mtx).try_enter() {
         0i64
     } else {
@@ -48,11 +52,7 @@ pub unsafe extern "C" fn rumpuser_mutex_tryenter(mtx: *mut Mutex) -> i64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_mutex_exit(mtx: *mut Mutex) {
-    trace!(
-        "{:?} rumpuser_mutex_exit {:p}",
-        lineup::tls::Environment::tid(),
-        mtx
-    );
+    trace!("{:?} rumpuser_mutex_exit {:p}", Environment::tid(), mtx);
     (*mtx).exit();
 }
 
@@ -65,8 +65,13 @@ pub unsafe extern "C" fn rumpuser_mutex_destroy(mtx: *mut Mutex) {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_mutex_owner(mtx: *mut Mutex, lwp: *mut *mut threads::lwp) {
-    trace!("rumpuser_mutex_owner {:p}", mtx);
     let owner = (*mtx).owner();
+    trace!(
+        "{:?} rumpuser_mutex_owner mtx={:p} owner={:p}",
+        Environment::tid(),
+        mtx,
+        owner
+    );
     *lwp = owner as *mut threads::lwp;
 }
 
@@ -168,6 +173,13 @@ pub unsafe extern "C" fn rumpuser_cv_wait_nowrap(cv: *mut CondVar, mtx: *mut Mut
         cv,
         mtx
     );
+
+    /*if lineup::tls::Environment::tid() == lineup::ThreadId(1)
+        && (cv as *const u64) == (0xffffffff81f0ba80 as *const u64)
+    {
+        crate::panic::backtrace();
+    }*/
+
     (*cv).wait_nowrap(&*mtx);
 }
 
@@ -178,11 +190,19 @@ pub unsafe extern "C" fn rumpuser_cv_timedwait(
     sec: u64,
     nanos: u64,
 ) -> i64 {
-    trace!("rumpuser_cv_timedwait {:p} {:p} {} {}", cv, mtx, sec, nanos);
+    error!(
+        "{:?} rumpuser_cv_timedwait {:p} {:p} {} {}",
+        lineup::tls::Environment::tid(),
+        cv,
+        mtx,
+        sec,
+        nanos
+    );
     let d = Duration::from_secs(sec).add(Duration::from_nanos(nanos));
     if (*cv).timed_wait(&*mtx, d) {
         0
     } else {
+        error!("ETIMEDOUT {:p} {:p} {} {}", cv, mtx, sec, nanos);
         RumpError::ETIMEDOUT as i64
     }
 }

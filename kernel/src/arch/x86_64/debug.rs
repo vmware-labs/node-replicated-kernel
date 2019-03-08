@@ -1,13 +1,16 @@
 use core::ops::Deref;
 use x86::io;
 
+use alloc::boxed::Box;
+
 use super::irq;
 use super::ExitReason;
 
 use super::process::CURRENT_PROCESS;
 
 static PORT0: u16 = 0x3f8; /* COM1 */
-static COM1_IRQ: usize = 4 + 32;
+//static COM1_IRQ: usize = 4 + 32;
+static COM1_IRQ: usize = 5 + 32; // XXX
 
 pub fn init() {
     unsafe {
@@ -21,9 +24,9 @@ pub fn init() {
                                    //io::outb(PORT0 + 1, 0x00);    // Disable receive data IRQ
     }
     debug!("serial initialized");
-    unsafe {
-        irq::register_handler(COM1_IRQ, receive_serial_irq);
-    }
+    /*unsafe {
+        irq::register_handler(COM1_IRQ, Box::new(|e| receive_serial_irq(e)));
+    }*/
 }
 
 unsafe fn receive_serial_irq(_a: &irq::ExceptionArguments) {

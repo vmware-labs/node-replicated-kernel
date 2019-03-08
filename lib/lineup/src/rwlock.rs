@@ -90,7 +90,7 @@ impl RwLockInner {
         let tid = Environment::tid();
         let yielder: &mut ThreadState = Environment::thread();
 
-        let mut rid: u64 = 0;
+        let mut rid = 0;
         match (self.try_enter(opt), opt) {
             (true, _) => return,
             (false, RwLockIntent::Read) => {

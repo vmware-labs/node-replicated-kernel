@@ -32,8 +32,8 @@ pub trait PhysicalAllocator {
 /// Physical region of memory.
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Frame {
-    base: PAddr,
-    size: usize,
+    pub base: PAddr,
+    pub size: usize,
 }
 
 impl Frame {

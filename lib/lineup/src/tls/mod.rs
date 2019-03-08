@@ -1,15 +1,17 @@
 use crate::{ThreadId, ThreadState};
 use core::ptr;
 
-#[cfg(target_os = "linux")]
+use log::warn;
+
+//#[cfg(target_os = "linux")]
 pub mod unix;
 #[cfg(target_os = "none")]
 pub mod x86_64;
 
-#[cfg(target_os = "linux")]
+//#[cfg(target_os = "linux")]
 pub use crate::tls::unix as arch;
-#[cfg(target_os = "none")]
-pub use crate::tls::x86_64 as arch;
+//#[cfg(target_os = "none")]
+//pub use crate::tls::x86_64 as arch;
 
 pub struct ThreadLocalStorage<'a> {
     thread: *mut ThreadState<'a>,
@@ -87,6 +89,7 @@ impl Environment {
 pub struct SchedulerState {
     pub rump_upcalls: *const u64,
     pub rump_version: i64,
+    pub(crate) make_runnable: crate::ds::Vec<ThreadId>,
 }
 
 impl SchedulerState {
@@ -94,6 +97,7 @@ impl SchedulerState {
         SchedulerState {
             rump_upcalls: ptr::null(),
             rump_version: 0,
+            make_runnable: crate::ds::Vec::with_capacity(crate::Scheduler::MAX_THREADS),
         }
     }
 
@@ -101,6 +105,11 @@ impl SchedulerState {
         self.rump_version = version;
         self.rump_upcalls = upcall_ptr;
         assert!(!self.rump_upcalls.is_null());
+    }
+
+    pub fn add_to_runlist(&mut self, tid: ThreadId) {
+        warn!("add_to_runlist {:?}", tid);
+        self.make_runnable.push(tid);
     }
 }
 

@@ -1,10 +1,13 @@
 use core::cell::UnsafeCell;
+use core::ops::Add;
 use core::time::Duration;
-use log::{info, trace};
+
+use log::{error, info, trace};
+use rawtime::Instant;
 
 use crate::mutex::Mutex;
 use crate::tls::Environment;
-use crate::{ds, Scheduler, ThreadId, ThreadState};
+use crate::{ds, Scheduler, ThreadId, ThreadState, YieldRequest};
 
 #[derive(Debug)]
 pub struct CondVar {
@@ -76,21 +79,22 @@ impl CondVarInner {
         }
     }
 
-    fn cv_unschedule(&mut self, mtx: &Mutex, rid: &mut u64) {
+    fn cv_unschedule(&mut self, mtx: &Mutex, rid: &mut i32) {
         trace!("cv_unschedule");
         let yielder: &mut ThreadState = Environment::thread();
         (yielder.upcalls.deschedule)(rid, Some(mtx));
         mtx.exit();
     }
 
-    fn cv_reschedule(&mut self, mtx: &Mutex, rid: &u64) {
-        trace!("cv_reschedule");
+    fn cv_reschedule(&mut self, mtx: &Mutex, rid: &i32) {
         let yielder: &mut ThreadState = Environment::thread();
 
-        if mtx.is_spin() || mtx.is_kmutex() {
+        if mtx.is_spin() && mtx.is_kmutex() {
+            error!("cv_reschedule spin kmutex");
             (yielder.upcalls.schedule)(&rid, Some(mtx));
             mtx.enter_nowrap();
         } else {
+            error!("cv_reschedule normal");
             mtx.enter_nowrap();
             (yielder.upcalls.schedule)(&rid, Some(mtx));
         }
@@ -100,35 +104,57 @@ impl CondVarInner {
         let tid = Environment::tid();
         let yielder: &mut ThreadState = Environment::thread();
 
-        let mut rid: u64 = 0;
+        let mut rid = 0;
         self.cv_unschedule(mtx, &mut rid);
         self.waiters.push(tid);
         trace!("waiting for {:?}", tid);
         yielder.make_unrunnable(tid);
         self.cv_reschedule(mtx, &rid);
+        self.waiters.remove_item(&tid);
     }
 
     pub fn wait_nowrap(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
         let yielder: &mut ThreadState = Environment::thread();
+        trace!("waiters are {:?}", self.waiters);
 
-        mtx.exit();
         self.waiters.push(tid);
+        mtx.exit();
         yielder.make_unrunnable(tid);
         mtx.enter_nowrap();
         self.waiters.remove_item(&tid);
     }
 
-    pub fn timed_wait(&mut self, _mutex: &Mutex, _d: Duration) -> bool {
-        unreachable!("CV timedwaits");
-        false
+    /// Returns false on time-out, or true if woken up by other event
+    pub fn timed_wait(&mut self, mtx: &Mutex, d: Duration) -> bool {
+        let mut rid: i32 = 0;
+        let wakup_time = Instant::now().add(d);
+        let tid = Environment::tid();
+
+        self.waiters.push(tid);
+        self.cv_unschedule(mtx, &mut rid);
+        // TODO: if an event wakes us up the scheduler will still wait until
+        // the timeout is reached due to the Timeout YieldRequest
+        let yielder: &mut ThreadState = Environment::thread();
+        yielder.suspend(YieldRequest::Timeout(wakup_time));
+
+        error!("timed_wait wakeup {:?}", tid);
+        self.cv_reschedule(mtx, &rid);
+        self.waiters.remove_item(&tid);
+
+        error!(
+            "cv_reschedule done Instant::now() < wakup_time = {}",
+            Instant::now() < wakup_time
+        );
+        Instant::now() < wakup_time
     }
 
     pub fn signal(&mut self) {
         let waking_tid = self.waiters.pop();
         trace!(
-            "{:?} CondVarInner.signal {:?}",
+            "{:?} CondVarInner.signal {:p} {:?}",
             Environment::tid(),
+            self,
             waking_tid
         );
 

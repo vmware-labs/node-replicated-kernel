@@ -55,11 +55,11 @@ pub unsafe extern "C" fn rumpuser_thread_create(
 /// Called when a thread created with rumpuser_thread_create() exits.
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_thread_exit() {
-    /*let t = lineup::tls::Environment::thread();
+    let t = lineup::tls::Environment::thread();
     loop {
-        t.relinquish();
-    }*/
-    unreachable!("rumpuser_thread_exit");
+        t.block();
+    }
+    //unreachable!("rumpuser_thread_exit");
 }
 
 /// Wait for a joinable thread to exit. The cookie matches the value from rumpuser_thread_create().
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn rumpuser_thread_join(cookie: *mut u8) -> i64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i64 {
-    trace!(
+    error!(
         "{:?} rumpuser_curlwpop op={} lwp={:p}",
         lineup::tls::Environment::tid(),
         op,
@@ -90,10 +90,24 @@ pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i6
     0
 }
 
+/*
+979148367 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=SET lwp=0xffffffff803a0b40
+980654579 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=CREAT lwp=0xffffffff8273c000
+982041302 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=CLEAR lwp=0xffffffff803a0b40
+983427129 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=SET lwp=0xffffffff8273c000
+984934736 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=CREAT lwp=0xffffffff8273d800
+986337116 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=CLEAR lwp=0xffffffff8273c000
+987740425 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=SET lwp=0xffffffff8273d800
+989263375 [ERROR] - bespin::rumprt::threads: ThreadId(1) rumpuser_curlwpop op=DESTROY lwp=0xffffffff8273c000
+*/
+
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_curlwp() -> *mut lwp {
     //debug!("rumpuser_curlwp");
     let t = lineup::tls::Environment::thread();
+    if lineup::tls::Environment::tid() == lineup::ThreadId(1) {
+        info!("rumpuser_curlwp for tid#1 = {:p}", t.rump_lwp);
+    }
     t.rump_lwp as *mut lwp
 }
 
@@ -115,9 +129,13 @@ pub unsafe extern "C" fn rumpuser_clock_sleep(enum_rumpclock: u64, sec: i64, nan
     );
     // TODO: ignored _enum_rumpclock
 
+    let mut nlocks = 0;
+    super::rumpkern_unsched(&mut nlocks, None);
+
     let d = Duration::from_secs(sec as u64).add(Duration::from_nanos(nanos));
     let t = Environment::thread();
     t.sleep(d);
+    super::rumpkern_sched(&nlocks, None);
     0
 }
 

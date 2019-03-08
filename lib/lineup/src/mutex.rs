@@ -96,7 +96,7 @@ impl MutexInner {
         let yielder: &mut ThreadState = Environment::thread();
 
         if !self.try_enter() {
-            let mut rid: u64 = 0;
+            let mut rid = 0;
             info!("try_enter failed deschedule");
             (yielder.upcalls.deschedule)(&mut rid, None);
             self.waitlist.push(tid);
@@ -114,6 +114,7 @@ impl MutexInner {
     }
 
     fn exit(&mut self) {
+        info!("mutex exit {:p}", self);
         let tid = Environment::tid();
         let yielder: &mut ThreadState = Environment::thread();
 

@@ -12,7 +12,8 @@
     global_asm,
     linkage,
     c_variadic,
-    alloc_layout_extra
+    alloc_layout_extra,
+    ptr_internals
 )]
 #![no_std]
 #![cfg_attr(target_os = "none", no_main)]
@@ -53,6 +54,9 @@ extern crate multiboot;
 
 extern crate backtracer;
 extern crate rawtime;
+
+#[macro_use]
+extern crate lazy_static;
 
 pub use klogger::*;
 

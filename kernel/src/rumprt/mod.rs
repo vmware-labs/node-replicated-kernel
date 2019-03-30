@@ -119,6 +119,11 @@ pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *const RumpHype
 // int rumpuser_malloc(size_t len, int alignment, void **memp)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_malloc(len: usize, alignment: usize, memp: *mut *mut u8) -> i64 {
+    assert!(
+        len >= alignment,
+        "If this doesn't hold we need a smarter deallocate method for buddy alloc"
+    );
+
     let ptr = alloc::alloc(Layout::from_size_align_unchecked(len, alignment));
     *memp = ptr;
     0
@@ -128,8 +133,12 @@ pub unsafe extern "C" fn rumpuser_malloc(len: usize, alignment: usize, memp: *mu
 // void rumpuser_free(void *mem, size_t len)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_free(ptr: *mut u8, len: usize) {
+    // We don't get the alignment on free here so we assume
+    // alignment == 1, this is fine as long as rumpuser_malloc always
+    // allocs with len >= alignment (see assertion there).
+
     trace!("rumpuser_free len={}", len);
-    alloc::dealloc(ptr, Layout::from_size_align_unchecked(len, len));
+    alloc::dealloc(ptr, Layout::from_size_align_unchecked(len, 1));
 }
 
 /// int rumpuser_getrandom(void *buf, size_t buflen, int flags, size_t *retp)

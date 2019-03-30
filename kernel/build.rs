@@ -8,7 +8,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=rumpdev_bpf");
     println!("cargo:rustc-link-lib=static=rumpdev_vnd");
     println!("cargo:rustc-link-lib=static=rumpdev_rnd");
-    println!("cargo:rustc-link-lib=static=rumprunfs_base");
+    //println!("cargo:rustc-link-lib=static=rumprunfs_base");
     println!("cargo:rustc-link-lib=static=rumpnet_netinet");
     println!("cargo:rustc-link-lib=static=rumpnet_net");
     println!("cargo:rustc-link-lib=static=rumpnet_netinet6");

@@ -114,6 +114,7 @@ impl PhysicalAllocator for BuddyFrameAllocator {
     /// All allocated Frames must be passed to `deallocate` with the same
     /// `size` and `align` parameter.
     unsafe fn allocate(&mut self, layout: Layout) -> Option<Frame> {
+        trace!("buddy allocate {:?}", layout);
         // Figure out which order block we need.
         if let Some(order_needed) = self.layout_to_order(layout) {
             // Start with the smallest acceptable block size, and search
@@ -145,13 +146,9 @@ impl PhysicalAllocator for BuddyFrameAllocator {
     /// Layout value must match the value passed to
     /// `allocate`.
     unsafe fn deallocate(&mut self, frame: Frame, layout: Layout) {
-        info!("buddy deallocate {:?} {:?}", frame, layout);
-        /*let initial_order = self
-        .layout_to_order(layout)
-        .expect("Tried to dispose of invalid block");*/
-
+        trace!("buddy deallocate {:?} {:?}", frame, layout);
         let initial_order = self
-            .layout_to_order(Layout::from_size_align_unchecked(layout.size(), 1))
+            .layout_to_order(layout)
             .expect("Tried to dispose of invalid block");
 
         // See if we can merge block with it's neighbouring buddy.

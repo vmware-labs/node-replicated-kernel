@@ -244,6 +244,7 @@ pub unsafe fn acknowledge() {
     // TODO: Disable the PIC and get rid of this.
     io::outb(PIC2_CMD, 0x20);
     io::outb(PIC1_CMD, 0x20);
+
     // TODO: Need ACPI to disable PIC first before this does anything.
     //msr::wrmsr(0x800 + 0xb, 0);
 }

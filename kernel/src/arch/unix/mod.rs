@@ -5,6 +5,7 @@ use crate::main;
 use crate::ExitReason;
 
 pub mod memory;
+pub mod process;
 
 pub mod debug {
     use crate::ExitReason;

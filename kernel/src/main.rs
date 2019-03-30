@@ -73,6 +73,8 @@ pub mod arch;
 
 mod memory;
 mod prelude;
+
+#[cfg(target_os = "none")]
 pub mod rumprt;
 
 use core::alloc::{GlobalAlloc, Layout};

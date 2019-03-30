@@ -1,11 +1,11 @@
-use super::{c_char, c_int, c_size_t, c_uint, c_ulong, c_void, RumpError};
+use super::{c_int, c_uint, c_ulong, c_void};
 use crate::arch::memory::{kernel_vaddr_to_paddr, PAddr, VAddr};
 use crate::memory::{PhysicalAllocator, FMANAGER};
 use alloc::boxed::Box;
 use core::alloc::Layout;
 use core::fmt;
 use core::ptr;
-use log::{info, trace, warn};
+use log::{info, trace};
 use x86::io;
 
 static PCI_CONF_ADDR: u16 = 0xcf8;
@@ -115,35 +115,25 @@ pub(crate) unsafe extern "C" fn irq_handler(arg1: *mut u8) -> *mut u8 {
     (*upcalls).hyp_lwproc_newlwp.expect("rump_upcalls set")(0);
     (*upcalls).hyp_unschedule.expect("rump_upcalls set")();
 
-    info!("before rumpkern_sched");
     let mut nlock: i32 = 1;
-
     loop {
         unsafe {
             x86::irq::disable();
         }
 
-        info!("doing rumpkern_sched");
         super::rumpkern_sched(&nlock, None);
-        info!("done with rumpkern_sched, calling IRQ handler");
-
         let r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);
         //assert_eq!(r, 0, "IRQ handler should return 0?");
-
-        info!("doing rumpkern_unsched");
         super::rumpkern_unsched(&mut nlock, None);
-        info!("done with rumpkern_unsched");
 
         unsafe {
             x86::irq::enable();
         }
 
         crate::arch::irq::acknowledge();
-        info!("handled irq going to sleep");
 
         let thread = lineup::tls::Environment::thread();
         thread.block(); // Wake up on next IRQ
-        info!("rump IRQ handler therad woke up from sleep");
     }
 }
 
@@ -153,7 +143,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     handler: Option<unsafe extern "C" fn(arg: *mut c_void) -> c_int>,
     arg: *mut c_void,
 ) -> *mut c_void {
-    error!("rumpcomp_pci_irq_establish {:#x} {:p}", cookie, arg);
+    trace!("rumpcomp_pci_irq_establish {:#x} {:p}", cookie, arg);
     IRQS[0].handler = handler;
     IRQS[0].arg = arg;
 
@@ -162,10 +152,8 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     crate::arch::irq::register_handler(
         IRQS[0].vector as usize + 32,
         Box::new(move |_| {
-            info!("Got irq {}", IRQS[0].vector as usize + 32);
             let scheduler = lineup::tls::Environment::scheduler();
             scheduler.add_to_runlist(lineup::ThreadId(1));
-            info!("woke up 1");
         }),
     );
 
@@ -175,7 +163,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c_void {
-    error!("rumpcomp_pci_map {:#x} {:#x}", addr, len);
+    trace!("rumpcomp_pci_map {:#x} {:#x}", addr, len);
     //let vaddr = VAddr::from(addr);
     //let paddr = kernel_vaddr_to_paddr(vaddr);
     // 19625676584 [TRACE] - bespin::rumprt::dev: rumpcomp_pci_map 0xfeb80000 0x20000

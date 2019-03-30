@@ -10,11 +10,9 @@ pub struct rumpuser_iovec {
 
 /// int rumpuser_open(const char *name, int mode, int *fdp)
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_open(
-    name: *const c_char,
-    mode: c_int,
-    fdp: *const c_int,
-) -> c_int {
+pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *const c_int) -> c_int {
+    let param_name = CStr::from_ptr(name).to_str().unwrap_or("unknown");
+    error!("rumpuser_open {}", param_name);
     unimplemented!();
 }
 

@@ -85,7 +85,8 @@ pub(crate) fn rumpkern_unsched(nlocks: &mut i32, mtx: Option<&Mutex>) {
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     unsafe {
         trace!(
-            "rumpkern_unsched {:p} lwp={:p}",
+            "rumpkern_unsched {} {:p} lwp={:p}",
+            *nlocks,
             mtx,
             threads::rumpuser_curlwp()
         );
@@ -98,7 +99,7 @@ pub(crate) fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
     let upcalls = s.rump_upcalls as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
-    trace!("rumpkern_sched {:p}", mtx);
+    trace!("rumpkern_sched {} {:p}", *nlocks, mtx);
     unsafe {
         (*upcalls).hyp_backend_schedule.unwrap()(*nlocks, mtx as *const u64);
     }
@@ -152,8 +153,7 @@ pub unsafe extern "C" fn rumpuser_getrandom(
     let region: &mut [u8] = slice::from_raw_parts_mut(buf, buflen);
     for (i, mut ptr) in region.iter_mut().enumerate() {
         let mut rnd: u16 = 0xba;
-        // let ret = _rdrand16_step(&mut rnd);
-        let ret = 1;
+        let ret = _rdrand16_step(&mut rnd);
         if ret == 1 {
             *ptr = rnd as u8;
         } else {
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
     sec: *mut i64,
     nsec: *mut u64,
 ) -> i64 {
-    trace!("rumpuser_clock_gettime");
+    //trace!("rumpuser_clock_gettime");
 
     let boot_time = rawtime::duration_since_boot();
 
@@ -205,7 +205,8 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
             0
         }
         RUMPUSER_CLOCK_RELWALL => {
-            *sec = ((*rawtime::WALL_TIME_ANCHOR).as_unix_time() + boot_time.as_secs()) as i64;
+            //*sec = ((*rawtime::WALL_TIME_ANCHOR).as_unix_time() + boot_time.as_secs()) as i64;
+            *sec = boot_time.as_secs() as i64;
             *nsec = boot_time.subsec_nanos() as u64;
             0
         }
@@ -228,7 +229,7 @@ pub unsafe extern "C" fn rumpuser_getparam(
         "_RUMPUSER_NCPU" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "RUMP_VERBOSE" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "RUMP_THREADS" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
-        "_RUMPUSER_HOSTNAME" => CStr::from_bytes_with_nul_unchecked(b"rtest\0"),
+        "_RUMPUSER_HOSTNAME" => CStr::from_bytes_with_nul_unchecked(b"btest\0"),
         "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"134217728\0"), // 128 MiB
         //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"2097152\0"), // 2MIB
         //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"197152\0"), // 2MIB

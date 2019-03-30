@@ -111,11 +111,16 @@ impl fmt::Display for ThreadId {
     }
 }
 
-#[derive(Debug)]
 pub struct Thread {
     id: ThreadId,
     return_with: Option<YieldResume>,
     state: *mut ThreadState<'static>, // TODO: not really static, but keeps it easier for now
+}
+
+impl fmt::Debug for Thread {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Thread#{}", self.id.0)
+    }
 }
 
 impl Thread {
@@ -222,11 +227,15 @@ impl<'a> Scheduler<'a> {
             "Thread {} does not exist?",
             tid
         );
-        /*assert!(
+        assert!(
             !self.runnable.contains(&tid),
             "Thread {} is already runnable?",
             tid
-        );*/
+        );
+
+        // CondVars can wake up before time-out is done
+        self.waiting.drain_filter(|(wtid, _)| *wtid == tid);
+
         if !self.runnable.contains(&tid) {
             self.runnable.push(tid);
         }
@@ -270,9 +279,8 @@ impl<'a> Scheduler<'a> {
     pub fn run(&mut self) {
         loop {
             // Try to add any threads in SchedulerState to runlist
-
             for tid in self.state.make_runnable.iter() {
-                info!("making {:?} from mark_runnable runnable!", tid);
+                trace!("making {:?} from mark_runnable runnable!", tid);
                 if !self.runnable.contains(&tid) {
                     self.runnable.push(*tid);
                 }
@@ -283,12 +291,14 @@ impl<'a> Scheduler<'a> {
             let now = Instant::now();
 
             // TODO: Don't have to pay 2n for this
+            //trace!("waiting: {:?}", self.waiting);
             for (tid, timeout) in self.waiting.iter() {
                 if *timeout <= now {
                     self.runnable.push(*tid);
                 }
             }
             self.waiting.drain_filter(|(tid, timeout)| *timeout <= now);
+            //trace!("waiting after draining: {:?}", self.waiting);
 
             // If there is nothing to run anymore, we are done.
             if self.runnable.is_empty() {
@@ -298,7 +308,7 @@ impl<'a> Scheduler<'a> {
             // Start off where we left off last
             let tid = self.runnable[self.run_idx];
 
-            info!(
+            trace!(
                 "dispatching {:?}, self.runnable({}) = {:?}",
                 tid,
                 self.runnable.len(),
@@ -312,7 +322,7 @@ impl<'a> Scheduler<'a> {
                     .expect("Can't find thread state?")
                     .0;
 
-                info!("thread = {:?}", thread);
+                trace!("thread = {:?}", thread);
                 thread.return_with.unwrap_or(YieldResume::Completed)
             };
 
@@ -345,7 +355,7 @@ impl<'a> Scheduler<'a> {
                 x86::irq::disable();
             }
 
-            let (is_done, cycle_to_next_thread, retresult) = match result {
+            let (is_done, retresult) = match result {
                 None => {
                     trace!("Thread {} has terminated.", tid);
                     self.mark_unrunnable(tid);
@@ -353,36 +363,41 @@ impl<'a> Scheduler<'a> {
                     unsafe {
                         tls::arch::set_tls(ptr::null_mut());
                     }
-                    (true, true, YieldResume::Completed)
+                    (true, YieldResume::Completed)
                 }
-                Some(YieldRequest::None) => (false, true, YieldResume::Completed),
+                Some(YieldRequest::None) => {
+                    // Put at end of the queue
+                    self.mark_unrunnable(tid);
+                    self.mark_runnable(tid);
+                    (false, YieldResume::Completed)
+                }
                 Some(YieldRequest::Runnable(rtid)) => {
                     trace!("YieldRequest::Runnable {:?}", rtid);
                     self.mark_runnable(rtid);
-                    (false, false, YieldResume::Completed)
+                    (false, YieldResume::Completed)
                 }
                 Some(YieldRequest::Unrunnable(rtid)) => {
                     trace!("YieldRequest::Unrunnable {:?}", rtid);
                     self.mark_unrunnable(rtid);
-                    (false, rtid == tid, YieldResume::Completed)
+                    (false, YieldResume::Completed)
                 }
                 Some(YieldRequest::RunnableList(rtids)) => {
                     trace!("YieldRequest::RunnableList {:?}", rtids);
                     for rtid in rtids.iter() {
                         self.mark_runnable(*rtid);
                     }
-                    (false, false, YieldResume::Completed)
+                    (false, YieldResume::Completed)
                 }
-                Some(YieldRequest::Timeout(instant)) => {
-                    error!(
-                        "The thread #{:?} has suspended itself until {:?}. now is {:?}.",
+                Some(YieldRequest::Timeout(until)) => {
+                    trace!(
+                        "The thread #{:?} has suspended itself until {:?}.",
                         tid,
-                        instant,
-                        Instant::now()
+                        until.duration_since(Instant::now()),
                     );
-                    self.waiting.push((tid, instant));
+
+                    self.waiting.push((tid, until));
                     self.mark_unrunnable(tid);
-                    (false, true, YieldResume::Completed)
+                    (false, YieldResume::Completed)
                 }
                 Some(YieldRequest::Spawn(function, arg)) => {
                     trace!("self.spawn {:?} {:p}", function, arg);
@@ -395,7 +410,7 @@ impl<'a> Scheduler<'a> {
                             arg,
                         )
                         .expect("Can't spawn the thread");
-                    (false, false, YieldResume::Spawned(tid))
+                    (false, YieldResume::Spawned(tid))
                 }
             };
 
@@ -403,7 +418,7 @@ impl<'a> Scheduler<'a> {
             // TODO: I modified libfringe to do this, but not
             // sure if llvm actually does it, check assembly!
             if !is_done {
-                warn!("tid {:?} not done, getting thread state", tid);
+                trace!("tid {:?} not done, getting thread state", tid);
                 let thread: &mut Thread = &mut self
                     .threads
                     .get_mut(&tid)

@@ -145,8 +145,13 @@ impl PhysicalAllocator for BuddyFrameAllocator {
     /// Layout value must match the value passed to
     /// `allocate`.
     unsafe fn deallocate(&mut self, frame: Frame, layout: Layout) {
+        info!("buddy deallocate {:?} {:?}", frame, layout);
+        /*let initial_order = self
+        .layout_to_order(layout)
+        .expect("Tried to dispose of invalid block");*/
+
         let initial_order = self
-            .layout_to_order(layout)
+            .layout_to_order(Layout::from_size_align_unchecked(layout.size(), 1))
             .expect("Tried to dispose of invalid block");
 
         // See if we can merge block with it's neighbouring buddy.

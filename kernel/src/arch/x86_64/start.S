@@ -159,10 +159,10 @@ init_pdpt:	/* covers the top 512GB, 1GB each entry */
 	.quad 0
 init_pd:
 	/* 0x80 = Page size extension */
-	.quad 0x000000 + 0x80 + 3	/* Map 2MB, enough for a 1MB kernel */
-	.quad 0x200000 + 0x80 + 3	/* - give it another 2MB, just in case */
-	.rept 512 - 2
-		.quad 0
+	base=0
+	.rept 512
+		.quad base + 0x80 + 3	/* - give it another 2MB, just in case */
+		base=base+0x200000
 	.endr
 init_stack_base:
 	.rept 0x1000 * 60

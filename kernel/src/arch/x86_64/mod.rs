@@ -86,10 +86,8 @@ enum CmdToken {
 fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
     sprint!("\n\n");
     sse::initialize();
-    assert!(
-        *rawtime::arch::tsc::TSC_FREQUENCY > 0,
-        "TSC_FREQUENCY has valid value." // Don't remove since it also initializes TSC_FREQUENCY
-    );
+    lazy_static::initialize(&rawtime::arch::tsc::TSC_FREQUENCY);
+
     let mb = unsafe {
         Multiboot::new(mboot_ptr.into(), |base, size| {
             let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
@@ -139,29 +137,6 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     unsafe { controlregs::cr4_write(cr4) };
 
     debug::init();
-
-    unsafe {
-        let mut base = PAddr::from(0x0);
-        let mut page_cnt = 0;
-
-        for e in &mut init_pd.iter_mut() {
-            (*e) = paging::PDEntry::new(
-                base,
-                paging::PDFlags::P | paging::PDFlags::RW | paging::PDFlags::PS,
-            );
-
-            base += 1024 * 1024 * 2;
-            page_cnt += 1;
-
-            //debug!("{:?}", (*e) );
-            //debug!("e ptr {:p}", e);
-        }
-
-        debug!(
-            "mb init. allocated {:?} PDE pages; base offset {:?}",
-            page_cnt, base
-        );
-    }
 
     if mb.modules().is_some() {
         for module in mb.modules().unwrap() {

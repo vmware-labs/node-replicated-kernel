@@ -230,10 +230,9 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
             pf_handler(&a);
         }
 
-        info!("handle_generic_exception {:?}", a);
+        trace!("handle_generic_exception {:?}", a);
         let vec_handlers = IRQ_HANDLERS.lock();
         (*vec_handlers)[a.vector as usize](&a);
-        info!("handler finished for vec#{}", a.vector);
     }
 }
 
@@ -274,10 +273,8 @@ pub unsafe fn pic_remap() {
     io::outb(PIC1_DATA, ICW4_8086);
     io::outb(PIC2_DATA, ICW4_8086);
 
-    error!("PIC1 mask is {:#b}", m1);
-    error!("PIC2 mask is {:#b}", m2);
-    //io::outb(PIC1_DATA, m1);
-    //io::outb(PIC2_DATA, m2);
+    trace!("PIC1 mask is {:#b}", m1);
+    trace!("PIC2 mask is {:#b}", m2);
 
     // Established Mapping
     // 0 -> 32
@@ -300,18 +297,10 @@ pub unsafe fn pic_remap() {
 
     const KEYBOARD_IRQ: u8 = 1 << 4; // IRQ 5 -> 37
     const E1000_IRQ: u8 = 1 << 3; // IRQ 11 -> 43 (11-8 = 3)
-
     assert_eq!((KEYBOARD_IRQ | 0b1), 0b10001);
     assert_eq!(!(E1000_IRQ), 0b11110111);
 
-    //let m1 = io::inb(PIC1_DATA);
-    //let m2 = io::inb(PIC2_DATA);
-
-    //io::outb(PIC1_DATA, !(1 << 2));
-    //io::outb(PIC2_DATA, 0xff);
-
     io::outb(PIC1_DATA, !(1 << 2));
-    //io::outb(PIC2_DATA, 0xff);
     io::outb(PIC2_DATA, 0b1111_0111);
 }
 
@@ -343,6 +332,7 @@ pub fn setup_idt() {
         // The difference is that for interrupt gates,
         // interrupts are automatically disabled upon entry
         // and re-enabled upon IRET which restores the saved EFLAGS.
+
         debug!("Install IRQ handler");
         let seg = SegmentSelector::new(1, Ring::Ring0);
         idt_set!(0, isr_handler0, seg, 0x8E);
@@ -379,12 +369,11 @@ pub fn setup_idt() {
         idt_set!(46, isr_handler46, seg, 0x8E);
         idt_set!(47, isr_handler47, seg, 0x8E);
 
-        //register_handler(11, xxx_handle);
         register_handler(13, Box::new(|e| gp_handler(e)));
         register_handler(14, Box::new(|e| pf_handler(e)));
 
         pic_remap();
-        info!("complete pic remap");
+        info!("Completed pic remap");
         lazy_static::initialize(&IRQ_HANDLERS);
     }
 }

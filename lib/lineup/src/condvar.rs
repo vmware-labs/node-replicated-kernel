@@ -2,7 +2,7 @@ use core::cell::UnsafeCell;
 use core::ops::Add;
 use core::time::Duration;
 
-use log::{error, info, trace};
+use log::trace;
 use rawtime::Instant;
 
 use crate::mutex::Mutex;
@@ -90,11 +90,9 @@ impl CondVarInner {
         let yielder: &mut ThreadState = Environment::thread();
 
         if mtx.is_spin() && mtx.is_kmutex() {
-            error!("cv_reschedule spin kmutex");
             (yielder.upcalls.schedule)(&rid, Some(mtx));
             mtx.enter_nowrap();
         } else {
-            error!("cv_reschedule normal");
             mtx.enter_nowrap();
             (yielder.upcalls.schedule)(&rid, Some(mtx));
         }
@@ -137,12 +135,10 @@ impl CondVarInner {
         // the timeout is reached due to the Timeout YieldRequest
         let yielder: &mut ThreadState = Environment::thread();
         yielder.suspend(YieldRequest::Timeout(wakup_time));
-
-        error!("timed_wait wakeup {:?}", tid);
         self.cv_reschedule(mtx, &rid);
         self.waiters.remove_item(&tid);
 
-        error!(
+        trace!(
             "cv_reschedule done Instant::now() < wakup_time = {}",
             Instant::now() < wakup_time
         );

@@ -3,6 +3,7 @@ use either::{Either, Left, Right};
 
 use crate::tls::Environment;
 use crate::{ds, Scheduler, ThreadId, ThreadState};
+use log::trace;
 
 #[derive(Debug, Clone, Copy)]
 pub enum RwLockIntent {
@@ -76,14 +77,17 @@ impl RwLockInner {
         let tid = Environment::tid();
         let thread = Environment::thread();
 
-        match (opt, self.owner) {
+        let held = match (opt, self.owner) {
             (_, None) => false,
             (RwLockIntent::Read, Some(Left(_))) => false,
             (RwLockIntent::Write, Some(Right(_))) => false,
             // If we have readers and our intent is read, we 'own' the lock
             (RwLockIntent::Read, Some(Right(_readers))) => true,
             (RwLockIntent::Write, Some(Left(owner))) => thread.rump_lwp == owner,
-        }
+        };
+
+        trace!("holding rwlock with opt {:?}: {}", opt, held);
+        held
     }
 
     pub fn enter(&mut self, opt: RwLockIntent) {
@@ -153,6 +157,12 @@ impl RwLockInner {
 
     pub fn exit(&mut self) {
         let tid = Environment::tid();
+        trace!(
+            "rwlock exit {:?} {:?} {:?}",
+            tid,
+            self.wait_for_read,
+            self.wait_for_write
+        );
 
         match self.owner {
             Some(Left(_owner)) => {
@@ -202,9 +212,11 @@ impl RwLockInner {
         };
 
         if can_upgrade {
+            trace!("try_upgrade upgrade successful");
             self.owner = Some(Left(Environment::thread().rump_lwp));
             true
         } else {
+            trace!("can not upgrade reader_count is {:?}", self.owner);
             false
         }
     }

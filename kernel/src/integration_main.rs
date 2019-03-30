@@ -128,6 +128,15 @@ pub fn main() {
 pub fn main() {
     use cstr_core::CStr;
 
+    #[repr(C)]
+    struct sockaddr_in {
+        sin_len: u8,
+        sin_family: u8, //typedef __uint8_t       __sa_family_t;
+        sin_port: u16,  // typedef __uint16_t      __in_port_t;    /* "Internet" port number */
+        sin_addr: u32,  // typedef __uint32_t      __in_addr_t;    /* IP(v4) address */
+        zero: [u8; 8],
+    }
+
     extern "C" {
         fn rump_boot_setsigmodel(sig: usize);
         fn rump_init() -> u64;
@@ -138,6 +147,24 @@ pub fn main() {
             -> i64;
         fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
 
+        fn socket(domain: i64, typ: i64, protocol: i64) -> i64;
+        fn htons(v: u16) -> u16;
+
+        fn close(sock: i64) -> i64;
+        fn rump_sys_fflush(sock: i64) -> i64;
+
+        fn rump_schedule();
+        fn rump_unschedule();
+
+        fn rump___sysimpl_sendto(
+            fd: i64,
+            buf: *const i8,
+            flags: i64,
+            len: usize,
+            addr: *const sockaddr_in,
+            len: usize,
+        ) -> i64;
+
         fn sysctlbyname(
             name: *const i8,
             oldp: *mut rumprt::c_void,
@@ -145,6 +172,12 @@ pub fn main() {
             newp: *const rumprt::c_void,
             newlen: rumprt::c_size_t,
         ) -> rumprt::c_int;
+
+        //int connect(int s, const struct sockaddr *name, socklen_t namelen);
+        fn connect(fd: i64, addr: *const sockaddr_in, len: usize) -> i64;
+        fn write(fd: i64, buf: *const i8, len: usize) -> i64;
+
+        fn rumpns_icmp_init();
     }
 
     let up = lineup::Upcalls {
@@ -158,7 +191,7 @@ pub fn main() {
         32 * 4096,
         |_yielder| unsafe {
             let start = rawtime::Instant::now();
-            rump_boot_setsigmodel(0);
+            rump_boot_setsigmodel(1);
             let ri = rump_init();
             assert_eq!(ri, 0);
             let TMPFS_ARGS_VERSION: u64 = 1;
@@ -184,49 +217,84 @@ pub fn main() {
             );
             info!("rump___sysimpl_mount50: {:?}", r);
 
-            //const char network_format_string[] = "\"net\" :  {,,\"if\":\"wm0\",, \"type\":\"inet\",,\"method\":\"dhcp\",,},,";
-
-            /*let path = CStr::from_bytes_with_nul(b"wm0\0");
-            let r = rump_pub_netconfig_ifcreate(path.unwrap().as_ptr());
-            assert_eq!(r, 0, "rump_pub_netconfig_ifcreate");*/
-
-            /*use core::mem;
-            use core::ptr;
-            let dad_count = CStr::from_bytes_with_nul(b"net.inet.ip.dad_count\0");
-            let x: rumprt::c_size_t = 0;
-            sysctlbyname(
-                dad_count.unwrap().as_ptr(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                &x as *const rumprt::c_size_t as *const rumprt::c_void,
-                mem::size_of::<rumprt::c_size_t>() as rumprt::c_size_t,
-            );*/
-
             let path = CStr::from_bytes_with_nul(b"wm0\0");
             let r = rump_pub_netconfig_dhcp_ipv4_oneshot(path.unwrap().as_ptr());
             assert_eq!(r, 0, "rump_pub_netconfig_dhcp_ipv4_oneshot");
 
-            /*let path = CStr::from_bytes_with_nul(b"wm0\0");
-            let addr = CStr::from_bytes_with_nul(b"10.0.120.101/24\0");
-            let r = rump_pub_netconfig_ipv4_ifaddr_cidr(
-                path.unwrap().as_ptr(),
-                addr.unwrap().as_ptr(),
-                0,
-            );
-            assert_eq!(r, 0, "rump_pub_netconfig_ipv4_ifaddr_cidr");
-            unreachable!();*/
+            let AF_INET = 2;
+            let SOCK_DGRAM = 2;
+            let INADDR_ANY = 0;
 
-            /*let gw = CStr::from_bytes_with_nul(b"10.0.120.100/24\0");
-            let r = rump_pub_netconfig_ipv4_gw(gw.unwrap().as_ptr());
-            assert_eq!(r, 0, "rump_pub_netconfig_ipv4_gw");*/
+            info!("before socket");
+            let sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+            info!("after socket");
+            assert!(sockfd > 0);
+
+            let addr = sockaddr_in {
+                sin_len: core::mem::size_of::<sockaddr_in>() as u8,
+                sin_family: AF_INET as u8,
+                sin_port: (8889 as u16).to_be(),
+                sin_addr: (2887712788 as u32).to_be(),
+                zero: [0; 8],
+            };
+
+            /*let r = connect(
+                sockfd,
+                &addr as *const sockaddr_in,
+                core::mem::size_of::<sockaddr_in>(),
+            );
+            assert_eq!(r, 0);
+            info!("after conect");
+
+            for i in 0..100 {
+                info!("write msg = {}", i);
+
+                use alloc::format;
+                let buf = format!("pkt {}\n\0", i);
+                let cstr = CStr::from_bytes_with_nul(buf.as_str().as_bytes()).unwrap();
+
+                let r = write(sockfd, cstr.as_ptr() as *const i8, buf.len() as usize);
+                assert_eq!(r, buf.len() as i64);
+
+                //let _r = lineup::tls::Environment::thread().relinquish();
+            }*/
+
+            //rc = connect( sockfd, serverIter->ai_addr, serverIter->ai_addrlen);
+            //(void) write( sockfd, TEST_MESSAGE, strlen(TEST_MESSAGE) );
+
+            for i in 0..1212 {
+                info!("sendto msg = {}", i);
+
+                use alloc::format;
+                let buf = format!("pkt {}\n\0", i);
+                let cstr = CStr::from_bytes_with_nul(buf.as_str().as_bytes()).unwrap();
+                core::mem::forget(cstr);
+
+                let r = rump___sysimpl_sendto(
+                    sockfd,
+                    cstr.as_ptr() as *const i8,
+                    buf.len() as i64,
+                    0,
+                    &addr as *const sockaddr_in,
+                    core::mem::size_of::<sockaddr_in>(),
+                );
+                assert_eq!(r, buf.len() as i64);
+                //let _r = lineup::tls::Environment::thread().relinquish();
+            }
+
+            let r = close(sockfd);
+            assert_eq!(r, 0);
 
             info!(
                 "rump_init({}) done in {:?}, mounted tmpfs",
                 ri,
                 start.elapsed()
             );
+
             loop {
-                lineup::tls::Environment::thread().sleep(rawtime::Duration::from_secs(1));
+                let t = lineup::tls::Environment::thread();
+                //t.sleep(rawtime::Duration::from_secs(5));
+                t.relinquish();
             }
         },
         core::ptr::null_mut(),
@@ -237,6 +305,7 @@ pub fn main() {
             32 * 1024,
             |_yielder| unsafe {
                 rumprt::dev::irq_handler(core::ptr::null_mut());
+                unreachable!("should not exit");
             },
             core::ptr::null_mut(),
         )

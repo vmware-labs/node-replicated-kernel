@@ -190,7 +190,7 @@ pub unsafe extern "C" fn rumpuser_cv_timedwait(
     sec: u64,
     nanos: u64,
 ) -> i64 {
-    error!(
+    trace!(
         "{:?} rumpuser_cv_timedwait {:p} {:p} {} {}",
         lineup::tls::Environment::tid(),
         cv,
@@ -202,7 +202,7 @@ pub unsafe extern "C" fn rumpuser_cv_timedwait(
     if (*cv).timed_wait(&*mtx, d) {
         0
     } else {
-        error!("ETIMEDOUT {:p} {:p} {} {}", cv, mtx, sec, nanos);
+        trace!("ETIMEDOUT {:p} {:p} {} {}", cv, mtx, sec, nanos);
         RumpError::ETIMEDOUT as i64
     }
 }

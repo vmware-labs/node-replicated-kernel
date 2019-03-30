@@ -1,7 +1,7 @@
 use crate::{ThreadId, ThreadState};
 use core::ptr;
 
-use log::warn;
+use log::trace;
 
 //#[cfg(target_os = "linux")]
 pub mod unix;
@@ -108,7 +108,7 @@ impl SchedulerState {
     }
 
     pub fn add_to_runlist(&mut self, tid: ThreadId) {
-        warn!("add_to_runlist {:?}", tid);
+        trace!("add_to_runlist {:?}", tid);
         self.make_runnable.push(tid);
     }
 }

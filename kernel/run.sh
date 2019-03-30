@@ -165,13 +165,13 @@ if [ "${_arg_norun}" != "on" ]; then
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
         KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
-		#KVM_ARG='-cpu qemu64'
+		#KVM_ARG='-cpu qemu64 -d int'
     else
         KVM_ARG='-cpu qemu64'
     fi
 
  	QEMU_NET_APPEND="-net nic,model=e1000,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0"
-
+	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
     qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 1 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_NET_APPEND $CMDLINE_APPEND
     QEMU_EXIT=$?
     set +ex

@@ -1,7 +1,8 @@
+use super::{RumpError, RUMPUSER_CLOCK_ABSMONO, RUMPUSER_CLOCK_RELWALL};
 use core::ops::Add;
 use cstr_core::CStr;
 use lineup::tls::Environment;
-use rawtime::Duration;
+use rawtime::{Duration, Instant};
 
 #[allow(non_camel_case_types)]
 pub type rumplwpop = u32;
@@ -57,9 +58,10 @@ pub unsafe extern "C" fn rumpuser_thread_create(
 pub unsafe extern "C" fn rumpuser_thread_exit() {
     let t = lineup::tls::Environment::thread();
     loop {
+        error!("rumpuser_thread_exit {:?}", lineup::tls::Environment::tid());
         t.block();
+        unreachable!("rumpuser_thread_exit");
     }
-    //unreachable!("rumpuser_thread_exit");
 }
 
 /// Wait for a joinable thread to exit. The cookie matches the value from rumpuser_thread_create().
@@ -71,7 +73,7 @@ pub unsafe extern "C" fn rumpuser_thread_join(cookie: *mut u8) -> i64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i64 {
-    error!(
+    trace!(
         "{:?} rumpuser_curlwpop op={} lwp={:p}",
         lineup::tls::Environment::tid(),
         op,
@@ -105,9 +107,6 @@ pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i6
 pub unsafe extern "C" fn rumpuser_curlwp() -> *mut lwp {
     //debug!("rumpuser_curlwp");
     let t = lineup::tls::Environment::thread();
-    if lineup::tls::Environment::tid() == lineup::ThreadId(1) {
-        info!("rumpuser_curlwp for tid#1 = {:p}", t.rump_lwp);
-    }
     t.rump_lwp as *mut lwp
 }
 
@@ -119,7 +118,7 @@ pub unsafe extern "C" fn rumpuser_curlwp() -> *mut lwp {
 /// hypervisor monotonic clock hits the specified absolute
 /// time.
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_clock_sleep(enum_rumpclock: u64, sec: i64, nanos: u64) -> isize {
+pub unsafe extern "C" fn rumpuser_clock_sleep(enum_rumpclock: u32, sec: i64, nanos: u64) -> isize {
     trace!(
         "{:?} rumpuser_clock_sleep({}, {}, {})",
         Environment::tid(),
@@ -132,11 +131,27 @@ pub unsafe extern "C" fn rumpuser_clock_sleep(enum_rumpclock: u64, sec: i64, nan
     let mut nlocks = 0;
     super::rumpkern_unsched(&mut nlocks, None);
 
-    let d = Duration::from_secs(sec as u64).add(Duration::from_nanos(nanos));
+    let (until, retval) = match enum_rumpclock as u64 {
+        super::RUMPUSER_CLOCK_ABSMONO => {
+            // TODO: this will negative overflow panic on bad timed irq
+            (
+                Instant::from_nanos((sec as u128) * 1_000_000_000 + nanos as u128) - Instant::now(),
+                0,
+            )
+        }
+        super::RUMPUSER_CLOCK_RELWALL => (
+            Duration::from_secs(sec as u64).add(Duration::from_nanos(nanos)),
+            0,
+        ),
+        _ => (Duration::from_secs(0), RumpError::EINVAL as isize),
+    };
+
     let t = Environment::thread();
-    t.sleep(d);
+    t.sleep(until);
+
     super::rumpkern_sched(&nlocks, None);
-    0
+
+    retval
 }
 
 #[no_mangle]

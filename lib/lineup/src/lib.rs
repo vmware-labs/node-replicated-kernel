@@ -59,11 +59,17 @@ pub static DEFAULT_UPCALLS: Upcalls = Upcalls {
     deschedule: noop_unschedule,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Upcalls {
     pub curlwp: fn() -> u64,
     pub schedule: fn(&i32, Option<&mutex::Mutex>),
     pub deschedule: fn(&mut i32, Option<&mutex::Mutex>),
+}
+
+impl fmt::Debug for Upcalls {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Upcalls {{}}")
+    }
 }
 
 #[derive(Debug)]

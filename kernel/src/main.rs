@@ -22,7 +22,7 @@
 #[cfg(not(target_os = "none"))]
 extern crate libc;
 
-extern crate compiler_builtins;
+extern crate rlibc;
 
 #[macro_use]
 pub mod mutex;

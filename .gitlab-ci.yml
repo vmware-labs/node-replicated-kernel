@@ -18,9 +18,10 @@ build:
   script:
     - cd kernel
     - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin
-  artifacts:
-    paths:
-      - target/
+  #artifacts:
+  #  paths:
+  #    - target/
+
 run:
   script:
     - cd kernel

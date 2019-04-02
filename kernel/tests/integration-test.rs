@@ -176,7 +176,11 @@ fn rump_net() {
         }
 
         ping.process.kill(SIGTERM)?;
-        dhcp_server.process.kill(SIGINT)?;
+        let o = process::Command::new("sudo")
+            .args(&["killall", "dhcpd"])
+            .output()
+            .expect("failed to shut down dhcpd");
+        assert!(o.status.success());
         receiver.process.kill(SIGTERM)?;
         p.process.kill(SIGTERM)
     };

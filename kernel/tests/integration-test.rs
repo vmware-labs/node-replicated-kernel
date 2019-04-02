@@ -5,23 +5,25 @@ extern crate matches;
 use std::process;
 
 use rexpect::errors::*;
-use rexpect::process::signal::SIGTERM;
+use rexpect::process::signal::{SIGINT, SIGTERM};
 use rexpect::process::wait::WaitStatus;
 use rexpect::spawn;
 
 fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
     let features = format!("integration-tests,{}", test);
 
-    process::Command::new("bash")
+    let o = process::Command::new("bash")
         .args(&[
             "run.sh",
             "--features",
             features.as_str(),
-            "--log info",
+            "--log",
+            "info",
             "--norun",
         ])
         .output()
         .expect("failed to build");
+    assert!(o.status.success());
 
     spawn(
         format!("bash run.sh --features {} --log info", features).as_str(),
@@ -128,17 +130,19 @@ fn rump_fs() {
 fn rump_net() {
     fn spawn_dhcpd() -> Result<rexpect::session::PtySession> {
         // XXX: apparmor prevents reading of ./tests/dhcpd.conf for dhcpd on Ubuntu :/
-        process::Command::new("service")
-            .args(&["apparmor", "teardown"])
+        let o = process::Command::new("sudo")
+            .args(&["service", "apparmor", "teardown"])
             .output()
             .expect("failed to disable apparmor");
-
-        process::Command::new("killall")
-            .args(&["dhcpd"])
+        let o = process::Command::new("sudo")
+            .args(&["killall", "dhcpd"])
             .output()
-            .expect("failed to disable apparmor");
+            .expect("failed to shut down dhcpd");
 
-        spawn("sudo dhcpd -f -d tap0 -cf ./tests/dhcpd.conf", Some(15000))
+        spawn(
+            "sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf",
+            Some(15000),
+        )
     }
 
     fn spawn_receiver() -> Result<rexpect::session::PtySession> {
@@ -172,7 +176,7 @@ fn rump_net() {
         }
 
         ping.process.kill(SIGTERM)?;
-        dhcp_server.process.kill(SIGTERM)?;
+        dhcp_server.process.kill(SIGINT)?;
         receiver.process.kill(SIGTERM)?;
         p.process.kill(SIGTERM)
     };

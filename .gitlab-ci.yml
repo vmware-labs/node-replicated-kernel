@@ -25,15 +25,15 @@ run:
   script:
     - cd kernel
     - bash run.sh --log trace
-  dependencies:
-    - build
+  #dependencies:
+  #  - build
 
 unix:
   script:
     - cd kernel
     - cargo run
-  dependencies:
-    - build
+  #dependencies:
+  #  - build
 
 test:
   script:
@@ -43,8 +43,8 @@ test:
     - cd kernel
     - cargo +nightly fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test
-  dependencies:
-    - build
+  #dependencies:
+  #  - build
 
 pages:
   script:
@@ -55,8 +55,8 @@ pages:
     - cp -rf public /home/gitlab/pages-root/bespin/book/
     - cargo doc
     - cp -rf target/doc /home/gitlab/pages-root/bespin/doc/
-  dependencies:
-    - build
+  #dependencies:
+  #  - build
   artifacts:
     paths:
       - public

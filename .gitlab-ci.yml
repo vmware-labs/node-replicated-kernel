@@ -18,25 +18,33 @@ build:
   script:
     - cd kernel
     - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin
-
+  artifacts:
+    paths:
+      - target/
 run:
   script:
     - cd kernel
     - bash run.sh --log trace
+  dependencies:
+    - build
 
 unix:
   script:
     - cd kernel
     - cargo run
+  dependencies:
+    - build
 
 test:
   script:
     # Clean up remaining processes
-    - sudo killall dhcpd
-    - sudo killall socat
+    - sudo killall dhcpd || true
+    - sudo killall socat || true
     - cd kernel
     - cargo +nightly fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test
+  dependencies:
+    - build
 
 pages:
   script:
@@ -47,6 +55,8 @@ pages:
     - cp -rf public /home/gitlab/pages-root/bespin/book/
     - cargo doc
     - cp -rf target/doc /home/gitlab/pages-root/bespin/doc/
+  dependencies:
+    - build
   artifacts:
     paths:
       - public

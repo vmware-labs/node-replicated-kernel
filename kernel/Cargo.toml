@@ -31,6 +31,7 @@ lazy_static = { version = "1.2", features = ["nightly", "spin_no_std"] }
 logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
 # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
+acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = "0.2"
@@ -50,3 +51,4 @@ test-rump-tmpfs = []
 test-rump-net = []
 test-time = []
 test-scheduler = []
+test-acpi = []

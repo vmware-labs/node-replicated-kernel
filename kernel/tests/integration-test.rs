@@ -198,3 +198,19 @@ fn scheduler() {
         WaitStatus::Exited(_, 0)
     );
 }
+
+#[test]
+fn acpi_smoke() {
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_qemu("test-acpi")?;
+        p.exp_string("acpi initialized")?;
+        p.exp_string("madt table processed")?;
+        p.exp_eof()?;
+        p.process.exit()
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Exited(_, 0)
+    );
+}

@@ -77,6 +77,9 @@ mod prelude;
 #[cfg(target_os = "none")]
 pub mod rumprt;
 
+#[cfg(target_os = "none")]
+extern crate acpica_sys;
+
 use core::alloc::{GlobalAlloc, Layout};
 use memory::{BespinSlabsProvider, PhysicalAllocator};
 use slabmalloc::{PageProvider, ZoneAllocator};

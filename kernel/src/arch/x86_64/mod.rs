@@ -20,6 +20,7 @@ pub mod memory;
 pub mod process;
 pub mod syscall;
 
+pub mod acpi;
 mod exec;
 mod isr;
 mod sse;

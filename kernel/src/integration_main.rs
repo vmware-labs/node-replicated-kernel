@@ -292,6 +292,31 @@ pub fn main() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+#[cfg(all(feature = "integration-tests", feature = "test-acpi"))]
+pub fn main() {
+    use arch::acpi;
+    use lineup::tls::Environment;
+
+    let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
+    scheduler.spawn(
+        32 * 4096,
+        |arg| {
+            let r = acpi::init();
+            assert!(r.is_ok());
+            info!("acpi initialized");
+            let r = acpi::process_madt();
+            assert!(r.is_ok());
+            info!("madt table processed");
+            arch::debug::shutdown(ExitReason::Ok);
+        },
+        core::ptr::null_mut(),
+    );
+
+    loop {
+        scheduler.run();
+    }
+}
+
 #[cfg(all(feature = "integration-tests", feature = "test-scheduler"))]
 pub fn main() {
     let cpuid = x86::cpuid::CpuId::new();

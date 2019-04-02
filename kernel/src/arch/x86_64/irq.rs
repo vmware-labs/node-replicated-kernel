@@ -7,9 +7,7 @@ use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
 use x86::io;
 use x86::irq;
-use x86::msr;
-
-use alloc::vec;
+//use x86::msr;
 
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,

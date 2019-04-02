@@ -74,6 +74,7 @@ pub struct RumpHyperUpcalls {
     pub hyp_extra: [*mut c_void; 8usize],
 }
 
+#[allow(unused)]
 pub(crate) fn rumpkern_curlwp() -> u64 {
     unsafe { threads::rumpuser_curlwp() as *const _ as u64 }
 }
@@ -160,7 +161,7 @@ pub unsafe extern "C" fn rumpuser_getrandom(
     trace!("rumpuser_getrandom");
 
     let region: &mut [u8] = slice::from_raw_parts_mut(buf, buflen);
-    for (i, mut ptr) in region.iter_mut().enumerate() {
+    for (i, ptr) in region.iter_mut().enumerate() {
         let mut rnd: u16 = 0xba;
         let ret = _rdrand16_step(&mut rnd);
         if ret == 1 {

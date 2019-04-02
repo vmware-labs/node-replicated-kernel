@@ -1,10 +1,9 @@
 use driverkit::bitops::BitField;
 use driverkit::{DriverControl, DriverState};
-use log::{debug, info, trace};
+use log::{debug, trace};
 use x86::msr::{
     rdmsr, wrmsr, IA32_APIC_BASE, IA32_TSC_DEADLINE, IA32_X2APIC_APICID, IA32_X2APIC_ESR,
-    IA32_X2APIC_LVT_ERROR, IA32_X2APIC_LVT_LINT0, IA32_X2APIC_LVT_LINT1, IA32_X2APIC_LVT_TIMER,
-    IA32_X2APIC_SELF_IPI, IA32_X2APIC_VERSION,
+    IA32_X2APIC_LVT_LINT0, IA32_X2APIC_LVT_TIMER, IA32_X2APIC_SELF_IPI, IA32_X2APIC_VERSION,
 };
 
 #[derive(Debug)]

@@ -361,14 +361,14 @@ pub extern "C" fn AcpiOsSignal(Function: UINT32, Info: *mut c_void) -> ACPI_STAT
 
 #[no_mangle]
 #[linkage = "external"]
-pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, Args: va_list) {
+pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, Args: VaList) {
     let fmt = CStr::from_ptr(format).to_str().unwrap_or("");
     error!("AcpiOsVprintf {}", fmt);
 }
 
 #[no_mangle]
 #[linkage = "external"]
-pub unsafe extern "C" fn AcpiOsPrintf(format: *const i8, mut args: ...) {
+pub unsafe extern "C" fn AcpiOsPrintf(format: *const i8, args: ...) {
     trace!("AcpiOsPrintf");
     let fmt = CStr::from_ptr(format).to_str().unwrap_or("");
     error!(" AcpiOsPrintf {}", fmt);
@@ -563,8 +563,7 @@ pub(crate) fn process_madt() -> Result<(), ACPI_STATUS> {
 
         let mut iterator = (madt_tbl_ptr as *const c_void).add(mem::size_of::<ACPI_TABLE_MADT>());
         while iterator < madt_table_end {
-            let mut entry: *const ACPI_SUBTABLE_HEADER = iterator as *const ACPI_SUBTABLE_HEADER;
-            use acpica_sys::Enum_AcpiMadtType::ACPI_MADT_TYPE_LOCAL_APIC;
+            let entry: *const ACPI_SUBTABLE_HEADER = iterator as *const ACPI_SUBTABLE_HEADER;
             let entry_type: Enum_AcpiMadtType = mem::transmute((*entry).Type as i32);
 
             match entry_type {

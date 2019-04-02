@@ -295,12 +295,11 @@ pub fn main() {
 #[cfg(all(feature = "integration-tests", feature = "test-acpi"))]
 pub fn main() {
     use arch::acpi;
-    use lineup::tls::Environment;
 
     let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
     scheduler.spawn(
         32 * 4096,
-        |arg| {
+        |_| {
             let r = acpi::init();
             assert!(r.is_ok());
             info!("acpi initialized");

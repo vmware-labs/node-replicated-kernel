@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 use core::alloc::Layout;
 use core::fmt;
 use core::ptr;
-use log::{info, trace};
+use log::trace;
 use x86::io;
 
 static PCI_CONF_ADDR: u16 = 0xcf8;
@@ -107,7 +107,8 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     0
 }
 
-pub(crate) unsafe extern "C" fn irq_handler(arg1: *mut u8) -> *mut u8 {
+#[allow(unused)]
+pub(crate) unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     let s = lineup::tls::Environment::scheduler();
     let upcalls = s.rump_upcalls as *const super::RumpHyperUpcalls;
 
@@ -117,18 +118,14 @@ pub(crate) unsafe extern "C" fn irq_handler(arg1: *mut u8) -> *mut u8 {
 
     let mut nlock: i32 = 1;
     loop {
-        unsafe {
-            x86::irq::disable();
-        }
+        x86::irq::disable();
 
         super::rumpkern_sched(&nlock, None);
-        let r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);
+        let _r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);
         //assert_eq!(r, 0, "IRQ handler should return 0?");
         super::rumpkern_unsched(&mut nlock, None);
 
-        unsafe {
-            x86::irq::enable();
-        }
+        x86::irq::enable();
 
         crate::arch::irq::acknowledge();
 
@@ -147,7 +144,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     IRQS[0].handler = handler;
     IRQS[0].arg = arg;
 
-    let unique_ptr = ptr::Unique::new(arg);
+    let _unique_ptr = ptr::Unique::new(arg);
 
     crate::arch::irq::register_handler(
         IRQS[0].vector as usize + 32,
@@ -172,13 +169,12 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
     use crate::arch::process::VSpace;
     use crate::memory::BespinPageTableProvider;
     use core::mem::transmute;
-    use x86::bits64::paging;
-    use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, PML4};
+    use x86::bits64::paging::PML4;
     use x86::controlregs;
 
-    let cr_three: u64 = unsafe { controlregs::cr3() };
+    let cr_three: u64 = controlregs::cr3();
     let pml4: PAddr = PAddr::from_u64(cr_three);
-    let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
+    let pml4_table = transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4));
     let mut vspace: VSpace = VSpace {
         pml4: pml4_table,
         pager: BespinPageTableProvider::new(),
@@ -186,7 +182,7 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
 
     let start = VAddr::from(addr);
     let end = VAddr::from(addr) + len;
-    vspace.map_identity(VAddr::from(addr), end);
+    vspace.map_identity(start, end);
 
     return addr as *mut c_void;
 }

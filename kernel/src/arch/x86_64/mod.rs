@@ -2,16 +2,16 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::slice;
 
-use driverkit::DriverControl;
+//use driverkit::DriverControl;
 
 use multiboot::{MemoryType, Multiboot};
 use x86::bits64::paging;
-use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, PML4};
+use x86::bits64::paging::PAddr;
 use x86::controlregs;
-use x86::cpuid;
+//use x86::cpuid;
 
-use apic::x2apic;
-use apic::xapic;
+//use apic::x2apic;
+//use apic::xapic;
 
 pub mod debug;
 pub mod gdt;
@@ -25,11 +25,6 @@ mod exec;
 mod isr;
 mod sse;
 mod start;
-
-use core::mem::transmute;
-
-use self::memory::paddr_to_kernel_vaddr;
-use self::process::VSpace;
 
 use crate::main;
 use crate::memory::{Frame, PhysicalAllocator, FMANAGER};
@@ -182,6 +177,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         FMANAGER.print_info();
     }
 
+    /*
     let cpuid = cpuid::CpuId::new();
     let fi = cpuid.get_feature_info();
     let has_x2apic = match fi {
@@ -193,7 +189,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         None => false,
     };
 
-    /*
+
     if has_x2apic && has_tsc {
         //info!("x2APIC / deadline TSC supported!");
         let mut apic = x2apic::X2APIC::new();

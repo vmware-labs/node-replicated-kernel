@@ -1,4 +1,4 @@
-use super::{RumpError, RUMPUSER_CLOCK_ABSMONO, RUMPUSER_CLOCK_RELWALL};
+use super::RumpError;
 use core::ops::Add;
 use cstr_core::CStr;
 use lineup::tls::Environment;
@@ -66,9 +66,8 @@ pub unsafe extern "C" fn rumpuser_thread_exit() {
 
 /// Wait for a joinable thread to exit. The cookie matches the value from rumpuser_thread_create().
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_thread_join(cookie: *mut u8) -> i64 {
+pub unsafe extern "C" fn rumpuser_thread_join(_cookie: *mut u8) -> i64 {
     unreachable!("rumpuser_thread_join");
-    0
 }
 
 #[no_mangle]

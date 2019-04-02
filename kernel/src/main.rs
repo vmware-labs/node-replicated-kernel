@@ -13,7 +13,8 @@
     linkage,
     c_variadic,
     alloc_layout_extra,
-    ptr_internals
+    ptr_internals,
+    compiler_builtins_lib
 )]
 #![no_std]
 #![cfg_attr(target_os = "none", no_main)]
@@ -21,9 +22,7 @@
 #[cfg(not(target_os = "none"))]
 extern crate libc;
 
-//extern crate rumpkernel;
-
-extern crate rlibc;
+extern crate compiler_builtins;
 
 #[macro_use]
 pub mod mutex;

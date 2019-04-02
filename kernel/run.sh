@@ -140,10 +140,6 @@ if [ "${_arg_features}" != "" ]; then
     BUILD_ARGS="$BUILD_ARGS --features $_arg_features"
 fi
 
-if [ "${_arg_log}" != "" ]; then
-    BUILD_ARGS="$BUILD_ARGS -vv"
-fi
-
 BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v $BUILD_ARGS
 
 if [ "$_arg_release" == "off" ]; then

@@ -17,7 +17,7 @@ fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
             "run.sh",
             "--features",
             features.as_str(),
-            "--log trace",
+            "--log info",
             "--norun",
         ])
         .output()
@@ -138,7 +138,7 @@ fn rump_net() {
             .output()
             .expect("failed to disable apparmor");
 
-        spawn("dhcpd -f -d tap0 -cf ./tests/dhcpd.conf", Some(15000))
+        spawn("sudo dhcpd -f -d tap0 -cf ./tests/dhcpd.conf", Some(15000))
     }
 
     fn spawn_receiver() -> Result<rexpect::session::PtySession> {

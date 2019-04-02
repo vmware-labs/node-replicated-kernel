@@ -31,6 +31,9 @@ unix:
 
 test:
   script:
+    # Clean up remaining processes
+    - sudo killall dhcpd
+    - sudo killall socat
     - cd kernel
     - cargo +nightly fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test

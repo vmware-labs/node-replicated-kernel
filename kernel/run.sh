@@ -173,9 +173,9 @@ if [ "${_arg_norun}" != "on" ]; then
 	#tunctl -d tap0
 
 	# Create a tap interface to communicate with guest and give it an IP
-	tunctl -t tap0 -u root
-	ifconfig tap0 ip 172.31.0.20/24
-	ifconfig up tap0
+	sudo tunctl -t tap0 -u root
+	sudo ifconfig tap0 ip 172.31.0.20/24
+	sudo ifconfig up tap0
 
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
     qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 2 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_NET_APPEND $CMDLINE_APPEND

@@ -71,7 +71,7 @@ Commit changes and push
 
 ### Future Work
  * [x] Milestone 1: Running libcore user-space program
- * [ ] Milestone 2: ACPI Integration
+ * [x] Milestone 2: ACPI Integration
+ * [x] Milestone 4: PCI support / Network
  * [ ] Milestone 3: Multiprocessor support
- * [ ] Milestone 4: PCI support
  * [ ] Milestone 5: Rust standard library port

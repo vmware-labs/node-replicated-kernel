@@ -2,6 +2,7 @@ stages:
   - build
   - run
   - test
+  - document
 
 before_script:
   - bash setup.sh
@@ -18,7 +19,7 @@ build:
     - cd kernel
     - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin
 
-run:
+run-qemu:
   stage: run
   script:
     - cd kernel
@@ -28,8 +29,8 @@ run:
   variables:
     GIT_STRATEGY: none
 
-unix:
-  stage: test
+run-unix:
+  stage: run
   script:
     - cd kernel
     - cargo run
@@ -53,6 +54,7 @@ test:
     GIT_STRATEGY: none
 
 pages:
+  stage: document
   script:
     - cd doc
     - mdbook build -d ../public

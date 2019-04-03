@@ -1,9 +1,11 @@
 use core::intrinsics::{volatile_load, volatile_store};
 use driverkit::bitops::BitField;
 use driverkit::{DriverControl, DriverState};
-use log::trace;
+use log::{info, trace};
 use x86::msr::{rdmsr, wrmsr, IA32_APIC_BASE, IA32_TSC_DEADLINE};
 use x86::xapic::*;
+
+use super::*;
 
 #[derive(Copy, Clone)]
 #[allow(dead_code, non_camel_case_types)]
@@ -110,6 +112,80 @@ impl XAPIC {
     /// Set TSC deadline value.
     pub unsafe fn tsc_set(&self, value: u64) {
         wrmsr(IA32_TSC_DEADLINE, value);
+    }
+
+    pub unsafe fn ipi_init(&mut self) {
+        let icr = Icr::new(
+            0,
+            1,
+            DestinationShorthand::NoShorthand,
+            DeliveryMode::Init,
+            DestinationMode::Physical,
+            DeliveryStatus::Idle,
+            Level::Assert,
+            TriggerMode::Level,
+        );
+        self.send_ipi(icr);
+    }
+
+    pub unsafe fn ipi_init_deassert(&mut self) {
+        let icr = Icr::new(
+            0,
+            0,
+            // INIT deassert is always sent to everyone, so we are supposed to specify:
+            DestinationShorthand::AllIncludingSelf,
+            DeliveryMode::Init,
+            DestinationMode::Physical,
+            DeliveryStatus::Idle,
+            Level::Deassert,
+            TriggerMode::Level,
+        );
+        self.send_ipi(icr);
+    }
+
+    pub unsafe fn ipi_startup(&mut self, start_page: u8) {
+        info!("ipi_startup {}", start_page);
+        let icr = Icr::new(
+            start_page,
+            1,
+            DestinationShorthand::NoShorthand,
+            DeliveryMode::StartUp,
+            DestinationMode::Physical,
+            DeliveryStatus::Idle,
+            Level::Assert,
+            TriggerMode::Edge,
+        );
+        self.send_ipi(icr);
+    }
+
+    unsafe fn send_ipi(&mut self, icr: Icr) {
+        self.write(ApicRegister::XAPIC_ESR, 0);
+        self.write(ApicRegister::XAPIC_ESR, 0);
+
+        // 10.6 ISSUING INTERPROCESSOR INTERRUPTS
+        info!("send ipi icr0 {:#b}", icr.lower());
+        info!("send ipi icr1 {:#b}", icr.upper());
+        self.write(ApicRegister::XAPIC_ICR1, icr.upper());
+        self.write(ApicRegister::XAPIC_ICR0, icr.lower());
+
+        loop {
+            let icr = self.read(ApicRegister::XAPIC_ICR0);
+            if (icr >> 12 & 0x1) == 0 {
+                break;
+            }
+            if self.read(ApicRegister::XAPIC_ESR) > 0 {
+                break;
+            }
+        }
+        info!(
+            "XAPIC ESR after send = {:?}",
+            self.read(ApicRegister::XAPIC_ESR)
+        );
+
+        info!(
+            "XAPIC ICR0 after send = {:#b}",
+            self.read(ApicRegister::XAPIC_ICR0)
+        );
     }
 }
 

@@ -140,7 +140,7 @@ if [ "${_arg_features}" != "" ]; then
     BUILD_ARGS="$BUILD_ARGS --features $_arg_features"
 fi
 
-BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v $BUILD_ARGS
+BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -vv $BUILD_ARGS
 
 if [ "$_arg_release" == "off" ]; then
     cp ../target/$BESPIN_TARGET/debug/bespin kernel
@@ -161,7 +161,7 @@ if [ "${_arg_norun}" != "on" ]; then
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
         KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
-        #KVM_ARG='-cpu qemu64 -d int'
+        KVM_ARG='-cpu qemu64 -d int'
     else
         KVM_ARG='-cpu qemu64'
     fi

@@ -14,7 +14,8 @@
     c_variadic,
     alloc_layout_extra,
     ptr_internals,
-    compiler_builtins_lib
+    compiler_builtins_lib,
+    ptr_offset_from
 )]
 #![no_std]
 #![cfg_attr(target_os = "none", no_main)]

@@ -1,4 +1,21 @@
+extern crate cc;
+use std::env;
+
 fn main() {
+    env::set_var("CC", "gcc");
+    cc::Build::new()
+        .flag("-m64")
+        .flag("-fno-builtin")
+        .flag("-nostdlib")
+        .flag("-nostdinc")
+        .flag("-U__linux__")
+        .flag("-shared")
+        .flag("-nostartfiles")
+        .file("src/arch/x86_64/start_ap.S")
+        .pic(true)
+        .warnings(true)
+        .compile("start_ap");
+
     println!("cargo:rustc-link-lib=static=rump");
     println!("cargo:rustc-link-lib=static=rumpvfs");
     println!("cargo:rustc-link-lib=static=rumpdev");

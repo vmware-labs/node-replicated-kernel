@@ -306,6 +306,7 @@ pub fn main() {
             let r = acpi::process_madt();
             assert!(r.is_ok());
             info!("madt table processed");
+            loop {}
             arch::debug::shutdown(ExitReason::Ok);
         },
         core::ptr::null_mut(),

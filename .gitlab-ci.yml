@@ -2,8 +2,6 @@ stages:
   - build
   - run
   - test
-  - pages
-  - unix
 
 before_script:
   - bash setup.sh
@@ -15,28 +13,33 @@ before_script:
   - git submodule update --init --recursive
 
 build:
+  stage: build
   script:
     - cd kernel
     - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin
-  #artifacts:
-  #  paths:
-  #    - target/
 
 run:
+  stage: run
   script:
     - cd kernel
     - bash run.sh --log trace
-  #dependencies:
-  #  - build
+  dependencies:
+    - build
+  variables:
+    GIT_STRATEGY: none
 
 unix:
+  stage: test
   script:
     - cd kernel
     - cargo run
-  #dependencies:
-  #  - build
+  dependencies:
+    - build
+  variables:
+    GIT_STRATEGY: none
 
 test:
+  stage: test
   script:
     # Delete potentially old tap interface
     #- sudo ifconfig tap0 down || true
@@ -44,8 +47,10 @@ test:
     - cd kernel
     - cargo +nightly fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test
-  #dependencies:
-  #  - build
+  dependencies:
+    - build
+  variables:
+    GIT_STRATEGY: none
 
 pages:
   script:
@@ -56,8 +61,10 @@ pages:
     - cp -rf public /home/gitlab/pages-root/bespin/book/
     - cargo doc
     - cp -rf target/doc /home/gitlab/pages-root/bespin/doc/
-  #dependencies:
-  #  - build
+  dependencies:
+    - build
+  variables:
+    GIT_STRATEGY: none
   artifacts:
     paths:
       - public

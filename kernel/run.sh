@@ -168,9 +168,6 @@ if [ "${_arg_norun}" != "on" ]; then
 
     QEMU_NET_APPEND="-net nic,model=e1000,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0"
 
-    # Delete potentially old tap interface (not necessary)
-    sudo ifconfig tap0 down || true
-    sudo tunctl -d tap0 || true
 
     # Create a tap interface to communicate with guest and give it an IP
     sudo tunctl -t tap0 -u $USER -g `id -gn`

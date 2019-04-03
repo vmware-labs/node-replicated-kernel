@@ -7,7 +7,7 @@ use std::process;
 use rexpect::errors::*;
 use rexpect::process::signal::{SIGINT, SIGTERM};
 use rexpect::process::wait::WaitStatus;
-use rexpect::spawn;
+use rexpect::{spawn, spawn_bash};
 
 fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
     let features = format!("integration-tests,{}", test);
@@ -128,7 +128,7 @@ fn rump_fs() {
 
 #[test]
 fn rump_net() {
-    fn spawn_dhcpd() -> Result<rexpect::session::PtySession> {
+    fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
         // XXX: apparmor prevents reading of ./tests/dhcpd.conf for dhcpd on Ubuntu :/
         let o = process::Command::new("sudo")
             .args(&["service", "apparmor", "teardown"])
@@ -139,10 +139,11 @@ fn rump_net() {
             .output()
             .expect("failed to shut down dhcpd");
 
-        spawn(
-            "sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf",
-            Some(15000),
-        )
+        // Spawn a bash session for dhcpd, otherwise it seems we
+        // can't kill the process since we do not run as root
+        let mut b = spawn_bash(Some(15000))?;
+        b.send_line("sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf");
+        Ok(b)
     }
 
     fn spawn_receiver() -> Result<rexpect::session::PtySession> {
@@ -176,11 +177,7 @@ fn rump_net() {
         }
 
         ping.process.kill(SIGTERM)?;
-        let o = process::Command::new("sudo")
-            .args(&["killall", "dhcpd"])
-            .output()
-            .expect("failed to shut down dhcpd");
-        assert!(o.status.success());
+        dhcp_server.send_control('c');
         receiver.process.kill(SIGTERM)?;
         p.process.kill(SIGTERM)
     };

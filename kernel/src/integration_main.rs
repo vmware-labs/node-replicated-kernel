@@ -306,6 +306,61 @@ pub fn main() {
             let r = acpi::process_madt();
             assert!(r.is_ok());
             info!("madt table processed");
+
+            const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
+            let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;
+            let real_mode_linear_offset = X86_64_REAL_MODE_SEGMENT << 4;
+
+            extern "C" {
+                static x86_64_start_ap: *const u8;
+                static x86_64_start_ap_end: *const u8;
+                static x86_64_init_ap_absolute_entry: *mut fn();
+            };
+            let boot_code_size =
+                unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
+
+            /*unsafe {
+                let start_addr: usize = core::mem::transmute(&x86_64_start_ap);
+                let end_addr: usize = core::mem::transmute(&x86_64_start_ap_end);
+                let boot_code_size = end_addr - start_addr;
+                info!("boot_code_size = {:#x}", boot_code_size);
+
+                let real_mode_base: usize = 0x0 + real_mode_linear_offset as usize;
+                info!("real_mode_base = {:#x}", real_mode_base);
+                let ap_bootstrap_code: &'static [u8] = unsafe {
+                    core::slice::from_raw_parts(
+                        &x86_64_start_ap as *const _ as *const u8,
+                        boot_code_size,
+                    )
+                };
+                let real_mode_destination: &mut [u8] = unsafe {
+                    core::slice::from_raw_parts_mut(real_mode_base as *mut u8, boot_code_size)
+                };
+
+                let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_absolute_entry);
+                *entry_pointer = bespin_init_ap as u64;
+
+                vspace.map_identity(
+                    VAddr::from(real_mode_base),
+                    VAddr::from(real_mode_base) + 20 * BASE_PAGE_SIZE,
+                );
+
+                real_mode_destination.copy_from_slice(ap_bootstrap_code);
+
+                info!("x86_64_start_ap = {:p} {:#x}", &x86_64_start_ap, start_addr);
+                info!(
+                    "x86_64_start_ap = {:p} {:#x}",
+                    &x86_64_start_ap_end, end_addr
+                );
+
+                // Have fun launching some cores:
+                apic.ipi_init();
+                apic.ipi_init_deassert();
+
+                apic.ipi_startup(real_mode_page as u8);
+                info!("Cores should've started?");
+            }*/
+
             loop {}
             arch::debug::shutdown(ExitReason::Ok);
         },
@@ -359,4 +414,35 @@ pub fn main() {
     info!("division = {}", 10.0 / 2.19);
     info!("division by zero = {}", 10.0 / 0.0);
     arch::debug::shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-tests", feature = "test-linux"))]
+pub fn main() {
+    use cstr_core::CStr;
+
+    extern "C" {
+        // int __init lkl_start_kernel(struct lkl_host_operations *ops, const char *fmt, ...)
+        fn lkl_start_kernel(ops: *const linuxkernel::lkl_host_operations, fmt: *const i8) -> i32;
+        fn lkl_sys_halt();
+    }
+
+    let up = lineup::DEFAULT_UPCALLS;
+
+    let mut scheduler = lineup::Scheduler::new(up);
+    scheduler.spawn(
+        32 * 4096,
+        |_yielder| unsafe {
+            let linux_ops = linuxrt::get_host_ops();
+            let boot_arg = CStr::from_bytes_with_nul(b"mem=16M loglevel=8\0");
+            let r = lkl_start_kernel(&linux_ops, boot_arg.unwrap().as_ptr());
+            info!("lkl_start_kernel {}", r);
+
+            arch::debug::shutdown(ExitReason::Ok);
+        },
+        core::ptr::null_mut(),
+    );
+
+    loop {
+        scheduler.run();
+    }
 }

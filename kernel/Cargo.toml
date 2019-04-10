@@ -23,6 +23,7 @@ backtracer = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
 driverkit = { path = "../lib/driverkit/" }
 rumpkernel = { path = "../lib/rumpkernel" }
+lkl = { path = "../lib/linuxkernel" }
 lineup = { path = "../lib/lineup" }
 rawtime = { path = "../lib/rawtime" }
 spin = "0.4"
@@ -52,6 +53,7 @@ test-alloc = []
 test-sse = []
 test-rump-tmpfs = []
 test-rump-net = []
+test-linux = []
 test-time = []
 test-scheduler = []
 test-acpi = []

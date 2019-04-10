@@ -19,7 +19,12 @@ fn has_fs_gs_base_instructions() {
     assert!(cpuid
         .get_extended_feature_info()
         .map_or(false, |ef| ef.has_fsgsbase()));
-    /*debug!("gsbase is {}", unsafe {
-        x86::bits64::segmentation::rdgsbase()
-    });*/
+
+    let p = "asdf";
+    set_tls(p.as_bytes().as_mut_ptr() as *mut ThreadLocalStorage);
+
+    assert_eq!(
+        p.as_bytes.as_mut_ptr(),
+        get_tls(p.as_bytes().as_mut_ptr() as *mut ThreadLocalStorage)
+    );
 }

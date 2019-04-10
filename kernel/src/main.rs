@@ -78,6 +78,9 @@ mod prelude;
 pub mod rumprt;
 
 #[cfg(target_os = "none")]
+pub mod linuxrt;
+
+#[cfg(target_os = "none")]
 extern crate acpica_sys;
 
 use core::alloc::{GlobalAlloc, Layout};

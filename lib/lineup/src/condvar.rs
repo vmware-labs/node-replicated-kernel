@@ -183,6 +183,7 @@ impl CondVarInner {
 #[test]
 fn test_condvar() {
     use crate::DEFAULT_UPCALLS;
+    use core::ptr;
     let mut s = Scheduler::new(DEFAULT_UPCALLS);
 
     let cv = ds::Arc::new(CondVar::new());
@@ -193,21 +194,28 @@ fn test_condvar() {
     let mtx = ds::Arc::new(Mutex::new(false, false));
     let m2: ds::Arc<Mutex> = mtx.clone();
 
-    s.spawn(4096, move |mut yielder| {
-        for _i in 0..12 {
-            cv1.signal();
-        }
-    });
+    s.spawn(
+        32 * 4096,
+        move |mut yielder| {
+            for _i in 0..5 {
+                m2.enter();
+                cv2.wait(&m2);
+                m2.exit();
+            }
+        },
+        ptr::null_mut(),
+    );
 
-    s.spawn(4096, move |mut yielder| {
-        for _i in 0..5 {
-            m2.enter();
-            cv2.wait(&m2);
-            m2.exit();
-        }
-    });
+    s.spawn(
+        32 * 4096,
+        move |mut yielder| {
+            for _i in 0..5 {
+                cv1.signal();
+                Environment::thread().relinquish();
+            }
+        },
+        ptr::null_mut(),
+    );
 
-    for _run in 0..100 {
-        s.run();
-    }
+    s.run();
 }

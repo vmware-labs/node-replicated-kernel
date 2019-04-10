@@ -225,32 +225,45 @@ impl RwLockInner {
 #[test]
 fn test_rwlock() {
     use crate::DEFAULT_UPCALLS;
+    use core::ptr;
     let mut s = Scheduler::new(DEFAULT_UPCALLS);
-    let rwlock = ds::Arc::new(RwLock::new());
 
+    let rwlock = ds::Arc::new(RwLock::new());
     let rwlock1: ds::Arc<RwLock> = rwlock.clone();
     let rwlock2: ds::Arc<RwLock> = rwlock.clone();
 
-    s.spawn(4096, move |mut yielder| {
-        for _i in 0..5 {
-            rwlock1.enter(RwLockIntent::Read);
-            assert!(!rwlock1.try_upgrade());
-        }
-    });
-
-    s.spawn(4096, move |mut yielder| {
-        for i in 0..5 {
+    s.spawn(
+        32 * 4096,
+        move |_| {
             rwlock2.enter(RwLockIntent::Read);
-            if i == 0 {
-                assert!(rwlock2.try_upgrade());
-                rwlock2.downgrade();
-            } else {
-                assert!(!rwlock2.try_upgrade());
-            }
-        }
-    });
+            Environment::thread().relinquish();
 
-    for _i in 0..10 {
-        s.run();
-    }
+            assert!(rwlock2.held(RwLockIntent::Read));
+            assert!(!rwlock2.held(RwLockIntent::Write));
+
+            assert!(rwlock2.try_upgrade());
+
+            assert!(!rwlock2.held(RwLockIntent::Read));
+            assert!(rwlock2.held(RwLockIntent::Write));
+
+            rwlock2.exit();
+        },
+        ptr::null_mut(),
+    );
+
+    s.spawn(
+        32 * 4096,
+        move |_| {
+            for _i in 0..5 {
+                rwlock1.enter(RwLockIntent::Read);
+                assert!(rwlock1.held(RwLockIntent::Read));
+                assert!(!rwlock1.held(RwLockIntent::Write));
+                assert!(!rwlock1.try_upgrade());
+                rwlock1.exit();
+            }
+        },
+        ptr::null_mut(),
+    );
+
+    s.run();
 }

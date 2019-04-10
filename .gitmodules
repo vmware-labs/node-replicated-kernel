@@ -37,3 +37,6 @@
 [submodule "lib/rawtime"]
 	path = lib/rawtime
 	url = https://github.com/gz/rawtime.git
+[submodule "lib/linuxkernel"]
+	path = lib/linuxkernel
+	url = git@github.com:gz/rust-lkl.git

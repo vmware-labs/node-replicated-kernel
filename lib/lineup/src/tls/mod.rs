@@ -3,15 +3,17 @@ use core::ptr;
 
 use log::trace;
 
-//#[cfg(target_os = "linux")]
+#[cfg(target_os = "linux")]
 pub mod unix;
+
 #[cfg(target_os = "none")]
 pub mod x86_64;
 
-//#[cfg(target_os = "linux")]
+#[cfg(target_os = "linux")]
 pub use crate::tls::unix as arch;
-//#[cfg(target_os = "none")]
-//pub use crate::tls::x86_64 as arch;
+
+#[cfg(target_os = "none")]
+pub use crate::tls::x86_64 as arch;
 
 pub struct ThreadLocalStorage<'a> {
     thread: *mut ThreadState<'a>,
@@ -118,23 +120,31 @@ fn test_tls() {
     use crate::DEFAULT_UPCALLS;
     let mut s = crate::Scheduler::new(DEFAULT_UPCALLS);
 
-    s.spawn(4096, move |mut yielder| {
-        let s = Environment::scheduler();
-        s.rump_upcalls = 0xdead as *mut u64;
-        for _i in 0..5 {
-            println!("{:?}", Environment::scheduler());
-            println!("{:?}", Environment::thread());
-        }
-    });
+    s.spawn(
+        4096,
+        move |mut yielder| {
+            let s = Environment::scheduler();
+            s.rump_upcalls = 0xdead as *mut u64;
+            for _i in 0..5 {
+                println!("{:?}", Environment::scheduler());
+                println!("{:?}", Environment::thread());
+            }
+        },
+        ptr::null_mut(),
+    );
 
-    s.spawn(4096, move |mut yielder| {
-        let s = Environment::scheduler();
-        s.rump_upcalls = 0xbeef as *mut u64;
-        for _i in 0..5 {
-            println!("{:?}", Environment::scheduler());
-            println!("{:?}", Environment::thread());
-        }
-    });
+    s.spawn(
+        4096,
+        move |mut yielder| {
+            let s = Environment::scheduler();
+            s.rump_upcalls = 0xbeef as *mut u64;
+            for _i in 0..5 {
+                println!("{:?}", Environment::scheduler());
+                println!("{:?}", Environment::thread());
+            }
+        },
+        ptr::null_mut(),
+    );
 
     for _i in 0..10 {
         s.run();

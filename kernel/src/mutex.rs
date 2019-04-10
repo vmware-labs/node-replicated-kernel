@@ -1,6 +1,8 @@
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
 
+use crate::arch;
+
 pub struct Mutex<T> {
     pub data: UnsafeCell<T>,
 }
@@ -56,4 +58,28 @@ macro_rules! mutex {
         $crate::mutex::Mutex<$ty> {
             data: ::core::cell::UnsafeCell<$ty>::new($val)
         });
+}
+
+/// Execute closure `f` in an interrupt-free context.
+pub fn with_irqs_disabled<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    arch::irq::disable();
+    let r = f();
+    arch::irq::enable();
+
+    r
+}
+
+/// Execute closure `f` in an interrupt-free context.
+pub fn with_irqs_enabled<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    arch::irq::enable();
+    let r = f();
+    arch::irq::disable();
+
+    r
 }

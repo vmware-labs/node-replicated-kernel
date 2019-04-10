@@ -1,7 +1,7 @@
 /* The kernel is linked to run at -2GB. This allows efficient addressing */
 KERNEL_BASE = 0xFFFFFFFF80000000
 
-/* === Multiboot Header === */
+/* Multiboot Header */
 MULTIBOOT_PAGE_ALIGN  =  (1<<0)
 MULTIBOOT_MEMORY_INFO =  (1<<1)
 MULTIBOOT_REQVIDMODE  =  (1<<2)
@@ -23,9 +23,7 @@ mboot:
 	.long 0 	/* Height (no preference) */
 	.long 32	/* Depth (32-bit preferred) */
 
-#define DEBUG(c)	mov $0x3f8, %dx ; mov $c, %al ; outb %al, %dx
-
-/* === Code === */
+/* Code */
 .section .inittext, "ax"
 .globl start
 .code32
@@ -38,18 +36,6 @@ start:
 	/* 1. Save multiboot state */
 	mov %eax, mboot_sig - KERNEL_BASE
 	mov %ebx, mboot_ptr - KERNEL_BASE
-
-	/* 2. Ensure that the CPU support long mode */
-	mov $0x80000000, %eax
-	cpuid
-	/* - Check if CPUID supports the field we want to query */
-	cmp $0x80000001, %eax
-	jbe not64bitCapable
-	/* - Test the IA-32e bit */
-	mov $0x80000001, %eax
-	cpuid
-	test $0x20000000, %edx /* bit 29 = */
-	jz not64bitCapable
 
 	/* 3. Set up state for long mode */
 	/* Enable:
@@ -79,23 +65,6 @@ start:
 	ljmp $0x08, $start64
 
 
-not64bitCapable:
-	/* If the CPU isn't 64-bit capable, print a message to serial/b8000 then busy wait */
-	mov $0x3f8, %dx
-	mov $'N', %al ; outb %al, %dx
-	movw $0x100|'N', 0xb8000
-	mov $'o', %al ; outb %al, %dx
-	movw $0x100|'o', 0xb8002
-	mov $'t', %al ; outb %al, %dx
-	movw $0x100|'t', 0xb8004
-	mov $'6', %al ; outb %al, %dx
-	movw $0x100|'6', 0xb8006
-	mov $'4', %al ; outb %al, %dx
-	movw $0x100|'4', 0xb8008
-
-not64bitCapable.loop:
-	hlt
-	jmp not64bitCapable.loop
 .code64
 .globl start64
 start64:
@@ -133,7 +102,7 @@ start64.loop:
 
 
 
-/* === Page-aligned data === */
+/* Page-aligned data */
 .section .padata
 .globl init_pd
 .globl init_pml4
@@ -170,7 +139,7 @@ init_stack_base:
 	.endr
 init_stack:
 
-/* === General Data === */
+/* General Data */
 .section .data
 .globl mboot_sig
 .globl mboot_ptr

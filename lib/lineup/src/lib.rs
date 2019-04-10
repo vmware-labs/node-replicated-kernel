@@ -43,6 +43,7 @@ use fringe::OwnedStack;
 pub mod condvar;
 pub mod mutex;
 pub mod rwlock;
+pub mod semaphore;
 pub mod tls;
 
 fn noop_curlwp() -> u64 {
@@ -230,7 +231,7 @@ impl<'a> Scheduler<'a> {
     fn mark_runnable(&mut self, tid: ThreadId) {
         assert!(
             self.threads.contains_key(&tid),
-            "Thread {} does not exist?",
+            "Thread {} does not exist? Can't mark_runnable.",
             tid
         );
         assert!(
@@ -252,7 +253,7 @@ impl<'a> Scheduler<'a> {
 
         assert!(
             self.threads.contains_key(&tid),
-            "Thread {} does not exist?",
+            "Thread {} does not exist? Can't mark_unrunnable.",
             tid
         );
         assert!(
@@ -364,14 +365,22 @@ impl<'a> Scheduler<'a> {
             let (is_done, retresult) = match result {
                 None => {
                     trace!("Thread {} has terminated.", tid);
+                    trace!(
+                        "self.runnable({}) = {:?} ",
+                        self.runnable.len(),
+                        self.runnable,
+                    );
+
                     self.mark_unrunnable(tid);
                     self.threads.remove(&tid);
+
                     unsafe {
                         tls::arch::set_tls(ptr::null_mut());
                     }
                     (true, YieldResume::Completed)
                 }
                 Some(YieldRequest::None) => {
+                    trace!("Thread {} has YieldRequest::None.", tid);
                     // Put at end of the queue
                     self.mark_unrunnable(tid);
                     self.mark_runnable(tid);

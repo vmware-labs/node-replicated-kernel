@@ -13,6 +13,7 @@ members = [
     "lib/driverkit",
     "lib/apic",
     "lib/rumpkernel",
+    "lib/linuxkernel",
     "lib/lineup",
     "lib/rawtime",
 ]

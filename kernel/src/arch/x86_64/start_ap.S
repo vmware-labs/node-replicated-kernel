@@ -3,11 +3,7 @@
 #define PROT_CS 0x0018
 #define PROT_DS 0x0030
 #define LONG_MODE_CS 0x0008
-#define PAE 0x20
-#define LME 8
-#define BOOT_AP_KERNEL_SIZE 4096
-#define TABLE_BITS ((1 << 0) | (1 << 1) | (1 << 2))
-#define PAGE_BITS ((1 << 0) | (1 << 1) | (1 << 2) | (1 << 7))
+#define BOOT_AP_KERNEL_STACK_SIZE (5*4096)
 
 #define X86_64_BASE_PAGE_SIZE 4096
 #define X86_64_REAL_MODE_OFFSET 0x0
@@ -23,167 +19,123 @@
 .code16
 .org X86_64_REAL_MODE_OFFSET
 
-.global x86_64_start_ap
-x86_64_start_ap:
-        cli
-        mov $X86_64_REAL_MODE_SEGMENT,%ax
-        mov %ax,%ds
-        mov $(gdt_ptr - x86_64_start_ap),%si
-        lgdt (%si)
-
-        // Work around for M5's limited support for protected
-        // mode.  Once in protected mode it will treat instruction
-        // fetches as if ES is the segment selector.  Therefore
-        // we initialize it beforehand to the expected value.
-        mov $PROT_CS,%ax
-        mov %ax,%es
-
-        mov %cr0,%eax
-        or $PROT_MODE_ENABLE,%al
-        mov %eax,%cr0
-//      jmp PROT_CS:start_ap_pm
-        .byte 0x66
-        .byte 0xea
-        .long start_ap_pm - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
-        .word PROT_CS
-
-
-        .code32
-start_ap_pm:
-        // set up data segment
-        mov $PROT_DS,%eax
-        mov %eax,%ds
-
-        // acquire start-up lock
-        mov $(x86_64_init_ap_lock - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET),%esi
-start_ap_spin:
-        lock bts $0,(%esi)
-        jc start_ap_spin
-
-        // set up stack
-        mov $PROT_DS,%eax
-        mov %eax,%ss
-        mov $(start_ap_stack - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET),%esp
-
-        // Fill the four page tables with identity map
-        // eax = page table index, ebx = page table entry
-        mov $0, %ecx
-        mov $PAGE_BITS, %ebx // P, R/R, U/S & PS bit set
-
-        // enable page address extension
-        mov %cr4,%eax
-        or $PAE,%eax
-        mov %eax,%cr4
-
-        // set PML4 pointer to cr3. the right value is copied to the code
-        // here by start_aps_startall
-
 .extern init_pml4
 
-//      .global pml4_code_ptr
-// pml4_code_ptr:
-//      mov $0xffeeddcc,%eax
-    	mov $(init_pml4 - KERNEL_BASE), %eax
-        mov %eax,%cr3
+.global x86_64_start_ap
+x86_64_start_ap:
+    cli
+    mov $X86_64_REAL_MODE_SEGMENT,%ax
+    mov %ax,%ds
+    mov $(gdt_ptr - x86_64_start_ap),%si
+    lgdt (%si)
 
-        // enable long-mode by setting EFER.LME
-        mov $MSR_IA32_EFER,%ecx
-        rdmsr
-        bts $LME,%eax
-        wrmsr
+    mov %cr0,%eax
+    or $PROT_MODE_ENABLE,%al
+    mov %eax,%cr0
 
-        // enable paging
-        mov %cr0,%eax
-        bts $PAGING_ENABLE,%eax
-        mov %eax,%cr0
+    /* jmp $PROT_CS:start_ap_pm */
+    .byte 0x66
+    .byte 0xea
+    .long start_ap_pm - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
+    .word PROT_CS
 
+.code32
+start_ap_pm:
+	/* Set up state for long mode */
+	/* Enable: PGE (Page Global Enable), PAE (Physical Address Extension), PSE (Page Size Extensions) */
+	mov %cr4, %eax
+	or $(0x80|0x20|0x10), %eax
+	mov %eax, %cr4
 
-        // jmp to long-mode to the linear address corresponding the
-        // real mode segment REAL_MODE_SEGMENT
-        // jmp LONG_MODE_CS:start_ap_64
-        .byte 0xea
-        .long start_ap_64 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
-        .word LONG_MODE_CS
+	/* Load PML4 */
+	mov $(init_pml4 - KERNEL_BASE), %eax
+	mov %eax, %cr3
 
-// Start the 64bit long-mode code here
+	/* Enable IA-32e mode (also enables SYSCALL and NX) */
+	mov $0xC0000080, %ecx
+	rdmsr
+	or $(1 << 11)|(1 << 8)|(1 << 0), %eax
+	wrmsr
 
-        .code64
+	/* Enable paging and enter long mode */
+	mov %cr0, %eax
+	or $0x80010000, %eax      /* PG & WP */
+	mov %eax, %cr0
+
+    /* Acquire start-up lock */
+    mov $(x86_64_init_ap_lock - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET),%esi
+
+start_ap_spin:
+    lock bts $0,(%esi)
+    jc start_ap_spin
+
+    /* set up stack */
+    mov $PROT_DS,%eax
+    mov %eax,%ss
+    mov $(start_ap_stack - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET),%esp
+
+    /* jmp to long-mode to the linear address corresponding the */
+    /* real mode segment REAL_MODE_SEGMENT */
+    /* jmp LONG_MODE_CS:start_ap_64 */
+    .byte 0xea
+    .long start_ap_64 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
+    .word LONG_MODE_CS
+
+/* Start the 64bit long-mode code here */
+.code64
 start_ap_64:
-        // initialize bootup stack for the 64bit long mode
-        lea (start_ap_stack)(%rip), %rsp
-        // lea (kernel_stack + KERNEL_STACK_SIZE)(%rip), %rsp
+    /* Initialize the bootup stack for long mode */
+    lea (start_ap_stack)(%rip), %rsp
 
+    /*
+    Jump to the Rust entry point function for ap init.
+    with an the address written into x86_64_init_ap_absolute_entry
+    by the coreboot driver. The jump is a jump to an absolute address.
+    We find the location of x86_64_init_ap_absolute_entry using
+    rip relative addressing.
+    */
+    lea (x86_64_init_ap_absolute_entry)(%rip),%rcx
+    mov (%rcx),%rcx
+    call *%rcx
 
-        //we should not return here after the call, but for any case, use a call
-        //instead of a jmp...
-
-        // jmp to the first C initialization function in the kernel
-        // the address is copied here to this code by start_aps_startall
-        // the jmp is a jmp to an absolute address. it is difficult to compute
-        // it here, because it is IP-relative and the IP here is
-        // REAL_MODE_LINEAR_OFFSET + some offset for _every_ AP to be started,
-        // independently of the final kernel location
-
-        lea (x86_64_init_ap_global)(%rip),%rbx
-        mov (%rbx),%rbx
-        mov $KERNEL_BOOT_MAGIC,%rax
-
-        lea (x86_64_init_ap_absolute_entry)(%rip),%rcx
-        mov (%rcx),%rcx
-        call *%rcx
-// We should never reach this location...
+/* We should not return here after the call */
 loop_ap:
-        hlt
-        jmp loop_ap
+    hlt
+    /* Cause a page-fault which will (hopefully) make
+       debugging easier if we ever come here */
+    mov $999, %rax
+    mov (%rax), %rax
+    jmp loop_ap
 
 
-// Stack for 64bit mode
-        .align 16
-        .fill BOOT_AP_KERNEL_SIZE,1,0
+/* Stack for 64bit mode -- this should be allocated by the coreboot driver */
+.align 16
+.fill BOOT_AP_KERNEL_STACK_SIZE,1,0
 start_ap_stack:
+.align 16
 
-
-        .align 16
 gdt:
-        .byte 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
-        .byte 0xff,0xff,0x00,0x00,0x00,0x9a,0xaf,0x00 // 64bit code segment, D _cleared_ => "16bit"
-        .byte 0xff,0xff,0x00,0x00,0x00,0x92,0xcf,0x00 // data
-        .byte 0xff,0xff,0x00,0x00,0x00,0x9a,0xcf,0x00 // 32bit code segment for protected-mode
-        .byte 0xff,0xff,0x00,0x80,0x0b,0x92,0xff,0x00 // screen
-        .byte 0xff,0xff,0x00,0x60,0x00,0x9a,0xcf,0x00 // segment at linear address 0x6000
-        .byte 0xff,0xff,0x00,0x00,0x00,0x92,0xaf,0x00 // stack segment in 64bit mode
-
+.byte 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+.byte 0xff,0xff,0x00,0x00,0x00,0x9a,0xaf,0x00 // 64bit code segment, D _cleared_ => "16bit"
+.byte 0xff,0xff,0x00,0x00,0x00,0x92,0xcf,0x00 // data
+.byte 0xff,0xff,0x00,0x00,0x00,0x9a,0xcf,0x00 // 32bit code segment for protected-mode
+.byte 0xff,0xff,0x00,0x80,0x0b,0x92,0xff,0x00 // screen
+.byte 0xff,0xff,0x00,0x60,0x00,0x9a,0xcf,0x00 // segment at linear address 0x6000
+.byte 0xff,0xff,0x00,0x00,0x00,0x92,0xaf,0x00 // stack segment in 64bit mode
 
 gdt_ptr:
-        .word gdt_ptr - gdt
-        .long gdt - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
-        .long 0
-
-        // 4GByte identity mapped page-table using 2MByte pages
-        .align X86_64_BASE_PAGE_SIZE
-
+.word gdt_ptr - gdt
+.long gdt - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
+.long 0
 
 .global x86_64_init_ap_absolute_entry
 x86_64_init_ap_absolute_entry:
-        .long 0
-        .long 0
+.long 0
+.long 0
 
-        .global x86_64_init_ap_global
-x86_64_init_ap_global:
-        .long 0
-
-        .global x86_64_init_ap_wait
-x86_64_init_ap_wait:
-        .long 0
-
-        .global x86_64_init_ap_lock
+.global x86_64_init_ap_lock
 x86_64_init_ap_lock:
-        .byte 0
+.byte 0
 
-
-        .global x86_64_start_ap_end
+.global x86_64_start_ap_end
 x86_64_start_ap_end:
-
-/**
- * \endcond
- */

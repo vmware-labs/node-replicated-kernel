@@ -3,6 +3,8 @@ use std::env;
 
 fn main() {
     env::set_var("CC", "gcc");
+
+    // start_ap.S file
     cc::Build::new()
         .flag("-m64")
         .flag("-fno-builtin")
@@ -16,6 +18,7 @@ fn main() {
         .warnings(true)
         .compile("start_ap");
 
+    // Rumpkernel
     println!("cargo:rustc-link-lib=static=rump");
     println!("cargo:rustc-link-lib=static=rumpvfs");
     println!("cargo:rustc-link-lib=static=rumpdev");
@@ -52,4 +55,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=rumpdev_pci_usbhc");
     println!("cargo:rustc-link-lib=static=rumpdev_usb");
     println!("cargo:rustc-link-lib=static=rumpdev_umass");
+
+    // Linux Kernel:
+    println!("cargo:rustc-link-lib=static=linux");
 }

@@ -142,63 +142,35 @@ impl Drop for MutexInner {
 
 #[test]
 fn test_mutex() {
-    #[derive(Debug)]
-    struct NotAtomicU64 {
-        val: UnsafeCell<u64>,
-    };
-
-    unsafe impl Send for NotAtomicU64 {}
-    unsafe impl Sync for NotAtomicU64 {}
-
-    impl NotAtomicU64 {
-        pub fn new() -> NotAtomicU64 {
-            NotAtomicU64 {
-                val: UnsafeCell::new(0),
-            }
-        }
-
-        pub fn increment(&self) {
-            let val = unsafe { &mut *self.val.get() };
-            *val += 1;
-        }
-
-        pub fn read(&self) -> u64 {
-            let val = unsafe { &mut *self.val.get() };
-            *val
-        }
-    }
+    env_logger::init();
 
     use crate::DEFAULT_UPCALLS;
+    use core::ptr;
+
     let mut s = Scheduler::new(DEFAULT_UPCALLS);
     let mtx = ds::Arc::new(Mutex::new(false, false));
     let m1: ds::Arc<Mutex> = mtx.clone();
     let m2: ds::Arc<Mutex> = mtx.clone();
 
-    let counter = ds::Arc::new(NotAtomicU64::new());
-    let counter_1: ds::Arc<NotAtomicU64> = counter.clone();
-    let counter_2: ds::Arc<NotAtomicU64> = counter.clone();
-
-    s.spawn(4096, move |mut yielder| {
-        for _i in 0..5 {
-            m2.enter();
-            assert!(counter_1.read() >= 5);
-            counter_1.increment();
+    s.spawn(
+        32 * 4096,
+        move |_| {
+            assert!(m2.try_enter());
+            Environment::thread().relinquish();
             m2.exit();
-        }
-    });
+        },
+        ptr::null_mut(),
+    );
 
-    s.spawn(4096, move |mut yielder| {
-        for _i in 0..5 {
+    s.spawn(
+        32 * 4096,
+        move |_| {
+            assert!(!m1.try_enter());
             m1.enter();
-            assert!(counter_2.read() < 5);
-            counter_2.increment();
             m1.exit();
-        }
-    });
+        },
+        ptr::null_mut(),
+    );
 
-    for _i in 0..10 {
-        s.run();
-    }
-
-    assert_eq!(counter.read(), 10, "Mutual exclusion failed.")
+    s.run();
 }

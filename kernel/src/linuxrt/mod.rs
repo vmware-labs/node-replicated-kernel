@@ -5,7 +5,7 @@ use core::alloc::Layout;
 use core::ptr;
 use core::slice;
 
-use linuxkernel::*;
+use lkl::*;
 
 pub mod dev;
 pub mod locking;

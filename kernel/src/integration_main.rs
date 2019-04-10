@@ -422,7 +422,7 @@ pub fn main() {
 
     extern "C" {
         // int __init lkl_start_kernel(struct lkl_host_operations *ops, const char *fmt, ...)
-        fn lkl_start_kernel(ops: *const linuxkernel::lkl_host_operations, fmt: *const i8) -> i32;
+        fn lkl_start_kernel(ops: *const lkl::lkl_host_operations, fmt: *const i8) -> i32;
         fn lkl_sys_halt();
     }
 

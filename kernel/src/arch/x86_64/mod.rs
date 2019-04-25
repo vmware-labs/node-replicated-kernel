@@ -1,3 +1,6 @@
+//! Contains initialization code for x86-64 cores.
+//! The purpose of the arch specific part is to initialize the machine to
+//! a sane environment and then jump to the main() function.
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::mem::transmute;
@@ -25,7 +28,6 @@ pub mod syscall;
 pub mod acpi;
 mod exec;
 mod isr;
-mod sse;
 mod start;
 
 use crate::main;
@@ -33,49 +35,51 @@ use crate::memory::*;
 use crate::ExitReason;
 use klogger;
 use log::Level;
+use logos::Logos;
 
 use memory::*;
 use process::*;
 
 extern "C" {
+    /// A pointer to the multiboot struct (initialized by start.S)
     #[no_mangle]
     static mboot_ptr: memory::PAddr;
-
-    #[no_mangle]
-    pub static mut init_pd: paging::PD;
 }
 
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
-use logos::Logos;
-
+/// Definition to parse the kernel command-line arguments.
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
 enum CmdToken {
-    // Logos requires that we define two default variants,
-    // one for end of input source,
+    /// Logos requires that we define two default variants,
+    /// one for end of input source,
     #[end]
     End,
 
+    /// Binary name
     #[regex = "./[a-zA-Z]+"]
     Binary,
 
+    /// Argument separator (1 space)
     #[token = " "]
     ArgSeparator,
 
-    // Anything not properly encoded
+    /// Anything not properly encoded
     #[error]
     Error,
 
-    // Tokens can be literal strings, of any length.
+    /// Log token.
     #[token = "log="]
     Log,
 
-    // Or regular expressions.
+    /// Regular expressions for parsing log-level.
     #[regex = "[a-zA-Z]+"]
     Text,
 }
 
+/// Entry point for AP (non bootstrap core). This function is called
+/// from start_ap.S for any core except core 0.
 #[no_mangle]
 pub extern "C" fn bespin_init_ap() {
     sprint!("Hello from the other side\n\n");
@@ -137,16 +141,40 @@ fn check_required_cpu_features() {
     let has_sse = fi.as_ref().map_or(false, |f| f.has_sse());
     let has_sse3 = fi.as_ref().map_or(false, |f| f.has_sse3());
     let has_avx = fi.as_ref().map_or(false, |f| f.has_avx());
+    let has_osfxsr = fi.as_ref().map_or(false, |f| f.has_fxsave_fxstor());
 
     assert!(has_tsc, "No RDTSC? Run on a more modern machine!");
-    assert!(has_sse, "No SSE3? Run on a more modern machine!"); //TBD
+    assert!(has_sse, "No SSE? Run on a more modern machine!");
+    assert!(has_osfxsr, "No fxsave? Run on a more modern machine!");
     assert!(has_sse3, "No SSE3? Run on a more modern machine!"); //TBD
     assert!(has_avx, "No AVX? Run on a more modern machine!"); //TBD
+
     assert!(has_apic, "No APIC? Run on a more modern machine!");
     assert!(has_x2apic, "No x2apic? Run on a more modern machine!");
     assert!(has_syscalls, "No sysenter? Run on a more modern machine!");
     assert!(has_pae, "No PAE? Run on a more modern machine!");
     assert!(has_msr, "No MSR? Run on a more modern machine!");
+}
+
+/// Enable SSE functionality and disable the old x87 FPU.
+pub fn enable_sse() {
+    // Follow the protocol described in Intel SDM, 13.1.3 Initialization of the SSE Extensions
+    unsafe {
+        let mut cr4 = controlregs::cr4();
+        // Operating system provides facilities for saving and restoring SSE state
+        // using FXSAVE and FXRSTOR instructions
+        cr4 |= controlregs::Cr4::CR4_ENABLE_SSE;
+        // The operating system provides a SIMD floating-point exception (#XM) handler
+        //cr4 |= x86::controlregs::Cr4::CR4_UNMASKED_SSE;
+        controlregs::cr4_write(cr4);
+
+        let mut cr0 = controlregs::cr0();
+        // Disables emulation of the x87 FPU
+        cr0 &= !controlregs::Cr0::CR0_EMULATE_COPROCESSOR;
+        // Required for Intel 64 and IA-32 processors that support the SSE
+        cr0 |= controlregs::Cr0::CR0_MONITOR_COPROCESSOR;
+        controlregs::cr0_write(cr0);
+    }
 }
 
 /// Return a struct to the currently installed page-tables so we
@@ -186,8 +214,9 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     sprint!("\n\n");
 
     // We want SSE enabled (yes this goes against conventional
-    // wisdom that thinks vector instructions in the kernel are a bad idea)
-    sse::initialize();
+    // wisdom that thinks vector instructions in the
+    // kernel are a bad idea)
+    enable_sse();
 
     // Make sure these constants are initialized early, for proper time accounting (otherwise because
     // they are lazy_static we may not end up using them until way later).
@@ -204,6 +233,11 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         *rawtime::WALL_TIME_ANCHOR,
         *rawtime::BOOT_TIME_ANCHOR
     );
+
+    // Figure out what this machine supports,
+    // fail if it doesn't have what we need
+    check_required_cpu_features();
+
 
     // For our scheduler and KCB we enable the fs/gs base instructions on the machine
     // This allows us to conventiently read and write the fs and gs registers
@@ -267,8 +301,6 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     }
     debug!("Memory allocation should work at this point...");
 
-    // Figure out what this machine supports, fail if it doesn't have what we need
-    check_required_cpu_features();
 
     // Initialize IDT and load a new GDT
     irq::setup_idt();

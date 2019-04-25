@@ -17,6 +17,7 @@ use apic::xapic;
 pub mod debug;
 pub mod gdt;
 pub mod irq;
+pub mod kcb;
 pub mod memory;
 pub mod process;
 pub mod syscall;
@@ -81,6 +82,11 @@ pub extern "C" fn bespin_init_ap() {
     loop {}
 }
 
+fn paddr_to_slice(base: u64, size: usize) -> Option<&'static [u8]> {
+    let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
+    unsafe { Some(slice::from_raw_parts(vbase, size)) }
+}
+
 #[lang = "start"]
 #[no_mangle]
 fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
@@ -88,13 +94,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     sse::initialize();
     lazy_static::initialize(&rawtime::arch::tsc::TSC_FREQUENCY);
 
-    let mb = unsafe {
-        Multiboot::new(mboot_ptr.into(), |base, size| {
-            let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
-            Some(slice::from_raw_parts(vbase, size))
-        })
-        .unwrap()
-    };
+    let mb = unsafe { Multiboot::new(mboot_ptr.into(), paddr_to_slice).unwrap() };
 
     let args = mb.command_line().unwrap_or("./mbkernel");
     let mut lexer = CmdToken::lexer(args);
@@ -196,7 +196,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     irq::enable();
     gdt::setup_gdt();
 
-    if has_x2apic && has_tsc && false {
+    /*if has_x2apic && has_tsc && false {
         //info!("x2APIC / deadline TSC supported!");
         let mut apic = x2apic::X2APIC::new();
         apic.attach();
@@ -206,39 +206,40 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
             apic.version(),
             apic.bsp()
         );
-    } else {
-        info!("no x2APIC support. Use xAPIC instead.");
-        use crate::memory::BespinPageTableProvider;
-        use x86::msr::{rdmsr, IA32_APIC_BASE};
+    } else {*/
 
-        let cr_three: u64 = unsafe { controlregs::cr3() };
-        let pml4: PAddr = PAddr::from_u64(cr_three);
-        let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
-        let mut vspace: VSpace = VSpace {
-            pml4: pml4_table,
-            pager: BespinPageTableProvider::new(),
-        };
+    info!("no x2APIC support. Use xAPIC instead.");
+    use crate::memory::BespinPageTableProvider;
+    use x86::msr::{rdmsr, IA32_APIC_BASE};
 
-        let base = unsafe {
-            let mut base = rdmsr(IA32_APIC_BASE);
-            debug!("xAPIC MMIO base is at {:x}", base & !0xfff);
-            base & !0xfff
-        };
-
-        vspace.map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
-
-        let regs: &'static mut [u32] =
-            unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
-
-        let mut apic = xapic::XAPIC::new(regs);
-        apic.attach();
-        info!(
-            "xAPIC id: {}, version: {:#x}, is bsp: {}",
-            apic.id(),
-            apic.version(),
-            apic.bsp()
-        );
+    let cr_three: u64 = unsafe { controlregs::cr3() };
+    let pml4: PAddr = PAddr::from_u64(cr_three);
+    let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
+    let mut vspace: VSpace = VSpace {
+        pml4: pml4_table,
+        pager: BespinPageTableProvider::new(),
     };
+
+    let base = unsafe {
+        let mut base = rdmsr(IA32_APIC_BASE);
+        debug!("xAPIC MMIO base is at {:x}", base & !0xfff);
+        base & !0xfff
+    };
+
+    vspace.map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
+
+    let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
+
+    let mut apic = xapic::XAPIC::new(regs);
+    apic.attach();
+    info!(
+        "xAPIC id: {}, version: {:#x}, is bsp: {}",
+        apic.id(),
+        apic.version(),
+        apic.bsp()
+    );
+
+    kcb::init_kcb(mb, apic);
 
     debug!("allocation should work here...");
     let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);

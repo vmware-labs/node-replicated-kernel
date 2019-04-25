@@ -15,7 +15,8 @@
     alloc_layout_extra,
     ptr_internals,
     compiler_builtins_lib,
-    ptr_offset_from
+    ptr_offset_from,
+    box_into_raw_non_null
 )]
 #![no_std]
 #![cfg_attr(target_os = "none", no_main)]

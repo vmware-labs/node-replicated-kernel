@@ -10,7 +10,9 @@ mod bump;
 
 pub use self::buddy::FMANAGER;
 
-use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE};
+pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
+
+pub use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE};
 use slabmalloc::{ObjectPage, PageProvider};
 
 pub trait PhysicalAllocator {

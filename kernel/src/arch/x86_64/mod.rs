@@ -270,17 +270,17 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     // Figure out what this machine supports, fail if it doesn't have what we need
     check_required_cpu_features();
 
-    // Initialize interrupts and load a new GDT
+    // Initialize IDT and load a new GDT
     irq::setup_idt();
-    irq::enable();
     gdt::setup_gdt();
+
 
     let mut vspace = find_current_vspace();
 
     // Construct the driver object to manipulate the interrupt controller
     // This is done in two parts:
-    // First, we need to find the APIC base and map it in our address space
-    // Second, we construct a new XAPIC struct by giving it access to its registers
+    // First, we need to find the APIC registers and map them in our address space
+    // Second, we construct a new XAPIC struct and give it access to the APIC registers
     let base = find_apic_base();
     vspace.map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
@@ -295,6 +295,9 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
 
     // Set the kernel control block containing core-local data
     kcb::init_kcb(mb, apic, kernel_binary, vspace);
+
+    // Do we want to enable IRQs here?
+    // irq::enable();
 
     // No we go in the arch-independent part
     main();

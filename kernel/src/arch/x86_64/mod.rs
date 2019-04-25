@@ -82,23 +82,22 @@ pub extern "C" fn bespin_init_ap() {
     loop {}
 }
 
+/// Given physical a base and size returns a slice of the memory region
+/// in virtual memory.
+/// Used by multiboot since it stores everything as physical addresses.debug
+///
+/// Example: base 0x4770000 and len 10 will return slice [u8; 10] at
+/// address 0xffffffff84770000.
 fn paddr_to_slice(base: u64, size: usize) -> Option<&'static [u8]> {
     let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
     unsafe { Some(slice::from_raw_parts(vbase, size)) }
 }
 
-#[lang = "start"]
-#[no_mangle]
-fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
-    sprint!("\n\n");
-    sse::initialize();
-    lazy_static::initialize(&rawtime::arch::tsc::TSC_FREQUENCY);
-
-    let mb = unsafe { Multiboot::new(mboot_ptr.into(), paddr_to_slice).unwrap() };
-
-    let args = mb.command_line().unwrap_or("./mbkernel");
+/// Parse command line argument and initialize the logging infrastructure.
+///
+/// Example: If args is './mbkernel log=trace' -> sets level to Level::debug
+fn init_logging(args: &str) {
     let mut lexer = CmdToken::lexer(args);
-
     let level: Level = loop {
         let mut level = Level::Info;
         lexer.advance();
@@ -121,50 +120,136 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
 
         break level;
     };
-
     klogger::init(level).expect("Can't set-up logging");
+}
 
-    // It's important that these two constructs get evaluated early during boot.
+/// Make sure the machine supports what we require.
+fn check_required_cpu_features() {
+    let cpuid = cpuid::CpuId::new();
+    let fi = cpuid.get_feature_info();
+    let has_apic = fi.as_ref().map_or(false, |f| f.has_apic());
+    let has_x2apic = fi.as_ref().map_or(false, |f| f.has_x2apic());
+    let has_tsc = fi.as_ref().map_or(false, |f| f.has_tsc());
+    let has_syscalls = fi.as_ref().map_or(false, |f| f.has_sysenter_sysexit());
+    let has_pae = fi.as_ref().map_or(false, |f| f.has_pae());
+    let has_msr = fi.as_ref().map_or(false, |f| f.has_msr());
+
+    let has_sse = fi.as_ref().map_or(false, |f| f.has_sse());
+    let has_sse3 = fi.as_ref().map_or(false, |f| f.has_sse3());
+    let has_avx = fi.as_ref().map_or(false, |f| f.has_avx());
+
+    assert!(has_tsc, "No RDTSC? Run on a more modern machine!");
+    assert!(has_sse, "No SSE3? Run on a more modern machine!"); //TBD
+    assert!(has_sse3, "No SSE3? Run on a more modern machine!"); //TBD
+    assert!(has_avx, "No AVX? Run on a more modern machine!"); //TBD
+    assert!(has_apic, "No APIC? Run on a more modern machine!");
+    assert!(has_x2apic, "No x2apic? Run on a more modern machine!");
+    assert!(has_syscalls, "No sysenter? Run on a more modern machine!");
+    assert!(has_pae, "No PAE? Run on a more modern machine!");
+    assert!(has_msr, "No MSR? Run on a more modern machine!");
+}
+
+/// Return a struct to the currently installed page-tables so we
+/// can manipulate them (for example to map the APIC registers).
+///
+/// This function is called during initialization.
+/// It will read the cr3 register to find the physical address of
+/// the currently loaded PML4 table which is defined in start.S
+/// see `.globl init_pml4`
+fn find_current_vspace() -> VSpace<'static> {
+    let cr_three: u64 = unsafe { controlregs::cr3() };
+    let pml4: PAddr = PAddr::from_u64(cr_three);
+    let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
+    VSpace {
+        pml4: pml4_table,
+        pager: crate::memory::BespinPageTableProvider::new(),
+    }
+}
+
+/// Return the base address of the xAPIC (x86 Interrupt controller)
+fn find_apic_base() -> u64 {
+    use x86::msr::{rdmsr, IA32_APIC_BASE};
+    unsafe {
+        let mut base = rdmsr(IA32_APIC_BASE);
+        debug!("xAPIC MMIO base is at {:x}", base & !0xfff);
+        base & !0xfff
+    }
+}
+
+/// Entry function that is callsed from start.S after the pre-initialization (in assembly)
+/// is done. At this point we are in x86-64 (long) mode,
+/// We have a simple GDT, address space, and small stack set-up.
+/// Ignore the arguments here (they are garbage).
+#[lang = "start"]
+#[no_mangle]
+fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
+    sprint!("\n\n");
+
+    // We want SSE enabled (yes this goes against conventional
+    // wisdom that thinks vector instructions in the kernel are a bad idea)
+    sse::initialize();
+
+    // Make sure these constants are initialized early, for proper time accounting (otherwise because
+    // they are lazy_static we may not end up using them until way later).
+    lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
+    lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
+
+    // Construct a multiboot struct for accessing the multiboot information
+    let mb = unsafe { Multiboot::new(mboot_ptr.into(), paddr_to_slice).unwrap() };
+    let args = mb.command_line().unwrap_or("./mbkernel");
+
+    init_logging(args);
     info!(
         "Started at {} with {:?} since CPU startup",
         *rawtime::WALL_TIME_ANCHOR,
         *rawtime::BOOT_TIME_ANCHOR
     );
 
-    // For lineup scheduler enable fs/gs base instructions (Thread local storage implementation).
-    let mut cr4: controlregs::Cr4 = unsafe { controlregs::cr4() };
-    cr4 |= controlregs::Cr4::CR4_ENABLE_FSGSBASE;
-    unsafe { controlregs::cr4_write(cr4) };
+    // For our scheduler and KCB we enable the fs/gs base instructions on the machine
+    // This allows us to conventiently read and write the fs and gs registers
+    // with 64 bit values (otherwise it's a bit of a pain)
+    // (used for our thread local storage implementation).
+    unsafe {
+        let mut cr4: controlregs::Cr4 = controlregs::cr4();
+        cr4 |= controlregs::Cr4::CR4_ENABLE_FSGSBASE;
+        controlregs::cr4_write(cr4)
+    };
 
+    // Initialize the serial console
+    // (this is already done in a very basic form by klogger)
     debug::init();
 
-    if mb.modules().is_some() {
-        for module in mb.modules().unwrap() {
-            debug!("Found module {:?}", module);
-            if module.string.is_some() && module.string.unwrap() == "kernel" {
-                unsafe {
-                    let mut k = KERNEL_BINARY.lock();
-                    let binary = slice::from_raw_parts(
-                        memory::paddr_to_kernel_vaddr(PAddr::from(module.start)).as_ptr(),
-                        (module.end - module.start) as usize,
-                    );
-                    *k = Some(binary);
-                }
-            }
-        }
-    }
+    // Find the kernel binary within the multiboot modules (to later store it in the KCB)
+    // The binary is useful for symbol name lookups when printing stacktraces
+    // in case things go wrong (see panic.rs).
+    // Note: this code will refuse to start in case the kernel binary is not found
+    let kernel = mb
+        .modules()
+        .expect("No modules found in multiboot.")
+        .find(|m| m.string.is_some() && m.string.unwrap() == "kernel")
+        .expect("Couldn't find 'kernel' binary in multiboot modules, won't start.");
+    let kernel_binary: &'static [u8] = unsafe {
+        slice::from_raw_parts(
+            memory::paddr_to_kernel_vaddr(PAddr::from(kernel.start)).as_ptr(),
+            (kernel.end - kernel.start) as usize,
+        )
+    };
 
-    debug!("checking memory regions");
+    // Find the physical memory regions available and add them to the physical memory manager
+    // This is a bit of a pain since we don't really know how much space is consumed by multiboot early on
+    // and we'd like to keep this memory intact...
+    debug!("Finding RAM regions:");
     unsafe {
         mb.memory_regions().map(|regions| {
             for region in regions {
                 if region.memory_type() == MemoryType::Available {
                     if region.base_address() > 0 {
-                        // XXX: Regions contain kernel image as well insetad of just RAM, that's why we add 20 MiB to it...
+                        // XXX: Regions contain kernel image as well insetad of just RAM
                         let offset = 1024 * 1024 * 64;
                         let base = PAddr::from(region.base_address() + offset);
                         let size = region.length() - offset;
-                        debug!("Traing to add base {:?} size {:?}", base, size);
+
+                        debug!("Trying to add base {:?} size {:?}", base, size);
                         if FMANAGER.add_memory(Frame::new(base, size as usize)) {
                             debug!("Added {:?}", region);
                         } else {
@@ -180,56 +265,25 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         FMANAGER.init();
         FMANAGER.print_info();
     }
+    debug!("Memory allocation should work at this point...");
 
-    let cpuid = cpuid::CpuId::new();
-    let fi = cpuid.get_feature_info();
-    let has_x2apic = match fi {
-        Some(ref fi) => fi.has_x2apic(),
-        None => false,
-    };
-    let has_tsc = match fi {
-        Some(ref fi) => fi.has_tsc(),
-        None => false,
-    };
+    // Figure out what this machine supports, fail if it doesn't have what we need
+    check_required_cpu_features();
 
+    // Initialize interrupts and load a new GDT
     irq::setup_idt();
     irq::enable();
     gdt::setup_gdt();
 
-    /*if has_x2apic && has_tsc && false {
-        //info!("x2APIC / deadline TSC supported!");
-        let mut apic = x2apic::X2APIC::new();
-        apic.attach();
-        info!(
-            "x2APIC id: {}, version: {}, is bsp: {}",
-            apic.id(),
-            apic.version(),
-            apic.bsp()
-        );
-    } else {*/
+    let mut vspace = find_current_vspace();
 
-    info!("no x2APIC support. Use xAPIC instead.");
-    use crate::memory::BespinPageTableProvider;
-    use x86::msr::{rdmsr, IA32_APIC_BASE};
-
-    let cr_three: u64 = unsafe { controlregs::cr3() };
-    let pml4: PAddr = PAddr::from_u64(cr_three);
-    let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
-    let mut vspace: VSpace = VSpace {
-        pml4: pml4_table,
-        pager: BespinPageTableProvider::new(),
-    };
-
-    let base = unsafe {
-        let mut base = rdmsr(IA32_APIC_BASE);
-        debug!("xAPIC MMIO base is at {:x}", base & !0xfff);
-        base & !0xfff
-    };
-
+    // Construct the driver object to manipulate the interrupt controller
+    // This is done in two parts:
+    // First, we need to find the APIC base and map it in our address space
+    // Second, we construct a new XAPIC struct by giving it access to its registers
+    let base = find_apic_base();
     vspace.map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
-
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
-
     let mut apic = xapic::XAPIC::new(regs);
     apic.attach();
     info!(
@@ -239,12 +293,8 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         apic.bsp()
     );
 
-    kcb::init_kcb(mb, apic);
-
-    debug!("allocation should work here...");
-    let mut process_list: Vec<Box<process::Process>> = Vec::with_capacity(100);
-    let init = Box::new(process::Process::new(1).unwrap());
-    process_list.push(init);
+    // Set the kernel control block containing core-local data
+    kcb::init_kcb(mb, apic, kernel_binary, vspace);
 
     // No we go in the arch-independent part
     main();

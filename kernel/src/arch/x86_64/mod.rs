@@ -3,7 +3,9 @@
 //! a sane environment and then jump to the main() function.
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::mem::transmute;
+
+use core::cmp;
+use core::mem::{size_of, transmute};
 use core::slice;
 
 use driverkit::DriverControl;
@@ -128,7 +130,7 @@ fn init_logging(args: &str) {
 }
 
 /// Make sure the machine supports what we require.
-fn check_required_cpu_features() {
+fn assert_required_cpu_features() {
     let cpuid = cpuid::CpuId::new();
     let fi = cpuid.get_feature_info();
     let has_apic = fi.as_ref().map_or(false, |f| f.has_apic());
@@ -157,7 +159,10 @@ fn check_required_cpu_features() {
 }
 
 /// Enable SSE functionality and disable the old x87 FPU.
-pub fn enable_sse() {
+/// (yes this goes against conventional
+/// wisdom that thinks SSE instructions in the
+/// kernel are a bad idea)
+fn enable_sse() {
     // Follow the protocol described in Intel SDM, 13.1.3 Initialization of the SSE Extensions
     unsafe {
         let mut cr4 = controlregs::cr4();
@@ -175,6 +180,18 @@ pub fn enable_sse() {
         cr0 |= controlregs::Cr0::CR0_MONITOR_COPROCESSOR;
         controlregs::cr0_write(cr0);
     }
+}
+
+/// For our scheduler and KCB we enable the fs/gs base instructions on the machine
+/// This allows us to conventiently read and write the fs and gs registers
+/// with 64 bit values (otherwise it's a bit of a pain)
+/// (used for our thread local storage implementation).
+fn enable_fsgsbase() {
+    unsafe {
+        let mut cr4: controlregs::Cr4 = controlregs::cr4();
+        cr4 |= controlregs::Cr4::CR4_ENABLE_FSGSBASE;
+        controlregs::cr4_write(cr4)
+    };
 }
 
 /// Return a struct to the currently installed page-tables so we
@@ -213,10 +230,9 @@ fn find_apic_base() -> u64 {
 fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
     sprint!("\n\n");
 
-    // We want SSE enabled (yes this goes against conventional
-    // wisdom that thinks vector instructions in the
-    // kernel are a bad idea)
     enable_sse();
+    enable_fsgsbase();
+    gdt::setup_gdt();
 
     // Make sure these constants are initialized early, for proper time accounting (otherwise because
     // they are lazy_static we may not end up using them until way later).
@@ -235,22 +251,12 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     );
 
     // Figure out what this machine supports,
-    // fail if it doesn't have what we need
-    check_required_cpu_features();
+    // fail if it doesn't have what we need.
+    assert_required_cpu_features();
 
 
-    // For our scheduler and KCB we enable the fs/gs base instructions on the machine
-    // This allows us to conventiently read and write the fs and gs registers
-    // with 64 bit values (otherwise it's a bit of a pain)
-    // (used for our thread local storage implementation).
-    unsafe {
-        let mut cr4: controlregs::Cr4 = controlregs::cr4();
-        cr4 |= controlregs::Cr4::CR4_ENABLE_FSGSBASE;
-        controlregs::cr4_write(cr4)
-    };
-
-    // Initialize the serial console
-    // (this is already done in a very basic form by klogger)
+    // Initializes the serial console.
+    // (this is already done in a very basic form by klogger/init_logging())
     debug::init();
 
     // Find the kernel binary within the multiboot modules (to later store it in the KCB)
@@ -270,53 +276,76 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     };
 
     // Find the physical memory regions available and add them to the physical memory manager
-    // This is a bit of a pain since we don't really know how much space is consumed by multiboot early on
-    // and we'd like to keep this memory intact...
-    debug!("Finding RAM regions:");
-    unsafe {
-        mb.memory_regions().map(|regions| {
-            for region in regions {
-                if region.memory_type() == MemoryType::Available {
-                    if region.base_address() > 0 {
-                        // XXX: Regions contain kernel image as well insetad of just RAM
-                        let offset = 1024 * 1024 * 64;
-                        let base = PAddr::from(region.base_address() + offset);
-                        let size = region.length() - offset;
+    let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();
 
-                        debug!("Trying to add base {:?} size {:?}", base, size);
-                        if FMANAGER.add_memory(Frame::new(base, size as usize)) {
-                            debug!("Added {:?}", region);
-                        } else {
-                            warn!("Unable to add {:?}", region)
-                        }
+    // Multiboot is kept somewhere in free (low) memory but the memory regions
+    // multiboot reports as free do not really take this into account,
+    // so we try to find out the last address used by multiboot in order
+    // to not overwrite the multiboot data later...
+    let ram_start = mb.find_highest_address();
+    trace!("multiboot ends at {:#x}", ram_start);
+
+    debug!("Finding RAM regions");
+    mb.memory_regions().map(|regions| {
+        for region in regions {
+            if region.memory_type() == MemoryType::Available {
+                if region.base_address() > 0 && region.length() >= (BASE_PAGE_SIZE as u64) {
+                    debug!(
+                        "region.base_address()={:#x} region.length()={:#x}",
+                        region.base_address(),
+                        region.length()
+                    );
+
+                    let (base, size) = if region.base_address() < ram_start
+                        && (region.base_address() + region.length()) > ram_start
+                    {
+                        let cut_away = ram_start - region.base_address();
+                        (ram_start, region.length() - cut_away)
                     } else {
-                        debug!("Ignore BIOS mappings at {:?}", region);
+                        (region.base_address(), region.length())
+                    };
+
+                    unsafe {
+                        if fmanager.add_memory(Frame::new(PAddr::from(base), size as usize)) {
+                            debug!("Trying to add base={:#x} size={:#x}", base, size);
+                        } else {
+                            warn!("Unable to add base={:#x} size={:#x}", base, size)
+                        }
                     }
+                } else {
+                    debug!("Ignore memory region at {:?}", region);
                 }
             }
-        });
-
-        FMANAGER.init();
-        FMANAGER.print_info();
-    }
-    debug!("Memory allocation should work at this point...");
-
-
-    // Initialize IDT and load a new GDT
-    irq::setup_idt();
-    gdt::setup_gdt();
-
+        }
+    });
 
     let mut vspace = find_current_vspace();
 
-    // Construct the driver object to manipulate the interrupt controller
-    // This is done in two parts:
-    // First, we need to find the APIC registers and map them in our address space
-    // Second, we construct a new XAPIC struct and give it access to the APIC registers
+    // Construct the driver object to manipulate the interrupt controller (XAPIC)
+    // This is done as follows:
+    // First, we find the memory for the registers of the controller (APIC base)
+    // Then, we give the memory location to the APIC struct
+    // Finally we put the driver in the KCB
+    // Ugly: We are not quite done since regs is not yet accessible
+    // but we can't map it before we have set up the KCB (see below :/)
     let base = find_apic_base();
-    vspace.map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
     let mut apic = xapic::XAPIC::new(regs);
+
+    // Construct the Kcb so we can access these things later on in the code
+    let mut kcb = kcb::Kcb::new(mb, kernel_binary, vspace, fmanager, apic);
+    kcb::init_kcb(kcb);
+    debug!("Memory allocation should work at this point...");
+
+    // Finish ACPI initialization here: because the APIC base memory
+    // (`regs`) is not mapped, we map it now (after we do init_kcb) because
+    // only then do we have memory management to allocate the page-tables
+    // required for the mapping
+    kcb::get_kcb()
+        .init_vspace()
+        .map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
+    // Attach the driver to the registers:
+    let mut apic = kcb::get_kcb().apic();
     apic.attach();
     info!(
         "xAPIC id: {}, version: {:#x}, is bsp: {}",
@@ -325,8 +354,8 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
         apic.bsp()
     );
 
-    // Set the kernel control block containing core-local data
-    kcb::init_kcb(mb, apic, kernel_binary, vspace);
+    // Initialize IDT and load a new GDT
+    irq::setup_idt();
 
     // Do we want to enable IRQs here?
     // irq::enable();

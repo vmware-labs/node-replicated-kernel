@@ -1,10 +1,14 @@
 use super::{c_int, c_uint, c_ulong, c_void};
 use crate::arch::memory::{kernel_vaddr_to_paddr, PAddr, VAddr};
-use crate::memory::{PhysicalAllocator, FMANAGER};
+use crate::arch::process::VSpace;
+use crate::kcb::{get_kcb, Kcb};
+use crate::memory::PhysicalAllocator;
 use alloc::boxed::Box;
 use core::alloc::Layout;
+use core::cell::RefMut;
 use core::fmt;
 use core::ptr;
+
 use log::trace;
 use x86::io;
 
@@ -165,20 +169,7 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
     //let paddr = kernel_vaddr_to_paddr(vaddr);
     // 19625676584 [TRACE] - bespin::rumprt::dev: rumpcomp_pci_map 0xfeb80000 0x20000
 
-    use crate::arch::memory::paddr_to_kernel_vaddr;
-    use crate::arch::process::VSpace;
-    use crate::memory::BespinPageTableProvider;
-    use core::mem::transmute;
-    use x86::bits64::paging::PML4;
-    use x86::controlregs;
-
-    let cr_three: u64 = controlregs::cr3();
-    let pml4: PAddr = PAddr::from_u64(cr_three);
-    let pml4_table = transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4));
-    let mut vspace: VSpace = VSpace {
-        pml4: pml4_table,
-        pager: BespinPageTableProvider::new(),
-    };
+    let mut vspace: RefMut<VSpace> = get_kcb().init_vspace();
 
     let start = VAddr::from(addr);
     let end = VAddr::from(addr) + len;
@@ -208,8 +199,11 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     vptr: *mut c_ulong,
 ) -> c_int {
     let layout = Layout::from_size_align(size, alignment);
+    let kcb = get_kcb();
+    let mut fmanager = kcb.pmanager();
+
     match layout {
-        Ok(l) => FMANAGER.allocate(l).map_or(2, |frame| {
+        Ok(l) => fmanager.allocate(l).map_or(2, |frame| {
             let vaddr = frame.kernel_vaddr();
             *vptr = vaddr.as_u64();
             *pptr = frame.base.as_u64();

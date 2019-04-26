@@ -72,6 +72,7 @@ pub mod arch;
 #[path = "arch/unix/mod.rs"]
 pub mod arch;
 
+mod kcb;
 mod memory;
 mod prelude;
 
@@ -88,6 +89,17 @@ use core::alloc::{GlobalAlloc, Layout};
 use memory::{BespinSlabsProvider, PhysicalAllocator};
 use slabmalloc::{PageProvider, ZoneAllocator};
 use spin::Mutex;
+
+#[cfg(not(any(test, target_family = "unix")))]
+mod std {
+    pub use core::cmp;
+    pub use core::fmt;
+    pub use core::iter;
+    pub use core::marker;
+    pub use core::ops;
+    pub use core::option;
+}
+
 
 #[allow(dead_code)]
 static PAGER: Mutex<BespinSlabsProvider> = Mutex::new(BespinSlabsProvider::new());
@@ -108,8 +120,10 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             //debug!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
             ptr
         } else {
-            use memory::FMANAGER;
-            let f = FMANAGER.allocate(layout);
+            let kcb = crate::kcb::get_kcb();
+            let mut fmanager = kcb.pmanager();
+
+            let f = fmanager.allocate(layout);
             let ptr = f.map_or(core::ptr::null_mut(), |region| {
                 region.kernel_vaddr().as_mut_ptr()
             });
@@ -125,8 +139,9 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             self.0.lock().deallocate(ptr, layout);
         } else {
             use arch::memory::{kernel_vaddr_to_paddr, VAddr};
-            use memory::FMANAGER;
-            FMANAGER.deallocate(
+            let kcb = crate::kcb::get_kcb();
+            let mut fmanager = kcb.pmanager();
+            fmanager.deallocate(
                 memory::Frame::new(
                     kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
                     layout.size(),
@@ -141,15 +156,6 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
 #[cfg_attr(target_os = "none", global_allocator)]
 static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
 
-#[cfg(not(any(test, target_family = "unix")))]
-mod std {
-    pub use core::cmp;
-    pub use core::fmt;
-    pub use core::iter;
-    pub use core::marker;
-    pub use core::ops;
-    pub use core::option;
-}
 
 #[repr(u8)]
 // If this type is modified, update run.sh script as well.

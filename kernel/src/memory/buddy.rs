@@ -16,44 +16,6 @@ use crate::prelude::*;
 use super::{Frame, PAddr, PhysicalAllocator, VAddr};
 use crate::arch::memory::{kernel_vaddr_to_paddr, BASE_PAGE_SIZE};
 
-pub static mut FMANAGER: BuddyFrameAllocator = BuddyFrameAllocator {
-    region: Frame {
-        base: PAddr(0),
-        size: 0,
-    },
-    free_lists: [
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-    ],
-    min_block_size: BASE_PAGE_SIZE,
-    min_block_size_log2: 12,
-};
-
 /// A free block in our heap.
 pub struct FreeBlock {
     /// The next block in the free list, or NULL if this is the final
@@ -183,6 +145,47 @@ impl PhysicalAllocator for BuddyFrameAllocator {
 
 impl BuddyFrameAllocator {
     const MIN_HEAP_ALIGN: usize = BASE_PAGE_SIZE;
+
+    #[cfg(not(test))]
+    pub fn new() -> BuddyFrameAllocator {
+        BuddyFrameAllocator {
+            region: Frame {
+                base: PAddr(0),
+                size: 0,
+            },
+            free_lists: [
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ],
+            min_block_size: BASE_PAGE_SIZE,
+            min_block_size_log2: 12,
+        }
+    }
 
     /// Create a new heap.
     ///

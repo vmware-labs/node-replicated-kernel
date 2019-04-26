@@ -5,10 +5,8 @@ use core::fmt;
 
 use x86::bits64::paging;
 
-mod buddy;
+pub mod buddy;
 mod bump;
-
-pub use self::buddy::FMANAGER;
 
 pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
 
@@ -140,8 +138,10 @@ impl BespinPageTableProvider {
 impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a PML4 table.
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
+        let kcb = crate::kcb::get_kcb();
+        let mut fmanager = kcb.pmanager();
         unsafe {
-            let f = FMANAGER.allocate(
+            let f = fmanager.allocate(
                 Layout::new::<paging::Page>()
                     .align_to(BASE_PAGE_SIZE)
                     .unwrap(),
@@ -156,8 +156,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
     /// Allocate a new page directory and return a PML4 entry for it.
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
+        let kcb = crate::kcb::get_kcb();
+        let mut fmanager = kcb.pmanager();
+
         unsafe {
-            FMANAGER
+            fmanager
                 .allocate(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
@@ -174,8 +177,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
     /// Allocate a new page directory and return a pdpt entry for it.
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
+        let kcb = crate::kcb::get_kcb();
+        let mut fmanager = kcb.pmanager();
+
         unsafe {
-            FMANAGER
+            fmanager
                 .allocate(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
@@ -192,8 +198,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
     /// Allocate a new page-directory and return a page directory entry for it.
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
+        let kcb = crate::kcb::get_kcb();
+        let mut fmanager = kcb.pmanager();
+
         unsafe {
-            FMANAGER
+            fmanager
                 .allocate(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
@@ -210,8 +219,11 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
     /// Allocate a new (4KiB) page and map it.
     fn new_page(&mut self) -> Option<paging::PTEntry> {
+        let kcb = crate::kcb::get_kcb();
+        let mut fmanager = kcb.pmanager();
+
         unsafe {
-            FMANAGER
+            fmanager
                 .allocate(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
@@ -240,8 +252,11 @@ impl BespinSlabsProvider {
 
 impl<'a> PageProvider<'a> for BespinSlabsProvider {
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
+        let kcb = crate::kcb::get_kcb();
+        let mut fmanager = kcb.pmanager();
+
         let f = unsafe {
-            FMANAGER.allocate(
+            fmanager.allocate(
                 Layout::new::<paging::Page>()
                     .align_to(BASE_PAGE_SIZE)
                     .unwrap(),

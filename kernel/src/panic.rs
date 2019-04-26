@@ -2,11 +2,12 @@ use core::alloc::Layout;
 use core::panic::PanicInfo;
 
 use crate::arch;
+use crate::kcb;
 use crate::ExitReason;
 use backtracer;
 
 fn backtrace_format(count: usize, frame: &backtracer::Frame) -> bool {
-    let kernel_binary = arch::KERNEL_BINARY.lock();
+    let kernel_binary = kcb::try_get_kcb().map(|k| k.kernel_binary());
     let ip = frame.ip();
 
     sprint!("frame #{:<2} - {:#02$x}", count, ip as usize, 20);

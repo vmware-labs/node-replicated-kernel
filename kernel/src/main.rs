@@ -181,16 +181,19 @@ pub fn main() {
 
     debug!("allocating a region of mem");
     unsafe {
-        use memory::FMANAGER;
-        FMANAGER.print_info();
-
+        {
+            let mem_mgmt = kcb::get_kcb().pmanager();
+            mem_mgmt.print_info();
+        }
         let new_region: *mut u8 =
             alloc::alloc::alloc(Layout::from_size_align_unchecked(8192, 4096));
         let p: *mut u8 = new_region.offset(4096);
         assert!(!p.is_null());
 
-        // print current regions
-        FMANAGER.print_info();
+        {
+            let mem_mgmt = kcb::get_kcb().pmanager();
+            mem_mgmt.print_info();
+        }
     }
 
     arch::debug::shutdown(ExitReason::Ok);

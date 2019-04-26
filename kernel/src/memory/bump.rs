@@ -2,12 +2,6 @@ use core::alloc::Layout;
 
 use crate::memory::{Frame, PAddr, PhysicalAllocator, BASE_PAGE_SIZE};
 
-#[allow(unused)]
-pub static mut FMANAGER: FrameAllocator = FrameAllocator {
-    count: 0,
-    regions: [Frame::empty(); FrameAllocator::MAX_FRAME_REGIONS],
-};
-
 #[derive(Debug)]
 pub struct FrameAllocator {
     pub count: usize,

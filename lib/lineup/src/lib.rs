@@ -1,4 +1,4 @@
-#![feature(vec_remove_item, linkage, alloc, drain_filter)]
+#![feature(vec_remove_item, linkage, drain_filter)]
 #![cfg_attr(not(test), no_std)]
 #![allow(unused)]
 

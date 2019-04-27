@@ -20,3 +20,4 @@ Cargo.lock
 binutils-*
 public
 .gdb_history
+.DS_Store

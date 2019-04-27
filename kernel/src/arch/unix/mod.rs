@@ -4,8 +4,12 @@ use spin::Mutex;
 use crate::main;
 use crate::ExitReason;
 
+
+pub mod irq;
+pub mod kcb;
 pub mod memory;
 pub mod process;
+
 
 pub mod debug {
     use crate::ExitReason;
@@ -16,8 +20,6 @@ pub mod debug {
     }
 
 }
-
-pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
 #[start]
 #[no_mangle]

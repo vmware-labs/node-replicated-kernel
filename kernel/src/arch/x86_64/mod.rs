@@ -120,7 +120,7 @@ fn init_logging(args: &str) {
                     (_, _) => Level::Error,
                 };
             }
-            (CmdToken::End, _) => level = Level::Error,
+            (CmdToken::End, _) => level = Level::Trace,
             (_, _) => continue,
         };
 
@@ -266,13 +266,15 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     let kernel = mb
         .modules()
         .expect("No modules found in multiboot.")
-        .find(|m| m.string.is_some() && m.string.unwrap() == "kernel")
-        .expect("Couldn't find 'kernel' binary in multiboot modules, won't start.");
+        .find(|m| m.string.is_some() && m.string.unwrap() == "kernel");
+
     let kernel_binary: &'static [u8] = unsafe {
-        slice::from_raw_parts(
-            memory::paddr_to_kernel_vaddr(PAddr::from(kernel.start)).as_ptr(),
-            (kernel.end - kernel.start) as usize,
-        )
+        kernel.map_or(slice::from_raw_parts(0 as *mut _, 1024), |k| {
+            slice::from_raw_parts(
+                memory::paddr_to_kernel_vaddr(PAddr::from(k.start)).as_ptr(),
+                (k.end - k.start) as usize,
+            )
+        })
     };
 
     // Find the physical memory regions available and add them to the physical memory manager
@@ -289,7 +291,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     mb.memory_regions().map(|regions| {
         for region in regions {
             if region.memory_type() == MemoryType::Available {
-                if region.base_address() > 0 && region.length() >= (BASE_PAGE_SIZE as u64) {
+                if region.base_address() > 0 && region.length() > (BASE_PAGE_SIZE as u64) {
                     debug!(
                         "region.base_address()={:#x} region.length()={:#x}",
                         region.base_address(),
@@ -318,8 +320,10 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
             }
         }
     });
+    trace!("added memory regions");
 
     let mut vspace = find_current_vspace();
+    trace!("vspace found");
 
     // Construct the driver object to manipulate the interrupt controller (XAPIC)
     // This is done as follows:
@@ -329,11 +333,15 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     // Ugly: We are not quite done since regs is not yet accessible
     // but we can't map it before we have set up the KCB (see below :/)
     let base = find_apic_base();
+    trace!("find_apic_base {:#x}", base);
+
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
     let mut apic = xapic::XAPIC::new(regs);
+    trace!("apic constructed");
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(mb, kernel_binary, vspace, fmanager, apic);
+    trace!("seting kcb");
     kcb::init_kcb(kcb);
     debug!("Memory allocation should work at this point...");
 

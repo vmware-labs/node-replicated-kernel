@@ -7,7 +7,6 @@
     box_syntax,
     start,
     panic_info_message,
-    alloc,
     allocator_api,
     global_asm,
     linkage,

@@ -489,6 +489,16 @@ mod test {
     }
 
     #[test]
+    fn test_buddy_one_page() {
+        unsafe {
+            let heap_size = BASE_PAGE_SIZE;
+            let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, BASE_PAGE_SIZE));
+            let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
+            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+        }
+    }
+
+    #[test]
     fn test_buddy() {
         unsafe {
             let heap_size = 256;

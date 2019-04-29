@@ -35,7 +35,7 @@ cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = fa
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
-libc = "0.2"
+libc = "0.2.53"
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
 rexpect = "0.3"

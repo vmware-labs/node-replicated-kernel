@@ -151,8 +151,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     }
 }
 
-#[allow(dead_code)]
-#[cfg_attr(target_os = "none", global_allocator)]
+#[global_allocator]
 static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
 
 

@@ -140,7 +140,7 @@ if [ "${_arg_features}" != "" ]; then
     BUILD_ARGS="$BUILD_ARGS --features $_arg_features"
 fi
 
-BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -vv $BUILD_ARGS
+BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build $BUILD_ARGS
 
 if [ "$_arg_release" == "off" ]; then
     cp ../target/$BESPIN_TARGET/debug/bespin kernel

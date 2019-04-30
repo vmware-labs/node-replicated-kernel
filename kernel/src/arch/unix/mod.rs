@@ -56,7 +56,6 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::BOOT_TIME_ANCHOR
     );
 
-
     xmain();
 
     ExitReason::ReturnFromMain as isize

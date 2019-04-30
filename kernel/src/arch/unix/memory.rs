@@ -73,5 +73,4 @@ impl MemoryMapper {
 
         self.currently_allocated -= p.size;
     }
-
 }

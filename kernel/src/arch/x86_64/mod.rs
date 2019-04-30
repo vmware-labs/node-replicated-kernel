@@ -32,7 +32,6 @@ mod exec;
 mod isr;
 mod start;
 
-
 use crate::memory::*;
 use crate::{xmain, ExitReason};
 use klogger;
@@ -252,7 +251,6 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     // Figure out what this machine supports,
     // fail if it doesn't have what we need.
     assert_required_cpu_features();
-
 
     // Initializes the serial console.
     // (this is already done in a very basic form by klogger/init_logging())

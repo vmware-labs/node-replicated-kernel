@@ -1,6 +1,5 @@
 #![no_std]
 #![cfg_attr(any(target_os = "none"), no_main)]
-
 #![feature(
     intrinsics,
     asm,
@@ -152,7 +151,6 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
 
 #[global_allocator]
 static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
-
 
 #[repr(u8)]
 // If this type is modified, update run.sh script as well.

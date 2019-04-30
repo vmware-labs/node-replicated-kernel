@@ -33,7 +33,6 @@ pub fn init() {
         io::outb(PORT2 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
         io::outb(PORT2 + 1, 0x01); // Enable receive data IRQ
                                    //io::outb(PORT0 + 1, 0x00);    // Disable receive data IRQ
-
     }
     debug!("serial initialized");
     /*unsafe {
@@ -74,7 +73,6 @@ pub unsafe fn putb(b: u8) {
     while (io::inb(PORT2 + 5) & 0x20) == 0 {}
     // Send the byte out the serial PORT2
     io::outb(PORT2, b);
-
 }
 
 /// Shutdown the processor.

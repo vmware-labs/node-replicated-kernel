@@ -16,6 +16,7 @@ members = [
     "lib/linuxkernel",
     "lib/lineup",
     "lib/rawtime",
+    "lib/ctest",
 ]
 
 # disable stack unwinding on panic for now

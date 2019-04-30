@@ -11,7 +11,9 @@ license = "MIT"
 build = "build.rs"
 edition = "2018"
 
+
 [dependencies]
+#test = { path = "../lib/ctest" }
 x86 = { path = "../lib/x86" }
 multiboot = { path = "../lib/multiboot" }
 raw-cpuid = { path = "../lib/cpuid" }
@@ -34,8 +36,12 @@ logos = { version = "0.9.7", default-features = false, features = ["export_deriv
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
 
+[[bin]]
+name = "bespin"
+harness = false
+
 [target.'cfg(not(target_os = "none"))'.dependencies]
-libc = "0.2.53"
+libc = { version = "0.2.53", default-features = false }
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
 rexpect = "0.3"

@@ -1,3 +1,6 @@
+#![no_std]
+#![cfg_attr(any(target_os = "none"), no_main)]
+
 #![feature(
     intrinsics,
     asm,
@@ -17,8 +20,6 @@
     ptr_offset_from,
     box_into_raw_non_null
 )]
-#![no_std]
-#![cfg_attr(target_os = "none", no_main)]
 
 #[cfg(not(target_os = "none"))]
 extern crate libc;
@@ -89,7 +90,6 @@ use memory::{BespinSlabsProvider, PhysicalAllocator};
 use slabmalloc::{PageProvider, ZoneAllocator};
 use spin::Mutex;
 
-#[cfg(not(any(test, target_family = "unix")))]
 mod std {
     pub use core::cmp;
     pub use core::fmt;
@@ -98,7 +98,6 @@ mod std {
     pub use core::ops;
     pub use core::option;
 }
-
 
 #[allow(dead_code)]
 static PAGER: Mutex<BespinSlabsProvider> = Mutex::new(BespinSlabsProvider::new());
@@ -168,8 +167,9 @@ pub enum ExitReason {
 }
 
 /// Kernel entry-point
+#[no_mangle]
 #[cfg(not(feature = "integration-tests"))]
-pub fn main() {
+pub fn xmain() {
     debug!("Reached architecture independent area");
     error!("error");
     warn!("warning");

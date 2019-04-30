@@ -146,7 +146,6 @@ impl PhysicalAllocator for BuddyFrameAllocator {
 impl BuddyFrameAllocator {
     const MIN_HEAP_ALIGN: usize = BASE_PAGE_SIZE;
 
-    #[cfg(not(test))]
     pub fn new() -> BuddyFrameAllocator {
         BuddyFrameAllocator {
             region: Frame {
@@ -193,7 +192,7 @@ impl BuddyFrameAllocator {
     /// * `heap_size` must be a power of 2
     /// * `heap_size / 2 ** (free_lists.len()-1)` must be greater than or equal to `size_of::<FreeBlock>()`.
     #[cfg(test)]
-    pub unsafe fn new(region: Frame, min_block_size: usize) -> BuddyFrameAllocator {
+    pub unsafe fn new_test_instance(region: Frame, min_block_size: usize) -> BuddyFrameAllocator {
         assert!(region.base.as_u64() > (BASE_PAGE_SIZE as u64));
         assert!(region.size.is_power_of_two());
         assert_eq!(region.base % BuddyFrameAllocator::MIN_HEAP_ALIGN, 0);
@@ -379,7 +378,7 @@ impl BuddyFrameAllocator {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use super::*;
 
     use crate::alloc::alloc;
@@ -392,7 +391,7 @@ mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
             let power_of_twos: [usize; 21] = [
                 0,
                 1,
@@ -450,7 +449,7 @@ mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
 
             // Block orders.
             assert_eq!(
@@ -494,7 +493,7 @@ mod test {
             let heap_size = BASE_PAGE_SIZE;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, BASE_PAGE_SIZE));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
         }
     }
 
@@ -504,7 +503,7 @@ mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
 
             let block_16_0 = mem as *mut FreeBlock;
             let block_16_1 = mem.offset(16) as *mut FreeBlock;
@@ -532,7 +531,7 @@ mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let mut heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), 16);
+            let mut heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
 
             let block_16_0 = heap
                 .allocate(Layout::from_size_align_unchecked(8, 8))
@@ -613,8 +612,10 @@ mod test {
                     let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
                     let mut rand: u64 = 0;
                     let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-                    let mut heap =
-                        BuddyFrameAllocator::new(Frame::new(pmem, heap_size), BASE_PAGE_SIZE);
+                    let mut heap = BuddyFrameAllocator::new_test_instance(
+                        Frame::new(pmem, heap_size),
+                        BASE_PAGE_SIZE,
+                    );
 
                     let alignment = $alignment;
 
@@ -696,7 +697,8 @@ mod test {
 
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let mut heap = BuddyFrameAllocator::new(Frame::new(pmem, heap_size), BASE_PAGE_SIZE);
+            let mut heap =
+                BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), BASE_PAGE_SIZE);
 
             let mut objects: Vec<(u64, Layout, Option<Frame>)> = Vec::new();
 

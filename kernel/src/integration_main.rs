@@ -1,5 +1,5 @@
 #[cfg(all(feature = "integration-tests", feature = "test-time"))]
-pub fn main() {
+pub fn xmain() {
     unsafe {
         let tsc = x86::time::rdtsc();
         let tsc2 = x86::time::rdtsc();
@@ -26,7 +26,7 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-rump-tmpfs"))]
-pub fn main() {
+pub fn xmain() {
     use cstr_core::CStr;
 
     #[repr(C)]
@@ -116,7 +116,7 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-rump-net"))]
-pub fn main() {
+pub fn xmain() {
     use cstr_core::CStr;
 
     #[repr(C)]
@@ -222,7 +222,7 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-buddy"))]
-pub fn main() {
+pub fn xmain() {
     use buddy::FreeBlock;
     use buddy::Heap;
     let mut heap = Heap::new(
@@ -237,12 +237,12 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-exit"))]
-pub fn main() {
+pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
-pub fn main() {
+pub fn xmain() {
     use arch::memory::{paddr_to_kernel_vaddr, PAddr};
 
     unsafe {
@@ -255,7 +255,7 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-gpfault"))]
-pub fn main() {
+pub fn xmain() {
     // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
     // So we cause a GP by loading garbage in the ss segment register.
     use x86::segmentation::{load_ss, SegmentSelector};
@@ -265,7 +265,7 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-alloc"))]
-pub fn main() {
+pub fn xmain() {
     use alloc::vec::Vec;
     {
         let mut buf: Vec<u8> = Vec::with_capacity(0);
@@ -293,7 +293,7 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-acpi"))]
-pub fn main() {
+pub fn xmain() {
     use arch::acpi;
 
     let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
@@ -361,7 +361,6 @@ pub fn main() {
                 info!("Cores should've started?");
             }*/
 
-            loop {}
             arch::debug::shutdown(ExitReason::Ok);
         },
         core::ptr::null_mut(),
@@ -373,7 +372,7 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-scheduler"))]
-pub fn main() {
+pub fn xmain() {
     let cpuid = x86::cpuid::CpuId::new();
     assert!(
         cpuid
@@ -410,14 +409,14 @@ pub fn main() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-sse"))]
-pub fn main() {
+pub fn xmain() {
     info!("division = {}", 10.0 / 2.19);
     info!("division by zero = {}", 10.0 / 0.0);
     arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-linux"))]
-pub fn main() {
+pub fn xmain() {
     use cstr_core::CStr;
 
     extern "C" {

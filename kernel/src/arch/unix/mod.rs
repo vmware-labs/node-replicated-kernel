@@ -1,7 +1,7 @@
 use log::Level;
 use spin::Mutex;
 
-use crate::main;
+use crate::xmain;
 use crate::ExitReason;
 
 use crate::memory::buddy::BuddyFrameAllocator;
@@ -23,8 +23,7 @@ pub mod debug {
 }
 
 #[start]
-#[no_mangle]
-fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
+fn start(_argc: isize, _argv: *const *const u8) -> isize {
     // Note anything lower than Info is currently broken
     // because macros in mem management will do a recursive
     // allocation and this stuff is not reentrant...
@@ -33,7 +32,7 @@ fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
-
+    trace!("setting the kcb");
     // Allocate 32 MiB and add it to our heap
     let mut mb = BuddyFrameAllocator::new();
     let mut mm = memory::MemoryMapper::new();
@@ -49,6 +48,7 @@ fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
 
     let mut kcb = kcb::Kcb::new(mb);
     kcb::init_kcb(kcb);
+    debug!("Memory allocation should work at this point...");
 
     info!(
         "Started at {} with {:?} since CPU startup",
@@ -56,10 +56,8 @@ fn arch_init(_argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::BOOT_TIME_ANCHOR
     );
 
-    trace!("setting the kcb");
 
-    debug!("Memory allocation should work at this point...");
-    main();
+    xmain();
 
     ExitReason::ReturnFromMain as isize
 }

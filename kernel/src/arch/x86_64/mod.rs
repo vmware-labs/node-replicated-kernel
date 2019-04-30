@@ -32,16 +32,15 @@ mod exec;
 mod isr;
 mod start;
 
-use crate::main;
+
 use crate::memory::*;
-use crate::ExitReason;
+use crate::{xmain, ExitReason};
 use klogger;
 use log::Level;
 use logos::Logos;
 
 use memory::*;
 use process::*;
-
 extern "C" {
     /// A pointer to the multiboot struct (initialized by start.S)
     #[no_mangle]
@@ -369,7 +368,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     // irq::enable();
 
     // No we go in the arch-independent part
-    main();
+    xmain();
 
     debug!("Returned from main, shutting down...");
     debug::shutdown(ExitReason::ReturnFromMain);

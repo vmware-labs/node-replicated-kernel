@@ -195,7 +195,7 @@ if [ "${_arg_norun}" != "on" ]; then
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
         KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
-		KVM_ARG='-cpu qemu64'
+		#KVM_ARG='-cpu qemu64'
     else
         KVM_ARG='-cpu qemu64'
     fi
@@ -203,7 +203,9 @@ if [ "${_arg_norun}" != "on" ]; then
     QEMU_NET_APPEND="-net nic,model=e1000,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0"
 
 	# QEMU Monitor for debug: https://en.wikibooks.org/wiki/QEMU/Monitor
-	QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
+	# qemu-system-x86_64 -d help
+	#QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
+	#QEMU_MONITOR="-d cpu_reset"
 
     # Create a tap interface to communicate with guest and give it an IP
     sudo tunctl -t tap0 -u $USER -g `id -gn`
@@ -211,7 +213,7 @@ if [ "${_arg_norun}" != "on" ]; then
 
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
 	# -kernel ./mbkernel -initrd kernel
-    qemu-system-x86_64 $KVM_ARG -m 1024 -smp 2 -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR
+    qemu-system-x86_64 $KVM_ARG -m 1024 -smp 1 -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR
     QEMU_EXIT=$?
     set +ex
     # qemu will do exit((val << 1) | 1);

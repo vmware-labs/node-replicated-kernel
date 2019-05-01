@@ -320,7 +320,7 @@ pub const KernelElf: u32 = 0x80000000;
 pub const KernelPT: u32 = 0x80000001;
 pub const KernelStack: u32 = 0x80000002;
 
-pub const KERNEL_OFFSET: usize = 0x010000000000;
+pub const KERNEL_OFFSET: usize = 0x400000000000;
 
 pub struct Kernel<'a> {
     pub mapping: Vec<(usize, usize)>,
@@ -332,7 +332,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
     fn allocate(&mut self, base: usize, size: usize, flags: elf::ProgFlag) {
         info!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
-        let base = KERNEL_OFFSET + base;
+        let base = base;
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
         self.vspace.map(VAddr::from(base), rsize);
     }
@@ -347,7 +347,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
         );
 
         for (idx, subregion) in region.chunks(BASE_PAGE_SIZE as usize).enumerate() {
-            let base_vaddr = KERNEL_OFFSET + destination + idx * BASE_PAGE_SIZE as usize;
+            let base_vaddr = destination + idx * BASE_PAGE_SIZE as usize;
             info!("loading content at: 0x{:x}", base_vaddr);
             self.vspace.fill(VAddr::from(base_vaddr), subregion);
         }

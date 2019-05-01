@@ -368,11 +368,11 @@ pub fn setup_idt() {
         idt_set!(46, isr_handler46, seg, 0x8E);
         idt_set!(47, isr_handler47, seg, 0x8E);
 
-        register_handler(13, Box::new(|e| gp_handler(e)));
+        /*register_handler(13, Box::new(|e| gp_handler(e)));
         register_handler(14, Box::new(|e| pf_handler(e)));
 
         pic_remap();
-        info!("Completed pic remap");
+        info!("Completed pic remap");*/
         lazy_static::initialize(&IRQ_HANDLERS);
     }
 }

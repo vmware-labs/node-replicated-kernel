@@ -11,7 +11,7 @@ isr_handler\ex:
     pushq $\ex
     /* Save state in SaveArea */
     pushq %r15
-    movq $CURRENT_SAVE_AREA, %r15
+    movabs $CURRENT_SAVE_AREA, %r15
     movq %rax,  0*8(%r15)
     movq %rbx,  1*8(%r15)
     movq %rcx,  2*8(%r15)
@@ -40,7 +40,7 @@ isr_handler\ex:
     popq %rdi /* Remove exception number */
     popq %rdi /* Remove error code */
 
-    movq $CURRENT_SAVE_AREA, %r15
+    movabs $CURRENT_SAVE_AREA, %r15
     movq  0*8(%r15), %rax
     movq  1*8(%r15), %rbx
     movq  2*8(%r15), %rcx

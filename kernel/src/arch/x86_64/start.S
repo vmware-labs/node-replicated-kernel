@@ -1,5 +1,5 @@
 /* The kernel is linked to run at -2GB. This allows efficient addressing */
-KERNEL_BASE = 0xFFFFFFFF80000000
+KERNEL_BASE = 0x800000000000
 
 /* Multiboot Header */
 MULTIBOOT_PAGE_ALIGN  =  (1<<0)

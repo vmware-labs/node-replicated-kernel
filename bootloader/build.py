@@ -40,8 +40,7 @@ def run_xargo(verb, *flags):
 
     cmd = [XARGO, verb, '--target', TARGET, *flags]
 
-    if VERBOSE:
-        print(' '.join(cmd))
+    print(' '.join(cmd))
 
     sp.run(cmd).check_returncode()
 
@@ -59,7 +58,7 @@ def build():
 
     output_file = boot_dir / 'BootX64.efi'
 
-    shutil.copy2(built_file, output_file)
+    shutil.copy2(str(built_file), str(output_file))
 
 
 def doc():
@@ -81,15 +80,16 @@ def run_qemu():
     ovmf_code, ovmf_vars = OVMF_DIR / 'OVMF_CODE.fd', OVMF_DIR / 'OVMF_VARS.fd'
 
     if not ovmf_code.is_file():
-        raise FileNotFoundError(f'OVMF_CODE.fd not found in the `{OVMF_DIR}` directory')
+        raise FileNotFoundError(
+            'OVMF_CODE.fd not found in the `{OVMF_DIR}` directory')
 
     qemu_flags = [
         # Disable default devices.
         # QEMU by defaults enables a ton of devices which slow down boot.
-        '-nodefaults',
+        # '-nodefaults',
 
         # Use a standard VGA for graphics.
-        '-vga', 'std',
+        #'-vga', 'std',
 
         # Use a modern machine, with acceleration if possible.
         '-machine', 'q35,accel=kvm:tcg',
@@ -98,20 +98,25 @@ def run_qemu():
         '-m', '128M',
 
         # Set up OVMF.
-        '-drive', f'if=pflash,format=raw,file={ovmf_code},readonly=on',
-        '-drive', f'if=pflash,format=raw,file={ovmf_vars},readonly=on',
+        '-drive', 'if=pflash,format=raw,file={ovmf_code},readonly=on'.format(
+            ovmf_code=ovmf_code),
+        '-drive', 'if=pflash,format=raw,file={ovmf_vars},readonly=on'.format(
+            ovmf_vars=ovmf_vars),
 
         # Create AHCI controller.
         '-device', 'ahci,id=ahci,multifunction=on',
 
         # Mount a local directory as a FAT partition.
-        '-drive', f'if=none,format=raw,file=fat:rw:{ESP_DIR},id=esp',
+        '-drive', 'if=none,format=raw,file=fat:rw:{ESP_DIR},id=esp'.format(
+            ESP_DIR=ESP_DIR),
         '-device', 'ide-drive,bus=ahci.0,drive=esp',
 
         # OVMF debug builds can output information to a serial `debugcon`.
         # Only enable when debugging UEFI boot:
         #'-debugcon', 'file:debug.log', '-global', 'isa-debugcon.iobase=0x402',
-        # '-nographic',
+        '-nographic',
+
+        #'-display', 'none',
     ]
 
     cmd = [QEMU] + qemu_flags
@@ -167,12 +172,13 @@ def main():
         # Run the program, by default.
         run_qemu()
     else:
-        raise ValueError(f'Unknown verb {opts.verb}')
+        raise ValueError('Unknown verb {opts.verb}')
 
 
 if __name__ == '__main__':
     try:
         main()
     except sp.CalledProcessError as cpe:
-        print(f'Subprocess {cpe.cmd[0]} exited with error code {cpe.returncode}')
+        print(
+            'Subprocess {cpe.cmd[0]} exited with error code {cpe.returncode}')
         sys.exit(1)

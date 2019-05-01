@@ -4,9 +4,14 @@ version = "0.0.1"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 
 [dependencies]
-uefi = { path = "../../uefi-rs" }
-uefi-services = { path = "../../uefi-rs/uefi-services" }
-uefi-utils = { path = "../../uefi-rs/uefi-utils" }
-elfloader = { path = "../lib/elfloader" }
+uefi = { git = "https://github.com/rust-osdev/uefi-rs.git" }
+uefi-services = { git = "https://github.com/rust-osdev/uefi-rs.git" }
+uefi-exts = { git = "https://github.com/rust-osdev/uefi-rs.git" }
 
 log = { version = "0.4", default-features = false }
+
+elfloader = { path = "../lib/elfloader" }
+x86 = { path = "../lib/x86" }
+
+
+

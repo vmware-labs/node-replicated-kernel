@@ -1,5 +1,4 @@
 #![no_std]
-#![cfg_attr(any(target_os = "none"), no_main)]
 #![feature(
     intrinsics,
     asm,

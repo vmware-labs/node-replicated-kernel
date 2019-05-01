@@ -1,6 +1,6 @@
 {
 	"env": "",
-	"dynamic-linking": true,
+	"dynamic-linking": false,
 	"llvm-target": "x86_64-unknown-none",
 	"data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
 	"target-endian": "little",
@@ -16,6 +16,6 @@
 	"eliminate-frame-pointer": false,
 	"morestack": false,
 	"features": "+sse",
-	"position-independent-executables": false,
+	"position-independent-executables": true,
 	"executables": true
 }

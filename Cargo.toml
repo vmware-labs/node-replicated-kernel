@@ -2,7 +2,7 @@
 
 members = [
     "kernel",
-    #"bootloader",
+    "bootloader",
     "lib/backtracer",
     "lib/x86",
     "lib/slabmalloc",

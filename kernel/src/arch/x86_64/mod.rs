@@ -28,9 +28,9 @@ pub mod process;
 pub mod syscall;
 
 pub mod acpi;
-mod exec;
+//mod exec;
 mod isr;
-mod start;
+//mod start;
 
 use crate::memory::*;
 use crate::{xmain, ExitReason};
@@ -101,6 +101,10 @@ fn paddr_to_slice(base: u64, size: usize) -> Option<&'static [u8]> {
 ///
 /// Example: If args is './mbkernel log=trace' -> sets level to Level::debug
 fn init_logging(args: &str) {
+    unsafe {
+        debug::puts("....in init_logging\n");
+    }
+
     let mut lexer = CmdToken::lexer(args);
     let level: Level = loop {
         let mut level = Level::Info;
@@ -124,6 +128,11 @@ fn init_logging(args: &str) {
 
         break level;
     };
+
+    unsafe {
+        debug::puts("before klogger::init");
+    }
+
     klogger::init(level).expect("Can't set-up logging");
 }
 
@@ -225,28 +234,44 @@ fn find_apic_base() -> u64 {
 /// Ignore the arguments here (they are garbage).
 #[lang = "start"]
 #[no_mangle]
-fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8) -> isize {
-    sprint!("\n\n");
+#[start]
+fn _start(_argc: isize, _argv: *const *const u8) -> isize {
+    unsafe {
+        debug::init();
+        debug::puts("we are here\n");
+        debug::puts("enable_sse\n");
 
-    enable_sse();
-    enable_fsgsbase();
-    gdt::setup_gdt();
+        enable_sse();
+        debug::puts("enable_fsgsbase\n");
 
-    // Make sure these constants are initialized early, for proper time accounting (otherwise because
-    // they are lazy_static we may not end up using them until way later).
-    lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
-    lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
+        enable_fsgsbase();
+        debug::puts("setup_gdt\n");
 
-    // Construct a multiboot struct for accessing the multiboot information
-    let mb = unsafe { Multiboot::new(mboot_ptr.into(), paddr_to_slice).unwrap() };
-    let args = mb.command_line().unwrap_or("./mbkernel");
+        gdt::setup_gdt();
+        debug::puts("lazy_static::initialize WALL_TIME_ANCHOR\n");
 
-    init_logging(args);
-    info!(
-        "Started at {} with {:?} since CPU startup",
-        *rawtime::WALL_TIME_ANCHOR,
-        *rawtime::BOOT_TIME_ANCHOR
-    );
+        // Make sure these constants are initialized early, for proper time accounting (otherwise because
+        // they are lazy_static we may not end up using them until way later).
+        lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
+        debug::puts("init logging\n");
+
+        lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
+        debug::puts("lazy_static::initialize done!\n");
+
+        // Construct a multiboot struct for accessing the multiboot information
+        //let mb = unsafe { Multiboot::new(0x0, paddr_to_slice).unwrap() };
+        //let args = mb.command_line().unwrap_or("./mbkernel");
+        let args = "./mbkernel log=trace";
+        debug::puts("init logging");
+
+        init_logging(args);
+        debug::puts("before info!");
+        info!(
+            "Started at {} with {:?} since CPU startup",
+            *rawtime::WALL_TIME_ANCHOR,
+            *rawtime::BOOT_TIME_ANCHOR
+        );
+    };
 
     // Figure out what this machine supports,
     // fail if it doesn't have what we need.
@@ -260,6 +285,7 @@ fn bespin_arch_init(_rust_main: *const u8, _argc: isize, _argv: *const *const u8
     // The binary is useful for symbol name lookups when printing stacktraces
     // in case things go wrong (see panic.rs).
     // Note: this code will refuse to start in case the kernel binary is not found
+    let mb = unsafe { Multiboot::new(0x0, paddr_to_slice).unwrap() };
     let kernel = mb
         .modules()
         .expect("No modules found in multiboot.")

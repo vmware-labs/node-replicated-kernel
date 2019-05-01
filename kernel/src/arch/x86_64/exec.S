@@ -1,3 +1,6 @@
+.text
+.align 4096
+
 /// Goes from kernel to user-space.
 /// This routine (sysretq really) expects
 /// %rcx program entry point
@@ -27,7 +30,7 @@ exec:
 /// %r10 points to rflags
 .global resume
 resume:
-    movq $CURRENT_PROCESS, %r15
+    /*movabs $CURRENT_PROCESS, %r15*/
     pushq      %r8                 /* ss */
     pushq      7*8(%r15)           /* rsp */
     pushq      %r10                /* rflags */
@@ -55,7 +58,7 @@ resume:
 .extern syscall_handle
 .global syscall_enter
 syscall_enter:
-    movq $syscall_stack, %rsp
+    /*movq $syscall_stack, %rsp*/
     callq syscall_handle
 
 syscall_stack_base:

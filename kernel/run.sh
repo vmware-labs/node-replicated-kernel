@@ -27,8 +27,6 @@ begins_with_short_option()
 	test "$all_short_options" = "${all_short_options/$first_option/}" && return 1 || return 0
 }
 
-
-
 # THE DEFAULTS INITIALIZATION - OPTIONALS
 _arg_features=
 _arg_log=
@@ -118,7 +116,39 @@ parse_commandline "$@"
 
 # ])
 
+#
+# Building the bootloader
+#
+echo "> Building the bootloader"
+UEFI_TARGET="x86_64-uefi"
+if [ "$_arg_release" == "on" ]; then
+	UEFI_BUILD_ARGS="--release"
+    UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/release"
+else
+	UEFI_BUILD_ARGS=""
+	UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/debug"
+fi
 
+ESP_DIR=$UEFI_BUILD_DIR/esp
+
+cd ../bootloader
+RUST_TARGET_PATH=`pwd` xargo build --target $UEFI_TARGET --package bootloader $UEFI_BUILD_ARGS
+
+QEMU_UEFI_APPEND="-drive if=pflash,format=raw,file=`pwd`/OVMF_CODE.fd,readonly=on"
+QEMU_UEFI_APPEND+=" -drive if=pflash,format=raw,file=`pwd`/OVMF_VARS.fd,readonly=on"
+QEMU_UEFI_APPEND+=" -device ahci,id=ahci,multifunction=on"
+QEMU_UEFI_APPEND+=" -drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp"
+QEMU_UEFI_APPEND+=" -device ide-drive,bus=ahci.0,drive=esp"
+
+rm -rf $ESP_DIR/EFI
+mkdir -p $ESP_DIR/EFI/Boot
+cp $UEFI_BUILD_DIR/bootloader.efi $ESP_DIR/EFI/Boot/BootX64.efi
+
+#
+# Building the kernel
+#
+echo "> Building the kernel"
+cd ../kernel
 BESPIN_TARGET=x86_64-bespin
 
 export PATH=`pwd`/../binutils-2.30.90/bin:$PATH
@@ -144,11 +174,15 @@ BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build $
 
 if [ "$_arg_release" == "off" ]; then
     cp ../target/$BESPIN_TARGET/debug/bespin kernel
+	cp ../target/$BESPIN_TARGET/debug/bespin $ESP_DIR/kernel
     $OBJCOPY ../target/$BESPIN_TARGET/debug/bespin -F elf32-i386 mbkernel
 else
     cp ../target/$BESPIN_TARGET/release/bespin kernel
+	cp ../target/$BESPIN_TARGET/release/bespin $ESP_DIR/kernel
     $OBJCOPY ../target/$BESPIN_TARGET/release/bespin -F elf32-i386 mbkernel
 fi
+
+find $ESP_DIR
 
 if [ "${_arg_norun}" != "on" ]; then
 
@@ -161,20 +195,23 @@ if [ "${_arg_norun}" != "on" ]; then
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
         KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
+		KVM_ARG='-cpu qemu64'
     else
         KVM_ARG='-cpu qemu64'
     fi
 
     QEMU_NET_APPEND="-net nic,model=e1000,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0"
 
-	# QEMU Monitor for debug: -monitor telnet:127.0.0.1:55555,server,nowait
+	# QEMU Monitor for debug: https://en.wikibooks.org/wiki/QEMU/Monitor
+	QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
 
     # Create a tap interface to communicate with guest and give it an IP
     sudo tunctl -t tap0 -u $USER -g `id -gn`
     sudo ifconfig tap0 ip 172.31.0.20/24
 
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
-    qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 2 -kernel ./mbkernel -initrd kernel -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_NET_APPEND $CMDLINE_APPEND
+	# -kernel ./mbkernel -initrd kernel
+    qemu-system-x86_64 $KVM_ARG -m 1024 -smp 2 -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR
     QEMU_EXIT=$?
     set +ex
     # qemu will do exit((val << 1) | 1);

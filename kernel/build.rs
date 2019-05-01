@@ -13,13 +13,15 @@ fn main() {
         .flag("-U__linux__")
         .flag("-shared")
         .flag("-nostartfiles")
+        .flag("-fPIC")
         .file("src/arch/x86_64/start_ap.S")
+        .file("src/arch/x86_64/exec.S")
         .pic(true)
         .warnings(true)
         .compile("start_ap");
 
     // Rumpkernel
-    println!("cargo:rustc-link-lib=static=rump");
+    /* println!("cargo:rustc-link-lib=static=rump");
     println!("cargo:rustc-link-lib=static=rumpvfs");
     println!("cargo:rustc-link-lib=static=rumpdev");
     println!("cargo:rustc-link-lib=static=rumpfs_tmpfs");
@@ -57,5 +59,5 @@ fn main() {
     println!("cargo:rustc-link-lib=static=rumpdev_umass");
 
     // Linux Kernel:
-    println!("cargo:rustc-link-lib=static=linux");
+    println!("cargo:rustc-link-lib=static=linux");*/
 }

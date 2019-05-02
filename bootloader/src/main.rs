@@ -255,18 +255,23 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let slice = core::slice::from_raw_parts(binary.entry_point() as *const u8, 32);
         trace!("Kernel's first 32 bytes of instruction stream: {:?}", slice);
 
+        // TODO: Firmware must ensure that timer event activity is stopped
+        // before any of the EXIT_BOOT_SERVICES (watchdog?)
+
         // We exit the UEFI boot services
         let (st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
             .expect_success("Can't exit the boot service");
 
-        // UEFI device drivers will raise interrupts if we don't disable them:
-        // TODO this may be unnecessary if we call exit boot services?
+        // It's unclear from the spec if `exit_boot_services` already disables interrupts
+        // so we we make sure they are disabled:
         x86::irq::disable();
+
+        // Finally switch to the kernel stack and entry function
         jump_to_kernel(stack_top, binary.entry_point(), &st);
     }
 
-    panic!("UEFI Bootloader: We are not supposed to return here from the kernel?");
+    unreachable!("UEFI Bootloader: We are not supposed to return here from the kernel?");
     uefi::Status(0xdead)
 }
 

@@ -1,9 +1,9 @@
 use crate::alloc::vec::Vec;
-use core::mem;
+
 use core::mem::transmute;
 
 use elfloader::elf;
-use uefi::table::boot::{AllocateType, BootServices, MemoryDescriptor, MemoryType};
+use uefi::table::boot::AllocateType;
 use uefi_services::system_table;
 use x86::bits64::paging::*;
 
@@ -316,9 +316,10 @@ impl<'a> VSpace<'a> {
     }
 }
 
-pub const KernelElf: u32 = 0x80000000;
-pub const KernelPT: u32 = 0x80000001;
-pub const KernelStack: u32 = 0x80000002;
+pub const KernelElf: u32 = 0x80000001;
+pub const KernelPT: u32 = 0x80000002;
+pub const KernelStack: u32 = 0x80000003;
+pub const UefiMemoryMap: u32 = 0x80000004;
 
 pub const KERNEL_OFFSET: usize = 0x400000000000;
 
@@ -330,7 +331,7 @@ pub struct Kernel<'a> {
 
 impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
-    fn allocate(&mut self, base: usize, size: usize, flags: elf::ProgFlag) {
+    fn allocate(&mut self, base: usize, size: usize, _flags: elf::ProgFlag) {
         info!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
         let base = base;
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
@@ -356,13 +357,13 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
 
 pub unsafe fn dump_table(pml4_table: &PML4) {
     for (pml_idx, pml_item) in pml4_table.iter().enumerate() {
-        if (pml_item.is_present()) {
+        if pml_item.is_present() {
             let pdpt_table = unsafe {
                 transmute::<VAddr, &mut PDPT>(VAddr::from_u64(pml_item.address().as_u64()))
             };
 
             for (pdpt_idx, pdpt_item) in pdpt_table.iter().enumerate() {
-                if (pdpt_item.is_present()) {
+                if pdpt_item.is_present() {
                     let pd_table = unsafe {
                         transmute::<VAddr, &mut PD>(VAddr::from_u64(pdpt_item.address().as_u64()))
                     };
@@ -373,14 +374,14 @@ pub unsafe fn dump_table(pml4_table: &PML4) {
                         info!("PDPT item: vaddr 0x{:x} maps to {:?}", vaddr, pdpt_item);
                     } else {
                         for (pd_idx, pd_item) in pd_table.iter().enumerate() {
-                            if (pd_item.is_present()) {
+                            if pd_item.is_present() {
                                 let ptes = unsafe {
                                     transmute::<VAddr, &mut PT>(VAddr::from_u64(
                                         pd_item.address().as_u64(),
                                     ))
                                 };
 
-                                if (pd_item.is_page()) {
+                                if pd_item.is_page() {
                                     let vaddr: usize = (512 * (512 * (512 * 0x1000))) * pml_idx
                                         + (512 * (512 * 0x1000)) * pdpt_idx
                                         + (512 * 0x1000) * pd_idx;

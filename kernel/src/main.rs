@@ -48,9 +48,6 @@ extern crate klogger;
 #[cfg(target_arch = "x86_64")]
 extern crate elfloader;
 
-#[cfg(target_arch = "x86_64")]
-extern crate multiboot;
-
 extern crate backtracer;
 extern crate rawtime;
 

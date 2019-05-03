@@ -299,7 +299,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             let base = region.phys_start;
             let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
 
-            if base > 0x1000 && size > BASE_PAGE_SIZE {
+            if base > 0x100000 && size > BASE_PAGE_SIZE {
                 debug!("region.base = {:#x} region.size = {:#x}", base, size);
                 unsafe {
                     if fmanager.add_memory(Frame::new(PAddr::from(base), size)) {

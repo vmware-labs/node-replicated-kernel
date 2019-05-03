@@ -27,7 +27,7 @@ const GIB_512: usize = 512 * 512 * 512 * 0x1000;
 impl<'a> VSpace<'a> {
     pub(crate) fn map_identity(&mut self, base: VAddr, end: VAddr) {
         let size: usize = (end - base).into();
-        debug!("map_identity 0x{:x} -- 0x{:x}", base, end);
+        trace!("map_identity 0x{:x} -- 0x{:x}", base, end);
 
         let pml4_idx = pml4_index(base);
         //info!("map base {:x} to pml4 {:p} @ pml4_idx {}", base, self.pml4, pml4_idx);
@@ -51,7 +51,7 @@ impl<'a> VSpace<'a> {
                     let paddr: PAddr = PAddr::from_u64((base + mapped).as_u64());
                     pdpt[pdpt_idx] =
                         PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::PS);
-                    debug!(
+                    trace!(
                         "Mapping 1GiB range 0x{:x} -- 0x{:x}",
                         base + mapped,
                         (base + mapped) + HUGE_PAGE_SIZE
@@ -62,7 +62,7 @@ impl<'a> VSpace<'a> {
                 }
 
                 if mapped < size {
-                    debug!(
+                    trace!(
                         "map_identity recurse 1GiB 0x{:x} -- 0x{:x}",
                         base + mapped,
                         end
@@ -73,7 +73,7 @@ impl<'a> VSpace<'a> {
                     return;
                 }
             } else {
-                debug!(
+                trace!(
                     "We have less than 1 GiB to map 0x{:x} -- 0x{:x}",
                     base,
                     base + size
@@ -99,7 +99,7 @@ impl<'a> VSpace<'a> {
                 while mapped < size && ((size - mapped) > LARGE_PAGE_SIZE) && pd_idx < 512 {
                     let paddr: PAddr = PAddr::from_u64((base + mapped).as_u64());
                     pd[pd_idx] = PDEntry::new(paddr, PDFlags::P | PDFlags::RW | PDFlags::PS);
-                    debug!(
+                    trace!(
                         "Mapping 2 MiB range 0x{:x} -- 0x{:x}",
                         base + mapped,
                         (base + mapped) + LARGE_PAGE_SIZE
@@ -110,7 +110,7 @@ impl<'a> VSpace<'a> {
                 }
 
                 if mapped < size {
-                    debug!(
+                    trace!(
                         "map_identity recurse 2MiB 0x{:x} -- 0x{:x}",
                         base + mapped,
                         end
@@ -121,7 +121,7 @@ impl<'a> VSpace<'a> {
                     return;
                 }
             } else {
-                debug!(
+                trace!(
                     "We have less than 2 MiB to map 0x{:x} -- 0x{:x}",
                     base,
                     base + size
@@ -142,7 +142,7 @@ impl<'a> VSpace<'a> {
 
                 pt[pt_idx] = PTEntry::new(paddr, PTFlags::P | PTFlags::RW); // |
                                                                             //PTFlags::US);
-                debug!("Mapped 4KiB page: {:?}", pt[pt_idx]);
+                trace!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             }
 
             mapped += BASE_PAGE_SIZE;
@@ -151,7 +151,7 @@ impl<'a> VSpace<'a> {
 
         // Need go to different PD/PDPT/PML4 slot
         if mapped < size {
-            debug!("map_identity recurse 0x{:x} -- 0x{:x}", base + mapped, end);
+            trace!("map_identity recurse 0x{:x} -- 0x{:x}", base + mapped, end);
             return self.map_identity(base + mapped, end);
         }
         // else return
@@ -299,7 +299,7 @@ impl<'a> VSpace<'a> {
         while mapped < size && pt_idx < 512 {
             if !pt[pt_idx].is_present() {
                 pt[pt_idx] = self.new_page();
-                debug!("Mapped 4KiB page: {:?}", pt[pt_idx]);
+                trace!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             } else {
                 error!("overwriting existing page??");
             }
@@ -320,6 +320,7 @@ pub const KernelElf: u32 = 0x80000001;
 pub const KernelPT: u32 = 0x80000002;
 pub const KernelStack: u32 = 0x80000003;
 pub const UefiMemoryMap: u32 = 0x80000004;
+pub const KernelArgs: u32 = 0x80000005;
 
 pub const KERNEL_OFFSET: usize = 0x400000000000;
 

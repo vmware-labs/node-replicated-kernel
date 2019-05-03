@@ -6,7 +6,7 @@ Bespin is an (experimental) OS kernel for x86-64 (amd64) machines written in
 rust. It currently does not do much except for serial output, interrupt handling and loading ELF binaries.
 
 ### Check-out the source tree
-1. `git clone git@github.com:gz/bespin.git`
+1. `git clone <repo-url>`
 1. `cd bespin`
 1. `git submodule init`
 1. `git submodule update`

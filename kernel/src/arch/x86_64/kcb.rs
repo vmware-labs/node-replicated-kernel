@@ -4,7 +4,6 @@ use alloc::boxed::Box;
 use core::cell::{Ref, RefCell, RefMut};
 use core::ptr;
 
-use multiboot::Multiboot;
 use x86::current::segmentation;
 
 use apic::xapic::XAPIC;
@@ -41,7 +40,7 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
 }
 
 pub struct Kcb {
-    multiboot: RefCell<Multiboot<'static>>,
+    kernel_args: RefCell<&'static crate::arch::KernelArgs>,
     kernel_binary: RefCell<&'static [u8]>,
     init_vspace: RefCell<VSpace<'static>>,
     pmanager: RefCell<BuddyFrameAllocator>,
@@ -50,14 +49,14 @@ pub struct Kcb {
 
 impl Kcb {
     pub fn new(
-        multiboot: Multiboot<'static>,
+        kernel_args: &'static crate::arch::KernelArgs,
         kernel_binary: &'static [u8],
         init_vspace: VSpace<'static>,
         pmanager: BuddyFrameAllocator,
         apic: XAPIC,
     ) -> Kcb {
         Kcb {
-            multiboot: RefCell::new(multiboot),
+            kernel_args: RefCell::new(kernel_args),
             kernel_binary: RefCell::new(kernel_binary),
             init_vspace: RefCell::new(init_vspace),
             pmanager: RefCell::new(pmanager),

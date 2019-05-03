@@ -15,7 +15,6 @@ edition = "2018"
 [dependencies]
 #test = { path = "../lib/ctest" }
 x86 = { path = "../lib/x86" }
-multiboot = { path = "../lib/multiboot" }
 raw-cpuid = { path = "../lib/cpuid" }
 rlibc = { path = "../lib/rlib" }
 klogger = { path = "../lib/klogger" }
@@ -35,6 +34,7 @@ logos = { version = "0.9.7", default-features = false, features = ["export_deriv
 # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
+uefi = { git = "https://github.com/rust-osdev/uefi-rs.git" }
 
 [[bin]]
 name = "bespin"

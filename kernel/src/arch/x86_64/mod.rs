@@ -10,7 +10,6 @@ use core::slice;
 
 use driverkit::DriverControl;
 
-use multiboot::{MemoryType, Multiboot};
 use x86::bits64::paging;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
@@ -26,6 +25,8 @@ pub mod kcb;
 pub mod memory;
 pub mod process;
 pub mod syscall;
+
+use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
 pub mod acpi;
 //mod exec;
@@ -224,6 +225,9 @@ fn find_apic_base() -> u64 {
     }
 }
 
+// Includes struct KernelArgs
+include!("../../../../bootloader/src/shared.rs");
+
 /// Entry function that is callsed from start.S after the pre-initialization (in assembly)
 /// is done. At this point we are in x86-64 (long) mode,
 /// We have a simple GDT, address space, and small stack set-up.
@@ -231,7 +235,7 @@ fn find_apic_base() -> u64 {
 #[lang = "start"]
 #[no_mangle]
 #[start]
-fn _start(_argc: isize, _argv: *const *const u8) -> isize {
+fn _start(argc: isize, _argv: *const *const u8) -> isize {
     sprint!("\n\n");
 
     enable_sse();
@@ -243,8 +247,8 @@ fn _start(_argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
+
     // Construct a multiboot struct for accessing the multiboot information
-    //
     let args = "./mbkernel log=trace";
 
     init_logging(args);
@@ -254,6 +258,20 @@ fn _start(_argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::BOOT_TIME_ANCHOR
     );
 
+    let mut kernel_args: &'static KernelArgs =
+        unsafe { transmute::<u64, &'static KernelArgs>(argc as u64) };
+
+    // TODO(fix): Because we pnly have a borrow of KernelArgs we have to work too hard to get mm_iter
+    let mm_iter = unsafe {
+        let mut mm_iter: uefi::table::boot::MemoryMapIter<'static> = core::mem::uninitialized();
+        core::ptr::copy_nonoverlapping(
+            &kernel_args.mm_iter as *const uefi::table::boot::MemoryMapIter,
+            &mut mm_iter as *mut uefi::table::boot::MemoryMapIter,
+            1,
+        );
+        mm_iter
+    };
+
     // Figure out what this machine supports,
     // fail if it doesn't have what we need.
     assert_required_cpu_features();
@@ -261,68 +279,42 @@ fn _start(_argc: isize, _argv: *const *const u8) -> isize {
     // Initializes the serial console.
     // (this is already done in a very basic form by klogger/init_logging())
     debug::init();
-    let mb = unsafe { Multiboot::new(0x0, paddr_to_slice).unwrap() };
-    // Find the kernel binary within the multiboot modules (to later store it in the KCB)
+
+    // Get the kernel binary (to later store it in the KCB)
     // The binary is useful for symbol name lookups when printing stacktraces
     // in case things go wrong (see panic.rs).
-    // Note: this code will refuse to start in case the kernel binary is not found
-    let kernel = mb
-        .modules()
-        .expect("No modules found in multiboot.")
-        .find(|m| m.string.is_some() && m.string.unwrap() == "kernel");
-
     let kernel_binary: &'static [u8] = unsafe {
-        kernel.map_or(slice::from_raw_parts(0 as *mut _, 1024), |k| {
-            slice::from_raw_parts(
-                memory::paddr_to_kernel_vaddr(PAddr::from(k.start)).as_ptr(),
-                (k.end - k.start) as usize,
-            )
-        })
+        slice::from_raw_parts(
+            memory::paddr_to_kernel_vaddr(PAddr::from(kernel_args.kernel_binary.0)).as_ptr(),
+            kernel_args.kernel_binary.1,
+        )
     };
 
     // Find the physical memory regions available and add them to the physical memory manager
     let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();
-
-    // Multiboot is kept somewhere in free (low) memory but the memory regions
-    // multiboot reports as free do not really take this into account,
-    // so we try to find out the last address used by multiboot in order
-    // to not overwrite the multiboot data later...
-    let ram_start = mb.find_highest_address();
-    trace!("multiboot ends at {:#x}", ram_start);
-
     debug!("Finding RAM regions");
-    mb.memory_regions().map(|regions| {
-        for region in regions {
-            if region.memory_type() == MemoryType::Available {
-                if region.base_address() > 0 && region.length() > (BASE_PAGE_SIZE as u64) {
-                    debug!(
-                        "region.base_address()={:#x} region.length()={:#x}",
-                        region.base_address(),
-                        region.length()
-                    );
+    for region in mm_iter {
+        trace!("{:?}", region);
+        if region.ty == MemoryType::CONVENTIONAL {
+            let base = region.phys_start;
+            let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
 
-                    let (base, size) = if region.base_address() < ram_start
-                        && (region.base_address() + region.length()) > ram_start
-                    {
-                        let cut_away = ram_start - region.base_address();
-                        (ram_start, region.length() - cut_away)
+            if base > 0x1000 && size > BASE_PAGE_SIZE {
+                debug!("region.base = {:#x} region.size = {:#x}", base, size);
+                unsafe {
+                    if fmanager.add_memory(Frame::new(PAddr::from(base), size)) {
+                        debug!("Trying to add base={:#x} size={:#x}", base, size);
                     } else {
-                        (region.base_address(), region.length())
-                    };
-
-                    unsafe {
-                        if fmanager.add_memory(Frame::new(PAddr::from(base), size as usize)) {
-                            debug!("Trying to add base={:#x} size={:#x}", base, size);
-                        } else {
-                            warn!("Unable to add base={:#x} size={:#x}", base, size)
-                        }
+                        warn!("Unable to add base={:#x} size={:#x}", base, size)
                     }
-                } else {
-                    debug!("Ignore memory region at {:?}", region);
+
                 }
+            } else {
+                debug!("Ignore memory region at {:?}", region);
             }
         }
-    });
+    }
+
     trace!("added memory regions");
 
     let mut vspace = find_current_vspace();
@@ -343,7 +335,7 @@ fn _start(_argc: isize, _argv: *const *const u8) -> isize {
     trace!("apic constructed");
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = kcb::Kcb::new(mb, kernel_binary, vspace, fmanager, apic);
+    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
     trace!("seting kcb");
     kcb::init_kcb(kcb);
     debug!("Memory allocation should work at this point...");

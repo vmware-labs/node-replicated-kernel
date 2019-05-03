@@ -10,8 +10,19 @@
 //! When the CPU driver on the boot core begins executing, the following
 //! statements hold:
 //!
-//!  * XXX
+//!  * CR4: We enabled the following features
+//!    PROTECTION_KEY, SMAP, SMEP, OS_XSAVE, FSGSBASE, UNMASKED_SSE, ENABLE_SSE,
+//!    ENABLE_GLOBAL_PAGES, ENABLE_PAE, ENABLE_PSE, DEBUGGING_EXTENSIONS,
+//!    ENABLE_MACHINE_CHECK
+//!  * The address space that we switch to is as follows:
+//!    * All UEFI reported memory regions are 1:1 mapped phys <-> virt.
+//!    * XXX: All UEFI reported memory regions are 1:1 mirrored in the kernel address region (above XXX)
+//!    * The kernel ELF binary was relocated to 0x0004000_00000000.
+//!  * A pointer to the KernelArgs struct is given as a first argument:
+//!    * The memory allocated for it (and everything within) points to the kernel address region (XXX)
 //!
+//!  Not yet done:
+//!    * the xAPIC region is remapped to XXX
 
 #![no_std]
 #![no_main]
@@ -36,7 +47,9 @@ use core::slice;
 use uefi::prelude::*;
 use uefi::proto::media::file::*;
 use uefi::proto::media::fs::SimpleFileSystem;
-use uefi::table::boot::{AllocateType, BootServices, MemoryDescriptor, MemoryMapIter, MemoryType};
+use uefi::table::boot::{
+    AllocateType, BootServices, MemoryDescriptor, MemoryMapIter, MemoryMapKey, MemoryType,
+};
 use uefi::table::Runtime;
 
 use crate::alloc::vec::Vec;
@@ -47,26 +60,15 @@ use x86::controlregs;
 
 mod boot;
 mod setup;
+mod shared;
 
 use setup::*;
+use shared::*;
 
 macro_rules! round_up {
     ($num:expr, $s:expr) => {
         (($num + $s - 1) / $s) * $s
     };
-}
-
-
-#[repr(C, packed)]
-pub struct KernelArgs {
-    /// An iterator over the UEFI memory map (which is also mapped in memory).
-    pub mm: MemoryMapIter<'static>,
-    /// The physical address of the kernel address space that gets loaded in cr3.
-    pub pml4: PAddr,
-    /// Mapping of the kernel stack base address.
-    pub stack_base: (VAddr, PAddr),
-    /// Mapping location of the loaded kernel binary file.
-    pub kernel_binary: (VAddr, PAddr),
 }
 
 // Include the `jump_to_kernel` assembly function. This does some things we can't express in
@@ -76,7 +78,7 @@ global_asm!(include_str!("switch.S"));
 extern "C" {
     /// Switches from this UEFI bootloader to the kernel init function (passes the sysinfo argument),
     /// kernel stack and kernel address space.
-    fn jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: &SystemTable<Runtime>);
+    fn jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64);
 }
 
 
@@ -166,11 +168,125 @@ fn dump_cr3() {
     }
 }
 
+/// Find out how many pages we require to load the memory map
+/// into it.
+///
+/// Plan for some 32 more descriptors than originally estimated,
+/// due to UEFI API crazyness. Also round to page-size.
+fn estimate_memory_map_size(st: &SystemTable<Boot>) -> usize {
+    let mm_size_estimate = st.boot_services().memory_map_size();
+    // Plan for some 32 more descriptors than originally estimated,
+    // due to UEFI API crazyness, round to page-size
+    let sz = round_up!(
+        mm_size_estimate + 32 * mem::size_of::<MemoryDescriptor>(),
+        BASE_PAGE_SIZE
+    );
+    assert_eq!(sz % BASE_PAGE_SIZE, 0, "Not multiple of page-size.");
+
+    sz
+}
+
+/// Load the memory map into buffer (which is hopefully big enough).
+fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
+    let mm_size = estimate_memory_map_size(st);
+    let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UefiMemoryMap));
+    let mut mm_slice: &mut [u8] = unsafe {
+        slice::from_raw_parts_mut(paddr_to_kernel_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
+    };
+
+    let (key, mut desc_iter) = st
+        .boot_services()
+        .memory_map(mm_slice)
+        .expect_success("Failed to retrieve UEFI memory map");
+    assert!(desc_iter.len() > 0, "Memory map is empty");
+
+    for entry in desc_iter {
+
+        if 0x0 != entry.virt_start {
+            info!(
+                "xxxxx {:#x} -- {:#x} {:?} {:?}",
+                entry.phys_start,
+                entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64,
+                entry.ty,
+                entry.att
+            );
+        }
+
+        if entry.phys_start == 0x0 {
+            warn!("Don't map memory entry at physical zero? {:#?}", entry);
+            continue;
+        }
+
+        // Compute physical base and bound for the region we're about to map
+        let phys_range_start = PAddr::from(entry.phys_start);
+        let phys_range_end =
+            PAddr::from(entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64);
+
+        #[derive(Debug)]
+        enum MapAction {
+            None,
+            Read,
+            ReadWrite,
+            ReadWriteExecute,
+            ReadExecute,
+        }
+
+        let action: MapAction = match entry.ty {
+            MemoryType::RESERVED => MapAction::None,
+            MemoryType::LOADER_CODE => MapAction::ReadExecute,
+            MemoryType::LOADER_DATA => MapAction::ReadWrite,
+            MemoryType::BOOT_SERVICES_CODE => MapAction::ReadExecute,
+            MemoryType::BOOT_SERVICES_DATA => MapAction::ReadWrite,
+            MemoryType::RUNTIME_SERVICES_CODE => MapAction::ReadExecute,
+            MemoryType::RUNTIME_SERVICES_DATA => MapAction::ReadWrite,
+            MemoryType::CONVENTIONAL => MapAction::ReadWrite,
+            MemoryType::UNUSABLE => MapAction::None,
+            MemoryType::ACPI_RECLAIM => MapAction::ReadWrite,
+            MemoryType::ACPI_NON_VOLATILE => MapAction::ReadWrite,
+            MemoryType::MMIO => MapAction::ReadWrite,
+            MemoryType::MMIO_PORT_SPACE => MapAction::ReadWrite,
+            MemoryType::PAL_CODE => MapAction::ReadWrite,
+            MemoryType::PERSISTENT_MEMORY => MapAction::ReadWrite,
+            MemoryType(KernelElf) => MapAction::ReadExecute,
+            MemoryType(KernelPT) => MapAction::ReadWrite,
+            MemoryType(KernelStack) => MapAction::ReadWrite,
+            MemoryType(UefiMemoryMap) => MapAction::ReadWrite,
+            _ => {
+                error!("Unknown memory type, what should we do? {:#?}", entry);
+                MapAction::None
+            }
+        };
+
+        // TODO: Handle actions properly!
+        let action = MapAction::ReadWrite;
+        debug!(
+            "Doing {:?} on {:#x} -- {:#x}",
+            action, phys_range_start, phys_range_end
+        );
+        match action {
+            MapAction::None => (),
+            _ => kernel.vspace.map_identity(
+                paddr_to_kernel_vaddr(phys_range_start),
+                paddr_to_kernel_vaddr(phys_range_end),
+            ),
+        };
+    }
+
+    /// TODO: Map the APIC at a different address...
+    kernel.vspace.map_identity(
+        VAddr(0xfee00000u64),
+        VAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
+    );
+
+}
+
 /// Start function of the bootloader.
 /// The symbol name is defined through `/Entry:uefi_start` in `x86_64-uefi.json`.
 #[no_mangle]
 pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Status {
     uefi_services::init(&st).expect("Can't initialize UEFI");
+    log::set_max_level(log::LevelFilter::Debug);
+
     debug!(
         "UEFI {}.{}",
         st.uefi_revision().major(),
@@ -184,18 +300,26 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     let mut kernel_file = locate_kernel_binary(&st);
     let kernel_size = determine_file_size(&mut kernel_file);
     debug!("Found kernel binary with {} bytes", kernel_size);
-
+    let kernel_base_paddr = allocate_pages(
+        &st,
+        round_up!(kernel_size, BASE_PAGE_SIZE) / BASE_PAGE_SIZE,
+        MemoryType(UefiMemoryMap),
+    );
     trace!("Load the kernel binary (in a vector)");
-    let mut kernel_blob = alloc::vec::Vec::with_capacity(kernel_size);
-    kernel_blob.resize(kernel_size, 0); // This is slow!
+    let mut kernel_blob: &mut [u8] = unsafe {
+        slice::from_raw_parts_mut(
+            paddr_to_kernel_vaddr(kernel_base_paddr).as_mut_ptr::<u8>(),
+            kernel_size,
+        )
+    };
     kernel_file
-        .read(kernel_blob.as_mut_slice())
+        .read(kernel_blob)
         .expect("Can't read the kernel");
 
     // Next create an address space for our kernel
     trace!("Allocate a PML4 (page-table root)");
     let pml4: PAddr = PAddr::from_u64(VSpace::allocate_one_page() as u64);
-    let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
+    let pml4_table = unsafe { &mut *paddr_to_kernel_vaddr(pml4).as_mut_ptr::<PML4>() };
 
     let mut kernel = Kernel {
         mapping: Vec::new(),
@@ -203,51 +327,59 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     };
 
     // Parse the ELF file and load it into the new address space
-    let binary = elfloader::ElfBinary::new("kernel", kernel_blob.as_slice()).unwrap();
+    let binary = elfloader::ElfBinary::new("kernel", kernel_blob).unwrap();
     trace!("Load the ELF binary into the address space");
     binary.load(&mut kernel);
 
-    // Make sure we still have access to the UEFI mappings:
-    kernel.vspace.map_identity(
-        VAddr::from(0x1000usize),
-        VAddr::from(0x90000000usize + 65536 * 4096),
-    );
-
-    // Print the current memory map:
+    trace!("Kernel stack allocation");
     let stack_pages = 128;
-    let _map_key = boot::memory::memory_map(st.boot_services());
     let stack_base = allocate_pages(&st, stack_pages, MemoryType(KernelStack));
     let stack_top = stack_base.as_u64() + (stack_pages * BASE_PAGE_SIZE) as u64;
     assert_eq!(stack_top % 16, 0);
     debug!("Kernel stack starts at {:x}", stack_top);
 
-    // Get an estimate of the memory map size:
-    let mm_size_estimate = st.boot_services().memory_map_size();
-    // Plan for some 32 more descriptors than original due to UEFI API crazyness,
-    // round to page-size
-    let mm_size = round_up!(
-        mm_size_estimate + 32 * mem::size_of::<MemoryDescriptor>(),
-        BASE_PAGE_SIZE
-    );
-    assert_eq!(mm_size % BASE_PAGE_SIZE, 0);
-    let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UefiMemoryMap));
-    let mm_slice = unsafe {
-        slice::from_raw_parts_mut(paddr_to_kernel_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
-    };
 
+    // Make sure we still have access to the UEFI mappings:
+    // Get the current memory map and 1:1 map all physical memory
+    // dump_cr3();
+    map_physical_memory(&st, &mut kernel);
+    trace!("Replicated UEFI memory map");
+
+    // Enable cr4 features
+    unsafe {
+        use x86::controlregs::{cr4, cr4_write, Cr4};
+        let old_cr4 = x86::controlregs::cr4();
+        let new_cr4 = Cr4::CR4_ENABLE_PROTECTION_KEY
+            | Cr4::CR4_ENABLE_SMAP
+            | Cr4::CR4_ENABLE_SMEP
+            | Cr4::CR4_ENABLE_OS_XSAVE
+            | Cr4::CR4_ENABLE_FSGSBASE
+            | Cr4::CR4_UNMASKED_SSE
+            | Cr4::CR4_ENABLE_SSE
+            | Cr4::CR4_ENABLE_GLOBAL_PAGES
+            | Cr4::CR4_ENABLE_PAE
+            | Cr4::CR4_ENABLE_PSE
+            | Cr4::CR4_DEBUGGING_EXTENSIONS
+            | Cr4::CR4_ENABLE_MACHINE_CHECK;
+
+        cr4_write(new_cr4);
+        if !new_cr4.contains(old_cr4) {
+            warn!("UEFI has too many CR4 features enabled, so we disabled some: new cr4 {:?}, uefi cr4 was = {:?}", new_cr4, old_cr4);
+        }
+    }
 
     // Preparing to jump to the kernel
-    // * Switch to new addres space
+    // * Switch to the kernel address space
     // * Exit boot services
-    // * Switch stack and do far jump (jump_to_kernel)
+    // * Switch stack and do a jump to kernel ELF entry point
     unsafe {
-        controlregs::cr3_write((kernel.vspace.pml4) as *const _ as u64);
-        x86::tlb::flush_all();
-        let cr_three: u64 = controlregs::cr3();
-        debug!("Switched to kernel address space: {:x}", cr_three);
-        // dump_cr3();
-
-        info!("Jumping to kernel entry point {:#x}", binary.entry_point());
+        // Get an estimate of the memory map size:
+        let mm_size = estimate_memory_map_size(&st);
+        assert_eq!(mm_size % BASE_PAGE_SIZE, 0);
+        let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UefiMemoryMap));
+        let mm_slice = unsafe {
+            slice::from_raw_parts_mut(paddr_to_kernel_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
+        };
 
         // For debugging purposes, we can validate that the entry point
         // has the instruction that should be in the kernel binary at
@@ -255,20 +387,42 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let slice = core::slice::from_raw_parts(binary.entry_point() as *const u8, 32);
         trace!("Kernel's first 32 bytes of instruction stream: {:?}", slice);
 
+        // Construct a KernelArgs struct that gets passed to the kernel
+        // This could theoretically be pushed on the stack too
+        // but for now we just allocate a separate page (and don't care about
+        // wasted memory)
+        assert!(mem::size_of::<KernelArgs>() < BASE_PAGE_SIZE);
+        let kernel_args_paddr = allocate_pages(&st, 1, MemoryType(KernelArgs));
+        let mut kernel_args = unsafe {
+            transmute::<VAddr, &mut KernelArgs>(paddr_to_kernel_vaddr(kernel_args_paddr))
+        };
+
+        // Initialize the KernelArgs
+        kernel_args.mm = (mm_paddr, mm_size);
+        kernel_args.pml4 = PAddr::from(kernel.vspace.pml4 as *const _ as u64);
+        kernel_args.stack = (stack_base, stack_pages * BASE_PAGE_SIZE);
+        kernel_args.kernel_binary = (kernel_base_paddr, kernel_size);
+
         // TODO: Firmware must ensure that timer event activity is stopped
         // before any of the EXIT_BOOT_SERVICES (watchdog?)
 
-        // We exit the UEFI boot services
+        // We exit the UEFI boot services (and record the memory map)
         let (st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
             .expect_success("Can't exit the boot service");
+        kernel_args.mm_iter = mmiter;
+
+        debug!("About to switch to kernel address space");
+        x86::irq::disable();
+        controlregs::cr3_write((kernel.vspace.pml4) as *const _ as u64);
+        x86::tlb::flush_all();
 
         // It's unclear from the spec if `exit_boot_services` already disables interrupts
-        // so we we make sure they are disabled:
-        x86::irq::disable();
-
+        // so we we make sure they are disabled (otherwise we triple fault since
+        // we don't have an IDT setup in the beginning)
+        info!("Jumping to kernel entry point {:#x}", binary.entry_point());
         // Finally switch to the kernel stack and entry function
-        jump_to_kernel(stack_top, binary.entry_point(), &st);
+        jump_to_kernel(stack_top, binary.entry_point(), kernel_args_paddr.0);
     }
 
     unreachable!("UEFI Bootloader: We are not supposed to return here from the kernel?");

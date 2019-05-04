@@ -17,6 +17,21 @@ pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
     return VAddr::from(paddr.as_u64());
 }
 
+/// Mapping rights to give to address translation.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum MapAction {
+    /// Don't map region.
+    None,
+    /// Map region read-only.
+    Read,
+    /// Map region read-write.
+    ReadWrite,
+    /// Map region read-write-executable.
+    ReadWriteExecute,
+    /// Map region read-executable.
+    ReadExecute,
+}
+
 
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
@@ -25,34 +40,54 @@ pub struct VSpace<'a> {
 const GIB_512: usize = 512 * 512 * 512 * 0x1000;
 
 impl<'a> VSpace<'a> {
-    pub(crate) fn map_identity(&mut self, base: VAddr, end: VAddr) {
-        let size: usize = (end - base).into();
-        trace!("map_identity 0x{:x} -- 0x{:x}", base, end);
 
-        let pml4_idx = pml4_index(base);
-        //info!("map base {:x} to pml4 {:p} @ pml4_idx {}", base, self.pml4, pml4_idx);
+    /// Constructs an identity map but with an offset added to the region.
+    ///
+    /// # Example
+    /// `map_identity_with_offset(0x20000, 0x1000, 0x2000, ReadWrite)`
+    /// will set the virtual addresses at 0x20000 -- 0x22000 to
+    /// point to physical 0x1000 - 0x2000.
+    pub(crate) fn map_identity_with_offset(
+        &mut self,
+        at_offset: PAddr,
+        base: PAddr,
+        end: PAddr,
+        rights: MapAction,
+    ) {
+        let size: usize = (end - base).as_usize();
+        let vbase = VAddr::from((at_offset + base).as_u64());
+
+        trace!(
+            "map_identity_with_offset 0x{:x} -- 0x{:x} -> 0x{:x} -- 0x{:x}",
+            base,
+            end,
+            at_offset + base,
+            at_offset + end
+        );
+
+        let pml4_idx = pml4_index(vbase);
         if !self.pml4[pml4_idx].is_present() {
+            trace!("New PDPDT for {:?} @ PML4[{}]", vbase, pml4_idx);
             self.pml4[pml4_idx] = self.new_pdpt();
         }
         assert!(self.pml4[pml4_idx].is_present());
 
         let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
-        let mut pdpt_idx = pdpt_index(base);
+        let mut pdpt_idx = pdpt_index(vbase);
         if !pdpt[pdpt_idx].is_present() {
             let vaddr_pos: usize = GIB_512 * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx;
 
             // In case we can map something at a 1 GiB granularity and
             // we still have at least 1 GiB to map create huge page mappings
-            if base.as_usize() == vaddr_pos && size > HUGE_PAGE_SIZE {
+            if vbase.as_usize() == vaddr_pos && size > HUGE_PAGE_SIZE {
                 let mut mapped = 0;
                 // Add entries as long as we are within this allocated PDPT table
                 // and have at least 1 GiB things to map
                 while mapped < size && ((size - mapped) > HUGE_PAGE_SIZE) && pdpt_idx < 512 {
-                    let paddr: PAddr = PAddr::from_u64((base + mapped).as_u64());
                     pdpt[pdpt_idx] =
-                        PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::PS);
+                        PDPTEntry::new(base + mapped, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::PS);
                     trace!(
-                        "Mapping 1GiB range 0x{:x} -- 0x{:x}",
+                        "Mapped 1GiB range 0x{:x} -- 0x{:x}",
                         base + mapped,
                         (base + mapped) + HUGE_PAGE_SIZE
                     );
@@ -63,11 +98,11 @@ impl<'a> VSpace<'a> {
 
                 if mapped < size {
                     trace!(
-                        "map_identity recurse 1GiB 0x{:x} -- 0x{:x}",
+                        "map_identity_with_offset recurse 1GiB 0x{:x} -- 0x{:x}",
                         base + mapped,
                         end
                     );
-                    return self.map_identity(base + mapped, end);
+                    return self.map_identity_with_offset(at_offset, base + mapped, end, rights);
                 } else {
                     // Everything fit in 1 GiB ranges, We're done with mappings
                     return;
@@ -85,19 +120,19 @@ impl<'a> VSpace<'a> {
         assert!(!pdpt[pdpt_idx].is_page());
 
         let pd = self.get_pd(pdpt[pdpt_idx]);
-        let mut pd_idx = pd_index(base);
+        let mut pd_idx = pd_index(vbase);
         if !pd[pd_idx].is_present() {
             let vaddr_pos: usize =
                 GIB_512 * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx + LARGE_PAGE_SIZE * pd_idx;
 
             // In case we can map something at a 2 MiB granularity and
             // we still have at least 2 MiB to map create large page mappings
-            if base.as_usize() == vaddr_pos && size > LARGE_PAGE_SIZE {
+            if vbase.as_usize() == vaddr_pos && size > LARGE_PAGE_SIZE {
                 let mut mapped = 0;
                 // Add entries as long as we are within this allocated PDPT table
                 // and have at least 1 GiB things to map
                 while mapped < size && ((size - mapped) > LARGE_PAGE_SIZE) && pd_idx < 512 {
-                    let paddr: PAddr = PAddr::from_u64((base + mapped).as_u64());
+                    let paddr: PAddr = base + mapped;
                     pd[pd_idx] = PDEntry::new(paddr, PDFlags::P | PDFlags::RW | PDFlags::PS);
                     trace!(
                         "Mapping 2 MiB range 0x{:x} -- 0x{:x}",
@@ -115,7 +150,7 @@ impl<'a> VSpace<'a> {
                         base + mapped,
                         end
                     );
-                    return self.map_identity(base + mapped, end);
+                    return self.map_identity_with_offset(at_offset, base + mapped, end, rights);
                 } else {
                     // Everything fit in 2 MiB ranges, We're done with mappings
                     return;
@@ -134,14 +169,12 @@ impl<'a> VSpace<'a> {
 
         let pt = self.get_pt(pd[pd_idx]);
 
-        let mut pt_idx = pt_index(base);
+        let mut pt_idx = pt_index(vbase);
         let mut mapped: usize = 0;
         while mapped < size && pt_idx < 512 {
             if !pt[pt_idx].is_present() {
-                let paddr: PAddr = PAddr::from_u64((base + mapped).as_u64());
-
-                pt[pt_idx] = PTEntry::new(paddr, PTFlags::P | PTFlags::RW); // |
-                                                                            //PTFlags::US);
+                let paddr: PAddr = base + mapped;
+                pt[pt_idx] = PTEntry::new(paddr, PTFlags::P | PTFlags::RW);
                 trace!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             }
 
@@ -152,9 +185,19 @@ impl<'a> VSpace<'a> {
         // Need go to different PD/PDPT/PML4 slot
         if mapped < size {
             trace!("map_identity recurse 0x{:x} -- 0x{:x}", base + mapped, end);
-            return self.map_identity(base + mapped, end);
+            return self.map_identity_with_offset(at_offset, base + mapped, end, rights);
         }
         // else return
+    }
+
+
+    /// Constructs an identity map in this region of memory.
+    ///
+    /// # Example
+    /// `map_identity(0x2000, 0x3000)` will map everything between 0x2000 and 0x3000 to
+    /// physical address 0x2000 -- 0x3000.
+    pub(crate) fn map_identity(&mut self, base: PAddr, end: PAddr, rights: MapAction) {
+        self.map_identity_with_offset(PAddr::from(0x0), base, end, rights);
     }
 
     pub(crate) fn allocate_one_page() -> usize {
@@ -266,7 +309,8 @@ impl<'a> VSpace<'a> {
         }
     }
 
-    /// Back a region of virtual address space with physical memory.
+    /// Back a region of virtual address space with
+    /// allocated physical memory.
     pub fn map(&mut self, base: VAddr, size: usize) {
         let pml4_idx = pml4_index(base);
         info!(

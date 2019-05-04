@@ -222,16 +222,8 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         let phys_range_end =
             PAddr::from(entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64);
 
-        #[derive(Debug)]
-        enum MapAction {
-            None,
-            Read,
-            ReadWrite,
-            ReadWriteExecute,
-            ReadExecute,
-        }
 
-        let action: MapAction = match entry.ty {
+        let rights: MapAction = match entry.ty {
             MemoryType::RESERVED => MapAction::None,
             MemoryType::LOADER_CODE => MapAction::ReadExecute,
             MemoryType::LOADER_DATA => MapAction::ReadWrite,
@@ -247,10 +239,10 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
             MemoryType::MMIO_PORT_SPACE => MapAction::ReadWrite,
             MemoryType::PAL_CODE => MapAction::ReadWrite,
             MemoryType::PERSISTENT_MEMORY => MapAction::ReadWrite,
-            MemoryType(KernelElf) => MapAction::ReadExecute,
+            MemoryType(KernelElf) => MapAction::Read,
             MemoryType(KernelPT) => MapAction::ReadWrite,
             MemoryType(KernelStack) => MapAction::ReadWrite,
-            MemoryType(UefiMemoryMap) => MapAction::ReadWrite,
+            MemoryType(UefiMemoryMap) => MapAction::Read,
             _ => {
                 error!("Unknown memory type, what should we do? {:#?}", entry);
                 MapAction::None
@@ -263,21 +255,29 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
             "Doing {:?} on {:#x} -- {:#x}",
             action, phys_range_start, phys_range_end
         );
-        match action {
-            MapAction::None => (),
-            _ => kernel.vspace.map_identity(
-                paddr_to_kernel_vaddr(phys_range_start),
-                paddr_to_kernel_vaddr(phys_range_end),
-            ),
-        };
+
+        if action != MapAction::None {
+            kernel
+                .vspace
+                .map_identity(phys_range_start, phys_range_end, rights);
+
+            if entry.ty == MemoryType::CONVENTIONAL {
+                kernel.vspace.map_identity_with_offset(
+                    PAddr::from(2 * KERNEL_OFFSET as u64),
+                    phys_range_start,
+                    phys_range_end,
+                    rights,
+                );
+            }
+        }
     }
 
-    /// TODO: Map the APIC at a different address...
+    /// TODO: ReMap the APIC at a different address...
     kernel.vspace.map_identity(
-        VAddr(0xfee00000u64),
-        VAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
+        PAddr(0xfee00000u64),
+        PAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
+        MapAction::ReadWrite,
     );
-
 }
 
 /// Start function of the bootloader.

@@ -81,7 +81,6 @@ extern "C" {
     fn jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64);
 }
 
-
 /// Make sure our UEFI version is not outdated.
 fn check_revision(rev: uefi::table::Revision) {
     let (major, minor) = (rev.major(), rev.minor());
@@ -201,7 +200,6 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     assert!(desc_iter.len() > 0, "Memory map is empty");
 
     for entry in desc_iter {
-
         if 0x0 != entry.virt_start {
             info!(
                 "xxxxx {:#x} -- {:#x} {:?} {:?}",
@@ -221,7 +219,6 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         let phys_range_start = PAddr::from(entry.phys_start);
         let phys_range_end =
             PAddr::from(entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64);
-
 
         let rights: MapAction = match entry.ty {
             MemoryType::RESERVED => MapAction::None,
@@ -262,12 +259,12 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 .map_identity(phys_range_start, phys_range_end, rights);
 
             if entry.ty == MemoryType::CONVENTIONAL {
-                kernel.vspace.map_identity_with_offset(
+                /*kernel.vspace.map_identity_with_offset(
                     PAddr::from(2 * KERNEL_OFFSET as u64),
                     phys_range_start,
                     phys_range_end,
                     rights,
-                );
+                );*/
             }
         }
     }
@@ -322,6 +319,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     let pml4_table = unsafe { &mut *paddr_to_kernel_vaddr(pml4).as_mut_ptr::<PML4>() };
 
     let mut kernel = Kernel {
+        offset: VAddr::from(KERNEL_OFFSET),
         mapping: Vec::new(),
         vspace: VSpace { pml4: pml4_table },
     };
@@ -329,7 +327,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     // Parse the ELF file and load it into the new address space
     let binary = elfloader::ElfBinary::new("kernel", kernel_blob).unwrap();
     trace!("Load the ELF binary into the address space");
-    binary.load(&mut kernel);
+    binary.load(&mut kernel).expect("Can't load the kernel");
 
     trace!("Kernel stack allocation");
     let stack_pages = 128;
@@ -338,12 +336,11 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     assert_eq!(stack_top % 16, 0);
     debug!("Kernel stack starts at {:x}", stack_top);
 
-
     // Make sure we still have access to the UEFI mappings:
     // Get the current memory map and 1:1 map all physical memory
     // dump_cr3();
     map_physical_memory(&st, &mut kernel);
-    trace!("Replicated UEFI memory map");
+    info!("Replicated UEFI memory map");
 
     // Enable cr4 features
     unsafe {
@@ -380,12 +377,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let mm_slice = unsafe {
             slice::from_raw_parts_mut(paddr_to_kernel_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
         };
-
-        // For debugging purposes, we can validate that the entry point
-        // has the instruction that should be in the kernel binary at
-        // the entry point address
-        let slice = core::slice::from_raw_parts(binary.entry_point() as *const u8, 32);
-        trace!("Kernel's first 32 bytes of instruction stream: {:?}", slice);
+        info!("Memory map allocated.");
 
         // Construct a KernelArgs struct that gets passed to the kernel
         // This could theoretically be pushed on the stack too
@@ -396,6 +388,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let mut kernel_args = unsafe {
             transmute::<VAddr, &mut KernelArgs>(paddr_to_kernel_vaddr(kernel_args_paddr))
         };
+        info!("kernel_args allocated.");
 
         // Initialize the KernelArgs
         kernel_args.mm = (mm_paddr, mm_size);
@@ -403,29 +396,46 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.stack = (stack_base, stack_pages * BASE_PAGE_SIZE);
         kernel_args.kernel_binary = (kernel_base_paddr, kernel_size);
 
+        info!(
+            "kernel.offset + binary.entry_point() = {:p}",
+            kernel.offset + binary.entry_point()
+        );
         // TODO: Firmware must ensure that timer event activity is stopped
         // before any of the EXIT_BOOT_SERVICES (watchdog?)
 
         // We exit the UEFI boot services (and record the memory map)
+        info!("Exiting boot services.");
         let (st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
             .expect_success("Can't exit the boot service");
+        info!("Exited the boot services.");
         kernel_args.mm_iter = mmiter;
 
-        debug!("About to switch to kernel address space");
+        //info!("About to switch to kernel address space");
         x86::irq::disable();
         controlregs::cr3_write((kernel.vspace.pml4) as *const _ as u64);
         x86::tlb::flush_all();
 
+        // For debugging purposes, we can validate that the entry point
+        // has the instruction that should be in the kernel binary at
+        // the entry point address
+        //info!("reading kernel stuff {:p}\r\n", (kernel.offset + binary.entry_point()).as_u64() as *const u8);
+        //let slice = core::slice::from_raw_parts((kernel.offset + binary.entry_point()).as_u64() as *const u8, 32);
+        //info!("Kernel's first 32 bytes of instruction stream: {:?}\r\n", slice);
+
         // It's unclear from the spec if `exit_boot_services` already disables interrupts
         // so we we make sure they are disabled (otherwise we triple fault since
         // we don't have an IDT setup in the beginning)
-        info!("Jumping to kernel entry point {:#x}", binary.entry_point());
+        //info!("Jumping to kernel entry point {:#x}\n", binary.entry_point());
+        //loop {}
         // Finally switch to the kernel stack and entry function
-        jump_to_kernel(stack_top, binary.entry_point(), kernel_args_paddr.0);
+        jump_to_kernel(
+            stack_top,
+            kernel.offset.as_u64() + binary.entry_point(),
+            kernel_args_paddr.0,
+        );
     }
 
     unreachable!("UEFI Bootloader: We are not supposed to return here from the kernel?");
     uefi::Status(0xdead)
 }
-

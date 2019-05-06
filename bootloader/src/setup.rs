@@ -2,7 +2,7 @@ use crate::alloc::vec::Vec;
 
 use core::mem::transmute;
 
-use elfloader::elf;
+use elfloader;
 use uefi::table::boot::AllocateType;
 use uefi_services::system_table;
 use x86::bits64::paging::*;
@@ -32,7 +32,6 @@ pub enum MapAction {
     ReadExecute,
 }
 
-
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
 }
@@ -40,7 +39,6 @@ pub struct VSpace<'a> {
 const GIB_512: usize = 512 * 512 * 512 * 0x1000;
 
 impl<'a> VSpace<'a> {
-
     /// Constructs an identity map but with an offset added to the region.
     ///
     /// # Example
@@ -190,7 +188,6 @@ impl<'a> VSpace<'a> {
         // else return
     }
 
-
     /// Constructs an identity map in this region of memory.
     ///
     /// # Example
@@ -199,6 +196,9 @@ impl<'a> VSpace<'a> {
     pub(crate) fn map_identity(&mut self, base: PAddr, end: PAddr, rights: MapAction) {
         self.map_identity_with_offset(PAddr::from(0x0), base, end, rights);
     }
+
+    /// Maps a physical memory region at vbase.
+    pub(crate) fn map_generic(&mut self, vbase: VAddr, pregion: (PAddr, usize)) {}
 
     pub(crate) fn allocate_one_page() -> usize {
         let st = system_table();
@@ -258,20 +258,23 @@ impl<'a> VSpace<'a> {
         unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
-    /// Do page-table walk to find physical address of a page.
-    pub(crate) fn resolve(&self, base: VAddr) -> Option<PAddr> {
-        let pml4_idx = pml4_index(base);
+    pub(crate) fn resolve_addr(&self, addr: VAddr) -> Option<PAddr> {
+        let page_offset: usize = addr & 0xfff;
+
+        let pml4_idx = pml4_index(addr);
         if self.pml4[pml4_idx].is_present() {
-            let pdpt_idx = pdpt_index(base);
+            let pdpt_idx = pdpt_index(addr);
             let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+            assert!(!pdpt[pdpt_idx].is_page(), "FIXME 1GiB lookups");
             if pdpt[pdpt_idx].is_present() {
-                let pd_idx = pd_index(base);
+                let pd_idx = pd_index(addr);
                 let pd = self.get_pd(pdpt[pdpt_idx]);
+                assert!(!pd[pd_idx].is_page(), "FIXME 2 MiB lookups");
                 if pd[pd_idx].is_present() {
-                    let pt_idx = pt_index(base);
+                    let pt_idx = pt_index(addr);
                     let pt = self.get_pt(pd[pd_idx]);
                     if pt[pt_idx].is_present() {
-                        return Some(pt[pt_idx].address());
+                        return Some(pt[pt_idx].address() + page_offset);
                     }
                 }
             }
@@ -283,7 +286,7 @@ impl<'a> VSpace<'a> {
     /// Resolve a virtual address in the address space and return a
     /// kernel accessible page to it.
     fn resolve_to_page(&self, base: VAddr) -> Option<&mut [u8]> {
-        match self.resolve(base) {
+        match self.resolve_addr(base) {
             Some(paddr) => {
                 let kernel_addr = paddr_to_kernel_vaddr(paddr);
                 Some(unsafe { transmute::<VAddr, &mut [u8; BASE_PAGE_SIZE as usize]>(kernel_addr) })
@@ -293,8 +296,10 @@ impl<'a> VSpace<'a> {
     }
 
     /// Fills a page in the virtual address space with the contents from region.
-    /// XXX: Check that region length <= page length...
     pub fn fill(&self, address: VAddr, region: &[u8]) -> bool {
+        assert!(region.len() <= BASE_PAGE_SIZE);
+        assert!(address & 0xfff == 0);
+
         match self.resolve_to_page(address) {
             Some(page) => {
                 for (idx, b) in region.iter().enumerate() {
@@ -343,7 +348,7 @@ impl<'a> VSpace<'a> {
         while mapped < size && pt_idx < 512 {
             if !pt[pt_idx].is_present() {
                 pt[pt_idx] = self.new_page();
-                trace!("Mapped 4KiB page: {:?}", pt[pt_idx]);
+                info!("Mapped 4KiB page: {:?}", pt[pt_idx]);
             } else {
                 error!("overwriting existing page??");
             }
@@ -366,36 +371,97 @@ pub const KernelStack: u32 = 0x80000003;
 pub const UefiMemoryMap: u32 = 0x80000004;
 pub const KernelArgs: u32 = 0x80000005;
 
-pub const KERNEL_OFFSET: usize = 0x400000000000;
+pub const KERNEL_OFFSET: usize = 1 << 44;
 
 pub struct Kernel<'a> {
+    pub offset: VAddr,
     pub mapping: Vec<(usize, usize)>,
     pub vspace: VSpace<'a>,
 }
 
-
 impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
-    fn allocate(&mut self, base: usize, size: usize, _flags: elf::ProgFlag) {
-        info!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
-        let base = base;
+    fn allocate(
+        &mut self,
+        base: u64,
+        size: usize,
+        _flags: elfloader::Flags,
+    ) -> Result<(), &'static str> {
+        let base = self.offset + base;
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
-        self.vspace.map(VAddr::from(base), rsize);
+        info!("allocate: 0x{:x} -- 0x{:x}", base, base + rsize);
+        self.vspace.map(VAddr::from(base), rsize + BASE_PAGE_SIZE);
+        Ok(())
     }
 
     /// Load a region of bytes into the virtual address space of the process.
     /// XXX: Report error if that region is not backed by memory (i.e., allocate was not called).
-    fn load(&mut self, destination: usize, region: &'static [u8]) {
+    fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
+        let destination = self.offset + destination;
         info!(
-            "load from elf: 0x{:x} -- 0x{:x}",
+            "Load from ELF: 0x{:x} -- 0x{:x}",
             destination,
             destination + region.len()
         );
 
-        for (idx, subregion) in region.chunks(BASE_PAGE_SIZE as usize).enumerate() {
-            let base_vaddr = destination + idx * BASE_PAGE_SIZE as usize;
+        for (idx, val) in region.iter().enumerate() {
+            let vaddr = VAddr::from(destination + idx);
+            let paddr = self.vspace.resolve_addr(vaddr).expect("Can't resolve addr");
+            let ptr = paddr.as_u64() as *mut u8;
+            unsafe {
+                *ptr = *val;
+            }
+        }
+
+        /*for (idx, subregion) in region.chunks(BASE_PAGE_SIZE as usize).enumerate() {
+            let base_vaddr = destination + (idx * BASE_PAGE_SIZE);
             info!("loading content at: 0x{:x}", base_vaddr);
-            self.vspace.fill(VAddr::from(base_vaddr), subregion);
+            assert!(self.vspace.fill(base_vaddr, subregion), "Can't fill page region?");
+        }*/
+
+        Ok(())
+    }
+
+    /// Relocating the kernel symbols.
+    ///
+    /// Since the kernel is a position independent executable that is 'statically' linked
+    /// with all dependencies we only expect to get relocations of type RELATIVE.
+    /// Otherwise, the build would be broken or you got a garbage ELF file.
+    /// We return an error in this case.
+    fn relocate(
+        &mut self,
+        entry: &elfloader::Rela<elfloader::P64>,
+        header_base: u64,
+    ) -> Result<(), &'static str> {
+        // TODO: we can't relocate below our header base in an ELF binary
+        // not impossible but not really needed
+        assert!(self.offset.as_u64() >= header_base);
+
+        // Get the pointer to where the relocation happens in the
+        // memory where we loaded the headers
+        // The forumla for this is our offset where the kernel is starting,
+        // plus the offset of the entry to jump to the code piece
+        let addr = (self.offset.as_u64() + entry.get_offset());
+        // We can't access addr in UEFI space so we resolve it to a physical address (UEFI has 1:1 mappings)
+        let uefi_addr = self
+            .vspace
+            .resolve_addr(VAddr::from(addr))
+            .expect("Can't resolve address")
+            .as_u64() as *mut u64;
+        //info!("relocate {:?} at kaddr = {:#x} which is currently accessible at {:?} header_base = {:#x}", entry, addr, uefi_addr, header_base);
+
+        use elfloader::TypeRela64;
+        if let TypeRela64::R_RELATIVE = TypeRela64::from(entry.get_type()) {
+            // This is a relative relocation of a 64 bit value, we add the offset (where we put our
+            // binary in the vspace) to the addend and we're done:
+            unsafe {
+                // Scary unsafe changing stuff in random memory locations based on
+                // ELF binary values weee!
+                *uefi_addr = self.offset.as_u64() + entry.get_addend();
+            }
+            Ok(())
+        } else {
+            Err("Can only handle R_RELATIVE for relocation")
         }
     }
 }
@@ -456,4 +522,3 @@ pub unsafe fn dump_table(pml4_table: &PML4) {
         }
     }
 }
-

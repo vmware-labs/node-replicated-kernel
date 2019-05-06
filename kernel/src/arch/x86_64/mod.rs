@@ -247,7 +247,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
-
     // Construct a multiboot struct for accessing the multiboot information
     let args = "./mbkernel log=trace";
 
@@ -307,7 +306,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                     } else {
                         warn!("Unable to add base={:#x} size={:#x}", base, size)
                     }
-
                 }
             } else {
                 debug!("Ignore memory region at {:?}", region);

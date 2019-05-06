@@ -1,7 +1,6 @@
 use core::fmt;
 use core::mem::transmute;
 
-use elfloader::elf;
 use elfloader::ElfLoader;
 
 use x86::bits64::paging;
@@ -339,24 +338,41 @@ impl<'a> fmt::Debug for Process<'a> {
 
 impl<'a> ElfLoader for Process<'a> {
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
-    fn allocate(&mut self, base: usize, size: usize, _flags: elf::ProgFlag) {
-        debug!("allocate: 0x{:x} -- 0x{:x}", base, base + size);
+    fn allocate(
+        &mut self,
+        base: u64,
+        size: usize,
+        _flags: elfloader::Flags,
+    ) -> Result<(), &'static str> {
+        debug!("allocate: 0x{:x} -- 0x{:x}", base, base as usize + size);
         let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
         self.vspace.map(VAddr::from(base), rsize);
+        Ok(())
     }
 
     /// Load a region of bytes into the virtual address space of the process.
     /// XXX: Report error if that region is not backed by memory (i.e., allocate was not called).
-    fn load(&mut self, destination: usize, region: &'static [u8]) {
+    fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
         debug!(
             "load: 0x{:x} -- 0x{:x}",
             destination,
-            destination + region.len()
+            destination as usize + region.len()
         );
 
         for (idx, subregion) in region.chunks(BASE_PAGE_SIZE as usize).enumerate() {
-            let base_vaddr = destination + idx * BASE_PAGE_SIZE as usize;
+            let base_vaddr = destination as usize + idx * BASE_PAGE_SIZE as usize;
             self.vspace.fill(VAddr::from(base_vaddr), subregion);
         }
+        Ok(())
+    }
+
+    fn relocate(
+        &mut self,
+        entry: &elfloader::Rela<u64>,
+        original_base: u64,
+    ) -> Result<(), &'static str> {
+        debug!("relocate: {:?}", entry);
+
+        Ok(())
     }
 }

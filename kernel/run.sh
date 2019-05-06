@@ -155,9 +155,6 @@ export PATH=`pwd`/../binutils-2.30.90/bin:$PATH
 if [ -x "$(command -v x86_64-elf-ld)" ] ; then
     # On non-Linux system we should use the cross-compiled linker from binutils
     export CARGO_TARGET_X86_64_BESPIN_LINKER=x86_64-elf-ld
-    OBJCOPY=x86_64-elf-objcopy
-else
-    OBJCOPY=objcopy
 fi
 
 BUILD_ARGS="--target=$BESPIN_TARGET"
@@ -175,11 +172,9 @@ BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build $
 if [ "$_arg_release" == "off" ]; then
     cp ../target/$BESPIN_TARGET/debug/bespin kernel
 	cp ../target/$BESPIN_TARGET/debug/bespin $ESP_DIR/kernel
-    $OBJCOPY ../target/$BESPIN_TARGET/debug/bespin -F elf32-i386 mbkernel
 else
     cp ../target/$BESPIN_TARGET/release/bespin kernel
 	cp ../target/$BESPIN_TARGET/release/bespin $ESP_DIR/kernel
-    $OBJCOPY ../target/$BESPIN_TARGET/release/bespin -F elf32-i386 mbkernel
 fi
 
 find $ESP_DIR

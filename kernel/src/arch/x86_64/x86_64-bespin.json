@@ -16,6 +16,6 @@
 	"eliminate-frame-pointer": false,
 	"morestack": false,
 	"features": "+sse",
-	"position-independent-executables": false,
+	"position-independent-executables": true,
 	"executables": true
 }

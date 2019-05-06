@@ -13,10 +13,10 @@ fn main() {
         .flag("-U__linux__")
         .flag("-shared")
         .flag("-nostartfiles")
-        //.flag("-fPIC")
+        .flag("-fPIC")
         .file("src/arch/x86_64/start_ap.S")
         .file("src/arch/x86_64/exec.S")
-        //.pic(true)
+        .pic(true)
         .warnings(true)
         .compile("start_ap");
 

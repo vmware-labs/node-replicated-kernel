@@ -366,11 +366,7 @@ impl<'a> ElfLoader for Process<'a> {
         Ok(())
     }
 
-    fn relocate(
-        &mut self,
-        entry: &elfloader::Rela<u64>,
-        original_base: u64,
-    ) -> Result<(), &'static str> {
+    fn relocate(&mut self, entry: &elfloader::Rela<u64>) -> Result<(), &'static str> {
         debug!("relocate: {:?}", entry);
 
         Ok(())

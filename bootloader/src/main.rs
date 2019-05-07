@@ -211,7 +211,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         }
 
         if entry.phys_start == 0x0 {
-            warn!("Don't map memory entry at physical zero? {:#?}", entry);
+            debug!("Don't map memory entry at physical zero? {:#?}", entry);
             continue;
         }
 
@@ -222,38 +222,35 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
 
         let rights: MapAction = match entry.ty {
             MemoryType::RESERVED => MapAction::None,
-            MemoryType::LOADER_CODE => MapAction::ReadExecute,
-            MemoryType::LOADER_DATA => MapAction::ReadWrite,
-            MemoryType::BOOT_SERVICES_CODE => MapAction::ReadExecute,
-            MemoryType::BOOT_SERVICES_DATA => MapAction::ReadWrite,
-            MemoryType::RUNTIME_SERVICES_CODE => MapAction::ReadExecute,
-            MemoryType::RUNTIME_SERVICES_DATA => MapAction::ReadWrite,
-            MemoryType::CONVENTIONAL => MapAction::ReadWrite,
+            MemoryType::LOADER_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::LOADER_DATA => MapAction::ReadWriteKernel,
+            MemoryType::BOOT_SERVICES_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::BOOT_SERVICES_DATA => MapAction::ReadWriteKernel,
+            MemoryType::RUNTIME_SERVICES_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::RUNTIME_SERVICES_DATA => MapAction::ReadWriteKernel,
+            MemoryType::CONVENTIONAL => MapAction::ReadWriteKernel,
             MemoryType::UNUSABLE => MapAction::None,
-            MemoryType::ACPI_RECLAIM => MapAction::ReadWrite,
-            MemoryType::ACPI_NON_VOLATILE => MapAction::ReadWrite,
-            MemoryType::MMIO => MapAction::ReadWrite,
-            MemoryType::MMIO_PORT_SPACE => MapAction::ReadWrite,
-            MemoryType::PAL_CODE => MapAction::ReadWrite,
-            MemoryType::PERSISTENT_MEMORY => MapAction::ReadWrite,
-            MemoryType(KernelElf) => MapAction::Read,
-            MemoryType(KernelPT) => MapAction::ReadWrite,
-            MemoryType(KernelStack) => MapAction::ReadWrite,
-            MemoryType(UefiMemoryMap) => MapAction::Read,
+            MemoryType::ACPI_RECLAIM => MapAction::ReadWriteKernel,
+            MemoryType::ACPI_NON_VOLATILE => MapAction::ReadWriteKernel,
+            MemoryType::MMIO => MapAction::ReadWriteKernel,
+            MemoryType::MMIO_PORT_SPACE => MapAction::ReadWriteKernel,
+            MemoryType::PAL_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::PERSISTENT_MEMORY => MapAction::ReadWriteKernel,
+            MemoryType(KernelElf) => MapAction::ReadKernel,
+            MemoryType(KernelPT) => MapAction::ReadWriteKernel,
+            MemoryType(KernelStack) => MapAction::ReadWriteKernel,
+            MemoryType(UefiMemoryMap) => MapAction::ReadWriteKernel,
             _ => {
                 error!("Unknown memory type, what should we do? {:#?}", entry);
                 MapAction::None
             }
         };
 
-        // TODO: Handle actions properly!
-        let action = MapAction::ReadWrite;
         debug!(
             "Doing {:?} on {:#x} -- {:#x}",
-            action, phys_range_start, phys_range_end
+            rights, phys_range_start, phys_range_end
         );
-
-        if action != MapAction::None {
+        if rights != MapAction::None {
             kernel
                 .vspace
                 .map_identity(phys_range_start, phys_range_end, rights);
@@ -273,7 +270,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     kernel.vspace.map_identity(
         PAddr(0xfee00000u64),
         PAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
-        MapAction::ReadWrite,
+        MapAction::ReadWriteExecuteKernel,
     );
 }
 
@@ -282,7 +279,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
 #[no_mangle]
 pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Status {
     uefi_services::init(&st).expect("Can't initialize UEFI");
-    log::set_max_level(log::LevelFilter::Debug);
+    log::set_max_level(log::LevelFilter::Info);
 
     debug!(
         "UEFI {}.{}",
@@ -341,10 +338,10 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     // Get the current memory map and 1:1 map all physical memory
     // dump_cr3();
     map_physical_memory(&st, &mut kernel);
-    info!("Replicated UEFI memory map");
+    trace!("Replicated UEFI memory map");
 
-    // Enable cr4 features
     unsafe {
+        // Enable cr4 features
         use x86::controlregs::{cr4, cr4_write, Cr4};
         let old_cr4 = x86::controlregs::cr4();
         let new_cr4 = Cr4::CR4_ENABLE_PROTECTION_KEY
@@ -364,6 +361,11 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         if !new_cr4.contains(old_cr4) {
             warn!("UEFI has too many CR4 features enabled, so we disabled some: new cr4 {:?}, uefi cr4 was = {:?}", new_cr4, old_cr4);
         }
+
+        // Enable NXE bit (11)
+        use x86::msr::{rdmsr, wrmsr, IA32_EFER};
+        let efer = rdmsr(IA32_EFER) | 1 << 11;
+        wrmsr(IA32_EFER, efer);
     }
 
     // Preparing to jump to the kernel
@@ -378,7 +380,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let mm_slice = unsafe {
             slice::from_raw_parts_mut(paddr_to_kernel_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
         };
-        info!("Memory map allocated.");
+        trace!("Memory map allocated.");
 
         // Construct a KernelArgs struct that gets passed to the kernel
         // This could theoretically be pushed on the stack too
@@ -389,7 +391,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let mut kernel_args = unsafe {
             transmute::<VAddr, &mut KernelArgs>(paddr_to_kernel_vaddr(kernel_args_paddr))
         };
-        info!("kernel_args allocated.");
+        trace!("Kernel args allocated.");
 
         // Initialize the KernelArgs
         kernel_args.mm = (mm_paddr, mm_size);
@@ -398,9 +400,10 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.kernel_binary = (kernel_base_paddr, kernel_size);
 
         info!(
-            "kernel.offset + binary.entry_point() = {:p}",
+            "Kernel will execute at: {:p}",
             kernel.offset + binary.entry_point()
         );
+
         // TODO: Firmware must ensure that timer event activity is stopped
         // before any of the EXIT_BOOT_SERVICES (watchdog?)
 
@@ -409,26 +412,18 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let (st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
             .expect_success("Can't exit the boot service");
-        info!("Exited the boot services.");
+        // Print no longer works here... so let's hope we make it to the kernel
         kernel_args.mm_iter = mmiter;
-
-        //info!("About to switch to kernel address space");
-        x86::irq::disable();
-        controlregs::cr3_write((kernel.vspace.pml4) as *const _ as u64);
-        x86::tlb::flush_all();
-
-        // For debugging purposes, we can validate that the entry point
-        // has the instruction that should be in the kernel binary at
-        // the entry point address
-        //info!("reading kernel stuff {:p}\r\n", (kernel.offset + binary.entry_point()).as_u64() as *const u8);
-        //let slice = core::slice::from_raw_parts((kernel.offset + binary.entry_point()).as_u64() as *const u8, 32);
-        //info!("Kernel's first 32 bytes of instruction stream: {:?}\r\n", slice);
 
         // It's unclear from the spec if `exit_boot_services` already disables interrupts
         // so we we make sure they are disabled (otherwise we triple fault since
         // we don't have an IDT setup in the beginning)
-        //info!("Jumping to kernel entry point {:#x}\n", binary.entry_point());
-        //loop {}
+        x86::irq::disable();
+
+        // Switch to the kernel address space
+        controlregs::cr3_write((kernel.vspace.pml4) as *const _ as u64);
+        x86::tlb::flush_all();
+
         // Finally switch to the kernel stack and entry function
         jump_to_kernel(
             stack_top,

@@ -21,31 +21,92 @@ pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
 /// Mapping rights to give to address translation.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum MapAction {
-    /// No access (but allocated and mapped).
+    /// Don't map
     None,
     /// Map region read-only.
-    Read,
+    ReadUser,
+    /// Map region read-only for kernel.
+    ReadKernel,
     /// Map region read-write.
-    ReadWrite,
+    ReadWriteUser,
+    /// Map region read-write for kernel.
+    ReadWriteKernel,
     /// Map region read-executable.
-    ReadExecute,
+    ReadExecuteUser,
+    /// Map region read-executable for kernel.
+    ReadExecuteKernel,
     /// Map region read-write-executable.
-    ReadWriteExecute,
+    ReadWriteExecuteUser,
+    /// Map region read-write-executable for kernel.
+    ReadWriteExecuteKernel,
+}
+
+impl MapAction {
+    /// Transform MapAction into rights for 1 GiB page.
+    fn to_pdpt_rights(&self) -> PDPTFlags {
+        use MapAction::*;
+        match self {
+            None => PDPTFlags::empty(),
+            ReadUser => PDPTFlags::XD,
+            ReadKernel => PDPTFlags::US | PDPTFlags::XD,
+            ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD,
+            ReadWriteKernel => PDPTFlags::RW | PDPTFlags::US | PDPTFlags::XD,
+            ReadExecuteUser => PDPTFlags::empty(),
+            ReadExecuteKernel => PDPTFlags::US,
+            ReadWriteExecuteUser => PDPTFlags::RW,
+            ReadWriteExecuteKernel => PDPTFlags::RW | PDPTFlags::US,
+        }
+    }
+
+    /// Transform MapAction into rights for 2 MiB page.
+    fn to_pd_rights(&self) -> PDFlags {
+        use MapAction::*;
+        match self {
+            None => PDFlags::empty(),
+            ReadUser => PDFlags::XD,
+            ReadKernel => PDFlags::US | PDFlags::XD,
+            ReadWriteUser => PDFlags::RW | PDFlags::XD,
+            ReadWriteKernel => PDFlags::RW | PDFlags::US | PDFlags::XD,
+            ReadExecuteUser => PDFlags::empty(),
+            ReadExecuteKernel => PDFlags::US,
+            ReadWriteExecuteUser => PDFlags::RW,
+            ReadWriteExecuteKernel => PDFlags::RW | PDFlags::US,
+        }
+    }
+
+    /// Transform MapAction into rights for 4KiB page.
+    fn to_pt_rights(&self) -> PTFlags {
+        use MapAction::*;
+        match self {
+            None => PTFlags::empty(),
+            ReadUser => PTFlags::XD,
+            ReadKernel => PTFlags::US | PTFlags::XD,
+            ReadWriteUser => PTFlags::RW | PTFlags::XD,
+            ReadWriteKernel => PTFlags::RW | PTFlags::US | PTFlags::XD,
+            ReadExecuteUser => PTFlags::empty(),
+            ReadExecuteKernel => PTFlags::US,
+            ReadWriteExecuteUser => PTFlags::RW,
+            ReadWriteExecuteKernel => PTFlags::RW | PTFlags::US,
+        }
+    }
 }
 
 impl fmt::Display for MapAction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use MapAction::*;
         match self {
-            None => write!(f, "---"),
-            Read => write!(f, "R--"),
-            ReadWrite => write!(f, "RW-"),
-            ReadExecute => write!(f, "R-X"),
-            ReadWriteExecute => write!(f, "RWX"),
+            None => write!(f, " ---"),
+            ReadUser => write!(f, "uR--"),
+            ReadKernel => write!(f, "kR--"),
+            ReadWriteUser => write!(f, "uRW-"),
+            ReadWriteKernel => write!(f, "kRW-"),
+            ReadExecuteUser => write!(f, "uR-X"),
+            ReadExecuteKernel => write!(f, "kR-X"),
+            ReadWriteExecuteUser => write!(f, "uRWX"),
+            ReadWriteExecuteKernel => write!(f, "kRWX"),
         }
     }
 }
-
 
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
@@ -57,7 +118,7 @@ impl<'a> VSpace<'a> {
     /// Constructs an identity map but with an offset added to the region.
     ///
     /// # Example
-    /// `map_identity_with_offset(0x20000, 0x1000, 0x2000, ReadWrite)`
+    /// `map_identity_with_offset(0x20000, 0x1000, 0x2000, ReadWriteKernel)`
     /// will set the virtual addresses at 0x21000 -- 0x22000 to
     /// point to physical 0x1000 - 0x2000.
     pub(crate) fn map_identity_with_offset(
@@ -92,14 +153,14 @@ impl<'a> VSpace<'a> {
     /// size into the virtual base at address `vbase`.
     ///
     /// The algorithm tries to allocate the biggest page-sizes possible for the allocations.
-    /// We require that `vbase` and `pregion` values are all aligned to page-size.
+    /// We require that `vbase` and `pregion` values are all aligned to a page-size.
     /// TODO: We panic in case there is already a mapping covering the region (should return error).
-    /// TODO: `rights` MapAction is currently ignored, everything is mapped RWX.
     pub(crate) fn map_generic(&mut self, vbase: VAddr, pregion: (PAddr, usize), rights: MapAction) {
         let (pbase, psize) = pregion;
         assert_eq!(pbase % BASE_PAGE_SIZE, 0);
         assert_eq!(psize % BASE_PAGE_SIZE, 0);
         assert_eq!(vbase % BASE_PAGE_SIZE, 0);
+        assert_ne!(rights, MapAction::None, "TODO: Should we allow that?");
 
         debug!(
             "map_generic {:#x} -- {:#x} -> {:#x} -- {:#x} {}",
@@ -141,7 +202,7 @@ impl<'a> VSpace<'a> {
                 while mapped < psize && ((psize - mapped) >= HUGE_PAGE_SIZE) && pdpt_idx < 512 {
                     pdpt[pdpt_idx] = PDPTEntry::new(
                         pbase + mapped,
-                        PDPTFlags::P | PDPTFlags::RW | PDPTFlags::PS,
+                        PDPTFlags::P | PDPTFlags::PS | rights.to_pdpt_rights(),
                     );
                     trace!(
                         "Mapped 1GiB range {:#x} -- {:#x} -> {:#x} -- {:#x}",
@@ -207,9 +268,11 @@ impl<'a> VSpace<'a> {
                 // Add entries as long as we are within this allocated PDPT table
                 // and have at least 2 MiB things to map
                 while mapped < psize && ((psize - mapped) >= LARGE_PAGE_SIZE) && pd_idx < 512 {
-                    pd[pd_idx] =
-                        PDEntry::new(pbase + mapped, PDFlags::P | PDFlags::RW | PDFlags::PS);
-                    debug!(
+                    pd[pd_idx] = PDEntry::new(
+                        pbase + mapped,
+                        PDFlags::P | PDFlags::PS | rights.to_pd_rights(),
+                    );
+                    trace!(
                         "Mapped 2 MiB region {:#x} -- {:#x} -> {:#x} -- {:#x}",
                         vbase + mapped,
                         (vbase + mapped) + LARGE_PAGE_SIZE,
@@ -262,8 +325,14 @@ impl<'a> VSpace<'a> {
         let mut mapped: usize = 0;
         while mapped < psize && pt_idx < 512 {
             if !pt[pt_idx].is_present() {
-                pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | PTFlags::RW);
-                trace!("Mapped 4KiB page: {:?}", pt[pt_idx]);
+                pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
+                if rights.to_pt_rights() != PTFlags::RW {
+                    trace!(
+                        "Mapped 4KiB page: {:?} rights {:?}",
+                        pt[pt_idx],
+                        rights.to_pt_rights()
+                    );
+                }
             } else {
                 assert!(
                     pt[pt_idx].is_present(),
@@ -452,13 +521,12 @@ pub struct Kernel<'a> {
 }
 
 impl<'a> elfloader::ElfLoader for Kernel<'a> {
-
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
     fn allocate(
         &mut self,
         base: u64,
         size: usize,
-        _flags: elfloader::Flags,
+        flags: elfloader::Flags,
     ) -> Result<(), &'static str> {
         // Calculate the offset and align to page boundaries
         // We can't expect to get something that is page-aligned from ELF
@@ -475,32 +543,27 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             page_base + size_page,
         );
 
-        self.mapping.push((page_base, size_page));
-        /*self.vspace
-            .map(page_base, size_page, MapAction::ReadWriteExecute);
+        /*self.mapping.push((page_base, size_page));
         self.allocated = true;*/
+        let map_action = match (flags.is_execute(), flags.is_write(), flags.is_read()) {
+            (false, false, false) => MapAction::None,
+            (true, false, false) => MapAction::None,
+            (false, true, false) => MapAction::None,
+            (false, false, true) => MapAction::ReadKernel,
+            (true, false, true) => MapAction::ReadExecuteKernel,
+            (true, true, false) => MapAction::None,
+            (false, true, true) => MapAction::ReadWriteKernel,
+            (true, true, true) => MapAction::ReadWriteExecuteKernel,
+        };
+
+        self.vspace.map(page_base, size_page, map_action);
+
         Ok(())
     }
-    /*
-    DEBUG: ELF Allocate: 0x400000000000 -- 0x4000000ba000
-    DEBUG: ELF Allocate: 0x4000002ba000 -- 0x4000002c4000
-    INFO: load dynamic segement ProgramHeader64 { type_: Ok(Dynamic), flags: Flags(6), offset: 790224, virtual_addr: 2887376, physical_addr: 2887376, file_size
-    : 304, mem_size: 304, align: 8 }
-    ERROR: DO ALLOCS NOW!~! 0x400000000000 0x4000002c4000
-    DEBUG: map_generic 0x400000000000 -- 0x4000002c4000 -> 0x3ddce000 -- 0x3e092000 RWX
-    DEBUG: map_generic 0x400000200000 -- 0x4000002c4000 -> 0x3dfce000 -- 0x3e092000 RWX
-    DEBUG: ELF Load at 0x400000000000 -- 0x4000000b95e0
-    DEBUG: ELF Load at 0x4000002ba1d0 -- 0x4000002c13c0
-
-
-    DEBUG: ELF Allocate: 0x400000000000 -- 0x4000000ba000
-    DEBUG: map_generic 0x400000000000 -- 0x4000000ba000 -> 0x3dfd8000 -- 0x3e092000 RWX
-    DEBUG: ELF Allocate: 0x4000002ba000 -- 0x4000002c4000
-    DEBUG: map_generic 0x4000002ba000 -- 0x4000002c4000 -> 0x3dfcb000 -- 0x3dfd5000 RWX
-        */
 
     /// Load a region of bytes into the virtual address space of the process.
     fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
+        /*
         if !self.allocated {
             let mut min_base: VAddr = VAddr::from(usize::max_value());
             let mut max_end: VAddr = VAddr::from(0usize);
@@ -537,7 +600,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             );
 
             self.allocated = true;
-        }
+        }*/
 
         let destination = self.offset + destination;
         debug!(
@@ -574,15 +637,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// with all dependencies we only expect to get relocations of type RELATIVE.
     /// Otherwise, the build would be broken or you got a garbage ELF file.
     /// We return an error in this case.
-    fn relocate(
-        &mut self,
-        entry: &elfloader::Rela<elfloader::P64>,
-        header_base: u64,
-    ) -> Result<(), &'static str> {
-        // TODO: we can't relocate below our header base in an ELF binary
-        // not impossible but not really needed
-        assert!(self.offset.as_u64() >= header_base);
-
+    fn relocate(&mut self, entry: &elfloader::Rela<elfloader::P64>) -> Result<(), &'static str> {
         // Get the pointer to where the relocation happens in the
         // memory where we loaded the headers
         // The forumla for this is our offset where the kernel is starting,
@@ -609,6 +664,27 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
         } else {
             Err("Can only handle R_RELATIVE for relocation")
         }
+    }
+
+    fn make_readonly(&mut self, base: u64, size: usize) -> Result<(), &'static str> {
+        trace!(
+            "Make readonly {:#x} -- {:#x}",
+            self.offset + base,
+            self.offset + base + size
+        );
+        assert_eq!(
+            (self.offset + base + size) % BASE_PAGE_SIZE,
+            0,
+            "RELRO segment doesn't end on a page-boundary"
+        );
+
+        let from: VAddr = self.offset + (base & !0xfff); // Round down to nearest page-size
+        let to = self.offset + base + size;
+
+        // TODO: NYI
+        // self.vspace.change_rights(from, to, MapAction::ReadKernel);
+
+        Ok(())
     }
 }
 

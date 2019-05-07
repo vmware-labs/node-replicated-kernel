@@ -10,14 +10,16 @@
 //! When the CPU driver on the boot core begins executing, the following
 //! statements hold:
 //!
-//!  * CR4: We enabled the following features
+//!  * In CR4, we enabled the following features
 //!    PROTECTION_KEY, SMAP, SMEP, OS_XSAVE, FSGSBASE, UNMASKED_SSE, ENABLE_SSE,
 //!    ENABLE_GLOBAL_PAGES, ENABLE_PAE, ENABLE_PSE, DEBUGGING_EXTENSIONS,
 //!    ENABLE_MACHINE_CHECK
+//!  * In IA32_EFER MSR, we enabled the following features
+//!    NSX (No execute bit)
 //!  * The address space that we switch to is as follows:
-//!    * All UEFI reported memory regions are 1:1 mapped phys <-> virt.
-//!    * XXX: All UEFI reported memory regions are 1:1 mirrored in the kernel address region (above XXX)
-//!    * The kernel ELF binary was relocated to 0x0004000_00000000.
+//!    * All UEFI reported memory regions are 1:1 mapped phys <-> virt as kernel readable-writeable.
+//!    * XXX: All UEFI reported memory regions are 1:1 mirrored in the kernel address region (above KERNEL_BASE)
+//!    * XXX: The kernel ELF binary loaded in physical memory and relocated for running in the space above KERNEL_BASE.
 //!  * A pointer to the KernelArgs struct is given as a first argument:
 //!    * The memory allocated for it (and everything within) points to the kernel address region (XXX)
 //!

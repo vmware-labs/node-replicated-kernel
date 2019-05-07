@@ -202,16 +202,6 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     assert!(desc_iter.len() > 0, "Memory map is empty");
 
     for entry in desc_iter {
-        if 0x0 != entry.virt_start {
-            info!(
-                "xxxxx {:#x} -- {:#x} {:?} {:?}",
-                entry.phys_start,
-                entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64,
-                entry.ty,
-                entry.att
-            );
-        }
-
         if entry.phys_start == 0x0 {
             debug!("Don't map memory entry at physical zero? {:#?}", entry);
             continue;
@@ -259,7 +249,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
 
             if entry.ty == MemoryType::CONVENTIONAL {
                 /*kernel.vspace.map_identity_with_offset(
-                    PAddr::from(2 * KERNEL_OFFSET as u64),
+                    PAddr::from(KERNEL_OFFSET as u64),
                     phys_range_start,
                     phys_range_end,
                     rights,

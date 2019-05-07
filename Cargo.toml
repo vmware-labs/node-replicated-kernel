@@ -17,7 +17,6 @@ members = [
     "lib/lineup",
     "lib/rawtime",
     "lib/ctest",
-    "lib/xmas-elf",
 ]
 
 # disable stack unwinding on panic for now

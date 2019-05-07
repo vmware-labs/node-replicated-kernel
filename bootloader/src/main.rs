@@ -315,10 +315,11 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
 
     // Next create an address space for our kernel
     trace!("Allocate a PML4 (page-table root)");
-    let pml4: PAddr = PAddr::from_u64(VSpace::allocate_one_page() as u64);
+    let pml4: PAddr = VSpace::allocate_one_page();
     let pml4_table = unsafe { &mut *paddr_to_kernel_vaddr(pml4).as_mut_ptr::<PML4>() };
 
     let mut kernel = Kernel {
+        allocated: false,
         offset: VAddr::from(KERNEL_OFFSET),
         mapping: Vec::new(),
         vspace: VSpace { pml4: pml4_table },

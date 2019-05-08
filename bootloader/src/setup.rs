@@ -14,6 +14,34 @@ macro_rules! round_up {
     };
 }
 
+macro_rules! is_page_aligned {
+    ($num:expr) => {
+        $num % BASE_PAGE_SIZE as u64 == 0
+    };
+}
+
+/// UEFI memory region type for ELF data allocation.
+pub const KernelElf: u32 = 0x80000001;
+
+/// UEFI memory region type for kernel page-tables.
+pub const KernelPT: u32 = 0x80000002;
+
+/// UEFI memory region type for the kernel stack.
+pub const KernelStack: u32 = 0x80000003;
+
+/// UEFI memory region type for the memory map.
+pub const UefiMemoryMap: u32 = 0x80000004;
+
+/// UEFI memory region type for arguments passed to the kernel.
+pub const KernelArgs: u32 = 0x80000005;
+
+/// 512 GiB are that many bytes.
+const GIB_512: usize = 512 * 512 * 512 * 0x1000;
+
+
+/// Translate between PAddr and VAddr
+///
+/// TODO: this should really be called paddr_to_uefi_vaddr()!
 pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
     return VAddr::from(paddr.as_u64());
 }
@@ -108,11 +136,10 @@ impl fmt::Display for MapAction {
     }
 }
 
+/// A VSpace allows to create and modify a (virtual) address space.
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
 }
-
-const GIB_512: usize = 512 * 512 * 512 * 0x1000;
 
 impl<'a> VSpace<'a> {
     /// Constructs an identity map but with an offset added to the region.
@@ -363,6 +390,70 @@ impl<'a> VSpace<'a> {
         VSpace::allocate_pages(1, uefi::table::boot::MemoryType(KernelPT))
     }
 
+    /// Does an allocation of physical memory where the base-address is a multiple of `align_to`.
+    pub(crate) fn allocate_pages_aligned(
+        how_many: usize,
+        typ: uefi::table::boot::MemoryType,
+        align_to: u64,
+    ) -> PAddr {
+        assert!(align_to.is_power_of_two(), "Alignment needs to be pow2");
+        assert!(
+            align_to >= BASE_PAGE_SIZE as u64,
+            "Alignment needs to be at least page-size"
+        );
+
+        let alignment_mask = align_to - 1;
+        let actual_how_many = how_many + ((align_to as usize) >> BASE_PAGE_SHIFT);
+        assert!(actual_how_many >= how_many);
+
+        // The region we allocated
+        let paddr = VSpace::allocate_pages(actual_how_many, typ);
+        let end = paddr + (actual_how_many * BASE_PAGE_SIZE);
+
+        // The region within the allocated one we actually want
+        let aligned_paddr = PAddr::from((paddr + alignment_mask) & !alignment_mask);
+        assert_eq!(aligned_paddr % align_to, 0, "Not aligned properly");
+        let aligned_end = aligned_paddr + (how_many * BASE_PAGE_SIZE);
+
+        // How many pages at the bottom and top we need to free
+        let unaligned_unused_pages_bottom = (aligned_paddr - paddr).as_usize() / BASE_PAGE_SIZE;
+        let unaligned_unused_pages_top = (end - aligned_end).as_usize() / BASE_PAGE_SIZE;
+
+        debug!(
+            "Wanted to allocate {} pages but we allocated {} ({:#x} -- {:#x}), keeping range ({:#x} -- {:#x}), freeing #pages at bottom {} and top {}",
+            how_many, actual_how_many,
+            paddr,
+            end,
+            aligned_paddr,
+            aligned_paddr + (how_many * BASE_PAGE_SIZE),
+            unaligned_unused_pages_bottom,
+            unaligned_unused_pages_top
+        );
+
+        assert!(
+            unaligned_unused_pages_bottom + unaligned_unused_pages_top
+                == actual_how_many - how_many,
+            "Don't loose any pages"
+        );
+
+        // Free unused top and bottom regions again:
+        unsafe {
+            let st = system_table();
+            st.as_ref()
+                .boot_services()
+                .free_pages(paddr.as_u64(), unaligned_unused_pages_bottom);
+        }
+
+        unsafe {
+            let st = system_table();
+            st.as_ref()
+                .boot_services()
+                .free_pages(aligned_end.as_u64(), unaligned_unused_pages_top);
+        }
+
+        PAddr::from(aligned_paddr)
+    }
+
     /// Allocates a set of consecutive physical pages, using UEFI.
     ///
     /// Zeroes the memory we allocate (TODO: I'm not sure if this is already done by UEFI).
@@ -469,16 +560,17 @@ impl<'a> VSpace<'a> {
     }
 
     /// Back a region of virtual address space with
-    /// allocated physical memory.
+    /// allocated physical memory (that got aligned to `palignment`).
     ///
     ///  * The base should be a multiple of `BASE_PAGE_SIZE`.
     ///  * The size should be a multiple of `BASE_PAGE_SIZE`.
-    pub fn map(&mut self, base: VAddr, size: usize, rights: MapAction) {
+    pub fn map(&mut self, base: VAddr, size: usize, rights: MapAction, palignment: u64) {
         assert_eq!(base % BASE_PAGE_SIZE, 0, "base is not page-aligned");
         assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
-        let paddr = VSpace::allocate_pages(
+        let paddr = VSpace::allocate_pages_aligned(
             size / BASE_PAGE_SIZE,
             uefi::table::boot::MemoryType(KernelElf),
+            palignment,
         );
         self.map_generic(base, (paddr, size), rights);
     }
@@ -486,7 +578,7 @@ impl<'a> VSpace<'a> {
     /// Fills a page in the virtual address space with the contents from region.
     pub(crate) fn fill(&self, address: VAddr, region: &[u8]) -> bool {
         assert_eq!(address % BASE_PAGE_SIZE, 0, "address is not page-aligned");
-        assert!(region.len() <= BASE_PAGE_SIZE, "Region too big to write.");
+        assert!(region.len() <= BASE_PAGE_SIZE, "region too big to write.");
 
         unsafe {
             match self.resolve_to_page(address) {
@@ -505,103 +597,122 @@ impl<'a> VSpace<'a> {
     }
 }
 
-pub const KernelElf: u32 = 0x80000001;
-pub const KernelPT: u32 = 0x80000002;
-pub const KernelStack: u32 = 0x80000003;
-pub const UefiMemoryMap: u32 = 0x80000004;
-pub const KernelArgs: u32 = 0x80000005;
-
+/// The starting address of the kernel address space
+///
+/// All physical mappings are identity mapped with KERNEL_OFFSET as
+/// displacement.
 pub const KERNEL_OFFSET: usize = 1 << 46;
 
+/// This struct stores meta-data required to construct
+/// an address space for the kernel and relocate the
+/// kernel ELF binary into it.
+///
+/// It also implements the ElfLoader trait.
 pub struct Kernel<'a> {
-    pub allocated: bool,
     pub offset: VAddr,
-    pub mapping: Vec<(VAddr, usize)>,
+    pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
     pub vspace: VSpace<'a>,
 }
 
 impl<'a> elfloader::ElfLoader for Kernel<'a> {
-    /// Makes sure the process vspace is backed for the region reported by the elf loader.
-    fn allocate(
-        &mut self,
-        base: u64,
-        size: usize,
-        flags: elfloader::Flags,
-    ) -> Result<(), &'static str> {
-        // Calculate the offset and align to page boundaries
-        // We can't expect to get something that is page-aligned from ELF
-        let page_base: VAddr = self.offset + (base & !0xfff); // Round down to nearest page-size
-        let size_page = round_up!(size + (base & 0xfff) as usize, BASE_PAGE_SIZE as usize);
-        assert!(size_page >= size);
-        assert_eq!(size_page % BASE_PAGE_SIZE, 0);
-        assert!(page_base >= VAddr::from(base));
-        assert_eq!(page_base % BASE_PAGE_SIZE, 0);
+    /// Makes sure the process vspace is backed for the regions
+    /// reported by the elf loader as loadable.
+    ///
+    /// Our strategy is to first figure out how much space we need,
+    /// then allocate a single chunk of physical memory and
+    /// map the individual pieces of it with different access rights.
+    /// This has the advantage that our kernel address space is
+    /// all a very simple 1:1 mapping of physical memory with the
+    /// KERNEL_OFFSET added to it.
+    ///
+    /// For alignment the following should hold (I don't quite get
+    /// what this parameter is useful for beyond the first load entry):
+    /// base ≡ offset, modulo align_to. (Or rather, base % align = offset % align_to)
+    fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
 
-        debug!(
-            "ELF Allocate: {:#x} -- {:#x}",
-            page_base,
-            page_base + size_page,
+        // Should contain what memory range we need to cover to contain
+        // loadable regions:
+        let mut min_base: VAddr = VAddr::from(usize::max_value());
+        let mut max_end: VAddr = VAddr::from(0usize);
+        let mut max_alignment: u64 = 0;
+
+        for header in load_headers.into_iter() {
+            let base = header.virtual_addr();
+            let size = header.mem_size() as usize;
+            let align_to = header.align();
+            let flags = header.flags();
+
+            // Calculate the offset and align to page boundaries
+            // We can't expect to get something that is page-aligned from ELF
+            let page_base: VAddr = VAddr::from(base & !0xfff); // Round down to nearest page-size
+            let size_page = round_up!(size + (base & 0xfff) as usize, BASE_PAGE_SIZE as usize);
+            assert!(size_page >= size);
+            assert_eq!(size_page % BASE_PAGE_SIZE, 0);
+            assert_eq!(page_base % BASE_PAGE_SIZE, 0);
+
+            // Update virtual range for ELF file [max, min] and alignment:
+            if max_alignment < align_to {
+                max_alignment = align_to;
+            }
+            if min_base > page_base {
+                min_base = page_base;
+            }
+            if page_base + size_page as u64 > max_end {
+                max_end = page_base + size_page as u64;
+            }
+
+            debug!(
+                "ELF Allocate: {:#x} -- {:#x} align to {:#x}",
+                page_base,
+                page_base + size_page,
+                align_to
+            );
+
+            let map_action = match (flags.is_execute(), flags.is_write(), flags.is_read()) {
+                (false, false, false) => MapAction::None,
+                (true, false, false) => MapAction::None,
+                (false, true, false) => MapAction::None,
+                (false, false, true) => MapAction::ReadKernel,
+                (true, false, true) => MapAction::ReadExecuteKernel,
+                (true, true, false) => MapAction::None,
+                (false, true, true) => MapAction::ReadWriteKernel,
+                (true, true, true) => MapAction::ReadWriteExecuteKernel,
+            };
+
+            // We don't allocate yet -- just record the allocation parameters
+            // This has the advantage that we know how much memory we need
+            // and can reserve one consecutive chunk of physical memory
+            self.mapping
+                .push((page_base, size_page, align_to, map_action));
+        }
+        assert!(
+            is_page_aligned!(min_base),
+            "min base is not aligned to page-size"
+        );
+        assert!(
+            is_page_aligned!(max_end),
+            "max end is not aligned to page-size"
+        );
+        let pbase = VSpace::allocate_pages_aligned(
+            (max_end - min_base) >> BASE_PAGE_SHIFT,
+            uefi::table::boot::MemoryType(KernelElf),
+            max_alignment,
         );
 
-        /*self.mapping.push((page_base, size_page));
-        self.allocated = true;*/
-        let map_action = match (flags.is_execute(), flags.is_write(), flags.is_read()) {
-            (false, false, false) => MapAction::None,
-            (true, false, false) => MapAction::None,
-            (false, true, false) => MapAction::None,
-            (false, false, true) => MapAction::ReadKernel,
-            (true, false, true) => MapAction::ReadExecuteKernel,
-            (true, true, false) => MapAction::None,
-            (false, true, true) => MapAction::ReadWriteKernel,
-            (true, true, true) => MapAction::ReadWriteExecuteKernel,
-        };
+        self.offset = VAddr::from(KERNEL_OFFSET + pbase.as_usize());
+        info!("Kernel loaded at address: {:#x}", self.offset);
 
-        self.vspace.map(page_base, size_page, map_action);
+        // Do the mappings:
+        for (base, size, _alignment, action) in self.mapping.iter() {
+            self.vspace
+                .map_generic(self.offset + *base, (pbase + base.as_u64(), *size), *action);
+        }
 
         Ok(())
     }
 
     /// Load a region of bytes into the virtual address space of the process.
     fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
-        /*
-        if !self.allocated {
-            let mut min_base: VAddr = VAddr::from(usize::max_value());
-            let mut max_end: VAddr = VAddr::from(0usize);
-            for (base, size) in self.mapping.iter() {
-                if min_base > *base {
-                    min_base = *base;
-                }
-
-                if *base + *size > max_end {
-                    max_end = *base + *size;
-                }
-            }
-
-            error!("DO ALLOCS NOW!~! {:#x} {:#x}", min_base, max_end);
-            assert_eq!(
-                min_base % BASE_PAGE_SIZE,
-                0,
-                "min base is not aligned to page-size"
-            );
-            assert_eq!(
-                max_end % BASE_PAGE_SIZE,
-                0,
-                "max end is not aligned to page-size"
-            );
-            let pbase = VSpace::allocate_pages(
-                (max_end - min_base).as_usize() / BASE_PAGE_SIZE,
-                uefi::table::boot::MemoryType(KernelElf),
-            );
-
-            self.vspace.map_generic(
-                self.offset,
-                (pbase, (max_end - min_base).as_usize()),
-                MapAction::ReadWriteExecute,
-            );
-
-            self.allocated = true;
-        }*/
-
         let destination = self.offset + destination;
         debug!(
             "ELF Load at {:#x} -- {:#x}",

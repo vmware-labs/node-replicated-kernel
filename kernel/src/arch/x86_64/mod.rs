@@ -342,9 +342,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // (`regs`) is not mapped, we map it now (after we do init_kcb) because
     // only then do we have memory management to allocate the page-tables
     // required for the mapping
-    kcb::get_kcb()
-        .init_vspace()
-        .map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);
+    /*kcb::get_kcb()
+    .init_vspace()
+    .map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);*/
     // Attach the driver to the registers:
     let mut apic = kcb::get_kcb().apic();
     apic.attach();

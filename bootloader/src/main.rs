@@ -248,17 +248,17 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 .map_identity(phys_range_start, phys_range_end, rights);
 
             if entry.ty == MemoryType::CONVENTIONAL {
-                /*kernel.vspace.map_identity_with_offset(
+                kernel.vspace.map_identity_with_offset(
                     PAddr::from(KERNEL_OFFSET as u64),
                     phys_range_start,
                     phys_range_end,
                     rights,
-                );*/
+                );
             }
         }
     }
 
-    /// TODO: ReMap the APIC at a different address...
+    // TODO: ReMap the APIC at a different address...
     kernel.vspace.map_identity(
         PAddr(0xfee00000u64),
         PAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
@@ -308,8 +308,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     let pml4_table = unsafe { &mut *paddr_to_kernel_vaddr(pml4).as_mut_ptr::<PML4>() };
 
     let mut kernel = Kernel {
-        allocated: false,
-        offset: VAddr::from(KERNEL_OFFSET),
+        offset: VAddr::from(0usize),
         mapping: Vec::new(),
         vspace: VSpace { pml4: pml4_table },
     };
@@ -392,7 +391,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.kernel_binary = (kernel_base_paddr, kernel_size);
 
         info!(
-            "Kernel will execute at: {:p}",
+            "Kernel will start to execute from: {:p}",
             kernel.offset + binary.entry_point()
         );
 
@@ -400,7 +399,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         // before any of the EXIT_BOOT_SERVICES (watchdog?)
 
         // We exit the UEFI boot services (and record the memory map)
-        info!("Exiting boot services.");
+        info!("Exiting boot services. About to jump...");
         let (st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
             .expect_success("Can't exit the boot service");

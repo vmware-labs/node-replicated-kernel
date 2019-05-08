@@ -338,15 +338,11 @@ impl<'a> fmt::Debug for Process<'a> {
 
 impl<'a> ElfLoader for Process<'a> {
     /// Makes sure the process vspace is backed for the region reported by the elf loader.
-    fn allocate(
-        &mut self,
-        base: u64,
-        size: usize,
-        _flags: elfloader::Flags,
-    ) -> Result<(), &'static str> {
-        debug!("allocate: 0x{:x} -- 0x{:x}", base, base as usize + size);
-        let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
-        self.vspace.map(VAddr::from(base), rsize);
+    fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
+        //debug!("allocate: 0x{:x} -- 0x{:x}", base, base as usize + size);
+        //let rsize = round_up!(size, BASE_PAGE_SIZE as usize);
+        //self.vspace.map(VAddr::from(base), rsize);
+        panic!("NYI");
         Ok(())
     }
 

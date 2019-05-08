@@ -1,3 +1,7 @@
+/// Arguments that are passed on to the kernel by the bootloader.
+///
+/// This file is imported using include!() from the kernel source
+/// so we have to be careful with imports.
 #[derive(Debug)]
 pub struct KernelArgs {
     /// Physical base address and size of the UEFI memory map (constructed on boot services exit).

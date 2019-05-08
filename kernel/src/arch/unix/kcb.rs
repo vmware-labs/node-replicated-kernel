@@ -4,9 +4,6 @@ use alloc::boxed::Box;
 use core::cell::{Ref, RefCell, RefMut};
 use core::ptr;
 
-use multiboot::Multiboot;
-use x86::current::segmentation;
-
 use apic::xapic::XAPIC;
 
 use super::irq;

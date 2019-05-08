@@ -60,7 +60,6 @@ use x86::bits64::paging::*;
 
 use x86::controlregs;
 
-mod boot;
 mod setup;
 mod shared;
 

@@ -1,6 +1,6 @@
 pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
 
-/// Maximum amount of addressable physical memory in kernel (32 TiB).
+/// Start of the kernel address space.
 const KERNEL_BASE: u64 = 0x400000000000;
 
 /// Translate a kernel 'virtual' address to the physical address of the memory.

@@ -21,7 +21,7 @@ fn main() {
         .compile("start_ap");
 
     // Rumpkernel
-    /* println!("cargo:rustc-link-lib=static=rump");
+    println!("cargo:rustc-link-lib=static=rump");
     println!("cargo:rustc-link-lib=static=rumpvfs");
     println!("cargo:rustc-link-lib=static=rumpdev");
     println!("cargo:rustc-link-lib=static=rumpfs_tmpfs");
@@ -59,5 +59,5 @@ fn main() {
     println!("cargo:rustc-link-lib=static=rumpdev_umass");
 
     // Linux Kernel:
-    println!("cargo:rustc-link-lib=static=linux");*/
+    println!("cargo:rustc-link-lib=static=linux");
 }

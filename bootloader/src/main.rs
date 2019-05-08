@@ -11,17 +11,27 @@
 //! statements hold:
 //!
 //!  * In CR4, we enabled the following features
-//!    PROTECTION_KEY, SMAP, SMEP, OS_XSAVE, FSGSBASE, UNMASKED_SSE, ENABLE_SSE,
-//!    ENABLE_GLOBAL_PAGES, ENABLE_PAE, ENABLE_PSE, DEBUGGING_EXTENSIONS,
-//!    ENABLE_MACHINE_CHECK
+//!    * PROTECTION_KEY,
+//!    * SMAP
+//!    * SMEP
+//!    * OS_XSAVE
+//!    * FSGSBASE
+//!    * UNMASKED_SSE
+//!    * ENABLE_SSE,
+//!    * ENABLE_GLOBAL_PAGES
+//!    * ENABLE_PAE
+//!    * ENABLE_PSE
+//!    * DEBUGGING_EXTENSIONS,
+//!    * ENABLE_MACHINE_CHECK
 //!  * In IA32_EFER MSR, we enabled the following features
-//!    NSX (No execute bit)
-//!  * The address space that we switch to is as follows:
-//!    * All UEFI reported memory regions are 1:1 mapped phys <-> virt as kernel readable-writeable.
-//!    * XXX: All UEFI reported memory regions are 1:1 mirrored in the kernel address region (above KERNEL_BASE)
-//!    * XXX: The kernel ELF binary loaded in physical memory and relocated for running in the space above KERNEL_BASE.
+//!    * NSX (No execute bit): The constructed kernel page-tables already make use of the NSX bits
+//!  * The kernel address space we switch to is set-up as follows:
+//!    * All UEFI reported memory regions are 1:1 mapped phys <-> virt.
+//!    * All UEFI reported memory regions are 1:1 mapped (above KERNEL_BASE).
+//!    * The kernel ELF binary is loaded somewhere in physical memory and relocated
+//!      for running in the space above KERNEL_BASE.
 //!  * A pointer to the KernelArgs struct is given as a first argument:
-//!    * The memory allocated for it (and everything within) points to the kernel address region (XXX)
+//!    * XXX? The memory allocated for it (and everything within) is pointing to addresses above KERNEL_BASE
 //!
 //!  Not yet done:
 //!    * the xAPIC region is remapped to XXX

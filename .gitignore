@@ -3,7 +3,6 @@ kernel.bin*
 *.o
 *.rlib
 kernel/kernel
-kernel/mbkernel
 
 # rump
 rump/binutils-2.30.90

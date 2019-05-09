@@ -233,11 +233,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     enable_sse();
     enable_fsgsbase();
 
-    // Load a new GDT and initialize our IDT
-    gdt::setup_gdt();
-    irq::setup_idt();
-    // We should catch page-faults and general protection faults from here...
-
     // Make sure these constants are initialized early, for proper time accounting (otherwise because
     // they are lazy_static we may not end up using them until way later).
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
@@ -253,6 +248,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::WALL_TIME_ANCHOR,
         *rawtime::BOOT_TIME_ANCHOR
     );
+
+    // Load a new GDT and initialize our IDT
+    gdt::setup_gdt();
+    irq::setup_idt();
+    // We should catch page-faults and general protection faults from here...
+
 
     let mut kernel_args: &'static KernelArgs =
         unsafe { transmute::<u64, &'static KernelArgs>(argc as u64) };

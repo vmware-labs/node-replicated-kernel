@@ -190,8 +190,8 @@ if [ "${_arg_norun}" != "on" ]; then
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
         KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
-		#KVM_ARG='-cpu qemu64'
     else
+		echo "No KVM, system will fail in initializtion since we're missing fs/gs base instructions."
         KVM_ARG='-cpu qemu64'
     fi
 
@@ -200,7 +200,7 @@ if [ "${_arg_norun}" != "on" ]; then
 	# QEMU Monitor for debug: https://en.wikibooks.org/wiki/QEMU/Monitor
 	# qemu-system-x86_64 -d help
 	#QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
-	#QEMU_MONITOR="-d cpu_reset"
+	#QEMU_MONITOR="-d int,cpu_reset"
 
     # Create a tap interface to communicate with guest and give it an IP
     sudo tunctl -t tap0 -u $USER -g `id -gn`

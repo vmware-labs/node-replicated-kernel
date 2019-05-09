@@ -242,6 +242,7 @@ pub fn xmain() {
 }
 
 #[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
+#[inline(never)]
 pub fn xmain() {
     use arch::memory::{paddr_to_kernel_vaddr, PAddr};
 

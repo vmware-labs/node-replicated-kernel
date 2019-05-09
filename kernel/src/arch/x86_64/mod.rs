@@ -149,10 +149,11 @@ fn assert_required_cpu_features() {
     assert!(has_sse, "No SSE? Run on a more modern machine!");
     assert!(has_osfxsr, "No fxsave? Run on a more modern machine!");
     assert!(has_sse3, "No SSE3? Run on a more modern machine!"); //TBD
-    assert!(has_avx, "No AVX? Run on a more modern machine!"); //TBD
+
+    //assert!(has_avx, "No AVX? Run on a more modern machine!");
 
     assert!(has_apic, "No APIC? Run on a more modern machine!");
-    assert!(has_x2apic, "No x2apic? Run on a more modern machine!");
+    //assert!(has_x2apic, "No x2apic? Run on a more modern machine!");
     assert!(has_syscalls, "No sysenter? Run on a more modern machine!");
     assert!(has_pae, "No PAE? Run on a more modern machine!");
     assert!(has_msr, "No MSR? Run on a more modern machine!");
@@ -236,7 +237,11 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     enable_sse();
     enable_fsgsbase();
+
+    // Load a new GDT and initialize our IDT
     gdt::setup_gdt();
+    irq::setup_idt();
+    // We should catch page-faults and general protection faults from here...
 
     // Make sure these constants are initialized early, for proper time accounting (otherwise because
     // they are lazy_static we may not end up using them until way later).
@@ -280,10 +285,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // in case things go wrong (see panic.rs).
     let kernel_binary: &'static [u8] = unsafe {
         slice::from_raw_parts(
-            memory::paddr_to_kernel_vaddr(PAddr::from(kernel_args.kernel_binary.0)).as_ptr(),
+            kernel_args.kernel_binary.0.as_u64() as *const u8,
             kernel_args.kernel_binary.1,
         )
     };
+
+    trace!("kernel binary slice {:?}", kernel_binary[0]);
 
     // Find the physical memory regions available and add them to the physical memory manager
     let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();
@@ -330,12 +337,15 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
     let mut apic = xapic::XAPIC::new(regs);
     trace!("apic constructed");
+    apic.attach();
+
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
     trace!("seting kcb");
     kcb::init_kcb(kcb);
     debug!("Memory allocation should work at this point...");
+    irq::init_irq_handlers();
 
     // Finish ACPI initialization here: because the APIC base memory
     // (`regs`) is not mapped, we map it now (after we do init_kcb) because
@@ -346,7 +356,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     .map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);*/
     // Attach the driver to the registers:
     let mut apic = kcb::get_kcb().apic();
-    apic.attach();
     info!(
         "xAPIC id: {}, version: {:#x}, is bsp: {}",
         apic.id(),
@@ -354,8 +363,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         apic.bsp()
     );
 
-    // Initialize IDT and load a new GDT
-    irq::setup_idt();
 
     // Do we want to enable IRQs here?
     // irq::enable();

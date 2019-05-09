@@ -79,6 +79,11 @@ impl Kcb {
     pub fn kernel_binary(&self) -> Ref<&'static [u8]> {
         self.kernel_binary.borrow()
     }
+
+    pub fn kernel_args(&self) -> Ref<&'static crate::arch::KernelArgs> {
+        self.kernel_args.borrow()
+    }
+
 }
 
 pub(crate) fn init_kcb(mut kcb: Kcb) {

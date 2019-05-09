@@ -241,6 +241,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
             MemoryType(KernelPT) => MapAction::ReadWriteKernel,
             MemoryType(KernelStack) => MapAction::ReadWriteKernel,
             MemoryType(UefiMemoryMap) => MapAction::ReadWriteKernel,
+            MemoryType(KernelArgs) => MapAction::ReadKernel,
             _ => {
                 error!("Unknown memory type, what should we do? {:#?}", entry);
                 MapAction::None
@@ -298,7 +299,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     let kernel_base_paddr = allocate_pages(
         &st,
         round_up!(kernel_size, BASE_PAGE_SIZE) / BASE_PAGE_SIZE,
-        MemoryType(UefiMemoryMap),
+        MemoryType(KernelArgs),
     );
     trace!("Load the kernel binary (in a vector)");
     let mut kernel_blob: &mut [u8] = unsafe {
@@ -322,16 +323,31 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         vspace: VSpace { pml4: pml4_table },
     };
 
+    /// Map the kernel ELF file contents
+    kernel.vspace.map_identity_with_offset(
+        PAddr::from(KERNEL_OFFSET as u64),
+        PAddr::from(kernel_base_paddr),
+        PAddr::from(kernel_base_paddr + round_up!(kernel_size, BASE_PAGE_SIZE)),
+        MapAction::ReadKernel,
+    );
+
     // Parse the ELF file and load it into the new address space
     let binary = elfloader::ElfBinary::new("kernel", kernel_blob).unwrap();
     trace!("Load the ELF binary into the address space");
     binary.load(&mut kernel).expect("Can't load the kernel");
 
     trace!("Kernel stack allocation");
-    let stack_pages = 128;
-    let stack_base = allocate_pages(&st, stack_pages, MemoryType(KernelStack));
-    let stack_top = stack_base.as_u64() + (stack_pages * BASE_PAGE_SIZE) as u64;
-    assert_eq!(stack_top % 16, 0);
+    let stack_pages: usize = 128;
+    let stack_base: PAddr = allocate_pages(&st, stack_pages, MemoryType(KernelStack));
+    let stack_size: usize = stack_pages * BASE_PAGE_SIZE;
+    let stack_top: PAddr = stack_base + stack_size as u64;
+    assert_eq!(stack_top % 16usize, 0);
+    kernel.vspace.map_identity_with_offset(
+        PAddr::from(KERNEL_OFFSET as u64),
+        stack_base,
+        stack_top,
+        MapAction::ReadWriteExecuteKernel,
+    );
     debug!("Kernel stack starts at {:x}", stack_top);
 
     // Make sure we still have access to the UEFI mappings:
@@ -394,10 +410,11 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         trace!("Kernel args allocated.");
 
         // Initialize the KernelArgs
-        kernel_args.mm = (mm_paddr, mm_size);
+        kernel_args.mm = (mm_paddr + KERNEL_OFFSET, mm_size);
         kernel_args.pml4 = PAddr::from(kernel.vspace.pml4 as *const _ as u64);
-        kernel_args.stack = (stack_base, stack_pages * BASE_PAGE_SIZE);
-        kernel_args.kernel_binary = (kernel_base_paddr, kernel_size);
+        kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
+        kernel_args.kernel_binary = (kernel_base_paddr + KERNEL_OFFSET, kernel_size);
+        kernel_args.kernel_elf_offset = kernel.offset;
 
         info!(
             "Kernel will start to execute from: {:p}",
@@ -426,7 +443,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
 
         // Finally switch to the kernel stack and entry function
         jump_to_kernel(
-            stack_top,
+            KERNEL_OFFSET as u64 + stack_top.as_u64(),
             kernel.offset.as_u64() + binary.entry_point(),
             kernel_args_paddr.0,
         );

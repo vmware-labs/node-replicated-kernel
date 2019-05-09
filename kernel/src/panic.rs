@@ -7,15 +7,21 @@ use crate::ExitReason;
 use backtracer;
 
 fn backtrace_format(count: usize, frame: &backtracer::Frame) -> bool {
-    let kernel_binary = kcb::try_get_kcb().map(|k| k.kernel_binary());
+    let kernel_info = kcb::try_get_kcb().map(|k| {
+        (
+            k.kernel_binary(),
+            k.kernel_args().kernel_elf_offset.as_u64(),
+        )
+    });
     let ip = frame.ip();
 
     sprint!("frame #{:<2} - {:#02$x}", count, ip as usize, 20);
     let mut resolved = false;
 
     // Resolve this instruction pointer to a symbol name
-    if kernel_binary.is_some() {
-        backtracer::resolve(&*kernel_binary.unwrap(), ip, |symbol| {
+    if kernel_info.is_some() {
+        let (kernel_binary, relocated_offset) = kernel_info.unwrap();
+        backtracer::resolve(&*kernel_binary, relocated_offset, ip, |symbol| {
             if !resolved {
                 resolved = true;
             } else {

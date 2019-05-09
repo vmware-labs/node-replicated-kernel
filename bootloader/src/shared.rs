@@ -16,4 +16,6 @@ pub struct KernelArgs {
     pub stack: (x86::bits64::paging::PAddr, usize),
     /// Mapping location of the loaded kernel binary file and it's size.
     pub kernel_binary: (x86::bits64::paging::PAddr, usize),
+    /// The offset where the elfloader placed the kernel
+    pub kernel_elf_offset: x86::bits64::paging::VAddr,
 }

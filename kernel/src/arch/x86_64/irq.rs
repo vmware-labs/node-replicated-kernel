@@ -102,8 +102,9 @@ rip = {:>#18x} rflags = {:?}",
     }
 }
 
+/// The isr.S code saves the registers in here in case an interrupt happens.
 #[no_mangle]
-pub static CURRENT_SAVE_AREA: SaveArea = SaveArea::empty();
+pub static mut CURRENT_SAVE_AREA: SaveArea = SaveArea::empty();
 
 const IDT_SIZE: usize = 256;
 static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
@@ -222,10 +223,16 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
     unsafe {
         assert!(a.vector < 256);
 
+        // Shortcut to handle protection and page faults
+        // that lock and IRQ_HANDLERS thing requires a bit
+        // too much machinery and is only set-up late in initialization
+        // and unfortunately! sometimes things break early on...
         if a.vector == 0xd {
             gp_handler(&a);
-        } else if a.vector == 0xc {
+            return;
+        } else if a.vector == 0xe {
             pf_handler(&a);
+            return;
         }
 
         trace!("handle_generic_exception {:?}", a);
@@ -240,11 +247,12 @@ const PIC2_CMD: u16 = 0xA0;
 pub unsafe fn acknowledge() {
     // ACK the interrupt
     // TODO: Disable the PIC and get rid of this.
-    io::outb(PIC2_CMD, 0x20);
-    io::outb(PIC1_CMD, 0x20);
+    //io::outb(PIC2_CMD, 0x20);
+    //io::outb(PIC1_CMD, 0x20);
 
     // TODO: Need ACPI to disable PIC first before this does anything.
-    //msr::wrmsr(0x800 + 0xb, 0);
+    use x86::msr;
+    msr::wrmsr(0x800 + 0xb, 0);
 }
 
 /// Work around for Intel quirk. Remap PIC vectors 0-16 to 32-48.
@@ -319,10 +327,18 @@ pub unsafe fn register_handler(
 }
 
 /// Initializes and loads the IDT into the CPU.
+///
+/// With this done we should be able to catch basic pfaults and gpfaults.
 pub fn setup_idt() {
     unsafe {
+
+        //let mut old_idt: dtables::DescriptorTablePointer<Descriptor64> = Default::default();
+        //dtables::sidt(&mut old_idt);
+        //trace!("IDT was: {:?}", old_idt);
+
         let idtptr = dtables::DescriptorTablePointer::new_from_slice(&IDT);
         dtables::lidt(&idtptr);
+        trace!("IDT set to {:p}", &idtptr);
 
         // Note everything is declared as interrupt gates for now.
         // Trap and Interrupt gates are similar,
@@ -367,13 +383,17 @@ pub fn setup_idt() {
         idt_set!(45, isr_handler45, seg, 0x8E);
         idt_set!(46, isr_handler46, seg, 0x8E);
         idt_set!(47, isr_handler47, seg, 0x8E);
+    }
+    info!("IDT table initialized.");
+}
 
-        /*register_handler(13, Box::new(|e| gp_handler(e)));
-        register_handler(14, Box::new(|e| pf_handler(e)));
+/// Finishes the initialization of IRQ handlers once we have memory allocation.
+pub fn init_irq_handlers() {
+    lazy_static::initialize(&IRQ_HANDLERS);
 
-        pic_remap();
-        info!("Completed pic remap");*/
-        lazy_static::initialize(&IRQ_HANDLERS);
+    unsafe {
+        //register_handler(13, Box::new(|e| gp_handler(e)));
+        //register_handler(14, Box::new(|e| pf_handler(e)));
     }
 }
 

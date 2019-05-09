@@ -41,11 +41,6 @@ use logos::Logos;
 
 use memory::*;
 use process::*;
-extern "C" {
-    /// A pointer to the multiboot struct (initialized by start.S)
-    #[no_mangle]
-    static mboot_ptr: memory::PAddr;
-}
 
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
@@ -100,14 +95,14 @@ fn paddr_to_slice(base: u64, size: usize) -> Option<&'static [u8]> {
 
 /// Parse command line argument and initialize the logging infrastructure.
 ///
-/// Example: If args is './mbkernel log=trace' -> sets level to Level::debug
+/// Example: If args is './kernel log=trace' -> sets level to Level::Trace
 fn init_logging(args: &str) {
     let mut lexer = CmdToken::lexer(args);
     let level: Level = loop {
         let mut level = Level::Info;
         lexer.advance();
         match (lexer.token, lexer.slice()) {
-            (CmdToken::Binary, bin) => assert_eq!(bin, "./mbkernel"),
+            (CmdToken::Binary, bin) => assert_eq!(bin, "./kernel"),
             (CmdToken::Log, _) => {
                 lexer.advance();
                 level = match (lexer.token, lexer.slice()) {
@@ -119,7 +114,7 @@ fn init_logging(args: &str) {
                     (_, _) => Level::Error,
                 };
             }
-            (CmdToken::End, _) => level = Level::Trace,
+            (CmdToken::End, _) => level = Level::Info,
             (_, _) => continue,
         };
 
@@ -248,9 +243,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
-    // Construct a multiboot struct for accessing the multiboot information
-    let args = "./mbkernel log=trace";
-
+    // Parse the command line arguments
+    // TODO: This should be passed on over using the UEFI bootlaoder
+    // https://stackoverflow.com/questions/17702725/how-to-access-command-line-arguments-in-uefi
+    let args = include_str!("../../../cmdline.in");
     init_logging(args);
     info!(
         "Started at {} with {:?} since CPU startup",

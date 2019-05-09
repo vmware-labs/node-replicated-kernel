@@ -17,8 +17,8 @@ fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
             "run.sh",
             "--features",
             features.as_str(),
-            "--log",
-            "info",
+            "--cmd",
+            "log=info",
             "--norun",
         ])
         .output()
@@ -26,7 +26,7 @@ fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
     assert!(o.status.success());
 
     spawn(
-        format!("bash run.sh --features {} --log info", features).as_str(),
+        format!("bash run.sh --features {} --cmd log=info", features).as_str(),
         Some(15000),
     )
 }

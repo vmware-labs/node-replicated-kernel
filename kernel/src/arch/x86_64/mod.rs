@@ -126,10 +126,6 @@ fn init_logging(args: &str) {
         break level;
     };
 
-    unsafe {
-        debug::puts("before klogger::init");
-    }
-
     klogger::init(level).expect("Can't set-up logging");
 }
 
@@ -236,7 +232,7 @@ include!("../../../../bootloader/src/shared.rs");
 #[no_mangle]
 #[start]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
-    sprint!("\n\n");
+    sprint!("\r\n");
 
     enable_sse();
     enable_fsgsbase();
@@ -298,11 +294,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             let base = region.phys_start;
             let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
 
-            if base > 0x100000 && size > BASE_PAGE_SIZE {
+            // TODO BAD: We can only add one region to the buddy allocator, so we need
+            // to pick a big one weee
+            if base > 0x100000 && size > BASE_PAGE_SIZE && region.page_count > 12000 {
                 debug!("region.base = {:#x} region.size = {:#x}", base, size);
                 unsafe {
-                    if fmanager.add_memory(Frame::new(PAddr::from(base), size)) {
-                        debug!("Trying to add base={:#x} size={:#x}", base, size);
+                    let mut f = Frame::new(PAddr::from(base), size);
+                    if fmanager.add_memory(f) {
+                        debug!("Added base={:#x} size={:#x}", base, size);
                     } else {
                         warn!("Unable to add base={:#x} size={:#x}", base, size)
                     }

@@ -246,9 +246,10 @@ pub fn xmain() {
     use arch::memory::{paddr_to_kernel_vaddr, PAddr};
 
     unsafe {
-        let paddr = PAddr::from(1024 * 1024 * 1024 * 1);
+        let paddr = PAddr::from(0xdeadbeef);
         let kernel_vaddr = paddr_to_kernel_vaddr(paddr);
         let ptr: *mut u64 = kernel_vaddr.as_mut_ptr();
+        debug!("before causing the pfault");
         let val = *ptr;
         assert!(val != 0);
     }

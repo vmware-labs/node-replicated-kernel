@@ -197,7 +197,7 @@ impl DriverControl for XAPIC {
             self.base = rdmsr(IA32_APIC_BASE);
             self.base.set_bit(11, true); // Enable xAPIC
             wrmsr(IA32_APIC_BASE, self.base);
-            trace!("Enabled xAPIC");
+            trace!("Enabled xAPIC {:#b}", self.base);
         }
     }
 

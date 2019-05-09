@@ -61,6 +61,8 @@ impl PhysicalAllocator for BuddyFrameAllocator {
             let order = self
                 .layout_to_order(Layout::from_size_align_unchecked(size, 1))
                 .expect("Failed to calculate order for root heap block");
+            //trace!("order = {} size = {}", order, region.size);
+            self.region.base = region.base;
             self.free_list_insert(order, region.kernel_vaddr().as_mut_ptr::<FreeBlock>());
             true
         } else {
@@ -278,6 +280,7 @@ impl BuddyFrameAllocator {
         if size <= self.region.size {
             Some(size)
         } else {
+            trace!("We can't allocate a block bigger than our heap.");
             None
         }
     }

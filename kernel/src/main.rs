@@ -116,8 +116,9 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             let kcb = crate::kcb::get_kcb();
             let mut fmanager = kcb.pmanager();
 
-            let f = fmanager.allocate(layout);
-            let ptr = f.map_or(core::ptr::null_mut(), |region| {
+            let mut f = fmanager.allocate(layout);
+            let ptr = f.map_or(core::ptr::null_mut(), |mut region| {
+                region.zero();
                 region.kernel_vaddr().as_mut_ptr()
             });
 

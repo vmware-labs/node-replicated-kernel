@@ -255,14 +255,15 @@ impl<'a> PageProvider<'a> for BespinSlabsProvider {
         let kcb = crate::kcb::get_kcb();
         let mut fmanager = kcb.pmanager();
 
-        let f = unsafe {
+        let mut f = unsafe {
             fmanager.allocate(
                 Layout::new::<paging::Page>()
                     .align_to(BASE_PAGE_SIZE)
                     .unwrap(),
             )
         };
-        f.map(|frame| unsafe {
+        f.map(|mut frame| unsafe {
+            frame.zero();
             debug!("slabmalloc allocate frame.base = {:x}", frame.base);
             let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
             sp

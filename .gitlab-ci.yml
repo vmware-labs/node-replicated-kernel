@@ -23,7 +23,7 @@ run-qemu:
   stage: run
   script:
     - cd kernel
-    - bash run.sh --log trace
+    - bash run.sh --cmd log=trace
   dependencies:
     - build
   variables:

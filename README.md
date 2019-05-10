@@ -68,6 +68,7 @@ Commit changes and push
 1. Delete the relevant section from .git/config.
 1. Run git rm --cached path_to_submodule (no trailing slash).
 1. Run rm -rf .git/modules/path_to_submodule (no trailing slash).
+1. Commit changes
 
 ### Future Work
  * [x] Milestone 1: Running libcore user-space program

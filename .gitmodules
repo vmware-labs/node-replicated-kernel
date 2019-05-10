@@ -1,6 +1,3 @@
-[submodule "lib/multiboot"]
-	path = lib/multiboot
-	url = https://github.com/gz/rust-multiboot.git
 [submodule "lib/cpuid"]
 	path = lib/cpuid
 	url = git@github.com:gz/rust-cpuid.git

@@ -143,7 +143,26 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
         "{}",
         x86::irq::PageFaultError::from_bits_truncate(a.exception as u32)
     );
-    sprintln!("Faulting address: {:#x}", x86::controlregs::cr2());
+
+    // Print where the fault happend in the address-space:
+    let faulting_address = x86::controlregs::cr2();
+    sprint!("Faulting address: {:#x}", faulting_address);
+    use crate::arch::kcb;
+    kcb::try_get_kcb().map(|k| {
+        sprintln!(
+            " (in ELF: {:#x})",
+            faulting_address - k.kernel_args().kernel_elf_offset.as_usize()
+        )
+    });
+
+    // Print the RIP that triggered the fault:
+    sprint!("Instruction Pointer: {:#x}", a.rip);
+    kcb::try_get_kcb().map(|k| {
+        sprintln!(
+            " (in ELF: {:#x})",
+            a.rip - k.kernel_args().kernel_elf_offset.as_u64()
+        )
+    });
 
     sprintln!("{:?}", a);
     let csa = &CURRENT_SAVE_AREA;
@@ -241,74 +260,10 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
     }
 }
 
-const PIC1_CMD: u16 = 0x20;
-const PIC2_CMD: u16 = 0xA0;
-
 pub unsafe fn acknowledge() {
-    // ACK the interrupt
-    // TODO: Disable the PIC and get rid of this.
-    //io::outb(PIC2_CMD, 0x20);
-    //io::outb(PIC1_CMD, 0x20);
-
     // TODO: Need ACPI to disable PIC first before this does anything.
     use x86::msr;
     msr::wrmsr(0x800 + 0xb, 0);
-}
-
-/// Work around for Intel quirk. Remap PIC vectors 0-16 to 32-48.
-/// TODO: PIC handling should probably go into separate file.
-pub unsafe fn pic_remap() {
-    const PIC1_DATA: u16 = 0x21;
-    const PIC2_DATA: u16 = 0xA1;
-
-    let m1 = io::inb(PIC1_DATA);
-    let m2 = io::inb(PIC2_DATA);
-
-    pub const ICW4: u8 = 0x01;
-    pub const INIT: u8 = 0x10;
-    pub const ICW4_8086: u8 = 0x1;
-
-    io::outb(PIC1_CMD, ICW4 | INIT);
-    io::outb(PIC2_CMD, ICW4 | INIT);
-
-    io::outb(PIC1_DATA, 32);
-    io::outb(PIC2_DATA, 32 + 8);
-
-    io::outb(PIC1_DATA, 0b0000_0100);
-    io::outb(PIC2_DATA, 2);
-
-    io::outb(PIC1_DATA, ICW4_8086);
-    io::outb(PIC2_DATA, ICW4_8086);
-
-    trace!("PIC1 mask is {:#b}", m1);
-    trace!("PIC2 mask is {:#b}", m2);
-
-    // Established Mapping
-    // 0 -> 32
-    // 1 -> 33
-    // 2 -> 34
-    // 3 -> 35
-    // 4 -> 36
-    // 5 -> 37: Serial?
-    // 6 -> 38
-    // 7 -> 39
-
-    // 8 -> 40
-    // 9 -> 41
-    // 10 -> 42
-    // 11 -> 43: e1000 NIC
-    // 12 -> 44
-    // 13 -> 45
-    // 14 -> 46
-    // 15 -> 47
-
-    const KEYBOARD_IRQ: u8 = 1 << 4; // IRQ 5 -> 37
-    const E1000_IRQ: u8 = 1 << 3; // IRQ 11 -> 43 (11-8 = 3)
-    assert_eq!((KEYBOARD_IRQ | 0b1), 0b10001);
-    assert_eq!(!(E1000_IRQ), 0b11110111);
-
-    io::outb(PIC1_DATA, !(1 << 2));
-    io::outb(PIC2_DATA, 0b1111_0111);
 }
 
 /// Registers a handler IRQ handler function.

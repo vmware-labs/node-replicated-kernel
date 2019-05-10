@@ -193,6 +193,14 @@ fi
 
 find $ESP_DIR
 
+#
+# Making a bootable image
+#
+rm -rf uefi.img
+dd if=/dev/zero of=uefi.img bs=1k count=65536
+mkfs.vfat uefi.img -F 32
+mcopy -si uefi.img $ESP_DIR/* ::/
+
 if [ "${_arg_norun}" != "on" ]; then
     set +e
     cat /proc/modules | grep kvm_intel

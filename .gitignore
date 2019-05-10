@@ -4,6 +4,7 @@ kernel.bin*
 *.rlib
 kernel/kernel
 kernel/cmdline.in
+kernel/uefi.img
 
 # rump
 rump/binutils-2.30.90

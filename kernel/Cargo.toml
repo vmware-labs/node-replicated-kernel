@@ -37,13 +37,9 @@ acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
 uefi = { git = "https://github.com/rust-osdev/uefi-rs.git" }
 addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
 
-
 [[bin]]
 name = "bespin"
 harness = false
-
-[profile.dev]
-debug = 3
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = { version = "0.2.53", default-features = false }

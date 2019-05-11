@@ -201,10 +201,7 @@ fn find_current_vspace() -> VSpace<'static> {
     let cr_three: u64 = unsafe { controlregs::cr3() };
     let pml4: PAddr = PAddr::from_u64(cr_three);
     let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
-    VSpace {
-        pml4: pml4_table,
-        pager: crate::memory::BespinPageTableProvider::new(),
-    }
+    VSpace { pml4: pml4_table }
 }
 
 /// Return the base address of the xAPIC (x86 Interrupt controller)

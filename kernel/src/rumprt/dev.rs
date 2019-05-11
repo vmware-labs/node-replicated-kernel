@@ -1,6 +1,6 @@
 use super::{c_int, c_uint, c_ulong, c_void};
 use crate::arch::memory::{kernel_vaddr_to_paddr, PAddr, VAddr};
-use crate::arch::process::VSpace;
+use crate::arch::process::{MapAction, VSpace};
 use crate::kcb::{get_kcb, Kcb};
 use crate::memory::PhysicalAllocator;
 use alloc::boxed::Box;
@@ -171,9 +171,9 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
 
     let mut vspace: RefMut<VSpace> = get_kcb().init_vspace();
 
-    let start = VAddr::from(addr);
-    let end = VAddr::from(addr) + len;
-    vspace.map_identity(start, end);
+    let start = PAddr::from(addr);
+    let end = PAddr::from(addr) + len;
+    vspace.map_identity(start, end, MapAction::ReadWriteKernel);
 
     return addr as *mut c_void;
 }

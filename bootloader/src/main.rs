@@ -256,7 +256,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 .vspace
                 .map_identity(phys_range_start, phys_range_end, rights);
 
-            if entry.ty == MemoryType::CONVENTIONAL {
+            if entry.ty == MemoryType::CONVENTIONAL || entry.ty == MemoryType(KERNEL_PT) {
                 kernel.vspace.map_identity_with_offset(
                     PAddr::from(KERNEL_OFFSET as u64),
                     phys_range_start,

@@ -171,7 +171,7 @@ if [ -x "$(command -v x86_64-elf-ld)" ] ; then
     export CARGO_TARGET_X86_64_BESPIN_LINKER=x86_64-elf-ld
 fi
 
-BUILD_ARGS="--target=$BESPIN_TARGET"
+BUILD_ARGS="--target=$BESPIN_TARGET --verbose"
 
 if [ "$_arg_release" == "on" ]; then
     BUILD_ARGS="$BUILD_ARGS --release"
@@ -181,7 +181,7 @@ if [ "${_arg_features}" != "" ]; then
     BUILD_ARGS="$BUILD_ARGS --features $_arg_features"
 fi
 
-BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build $BUILD_ARGS
+BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build  $BUILD_ARGS
 
 if [ "$_arg_release" == "off" ]; then
     cp ../target/$BESPIN_TARGET/debug/bespin kernel

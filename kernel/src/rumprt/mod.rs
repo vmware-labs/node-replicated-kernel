@@ -179,6 +179,9 @@ pub unsafe extern "C" fn rumpuser_getrandom(
 /// void rumpuser_putchar(int ch)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_putchar(ch: i64) {
+    if ch as i64 == '\n' as u8 as i64 {
+        klogger::putchar('\r');
+    }
     klogger::putchar(ch as u8 as char);
 }
 

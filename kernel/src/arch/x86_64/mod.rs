@@ -360,7 +360,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         apic.bsp()
     );
 
-
     // Do we want to enable IRQs here?
     // irq::enable();
 

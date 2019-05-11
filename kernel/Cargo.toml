@@ -29,16 +29,21 @@ lineup = { path = "../lib/lineup" }
 rawtime = { path = "../lib/rawtime" }
 spin = "0.4"
 log = "0.4"
-lazy_static = { version = "1.2", features = ["nightly", "spin_no_std"] }
+lazy_static = { version = "1.3", features = ["spin_no_std"] }
 logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
 # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
 uefi = { git = "https://github.com/rust-osdev/uefi-rs.git" }
+addr2line = { path = "../lib/addr2line", default-features = false, features = ["alloc", "rustc-demangle"] }
+
 
 [[bin]]
 name = "bespin"
 harness = false
+
+[profile.dev]
+debug = 3
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = { version = "0.2.53", default-features = false }

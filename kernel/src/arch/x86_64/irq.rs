@@ -186,6 +186,17 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     } else {
         sprintln!("No error!");
     }
+
+    // Print the RIP that triggered the fault:
+    use crate::arch::kcb;
+    sprint!("Instruction Pointer: {:#x}", a.rip);
+    kcb::try_get_kcb().map(|k| {
+        sprintln!(
+            " (in ELF: {:#x})",
+            a.rip - k.kernel_args().kernel_elf_offset.as_u64()
+        )
+    });
+
     sprintln!("{:?}", a);
     let csa = &CURRENT_SAVE_AREA;
     sprintln!("Register State:\n{:?}", csa);

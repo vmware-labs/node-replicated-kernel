@@ -35,7 +35,7 @@ logos = { version = "0.9.7", default-features = false, features = ["export_deriv
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
 uefi = { git = "https://github.com/rust-osdev/uefi-rs.git" }
-addr2line = { path = "../lib/addr2line", default-features = false, features = ["alloc", "rustc-demangle"] }
+addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
 
 
 [[bin]]

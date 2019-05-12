@@ -12,6 +12,8 @@ use acpica_sys::*;
 use cstr_core::CStr;
 use log::{error, trace};
 
+use super::process::{MapAction, VSpace};
+
 use x86::io;
 
 #[no_mangle]
@@ -29,13 +31,25 @@ pub extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
+    info!("AcpiOsGetRootPointer");
     let mut root_ptr: ACPI_PHYSICAL_ADDRESS = 0x0;
-    let ret = unsafe { AcpiFindRootPointer(&mut root_ptr) };
-    if ret == AE_OK {
-        root_ptr
-    } else {
-        0
-    }
+
+    let rsdp2_root = crate::kcb::try_get_kcb().map(|k| {
+        let args = k.kernel_args();
+        args.acpi2_rsdp
+    });
+    let rsdp1_root = crate::kcb::try_get_kcb().map(|k| {
+        let args = k.kernel_args();
+        args.acpi1_rsdp
+    });
+
+    let ptr = match (rsdp2_root, rsdp1_root) {
+        (Some(ptr), _) => ptr,
+        (None, Some(ptr)) => ptr,
+        (None, None) => return 0,
+    };
+
+    ptr.as_u64() as ACPI_PHYSICAL_ADDRESS
 }
 
 #[no_mangle]
@@ -44,7 +58,8 @@ pub extern "C" fn AcpiOsPredefinedOverride(
     init: *const ACPI_PREDEFINED_NAMES,
     new: *mut ACPI_STRING,
 ) -> ACPI_STATUS {
-    trace!("AcpiOsPredefinedOverride");
+    let name = unsafe { CStr::from_ptr((*init).Name).to_str().unwrap_or("") };
+    trace!("AcpiOsPredefinedOverride {}", name);
     if new.is_null() {
         AE_BAD_PARAMETER
     } else {
@@ -157,7 +172,23 @@ pub extern "C" fn AcpiOsFree(ptr: *mut u8) {
 #[linkage = "external"]
 pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZE) -> *mut c_void {
     trace!("AcpiOsMapMemory(loc = {:#x}, len = {})", location, len);
-    let p = PAddr::from_u64(location as u64);
+
+    let p = PAddr::from_u64((location & !0xfff) as u64);
+
+    use crate::round_up;
+    crate::kcb::try_get_kcb().map(|k| {
+        let mut vspace = k.init_vspace();
+        vspace.map_identity_with_offset(
+            PAddr::from_u64(super::memory::KERNEL_BASE),
+            p,
+            PAddr::from(round_up!(
+                (location + len) as usize,
+                x86::bits64::paging::BASE_PAGE_SIZE
+            ) as u64),
+            MapAction::ReadWriteKernel,
+        );
+    });
+
     let vaddr = paddr_to_kernel_vaddr(p);
     vaddr.as_mut_ptr::<c_void>()
 }
@@ -588,7 +619,7 @@ pub(crate) fn process_madt() -> Result<(), ACPI_STATUS> {
         }
 
         info!("Found cores {:?}", cores);
-        assert_eq!(cores.len(), 2);
+        //assert_eq!(cores.len(), 2);
     }
 
     Ok(())

@@ -19,8 +19,6 @@
 .code16
 .org X86_64_REAL_MODE_OFFSET
 
-.extern init_pml4
-
 .global x86_64_start_ap
 x86_64_start_ap:
     cli
@@ -48,7 +46,7 @@ start_ap_pm:
 	mov %eax, %cr4
 
 	/* Load PML4 */
-	mov $(init_pml4 - KERNEL_BASE), %eax
+	mov $(x86_64_init_ap_init_pml4 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %eax
 	mov %eax, %cr3
 
 	/* Enable IA-32e mode (also enables SYSCALL and NX) */
@@ -130,6 +128,11 @@ gdt_ptr:
 
 .global x86_64_init_ap_absolute_entry
 x86_64_init_ap_absolute_entry:
+.long 0
+.long 0
+
+.global x86_64_init_ap_init_pml4
+x86_64_init_ap_init_pml4:
 .long 0
 .long 0
 

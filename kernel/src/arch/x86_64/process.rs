@@ -148,6 +148,10 @@ impl<'a> VSpace<'a> {
         end: PAddr,
         rights: MapAction,
     ) {
+        // TODO: maybe better to provide a length instead of end
+        // so harder for things to break
+        assert!(end > pbase, "End should be bigger than pbase");
+
         let vbase = VAddr::from_u64((at_offset + pbase).as_u64());
         let size = (end - pbase).as_usize();
         debug!(
@@ -347,11 +351,7 @@ impl<'a> VSpace<'a> {
             if !pt[pt_idx].is_present() {
                 pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
                 if rights.to_pt_rights() != PTFlags::RW {
-                    trace!(
-                        "Mapped 4KiB page: {:?} rights {:?}",
-                        pt[pt_idx],
-                        rights.to_pt_rights()
-                    );
+                    trace!("Mapped 4KiB page: {:?} ", pt[pt_idx]);
                 }
             } else {
                 assert!(

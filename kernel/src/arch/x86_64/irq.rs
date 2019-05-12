@@ -278,7 +278,6 @@ pub unsafe fn acknowledge() {
     });
 }
 
-
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(
     vector: usize,
@@ -299,7 +298,6 @@ pub unsafe fn register_handler(
 /// With this done we should be able to catch basic pfaults and gpfaults.
 pub fn setup_idt() {
     unsafe {
-
         //let mut old_idt: dtables::DescriptorTablePointer<Descriptor64> = Default::default();
         //dtables::sidt(&mut old_idt);
         //trace!("IDT was: {:?}", old_idt);

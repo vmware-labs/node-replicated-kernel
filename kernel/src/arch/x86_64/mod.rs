@@ -251,7 +251,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     irq::setup_idt();
     // We should catch page-faults and general protection faults from here...
 
-
     let mut kernel_args: &'static KernelArgs =
         unsafe { transmute::<u64, &'static KernelArgs>(argc as u64) };
 
@@ -332,7 +331,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut apic = xapic::XAPIC::new(regs);
     trace!("apic constructed");
     apic.attach();
-
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);

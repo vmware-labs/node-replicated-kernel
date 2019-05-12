@@ -38,7 +38,6 @@ lazy_static! {
 
 }
 
-
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsInitialize() -> ACPI_STATUS {
@@ -645,7 +644,6 @@ fn acpi_get_integer(handle: ACPI_HANDLE, name: *const i8, reg: &mut ACPI_INTEGER
         }
         ret
     }
-
 }
 
 pub fn process_pcie() {

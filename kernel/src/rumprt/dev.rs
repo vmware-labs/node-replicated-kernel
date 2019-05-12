@@ -164,7 +164,6 @@ pub(crate) unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
         crate::arch::irq::acknowledge();
         x86::irq::enable();
 
-
         let thread = lineup::tls::Environment::thread();
         thread.block(); // Wake up on next IRQ
     }

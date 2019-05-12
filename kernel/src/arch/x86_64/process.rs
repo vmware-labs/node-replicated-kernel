@@ -16,7 +16,6 @@ use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 use crate::memory::PageTableProvider;
 use crate::mutex::Mutex;
 
-
 use super::memory::KERNEL_BASE;
 use crate::memory::BespinPageTableProvider;
 
@@ -34,7 +33,6 @@ pub static CURRENT_PROCESS: Mutex<Option<Process<'static>>> = mutex!(None);
 pub struct VSpace<'a> {
     pub pml4: &'a mut PML4,
 }
-
 
 /// Mapping rights to give to address translation.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -533,7 +531,6 @@ impl<'a> VSpace<'a> {
             VSpace::allocate_pages_aligned(size / BASE_PAGE_SIZE, ResourceType::Memory, palignment);
         self.map_generic(base, (paddr, size), rights);
     }
-
 }
 
 pub unsafe fn dump_table(pml4_table: &PML4) {
@@ -588,7 +585,6 @@ pub unsafe fn dump_table(pml4_table: &PML4) {
         }
     }
 }
-
 
 pub struct Process<'a> {
     pub save_area: irq::SaveArea,

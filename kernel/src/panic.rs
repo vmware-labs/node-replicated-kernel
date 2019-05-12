@@ -83,7 +83,6 @@ fn backtrace_format(
                         sprint!(")");
                     }
                 }
-
             }
         } else {
             sprint!(" - <unknown>");

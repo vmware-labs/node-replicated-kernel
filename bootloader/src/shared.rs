@@ -18,4 +18,8 @@ pub struct KernelArgs {
     pub kernel_binary: (x86::bits64::paging::PAddr, usize),
     /// The offset where the elfloader placed the kernel
     pub kernel_elf_offset: x86::bits64::paging::VAddr,
+    /// The physical address of the ACPIv1 RSDP (Root System Description Pointer)
+    pub acpi1_rsdp: x86::bits64::paging::PAddr,
+    /// The physical address of the ACPIv2 RSDP (Root System Description Pointer)
+    pub acpi2_rsdp: x86::bits64::paging::PAddr,
 }

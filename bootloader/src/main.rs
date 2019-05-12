@@ -60,6 +60,7 @@ use uefi::prelude::*;
 use uefi::proto::media::file::*;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::table::boot::{AllocateType, MemoryDescriptor, MemoryType};
+use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
 
 use crate::alloc::vec::Vec;
 
@@ -355,6 +356,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     map_physical_memory(&st, &mut kernel);
     trace!("Replicated UEFI memory map");
 
+
     unsafe {
         // Enable cr4 features
         use x86::controlregs::{cr4, cr4_write, Cr4};
@@ -412,6 +414,14 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
         kernel_args.kernel_binary = (kernel_base_paddr + KERNEL_OFFSET, kernel_size);
         kernel_args.kernel_elf_offset = kernel.offset;
+        for entry in st.config_table() {
+            if entry.guid == ACPI2_GUID {
+                kernel_args.acpi2_rsdp = PAddr::from(entry.address as u64);
+            } else if entry.guid == ACPI_GUID {
+                kernel_args.acpi1_rsdp = PAddr::from(entry.address as u64);
+            }
+        }
+
 
         info!(
             "Kernel will start to execute from: {:p}",

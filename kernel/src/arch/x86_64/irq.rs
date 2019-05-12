@@ -272,10 +272,12 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
 }
 
 pub unsafe fn acknowledge() {
-    // TODO: Need ACPI to disable PIC first before this does anything.
-    //use x86::msr;
-    //msr::wrmsr(0x800 + 0xb, 0);
+    crate::kcb::try_get_kcb().map(|k| {
+        let mut apic = k.apic();
+        apic.eoi();
+    });
 }
+
 
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(

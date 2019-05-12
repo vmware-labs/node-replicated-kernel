@@ -305,9 +305,7 @@ pub fn xmain() {
             let r = acpi::init();
             assert!(r.is_ok());
             info!("acpi initialized");
-            let r = acpi::process_madt();
-            assert!(r.is_ok());
-            info!("madt table processed");
+
 
             const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
             let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;
@@ -320,6 +318,8 @@ pub fn xmain() {
             };
             let boot_code_size =
                 unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
+
+            acpi::process_pcie();
 
             /*unsafe {
                 let start_addr: usize = core::mem::transmute(&x86_64_start_ap);

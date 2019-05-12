@@ -108,6 +108,38 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     IRQS[0].vector = vector;
     IRQS[0].cookie = cookie;
 
+    use crate::arch::acpi;
+    use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+    for io_apic in acpi::IO_APICS.iter() {
+        info!("io_apic {:?}", io_apic);
+        let addr = PAddr::from(io_apic.address as u64);
+
+        // map it
+        use crate::round_up;
+        crate::kcb::try_get_kcb().map(|k| {
+            let mut vspace = k.init_vspace();
+            vspace.map_identity_with_offset(
+                PAddr::from_u64(crate::arch::memory::KERNEL_BASE),
+                addr,
+                addr + x86::bits64::paging::BASE_PAGE_SIZE,
+                crate::arch::process::MapAction::ReadWriteKernel,
+            );
+        });
+
+        let mut inst = unsafe { apic::ioapic::IoApic::new(paddr_to_kernel_vaddr(addr).as_usize()) };
+        info!("this ioapic supports {} intrs", inst.supported_interrupts());
+
+        for i in 0..inst.supported_interrupts() {
+            if (io_apic.global_irq_base + i as u32) < 16 {
+                //&& i as c_int == vector {
+                info!("map irq {}", i);
+                if i != 2 && i != 1 {
+                    inst.enable(i, 0);
+                }
+            }
+        }
+    }
+
     0
 }
 
@@ -129,9 +161,9 @@ pub(crate) unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
         //assert_eq!(r, 0, "IRQ handler should return 0?");
         super::rumpkern_unsched(&mut nlock, None);
 
+        crate::arch::irq::acknowledge();
         x86::irq::enable();
 
-        crate::arch::irq::acknowledge();
 
         let thread = lineup::tls::Environment::thread();
         thread.block(); // Wake up on next IRQ
@@ -147,11 +179,12 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     trace!("rumpcomp_pci_irq_establish {:#x} {:p}", cookie, arg);
     IRQS[0].handler = handler;
     IRQS[0].arg = arg;
+    warn!("register for IRQ {}", IRQS[0].vector as usize + 31);
 
     let _unique_ptr = ptr::Unique::new(arg);
 
     crate::arch::irq::register_handler(
-        IRQS[0].vector as usize + 32,
+        IRQS[0].vector as usize + 31,
         Box::new(move |_| {
             let scheduler = lineup::tls::Environment::scheduler();
             scheduler.add_to_runlist(lineup::ThreadId(1));

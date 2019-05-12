@@ -101,6 +101,10 @@ impl XAPIC {
         self.read(ApicRegister::XAPIC_VERSION)
     }
 
+    pub fn eoi(&mut self) {
+        self.write(ApicRegister::XAPIC_EOI, 0);
+    }
+
     /// Enable TSC timer.
     pub unsafe fn tsc_enable(&mut self) {
         let mut lvt: u32 = self.read(ApicRegister::XAPIC_LVT_TIMER);

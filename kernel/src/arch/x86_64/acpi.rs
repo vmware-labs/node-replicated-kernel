@@ -2,6 +2,7 @@
 
 use core::alloc::Layout;
 use core::ffi::VaList;
+use core::fmt;
 use core::mem;
 use core::ptr;
 
@@ -15,6 +16,28 @@ use log::{error, trace};
 use super::process::{MapAction, VSpace};
 
 use x86::io;
+
+// TODO: We shouldn't have to call process_madt twice!
+lazy_static! {
+    /// A list of cores available in the system.
+    ///
+    /// This should probably not be here since we want to handle
+    /// hotplug eventually.
+    pub static ref LOCAL_APICS: Vec<LocalApic> = {
+        let (cores, _) = process_madt();
+        cores
+    };
+
+    /// A list of I/O APICs in the system.
+    ///
+    /// Ideally we get rid of I/O APIC entirely and just use MSI.
+    pub static ref IO_APICS: Vec<IoApic> = {
+        let (_, ioapics) = process_madt();
+        ioapics
+    };
+
+}
+
 
 #[no_mangle]
 #[linkage = "external"]
@@ -394,7 +417,7 @@ pub extern "C" fn AcpiOsSignal(Function: UINT32, Info: *mut c_void) -> ACPI_STAT
 #[linkage = "external"]
 pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, Args: VaList) {
     let fmt = CStr::from_ptr(format).to_str().unwrap_or("");
-    error!("AcpiOsVprintf {}", fmt);
+    debug!("AcpiOsVprintf {}", fmt);
 }
 
 #[no_mangle]
@@ -402,11 +425,10 @@ pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, Args: VaList) {
 pub unsafe extern "C" fn AcpiOsPrintf(format: *const i8, args: ...) {
     trace!("AcpiOsPrintf");
     let fmt = CStr::from_ptr(format).to_str().unwrap_or("");
-    error!(" AcpiOsPrintf {}", fmt);
+    debug!("AcpiOsPrintf {}", fmt);
     //let arg1 = args.arg::<*const i8>();
     //let arg1_str = CStr::from_ptr(arg1).to_str().unwrap_or("unknown");
     //error!(" AcpiOsPrintf {}", arg1_str);
-
     /*let mut sum = 0;
     for _ in 0..n {
         sum += args.arg::<usize>();
@@ -545,30 +567,147 @@ pub(crate) fn init() -> Result<(), ACPI_STATUS> {
     unsafe {
         let ret = AcpiInitializeSubsystem();
         assert_eq!(ret, AE_OK);
-        info!("AcpiInitializeSubsystem {:?}\n", ret);
+        trace!("AcpiInitializeSubsystem {:?}", ret);
 
         let ret = AcpiInitializeTables(ptr::null_mut(), 16, false);
         assert_eq!(ret, AE_OK);
-        info!("AcpiInitializeTables {:?}\n", ret);
+        trace!("AcpiInitializeTables {:?}", ret);
 
         let full_init = 0x0;
         let ret = AcpiEnableSubsystem(full_init);
         assert_eq!(ret, AE_OK);
-        info!("AcpiEnableSubsystem {:?}\n", ret);
+        trace!("AcpiEnableSubsystem {:?}", ret);
 
         let ret = AcpiLoadTables();
         assert_eq!(ret, AE_OK);
-        info!("AcpiLoadTables {:?}\n", ret);
+        trace!("AcpiLoadTables {:?}", ret);
 
         let ret = AcpiInitializeObjects(full_init);
         assert_eq!(ret, AE_OK);
-        info!("AcpiInitializeObjects {:?}\n", ret);
+        trace!("AcpiInitializeObjects {:?}", ret);
     }
 
     Ok(())
 }
 
-pub(crate) fn process_madt() -> Result<(), ACPI_STATUS> {
+#[derive(Eq, PartialEq)]
+pub struct IoApic {
+    pub id: u8,
+    pub address: u32,
+    pub global_irq_base: u32,
+}
+
+impl fmt::Debug for IoApic {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        struct Hex(u32);
+        impl fmt::Debug for Hex {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "{:#x}", self.0)
+            }
+        }
+        let mut s = f.debug_struct("IoApic");
+        s.field("id", &self.id);
+        s.field("address", &Hex(self.address));
+        s.field("global_irq_base", &self.global_irq_base);
+
+        s.finish()
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct LocalApic {
+    pub processor_id: u8,
+    pub core_id: u8,
+    pub flags: i32,
+}
+
+const ACPI_FULL_PATHNAME: i32 = 0;
+const ACPI_TYPE_INTEGER: i32 = 0x01;
+
+fn acpi_get_integer(handle: ACPI_HANDLE, name: *const i8, reg: &mut ACPI_INTEGER) -> ACPI_STATUS {
+    unsafe {
+        let mut object: ACPI_OBJECT = mem::uninitialized();
+        let mut namebuf: ACPI_BUFFER = ACPI_BUFFER {
+            Length: mem::size_of::<ACPI_OBJECT>() as i64,
+            Pointer: &mut object as *mut _ as *mut acpica_sys::c_void,
+        };
+
+        let ret = AcpiEvaluateObjectTyped(
+            handle,
+            name as *mut i8,
+            ptr::null_mut(),
+            &mut namebuf,
+            ACPI_TYPE_INTEGER,
+        );
+
+        if ret == AE_OK {
+            *reg = (*object.Integer()).Value;
+        }
+        ret
+    }
+
+}
+
+pub fn process_pcie() {
+    unsafe {
+        let pcie_exp = CStr::from_bytes_with_nul_unchecked(b"PNP0A03\0");
+
+        unsafe extern "C" fn call_back(
+            handle: ACPI_HANDLE,
+            nexting: i32,
+            context: *mut acpica_sys::c_void,
+            return_value: *mut *mut acpica_sys::c_void,
+        ) -> i32 {
+            let mut namebuf: ACPI_BUFFER = ACPI_BUFFER {
+                Length: 256,
+                Pointer: alloc::alloc(Layout::from_size_align_unchecked(128, 0x1))
+                    as *mut acpica_sys::c_void,
+            };
+            let ret = AcpiGetName(handle, ACPI_FULL_PATHNAME, &mut namebuf);
+            let name = unsafe {
+                CStr::from_ptr(namebuf.Pointer as *const i8)
+                    .to_str()
+                    .unwrap_or("")
+            };
+
+            let mut address: ACPI_INTEGER = 0x0;
+            let adr_cstr = CStr::from_bytes_with_nul_unchecked(b"_ADR\0");
+            acpi_get_integer(handle, adr_cstr.as_ptr() as *const i8, &mut address);
+
+            let mut bus_number: ACPI_INTEGER = 0x0;
+            let adr_cstr = CStr::from_bytes_with_nul_unchecked(b"_BBN\0");
+            let bbn_ret = acpi_get_integer(handle, adr_cstr.as_ptr() as *const i8, &mut bus_number);
+
+            let bus = if bbn_ret == AE_OK {
+                bus_number as u16
+            } else {
+                0u16
+            };
+
+            let device: u16 = (address >> 16) as u16 & 0xffff;
+            let function: u16 = address as u16 & 0xffff;
+
+            info!(
+                "PCIe bridge name={} bus={} device={} function={}",
+                name, bus, device, function
+            );
+
+            AE_OK
+        }
+
+        let ret = AcpiGetDevices(
+            pcie_exp.as_ptr() as *mut cstr_core::c_char,
+            Some(call_back),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+    }
+}
+
+fn process_madt() -> (Vec<LocalApic>, Vec<IoApic>) {
+    let mut cores = Vec::with_capacity(4);
+    let mut io_apics = Vec::with_capacity(4);
+
     unsafe {
         let madt_handle = CStr::from_bytes_with_nul_unchecked(b"APIC\0");
         let mut table_header: *mut ACPI_TABLE_HEADER = ptr::null_mut();
@@ -584,13 +723,12 @@ pub(crate) fn process_madt() -> Result<(), ACPI_STATUS> {
         let madt_table_len = (*madt_tbl_ptr).Header.Length as usize;
         let madt_table_end = (madt_tbl_ptr as *const c_void).add(madt_table_len);
 
-        info!(
+        trace!(
             "MADT Table: Rev={} Len={} OemID={:?}",
             (*madt_tbl_ptr).Header.Revision,
             madt_table_len,
             (*madt_tbl_ptr).Header.OemId
         );
-        let mut cores = Vec::with_capacity(4);
 
         let mut iterator = (madt_tbl_ptr as *const c_void).add(mem::size_of::<ACPI_TABLE_MADT>());
         while iterator < madt_table_end {
@@ -604,12 +742,23 @@ pub(crate) fn process_madt() -> Result<(), ACPI_STATUS> {
                         entry as *const ACPI_MADT_LOCAL_APIC;
                     let enabled: bool = (*local_apic).LapicFlags & ACPI_MADT_ENABLED > 0;
                     if enabled {
-                        cores.push((
-                            (*local_apic).ProcessorId,
-                            (*local_apic).Id,
-                            (*local_apic).LapicFlags,
-                        ));
+                        let core = LocalApic {
+                            processor_id: (*local_apic).ProcessorId,
+                            core_id: (*local_apic).Id,
+                            flags: (*local_apic).LapicFlags,
+                        };
+                        cores.push(core);
                     }
+                }
+                Enum_AcpiMadtType::ACPI_MADT_TYPE_IO_APIC => {
+                    let io_apic: *const ACPI_MADT_IO_APIC = entry as *const ACPI_MADT_IO_APIC;
+
+                    let apic = IoApic {
+                        id: (*io_apic).Id,
+                        address: (*io_apic).Address as u32,
+                        global_irq_base: (*io_apic).GlobalIrqBase as u32,
+                    };
+                    io_apics.push(apic);
                 }
                 _ => debug!("Unhandled entry {:?}", entry_type),
             }
@@ -617,10 +766,7 @@ pub(crate) fn process_madt() -> Result<(), ACPI_STATUS> {
             assert!((*entry).Length > 0);
             iterator = iterator.add((*entry).Length as usize);
         }
-
-        info!("Found cores {:?}", cores);
-        //assert_eq!(cores.len(), 2);
     }
 
-    Ok(())
+    (cores, io_apics)
 }

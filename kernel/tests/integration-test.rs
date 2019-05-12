@@ -141,17 +141,17 @@ fn rump_net() {
 
         // Spawn a bash session for dhcpd, otherwise it seems we
         // can't kill the process since we do not run as root
-        let mut b = spawn_bash(Some(15000))?;
-        b.send_line("sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf");
+        let mut b = spawn_bash(Some(20000))?;
+        b.send_line("sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf")?;
         Ok(b)
     }
 
     fn spawn_receiver() -> Result<rexpect::session::PtySession> {
-        spawn("socat UDP-LISTEN:8889,fork stdout", Some(15000))
+        spawn("socat UDP-LISTEN:8889,fork stdout", Some(20000))
     }
 
     fn spawn_ping() -> Result<rexpect::session::PtySession> {
-        spawn("ping 172.31.0.10", Some(15000))
+        spawn("ping 172.31.0.10", Some(20000))
     }
 
     let qemu_run = || -> Result<WaitStatus> {
@@ -177,7 +177,7 @@ fn rump_net() {
         }
 
         ping.process.kill(SIGTERM)?;
-        dhcp_server.send_control('c');
+        dhcp_server.send_control('c')?;
         receiver.process.kill(SIGTERM)?;
         p.process.kill(SIGTERM)
     };

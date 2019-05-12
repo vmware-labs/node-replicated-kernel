@@ -349,13 +349,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     .init_vspace()
     .map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);*/
     // Attach the driver to the registers:
-    let mut apic = kcb::get_kcb().apic();
-    info!(
-        "xAPIC id: {}, version: {:#x}, is bsp: {}",
-        apic.id(),
-        apic.version(),
-        apic.bsp()
-    );
+    {
+        let mut apic = kcb::get_kcb().apic();
+        info!(
+            "xAPIC id: {}, version: {:#x}, is bsp: {}",
+            apic.id(),
+            apic.version(),
+            apic.bsp()
+        );
+
+        let r = acpi::init();
+        assert!(r.is_ok());
+        info!("ACPI initialized");
+    }
+    lazy_static::initialize(&acpi::LOCAL_APICS);
+    lazy_static::initialize(&acpi::IO_APICS);
 
     // Do we want to enable IRQs here?
     // irq::enable();

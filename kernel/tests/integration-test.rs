@@ -208,8 +208,7 @@ fn scheduler() {
 fn acpi_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu("test-acpi")?;
-        p.exp_string("acpi initialized")?;
-        p.exp_string("madt table processed")?;
+        p.exp_string("ACPI initialized")?;
         p.exp_eof()?;
         p.process.exit()
     };

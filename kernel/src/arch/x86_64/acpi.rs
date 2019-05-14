@@ -586,6 +586,8 @@ pub(crate) fn init() -> Result<(), ACPI_STATUS> {
         trace!("AcpiInitializeObjects {:?}", ret);
     }
 
+    info!("ACPI Initialized");
+
     Ok(())
 }
 

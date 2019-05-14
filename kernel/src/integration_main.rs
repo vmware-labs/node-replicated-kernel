@@ -302,11 +302,6 @@ pub fn xmain() {
     scheduler.spawn(
         32 * 4096,
         |_| {
-            let r = acpi::init();
-            assert!(r.is_ok());
-            info!("acpi initialized");
-
-
             const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
             let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;
             let real_mode_linear_offset = X86_64_REAL_MODE_SEGMENT << 4;
@@ -320,6 +315,9 @@ pub fn xmain() {
                 unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
 
             acpi::process_pcie();
+
+            assert_eq!(acpi::LOCAL_APICS.len(), 1, "Found a core");
+            assert_eq!(acpi::IO_APICS.len(), 1, "Found an IO APIC");
 
             /*unsafe {
                 let start_addr: usize = core::mem::transmute(&x86_64_start_ap);

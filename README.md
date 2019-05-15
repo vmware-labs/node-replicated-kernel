@@ -8,6 +8,9 @@ rust. It currently does not do much except for serial output, interrupt handling
 ### Check-out the source tree
 1. `git clone <repo-url>`
 1. `cd bespin`
+1. Note: In case you don't have the SSH key of your machine registered with a github account,
+you need to convert the submodule URLs to the https protocol, to do so run:
+`sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules`
 1. `git submodule init`
 1. `git submodule update`
 

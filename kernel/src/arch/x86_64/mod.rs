@@ -214,7 +214,7 @@ fn find_apic_base() -> u64 {
     }
 }
 
-// Includes struct KernelArgs
+// Includes structs KernelArgs, and Module from bootloader
 include!("../../../../bootloader/src/shared.rs");
 
 /// Entry function that is callsed from start.S after the pre-initialization (in assembly)
@@ -251,8 +251,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     irq::setup_idt();
     // We should catch page-faults and general protection faults from here...
 
-    let mut kernel_args: &'static KernelArgs =
-        unsafe { transmute::<u64, &'static KernelArgs>(argc as u64) };
+    let mut kernel_args: &'static KernelArgs<[Module; 1]> =
+        unsafe { transmute::<u64, &'static KernelArgs<[Module; 1]>>(argc as u64) };
 
     // TODO(fix): Because we pnly have a borrow of KernelArgs we have to work too hard to get mm_iter
     let mm_iter = unsafe {
@@ -284,6 +284,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     };
 
     trace!("kernel binary slice {:?}", kernel_binary[0]);
+    info!("kernel args module 1 {:?}", kernel_args.modules[0]);
 
     // Find the physical memory regions available and add them to the physical memory manager
     let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();

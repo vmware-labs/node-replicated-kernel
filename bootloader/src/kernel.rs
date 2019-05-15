@@ -33,6 +33,10 @@ pub const UEFI_MEMORY_MAP: u32 = 0x80000004;
 /// UEFI memory region type for arguments passed to the kernel.
 pub const KERNEL_ARGS: u32 = 0x80000005;
 
+/// UEFI memory region type for arguments passed to the kernel.
+pub const MODULE: u32 = 0x80000006;
+
+
 /// 512 GiB are that many bytes.
 pub const GIB_512: usize = 512 * 512 * 512 * 0x1000;
 

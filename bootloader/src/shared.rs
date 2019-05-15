@@ -1,9 +1,18 @@
+/// Describes an ELF binary we loaded from the UEFI image into memory.
+#[derive(Debug)]
+pub struct Module {
+    /// Name of the module (ELF file).
+    pub name: [u8; 32],
+    /// Where in memory the binary is and how big it is (in bytes).
+    pub binary: (x86::bits64::paging::PAddr, usize),
+}
+
 /// Arguments that are passed on to the kernel by the bootloader.
 ///
 /// This file is imported using include!() from the kernel source
 /// so we have to be careful with imports.
 #[derive(Debug)]
-pub struct KernelArgs {
+pub struct KernelArgs<T: ?Sized> {
     /// Physical base address and size of the UEFI memory map (constructed on boot services exit).
     pub mm: (x86::bits64::paging::PAddr, usize),
     /// Iterator over memory map
@@ -22,4 +31,6 @@ pub struct KernelArgs {
     pub acpi1_rsdp: x86::bits64::paging::PAddr,
     /// The physical address of the ACPIv2 RSDP (Root System Description Pointer)
     pub acpi2_rsdp: x86::bits64::paging::PAddr,
+    /// Modules (ELF binaries we load as user-space program) passed to the kernel
+    pub modules: T,
 }

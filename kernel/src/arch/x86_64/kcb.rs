@@ -11,6 +11,7 @@ use apic::xapic::XAPIC;
 use super::irq;
 use super::process::VSpace;
 
+use crate::arch::{KernelArgs, Module};
 use crate::memory::buddy::BuddyFrameAllocator;
 use crate::memory::{PAddr, PhysicalMemoryAllocator};
 
@@ -40,7 +41,7 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
 }
 
 pub struct Kcb {
-    kernel_args: RefCell<&'static crate::arch::KernelArgs>,
+    kernel_args: RefCell<&'static KernelArgs<[Module; 1]>>,
     kernel_binary: RefCell<&'static [u8]>,
     init_vspace: RefCell<VSpace<'static>>,
     pmanager: RefCell<BuddyFrameAllocator>,
@@ -49,7 +50,7 @@ pub struct Kcb {
 
 impl Kcb {
     pub fn new(
-        kernel_args: &'static crate::arch::KernelArgs,
+        kernel_args: &'static KernelArgs<[Module; 1]>,
         kernel_binary: &'static [u8],
         init_vspace: VSpace<'static>,
         pmanager: BuddyFrameAllocator,
@@ -80,7 +81,7 @@ impl Kcb {
         self.kernel_binary.borrow()
     }
 
-    pub fn kernel_args(&self) -> Ref<&'static crate::arch::KernelArgs> {
+    pub fn kernel_args(&self) -> Ref<&'static KernelArgs<[Module; 1]>> {
         self.kernel_args.borrow()
     }
 }

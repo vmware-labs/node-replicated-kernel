@@ -99,7 +99,7 @@ fn check_revision(rev: uefi::table::Revision) {
 }
 
 /// Trying to get the file handle for the kernel binary.
-fn locate_kernel_binary(st: &SystemTable<Boot>) -> RegularFile {
+fn locate_binary(st: &SystemTable<Boot>, name: &str) -> RegularFile {
     let fhandle = st
         .boot_services()
         .locate_protocol::<SimpleFileSystem>()
@@ -107,28 +107,27 @@ fn locate_kernel_binary(st: &SystemTable<Boot>) -> RegularFile {
     let fhandle = unsafe { &mut *fhandle.get() };
     let mut root_file = fhandle.open_volume().expect_success("Can't open volume");
 
-    // The kernel is supposed to be in the root folder of our EFI partition
+    // Look for the given binary name in the root folder of our EFI partition
     // in our case this is `target/x86_64-uefi/debug/esp/`
     // whereas the esp dir gets mounted with qemu using
     // `-drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp`
-    let kernel_binary = "kernel";
-    let kernel_file = root_file
+    let binary_file = root_file
         .open(
-            format!("\\{}", kernel_binary).as_str(),
+            format!("\\{}", name).as_str(),
             FileMode::Read,
             FileAttribute::READ_ONLY,
         )
-        .expect_success("Unable to locate `kernel` binary")
+        .expect_success("Unable to locate binary")
         .into_type()
         .expect_success("Can't cast it to a file common type??");
 
-    let kernel_file: RegularFile = match kernel_file {
+    let binary_file: RegularFile = match binary_file {
         FileType::Regular(t) => t,
-        _ => panic!("kernel binary was found but is not a regular file type, check your build."),
+        _ => panic!("Binary was found but is not a regular file type, check your build."),
     };
 
-    debug!("Found the kernel binary");
-    kernel_file
+    debug!("Found the binary {}", name);
+    binary_file
 }
 
 /// Determine the size of a regular file,
@@ -146,6 +145,38 @@ fn determine_file_size(file: &mut RegularFile) -> usize {
 
     file_size
 }
+
+fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &'static mut [u8]) {
+    // Get the binary, this should be a plain old
+    // ELF executable.
+    let mut module_file = locate_binary(&st, name);
+    let module_size = determine_file_size(&mut module_file);
+    debug!("Found {} binary with {} bytes", name, module_size);
+    let module_base_paddr = allocate_pages(
+        &st,
+        round_up!(module_size, BASE_PAGE_SIZE) / BASE_PAGE_SIZE,
+        MemoryType(MODULE),
+    );
+    trace!("Load the {} binary (in a vector)", name);
+    let module_blob: &mut [u8] = unsafe {
+        slice::from_raw_parts_mut(
+            paddr_to_kernel_vaddr(module_base_paddr).as_mut_ptr::<u8>(),
+            module_size,
+        )
+    };
+    module_file
+        .read(module_blob)
+        .expect_success("Can't read the module file");
+
+    (
+        Module {
+            name: [0; 32],
+            binary: (module_base_paddr, module_size),
+        },
+        module_blob,
+    )
+}
+
 
 /// Allocates `pages` * `BASE_PAGE_SIZE` bytes of physical memory
 /// and return the address.
@@ -242,6 +273,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
             MemoryType(KERNEL_STACK) => MapAction::ReadWriteKernel,
             MemoryType(UEFI_MEMORY_MAP) => MapAction::ReadWriteKernel,
             MemoryType(KERNEL_ARGS) => MapAction::ReadKernel,
+            MemoryType(MODULE) => MapAction::ReadKernel,
             _ => {
                 error!("Unknown memory type, what should we do? {:#?}", entry);
                 MapAction::None
@@ -291,26 +323,18 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     info!("UEFI Bootloader starting...");
     check_revision(st.uefi_revision());
 
-    // Get the kernel binary, this is just a plain old
-    // ELF executable.
-    let mut kernel_file = locate_kernel_binary(&st);
-    let kernel_size = determine_file_size(&mut kernel_file);
-    debug!("Found kernel binary with {} bytes", kernel_size);
-    let kernel_base_paddr = allocate_pages(
-        &st,
-        round_up!(kernel_size, BASE_PAGE_SIZE) / BASE_PAGE_SIZE,
-        MemoryType(KERNEL_ARGS),
-    );
-    trace!("Load the kernel binary (in a vector)");
-    let kernel_blob: &mut [u8] = unsafe {
-        slice::from_raw_parts_mut(
-            paddr_to_kernel_vaddr(kernel_base_paddr).as_mut_ptr::<u8>(),
-            kernel_size,
-        )
+    let (kernel_base_paddr, kernel_size, kernel_blob) = match load_binary_into_memory(&st, "kernel")
+    {
+        (
+            Module {
+                name: _,
+                binary: (kernel_base_paddr, kernel_size),
+            },
+            kernel_blob,
+        ) => (kernel_base_paddr, kernel_size, kernel_blob),
     };
-    kernel_file
-        .read(kernel_blob)
-        .expect_success("Can't read the kernel");
+
+    let (init_module, _) = load_binary_into_memory(&st, "init");
 
     // Next create an address space for our kernel
     trace!("Allocate a PML4 (page-table root)");
@@ -402,10 +426,11 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         // This could theoretically be pushed on the stack too
         // but for now we just allocate a separate page (and don't care about
         // wasted memory)
-        assert!(mem::size_of::<KernelArgs>() < BASE_PAGE_SIZE);
+        assert!(mem::size_of::<KernelArgs<[Module; 1]>>() < BASE_PAGE_SIZE);
         let kernel_args_paddr = allocate_pages(&st, 1, MemoryType(KERNEL_ARGS));
-        let mut kernel_args =
-            transmute::<VAddr, &mut KernelArgs>(paddr_to_kernel_vaddr(kernel_args_paddr));
+        let mut kernel_args = transmute::<VAddr, &mut KernelArgs<[Module; 1]>>(
+            paddr_to_kernel_vaddr(kernel_args_paddr),
+        );
         trace!("Kernel args allocated.");
 
         // Initialize the KernelArgs
@@ -414,6 +439,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
         kernel_args.kernel_binary = (kernel_base_paddr + KERNEL_OFFSET, kernel_size);
         kernel_args.kernel_elf_offset = kernel.offset;
+        kernel_args.modules = [init_module];
         for entry in st.config_table() {
             if entry.guid == ACPI2_GUID {
                 kernel_args.acpi2_rsdp = PAddr::from(entry.address as u64);

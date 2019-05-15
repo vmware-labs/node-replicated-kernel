@@ -4,6 +4,7 @@ set -ex
 
 # ARG_OPTIONAL_SINGLE([features],[f],[Rust features to enable.])
 # ARG_OPTIONAL_SINGLE([cmd],[c],[Command line for kernel.])
+# ARG_OPTIONAL_REPEATED([mods],[m],[Modules to include on startup.])
 # ARG_OPTIONAL_BOOLEAN([release],[r],[Do a release build.])
 # ARG_OPTIONAL_BOOLEAN([norun],[n],[Only build, don't run.])
 # ARG_HELP([Bespin runner script])
@@ -26,7 +27,7 @@ die()
 begins_with_short_option()
 {
 	local first_option all_short_options
-	all_short_options='fcrnh'
+	all_short_options='fcmrnh'
 	first_option="${1:0:1}"
 	test "$all_short_options" = "${all_short_options/$first_option/}" && return 1 || return 0
 }
@@ -36,15 +37,17 @@ begins_with_short_option()
 # THE DEFAULTS INITIALIZATION - OPTIONALS
 _arg_features=
 _arg_cmd=
+_arg_mods=()
 _arg_release="off"
 _arg_norun="off"
 
 print_help ()
 {
 	printf '%s\n' "Bespin runner script"
-	printf 'Usage: %s [-f|--features <arg>] [-c|--cmd <arg>] [-r|--(no-)release] [-n|--(no-)norun] [-h|--help]\n' "$0"
+	printf 'Usage: %s [-f|--features <arg>] [-c|--cmd <arg>] [-m|--mods <arg>] [-r|--(no-)release] [-n|--(no-)norun] [-h|--help]\n' "$0"
 	printf '\t%s\n' "-f,--features: Rust features to enable. (no default)"
 	printf '\t%s\n' "-c,--cmd: Command line for kernel. (no default)"
+	printf '\t%s\n' "-m,--mods: Modules to include on startup. (empty by default)"
 	printf '\t%s\n' "-r,--release,--no-release: Do a release build. (off by default)"
 	printf '\t%s\n' "-n,--norun,--no-norun: Only build, don't run. (off by default)"
 	printf '\t%s\n' "-h,--help: Prints help"
@@ -77,6 +80,17 @@ parse_commandline ()
 				;;
 			-c*)
 				_arg_cmd="${_key##-c}"
+				;;
+			-m|--mods)
+				test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
+				_arg_mods+=("$2")
+				shift
+				;;
+			--mods=*)
+				_arg_mods+=("${_key##--mods=}")
+				;;
+			-m*)
+				_arg_mods+=("${_key##-m}")
 				;;
 			-r|--no-release|--release)
 				_arg_release="on"
@@ -126,8 +140,6 @@ parse_commandline "$@"
 # [ <-- needed because of Argbash
 
 
-
-
 #
 # Building the bootloader
 #
@@ -136,9 +148,13 @@ UEFI_TARGET="x86_64-uefi"
 if [ "$_arg_release" == "on" ]; then
 	UEFI_BUILD_ARGS="--release"
     UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/release"
+	USER_BUILD_ARGS="--release"
+	USER_BUILD_DIR="`pwd`/../target/release"
 else
 	UEFI_BUILD_ARGS=""
 	UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/debug"
+	USER_BUILD_ARGS=""
+	USER_BUILD_DIR="`pwd`/../target/debug"
 fi
 
 ESP_DIR=$UEFI_BUILD_DIR/esp
@@ -155,6 +171,24 @@ QEMU_UEFI_APPEND+=" -device ide-drive,bus=ahci.0,drive=esp"
 rm -rf $ESP_DIR/EFI
 mkdir -p $ESP_DIR/EFI/Boot
 cp $UEFI_BUILD_DIR/bootloader.efi $ESP_DIR/EFI/Boot/BootX64.efi
+
+#
+# Build user modules
+#
+echo "> Building user modules"
+cd ../usr
+if [ "${_arg_mods}" != "" ]; then
+    echo "Found MODULES: ${_arg_mods}"
+	for item in ${_arg_mods}
+	do
+		echo "ITEM: $item"
+		cd ${item}
+		cargo rustc $USER_BUILD_ARGS -- -C link-arg=-nostartfiles
+		cp $USER_BUILD_DIR/$item $ESP_DIR/
+		cd ..
+	done
+fi
+
 
 #
 # Building the kernel
@@ -201,6 +235,9 @@ dd if=/dev/zero of=uefi.img bs=1k count=65536
 mkfs.vfat uefi.img -F 32
 mcopy -si uefi.img $ESP_DIR/* ::/
 
+#
+# Running things
+#
 if [ "${_arg_norun}" != "on" ]; then
     set +e
     cat /proc/modules | grep kvm_intel

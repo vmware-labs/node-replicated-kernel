@@ -17,6 +17,7 @@ members = [
     "lib/lineup",
     "lib/rawtime",
     "lib/ctest",
+    "usr/init",
 ]
 
 # disable stack unwinding on panic for now

@@ -1,0 +1,21 @@
+[package]
+name = "init"
+version = "0.1.0"
+authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+edition = "2018"
+
+[profile.debug]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+x86 = "0.16"
+
+[[bin]]
+name = "init"
+path = "src/init.rs"
+
+[build-dependencies]
+cc = "1.0"

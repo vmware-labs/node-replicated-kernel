@@ -41,7 +41,7 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
 }
 
 pub struct Kcb {
-    kernel_args: RefCell<&'static KernelArgs<[Module; 1]>>,
+    kernel_args: RefCell<&'static KernelArgs<[Module; 2]>>,
     kernel_binary: RefCell<&'static [u8]>,
     init_vspace: RefCell<VSpace<'static>>,
     pmanager: RefCell<BuddyFrameAllocator>,
@@ -50,7 +50,7 @@ pub struct Kcb {
 
 impl Kcb {
     pub fn new(
-        kernel_args: &'static KernelArgs<[Module; 1]>,
+        kernel_args: &'static KernelArgs<[Module; 2]>,
         kernel_binary: &'static [u8],
         init_vspace: VSpace<'static>,
         pmanager: BuddyFrameAllocator,
@@ -81,7 +81,7 @@ impl Kcb {
         self.kernel_binary.borrow()
     }
 
-    pub fn kernel_args(&self) -> Ref<&'static KernelArgs<[Module; 1]>> {
+    pub fn kernel_args(&self) -> Ref<&'static KernelArgs<[Module; 2]>> {
         self.kernel_args.borrow()
     }
 }

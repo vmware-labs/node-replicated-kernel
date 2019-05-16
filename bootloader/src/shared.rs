@@ -1,10 +1,55 @@
 /// Describes an ELF binary we loaded from the UEFI image into memory.
-#[derive(Debug)]
 pub struct Module {
     /// Name of the module (ELF file).
     pub name: [u8; 32],
+    /// Length of name
+    pub name_len: usize,
     /// Where in memory the binary is and how big it is (in bytes).
-    pub binary: (x86::bits64::paging::PAddr, usize),
+    pub binary: (x86::bits64::paging::VAddr, usize),
+}
+
+impl Module {
+    /// Create a new module to pass to the kernel.
+    /// The name will be truncated to 32 bytes.
+    pub(crate) fn new(name: &str, binary: (x86::bits64::paging::VAddr, usize)) -> Module {
+        let mut name_slice: [u8; 32] = [0; 32];
+        let len = core::cmp::min(name.len(), 32);
+        name_slice[0..len].copy_from_slice(&name.as_bytes()[0..len]);
+
+        Module {
+            name: name_slice,
+            name_len: len,
+            binary: binary,
+        }
+    }
+
+    /// Return the name of the module (or at least the first 32 characters).
+    pub(crate) fn name(&self) -> &str {
+        core::str::from_utf8(&self.name[0..self.name_len]).unwrap_or("unknown")
+    }
+
+    /// Base physical address of the binary blob.
+    pub(crate) fn base(&self) -> x86::bits64::paging::VAddr {
+        self.binary.0
+    }
+
+    /// Size of the binary blob.
+    pub(crate) fn size(&self) -> usize {
+        self.binary.1
+    }
+
+}
+
+impl core::fmt::Debug for Module {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        let mut w = f.debug_struct("Module");
+        w.field("name", &self.name());
+        w.field(
+            "binary",
+            &format_args!("({:#x}, {:#x})", self.binary.0, self.binary.1),
+        );
+        w.finish()
+    }
 }
 
 /// Arguments that are passed on to the kernel by the bootloader.
@@ -23,8 +68,6 @@ pub struct KernelArgs<T: ?Sized> {
     pub pml4: x86::bits64::paging::PAddr,
     /// Kernel stack base address and stack size.
     pub stack: (x86::bits64::paging::PAddr, usize),
-    /// Mapping location of the loaded kernel binary file and it's size.
-    pub kernel_binary: (x86::bits64::paging::PAddr, usize),
     /// The offset where the elfloader placed the kernel
     pub kernel_elf_offset: x86::bits64::paging::VAddr,
     /// The physical address of the ACPIv1 RSDP (Root System Description Pointer)

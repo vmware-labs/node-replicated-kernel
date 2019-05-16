@@ -146,6 +146,9 @@ fn determine_file_size(file: &mut RegularFile) -> usize {
     file_size
 }
 
+/// Load a binary from the UEFI FAT partition, and return
+/// a slice to the data in memory along with a Module struct
+/// that can be passed to the kernel.
 fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &'static mut [u8]) {
     // Get the binary, this should be a plain old
     // ELF executable.
@@ -160,7 +163,7 @@ fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &'sta
     trace!("Load the {} binary (in a vector)", name);
     let module_blob: &mut [u8] = unsafe {
         slice::from_raw_parts_mut(
-            paddr_to_kernel_vaddr(module_base_paddr).as_mut_ptr::<u8>(),
+            paddr_to_uefi_vaddr(module_base_paddr).as_mut_ptr::<u8>(),
             module_size,
         )
     };
@@ -169,10 +172,10 @@ fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &'sta
         .expect_success("Can't read the module file");
 
     (
-        Module {
-            name: [0; 32],
-            binary: (module_base_paddr, module_size),
-        },
+        Module::new(
+            name,
+            (paddr_to_kernel_vaddr(module_base_paddr), module_size),
+        ),
         module_blob,
     )
 }
@@ -204,7 +207,7 @@ fn dump_cr3() {
         debug!("current CR3: {:x}", cr_three);
 
         let pml4: PAddr = PAddr::from_u64(cr_three);
-        let pml4_table = unsafe { transmute::<VAddr, &PML4>(paddr_to_kernel_vaddr(pml4)) };
+        let pml4_table = unsafe { transmute::<VAddr, &PML4>(paddr_to_uefi_vaddr(pml4)) };
         vspace::dump_table(pml4_table);
     }
 }
@@ -232,7 +235,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     let mm_size = estimate_memory_map_size(st);
     let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UEFI_MEMORY_MAP));
     let mm_slice: &mut [u8] = unsafe {
-        slice::from_raw_parts_mut(paddr_to_kernel_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
+        slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
     };
 
     let (_key, desc_iter) = st
@@ -289,7 +292,10 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 .vspace
                 .map_identity(phys_range_start, phys_range_end, rights);
 
-            if entry.ty == MemoryType::CONVENTIONAL || entry.ty == MemoryType(KERNEL_PT) {
+            if entry.ty == MemoryType::CONVENTIONAL
+                || entry.ty == MemoryType(KERNEL_PT)
+                || entry.ty == MemoryType(MODULE)
+            {
                 kernel.vspace.map_identity_with_offset(
                     PAddr::from(KERNEL_OFFSET as u64),
                     phys_range_start,
@@ -323,37 +329,19 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     info!("UEFI Bootloader starting...");
     check_revision(st.uefi_revision());
 
-    let (kernel_base_paddr, kernel_size, kernel_blob) = match load_binary_into_memory(&st, "kernel")
-    {
-        (
-            Module {
-                name: _,
-                binary: (kernel_base_paddr, kernel_size),
-            },
-            kernel_blob,
-        ) => (kernel_base_paddr, kernel_size, kernel_blob),
-    };
-
+    let (kernel_module, kernel_blob) = load_binary_into_memory(&st, "kernel");
     let (init_module, _) = load_binary_into_memory(&st, "init");
 
     // Next create an address space for our kernel
     trace!("Allocate a PML4 (page-table root)");
     let pml4: PAddr = VSpace::allocate_one_page();
-    let pml4_table = unsafe { &mut *paddr_to_kernel_vaddr(pml4).as_mut_ptr::<PML4>() };
+    let pml4_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
 
     let mut kernel = Kernel {
         offset: VAddr::from(0usize),
         mapping: Vec::new(),
         vspace: VSpace { pml4: pml4_table },
     };
-
-    // Map the kernel ELF file contents
-    kernel.vspace.map_identity_with_offset(
-        PAddr::from(KERNEL_OFFSET as u64),
-        PAddr::from(kernel_base_paddr),
-        PAddr::from(kernel_base_paddr + round_up!(kernel_size, BASE_PAGE_SIZE)),
-        MapAction::ReadKernel,
-    );
 
     // Parse the ELF file and load it into the new address space
     let binary = elfloader::ElfBinary::new("kernel", kernel_blob).unwrap();
@@ -379,7 +367,6 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     // dump_cr3();
     map_physical_memory(&st, &mut kernel);
     trace!("Replicated UEFI memory map");
-
 
     unsafe {
         // Enable cr4 features
@@ -419,17 +406,17 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         assert_eq!(mm_size % BASE_PAGE_SIZE, 0);
         let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UEFI_MEMORY_MAP));
         let mm_slice =
-            slice::from_raw_parts_mut(paddr_to_kernel_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size);
+            slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size);
         trace!("Memory map allocated.");
 
         // Construct a KernelArgs struct that gets passed to the kernel
         // This could theoretically be pushed on the stack too
         // but for now we just allocate a separate page (and don't care about
         // wasted memory)
-        assert!(mem::size_of::<KernelArgs<[Module; 1]>>() < BASE_PAGE_SIZE);
+        assert!(mem::size_of::<KernelArgs<[Module; 2]>>() < BASE_PAGE_SIZE);
         let kernel_args_paddr = allocate_pages(&st, 1, MemoryType(KERNEL_ARGS));
-        let mut kernel_args = transmute::<VAddr, &mut KernelArgs<[Module; 1]>>(
-            paddr_to_kernel_vaddr(kernel_args_paddr),
+        let mut kernel_args = transmute::<VAddr, &mut KernelArgs<[Module; 2]>>(
+            paddr_to_uefi_vaddr(kernel_args_paddr),
         );
         trace!("Kernel args allocated.");
 
@@ -437,9 +424,8 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.mm = (mm_paddr + KERNEL_OFFSET, mm_size);
         kernel_args.pml4 = PAddr::from(kernel.vspace.pml4 as *const _ as u64);
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
-        kernel_args.kernel_binary = (kernel_base_paddr + KERNEL_OFFSET, kernel_size);
         kernel_args.kernel_elf_offset = kernel.offset;
-        kernel_args.modules = [init_module];
+        kernel_args.modules = [kernel_module, init_module];
         for entry in st.config_table() {
             if entry.guid == ACPI2_GUID {
                 kernel_args.acpi2_rsdp = PAddr::from(entry.address as u64);
@@ -447,7 +433,6 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
                 kernel_args.acpi1_rsdp = PAddr::from(entry.address as u64);
             }
         }
-
 
         info!(
             "Kernel will start to execute from: {:p}",

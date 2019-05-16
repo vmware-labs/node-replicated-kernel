@@ -42,11 +42,15 @@ pub const GIB_512: usize = 512 * 512 * 512 * 0x1000;
 
 
 /// Translate between PAddr and VAddr
-///
-/// TODO: this should really be called paddr_to_uefi_vaddr()!
-pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
+pub(crate) fn paddr_to_uefi_vaddr(paddr: PAddr) -> VAddr {
     return VAddr::from(paddr.as_u64());
 }
+
+/// Translate between PAddr and VAddr
+pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
+    return VAddr::from(KERNEL_OFFSET + paddr.as_usize());
+}
+
 
 /// The starting address of the kernel address space
 ///

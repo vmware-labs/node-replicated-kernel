@@ -251,8 +251,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     irq::setup_idt();
     // We should catch page-faults and general protection faults from here...
 
-    let mut kernel_args: &'static KernelArgs<[Module; 1]> =
-        unsafe { transmute::<u64, &'static KernelArgs<[Module; 1]>>(argc as u64) };
+    let mut kernel_args: &'static KernelArgs<[Module; 2]> =
+        unsafe { transmute::<u64, &'static KernelArgs<[Module; 2]>>(argc as u64) };
 
     // TODO(fix): Because we pnly have a borrow of KernelArgs we have to work too hard to get mm_iter
     let mm_iter = unsafe {
@@ -276,15 +276,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Get the kernel binary (to later store it in the KCB)
     // The binary is useful for symbol name lookups when printing stacktraces
     // in case things go wrong (see panic.rs).
+    trace!("Kernel binary: {:?}", kernel_args.modules[0]);
     let kernel_binary: &'static [u8] = unsafe {
         slice::from_raw_parts(
-            kernel_args.kernel_binary.0.as_u64() as *const u8,
-            kernel_args.kernel_binary.1,
+            kernel_args.modules[0].base().as_u64() as *const u8,
+            kernel_args.modules[0].size(),
         )
     };
-
-    trace!("kernel binary slice {:?}", kernel_binary[0]);
-    info!("kernel args module 1 {:?}", kernel_args.modules[0]);
 
     // Find the physical memory regions available and add them to the physical memory manager
     let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();

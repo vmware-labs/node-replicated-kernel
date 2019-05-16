@@ -464,17 +464,17 @@ impl<'a> VSpace<'a> {
 
     /// Resolve a PDEntry to a page table.
     fn get_pt<'b>(&self, entry: PDEntry) -> &'b mut PT {
-        unsafe { transmute::<VAddr, &mut PT>(paddr_to_kernel_vaddr(entry.address())) }
+        unsafe { transmute::<VAddr, &mut PT>(paddr_to_uefi_vaddr(entry.address())) }
     }
 
     /// Resolve a PDPTEntry to a page directory.
     fn get_pd<'b>(&self, entry: PDPTEntry) -> &'b mut PD {
-        unsafe { transmute::<VAddr, &mut PD>(paddr_to_kernel_vaddr(entry.address())) }
+        unsafe { transmute::<VAddr, &mut PD>(paddr_to_uefi_vaddr(entry.address())) }
     }
 
     /// Resolve a PML4Entry to a PDPT.
     fn get_pdpt<'b>(&self, entry: PML4Entry) -> &'b mut PDPT {
-        unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
+        unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_uefi_vaddr(entry.address())) }
     }
 
     pub(crate) fn resolve_addr(&self, addr: VAddr) -> Option<PAddr> {

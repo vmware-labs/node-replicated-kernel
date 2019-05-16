@@ -1,4 +1,4 @@
-// LKCB is the local kernel control that stores all core local state.
+// KCB is the local kernel control that stores all core local state.
 
 use alloc::boxed::Box;
 use core::cell::{Ref, RefCell, RefMut};

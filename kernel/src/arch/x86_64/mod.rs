@@ -217,10 +217,11 @@ fn find_apic_base() -> u64 {
 // Includes structs KernelArgs, and Module from bootloader
 include!("../../../../bootloader/src/shared.rs");
 
-/// Entry function that is callsed from start.S after the pre-initialization (in assembly)
-/// is done. At this point we are in x86-64 (long) mode,
-/// We have a simple GDT, address space, and small stack set-up.
-/// Ignore the arguments here (they are garbage).
+/// Entry function that is called from UEFI
+/// At this point we are in x86-64 (long) mode,
+/// We have a simple GDT, our address space, and stack set-up.
+/// The argc argument is abused as a pointer ot the KernelArgs struct
+/// passed by UEFI.
 #[lang = "start"]
 #[no_mangle]
 #[start]
@@ -236,7 +237,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
     // Parse the command line arguments
-    // TODO: This should be passed on over using the UEFI bootlaoder
+    // TODO: This should be passed on over using the UEFI bootloader
     // https://stackoverflow.com/questions/17702725/how-to-access-command-line-arguments-in-uefi
     let args = include_str!("../../../cmdline.in");
     init_logging(args);
@@ -317,34 +318,19 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     trace!("vspace found");
 
     // Construct the driver object to manipulate the interrupt controller (XAPIC)
-    // This is done as follows:
-    // First, we find the memory for the registers of the controller (APIC base)
-    // Then, we give the memory location to the APIC struct
-    // Finally we put the driver in the KCB
-    // Ugly: We are not quite done since regs is not yet accessible
-    // but we can't map it before we have set up the KCB (see below :/)
     let base = find_apic_base();
     trace!("find_apic_base {:#x}", base);
-
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
     let mut apic = xapic::XAPIC::new(regs);
-    trace!("apic constructed");
     apic.attach();
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
-    trace!("seting kcb");
     kcb::init_kcb(kcb);
+
     debug!("Memory allocation should work at this point...");
     irq::init_irq_handlers();
 
-    // Finish ACPI initialization here: because the APIC base memory
-    // (`regs`) is not mapped, we map it now (after we do init_kcb) because
-    // only then do we have memory management to allocate the page-tables
-    // required for the mapping
-    /*kcb::get_kcb()
-    .init_vspace()
-    .map_identity(VAddr::from(base), VAddr::from(base) + BASE_PAGE_SIZE);*/
     // Attach the driver to the registers:
     {
         let mut apic = kcb::get_kcb().apic();
@@ -354,11 +340,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             apic.version(),
             apic.bsp()
         );
+    } // Make sure to drop the reference to the APIC again
 
-        let r = acpi::init();
-        assert!(r.is_ok());
-        info!("ACPI initialized");
-    }
+    let r = acpi::init();
+    assert!(r.is_ok());
+    info!("ACPI initialized");
+
     lazy_static::initialize(&acpi::LOCAL_APICS);
     lazy_static::initialize(&acpi::IO_APICS);
 

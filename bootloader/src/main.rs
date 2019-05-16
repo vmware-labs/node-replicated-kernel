@@ -444,7 +444,8 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let (_st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
             .expect_success("Can't exit the boot service");
-        // FYI: Print no longer works here... so let's hope we make it to the kernel serial init
+        // FYI: Print no longer works here... so let's hope we make
+        // it to the kernel serial init
 
         kernel_args.mm_iter = mmiter;
 

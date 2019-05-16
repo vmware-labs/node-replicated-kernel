@@ -25,6 +25,7 @@ pub mod kcb;
 pub mod memory;
 pub mod process;
 pub mod syscall;
+pub mod vspace;
 
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
@@ -41,6 +42,7 @@ use logos::Logos;
 
 use memory::*;
 use process::*;
+use vspace::*;
 
 use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);

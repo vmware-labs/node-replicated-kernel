@@ -13,7 +13,7 @@ use acpica_sys::*;
 use cstr_core::CStr;
 use log::{error, trace};
 
-use super::process::{MapAction, VSpace};
+use super::vspace::{MapAction, VSpace};
 
 use x86::io;
 

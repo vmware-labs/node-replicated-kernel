@@ -9,7 +9,7 @@ use x86::current::segmentation;
 use apic::xapic::XAPIC;
 
 use super::irq;
-use super::process::VSpace;
+use super::vspace::VSpace;
 
 use crate::arch::{KernelArgs, Module};
 use crate::memory::buddy::BuddyFrameAllocator;

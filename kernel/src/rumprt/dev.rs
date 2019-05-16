@@ -1,6 +1,6 @@
 use super::{c_int, c_uint, c_ulong, c_void};
 use crate::arch::memory::{kernel_vaddr_to_paddr, PAddr, VAddr};
-use crate::arch::process::{MapAction, VSpace};
+use crate::arch::vspace::{MapAction, VSpace};
 use crate::kcb::{get_kcb, Kcb};
 use crate::memory::PhysicalAllocator;
 use alloc::boxed::Box;
@@ -109,7 +109,9 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     IRQS[0].cookie = cookie;
 
     use crate::arch::acpi;
+    use crate::arch::vspace::MapAction;
     use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+
     for io_apic in acpi::IO_APICS.iter() {
         info!("io_apic {:?}", io_apic);
         let addr = PAddr::from(io_apic.address as u64);
@@ -122,7 +124,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
                 PAddr::from_u64(crate::arch::memory::KERNEL_BASE),
                 addr,
                 addr + x86::bits64::paging::BASE_PAGE_SIZE,
-                crate::arch::process::MapAction::ReadWriteKernel,
+                MapAction::ReadWriteKernel,
             );
         });
 

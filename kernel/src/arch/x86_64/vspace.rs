@@ -63,14 +63,14 @@ impl MapAction {
         use MapAction::*;
         match self {
             None => PDPTFlags::empty(),
-            ReadUser => PDPTFlags::XD,
-            ReadKernel => PDPTFlags::US | PDPTFlags::XD,
-            ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD,
-            ReadWriteKernel => PDPTFlags::RW | PDPTFlags::US | PDPTFlags::XD,
-            ReadExecuteUser => PDPTFlags::empty(),
-            ReadExecuteKernel => PDPTFlags::US,
-            ReadWriteExecuteUser => PDPTFlags::RW,
-            ReadWriteExecuteKernel => PDPTFlags::RW | PDPTFlags::US,
+            ReadUser => PDPTFlags::XD | PDPTFlags::US,
+            ReadKernel => PDPTFlags::XD,
+            ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
+            ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
+            ReadExecuteUser => PDPTFlags::US,
+            ReadExecuteKernel => PDPTFlags::empty(),
+            ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
+            ReadWriteExecuteKernel => PDPTFlags::RW,
         }
     }
 
@@ -79,14 +79,14 @@ impl MapAction {
         use MapAction::*;
         match self {
             None => PDFlags::empty(),
-            ReadUser => PDFlags::XD,
-            ReadKernel => PDFlags::US | PDFlags::XD,
-            ReadWriteUser => PDFlags::RW | PDFlags::XD,
-            ReadWriteKernel => PDFlags::RW | PDFlags::US | PDFlags::XD,
-            ReadExecuteUser => PDFlags::empty(),
-            ReadExecuteKernel => PDFlags::US,
-            ReadWriteExecuteUser => PDFlags::RW,
-            ReadWriteExecuteKernel => PDFlags::RW | PDFlags::US,
+            ReadUser => PDFlags::XD | PDFlags::US,
+            ReadKernel => PDFlags::XD,
+            ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
+            ReadWriteKernel => PDFlags::RW | PDFlags::XD,
+            ReadExecuteUser => PDFlags::US,
+            ReadExecuteKernel => PDFlags::empty(),
+            ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
+            ReadWriteExecuteKernel => PDFlags::RW,
         }
     }
 
@@ -95,14 +95,14 @@ impl MapAction {
         use MapAction::*;
         match self {
             None => PTFlags::empty(),
-            ReadUser => PTFlags::XD,
-            ReadKernel => PTFlags::US | PTFlags::XD,
-            ReadWriteUser => PTFlags::RW | PTFlags::XD,
-            ReadWriteKernel => PTFlags::RW | PTFlags::US | PTFlags::XD,
-            ReadExecuteUser => PTFlags::empty(),
-            ReadExecuteKernel => PTFlags::US,
-            ReadWriteExecuteUser => PTFlags::RW,
-            ReadWriteExecuteKernel => PTFlags::RW | PTFlags::US,
+            ReadUser => PTFlags::XD | PTFlags::US,
+            ReadKernel => PTFlags::XD,
+            ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
+            ReadWriteKernel => PTFlags::RW | PTFlags::XD,
+            ReadExecuteUser => PTFlags::US,
+            ReadExecuteKernel => PTFlags::empty(),
+            ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
+            ReadWriteExecuteKernel => PTFlags::RW,
         }
     }
 }
@@ -472,17 +472,17 @@ impl VSpace {
 
     fn new_pt(&mut self) -> PDEntry {
         let paddr: PAddr = VSpace::allocate_one_page();
-        return PDEntry::new(paddr, PDFlags::P | PDFlags::RW);
+        return PDEntry::new(paddr, PDFlags::P | PDFlags::RW | PDFlags::US);
     }
 
     fn new_pd(&mut self) -> PDPTEntry {
         let paddr: PAddr = VSpace::allocate_one_page();
-        return PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW);
+        return PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
     }
 
     fn new_pdpt(&mut self) -> PML4Entry {
         let paddr: PAddr = VSpace::allocate_one_page();
-        return PML4Entry::new(paddr, PML4Flags::P | PML4Flags::RW);
+        return PML4Entry::new(paddr, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
     }
 
     /// Resolve a PDEntry to a page table.

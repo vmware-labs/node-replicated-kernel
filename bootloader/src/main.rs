@@ -373,8 +373,8 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         use x86::controlregs::{cr4, cr4_write, Cr4};
         let old_cr4 = cr4();
         let new_cr4 = Cr4::CR4_ENABLE_PROTECTION_KEY
-            //| Cr4::CR4_ENABLE_SMAP
-            //| Cr4::CR4_ENABLE_SMEP
+            | Cr4::CR4_ENABLE_SMAP
+            | Cr4::CR4_ENABLE_SMEP
             | Cr4::CR4_ENABLE_OS_XSAVE
             | Cr4::CR4_ENABLE_FSGSBASE
             | Cr4::CR4_UNMASKED_SSE
@@ -462,7 +462,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         jump_to_kernel(
             KERNEL_OFFSET as u64 + stack_top.as_u64(),
             kernel.offset.as_u64() + binary.entry_point(),
-            kernel_args_paddr.0,
+            paddr_to_kernel_vaddr(kernel_args_paddr).as_u64(),
         );
     }
 

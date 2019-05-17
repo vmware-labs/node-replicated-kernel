@@ -10,7 +10,7 @@ use rexpect::process::wait::WaitStatus;
 use rexpect::{spawn, spawn_bash};
 
 fn spawn_qemu(test: &str) -> Result<rexpect::session::PtySession> {
-    let features = format!("integration-tests,{}", test);
+    let features = format!("integration-test,{}", test);
 
     let o = process::Command::new("bash")
         .args(&[

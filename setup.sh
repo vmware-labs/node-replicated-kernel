@@ -7,7 +7,7 @@ if [ ! -x "$(command -v qemu-system-x86_64)" ]; then
         brew install qemu
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
         sudo apt-get update
-        sudo apt-get install -y qemu qemu-kvm
+        sudo apt-get install -y qemu qemu-kvm uml-utilities mtools
     fi
 fi
 

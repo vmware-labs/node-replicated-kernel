@@ -197,13 +197,19 @@ fn enable_fsgsbase() {
 ///
 /// This function is called during initialization.
 /// It will read the cr3 register to find the physical address of
-/// the currently loaded PML4 table which is defined in start.S
-/// see `.globl init_pml4`
-fn find_current_vspace() -> VSpace<'static> {
-    let cr_three: u64 = unsafe { controlregs::cr3() };
+/// the currently loaded PML4 table which is constructed
+/// by the bootloader.
+///
+/// # Safety
+/// This should only be called once during init to retrieve the
+/// initial VSpace.
+unsafe fn find_current_vspace() -> VSpace {
+    let cr_three: u64 = controlregs::cr3();
     let pml4: PAddr = PAddr::from_u64(cr_three);
-    let pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_kernel_vaddr(pml4)) };
-    VSpace { pml4: pml4_table }
+    let pml4_table = transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
+    VSpace {
+        pml4: Box::into_pin(Box::from_raw(pml4_table)),
+    }
 }
 
 /// Return the base address of the xAPIC (x86 Interrupt controller)
@@ -313,10 +319,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
     }
-
     trace!("added memory regions");
 
-    let mut vspace = find_current_vspace();
+    let mut vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
 
     // Construct the driver object to manipulate the interrupt controller (XAPIC)

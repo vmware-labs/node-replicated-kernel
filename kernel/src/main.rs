@@ -16,7 +16,8 @@
     ptr_internals,
     compiler_builtins_lib,
     ptr_offset_from,
-    box_into_raw_non_null
+    box_into_raw_non_null,
+    box_into_pin
 )]
 
 #[cfg(not(target_os = "none"))]
@@ -28,6 +29,7 @@ extern crate rlibc;
 pub mod mutex;
 
 extern crate alloc;
+extern crate custom_error;
 
 #[macro_use]
 extern crate log;
@@ -69,7 +71,9 @@ pub mod arch;
 
 mod kcb;
 mod memory;
+#[macro_use]
 mod prelude;
+mod error;
 
 #[cfg(target_os = "none")]
 pub mod rumprt;
@@ -163,7 +167,7 @@ pub enum ExitReason {
 
 /// Kernel entry-point
 #[no_mangle]
-#[cfg(not(feature = "integration-tests"))]
+#[cfg(not(feature = "integration-test"))]
 pub fn xmain() {
     debug!("Reached architecture independent area");
     error!("error");

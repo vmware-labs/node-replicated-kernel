@@ -43,7 +43,7 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
 pub struct Kcb {
     kernel_args: RefCell<&'static KernelArgs<[Module; 2]>>,
     kernel_binary: RefCell<&'static [u8]>,
-    init_vspace: RefCell<VSpace<'static>>,
+    init_vspace: RefCell<VSpace>,
     pmanager: RefCell<BuddyFrameAllocator>,
     apic: RefCell<XAPIC>,
 }
@@ -52,7 +52,7 @@ impl Kcb {
     pub fn new(
         kernel_args: &'static KernelArgs<[Module; 2]>,
         kernel_binary: &'static [u8],
-        init_vspace: VSpace<'static>,
+        init_vspace: VSpace,
         pmanager: BuddyFrameAllocator,
         apic: XAPIC,
     ) -> Kcb {
@@ -73,7 +73,7 @@ impl Kcb {
         self.apic.borrow_mut()
     }
 
-    pub fn init_vspace(&self) -> RefMut<VSpace<'static>> {
+    pub fn init_vspace(&self) -> RefMut<VSpace> {
         self.init_vspace.borrow_mut()
     }
 
@@ -89,6 +89,7 @@ impl Kcb {
 pub(crate) fn init_kcb(mut kcb: Kcb) {
     let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(&mut kcb);
     unsafe { set_kcb(kptr) };
+    core::mem::forget(kcb);
 }
 /*
 

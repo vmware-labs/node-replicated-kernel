@@ -1,6 +1,9 @@
 use core::fmt;
 use core::mem::transmute;
+use core::pin::Pin;
 use core::ptr;
+
+use alloc::boxed::Box;
 
 use elfloader::ElfLoader;
 
@@ -18,16 +21,6 @@ use crate::mutex::Mutex;
 
 use super::memory::KERNEL_BASE;
 use crate::memory::BespinPageTableProvider;
-
-macro_rules! round_up {
-    ($num:expr, $s:expr) => {
-        (($num + $s - 1) / $s) * $s
-    };
-}
-
-pub struct VSpace<'a> {
-    pub pml4: &'a mut PML4,
-}
 
 /// Mapping rights to give to address translation.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -56,7 +49,11 @@ pub enum MapAction {
 /// Type of resource we're trying to allocate
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceType {
+    /// ELF Binary data
+    Binary,
+    /// Physical memory
     Memory,
+    /// Page-table meta-data
     PageTable,
 }
 
@@ -127,7 +124,36 @@ impl fmt::Display for MapAction {
     }
 }
 
-impl<'a> VSpace<'a> {
+
+pub struct VSpace {
+    pub pml4: Pin<Box<PML4>>,
+}
+
+impl Drop for VSpace {
+    fn drop(&mut self) {
+        //panic!("Drop for VSpace!");
+    }
+}
+
+impl VSpace {
+
+    /// Create a new address-space.
+    ///
+    /// Allocate an initial PML4 table for it.
+    pub fn new() -> VSpace {
+        VSpace {
+            pml4: Box::pin(
+                [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
+            ),
+        }
+    }
+
+    pub fn pml4_address(&self) -> PAddr {
+        let pml4_vaddr = VAddr::from(&*self.pml4 as *const _ as u64);
+        kernel_vaddr_to_paddr(pml4_vaddr)
+    }
+
+
     /// Constructs an identity map but with an offset added to the region.
     ///
     /// # Example
@@ -343,9 +369,6 @@ impl<'a> VSpace<'a> {
         while mapped < psize && pt_idx < 512 {
             if !pt[pt_idx].is_present() {
                 pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
-                if rights.to_pt_rights() != PTFlags::RW {
-                    trace!("Mapped 4KiB page: {:?} ", pt[pt_idx]);
-                }
             } else {
                 assert!(
                     pt[pt_idx].is_present(),
@@ -424,11 +447,11 @@ impl<'a> VSpace<'a> {
 
         // Free unused top and bottom regions again:
         unsafe {
-            panic!("NYI free");
+            trace!("NYI free");
         }
 
         unsafe {
-            panic!("NYI free");
+            trace!("NYI free");
         }
 
         PAddr::from(aligned_paddr)
@@ -528,13 +551,28 @@ impl<'a> VSpace<'a> {
     }
 }
 
-pub unsafe fn dump_table(pml4_table: &PML4) {
+pub unsafe fn dump_current_table(log_level: usize) {
+    let cr_three: u64 = controlregs::cr3();
+    let pml4: PAddr = PAddr::from_u64(cr_three);
+    let pml4_table = transmute::<VAddr, &PML4>(paddr_to_kernel_vaddr(pml4));
+
+    dump_table(pml4_table, log_level);
+}
+
+pub unsafe fn dump_table(pml4_table: &PML4, log_level: usize) {
     for (pml_idx, pml_item) in pml4_table.iter().enumerate() {
         if pml_item.is_present() {
+            info!("PML4 item#{}: maps to {:?}", pml_idx, pml_item);
+
             let pdpt_table =
                 transmute::<VAddr, &mut PDPT>(VAddr::from_u64(pml_item.address().as_u64()));
+            if log_level <= 1 {
+                continue;
+            }
 
             for (pdpt_idx, pdpt_item) in pdpt_table.iter().enumerate() {
+                info!("PDPT item#{}: maps to {:?}", pdpt_idx, pdpt_item);
+
                 if pdpt_item.is_present() {
                     let pd_table =
                         transmute::<VAddr, &mut PD>(VAddr::from_u64(pdpt_item.address().as_u64()));
@@ -545,6 +583,8 @@ pub unsafe fn dump_table(pml4_table: &PML4) {
                         info!("PDPT item: vaddr 0x{:x} maps to {:?}", vaddr, pdpt_item);
                     } else {
                         for (pd_idx, pd_item) in pd_table.iter().enumerate() {
+                            info!("PD item#{}: maps to {:?}", pd_idx, pd_item);
+
                             if pd_item.is_present() {
                                 let ptes = transmute::<VAddr, &mut PT>(VAddr::from_u64(
                                     pd_item.address().as_u64(),

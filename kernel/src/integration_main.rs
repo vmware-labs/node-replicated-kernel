@@ -1,4 +1,4 @@
-#[cfg(all(feature = "integration-tests", feature = "test-time"))]
+#[cfg(all(feature = "integration-test", feature = "test-time"))]
 pub fn xmain() {
     unsafe {
         let tsc = x86::time::rdtsc();
@@ -25,7 +25,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-rump-tmpfs"))]
+#[cfg(all(feature = "integration-test", feature = "test-rump-tmpfs"))]
 pub fn xmain() {
     use cstr_core::CStr;
 
@@ -115,7 +115,7 @@ pub fn xmain() {
     }
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-rump-net"))]
+#[cfg(all(feature = "integration-test", feature = "test-rump-net"))]
 pub fn xmain() {
     use cstr_core::CStr;
 
@@ -221,7 +221,7 @@ pub fn xmain() {
     }
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-buddy"))]
+#[cfg(all(feature = "integration-test", feature = "test-buddy"))]
 pub fn xmain() {
     use buddy::FreeBlock;
     use buddy::Heap;
@@ -236,12 +236,12 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-exit"))]
+#[cfg(all(feature = "integration-test", feature = "test-exit"))]
 pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-pfault"))]
+#[cfg(all(feature = "integration-test", feature = "test-pfault"))]
 #[inline(never)]
 pub fn xmain() {
     use arch::memory::{paddr_to_kernel_vaddr, PAddr};
@@ -256,7 +256,7 @@ pub fn xmain() {
     }
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-gpfault"))]
+#[cfg(all(feature = "integration-test", feature = "test-gpfault"))]
 pub fn xmain() {
     // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
     // So we cause a GP by loading garbage in the ss segment register.
@@ -266,7 +266,7 @@ pub fn xmain() {
     }
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-alloc"))]
+#[cfg(all(feature = "integration-test", feature = "test-alloc"))]
 pub fn xmain() {
     use alloc::vec::Vec;
     {
@@ -294,7 +294,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-acpi"))]
+#[cfg(all(feature = "integration-test", feature = "test-acpi"))]
 pub fn xmain() {
     use arch::acpi;
 
@@ -371,7 +371,7 @@ pub fn xmain() {
     }
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-scheduler"))]
+#[cfg(all(feature = "integration-test", feature = "test-scheduler"))]
 pub fn xmain() {
     let cpuid = x86::cpuid::CpuId::new();
     assert!(
@@ -408,14 +408,29 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-sse"))]
+#[cfg(all(feature = "integration-test", feature = "test-userspace"))]
+pub fn xmain() {
+    let init_module = kcb::try_get_kcb()
+        .map(|kcb| kcb.kernel_args().modules[1].clone())
+        .expect("Need to have init module");
+
+    info!("init {:?}", init_module);
+    let process = arch::process::Process::from(init_module).expect("Couldn't load this");
+    info!("created the process");
+    process.start();
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+
+#[cfg(all(feature = "integration-test", feature = "test-sse"))]
 pub fn xmain() {
     info!("division = {}", 10.0 / 2.19);
     info!("division by zero = {}", 10.0 / 0.0);
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-tests", feature = "test-linux"))]
+#[cfg(all(feature = "integration-test", feature = "test-linux"))]
 pub fn xmain() {
     use cstr_core::CStr;
 

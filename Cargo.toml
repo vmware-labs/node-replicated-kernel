@@ -17,6 +17,7 @@ members = [
     "lib/lineup",
     "lib/rawtime",
     "lib/ctest",
+    "lib/custom_error",
     "usr/init",
 ]
 

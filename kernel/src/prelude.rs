@@ -5,6 +5,13 @@ macro_rules! round_up {
     };
 }
 
+#[macro_export]
+macro_rules! is_page_aligned {
+    ($num:expr) => {
+        $num % BASE_PAGE_SIZE as u64 == 0
+    };
+}
+
 pub trait PowersOf2 {
     fn log2(self) -> u8;
 }
@@ -20,3 +27,4 @@ impl PowersOf2 for usize {
         31 - self.leading_zeros() as u8
     }
 }
+

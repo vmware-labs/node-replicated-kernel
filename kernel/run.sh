@@ -4,7 +4,7 @@ set -ex
 
 # ARG_OPTIONAL_SINGLE([features],[f],[Rust features to enable.])
 # ARG_OPTIONAL_SINGLE([cmd],[c],[Command line for kernel.])
-# ARG_OPTIONAL_REPEATED([mods],[m],[Modules to include on startup.])
+# ARG_OPTIONAL_REPEATED([mods],[m],[Modules to include on startup.], ['init'])
 # ARG_OPTIONAL_BOOLEAN([release],[r],[Do a release build.])
 # ARG_OPTIONAL_BOOLEAN([norun],[n],[Only build, don't run.])
 # ARG_HELP([Bespin runner script])
@@ -37,7 +37,7 @@ begins_with_short_option()
 # THE DEFAULTS INITIALIZATION - OPTIONALS
 _arg_features=
 _arg_cmd=
-_arg_mods=()
+_arg_mods=('init')
 _arg_release="off"
 _arg_norun="off"
 
@@ -47,7 +47,7 @@ print_help ()
 	printf 'Usage: %s [-f|--features <arg>] [-c|--cmd <arg>] [-m|--mods <arg>] [-r|--(no-)release] [-n|--(no-)norun] [-h|--help]\n' "$0"
 	printf '\t%s\n' "-f,--features: Rust features to enable. (no default)"
 	printf '\t%s\n' "-c,--cmd: Command line for kernel. (no default)"
-	printf '\t%s\n' "-m,--mods: Modules to include on startup. (empty by default)"
+	printf '\t%s\n' "-m,--mods: Modules to include on startup. (default array: ('init') )"
 	printf '\t%s\n' "-r,--release,--no-release: Do a release build. (off by default)"
 	printf '\t%s\n' "-n,--norun,--no-norun: Only build, don't run. (off by default)"
 	printf '\t%s\n' "-h,--help: Prints help"

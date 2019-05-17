@@ -1,4 +1,5 @@
 /// Describes an ELF binary we loaded from the UEFI image into memory.
+#[derive(Clone)]
 pub struct Module {
     /// Name of the module (ELF file).
     pub name: [u8; 32],
@@ -38,6 +39,14 @@ impl Module {
         self.binary.1
     }
 
+    /// Return a slice to the binary loaded in the (kernel) address space.elfloader
+    ///
+    /// # Unsafe
+    /// May not be mapped at all (for example in UEFI bootloader space).
+    /// May be unmapped/changed arbitrarily later by the kernel.
+    unsafe fn as_slice(&self) -> &'static [u8] {
+        core::slice::from_raw_parts(self.base().as_ptr::<u8>(), self.size())
+    }
 }
 
 impl core::fmt::Debug for Module {

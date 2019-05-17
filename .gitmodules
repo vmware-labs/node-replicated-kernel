@@ -37,3 +37,6 @@
 [submodule "lib/linuxkernel"]
 	path = lib/linuxkernel
 	url = git@github.com:gz/rust-lkl.git
+[submodule "lib/custom_error"]
+	path = lib/custom_error
+	url = git@github.com:gz/custom_error.git

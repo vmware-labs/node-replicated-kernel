@@ -319,13 +319,6 @@ impl<'a> VSpace<'a> {
         while mapped < psize && pt_idx < 512 {
             if !pt[pt_idx].is_present() {
                 pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
-                if rights.to_pt_rights() != PTFlags::RW {
-                    trace!(
-                        "Mapped 4KiB page: {:?} rights {:?}",
-                        pt[pt_idx],
-                        rights.to_pt_rights()
-                    );
-                }
             } else {
                 assert!(
                     pt[pt_idx].is_present(),

@@ -57,10 +57,8 @@ impl Process {
             p.vspace.pml4[128] = kernel_pml_entry;
         });
 
-
         Ok(p)
     }
-
 
     pub fn new<'b>(pid: u64) -> Process {
         unsafe {
@@ -82,7 +80,6 @@ impl Process {
         let pml4_physical = self.vspace.pml4_address();
 
         unsafe {
-
             //super::vspace::dump_current_table(1);
             //super::vspace::dump_table(&self.vspace.pml4, 4);
 
@@ -137,7 +134,6 @@ impl elfloader::ElfLoader for Process {
     /// This has the advantage that our address space is
     /// all a very simple 1:1 mapping of physical memory.
     fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
-
         // Should contain what memory range we need to cover to contain
         // loadable regions:
         let mut min_base: VAddr = VAddr::from(usize::max_value());
@@ -306,4 +302,3 @@ impl elfloader::ElfLoader for Process {
         Ok(())
     }
 }
-

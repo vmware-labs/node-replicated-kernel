@@ -27,4 +27,3 @@ impl PowersOf2 for usize {
         31 - self.leading_zeros() as u8
     }
 }
-

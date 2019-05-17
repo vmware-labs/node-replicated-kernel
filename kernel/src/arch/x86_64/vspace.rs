@@ -124,7 +124,6 @@ impl fmt::Display for MapAction {
     }
 }
 
-
 pub struct VSpace {
     pub pml4: Pin<Box<PML4>>,
 }
@@ -136,7 +135,6 @@ impl Drop for VSpace {
 }
 
 impl VSpace {
-
     /// Create a new address-space.
     ///
     /// Allocate an initial PML4 table for it.
@@ -152,7 +150,6 @@ impl VSpace {
         let pml4_vaddr = VAddr::from(&*self.pml4 as *const _ as u64);
         kernel_vaddr_to_paddr(pml4_vaddr)
     }
-
 
     /// Constructs an identity map but with an offset added to the region.
     ///

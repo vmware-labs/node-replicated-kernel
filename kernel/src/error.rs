@@ -8,7 +8,6 @@ custom_error! {pub KError
     ProcessCreate{desc: String}      = "Unable to create process: {desc}",
 }
 
-
 impl From<String> for KError {
     fn from(err: String) -> KError {
         KError::ProcessCreate { desc: err }

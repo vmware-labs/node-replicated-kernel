@@ -18,8 +18,8 @@ exec:
     movq       $0, %r15
     movq       $0, %rax
     movq       $0, %rbx
-    movq       $0, %rbp
-    movq       $0, %rsp
+    //movq       $0, %rbp
+    //movq       $0, %rsp
     sysretq
 
 /// Resumes a process
@@ -30,7 +30,7 @@ exec:
 /// %r10 points to rflags
 .global resume
 resume:
-    /*movabs $CURRENT_PROCESS, %r15*/
+    movabs $CURRENT_PROCESS, %r15
     pushq      %r8                 /* ss */
     pushq      7*8(%r15)           /* rsp */
     pushq      %r10                /* rflags */
@@ -58,9 +58,12 @@ resume:
 .extern syscall_handle
 .global syscall_enter
 syscall_enter:
-    /*movq $syscall_stack, %rsp*/
+    movabs $syscall_stack, %rsp
+    movq %rsp, %rbp
     callq syscall_handle
 
+.data
+.align 4096
 syscall_stack_base:
     .rept 0x1000 * 60
         .byte 0

@@ -109,9 +109,7 @@ pub fn setup_gdt() {
         debug!("loaded cs");
         load_ss(ss_selector);
 
-        let cs_user_selector = SegmentSelector::new(GdtTable::CS_USER_INDEX as u16, Ring::Ring3)
-            | SegmentSelector::TI_GDT;
-        syscall::enable_fast_syscalls(cs_selector, cs_user_selector);
+        syscall::enable_fast_syscalls(cs_selector, ss_selector);
     }
 
     debug!("Segments reloaded");

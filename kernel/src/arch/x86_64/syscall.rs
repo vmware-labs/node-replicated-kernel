@@ -11,14 +11,12 @@ extern "C" {
 #[inline(never)]
 #[no_mangle]
 pub extern "C" fn syscall_handle() {
-    debug!("got syscall");
+    info!("got syscall");
     loop {}
 }
 
 /// Enables syscall/sysret functionality.
-pub fn enable_fast_syscalls(_cs: SegmentSelector, _cs_user: SegmentSelector) {
-    let cs_selector = SegmentSelector::new(1 as u16, Ring::Ring0) | SegmentSelector::TI_GDT;
-    let ss_selector = SegmentSelector::new(2 as u16, Ring::Ring3) | SegmentSelector::TI_GDT;
+pub fn enable_fast_syscalls(cs_selector: SegmentSelector, ss_selector: SegmentSelector) {
 
     unsafe {
         let mut star = rdmsr(IA32_STAR);
@@ -27,8 +25,9 @@ pub fn enable_fast_syscalls(_cs: SegmentSelector, _cs_user: SegmentSelector) {
         wrmsr(IA32_STAR, star);
 
         // System call RIP
-        let rip = syscall_enter as usize as u64;
+        let rip = syscall_enter as u64;
         wrmsr(IA32_LSTAR, rip);
+        info!("syscalls jump to {:#x}", rip);
 
         wrmsr(IA32_FMASK, !(RFlags::new().bits()));
 

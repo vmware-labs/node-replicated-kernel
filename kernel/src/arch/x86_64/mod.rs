@@ -30,9 +30,7 @@ pub mod vspace;
 use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
 pub mod acpi;
-//mod exec;
 mod isr;
-//mod start;
 
 use crate::memory::*;
 use crate::{xmain, ExitReason};

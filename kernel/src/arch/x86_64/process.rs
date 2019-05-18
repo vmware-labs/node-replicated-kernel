@@ -29,21 +29,36 @@ use super::vspace::*;
 use crate::error::KError;
 
 #[no_mangle]
-pub static CURRENT_PROCESS: Mutex<Option<Process>> = mutex!(None);
+pub static mut CURRENT_PROCESS: Mutex<Option<Process>> = mutex!(None);
 
+/// A process representation.
 pub struct Process {
+    /// ELF File mappings that were installed into the address space.
     pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
+    /// IRQ save area.
     pub save_area: irq::SaveArea,
+    /// Process ID.
     pub pid: u64,
+    /// The address space of the process.
     pub vspace: VSpace,
-
+    /// Offset where ELF is located.
     pub offset: VAddr,
+    /// The entry point of the ELF file.
     pub entry_point: VAddr,
+    /// Initial allocated stack (base address).
+    pub stack_base: VAddr,
+    /// Initial allocated stack (top address).
+    pub stack_top: VAddr,
+    /// Initial allocated stack size.
+    pub stack_size: usize,
 }
 
 impl Process {
+    /// Create a process from a Module (i.e., a struct passed by UEFI)
     pub fn from(module: crate::arch::Module) -> Result<Process, KError> {
         let mut p = Process::new(0);
+
+        // Load the Module into the process address-space
         // Safe since we don't modify the kernel page-table
         unsafe {
             let e = elfloader::ElfBinary::new(module.name(), module.as_slice())?;
@@ -51,6 +66,16 @@ impl Process {
             e.load(&mut p)?;
         }
 
+        // Allocate a stack
+        p.vspace.map(
+            p.stack_base,
+            p.stack_size,
+            MapAction::ReadWriteExecuteUser,
+            BASE_PAGE_SIZE as u64,
+        );
+
+
+        // Install the kernel mappings
         super::kcb::try_get_kcb().map(|kcb| {
             let kernel_pml_entry = kcb.init_vspace().pml4[128];
             info!("KERNEL MAPPINGS {:?}", kernel_pml_entry);
@@ -60,7 +85,12 @@ impl Process {
         Ok(p)
     }
 
-    pub fn new<'b>(pid: u64) -> Process {
+    /// Create a new `empty` process.
+    fn new<'b>(pid: u64) -> Process {
+        let stack_base = VAddr::from(0xf000_0000usize);
+        let stack_size = 128 * BASE_PAGE_SIZE;
+        let stack_top = stack_base + stack_size;
+
         unsafe {
             Process {
                 offset: VAddr::from(0usize),
@@ -69,10 +99,14 @@ impl Process {
                 vspace: VSpace::new(),
                 save_area: Default::default(),
                 entry_point: VAddr::from(0usize),
+                stack_base: stack_base,
+                stack_top: stack_top,
+                stack_size: stack_size,
             }
         }
     }
 
+    /// Start the process (run it for the first time).
     pub fn start(&self) -> ! {
         info!("About to go to user-space");
         let user_flags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
@@ -93,13 +127,20 @@ impl Process {
             "Jumping to {:#x}",
             (self.offset + self.entry_point).as_u64()
         );
+
         unsafe {
-            asm!("jmp exec" :: "{rcx}" ((self.offset + self.entry_point).as_u64()) "{r11}" (user_flags));
+            asm!("jmp exec" ::
+                "{rcx}" ((self.offset + self.entry_point).as_u64())
+                "{r11}" (user_flags)
+                "{rsp}" (self.stack_top.as_u64())
+                "{rbp}" (self.stack_top.as_u64())
+            );
         }
 
         unreachable!("We should not come here!");
     }
 
+    /// Resume the process (after it got interrupted or from a system call).
     pub fn resume(&self) {
         let user_rflags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
         debug!("resuming User-space");

@@ -1,18 +1,23 @@
+use core::mem;
+use core::ops::Deref;
+
+use x86::bits64::paging::{PAddr, VAddr};
 use x86::bits64::rflags::{self, RFlags};
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 use x86::segmentation::SegmentSelector;
+use x86::tlb;
 use x86::Ring;
+
+use kpi::{SystemCall, SystemCallStatus, VSpaceOperation};
+
+use super::process::{Process, CURRENT_PROCESS};
+use super::vspace;
+use crate::prelude::NoDrop;
 
 extern "C" {
     #[no_mangle]
     fn syscall_enter();
 }
-
-use kpi::{SystemCall, SystemCallStatus};
-
-use crate::prelude::NoDrop;
-use core::mem;
-use core::ops::Deref;
 
 struct UserValue<T> {
     value: T,
@@ -40,9 +45,42 @@ impl<T> Drop for UserValue<T> {
     }
 }
 
+/// System call handler for printing
 fn handle_print(buf: UserValue<&str>) -> SystemCallStatus {
     let buffer: &str = *buf;
     info!("handle_print: {:?}", buffer);
+    SystemCallStatus::Ok
+}
+
+/// System call handler for process exit
+fn handle_exit(code: u64) -> SystemCallStatus {
+    info!("Process got exit, we are done for now...");
+    super::debug::shutdown(crate::ExitReason::Ok);
+    SystemCallStatus::Ok
+}
+
+/// System call handler for vspace operations
+fn handle_vspace(op: VSpaceOperation, base: VAddr, bound: u64) -> SystemCallStatus {
+    info!("VSpace {:?} {:#x} {}", op, base, bound);
+
+    match op {
+        VSpaceOperation::Map => unsafe {
+            info!("MAP");
+            let mut plock = CURRENT_PROCESS.lock();
+            (*plock).as_mut().map(|ref mut p| {
+                (*p).vspace.map(
+                    base,
+                    bound as usize,
+                    vspace::MapAction::ReadWriteUser,
+                    0x1000,
+                )
+            });
+            tlb::flush_all();
+        },
+        VSpaceOperation::Unmap => info!("UNMAP"),
+        VSpaceOperation::Unknown => info!("xxx"),
+    }
+
     SystemCallStatus::Ok
 }
 
@@ -65,7 +103,7 @@ pub extern "C" fn syscall_handle(
         info!("p {:?}", *p);
     }
 
-    match SystemCall::new(function) {
+    let status: SystemCallStatus = match SystemCall::new(function) {
         SystemCall::Print => {
             let buffer: *const u8 = arg1 as *const u8;
             let len: usize = arg2 as usize;
@@ -73,14 +111,14 @@ pub extern "C" fn syscall_handle(
                 let slice = core::slice::from_raw_parts(buffer, len);
                 core::str::from_utf8_unchecked(slice)
             };
-            handle_print(UserValue::new(user_str)) as u64
+            handle_print(UserValue::new(user_str))
         }
-        SystemCall::Exit => {
-            info!("Process got exit, we are done for now...");
-            super::debug::shutdown(crate::ExitReason::Ok)
-        }
-        _ => SystemCallStatus::NotSupported as u64,
-    }
+        SystemCall::Exit => handle_exit(arg1),
+        SystemCall::VSpace => handle_vspace(VSpaceOperation::new(arg1), VAddr::from(arg2), arg3),
+        _ => SystemCallStatus::NotSupported,
+    };
+
+    status as u64
 }
 
 /// Enables syscall/sysret functionality.

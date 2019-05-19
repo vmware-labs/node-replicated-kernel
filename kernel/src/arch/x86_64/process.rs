@@ -29,7 +29,7 @@ use super::vspace::*;
 use crate::error::KError;
 
 #[no_mangle]
-pub static mut CURRENT_PROCESS: Mutex<Option<&Process>> = mutex!(None);
+pub static mut CURRENT_PROCESS: Mutex<Option<&mut Process>> = mutex!(None);
 
 /// A process representation.
 #[repr(C, packed)]

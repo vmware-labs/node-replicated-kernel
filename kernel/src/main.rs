@@ -17,7 +17,8 @@
     compiler_builtins_lib,
     ptr_offset_from,
     box_into_raw_non_null,
-    box_into_pin
+    box_into_pin,
+    untagged_unions
 )]
 
 #[cfg(not(target_os = "none"))]

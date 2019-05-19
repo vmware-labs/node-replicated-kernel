@@ -7,12 +7,21 @@ extern crate x86;
 use core::panic::PanicInfo;
 
 
+pub fn sys_print(buf: &str) {
+    unsafe {
+        let r = syscall!(0, 1, buf.as_ptr() as u64, buf.len());
+        assert!(r == 0x0);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     unsafe {
-        syscall!(1, 1);
-    }
+        sys_print("ttttt");
 
+        //let r = syscall!(0, 1, 0);
+        //assert!(r == 0x0);
+    }
     loop {}
 }
 

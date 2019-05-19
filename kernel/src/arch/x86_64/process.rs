@@ -29,14 +29,15 @@ use super::vspace::*;
 use crate::error::KError;
 
 #[no_mangle]
-pub static mut CURRENT_PROCESS: Mutex<Option<Process>> = mutex!(None);
+pub static mut CURRENT_PROCESS: Mutex<Option<&Process>> = mutex!(None);
 
 /// A process representation.
+#[repr(C, packed)]
 pub struct Process {
+    /// CPU context save area (must be first, see exec.S).
+    pub save_area: irq::SaveArea,
     /// ELF File mappings that were installed into the address space.
     pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
-    /// IRQ save area.
-    pub save_area: irq::SaveArea,
     /// Process ID.
     pub pid: u64,
     /// The address space of the process.
@@ -107,9 +108,9 @@ impl Process {
     }
 
     /// Start the process (run it for the first time).
-    pub fn start(&self) -> ! {
+    pub fn start(&mut self) -> ! {
         info!("About to go to user-space");
-        let user_flags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
+        let user_flags = rflags::RFlags::FLAGS_A1;
 
         let pml4_physical = self.vspace.pml4_address();
 
@@ -122,6 +123,17 @@ impl Process {
             x86::tlb::flush_all();
             info!("Switched to 0x{:x}", pml4_physical);
         };
+
+        unsafe {
+            let mut p = CURRENT_PROCESS.lock();
+            *p = Some(core::mem::transmute::<&mut Process, &'static mut Process>(self));
+            info!("p {:?}", *p);
+        }
+        unsafe {
+            info!("test process");
+            let p = super::process::CURRENT_PROCESS.lock();
+            info!("p {:?}\n\n\n{:p}", *p, &*p);
+        }
 
         info!(
             "Jumping to {:#x}",
@@ -161,7 +173,7 @@ impl Process {
 
 impl fmt::Debug for Process {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Process: {}\nSaveArea: {:?}", self.pid, self.save_area)
+        write!(f, "Process {}:\nSaveArea: {:?}", self.pid, self.save_area)
     }
 }
 

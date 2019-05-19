@@ -415,7 +415,7 @@ pub fn xmain() {
         .expect("Need to have init module");
 
     info!("init {:?}", init_module);
-    let process = arch::process::Process::from(init_module).expect("Couldn't load this");
+    let mut process = arch::process::Process::from(init_module).expect("Couldn't load this");
     info!("created the process");
     process.start();
 

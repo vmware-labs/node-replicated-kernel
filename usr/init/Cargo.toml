@@ -11,7 +11,7 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-x86 = "0.16"
+kpi = { path = "../../lib/kpi" }
 
 [[bin]]
 name = "init"

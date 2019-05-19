@@ -75,7 +75,6 @@ impl Process {
             BASE_PAGE_SIZE as u64,
         );
 
-
         // Install the kernel mappings
         super::kcb::try_get_kcb().map(|kcb| {
             let kernel_pml_entry = kcb.init_vspace().pml4[128];
@@ -126,7 +125,9 @@ impl Process {
 
         unsafe {
             let mut p = CURRENT_PROCESS.lock();
-            *p = Some(core::mem::transmute::<&mut Process, &'static mut Process>(self));
+            *p = Some(core::mem::transmute::<&mut Process, &'static mut Process>(
+                self,
+            ));
             info!("p {:?}", *p);
         }
         unsafe {

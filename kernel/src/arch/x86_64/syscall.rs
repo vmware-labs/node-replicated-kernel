@@ -8,47 +8,19 @@ extern "C" {
     fn syscall_enter();
 }
 
-#[repr(u64)]
-enum SystemCallStatus {
-    Ok = 0x0,
-    NotSupported = 0x1,
-}
+use kpi::{SystemCall, SystemCallStatus};
 
-#[repr(u64)]
-enum SystemCall {
-    Print = 0x1,
-    Exit = 0x2,
-    VSpace = 0x3,
-    Io = 0x4,
-    Unknown,
-}
-
-impl SystemCall {
-    fn new(handle: u64)  -> SystemCall {
-        match handle {
-            0x1 => SystemCall::Print,
-            0x2 => SystemCall::Exit,
-            0x3 => SystemCall::VSpace,
-            0x4 => SystemCall::Io,
-            _ => SystemCall::Unknown
-        }
-    }
-}
-
-use core::ops::Deref;
-use core::mem;
 use crate::prelude::NoDrop;
+use core::mem;
+use core::ops::Deref;
 
 struct UserValue<T> {
-    value: T
+    value: T,
 }
 
 impl<T> UserValue<T> {
-
     fn new(pointer: T) -> UserValue<T> {
-        UserValue {
-            value: pointer
-        }
+        UserValue { value: pointer }
     }
 }
 
@@ -68,19 +40,27 @@ impl<T> Drop for UserValue<T> {
     }
 }
 
-fn syscall_print(buf: UserValue<&str>) -> SystemCallStatus {
-
+fn handle_print(buf: UserValue<&str>) -> SystemCallStatus {
     let buffer: &str = *buf;
-    info!("syscall_print: {:?}", buffer);
+    info!("handle_print: {:?}", buffer);
     SystemCallStatus::Ok
 }
 
 #[inline(never)]
 #[no_mangle]
-pub extern "C" fn syscall_handle(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> u64 {
-
+pub extern "C" fn syscall_handle(
+    function: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+) -> u64 {
     unsafe {
-        info!("got syscall {} {} {} {} {} {}", function, arg1, arg2, arg3, arg4, arg5);
+        info!(
+            "got syscall {} {} {} {} {} {}",
+            function, arg1, arg2, arg3, arg4, arg5
+        );
         let p = super::process::CURRENT_PROCESS.lock();
         info!("p {:?}", *p);
     }
@@ -93,15 +73,18 @@ pub extern "C" fn syscall_handle(function: u64, arg1: u64, arg2: u64, arg3: u64,
                 let slice = core::slice::from_raw_parts(buffer, len);
                 core::str::from_utf8_unchecked(slice)
             };
-            syscall_print(UserValue::new(user_str)) as u64
-        },
+            handle_print(UserValue::new(user_str)) as u64
+        }
+        SystemCall::Exit => {
+            info!("Process got exit, we are done for now...");
+            super::debug::shutdown(crate::ExitReason::Ok)
+        }
         _ => SystemCallStatus::NotSupported as u64,
     }
 }
 
 /// Enables syscall/sysret functionality.
 pub fn enable_fast_syscalls(cs_selector: SegmentSelector, ss_selector: SegmentSelector) {
-
     unsafe {
         let mut star = rdmsr(IA32_STAR);
         star |= (cs_selector.bits() as u64) << 32;

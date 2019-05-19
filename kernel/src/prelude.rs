@@ -30,7 +30,6 @@ impl PowersOf2 for usize {
     }
 }
 
-
 #[allow(unions_with_drop_fields)]
 #[derive(Copy)]
 union UnionFlag<T> {
@@ -40,7 +39,9 @@ union UnionFlag<T> {
 impl<T: Clone> Clone for UnionFlag<T> {
     fn clone(&self) -> Self {
         unsafe {
-            UnionFlag { value: self.value.clone() }
+            UnionFlag {
+                value: self.value.clone(),
+            }
         }
     }
 }
@@ -64,9 +65,7 @@ impl<T> NoDrop<T> {
     /// Once extracted, the value can of course drop again.
     #[inline]
     pub fn into_inner(self) -> T {
-        unsafe {
-            self.0.value
-        }
+        unsafe { self.0.value }
     }
 }
 
@@ -76,9 +75,7 @@ impl<T> Deref for NoDrop<T> {
     // Use type invariant, always initialized
     #[inline]
     fn deref(&self) -> &T {
-        unsafe {
-            &self.0.value
-        }
+        unsafe { &self.0.value }
     }
 }
 
@@ -86,8 +83,6 @@ impl<T> DerefMut for NoDrop<T> {
     // Use type invariant, always initialized
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe {
-            &mut self.0.value
-        }
+        unsafe { &mut self.0.value }
     }
 }

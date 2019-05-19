@@ -11,17 +11,17 @@
 //! statements hold:
 //!
 //!  * In CR4, we enabled the following features
-//!    * PROTECTION_KEY,
+//!    * PROTECTION_KEY
 //!    * SMAP
 //!    * SMEP
 //!    * OS_XSAVE
 //!    * FSGSBASE
 //!    * UNMASKED_SSE
-//!    * ENABLE_SSE,
+//!    * ENABLE_SSE
 //!    * ENABLE_GLOBAL_PAGES
 //!    * ENABLE_PAE
 //!    * ENABLE_PSE
-//!    * DEBUGGING_EXTENSIONS,
+//!    * DEBUGGING_EXTENSIONS
 //!    * ENABLE_MACHINE_CHECK
 //!  * In IA32_EFER MSR, we enabled the following features
 //!    * NSX (No execute bit): The constructed kernel page-tables already make use of the NSX bits

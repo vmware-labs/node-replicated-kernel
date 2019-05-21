@@ -336,7 +336,6 @@ impl elfloader::ElfLoader for Process {
             }
             Ok(())
         } else {
-            panic!("Can only handle R_RELATIVE for relocation");
             Err("Can only handle R_RELATIVE for relocation")
         }
     }

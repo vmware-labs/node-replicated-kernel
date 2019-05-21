@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(alloc_error_handler, const_fn)]
+#![feature(alloc_error_handler, const_fn, panic_info_message)]
 
 extern crate alloc;
 extern crate rlibc;
@@ -15,6 +15,10 @@ use core::panic::PanicInfo;
 use core::slice::from_raw_parts_mut;
 
 use kpi;
+use kpi::sys_println;
+
+use log::{error, info, debug};
+use log::{Level, Metadata, Record, SetLoggerError};
 
 use slabmalloc::{ObjectPage, PageProvider, ZoneAllocator};
 use spin::Mutex;
@@ -65,7 +69,8 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
 }
 
 fn print_test() {
-    kpi::print("test");
+    kpi::print("test\r\n");
+    info!("log test");
 }
 
 fn map_test() {
@@ -89,29 +94,36 @@ fn alloc_test() {
         v.push(e);
     }
 
-    assert_eq!(v[1023], 1023);
+    assert_eq!(v[255], 255);
     assert_eq!(v.len(), 256);
 }
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    unsafe {
+        log::set_logger(&kpi::writer::LOGGER).map(|()| log::set_max_level(Level::Debug.to_level_filter()));
+    }
+    debug!("INIT LOGGING");
+
     print_test();
     map_test();
     alloc_test();
+
+    debug!("DONE with init");
 
     kpi::exit(0);
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    //kpi::print(format!("panic: {:?}", info.location()).as_str());
+    error!("panic happened: {:?}", info.message());
     kpi::exit(1);
     loop {}
 }
 
 #[alloc_error_handler]
-fn oom(_: core::alloc::Layout) -> ! {
-    panic!("oom")
+fn oom(layout: core::alloc::Layout) -> ! {
+    panic!("oom {:?}", layout)
 }
 
 #[allow(non_camel_case_types)]

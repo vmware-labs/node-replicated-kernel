@@ -18,8 +18,8 @@ exec:
     movq       $0, %r15
     movq       $0, %rax
     movq       $0, %rbx
-    //movq       $0, %rbp
-    //movq       $0, %rsp
+    push       %rsp
+    movq       %rsp, %rbp
     sysretq
 
 /// Resumes a process
@@ -59,29 +59,33 @@ resume:
 .global syscall_enter
 syscall_enter:
     // Get the pointer to the current process
-    movabs $CURRENT_PROCESS, %r15
+    movabs $CURRENT_PROCESS, %r11
     // Dereference it
-    movq (%r15), %r15
+    movq (%r11), %r11
 
     // Save process context
-    movq %rax,  0*8(%r15)
-    movq %rbx,  1*8(%r15)
-    movq %rcx,  2*8(%r15)
-    movq %rdx,  3*8(%r15)
-    movq %rsi,  4*8(%r15)
-    movq %rdi,  5*8(%r15)
-    movq %rbp,  6*8(%r15)
-    movq %rsp,  7*8(%r15)
-    movq %r8,   8*8(%r15)
-    movq %r9,   9*8(%r15)
-    movq %r10, 10*8(%r15)
-    movq %r11, 11*8(%r15)
-    movq %r12, 12*8(%r15)
-    movq %r13, 13*8(%r15)
-    movq %r14, 14*8(%r15)
-    movq %r15, 15*8(%r15)
+    movq %rax,  0*8(%r11)
+    movq %rbx,  1*8(%r11)
+    movq %rcx,  2*8(%r11)
+    movq %rdx,  3*8(%r11)
+    movq %rsi,  4*8(%r11)
+    movq %rdi,  5*8(%r11)
+    movq %rbp,  6*8(%r11)
+    movq %rsp,  7*8(%r11)
+    movq %r8,   8*8(%r11)
+    movq %r9,   9*8(%r11)
+    movq %r10, 10*8(%r11)
+    // We don't save %r11 since we use it for CURRENT_PROCESS
+    // it's ok since it is a caller saved register
+    movq $0x0, 11*8(%r11)
+    movq %r12, 12*8(%r11)
+    movq %r13, 13*8(%r11)
+    movq %r14, 14*8(%r11)
+    movq %r15, 15*8(%r11)
+    //fxsave 19*8(%r11)
 
     // swapgs
+
     // Prepare kernel stack
     movabs $syscall_stack, %rsp
     movq %rsp, %rbp
@@ -97,29 +101,30 @@ syscall_enter:
     callq syscall_handle
 
     // Load process pointer (in case we changed it)
-    movabs $CURRENT_PROCESS, %r15
+    movabs $CURRENT_PROCESS, %r11
     // Dereference it
-    movq (%r15), %r15
+    movq (%r11), %r11
 
     // Restore context
-    // %rax should contain a return value
-    movq  0*8(%r15), %rax
-    movq  1*8(%r15), %rbx
-    movq  2*8(%r15), %rcx
-    movq  3*8(%r15), %rdx
-    movq  4*8(%r15), %rsi
-    movq  5*8(%r15), %rdi
-    movq  6*8(%r15), %rbp
-    movq  7*8(%r15), %rsp
-    movq  8*8(%r15), %r8
-    movq  9*8(%r15), %r9
-    movq 10*8(%r15), %r10
-    movq 11*8(%r15), %r11
-    movq 12*8(%r15), %r12
-    movq 13*8(%r15), %r13
-    movq 14*8(%r15), %r14
-    movq 15*8(%r15), %r15
-
+    // %rax should contain a return value (so we don't restore it)
+    //movq  0*8(%r11), %rax
+    movq  1*8(%r11), %rbx
+    movq  2*8(%r11), %rcx
+    movq  3*8(%r11), %rdx
+    movq  4*8(%r11), %rsi
+    movq  5*8(%r11), %rdi
+    movq  6*8(%r11), %rbp
+    movq  7*8(%r11), %rsp
+    movq  8*8(%r11), %r8
+    movq  9*8(%r11), %r9
+    movq 10*8(%r11), %r10
+    movq 12*8(%r11), %r12
+    movq 13*8(%r11), %r13
+    movq 14*8(%r11), %r14
+    movq 15*8(%r11), %r15
+    //fxrstor 19*8(%r11)
+    // Clear out %r11
+    movq $0x0, %r11
     // Return from system call
     sysretq
 

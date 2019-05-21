@@ -48,7 +48,7 @@ impl<T> Drop for UserValue<T> {
 /// System call handler for printing
 fn handle_print(buf: UserValue<&str>) -> SystemCallStatus {
     let buffer: &str = *buf;
-    info!("handle_print: {:?}", buffer);
+    sprint!("{}", buffer);
     SystemCallStatus::Ok
 }
 
@@ -95,12 +95,11 @@ pub extern "C" fn syscall_handle(
     arg5: u64,
 ) -> u64 {
     unsafe {
-        info!(
+        debug!(
             "got syscall {} {} {} {} {} {}",
             function, arg1, arg2, arg3, arg4, arg5
         );
         let p = super::process::CURRENT_PROCESS.lock();
-        info!("p {:?}", *p);
     }
 
     let status: SystemCallStatus = match SystemCall::new(function) {

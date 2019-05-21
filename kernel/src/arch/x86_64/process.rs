@@ -89,7 +89,8 @@ impl Process {
     fn new<'b>(pid: u64) -> Process {
         let stack_base = VAddr::from(0xf000_0000usize);
         let stack_size = 128 * BASE_PAGE_SIZE;
-        let stack_top = stack_base + stack_size;
+        let stack_top = stack_base + stack_size; // -8 due to x86 stack alignemnt requirements
+        //assert_eq!(stack_top % 16usize, 0, "Stack alignment");
 
         unsafe {
             Process {
@@ -243,6 +244,7 @@ impl elfloader::ElfLoader for Process {
             self.mapping
                 .push((page_base, size_page, align_to, map_action));
         }
+
         assert!(
             is_page_aligned!(min_base),
             "min base is not aligned to page-size"
@@ -275,7 +277,7 @@ impl elfloader::ElfLoader for Process {
     /// Load a region of bytes into the virtual address space of the process.
     fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
         let destination = self.offset + destination;
-        info!(
+        debug!(
             "ELF Load at {:#x} -- {:#x}",
             destination,
             destination + region.len()
@@ -286,11 +288,9 @@ impl elfloader::ElfLoader for Process {
             let vaddr = VAddr::from(destination + idx);
             let paddr = self.vspace.resolve_addr(vaddr);
             if paddr.is_some() {
-                // Inefficient byte-wise copy since we don't necessarily
-                // have consecutive "physical" memory in UEFI we can
-                // just memcopy this stuff into.
-                // Best way would probably mean to map replicate the kernel mappings
-                // in UEFI space if this ever becomes a problem.
+                // TODO: Inefficient byte-wise copy
+                // If this is allocated as a single block of physical memory
+                // we can just do paddr_to_vaddr and memcopy
                 let ptr = paddr.unwrap().as_u64() as *mut u8;
                 unsafe {
                     *ptr = *val;
@@ -314,15 +314,16 @@ impl elfloader::ElfLoader for Process {
         // memory where we loaded the headers
         // The forumla for this is our offset where the kernel is starting,
         // plus the offset of the entry to jump to the code piece
-        let addr = self.offset.as_u64() + entry.get_offset();
-        info!("ELF relocation");
+        let addr = self.offset + entry.get_offset();
 
-        // We can't access addr in UEFI space so we resolve it to a physical address (UEFI has 1:1 mappings)
-        let uefi_addr = self
+        // Translate `addr` into a kernel vaddr we can write to:
+        let paddr = self
             .vspace
-            .resolve_addr(VAddr::from(addr))
-            .expect("Can't resolve address")
-            .as_u64() as *mut u64;
+            .resolve_addr(addr)
+            .expect("Can't resolve address");
+        let mut kernel_addr: VAddr = paddr_to_kernel_vaddr(paddr);
+
+        debug!("ELF relocation paddr {:#x} kernel_addr {:#x}", paddr, kernel_addr);
 
         use elfloader::TypeRela64;
         if let TypeRela64::R_RELATIVE = TypeRela64::from(entry.get_type()) {
@@ -331,10 +332,11 @@ impl elfloader::ElfLoader for Process {
             unsafe {
                 // Scary unsafe changing stuff in random memory locations based on
                 // ELF binary values weee!
-                *uefi_addr = self.offset.as_u64() + entry.get_addend();
+                *(kernel_addr.as_mut_ptr::<u64>()) = self.offset.as_u64() + entry.get_addend();
             }
             Ok(())
         } else {
+            panic!("Can only handle R_RELATIVE for relocation");
             Err("Can only handle R_RELATIVE for relocation")
         }
     }

@@ -21,27 +21,33 @@ use spin::Mutex;
 
 use log::debug;
 
-#[derive(Default)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct SaveArea {
-    rax: u64,
-    rbx: u64,
-    rcx: u64,
-    rdx: u64,
-    rsi: u64,
-    rdi: u64,
-    rbp: u64,
-    rsp: u64,
-    r8: u64,
-    r9: u64,
-    r10: u64,
-    r11: u64,
-    r12: u64,
-    r13: u64,
-    r14: u64,
-    r15: u64,
-    rip: u64,
-    rflags: u64,
+    rax: u64, // 0
+    rbx: u64, // 1
+    rcx: u64, // 2
+    rdx: u64, // 3
+    rsi: u64, // 4
+    rdi: u64, // 5
+    rbp: u64, // 6
+    rsp: u64, // 7
+    r8: u64,  // 8
+    r9: u64,  // 9
+    r10: u64, // 10
+    r11: u64, // 11
+    r12: u64, // 12
+    r13: u64, // 13
+    r14: u64, // 14
+    r15: u64, // 15
+    rip: u64, // 16
+    rflags: u64, // 17
+    fxsave: [u8; 512], // 18
+}
+
+impl Default for SaveArea {
+    fn default() -> SaveArea {
+        SaveArea::empty()
+    }
 }
 
 impl SaveArea {
@@ -65,6 +71,7 @@ impl SaveArea {
             r15: 0,
             rip: 0,
             rflags: 0,
+            fxsave: [0; 512]
         }
     }
 }
@@ -74,14 +81,14 @@ impl fmt::Debug for SaveArea {
         unsafe {
             write!(
                 f,
-                "rax = {:>#18x} rbx = {:>#18x} rcx = {:>#18x} rdx = {:>#18x}
+                "\r\nrax = {:>#18x} rbx = {:>#18x} rcx = {:>#18x} rdx = {:>#18x}
 rsi = {:>#18x} rdi = {:>#18x} rbp = {:>#18x} rsp = {:>#18x}
 r8  = {:>#18x} r9  = {:>#18x} r10 = {:>#18x} r11 = {:>#18x}
 r12 = {:>#18x} r13 = {:>#18x} r14 = {:>#18x} r15 = {:>#18x}
 rip = {:>#18x} rflags = {:?}",
                 self.rax,
-                self.rcx,
                 self.rbx,
+                self.rcx,
                 self.rdx,
                 self.rsi,
                 self.rdi,
@@ -138,31 +145,41 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
 }
 
 unsafe fn pf_handler(a: &ExceptionArguments) {
+    use x86::irq::PageFaultError;
     sprintln!("[IRQ] Page Fault");
-    sprintln!(
-        "{}",
-        x86::irq::PageFaultError::from_bits_truncate(a.exception as u32)
-    );
+    let err = PageFaultError::from_bits_truncate(a.exception as u32);
+    sprintln!("{}", err);
 
     // Print where the fault happend in the address-space:
     let faulting_address = x86::controlregs::cr2();
     sprint!("Faulting address: {:#x}", faulting_address);
     use crate::arch::kcb;
-    kcb::try_get_kcb().map(|k| {
-        sprintln!(
-            " (in ELF: {:#x})",
-            faulting_address - k.kernel_args().kernel_elf_offset.as_usize()
-        )
-    });
+    if !err.contains(PageFaultError::US) {
+        kcb::try_get_kcb().map(|k| {
+            sprintln!(
+                " (in ELF: {:#x})",
+                faulting_address - k.kernel_args().kernel_elf_offset.as_usize()
+            )
+        });
+    }
+    else {
+        sprintln!("");
+    }
+
 
     // Print the RIP that triggered the fault:
     sprint!("Instruction Pointer: {:#x}", a.rip);
-    kcb::try_get_kcb().map(|k| {
-        sprintln!(
-            " (in ELF: {:#x})",
-            a.rip - k.kernel_args().kernel_elf_offset.as_u64()
-        )
-    });
+    if !err.contains(PageFaultError::US) {
+        kcb::try_get_kcb().map(|k| {
+            sprintln!(
+                " (in ELF: {:#x})",
+                a.rip - k.kernel_args().kernel_elf_offset.as_u64()
+            )
+        });
+    }
+    else {
+        sprintln!("");
+    }
 
     sprintln!("{:?}", a);
     let csa = &CURRENT_SAVE_AREA;

@@ -15,6 +15,7 @@ kpi = { path = "../../lib/kpi" }
 slabmalloc = { path = "../../lib/slabmalloc" }
 spin = { version = "0.4.8", default_features = false }
 rlibc = { path = "../../lib/rlib" }
+log = "0.4"
 
 [[bin]]
 name = "init"

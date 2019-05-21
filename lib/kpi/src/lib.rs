@@ -12,6 +12,9 @@
 
 use x86::syscall;
 
+#[cfg(not(target_os = "none"))]
+pub mod writer;
+
 /// SystemCallStatus is an error code returned
 /// by the kernel to the user-space caller.
 ///

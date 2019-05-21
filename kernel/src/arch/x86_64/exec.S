@@ -1,10 +1,10 @@
 .text
 .align 4096
 
-// Switch to user-space with initial register state.
-// (set RIP to %rcx).
-// This routine (sysretq really) expects
-// %rcx program entry point
+// Switch to user-space with initial zeroed registers.
+//
+// `sysretq` expectations are:
+// %rcx Program entry point in Ring 3
 // %r11 RFlags
 .global exec
 exec:
@@ -22,12 +22,12 @@ exec:
     movq       %rsp, %rbp
     sysretq
 
-/// Resumes a process
-/// This routine assumes the following set-up
-/// %rbx points to SaveArea
-/// %r8 points to ss
-/// %r9 points to cs
-/// %r10 points to rflags
+// Resumes a process
+// This routine assumes the following set-up
+// %rbx points to SaveArea
+// %r8 points to ss
+// %r9 points to cs
+// %r10 points to rflags
 .global resume
 resume:
     movabs $CURRENT_PROCESS, %r15

@@ -89,7 +89,7 @@ impl Process {
     fn new<'b>(pid: u64) -> Process {
         let stack_base = VAddr::from(0xf000_0000usize);
         let stack_size = 128 * BASE_PAGE_SIZE;
-        let stack_top = stack_base + stack_size; // -8 due to x86 stack alignemnt requirements
+        let stack_top = stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
         //assert_eq!(stack_top % 16usize, 0, "Stack alignment");
 
         unsafe {

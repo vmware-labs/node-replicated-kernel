@@ -5,13 +5,16 @@ use log::trace;
 
 #[cfg(target_os = "linux")]
 pub mod unix;
-
-#[cfg(target_os = "none")]
-pub mod x86_64;
-
 #[cfg(target_os = "linux")]
 pub use crate::tls::unix as arch;
 
+#[cfg(target_os = "bespin")]
+pub mod bespin;
+#[cfg(target_os = "bespin")]
+pub use crate::tls::bespin as arch;
+
+#[cfg(target_os = "none")]
+pub mod x86_64;
 #[cfg(target_os = "none")]
 pub use crate::tls::x86_64 as arch;
 

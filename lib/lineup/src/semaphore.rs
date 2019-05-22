@@ -82,7 +82,7 @@ fn test_semaphore() {
     use core::ptr;
     let mut s = Scheduler::new(DEFAULT_UPCALLS);
 
-    let cv = ds::Arc::new(Semaphore::new());
+    let cv = ds::Arc::new(Semaphore::new(0));
     let cv1: ds::Arc<Semaphore> = cv.clone();
     let cv2: ds::Arc<Semaphore> = cv.clone();
 

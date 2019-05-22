@@ -1,0 +1,13 @@
+[package]
+name = "vibrio"
+version = "0.1.0"
+authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+edition = "2018"
+description = "A small user-space runtime that interacts with the bespin kernel."
+
+[dependencies]
+log = "0.4"
+x86 = { path = "../x86" }
+kpi = { path = "../kpi" }
+slabmalloc = { path = "../slabmalloc" }
+spin = { version = "0.4.8", default_features = false }

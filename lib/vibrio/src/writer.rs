@@ -1,3 +1,6 @@
+//! A simple printing infrastructure for user-space programs.
+//! We provide [`core::fmt::Write`] and [`log::Log`].
+
 use core::fmt;
 use core::ops;
 
@@ -21,7 +24,6 @@ macro_rules! sys_print {
 	})
 }
 
-
 pub struct Writer;
 
 impl Writer {
@@ -29,7 +31,7 @@ impl Writer {
     pub fn get_module(module: &str) -> Writer {
         use core::fmt::Write;
         let mut ret = Writer;
-        let _ =  write!(&mut ret, "[{}] ", module);
+        let _ = write!(&mut ret, "[{}] ", module);
         ret
     }
 
@@ -49,7 +51,7 @@ impl ops::Drop for Writer {
 impl fmt::Write for Writer {
     /// Write stuff to serial out.
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        crate::print(s);
+        crate::syscalls::print(s);
         Ok(())
     }
 }
@@ -65,7 +67,7 @@ impl WriterNoDrop {
 impl fmt::Write for WriterNoDrop {
     /// Write stuff to serial out.
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        crate::print(s);
+        crate::syscalls::print(s);
         Ok(())
     }
 }
@@ -74,7 +76,6 @@ impl fmt::Write for WriterNoDrop {
 pub struct ULogger;
 
 pub static mut LOGGER: ULogger = ULogger {};
-
 
 impl log::Log for ULogger {
     fn enabled(&self, metadata: &Metadata) -> bool {

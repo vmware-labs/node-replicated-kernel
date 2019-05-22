@@ -3,80 +3,37 @@
 #![feature(alloc_error_handler, const_fn, panic_info_message)]
 
 extern crate alloc;
-extern crate rlibc;
-extern crate slabmalloc;
 extern crate spin;
 
+extern crate lineup;
+
 use alloc::format;
+use alloc::vec::Vec;
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::transmute;
 use core::panic::PanicInfo;
+use core::ptr;
 use core::slice::from_raw_parts_mut;
 
-use kpi;
-use kpi::sys_println;
+use vibrio::sys_println;
 
-use log::{error, info, debug};
+use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
-use slabmalloc::{ObjectPage, PageProvider, ZoneAllocator};
-use spin::Mutex;
-
-struct Pager(u64);
-
-impl<'a> PageProvider<'a> for Pager {
-    fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
-        let r = kpi::vspace(kpi::VSpaceOperation::Map, self.0, 0x1000);
-        let sp: &'a mut ObjectPage = unsafe { transmute(self.0) };
-
-        self.0 += 0x1000;
-
-        Some(sp)
-    }
-
-    fn release_page(&mut self, page: &'a mut ObjectPage<'a>) {}
-}
-
-static PAGER: Mutex<Pager> = Mutex::new(Pager(0xabfff000));
 #[global_allocator]
-static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
-
-pub struct SafeZoneAllocator(Mutex<ZoneAllocator<'static>>);
-
-impl SafeZoneAllocator {
-    pub const fn new(provider: &'static Mutex<PageProvider>) -> SafeZoneAllocator {
-        SafeZoneAllocator(Mutex::new(ZoneAllocator::new(provider)))
-    }
-}
-
-unsafe impl GlobalAlloc for SafeZoneAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            self.0.lock().allocate(layout)
-        } else {
-            panic!("NYI");
-        }
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            self.0.lock().deallocate(ptr, layout);
-        } else {
-            panic!("NYI");
-        }
-    }
-}
+static MEM_PROVIDER: vibrio::mem::SafeZoneAllocator =
+    vibrio::mem::SafeZoneAllocator::new(&vibrio::mem::PAGER);
 
 fn print_test() {
-    kpi::print("test\r\n");
+    vibrio::print("test\r\n");
     info!("log test");
 }
 
 fn map_test() {
     let base: u64 = 0xff000;
     let size: u64 = 0x1000 * 64;
-    kpi::vspace(kpi::VSpaceOperation::Map, base, size);
+    vibrio::vspace(vibrio::VSpaceOperation::Map, base, size);
     unsafe {
         let mut slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
         for i in slice.iter_mut() {
@@ -98,26 +55,52 @@ fn alloc_test() {
     assert_eq!(v.len(), 256);
 }
 
+fn scheduler_test() {
+    vibrio::print("scheduler test");
+    use lineup::DEFAULT_UPCALLS;
+    let mut s = lineup::Scheduler::new(DEFAULT_UPCALLS);
+
+    s.spawn(
+        32 * 4096,
+        move |_| {
+            info!("weee from t1");
+        },
+        ptr::null_mut(),
+    );
+
+    s.spawn(
+        32 * 4096,
+        move |_| {
+            info!("weee from t2");
+        },
+        ptr::null_mut(),
+    );
+
+    s.run();
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     unsafe {
-        log::set_logger(&kpi::writer::LOGGER).map(|()| log::set_max_level(Level::Debug.to_level_filter()));
+        log::set_logger(&vibrio::writer::LOGGER)
+            .map(|()| log::set_max_level(Level::Debug.to_level_filter()));
     }
     debug!("INIT LOGGING");
 
     print_test();
     map_test();
     alloc_test();
+    scheduler_test();
 
-    debug!("DONE with init");
+    debug!("DONE WITH INIT");
 
-    kpi::exit(0);
+    vibrio::exit(0);
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     error!("panic happened: {:?}", info.message());
-    kpi::exit(1);
+    vibrio::exit(1);
     loop {}
 }
 

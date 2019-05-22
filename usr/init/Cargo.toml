@@ -11,15 +11,12 @@ panic = "abort"
 panic = "abort"
 
 [dependencies]
-kpi = { path = "../../lib/kpi" }
-slabmalloc = { path = "../../lib/slabmalloc" }
 spin = { version = "0.4.8", default_features = false }
-rlibc = { path = "../../lib/rlib" }
 log = "0.4"
+vibrio = { path = "../../lib/vibrio" }
+lineup = { path = "../../lib/lineup" }
 
 [[bin]]
 name = "init"
 path = "src/init.rs"
 
-[build-dependencies]
-cc = "1.0"

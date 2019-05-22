@@ -16,7 +16,6 @@ edition = "2018"
 #test = { path = "../lib/ctest" }
 x86 = { path = "../lib/x86" }
 raw-cpuid = { path = "../lib/cpuid" }
-rlibc = { path = "../lib/rlib" }
 klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }

@@ -351,13 +351,19 @@ impl<'a> Scheduler<'a> {
                 }
             }
 
+            // TODO: this should abstracted (hooks?)
+            #[cfg(all(target_arch = "x86_64", target_os = "none"))]
             unsafe {
                 x86::irq::enable();
             }
+
             let result = {
                 let generator = &mut self.threads.get_mut(&tid).unwrap().1;
                 generator.resume(action)
             };
+
+            // TODO: this should abstracted (hooks?)
+            #[cfg(all(target_arch = "x86_64", target_os = "none"))]
             unsafe {
                 x86::irq::disable();
             }

@@ -10,11 +10,6 @@
 //! argument.
 #![no_std]
 
-use x86::syscall;
-
-#[cfg(not(target_os = "none"))]
-pub mod writer;
-
 /// SystemCallStatus is an error code returned
 /// by the kernel to the user-space caller.
 ///
@@ -69,37 +64,5 @@ impl SystemCall {
             4 => SystemCall::Io,
             _ => SystemCall::Unknown,
         }
-    }
-}
-
-/// Print `buffer` on the console.
-#[cfg(not(target_os = "none"))]
-pub fn print(buffer: &str) {
-    unsafe {
-        let r = syscall!(
-            0,
-            SystemCall::Print as u64,
-            buffer.as_ptr() as u64,
-            buffer.len()
-        );
-        assert!(r == 0x0);
-    }
-}
-
-/// Exit the process (pass an error `code` to exit).
-#[cfg(not(target_os = "none"))]
-pub fn exit(code: u64) -> ! {
-    unsafe {
-        let r = syscall!(0, SystemCall::Exit as u64, code);
-        unreachable!()
-    }
-}
-
-
-/// Map memory into the address space.
-#[cfg(not(target_os = "none"))]
-pub fn vspace(op: VSpaceOperation, base: u64, bound: u64) -> u64 {
-    unsafe {
-        syscall!(0, SystemCall::VSpace as u64, op as u64, base, bound)
     }
 }

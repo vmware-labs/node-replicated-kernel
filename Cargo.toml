@@ -19,7 +19,8 @@ members = [
     "lib/ctest",
     "lib/custom_error",
     "usr/init",
-    "lib/kpi"
+    "lib/kpi",
+    "lib/vibrio"
 ]
 
 # disable stack unwinding on panic for now

@@ -5,5 +5,3 @@ authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 edition = "2018"
 
 [dependencies]
-x86 = { path = "../x86" }
-log = "0.4"

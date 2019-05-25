@@ -91,7 +91,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             self.0.lock().deallocate(ptr, layout);
         } else {
             //panic!("NYI dealloc");
-            error!("NYI dealloc");
+            //error!("NYI dealloc");
         }
     }
 }

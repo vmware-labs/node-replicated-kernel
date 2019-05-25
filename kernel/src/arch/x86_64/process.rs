@@ -87,10 +87,9 @@ impl Process {
 
     /// Create a new `empty` process.
     fn new<'b>(pid: u64) -> Process {
-        let stack_base = VAddr::from(0xf000_0000usize);
+        let stack_base = VAddr::from(0xadf000_0000usize);
         let stack_size = 128 * BASE_PAGE_SIZE;
         let stack_top = stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
-        //assert_eq!(stack_top % 16usize, 0, "Stack alignment");
 
         unsafe {
             Process {
@@ -110,7 +109,8 @@ impl Process {
     /// Start the process (run it for the first time).
     pub fn start(&mut self) -> ! {
         info!("About to go to user-space");
-        let user_flags = rflags::RFlags::FLAGS_A1;
+        // TODO: For now we allow unconditional IO access from user-space
+        let user_flags = rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1;
 
         let pml4_physical = self.vspace.pml4_address();
 

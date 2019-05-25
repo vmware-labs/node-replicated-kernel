@@ -53,16 +53,11 @@ pub extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
-    info!("AcpiOsGetRootPointer");
     let mut root_ptr: ACPI_PHYSICAL_ADDRESS = 0x0;
 
-    let rsdp2_root = crate::kcb::try_get_kcb().map(|k| {
+    let (rsdp1_root, rsdp2_root) = crate::kcb::try_get_kcb().map_or((None, None), |k| {
         let args = k.kernel_args();
-        args.acpi2_rsdp
-    });
-    let rsdp1_root = crate::kcb::try_get_kcb().map(|k| {
-        let args = k.kernel_args();
-        args.acpi1_rsdp
+        (Some(args.acpi1_rsdp), Some(args.acpi2_rsdp))
     });
 
     let ptr = match (rsdp2_root, rsdp1_root) {

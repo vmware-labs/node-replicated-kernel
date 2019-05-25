@@ -184,7 +184,7 @@ if [ "${_arg_mods}" != "" ]; then
 	do
 		echo "ITEM: $item"
 		cd ${item}
-		RUST_TARGET_PATH=`pwd`/../ xargo build --target=x86_64-bespin-none
+		RUST_TARGET_PATH=`pwd`/../ xargo build --target=x86_64-bespin-none $USER_BUILD_ARGS
 		cp $USER_BUILD_DIR/$item $ESP_DIR/
 		cd ..
 	done

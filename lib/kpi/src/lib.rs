@@ -10,15 +10,57 @@
 //! argument.
 #![no_std]
 
-/// SystemCallStatus is an error code returned
-/// by the kernel to the user-space caller.
-///
-/// It is passed back in the %rax register.
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
-pub enum SystemCallStatus {
-    Ok = 0x0,
-    NotSupported = 0x1,
+/// Errors returned by system calls.
+pub enum SystemCallError {
+    /// This means no error and should never be created.
+    Ok = 0,
+    /// Couldn't log the message (lost).
+    NotLogged = 1,
+    /// Requested Operation is not supported.
+    NotSupported = 2,
+    /// Can't overwrite exsting mapping in vspace.
+    VSpaceAlreadyMapped = 3,
+    /// Not enough memory available to fulfill operation.
+    OutOfMemory = 4,
+    /// Internal error that should not have happened.
+    InternalError = 5,
+    /// Placeholder for an invalid, unknown error code.
+    Unknown,
+}
+
+impl From<u64> for SystemCallError {
+    /// Construct a `SystemCallError` enum based on a 64-bit value.
+    fn from(e: u64) -> SystemCallError {
+        match e {
+            1 => SystemCallError::NotLogged,
+            2 => SystemCallError::NotSupported,
+            3 => SystemCallError::VSpaceAlreadyMapped,
+            4 => SystemCallError::OutOfMemory,
+            _ => SystemCallError::Unknown,
+        }
+    }
+}
+
+/// Flags for the process system call
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[repr(u64)]
+pub enum ProcessOperation {
+    Exit = 1,
+    Log = 2,
+    Unknown,
+}
+
+impl From<u64> for ProcessOperation {
+    /// Construct a ProcessOperation enum based on a 64-bit value.
+    fn from(op: u64) -> ProcessOperation {
+        match op {
+            1 => ProcessOperation::Exit,
+            2 => ProcessOperation::Log,
+            _ => ProcessOperation::Unknown,
+        }
+    }
 }
 
 /// Flags for the map system call
@@ -27,15 +69,17 @@ pub enum SystemCallStatus {
 pub enum VSpaceOperation {
     Map = 1,
     Unmap = 2,
+    MapDevice = 3,
     Unknown,
 }
 
-impl VSpaceOperation {
+impl From<u64> for VSpaceOperation {
     /// Construct a SystemCall enum based on a 64-bit value.
-    pub fn new(op: u64) -> VSpaceOperation {
+    fn from(op: u64) -> VSpaceOperation {
         match op {
             1 => VSpaceOperation::Map,
             2 => VSpaceOperation::Unmap,
+            3 => VSpaceOperation::MapDevice,
             _ => VSpaceOperation::Unknown,
         }
     }
@@ -47,21 +91,17 @@ impl VSpaceOperation {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
 pub enum SystemCall {
-    Print = 1,
-    Exit = 2,
+    Process = 1,
     VSpace = 3,
-    Io = 4,
     Unknown,
 }
 
 impl SystemCall {
     /// Construct a SystemCall enum based on a 64-bit value.
-    pub fn new(handle: u64) -> SystemCall {
-        match handle {
-            1 => SystemCall::Print,
-            2 => SystemCall::Exit,
+    pub fn new(domain: u64) -> SystemCall {
+        match domain {
+            1 => SystemCall::Process,
             3 => SystemCall::VSpace,
-            4 => SystemCall::Io,
             _ => SystemCall::Unknown,
         }
     }

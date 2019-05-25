@@ -8,7 +8,9 @@ use x86::segmentation::SegmentSelector;
 use x86::tlb;
 use x86::Ring;
 
-use kpi::{SystemCall, SystemCallStatus, VSpaceOperation};
+use kpi::*;
+
+use crate::error::KError;
 
 use super::process::{Process, CURRENT_PROCESS};
 use super::vspace;
@@ -46,42 +48,98 @@ impl<T> Drop for UserValue<T> {
 }
 
 /// System call handler for printing
-fn handle_print(buf: UserValue<&str>) -> SystemCallStatus {
+fn process_print(buf: UserValue<&str>) -> Result<(), KError> {
     let buffer: &str = *buf;
     sprint!("{}", buffer);
-    SystemCallStatus::Ok
+    Ok(())
 }
 
 /// System call handler for process exit
-fn handle_exit(code: u64) -> SystemCallStatus {
+fn process_exit(code: u64) -> Result<(), KError> {
     info!("Process got exit, we are done for now...");
     super::debug::shutdown(crate::ExitReason::Ok);
-    SystemCallStatus::Ok
+    Ok(())
+}
+
+fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
+    let op = ProcessOperation::from(arg1);
+    debug!("{:?} {:#x} {:#x}", op, arg2, arg3);
+
+    match op {
+        ProcessOperation::Log => {
+            let buffer: *const u8 = arg2 as *const u8;
+            let len: usize = arg3 as usize;
+
+            let user_str = unsafe {
+                let slice = core::slice::from_raw_parts(buffer, len);
+                core::str::from_utf8_unchecked(slice)
+            };
+
+            process_print(UserValue::new(user_str))
+        }
+        ProcessOperation::Exit => {
+            let exit_code = arg2;
+            process_exit(arg1)
+        }
+        _ => Err(KError::InvalidProcessOperation { a: arg1 }),
+    }
 }
 
 /// System call handler for vspace operations
-fn handle_vspace(op: VSpaceOperation, base: VAddr, bound: u64) -> SystemCallStatus {
-    info!("VSpace {:?} {:#x} {}", op, base, bound);
+fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
+    let op = VSpaceOperation::from(arg1);
+    let base = VAddr::from(arg2);
+    let bound = arg3;
+    debug!("{:?} {:#x} {:#x}", op, base, bound);
 
     match op {
         VSpaceOperation::Map => unsafe {
-            info!("MAP");
             let mut plock = CURRENT_PROCESS.lock();
-            (*plock).as_mut().map(|ref mut p| {
-                (*p).vspace.map(
-                    base,
-                    bound as usize,
-                    vspace::MapAction::ReadWriteUser,
-                    0x1000,
-                )
-            });
-            tlb::flush_all();
+            (*plock)
+                .as_mut()
+                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
+                    let (paddr, size) = (*p).vspace.map(
+                        base,
+                        bound as usize,
+                        vspace::MapAction::ReadWriteUser,
+                        0x1000,
+                    )?;
+                    tlb::flush_all();
+                    (*p).save_area.set_syscall_ret1(paddr.as_u64());
+                    (*p).save_area.set_syscall_ret2(size as u64);
+                    Ok(())
+                })
         },
-        VSpaceOperation::Unmap => info!("UNMAP"),
-        VSpaceOperation::Unknown => info!("xxx"),
-    }
+        VSpaceOperation::MapDevice => unsafe {
+            let mut plock = CURRENT_PROCESS.lock();
 
-    SystemCallStatus::Ok
+            (*plock)
+                .as_mut()
+                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
+                    let paddr = PAddr::from(base.as_u64());
+
+                    (*p).vspace.map_generic(
+                        base,
+                        (paddr, bound as usize),
+                        vspace::MapAction::ReadWriteUser,
+                    )?;
+
+                    tlb::flush_all();
+                    (*p).save_area.set_syscall_ret1(paddr.as_u64());
+                    (*p).save_area.set_syscall_ret2(bound);
+
+                    Ok(())
+                })
+        },
+        VSpaceOperation::Unmap => {
+            error!("Can't do VSpaceOperation unmap yet.");
+            Err(KError::NotSupported)
+        }
+        VSpaceOperation::Unknown => {
+            error!("Got an invalid VSpaceOperation code.");
+            Err(KError::InvalidVSpaceOperation { a: arg1 })
+        }
+    }
 }
 
 #[inline(never)]
@@ -94,30 +152,21 @@ pub extern "C" fn syscall_handle(
     arg4: u64,
     arg5: u64,
 ) -> u64 {
-    unsafe {
-        debug!(
-            "got syscall {} {} {} {} {} {}",
-            function, arg1, arg2, arg3, arg4, arg5
-        );
-        let p = super::process::CURRENT_PROCESS.lock();
-    }
-
-    let status: SystemCallStatus = match SystemCall::new(function) {
-        SystemCall::Print => {
-            let buffer: *const u8 = arg1 as *const u8;
-            let len: usize = arg2 as usize;
-            let user_str = unsafe {
-                let slice = core::slice::from_raw_parts(buffer, len);
-                core::str::from_utf8_unchecked(slice)
-            };
-            handle_print(UserValue::new(user_str))
-        }
-        SystemCall::Exit => handle_exit(arg1),
-        SystemCall::VSpace => handle_vspace(VSpaceOperation::new(arg1), VAddr::from(arg2), arg3),
-        _ => SystemCallStatus::NotSupported,
+    let status: Result<(), KError> = match SystemCall::new(function) {
+        SystemCall::Process => handle_process(arg1, arg2, arg3),
+        SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
+        _ => Err(KError::InvalidSyscallArgument1 { a: function }),
     };
 
-    status as u64
+    let retcode = match status {
+        Ok(()) => SystemCallError::Ok,
+        Err(status) => {
+            error!("System call returned with error: {:?}", status);
+            status.into()
+        }
+    };
+
+    retcode as u64
 }
 
 /// Enables syscall/sysret functionality.
@@ -133,7 +182,11 @@ pub fn enable_fast_syscalls(cs_selector: SegmentSelector, ss_selector: SegmentSe
         wrmsr(IA32_LSTAR, rip);
         info!("syscalls jump to {:#x}", rip);
 
-        wrmsr(IA32_FMASK, !(RFlags::new().bits()));
+        wrmsr(
+            IA32_FMASK,
+            !(rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF)
+                .bits(),
+        );
 
         // Enable fast syscalls
         let efer = rdmsr(IA32_EFER) | 0b1;

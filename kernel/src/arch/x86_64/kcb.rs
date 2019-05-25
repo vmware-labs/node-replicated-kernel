@@ -86,10 +86,9 @@ impl Kcb {
     }
 }
 
-pub(crate) fn init_kcb(mut kcb: Kcb) {
-    let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(&mut kcb);
+pub(crate) fn init_kcb(kcb: &mut Kcb) {
+    let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(kcb);
     unsafe { set_kcb(kptr) };
-    core::mem::forget(kcb);
 }
 /*
 

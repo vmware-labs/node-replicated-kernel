@@ -283,7 +283,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Get the kernel binary (to later store it in the KCB)
     // The binary is useful for symbol name lookups when printing stacktraces
     // in case things go wrong (see panic.rs).
-    trace!("Kernel binary: {:?}", kernel_args.modules[0]);
+    info!("Kernel binary: {:?}", kernel_args.modules[0]);
     let kernel_binary: &'static [u8] = unsafe {
         slice::from_raw_parts(
             kernel_args.modules[0].base().as_u64() as *const u8,
@@ -331,9 +331,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
-    kcb::init_kcb(kcb);
-
+    kcb::init_kcb(&mut kcb);
+    // Make sure we don't drop the KCB and anything in it,
+    // the kcb is on the stack and remains allocated on it,
+    // this is (probably) fine as we never return to _start.
+    core::mem::forget(kcb);
     debug!("Memory allocation should work at this point...");
+
+    // Set up interrupts (which needs Box)
     irq::init_irq_handlers();
 
     // Attach the driver to the registers:
@@ -347,9 +352,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         );
     } // Make sure to drop the reference to the APIC again
 
-    let r = acpi::init();
-    assert!(r.is_ok());
-    info!("ACPI initialized");
+    // Init ACPI
+    {
+        let r = acpi::init();
+        assert!(r.is_ok());
+        info!("ACPI initialized");
+    }
 
     lazy_static::initialize(&acpi::LOCAL_APICS);
     lazy_static::initialize(&acpi::IO_APICS);

@@ -6,7 +6,8 @@ edition = "2018"
 
 [dependencies]
 either = { version = "1.5", default-features = false }
-fringe = { git = "https://github.com/gz/libfringe", default-features = false, features = ["alloc"] }
+#fringe = { path = "../libfringe", default-features = false, features = ["alloc"] }
+fringe = { git = "https://github.com/gz/libfringe.git", default-features = false, features = ["alloc"] }
 log = "0.4.6"
 hashmap_core = "0.1.10"
 rawtime = { path = "../rawtime" }

@@ -23,25 +23,25 @@ use log::debug;
 
 #[repr(C, packed)]
 pub struct SaveArea {
-    rax: u64, // 0
-    rbx: u64, // 1
-    rcx: u64, // 2
-    rdx: u64, // 3
-    rsi: u64, // 4
-    rdi: u64, // 5
-    rbp: u64, // 6
-    rsp: u64, // 7
-    r8: u64,  // 8
-    r9: u64,  // 9
-    r10: u64, // 10
-    r11: u64, // 11
-    r12: u64, // 12
-    r13: u64, // 13
-    r14: u64, // 14
-    r15: u64, // 15
-    rip: u64, // 16
-    rflags: u64, // 17
-    fxsave: [u8; 512], // 18
+    pub rax: u64,          // 0 ret val, not preserved
+    pub rbx: u64,          // 1 preserved
+    pub rcx: u64,          // 2 4th arg, not preserved
+    pub rdx: u64,          // 3 3rd arg, not preserved
+    pub rsi: u64,          // 4 2nd arg, not preserved
+    pub rdi: u64,          // 5, 1st arg, not preserved
+    pub rbp: u64,          // 6 base pointer, preserved
+    pub rsp: u64,          // 7 stack pointer, preserved
+    pub r8: u64,           // 8 5th arg, not preserved
+    pub r9: u64,           // 9 6th arg, not preserved
+    pub r10: u64,          // 10 not preserved
+    pub r11: u64,          // 11 not preserved
+    pub r12: u64,          // 12 preserved
+    pub r13: u64,          // 13 preserved
+    pub r14: u64,          // 14 preserved
+    pub r15: u64,          // 15 preserved
+    pub rip: u64,          // 16 instruction pointer
+    pub rflags: u64,       // 17
+    pub fxsave: [u8; 512], // 18
 }
 
 impl Default for SaveArea {
@@ -71,8 +71,22 @@ impl SaveArea {
             r15: 0,
             rip: 0,
             rflags: 0,
-            fxsave: [0; 512]
+            fxsave: [0; 512],
         }
+    }
+
+    /// Sets the 1st return argument for system calls
+    ///
+    /// 1st argument is passed back in the rdi register.
+    pub fn set_syscall_ret1(&mut self, val: u64) {
+        self.rdi = val;
+    }
+
+    /// Sets the 2nd return argument for system calls
+    ///
+    /// 1st argument is passed back in the rsi register.
+    pub fn set_syscall_ret2(&mut self, val: u64) {
+        self.rsi = val;
     }
 }
 
@@ -150,6 +164,16 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     let err = PageFaultError::from_bits_truncate(a.exception as u32);
     sprintln!("{}", err);
 
+    // Enable user-space access to do backtraces in user-space
+    x86::current::rflags::stac();
+
+    unsafe {
+        for i in 0..32 {
+            let ptr = (a.rsp as *const u64).offset(i);
+            sprintln!("stack[{}] = {:#x}", i, *ptr);
+        }
+    }
+
     // Print where the fault happend in the address-space:
     let faulting_address = x86::controlregs::cr2();
     sprint!("Faulting address: {:#x}", faulting_address);
@@ -161,11 +185,9 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
                 faulting_address - k.kernel_args().kernel_elf_offset.as_usize()
             )
         });
-    }
-    else {
+    } else {
         sprintln!("");
     }
-
 
     // Print the RIP that triggered the fault:
     sprint!("Instruction Pointer: {:#x}", a.rip);
@@ -176,8 +198,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
                 a.rip - k.kernel_args().kernel_elf_offset.as_u64()
             )
         });
-    }
-    else {
+    } else {
         sprintln!("");
     }
 

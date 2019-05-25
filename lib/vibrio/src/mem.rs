@@ -7,6 +7,9 @@ use core::mem::transmute;
 
 use log::{debug, error, info};
 use spin::Mutex;
+use x86::current::paging::{PAddr, VAddr};
+
+use kpi::SystemCallError;
 
 use slabmalloc::{ObjectPage, PageProvider, ZoneAllocator};
 
@@ -17,7 +20,7 @@ macro_rules! round_up {
 }
 
 /// A static reference to our silly pager.
-pub static PAGER: Mutex<Pager> = Mutex::new(Pager(0xabfff000));
+pub static PAGER: Mutex<Pager> = Mutex::new(Pager(0xddabfff000));
 
 /// A silly pager.
 pub struct Pager(u64);
@@ -25,12 +28,12 @@ pub struct Pager(u64);
 impl<'a> PageProvider<'a> for Pager {
     /// Allocates a page for use with slabmalloc.
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
-        let r = crate::vspace(crate::VSpaceOperation::Map, self.0, 0x1000);
-        let sp: &'a mut ObjectPage = unsafe { transmute(self.0) };
-
-        self.0 += 0x1000;
-
-        Some(sp)
+        unsafe {
+            let r = crate::vspace(crate::VSpaceOperation::Map, self.0, 0x1000);
+            let sp: &'a mut ObjectPage = transmute(self.0);
+            self.0 += 0x1000;
+            Some(sp)
+        }
     }
 
     /// Releases a page back to slabmalloc.
@@ -38,14 +41,29 @@ impl<'a> PageProvider<'a> for Pager {
 }
 
 impl Pager {
+    pub(crate) fn allocate_new(
+        &mut self,
+        layout: Layout,
+    ) -> Result<(VAddr, PAddr), SystemCallError> {
+        let size = round_up!(layout.size(), 4096) as u64;
+        self.0 = round_up!(self.0 as usize, core::cmp::max(layout.align(), 4096)) as u64;
+
+        unsafe { crate::vspace(crate::VSpaceOperation::Map, self.0, size) }
+    }
+
     /// Allocates an arbitray layout (> 4K) in the address space.
     fn allocate(&mut self, layout: Layout) -> *mut u8 {
-        let size = round_up!(layout.size(), 4096) as u64;
+        //debug!("layout {:?}", layout);
 
-        let r = crate::vspace(crate::VSpaceOperation::Map, self.0, size);
-        let sp: *mut u8 = unsafe { transmute(self.0) };
-        self.0 += size;
-        sp
+        let size = round_up!(layout.size(), 4096) as u64;
+        self.0 = round_up!(self.0 as usize, core::cmp::max(layout.align(), 4096)) as u64;
+
+        unsafe {
+            let r = crate::vspace(crate::VSpaceOperation::Map, self.0, size);
+            let sp: *mut u8 = transmute(self.0);
+            self.0 += size;
+            sp
+        }
     }
 }
 

@@ -16,11 +16,31 @@ use super::gdt;
 
 use super::irq;
 use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
+
+use super::memory::KERNEL_BASE;
+use crate::error::KError;
+use crate::memory::BespinPageTableProvider;
 use crate::memory::PageTableProvider;
 use crate::mutex::Mutex;
 
-use super::memory::KERNEL_BASE;
-use crate::memory::BespinPageTableProvider;
+use core::fmt::{Debug, Display};
+use custom_error::custom_error;
+
+use crate::alloc::string::ToString;
+use kpi::SystemCallError;
+
+custom_error! {pub VSpaceError
+    AlreadyMapped{from: u64, to: u64} = "VSpace operation covers existing mapping ({from} -- {to})",
+}
+
+impl Into<SystemCallError> for VSpaceError {
+    fn into(self) -> SystemCallError {
+        match self {
+            VSpaceError::AlreadyMapped { from: _, to: _ } => SystemCallError::VSpaceAlreadyMapped,
+            _ => SystemCallError::InternalError,
+        }
+    }
+}
 
 /// Mapping rights to give to address translation.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -130,7 +150,7 @@ pub struct VSpace {
 
 impl Drop for VSpace {
     fn drop(&mut self) {
-        //panic!("Drop for VSpace!");
+        panic!("Drop for VSpace!");
     }
 }
 
@@ -163,7 +183,7 @@ impl VSpace {
         pbase: PAddr,
         end: PAddr,
         rights: MapAction,
-    ) {
+    ) -> Result<(), VSpaceError> {
         // TODO: maybe better to provide a length instead of end
         // so harder for things to break
         assert!(end > pbase, "End should be bigger than pbase");
@@ -177,7 +197,7 @@ impl VSpace {
             pbase,
             pbase + size
         );
-        self.map_generic(vbase, (pbase, size), rights);
+        self.map_generic(vbase, (pbase, size), rights)
     }
 
     /// Constructs an identity map in this region of memory.
@@ -195,7 +215,12 @@ impl VSpace {
     /// The algorithm tries to allocate the biggest page-sizes possible for the allocations.
     /// We require that `vbase` and `pregion` values are all aligned to a page-size.
     /// TODO: We panic in case there is already a mapping covering the region (should return error).
-    pub(crate) fn map_generic(&mut self, vbase: VAddr, pregion: (PAddr, usize), rights: MapAction) {
+    pub(crate) fn map_generic(
+        &mut self,
+        vbase: VAddr,
+        pregion: (PAddr, usize),
+        rights: MapAction,
+    ) -> Result<(), VSpaceError> {
         let (pbase, psize) = pregion;
         assert_eq!(pbase % BASE_PAGE_SIZE, 0);
         assert_eq!(psize % BASE_PAGE_SIZE, 0);
@@ -240,6 +265,7 @@ impl VSpace {
                 // Add entries to PDPT as long as we're within this allocated PDPT table
                 // and have 1 GiB chunks to map:
                 while mapped < psize && ((psize - mapped) >= HUGE_PAGE_SIZE) && pdpt_idx < 512 {
+                    assert!(!pdpt[pdpt_idx].is_present());
                     pdpt[pdpt_idx] = PDPTEntry::new(
                         pbase + mapped,
                         PDPTFlags::P | PDPTFlags::PS | rights.to_pdpt_rights(),
@@ -272,7 +298,7 @@ impl VSpace {
                 } else {
                     // Everything fit in 1 GiB ranges,
                     // We're done with mappings
-                    return;
+                    return Ok(());
                 }
             } else {
                 trace!(
@@ -308,6 +334,10 @@ impl VSpace {
                 // Add entries as long as we are within this allocated PDPT table
                 // and have at least 2 MiB things to map
                 while mapped < psize && ((psize - mapped) >= LARGE_PAGE_SIZE) && pd_idx < 512 {
+                    if (pd[pd_idx].is_present()) {
+                        panic!("Already mapped pd at {:#x}", pbase + mapped);
+                    }
+
                     pd[pd_idx] = PDEntry::new(
                         pbase + mapped,
                         PDFlags::P | PDFlags::PS | rights.to_pd_rights(),
@@ -340,7 +370,7 @@ impl VSpace {
                 } else {
                     // Everything fit in 2 MiB ranges,
                     // We're done with mappings
-                    return;
+                    return Ok(());
                 }
             } else {
                 trace!(
@@ -387,8 +417,10 @@ impl VSpace {
                 pbase + (psize - mapped),
             );
             return self.map_generic(vbase + mapped, ((pbase + mapped), psize - mapped), rights);
+        } else {
+            // else we're done here, return
+            Ok(())
         }
-        // else we're done here, return
     }
 
     /// A simple wrapper function for allocating just one page.
@@ -539,12 +571,19 @@ impl VSpace {
     ///  * The base should be a multiple of `BASE_PAGE_SIZE`.
     ///  * The size should be a multiple of `BASE_PAGE_SIZE`.
     #[allow(unused)]
-    pub fn map(&mut self, base: VAddr, size: usize, rights: MapAction, palignment: u64) {
+    pub fn map(
+        &mut self,
+        base: VAddr,
+        size: usize,
+        rights: MapAction,
+        palignment: u64,
+    ) -> Result<(PAddr, usize), VSpaceError> {
         assert_eq!(base % BASE_PAGE_SIZE, 0, "base is not page-aligned");
         assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
         let paddr =
             VSpace::allocate_pages_aligned(size / BASE_PAGE_SIZE, ResourceType::Memory, palignment);
-        self.map_generic(base, (paddr, size), rights);
+        self.map_generic(base, (paddr, size), rights)?;
+        Ok((paddr, size))
     }
 }
 

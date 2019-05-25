@@ -145,7 +145,7 @@ impl Process {
         unsafe {
             asm!("jmp exec" ::
                 "{rcx}" ((self.offset + self.entry_point).as_u64())
-                "{r11}" (user_flags)
+                "{r11}" (user_flags.bits())
                 "{rsp}" (self.stack_top.as_u64())
                 "{rbp}" (self.stack_top.as_u64())
             );
@@ -156,8 +156,10 @@ impl Process {
 
     /// Resume the process (after it got interrupted or from a system call).
     pub fn resume(&self) {
-        let user_rflags = rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
-        debug!("resuming User-space");
+        let user_rflags = rflags::RFlags::from_priv(x86::Ring::Ring3)
+            | rflags::RFlags::FLAGS_A1
+            | rflags::RFlags::FLAGS_IF;
+        info!("resuming User-space {:?}", user_rflags.bits());
         unsafe {
             // %rbx points to save_area
             // %r8 points to ss
@@ -323,7 +325,10 @@ impl elfloader::ElfLoader for Process {
             .expect("Can't resolve address");
         let mut kernel_addr: VAddr = paddr_to_kernel_vaddr(paddr);
 
-        debug!("ELF relocation paddr {:#x} kernel_addr {:#x}", paddr, kernel_addr);
+        debug!(
+            "ELF relocation paddr {:#x} kernel_addr {:#x}",
+            paddr, kernel_addr
+        );
 
         use elfloader::TypeRela64;
         if let TypeRela64::R_RELATIVE = TypeRela64::from(entry.get_type()) {

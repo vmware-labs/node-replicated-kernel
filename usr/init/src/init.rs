@@ -16,7 +16,8 @@ use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;
 
-use vibrio::sys_println;
+use vibrio::rumprt;
+use vibrio::{sys_print, sys_println};
 
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
@@ -33,8 +34,9 @@ fn print_test() {
 fn map_test() {
     let base: u64 = 0xff000;
     let size: u64 = 0x1000 * 64;
-    vibrio::vspace(vibrio::VSpaceOperation::Map, base, size);
     unsafe {
+        vibrio::vspace(vibrio::VSpaceOperation::Map, base, size);
+
         let mut slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
         for i in slice.iter_mut() {
             *i = 0xb;
@@ -79,6 +81,97 @@ fn scheduler_test() {
     s.run();
 }
 
+fn rumprt_test() {
+    use cstr_core::CStr;
+
+    #[repr(C)]
+    struct tmpfs_args {
+        ta_version: u64, // c_int
+        /* Size counters. */
+        ta_nodes_max: u64, // ino_t			ta_nodes_max;
+        ta_size_max: i64,  // off_t			ta_size_max;
+        /* Root node attributes. */
+        ta_root_uid: u32,  // uid_t			ta_root_uid;
+        ta_root_gid: u32,  // gid_t			ta_root_gid;
+        ta_root_mode: u32, // mode_t			ta_root_mode;
+    }
+
+    extern "C" {
+        fn rump_boot_setsigmodel(sig: usize);
+        fn rump_init() -> u64;
+        fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
+        fn open(path: *const i8, opt: u64) -> i64;
+        fn read(fd: i64, buf: *mut i8, bytes: u64) -> i64;
+        fn write(fd: i64, buf: *const i8, bytes: u64) -> i64;
+    }
+
+    let up = lineup::Upcalls {
+        curlwp: rumprt::rumpkern_curlwp,
+        deschedule: rumprt::rumpkern_unsched,
+        schedule: rumprt::rumpkern_sched,
+    };
+
+    let mut scheduler = lineup::Scheduler::new(up);
+    scheduler.spawn(
+        32 * 4096,
+        |_yielder| unsafe {
+            let start = rawtime::Instant::now();
+            rump_boot_setsigmodel(0);
+            let ri = rump_init();
+            assert_eq!(ri, 0);
+            info!("rump_init({}) done in {:?}", ri, start.elapsed());
+
+            let TMPFS_ARGS_VERSION: u64 = 1;
+
+            let tfsa = tmpfs_args {
+                ta_version: TMPFS_ARGS_VERSION,
+                ta_nodes_max: 0,
+                ta_size_max: 1 * 1024 * 1024,
+                ta_root_uid: 0,
+                ta_root_gid: 0,
+                ta_root_mode: 0o1777,
+            };
+
+            let path = CStr::from_bytes_with_nul(b"/tmp\0");
+            let MOUNT_TMPFS = CStr::from_bytes_with_nul(b"tmpfs\0");
+            info!("mounting tmpfs");
+
+            let r = mount(
+                MOUNT_TMPFS.unwrap().as_ptr(),
+                path.unwrap().as_ptr(),
+                0,
+                &tfsa,
+                core::mem::size_of::<tmpfs_args>(),
+            );
+
+            let path = CStr::from_bytes_with_nul(b"/tmp/bla\0");
+            let fd = open(path.unwrap().as_ptr(), 0x00000202);
+            assert_eq!(fd, 3, "Proper FD was returned");
+
+            let wbuf: [i8; 12] = [0xa; 12];
+            let bytes_written = write(fd, wbuf.as_ptr(), 12);
+            assert_eq!(bytes_written, 12, "Write successful");
+            info!("bytes_written: {:?}", bytes_written);
+
+            let path = CStr::from_bytes_with_nul(b"/tmp/bla\0");
+            let fd = open(path.unwrap().as_ptr(), 0x00000002);
+            let mut rbuf: [i8; 12] = [0x00; 12];
+            let read_bytes = read(fd, rbuf.as_mut_ptr(), 12);
+            assert_eq!(read_bytes, 12, "Read successful");
+            assert_eq!(rbuf[0], 0xa, "Read matches write");
+            info!("bytes_read: {:?}", read_bytes);
+
+            //arch::debug::shutdown(ExitReason::Ok);
+            vibrio::exit(1);
+        },
+        core::ptr::null_mut(),
+    );
+
+    loop {
+        scheduler.run();
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     unsafe {
@@ -91,6 +184,7 @@ pub extern "C" fn _start() -> ! {
     map_test();
     alloc_test();
     scheduler_test();
+    rumprt_test();
 
     debug!("DONE WITH INIT");
 
@@ -99,7 +193,16 @@ pub extern "C" fn _start() -> ! {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    error!("panic happened: {:?}", info.message());
+    sys_println!("System panic encountered");
+    if let Some(message) = info.message() {
+        sys_print!(": '{}'", message);
+    }
+    if let Some(location) = info.location() {
+        sys_println!(" in {}:{}", location.file(), location.line());
+    } else {
+        sys_println!("");
+    }
+
     vibrio::exit(1);
     loop {}
 }

@@ -3,8 +3,9 @@ name = "init"
 version = "0.1.0"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 edition = "2018"
+build = "build.rs"
 
-[profile.debug]
+[profile.dev]
 panic = "abort"
 
 [profile.release]
@@ -13,8 +14,13 @@ panic = "abort"
 [dependencies]
 spin = { version = "0.4.8", default_features = false }
 log = "0.4"
-vibrio = { path = "../../lib/vibrio" }
 lineup = { path = "../../lib/lineup" }
+rawtime = { path = "../../lib/rawtime" }
+cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
+
+[dependencies.vibrio]
+path = "../../lib/vibrio"
+features = ["rumprt"]
 
 [[bin]]
 name = "init"

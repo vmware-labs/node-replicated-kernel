@@ -1,3 +1,11 @@
+//! A set of data-structures that are shared between the booatloader
+//! and the kernel (i.e., they are passed by the bootloader
+//! to the kernel).
+//!
+//! # Notes
+//! This file is imported using include!() from the kernel source
+//! so we have to be careful with imports (use full qualifiers).
+
 /// Describes an ELF binary we loaded from the UEFI image into memory.
 #[derive(Clone)]
 pub struct Module {
@@ -24,7 +32,7 @@ impl Module {
         }
     }
 
-    /// Return the name of the module (or at least the first 32 characters).
+    /// Return the name of the module (or at least the first 32 bytes).
     pub(crate) fn name(&self) -> &str {
         core::str::from_utf8(&self.name[0..self.name_len]).unwrap_or("unknown")
     }
@@ -39,12 +47,12 @@ impl Module {
         self.binary.1
     }
 
-    /// Return a slice to the binary loaded in the (kernel) address space.elfloader
+    /// Return a slice to the binary loaded in the (kernel) address space.
     ///
     /// # Unsafe
     /// May not be mapped at all (for example in UEFI bootloader space).
     /// May be unmapped/changed arbitrarily later by the kernel.
-    unsafe fn as_slice(&self) -> &'static [u8] {
+    pub(crate) unsafe fn as_slice(&self) -> &'static [u8] {
         core::slice::from_raw_parts(self.base().as_ptr::<u8>(), self.size())
     }
 }
@@ -62,9 +70,6 @@ impl core::fmt::Debug for Module {
 }
 
 /// Arguments that are passed on to the kernel by the bootloader.
-///
-/// This file is imported using include!() from the kernel source
-/// so we have to be careful with imports.
 #[derive(Debug)]
 pub struct KernelArgs<T: ?Sized> {
     /// Physical base address and size of the UEFI memory map (constructed on boot services exit).
@@ -83,6 +88,7 @@ pub struct KernelArgs<T: ?Sized> {
     pub acpi1_rsdp: x86::bits64::paging::PAddr,
     /// The physical address of the ACPIv2 RSDP (Root System Description Pointer)
     pub acpi2_rsdp: x86::bits64::paging::PAddr,
-    /// Modules (ELF binaries we load as user-space program) passed to the kernel
+    /// Modules (ELF binaries found in the UEFI partition) passed to the kernel
+    /// modules[0] is the kernel binary
     pub modules: T,
 }

@@ -180,7 +180,6 @@ fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &'sta
     )
 }
 
-
 /// Allocates `pages` * `BASE_PAGE_SIZE` bytes of physical memory
 /// and return the address.
 fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> PAddr {

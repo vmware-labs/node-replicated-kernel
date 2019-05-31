@@ -97,7 +97,7 @@ impl FrameAllocator {
                 self.regions[i].size += self.regions[i + 1].size;
 
                 // Mark region invalid (this is now merged with previous)
-                self.regions[i + 1].base = PAddr::from(0xFFFFFFFFFFFFFFFF);
+                self.regions[i + 1].base = PAddr::from(0xFFFFFFFFFFFFFFFFu64);
                 self.regions[i + 1].size = 0;
             }
 

@@ -540,7 +540,7 @@ impl VSpace {
             if pdpt[pdpt_idx].is_present() {
                 if pdpt[pdpt_idx].is_page() {
                     // Page is a 1 GiB mapping, we have to return here
-                    let page_offset: usize = addr & 0x3fffffff;
+                    let page_offset = addr.huge_page_offset();
                     return Some(pdpt[pdpt_idx].address() + page_offset);
                 } else {
                     let pd_idx = pd_index(addr);
@@ -548,13 +548,13 @@ impl VSpace {
                     if pd[pd_idx].is_present() {
                         if pd[pd_idx].is_page() {
                             // Encountered a 2 MiB mapping, we have to return here
-                            let page_offset: usize = addr & 0x1fffff;
+                            let page_offset = addr.large_page_offset();
                             return Some(pd[pd_idx].address() + page_offset);
                         } else {
                             let pt_idx = pt_index(addr);
                             let pt = self.get_pt(pd[pd_idx]);
                             if pt[pt_idx].is_present() {
-                                let page_offset: usize = addr & 0xfff;
+                                let page_offset = addr.base_page_offset();
                                 return Some(pt[pt_idx].address() + page_offset);
                             }
                         }
@@ -589,7 +589,7 @@ impl VSpace {
 
 pub unsafe fn dump_current_table(log_level: usize) {
     let cr_three: u64 = controlregs::cr3();
-    let pml4: PAddr = PAddr::from_u64(cr_three);
+    let pml4: PAddr = PAddr::from(cr_three);
     let pml4_table = transmute::<VAddr, &PML4>(paddr_to_kernel_vaddr(pml4));
 
     dump_table(pml4_table, log_level);

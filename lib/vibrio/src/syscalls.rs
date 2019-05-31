@@ -112,9 +112,9 @@ unsafe fn syscall_4_2(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> (u64, u64) 
 #[inline(always)]
 #[allow(unused_mut)]
 unsafe fn syscall_4_3(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> (u64, u64, u64) {
-    let mut ret: u64;
-    let mut ret2: u64;
-    let mut ret3: u64;
+    let ret: u64;
+    let ret2: u64;
+    let ret3: u64;
     asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2) "={rsi}" (ret3)
                    : "{rdi}"  (arg1), "{rsi}"  (arg2), "{rdx}"  (arg3), "{r10}"  (arg4)
                    : "rcx", "r11", "memory" : "volatile");

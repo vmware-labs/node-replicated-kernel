@@ -67,9 +67,14 @@ impl From<u64> for ProcessOperation {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
 pub enum VSpaceOperation {
+    /// Map some anonymous memory
     Map = 1,
+    /// Unmap a mapped region
     Unmap = 2,
+    /// Identity map some device memory
     MapDevice = 3,
+    /// Resolve a virtual to a physical address
+    Identify = 4,
     Unknown,
 }
 
@@ -80,6 +85,7 @@ impl From<u64> for VSpaceOperation {
             1 => VSpaceOperation::Map,
             2 => VSpaceOperation::Unmap,
             3 => VSpaceOperation::MapDevice,
+            4 => VSpaceOperation::Identify,
             _ => VSpaceOperation::Unknown,
         }
     }

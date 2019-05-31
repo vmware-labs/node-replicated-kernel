@@ -478,7 +478,7 @@ impl<'a> VSpace<'a> {
             if pdpt[pdpt_idx].is_present() {
                 if pdpt[pdpt_idx].is_page() {
                     // Page is a 1 GiB mapping, we have to return here
-                    let page_offset: usize = addr & 0x3fffffff;
+                    let page_offset = addr.huge_page_offset();
                     return Some(pdpt[pdpt_idx].address() + page_offset);
                 } else {
                     let pd_idx = pd_index(addr);
@@ -486,13 +486,13 @@ impl<'a> VSpace<'a> {
                     if pd[pd_idx].is_present() {
                         if pd[pd_idx].is_page() {
                             // Encountered a 2 MiB mapping, we have to return here
-                            let page_offset: usize = addr & 0x1fffff;
+                            let page_offset = addr.large_page_offset();
                             return Some(pd[pd_idx].address() + page_offset);
                         } else {
                             let pt_idx = pt_index(addr);
                             let pt = self.get_pt(pd[pd_idx]);
                             if pt[pt_idx].is_present() {
-                                let page_offset: usize = addr & 0xfff;
+                                let page_offset = addr.base_page_offset();
                                 return Some(pt[pt_idx].address() + page_offset);
                             }
                         }
@@ -510,7 +510,7 @@ impl<'a> VSpace<'a> {
     ///  * The size should be a multiple of `BASE_PAGE_SIZE`.
     #[allow(unused)]
     pub fn map(&mut self, base: VAddr, size: usize, rights: MapAction, palignment: u64) {
-        assert_eq!(base % BASE_PAGE_SIZE, 0, "base is not page-aligned");
+        assert!(base.is_base_page_aligned(), "base is not page-aligned");
         assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
         let paddr = VSpace::allocate_pages_aligned(
             size / BASE_PAGE_SIZE,
@@ -519,7 +519,6 @@ impl<'a> VSpace<'a> {
         );
         self.map_generic(base, (paddr, size), rights);
     }
-
 }
 
 pub unsafe fn dump_table(pml4_table: &PML4) {

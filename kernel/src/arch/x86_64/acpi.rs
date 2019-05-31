@@ -190,13 +190,13 @@ pub extern "C" fn AcpiOsFree(ptr: *mut u8) {
 pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZE) -> *mut c_void {
     trace!("AcpiOsMapMemory(loc = {:#x}, len = {})", location, len);
 
-    let p = PAddr::from_u64((location & !0xfff) as u64);
+    let p = PAddr::from((location & !0xfff) as u64);
 
     use crate::round_up;
     crate::kcb::try_get_kcb().map(|k| {
         let mut vspace = k.init_vspace();
         vspace.map_identity_with_offset(
-            PAddr::from_u64(super::memory::KERNEL_BASE),
+            PAddr::from(super::memory::KERNEL_BASE),
             p,
             PAddr::from(round_up!(
                 (location + len) as usize,

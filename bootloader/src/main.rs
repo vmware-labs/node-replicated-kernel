@@ -205,7 +205,7 @@ fn dump_cr3() {
         let cr_three: u64 = controlregs::cr3();
         debug!("current CR3: {:x}", cr_three);
 
-        let pml4: PAddr = PAddr::from_u64(cr_three);
+        let pml4: PAddr = PAddr::from(cr_three);
         let pml4_table = unsafe { transmute::<VAddr, &PML4>(paddr_to_uefi_vaddr(pml4)) };
         vspace::dump_table(pml4_table);
     }

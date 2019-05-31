@@ -203,7 +203,7 @@ fn enable_fsgsbase() {
 /// initial VSpace.
 unsafe fn find_current_vspace() -> VSpace {
     let cr_three: u64 = controlregs::cr3();
-    let pml4: PAddr = PAddr::from_u64(cr_three);
+    let pml4: PAddr = PAddr::from(cr_three);
     let pml4_table = transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
     VSpace {
         pml4: Box::into_pin(Box::from_raw(pml4_table)),

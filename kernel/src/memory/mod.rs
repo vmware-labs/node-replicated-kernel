@@ -47,7 +47,7 @@ impl Frame {
     #[allow(unused)]
     const fn empty() -> Frame {
         Frame {
-            base: PAddr::from_u64(0),
+            base: PAddr::zero(),
             size: 0,
         }
     }

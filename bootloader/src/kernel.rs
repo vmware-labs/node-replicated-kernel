@@ -36,10 +36,8 @@ pub const KERNEL_ARGS: u32 = 0x80000005;
 /// UEFI memory region type for arguments passed to the kernel.
 pub const MODULE: u32 = 0x80000006;
 
-
 /// 512 GiB are that many bytes.
 pub const GIB_512: usize = 512 * 512 * 512 * 0x1000;
-
 
 /// Translate between PAddr and VAddr
 pub(crate) fn paddr_to_uefi_vaddr(paddr: PAddr) -> VAddr {
@@ -50,7 +48,6 @@ pub(crate) fn paddr_to_uefi_vaddr(paddr: PAddr) -> VAddr {
 pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
     return VAddr::from(KERNEL_OFFSET + paddr.as_usize());
 }
-
 
 /// The starting address of the kernel address space
 ///
@@ -84,7 +81,6 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// what this parameter is useful for beyond the first load entry):
     /// base ≡ offset, modulo align_to. (Or rather, base % align = offset % align_to)
     fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
-
         // Should contain what memory range we need to cover to contain
         // loadable regions:
         let mut min_base: VAddr = VAddr::from(usize::max_value());
@@ -149,7 +145,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             "max end is not aligned to page-size"
         );
         let pbase = VSpace::allocate_pages_aligned(
-            (max_end - min_base) >> BASE_PAGE_SHIFT,
+            ((max_end - min_base) >> BASE_PAGE_SHIFT) as usize,
             uefi::table::boot::MemoryType(KERNEL_ELF),
             max_alignment,
         );

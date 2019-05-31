@@ -1,10 +1,11 @@
-//! A set of data-structures that are shared between the booatloader
-//! and the kernel (i.e., they are passed by the bootloader
-//! to the kernel).
-//!
-//! # Notes
-//! This file is imported using include!() from the kernel source
-//! so we have to be careful with imports (use full qualifiers).
+// A set of data-structures that are shared between the booatloader
+// and the kernel (i.e., they are passed by the bootloader
+// to the kernel).
+//
+// # Notes
+// This file is imported using include!() from the kernel source
+// so we have to be careful with imports (use full qualifiers).
+// That's also the reason why this isn't a rustdoc comment.
 
 /// Describes an ELF binary we loaded from the UEFI image into memory.
 #[derive(Clone)]

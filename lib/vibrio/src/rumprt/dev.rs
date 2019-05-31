@@ -117,53 +117,18 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     IRQS[0].vector = vector;
     IRQS[0].cookie = cookie;
 
-    /*use crate::arch::acpi;
-    use crate::arch::vspace::MapAction;
-    use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
-
-    for io_apic in acpi::IO_APICS.iter() {
-        info!("io_apic {:?}", io_apic);
-        let addr = PAddr::from(io_apic.address as u64);
-
-        // map it
-        use crate::round_up;
-        crate::kcb::try_get_kcb().map(|k| {
-            let mut vspace = k.init_vspace();
-            vspace.map_identity_with_offset(
-                PAddr::from_u64(crate::arch::memory::KERNEL_BASE),
-                addr,
-                addr + x86::bits64::paging::BASE_PAGE_SIZE,
-                MapAction::ReadWriteKernel,
-            );
-        });
-
-        let mut inst = unsafe { apic::ioapic::IoApic::new(paddr_to_kernel_vaddr(addr).as_usize()) };
-        info!("this ioapic supports {} intrs", inst.supported_interrupts());
-
-        for i in 0..inst.supported_interrupts() {
-            if (io_apic.global_irq_base + i as u32) < 16 {
-                //&& i as c_int == vector {
-                info!("map irq {}", i);
-                if i != 2 && i != 1 {
-                    inst.enable(i, 0);
-                }
-            }
-        }
-    }*/
-
-    //unimplemented!();
-
     0
 }
 
 #[allow(unused)]
-pub(crate) unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
+pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     let s = lineup::tls::Environment::scheduler();
     let upcalls = s.rump_upcalls as *const super::RumpHyperUpcalls;
 
     (*upcalls).hyp_schedule.expect("rump_upcalls set")();
     (*upcalls).hyp_lwproc_newlwp.expect("rump_upcalls set")(0);
     (*upcalls).hyp_unschedule.expect("rump_upcalls set")();
+    info!("irq_handler");
 
     let mut nlock: i32 = 1;
     loop {
@@ -188,25 +153,23 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     handler: Option<unsafe extern "C" fn(arg: *mut c_void) -> c_int>,
     arg: *mut c_void,
 ) -> *mut c_void {
-    /*trace!("rumpcomp_pci_irq_establish {:#x} {:p}", cookie, arg);
-        IRQS[0].handler = handler;
-        IRQS[0].arg = arg;
-        warn!("register for IRQ {}", IRQS[0].vector as usize + 31);
+    trace!("rumpcomp_pci_irq_establish {:#x} {:p}", cookie, arg);
+    IRQS[0].handler = handler;
+    IRQS[0].arg = arg;
+    warn!("register for IRQ {}", IRQS[0].vector as usize + 31);
 
-        let _unique_ptr = ptr::Unique::new(arg);
-
-        crate::arch::irq::register_handler(
-            IRQS[0].vector as usize + 31,
-            Box::new(move |_| {
-                let scheduler = lineup::tls::Environment::scheduler();
-                scheduler.add_to_runlist(lineup::ThreadId(1));
-            }),
-        );
-
-        //ptr::null_mut()
-    */
-    //unreachable!()
     &mut IRQS[0] as *mut _ as *mut c_void
+}
+
+use core::hash::{Hash, Hasher};
+use hashmap_core::map::HashMap;
+use spin::Mutex;
+
+lazy_static! {
+    static ref VADDR_TO_PADDR: Mutex<HashMap<u64, u64>> = {
+        let mut m = HashMap::with_capacity(128);
+        Mutex::new(m)
+    };
 }
 
 #[no_mangle]
@@ -223,7 +186,7 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
     );
 
     match r {
-        Ok(_) => start.as_u64() as *mut c_void,
+        Ok((vaddr, paddr)) => vaddr.as_u64() as *mut c_void,
         Err(e) => ptr::null_mut(),
     }
 }
@@ -232,12 +195,21 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
 #[no_mangle]
 pub unsafe extern "C" fn rumpcomp_pci_virt_to_mach(vaddr: *mut c_void) -> c_ulong {
     let vaddr = VAddr::from(vaddr as u64);
-    let paddr = PAddr::from(vaddr.as_u64());
+
+    let (_, paddr) = crate::vspace(
+        crate::VSpaceOperation::Identify,
+        vaddr.align_down_to_base_page().into(),
+        0x0,
+    )
+    .unwrap();
+    let paddr = paddr + vaddr.base_page_offset();
+
     trace!(
         "rumpcomp_pci_virt_to_mach va:{:#x} -> pa:{:#x}",
         vaddr,
         paddr
     );
+
     paddr.as_u64()
 }
 
@@ -253,10 +225,10 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     let mut p = crate::mem::PAGER.lock();
     let r = (*p).allocate_new(layout);
     match r {
-        Ok((paddr, vaddr)) => {
+        Ok((vaddr, paddr)) => {
             *vptr = vaddr.as_u64();
             *pptr = paddr.as_u64();
-            trace!(
+            info!(
                 "rumpcomp_pci_dmalloc {:#x} {:#x} at va:{:#x} pa:{:#x}",
                 size,
                 alignment,
@@ -300,7 +272,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmamem_map(
     totlen: usize,
     vap: *mut *mut c_void,
 ) -> c_int {
-    trace!(
+    info!(
         "rumpcomp_pci_dmamem_map {:#x} {:#x} {:?}",
         nseg,
         totlen,
@@ -312,6 +284,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmamem_map(
         //trace!("rumpcomp_pci_dmamem_map vap={:p}", *vap);
         0
     } else {
+        panic!("nseg > 1");
         1
     }
 }

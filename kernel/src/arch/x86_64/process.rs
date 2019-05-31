@@ -256,7 +256,7 @@ impl elfloader::ElfLoader for Process {
             "max end is not aligned to page-size"
         );
         let pbase = VSpace::allocate_pages_aligned(
-            (max_end - min_base) >> BASE_PAGE_SHIFT,
+            ((max_end - min_base) >> BASE_PAGE_SHIFT) as usize,
             ResourceType::Binary,
             max_alignment,
         );

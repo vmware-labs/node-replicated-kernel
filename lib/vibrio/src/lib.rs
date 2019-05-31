@@ -12,6 +12,9 @@
 extern crate alloc;
 extern crate kpi;
 
+#[macro_use]
+extern crate lazy_static;
+
 mod syscalls;
 
 pub use kpi::*;

@@ -93,7 +93,7 @@ fn rumprt_test() {
         /* Root node attributes. */
         ta_root_uid: u32,  // uid_t			ta_root_uid;
         ta_root_gid: u32,  // gid_t			ta_root_gid;
-        ta_root_mode: u32, // mode_t			ta_root_mode;
+        ta_root_mode: u32, // mode_t		ta_root_mode;
     }
 
     extern "C" {
@@ -172,6 +172,118 @@ fn rumprt_test() {
     }
 }
 
+pub fn test_rump_net() {
+    use cstr_core::CStr;
+
+    #[repr(C)]
+    struct sockaddr_in {
+        sin_len: u8,
+        sin_family: u8, //typedef __uint8_t       __sa_family_t;
+        sin_port: u16,  // typedef __uint16_t      __in_port_t;    /* "Internet" port number */
+        sin_addr: u32,  // typedef __uint32_t      __in_addr_t;    /* IP(v4) address */
+        zero: [u8; 8],
+    }
+
+    extern "C" {
+        fn rump_boot_setsigmodel(sig: usize);
+        fn rump_init() -> u64;
+        fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
+
+        fn socket(domain: i64, typ: i64, protocol: i64) -> i64;
+        fn rump___sysimpl_sendto(
+            fd: i64,
+            buf: *const i8,
+            flags: i64,
+            len: usize,
+            addr: *const sockaddr_in,
+            len: usize,
+        ) -> i64;
+        fn close(sock: i64) -> i64;
+    }
+
+    let up = lineup::Upcalls {
+        curlwp: rumprt::rumpkern_curlwp,
+        deschedule: rumprt::rumpkern_unsched,
+        schedule: rumprt::rumpkern_sched,
+    };
+
+    let mut scheduler = lineup::Scheduler::new(up);
+    scheduler.spawn(
+        32 * 4096,
+        |_yielder| unsafe {
+            let start = rawtime::Instant::now();
+            rump_boot_setsigmodel(1);
+            let ri = rump_init();
+            assert_eq!(ri, 0);
+            info!("rump_init({}) done in {:?}", ri, start.elapsed());
+
+            let iface = CStr::from_bytes_with_nul(b"wm0\0");
+            info!("before rump_pub_netconfig_dhcp_ipv4_oneshot");
+
+            let r = rump_pub_netconfig_dhcp_ipv4_oneshot(iface.unwrap().as_ptr());
+            assert_eq!(r, 0, "rump_pub_netconfig_dhcp_ipv4_oneshot");
+            info!(
+                "rump_pub_netconfig_dhcp_ipv4_oneshot done in {:?}",
+                start.elapsed()
+            );
+
+            let AF_INET = 2;
+            let SOCK_DGRAM = 2;
+
+            let sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+            assert!(sockfd > 0);
+            info!("socket done in {:?}", start.elapsed());
+
+            let addr = sockaddr_in {
+                sin_len: core::mem::size_of::<sockaddr_in>() as u8,
+                sin_family: AF_INET as u8,
+                sin_port: (8889 as u16).to_be(),
+                sin_addr: (2887712788 as u32).to_be(), // 172.31.0.20
+                zero: [0; 8],
+            };
+
+            for i in 0..5 {
+                info!("sendto msg = {}", i);
+
+                use alloc::format;
+                let buf = format!("pkt {}\n\0", i);
+                let cstr = CStr::from_bytes_with_nul(buf.as_str().as_bytes()).unwrap();
+                core::mem::forget(cstr);
+
+                let r = rump___sysimpl_sendto(
+                    sockfd,
+                    cstr.as_ptr() as *const i8,
+                    buf.len() as i64,
+                    0,
+                    &addr as *const sockaddr_in,
+                    core::mem::size_of::<sockaddr_in>(),
+                );
+                assert_eq!(r, buf.len() as i64);
+                let _r = lineup::tls::Environment::thread().relinquish();
+            }
+
+            let r = close(sockfd);
+            assert_eq!(r, 0);
+        },
+        core::ptr::null_mut(),
+    );
+
+    scheduler
+        .spawn(
+            32 * 1024,
+            |_yielder| unsafe {
+                vibrio::rumprt::dev::irq_handler(core::ptr::null_mut());
+                unreachable!("should not exit");
+            },
+            core::ptr::null_mut(),
+        )
+        .expect("Can't create IRQ thread?");
+
+    loop {
+        scheduler.run();
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     unsafe {
@@ -184,7 +296,8 @@ pub extern "C" fn _start() -> ! {
     map_test();
     alloc_test();
     scheduler_test();
-    rumprt_test();
+    //rumprt_test();
+    test_rump_net();
 
     debug!("DONE WITH INIT");
 

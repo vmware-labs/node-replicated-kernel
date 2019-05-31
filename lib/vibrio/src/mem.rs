@@ -20,7 +20,7 @@ macro_rules! round_up {
 }
 
 /// A static reference to our silly pager.
-pub static PAGER: Mutex<Pager> = Mutex::new(Pager(0xddabfff000));
+pub static PAGER: Mutex<Pager> = Mutex::new(Pager(0x11100000));
 
 /// A silly pager.
 pub struct Pager(u64);
@@ -48,7 +48,11 @@ impl Pager {
         let size = round_up!(layout.size(), 4096) as u64;
         self.0 = round_up!(self.0 as usize, core::cmp::max(layout.align(), 4096)) as u64;
 
-        unsafe { crate::vspace(crate::VSpaceOperation::Map, self.0, size) }
+        unsafe {
+            let r = crate::vspace(crate::VSpaceOperation::Map, self.0, size)?;
+            self.0 += size;
+            Ok(r)
+        }
     }
 
     /// Allocates an arbitray layout (> 4K) in the address space.

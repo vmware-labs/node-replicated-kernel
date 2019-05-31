@@ -135,6 +135,21 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
             error!("Can't do VSpaceOperation unmap yet.");
             Err(KError::NotSupported)
         }
+        VSpaceOperation::Identify => unsafe {
+            trace!("Identify base {:#x}.", base);
+            let mut plock = CURRENT_PROCESS.lock();
+            (*plock)
+                .as_mut()
+                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
+                    let paddr = (*p).vspace.resolve_addr(base);
+
+                    (*p).save_area
+                        .set_syscall_ret1(paddr.map(|p| p.as_u64()).unwrap_or(0x0));
+                    (*p).save_area.set_syscall_ret2(0x0);
+
+                    Ok(())
+                })
+        },
         VSpaceOperation::Unknown => {
             error!("Got an invalid VSpaceOperation code.");
             Err(KError::InvalidVSpaceOperation { a: arg1 })

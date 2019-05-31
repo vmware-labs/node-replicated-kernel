@@ -13,9 +13,11 @@ kpi = { path = "../kpi" }
 slabmalloc = { path = "../slabmalloc" }
 rawtime = { path = "../rawtime" }
 lineup = { path = "../../lib/lineup" }
-rumpkernel = { path = "../../lib/rumpkernel", optional = true }
 spin = { version = "0.4.8", default_features = false }
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
+rumpkernel = { path = "../../lib/rumpkernel", optional = true }
+hashmap_core = { version = "0.1.10", optional = true }
+lazy_static = { version = "1.3", features = ["spin_no_std"], optional = true }
 
 [features]
-rumprt = ["rumpkernel"]
+rumprt = ["rumpkernel", "hashmap_core", "lazy_static"]

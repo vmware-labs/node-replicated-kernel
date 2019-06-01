@@ -3,9 +3,9 @@ use core::ptr;
 
 use log::trace;
 
-#[cfg(target_os = "linux")]
+#[cfg(target_family = "unix")]
 pub mod unix;
-#[cfg(target_os = "linux")]
+#[cfg(target_family = "unix")]
 pub use crate::tls::unix as arch;
 
 #[cfg(target_os = "bespin")]

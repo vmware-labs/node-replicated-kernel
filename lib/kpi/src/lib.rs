@@ -1,14 +1,14 @@
 //! Defines the public kernel interface (i.e., system call interface)
 //! and associated data-types.
-//!
-//! # Note
-//!
-//! We follow the Linux system call register conventions which
-//! uses %rax as it's first argument, for convenience this is ignored
-//! (therefore set to 0 in all our syscall! invocations). We do
-//! the dispatching in rust code which uses %rdi as it's first
-//! argument.
 #![no_std]
+
+pub mod x86_64;
+
+/// A short-cut to the architecture specific part that this crate was compiled for.
+pub mod arch {
+    #[cfg(target_arch = "x86_64")]
+    pub use crate::x86_64::*;
+}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
@@ -47,8 +47,13 @@ impl From<u64> for SystemCallError {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
 pub enum ProcessOperation {
+    /// Exit the process.
     Exit = 1,
+    /// Log to console.
     Log = 2,
+    /// Sets the process control and save area for trap/IRQ forwarding
+    /// to user-space for this process and CPU.
+    InstallVCpuArea = 3,
     Unknown,
 }
 
@@ -58,6 +63,7 @@ impl From<u64> for ProcessOperation {
         match op {
             1 => ProcessOperation::Exit,
             2 => ProcessOperation::Log,
+            3 => ProcessOperation::InstallVCpuArea,
             _ => ProcessOperation::Unknown,
         }
     }

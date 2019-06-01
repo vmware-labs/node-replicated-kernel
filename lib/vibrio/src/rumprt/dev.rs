@@ -179,8 +179,8 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
     let start = PAddr::from(addr);
     let end = PAddr::from(addr) + len;
 
-    let r = crate::vspace(
-        crate::VSpaceOperation::MapDevice,
+    let r = crate::syscalls::vspace(
+        crate::syscalls::VSpaceOperation::MapDevice,
         start.as_u64(),
         end.as_u64(),
     );
@@ -196,8 +196,8 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
 pub unsafe extern "C" fn rumpcomp_pci_virt_to_mach(vaddr: *mut c_void) -> c_ulong {
     let vaddr = VAddr::from(vaddr as u64);
 
-    let (_, paddr) = crate::vspace(
-        crate::VSpaceOperation::Identify,
+    let (_, paddr) = crate::syscalls::vspace(
+        crate::syscalls::VSpaceOperation::Identify,
         vaddr.align_down_to_base_page().into(),
         0x0,
     )

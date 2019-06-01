@@ -1,50 +1,24 @@
 use core::mem;
-use core::ops::Deref;
 
-use x86::bits64::paging::{PAddr, VAddr};
+use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
 use x86::bits64::rflags::{self, RFlags};
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 use x86::segmentation::SegmentSelector;
 use x86::tlb;
 use x86::Ring;
 
+use kpi::arch::{VirtualCpu, VirtualCpuState};
 use kpi::*;
 
 use crate::error::KError;
 
-use super::process::{Process, CURRENT_PROCESS};
+use super::process::{Process, UserValue, CURRENT_PROCESS};
 use super::vspace;
 use crate::prelude::NoDrop;
 
 extern "C" {
     #[no_mangle]
     fn syscall_enter();
-}
-
-struct UserValue<T> {
-    value: T,
-}
-
-impl<T> UserValue<T> {
-    fn new(pointer: T) -> UserValue<T> {
-        UserValue { value: pointer }
-    }
-}
-
-impl<T> Deref for UserValue<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        unsafe {
-            rflags::stac();
-            &self.value
-        }
-    }
-}
-
-impl<T> Drop for UserValue<T> {
-    fn drop(&mut self) {
-        unsafe { rflags::clac() };
-    }
 }
 
 /// System call handler for printing
@@ -77,6 +51,41 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
 
             process_print(UserValue::new(user_str))
         }
+        ProcessOperation::InstallVCpuArea => unsafe {
+            let mut plock = CURRENT_PROCESS.lock();
+            (*plock)
+                .as_mut()
+                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
+                    let cpu_ctl_addr = VAddr::from(arg2);
+                    let cpu_state_addr = VAddr::from(arg3);
+
+                    (*p).vspace.map(
+                        cpu_ctl_addr,
+                        BASE_PAGE_SIZE,
+                        vspace::MapAction::ReadWriteUser,
+                        0x1000,
+                    )?;
+
+                    (*p).vspace.map(
+                        cpu_state_addr,
+                        BASE_PAGE_SIZE,
+                        vspace::MapAction::ReadUser,
+                        0x1000,
+                    )?;
+
+                    (*p).vcpu_ctl = Some(UserValue::new(cpu_ctl_addr.as_mut_ptr::<VirtualCpu>()));
+                    (*p).vcpu_state = Some(UserValue::new(
+                        cpu_state_addr.as_mut_ptr::<VirtualCpuState>(),
+                    ));
+
+                    (*p).save_area.set_syscall_ret1(cpu_ctl_addr.as_u64());
+                    (*p).save_area.set_syscall_ret2(cpu_state_addr.as_u64());
+
+                    warn!("installed vcpu area");
+
+                    Ok(())
+                })
+        },
         ProcessOperation::Exit => {
             let exit_code = arg2;
             process_exit(arg1)

@@ -417,11 +417,13 @@ pub fn xmain() {
     info!("init {:?}", init_module);
     let mut process = arch::process::Process::from(init_module).expect("Couldn't load this");
     info!("created the process");
-    process.start();
+
+    unsafe {
+        process.start();
+    }
 
     arch::debug::shutdown(ExitReason::Ok);
 }
-
 
 #[cfg(all(feature = "integration-test", feature = "test-sse"))]
 pub fn xmain() {

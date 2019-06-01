@@ -1,19 +1,26 @@
 .text
 .align 4096
 
+.global exec
+exec:
+    movq       $0, %rsi
+    movq       $0, %rdx
+    movq       $0, %r8
+    movq       $0, %r9
+    movq       $0, %r10
+    movq       $0, %r12
+    movq       $0, %r13
+    movq       $0, %r14
+    movq       $0, %r15
+    movq       $0, %rax
+    movq       $0, %rbx
+    movq       %rsp, %rbp
+    sysretq
 
-// This is the entry point for syscall instruction.
-// The architecture knows about it because we loaded
-// the address of this symbol into IA32_LSTAR.
-// (see syscalls.rs)
-// For SYSCALL, the processor saves RFLAGS into R11 and
-// the RIP of the next instruction into RCX
 .extern syscall_handle
 .global syscall_enter
 syscall_enter:
-
     // Get the pointer to the current process
-    // TODO: use swapgs instead and load current process in gs
     movabs $CURRENT_PROCESS, %rax
     // Dereference it
     movq (%rax), %rax
@@ -38,19 +45,11 @@ syscall_enter:
     movq %r13, 13*8(%rax)
     movq %r14, 14*8(%rax)
     movq %r15, 15*8(%rax)
-    // Save IP in SaveArea.rip as well
-    movq %rcx, 16*8(%rax)
+    // fxsave 19*8(%rax)
 
-    // Save vector registers (TODO: offset issue)
-    fxsave 23*8(%rax)
+    // swapgs
 
-    // Save the fs and gs registers
-    rdgsbase %r15
-    movq %r15, 18*8(%rax)
-    rdfsbase %r15
-    movq %r15, 19*8(%rax)
-
-    // Prepare kernel stack (TODO: should come from kernel gs/fs)
+    // Prepare kernel stack
     movabs $syscall_stack, %rsp
     movq %rsp, %rbp
 
@@ -70,17 +69,10 @@ syscall_enter:
     // Dereference it
     movq (%r10), %r10
 
-    // Restore the fs and gs registers
-    rdgsbase %rdi
-    movq %rdi, 18*8(%r10)
-    rdfsbase %rdi
-    movq %rdi, 19*8(%r10)
-
-    // Restore vector registers (TODO offset issue):
-    fxrstor 23*8(%r10)
-
-    // Restore the process context %rax should contain a return value
-    // from syscall_handle above (so we don't restore it)
+    // Restore the process context
+    // %rax should contain a return value
+    // from syscall_handle above
+    // (so we don't restore it)
     movq  1*8(%r10), %rbx
     movq  2*8(%r10), %rcx
     movq  3*8(%r10), %rdx
@@ -95,20 +87,11 @@ syscall_enter:
     movq 13*8(%r10), %r13
     movq 14*8(%r10), %r14
     movq 15*8(%r10), %r15
-
-    // Finally, also restore r10 which held our SaveArea pointer
+    //fxrstor 19*8(%r10)
+    // Last one restore r10
     movq 10*8(%r10), %r10
 
     // Going back to user-space
-    // * Uses %rcx as address to jump to
-    // * Uses %r11 to load as RFlags
+    // Uses %rcx as address to jump to
+    // Uses %r11 to load as RFlags
     sysretq
-
-.bss
-.align 4096
-syscall_stack_base:
-    .rept 0x1000 * 60
-        .byte 0
-    .endr
-syscall_stack:
-

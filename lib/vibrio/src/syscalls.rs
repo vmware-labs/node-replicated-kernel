@@ -8,11 +8,18 @@
 //! and the last argument specifies how many return values we
 //! expect.
 //!
-//! # Note
+//! # Notes
 //! The definitions which are shared between the kernel
 //! and user-space reside in a different [`kpi`] (kernel
 //! public interface) crate.
-use kpi::*;
+//!
+//! We follow the System V register conventions which
+//! uses `%rdi` as it's first argument. This is different
+//! from Linux which tries to squeeze in one more syscall
+//! argument by adding `%rax` to the mix.
+
+pub use kpi::arch::{VirtualCpu, VirtualCpuState};
+pub use kpi::*;
 
 use log::info;
 use x86::bits64::paging::{PAddr, VAddr};
@@ -24,6 +31,14 @@ macro_rules! syscall {
 
     ($arg0:expr, $arg1:expr, 1) => {
         crate::syscalls::syscall_2_1($arg0 as u64, $arg1 as u64)
+    };
+
+    ($arg0:expr, $arg1:expr, 2) => {
+        crate::syscalls::syscall_2_2($arg0 as u64, $arg1 as u64)
+    };
+
+    ($arg0:expr, $arg1:expr, 3) => {
+        crate::syscalls::syscall_2_3($arg0 as u64, $arg1 as u64)
     };
 
     ($arg0:expr, $arg1:expr, $arg2:expr, 1) => {
@@ -54,44 +69,60 @@ macro_rules! syscall {
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall_1_1(arg0: u64) -> u64 {
-    let mut ret1: u64;
+    let ret1: u64;
     asm!("syscall" : "={rax}" (ret1) : "{rdi}" (arg0) : "rcx", "r11", "memory" : "volatile");
     ret1
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall_1_2(arg0: u64) -> (u64, u64) {
-    let mut ret1: u64;
-    let mut ret2: u64;
+    let ret1: u64;
+    let ret2: u64;
     asm!("syscall" : "={rax}" (ret1), "={r}" (ret2) : "{rdi}" (arg0) : "rcx", "r11", "memory" : "volatile");
     (ret1, ret2)
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall_2_1(arg1: u64, arg2: u64) -> u64 {
-    let mut ret1: u64;
+    let ret1: u64;
     asm!("syscall" : "={rax}" (ret1) : "{rdi}" (arg1), "{rsi}" (arg2)
                    : "rcx", "r11", "memory" : "volatile");
     ret1
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
+unsafe fn syscall_2_2(arg1: u64, arg2: u64) -> (u64, u64) {
+    let ret1: u64;
+    let ret2: u64;
+    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) : "{rdi}" (arg1), "{rsi}" (arg2)
+                   : "rcx", "r11", "memory" : "volatile");
+    (ret1, ret2)
+}
+
+#[inline(always)]
+unsafe fn syscall_2_3(arg1: u64, arg2: u64) -> (u64, u64, u64) {
+    let ret1: u64;
+    let ret2: u64;
+    let ret3: u64;
+
+    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) "={rsi}" (ret3)
+                   : "{rdi}" (arg1), "{rsi}" (arg2)
+                   : "rcx", "r11", "memory" : "volatile");
+    (ret1, ret2, ret3)
+}
+
+#[inline(always)]
 unsafe fn syscall_3_1(arg1: u64, arg2: u64, arg3: u64) -> u64 {
-    let mut ret: u64;
+    let ret: u64;
     asm!("syscall" : "={rax}" (ret) : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
                    : "rcx", "r11", "memory" : "volatile");
     ret
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall_4_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> u64 {
-    let mut ret: u64;
+    let ret: u64;
     asm!("syscall" : "={rax}" (ret)
                    : "{rdi}"  (arg1), "{rsi}"  (arg2), "{rdx}"  (arg3), "{r10}"  (arg4)
                    : "rcx", "r11", "memory" : "volatile");
@@ -99,10 +130,9 @@ unsafe fn syscall_4_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> u64 {
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall_4_2(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> (u64, u64) {
-    let mut ret: u64;
-    let mut ret2: u64;
+    let ret: u64;
+    let ret2: u64;
     asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
                    : "{rdi}"  (arg1), "{rsi}"  (arg2), "{rdx}"  (arg3), "{r10}"  (arg4)
                    : "rcx", "r11", "memory" : "volatile");
@@ -110,7 +140,6 @@ unsafe fn syscall_4_2(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> (u64, u64) 
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall_4_3(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> (u64, u64, u64) {
     let ret: u64;
     let ret2: u64;
@@ -122,9 +151,8 @@ unsafe fn syscall_4_3(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> (u64, u64, 
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall_5_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> u64 {
-    let mut ret: u64;
+    let ret: u64;
     asm!("syscall" : "={rax}" (ret)
                    : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3), "{r10}" (arg4), "{r8}" (arg5)
                    : "rcx", "r11", "memory"
@@ -133,7 +161,6 @@ unsafe fn syscall_5_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> 
 }
 
 #[inline(always)]
-#[allow(unused_mut)]
 unsafe fn syscall6_1(
     arg0: u64,
     arg1: u64,
@@ -143,7 +170,7 @@ unsafe fn syscall6_1(
     arg5: u64,
     arg6: u64,
 ) -> u64 {
-    let mut ret: u64;
+    let ret: u64;
     asm!("syscall" : "={rax}" (ret)
                    : "{rax}" (arg0), "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3),
                      "{r10}" (arg4), "{r8}" (arg5), "{r9}" (arg6)
@@ -166,6 +193,42 @@ pub fn print(buffer: &str) -> Result<(), SystemCallError> {
 
     if r == 0 {
         Ok(())
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}
+
+/// Sets the VCPU memory location for the upcall mechanism.
+///
+/// This is allocated and controlled by the kernel, it doesn't move and
+/// should live as long as the current CPU is allocated to the process.
+pub fn vcpu_control_area(
+    vcpu_ctl: VAddr,
+    vcpu_state: VAddr,
+) -> Result<(&'static mut VirtualCpu, &'static VirtualCpuState), SystemCallError> {
+    assert!(vcpu_ctl.is_base_page_aligned());
+    assert!(vcpu_state.is_base_page_aligned());
+
+    let (r, control, state) = unsafe {
+        syscall!(
+            SystemCall::Process as u64,
+            ProcessOperation::InstallVCpuArea as u64,
+            vcpu_ctl.as_u64(),
+            vcpu_state.as_u64(),
+            3
+        )
+    };
+
+    if r == 0 {
+        let vaddr = VAddr::from(control);
+        assert_eq!(vaddr, vcpu_ctl);
+        let vcpu_ctl: *mut VirtualCpu = vaddr.as_mut_ptr::<VirtualCpu>();
+
+        let vaddr = VAddr::from(state);
+        assert_eq!(vaddr, vcpu_state);
+        let vcpu_state: *const VirtualCpuState = vaddr.as_ptr::<VirtualCpuState>();
+
+        unsafe { Ok((&mut *vcpu_ctl, &*vcpu_state)) }
     } else {
         Err(SystemCallError::from(r))
     }

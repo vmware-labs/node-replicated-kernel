@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(alloc_error_handler, const_fn, panic_info_message)]
+#![feature(asm, alloc_error_handler, const_fn, panic_info_message)]
 
 extern crate alloc;
 extern crate spin;
@@ -27,7 +27,7 @@ static MEM_PROVIDER: vibrio::mem::SafeZoneAllocator =
     vibrio::mem::SafeZoneAllocator::new(&vibrio::mem::PAGER);
 
 fn print_test() {
-    vibrio::print("test\r\n");
+    vibrio::syscalls::print("test\r\n");
     info!("log test");
 }
 
@@ -35,7 +35,7 @@ fn map_test() {
     let base: u64 = 0xff000;
     let size: u64 = 0x1000 * 64;
     unsafe {
-        vibrio::vspace(vibrio::VSpaceOperation::Map, base, size);
+        vibrio::syscalls::vspace(vibrio::syscalls::VSpaceOperation::Map, base, size);
 
         let mut slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
         for i in slice.iter_mut() {
@@ -58,7 +58,7 @@ fn alloc_test() {
 }
 
 fn scheduler_test() {
-    vibrio::print("scheduler test");
+    vibrio::syscalls::print("scheduler test");
     use lineup::DEFAULT_UPCALLS;
     let mut s = lineup::Scheduler::new(DEFAULT_UPCALLS);
 
@@ -162,7 +162,7 @@ fn rumprt_test() {
             info!("bytes_read: {:?}", read_bytes);
 
             //arch::debug::shutdown(ExitReason::Ok);
-            vibrio::exit(1);
+            vibrio::syscalls::exit(1);
         },
         core::ptr::null_mut(),
     );
@@ -284,6 +284,21 @@ pub fn test_rump_net() {
     }
 }
 
+pub fn install_vcpu_area() {
+    use x86::bits64::paging::VAddr;
+    vibrio::syscalls::vcpu_control_area(
+        VAddr::from(0xdeadbeef0000u64),
+        VAddr::from(0xdeadbeef1000u64),
+    )
+    .expect("Can't install vcpu control area");
+}
+
+pub fn upcall_test() {
+    sys_println!("causing a debug exception");
+    unsafe { x86::int!(3) };
+    sys_println!("hopefully we arrive here again?");
+}
+
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     unsafe {
@@ -292,7 +307,12 @@ pub extern "C" fn _start() -> ! {
     }
     debug!("INIT LOGGING");
 
+    install_vcpu_area();
+
     print_test();
+
+    upcall_test();
+
     map_test();
     alloc_test();
     scheduler_test();
@@ -301,7 +321,7 @@ pub extern "C" fn _start() -> ! {
 
     debug!("DONE WITH INIT");
 
-    vibrio::exit(0);
+    vibrio::syscalls::exit(0);
 }
 
 #[panic_handler]
@@ -316,7 +336,7 @@ fn panic(info: &PanicInfo) -> ! {
         sys_println!("");
     }
 
-    vibrio::exit(1);
+    vibrio::syscalls::exit(1);
     loop {}
 }
 

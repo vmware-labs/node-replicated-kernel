@@ -6,6 +6,7 @@ use core::ops;
 
 use log::{Level, Metadata, Record, SetLoggerError};
 
+/// println macro that uses the logging syscall.
 #[macro_export]
 macro_rules! sys_println {
 	( $($arg:tt)* ) => ({
@@ -15,6 +16,7 @@ macro_rules! sys_println {
 	})
 }
 
+/// print macro that uses the logging syscall.
 #[macro_export]
 macro_rules! sys_print {
 	( $($arg:tt)* ) => ({

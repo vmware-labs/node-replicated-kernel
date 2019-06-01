@@ -252,7 +252,7 @@ macro_rules! idt_set {
         }
 
         IDT[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64)
-            .dpl(Ring::Ring0)
+            .dpl(Ring::Ring3)
             .present()
             .finish();
     }};

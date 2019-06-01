@@ -184,10 +184,10 @@ pub unsafe extern "C" fn rumpuser_putchar(ch: i64) {
     let mut buf: [u8; 4] = [0; 4]; // A buffer of length 4 is large enough to encode any char
     if ch as i64 == '\n' as u8 as i64 {
         let utf8_char = '\r'.encode_utf8(&mut buf);
-        crate::print(utf8_char);
+        crate::syscalls::print(utf8_char);
     }
     let utf8_char = (ch as u8 as char).encode_utf8(&mut buf);
-    crate::print(utf8_char);
+    crate::syscalls::print(utf8_char);
 }
 
 /// void rumpuser_dprintf(const char *fmt, ...)

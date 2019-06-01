@@ -29,7 +29,7 @@ impl<'a> PageProvider<'a> for Pager {
     /// Allocates a page for use with slabmalloc.
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
         unsafe {
-            let r = crate::vspace(crate::VSpaceOperation::Map, self.0, 0x1000);
+            let r = crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.0, 0x1000);
             let sp: &'a mut ObjectPage = transmute(self.0);
             self.0 += 0x1000;
             Some(sp)
@@ -49,7 +49,7 @@ impl Pager {
         self.0 = round_up!(self.0 as usize, core::cmp::max(layout.align(), 4096)) as u64;
 
         unsafe {
-            let r = crate::vspace(crate::VSpaceOperation::Map, self.0, size)?;
+            let r = crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.0, size)?;
             self.0 += size;
             Ok(r)
         }
@@ -63,7 +63,7 @@ impl Pager {
         self.0 = round_up!(self.0 as usize, core::cmp::max(layout.align(), 4096)) as u64;
 
         unsafe {
-            let r = crate::vspace(crate::VSpaceOperation::Map, self.0, size);
+            let r = crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.0, size);
             let sp: *mut u8 = transmute(self.0);
             self.0 += size;
             sp

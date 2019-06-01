@@ -17,6 +17,7 @@ log = "0.4"
 lineup = { path = "../../lib/lineup" }
 rawtime = { path = "../../lib/rawtime" }
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
+x86 = { path = "../../lib/x86" }
 
 [dependencies.vibrio]
 path = "../../lib/vibrio"

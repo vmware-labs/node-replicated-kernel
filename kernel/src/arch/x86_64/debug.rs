@@ -48,7 +48,7 @@ unsafe fn receive_serial_irq(_a: &irq::ExceptionArguments) {
         Some(ref p) => {
             debug!("p = {:?}", p);
             putb(scancode);
-            p.resume();
+            panic!("p.resume();");
         }
         None => debug!("No process"),
     };

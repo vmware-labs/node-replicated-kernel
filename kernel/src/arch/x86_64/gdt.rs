@@ -28,8 +28,8 @@ impl GdtTable {
     const NULL_INDEX: usize = 0;
     const CS_KERNEL_INDEX: usize = 1;
     const SS_KERNEL_INDEX: usize = 2;
-    const SS_USER_INDEX: usize = 3;
-    const CS_USER_INDEX: usize = 4;
+    const CS_USER_INDEX: usize = 3;
+    const SS_USER_INDEX: usize = 4;
     const TSS_INDEX: usize = 5;
 }
 

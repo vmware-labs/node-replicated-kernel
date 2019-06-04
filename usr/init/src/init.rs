@@ -286,11 +286,8 @@ pub fn test_rump_net() {
 
 pub fn install_vcpu_area() {
     use x86::bits64::paging::VAddr;
-    vibrio::syscalls::vcpu_control_area(
-        VAddr::from(0xdeadbeef0000u64),
-        VAddr::from(0xdeadbeef1000u64),
-    )
-    .expect("Can't install vcpu control area");
+    vibrio::syscalls::vcpu_control_area(VAddr::from(0x32eef0000u64), VAddr::from(0x32eef1000u64))
+        .expect("Can't install vcpu control area");
 }
 
 pub fn upcall_test() {

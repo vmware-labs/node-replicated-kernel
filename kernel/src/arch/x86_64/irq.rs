@@ -2,6 +2,7 @@ use core::fmt;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use x86::bits64::paging::VAddr;
 use x86::bits64::rflags;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
@@ -19,109 +20,9 @@ use crate::panic::{backtrace, backtrace_from};
 use crate::ExitReason;
 use spin::Mutex;
 
+use kpi::arch::SaveArea;
+
 use log::debug;
-
-#[repr(C, packed)]
-pub struct SaveArea {
-    pub rax: u64,          // 0 ret val, not preserved
-    pub rbx: u64,          // 1 preserved
-    pub rcx: u64,          // 2 4th arg, not preserved
-    pub rdx: u64,          // 3 3rd arg, not preserved
-    pub rsi: u64,          // 4 2nd arg, not preserved
-    pub rdi: u64,          // 5, 1st arg, not preserved
-    pub rbp: u64,          // 6 base pointer, preserved
-    pub rsp: u64,          // 7 stack pointer, preserved
-    pub r8: u64,           // 8 5th arg, not preserved
-    pub r9: u64,           // 9 6th arg, not preserved
-    pub r10: u64,          // 10 not preserved
-    pub r11: u64,          // 11 not preserved
-    pub r12: u64,          // 12 preserved
-    pub r13: u64,          // 13 preserved
-    pub r14: u64,          // 14 preserved
-    pub r15: u64,          // 15 preserved
-    pub rip: u64,          // 16 instruction pointer
-    pub rflags: u64,       // 17
-    pub fxsave: [u8; 512], // 18
-}
-
-impl Default for SaveArea {
-    fn default() -> SaveArea {
-        SaveArea::empty()
-    }
-}
-
-impl SaveArea {
-    const fn empty() -> SaveArea {
-        SaveArea {
-            rax: 0,
-            rbx: 0,
-            rcx: 0,
-            rdx: 0,
-            rsi: 0,
-            rdi: 0,
-            rbp: 0,
-            rsp: 0,
-            r8: 0,
-            r9: 0,
-            r10: 0,
-            r11: 0,
-            r12: 0,
-            r13: 0,
-            r14: 0,
-            r15: 0,
-            rip: 0,
-            rflags: 0,
-            fxsave: [0; 512],
-        }
-    }
-
-    /// Sets the 1st return argument for system calls
-    ///
-    /// 1st argument is passed back in the rdi register.
-    pub fn set_syscall_ret1(&mut self, val: u64) {
-        self.rdi = val;
-    }
-
-    /// Sets the 2nd return argument for system calls
-    ///
-    /// 1st argument is passed back in the rsi register.
-    pub fn set_syscall_ret2(&mut self, val: u64) {
-        self.rsi = val;
-    }
-}
-
-impl fmt::Debug for SaveArea {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            write!(
-                f,
-                "\r\nrax = {:>#18x} rbx = {:>#18x} rcx = {:>#18x} rdx = {:>#18x}
-rsi = {:>#18x} rdi = {:>#18x} rbp = {:>#18x} rsp = {:>#18x}
-r8  = {:>#18x} r9  = {:>#18x} r10 = {:>#18x} r11 = {:>#18x}
-r12 = {:>#18x} r13 = {:>#18x} r14 = {:>#18x} r15 = {:>#18x}
-rip = {:>#18x} rflags = {:?}",
-                self.rax,
-                self.rbx,
-                self.rcx,
-                self.rdx,
-                self.rsi,
-                self.rdi,
-                self.rbp,
-                self.rsp,
-                self.r8,
-                self.r9,
-                self.r10,
-                self.r11,
-                self.r12,
-                self.r13,
-                self.r14,
-                self.r15,
-                self.rip,
-                rflags::RFlags::from_raw(self.rflags)
-            )
-        }
-    }
-}
 
 /// The isr.S code saves the registers in here in case an interrupt happens.
 #[no_mangle]
@@ -211,6 +112,19 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::PageFault);
 }
 
+unsafe fn dbg_handler(a: &ExceptionArguments) {
+    let desc = &irq::EXCEPTIONS[a.vector as usize];
+    warn!("Got debug interrupt {}", desc.source);
+    let csa = &CURRENT_SAVE_AREA;
+
+    let mut plock = super::process::CURRENT_PROCESS.lock();
+    (*plock).as_mut().map(|ref mut p| {
+        p.resume_from(&CURRENT_SAVE_AREA);
+    });
+
+    unreachable!()
+}
+
 unsafe fn gp_handler(a: &ExceptionArguments) {
     let desc = &irq::EXCEPTIONS[a.vector as usize];
     sprint!("\n[IRQ] GENERAL PROTECTION FAULT: ");
@@ -287,9 +201,36 @@ impl fmt::Debug for ExceptionArguments {
 /// TODO: does this need to be extern?
 #[inline(never)]
 #[no_mangle]
-pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
+pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unsafe {
         assert!(a.vector < 256);
+        info!("handle_generic_exception {:?}", a);
+
+        // Make sure we preserve user stack,
+        // instruction pointer and rflags:
+        CURRENT_SAVE_AREA.rsp = a.rsp;
+        CURRENT_SAVE_AREA.rip = a.rip;
+        CURRENT_SAVE_AREA.rflags = a.rflags;
+
+        // If we have an active process we should do scheduler
+        // activations:
+        let mut plock = super::process::CURRENT_PROCESS.lock();
+        (*plock).as_mut().map(|ref mut p| {
+            p.vcpu_ctl.as_mut().map(|mut vcpu| {
+                let was_disabled = vcpu.upcalls_disabled(VAddr::from(CURRENT_SAVE_AREA.rip));
+                vcpu.disable_upcalls();
+
+                info!("was disabled = {}", was_disabled);
+                if was_disabled {
+                    // Resume to current_save_area
+                } else {
+                    // Copy CURRENT_SAVE_AREA to process enabled save area
+                    // then resume in the upcall handler
+                }
+            });
+
+            p.resume_from(&CURRENT_SAVE_AREA);
+        });
 
         // Shortcut to handle protection and page faults
         // that lock and IRQ_HANDLERS thing requires a bit
@@ -297,16 +238,18 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) {
         // and unfortunately! sometimes things break early on...
         if a.vector == 0xd {
             gp_handler(&a);
-            return;
         } else if a.vector == 0xe {
             pf_handler(&a);
-            return;
+        } else if a.vector == 0x3 {
+            dbg_handler(&a);
         }
 
-        trace!("handle_generic_exception {:?}", a);
+        info!("handle_generic_exception {:?}", a);
         let vec_handlers = IRQ_HANDLERS.lock();
         (*vec_handlers)[a.vector as usize](&a);
     }
+
+    unreachable!("Should not come here")
 }
 
 pub unsafe fn acknowledge() {

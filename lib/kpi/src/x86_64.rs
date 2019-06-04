@@ -30,15 +30,12 @@ pub struct VirtualCpu {
 pub struct VirtualCpuState {
     /// Register state of our CPU if interrupted while in a non-critical section.
     enabled: SaveArea,
-    /// Register state of our CPU if interrupted while in a critical section (`is_disabled` == true
-    /// or while modifying register state).
-    disabled: SaveArea,
 }
 
 impl VirtualCpu {
-    /// Is the vCPU currently executing in a critical section?
-    pub fn upcalls_disabled() -> bool {
-        false
+    /// Is the vCPU currently disabled or executing in a critical section?
+    pub fn upcalls_disabled(&self, rip: VAddr) -> bool {
+        self.is_disabled || self.pc_disabled.0 <= rip && rip <= self.pc_disabled.1
     }
 
     pub fn enable_upcalls(&mut self) {
@@ -66,7 +63,8 @@ impl VirtualCpu {
 /// Grep for SaveArea to find all occurences.
 #[repr(C, packed)]
 pub struct SaveArea {
-    /// 0: ret val, not preserved
+    /// 0: ret val, not preserved, holds 1st ret arg (error code)
+    /// for syscalls
     pub rax: u64,
     /// 1: preserved
     pub rbx: u64,
@@ -75,10 +73,12 @@ pub struct SaveArea {
     /// 3: 3rd arg, not preserved, holds return %rip during a syscall
     pub rdx: u64,
     /// 4: 2nd arg, not preserved
+    /// 3nd return argument on sysretq
     pub rsi: u64,
     /// 5: 1st arg, not preserved
+    /// 2nd return argument on sysretq
     pub rdi: u64,
-    /// 6: base pointer, preserved
+    /// 6: base pointer, preserved, holds 2nd ret arg for syscall
     pub rbp: u64,
     /// 7: stack pointer, preserved
     pub rsp: u64,
@@ -119,7 +119,7 @@ impl Default for SaveArea {
 }
 
 impl SaveArea {
-    const fn empty() -> SaveArea {
+    pub const fn empty() -> SaveArea {
         SaveArea {
             rax: 0,
             rbx: 0,
@@ -146,6 +146,13 @@ impl SaveArea {
         }
     }
 
+    /// Sets the error return code on a system call.
+    ///
+    /// 0th argument is passed back in the rax register.
+    pub fn set_syscall_error_code(&mut self, err: crate::SystemCallError) {
+        self.rax = err as u64;
+    }
+
     /// Sets the 1st return argument for system calls
     ///
     /// 1st argument is passed back in the rdi register.
@@ -155,7 +162,7 @@ impl SaveArea {
 
     /// Sets the 2nd return argument for system calls
     ///
-    /// 1st argument is passed back in the rsi register.
+    /// 2nd argument is passed back in the rsi register.
     pub fn set_syscall_ret2(&mut self, val: u64) {
         self.rsi = val;
     }

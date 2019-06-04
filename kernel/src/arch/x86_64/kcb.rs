@@ -90,20 +90,3 @@ pub(crate) fn init_kcb(kcb: &mut Kcb) {
     let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(kcb);
     unsafe { set_kcb(kptr) };
 }
-/*
-
-// Execute closure `f` on the LKCB.
-pub fn on_kcb<F, R>(f: F) -> R
-where
-    F: FnOnce(RefMut<Kcb>) -> R,
-{
-    irq::disable();
-    let kcb_ptr: ptr::NonNull<Kcb> = unsafe { get_kcb() };
-    let kcb_rc: &RefCell<Kcb> = unsafe { kcb_ptr.as_ref() };
-
-    let r = { f(kcb_rc.borrow_mut()) };
-
-    irq::enable();
-    r
-}
-*/

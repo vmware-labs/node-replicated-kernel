@@ -1,7 +1,6 @@
 .text
 .align 4096
 
-
 // This is the entry point for syscall instruction.
 // The architecture knows about it because we loaded
 // the address of this symbol into IA32_LSTAR.

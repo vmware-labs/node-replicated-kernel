@@ -1,6 +1,6 @@
 use core::fmt;
 use core::mem::transmute;
-use core::ops::Deref;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 
 use alloc::vec::Vec;
@@ -52,6 +52,15 @@ impl<T> Deref for UserValue<T> {
     }
 }
 
+impl<T> DerefMut for UserValue<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe {
+            rflags::stac();
+            &mut self.value
+        }
+    }
+}
+
 impl<T> Drop for UserValue<T> {
     fn drop(&mut self) {
         unsafe { rflags::clac() };
@@ -62,7 +71,7 @@ impl<T> Drop for UserValue<T> {
 #[repr(C, packed)]
 pub struct Process {
     /// CPU context save area (must be first, see exec.S).
-    pub save_area: irq::SaveArea,
+    pub save_area: kpi::arch::SaveArea,
     /// ELF File mappings that were installed into the address space.
     pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
     /// Process ID.
@@ -84,12 +93,12 @@ pub struct Process {
     /// Initial allocated stack size.
     pub stack_size: usize,
     /// Virtual CPU control used by user-space upcall mechanism.
-    pub vcpu_ctl: Option<UserValue<*mut kpi::arch::VirtualCpu>>,
+    pub vcpu_ctl: Option<UserValue<&'static mut kpi::arch::VirtualCpu>>,
     /// Virtual CPU state to resume later in user-space
     /// (in case the user-scheduler is *not* in disabled mode).
     /// If this is None (not set-up) we assume the user-scheduler
     /// is disabled and just return back as well.
-    pub vcpu_state: Option<UserValue<*const kpi::arch::VirtualCpuState>>,
+    pub vcpu_state: Option<UserValue<&'static mut kpi::arch::VirtualCpuState>>,
 }
 
 impl Process {
@@ -175,7 +184,7 @@ impl Process {
         info!("p {:?}", *p);
 
         let p = super::process::CURRENT_PROCESS.lock();
-        info!("p {:?}\n\n\n{:p}", *p, &*p);
+        info!("p {:?}\n\n{:p}", *p, &*p);
 
         // Switch to user-space with initial zeroed registers.
         //
@@ -187,18 +196,25 @@ impl Process {
         // %r11 RFlags
         info!("Jumping to {:#x}", entry_point);
         asm!("
-                movq       $0, %rsi
+                movq       $0, %rax
+                movq       $0, %rbx
+                // rcx has entry point
                 movq       $0, %rdx
+                movq       $0, %rsi
+                movq       $0, %rdi
+                // rsp and rbp set to base stack
                 movq       $0, %r8
                 movq       $0, %r9
                 movq       $0, %r10
+                // r11 register is used for RFlags
                 movq       $0, %r12
                 movq       $0, %r13
                 movq       $0, %r14
                 movq       $0, %r15
-                movq       $0, %rax
-                movq       $0, %rbx
+
+                // Reset vector registers
                 fninit
+                // TODO: swap in fs and gs
                 sysretq
             " ::
             "{rcx}" (entry_point.as_u64())
@@ -213,59 +229,61 @@ impl Process {
     pub unsafe fn resume_disabled(&self) {}
 
     /// Resume the process (after it got interrupted or from a system call).
-    unsafe fn resume_from(&self, save_area: &kpi::arch::SaveArea) -> ! {
+    pub(crate) unsafe fn resume_from(&self, save_area: &kpi::arch::SaveArea) -> ! {
         let user_rflags = rflags::RFlags::from_priv(x86::Ring::Ring3)
             | rflags::RFlags::FLAGS_A1
             | rflags::RFlags::FLAGS_IF;
-        info!("resuming User-space {:?}", user_rflags.bits());
+        info!(
+            "resuming User-space {:?} at {:#x} {:?}",
+            user_rflags.bits(),
+            save_area.rip,
+            rflags::RFlags::from_bits(save_area.rflags)
+        );
 
         // Resumes a process
         // This routine assumes the following set-up
         // %rdi points to SaveArea
-        // %r8 points to ss
-        // %r9 points to cs
-        // %r10 points to rflags
+        // r11 has rflags
         asm!("
-                pushq      %r8                 // ss
-                pushq      7*8(%rdi)           // rsp
-                pushq      %r10                // rflags
-                pushq      %r9                 // cs
-                pushq      16*8(%rdi)          // rip
-
-                // Restore fs and gs registers
-                movq 18*8(%rdi), %rsi
-                wrgsbase %rsi
-                movq 19*8(%rdi), %rsi
-                wrfsbase %rsi
-
-                // Restore vector registers
-                fxrstor 20*8(%rdi)
-
                 // Restore CPU registers
                 movq  0*8(%rdi), %rax
                 movq  1*8(%rdi), %rbx
-                movq  2*8(%rdi), %rcx
+                // %rcx: Don't restore it will contain user-space rip
                 movq  3*8(%rdi), %rdx
                 movq  4*8(%rdi), %rsi
-                // restore %rdi last to preserve `save_area`
+                // %rdi: Restore last (see below) to preserve `save_area`
                 movq  6*8(%rdi), %rbp
-                // %rsp is restored during iretq
+                movq  7*8(%rdi), %rsp
                 movq  8*8(%rdi), %r8
                 movq  9*8(%rdi), %r9
-                movq 10*8(%r10), %r10
-                movq 11*8(%rdi), %r11
+                movq 10*8(%rdi), %r10
+                // %r11: Don't restore it will contain RFlags
                 movq 12*8(%rdi), %r12
                 movq 13*8(%rdi), %r13
                 movq 14*8(%rdi), %r14
                 movq 15*8(%rdi), %r15
 
+                // Restore fs and gs registers
+                //movq 18*8(%rdi), %rsi
+                //wrgsbase %rsi
+                //movq 19*8(%rdi), %rsi
+                //wrfsbase %rsi
+
+                // Restore vector registers
+                //fxrstor 23*8(%rdi)
+
+                // sysretq expects user-space %rip in %rcx
+                movq 16*8(%rdi),%rcx
+                // sysretq expects rflags in %r11
+                movq 17*8(%rdi),%r11
+
+                // At last, restore rdi before we return
                 movq  5*8(%rdi), %rdi
 
-                iretq // CVE-2012-0217: Is this still a problem?
-            " :: "{rdi}" (save_area)
-                 "{r8}"  (gdt::get_user_stack_selector().bits() as u64)
-                 "{r9}"  (gdt::get_user_code_selector().bits() as u64)
-                 "{r10}" (user_rflags.bits() as u64));
+                // Let's do sysretq instead of (slow, measure?) iretq
+                // (TODO: we need to be more careful about CVE-2012-0217)
+                sysretq
+            " :: "{rdi}" (save_area));
 
         unreachable!("We should not come here!");
     }

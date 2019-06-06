@@ -117,7 +117,7 @@ pub fn setup_gdt() {
     debug!("TSS enabled");
 }
 
-static mut SYSCALL_STACK: [u64; 512] = [0; 512];
+static mut SYSCALL_STACK: [u8; 32 * 4096] = [0; 32 * 4096];
 
 fn setup_tss() {
     unsafe {
@@ -133,7 +133,7 @@ fn setup_tss() {
         .present()
         .dpl(Ring::Ring0)
         .finish();
-        TSS.rsp[0] = transmute::<&[u64; 512], u64>(&SYSCALL_STACK) + 4096;
+        TSS.rsp[0] = transmute::<&[u8; 32 * 4096], u64>(&SYSCALL_STACK) + 32 * 4096;
         debug!("tss.rsp[0] = 0x{:x}", TSS.rsp[0]);
 
         load_tr(

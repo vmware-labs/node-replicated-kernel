@@ -13,23 +13,18 @@ use x86::bits64::rflags::RFlags;
 /// This struct is referenced by several assembly code pieces through the kernel
 /// and in [vibrio]. Care must be taken to adjust them after any changes to
 /// this struct.
+#[derive(Debug)]
 pub struct VirtualCpu {
+    /// CPU state if interrupted while not disabled
+    pub enabled_state: SaveArea,
     /// PC critical region
     pc_disabled: (VAddr, VAddr),
     /// Function pointer to the entry point for upcalls.
-    resume_with_upcall: VAddr,
-    /// CPU state
-    state: &'static VirtualCpuState,
+    pub resume_with_upcall: VAddr,
     /// Are we in a critical section?
     is_disabled: bool,
     /// An upcall needs to be executed.
     has_pending_upcall: bool,
-}
-
-#[repr(C, packed)]
-pub struct VirtualCpuState {
-    /// Register state of our CPU if interrupted while in a non-critical section.
-    enabled: SaveArea,
 }
 
 impl VirtualCpu {
@@ -47,10 +42,7 @@ impl VirtualCpu {
     }
 
     /// Copy `regs` into the disabled state.
-    pub fn set_disabled_state(regs: &SaveArea) {}
-
-    /// Copy `regs` into the enabled state.
-    pub fn set_enabled_state(regs: &SaveArea) {}
+    pub fn set_state(regs: &SaveArea) {}
 }
 
 /// Memory area that is used by a CPU/scheduler to capture and save

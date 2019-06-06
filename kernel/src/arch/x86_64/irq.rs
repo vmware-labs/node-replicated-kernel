@@ -216,20 +216,30 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // activations:
         let mut plock = super::process::CURRENT_PROCESS.lock();
         (*plock).as_mut().map(|ref mut p| {
-            p.vcpu_ctl.as_mut().map(|mut vcpu| {
+            let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |mut vcpu| {
                 let was_disabled = vcpu.upcalls_disabled(VAddr::from(CURRENT_SAVE_AREA.rip));
                 vcpu.disable_upcalls();
-
-                info!("was disabled = {}", was_disabled);
-                if was_disabled {
-                    // Resume to current_save_area
-                } else {
-                    // Copy CURRENT_SAVE_AREA to process enabled save area
-                    // then resume in the upcall handler
-                }
+                was_disabled
             });
 
-            p.resume_from(&CURRENT_SAVE_AREA);
+            info!("was disabled = {}", was_disabled);
+            if was_disabled {
+                // Resume to current_save_area
+                p.resume_from(&CURRENT_SAVE_AREA);
+                unreachable!("was disabled and had exception")
+            } else {
+                // Copy CURRENT_SAVE_AREA to process enabled save area
+                // then resume in the upcall handler
+                let was_disabled = p.vcpu_ctl.as_mut().map(|mut vcpu| {
+                    core::intrinsics::copy_nonoverlapping::<SaveArea>(
+                        &CURRENT_SAVE_AREA,
+                        &mut vcpu.enabled_state,
+                        1,
+                    );
+                });
+
+                p.upcall(a.vector, a.exception);
+            }
         });
 
         // Shortcut to handle protection and page faults

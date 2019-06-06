@@ -18,7 +18,7 @@
 //! from Linux which tries to squeeze in one more syscall
 //! argument by adding `%rax` to the mix.
 
-pub use kpi::arch::{VirtualCpu, VirtualCpuState};
+pub use kpi::arch::{SaveArea, VirtualCpu};
 pub use kpi::*;
 
 use log::info;
@@ -205,7 +205,7 @@ pub fn print(buffer: &str) -> Result<(), SystemCallError> {
 pub fn vcpu_control_area(
     vcpu_ctl: VAddr,
     vcpu_state: VAddr,
-) -> Result<(&'static mut VirtualCpu, &'static VirtualCpuState), SystemCallError> {
+) -> Result<(&'static mut VirtualCpu, &'static SaveArea), SystemCallError> {
     assert!(vcpu_ctl.is_base_page_aligned());
     assert!(vcpu_state.is_base_page_aligned());
 
@@ -226,7 +226,7 @@ pub fn vcpu_control_area(
 
         let vaddr = VAddr::from(state);
         assert_eq!(vaddr, vcpu_state);
-        let vcpu_state: *const VirtualCpuState = vaddr.as_ptr::<VirtualCpuState>();
+        let vcpu_state: *const SaveArea = vaddr.as_ptr::<SaveArea>();
 
         unsafe { Ok((&mut *vcpu_ctl, &*vcpu_state)) }
     } else {

@@ -7,12 +7,12 @@ use x86::segmentation::SegmentSelector;
 use x86::tlb;
 use x86::Ring;
 
-use kpi::arch::{VirtualCpu, VirtualCpuState};
+use kpi::arch::{SaveArea, VirtualCpu};
 use kpi::*;
 
 use crate::error::KError;
 
-use super::process::{Process, UserValue, CURRENT_PROCESS};
+use super::process::{Process, UserPtr, UserValue, CURRENT_PROCESS};
 use super::vspace;
 use crate::prelude::NoDrop;
 
@@ -73,12 +73,8 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
                         0x1000,
                     )?;
 
-                    (*p).vcpu_ctl = Some(UserValue::new(
-                        &mut *cpu_ctl_addr.as_mut_ptr::<VirtualCpu>(),
-                    ));
-                    (*p).vcpu_state = Some(UserValue::new(
-                        &mut *cpu_state_addr.as_mut_ptr::<VirtualCpuState>(),
-                    ));
+                    (*p).vcpu_ctl = Some(UserPtr::new(cpu_ctl_addr.as_mut_ptr::<VirtualCpu>()));
+                    (*p).vcpu_state = Some(UserPtr::new(cpu_state_addr.as_mut_ptr::<SaveArea>()));
 
                     (*p).save_area.set_syscall_ret1(cpu_ctl_addr.as_u64());
                     (*p).save_area.set_syscall_ret2(cpu_state_addr.as_u64());
@@ -188,6 +184,8 @@ pub extern "C" fn syscall_handle(
         SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
         _ => Err(KError::InvalidSyscallArgument1 { a: function }),
     };
+
+    //info!("syscall handle {:?}", status);
 
     let retcode = match status {
         Ok(()) => SystemCallError::Ok,

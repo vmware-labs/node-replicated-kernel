@@ -32,6 +32,45 @@ use crate::error::KError;
 #[no_mangle]
 pub static mut CURRENT_PROCESS: Mutex<Option<&mut Process>> = mutex!(None);
 
+pub struct UserPtr<T> {
+    value: *mut T,
+}
+
+impl<T> UserPtr<T> {
+    pub fn new(pointer: *mut T) -> UserPtr<T> {
+        UserPtr { value: pointer }
+    }
+
+    pub fn vaddr(&self) -> VAddr {
+        VAddr::from(self.value as u64)
+    }
+}
+
+impl<T> Deref for UserPtr<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            rflags::stac();
+            &*self.value
+        }
+    }
+}
+
+impl<T> DerefMut for UserPtr<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe {
+            rflags::stac();
+            &mut *self.value
+        }
+    }
+}
+
+impl<T> Drop for UserPtr<T> {
+    fn drop(&mut self) {
+        unsafe { rflags::clac() };
+    }
+}
+
 pub struct UserValue<T> {
     value: T,
 }
@@ -39,6 +78,10 @@ pub struct UserValue<T> {
 impl<T> UserValue<T> {
     pub fn new(pointer: T) -> UserValue<T> {
         UserValue { value: pointer }
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        unsafe { core::mem::transmute(&self.value) }
     }
 }
 
@@ -92,13 +135,21 @@ pub struct Process {
     pub stack_top: VAddr,
     /// Initial allocated stack size.
     pub stack_size: usize,
+
+    /// Upcall allocated stack (base address).
+    pub upcall_stack_base: VAddr,
+    /// Upcall allocated stack (top address).
+    pub upcall_stack_top: VAddr,
+    /// Upcall allocated stack size.
+    pub upcall_stack_size: usize,
+
     /// Virtual CPU control used by user-space upcall mechanism.
-    pub vcpu_ctl: Option<UserValue<&'static mut kpi::arch::VirtualCpu>>,
+    pub vcpu_ctl: Option<UserPtr<kpi::arch::VirtualCpu>>,
     /// Virtual CPU state to resume later in user-space
     /// (in case the user-scheduler is *not* in disabled mode).
     /// If this is None (not set-up) we assume the user-scheduler
     /// is disabled and just return back as well.
-    pub vcpu_state: Option<UserValue<&'static mut kpi::arch::VirtualCpuState>>,
+    pub vcpu_state: Option<UserPtr<kpi::arch::SaveArea>>,
 }
 
 impl Process {
@@ -122,6 +173,14 @@ impl Process {
             BASE_PAGE_SIZE as u64,
         );
 
+        // Allocate a upcall stack
+        p.vspace.map(
+            p.upcall_stack_base,
+            p.upcall_stack_size,
+            MapAction::ReadWriteExecuteUser,
+            BASE_PAGE_SIZE as u64,
+        );
+
         // Install the kernel mappings
         super::kcb::try_get_kcb().map(|kcb| {
             let kernel_pml_entry = kcb.init_vspace().pml4[128];
@@ -138,6 +197,10 @@ impl Process {
         let stack_size = 128 * BASE_PAGE_SIZE;
         let stack_top = stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
 
+        let upcall_stack_base = VAddr::from(0xade000_0000usize);
+        let upcall_stack_size = 128 * BASE_PAGE_SIZE;
+        let upcall_stack_top = upcall_stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
+
         unsafe {
             Process {
                 offset: VAddr::from(0usize),
@@ -149,6 +212,9 @@ impl Process {
                 stack_base: stack_base,
                 stack_top: stack_top,
                 stack_size: stack_size,
+                upcall_stack_base: upcall_stack_base,
+                upcall_stack_size: upcall_stack_size,
+                upcall_stack_top: upcall_stack_top,
                 vcpu_ctl: None,
                 vcpu_state: None,
             }
@@ -157,11 +223,37 @@ impl Process {
 
     /// Start the process (run it for the first time).
     pub unsafe fn start(&mut self) -> ! {
-        self.execute_at(self.offset + self.entry_point);
+        self.execute_at(self.offset + self.entry_point, self.stack_top, 0, 0, 0);
     }
 
-    unsafe fn execute_at(&mut self, entry_point: VAddr) -> ! {
-        info!("About to go to user-space");
+    pub unsafe fn upcall(&mut self, vector: u64, exception: u64) -> ! {
+        let (entry_point, cpu_ctl) = self
+            .vcpu_ctl
+            .as_mut()
+            .map_or((VAddr::zero(), 0), |mut ctl| {
+                (ctl.resume_with_upcall, ctl.vaddr().into())
+            });
+
+        info!("cpu_ctl is : {:#x}", cpu_ctl);
+
+        self.execute_at(
+            entry_point,
+            self.upcall_stack_top,
+            cpu_ctl,
+            vector,
+            exception,
+        );
+    }
+
+    unsafe fn execute_at(
+        &mut self,
+        entry_point: VAddr,
+        stack_top: VAddr,
+        arg1: u64,
+        arg2: u64,
+        arg3: u64,
+    ) -> ! {
+        info!("About to go to user-space: {:#x}", entry_point);
 
         // TODO: For now we allow unconditional IO access from user-space
         let user_flags = rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1;
@@ -177,14 +269,14 @@ impl Process {
             info!("Switched to 0x{:x}", process_pml4);
         }
 
-        let mut p = CURRENT_PROCESS.lock();
-        *p = Some(core::mem::transmute::<&mut Process, &'static mut Process>(
-            self,
-        ));
-        info!("p {:?}", *p);
+        info!("p {:?}", self);
 
-        let p = super::process::CURRENT_PROCESS.lock();
-        info!("p {:?}\n\n{:p}", *p, &*p);
+        {
+            // TODO CURRENT_PROCESS should probably have box and be in the KCB:
+            let mut p = super::process::CURRENT_PROCESS.lock();
+            *p = Some(transmute::<&mut Process, &'static mut Process>(self));
+            //info!("\np {:?}\n", *p);
+        }
 
         // Switch to user-space with initial zeroed registers.
         //
@@ -199,10 +291,10 @@ impl Process {
                 movq       $0, %rax
                 movq       $0, %rbx
                 // rcx has entry point
-                movq       $0, %rdx
-                movq       $0, %rsi
-                movq       $0, %rdi
-                // rsp and rbp set to base stack
+                // rdi: 1st argument
+                // rsi: 2nd argument
+                // rdx: 3rd argument
+                // rsp and rbp are set to provided `stack_top`
                 movq       $0, %r8
                 movq       $0, %r9
                 movq       $0, %r10
@@ -218,9 +310,12 @@ impl Process {
                 sysretq
             " ::
             "{rcx}" (entry_point.as_u64())
+            "{rdi}" (arg1)
+            "{rsi}" (arg2)
+            "{rdx}" (arg3)
             "{r11}" (user_flags.bits())
-            "{rsp}" (self.stack_top.as_u64())
-            "{rbp}" (self.stack_top.as_u64())
+            "{rsp}" (stack_top.as_u64())
+            "{rbp}" (stack_top.as_u64())
         );
 
         unreachable!("We should not come here!");

@@ -21,7 +21,7 @@ pub struct Module {
 impl Module {
     /// Create a new module to pass to the kernel.
     /// The name will be truncated to 32 bytes.
-    pub(crate) fn new(name: &str, binary: (x86::bits64::paging::VAddr, usize)) -> Module {
+    pub fn new(name: &str, binary: (x86::bits64::paging::VAddr, usize)) -> Module {
         let mut name_slice: [u8; 32] = [0; 32];
         let len = core::cmp::min(name.len(), 32);
         name_slice[0..len].copy_from_slice(&name.as_bytes()[0..len]);
@@ -34,17 +34,19 @@ impl Module {
     }
 
     /// Return the name of the module (or at least the first 32 bytes).
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         core::str::from_utf8(&self.name[0..self.name_len]).unwrap_or("unknown")
     }
 
     /// Base physical address of the binary blob.
-    pub(crate) fn base(&self) -> x86::bits64::paging::VAddr {
+    #[allow(unused)]
+    pub fn base(&self) -> x86::bits64::paging::VAddr {
         self.binary.0
     }
 
     /// Size of the binary blob.
-    pub(crate) fn size(&self) -> usize {
+    #[allow(unused)]
+    pub fn size(&self) -> usize {
         self.binary.1
     }
 
@@ -53,7 +55,8 @@ impl Module {
     /// # Unsafe
     /// May not be mapped at all (for example in UEFI bootloader space).
     /// May be unmapped/changed arbitrarily later by the kernel.
-    pub(crate) unsafe fn as_slice(&self) -> &'static [u8] {
+    #[allow(unused)]
+    pub unsafe fn as_slice(&self) -> &'static [u8] {
         core::slice::from_raw_parts(self.base().as_ptr::<u8>(), self.size())
     }
 }

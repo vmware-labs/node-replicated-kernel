@@ -66,19 +66,9 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
                         0x1000,
                     )?;
 
-                    (*p).vspace.map(
-                        cpu_state_addr,
-                        BASE_PAGE_SIZE,
-                        vspace::MapAction::ReadWriteUser,
-                        0x1000,
-                    )?;
-
                     (*p).vcpu_ctl = Some(UserPtr::new(cpu_ctl_addr.as_mut_ptr::<VirtualCpu>()));
-                    (*p).vcpu_state = Some(UserPtr::new(cpu_state_addr.as_mut_ptr::<SaveArea>()));
 
                     (*p).save_area.set_syscall_ret1(cpu_ctl_addr.as_u64());
-                    (*p).save_area.set_syscall_ret2(cpu_state_addr.as_u64());
-
                     x86::tlb::flush_all();
 
                     warn!(

@@ -143,13 +143,8 @@ pub struct Process {
     /// Upcall allocated stack size.
     pub upcall_stack_size: usize,
 
-    /// Virtual CPU control used by user-space upcall mechanism.
+    /// Virtual CPU control used by the user-space upcall mechanism.
     pub vcpu_ctl: Option<UserPtr<kpi::arch::VirtualCpu>>,
-    /// Virtual CPU state to resume later in user-space
-    /// (in case the user-scheduler is *not* in disabled mode).
-    /// If this is None (not set-up) we assume the user-scheduler
-    /// is disabled and just return back as well.
-    pub vcpu_state: Option<UserPtr<kpi::arch::SaveArea>>,
 }
 
 impl Process {
@@ -197,7 +192,7 @@ impl Process {
         let stack_size = 128 * BASE_PAGE_SIZE;
         let stack_top = stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
 
-        let upcall_stack_base = VAddr::from(0xade000_0000usize);
+        let upcall_stack_base = VAddr::from(0xad2000_0000usize);
         let upcall_stack_size = 128 * BASE_PAGE_SIZE;
         let upcall_stack_top = upcall_stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
 
@@ -216,7 +211,6 @@ impl Process {
                 upcall_stack_size: upcall_stack_size,
                 upcall_stack_top: upcall_stack_top,
                 vcpu_ctl: None,
-                vcpu_state: None,
             }
         }
     }

@@ -45,6 +45,10 @@ macro_rules! syscall {
         crate::syscalls::syscall_3_1($arg0 as u64, $arg1 as u64, $arg2 as u64)
     };
 
+    ($arg0:expr, $arg1:expr, $arg2:expr, 2) => {
+        crate::syscalls::syscall_3_2($arg0 as u64, $arg1 as u64, $arg2 as u64)
+    };
+
     ($arg0:expr, $arg1:expr, $arg2:expr, $arg3:expr, 1) => {
         crate::syscalls::syscall_4_1($arg0 as u64, $arg1 as u64, $arg2 as u64, $arg3 as u64)
     };
@@ -118,6 +122,16 @@ unsafe fn syscall_3_1(arg1: u64, arg2: u64, arg3: u64) -> u64 {
     asm!("syscall" : "={rax}" (ret) : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
                    : "rcx", "r11", "memory" : "volatile");
     ret
+}
+
+#[inline(always)]
+unsafe fn syscall_3_2(arg1: u64, arg2: u64, arg3: u64) -> (u64, u64) {
+    let ret1: u64;
+    let ret2: u64;
+    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2)
+                   : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
+                   : "rcx", "r11", "memory" : "volatile");
+    (ret1, ret2)
 }
 
 #[inline(always)]
@@ -202,20 +216,15 @@ pub fn print(buffer: &str) -> Result<(), SystemCallError> {
 ///
 /// This is allocated and controlled by the kernel, it doesn't move and
 /// should live as long as the current CPU is allocated to the process.
-pub fn vcpu_control_area(
-    vcpu_ctl: VAddr,
-    vcpu_state: VAddr,
-) -> Result<(&'static mut VirtualCpu, &'static SaveArea), SystemCallError> {
+pub fn vcpu_control_area(vcpu_ctl: VAddr) -> Result<&'static mut VirtualCpu, SystemCallError> {
     assert!(vcpu_ctl.is_base_page_aligned());
-    assert!(vcpu_state.is_base_page_aligned());
 
-    let (r, control, state) = unsafe {
+    let (r, control) = unsafe {
         syscall!(
             SystemCall::Process as u64,
             ProcessOperation::InstallVCpuArea as u64,
             vcpu_ctl.as_u64(),
-            vcpu_state.as_u64(),
-            3
+            2
         )
     };
 
@@ -224,11 +233,7 @@ pub fn vcpu_control_area(
         assert_eq!(vaddr, vcpu_ctl);
         let vcpu_ctl: *mut VirtualCpu = vaddr.as_mut_ptr::<VirtualCpu>();
 
-        let vaddr = VAddr::from(state);
-        assert_eq!(vaddr, vcpu_state);
-        let vcpu_state: *const SaveArea = vaddr.as_ptr::<SaveArea>();
-
-        unsafe { Ok((&mut *vcpu_ctl, &*vcpu_state)) }
+        unsafe { Ok(&mut *vcpu_ctl) }
     } else {
         Err(SystemCallError::from(r))
     }

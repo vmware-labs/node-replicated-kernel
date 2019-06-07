@@ -300,7 +300,10 @@ impl Process {
 
                 // Reset vector registers
                 fninit
-                // TODO: swap in fs and gs
+
+                swapgs
+                // TODO: restore fs register
+
                 sysretq
             " ::
             "{rcx}" (entry_point.as_u64())
@@ -353,10 +356,9 @@ impl Process {
                 movq 15*8(%rdi), %r15
 
                 // Restore fs and gs registers
-                //movq 18*8(%rdi), %rsi
-                //wrgsbase %rsi
-                //movq 19*8(%rdi), %rsi
-                //wrfsbase %rsi
+                swapgs
+                movq 19*8(%rdi), %rsi
+                wrfsbase %rsi
 
                 // Restore vector registers
                 //fxrstor 23*8(%rdi)

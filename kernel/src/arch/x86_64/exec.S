@@ -10,9 +10,12 @@
 .extern syscall_handle
 .global syscall_enter
 syscall_enter:
+    // Puts address of KCB in %gs and temporarily store user %gs in MSR IA32_KERNEL_GSBASE
+    swapgs
 
     // Get the pointer to the current process
     // TODO: use swapgs instead and load current process in gs
+    rdgsbase %rax
     movabs $CURRENT_PROCESS, %rax
     // Dereference it
     movq (%rax), %rax
@@ -37,20 +40,21 @@ syscall_enter:
     movq %r13, 13*8(%rax)
     movq %r14, 14*8(%rax)
     movq %r15, 15*8(%rax)
-    // Save IP in SaveArea.rip as well
+    // Save user IP in SaveArea.rip
     movq %rcx, 16*8(%rax)
 
     // Save vector registers (TODO: offset issue)
     fxsave 23*8(%rax)
 
-    // Save the fs and gs registers
-    rdgsbase %r15
-    movq %r15, 18*8(%rax)
+    // Saves fs register
     rdfsbase %r15
     movq %r15, 19*8(%rax)
 
-    // Prepare kernel stack (TODO: should come from kernel gs/fs)
-    movabs $syscall_stack, %rsp
+    // Find the syscall stack of the core (the stack top is the first member
+    // of the KCB and it lives at 0x0(%gs)),
+    // we use rdgsbase to get the KCB pointer and then dereference it:
+    rdgsbase %rsp
+    movq (%rsp), %rsp
     movq %rsp, %rbp
 
     // The syscall instruction saved the user-space RIP
@@ -69,9 +73,9 @@ syscall_enter:
     // Dereference it
     movq (%r10), %r10
 
-    // Restore the fs and gs registers
-    rdgsbase %rdi
-    movq %rdi, 18*8(%r10)
+    // Restore the gs
+    swapgs
+    // and fs registers:
     rdfsbase %rdi
     movq %rdi, 19*8(%r10)
 
@@ -102,12 +106,3 @@ syscall_enter:
     // * Uses %rcx as address to jump to
     // * Uses %r11 to load as RFlags
     sysretq
-
-.bss
-.align 4096
-syscall_stack_base:
-    .rept 0x1000 * 60
-        .byte 0
-    .endr
-syscall_stack:
-

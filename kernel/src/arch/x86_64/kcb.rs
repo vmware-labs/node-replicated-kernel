@@ -18,6 +18,7 @@ use crate::arch::{KernelArgs, Module};
 use crate::memory::buddy::BuddyFrameAllocator;
 use crate::memory::{PAddr, PhysicalMemoryAllocator};
 
+/// Try to retrieve the KCB by reading the gs register.
 pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
     unsafe {
         let kcb = segmentation::rdgsbase() as *mut Kcb;
@@ -30,15 +31,26 @@ pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
     }
 }
 
+/// Retrieve the KCB by reading the gs register.
+///
+/// # Panic
+/// This will fail in case the KCB is not yet set (i.e., early on during
+/// initialization).
 pub fn get_kcb<'a>() -> &'a mut Kcb {
     unsafe {
         let kcb = segmentation::rdgsbase() as *mut Kcb;
-        assert!(kcb != ptr::null_mut());
+        assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
         let kptr = ptr::NonNull::new_unchecked(kcb);
         &mut *kptr.as_ptr()
     }
 }
 
+/// Installs the KCB by setting the gs register to point to it.
+///
+/// We also set IA32_KERNEL_GSBASE to the kcb pointer to make sure
+/// when we call swapgs on a syscall entry, we restore the pointer
+/// to the KCB (since user-space may change gs register for
+/// TLS etc.).
 unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
     // Set up the GS register to point to the KCB
     segmentation::wrgsbase(kcb.as_ptr() as u64);
@@ -46,17 +58,44 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
     wrmsr(IA32_KERNEL_GSBASE, kcb.as_ptr() as u64);
 }
 
+/// Initialize the KCB in the system.
+///
+/// Should be called during set-up. Afterwards we can use `get_kcb` safely.
+pub(crate) fn init_kcb(kcb: &mut Kcb) {
+    let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(kcb);
+    unsafe { set_kcb(kptr) };
+}
+
+/// The Kernel Control Block for a given core. It contains all core-local state of the kernel.
 pub struct Kcb {
     /// Pointer to the syscall stack (this is referenced in assembly early on in exec.S)
     /// and should therefore always be at offset 0 of the Kcb struct!
     syscall_stack_top: *mut u8,
+    /// Pointer to the save area of `current_process`,
+    /// this is referenced on trap/syscall entries to save the CPU state into it.
+    /// `current_process` == None implies `current_process_save_area` == NULL
+    current_process_save_area: *mut kpi::arch::SaveArea,
+    /// A handle to the currently active (scheduled) process.
     current_process: Option<RefCell<Process>>,
+    /// Arguments passed to the kernel by the bootloader.
     kernel_args: RefCell<&'static KernelArgs<[Module; 2]>>,
+    /// A pointer to the memory location of the kernel ELF binary.
     kernel_binary: RefCell<&'static [u8]>,
+    /// The initial VSpace as constructed by the bootloader.
     init_vspace: RefCell<VSpace>,
+    /// A handle to the physical memory manager.
     pmanager: RefCell<BuddyFrameAllocator>,
+    /// A handle to the core-local interrupt driver.
     apic: RefCell<XAPIC>,
+    /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
+    ///
+    /// The CPU switches to this memory location automatically (see gdt.rs).
+    /// This member should probably not be touched from normal code.
     interrupt_stack: Option<Pin<Box<[u8; 64 * 0x1000]>>>,
+    /// A handle to the syscall stack memory location.
+    ///
+    /// We switch rsp/rbp to point in here in exec.S.
+    /// This member should probably not be touched from normal code.
     syscall_stack: Option<Pin<Box<[u8; 64 * 0x1000]>>>,
 }
 
@@ -70,6 +109,7 @@ impl Kcb {
     ) -> Kcb {
         Kcb {
             syscall_stack_top: ptr::null_mut(),
+            current_process_save_area: ptr::null_mut(),
             current_process: None,
             kernel_args: RefCell::new(kernel_args),
             kernel_binary: RefCell::new(kernel_binary),
@@ -96,7 +136,7 @@ impl Kcb {
 
         // the current process entry should be at offset 8 (for assembly)
         debug_assert_eq!(
-            (&self.current_process as *const _ as usize) - (self as *const _ as usize),
+            (&self.current_process_save_area as *const _ as usize) - (self as *const _ as usize),
             8
         );
     }
@@ -120,9 +160,4 @@ impl Kcb {
     pub fn kernel_args(&self) -> Ref<&'static KernelArgs<[Module; 2]>> {
         self.kernel_args.borrow()
     }
-}
-
-pub(crate) fn init_kcb(kcb: &mut Kcb) {
-    let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(kcb);
-    unsafe { set_kcb(kptr) };
 }

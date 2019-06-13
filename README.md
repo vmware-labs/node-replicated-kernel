@@ -16,11 +16,13 @@ you need to convert the submodule URLs to the https protocol, to do so run:
 
 ### Install dependencies
 Run `bash setup.sh` this will install rust (nightly), xargo (rust cross compilation tool),
-and QEMU on Linux or Mac.
+and QEMU on Linux ~~or Mac~~.
 
 ### Install binutils for Mac
-If you are testing on Mac OS you have to compile and install your own binutils
-to link ELF files. You can execute `bash setup_mac_binutils.sh` to download and compile binutils.
+*Note: Mac OS is currently not supported*
+
+~~If you are testing on Mac OS you have to compile and install your own binutils
+to link ELF files. You can execute `bash setup_mac_binutils.sh` to download and compile binutils.~~
 
 ### Build and run
 1. `cd kernel`

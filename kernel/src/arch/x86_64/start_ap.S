@@ -15,7 +15,7 @@
 #define KERNEL_BASE 0x400000000000
 
 .text
-.align 4096
+.balign 4096
 .code16
 .org X86_64_REAL_MODE_OFFSET
 

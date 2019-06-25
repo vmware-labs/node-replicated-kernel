@@ -2,9 +2,9 @@ extern crate cc;
 use std::env;
 
 fn main() {
+    //export CARGO_TARGET_X86_64_BESPIN_LINKER=x86_64-elf-ld
     env::set_var("CC", "gcc");
 
-    // start_ap.S file
     cc::Build::new()
         .flag("-m64")
         .flag("-fno-builtin")
@@ -18,8 +18,17 @@ fn main() {
         .file("src/arch/x86_64/exec.S")
         .pic(true)
         .warnings(true)
-        .compile("start_ap");
+        .compile("bespin_asm");
 
+    #[cfg(feature = "rumprt")]
+    rumprt_includes();
+
+    #[cfg(feature = "lkl")]
+    lkl_includes();
+}
+
+#[allow(unused)]
+fn rumprt_includes() {
     // Rumpkernel
     println!("cargo:rustc-link-lib=static=rump");
     println!("cargo:rustc-link-lib=static=rumpvfs");
@@ -57,7 +66,10 @@ fn main() {
     println!("cargo:rustc-link-lib=static=rumpdev_pci_usbhc");
     println!("cargo:rustc-link-lib=static=rumpdev_usb");
     println!("cargo:rustc-link-lib=static=rumpdev_umass");
+}
 
+#[allow(unused)]
+fn lkl_includes() {
     // Linux Kernel:
     println!("cargo:rustc-link-lib=static=linux");
 }

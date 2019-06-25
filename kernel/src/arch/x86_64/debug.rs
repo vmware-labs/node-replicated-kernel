@@ -6,8 +6,6 @@ use x86::io;
 use super::irq;
 use super::ExitReason;
 
-use super::process::CURRENT_PROCESS;
-
 static PORT0: u16 = 0x3f8; /* COM1 */
 static PORT2: u16 = 0x2F8; /* COM1 */
 
@@ -43,15 +41,7 @@ pub fn init() {
 #[allow(unused)]
 unsafe fn receive_serial_irq(_a: &irq::ExceptionArguments) {
     let scancode = io::inb(PORT0 + 0);
-    let cp = CURRENT_PROCESS.lock();
-    match *cp.deref() {
-        Some(ref p) => {
-            debug!("p = {:?}", p);
-            putb(scancode);
-            panic!("p.resume();");
-        }
-        None => debug!("No process"),
-    };
+    panic!("receive_serial_irq");
     //loop {}
 }
 

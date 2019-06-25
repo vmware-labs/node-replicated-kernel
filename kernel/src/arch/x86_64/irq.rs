@@ -16,6 +16,7 @@ use x86::segmentation::{
 use x86::Ring;
 
 use crate::arch::debug;
+use crate::arch::process::{Process, ResumeHandle};
 use crate::panic::{backtrace, backtrace_from};
 use crate::ExitReason;
 use spin::Mutex;
@@ -117,12 +118,9 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     warn!("Got debug interrupt {}", desc.source);
     let csa = &CURRENT_SAVE_AREA;
 
-    let mut plock = super::process::CURRENT_PROCESS.lock();
-    (*plock).as_mut().map(|ref mut p| {
-        p.resume_from(&CURRENT_SAVE_AREA);
-    });
-
-    unreachable!()
+    let mut kcb = crate::kcb::get_kcb();
+    let r = ResumeHandle::new_restore(kcb.get_save_area_ptr());
+    r.resume()
 }
 
 unsafe fn gp_handler(a: &ExceptionArguments) {
@@ -197,6 +195,10 @@ impl fmt::Debug for ExceptionArguments {
     }
 }
 
+fn kcb_resume_handle(kcb: &crate::kcb::Kcb) -> ResumeHandle {
+    ResumeHandle::new_restore(kcb.get_save_area_ptr())
+}
+
 /// Rust entry point for exception handling (see isr.S).
 /// TODO: does this need to be extern?
 #[inline(never)]
@@ -214,33 +216,46 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
         // If we have an active process we should do scheduler
         // activations:
-        let mut plock = super::process::CURRENT_PROCESS.lock();
-        (*plock).as_mut().map(|ref mut p| {
-            let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |mut vcpu| {
-                let was_disabled = vcpu.upcalls_disabled(VAddr::from(CURRENT_SAVE_AREA.rip));
-                vcpu.disable_upcalls();
-                was_disabled
-            });
-
-            info!("was disabled = {}", was_disabled);
-            if was_disabled {
-                // Resume to current_save_area
-                p.resume_from(&CURRENT_SAVE_AREA);
-                unreachable!("was disabled and had exception")
-            } else {
-                // Copy CURRENT_SAVE_AREA to process enabled save area
-                // then resume in the upcall handler
-                let was_disabled = p.vcpu_ctl.as_mut().map(|mut vcpu| {
-                    core::intrinsics::copy_nonoverlapping::<SaveArea>(
-                        &CURRENT_SAVE_AREA,
-                        &mut vcpu.enabled_state,
-                        1,
+        {
+            let kcb = crate::kcb::get_kcb();
+            let mut plock = kcb.current_process();
+            let p = plock.as_mut().unwrap();
+            let resumer = {
+                let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |mut vcpu| {
+                    info!(
+                        "vcpu state is: pc_disabled {:?} is_disabled {:?}",
+                        vcpu.pc_disabled, vcpu.is_disabled
                     );
+                    let was_disabled = vcpu.upcalls_disabled(VAddr::from(CURRENT_SAVE_AREA.rip));
+                    vcpu.disable_upcalls();
+                    was_disabled
                 });
 
-                p.upcall(a.vector, a.exception);
-            }
-        });
+                info!("was disabled = {}", was_disabled);
+                if was_disabled {
+                    // Resume to current_save_area
+                    // ResumeHandle::new(kcb.get_save_area_ptr())
+                    kcb_resume_handle(kcb)
+                } else {
+                    // Copy CURRENT_SAVE_AREA to process enabled save area
+                    // then resume in the upcall handler
+                    let was_disabled = p.vcpu_ctl.as_mut().map(|vcpu| {
+                        core::intrinsics::copy_nonoverlapping::<SaveArea>(
+                            &CURRENT_SAVE_AREA,
+                            &mut vcpu.enabled_state,
+                            1,
+                        );
+                    });
+
+                    p.upcall(a.vector, a.exception)
+                }
+            };
+
+            info!("resuming now...");
+            drop(p);
+            drop(plock);
+            resumer.resume()
+        } // make sure we drop the KCB object here
 
         // Shortcut to handle protection and page faults
         // that lock and IRQ_HANDLERS thing requires a bit

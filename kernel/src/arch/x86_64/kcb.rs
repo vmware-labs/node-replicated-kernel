@@ -1,6 +1,7 @@
 // KCB is the local kernel control that stores all core local state.
 
 use alloc::boxed::Box;
+use core::borrow::BorrowMut;
 use core::cell::{Ref, RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
@@ -71,27 +72,38 @@ pub struct Kcb {
     /// Pointer to the syscall stack (this is referenced in assembly early on in exec.S)
     /// and should therefore always be at offset 0 of the Kcb struct!
     syscall_stack_top: *mut u8,
-    /// Pointer to the save area of `current_process`,
+
+    /// Pointer to the save area of the core,
     /// this is referenced on trap/syscall entries to save the CPU state into it.
-    /// `current_process` == None implies `current_process_save_area` == NULL
-    current_process_save_area: *mut kpi::arch::SaveArea,
+    ///
+    /// State from the save_area may be copied into current_process` save area
+    /// to handle upcalls (in the general state it is stored/resumed from here).
+    pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
+
     /// A handle to the currently active (scheduled) process.
-    current_process: Option<RefCell<Process>>,
+    current_process: RefCell<Option<Box<Process>>>,
+
     /// Arguments passed to the kernel by the bootloader.
     kernel_args: RefCell<&'static KernelArgs<[Module; 2]>>,
+
     /// A pointer to the memory location of the kernel ELF binary.
     kernel_binary: RefCell<&'static [u8]>,
+
     /// The initial VSpace as constructed by the bootloader.
     init_vspace: RefCell<VSpace>,
+
     /// A handle to the physical memory manager.
     pmanager: RefCell<BuddyFrameAllocator>,
+
     /// A handle to the core-local interrupt driver.
     apic: RefCell<XAPIC>,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this memory location automatically (see gdt.rs).
     /// This member should probably not be touched from normal code.
     interrupt_stack: Option<Pin<Box<[u8; 64 * 0x1000]>>>,
+
     /// A handle to the syscall stack memory location.
     ///
     /// We switch rsp/rbp to point in here in exec.S.
@@ -109,8 +121,8 @@ impl Kcb {
     ) -> Kcb {
         Kcb {
             syscall_stack_top: ptr::null_mut(),
-            current_process_save_area: ptr::null_mut(),
-            current_process: None,
+            save_area: None,
+            current_process: RefCell::new(None),
             kernel_args: RefCell::new(kernel_args),
             kernel_binary: RefCell::new(kernel_binary),
             init_vspace: RefCell::new(init_vspace),
@@ -128,17 +140,44 @@ impl Kcb {
         info!("syscall_stack_top {:p}", self.syscall_stack_top);
         self.syscall_stack = Some(stack);
 
-        // self.syscall_stack_top should be at offset 0 (for assembly)
+        // TODO: need static assert and offsetof!
         debug_assert_eq!(
             (&self.syscall_stack_top as *const _ as usize) - (self as *const _ as usize),
-            0
+            0,
+            "syscall_stack_top should be at offset 0 (for assembly)"
+        );
+    }
+
+    pub fn set_save_area(&mut self, save_area: Pin<Box<kpi::arch::SaveArea>>) {
+        self.save_area = Some(save_area);
+    }
+
+    pub fn get_save_area_ptr(&self) -> *const kpi::arch::SaveArea {
+        // TODO: this probably doesn't need an unsafe, but I couldn't figure
+        // out how to get that pointer out of the Option<Pin<Box>>>
+        unsafe {
+            core::mem::transmute::<_, *const kpi::arch::SaveArea>(
+                &*(*self.save_area.as_ref().unwrap()),
+            )
+        }
+    }
+
+    /// Swaps out current process with a new process. Returns the old process.
+    pub fn swap_current_process(&self, new_current_process: Box<Process>) -> Option<Box<Process>> {
+        let p = self.current_process.replace(Some(new_current_process));
+
+        // TODO: need static assert and offsetof!
+        debug_assert_eq!(
+            (&self.save_area as *const _ as usize) - (self as *const _ as usize),
+            8,
+            "The current process entry should be at offset 8 (for assembly)"
         );
 
-        // the current process entry should be at offset 8 (for assembly)
-        debug_assert_eq!(
-            (&self.current_process_save_area as *const _ as usize) - (self as *const _ as usize),
-            8
-        );
+        p
+    }
+
+    pub fn current_process(&self) -> RefMut<Option<Box<Process>>> {
+        self.current_process.borrow_mut()
     }
 
     pub fn pmanager(&self) -> RefMut<BuddyFrameAllocator> {

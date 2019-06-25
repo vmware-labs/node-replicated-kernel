@@ -3,4 +3,3 @@
 rustflags = [
     "-C", "target-feature=+sse",
 ]
-

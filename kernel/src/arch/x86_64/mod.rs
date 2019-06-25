@@ -335,6 +335,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
     kcb.set_syscall_stack(stack);
 
+    let mut save_area = Box::pin(kpi::x86_64::SaveArea::empty());
+    kcb.set_save_area(save_area);
+
     // Make sure we don't drop the KCB and anything in it,
     // the kcb is on the stack and remains allocated on it,
     // this is (probably) fine as we never return to _start.

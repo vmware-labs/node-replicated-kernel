@@ -12,7 +12,7 @@ use kpi::*;
 
 use crate::error::KError;
 
-use super::process::{Process, UserPtr, UserValue, CURRENT_PROCESS};
+use super::process::{Process, UserPtr, UserValue};
 use super::vspace;
 use crate::prelude::NoDrop;
 
@@ -22,20 +22,20 @@ extern "C" {
 }
 
 /// System call handler for printing
-fn process_print(buf: UserValue<&str>) -> Result<(), KError> {
+fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
     let buffer: &str = *buf;
     sprint!("{}", buffer);
-    Ok(())
+    Ok((0, 0))
 }
 
 /// System call handler for process exit
-fn process_exit(code: u64) -> Result<(), KError> {
+fn process_exit(code: u64) -> Result<(u64, u64), KError> {
     info!("Process got exit, we are done for now...");
     super::debug::shutdown(crate::ExitReason::Ok);
-    Ok(())
+    Ok((0, 0))
 }
 
-fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
+fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
     let op = ProcessOperation::from(arg1);
     debug!("{:?} {:#x} {:#x}", op, arg2, arg3);
 
@@ -52,32 +52,26 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
             process_print(UserValue::new(user_str))
         }
         ProcessOperation::InstallVCpuArea => unsafe {
-            let mut plock = CURRENT_PROCESS.lock();
-            (*plock)
-                .as_mut()
-                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
-                    let cpu_ctl_addr = VAddr::from(arg2);
-                    let cpu_state_addr = VAddr::from(arg3);
+            let kcb = crate::kcb::get_kcb();
+            let mut plock = kcb.current_process();
 
-                    (*p).vspace.map(
-                        cpu_ctl_addr,
-                        BASE_PAGE_SIZE,
-                        vspace::MapAction::ReadWriteUser,
-                        0x1000,
-                    )?;
+            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
+                let cpu_ctl_addr = VAddr::from(arg2);
+                p.vspace.map(
+                    cpu_ctl_addr,
+                    BASE_PAGE_SIZE,
+                    vspace::MapAction::ReadWriteUser,
+                    0x1000,
+                )?;
 
-                    (*p).vcpu_ctl = Some(UserPtr::new(cpu_ctl_addr.as_mut_ptr::<VirtualCpu>()));
+                x86::tlb::flush_all();
 
-                    (*p).save_area.set_syscall_ret1(cpu_ctl_addr.as_u64());
-                    x86::tlb::flush_all();
+                p.vcpu_ctl = Some(UserPtr::new(cpu_ctl_addr.as_u64() as *mut VirtualCpu));
 
-                    warn!(
-                        "installed vcpu area {:p} {:p}",
-                        cpu_ctl_addr, cpu_state_addr
-                    );
+                warn!("installed vcpu area {:p}", cpu_ctl_addr,);
 
-                    Ok(())
-                })
+                Ok((cpu_ctl_addr.as_u64(), 0))
+            })
         },
         ProcessOperation::Exit => {
             let exit_code = arg2;
@@ -88,50 +82,41 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
 }
 
 /// System call handler for vspace operations
-fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
+fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
     let op = VSpaceOperation::from(arg1);
     let base = VAddr::from(arg2);
     let bound = arg3;
     debug!("{:?} {:#x} {:#x}", op, base, bound);
 
+    let kcb = crate::kcb::get_kcb();
+    let mut plock = kcb.current_process();
+
     match op {
         VSpaceOperation::Map => unsafe {
-            let mut plock = CURRENT_PROCESS.lock();
-            (*plock)
-                .as_mut()
-                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
-                    let (paddr, size) = (*p).vspace.map(
-                        base,
-                        bound as usize,
-                        vspace::MapAction::ReadWriteUser,
-                        0x1000,
-                    )?;
-                    tlb::flush_all();
-                    (*p).save_area.set_syscall_ret1(paddr.as_u64());
-                    (*p).save_area.set_syscall_ret2(size as u64);
-                    Ok(())
-                })
+            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
+                let (paddr, size) = (*p).vspace.map(
+                    base,
+                    bound as usize,
+                    vspace::MapAction::ReadWriteUser,
+                    0x1000,
+                )?;
+
+                tlb::flush_all();
+                Ok((paddr.as_u64(), size as u64))
+            })
         },
         VSpaceOperation::MapDevice => unsafe {
-            let mut plock = CURRENT_PROCESS.lock();
+            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
+                let paddr = PAddr::from(base.as_u64());
+                p.vspace.map_generic(
+                    base,
+                    (paddr, bound as usize),
+                    vspace::MapAction::ReadWriteUser,
+                )?;
 
-            (*plock)
-                .as_mut()
-                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
-                    let paddr = PAddr::from(base.as_u64());
-
-                    (*p).vspace.map_generic(
-                        base,
-                        (paddr, bound as usize),
-                        vspace::MapAction::ReadWriteUser,
-                    )?;
-
-                    tlb::flush_all();
-                    (*p).save_area.set_syscall_ret1(paddr.as_u64());
-                    (*p).save_area.set_syscall_ret2(bound);
-
-                    Ok(())
-                })
+                tlb::flush_all();
+                Ok((paddr.as_u64(), bound))
+            })
         },
         VSpaceOperation::Unmap => {
             error!("Can't do VSpaceOperation unmap yet.");
@@ -139,18 +124,11 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(), KError> {
         }
         VSpaceOperation::Identify => unsafe {
             trace!("Identify base {:#x}.", base);
-            let mut plock = CURRENT_PROCESS.lock();
-            (*plock)
-                .as_mut()
-                .map_or(Err(KError::ProcessNotSet), |ref mut p| {
-                    let paddr = (*p).vspace.resolve_addr(base);
+            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
+                let paddr = p.vspace.resolve_addr(base);
 
-                    (*p).save_area
-                        .set_syscall_ret1(paddr.map(|p| p.as_u64()).unwrap_or(0x0));
-                    (*p).save_area.set_syscall_ret2(0x0);
-
-                    Ok(())
-                })
+                Ok((paddr.map(|pnum| pnum.as_u64()).unwrap_or(0x0), 0x0))
+            })
         },
         VSpaceOperation::Unknown => {
             error!("Got an invalid VSpaceOperation code.");
@@ -168,24 +146,41 @@ pub extern "C" fn syscall_handle(
     arg3: u64,
     arg4: u64,
     arg5: u64,
-) -> u64 {
-    let status: Result<(), KError> = match SystemCall::new(function) {
+) -> ! {
+    let status: Result<(u64, u64), KError> = match SystemCall::new(function) {
         SystemCall::Process => handle_process(arg1, arg2, arg3),
         SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
         _ => Err(KError::InvalidSyscallArgument1 { a: function }),
     };
 
-    //info!("syscall handle {:?}", status);
+    let r = {
+        let kcb = crate::kcb::get_kcb();
 
-    let retcode = match status {
-        Ok(()) => SystemCallError::Ok,
-        Err(status) => {
-            error!("System call returned with error: {:?}", status);
-            status.into()
-        }
+        let retcode = match status {
+            Ok((a1, a2)) => {
+                kcb.save_area.as_mut().map(|mut sa| {
+                    sa.set_syscall_ret1(a1);
+                    sa.set_syscall_ret2(a2);
+                    sa.set_syscall_error_code(SystemCallError::Ok);
+                });
+            }
+            Err(status) => {
+                error!("System call returned with error: {:?}", status);
+                kcb.save_area.as_mut().map(|mut sa| {
+                    sa.set_syscall_error_code(status.into());
+                });
+            }
+        };
+
+        /*info!(
+            "resume from syscall with kcb save area = {:?}",
+            kcb.save_area
+        );*/
+
+        super::process::ResumeHandle::new_restore(kcb.get_save_area_ptr())
     };
 
-    retcode as u64
+    unsafe { r.resume() }
 }
 
 /// Enables syscall/sysret functionality.

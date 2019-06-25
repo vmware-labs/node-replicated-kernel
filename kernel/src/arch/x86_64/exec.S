@@ -1,5 +1,5 @@
 .text
-.align 4096
+.balign 4096
 
 // This is the entry point for syscall instruction.
 // The architecture knows about it because we loaded
@@ -13,18 +13,13 @@ syscall_enter:
     // Puts address of KCB in %gs and temporarily store user %gs in MSR IA32_KERNEL_GSBASE
     swapgs
 
-    // Get the pointer to the current process
-    // TODO: use swapgs instead and load current process in gs
+    // Get the pointer to the kcb.save_area
     rdgsbase %rax
-    movabs $CURRENT_PROCESS, %rax
-    // Dereference it
-    movq (%rax), %rax
+    movq 0x8(%rax), %rax
 
-    // Save process context
-    // We don't save %rax since we
-    // use it for CURRENT_PROCESS
-    // it's ok since it is a caller-saved
-    // register
+    // Save process context:
+    // We don't save %rax since we use it to reference the save_area location
+    // it's ok since it is a caller-saved register (and used to return the syscall error)
     movq %rbx,  1*8(%rax)
     movq %rcx,  2*8(%rax)
     movq %rdx,  3*8(%rax)
@@ -44,7 +39,7 @@ syscall_enter:
     movq %rcx, 16*8(%rax)
 
     // Save vector registers (TODO: offset issue)
-    fxsave 23*8(%rax)
+    fxsave 24*8(%rax)
 
     // Saves fs register
     rdfsbase %r15
@@ -66,43 +61,3 @@ syscall_enter:
 
     // Ready to handle the system call (in rust):
     callq syscall_handle
-
-    // Reload the process pointer
-    // (we no longer use rax since it now contains our return value):
-    movabs $CURRENT_PROCESS, %r10
-    // Dereference it
-    movq (%r10), %r10
-
-    // Restore the gs
-    swapgs
-    // and fs registers:
-    rdfsbase %rdi
-    movq %rdi, 19*8(%r10)
-
-    // Restore vector registers (TODO offset issue):
-    fxrstor 23*8(%r10)
-
-    // Restore the process context %rax should contain a return value
-    // from syscall_handle above (so we don't restore it)
-    movq  1*8(%r10), %rbx
-    movq  2*8(%r10), %rcx
-    movq  3*8(%r10), %rdx
-    movq  4*8(%r10), %rsi
-    movq  5*8(%r10), %rdi
-    movq  6*8(%r10), %rbp
-    movq  7*8(%r10), %rsp
-    movq  8*8(%r10), %r8
-    movq  9*8(%r10), %r9
-    movq 11*8(%r10), %r11
-    movq 12*8(%r10), %r12
-    movq 13*8(%r10), %r13
-    movq 14*8(%r10), %r14
-    movq 15*8(%r10), %r15
-
-    // Finally, also restore r10 which held our SaveArea pointer
-    movq 10*8(%r10), %r10
-
-    // Going back to user-space
-    // * Uses %rcx as address to jump to
-    // * Uses %r11 to load as RFlags
-    sysretq

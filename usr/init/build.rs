@@ -1,4 +1,10 @@
 fn main() {
+    #[cfg(feature = "rumprt")]
+    rumprt_dependencies();
+}
+
+#[allow(unused)]
+fn rumprt_dependencies() {
     // Rumpkernel
     println!("cargo:rustc-link-lib=static=rump");
     println!("cargo:rustc-link-lib=static=rumpvfs");

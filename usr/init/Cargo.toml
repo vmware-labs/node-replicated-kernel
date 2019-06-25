@@ -5,6 +5,10 @@ authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 edition = "2018"
 build = "build.rs"
 
+[[bin]]
+name = "init"
+path = "src/init.rs"
+
 [profile.dev]
 panic = "abort"
 
@@ -13,17 +17,13 @@ panic = "abort"
 
 [dependencies]
 spin = { version = "0.4.8", default_features = false }
+cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
 log = "0.4"
 lineup = { path = "../../lib/lineup" }
 rawtime = { path = "../../lib/rawtime" }
-cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
 x86 = { path = "../../lib/x86" }
+vibrio = { path = "../../lib/vibrio" }
 
-[dependencies.vibrio]
-path = "../../lib/vibrio"
-features = ["rumprt"]
-
-[[bin]]
-name = "init"
-path = "src/init.rs"
-
+[features]
+default = ["rumprt"]
+rumprt = ["vibrio/rumprt"]

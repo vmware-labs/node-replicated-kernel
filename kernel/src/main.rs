@@ -74,10 +74,10 @@ mod memory;
 mod prelude;
 mod error;
 
-#[cfg(target_os = "none")]
+#[cfg(all(target_os = "none", feature = "rumpkernel"))]
 pub mod rumprt;
 
-#[cfg(target_os = "none")]
+#[cfg(all(target_os = "none", feature = "lkl"))]
 pub mod linuxrt;
 
 #[cfg(target_os = "none")]

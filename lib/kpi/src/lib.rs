@@ -54,6 +54,10 @@ pub enum ProcessOperation {
     /// Sets the process control and save area for trap/IRQ forwarding
     /// to user-space for this process and CPU.
     InstallVCpuArea = 3,
+    /// Allocate a device interrupt vector.
+    AllocateVector = 4,
+    /// Subscribe to a trap and/or interrupt events.
+    SubscribeEvent = 5,
     Unknown,
 }
 
@@ -64,6 +68,8 @@ impl From<u64> for ProcessOperation {
             1 => ProcessOperation::Exit,
             2 => ProcessOperation::Log,
             3 => ProcessOperation::InstallVCpuArea,
+            4 => ProcessOperation::AllocateVector,
+            5 => ProcessOperation::SubscribeEvent,
             _ => ProcessOperation::Unknown,
         }
     }

@@ -415,11 +415,16 @@ pub fn xmain() {
         .expect("Need to have init module");
 
     info!("init {:?}", init_module);
-    let mut process = arch::process::Process::from(init_module).expect("Couldn't load this");
+    let mut process = alloc::boxed::Box::new(
+        arch::process::Process::from(init_module).expect("Couldn't load this"),
+    );
     info!("created the process");
+    let no = kcb::get_kcb().swap_current_process(process);
+    assert!(no.is_none());
 
     unsafe {
-        process.start();
+        let rh = kcb::get_kcb().current_process().as_mut().map(|p| p.start());
+        rh.unwrap().resume();
     }
 
     arch::debug::shutdown(ExitReason::Ok);

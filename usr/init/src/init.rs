@@ -16,6 +16,7 @@ use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;
 
+#[cfg(features = "rumprt")]
 use vibrio::rumprt;
 use vibrio::{sys_print, sys_println};
 
@@ -58,7 +59,7 @@ fn alloc_test() {
 }
 
 fn scheduler_test() {
-    vibrio::syscalls::print("scheduler test");
+    info!("scheduler_test");
     use lineup::DEFAULT_UPCALLS;
     let mut s = lineup::Scheduler::new(DEFAULT_UPCALLS);
 
@@ -81,6 +82,7 @@ fn scheduler_test() {
     s.run();
 }
 
+#[cfg(features = "rumprt")]
 fn rumprt_test() {
     use cstr_core::CStr;
 
@@ -172,6 +174,7 @@ fn rumprt_test() {
     }
 }
 
+#[cfg(features = "rumprt")]
 pub fn test_rump_net() {
     use cstr_core::CStr;
 
@@ -316,8 +319,12 @@ pub extern "C" fn _start() -> ! {
     map_test();
     alloc_test();
     scheduler_test();
-    //rumprt_test();
-    test_rump_net();
+
+    #[cfg(features = "rumprt")]
+    {
+        //rumprt_test();
+        test_rump_net();
+    }
 
     debug!("DONE WITH INIT");
 

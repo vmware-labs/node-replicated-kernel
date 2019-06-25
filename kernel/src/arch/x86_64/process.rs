@@ -29,9 +29,6 @@ use super::vspace::*;
 
 use crate::error::KError;
 
-#[no_mangle]
-pub static mut CURRENT_PROCESS: Mutex<Option<&mut Process>> = mutex!(None);
-
 pub struct UserPtr<T> {
     value: *mut T,
 }
@@ -110,11 +107,174 @@ impl<T> Drop for UserValue<T> {
     }
 }
 
+/// A ResumeHandle that can either be an upcall or a context restore.
+///
+/// # TODO
+/// This two should ideally be separate with a common resume trait once impl Trait
+/// is flexible enough.
+/// The interface is not really safe at the moment (we use it in very restricted ways
+/// i.e., get the handle and immediatle resume but we can def. make this more safe
+/// to use...)
+pub struct ResumeHandle {
+    is_upcall: bool,
+    pub save_area: *const kpi::arch::SaveArea,
+
+    entry_point: VAddr,
+    stack_top: VAddr,
+    cpu_ctl: u64,
+    vector: u64,
+    exception: u64,
+}
+
+impl ResumeHandle {
+    pub fn new_restore(save_area: *const kpi::arch::SaveArea) -> ResumeHandle {
+        ResumeHandle {
+            is_upcall: false,
+            save_area: save_area,
+            entry_point: VAddr::zero(),
+            stack_top: VAddr::zero(),
+            cpu_ctl: 0,
+            vector: 0,
+            exception: 0,
+        }
+    }
+
+    pub fn new_upcall(
+        entry_point: VAddr,
+        stack_top: VAddr,
+        cpu_ctl: u64,
+        vector: u64,
+        exception: u64,
+    ) -> ResumeHandle {
+        ResumeHandle {
+            is_upcall: true,
+            save_area: ptr::null(),
+            entry_point: entry_point,
+            stack_top: stack_top,
+            cpu_ctl: cpu_ctl,
+            vector: vector,
+            exception: exception,
+        }
+    }
+
+    pub unsafe fn resume(self) -> ! {
+        if self.is_upcall {
+            self.upcall()
+        } else {
+            self.restore()
+        }
+    }
+
+    unsafe fn restore(self) -> ! {
+        let user_rflags = rflags::RFlags::from_priv(x86::Ring::Ring3)
+            | rflags::RFlags::FLAGS_A1
+            | rflags::RFlags::FLAGS_IF;
+
+        //info!("resuming User-space with ctxt: {:?}", (*(self.save_area)),);
+
+        // Resumes a process
+        // This routine assumes the following set-up
+        // %rdi points to SaveArea
+        // r11 has rflags
+        asm!("  // Restore CPU registers
+                movq  0*8(%rdi), %rax
+                movq  1*8(%rdi), %rbx
+                // %rcx: Don't restore it will contain user-space rip
+                movq  3*8(%rdi), %rdx
+                // %rdi and %rsi: Restore last (see below) to preserve `save_area`
+                movq  6*8(%rdi), %rbp
+                movq  7*8(%rdi), %rsp
+                movq  8*8(%rdi), %r8
+                movq  9*8(%rdi), %r9
+                movq 10*8(%rdi), %r10
+                // %r11: Don't restore it will contain RFlags
+                movq 12*8(%rdi), %r12
+                movq 13*8(%rdi), %r13
+                movq 14*8(%rdi), %r14
+                movq 15*8(%rdi), %r15
+
+                // Restore fs and gs registers
+                swapgs
+                movq 19*8(%rdi), %rsi
+                wrfsbase %rsi
+
+                // Restore vector registers
+                fxrstor 24*8(%rdi)
+
+                // sysretq expects user-space %rip in %rcx
+                movq 16*8(%rdi),%rcx
+                // sysretq expects rflags in %r11
+                movq 17*8(%rdi),%r11
+
+                // At last, restore rdi before we return
+                movq  4*8(%rdi), %rsi
+                movq  5*8(%rdi), %rdi
+
+                // Let's do sysretq instead of (slow, measure?) iretq
+                // (TODO: we need to be more careful about CVE-2012-0217)
+                sysretq
+            " :: "{rdi}" (self.save_area));
+
+        unreachable!("We should not come here!");
+    }
+
+    unsafe fn upcall(self) -> ! {
+        info!("About to go to user-space: {:#x}", self.entry_point);
+        // TODO: For now we allow unconditional IO access from user-space
+        let user_flags = rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1;
+
+        // Switch to user-space with initial zeroed registers.
+        //
+        // Stack is set to the initial stack for the process that
+        // was allocated by the kernel.
+        //
+        // `sysretq` expectations are:
+        // %rcx Program entry point in Ring 3
+        // %r11 RFlags
+        info!("Jumping to {:#x}", self.entry_point);
+        asm!("
+                movq       $0, %rax
+                movq       $0, %rbx
+                // rcx has entry point
+                // rdi: 1st argument
+                // rsi: 2nd argument
+                // rdx: 3rd argument
+                // rsp and rbp are set to provided `stack_top`
+                movq       $0, %r8
+                movq       $0, %r9
+                movq       $0, %r10
+                // r11 register is used for RFlags
+                movq       $0, %r12
+                movq       $0, %r13
+                movq       $0, %r14
+                movq       $0, %r15
+
+                // Reset vector registers
+                fninit
+
+                swapgs
+                // TODO: restore fs register
+
+                sysretq
+            " ::
+            "{rcx}" (self.entry_point.as_u64())
+            "{rdi}" (self.cpu_ctl)
+            "{rsi}" (self.vector)
+            "{rdx}" (self.exception)
+            "{r11}" (user_flags.bits())
+            "{rsp}" (self.stack_top.as_u64())
+            "{rbp}" (self.stack_top.as_u64())
+        );
+
+        unreachable!("We should not come here!");
+    }
+}
+
 /// A process representation.
 #[repr(C, packed)]
 pub struct Process {
     /// CPU context save area (must be first, see exec.S).
-    pub save_area: kpi::arch::SaveArea,
+    pub save_area: kpi::x86_64::SaveArea,
     /// ELF File mappings that were installed into the address space.
     pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
     /// Process ID.
@@ -216,11 +376,18 @@ impl Process {
     }
 
     /// Start the process (run it for the first time).
-    pub unsafe fn start(&mut self) -> ! {
-        self.execute_at(self.offset + self.entry_point, self.stack_top, 0, 0, 0);
+    pub fn start(&mut self) -> ResumeHandle {
+        self.maybe_switch_vspace();
+        ResumeHandle::new_upcall(self.offset + self.entry_point, self.stack_top, 0, 0, 0)
     }
 
-    pub unsafe fn upcall(&mut self, vector: u64, exception: u64) -> ! {
+    pub fn resume(&self) -> ResumeHandle {
+        self.maybe_switch_vspace();
+        ResumeHandle::new_restore(&self.save_area as *const kpi::arch::SaveArea)
+    }
+
+    pub fn upcall(&mut self, vector: u64, exception: u64) -> ResumeHandle {
+        self.maybe_switch_vspace();
         let (entry_point, cpu_ctl) = self
             .vcpu_ctl
             .as_mut()
@@ -229,154 +396,27 @@ impl Process {
             });
 
         info!("cpu_ctl is : {:#x}", cpu_ctl);
-
-        self.execute_at(
+        info!("upcall for {:?}", self);
+        ResumeHandle::new_upcall(
             entry_point,
             self.upcall_stack_top,
             cpu_ctl,
             vector,
             exception,
-        );
+        )
     }
 
-    unsafe fn execute_at(
-        &mut self,
-        entry_point: VAddr,
-        stack_top: VAddr,
-        arg1: u64,
-        arg2: u64,
-        arg3: u64,
-    ) -> ! {
-        info!("About to go to user-space: {:#x}", entry_point);
-
-        // TODO: For now we allow unconditional IO access from user-space
-        let user_flags = rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1;
-
-        let process_pml4 = self.vspace.pml4_address();
-
-        let current_pml4 = PAddr::from(controlregs::cr3());
-        if current_pml4 != process_pml4 {
-            info!("Switching to 0x{:x}", process_pml4);
-            controlregs::cr3_write(process_pml4.into());
-
-            x86::tlb::flush_all();
-            info!("Switched to 0x{:x}", process_pml4);
+    fn maybe_switch_vspace(&self) {
+        unsafe {
+            let current_pml4 = PAddr::from(controlregs::cr3());
+            let process_pml4 = self.vspace.pml4_address();
+            if current_pml4 != process_pml4 {
+                info!("Switching to 0x{:x}", process_pml4);
+                controlregs::cr3_write(process_pml4.into());
+                x86::tlb::flush_all();
+                info!("Switched to 0x{:x}", process_pml4);
+            }
         }
-
-        info!("p {:?}", self);
-
-        {
-            // TODO CURRENT_PROCESS should probably have box and be in the KCB:
-            let mut p = super::process::CURRENT_PROCESS.lock();
-            *p = Some(transmute::<&mut Process, &'static mut Process>(self));
-            //info!("\np {:?}\n", *p);
-        }
-
-        // Switch to user-space with initial zeroed registers.
-        //
-        // Stack is set to the initial stack for the process that
-        // was allocated by the kernel.
-        //
-        // `sysretq` expectations are:
-        // %rcx Program entry point in Ring 3
-        // %r11 RFlags
-        info!("Jumping to {:#x}", entry_point);
-        asm!("
-                movq       $0, %rax
-                movq       $0, %rbx
-                // rcx has entry point
-                // rdi: 1st argument
-                // rsi: 2nd argument
-                // rdx: 3rd argument
-                // rsp and rbp are set to provided `stack_top`
-                movq       $0, %r8
-                movq       $0, %r9
-                movq       $0, %r10
-                // r11 register is used for RFlags
-                movq       $0, %r12
-                movq       $0, %r13
-                movq       $0, %r14
-                movq       $0, %r15
-
-                // Reset vector registers
-                fninit
-
-                swapgs
-                // TODO: restore fs register
-
-                sysretq
-            " ::
-            "{rcx}" (entry_point.as_u64())
-            "{rdi}" (arg1)
-            "{rsi}" (arg2)
-            "{rdx}" (arg3)
-            "{r11}" (user_flags.bits())
-            "{rsp}" (stack_top.as_u64())
-            "{rbp}" (stack_top.as_u64())
-        );
-
-        unreachable!("We should not come here!");
-    }
-
-    pub unsafe fn resume_disabled(&self) {}
-
-    /// Resume the process (after it got interrupted or from a system call).
-    pub(crate) unsafe fn resume_from(&self, save_area: &kpi::arch::SaveArea) -> ! {
-        let user_rflags = rflags::RFlags::from_priv(x86::Ring::Ring3)
-            | rflags::RFlags::FLAGS_A1
-            | rflags::RFlags::FLAGS_IF;
-        info!(
-            "resuming User-space {:?} at {:#x} {:?}",
-            user_rflags.bits(),
-            save_area.rip,
-            rflags::RFlags::from_bits(save_area.rflags)
-        );
-
-        // Resumes a process
-        // This routine assumes the following set-up
-        // %rdi points to SaveArea
-        // r11 has rflags
-        asm!("
-                // Restore CPU registers
-                movq  0*8(%rdi), %rax
-                movq  1*8(%rdi), %rbx
-                // %rcx: Don't restore it will contain user-space rip
-                movq  3*8(%rdi), %rdx
-                movq  4*8(%rdi), %rsi
-                // %rdi: Restore last (see below) to preserve `save_area`
-                movq  6*8(%rdi), %rbp
-                movq  7*8(%rdi), %rsp
-                movq  8*8(%rdi), %r8
-                movq  9*8(%rdi), %r9
-                movq 10*8(%rdi), %r10
-                // %r11: Don't restore it will contain RFlags
-                movq 12*8(%rdi), %r12
-                movq 13*8(%rdi), %r13
-                movq 14*8(%rdi), %r14
-                movq 15*8(%rdi), %r15
-
-                // Restore fs and gs registers
-                swapgs
-                movq 19*8(%rdi), %rsi
-                wrfsbase %rsi
-
-                // Restore vector registers
-                //fxrstor 23*8(%rdi)
-
-                // sysretq expects user-space %rip in %rcx
-                movq 16*8(%rdi),%rcx
-                // sysretq expects rflags in %r11
-                movq 17*8(%rdi),%r11
-
-                // At last, restore rdi before we return
-                movq  5*8(%rdi), %rdi
-
-                // Let's do sysretq instead of (slow, measure?) iretq
-                // (TODO: we need to be more careful about CVE-2012-0217)
-                sysretq
-            " :: "{rdi}" (save_area));
-
-        unreachable!("We should not come here!");
     }
 }
 

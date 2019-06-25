@@ -262,8 +262,7 @@ pub unsafe fn vspace(
 ) -> Result<(VAddr, PAddr), SystemCallError> {
     let (err, paddr, size) = syscall!(SystemCall::VSpace as u64, op as u64, base, bound, 3);
     if err == 0 {
-        //info!("bound {:#x} size {:#x}", bound, size);
-        debug_assert!(bound == size);
+        debug_assert_eq!(bound, size);
         Ok((VAddr::from(base), PAddr::from(paddr)))
     } else {
         Err(SystemCallError::from(err))

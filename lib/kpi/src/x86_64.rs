@@ -18,13 +18,13 @@ pub struct VirtualCpu {
     /// CPU state if interrupted while not disabled
     pub enabled_state: SaveArea,
     /// PC critical region
-    pc_disabled: (VAddr, VAddr),
+    pub pc_disabled: (VAddr, VAddr),
     /// Function pointer to the entry point for upcalls.
     pub resume_with_upcall: VAddr,
     /// Are we in a critical section?
-    is_disabled: bool,
+    pub is_disabled: bool,
     /// An upcall needs to be executed.
-    has_pending_upcall: bool,
+    pub has_pending_upcall: bool,
 }
 
 impl VirtualCpu {
@@ -40,9 +40,6 @@ impl VirtualCpu {
     pub fn disable_upcalls(&mut self) {
         self.is_disabled = true;
     }
-
-    /// Copy `regs` into the disabled state.
-    pub fn set_state(regs: &SaveArea) {}
 }
 
 /// Memory area that is used by a CPU/scheduler to capture and save
@@ -98,9 +95,9 @@ pub struct SaveArea {
     pub gs: u64,
     /// 19: %fs register
     pub fs: u64,
-    /// 20-22: reserved (fxsave alignment -- TODO: don't want this)
-    pub reserved1: [u64; 3],
-    /// 23: Floating point register state
+    /// 20-23: reserved (fxsave alignment -- TODO: don't want this)
+    pub reserved1: [u64; 4],
+    /// 24: Floating point register state
     pub fxsave: [u8; 512],
 }
 
@@ -133,7 +130,7 @@ impl SaveArea {
             rflags: 0,
             fs: 0,
             gs: 0,
-            reserved1: [0; 3],
+            reserved1: [0; 4],
             fxsave: [0; 512],
         }
     }

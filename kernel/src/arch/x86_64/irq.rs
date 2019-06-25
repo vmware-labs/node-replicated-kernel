@@ -216,10 +216,15 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
         // If we have an active process we should do scheduler
         // activations:
-        {
+        // TODO: do proper masking based on some VCPU mask...
+        if a.vector > 30 || a.vector == 3 {
             let kcb = crate::kcb::get_kcb();
+            info!("1");
             let mut plock = kcb.current_process();
+            info!("2");
             let p = plock.as_mut().unwrap();
+            info!("3");
+
             let resumer = {
                 let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |mut vcpu| {
                     info!(
@@ -252,7 +257,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             };
 
             info!("resuming now...");
-            drop(p);
             drop(plock);
             resumer.resume()
         } // make sure we drop the KCB object here
@@ -366,6 +370,56 @@ pub fn init_irq_handlers() {
     unsafe {
         //register_handler(13, Box::new(|e| gp_handler(e)));
         //register_handler(14, Box::new(|e| pf_handler(e)));
+    }
+}
+
+/// Establishes a route for a GSI on the IOAPIC.
+///
+/// # TODO
+/// Currently this just enables everything and routes it to
+/// core 0. This is because, we should probably just support MSI(X)
+/// and don't invest a lot in legacy interrupts...
+pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
+    use crate::arch::acpi;
+    use crate::arch::vspace::MapAction;
+    use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+
+    for io_apic in acpi::IO_APICS.iter() {
+        info!("io_apic {:?}", io_apic);
+        let addr = PAddr::from(io_apic.address as u64);
+
+        // map it
+        use crate::round_up;
+        let mut kcb = crate::kcb::get_kcb();
+        let mut plock = kcb.current_process();
+
+        plock.as_mut().map(|mut p| {
+            info!(
+                "put IOAPIC at: {:#x}, p is at {:p}",
+                PAddr::from(crate::arch::memory::KERNEL_BASE) + addr,
+                p
+            );
+
+            p.vspace.map_identity_with_offset(
+                PAddr::from(crate::arch::memory::KERNEL_BASE),
+                addr,
+                addr + x86::bits64::paging::BASE_PAGE_SIZE,
+                MapAction::ReadWriteKernel,
+            );
+        });
+
+        let mut inst = unsafe { apic::ioapic::IoApic::new(paddr_to_kernel_vaddr(addr).as_usize()) };
+        info!("this ioapic supports {} intrs", inst.supported_interrupts());
+
+        for i in 0..inst.supported_interrupts() {
+            if (io_apic.global_irq_base + i as u32) < 16 {
+                //&& i as c_int == vector {
+                info!("map irq {}", i);
+                if i != 2 && i != 1 {
+                    inst.enable(i, 0);
+                }
+            }
+        }
     }
 }
 

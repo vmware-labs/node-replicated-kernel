@@ -268,3 +268,25 @@ pub unsafe fn vspace(
         Err(SystemCallError::from(err))
     }
 }
+
+/// Manipulate the virtual address space.
+pub fn irqalloc(vec: u64, core: u64) -> Result<(), SystemCallError> {
+    let (r, retvec, retcore) = unsafe {
+        syscall!(
+            SystemCall::Process as u64,
+            ProcessOperation::AllocateVector as u64,
+            vec,
+            core,
+            3
+        )
+    };
+
+    assert_eq!(vec, retvec);
+    assert_eq!(core, retcore);
+
+    if r == 0 {
+        Ok(())
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}

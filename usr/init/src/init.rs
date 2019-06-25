@@ -16,7 +16,7 @@ use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;
 
-#[cfg(features = "rumprt")]
+#[cfg(feature = "rumprt")]
 use vibrio::rumprt;
 use vibrio::{sys_print, sys_println};
 
@@ -82,7 +82,7 @@ fn scheduler_test() {
     s.run();
 }
 
-#[cfg(features = "rumprt")]
+#[cfg(feature = "rumprt")]
 fn rumprt_test() {
     use cstr_core::CStr;
 
@@ -174,7 +174,7 @@ fn rumprt_test() {
     }
 }
 
-#[cfg(features = "rumprt")]
+#[cfg(feature = "rumprt")]
 pub fn test_rump_net() {
     use cstr_core::CStr;
 
@@ -299,6 +299,7 @@ pub fn install_vcpu_area() {
 pub fn upcall_test() {
     sys_println!("causing a debug exception");
     unsafe { x86::int!(3) };
+    unsafe { x86::int!(3) };
     sys_println!("hopefully we arrive here again?");
 }
 
@@ -320,7 +321,7 @@ pub extern "C" fn _start() -> ! {
     alloc_test();
     scheduler_test();
 
-    #[cfg(features = "rumprt")]
+    #[cfg(feature = "rumprt")]
     {
         //rumprt_test();
         test_rump_net();

@@ -11,6 +11,7 @@ isr_handler\ex:
     pushq $\ex
     /* Save state in SaveArea */
     pushq %r15
+    swapgs
     movabs $CURRENT_SAVE_AREA, %r15
     movq %rax,  0*8(%r15)
     movq %rbx,  1*8(%r15)

@@ -73,6 +73,13 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
                 Ok((cpu_ctl_addr.as_u64(), 0))
             })
         },
+        ProcessOperation::AllocateVector => {
+            // TODO: missing proper IRQ resource allocation...
+            let vector = arg2;
+            let core = arg3;
+            super::irq::ioapic_establish_route(vector, core);
+            Ok((vector, core))
+        }
         ProcessOperation::Exit => {
             let exit_code = arg2;
             process_exit(arg1)

@@ -117,6 +117,8 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     IRQS[0].vector = vector;
     IRQS[0].cookie = cookie;
 
+    crate::syscalls::irqalloc(vector as u64, 0).ok();
+
     0
 }
 

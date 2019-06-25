@@ -204,16 +204,18 @@ impl ResumeHandle {
                 // sysretq expects user-space %rip in %rcx
                 movq 16*8(%rdi),%rcx
                 // sysretq expects rflags in %r11
-                movq 17*8(%rdi),%r11
+                //movq 17*8(%rdi),%r11
 
-                // At last, restore rdi before we return
+                // At last, restore %rsi and %rdi before we return
                 movq  4*8(%rdi), %rsi
                 movq  5*8(%rdi), %rdi
 
-                // Let's do sysretq instead of (slow, measure?) iretq
+                // Let's do sysretq instead of iretq (slow, measure?)
                 // (TODO: we need to be more careful about CVE-2012-0217)
                 sysretq
-            " :: "{rdi}" (self.save_area));
+            " ::
+            "{r11}" (user_rflags.bits())
+            "{rdi}" (self.save_area));
 
         unreachable!("We should not come here!");
     }

@@ -154,7 +154,7 @@ if [ "$_arg_release" == "on" ]; then
 else
 	UEFI_BUILD_ARGS=""
 	UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/debug"
-	USER_BUILD_ARGS=""
+	USER_BUILD_ARGS="--features rumprt"
 	USER_BUILD_DIR="`pwd`/../target/$USER_TARGET/debug"
 fi
 

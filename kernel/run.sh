@@ -302,7 +302,7 @@ if [ "${_arg_norun}" != "on" ]; then
     set +e
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
-        KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
+        KVM_ARG= '' #'-enable-kvm -cpu host,migratable=no,+invtsc,+tsc'
     else
 		echo "No KVM, system will fail in initializtion since we're missing fs/gs base instructions."
 		exit 1
@@ -323,7 +323,7 @@ if [ "${_arg_norun}" != "on" ]; then
 
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
 	# -kernel ./mbkernel -initrd kernel
-    qemu-system-x86_64 $KVM_ARG -m 1024 -smp 1 -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR
+    qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 2 -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR
     QEMU_EXIT=$?
     set +ex
     # qemu will do exit((val << 1) | 1);

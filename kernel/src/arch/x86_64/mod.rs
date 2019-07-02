@@ -330,7 +330,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     apic.attach();
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
+    let mut kcb = unsafe { kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic) };
     kcb::init_kcb(&mut kcb);
     let mut stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
     kcb.set_syscall_stack(stack);
@@ -342,6 +342,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // the kcb is on the stack and remains allocated on it,
     // this is (probably) fine as we never return to _start.
     core::mem::forget(kcb);
+
     debug!("Memory allocation should work at this point...");
 
     // Set up interrupts (which needs Box)

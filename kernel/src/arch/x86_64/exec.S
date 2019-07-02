@@ -38,7 +38,7 @@ syscall_enter:
     // Save user IP in SaveArea.rip
     movq %rcx, 16*8(%rax)
 
-    // Save vector registers (TODO: offset issue)
+    // Save vector registers
     fxsave 24*8(%rax)
 
     // Saves fs register
@@ -47,7 +47,7 @@ syscall_enter:
 
     // Find the syscall stack of the core (the stack top is the first member
     // of the KCB and it lives at 0x0(%gs)),
-    // we use rdgsbase to get the KCB pointer and then dereference it:
+    // TODO: we could try to avoid calling rdgsbase twice (see above)?
     rdgsbase %rsp
     movq (%rsp), %rsp
     movq %rsp, %rbp
@@ -61,3 +61,11 @@ syscall_enter:
 
     // Ready to handle the system call (in rust):
     callq syscall_handle
+
+    // We should not return here form syscall_handle
+    // In case we do, cause a page-fault to ease debugging
+    movq  $0xdeada, %rax
+    movq (%rax), %rax
+exec.loop:
+	hlt
+	jmp exec.loop

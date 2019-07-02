@@ -30,7 +30,7 @@ pub struct VirtualCpu {
 impl VirtualCpu {
     /// Is the vCPU currently disabled or executing in a critical section?
     pub fn upcalls_disabled(&self, rip: VAddr) -> bool {
-        self.is_disabled || self.pc_disabled.0 <= rip && rip <= self.pc_disabled.1
+        self.is_disabled //|| self.pc_disabled.0 <= rip && rip <= self.pc_disabled.1
     }
 
     pub fn enable_upcalls(&mut self) {
@@ -50,6 +50,7 @@ impl VirtualCpu {
 /// and in [vibrio]. Care must be taken to adjust them after any changes to
 /// this struct.
 /// Grep for SaveArea to find all occurences.
+#[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct SaveArea {
     /// 0: ret val, not preserved, holds 1st ret arg (error code)

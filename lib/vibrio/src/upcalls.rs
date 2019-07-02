@@ -29,6 +29,14 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
         control, vector, error
     );
 
+    if vector == 0x2a {
+        info!("got networked interrupt...");
+        let scheduler = lineup::tls::Environment::scheduler();
+        scheduler.add_to_runlist(lineup::ThreadId(1));
+    }
+
+    info!("upcall_while_enabled: renable and resume...");
+    control.enable_upcalls();
     unsafe { resume(control) }
 }
 

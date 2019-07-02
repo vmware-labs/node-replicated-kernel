@@ -16,6 +16,7 @@ use x86::segmentation::{
 use x86::Ring;
 
 use crate::arch::debug;
+use crate::arch::kcb::get_kcb;
 use crate::arch::process::{Process, ResumeHandle};
 use crate::panic::{backtrace, backtrace_from};
 use crate::ExitReason;
@@ -24,10 +25,6 @@ use spin::Mutex;
 use kpi::arch::SaveArea;
 
 use log::debug;
-
-/// The isr.S code saves the registers in here in case an interrupt happens.
-#[no_mangle]
-pub static mut CURRENT_SAVE_AREA: SaveArea = SaveArea::empty();
 
 const IDT_SIZE: usize = 256;
 static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
@@ -53,9 +50,11 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
     }
     sprintln!("{:?}", a);
     backtrace();
-    let csa = &CURRENT_SAVE_AREA;
-    sprintln!("Register State:\n{:?}", csa);
-    backtrace_from(csa.rbp, csa.rsp, csa.rip);
+    let kcb = get_kcb();
+    sprintln!("Register State:\n{:?}", kcb.save_area);
+    kcb.save_area.as_ref().map(|sa| {
+        backtrace_from(sa.rbp, sa.rsp, sa.rip);
+    });
 
     debug::shutdown(ExitReason::UnhandledInterrupt);
 }
@@ -105,10 +104,12 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     }
 
     sprintln!("{:?}", a);
-    let csa = &CURRENT_SAVE_AREA;
-    sprintln!("Register State:\n{:?}", csa);
+    let kcb = get_kcb();
+    sprintln!("Register State:\n{:?}", kcb.save_area);
 
-    backtrace_from(csa.rbp, csa.rsp, csa.rip);
+    kcb.save_area.as_ref().map(|sa| {
+        backtrace_from(sa.rbp, sa.rsp, sa.rip);
+    });
 
     debug::shutdown(ExitReason::PageFault);
 }
@@ -116,7 +117,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &irq::EXCEPTIONS[a.vector as usize];
     warn!("Got debug interrupt {}", desc.source);
-    let csa = &CURRENT_SAVE_AREA;
+    let kcb = get_kcb();
 
     let mut kcb = crate::kcb::get_kcb();
     let r = ResumeHandle::new_restore(kcb.get_save_area_ptr());
@@ -148,9 +149,11 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     });
 
     sprintln!("{:?}", a);
-    let csa = &CURRENT_SAVE_AREA;
-    sprintln!("Register State:\n{:?}", csa);
-    backtrace_from(csa.rbp, csa.rsp, csa.rip);
+    let kcb = get_kcb();
+    sprintln!("Register State:\n{:?}", kcb.save_area);
+    kcb.save_area.as_ref().map(|sa| {
+        backtrace_from(sa.rbp, sa.rsp, sa.rip);
+    });
 
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
@@ -208,22 +211,13 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         assert!(a.vector < 256);
         info!("handle_generic_exception {:?}", a);
 
-        // Make sure we preserve user stack,
-        // instruction pointer and rflags:
-        CURRENT_SAVE_AREA.rsp = a.rsp;
-        CURRENT_SAVE_AREA.rip = a.rip;
-        CURRENT_SAVE_AREA.rflags = a.rflags;
-
         // If we have an active process we should do scheduler
         // activations:
         // TODO: do proper masking based on some VCPU mask...
         if a.vector > 30 || a.vector == 3 {
             let kcb = crate::kcb::get_kcb();
-            info!("1");
             let mut plock = kcb.current_process();
-            info!("2");
             let p = plock.as_mut().unwrap();
-            info!("3");
 
             let resumer = {
                 let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |mut vcpu| {
@@ -231,25 +225,23 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                         "vcpu state is: pc_disabled {:?} is_disabled {:?}",
                         vcpu.pc_disabled, vcpu.is_disabled
                     );
-                    let was_disabled = vcpu.upcalls_disabled(VAddr::from(CURRENT_SAVE_AREA.rip));
+                    let was_disabled = vcpu.upcalls_disabled(VAddr::from(0x0));
                     vcpu.disable_upcalls();
                     was_disabled
                 });
 
                 info!("was disabled = {}", was_disabled);
                 if was_disabled {
-                    // Resume to current_save_area
-                    // ResumeHandle::new(kcb.get_save_area_ptr())
+                    // Resume to the current save area...
+                    warn!("Upcalling while disabled");
                     kcb_resume_handle(kcb)
                 } else {
                     // Copy CURRENT_SAVE_AREA to process enabled save area
                     // then resume in the upcall handler
                     let was_disabled = p.vcpu_ctl.as_mut().map(|vcpu| {
-                        core::intrinsics::copy_nonoverlapping::<SaveArea>(
-                            &CURRENT_SAVE_AREA,
-                            &mut vcpu.enabled_state,
-                            1,
-                        );
+                        kcb.save_area.as_ref().map(|sa| {
+                            vcpu.enabled_state = **sa;
+                        });
                     });
 
                     p.upcall(a.vector, a.exception)
@@ -258,6 +250,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             info!("resuming now...");
             drop(plock);
+            //acknowledge();
             resumer.resume()
         } // make sure we drop the KCB object here
 
@@ -282,10 +275,9 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 }
 
 pub unsafe fn acknowledge() {
-    crate::kcb::try_get_kcb().map(|k| {
-        let mut apic = k.apic();
-        apic.eoi();
-    });
+    let kcb = crate::kcb::get_kcb();
+    let mut apic = kcb.apic();
+    apic.eoi();
 }
 
 /// Registers a handler IRQ handler function.

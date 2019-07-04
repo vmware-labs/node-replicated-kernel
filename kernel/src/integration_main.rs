@@ -117,7 +117,7 @@ pub fn xmain() {
                 static x86_64_start_ap: *const u8;
                 static x86_64_start_ap_end: *const u8;
                 static x86_64_init_ap_absolute_entry: *mut fn();
-                static x86_64_init_ap_init_pml4: *mut u64;
+                static x86_64_init_ap_init_pml4: *mut fn();
             };
             let boot_code_size =
                 unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
@@ -152,10 +152,11 @@ pub fn xmain() {
                 );*/
 
                 /*let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_absolute_entry);
-                *entry_pointer = crate::arch::bespin_init_ap as u64;
+                 *entry_pointer = crate::arch::bespin_init_ap as u64;
 
                 let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_init_pml4);
-                *entry_pointer = 0xdeadbeefdeadbeef as u64;*/
+                *entry_pointer = 0xdeadbeefdeadbeef as u64;
+                */
 
                 real_mode_destination.copy_from_slice(ap_bootstrap_code);
 
@@ -169,34 +170,16 @@ pub fn xmain() {
                     &x86_64_init_ap_init_pml4 as *const _ as u64 - start_addr as u64
                         + real_mode_base as u64,
                 );
-                info!("pml4: {:#x}", *pml4_pointer);
-                info!("entry_pointer: {:#x}", *entry_pointer);
-                info!("x86_64_start_ap = {:p} {:#x}", &x86_64_start_ap, start_addr);
-                info!("pml4 on bsp: {:#x}", kcb.init_vspace().pml4_address());
+
                 *pml4_pointer = kcb.init_vspace().pml4_address().into();
 
-                /*                let entry_pointer: *mut u64 = core::mem::transmute(
-                    &x86_64_init_ap_absolute_entry as *const _ as u64 - start_addr as u64
-                        + real_mode_base as u64,
-                );
-                let pml4_pointer: *mut u64 = core::mem::transmute(
-                    &x86_64_init_ap_init_pml4 as *const _ as u64 - start_addr as u64
-                        + real_mode_base as u64,
-                );
-                info!("entry_pointer: {:p}", entry_pointer);
-                info!("pml4: {:p}", pml4_pointer);
-
-                *entry_pointer = crate::arch::bespin_init_ap as u64;
-                info!("entry_pointer: {:#x}", *entry_pointer);
-                *pml4_pointer = kcb.init_vspace().pml4_address().into();
-                info!("pml4: {:#x}", *pml4_pointer);
-
-                info!("x86_64_start_ap = {:p} {:#x}", &x86_64_start_ap, start_addr);
+                info!("start_addr: {:#x}", start_addr);
                 info!(
-                    "x86_64_start_ap_end = {:p} {:#x}",
-                    &x86_64_start_ap_end, end_addr
-                );*/
-                core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                    "x86_64_start_ap = {:p} {:#x}",
+                    entry_pointer, *entry_pointer
+                );
+                info!("pml4_pointer = {:p} {:#x}", pml4_pointer, *pml4_pointer);
+                info!("pml4 on bsp: {:#x}", kcb.init_vspace().pml4_address());
 
                 // Have fun launching some cores:
                 kcb.apic().ipi_init();

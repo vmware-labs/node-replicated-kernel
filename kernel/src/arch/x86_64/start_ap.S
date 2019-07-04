@@ -19,6 +19,7 @@
 .code16
 .org X86_64_REAL_MODE_OFFSET
 
+
 .global x86_64_start_ap
 x86_64_start_ap:
     cli
@@ -39,19 +40,20 @@ x86_64_start_ap:
 
 .code32
 start_ap_pm:
+    /* set up data segment: Memory loads won't work before that is done! */
+    mov $PROT_DS,%eax
+    mov %eax,%ds
+
 	/* Set up state for long mode */
 	/* Enable: PGE (Page Global Enable), PAE (Physical Address Extension), PSE (Page Size Extensions) */
 	mov %cr4, %eax
-	//or $(0x80|0x20|0x10), %eax
-    or $(0x4506f8), %eax
+	or $(0x80|0x20|0x10), %eax
 	mov %eax, %cr4
 
 	/* Load PML4 */
-	//mov $(x86_64_init_ap_init_pml4 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %eax
-    //mov (%eax), %eax
-    mov $0x3e41c000, %eax
+	mov $(x86_64_init_ap_init_pml4 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %eax
+    mov (%eax), %eax
 	mov %eax, %cr3
-
 
 	/* Enable IA-32e mode (also enables SYSCALL and NX) */
 	mov $0xC0000080, %ecx
@@ -60,9 +62,8 @@ start_ap_pm:
 	wrmsr
 
 	/* Enable paging and enter long mode */
-	//mov %cr0, %esi
-	//or $0x80010000, %eax      /* PG & WP */
-    mov $0x80010033, %eax
+	mov %cr0, %eax
+	or $0x80010000, %eax      /* PG & WP */
 	mov %eax, %cr0
 
     /* Acquire start-up lock */
@@ -72,9 +73,6 @@ start_ap_spin:
     lock bts $0,(%esi)
     jc start_ap_spin
 
-    /* set up stack */
-    mov $PROT_DS,%eax
-    mov %eax,%ss
     mov $(start_ap_stack - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET),%esp
 
     /* jmp to long-mode to the linear address corresponding the */
@@ -140,13 +138,13 @@ x86_64_init_ap_absolute_entry:
 .align 64
 .global x86_64_init_ap_lock
 x86_64_init_ap_lock:
-.long 0xbeefbee1
-.long 0xbeefbee2
+.long 0x0
+.long 0x0
 
 .align 64
 .global x86_64_init_ap_init_pml4
 x86_64_init_ap_init_pml4:
-.quad 0xbeefbeefbeefbeef
+.quad 0xbeefbeefbeefbee2
 
 .global x86_64_start_ap_end
 x86_64_start_ap_end:

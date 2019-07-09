@@ -75,6 +75,20 @@ impl From<u64> for ProcessOperation {
     }
 }
 
+impl From<&str> for ProcessOperation {
+    /// Construct a ProcessOperation enum based on a str.
+    fn from(op: &str) -> ProcessOperation {
+        match op {
+            "Exit" => ProcessOperation::Exit,
+            "Log" => ProcessOperation::Log,
+            "InstallVCpuArea" => ProcessOperation::InstallVCpuArea,
+            "AllocateVector" => ProcessOperation::AllocateVector,
+            "SubscribeEvent" => ProcessOperation::SubscribeEvent,
+            _ => ProcessOperation::Unknown,
+        }
+    }
+}
+
 /// Flags for the map system call
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
@@ -103,6 +117,19 @@ impl From<u64> for VSpaceOperation {
     }
 }
 
+impl From<&str> for VSpaceOperation {
+    /// Construct a VSpaceOperation enum based on a str.
+    fn from(op: &str) -> VSpaceOperation {
+        match op {
+            "Map" => VSpaceOperation::Map,
+            "Unmap" => VSpaceOperation::Unmap,
+            "MapDevice" => VSpaceOperation::MapDevice,
+            "Identify" => VSpaceOperation::Identify,
+            _ => VSpaceOperation::Unknown,
+        }
+    }
+}
+
 /// SystemCall is the type of call we are invoking.
 ///
 /// It is passed to the kernel in the %rdi register.
@@ -120,6 +147,17 @@ impl SystemCall {
         match domain {
             1 => SystemCall::Process,
             3 => SystemCall::VSpace,
+            _ => SystemCall::Unknown,
+        }
+    }
+}
+
+impl From<&str> for SystemCall {
+    /// Construct a SystemCall enum based on a str.
+    fn from(op: &str) -> SystemCall {
+        match op {
+            "Process" => SystemCall::Process,
+            "VSpace" => SystemCall::VSpace,
             _ => SystemCall::Unknown,
         }
     }

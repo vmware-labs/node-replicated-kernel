@@ -130,19 +130,14 @@ pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     (*upcalls).hyp_schedule.expect("rump_upcalls set")();
     (*upcalls).hyp_lwproc_newlwp.expect("rump_upcalls set")(0);
     (*upcalls).hyp_unschedule.expect("rump_upcalls set")();
-    info!("irq_handler");
+    trace!("irq_handler");
 
-    let mut nlock: i32 = 1;
+    let mut nlock: i32 = 0;
     loop {
-        //x86::irq::disable();
-
         super::rumpkern_sched(&nlock, None);
-        let _r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);
-        //assert_eq!(r, 0, "IRQ handler should return 0?");
+        let r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);
+        assert_eq!(r, 1, "IRQ handler should return 1 (I don't actually know)?");
         super::rumpkern_unsched(&mut nlock, None);
-
-        //crate::arch::irq::acknowledge();
-        //x86::irq::enable();
 
         let thread = lineup::tls::Environment::thread();
         thread.block(); // Wake up on next IRQ
@@ -230,7 +225,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
         Ok((vaddr, paddr)) => {
             *vptr = vaddr.as_u64();
             *pptr = paddr.as_u64();
-            info!(
+            trace!(
                 "rumpcomp_pci_dmalloc {:#x} {:#x} at va:{:#x} pa:{:#x}",
                 size,
                 alignment,
@@ -274,7 +269,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmamem_map(
     totlen: usize,
     vap: *mut *mut c_void,
 ) -> c_int {
-    info!(
+    trace!(
         "rumpcomp_pci_dmamem_map {:#x} {:#x} {:?}",
         nseg,
         totlen,

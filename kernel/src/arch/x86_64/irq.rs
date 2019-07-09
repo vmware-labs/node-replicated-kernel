@@ -209,7 +209,7 @@ fn kcb_resume_handle(kcb: &crate::kcb::Kcb) -> ResumeHandle {
 pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unsafe {
         assert!(a.vector < 256);
-        info!("handle_generic_exception {:?}", a);
+        trace!("handle_generic_exception {:?}", a);
 
         // If we have an active process we should do scheduler
         // activations:
@@ -221,16 +221,16 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             let resumer = {
                 let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |mut vcpu| {
-                    info!(
+                    trace!(
                         "vcpu state is: pc_disabled {:?} is_disabled {:?}",
-                        vcpu.pc_disabled, vcpu.is_disabled
+                        vcpu.pc_disabled,
+                        vcpu.is_disabled
                     );
                     let was_disabled = vcpu.upcalls_disabled(VAddr::from(0x0));
                     vcpu.disable_upcalls();
                     was_disabled
                 });
 
-                info!("was disabled = {}", was_disabled);
                 if was_disabled {
                     // Resume to the current save area...
                     warn!("Upcalling while disabled");
@@ -248,9 +248,9 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 }
             };
 
-            info!("resuming now...");
+            trace!("resuming now...");
             drop(plock);
-            //acknowledge();
+            acknowledge();
             resumer.resume()
         } // make sure we drop the KCB object here
 
@@ -352,7 +352,7 @@ pub fn setup_idt() {
         idt_set!(46, isr_handler46, seg, 0x8E);
         idt_set!(47, isr_handler47, seg, 0x8E);
     }
-    info!("IDT table initialized.");
+    debug!("IDT table initialized.");
 }
 
 /// Finishes the initialization of IRQ handlers once we have memory allocation.
@@ -377,7 +377,7 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
     use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
 
     for io_apic in acpi::IO_APICS.iter() {
-        info!("io_apic {:?}", io_apic);
+        debug!("Initialize IO APIC {:?}", io_apic);
         let addr = PAddr::from(io_apic.address as u64);
 
         // map it
@@ -386,12 +386,13 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
         let mut plock = kcb.current_process();
 
         plock.as_mut().map(|mut p| {
-            info!(
-                "put IOAPIC at: {:#x}, p is at {:p}",
+            trace!(
+                "Map IOAPIC at: {:#x}, p is at {:p}",
                 PAddr::from(crate::arch::memory::KERNEL_BASE) + addr,
                 p
             );
 
+            // TODO: The mapping should be in global kernel-space!
             p.vspace.map_identity_with_offset(
                 PAddr::from(crate::arch::memory::KERNEL_BASE),
                 addr,
@@ -401,12 +402,19 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
         });
 
         let mut inst = unsafe { apic::ioapic::IoApic::new(paddr_to_kernel_vaddr(addr).as_usize()) };
-        info!("this ioapic supports {} intrs", inst.supported_interrupts());
+        trace!(
+            "This IOAPIC supports {} Interrupts",
+            inst.supported_interrupts()
+        );
 
         for i in 0..inst.supported_interrupts() {
-            if (io_apic.global_irq_base + i as u32) < 16 {
-                //&& i as c_int == vector {
-                info!("map irq {}", i);
+            let gsi = io_apic.global_irq_base + i as u32;
+            if gsi < 16 {
+                trace!(
+                    "Enable irq {} which maps to GSI#{}",
+                    i,
+                    io_apic.global_irq_base + i as u32
+                );
                 if i != 2 && i != 1 {
                     inst.enable(i, 0);
                 }

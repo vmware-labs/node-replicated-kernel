@@ -412,13 +412,14 @@ pub fn xmain() {
 pub fn xmain() {
     let init_module = kcb::try_get_kcb()
         .map(|kcb| kcb.kernel_args().modules[1].clone())
-        .expect("Need to have init module");
+        .expect("Need to have an init module.");
 
-    info!("init {:?}", init_module);
+    trace!("init {:?}", init_module);
     let mut process = alloc::boxed::Box::new(
-        arch::process::Process::from(init_module).expect("Couldn't load this"),
+        arch::process::Process::from(init_module).expect("Couldn't load init."),
     );
-    info!("created the process");
+
+    info!("Created the init process, about to go there...");
     let no = kcb::get_kcb().swap_current_process(process);
     assert!(no.is_none());
 

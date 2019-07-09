@@ -10,7 +10,7 @@
 //! [2]: www.barrelfish.org/publications/TN-010-Spec.pdf
 //! [3]: http://www.barrelfish.org/publications/ma-fuchs-tm-mp.pdf
 
-use log::info;
+use log::{debug, info, trace};
 
 /// This is invoked through the kernel whenever we get an
 /// upcall (trap happened or interrupt came in) we resume
@@ -24,18 +24,20 @@ use log::info;
 /// * The [kpi::arch::VirtualCpu] `disabled` flag was set to true and
 ///   needs to be cleared again.
 pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, error: u64) -> ! {
-    info!(
+    trace!(
         "upcall_while_enabled {:?} vec={:#x} err={}",
-        control, vector, error
+        control,
+        vector,
+        error
     );
 
     if vector == 0x2a {
-        info!("got networked interrupt...");
+        trace!("got networked interrupt...");
         let scheduler = lineup::tls::Environment::scheduler();
         scheduler.add_to_runlist(lineup::ThreadId(1));
     }
 
-    info!("upcall_while_enabled: renable and resume...");
+    trace!("upcall_while_enabled: renable and resume...");
     control.enable_upcalls();
     unsafe { resume(control) }
 }

@@ -291,6 +291,9 @@ if [ "${_arg_norun}" != "on" ]; then
         6)
         MESSAGE="[FAIL] Unexpected Page Fault."
         ;;
+        7)
+        MESSAGE="[FAIL] Unexpected process exit code when running a user-space test."
+        ;;
         *)
         MESSAGE="[FAIL] Kernel exited with unknown error status $BESPIN_EXIT... Update the script!"
         ;;

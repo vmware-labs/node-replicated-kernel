@@ -363,7 +363,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let r = acpi::init();
         assert!(r.is_ok());
-        info!("ACPI initialized");
     }
 
     lazy_static::initialize(&acpi::LOCAL_APICS);

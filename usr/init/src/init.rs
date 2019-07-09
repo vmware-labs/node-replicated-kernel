@@ -29,7 +29,7 @@ static MEM_PROVIDER: vibrio::mem::SafeZoneAllocator =
 
 fn print_test() {
     vibrio::syscalls::print("test\r\n");
-    info!("log test");
+    info!("print_test OK");
 }
 
 fn map_test() {
@@ -44,6 +44,8 @@ fn map_test() {
         }
         assert_eq!(slice[99], 0xb);
     }
+
+    info!("map_test OK");
 }
 
 fn alloc_test() {
@@ -56,17 +58,17 @@ fn alloc_test() {
 
     assert_eq!(v[255], 255);
     assert_eq!(v.len(), 256);
+    info!("alloc_test OK");
 }
 
 fn scheduler_test() {
-    info!("scheduler_test");
     use lineup::DEFAULT_UPCALLS;
     let mut s = lineup::Scheduler::new(DEFAULT_UPCALLS);
 
     s.spawn(
         32 * 4096,
         move |_| {
-            info!("weee from t1");
+            info!("Hello from t1");
         },
         ptr::null_mut(),
     );
@@ -74,16 +76,18 @@ fn scheduler_test() {
     s.spawn(
         32 * 4096,
         move |_| {
-            info!("weee from t2");
+            info!("Hello from t2");
         },
         ptr::null_mut(),
     );
 
     s.run();
+
+    info!("scheduler_test OK");
 }
 
 #[cfg(feature = "rumprt")]
-fn rumprt_test() {
+fn test_rump_tmpfs() {
     use cstr_core::CStr;
 
     #[repr(C)]
@@ -162,16 +166,15 @@ fn rumprt_test() {
             assert_eq!(read_bytes, 12, "Read successful");
             assert_eq!(rbuf[0], 0xa, "Read matches write");
             info!("bytes_read: {:?}", read_bytes);
-
-            //arch::debug::shutdown(ExitReason::Ok);
-            vibrio::syscalls::exit(1);
         },
         core::ptr::null_mut(),
     );
 
-    loop {
-        scheduler.run();
-    }
+    scheduler.run();
+    // TODO: Don't drop the scheduler for now,
+    // so we don't panic because of unfinished generators:
+    unsafe { core::mem::forget(scheduler) };
+    info!("test_rump_tmpfs OK");
 }
 
 #[cfg(feature = "rumprt")]
@@ -282,9 +285,11 @@ pub fn test_rump_net() {
         )
         .expect("Can't create IRQ thread?");
 
-    loop {
-        scheduler.run();
-    }
+    scheduler.run();
+    // TODO: Don't drop the scheduler for now,
+    // so we don't panic because of unfinished generators:
+    unsafe { core::mem::forget(scheduler) };
+    info!("test_rump_net OK");
 }
 
 pub fn install_vcpu_area() {
@@ -299,7 +304,6 @@ pub fn install_vcpu_area() {
 pub fn upcall_test() {
     sys_println!("causing a debug exception");
     unsafe { x86::int!(3) };
-    unsafe { x86::int!(3) };
     sys_println!("hopefully we arrive here again?");
 }
 
@@ -309,26 +313,36 @@ pub extern "C" fn _start() -> ! {
         log::set_logger(&vibrio::writer::LOGGER)
             .map(|()| log::set_max_level(Level::Debug.to_level_filter()));
     }
-    debug!("INIT LOGGING");
-
+    debug!("Initialized logging");
     install_vcpu_area();
 
+    #[cfg(feature = "test-print")]
     print_test();
 
+    #[cfg(feature = "test-upcall")]
     upcall_test();
 
+    #[cfg(feature = "test-map")]
     map_test();
+
+    #[cfg(feature = "test-alloc")]
     alloc_test();
+
+    #[cfg(feature = "test-scheduler")]
     scheduler_test();
 
     #[cfg(feature = "rumprt")]
     {
-        //rumprt_test();
+        // Run either, test-rump-net or test-rump-tmpfs
+        // Can't run both together at the moment, I suspect it is due to
+        // the IRQ thread being statically 'hacked' as thread#1 in virbio/upcalls.rs
+        #[cfg(all(not(feature = "test-rump-net"), feature = "test-rump-tmpfs"))]
+        test_rump_tmpfs();
+        #[cfg(all(not(feature = "test-rump-tmpfs"), feature = "test-rump-net"))]
         test_rump_net();
     }
 
-    debug!("DONE WITH INIT");
-
+    debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::exit(0);
 }
 
@@ -344,7 +358,7 @@ fn panic(info: &PanicInfo) -> ! {
         sys_println!("");
     }
 
-    vibrio::syscalls::exit(1);
+    vibrio::syscalls::exit(99);
     loop {}
 }
 

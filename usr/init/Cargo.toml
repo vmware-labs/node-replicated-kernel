@@ -25,5 +25,16 @@ x86 = { path = "../../lib/x86" }
 vibrio = { path = "../../lib/vibrio" }
 
 [features]
-default = ["rumprt"]
 rumprt = ["vibrio/rumprt"]
+default = ["rumprt", "test-print", "test-map", "test-alloc", "test-upcall", "test-scheduler", "test-rump-tmpfs"]
+
+# Some smoke tests we run with CI,
+# they test that the base features of
+# the kernel are working:
+test-print = []
+test-map = []
+test-alloc = []
+test-upcall = []
+test-scheduler = []
+test-rump-tmpfs = [ "rumprt" ]
+test-rump-net = [ "rumprt" ]

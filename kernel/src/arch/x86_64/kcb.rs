@@ -137,10 +137,10 @@ impl Kcb {
         unsafe {
             self.syscall_stack_top = stack.as_mut_ptr().offset((stack.len()) as isize);
         }
-        info!("syscall_stack_top {:p}", self.syscall_stack_top);
+        debug!("Syscall stack top set to: {:p}", self.syscall_stack_top);
         self.syscall_stack = Some(stack);
 
-        // TODO: need static assert and offsetof!
+        // TODO: need a static assert and offsetof!
         debug_assert_eq!(
             (&self.syscall_stack_top as *const _ as usize) - (self as *const _ as usize),
             0,

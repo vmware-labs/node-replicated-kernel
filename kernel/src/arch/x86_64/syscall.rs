@@ -30,14 +30,21 @@ fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
 
 /// System call handler for process exit
 fn process_exit(code: u64) -> Result<(u64, u64), KError> {
-    info!("Process got exit, we are done for now...");
-    super::debug::shutdown(crate::ExitReason::Ok);
+    debug!("Process got exit, we are done for now...");
+
+    // TODO: For now just a dummy version that exits Qemu
+    if code != 0 {
+        // When testing we want to indicate to our integration
+        // test that our user-space test failed with a non-zero exit
+        super::debug::shutdown(crate::ExitReason::UserSpaceError);
+    } else {
+        super::debug::shutdown(crate::ExitReason::Ok);
+    }
     Ok((0, 0))
 }
 
 fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
     let op = ProcessOperation::from(arg1);
-    debug!("{:?} {:#x} {:#x}", op, arg2, arg3);
 
     match op {
         ProcessOperation::Log => {
@@ -82,7 +89,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
         }
         ProcessOperation::Exit => {
             let exit_code = arg2;
-            process_exit(arg1)
+            process_exit(exit_code)
         }
         _ => Err(KError::InvalidProcessOperation { a: arg1 }),
     }
@@ -93,7 +100,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     let op = VSpaceOperation::from(arg1);
     let base = VAddr::from(arg2);
     let bound = arg3;
-    debug!("{:?} {:#x} {:#x}", op, base, bound);
+    trace!("{:?} {:#x} {:#x}", op, base, bound);
 
     let kcb = crate::kcb::get_kcb();
     let mut plock = kcb.current_process();
@@ -117,7 +124,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                 let paddr = PAddr::from(base.as_u64());
                 p.vspace.map_generic(
                     base,
-                    (paddr, bound as usize),
+                    (paddr, (bound - base.as_u64()) as usize),
                     vspace::MapAction::ReadWriteUser,
                 )?;
 
@@ -141,6 +148,35 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             error!("Got an invalid VSpaceOperation code.");
             Err(KError::InvalidVSpaceOperation { a: arg1 })
         }
+    }
+}
+
+#[allow(unused)]
+fn debug_print_syscall(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) {
+    sprint!("syscall: {:?}", SystemCall::new(function));
+
+    match SystemCall::new(function) {
+        SystemCall::Process => {
+            sprintln!(
+                " {:?} {} {} {} {}",
+                ProcessOperation::from(arg1),
+                arg2,
+                arg3,
+                arg4,
+                arg5
+            );
+        }
+        SystemCall::VSpace => {
+            sprintln!(
+                " {:?} {} {} {} {}",
+                VSpaceOperation::from(arg1),
+                arg2,
+                arg3,
+                arg4,
+                arg5
+            );
+        }
+        SystemCall::Unknown => unreachable!(),
     }
 }
 
@@ -201,7 +237,7 @@ pub fn enable_fast_syscalls(cs_selector: SegmentSelector, ss_selector: SegmentSe
         // System call RIP
         let rip = syscall_enter as u64;
         wrmsr(IA32_LSTAR, rip);
-        info!("syscalls jump to {:#x}", rip);
+        debug!("Set up fast syscalls. `sysenter` will jump to {:#x}.", rip);
 
         wrmsr(
             IA32_FMASK,
@@ -213,6 +249,4 @@ pub fn enable_fast_syscalls(cs_selector: SegmentSelector, ss_selector: SegmentSe
         let efer = rdmsr(IA32_EFER) | 0b1;
         wrmsr(IA32_EFER, efer);
     }
-
-    debug!("Fast syscalls enabled!");
 }

@@ -221,7 +221,7 @@ impl ResumeHandle {
     }
 
     unsafe fn upcall(self) -> ! {
-        info!("About to go to user-space: {:#x}", self.entry_point);
+        trace!("About to go to user-space: {:#x}", self.entry_point);
         // TODO: For now we allow unconditional IO access from user-space
         let user_flags = rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1;
 
@@ -233,7 +233,7 @@ impl ResumeHandle {
         // `sysretq` expectations are:
         // %rcx Program entry point in Ring 3
         // %r11 RFlags
-        info!("Jumping to {:#x}", self.entry_point);
+        trace!("Jumping to {:#x}", self.entry_point);
         asm!("
                 movq       $0, %rax
                 movq       $0, %rbx
@@ -330,7 +330,7 @@ impl Process {
             BASE_PAGE_SIZE as u64,
         );
 
-        // Allocate a upcall stack
+        // Allocate an upcall stack
         p.vspace.map(
             p.upcall_stack_base,
             p.upcall_stack_size,
@@ -338,10 +338,18 @@ impl Process {
             BASE_PAGE_SIZE as u64,
         );
 
-        // Install the kernel mappings
+        // TODO: make sure we have APIC base (these should be part of kernel
+        // mappings and above KERNEL_BASE), should not be hardcoded
+        p.vspace.map_identity(
+            PAddr(0xfee00000u64),
+            PAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
+            MapAction::ReadWriteExecuteKernel,
+        );
+
+        // TODO: Install the kernel mappings (these should be global mappings)
         super::kcb::try_get_kcb().map(|kcb| {
             let kernel_pml_entry = kcb.init_vspace().pml4[128];
-            info!("KERNEL MAPPINGS {:?}", kernel_pml_entry);
+            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
             p.vspace.pml4[128] = kernel_pml_entry;
         });
 
@@ -350,10 +358,12 @@ impl Process {
 
     /// Create a new `empty` process.
     fn new<'b>(pid: u64) -> Process {
+        // TODO: stack_base address should not be hard-coded
         let stack_base = VAddr::from(0xadf000_0000usize);
         let stack_size = 128 * BASE_PAGE_SIZE;
         let stack_top = stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
 
+        // TODO: upcall stack address should not be hard-coded
         let upcall_stack_base = VAddr::from(0xad2000_0000usize);
         let upcall_stack_size = 128 * BASE_PAGE_SIZE;
         let upcall_stack_top = upcall_stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
@@ -397,8 +407,6 @@ impl Process {
                 (ctl.resume_with_upcall, ctl.vaddr().into())
             });
 
-        info!("cpu_ctl is : {:#x}", cpu_ctl);
-        info!("upcall for {:?}", self);
         ResumeHandle::new_upcall(
             entry_point,
             self.upcall_stack_top,
@@ -413,10 +421,8 @@ impl Process {
             let current_pml4 = PAddr::from(controlregs::cr3());
             let process_pml4 = self.vspace.pml4_address();
             if current_pml4 != process_pml4 {
-                info!("Switching to 0x{:x}", process_pml4);
+                trace!("Switching to 0x{:x}", process_pml4);
                 controlregs::cr3_write(process_pml4.into());
-                x86::tlb::flush_all();
-                info!("Switched to 0x{:x}", process_pml4);
             }
         }
     }
@@ -509,9 +515,10 @@ impl elfloader::ElfLoader for Process {
         );
 
         self.offset = VAddr::from(pbase.as_usize());
-        info!(
+        trace!(
             "Binary loaded at address: {:#x} entry {:#x}",
-            self.offset, self.entry_point
+            self.offset,
+            self.entry_point
         );
 
         // Do the mappings:
@@ -526,7 +533,7 @@ impl elfloader::ElfLoader for Process {
     /// Load a region of bytes into the virtual address space of the process.
     fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
         let destination = self.offset + destination;
-        debug!(
+        trace!(
             "ELF Load at {:#x} -- {:#x}",
             destination,
             destination + region.len()

@@ -20,7 +20,6 @@ pub mod debug {
             libc::exit(val as i32);
         }
     }
-
 }
 
 #[start]

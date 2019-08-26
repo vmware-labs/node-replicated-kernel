@@ -324,5 +324,4 @@ mod test {
             rumpuser_putchar('c' as i64);
         }
     }
-
 }

@@ -2,9 +2,12 @@
 
 set -ex
 
-# ARG_OPTIONAL_SINGLE([features],[f],[Rust features to enable.])
+# ARG_OPTIONAL_SINGLE([kfeatures],[f],[Rust features to enable (in the kernel).])
+# ARG_OPTIONAL_SINGLE([ufeatures],[u],[Rust features to enable (in user-space).])
+# ARG_OPTIONAL_SINGLE([nodes],[a],[How many numa-nodes.],[1])
+# ARG_OPTIONAL_SINGLE([cores],[s],[How many cores (evenly divided across NUMA nodes).],[1])
 # ARG_OPTIONAL_SINGLE([cmd],[c],[Command line for kernel.])
-# ARG_OPTIONAL_REPEATED([mods],[m],[Modules to include on startup.], ['init'])
+# ARG_OPTIONAL_REPEATED([mods],[m],[Modules to include on startup.],['init'])
 # ARG_OPTIONAL_BOOLEAN([release],[r],[Do a release build.])
 # ARG_OPTIONAL_BOOLEAN([norun],[n],[Only build, don't run.])
 # ARG_HELP([Bespin runner script])
@@ -27,7 +30,7 @@ die()
 begins_with_short_option()
 {
 	local first_option all_short_options
-	all_short_options='fcmrnh'
+	all_short_options='fuascmrnh'
 	first_option="${1:0:1}"
 	test "$all_short_options" = "${all_short_options/$first_option/}" && return 1 || return 0
 }
@@ -35,7 +38,10 @@ begins_with_short_option()
 
 
 # THE DEFAULTS INITIALIZATION - OPTIONALS
-_arg_features=
+_arg_kfeatures=
+_arg_ufeatures=
+_arg_nodes="1"
+_arg_cores="1"
 _arg_cmd=
 _arg_mods=('init')
 _arg_release="off"
@@ -44,8 +50,11 @@ _arg_norun="off"
 print_help ()
 {
 	printf '%s\n' "Bespin runner script"
-	printf 'Usage: %s [-f|--features <arg>] [-c|--cmd <arg>] [-m|--mods <arg>] [-r|--(no-)release] [-n|--(no-)norun] [-h|--help]\n' "$0"
-	printf '\t%s\n' "-f,--features: Rust features to enable. (no default)"
+	printf 'Usage: %s [-f|--kfeatures <arg>] [-u|--ufeatures <arg>] [-a|--nodes <arg>] [-s|--cores <arg>] [-c|--cmd <arg>] [-m|--mods <arg>] [-r|--(no-)release] [-n|--(no-)norun] [-h|--help]\n' "$0"
+	printf '\t%s\n' "-f,--kfeatures: Rust features to enable (in the kernel). (no default)"
+	printf '\t%s\n' "-u,--ufeatures: Rust features to enable (in user-space). (no default)"
+	printf '\t%s\n' "-a,--nodes: How many numa-nodes. (default: '1')"
+	printf '\t%s\n' "-s,--cores: How many cores (evenly divided across NUMA nodes). (default: '1')"
 	printf '\t%s\n' "-c,--cmd: Command line for kernel. (no default)"
 	printf '\t%s\n' "-m,--mods: Modules to include on startup. (default array: ('init') )"
 	printf '\t%s\n' "-r,--release,--no-release: Do a release build. (off by default)"
@@ -59,16 +68,49 @@ parse_commandline ()
 	do
 		_key="$1"
 		case "$_key" in
-			-f|--features)
+			-f|--kfeatures)
 				test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
-				_arg_features="$2"
+				_arg_kfeatures="$2"
 				shift
 				;;
-			--features=*)
-				_arg_features="${_key##--features=}"
+			--kfeatures=*)
+				_arg_kfeatures="${_key##--kfeatures=}"
 				;;
 			-f*)
-				_arg_features="${_key##-f}"
+				_arg_kfeatures="${_key##-f}"
+				;;
+			-u|--ufeatures)
+				test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
+				_arg_ufeatures="$2"
+				shift
+				;;
+			--ufeatures=*)
+				_arg_ufeatures="${_key##--ufeatures=}"
+				;;
+			-u*)
+				_arg_ufeatures="${_key##-u}"
+				;;
+			-a|--nodes)
+				test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
+				_arg_nodes="$2"
+				shift
+				;;
+			--nodes=*)
+				_arg_nodes="${_key##--nodes=}"
+				;;
+			-a*)
+				_arg_nodes="${_key##-a}"
+				;;
+			-s|--cores)
+				test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
+				_arg_cores="$2"
+				shift
+				;;
+			--cores=*)
+				_arg_cores="${_key##--cores=}"
+				;;
+			-s*)
+				_arg_cores="${_key##-s}"
 				;;
 			-c|--cmd)
 				test $# -lt 2 && die "Missing value for the optional argument '$_key'." 1
@@ -158,6 +200,10 @@ else
 	USER_BUILD_DIR="`pwd`/../target/$USER_TARGET/debug"
 fi
 
+if [ "${_arg_ufeatures}" != "" ]; then
+    USER_BUILD_ARGS="$BUILD_ARGS --features $_arg_ufeatures"
+fi
+
 ESP_DIR=$UEFI_BUILD_DIR/esp
 
 cd ../bootloader
@@ -212,8 +258,8 @@ if [ "$_arg_release" == "on" ]; then
     BUILD_ARGS="$BUILD_ARGS --release"
 fi
 
-if [ "${_arg_features}" != "" ]; then
-    BUILD_ARGS="$BUILD_ARGS --features $_arg_features"
+if [ "${_arg_kfeatures}" != "" ]; then
+    BUILD_ARGS="$BUILD_ARGS --features $_arg_kfeatures"
 fi
 
 BESPIN_TARGET=x86_64-bespin RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build  $BUILD_ARGS
@@ -254,9 +300,9 @@ if [ "${_arg_norun}" != "on" ]; then
 
 	# QEMU Monitor for debug: https://en.wikibooks.org/wiki/QEMU/Monitor
 	# qemu-system-x86_64 -d help
-	#QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
+	QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
 	#QEMU_MONITOR="-d int,cpu_reset"
-	QEMU_MONITOR="-d cpu_reset,int,guest_errors"
+	#QEMU_MONITOR="-d cpu_reset,int,guest_errors"
 
     # Create a tap interface to communicate with guest and give it an IP
     sudo tunctl -t tap0 -u $USER -g `id -gn`

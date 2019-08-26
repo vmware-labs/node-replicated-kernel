@@ -69,7 +69,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     x86::current::rflags::stac();
 
     unsafe {
-        for i in 0..32 {
+        for i in 0..12 {
             let ptr = (a.rsp as *const u64).offset(i);
             sprintln!("stack[{}] = {:#x}", i, *ptr);
         }
@@ -78,7 +78,10 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     // Print where the fault happend in the address-space:
     let faulting_address = x86::controlregs::cr2();
     sprint!("Faulting address: {:#x}", faulting_address);
+    sprint!(" Instruction Pointer: {:#x}", a.rip);
     use crate::arch::kcb;
+
+    /*
     if !err.contains(PageFaultError::US) {
         kcb::try_get_kcb().map(|k| {
             sprintln!(
@@ -89,6 +92,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     } else {
         sprintln!("");
     }
+    */
 
     // Print the RIP that triggered the fault:
     sprint!("Instruction Pointer: {:#x}", a.rip);
@@ -141,12 +145,12 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     // Print the RIP that triggered the fault:
     use crate::arch::kcb;
     sprint!("Instruction Pointer: {:#x}", a.rip);
-    kcb::try_get_kcb().map(|k| {
+    /*kcb::try_get_kcb().map(|k| {
         sprintln!(
             " (in ELF: {:#x})",
             a.rip - k.kernel_args().kernel_elf_offset.as_u64()
         )
-    });
+    });*/
 
     sprintln!("{:?}", a);
     let kcb = get_kcb();
@@ -210,11 +214,14 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unsafe {
         assert!(a.vector < 256);
         trace!("handle_generic_exception {:?}", a);
+        acknowledge();
 
         // If we have an active process we should do scheduler
         // activations:
         // TODO: do proper masking based on some VCPU mask...
         if a.vector > 30 || a.vector == 3 {
+            info!("handle_generic_exception {:?}", a);
+
             let kcb = crate::kcb::get_kcb();
             let mut plock = kcb.current_process();
             let p = plock.as_mut().unwrap();
@@ -250,7 +257,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             trace!("resuming now...");
             drop(plock);
-            acknowledge();
+
             resumer.resume()
         } // make sure we drop the KCB object here
 

@@ -15,7 +15,7 @@
 	"disable-redzone": true,
 	"eliminate-frame-pointer": false,
 	"morestack": false,
-	"features": "+sse",
+	"features": "-mmx,-sse,+soft-float",
 	"position-independent-executables": true,
 	"executables": true
 }

@@ -26,7 +26,7 @@ vibrio = { path = "../../lib/vibrio" }
 
 [features]
 rumprt = ["vibrio/rumprt"]
-default = ["rumprt", "test-print", "test-map", "test-alloc", "test-upcall", "test-scheduler", "test-rump-tmpfs"]
+default = ["rumprt"]
 
 # Some smoke tests we run with CI,
 # they test that the base features of

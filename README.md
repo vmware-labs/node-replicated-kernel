@@ -36,6 +36,9 @@ in the kernel directory (run.sh will do that on your behalf).
 1. `cd kernel`
 1. `RUST_TEST_THREADS=1 cargo test --test integration-test`
 
+If you would like to run a specific integration test you can pass it with `--`:
+1. `RUST_TEST_THREADS=1 cargo test --test integration-test -- --nocapture userspace_smoke`
+
 Note: Parallel testing is not possible at the moment due to reliance on build flags for testing.
 
 ### Submitting a change

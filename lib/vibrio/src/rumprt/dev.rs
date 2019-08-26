@@ -132,12 +132,16 @@ pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     (*upcalls).hyp_unschedule.expect("rump_upcalls set")();
     trace!("irq_handler");
 
-    let mut nlock: i32 = 0;
+    let mut nlock: i32 = 1;
     loop {
+        x86::irq::disable();
+
         super::rumpkern_sched(&nlock, None);
         let r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);
-        assert_eq!(r, 1, "IRQ handler should return 1 (I don't actually know)?");
+        //assert_eq!(r, 1, "IRQ handler should return 1 (I don't actually know)?");
         super::rumpkern_unsched(&mut nlock, None);
+
+        x86::irq::enable();
 
         let thread = lineup::tls::Environment::thread();
         thread.block(); // Wake up on next IRQ
@@ -156,17 +160,6 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
     warn!("register for IRQ {}", IRQS[0].vector as usize + 31);
 
     &mut IRQS[0] as *mut _ as *mut c_void
-}
-
-use core::hash::{Hash, Hasher};
-use hashmap_core::map::HashMap;
-use spin::Mutex;
-
-lazy_static! {
-    static ref VADDR_TO_PADDR: Mutex<HashMap<u64, u64>> = {
-        let mut m = HashMap::with_capacity(128);
-        Mutex::new(m)
-    };
 }
 
 #[no_mangle]

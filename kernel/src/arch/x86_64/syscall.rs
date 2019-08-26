@@ -241,8 +241,7 @@ pub fn enable_fast_syscalls(cs_selector: SegmentSelector, ss_selector: SegmentSe
 
         wrmsr(
             IA32_FMASK,
-            !(rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF)
-                .bits(),
+            !(rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1).bits(),
         );
 
         // Enable fast syscalls

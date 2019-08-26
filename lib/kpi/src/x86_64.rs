@@ -13,6 +13,7 @@ use x86::bits64::rflags::RFlags;
 /// This struct is referenced by several assembly code pieces through the kernel
 /// and in [vibrio]. Care must be taken to adjust them after any changes to
 /// this struct.
+#[repr(packed)]
 #[derive(Debug)]
 pub struct VirtualCpu {
     /// CPU state if interrupted while not disabled

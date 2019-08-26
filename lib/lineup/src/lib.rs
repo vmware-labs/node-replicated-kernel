@@ -352,7 +352,7 @@ impl<'a> Scheduler<'a> {
             }
 
             // TODO: this should abstracted (hooks?)
-            #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+            //#[cfg(all(target_arch = "x86_64", target_os = "none"))]
             unsafe {
                 x86::irq::enable();
             }
@@ -363,7 +363,7 @@ impl<'a> Scheduler<'a> {
             };
 
             // TODO: this should abstracted (hooks?)
-            #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+            //#[cfg(all(target_arch = "x86_64", target_os = "none"))]
             unsafe {
                 x86::irq::disable();
             }

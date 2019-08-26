@@ -11,6 +11,7 @@ pub mod irq;
 pub mod kcb;
 pub mod memory;
 pub mod process;
+pub mod vspace;
 
 pub mod debug {
     use crate::ExitReason;

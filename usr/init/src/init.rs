@@ -268,6 +268,8 @@ pub fn test_rump_net() {
                 let _r = lineup::tls::Environment::thread().relinquish();
             }
 
+            info!("test_rump_net OK");
+
             let r = close(sockfd);
             assert_eq!(r, 0);
         },
@@ -285,11 +287,9 @@ pub fn test_rump_net() {
         )
         .expect("Can't create IRQ thread?");
 
-    scheduler.run();
-    // TODO: Don't drop the scheduler for now,
-    // so we don't panic because of unfinished generators:
-    unsafe { core::mem::forget(scheduler) };
-    info!("test_rump_net OK");
+    loop {
+        scheduler.run();
+    }
 }
 
 pub fn install_vcpu_area() {
@@ -304,7 +304,7 @@ pub fn install_vcpu_area() {
 pub fn upcall_test() {
     sys_println!("causing a debug exception");
     unsafe { x86::int!(3) };
-    sys_println!("hopefully we arrive here again?");
+    info!("upcall_test OK");
 }
 
 #[no_mangle]

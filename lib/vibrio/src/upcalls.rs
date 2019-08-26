@@ -30,15 +30,20 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
         vector,
         error
     );
+    unsafe {
+        x86::irq::disable();
+    }
 
     if vector == 0x2a {
         trace!("got networked interrupt...");
         let scheduler = lineup::tls::Environment::scheduler();
         scheduler.add_to_runlist(lineup::ThreadId(1));
     }
+    unsafe {
+        x86::irq::enable();
+    }
 
     trace!("upcall_while_enabled: renable and resume...");
-    control.enable_upcalls();
     unsafe { resume(control) }
 }
 
@@ -55,15 +60,19 @@ pub unsafe fn resume(control: &mut kpi::arch::VirtualCpu) -> ! {
     // is in this function (i.e., between the `resume` and `resume_end`
     // symbol (see asm! below))
     control.enable_upcalls();
+    //debug!("resume enabled_state {:p}", &control.enabled_state);
 
-    asm! {" // Restore fs and gs registers
+    asm! {"
+            // Restore gs
             //movq 18*8(%rsi), %rdi
             //wrgsbase %rdi
-            //movq 19*8(%rsi), %rdi
-            //wrfsbase %rdi
+
+            // Restore fs
+            movq 19*8(%rsi), %rdi
+            wrfsbase %rdi
 
             // Restore vector register
-            //fxrstor  20*8(%rsi)
+            fxrstor 24*8(%rsi)
 
             // Restore CPU registers
             movq  0*8(%rsi), %rax

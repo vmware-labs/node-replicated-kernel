@@ -212,9 +212,8 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
     sec: *mut i64,
     nsec: *mut u64,
 ) -> i64 {
-    //trace!("rumpuser_clock_gettime");
-
     let boot_time = rawtime::duration_since_boot();
+    //info!("rumpuser_clock_gettime {:?}", boot_time);
 
     match enum_rumpclock {
         RUMPUSER_CLOCK_ABSMONO => {
@@ -223,6 +222,7 @@ pub unsafe extern "C" fn rumpuser_clock_gettime(
             0
         }
         RUMPUSER_CLOCK_RELWALL => {
+            error!("RUMPUSER_CLOCK_RELWALL");
             //*sec = ((*rawtime::WALL_TIME_ANCHOR).as_unix_time() + boot_time.as_secs()) as i64;
             *sec = boot_time.as_secs() as i64;
             *nsec = boot_time.subsec_nanos() as u64;

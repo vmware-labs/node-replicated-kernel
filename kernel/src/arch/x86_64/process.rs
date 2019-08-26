@@ -223,7 +223,8 @@ impl ResumeHandle {
     unsafe fn upcall(self) -> ! {
         trace!("About to go to user-space: {:#x}", self.entry_point);
         // TODO: For now we allow unconditional IO access from user-space
-        let user_flags = rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1;
+        let user_flags =
+            rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;;
 
         // Switch to user-space with initial zeroed registers.
         //
@@ -328,6 +329,12 @@ impl Process {
             p.stack_size,
             MapAction::ReadWriteExecuteUser,
             BASE_PAGE_SIZE as u64,
+        );
+        info!(
+            "stack base {:#x} size: {} end {:#x}",
+            p.stack_base,
+            p.stack_size,
+            p.stack_base + p.stack_size
         );
 
         // Allocate an upcall stack
@@ -515,10 +522,9 @@ impl elfloader::ElfLoader for Process {
         );
 
         self.offset = VAddr::from(pbase.as_usize());
-        trace!(
+        info!(
             "Binary loaded at address: {:#x} entry {:#x}",
-            self.offset,
-            self.entry_point
+            self.offset, self.entry_point
         );
 
         // Do the mappings:

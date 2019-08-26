@@ -4,7 +4,7 @@
 
 extern crate either;
 extern crate fringe;
-extern crate hashmap_core;
+extern crate hashbrown;
 extern crate log;
 extern crate rawtime;
 extern crate x86;
@@ -17,7 +17,7 @@ extern crate env_logger;
 
 #[cfg(test)]
 mod ds {
-    pub use hashmap_core::map::HashMap;
+    pub use hashbrown::HashMap;
     pub use std::sync::Arc;
     pub use std::vec::Vec;
 }
@@ -28,7 +28,7 @@ mod ds {
     pub use alloc::boxed::Box;
     pub use alloc::sync::Arc;
     pub use alloc::vec::Vec;
-    pub use hashmap_core::map::HashMap;
+    pub use hashbrown::HashMap;
 }
 
 use core::hash::{Hash, Hasher};

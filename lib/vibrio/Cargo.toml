@@ -16,8 +16,8 @@ lineup = { path = "../../lib/lineup" }
 spin = { version = "0.4.8", default_features = false }
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
 rumpkernel = { path = "../../lib/rumpkernel", optional = true }
-hashmap_core = { version = "0.1.10", optional = true }
+hashbrown = { version = "0.1.10", optional = true }
 lazy_static = { version = "1.3", features = ["spin_no_std"], optional = true }
 
 [features]
-rumprt = ["rumpkernel", "hashmap_core", "lazy_static"]
+rumprt = ["rumpkernel", "hashbrown", "lazy_static"]

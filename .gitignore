@@ -16,6 +16,7 @@ Cargo.lock
 
 # Editor configs
 .vscode
+.tmuxinator.yml
 
 binutils-*
 public

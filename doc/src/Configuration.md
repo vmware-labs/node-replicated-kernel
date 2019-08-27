@@ -55,11 +55,13 @@ Please enter the gitlab-ci token for this runner:
 Please enter the gitlab-ci description for this runner:
 [ENTER]
 Please enter the gitlab-ci tags for this runner (comma separated):
-os,rust
+[ENTER]
 Registering runner... succeeded                     runner=Dd5n2xcY
 Please enter the executor: ssh, virtualbox, docker+machine, kubernetes, docker, docker-ssh, shell, custom, parallels, docker-ssh+machine:
 shell
 ```
+
+In runner settings (Web GUI), check mark "Run untagged jobs" (Indicates whether this runner can pick jobs without tags).
 
 ### Set-up software on gitlab runner account
 

@@ -232,6 +232,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     pptr: *mut c_ulong,
     vptr: *mut c_ulong,
 ) -> c_int {
+    trace!("rumpcomp_pci_dmalloc");
     let layout = Layout::from_size_align(size, alignment);
     let kcb = get_kcb();
     let mut fmanager = kcb.pmanager();

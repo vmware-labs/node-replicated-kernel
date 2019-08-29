@@ -53,16 +53,31 @@ matches = "0.1.8"
 cc = "1.0"
 
 [features]
+# Enable rumpkernel runtime in the kernel
+rumprt = ["rumpkernel"]
+# Run an integration test instead of standard kernel main function
 integration-test = []
+# exit: test qemu exit functionality (used heavily for CI)
 test-exit = []
+# pfault: test page-fault handler
 test-pfault = []
+# gpfault: test general protection fault handler
 test-gpfault = []
+# alloc: test memory allocation
 test-alloc = []
+# sse: test SIMD register are usable
 test-sse = []
-test-rump-tmpfs = [ "rumpkernel", "lineup" ]
-test-rump-net = [ "rumpkernel", "lineup" ]
+# rump-tmpfs: test rumprt file system and init
+test-rump-tmpfs = [ "rumprt", "lineup" ]
+# rump-net: test rumprt e1000 driver and network stack
+test-rump-net = [ "rumprt", "lineup" ]
+# lkl test
 test-linux = [ "lkl", "lineup" ]
+# test time
 test-time = []
+# scheduler: test cooperative scheduler
 test-scheduler = [ "lineup" ]
+# acpi: test ACPI is initialized
 test-acpi = []
+# userspace: run a test in user-space by spawning the init process
 test-userspace = []

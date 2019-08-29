@@ -1,3 +1,5 @@
+#![feature(vec_remove_item)]
+
 extern crate rexpect;
 #[macro_use]
 extern crate matches;
@@ -18,33 +20,45 @@ use rexpect::{spawn, spawn_bash};
 /// It will make sure the code is compiled and ready to launch.
 /// Otherwise the 15s timeout we set on the PtySession may not be enough
 /// to build from scratch and run the test.
-fn spawn_qemu(test: &str, user_features: Option<&str>) -> Result<rexpect::session::PtySession> {
+fn spawn_qemu(
+    kernel_features: &str,
+    user_features: Option<&str>,
+) -> Result<rexpect::session::PtySession> {
     let features = format!("integration-test,{}", test);
 
+    let mut cmd = vec![
+        "run.sh",
+        "--kfeatures",
+        kernel_features.as_str(),
+        "--cmd",
+        "log=info",
+        "--norun",
+    ];
+
+    match user_features {
+        Some(features) => {
+            cmd.push("--ufeatures");
+            cmd.push(features);
+        }
+        None => {}
+    };
+
     let o = process::Command::new("bash")
-        .args(&[
-            "run.sh",
-            "--kfeatures",
-            features.as_str(),
-            "--ufeatures",
-            user_features.unwrap_or("\"\""),
-            "--cmd",
-            "log=info",
-            "--norun",
-        ])
+        .args(&cmd)
         .output()
         .expect("failed to build");
-    assert!(o.status.success());
+    assert!(
+        o.status.success(),
+        "Building test failed: {:?}",
+        cmd.join(" ")
+    );
 
-    spawn(
-        format!(
-            "bash run.sh --kfeatures {} --ufeatures {} --cmd log=info",
-            features,
-            user_features.unwrap_or("\"\"")
-        )
-        .as_str(),
-        Some(15000),
-    )
+    // Now run the command, by removing the --norun and adding bash to the front
+    let no_run = cmd.remove_item(&"--norun");
+    cmd.insert(0, "bash");
+    assert!(no_run.is_some(), "Found and removed no_run in cmd");
+
+    spawn(&cmd.join(" "), Some(15000))
 }
 
 /// Spawns a DHCP server on our host
@@ -54,11 +68,11 @@ fn spawn_qemu(test: &str, user_features: Option<&str>) -> Result<rexpect::sessio
 fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:
-    let o = process::Command::new("sudo")
+    let _o = process::Command::new("sudo")
         .args(&["service", "apparmor", "teardown"])
         .output()
         .expect("failed to disable apparmor");
-    let o = process::Command::new("sudo")
+    let _o = process::Command::new("sudo")
         .args(&["killall", "dhcpd"])
         .output()
         .expect("failed to shut down dhcpd");
@@ -185,7 +199,7 @@ fn sse() {
 /// management, IO and device interrupts.
 fn rump_fs() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-rump-tmpfs", None)?;
+        let mut p = spawn_qemu("rumprt,test-rump-tmpfs", None)?;
         p.exp_string("bytes_written: 12")?;
         p.exp_string("bytes_read: 12")?;
         p.exp_eof()?;
@@ -213,7 +227,7 @@ fn rump_net() {
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
 
-        let mut p = spawn_qemu("test-rump-net", None)?;
+        let mut p = spawn_qemu("rumprt,test-rump-net", None)?;
 
         // Test that DHCP works:
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;

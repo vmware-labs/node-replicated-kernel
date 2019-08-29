@@ -111,9 +111,10 @@ impl SafeZoneAllocator {
 
 unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        trace!("alloc layout={:?}", layout);
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
             let ptr = self.0.lock().allocate(layout);
-            //debug!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
+            trace!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
             ptr
         } else {
             let kcb = crate::kcb::get_kcb();
@@ -124,7 +125,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                 region.zero();
                 region.kernel_vaddr().as_mut_ptr()
             });
-
+            trace!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
             ptr
         }
     }

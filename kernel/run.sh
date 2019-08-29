@@ -187,7 +187,6 @@ parse_commandline "$@"
 #
 echo "> Building the bootloader"
 UEFI_TARGET="x86_64-uefi"
-USER_TARGET="x86_64-bespin-none"
 if [ "$_arg_release" == "on" ]; then
 	UEFI_BUILD_ARGS="--release"
     UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/release"
@@ -223,6 +222,20 @@ cp $UEFI_BUILD_DIR/bootloader.efi $ESP_DIR/EFI/Boot/BootX64.efi
 # Build user modules
 #
 echo "> Building user modules"
+USER_TARGET="x86_64-bespin-none"
+USER_BUILD_ARGS="--verbose --target=$USER_TARGET"
+
+if [ "$_arg_release" == "on" ]; then
+	USER_BUILD_ARGS="$USER_BUILD_ARGS --release"
+	USER_BUILD_DIR="`pwd`/../target/$USER_TARGET/release"
+else
+	USER_BUILD_DIR="`pwd`/../target/$USER_TARGET/debug"
+fi
+
+if [ "${_arg_ufeatures}" != "" ]; then
+    USER_BUILD_ARGS="$USER_BUILD_ARGS --features $_arg_ufeatures"
+fi
+
 cd ../usr
 if [ "${_arg_mods}" != "" ]; then
     echo "Found MODULES: ${_arg_mods}"
@@ -230,7 +243,7 @@ if [ "${_arg_mods}" != "" ]; then
 	do
 		echo "ITEM: $item"
 		cd ${item}
-		RUST_TARGET_PATH=`pwd`/../ xargo build --target=x86_64-bespin-none $USER_BUILD_ARGS
+		RUST_TARGET_PATH=`pwd`/../ xargo build $USER_BUILD_ARGS
 		cp $USER_BUILD_DIR/$item $ESP_DIR/
 		cd ..
 	done

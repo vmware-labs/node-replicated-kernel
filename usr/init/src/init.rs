@@ -334,7 +334,7 @@ pub extern "C" fn _start() -> ! {
     #[cfg(feature = "rumprt")]
     {
         // Run either, test-rump-net or test-rump-tmpfs
-        // Can't run both together at the moment, I suspect it is due to
+        // TODO: Can't run both together at the moment, I suspect it is due to
         // the IRQ thread being statically 'hacked' as thread#1 in virbio/upcalls.rs
         #[cfg(all(not(feature = "test-rump-net"), feature = "test-rump-tmpfs"))]
         test_rump_tmpfs();

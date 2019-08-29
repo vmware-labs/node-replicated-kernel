@@ -22,8 +22,6 @@ elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
 driverkit = { path = "../lib/driverkit/" }
-rumpkernel = { path = "../lib/rumpkernel", optional = true }
-lkl = { path = "../lib/linuxkernel", optional = true }
 lineup = { path = "../lib/lineup", optional = true }
 rawtime = { path = "../lib/rawtime" }
 custom_error = { path = "../lib/custom_error" }
@@ -53,8 +51,6 @@ matches = "0.1.8"
 cc = "1.0"
 
 [features]
-# Enable rumpkernel runtime in the kernel
-rumprt = ["rumpkernel"]
 # Run an integration test instead of standard kernel main function
 integration-test = []
 # exit: test qemu exit functionality (used heavily for CI)
@@ -67,17 +63,11 @@ test-gpfault = []
 test-alloc = []
 # sse: test SIMD register are usable
 test-sse = []
-# rump-tmpfs: test rumprt file system and init
-test-rump-tmpfs = [ "rumprt", "lineup" ]
-# rump-net: test rumprt e1000 driver and network stack
-test-rump-net = [ "rumprt", "lineup" ]
-# lkl test
-test-linux = [ "lkl", "lineup" ]
 # test time
 test-time = []
 # scheduler: test cooperative scheduler
 test-scheduler = [ "lineup" ]
 # acpi: test ACPI is initialized
-test-acpi = []
+test-acpi = [ "lineup" ]
 # userspace: run a test in user-space by spawning the init process
 test-userspace = []

@@ -4,12 +4,13 @@ use crate::tls::ThreadLocalStorage;
 
 #[cfg(target_os = "none")]
 pub(crate) unsafe fn get_tls<'a>() -> *mut ThreadLocalStorage<'a> {
-    segmentation::rdgsbase() as *mut ThreadLocalStorage
+    // Uses fs register because the kernel uses gs for kcb storage
+    segmentation::rdfsbase() as *mut ThreadLocalStorage
 }
 
 #[cfg(target_os = "none")]
 pub(crate) unsafe fn set_tls(t: *mut ThreadLocalStorage) {
-    segmentation::wrgsbase(t as u64)
+    segmentation::wrfsbase(t as u64)
 }
 
 #[test]

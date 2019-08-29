@@ -7,7 +7,7 @@ extern crate matches;
 use std::process;
 
 use rexpect::errors::*;
-use rexpect::process::signal::{SIGINT, SIGTERM};
+use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
 use rexpect::{spawn, spawn_bash};
 
@@ -24,7 +24,7 @@ fn spawn_qemu(
     kernel_features: &str,
     user_features: Option<&str>,
 ) -> Result<rexpect::session::PtySession> {
-    let features = format!("integration-test,{}", test);
+    let kernel_features = format!("integration-test,{}", kernel_features);
 
     let mut cmd = vec![
         "run.sh",
@@ -192,72 +192,6 @@ fn sse() {
 }
 
 #[test]
-/// Tests the rump FS (in kernel-space).
-///
-/// Checks that we can initialize a BSD libOS and run FS operations.
-/// This implicitly tests many components such as the scheduler, memory
-/// management, IO and device interrupts.
-fn rump_fs() {
-    let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("rumprt,test-rump-tmpfs", None)?;
-        p.exp_string("bytes_written: 12")?;
-        p.exp_string("bytes_read: 12")?;
-        p.exp_eof()?;
-        p.process.exit()
-    };
-
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
-}
-
-#[test]
-/// Tests the rump network stack (in kernel-space).
-///
-/// This tests spawns a DHCP server where we request an IP from,
-/// tries to ping the network stack in the guest and then receives
-/// some packets from the guest.
-///
-/// Checks that we can initialize a BSD libOS and run network operations.
-/// This implicitly tests many components such as the scheduler, memory
-/// management, IO and device interrupts.
-fn rump_net() {
-    let qemu_run = || -> Result<WaitStatus> {
-        let mut dhcp_server = spawn_dhcpd()?;
-        let mut receiver = spawn_receiver()?;
-
-        let mut p = spawn_qemu("rumprt,test-rump-net", None)?;
-
-        // Test that DHCP works:
-        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
-
-        // Test that sendto works:
-        // Currently swallows first packet (see also: https://github.com/rumpkernel/rumprun/issues/131)
-        //receiver.exp_string("pkt 1")?;
-        receiver.exp_string("pkt 2")?;
-        receiver.exp_string("pkt 3")?;
-        receiver.exp_string("pkt 4")?;
-
-        // Test that ping works:
-        let mut ping = spawn_ping()?;
-        for _ in 0..3 {
-            ping.exp_regex(r#"64 bytes from 172.31.0.10: icmp_seq=(\d+) ttl=255 time=(.*?ms)"#)?;
-        }
-
-        ping.process.kill(SIGTERM)?;
-        dhcp_server.send_control('c')?;
-        receiver.process.kill(SIGTERM)?;
-        p.process.kill(SIGTERM)
-    };
-
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Signaled(_, SIGTERM, _)
-    );
-}
-
-#[test]
 /// Tests the scheduler (in kernel-space).
 fn scheduler() {
     let qemu_run = || -> Result<WaitStatus> {
@@ -279,7 +213,7 @@ fn scheduler() {
 fn acpi_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu("test-acpi", None)?;
-        p.exp_string("ACPI initialized")?;
+        p.exp_string("ACPI Initialized")?;
         p.exp_eof()?;
         p.process.exit()
     };
@@ -303,7 +237,7 @@ fn userspace_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_qemu(
             "test-userspace",
-            Some("test-print,test-map,test-alloc,test-upcall,test-scheduler,test-rump-tmpfs"),
+            Some("test-print,test-map,test-alloc,test-upcall,test-scheduler"),
         )?;
         p.exp_string("print_test OK")?;
         p.exp_string("upcall_test OK")?;
@@ -329,7 +263,7 @@ fn userspace_smoke() {
 ///  * PCI/user-space drivers
 ///  * Interrupt registration and upcalls
 ///
-fn userspace_net() {
+fn userspace_rumprt_net() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
@@ -361,5 +295,26 @@ fn userspace_net() {
     assert_matches!(
         qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
         WaitStatus::Signaled(_, SIGTERM, _)
+    );
+}
+
+#[test]
+/// Tests the rump FS.
+///
+/// Checks that we can initialize a BSD libOS and run FS operations.
+/// This implicitly tests many components such as the scheduler, memory
+/// management, IO and device interrupts.
+fn userspace_rumprt_fs() {
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_qemu("test-userspace", Some("rumprt,test-rump-tmpfs"))?;
+        p.exp_string("bytes_written: 12")?;
+        p.exp_string("bytes_read: 12")?;
+        p.exp_eof()?;
+        p.process.exit()
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Exited(_, 0)
     );
 }

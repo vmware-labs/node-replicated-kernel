@@ -1,6 +1,9 @@
 fn main() {
     #[cfg(feature = "rumprt")]
     rumprt_includes();
+
+    #[cfg(feature = "lklrt")]
+    lkl_includes();
 }
 
 #[allow(unused)]
@@ -43,4 +46,10 @@ fn rumprt_includes() {
     println!("cargo:rustc-link-lib=static=rumpdev_pci_usbhc");
     println!("cargo:rustc-link-lib=static=rumpdev_usb");
     println!("cargo:rustc-link-lib=static=rumpdev_umass");
+}
+
+#[allow(unused)]
+fn lkl_includes() {
+    // Linux Kernel
+    println!("cargo:rustc-link-lib=static=linux");
 }

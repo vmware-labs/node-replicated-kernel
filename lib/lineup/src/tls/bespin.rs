@@ -1,5 +1,5 @@
-use x86::bits64::segmentation;
 use crate::tls::ThreadLocalStorage;
+use x86::bits64::segmentation;
 
 pub(crate) unsafe fn get_tls<'a>() -> *mut ThreadLocalStorage<'a> {
     segmentation::rdgsbase() as *mut ThreadLocalStorage

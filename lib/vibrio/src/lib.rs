@@ -29,4 +29,5 @@ pub mod upcalls;
 #[cfg(feature = "rumprt")]
 pub mod rumprt;
 
-//pub use syscalls::{exit, print, vspace};
+#[cfg(feature = "lklrt")]
+pub mod lklrt;

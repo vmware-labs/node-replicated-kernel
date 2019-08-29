@@ -244,7 +244,6 @@ fn userspace_smoke() {
         p.exp_string("map_test OK")?;
         p.exp_string("alloc_test OK")?;
         p.exp_string("scheduler_test OK")?;
-        p.exp_string("test_rump_tmpfs OK")?;
         p.exp_eof()?;
         p.process.exit()
     };

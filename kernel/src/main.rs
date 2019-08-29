@@ -74,12 +74,6 @@ mod memory;
 mod prelude;
 mod error;
 
-#[cfg(all(target_os = "none", feature = "rumpkernel"))]
-pub mod rumprt;
-
-#[cfg(all(target_os = "none", feature = "lkl"))]
-pub mod linuxrt;
-
 #[cfg(target_os = "none")]
 extern crate acpica_sys;
 

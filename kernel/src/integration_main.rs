@@ -241,34 +241,3 @@ pub fn xmain() {
     info!("division by zero = {}", 10.0 / 0.0);
     arch::debug::shutdown(ExitReason::Ok);
 }
-
-#[cfg(all(feature = "integration-test", feature = "test-linux"))]
-pub fn xmain() {
-    use cstr_core::CStr;
-
-    extern "C" {
-        // int __init lkl_start_kernel(struct lkl_host_operations *ops, const char *fmt, ...)
-        fn lkl_start_kernel(ops: *const lkl::lkl_host_operations, fmt: *const i8) -> i32;
-        fn lkl_sys_halt();
-    }
-
-    let up = lineup::DEFAULT_UPCALLS;
-
-    let mut scheduler = lineup::Scheduler::new(up);
-    scheduler.spawn(
-        32 * 4096,
-        |_yielder| unsafe {
-            let linux_ops = linuxrt::get_host_ops();
-            let boot_arg = CStr::from_bytes_with_nul(b"mem=16M loglevel=8\0");
-            let r = lkl_start_kernel(&linux_ops, boot_arg.unwrap().as_ptr());
-            info!("lkl_start_kernel {}", r);
-
-            arch::debug::shutdown(ExitReason::Ok);
-        },
-        core::ptr::null_mut(),
-    );
-
-    loop {
-        scheduler.run();
-    }
-}

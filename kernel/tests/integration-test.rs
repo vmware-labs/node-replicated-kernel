@@ -11,6 +11,97 @@ use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
 use rexpect::{spawn, spawn_bash};
 
+/// Arguments passed to the run.sh script to configure a test.
+struct RunnerArgs<'a> {
+    /// Test name of kernel integration test.
+    kernel_features: Vec<&'a str>,
+    /// Features passed to compiled user-space modules.
+    user_features: Vec<&'a str>,
+    /// Number of NUMA nodes the VM should have.
+    nodes: usize,
+    /// Number of cores the VM should have.
+    cores: usize,
+    /// Kernel command line argument.
+    cmd: Option<&'a str>,
+    /// Which user-space modules to include.
+    mods: Vec<&'a str>,
+    /// Should we compile in release mode?
+    release: bool,
+    /// If true don't run, just compile.
+    norun: bool,
+}
+
+#[allow(unused)]
+impl<'a> RunnerArgs<'a> {
+    fn new(kernel_test: &str) -> RunnerArgs {
+        RunnerArgs {
+            kernel_features: vec![kernel_test],
+            user_features: Vec::new(),
+            nodes: 1,
+            cores: 1,
+            cmd: None,
+            mods: Vec::new(),
+            release: false,
+            norun: false,
+        }
+    }
+
+    fn kernel_features(&'a mut self, kernel_features: &[&'a str]) -> &'a mut RunnerArgs {
+        self.kernel_features.extend_from_slice(kernel_features);
+        self
+    }
+
+    fn kernel_feature(&'a mut self, kernel_feature: &'a str) -> &'a mut RunnerArgs {
+        self.kernel_features.push(kernel_feature);
+        self
+    }
+
+    fn user_features(&'a mut self, user_features: &[&'a str]) -> &'a mut RunnerArgs {
+        self.user_features.extend_from_slice(user_features);
+        self
+    }
+
+    fn user_feature(&'a mut self, user_feature: &'a str) -> &'a mut RunnerArgs {
+        self.user_features.push(user_feature);
+        self
+    }
+
+    fn nodes(&'a mut self, nodes: usize) -> &'a mut RunnerArgs {
+        self.nodes = nodes;
+        self
+    }
+
+    fn cores(&'a mut self, cores: usize) -> &'a mut RunnerArgs {
+        self.cores = cores;
+        self
+    }
+
+    fn cmd(&'a mut self, cmd: &'a str) -> &'a mut RunnerArgs {
+        self.cmd = Some(cmd);
+        self
+    }
+
+    fn modules(&'a mut self, mods: &[&'a str]) -> &'a mut RunnerArgs {
+        self.mods.extend_from_slice(mods);
+        self
+    }
+
+    fn module(&'a mut self, module: &'a str) -> &'a mut RunnerArgs {
+        self.mods.push(module);
+        self
+    }
+
+    fn release(&'a mut self) -> &'a mut RunnerArgs {
+        self.release = true;
+        self
+    }
+
+    fn norun(&'a mut self) -> &'a mut RunnerArgs {
+        self.norun = true;
+        self
+    }
+}
+
 /// Builds the kernel and spawns a qemu instance of it.
 ///
 /// For kernel-code it gets compiled with kernel features `integration-test`
@@ -20,27 +111,31 @@ use rexpect::{spawn, spawn_bash};
 /// It will make sure the code is compiled and ready to launch.
 /// Otherwise the 15s timeout we set on the PtySession may not be enough
 /// to build from scratch and run the test.
-fn spawn_qemu(
-    kernel_features: &str,
-    user_features: Option<&str>,
-) -> Result<rexpect::session::PtySession> {
-    let kernel_features = format!("integration-test,{}", kernel_features);
+fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
+    let kernel_features = format!("integration-test,{}", args.kernel_features.join(","));
+    let user_features = args.user_features.join(",");
+    let cores = format!("{}", args.cores);
+    let nodes = format!("{}", args.nodes);
 
     let mut cmd = vec![
         "run.sh",
         "--kfeatures",
         kernel_features.as_str(),
+        "--cores",
+        cores.as_str(),
+        "--nodes",
+        nodes.as_str(),
         "--cmd",
         "log=info",
         "--norun",
     ];
 
-    match user_features {
-        Some(features) => {
+    match args.user_features.is_empty() {
+        false => {
             cmd.push("--ufeatures");
-            cmd.push(features);
+            cmd.push(user_features.as_str());
         }
-        None => {}
+        true => {}
     };
 
     let o = process::Command::new("bash")
@@ -102,7 +197,7 @@ fn spawn_ping() -> Result<rexpect::session::PtySession> {
 /// and communicate if our tests passed or failed.
 fn exit() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-exit", None)?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-exit"))?;
         p.exp_string("Started")?;
         p.exp_eof()?;
         p.process.exit()
@@ -119,7 +214,7 @@ fn exit() {
 /// In essence a trap should be raised and we should get a backtrace.
 fn pfault() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-pfault", None)?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-pfault"))?;
         p.exp_string("[IRQ] Page Fault")?;
         p.exp_regex("Backtrace:")?;
         p.exp_eof()?;
@@ -138,7 +233,7 @@ fn pfault() {
 /// Again we'd expect a trap and a backtrace.
 fn gpfault() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-gpfault", None)?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-gpfault"))?;
         p.exp_string("[IRQ] GENERAL PROTECTION FAULT")?;
         p.exp_regex("frame #2  - 0x[0-9a-fA-F]+ - bespin::xmain")?;
         p.exp_eof()?;
@@ -158,7 +253,7 @@ fn gpfault() {
 /// and the global allocator integration.
 fn alloc() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-alloc", None)?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-alloc"))?;
         p.exp_string("small allocations work.")?;
         p.exp_string("large allocations work.")?;
         p.exp_eof()?;
@@ -178,7 +273,7 @@ fn alloc() {
 /// point.
 fn sse() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-sse", None)?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-sse"))?;
         p.exp_string("division = 4.566210045662101")?;
         p.exp_string("division by zero = inf")?;
         p.exp_eof()?;
@@ -195,7 +290,7 @@ fn sse() {
 /// Tests the scheduler (in kernel-space).
 fn scheduler() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-scheduler", None)?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-scheduler"))?;
         p.exp_string("lwt2 ThreadId(1)")?;
         p.exp_string("lwt1 ThreadId(0)")?;
         p.exp_eof()?;
@@ -212,7 +307,7 @@ fn scheduler() {
 /// Test that we can initialize the ACPI subsystem (in kernel-space).
 fn acpi_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-acpi", None)?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(2))?;
         p.exp_string("ACPI Initialized")?;
         p.exp_eof()?;
         p.process.exit()
@@ -235,10 +330,14 @@ fn acpi_smoke() {
 ///
 fn userspace_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu(
-            "test-userspace",
-            Some("test-print,test-map,test-alloc,test-upcall,test-scheduler"),
-        )?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-userspace").user_features(&[
+            "test-print",
+            "test-map",
+            "test-alloc",
+            "test-upcall",
+            "test-scheduler",
+        ]))?;
+
         p.exp_string("print_test OK")?;
         p.exp_string("upcall_test OK")?;
         p.exp_string("map_test OK")?;
@@ -267,7 +366,7 @@ fn userspace_rumprt_net() {
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
 
-        let mut p = spawn_qemu("test-userspace", Some("test-rump-net"))?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-userspace").user_feature("test-rump-net"))?;
 
         // Test that DHCP works:
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
@@ -305,7 +404,8 @@ fn userspace_rumprt_net() {
 /// management, IO and device interrupts.
 fn userspace_rumprt_fs() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_qemu("test-userspace", Some("rumprt,test-rump-tmpfs"))?;
+        let mut p =
+            spawn_bespin(&RunnerArgs::new("test-userspace").user_feature("test-rump-tmpfs"))?;
         p.exp_string("bytes_written: 12")?;
         p.exp_string("bytes_read: 12")?;
         p.exp_eof()?;

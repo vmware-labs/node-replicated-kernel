@@ -108,6 +108,30 @@ pub fn xmain() {
     scheduler.spawn(
         32 * 4096,
         |_| {
+            acpi::process_pcie();
+            assert_eq!(acpi::LOCAL_APICS.len(), 2, "Found two cores");
+            assert_eq!(acpi::IO_APICS.len(), 1, "Found one IO APIC");
+
+            arch::debug::shutdown(ExitReason::Ok);
+        },
+        core::ptr::null_mut(),
+    );
+
+    loop {
+        scheduler.run();
+    }
+}
+
+#[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
+pub fn xmain() {
+    use arch::acpi;
+    use arch::memory::{PAddr, BASE_PAGE_SIZE};
+    use arch::vspace::MapAction;
+
+    let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
+    scheduler.spawn(
+        32 * 4096,
+        |_| {
             let kcb = crate::arch::kcb::get_kcb();
             const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
             let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;

@@ -323,7 +323,7 @@ if [ "${_arg_norun}" != "on" ]; then
 
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
 	# -kernel ./mbkernel -initrd kernel
-    qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp 2 -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR
+    qemu-system-x86_64 $KVM_ARG -m 1024 -d int -smp ${_arg_cores} -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR
     QEMU_EXIT=$?
     set +ex
     # qemu will do exit((val << 1) | 1);

@@ -54,20 +54,22 @@ cc = "1.0"
 # Run an integration test instead of standard kernel main function
 integration-test = []
 # exit: test qemu exit functionality (used heavily for CI)
-test-exit = []
+test-exit = ["integration-test"]
 # pfault: test page-fault handler
-test-pfault = []
+test-pfault = ["integration-test"]
 # gpfault: test general protection fault handler
-test-gpfault = []
+test-gpfault = ["integration-test"]
 # alloc: test memory allocation
-test-alloc = []
+test-alloc = ["integration-test"]
 # sse: test SIMD register are usable
-test-sse = []
+test-sse = ["integration-test"]
 # test time
-test-time = []
+test-time = ["integration-test"]
 # scheduler: test cooperative scheduler
-test-scheduler = [ "lineup" ]
+test-scheduler = [ "integration-test", "lineup" ]
 # acpi: test ACPI is initialized
-test-acpi = [ "lineup" ]
+test-acpi = [ "integration-test", "lineup" ]
+# coreboot: Test that we can boot-up additional cores
+test-coreboot = ["integration-test"]
 # userspace: run a test in user-space by spawning the init process
-test-userspace = []
+test-userspace = ["integration-test"]

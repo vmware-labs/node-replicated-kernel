@@ -189,12 +189,12 @@ fn spawn_ping() -> Result<rexpect::session::PtySession> {
     spawn("ping 172.31.0.10", Some(20000))
 }
 
-#[test]
 /// Make sure exiting the kernel works.
 ///
 /// We have a special ioport that we use to signal the exit to
 /// qemu and some parsing logic to read the exit code
 /// and communicate if our tests passed or failed.
+#[test]
 fn exit() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-exit"))?;
@@ -209,9 +209,9 @@ fn exit() {
     );
 }
 
-#[test]
 /// Make sure the page-fault handler functions as expected.
 /// In essence a trap should be raised and we should get a backtrace.
+#[test]
 fn pfault() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-pfault"))?;
@@ -227,10 +227,10 @@ fn pfault() {
     );
 }
 
-#[test]
 /// Make sure general protection fault handling works as expected.
 ///
 /// Again we'd expect a trap and a backtrace.
+#[test]
 fn gpfault() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-gpfault"))?;
@@ -246,11 +246,11 @@ fn gpfault() {
     );
 }
 
-#[test]
 /// Make sure we can do kernel memory allocations.
 ///
 /// This smoke tests the physical memory allocator
 /// and the global allocator integration.
+#[test]
 fn alloc() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-alloc"))?;
@@ -266,11 +266,11 @@ fn alloc() {
     );
 }
 
-#[test]
 /// Test that makes use of SSE in kernel-space and see if it works.AsMut
 ///
 /// Tests that we have correctly set-up the hardware to deal with floating
 /// point.
+#[test]
 fn sse() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-sse"))?;
@@ -286,8 +286,8 @@ fn sse() {
     );
 }
 
-#[test]
 /// Tests the scheduler (in kernel-space).
+#[test]
 fn scheduler() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-scheduler"))?;
@@ -303,8 +303,8 @@ fn scheduler() {
     );
 }
 
-#[test]
 /// Test that we can initialize the ACPI subsystem (in kernel-space).
+#[test]
 fn acpi_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(2))?;
@@ -319,7 +319,22 @@ fn acpi_smoke() {
     );
 }
 
+/// Test that we can boot additional cores.
 #[test]
+fn coreboot() {
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(2))?;
+        p.exp_string("ACPI Initialized")?;
+        p.exp_eof()?;
+        p.process.exit()
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Exited(_, 0)
+    );
+}
+
 /// Tests that basic user-space support is functional.
 ///
 /// This tests various user-space components such as:
@@ -327,7 +342,7 @@ fn acpi_smoke() {
 ///  * system calls (printing, mem. mgmt.)
 ///  * user-space scheduling and upcalls
 ///  * BSD libOS in user-space
-///
+#[test]
 fn userspace_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-userspace").user_features(&[
@@ -353,7 +368,6 @@ fn userspace_smoke() {
     );
 }
 
-#[test]
 /// Tests that user-space networking is functional.
 ///
 /// This tests various user-space components such as:
@@ -361,6 +375,7 @@ fn userspace_smoke() {
 ///  * PCI/user-space drivers
 ///  * Interrupt registration and upcalls
 ///
+#[test]
 fn userspace_rumprt_net() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
@@ -396,12 +411,12 @@ fn userspace_rumprt_net() {
     );
 }
 
-#[test]
 /// Tests the rump FS.
 ///
 /// Checks that we can initialize a BSD libOS and run FS operations.
 /// This implicitly tests many components such as the scheduler, memory
 /// management, IO and device interrupts.
+#[test]
 fn userspace_rumprt_fs() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut p =

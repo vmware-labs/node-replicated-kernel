@@ -98,6 +98,11 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Checks that we can initialize ACPI and query the ACPI tables.
+///
+/// # Note
+/// This test is supposed to spawn on a topology with 2 sockets, 1 core each
+/// 2 numa nodes (one per socket) with 512 MiB RAM each.
 #[cfg(all(feature = "integration-test", feature = "test-acpi"))]
 pub fn xmain() {
     use arch::acpi;
@@ -109,8 +114,19 @@ pub fn xmain() {
         32 * 4096,
         |_| {
             acpi::process_pcie();
+            acpi::process_srat();
+
+            // We have two cores
             assert_eq!(acpi::LOCAL_APICS.len(), 2, "Found two cores");
+
+            // One IOAPIC
             assert_eq!(acpi::IO_APICS.len(), 1, "Found one IO APIC");
+
+            // 2 sockets, 1 core per socket
+
+            // Two NUMA nodes
+
+            // with 512 MiB of RAM
 
             arch::debug::shutdown(ExitReason::Ok);
         },

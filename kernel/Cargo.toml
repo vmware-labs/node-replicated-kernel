@@ -70,6 +70,6 @@ test-scheduler = [ "integration-test", "lineup" ]
 # acpi: test ACPI is initialized
 test-acpi = [ "integration-test", "lineup" ]
 # coreboot: Test that we can boot-up additional cores
-test-coreboot = ["integration-test"]
+test-coreboot = ["integration-test", "lineup" ]
 # userspace: run a test in user-space by spawning the init process
 test-userspace = ["integration-test"]

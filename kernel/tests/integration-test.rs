@@ -4,14 +4,17 @@ extern crate rexpect;
 #[macro_use]
 extern crate matches;
 
+use std::io::{self, Write};
 use std::process;
 
 use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
+use rexpect::session::spawn_command;
 use rexpect::{spawn, spawn_bash};
 
 /// Arguments passed to the run.sh script to configure a test.
+#[derive(Clone)]
 struct RunnerArgs<'a> {
     /// Test name of kernel integration test.
     kernel_features: Vec<&'a str>,
@@ -21,6 +24,8 @@ struct RunnerArgs<'a> {
     nodes: usize,
     /// Number of cores the VM should have.
     cores: usize,
+    /// Total memory of the system (in MiB).
+    memory: usize,
     /// Kernel command line argument.
     cmd: Option<&'a str>,
     /// Which user-space modules to include.
@@ -39,6 +44,7 @@ impl<'a> RunnerArgs<'a> {
             user_features: Vec::new(),
             nodes: 1,
             cores: 1,
+            memory: 1024,
             cmd: None,
             mods: Vec::new(),
             release: false,
@@ -100,6 +106,87 @@ impl<'a> RunnerArgs<'a> {
         self.norun = true;
         self
     }
+
+    fn as_cmd(&'a self) -> Vec<String> {
+        use std::ops::Add;
+
+        let kernel_features = String::from(self.kernel_features.join(","));
+        let user_features = String::from(self.user_features.join(","));
+
+        let mut cmd = vec![
+            String::from("run.sh"),
+            String::from("--kfeatures"),
+            kernel_features,
+            String::from("--cmd"),
+            String::from("log=info"),
+        ];
+
+        match self.user_features.is_empty() {
+            false => {
+                cmd.push(String::from("--ufeatures"));
+                cmd.push(user_features);
+            }
+            true => {}
+        };
+
+        if self.nodes > 1 || self.cores > 1 {
+            cmd.push(String::from("--qemu"));
+            let mut qemu_args = String::new();
+
+            if self.nodes > 1 {
+                for node in 0..self.nodes {
+                    // Divide memory equally across cores
+                    let mem_per_node = self.memory / self.nodes;
+                    qemu_args.push_str(
+                        format!("-numa node,mem={},nodeid={} ", mem_per_node, node).as_str(),
+                    );
+                    // 1:1 mapping of sockets to cores
+                    qemu_args.push_str(
+                        format!("-numa cpu,node-id={},socket-id={} ", node, node).as_str(),
+                    );
+                }
+            }
+
+            if self.cores > 1 {
+                let sockets = self.nodes;
+                qemu_args.push_str(
+                    format!(
+                        "-smp {},sockets={},maxcpus={}",
+                        self.cores, sockets, self.cores
+                    )
+                    .as_str(),
+                );
+
+                cmd.push(qemu_args);
+            }
+        }
+
+        match self.norun {
+            false => {}
+            true => {
+                cmd.push(String::from("--norun"));
+            }
+        };
+
+        cmd
+    }
+}
+
+fn check_for_successful_exit(r: Result<WaitStatus>) {
+    match r {
+        Ok(WaitStatus::Exited(_, exit_status)) => {
+            if exit_status != 0 {
+                assert_eq!(exit_status, 0, "Test exited with wrong status.");
+            }
+            // else: We're good
+        }
+        Err(e) => {
+            panic!("Qemu testing failed: {}", e);
+        }
+        _ => {
+            panic!("Something weird happened to the Qemu process, please investigate.");
+        }
+    };
 }
 
 /// Builds the kernel and spawns a qemu instance of it.
@@ -112,48 +199,28 @@ impl<'a> RunnerArgs<'a> {
 /// Otherwise the 15s timeout we set on the PtySession may not be enough
 /// to build from scratch and run the test.
 fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
-    let kernel_features = format!("integration-test,{}", args.kernel_features.join(","));
-    let user_features = args.user_features.join(",");
-    let cores = format!("{}", args.cores);
-    let nodes = format!("{}", args.nodes);
-
-    let mut cmd = vec![
-        "run.sh",
-        "--kfeatures",
-        kernel_features.as_str(),
-        "--cores",
-        cores.as_str(),
-        "--nodes",
-        nodes.as_str(),
-        "--cmd",
-        "log=info",
-        "--norun",
-    ];
-
-    match args.user_features.is_empty() {
-        false => {
-            cmd.push("--ufeatures");
-            cmd.push(user_features.as_str());
-        }
-        true => {}
-    };
+    // Compile the code with correct settings first:
+    let mut cloned_args = args.clone();
+    let compile_args = cloned_args.norun();
 
     let o = process::Command::new("bash")
-        .args(&cmd)
+        .args(compile_args.as_cmd())
         .output()
         .expect("failed to build");
-    assert!(
-        o.status.success(),
-        "Building test failed: {:?}",
-        cmd.join(" ")
-    );
+    if !o.status.success() {
+        io::stdout().write_all(&o.stdout).unwrap();
+        io::stderr().write_all(&o.stderr).unwrap();
+        panic!(
+            "Building test failed: {:?}",
+            compile_args.as_cmd().join(" ")
+        );
+    }
 
-    // Now run the command, by removing the --norun and adding bash to the front
-    let no_run = cmd.remove_item(&"--norun");
-    cmd.insert(0, "bash");
-    assert!(no_run.is_some(), "Found and removed no_run in cmd");
+    let mut o = process::Command::new("bash");
+    o.args(args.as_cmd());
 
-    spawn(&cmd.join(" "), Some(15000))
+    //eprintln!("Invoke QEMU: {:?}", o);
+    spawn_command(o, Some(15000))
 }
 
 /// Spawns a DHCP server on our host
@@ -203,10 +270,7 @@ fn exit() {
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }
 
 /// Make sure the page-fault handler functions as expected.
@@ -260,10 +324,7 @@ fn alloc() {
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }
 
 /// Test that makes use of SSE in kernel-space and see if it works.AsMut
@@ -280,10 +341,7 @@ fn sse() {
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }
 
 /// Tests the scheduler (in kernel-space).
@@ -297,42 +355,33 @@ fn scheduler() {
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }
 
 /// Test that we can initialize the ACPI subsystem (in kernel-space).
 #[test]
 fn acpi_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(2))?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(2).nodes(2))?;
         p.exp_string("ACPI Initialized")?;
         p.exp_eof()?;
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }
 
 /// Test that we can boot additional cores.
-#[test]
+//#[test]
 fn coreboot() {
     let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(2))?;
+        let mut p = spawn_bespin(&RunnerArgs::new("test-coreboot").cores(2))?;
         p.exp_string("ACPI Initialized")?;
         p.exp_eof()?;
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }
 
 /// Tests that basic user-space support is functional.
@@ -362,10 +411,7 @@ fn userspace_smoke() {
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }
 
 /// Tests that user-space networking is functional.
@@ -427,8 +473,5 @@ fn userspace_rumprt_fs() {
         p.process.exit()
     };
 
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Exited(_, 0)
-    );
+    check_for_successful_exit(qemu_run());
 }

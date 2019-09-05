@@ -116,8 +116,8 @@ pub fn xmain() {
             acpi::process_pcie();
             acpi::process_srat();
 
-            // We have two cores
-            assert_eq!(acpi::LOCAL_APICS.len(), 2, "Found two cores");
+            // We have 80 cores
+            assert_eq!(acpi::LOCAL_APICS.len(), 80, "Found 80 cores");
 
             // One IOAPIC
             assert_eq!(acpi::IO_APICS.len(), 1, "Found one IO APIC");

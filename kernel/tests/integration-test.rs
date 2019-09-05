@@ -52,61 +52,73 @@ impl<'a> RunnerArgs<'a> {
         }
     }
 
+    /// What cargo features should be passed to the kernel build.
     fn kernel_features(&'a mut self, kernel_features: &[&'a str]) -> &'a mut RunnerArgs {
         self.kernel_features.extend_from_slice(kernel_features);
         self
     }
 
+    /// Add a cargo feature to the kernel build.
     fn kernel_feature(&'a mut self, kernel_feature: &'a str) -> &'a mut RunnerArgs {
         self.kernel_features.push(kernel_feature);
         self
     }
 
+    /// What cargo features should be passed to the user-space modules build.
     fn user_features(&'a mut self, user_features: &[&'a str]) -> &'a mut RunnerArgs {
         self.user_features.extend_from_slice(user_features);
         self
     }
 
+    /// Add a cargo feature to the user-space modules build.
     fn user_feature(&'a mut self, user_feature: &'a str) -> &'a mut RunnerArgs {
         self.user_features.push(user_feature);
         self
     }
 
+    /// How many NUMA nodes QEMU should simulate.
     fn nodes(&'a mut self, nodes: usize) -> &'a mut RunnerArgs {
         self.nodes = nodes;
         self
     }
 
+    /// How many cores QEMU should simulate.
     fn cores(&'a mut self, cores: usize) -> &'a mut RunnerArgs {
         self.cores = cores;
         self
     }
 
+    /// Command line passed to the kernel.
     fn cmd(&'a mut self, cmd: &'a str) -> &'a mut RunnerArgs {
         self.cmd = Some(cmd);
         self
     }
 
+    /// Which user-space modules we want to include.
     fn modules(&'a mut self, mods: &[&'a str]) -> &'a mut RunnerArgs {
         self.mods.extend_from_slice(mods);
         self
     }
 
+    /// Adds a user-space module to the build and deployment.
     fn module(&'a mut self, module: &'a str) -> &'a mut RunnerArgs {
         self.mods.push(module);
         self
     }
 
+    /// Do a release build.
     fn release(&'a mut self) -> &'a mut RunnerArgs {
         self.release = true;
         self
     }
 
+    /// Don't run, just build.
     fn norun(&'a mut self) -> &'a mut RunnerArgs {
         self.norun = true;
         self
     }
 
+    /// Converts the RunnerArgs to a run.sh command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
 
@@ -172,10 +184,13 @@ impl<'a> RunnerArgs<'a> {
     }
 }
 
-fn check_for_successful_exit(r: Result<WaitStatus>) {
+fn check_for_successful_exit(r: Result<WaitStatus>, output: String) {
     match r {
         Ok(WaitStatus::Exited(_, exit_status)) => {
             if exit_status != 0 {
+                println!("\n===== QEMU LOG =====");
+                println!("{}", output);
+                println!("===== END QEMU LOG =====");
                 assert_eq!(exit_status, 0, "Test exited with wrong status.");
             }
             // else: We're good
@@ -263,25 +278,29 @@ fn spawn_ping() -> Result<rexpect::session::PtySession> {
 /// and communicate if our tests passed or failed.
 #[test]
 fn exit() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-exit"))?;
         p.exp_string("Started")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output);
 }
 
 /// Make sure the page-fault handler functions as expected.
 /// In essence a trap should be raised and we should get a backtrace.
 #[test]
 fn pfault() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-pfault"))?;
         p.exp_string("[IRQ] Page Fault")?;
         p.exp_regex("Backtrace:")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
@@ -296,11 +315,13 @@ fn pfault() {
 /// Again we'd expect a trap and a backtrace.
 #[test]
 fn gpfault() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-gpfault"))?;
         p.exp_string("[IRQ] GENERAL PROTECTION FAULT")?;
         p.exp_regex("frame #2  - 0x[0-9a-fA-F]+ - bespin::xmain")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
@@ -316,15 +337,17 @@ fn gpfault() {
 /// and the global allocator integration.
 #[test]
 fn alloc() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-alloc"))?;
         p.exp_string("small allocations work.")?;
         p.exp_string("large allocations work.")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output);
 }
 
 /// Test that makes use of SSE in kernel-space and see if it works.AsMut
@@ -333,55 +356,65 @@ fn alloc() {
 /// point.
 #[test]
 fn sse() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-sse"))?;
         p.exp_string("division = 4.566210045662101")?;
         p.exp_string("division by zero = inf")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output);
 }
 
 /// Tests the scheduler (in kernel-space).
 #[test]
 fn scheduler() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-scheduler"))?;
         p.exp_string("lwt2 ThreadId(1)")?;
         p.exp_string("lwt1 ThreadId(0)")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output);
 }
 
 /// Test that we can initialize the ACPI subsystem (in kernel-space).
 #[test]
 fn acpi_smoke() {
-    let qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(2).nodes(2))?;
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(80).nodes(8))
+            .expect("Can't spawn QEMU instance");
+
         p.exp_string("ACPI Initialized")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output)
 }
 
 /// Test that we can boot additional cores.
 //#[test]
 fn coreboot() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-coreboot").cores(2))?;
         p.exp_string("ACPI Initialized")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output);
 }
 
 /// Tests that basic user-space support is functional.
@@ -393,7 +426,9 @@ fn coreboot() {
 ///  * BSD libOS in user-space
 #[test]
 fn userspace_smoke() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&RunnerArgs::new("test-userspace").user_features(&[
             "test-print",
             "test-map",
@@ -407,11 +442,11 @@ fn userspace_smoke() {
         p.exp_string("map_test OK")?;
         p.exp_string("alloc_test OK")?;
         p.exp_string("scheduler_test OK")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output);
 }
 
 /// Tests that user-space networking is functional.
@@ -464,14 +499,16 @@ fn userspace_rumprt_net() {
 /// management, IO and device interrupts.
 #[test]
 fn userspace_rumprt_fs() {
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p =
             spawn_bespin(&RunnerArgs::new("test-userspace").user_feature("test-rump-tmpfs"))?;
         p.exp_string("bytes_written: 12")?;
         p.exp_string("bytes_read: 12")?;
-        p.exp_eof()?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_successful_exit(qemu_run());
+    check_for_successful_exit(qemu_run(), output);
 }

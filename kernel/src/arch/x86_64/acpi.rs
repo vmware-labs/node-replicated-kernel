@@ -720,7 +720,7 @@ pub struct LocalApicAffinity {
 ///
 /// - The association between a range of memory and the proximity domain to which it belongs
 /// - Information about whether the range of memory can be hot-plugged.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Eq, PartialEq)]
 pub struct MemoryAffinity {
     /// Proximity domain to wich the processor belongs.
     pub proximity_domain: u32,
@@ -734,6 +734,16 @@ pub struct MemoryAffinity {
     pub hotplug_capable: bool,
     /// The memory region represents Non-Volatile memory.
     pub non_volatile: bool,
+}
+
+impl fmt::Debug for MemoryAffinity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "MemoryAffinity {{ proximity_domain: {}, base_address: {:#x}, length: {:#x} }}",
+            self.proximity_domain, self.base_address, self.length
+        )
+    }
 }
 
 /// Processor Local x2APIC Affinity structure provides the association
@@ -823,6 +833,8 @@ pub fn process_srat() -> (
                     if enabled {
                         apic_affinity.push(parsed_entry);
                     }
+
+                    debug_assert_eq!((*entry).Length, 16);
                 }
                 Enum_AcpiSratType::ACPI_SRAT_TYPE_MEMORY_AFFINITY => {
                     let ACPI_SRAT_ENABLED = 0x1;
@@ -832,14 +844,12 @@ pub fn process_srat() -> (
                     let mem_affinity_entry: *const ACPI_SRAT_MEM_AFFINITY =
                         entry as *const ACPI_SRAT_MEM_AFFINITY;
 
-                    let proximity_domain: u32 = (*mem_affinity_entry).ProximityDomain;
-                    let base_address: u64 = (*mem_affinity_entry).BaseAddress;
-                    let length: u64 = (*mem_affinity_entry).Length;
-                    let enabled: bool = (*mem_affinity_entry).Flags & ACPI_SRAT_ENABLED > 0;
-                    let hotplug_capable: bool =
-                        (*mem_affinity_entry).Flags & ACPI_SRAT_HOTPLUGGABLE > 0;
-                    let non_volatile: bool =
-                        (*mem_affinity_entry).Flags & ACPI_SRAT_NON_VOLATILE > 0;
+                    let proximity_domain = (*mem_affinity_entry).ProximityDomain;
+                    let base_address = (*mem_affinity_entry).BaseAddress;
+                    let length = (*mem_affinity_entry).Length;
+                    let enabled = (*mem_affinity_entry).Flags & ACPI_SRAT_ENABLED > 0;
+                    let hotplug_capable = (*mem_affinity_entry).Flags & ACPI_SRAT_HOTPLUGGABLE > 0;
+                    let non_volatile = (*mem_affinity_entry).Flags & ACPI_SRAT_NON_VOLATILE > 0;
 
                     let parsed_entry = MemoryAffinity {
                         proximity_domain,
@@ -854,6 +864,8 @@ pub fn process_srat() -> (
                     if enabled {
                         mem_affinity.push(parsed_entry);
                     }
+
+                    debug_assert_eq!((*entry).Length, 40);
                 }
                 Enum_AcpiSratType::ACPI_SRAT_TYPE_X2APIC_CPU_AFFINITY => {
                     let ACPI_SRAT_ENABLED = 0x1;
@@ -877,8 +889,10 @@ pub fn process_srat() -> (
                     if enabled {
                         x2apic_affinity.push(parsed_entry);
                     }
+
+                    debug_assert_eq!((*entry).Length, 24);
                 }
-                _ => debug!("Unhandled entry {:?}", entry_type),
+                _ => error!("Unhandled SRAT entry {:?}", entry_type),
             }
 
             assert!((*entry).Length > 0);

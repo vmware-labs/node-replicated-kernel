@@ -928,116 +928,121 @@ pub fn process_srat() -> (
             1,
             &mut table_header,
         );
-        assert_eq!(ret, AE_OK);
 
-        let srat_tbl_ptr = table_header as *const ACPI_TABLE_SRAT;
-        let srat_table_len = (*srat_tbl_ptr).Header.Length as usize;
-        let srat_table_end = (srat_tbl_ptr as *const c_void).add(srat_table_len);
+        if ret == AE_OK {
+            let srat_tbl_ptr = table_header as *const ACPI_TABLE_SRAT;
+            let srat_table_len = (*srat_tbl_ptr).Header.Length as usize;
+            let srat_table_end = (srat_tbl_ptr as *const c_void).add(srat_table_len);
 
-        debug!(
-            "SRAT Table: Rev={} Len={} OemID={:?}",
-            (*srat_tbl_ptr).Header.Revision,
-            srat_table_len,
-            (*srat_tbl_ptr).Header.OemId
-        );
+            debug!(
+                "SRAT Table: Rev={} Len={} OemID={:?}",
+                (*srat_tbl_ptr).Header.Revision,
+                srat_table_len,
+                (*srat_tbl_ptr).Header.OemId
+            );
 
-        let mut iterator = (srat_tbl_ptr as *const c_void).add(mem::size_of::<ACPI_TABLE_SRAT>());
-        while iterator < srat_table_end {
-            let entry: *const ACPI_SUBTABLE_HEADER = iterator as *const ACPI_SUBTABLE_HEADER;
-            let entry_type: Enum_AcpiSratType = mem::transmute((*entry).Type as i32);
+            let mut iterator =
+                (srat_tbl_ptr as *const c_void).add(mem::size_of::<ACPI_TABLE_SRAT>());
+            while iterator < srat_table_end {
+                let entry: *const ACPI_SUBTABLE_HEADER = iterator as *const ACPI_SUBTABLE_HEADER;
+                let entry_type: Enum_AcpiSratType = mem::transmute((*entry).Type as i32);
 
-            match entry_type {
-                Enum_AcpiSratType::ACPI_SRAT_TYPE_CPU_AFFINITY => {
-                    let ACPI_SRAT_ENABLED = 0x1;
+                match entry_type {
+                    Enum_AcpiSratType::ACPI_SRAT_TYPE_CPU_AFFINITY => {
+                        let ACPI_SRAT_ENABLED = 0x1;
 
-                    let local_apic_affinity: *const ACPI_SRAT_CPU_AFFINITY =
-                        entry as *const ACPI_SRAT_CPU_AFFINITY;
+                        let local_apic_affinity: *const ACPI_SRAT_CPU_AFFINITY =
+                            entry as *const ACPI_SRAT_CPU_AFFINITY;
 
-                    let apic_id = (*local_apic_affinity).ApicId;
-                    let sapic_eid = (*local_apic_affinity).LocalSapicEid;
-                    let proximity_domain: u32 = (*local_apic_affinity).ProximityDomainLo as u32
-                        | (((*local_apic_affinity).ProximityDomainHi[0] as u32) << 8)
-                        | (((*local_apic_affinity).ProximityDomainHi[1] as u32) << 16)
-                        | (((*local_apic_affinity).ProximityDomainHi[2] as u32) << 24);
-                    let clock_domain = (*local_apic_affinity).ClockDomain;
-                    let enabled = (*local_apic_affinity).Flags & ACPI_SRAT_ENABLED > 0;
+                        let apic_id = (*local_apic_affinity).ApicId;
+                        let sapic_eid = (*local_apic_affinity).LocalSapicEid;
+                        let proximity_domain: u32 = (*local_apic_affinity).ProximityDomainLo as u32
+                            | (((*local_apic_affinity).ProximityDomainHi[0] as u32) << 8)
+                            | (((*local_apic_affinity).ProximityDomainHi[1] as u32) << 16)
+                            | (((*local_apic_affinity).ProximityDomainHi[2] as u32) << 24);
+                        let clock_domain = (*local_apic_affinity).ClockDomain;
+                        let enabled = (*local_apic_affinity).Flags & ACPI_SRAT_ENABLED > 0;
 
-                    let parsed_entry = LocalApicAffinity {
-                        apic_id,
-                        sapic_eid,
-                        proximity_domain,
-                        clock_domain,
-                        enabled,
-                    };
+                        let parsed_entry = LocalApicAffinity {
+                            apic_id,
+                            sapic_eid,
+                            proximity_domain,
+                            clock_domain,
+                            enabled,
+                        };
 
-                    trace!("SRAT entry: {:?}", parsed_entry);
-                    if enabled {
-                        apic_affinity.push(parsed_entry);
+                        trace!("SRAT entry: {:?}", parsed_entry);
+                        if enabled {
+                            apic_affinity.push(parsed_entry);
+                        }
+
+                        debug_assert_eq!((*entry).Length, 16);
                     }
+                    Enum_AcpiSratType::ACPI_SRAT_TYPE_MEMORY_AFFINITY => {
+                        let ACPI_SRAT_ENABLED = 0x1;
+                        let ACPI_SRAT_HOTPLUGGABLE = 0x1 << 1;
+                        let ACPI_SRAT_NON_VOLATILE = 0x1 << 2;
 
-                    debug_assert_eq!((*entry).Length, 16);
-                }
-                Enum_AcpiSratType::ACPI_SRAT_TYPE_MEMORY_AFFINITY => {
-                    let ACPI_SRAT_ENABLED = 0x1;
-                    let ACPI_SRAT_HOTPLUGGABLE = 0x1 << 1;
-                    let ACPI_SRAT_NON_VOLATILE = 0x1 << 2;
+                        let mem_affinity_entry: *const ACPI_SRAT_MEM_AFFINITY =
+                            entry as *const ACPI_SRAT_MEM_AFFINITY;
 
-                    let mem_affinity_entry: *const ACPI_SRAT_MEM_AFFINITY =
-                        entry as *const ACPI_SRAT_MEM_AFFINITY;
+                        let proximity_domain = (*mem_affinity_entry).ProximityDomain;
+                        let base_address = (*mem_affinity_entry).BaseAddress;
+                        let length = (*mem_affinity_entry).Length;
+                        let enabled = (*mem_affinity_entry).Flags & ACPI_SRAT_ENABLED > 0;
+                        let hotplug_capable =
+                            (*mem_affinity_entry).Flags & ACPI_SRAT_HOTPLUGGABLE > 0;
+                        let non_volatile = (*mem_affinity_entry).Flags & ACPI_SRAT_NON_VOLATILE > 0;
 
-                    let proximity_domain = (*mem_affinity_entry).ProximityDomain;
-                    let base_address = (*mem_affinity_entry).BaseAddress;
-                    let length = (*mem_affinity_entry).Length;
-                    let enabled = (*mem_affinity_entry).Flags & ACPI_SRAT_ENABLED > 0;
-                    let hotplug_capable = (*mem_affinity_entry).Flags & ACPI_SRAT_HOTPLUGGABLE > 0;
-                    let non_volatile = (*mem_affinity_entry).Flags & ACPI_SRAT_NON_VOLATILE > 0;
+                        let parsed_entry = MemoryAffinity {
+                            proximity_domain,
+                            base_address,
+                            length,
+                            enabled,
+                            hotplug_capable,
+                            non_volatile,
+                        };
 
-                    let parsed_entry = MemoryAffinity {
-                        proximity_domain,
-                        base_address,
-                        length,
-                        enabled,
-                        hotplug_capable,
-                        non_volatile,
-                    };
+                        trace!("SRAT entry: {:?}", parsed_entry);
+                        if enabled {
+                            mem_affinity.push(parsed_entry);
+                        }
 
-                    trace!("SRAT entry: {:?}", parsed_entry);
-                    if enabled {
-                        mem_affinity.push(parsed_entry);
+                        debug_assert_eq!((*entry).Length, 40);
                     }
+                    Enum_AcpiSratType::ACPI_SRAT_TYPE_X2APIC_CPU_AFFINITY => {
+                        let ACPI_SRAT_ENABLED = 0x1;
 
-                    debug_assert_eq!((*entry).Length, 40);
-                }
-                Enum_AcpiSratType::ACPI_SRAT_TYPE_X2APIC_CPU_AFFINITY => {
-                    let ACPI_SRAT_ENABLED = 0x1;
+                        let x2apic_affinity_entry: *const ACPI_SRAT_X2APIC_CPU_AFFINITY =
+                            entry as *const ACPI_SRAT_X2APIC_CPU_AFFINITY;
 
-                    let x2apic_affinity_entry: *const ACPI_SRAT_X2APIC_CPU_AFFINITY =
-                        entry as *const ACPI_SRAT_X2APIC_CPU_AFFINITY;
+                        let x2apic_id: u32 = (*x2apic_affinity_entry).ApicId;
+                        let proximity_domain: u32 = (*x2apic_affinity_entry).ProximityDomain;
+                        let clock_domain: u32 = (*x2apic_affinity_entry).ClockDomain;
+                        let enabled: bool = (*x2apic_affinity_entry).Flags & ACPI_SRAT_ENABLED > 0;
 
-                    let x2apic_id: u32 = (*x2apic_affinity_entry).ApicId;
-                    let proximity_domain: u32 = (*x2apic_affinity_entry).ProximityDomain;
-                    let clock_domain: u32 = (*x2apic_affinity_entry).ClockDomain;
-                    let enabled: bool = (*x2apic_affinity_entry).Flags & ACPI_SRAT_ENABLED > 0;
+                        let parsed_entry = LocalX2ApicAffinity {
+                            x2apic_id,
+                            proximity_domain,
+                            clock_domain,
+                            enabled,
+                        };
 
-                    let parsed_entry = LocalX2ApicAffinity {
-                        x2apic_id,
-                        proximity_domain,
-                        clock_domain,
-                        enabled,
-                    };
+                        trace!("SRAT entry: {:?}", parsed_entry);
+                        if enabled {
+                            x2apic_affinity.push(parsed_entry);
+                        }
 
-                    trace!("SRAT entry: {:?}", parsed_entry);
-                    if enabled {
-                        x2apic_affinity.push(parsed_entry);
+                        debug_assert_eq!((*entry).Length, 24);
                     }
-
-                    debug_assert_eq!((*entry).Length, 24);
+                    _ => warn!("Unhandled SRAT entry {:?}", entry_type),
                 }
-                _ => warn!("Unhandled SRAT entry {:?}", entry_type),
+
+                assert!((*entry).Length > 0);
+                iterator = iterator.add((*entry).Length as usize);
             }
-
-            assert!((*entry).Length > 0);
-            iterator = iterator.add((*entry).Length as usize);
+        } else {
+            debug!("ACPI SRAT Table not found.");
         }
     }
 

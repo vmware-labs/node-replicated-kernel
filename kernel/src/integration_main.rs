@@ -162,101 +162,82 @@ pub fn xmain() {
     use arch::memory::{PAddr, BASE_PAGE_SIZE};
     use arch::vspace::MapAction;
 
-    let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
-    scheduler.spawn(
-        32 * 4096,
-        |_| {
-            let kcb = crate::arch::kcb::get_kcb();
-            const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
-            let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;
-            let real_mode_linear_offset = X86_64_REAL_MODE_SEGMENT << 4;
+    let kcb = crate::arch::kcb::get_kcb();
+    const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
+    let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;
+    let real_mode_linear_offset = X86_64_REAL_MODE_SEGMENT << 4;
 
-            extern "C" {
-                static x86_64_start_ap: *const u8;
-                static x86_64_start_ap_end: *const u8;
-                static x86_64_init_ap_absolute_entry: *mut fn();
-                static x86_64_init_ap_init_pml4: *mut fn();
-            };
-            let boot_code_size =
-                unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
+    extern "C" {
+        static x86_64_start_ap: *const u8;
+        static x86_64_start_ap_end: *const u8;
+        static x86_64_init_ap_absolute_entry: *mut fn();
+        static x86_64_init_ap_init_pml4: *mut fn();
+    };
+    let boot_code_size = unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
 
-            acpi::process_pcie();
+    acpi::process_pcie();
 
-            assert_eq!(acpi::LOCAL_APICS.len(), 2, "Found a core");
-            assert_eq!(acpi::IO_APICS.len(), 1, "Found an IO APIC");
+    assert_eq!(acpi::MACHINE_TOPOLOGY.cores().count(), 2, "Found a core");
 
-            unsafe {
-                let start_addr: usize = core::mem::transmute(&x86_64_start_ap);
-                let end_addr: usize = core::mem::transmute(&x86_64_start_ap_end);
-                let boot_code_size = end_addr - start_addr;
-                info!("boot_code_size = {:#x}", boot_code_size);
+    unsafe {
+        let start_addr: usize = core::mem::transmute(&x86_64_start_ap);
+        let end_addr: usize = core::mem::transmute(&x86_64_start_ap_end);
+        let boot_code_size = end_addr - start_addr;
+        info!("boot_code_size = {:#x}", boot_code_size);
 
-                let real_mode_base: usize = 0x0 + real_mode_linear_offset as usize;
-                info!("real_mode_base = {:#x}", real_mode_base);
-                let ap_bootstrap_code: &'static [u8] = unsafe {
-                    core::slice::from_raw_parts(
-                        &x86_64_start_ap as *const _ as *const u8,
-                        boot_code_size,
-                    )
-                };
-                let real_mode_destination: &mut [u8] = unsafe {
-                    core::slice::from_raw_parts_mut(real_mode_base as *mut u8, boot_code_size)
-                };
+        let real_mode_base: usize = 0x0 + real_mode_linear_offset as usize;
+        info!("real_mode_base = {:#x}", real_mode_base);
+        let ap_bootstrap_code: &'static [u8] = unsafe {
+            core::slice::from_raw_parts(&x86_64_start_ap as *const _ as *const u8, boot_code_size)
+        };
+        let real_mode_destination: &mut [u8] =
+            unsafe { core::slice::from_raw_parts_mut(real_mode_base as *mut u8, boot_code_size) };
 
-                /*kcb.init_vspace().map_identity(
-                    PAddr::from(real_mode_base as u64),
-                    PAddr::from((real_mode_base + 20 * BASE_PAGE_SIZE) as u64),
-                    MapAction::ReadWriteExecuteKernel,
-                );*/
+        kcb.init_vspace().map_identity(
+            PAddr::from(real_mode_base as u64),
+            PAddr::from((real_mode_base + 20 * BASE_PAGE_SIZE) as u64),
+            MapAction::ReadWriteExecuteKernel,
+        );
 
-                /*let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_absolute_entry);
-                 *entry_pointer = crate::arch::bespin_init_ap as u64;
+        let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_absolute_entry);
+        *entry_pointer = crate::arch::bespin_init_ap as u64;
 
-                let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_init_pml4);
-                *entry_pointer = 0xdeadbeefdeadbeef as u64;
-                */
+        let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_init_pml4);
+        *entry_pointer = 0xdeadbeefdeadbeef as u64;
 
-                real_mode_destination.copy_from_slice(ap_bootstrap_code);
+        real_mode_destination.copy_from_slice(ap_bootstrap_code);
 
-                let entry_pointer: *mut u64 = core::mem::transmute(
-                    &x86_64_init_ap_absolute_entry as *const _ as u64 - start_addr as u64
-                        + real_mode_base as u64,
-                );
-                *entry_pointer = crate::arch::bespin_init_ap as u64;
+        let entry_pointer: *mut u64 = core::mem::transmute(
+            &x86_64_init_ap_absolute_entry as *const _ as u64 - start_addr as u64
+                + real_mode_base as u64,
+        );
+        *entry_pointer = crate::arch::bespin_init_ap as u64;
 
-                let pml4_pointer: *mut u64 = core::mem::transmute(
-                    &x86_64_init_ap_init_pml4 as *const _ as u64 - start_addr as u64
-                        + real_mode_base as u64,
-                );
+        let pml4_pointer: *mut u64 = core::mem::transmute(
+            &x86_64_init_ap_init_pml4 as *const _ as u64 - start_addr as u64
+                + real_mode_base as u64,
+        );
 
-                *pml4_pointer = kcb.init_vspace().pml4_address().into();
+        *pml4_pointer = kcb.init_vspace().pml4_address().into();
 
-                info!("start_addr: {:#x}", start_addr);
-                info!(
-                    "x86_64_start_ap = {:p} {:#x}",
-                    entry_pointer, *entry_pointer
-                );
-                info!("pml4_pointer = {:p} {:#x}", pml4_pointer, *pml4_pointer);
-                info!("pml4 on bsp: {:#x}", kcb.init_vspace().pml4_address());
+        info!("start_addr: {:#x}", start_addr);
+        info!(
+            "x86_64_start_ap = {:p} {:#x}",
+            entry_pointer, *entry_pointer
+        );
+        info!("pml4_pointer = {:p} {:#x}", pml4_pointer, *pml4_pointer);
+        info!("pml4 on bsp: {:#x}", kcb.init_vspace().pml4_address());
 
-                // Have fun launching some cores:
-                kcb.apic().ipi_init();
-                kcb.apic().ipi_init_deassert();
+        // Have fun launching some cores:
+        kcb.apic().ipi_init();
+        kcb.apic().ipi_init_deassert();
 
-                kcb.apic().ipi_startup(real_mode_page as u8);
-                info!("Cores should've started?");
-            }
-
-            loop {}
-
-            arch::debug::shutdown(ExitReason::Ok);
-        },
-        core::ptr::null_mut(),
-    );
-
-    loop {
-        scheduler.run();
+        kcb.apic().ipi_startup(real_mode_page as u8);
+        info!("Cores should've started?");
     }
+
+    loop {}
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(feature = "integration-test", feature = "test-scheduler"))]

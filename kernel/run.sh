@@ -169,12 +169,12 @@ set -ex
 echo "> Building the bootloader"
 UEFI_TARGET="x86_64-uefi"
 if [ "$_arg_release" == "on" ]; then
-	UEFI_BUILD_ARGS="--release"
+	UEFI_BUILD_ARGS="--color always --release"
     UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/release"
 	USER_BUILD_ARGS="--release"
 	USER_BUILD_DIR="`pwd`/../target/$USER_TARGET/release"
 else
-	UEFI_BUILD_ARGS=""
+	UEFI_BUILD_ARGS="--color always"
 	UEFI_BUILD_DIR="`pwd`/../target/$UEFI_TARGET/debug"
 	USER_BUILD_ARGS="--features rumprt"
 	USER_BUILD_DIR="`pwd`/../target/$USER_TARGET/debug"
@@ -204,7 +204,7 @@ cp $UEFI_BUILD_DIR/bootloader.efi $ESP_DIR/EFI/Boot/BootX64.efi
 #
 echo "> Building user modules"
 USER_TARGET="x86_64-bespin-none"
-USER_BUILD_ARGS="--verbose --target=$USER_TARGET"
+USER_BUILD_ARGS="--color always --verbose --target=$USER_TARGET"
 
 if [ "$_arg_release" == "on" ]; then
 	USER_BUILD_ARGS="$USER_BUILD_ARGS --release"
@@ -246,7 +246,7 @@ if [ -x "$(command -v x86_64-elf-ld)" ] ; then
     export CARGO_TARGET_X86_64_BESPIN_LINKER=x86_64-elf-ld
 fi
 
-BUILD_ARGS="--target=$BESPIN_TARGET --verbose"
+BUILD_ARGS="--color always --target=$BESPIN_TARGET --verbose"
 
 if [ "$_arg_release" == "on" ]; then
     BUILD_ARGS="$BUILD_ARGS --release"
@@ -304,7 +304,7 @@ if [ "${_arg_norun}" != "on" ]; then
 
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
 	# -kernel ./mbkernel -initrd kernel
-    qemu-system-x86_64 $KVM_ARG -m 1G -d int -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR ${_arg_qemu}
+    qemu-system-x86_64 $KVM_ARG -d int -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR ${_arg_qemu}
     QEMU_EXIT=$?
     set +ex
     # qemu will do exit((val << 1) | 1);

@@ -17,25 +17,118 @@ use super::vspace::{MapAction, VSpace};
 
 use x86::io;
 
-// TODO: We shouldn't have to call process_madt twice!
+const ACPI_FULL_PATHNAME: u32 = 0;
+const ACPI_TYPE_INTEGER: u32 = 0x01;
+
+pub type ApicId = usize;
+pub type NodeId = usize;
+
+/// Contains a condensed and filtered version of all data queried from ACPI.
+pub struct MachineInfo {
+    cores: Vec<LocalApic>,
+    io_apics: Vec<IoApic>,
+    core_affinity: Vec<LocalApicAffinity>,
+    memory_affinity: Vec<MemoryAffinity>,
+    x2apic_affinity: Vec<LocalX2ApicAffinity>,
+    max_proximity_info: Vec<MaximumProximityDomainInfo>,
+    nodes: Vec<usize>,
+}
+
+impl MachineInfo {
+    fn new(
+        cores: Vec<LocalApic>,
+        io_apics: Vec<IoApic>,
+        core_affinity: Vec<LocalApicAffinity>,
+        memory_affinity: Vec<MemoryAffinity>,
+        x2apic_affinity: Vec<LocalX2ApicAffinity>,
+        max_proximity_info: Vec<MaximumProximityDomainInfo>,
+    ) -> MachineInfo {
+        let mut nodes: Vec<usize> = core_affinity
+            .iter()
+            .map(|ca| ca.proximity_domain as usize)
+            .collect();
+        nodes.sort();
+        nodes.dedup();
+
+        MachineInfo {
+            cores,
+            io_apics,
+            core_affinity,
+            memory_affinity,
+            x2apic_affinity,
+            max_proximity_info,
+            nodes,
+        }
+    }
+
+    /// Return the amount of cores in the system.
+    pub fn num_cores(&self) -> usize {
+        self.cores.len()
+    }
+
+    /// Return information about all cores in the system.
+    pub fn cores(&'static self) -> impl Iterator<Item = ApicId> {
+        self.cores
+            .iter()
+            .map(|cpu: &LocalApic| cpu.apic_id as ApicId)
+    }
+
+    /// Return information about all cores on a given node.
+    pub fn cores_on_node(&'static self, node: NodeId) -> impl Iterator<Item = ApicId> {
+        self.core_affinity
+            .iter()
+            .filter(move |cpu| cpu.proximity_domain == (node as u32))
+            .map(|cpu| cpu.apic_id as ApicId)
+    }
+
+    pub fn memory_regions_on_node(
+        &'static self,
+        node: NodeId,
+    ) -> impl Iterator<Item = &MemoryAffinity> {
+        self.memory_affinity
+            .iter()
+            .filter(move |ma| ma.proximity_domain == (node as u32))
+    }
+
+    /// Return the amount of numa nodes in the system.
+    pub fn num_nodes(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Return information about all NUMA nodes.
+    fn nodes(&self) -> &[NodeId] {
+        self.nodes.as_slice()
+    }
+
+    /// Return an iterator over all I/O APICs in the system.
+    pub fn io_apics(&'static self) -> impl Iterator<Item = &IoApic> {
+        self.io_apics.iter()
+    }
+}
+
 lazy_static! {
-    /// A list of cores available in the system.
-    ///
-    /// This should probably not be here since we want to handle
-    /// hotplug eventually.
-    pub static ref LOCAL_APICS: Vec<LocalApic> = {
-        let (cores, _) = process_madt();
-        cores
-    };
 
-    /// A list of I/O APICs in the system.
+    /// A struct that contains all information about current machine we're running on
+    /// (discovered from ACPI Tables and cpuid).
     ///
-    /// Ideally we get rid of I/O APIC entirely and just use MSI.
-    pub static ref IO_APICS: Vec<IoApic> = {
-        let (_, ioapics) = process_madt();
-        ioapics
-    };
+    /// Should have some of the following:
+    /// - Cores and NUMA nodes
+    /// - Interrupt routing (I/O APICs, overrides)
+    /// - PCIe root complexes
+    pub static ref MACHINE_TOPOLOGY: MachineInfo = {
+        let (cores, ioapics) = process_madt();
+        let (core_affinity, memory_affinity, x2apic_affinity) = process_srat();
+        let max_proximity_info = process_msct();
 
+        MachineInfo::new(
+            cores,
+            ioapics,
+            core_affinity,
+            x2apic_affinity,
+            memory_affinity,
+            max_proximity_info,
+        )
+    };
 }
 
 #[no_mangle]
@@ -586,10 +679,21 @@ pub(crate) fn init() -> Result<(), ACPI_STATUS> {
     Ok(())
 }
 
+/// The I/O APIC structure declares which global system interrupts are uniquely
+/// associated with the I/O APIC interrupt inputs
+///
+/// Each I/O APIC has a series of interrupt inputs, referred to as INTn, where the
+/// value of n is from 0 to the number of the last interrupt input on the I/O APIC.
 #[derive(Eq, PartialEq)]
 pub struct IoApic {
+    /// The I/O APIC’s ID.
     pub id: u8,
+    /// The 32-bit physical address to access this I/O APIC.
+    /// Each I/O APIC resides at a unique address.
     pub address: u32,
+    /// The global system interrupt number where this I/O APIC’s interrupt
+    /// inputs start. The number of interrupt inputs is determined by the I/O
+    /// APIC’s max redir entry register.
     pub global_irq_base: u32,
 }
 
@@ -610,15 +714,114 @@ impl fmt::Debug for IoApic {
     }
 }
 
+/// Association between the APIC ID or SAPIC ID/EID of a processor
+/// and the proximity domain to which the processor belongs.
 #[derive(Debug, Eq, PartialEq)]
-pub struct LocalApic {
-    pub processor_id: u8,
-    pub core_id: u8,
+pub struct LocalApicAffinity {
+    /// Processor local APIC ID.
+    pub apic_id: u8,
+    /// Processor local SAPIC EID.
+    pub sapic_eid: u8,
+    /// Proximity domain to wich the processor belongs.
+    pub proximity_domain: u32,
+    /// The clock domain to which the processor belongs to.
+    pub clock_domain: u32,
+    /// True if the entry refers to an enabled local APIC.
     pub enabled: bool,
 }
 
-const ACPI_FULL_PATHNAME: u32 = 0;
-const ACPI_TYPE_INTEGER: u32 = 0x01;
+/// The Memory Affinity structure provides the following topology information
+/// statically to the operating system:
+///
+/// - The association between a range of memory and the proximity domain to which it belongs
+/// - Information about whether the range of memory can be hot-plugged.
+#[derive(Eq, PartialEq)]
+pub struct MemoryAffinity {
+    /// Proximity domain to wich the processor belongs.
+    pub proximity_domain: u32,
+    /// Base Address of the memory range.
+    pub base_address: u64,
+    /// Length of the memory range.
+    pub length: u64,
+    /// True if the entry refers to enabled memory.
+    pub enabled: bool,
+    /// System hardware supports hot-add and hot-remove of this memory region.
+    pub hotplug_capable: bool,
+    /// The memory region represents Non-Volatile memory.
+    pub non_volatile: bool,
+}
+
+impl MemoryAffinity {
+    fn start(&self) -> u64 {
+        self.base_address
+    }
+
+    fn end(&self) -> u64 {
+        self.base_address + self.length
+    }
+}
+
+impl fmt::Debug for MemoryAffinity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "MemoryAffinity {{ {:#x} -- {:#x}, node#{} }}",
+            self.start(),
+            self.end(),
+            self.proximity_domain
+        )
+    }
+}
+
+/// Processor Local x2APIC Affinity structure provides the association
+/// between the local x2APIC ID of a processor and the proximity domain
+/// to which the processor belongs.
+#[derive(Debug, Eq, PartialEq)]
+pub struct LocalX2ApicAffinity {
+    /// Processor local x2APIC ID.
+    pub x2apic_id: u32,
+    /// Proximity domain to wich the processor belongs.
+    pub proximity_domain: u32,
+    /// The clock domain to which the processor belongs to.
+    pub clock_domain: u32,
+    /// True if the entry refers to an enabled local x2APIC.
+    pub enabled: bool,
+}
+
+/// Information about local APICs (cores) in the system.
+#[derive(Debug, Eq, PartialEq)]
+pub struct LocalApic {
+    /// The ProcessorId for which this processor is listed in the ACPI
+    /// Processor declaration operator. For a definition of the Processor
+    /// operator, see Section 19.5.100, “Processor (Declare Processor).”
+    pub processor_id: u8,
+    /// The processor’s local APIC ID.
+    pub apic_id: u8,
+    /// If zero, this processor is unusable, and the operating system support will not attempt to use it.
+    pub enabled: bool,
+}
+
+/// Information about maximum supported instances in the system.
+pub struct MaximumProximityDomainInfo {
+    /// Offset in bytes to the Proximity Domain Information Structure table entry.
+    proximity_offset: u32,
+
+    /// Indicates the maximum number of Proximity Domains ever possible in the system.
+    /// The number reported in this field is (maximum domains – 1).
+    max_proximity_domain: u32,
+
+    /// Indicates the maximum number of Clock Domains ever possible in the system.
+    /// The number reported in this field is (maximum domains – 1).
+    ///
+    /// See also: “_CDM (Clock Domain)”.
+    max_clock_domains: u32,
+
+    /// Indicates the maximum Physical Address ever possible in the system.
+    ///
+    /// # Note
+    /// This is the top of the reachable physical address.
+    max_address: u64,
+}
 
 fn acpi_get_integer(handle: ACPI_HANDLE, name: *const i8, reg: &mut ACPI_INTEGER) -> ACPI_STATUS {
     unsafe {
@@ -699,68 +902,6 @@ pub fn process_pcie() {
     }
 }
 
-/// Association between the APIC ID or SAPIC ID/EID of a processor
-/// and the proximity domain to which the processor belongs.
-#[derive(Debug, Eq, PartialEq)]
-pub struct LocalApicAffinity {
-    /// Processor local APIC ID.
-    pub apic_id: u8,
-    /// Processor local SAPIC EID.
-    pub sapic_eid: u8,
-    /// Proximity domain to wich the processor belongs.
-    pub proximity_domain: u32,
-    /// The clock domain to which the processor belongs to.
-    pub clock_domain: u32,
-    /// True if the entry refers to an enabled local APIC.
-    pub enabled: bool,
-}
-
-/// The Memory Affinity structure provides the following topology information
-/// statically to the operating system:
-///
-/// - The association between a range of memory and the proximity domain to which it belongs
-/// - Information about whether the range of memory can be hot-plugged.
-#[derive(Eq, PartialEq)]
-pub struct MemoryAffinity {
-    /// Proximity domain to wich the processor belongs.
-    pub proximity_domain: u32,
-    /// Base Address of the memory range.
-    pub base_address: u64,
-    /// Length of the memory range.
-    pub length: u64,
-    /// True if the entry refers to enabled memory.
-    pub enabled: bool,
-    /// System hardware supports hot-add and hot-remove of this memory region.
-    pub hotplug_capable: bool,
-    /// The memory region represents Non-Volatile memory.
-    pub non_volatile: bool,
-}
-
-impl fmt::Debug for MemoryAffinity {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "MemoryAffinity {{ proximity_domain: {}, base_address: {:#x}, length: {:#x} }}",
-            self.proximity_domain, self.base_address, self.length
-        )
-    }
-}
-
-/// Processor Local x2APIC Affinity structure provides the association
-/// between the local x2APIC ID of a processor and the proximity domain
-/// to which the processor belongs.
-#[derive(Debug, Eq, PartialEq)]
-pub struct LocalX2ApicAffinity {
-    /// Processor local x2APIC ID.
-    pub x2apic_id: u32,
-    /// Proximity domain to wich the processor belongs.
-    pub proximity_domain: u32,
-    /// The clock domain to which the processor belongs to.
-    pub clock_domain: u32,
-    /// True if the entry refers to an enabled local x2APIC.
-    pub enabled: bool,
-}
-
 /// Parse the SRAT table (static resource allocation structures for the platform).
 ///
 /// This essentially figures out the NUMA topology of your system.
@@ -793,7 +934,7 @@ pub fn process_srat() -> (
         let srat_table_len = (*srat_tbl_ptr).Header.Length as usize;
         let srat_table_end = (srat_tbl_ptr as *const c_void).add(srat_table_len);
 
-        trace!(
+        debug!(
             "SRAT Table: Rev={} Len={} OemID={:?}",
             (*srat_tbl_ptr).Header.Revision,
             srat_table_len,
@@ -829,7 +970,7 @@ pub fn process_srat() -> (
                         enabled,
                     };
 
-                    error!("SRAT entry: {:?}", parsed_entry);
+                    trace!("SRAT entry: {:?}", parsed_entry);
                     if enabled {
                         apic_affinity.push(parsed_entry);
                     }
@@ -860,7 +1001,7 @@ pub fn process_srat() -> (
                         non_volatile,
                     };
 
-                    error!("SRAT entry: {:?}", parsed_entry);
+                    trace!("SRAT entry: {:?}", parsed_entry);
                     if enabled {
                         mem_affinity.push(parsed_entry);
                     }
@@ -885,14 +1026,14 @@ pub fn process_srat() -> (
                         enabled,
                     };
 
-                    error!("SRAT entry: {:?}", parsed_entry);
+                    trace!("SRAT entry: {:?}", parsed_entry);
                     if enabled {
                         x2apic_affinity.push(parsed_entry);
                     }
 
                     debug_assert_eq!((*entry).Length, 24);
                 }
-                _ => error!("Unhandled SRAT entry {:?}", entry_type),
+                _ => warn!("Unhandled SRAT entry {:?}", entry_type),
             }
 
             assert!((*entry).Length > 0);
@@ -951,15 +1092,16 @@ fn process_madt() -> (Vec<LocalApic>, Vec<IoApic>) {
                         entry as *const ACPI_MADT_LOCAL_APIC;
 
                     let processor_id = (*local_apic).ProcessorId;
-                    let core_id = (*local_apic).Id;
+                    let apic_id = (*local_apic).Id;
                     let enabled: bool = (*local_apic).LapicFlags & ACPI_MADT_ENABLED > 0;
 
                     if enabled {
                         let core = LocalApic {
                             processor_id,
-                            core_id,
+                            apic_id,
                             enabled,
                         };
+                        trace!("MADT Entry: {:?}", core);
                         cores.push(core);
                     }
                 }
@@ -971,6 +1113,7 @@ fn process_madt() -> (Vec<LocalApic>, Vec<IoApic>) {
                         address: (*io_apic).Address as u32,
                         global_irq_base: (*io_apic).GlobalIrqBase as u32,
                     };
+                    trace!("MADT Entry: {:?}", apic);
                     io_apics.push(apic);
                 }
                 _ => debug!("Unhandled entry {:?}", entry_type),
@@ -982,4 +1125,66 @@ fn process_madt() -> (Vec<LocalApic>, Vec<IoApic>) {
     }
 
     (cores, io_apics)
+}
+
+/// Parse the MSCT table (maximum system characteristics for the platform).
+/// Returns all entries as a vector of MaximumProximityDomainInfo (or an empty vector
+/// if table does not exist).
+///
+/// The Maximum Proximity Domain Information Structure is used to report system
+/// maximum characteristics. It is likely that these characteristics may be the
+/// same for many proximity domains, but they can vary from one proximity domain to
+/// another.
+///
+/// These structures are organized in ascending order of the proximity domain
+/// enumerations. All proximity domains within the Maximum Number of Proximity
+/// Domains reported in the MSCT must be covered by one of these structures.
+///
+/// If the system maximum topology is not known up front at boot time, then this
+/// table is not present. OSPM will use information provided by the MSCT only when
+/// the System Resource Affinity Table (SRAT) exists. The MSCT must contain all
+/// proximity and clock domains defined in the SRAT.
+pub fn process_msct() -> Vec<MaximumProximityDomainInfo> {
+    unsafe {
+        let msct_handle = CStr::from_bytes_with_nul_unchecked(b"MSCT");
+        let mut table_header: *mut ACPI_TABLE_HEADER = ptr::null_mut();
+
+        let ret = AcpiGetTable(
+            msct_handle.as_ptr() as *mut cstr_core::c_char,
+            1,
+            &mut table_header,
+        );
+        if ret != AE_OK {
+            return Vec::new();
+        }
+
+        let msct_tbl_ptr = table_header as *const ACPI_TABLE_MSCT;
+        let msct_table_len = (*msct_tbl_ptr).Header.Length as usize;
+        let msct_table_end = (msct_tbl_ptr as *const c_void).add(msct_table_len);
+
+        debug!(
+            "MSCT Table: Rev={} Len={} OemID={:?}",
+            (*msct_tbl_ptr).Header.Revision,
+            msct_table_len,
+            (*msct_tbl_ptr).Header.OemId
+        );
+
+        let mut max_prox_domains = Vec::with_capacity(24);
+        let mut iterator = (msct_tbl_ptr as *const c_void).add(mem::size_of::<ACPI_TABLE_MSCT>());
+        while iterator < msct_table_end {
+            let entry: *const Struct_acpi_table_msct = iterator as *const Struct_acpi_table_msct;
+
+            trace!("MSCT entry: {:?}", entry);
+            max_prox_domains.push(MaximumProximityDomainInfo {
+                proximity_offset: (*entry).ProximityOffset,
+                max_proximity_domain: (*entry).MaxProximityDomains,
+                max_clock_domains: (*entry).MaxClockDomains,
+                max_address: (*entry).MaxAddress,
+            });
+            assert_eq!((*entry).Header.Length, 22);
+            iterator = iterator.add((*entry).Header.Length as usize);
+        }
+
+        max_prox_domains
+    }
 }

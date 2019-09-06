@@ -1,3 +1,20 @@
+// Systems that support both APIC and dual 8259 interrupt models must map global
+// system interrupts 0-15 to the 8259 IRQs 0-15, except where Interrupt Source
+// Overrides are provided (see Section 5.2.12.5, “Interrupt Source Override
+// Structure” below). This means that I/O APIC interrupt inputs 0-15 must be
+// mapped to global system interrupts 0-15 and have identical sources as the 8259
+// IRQs 0-15 unless overrides are used. This allows a platform to support OSPM
+// implementations that use the APIC model as well as OSPM implementations that
+// use the 8259 model (OSPM will only use one model; it will not mix models). When
+// OSPM supports the 8259 model, it will assume that all interrupt descriptors
+// reporting global system interrupts 0-15 correspond to 8259 IRQs. In the 8259
+// model all global system interrupts greater than 15 are ignored. If OSPM
+// implements APIC support, it will enable the APIC as described by the APIC
+// specification and will use all reported global system interrupts that fall
+// within the limits of the interrupt inputs defined by the I/O APIC structures.
+// For more information on hardware resource configuration see Section 6,
+// “Configuration.”
+
 use core::fmt;
 
 use alloc::boxed::Box;
@@ -383,7 +400,7 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
     use crate::arch::vspace::MapAction;
     use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
 
-    for io_apic in acpi::IO_APICS.iter() {
+    for io_apic in acpi::MACHINE_TOPOLOGY.io_apics() {
         debug!("Initialize IO APIC {:?}", io_apic);
         let addr = PAddr::from(io_apic.address as u64);
 

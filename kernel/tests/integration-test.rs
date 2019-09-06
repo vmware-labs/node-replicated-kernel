@@ -88,6 +88,14 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    /// How much total system memory (in MiB) that the instance should get.
+    ///
+    /// The amount is evenly divided among all nodes.
+    fn memory(&'a mut self, mibs: usize) -> &'a mut RunnerArgs {
+        self.memory = mibs;
+        self
+    }
+
     /// Command line passed to the kernel.
     fn cmd(&'a mut self, cmd: &'a str) -> &'a mut RunnerArgs {
         self.cmd = Some(cmd);
@@ -145,12 +153,14 @@ impl<'a> RunnerArgs<'a> {
             cmd.push(String::from("--qemu"));
             let mut qemu_args = String::new();
 
+            qemu_args.push_str(format!("-m {}M ", self.memory).as_str());
+
             if self.nodes > 1 {
                 for node in 0..self.nodes {
                     // Divide memory equally across cores
                     let mem_per_node = self.memory / self.nodes;
                     qemu_args.push_str(
-                        format!("-numa node,mem={},nodeid={} ", mem_per_node, node).as_str(),
+                        format!("-numa node,mem={}M,nodeid={} ", mem_per_node, node).as_str(),
                     );
                     // 1:1 mapping of sockets to cores
                     qemu_args.push_str(
@@ -391,7 +401,7 @@ fn acpi_smoke() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(80).nodes(8))
+        let mut p = spawn_bespin(&RunnerArgs::new("test-acpi").cores(80).nodes(8).memory(800))
             .expect("Can't spawn QEMU instance");
 
         p.exp_string("ACPI Initialized")?;

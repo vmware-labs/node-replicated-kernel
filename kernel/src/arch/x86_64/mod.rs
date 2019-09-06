@@ -365,8 +365,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         assert!(r.is_ok());
     }
 
-    lazy_static::initialize(&acpi::LOCAL_APICS);
-    lazy_static::initialize(&acpi::IO_APICS);
+    lazy_static::initialize(&acpi::MACHINE_TOPOLOGY);
 
     // Do we want to enable IRQs here?
     // irq::enable();

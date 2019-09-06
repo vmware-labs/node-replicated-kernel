@@ -105,37 +105,55 @@ pub fn xmain() {
 /// 2 numa nodes (one per socket) with 512 MiB RAM each.
 #[cfg(all(feature = "integration-test", feature = "test-acpi"))]
 pub fn xmain() {
-    use arch::acpi;
-    use arch::memory::{PAddr, BASE_PAGE_SIZE};
-    use arch::vspace::MapAction;
+    use arch::acpi::MACHINE_TOPOLOGY;
 
-    let mut scheduler = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
-    scheduler.spawn(
-        32 * 4096,
-        |_| {
-            acpi::process_pcie();
-            acpi::process_srat();
+    // We have 80 cores ...
+    assert_eq!(MACHINE_TOPOLOGY.num_cores(), 80);
+    // ... on 8 numa-nodes ...
+    assert_eq!(MACHINE_TOPOLOGY.num_nodes(), 8);
+    // ... with 100 MiB of RAM per NUMA node ...
+    for node in 0..MACHINE_TOPOLOGY.num_nodes() {
+        match node {
+            0 => assert_eq!(MACHINE_TOPOLOGY.memory_regions_on_node(node).count(), 2),
+            _ => assert_eq!(MACHINE_TOPOLOGY.memory_regions_on_node(node).count(), 1),
+        };
 
-            // We have 80 cores
-            assert_eq!(acpi::LOCAL_APICS.len(), 80, "Found 80 cores");
+        let bytes_per_node: u64 = MACHINE_TOPOLOGY
+            .memory_regions_on_node(node)
+            .map(|ma| ma.length)
+            .sum();
 
-            // One IOAPIC
-            assert_eq!(acpi::IO_APICS.len(), 1, "Found one IO APIC");
-
-            // 2 sockets, 1 core per socket
-
-            // Two NUMA nodes
-
-            // with 512 MiB of RAM
-
-            arch::debug::shutdown(ExitReason::Ok);
-        },
-        core::ptr::null_mut(),
-    );
-
-    loop {
-        scheduler.run();
+        if node > 0 {
+            assert_eq!(
+                bytes_per_node,
+                1024 * 1024 * 100,
+                "Node#{} has 100 MiB of RAM",
+                node
+            );
+        } else {
+            // First node has a bit less...
+            assert!(
+                bytes_per_node >= 1024 * 1024 * 99,
+                "Node#0 has almost 100 MiB of RAM"
+            );
+        }
     }
+    // ... and 10 core per node ...
+    for node in 0..MACHINE_TOPOLOGY.num_nodes() {
+        assert_eq!(MACHINE_TOPOLOGY.cores_on_node(node).count(), 10);
+    }
+    // ... and one IOAPIC which starts from GSI 0
+    for (i, io_apic) in MACHINE_TOPOLOGY.io_apics().enumerate() {
+        match i {
+            0 => assert_eq!(io_apic.global_irq_base, 0, "GSI of I/O APIC is 0"),
+            _ => assert_eq!(
+                MACHINE_TOPOLOGY.io_apics().count(),
+                1,
+                "Found more than 1 IO APIC"
+            ),
+        };
+    }
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(feature = "integration-test", feature = "test-coreboot"))]

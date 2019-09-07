@@ -100,6 +100,8 @@ struct RunnerArgs<'a> {
     release: bool,
     /// If true don't run, just compile.
     norun: bool,
+    /// Parameters to add to the QEMU command line
+    qemu_args: Vec<&'a str>,
 }
 
 #[allow(unused)]
@@ -115,6 +117,7 @@ impl<'a> RunnerArgs<'a> {
             mods: Vec::new(),
             release: false,
             norun: false,
+            qemu_args: Vec::new(),
         }
     }
 
@@ -192,6 +195,18 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    /// Which arguments we want to add to QEMU.
+    fn qemu_args(mut self, args: &[&'a str]) -> RunnerArgs<'a> {
+        self.qemu_args.extend_from_slice(args);
+        self
+    }
+
+    /// Adds an argument to QEMU.
+    fn qemu_arg(mut self, arg: &'a str) -> RunnerArgs<'a> {
+        self.qemu_args.push(arg);
+        self
+    }
+
     /// Converts the RunnerArgs to a run.sh command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
@@ -217,8 +232,9 @@ impl<'a> RunnerArgs<'a> {
 
         // Form arguments for QEMU
         cmd.push(String::from("--qemu"));
-        let mut qemu_args = String::new();
+        let mut qemu_args = String::from(self.qemu_args.join(" "));
         qemu_args.push_str(format!("-m {}M ", self.memory).as_str());
+
         if self.nodes > 1 || self.cores > 1 {
             if self.nodes > 1 {
                 for node in 0..self.nodes {
@@ -271,8 +287,18 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
                 println!("\n===== QEMU LOG =====");
                 println!("{}", output);
                 println!("===== END QEMU LOG =====");
+                let quoted_cmd = args
+                    .as_cmd()
+                    .into_iter()
+                    .map(|mut arg| {
+                        arg.insert(0, '"');
+                        arg.push('"');
+                        arg
+                    })
+                    .collect::<Vec<String>>()
+                    .join(" ");
 
-                println!("We invoked: bash {}", args.as_cmd().join(" "));
+                println!("We invoked: bash {}", quoted_cmd);
                 if expected != ExitStatus::Success {
                     println!("We expected to exit with {}, but", expected);
                 }
@@ -300,7 +326,7 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
 /// to build from scratch and run the test.
 fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     // Compile the code with correct settings first:
-    let mut cloned_args = args.clone();
+    let cloned_args = args.clone();
     let compile_args = cloned_args.norun();
 
     let o = process::Command::new("bash")
@@ -495,7 +521,9 @@ fn acpi_smoke() {
 /// Test that we can boot additional cores.
 #[test]
 fn coreboot() {
-    let cmdline = RunnerArgs::new("test-coreboot").cores(2);
+    let cmdline = RunnerArgs::new("test-coreboot")
+        .cores(2)
+        .qemu_arg("-d int,cpu_reset ");
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {

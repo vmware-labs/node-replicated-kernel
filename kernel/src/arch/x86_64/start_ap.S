@@ -1,24 +1,18 @@
 #define PROT_MODE_ENABLE 1
-#define PAGING_ENABLE 31
 #define PROT_CS 0x0018
 #define PROT_DS 0x0030
 #define LONG_MODE_CS 0x0008
-#define BOOT_AP_KERNEL_STACK_SIZE (5*4096)
 
-#define X86_64_BASE_PAGE_SIZE 4096
 #define X86_64_REAL_MODE_OFFSET 0x0
 #define X86_64_REAL_MODE_SEGMENT 0x0600
 #define X86_64_REAL_MODE_LINEAR_OFFSET (X86_64_REAL_MODE_SEGMENT << 4)
 #define MSR_IA32_EFER 0xc0000080
-#define KERNEL_BOOT_MAGIC       0x33e1f154
 
-#define KERNEL_BASE 0x400000000000
-
-.text
+/* Put this code in the data section because we need to parts of it and .text will be read-only */
+.data
 .balign 4096
 .code16
 .org X86_64_REAL_MODE_OFFSET
-
 
 .global x86_64_start_ap
 x86_64_start_ap:
@@ -73,8 +67,6 @@ start_ap_spin:
     lock bts $0,(%esi)
     jc start_ap_spin
 
-    mov $(start_ap_stack - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET),%esp
-
     /* jmp to long-mode to the linear address corresponding the */
     /* real mode segment REAL_MODE_SEGMENT */
     /* jmp LONG_MODE_CS:start_ap_64 */
@@ -86,8 +78,9 @@ start_ap_spin:
 .code64
 start_ap_64:
     /* Initialize the bootup stack for long mode */
-    lea (start_ap_stack)(%rip), %rsp
-
+    lea (start_ap_stack_ptr)(%rip), %rcx
+    mov (%rcx),%rsp
+    mov %rsp, %rbp
     /*
     Jump to the Rust entry point function for ap init.
     with an the address written into x86_64_init_ap_absolute_entry
@@ -108,13 +101,7 @@ loop_ap:
     mov (%rax), %rax
     jmp loop_ap
 
-
-/* Stack for 64bit mode -- this should be allocated by the coreboot driver */
 .align 16
-.fill BOOT_AP_KERNEL_STACK_SIZE,1,0
-start_ap_stack:
-.align 16
-
 gdt:
 .byte 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
 .byte 0xff,0xff,0x00,0x00,0x00,0x9a,0xaf,0x00 // 64bit code segment, D _cleared_ => "16bit"
@@ -128,6 +115,11 @@ gdt_ptr:
 .word gdt_ptr - gdt
 .long gdt - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
 .long 0
+
+.align 64
+.global start_ap_stack_ptr
+start_ap_stack_ptr:
+.quad 0xbeefbeefbeefbee5
 
 .align 64
 .global x86_64_init_ap_absolute_entry

@@ -156,6 +156,8 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
+
 #[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
 pub fn xmain() {
     use arch::acpi;
@@ -172,6 +174,7 @@ pub fn xmain() {
         static x86_64_start_ap_end: *const u8;
         static x86_64_init_ap_absolute_entry: *mut fn();
         static x86_64_init_ap_init_pml4: *mut fn();
+        static start_ap_stack_ptr: *mut fn();
     };
     let boot_code_size = unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
 
@@ -201,12 +204,12 @@ pub fn xmain() {
 
         let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_absolute_entry);
         *entry_pointer = crate::arch::bespin_init_ap as u64;
-
-        let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_init_pml4);
-        *entry_pointer = 0xdeadbeefdeadbeef as u64;
+        info!(
+            "crate::arch::bespin_init_ap = {:#x}",
+            crate::arch::bespin_init_ap as u64
+        );
 
         real_mode_destination.copy_from_slice(ap_bootstrap_code);
-
         let entry_pointer: *mut u64 = core::mem::transmute(
             &x86_64_init_ap_absolute_entry as *const _ as u64 - start_addr as u64
                 + real_mode_base as u64,
@@ -217,8 +220,12 @@ pub fn xmain() {
             &x86_64_init_ap_init_pml4 as *const _ as u64 - start_addr as u64
                 + real_mode_base as u64,
         );
-
         *pml4_pointer = kcb.init_vspace().pml4_address().into();
+
+        let stack_pointer: *mut u64 = core::mem::transmute(
+            &start_ap_stack_ptr as *const _ as u64 - start_addr as u64 + real_mode_base as u64,
+        );
+        *stack_pointer = &COREBOOT_STACK as *const _ as u64 + 32 * 4096 - 16;
 
         info!("start_addr: {:#x}", start_addr);
         info!(

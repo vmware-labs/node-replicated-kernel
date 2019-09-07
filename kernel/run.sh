@@ -294,7 +294,7 @@ if [ "${_arg_norun}" != "on" ]; then
 
 	# QEMU Monitor for debug: https://en.wikibooks.org/wiki/QEMU/Monitor
 	# qemu-system-x86_64 -d help
-	QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
+	#QEMU_MONITOR="-monitor telnet:127.0.0.1:55555,server,nowait -d guest_errors -d int -D debuglog.out"
 	#QEMU_MONITOR="-d int,cpu_reset"
 	#QEMU_MONITOR="-d cpu_reset,int,guest_errors"
 
@@ -304,7 +304,7 @@ if [ "${_arg_norun}" != "on" ]; then
 
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
 	# -kernel ./mbkernel -initrd kernel
-    qemu-system-x86_64 $KVM_ARG -d int -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR ${_arg_qemu}
+    qemu-system-x86_64 $KVM_ARG -nographic -device isa-debug-exit,iobase=0xf4,iosize=0x04 $QEMU_UEFI_APPEND $QEMU_NET_APPEND $CMDLINE_APPEND $QEMU_MONITOR ${_arg_qemu}
     QEMU_EXIT=$?
     set +ex
     # qemu will do exit((val << 1) | 1);

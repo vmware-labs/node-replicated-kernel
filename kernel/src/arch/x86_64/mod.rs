@@ -78,7 +78,10 @@ enum CmdToken {
 /// from start_ap.S for any core except core 0.
 #[no_mangle]
 pub extern "C" fn bespin_init_ap() {
-    sprint!("Hello from the other side\n\n");
+    enable_sse();
+    enable_fsgsbase();
+
+    sprintln!("Hello from the other side\n\n");
     loop {}
 }
 

@@ -529,7 +529,7 @@ fn coreboot() {
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
         p.exp_string("ACPI Initialized")?;
-        output = p.exp_eof()?;
+        p.exp_string("Hello from the other side")?;
         p.process.exit()
     };
 

@@ -80,8 +80,7 @@ enum CmdToken {
 pub extern "C" fn bespin_init_ap() {
     enable_sse();
     enable_fsgsbase();
-
-    sprintln!("Hello from the other side\n\n");
+    sprintln!("Hello from the other side");
     loop {}
 }
 
@@ -151,7 +150,7 @@ fn assert_required_cpu_features() {
     //assert!(has_avx, "No AVX? Run on a more modern machine!");
 
     assert!(has_apic, "No APIC? Run on a more modern machine!");
-    //assert!(has_x2apic, "No x2apic? Run on a more modern machine!");
+    assert!(has_x2apic, "No X2APIC? Run on a more modern machine!");
     assert!(has_syscalls, "No sysenter? Run on a more modern machine!");
     assert!(has_pae, "No PAE? Run on a more modern machine!");
     assert!(has_msr, "No MSR? Run on a more modern machine!");

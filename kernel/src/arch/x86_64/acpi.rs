@@ -801,6 +801,38 @@ pub struct LocalApic {
     pub enabled: bool,
 }
 
+/// Information about local APICs (cores) in the system with ID's higher than 255.
+///
+/// ACPI will store the first 255 cores as LocalApics, and afterwards will use
+/// LocalX2APIC entries.
+///
+/// # Note
+/// The Processor X2APIC structure is very similar to the processor local APIC
+/// structure. When using the X2APIC interrupt model, logical processors with APIC
+/// ID values of 255 and greater are required to have a Processor Device object and
+/// must convey the processor’s APIC information to OSPM using the Processor Local
+/// X2APIC structure. Logical processors with APIC ID values less than 255 must use
+/// the Processor Local APIC structure to convey their APIC information to OSPM.
+/// OSPM does not expect the information provided in this table to be updated if
+/// the processor information changes during the lifespan of an OS boot. While in
+/// the sleeping state, logical processors must not be added or removed, nor can
+/// their X2APIC ID or x2APIC Flags change. When a logical processor is not
+/// present, the processor local X2APIC information is either not reported or
+/// flagged as disabled.
+pub struct LocalX2Apic {
+    /// Corresponding processor
+    ///
+    /// OSPM associates the X2APIC Structure with a processor object declared in
+    /// the namespace using the Device statement, when the
+    /// _UID child object of the processor device evaluates to a numeric
+    /// value, by matching the numeric value with this field
+    pub processor_id: u32,
+    /// The processor’s local x2APIC ID.
+    pub apic_id: u32,
+    /// If zero, this processor is unusable, and the operating system support will not attempt to use it.
+    pub enabled: bool,
+}
+
 /// Information about maximum supported instances in the system.
 pub struct MaximumProximityDomainInfo {
     /// Offset in bytes to the Proximity Domain Information Structure table entry.
@@ -1121,7 +1153,7 @@ fn process_madt() -> (Vec<LocalApic>, Vec<IoApic>) {
                     trace!("MADT Entry: {:?}", apic);
                     io_apics.push(apic);
                 }
-                _ => debug!("Unhandled entry {:?}", entry_type),
+                _ => warn!("Unhandled entry {:?}", entry_type),
             }
 
             assert!((*entry).Length > 0);

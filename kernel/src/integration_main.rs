@@ -243,7 +243,6 @@ pub fn xmain() {
         info!("Cores should've started?");
     }
 
-    loop {}
     arch::debug::shutdown(ExitReason::Ok);
 }
 

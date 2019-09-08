@@ -283,7 +283,7 @@ if [ "${_arg_norun}" != "on" ]; then
     set +e
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
-        KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc' #
+        KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc,+x2apic' #
     else
 		echo "No KVM, system will fail in initializtion since we're missing fs/gs base instructions."
 		exit 1

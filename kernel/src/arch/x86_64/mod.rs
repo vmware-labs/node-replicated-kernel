@@ -20,6 +20,7 @@ use apic::xapic;
 
 pub mod debug;
 pub mod gdt;
+pub mod hwinfo;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
@@ -367,7 +368,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         assert!(r.is_ok());
     }
 
-    lazy_static::initialize(&acpi::MACHINE_TOPOLOGY);
+    lazy_static::initialize(&topology::MACHINE_TOPOLOGY);
+
+    info!("{:#?}", *topology::MACHINE_TOPOLOGY);
 
     // Do we want to enable IRQs here?
     // irq::enable();

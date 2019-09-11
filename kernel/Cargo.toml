@@ -35,6 +35,7 @@ acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
 uefi = { git = "https://github.com/rust-osdev/uefi-rs.git" }
 addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
 kpi = { path = "../lib/kpi" }
+topology = { path = "../lib/topology" }
 
 [[bin]]
 name = "bespin"

@@ -40,3 +40,6 @@
 [submodule "lib/custom_error"]
 	path = lib/custom_error
 	url = git@github.com:gz/custom_error.git
+[submodule "lib/topology"]
+	path = lib/topology
+	url = git@github.com:gz/rust-topology.git

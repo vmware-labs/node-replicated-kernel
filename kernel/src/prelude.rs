@@ -30,6 +30,12 @@ impl PowersOf2 for usize {
     }
 }
 
+impl PowersOf2 for u8 {
+    fn log2(self) -> u8 {
+        7 - self.leading_zeros() as u8
+    }
+}
+
 #[allow(unions_with_drop_fields)]
 #[derive(Copy)]
 union UnionFlag<T> {

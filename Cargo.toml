@@ -20,7 +20,8 @@ members = [
     "lib/custom_error",
     "usr/init",
     "lib/kpi",
-    "lib/vibrio"
+    "lib/vibrio",
+    "lib/topology"
 ]
 
 # disable stack unwinding on panic for now

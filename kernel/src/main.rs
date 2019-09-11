@@ -49,6 +49,9 @@ extern crate klogger;
 #[cfg(target_arch = "x86_64")]
 extern crate elfloader;
 
+#[cfg(target_arch = "x86_64")]
+extern crate topology;
+
 extern crate backtracer;
 extern crate rawtime;
 
@@ -125,7 +128,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        debug!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
+        trace!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
             //debug!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
             self.0.lock().deallocate(ptr, layout);

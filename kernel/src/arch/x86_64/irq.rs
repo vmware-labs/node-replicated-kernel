@@ -399,8 +399,9 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
     use crate::arch::acpi;
     use crate::arch::vspace::MapAction;
     use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+    use topology;
 
-    for io_apic in acpi::MACHINE_TOPOLOGY.io_apics() {
+    for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
         debug!("Initialize IO APIC {:?}", io_apic);
         let addr = PAddr::from(io_apic.address as u64);
 

@@ -264,13 +264,13 @@ impl<'a> PageProvider<'a> for BespinSlabsProvider {
         };
         f.map(|mut frame| unsafe {
             frame.zero();
-            debug!("slabmalloc allocate frame.base = {:x}", frame.base);
+            trace!("slabmalloc allocate frame.base = {:x}", frame.base);
             let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
             sp
         })
     }
 
     fn release_page(&mut self, _p: &'a mut ObjectPage<'a>) {
-        debug!("TODO!");
+        trace!("TODO!");
     }
 }

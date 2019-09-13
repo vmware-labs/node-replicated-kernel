@@ -1,7 +1,3 @@
 # APIC driver
 
-## x2APIC
-
-## xAPIC
-
-
+APIC driver for bespin.

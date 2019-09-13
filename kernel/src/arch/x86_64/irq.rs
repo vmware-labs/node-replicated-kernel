@@ -19,6 +19,8 @@ use core::fmt;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+
+use x86::apic::ApicControl;
 use x86::bits64::paging::VAddr;
 use x86::bits64::rflags;
 use x86::bits64::segmentation::Descriptor64;
@@ -426,7 +428,8 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
             );
         });
 
-        let mut inst = unsafe { apic::ioapic::IoApic::new(paddr_to_kernel_vaddr(addr).as_usize()) };
+        let mut inst =
+            unsafe { x86::apic::ioapic::IoApic::new(paddr_to_kernel_vaddr(addr).as_usize()) };
         trace!(
             "This IOAPIC supports {} Interrupts",
             inst.supported_interrupts()

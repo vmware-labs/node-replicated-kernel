@@ -6,6 +6,7 @@ description = "ACPI drivers."
 readme = "README.md"
 license = "MIT"
 keywords = ["os", "acpi", "irq", "driver", "x86"]
+edition = "2018"
 
 [dependencies]
 driverkit = { path = "../driverkit" }

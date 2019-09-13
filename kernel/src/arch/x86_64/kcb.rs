@@ -9,7 +9,7 @@ use core::ptr;
 use x86::current::segmentation;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
-use apic::xapic::XAPIC;
+use apic::xapic::XAPICDriver;
 
 use super::irq;
 use super::process::Process;
@@ -96,7 +96,7 @@ pub struct Kcb {
     pmanager: RefCell<BuddyFrameAllocator>,
 
     /// A handle to the core-local interrupt driver.
-    apic: RefCell<XAPIC>,
+    apic: RefCell<XAPICDriver>,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -117,7 +117,7 @@ impl Kcb {
         kernel_binary: &'static [u8],
         init_vspace: VSpace,
         pmanager: BuddyFrameAllocator,
-        apic: XAPIC,
+        apic: XAPICDriver,
     ) -> Kcb {
         Kcb {
             syscall_stack_top: ptr::null_mut(),
@@ -184,7 +184,7 @@ impl Kcb {
         self.pmanager.borrow_mut()
     }
 
-    pub fn apic(&self) -> RefMut<XAPIC> {
+    pub fn apic(&self) -> RefMut<XAPICDriver> {
         self.apic.borrow_mut()
     }
 

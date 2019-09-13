@@ -166,6 +166,8 @@ pub fn xmain() {
     use arch::vspace::MapAction;
     use topology;
 
+    use x86::apic::{ApicControl, ApicId};
+
     let kcb = crate::arch::kcb::get_kcb();
     const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
     let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;
@@ -238,10 +240,19 @@ pub fn xmain() {
         info!("pml4 on bsp: {:#x}", kcb.init_vspace().pml4_address());
 
         // Have fun launching some cores:
-        kcb.apic().ipi_init();
+        kcb.apic().ipi_init(ApicId::XApic(1));
         kcb.apic().ipi_init_deassert();
 
-        kcb.apic().ipi_startup(real_mode_page as u8);
+        kcb.apic()
+            .ipi_startup(ApicId::XApic(1), real_mode_page as u8);
+
+        // Wait for a while
+        let break_time = x86::time::rdtsc() + 1000000;
+        loop {
+            if x86::time::rdtsc() > break_time {
+                break;
+            }
+        }
         info!("Cores should've started?");
     }
 

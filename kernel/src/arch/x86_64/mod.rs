@@ -10,6 +10,7 @@ use core::slice;
 
 use driverkit::DriverControl;
 
+use x86::apic::ApicControl;
 use x86::bits64::paging;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
@@ -329,7 +330,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let base = find_apic_base();
     trace!("find_apic_base {:#x}", base);
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
-    let mut apic = xapic::XAPIC::new(regs);
+    let mut apic = xapic::XAPICDriver::new(regs);
     apic.attach();
 
     // Construct the Kcb so we can access these things later on in the code

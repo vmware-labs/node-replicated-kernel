@@ -1,98 +1,106 @@
 use driverkit::bitops::BitField;
 use driverkit::{DriverControl, DriverState};
 use log::{debug, trace};
-use x86::msr::{
-    rdmsr, wrmsr, IA32_APIC_BASE, IA32_TSC_DEADLINE, IA32_X2APIC_APICID, IA32_X2APIC_ESR,
-    IA32_X2APIC_LVT_LINT0, IA32_X2APIC_LVT_TIMER, IA32_X2APIC_SELF_IPI, IA32_X2APIC_VERSION,
-};
+use x86::apic::x2apic::X2APIC;
+use x86::apic::{ApicControl, ApicId, Icr};
 
+/// An x2APIC driver
 #[derive(Debug)]
-pub struct X2APIC {
+pub struct X2APICDriver {
     state: DriverState,
-    base: u64,
+    inner: X2APIC,
 }
 
-impl X2APIC {
-    pub fn new() -> X2APIC {
-        unsafe {
-            X2APIC {
-                state: DriverState::Uninitialized,
-                base: rdmsr(IA32_APIC_BASE),
-            }
+impl X2APICDriver {
+    /// Create a new x2APIC driver object.
+    pub fn new() -> X2APICDriver {
+        X2APICDriver {
+            state: DriverState::Uninitialized,
+            inner: X2APIC::new(),
         }
     }
+}
 
-    pub fn bsp(&self) -> bool {
-        (self.base & (1 << 8)) > 0
+impl ApicControl for X2APICDriver {
+    /// Is a bootstrap processor?
+    fn bsp(&self) -> bool {
+        self.inner.bsp()
     }
 
-    /// Read local APIC ID.
-    pub fn id(&self) -> u32 {
-        unsafe { rdmsr(IA32_X2APIC_APICID) as u32 }
+    /// Return APIC ID.
+    fn id(&self) -> u32 {
+        self.inner.id()
     }
 
-    /// Read APIC version.
-    pub fn version(&self) -> u32 {
-        unsafe { rdmsr(IA32_X2APIC_VERSION) as u32 }
+    /// Read APIC version
+    fn version(&self) -> u32 {
+        self.inner.version()
     }
 
-    pub unsafe fn tsc_enable(&self) {
-        // Enable TSC timer
-        let mut lvt: u64 = rdmsr(IA32_X2APIC_LVT_TIMER);
-        lvt |= 0 << 17;
-        lvt |= 1 << 18;
-        wrmsr(IA32_X2APIC_LVT_TIMER, lvt);
+    /// End Of Interrupt -- Acknowledge interrupt delivery.
+    fn eoi(&mut self) {
+        self.inner.eoi()
     }
 
-    pub unsafe fn tsc_set(&self, value: u64) {
-        wrmsr(IA32_TSC_DEADLINE, value);
+    /// Enable TSC deadline timer.
+    fn tsc_enable(&mut self) {
+        self.inner.tsc_enable()
     }
 
-    pub unsafe fn send_self_ipi(&self, vector: u64) {
-        wrmsr(IA32_X2APIC_SELF_IPI, vector);
+    /// Set TSC deadline value.
+    fn tsc_set(&self, value: u64) {
+        self.inner.tsc_set(value)
+    }
+
+    /// Send a INIT IPI to a core.
+    unsafe fn ipi_init(&mut self, core: ApicId) {
+        self.inner.ipi_init(core)
+    }
+
+    /// Deassert INIT IPI.
+    unsafe fn ipi_init_deassert(&mut self) {
+        self.inner.ipi_init_deassert()
+    }
+
+    /// Send a STARTUP IPI to a core.
+    unsafe fn ipi_startup(&mut self, core: ApicId, start_page: u8) {
+        self.inner.ipi_startup(core, start_page)
+    }
+
+    /// Send a generic IPI.
+    unsafe fn send_ipi(&mut self, icr: Icr) {
+        use log::info;
+        info!("sending icr {:?}", icr);
+
+        self.inner.send_ipi(icr)
     }
 }
 
-impl DriverControl for X2APIC {
+impl DriverControl for X2APICDriver {
+    /// Attach to the device
     fn attach(&mut self) {
         self.set_state(DriverState::Attached(0));
-        // Enable
-        unsafe {
-            self.base = rdmsr(IA32_APIC_BASE);
-            self.base.set_bit(10, true); // Enable x2APIC
-            self.base.set_bit(11, true); // Enable xAPIC
-            wrmsr(IA32_APIC_BASE, self.base);
-
-            let mut lint0 = rdmsr(IA32_X2APIC_LVT_LINT0);
-            debug!("lint 0 is {:#b}", lint0);
-            lint0 = 1 << 16 | (1 << 15) | (0b111 << 8) | 0x20;
-            wrmsr(IA32_X2APIC_LVT_LINT0, lint0);
-
-            let esr = rdmsr(IA32_X2APIC_ESR);
-            debug!("esr is {:#b}", esr);
-            trace!("Enabled x2APIC");
-        }
+        self.inner.attach();
     }
 
+    /// Detach from the device
     fn detach(&mut self) {
-        unsafe {
-            self.base = rdmsr(IA32_APIC_BASE);
-            self.base.set_bit(10, false); // x2APIC
-            self.base.set_bit(11, false); // xAPIC
-            wrmsr(IA32_APIC_BASE, self.base);
-        }
+        self.inner.detach();
         self.set_state(DriverState::Detached);
     }
 
+    /// Destroy the device.
     fn destroy(mut self) {
         self.detach();
         self.set_state(DriverState::Destroyed);
     }
 
+    /// Query driver state
     fn state(&self) -> DriverState {
         self.state
     }
 
+    /// Set the state of the driver
     fn set_state(&mut self, st: DriverState) {
         self.state = st;
     }

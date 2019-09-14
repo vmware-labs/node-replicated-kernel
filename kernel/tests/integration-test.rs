@@ -504,7 +504,7 @@ fn scheduler() {
 /// Test that we can initialize the ACPI subsystem (in kernel-space).
 #[test]
 fn acpi_smoke() {
-    let cmdline = &RunnerArgs::new("test-acpi").cores(80).nodes(8).memory(80);
+    let cmdline = &RunnerArgs::new("test-acpi").cores(80).nodes(8).memory(4096);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -524,9 +524,9 @@ fn coreboot() {
     let cmdline = RunnerArgs::new("test-coreboot")
         .cores(2)
         .qemu_arg("-d int,cpu_reset ");
-    let mut output = String::new();
+    let output = String::new();
 
-    let mut qemu_run = || -> Result<WaitStatus> {
+    let qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
         p.exp_string("ACPI Initialized")?;
         p.exp_string("Hello from the other side")?;

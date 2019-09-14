@@ -1,29 +1,14 @@
 use core::fmt;
 use core::mem::transmute;
 use core::pin::Pin;
-use core::ptr;
 
 use alloc::boxed::Box;
 
-use elfloader::ElfLoader;
-
-use x86::bits64::paging;
 use x86::bits64::paging::*;
-use x86::bits64::rflags;
 use x86::controlregs;
 
-use super::gdt;
-
-use super::irq;
 use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 
-use super::memory::KERNEL_BASE;
-use crate::error::KError;
-use crate::memory::BespinPageTableProvider;
-use crate::memory::PageTableProvider;
-use crate::mutex::Mutex;
-
-use core::fmt::{Debug, Display};
 use custom_error::custom_error;
 
 use crate::alloc::string::ToString;
@@ -37,7 +22,6 @@ impl Into<SystemCallError> for VSpaceError {
     fn into(self) -> SystemCallError {
         match self {
             VSpaceError::AlreadyMapped { from: _, to: _ } => SystemCallError::VSpaceAlreadyMapped,
-            _ => SystemCallError::InternalError,
         }
     }
 }
@@ -206,7 +190,8 @@ impl VSpace {
     /// `map_identity(0x2000, 0x3000)` will map everything between 0x2000 and 0x3000 to
     /// physical address 0x2000 -- 0x3000.
     pub(crate) fn map_identity(&mut self, base: PAddr, end: PAddr, rights: MapAction) {
-        self.map_identity_with_offset(PAddr::from(0x0), base, end, rights);
+        self.map_identity_with_offset(PAddr::from(0x0), base, end, rights)
+            .expect("Can't identity map region");
     }
 
     /// A pretty generic map function, it puts the physical memory range `pregion` with base and
@@ -334,7 +319,7 @@ impl VSpace {
                 // Add entries as long as we are within this allocated PDPT table
                 // and have at least 2 MiB things to map
                 while mapped < psize && ((psize - mapped) >= LARGE_PAGE_SIZE) && pd_idx < 512 {
-                    if (pd[pd_idx].is_present()) {
+                    if pd[pd_idx].is_present() {
                         panic!("Already mapped pd at {:#x}", pbase + mapped);
                     }
 
@@ -475,13 +460,8 @@ impl VSpace {
         );
 
         // Free unused top and bottom regions again:
-        unsafe {
-            trace!("NYI free");
-        }
-
-        unsafe {
-            trace!("NYI free");
-        }
+        trace!("NYI free top");
+        trace!("NYI free bottom");
 
         PAddr::from(aligned_paddr)
     }

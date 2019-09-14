@@ -1,29 +1,17 @@
 use core::fmt;
-use core::mem::transmute;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 
 use alloc::vec::Vec;
 
-use elfloader::ElfLoader;
-
-use x86::bits64::paging;
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
-use super::gdt;
-
 use crate::is_page_aligned;
 use crate::round_up;
 
-use super::irq;
-use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
-use crate::memory::PageTableProvider;
-use crate::mutex::Mutex;
-
-use super::memory::KERNEL_BASE;
-use crate::memory::BespinPageTableProvider;
+use super::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
 
 use super::vspace::*;
 
@@ -224,7 +212,7 @@ impl ResumeHandle {
         trace!("About to go to user-space: {:#x}", self.entry_point);
         // TODO: For now we allow unconditional IO access from user-space
         let user_flags =
-            rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;;
+            rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
 
         // Switch to user-space with initial zeroed registers.
         //
@@ -324,12 +312,15 @@ impl Process {
         }
 
         // Allocate a stack
-        p.vspace.map(
-            p.stack_base,
-            p.stack_size,
-            MapAction::ReadWriteExecuteUser,
-            BASE_PAGE_SIZE as u64,
-        );
+        p.vspace
+            .map(
+                p.stack_base,
+                p.stack_size,
+                MapAction::ReadWriteExecuteUser,
+                BASE_PAGE_SIZE as u64,
+            )
+            .expect("Can't map user-space stack");
+
         info!(
             "stack base {:#x} size: {} end {:#x}",
             p.stack_base,
@@ -338,12 +329,14 @@ impl Process {
         );
 
         // Allocate an upcall stack
-        p.vspace.map(
-            p.upcall_stack_base,
-            p.upcall_stack_size,
-            MapAction::ReadWriteExecuteUser,
-            BASE_PAGE_SIZE as u64,
-        );
+        p.vspace
+            .map(
+                p.upcall_stack_base,
+                p.upcall_stack_size,
+                MapAction::ReadWriteExecuteUser,
+                BASE_PAGE_SIZE as u64,
+            )
+            .expect("Can't map user-space upcall stack.");
 
         // TODO: make sure we have APIC base (these should be part of kernel
         // mappings and above KERNEL_BASE), should not be hardcoded
@@ -375,22 +368,20 @@ impl Process {
         let upcall_stack_size = 128 * BASE_PAGE_SIZE;
         let upcall_stack_top = upcall_stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
 
-        unsafe {
-            Process {
-                offset: VAddr::from(0usize),
-                mapping: Vec::with_capacity(64),
-                pid: pid,
-                vspace: VSpace::new(),
-                save_area: Default::default(),
-                entry_point: VAddr::from(0usize),
-                stack_base: stack_base,
-                stack_top: stack_top,
-                stack_size: stack_size,
-                upcall_stack_base: upcall_stack_base,
-                upcall_stack_size: upcall_stack_size,
-                upcall_stack_top: upcall_stack_top,
-                vcpu_ctl: None,
-            }
+        Process {
+            offset: VAddr::from(0usize),
+            mapping: Vec::with_capacity(64),
+            pid: pid,
+            vspace: VSpace::new(),
+            save_area: Default::default(),
+            entry_point: VAddr::from(0usize),
+            stack_base: stack_base,
+            stack_top: stack_top,
+            stack_size: stack_size,
+            upcall_stack_base: upcall_stack_base,
+            upcall_stack_size: upcall_stack_size,
+            upcall_stack_top: upcall_stack_top,
+            vcpu_ctl: None,
         }
     }
 
@@ -407,12 +398,9 @@ impl Process {
 
     pub fn upcall(&mut self, vector: u64, exception: u64) -> ResumeHandle {
         self.maybe_switch_vspace();
-        let (entry_point, cpu_ctl) = self
-            .vcpu_ctl
-            .as_mut()
-            .map_or((VAddr::zero(), 0), |mut ctl| {
-                (ctl.resume_with_upcall, ctl.vaddr().into())
-            });
+        let (entry_point, cpu_ctl) = self.vcpu_ctl.as_mut().map_or((VAddr::zero(), 0), |ctl| {
+            (ctl.resume_with_upcall, ctl.vaddr().into())
+        });
 
         ResumeHandle::new_upcall(
             entry_point,
@@ -530,7 +518,8 @@ impl elfloader::ElfLoader for Process {
         // Do the mappings:
         for (base, size, _alignment, action) in self.mapping.iter() {
             self.vspace
-                .map_generic(self.offset + *base, (pbase + base.as_u64(), *size), *action);
+                .map_generic(self.offset + *base, (pbase + base.as_u64(), *size), *action)
+                .expect("Can't map ELF region");
         }
 
         Ok(())
@@ -583,7 +572,7 @@ impl elfloader::ElfLoader for Process {
             .vspace
             .resolve_addr(addr)
             .expect("Can't resolve address");
-        let mut kernel_addr: VAddr = paddr_to_kernel_vaddr(paddr);
+        let kernel_addr: VAddr = paddr_to_kernel_vaddr(paddr);
 
         debug!(
             "ELF relocation paddr {:#x} kernel_addr {:#x}",

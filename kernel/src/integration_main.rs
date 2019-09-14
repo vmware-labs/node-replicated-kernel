@@ -109,39 +109,54 @@ pub fn xmain() {
 
     // We have 80 cores ...
     assert_eq!(MACHINE_TOPOLOGY.num_threads(), 80);
+    // ... no SMT ...
+    assert_eq!(MACHINE_TOPOLOGY.num_cores(), 80);
+    // ... 8 sockets ...
+    assert_eq!(MACHINE_TOPOLOGY.num_packages(), 8);
     // ... on 8 numa-nodes ...
-    //assert_eq!(MACHINE_TOPOLOGY.num_nodes(), 8);
-    // ... with 100 MiB of RAM per NUMA node ...
-    /*for node in 0..MACHINE_TOPOLOGY.num_nodes() {
-        match node {
-            0 => assert_eq!(MACHINE_TOPOLOGY.memory_regions_on_node(node).count(), 2),
-            _ => assert_eq!(MACHINE_TOPOLOGY.memory_regions_on_node(node).count(), 1),
+    assert_eq!(MACHINE_TOPOLOGY.num_nodes(), 8);
+
+    // ... with 512 MiB of RAM per NUMA node ...
+    for (nid, node) in MACHINE_TOPOLOGY.nodes().enumerate() {
+        match nid {
+            0 => assert_eq!(node.memory().count(), 2),
+            _ => assert_eq!(node.memory().count(), 1),
         };
 
-        let bytes_per_node: u64 = MACHINE_TOPOLOGY
-            .memory_regions_on_node(node)
-            .map(|ma| ma.length)
-            .sum();
+        let bytes_per_node: u64 = node.memory().map(|ma| ma.length).sum();
 
-        if node > 0 {
+        if nid > 0 {
             assert_eq!(
                 bytes_per_node,
-                1024 * 1024 * 100,
-                "Node#{} has 100 MiB of RAM",
-                node
+                1024 * 1024 * 512,
+                "Node#{} has 512 MiB of RAM",
+                nid
             );
         } else {
             // First node has a bit less...
             assert!(
-                bytes_per_node >= 1024 * 1024 * 99,
-                "Node#0 has almost 100 MiB of RAM"
+                bytes_per_node >= 1024 * 1024 * 511,
+                "Node#0 has almost 512 MiB of RAM"
             );
         }
     }
-    // ... and 10 core per node ...
-    for node in 0..MACHINE_TOPOLOGY.num_nodes() {
-        assert_eq!(MACHINE_TOPOLOGY.cores_on_node(node).count(), 10);
+
+    // ... and 10 cores per node ...
+    for node in MACHINE_TOPOLOGY.nodes() {
+        assert_eq!(node.cores().count(), 10);
     }
+
+    // ... and 10 cores/threads per package ...
+    for package in MACHINE_TOPOLOGY.packages() {
+        assert_eq!(package.cores().count(), 10);
+        assert_eq!(package.threads().count(), 10);
+    }
+
+    // ... and each core has 10 siblings ...
+    for core in MACHINE_TOPOLOGY.cores() {
+        assert_eq!(core.siblings().count(), 10);
+    }
+
     // ... and one IOAPIC which starts from GSI 0
     for (i, io_apic) in MACHINE_TOPOLOGY.io_apics().enumerate() {
         match i {
@@ -152,16 +167,16 @@ pub fn xmain() {
                 "Found more than 1 IO APIC"
             ),
         };
-    }*/
+    }
 
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+#[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
 static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
 #[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
 pub fn xmain() {
-    use arch::acpi;
     use arch::memory::{PAddr, BASE_PAGE_SIZE};
     use arch::vspace::MapAction;
     use topology;
@@ -176,11 +191,11 @@ pub fn xmain() {
     extern "C" {
         static x86_64_start_ap: *const u8;
         static x86_64_start_ap_end: *const u8;
-        static x86_64_init_ap_absolute_entry: *mut fn();
-        static x86_64_init_ap_init_pml4: *mut fn();
-        static start_ap_stack_ptr: *mut fn();
+        static x86_64_init_ap_absolute_entry: *mut extern "C" fn();
+        static x86_64_init_ap_init_pml4: *mut extern "C" fn();
+        static start_ap_stack_ptr: *mut extern "C" fn();
     };
-    let boot_code_size = unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
+    let _boot_code_size = unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
 
     //acpi::process_pcie();
 
@@ -194,11 +209,10 @@ pub fn xmain() {
 
         let real_mode_base: usize = 0x0 + real_mode_linear_offset as usize;
         info!("real_mode_base = {:#x}", real_mode_base);
-        let ap_bootstrap_code: &'static [u8] = unsafe {
-            core::slice::from_raw_parts(&x86_64_start_ap as *const _ as *const u8, boot_code_size)
-        };
+        let ap_bootstrap_code: &'static [u8] =
+            core::slice::from_raw_parts(&x86_64_start_ap as *const _ as *const u8, boot_code_size);
         let real_mode_destination: &mut [u8] =
-            unsafe { core::slice::from_raw_parts_mut(real_mode_base as *mut u8, boot_code_size) };
+            core::slice::from_raw_parts_mut(real_mode_base as *mut u8, boot_code_size);
 
         kcb.init_vspace().map_identity(
             PAddr::from(real_mode_base as u64),

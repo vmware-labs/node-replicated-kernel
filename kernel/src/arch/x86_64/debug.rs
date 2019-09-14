@@ -1,4 +1,3 @@
-use core::ops::Deref;
 use x86::io;
 
 //use alloc::boxed::Box;

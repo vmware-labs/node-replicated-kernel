@@ -1,7 +1,6 @@
 // KCB is the local kernel control that stores all core local state.
 
 use alloc::boxed::Box;
-use core::borrow::BorrowMut;
 use core::cell::{Ref, RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
@@ -11,13 +10,11 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use apic::xapic::XAPICDriver;
 
-use super::irq;
 use super::process::Process;
 use super::vspace::VSpace;
 
 use crate::arch::{KernelArgs, Module};
 use crate::memory::buddy::BuddyFrameAllocator;
-use crate::memory::{PAddr, PhysicalMemoryAllocator};
 
 /// Try to retrieve the KCB by reading the gs register.
 pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
@@ -102,6 +99,7 @@ pub struct Kcb {
     ///
     /// The CPU switches to this memory location automatically (see gdt.rs).
     /// This member should probably not be touched from normal code.
+    #[allow(dead_code)]
     interrupt_stack: Option<Pin<Box<[u8; 64 * 0x1000]>>>,
 
     /// A handle to the syscall stack memory location.

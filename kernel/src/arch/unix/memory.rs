@@ -1,5 +1,4 @@
 use core::mem::{transmute, uninitialized};
-use core::ptr;
 
 use crate::memory::Frame;
 pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, CACHE_LINE_SIZE};
@@ -63,6 +62,7 @@ impl MemoryMapper {
     /// Release a Frame back to the system.
     ///
     /// Uses `munmap` to release the page back to the OS.
+    #[allow(unused)]
     fn release_frame(&mut self, p: Frame) {
         let addr: *mut libc::c_void = unsafe { transmute(p.base) };
         let len: libc::size_t = p.size;

@@ -20,6 +20,7 @@
     box_into_pin,
     untagged_unions
 )]
+#![allow(safe_packed_borrows)]
 
 #[cfg(not(target_os = "none"))]
 extern crate libc;
@@ -101,7 +102,7 @@ static PAGER: Mutex<BespinSlabsProvider> = Mutex::new(BespinSlabsProvider::new()
 pub struct SafeZoneAllocator(Mutex<ZoneAllocator<'static>>);
 
 impl SafeZoneAllocator {
-    pub const fn new(provider: &'static Mutex<PageProvider>) -> SafeZoneAllocator {
+    pub const fn new(provider: &'static Mutex<dyn PageProvider>) -> SafeZoneAllocator {
         SafeZoneAllocator(Mutex::new(ZoneAllocator::new(provider)))
     }
 }
@@ -117,7 +118,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             let kcb = crate::kcb::get_kcb();
             let mut fmanager = kcb.pmanager();
 
-            let mut f = fmanager.allocate(layout);
+            let f = fmanager.allocate(layout);
             let ptr = f.map_or(core::ptr::null_mut(), |mut region| {
                 region.zero();
                 region.kernel_vaddr().as_mut_ptr()

@@ -2,18 +2,15 @@
 
 use core::alloc::Layout;
 use core::ffi::VaList;
-use core::fmt;
-use core::mem;
 use core::ptr;
 
 use super::memory::{paddr_to_kernel_vaddr, PAddr};
 use crate::alloc::alloc;
-use crate::alloc::vec::Vec;
 use acpica_sys::*;
 use cstr_core::CStr;
-use log::{error, trace};
+use log::trace;
 
-use super::vspace::{MapAction, VSpace};
+use super::vspace::MapAction;
 
 use x86::io;
 
@@ -35,7 +32,7 @@ pub extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
-    let mut root_ptr: ACPI_PHYSICAL_ADDRESS = 0x0;
+    let root_ptr: ACPI_PHYSICAL_ADDRESS = 0x0;
 
     let (rsdp1_root, rsdp2_root) = crate::kcb::try_get_kcb().map_or((None, None), |k| {
         let args = k.kernel_args();
@@ -177,15 +174,17 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
     use crate::round_up;
     crate::kcb::try_get_kcb().map(|k| {
         let mut vspace = k.init_vspace();
-        vspace.map_identity_with_offset(
-            PAddr::from(super::memory::KERNEL_BASE),
-            p,
-            PAddr::from(round_up!(
-                (location + len) as usize,
-                x86::bits64::paging::BASE_PAGE_SIZE
-            ) as u64),
-            MapAction::ReadWriteKernel,
-        );
+        vspace
+            .map_identity_with_offset(
+                PAddr::from(super::memory::KERNEL_BASE),
+                p,
+                PAddr::from(round_up!(
+                    (location + len) as usize,
+                    x86::bits64::paging::BASE_PAGE_SIZE
+                ) as u64),
+                MapAction::ReadWriteKernel,
+            )
+            .expect("Can't map ACPI memory");
     });
 
     let vaddr = paddr_to_kernel_vaddr(p);

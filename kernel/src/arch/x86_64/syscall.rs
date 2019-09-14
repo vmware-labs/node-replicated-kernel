@@ -1,20 +1,16 @@
-use core::mem;
-
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
-use x86::bits64::rflags::{self, RFlags};
+use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 use x86::segmentation::SegmentSelector;
 use x86::tlb;
-use x86::Ring;
 
-use kpi::arch::{SaveArea, VirtualCpu};
+use kpi::arch::VirtualCpu;
 use kpi::*;
 
 use crate::error::KError;
 
-use super::process::{Process, UserPtr, UserValue};
+use super::process::{UserPtr, UserValue};
 use super::vspace;
-use crate::prelude::NoDrop;
 
 extern "C" {
     #[no_mangle]
@@ -40,7 +36,6 @@ fn process_exit(code: u64) -> Result<(u64, u64), KError> {
     } else {
         super::debug::shutdown(crate::ExitReason::Ok);
     }
-    Ok((0, 0))
 }
 
 fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
@@ -187,8 +182,8 @@ pub extern "C" fn syscall_handle(
     arg1: u64,
     arg2: u64,
     arg3: u64,
-    arg4: u64,
-    arg5: u64,
+    _arg4: u64,
+    _arg5: u64,
 ) -> ! {
     let status: Result<(u64, u64), KError> = match SystemCall::new(function) {
         SystemCall::Process => handle_process(arg1, arg2, arg3),
@@ -199,9 +194,9 @@ pub extern "C" fn syscall_handle(
     let r = {
         let kcb = crate::kcb::get_kcb();
 
-        let retcode = match status {
+        let _retcode = match status {
             Ok((a1, a2)) => {
-                kcb.save_area.as_mut().map(|mut sa| {
+                kcb.save_area.as_mut().map(|sa| {
                     sa.set_syscall_ret1(a1);
                     sa.set_syscall_ret2(a2);
                     sa.set_syscall_error_code(SystemCallError::Ok);
@@ -209,7 +204,7 @@ pub extern "C" fn syscall_handle(
             }
             Err(status) => {
                 error!("System call returned with error: {:?}", status);
-                kcb.save_area.as_mut().map(|mut sa| {
+                kcb.save_area.as_mut().map(|sa| {
                     sa.set_syscall_error_code(status.into());
                 });
             }

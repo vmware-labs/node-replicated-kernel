@@ -2,26 +2,22 @@
 //! The purpose of the arch specific part is to initialize the machine to
 //! a sane environment and then jump to the main() function.
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 
-use core::cmp;
-use core::mem::{size_of, transmute};
+use core::mem::transmute;
 use core::slice;
 
 use driverkit::DriverControl;
 
 use x86::apic::ApicControl;
-use x86::bits64::paging;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
 use x86::cpuid;
 
-use apic::x2apic;
+//use apic::x2apic;
 use apic::xapic;
 
 pub mod debug;
 pub mod gdt;
-pub mod hwinfo;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
@@ -29,7 +25,7 @@ pub mod process;
 pub mod syscall;
 pub mod vspace;
 
-use uefi::table::boot::{MemoryDescriptor, MemoryType};
+use uefi::table::boot::MemoryType;
 
 pub mod acpi;
 mod isr;
@@ -41,7 +37,6 @@ use log::Level;
 use logos::Logos;
 
 use memory::*;
-use process::*;
 use vspace::*;
 
 use spin::Mutex;
@@ -84,17 +79,6 @@ pub extern "C" fn bespin_init_ap() {
     enable_fsgsbase();
     sprintln!("Hello from the other side");
     loop {}
-}
-
-/// Given physical a base and size returns a slice of the memory region
-/// in virtual memory.
-/// Used by multiboot since it stores everything as physical addresses.debug
-///
-/// Example: base 0x4770000 and len 10 will return slice [u8; 10] at
-/// address 0xffffffff84770000.
-fn paddr_to_slice(base: u64, size: usize) -> Option<&'static [u8]> {
-    let vbase = memory::paddr_to_kernel_vaddr(PAddr::from(base)).as_ptr();
-    unsafe { Some(slice::from_raw_parts(vbase, size)) }
 }
 
 /// Parse command line argument and initialize the logging infrastructure.
@@ -141,7 +125,7 @@ fn assert_required_cpu_features() {
 
     let has_sse = fi.as_ref().map_or(false, |f| f.has_sse());
     let has_sse3 = fi.as_ref().map_or(false, |f| f.has_sse3());
-    let has_avx = fi.as_ref().map_or(false, |f| f.has_avx());
+    let _has_avx = fi.as_ref().map_or(false, |f| f.has_avx());
     let has_osfxsr = fi.as_ref().map_or(false, |f| f.has_fxsave_fxstor());
 
     assert!(has_tsc, "No RDTSC? Run on a more modern machine!");
@@ -218,7 +202,7 @@ unsafe fn find_current_vspace() -> VSpace {
 fn find_apic_base() -> u64 {
     use x86::msr::{rdmsr, IA32_APIC_BASE};
     unsafe {
-        let mut base = rdmsr(IA32_APIC_BASE);
+        let base = rdmsr(IA32_APIC_BASE);
         debug!("xAPIC MMIO base is at {:x}", base & !0xfff);
         base & !0xfff
     }
@@ -262,7 +246,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     irq::setup_idt();
     // We should catch page-faults and general protection faults from here...
 
-    let mut kernel_args: &'static KernelArgs<[Module; 2]> =
+    let kernel_args: &'static KernelArgs<[Module; 2]> =
         unsafe { transmute::<u64, &'static KernelArgs<[Module; 2]>>(argc as u64) };
 
     // TODO(fix): Because we pnly have a borrow of KernelArgs we have to work too hard to get mm_iter
@@ -309,7 +293,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             if base > 0x100000 && size > BASE_PAGE_SIZE && region.page_count > 12000 {
                 debug!("region.base = {:#x} region.size = {:#x}", base, size);
                 unsafe {
-                    let mut f = Frame::new(PAddr::from(base), size);
+                    let f = Frame::new(PAddr::from(base), size);
                     if fmanager.add_memory(f) {
                         debug!("Added base={:#x} size={:#x}", base, size);
                     } else {
@@ -323,7 +307,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
     trace!("added memory regions");
 
-    let mut vspace = unsafe { find_current_vspace() }; // Safe, done once during init
+    let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
 
     // Construct the driver object to manipulate the interrupt controller (XAPIC)
@@ -334,12 +318,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     apic.attach();
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = unsafe { kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic) };
+    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
     kcb::init_kcb(&mut kcb);
-    let mut stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
+    let stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
     kcb.set_syscall_stack(stack);
 
-    let mut save_area = Box::pin(kpi::x86_64::SaveArea::empty());
+    let save_area = Box::pin(kpi::x86_64::SaveArea::empty());
     kcb.set_save_area(save_area);
 
     // Make sure we don't drop the KCB and anything in it,
@@ -354,7 +338,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Attach the driver to the registers:
     {
-        let mut apic = kcb::get_kcb().apic();
+        let apic = kcb::get_kcb().apic();
         info!(
             "xAPIC id: {}, version: {:#x}, is bsp: {}",
             apic.id(),

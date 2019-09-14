@@ -1,17 +1,13 @@
 #![no_std]
 #![no_main]
 #![feature(asm, alloc_error_handler, const_fn, panic_info_message)]
-
+#![allow(unused_imports, dead_code)]
 extern crate alloc;
 extern crate spin;
 
 extern crate lineup;
 
-use alloc::format;
-use alloc::vec::Vec;
-
 use core::alloc::{GlobalAlloc, Layout};
-use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;
@@ -28,7 +24,7 @@ static MEM_PROVIDER: vibrio::mem::SafeZoneAllocator =
     vibrio::mem::SafeZoneAllocator::new(&vibrio::mem::PAGER);
 
 fn print_test() {
-    vibrio::syscalls::print("test\r\n");
+    let _r = vibrio::syscalls::print("test\r\n");
     info!("print_test OK");
 }
 
@@ -36,9 +32,10 @@ fn map_test() {
     let base: u64 = 0xff000;
     let size: u64 = 0x1000 * 64;
     unsafe {
-        vibrio::syscalls::vspace(vibrio::syscalls::VSpaceOperation::Map, base, size);
+        vibrio::syscalls::vspace(vibrio::syscalls::VSpaceOperation::Map, base, size)
+            .expect("Map syscall failed");
 
-        let mut slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
+        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
         for i in slice.iter_mut() {
             *i = 0xb;
         }
@@ -127,7 +124,7 @@ fn test_rump_tmpfs() {
             assert_eq!(ri, 0);
             info!("rump_init({}) done in {:?}", ri, start.elapsed());
 
-            let TMPFS_ARGS_VERSION: u64 = 1;
+            const TMPFS_ARGS_VERSION: u64 = 1;
 
             let tfsa = tmpfs_args {
                 ta_version: TMPFS_ARGS_VERSION,
@@ -139,11 +136,11 @@ fn test_rump_tmpfs() {
             };
 
             let path = CStr::from_bytes_with_nul(b"/tmp\0");
-            let MOUNT_TMPFS = CStr::from_bytes_with_nul(b"tmpfs\0");
+            let tmpfs_ident = CStr::from_bytes_with_nul(b"tmpfs\0");
             info!("mounting tmpfs");
 
-            let r = mount(
-                MOUNT_TMPFS.unwrap().as_ptr(),
+            let _r = mount(
+                tmpfs_ident.unwrap().as_ptr(),
                 path.unwrap().as_ptr(),
                 0,
                 &tfsa,
@@ -173,7 +170,7 @@ fn test_rump_tmpfs() {
     scheduler.run();
     // TODO: Don't drop the scheduler for now,
     // so we don't panic because of unfinished generators:
-    unsafe { core::mem::forget(scheduler) };
+    core::mem::forget(scheduler);
     info!("test_rump_tmpfs OK");
 }
 
@@ -233,8 +230,8 @@ pub fn test_rump_net() {
                 start.elapsed()
             );
 
-            let AF_INET = 2;
-            let SOCK_DGRAM = 2;
+            const AF_INET: i64 = 2;
+            const SOCK_DGRAM: i64 = 2;
 
             let sockfd = socket(AF_INET, SOCK_DGRAM, 0);
             assert!(sockfd > 0);
@@ -311,7 +308,8 @@ pub fn upcall_test() {
 pub extern "C" fn _start() -> ! {
     unsafe {
         log::set_logger(&vibrio::writer::LOGGER)
-            .map(|()| log::set_max_level(Level::Debug.to_level_filter()));
+            .map(|()| log::set_max_level(Level::Debug.to_level_filter()))
+            .expect("Can't set-up logging");
     }
     debug!("Initialized logging");
     install_vcpu_area();
@@ -359,7 +357,6 @@ fn panic(info: &PanicInfo) -> ! {
     }
 
     vibrio::syscalls::exit(99);
-    loop {}
 }
 
 #[alloc_error_handler]

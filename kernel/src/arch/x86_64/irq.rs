@@ -22,12 +22,9 @@ use alloc::vec::Vec;
 
 use x86::apic::ApicControl;
 use x86::bits64::paging::VAddr;
-use x86::bits64::rflags;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
-use x86::io;
 use x86::irq;
-//use x86::msr;
 
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
@@ -36,12 +33,10 @@ use x86::Ring;
 
 use crate::arch::debug;
 use crate::arch::kcb::get_kcb;
-use crate::arch::process::{Process, ResumeHandle};
+use crate::arch::process::ResumeHandle;
 use crate::panic::{backtrace, backtrace_from};
 use crate::ExitReason;
 use spin::Mutex;
-
-use kpi::arch::SaveArea;
 
 use log::debug;
 
@@ -49,8 +44,8 @@ const IDT_SIZE: usize = 256;
 static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
 
 lazy_static! {
-    static ref IRQ_HANDLERS: Mutex<Vec<Box<Fn(&ExceptionArguments) -> () + Send + 'static>>> = {
-        let mut vec: Vec<Box<Fn(&ExceptionArguments) -> () + Send + 'static>> =
+    static ref IRQ_HANDLERS: Mutex<Vec<Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>>> = {
+        let mut vec: Vec<Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>> =
             Vec::with_capacity(IDT_SIZE);
         for _ in 0..IDT_SIZE {
             vec.push(Box::new(|e| unsafe { unhandled_irq(e) }));
@@ -87,11 +82,9 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     // Enable user-space access to do backtraces in user-space
     x86::current::rflags::stac();
 
-    unsafe {
-        for i in 0..12 {
-            let ptr = (a.rsp as *const u64).offset(i);
-            sprintln!("stack[{}] = {:#x}", i, *ptr);
-        }
+    for i in 0..12 {
+        let ptr = (a.rsp as *const u64).offset(i);
+        sprintln!("stack[{}] = {:#x}", i, *ptr);
     }
 
     // Print where the fault happend in the address-space:
@@ -140,9 +133,8 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &irq::EXCEPTIONS[a.vector as usize];
     warn!("Got debug interrupt {}", desc.source);
-    let kcb = get_kcb();
 
-    let mut kcb = crate::kcb::get_kcb();
+    let kcb = crate::kcb::get_kcb();
     let r = ResumeHandle::new_restore(kcb.get_save_area_ptr());
     r.resume()
 }
@@ -162,7 +154,7 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     }
 
     // Print the RIP that triggered the fault:
-    use crate::arch::kcb;
+    //use crate::arch::kcb;
     sprint!("Instruction Pointer: {:#x}", a.rip);
     /*kcb::try_get_kcb().map(|k| {
         sprintln!(
@@ -239,14 +231,14 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // activations:
         // TODO: do proper masking based on some VCPU mask...
         if a.vector > 30 || a.vector == 3 {
-            info!("handle_generic_exception {:?}", a);
+            trace!("handle_generic_exception {:?}", a);
 
             let kcb = crate::kcb::get_kcb();
             let mut plock = kcb.current_process();
             let p = plock.as_mut().unwrap();
 
             let resumer = {
-                let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |mut vcpu| {
+                let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |vcpu| {
                     trace!(
                         "vcpu state is: pc_disabled {:?} is_disabled {:?}",
                         vcpu.pc_disabled,
@@ -264,7 +256,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 } else {
                     // Copy CURRENT_SAVE_AREA to process enabled save area
                     // then resume in the upcall handler
-                    let was_disabled = p.vcpu_ctl.as_mut().map(|vcpu| {
+                    let _was_disabled = p.vcpu_ctl.as_mut().map(|vcpu| {
                         kcb.save_area.as_ref().map(|sa| {
                             vcpu.enabled_state = **sa;
                         });
@@ -309,7 +301,7 @@ pub unsafe fn acknowledge() {
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(
     vector: usize,
-    handler: Box<Fn(&ExceptionArguments) -> () + Send + 'static>,
+    handler: Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>,
 ) {
     if vector > IDT_SIZE - 1 {
         debug!("Invalid vector!");
@@ -385,10 +377,10 @@ pub fn setup_idt() {
 pub fn init_irq_handlers() {
     lazy_static::initialize(&IRQ_HANDLERS);
 
-    unsafe {
-        //register_handler(13, Box::new(|e| gp_handler(e)));
-        //register_handler(14, Box::new(|e| pf_handler(e)));
-    }
+    //unsafe {
+    //register_handler(13, Box::new(|e| gp_handler(e)));
+    //register_handler(14, Box::new(|e| pf_handler(e)));
+    //}
 }
 
 /// Establishes a route for a GSI on the IOAPIC.
@@ -398,21 +390,18 @@ pub fn init_irq_handlers() {
 /// core 0. This is because, we should probably just support MSI(X)
 /// and don't invest a lot in legacy interrupts...
 pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
-    use crate::arch::acpi;
     use crate::arch::vspace::MapAction;
-    use crate::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
-    use topology;
+    use crate::memory::{paddr_to_kernel_vaddr, PAddr};
 
     for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
         debug!("Initialize IO APIC {:?}", io_apic);
         let addr = PAddr::from(io_apic.address as u64);
 
         // map it
-        use crate::round_up;
-        let mut kcb = crate::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         let mut plock = kcb.current_process();
 
-        plock.as_mut().map(|mut p| {
+        plock.as_mut().map(|p| {
             trace!(
                 "Map IOAPIC at: {:#x}, p is at {:p}",
                 PAddr::from(crate::arch::memory::KERNEL_BASE) + addr,
@@ -420,12 +409,14 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
             );
 
             // TODO: The mapping should be in global kernel-space!
-            p.vspace.map_identity_with_offset(
-                PAddr::from(crate::arch::memory::KERNEL_BASE),
-                addr,
-                addr + x86::bits64::paging::BASE_PAGE_SIZE,
-                MapAction::ReadWriteKernel,
-            );
+            p.vspace
+                .map_identity_with_offset(
+                    PAddr::from(crate::arch::memory::KERNEL_BASE),
+                    addr,
+                    addr + x86::bits64::paging::BASE_PAGE_SIZE,
+                    MapAction::ReadWriteKernel,
+                )
+                .expect("Can't map IO APIC?");
         });
 
         let mut inst =

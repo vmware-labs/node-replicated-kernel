@@ -255,7 +255,7 @@ impl<'a> PageProvider<'a> for BespinSlabsProvider {
         let kcb = crate::kcb::get_kcb();
         let mut fmanager = kcb.pmanager();
 
-        let mut f = unsafe {
+        let f = unsafe {
             fmanager.allocate(
                 Layout::new::<paging::Page>()
                     .align_to(BASE_PAGE_SIZE)

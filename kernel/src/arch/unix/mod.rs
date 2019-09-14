@@ -1,11 +1,10 @@
 use log::Level;
-use spin::Mutex;
 
 use crate::xmain;
 use crate::ExitReason;
 
 use crate::memory::buddy::BuddyFrameAllocator;
-use crate::memory::{Frame, PhysicalAllocator};
+use crate::memory::PhysicalAllocator;
 
 pub mod irq;
 pub mod kcb;
@@ -46,7 +45,7 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
 
     // Construct the Kcb so we can access these things later on in the code
 
-    let mut kcb = kcb::Kcb::new(mb);
+    let kcb = kcb::Kcb::new(mb);
     kcb::init_kcb(kcb);
     debug!("Memory allocation should work at this point...");
 

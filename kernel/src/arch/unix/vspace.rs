@@ -11,7 +11,6 @@ impl Into<SystemCallError> for VSpaceError {
     fn into(self) -> SystemCallError {
         match self {
             VSpaceError::AlreadyMapped { from: _, to: _ } => SystemCallError::VSpaceAlreadyMapped,
-            _ => SystemCallError::InternalError,
         }
     }
 }

@@ -64,7 +64,7 @@ fn backtrace_format(
     sprint!("frame #{:<2} - {:#02$x}", count, ip as usize, 20);
     let mut resolved = false;
 
-    backtracer::resolve(context, relocated_offset, ip, |symbol| {
+    let _r = backtracer::resolve(context, relocated_offset, ip, |symbol| {
         if !resolved {
             resolved = true;
         } else {

@@ -103,7 +103,40 @@ pub fn xmain() {
 /// # Note
 /// This test is supposed to spawn on a topology with 2 sockets, 1 core each
 /// 2 numa nodes (one per socket) with 512 MiB RAM each.
-#[cfg(all(feature = "integration-test", feature = "test-acpi"))]
+#[cfg(all(feature = "integration-test", feature = "test-acpi-smoke"))]
+pub fn xmain() {
+    use topology::MACHINE_TOPOLOGY;
+
+    // We have 2 cores ...
+    assert_eq!(MACHINE_TOPOLOGY.num_threads(), 2);
+    // ... no SMT ...
+    assert_eq!(MACHINE_TOPOLOGY.num_cores(), 2);
+    // ... 1 sockets ...
+    assert_eq!(MACHINE_TOPOLOGY.num_packages(), 1);
+    // ... no numa ...
+    assert_eq!(MACHINE_TOPOLOGY.num_nodes(), 0);
+
+    // ... and one IOAPIC which starts from GSI 0
+    for (i, io_apic) in MACHINE_TOPOLOGY.io_apics().enumerate() {
+        match i {
+            0 => assert_eq!(io_apic.global_irq_base, 0, "GSI of I/O APIC is 0"),
+            _ => assert_eq!(
+                MACHINE_TOPOLOGY.io_apics().count(),
+                1,
+                "Found more than 1 IO APIC"
+            ),
+        };
+    }
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+/// Checks that we can initialize ACPI and query the ACPI tables.
+///
+/// # Note
+/// This test is supposed to spawn on a topology with 2 sockets, 1 core each
+/// 2 numa nodes (one per socket) with 512 MiB RAM each.
+#[cfg(all(feature = "integration-test", feature = "test-acpi-topology"))]
 pub fn xmain() {
     use topology::MACHINE_TOPOLOGY;
 

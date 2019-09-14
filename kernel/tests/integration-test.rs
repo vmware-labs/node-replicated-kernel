@@ -501,10 +501,31 @@ fn scheduler() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Test that we can initialize the ACPI subsystem (in kernel-space).
+/// Test that we can initialize the ACPI subsystem and figure out the machine topology.
+#[test]
+fn acpi_topology() {
+    let cmdline = &RunnerArgs::new("test-acpi-topology")
+        .cores(80)
+        .nodes(8)
+        .memory(4096);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline).expect("Can't spawn QEMU instance");
+
+        p.exp_string("ACPI Initialized")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output)
+}
+
+/// Test that we can initialize the ACPI subsystem and figure out the machine topology
+/// (a different one than acpi_smoke).
 #[test]
 fn acpi_smoke() {
-    let cmdline = &RunnerArgs::new("test-acpi").cores(80).nodes(8).memory(4096);
+    let cmdline = &RunnerArgs::new("test-acpi-smoke").cores(2).memory(1024);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {

@@ -205,10 +205,10 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
+#[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
-#[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
+#[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
     use arch::memory::{PAddr, BASE_PAGE_SIZE};
     use arch::vspace::MapAction;

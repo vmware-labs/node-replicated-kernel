@@ -305,7 +305,7 @@ if [ "${_arg_norun}" != "on" ]; then
 	#QEMU_NET_APPEND="-net nic,model=e1000 -net user"
 	# -kernel ./mbkernel -initrd kernel
 
-	if [ "${_arg_qemu}" != "" ]; then
+	if [ "${_arg_qemu}" == "" ]; then
 		_arg_qemu="-m 1024"
 	fi
 

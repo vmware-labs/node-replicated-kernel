@@ -232,36 +232,29 @@ impl<'a> RunnerArgs<'a> {
 
         // Form arguments for QEMU
         cmd.push(String::from("--qemu"));
-        let mut qemu_args = String::from(self.qemu_args.join(" "));
-        qemu_args.push_str(format!("-m {}M ", self.memory).as_str());
+        let mut qemu_args: Vec<String> = self.qemu_args.iter().map(|arg| arg.to_string()).collect();
+        qemu_args.push(format!("-m {}M", self.memory));
 
         if self.nodes > 1 || self.cores > 1 {
             if self.nodes > 1 {
                 for node in 0..self.nodes {
                     // Divide memory equally across cores
                     let mem_per_node = self.memory / self.nodes;
-                    qemu_args.push_str(
-                        format!("-numa node,mem={}M,nodeid={} ", mem_per_node, node).as_str(),
-                    );
+                    qemu_args.push(format!("-numa node,mem={}M,nodeid={}", mem_per_node, node));
                     // 1:1 mapping of sockets to cores
-                    qemu_args.push_str(
-                        format!("-numa cpu,node-id={},socket-id={} ", node, node).as_str(),
-                    );
+                    qemu_args.push(format!("-numa cpu,node-id={},socket-id={}", node, node));
                 }
             }
 
             if self.cores > 1 {
                 let sockets = self.nodes;
-                qemu_args.push_str(
-                    format!(
-                        "-smp {},sockets={},maxcpus={}",
-                        self.cores, sockets, self.cores
-                    )
-                    .as_str(),
-                );
+                qemu_args.push(format!(
+                    "-smp {},sockets={},maxcpus={}",
+                    self.cores, sockets, self.cores
+                ));
             }
         }
-        cmd.push(qemu_args);
+        cmd.push(String::from(qemu_args.join(" ")));
 
         // Don't run qemu, just build?
         match self.norun {
@@ -280,25 +273,31 @@ fn check_for_successful_exit(args: &RunnerArgs, r: Result<WaitStatus>, output: S
 }
 
 fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
+    fn log_qemu_out(args: &RunnerArgs, output: String) {
+        if !output.is_empty() {
+            println!("\n===== QEMU LOG =====");
+            println!("{}", output);
+            println!("===== END QEMU LOG =====");
+        }
+        let quoted_cmd = args
+            .as_cmd()
+            .into_iter()
+            .map(|mut arg| {
+                arg.insert(0, '"');
+                arg.push('"');
+                arg
+            })
+            .collect::<Vec<String>>()
+            .join(" ");
+
+        println!("We invoked: bash {}", quoted_cmd);
+    }
+
     match r {
         Ok(WaitStatus::Exited(_, code)) => {
             let exit_status: ExitStatus = code.into();
             if exit_status != expected {
-                println!("\n===== QEMU LOG =====");
-                println!("{}", output);
-                println!("===== END QEMU LOG =====");
-                let quoted_cmd = args
-                    .as_cmd()
-                    .into_iter()
-                    .map(|mut arg| {
-                        arg.insert(0, '"');
-                        arg.push('"');
-                        arg
-                    })
-                    .collect::<Vec<String>>()
-                    .join(" ");
-
-                println!("We invoked: bash {}", quoted_cmd);
+                log_qemu_out(args, output);
                 if expected != ExitStatus::Success {
                     println!("We expected to exit with {}, but", expected);
                 }
@@ -307,9 +306,11 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
             // else: We're good
         }
         Err(e) => {
+            log_qemu_out(args, output);
             panic!("Qemu testing failed: {}", e);
         }
         _ => {
+            log_qemu_out(args, output);
             panic!("Something weird happened to the Qemu process, please investigate.");
         }
     };
@@ -539,12 +540,15 @@ fn acpi_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output)
 }
 
-/// Test that we can boot additional cores.
+/// Test that we can boot an additional core.
+///
+/// Utilizes the app core initializtion logic
+/// as well as the APIC driver (sending IPIs).
 #[test]
-fn coreboot() {
-    let cmdline = RunnerArgs::new("test-coreboot")
+fn coreboot_smoke() {
+    let cmdline = RunnerArgs::new("test-coreboot-smoke")
         .cores(2)
-        .qemu_arg("-d int,cpu_reset ");
+        .qemu_arg("-d int,cpu_reset"); // Adding this to qemu is helpful to debug core-booting related failures
     let output = String::new();
 
     let qemu_run = || -> Result<WaitStatus> {

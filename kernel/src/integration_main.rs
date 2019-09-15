@@ -101,8 +101,8 @@ pub fn xmain() {
 /// Checks that we can initialize ACPI and query the ACPI tables.
 ///
 /// # Note
-/// This test is supposed to spawn on a topology with 2 sockets, 1 core each
-/// 2 numa nodes (one per socket) with 512 MiB RAM each.
+/// This test is supposed to spawn on a small machine with 1 socket, 2 cores
+/// and no numa nodes.
 #[cfg(all(feature = "integration-test", feature = "test-acpi-smoke"))]
 pub fn xmain() {
     use topology::MACHINE_TOPOLOGY;
@@ -131,7 +131,8 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Checks that we can initialize ACPI and query the ACPI tables.
+/// Checks that we can initialize ACPI, query the ACPI tables
+/// and construct a large NUMA topology.
 ///
 /// # Note
 /// This test is supposed to spawn on a topology with 2 sockets, 1 core each
@@ -210,88 +211,22 @@ static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
-    use arch::memory::{PAddr, BASE_PAGE_SIZE};
-    use arch::vspace::MapAction;
+    use arch::coreboot;
     use topology;
-
     use x86::apic::{ApicControl, ApicId};
 
-    let kcb = crate::arch::kcb::get_kcb();
-    const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
-    let real_mode_page = X86_64_REAL_MODE_SEGMENT >> 8;
-    let real_mode_linear_offset = X86_64_REAL_MODE_SEGMENT << 4;
-
-    extern "C" {
-        static x86_64_start_ap: *const u8;
-        static x86_64_start_ap_end: *const u8;
-        static x86_64_init_ap_absolute_entry: *mut extern "C" fn();
-        static x86_64_init_ap_init_pml4: *mut extern "C" fn();
-        static start_ap_stack_ptr: *mut extern "C" fn();
-    };
-    let _boot_code_size = unsafe { (x86_64_start_ap).offset_from(x86_64_start_ap_end) as usize };
-
-    //acpi::process_pcie();
-
-    assert_eq!(topology::MACHINE_TOPOLOGY.num_threads(), 2, "Found a core");
+    assert_eq!(topology::MACHINE_TOPOLOGY.num_threads(), 2, "No 2nd core?");
 
     unsafe {
-        let start_addr: usize = core::mem::transmute(&x86_64_start_ap);
-        let end_addr: usize = core::mem::transmute(&x86_64_start_ap_end);
-        let boot_code_size = end_addr - start_addr;
-        info!("boot_code_size = {:#x}", boot_code_size);
+        let kcb = crate::arch::kcb::get_kcb();
 
-        let real_mode_base: usize = 0x0 + real_mode_linear_offset as usize;
-        info!("real_mode_base = {:#x}", real_mode_base);
-        let ap_bootstrap_code: &'static [u8] =
-            core::slice::from_raw_parts(&x86_64_start_ap as *const _ as *const u8, boot_code_size);
-        let real_mode_destination: &mut [u8] =
-            core::slice::from_raw_parts_mut(real_mode_base as *mut u8, boot_code_size);
-
-        kcb.init_vspace().map_identity(
-            PAddr::from(real_mode_base as u64),
-            PAddr::from((real_mode_base + 20 * BASE_PAGE_SIZE) as u64),
-            MapAction::ReadWriteExecuteKernel,
+        coreboot::copy_bootstrap_code();
+        coreboot::setup_boostrap_code(
+            crate::arch::bespin_init_ap as u64,
+            kcb.init_vspace().pml4_address().into(),
+            &COREBOOT_STACK as *const _ as u64 + 32 * 4096 - 16,
         );
-
-        let entry_pointer: *mut u64 = core::mem::transmute(&x86_64_init_ap_absolute_entry);
-        *entry_pointer = crate::arch::bespin_init_ap as u64;
-        info!(
-            "crate::arch::bespin_init_ap = {:#x}",
-            crate::arch::bespin_init_ap as u64
-        );
-
-        real_mode_destination.copy_from_slice(ap_bootstrap_code);
-        let entry_pointer: *mut u64 = core::mem::transmute(
-            &x86_64_init_ap_absolute_entry as *const _ as u64 - start_addr as u64
-                + real_mode_base as u64,
-        );
-        *entry_pointer = crate::arch::bespin_init_ap as u64;
-
-        let pml4_pointer: *mut u64 = core::mem::transmute(
-            &x86_64_init_ap_init_pml4 as *const _ as u64 - start_addr as u64
-                + real_mode_base as u64,
-        );
-        *pml4_pointer = kcb.init_vspace().pml4_address().into();
-
-        let stack_pointer: *mut u64 = core::mem::transmute(
-            &start_ap_stack_ptr as *const _ as u64 - start_addr as u64 + real_mode_base as u64,
-        );
-        *stack_pointer = &COREBOOT_STACK as *const _ as u64 + 32 * 4096 - 16;
-
-        info!("start_addr: {:#x}", start_addr);
-        info!(
-            "x86_64_start_ap = {:p} {:#x}",
-            entry_pointer, *entry_pointer
-        );
-        info!("pml4_pointer = {:p} {:#x}", pml4_pointer, *pml4_pointer);
-        info!("pml4 on bsp: {:#x}", kcb.init_vspace().pml4_address());
-
-        // Have fun launching some cores:
-        kcb.apic().ipi_init(ApicId::XApic(1));
-        kcb.apic().ipi_init_deassert();
-
-        kcb.apic()
-            .ipi_startup(ApicId::XApic(1), real_mode_page as u8);
+        coreboot::wakeup_core(ApicId::XApic(1));
 
         // Wait for a while
         let break_time = x86::time::rdtsc() + 1000000;

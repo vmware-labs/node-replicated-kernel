@@ -309,9 +309,12 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
             log_qemu_out(args, output);
             panic!("Qemu testing failed: {}", e);
         }
-        _ => {
+        e => {
             log_qemu_out(args, output);
-            panic!("Something weird happened to the Qemu process, please investigate.");
+            panic!(
+                "Something weird happened to the Qemu process, please investigate: {:?}",
+                e
+            );
         }
     };
 }
@@ -548,13 +551,16 @@ fn acpi_smoke() {
 fn coreboot_smoke() {
     let cmdline = RunnerArgs::new("test-coreboot-smoke")
         .cores(2)
-        .qemu_arg("-d int,cpu_reset"); // Adding this to qemu is helpful to debug core-booting related failures
-    let output = String::new();
+        // Adding this to qemu will print register state on CPU rests (triple-faults)
+        // helpful to debug core-booting related failures:
+        .qemu_arg("-d int,cpu_reset");
+    let mut output = String::new();
 
-    let qemu_run = || -> Result<WaitStatus> {
+    let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
         p.exp_string("ACPI Initialized")?;
         p.exp_string("Hello from the other side")?;
+        output = p.exp_eof()?;
         p.process.exit()
     };
 

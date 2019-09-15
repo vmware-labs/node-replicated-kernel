@@ -24,6 +24,7 @@ pub mod memory;
 pub mod process;
 pub mod syscall;
 pub mod vspace;
+pub mod coreboot;
 
 use uefi::table::boot::MemoryType;
 

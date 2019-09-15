@@ -60,10 +60,11 @@ start_ap_pm:
 	or $0x80010000, %eax      /* PG & WP */
 	mov %eax, %cr0
 
-    /* Acquire start-up lock */
+    /* Load start-up lock */
     mov $(x86_64_init_ap_lock - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %esi
 
 start_ap_spin:
+    /* store bit 0 fo the ap_lock in CF flag, set bit 0 to 1, signals BSP we're done */
     lock bts $0,(%esi)
     jc start_ap_spin
 
@@ -78,7 +79,7 @@ start_ap_spin:
 .code64
 start_ap_64:
     /* Initialize the bootup stack for long mode */
-    lea (start_ap_stack_ptr)(%rip), %rcx
+    lea (x86_64_init_ap_stack_ptr)(%rip), %rcx
     mov (%rcx),%rsp
     mov %rsp, %rbp
     /*
@@ -117,8 +118,8 @@ gdt_ptr:
 .long 0
 
 .align 64
-.global start_ap_stack_ptr
-start_ap_stack_ptr:
+.global x86_64_init_ap_stack_ptr
+x86_64_init_ap_stack_ptr:
 .quad 0xbeefbeefbeefbee5
 
 .align 64

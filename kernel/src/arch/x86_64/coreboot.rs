@@ -1,6 +1,7 @@
 //! Functionality to boot application cores on x86.
 //!
-//! This code is closely intertwingled with the assembly code in `start_ap.S`.
+//! This code is closely intertwingled with the assembly code in `start_ap.S`,
+//! make sure these two files are and stay in sync.
 
 use super::kcb;
 use super::vspace::MapAction;
@@ -55,7 +56,7 @@ fn get_boostrap_code_size() -> usize {
     boostrap_code_size.into()
 }
 
-pub unsafe fn copy_bootstrap_code() {
+unsafe fn copy_bootstrap_code() {
     let (start_address, _end_address) = ap_code_address_range();
     let boot_code_size = get_boostrap_code_size();
 
@@ -78,13 +79,15 @@ pub unsafe fn copy_bootstrap_code() {
 /// to the initial address space, a pointer to the
 /// initial stack.
 ///
-/// # TODO
-/// Should also reset the boostrap code lock...
-///
 /// # Safety
 /// To be safe this function should only be invoked
 /// during initialization on the BSP core and after we invoked `copy_bootstrap_code`.
-pub unsafe fn setup_boostrap_code(entry_fn: u64, pml4: u64, stack_top: u64) {
+unsafe fn setup_boostrap_code(
+    entry_fn: u64,
+    args: (*mut u64, *mut u64, *mut u64, *mut u64),
+    pml4: u64,
+    stack_top: u64,
+) {
     // Symbols from `start_ap.S`
     extern "C" {
         /// Bootstrap code jumps to this address after initialization.
@@ -93,6 +96,14 @@ pub unsafe fn setup_boostrap_code(entry_fn: u64, pml4: u64, stack_top: u64) {
         static x86_64_init_ap_init_pml4: *mut extern "C" fn();
         /// Bootstrap core uses this stack address when starting to execute at `x86_64_init_ap_absolute_entry`.
         static x86_64_init_ap_stack_ptr: *mut extern "C" fn();
+        /// First argument for entry fn.
+        static x86_64_init_ap_arg1: *mut *mut u64;
+        /// 2nd argument for entry fn.
+        static x86_64_init_ap_arg2: *mut *mut u64;
+        /// 3rd argument for entry fn.
+        static x86_64_init_ap_arg3: *mut *mut u64;
+        /// 4th argument for entry fn.
+        static x86_64_init_ap_arg4: *mut *mut u64;
         /// The ap lock to let us know when the app core currently booting is done
         /// with the initialization code section.
         ///
@@ -103,22 +114,49 @@ pub unsafe fn setup_boostrap_code(entry_fn: u64, pml4: u64, stack_top: u64) {
 
     let (start_addr, _end_addr) = ap_code_address_range();
 
+    // TODO: this code below is ugly and needs shortening:
+
+    // Init function
     let entry_pointer: *mut u64 = core::mem::transmute(
         &x86_64_init_ap_absolute_entry as *const _ as u64 - start_addr.as_u64()
             + REAL_MODE_BASE as u64,
     );
     *entry_pointer = entry_fn;
 
+    // Arguments
+    let arg1_pointer: *mut *mut u64 = core::mem::transmute(
+        &x86_64_init_ap_arg1 as *const _ as u64 - start_addr.as_u64() + REAL_MODE_BASE as u64,
+    );
+    *arg1_pointer = args.0;
+
+    let arg2_pointer: *mut *mut u64 = core::mem::transmute(
+        &x86_64_init_ap_arg2 as *const _ as u64 - start_addr.as_u64() + REAL_MODE_BASE as u64,
+    );
+    *arg2_pointer = args.1;
+
+    let arg3_pointer: *mut *mut u64 = core::mem::transmute(
+        &x86_64_init_ap_arg3 as *const _ as u64 - start_addr.as_u64() + REAL_MODE_BASE as u64,
+    );
+    *arg3_pointer = args.2;
+
+    let arg4_pointer: *mut *mut u64 = core::mem::transmute(
+        &x86_64_init_ap_arg4 as *const _ as u64 - start_addr.as_u64() + REAL_MODE_BASE as u64,
+    );
+    *arg4_pointer = args.3;
+
+    // Page-table
     let pml4_pointer: *mut u64 = core::mem::transmute(
         &x86_64_init_ap_init_pml4 as *const _ as u64 - start_addr.as_u64() + REAL_MODE_BASE as u64,
     );
     *pml4_pointer = pml4;
 
+    // Stack
     let stack_pointer: *mut u64 = core::mem::transmute(
         &x86_64_init_ap_stack_ptr as *const _ as u64 - start_addr.as_u64() + REAL_MODE_BASE as u64,
     );
     *stack_pointer = stack_top;
 
+    // Initialization lock
     let ap_lock_pointer: *mut u64 = core::mem::transmute(
         &x86_64_init_ap_lock as *const _ as u64 - start_addr.as_u64() + REAL_MODE_BASE as u64,
     );
@@ -182,13 +220,40 @@ unsafe fn get_boostrap_code_region() -> &'static mut [u8] {
 /// modern processors (Xeon Phi being an exception) this is not actually necessary.
 ///
 /// # Safety
-/// You're waking up a core that goes off and does random things (if not being careful),
-/// so this is pretty bad for memory safety.
-pub unsafe fn wakeup_core(core_id: ApicId) {
+/// Can easily reset the wrong core (bad for memory safety).
+unsafe fn wakeup_core(core_id: ApicId) {
     let kcb = kcb::get_kcb();
 
     // x86 core boot protocol, without sleeping:
     kcb.apic().ipi_init(core_id);
     kcb.apic().ipi_init_deassert();
     kcb.apic().ipi_startup(core_id, REAL_MODE_PAGE);
+}
+
+/// Starts up the core identified by `core_id`, after initialization it begins
+/// to executing in `init_function` and uses `stack` as a stack.
+///
+/// # Safety
+/// You're waking up a core that goes off and does random things
+/// (if not being careful), so this can be pretty bad for memory safety.
+pub unsafe fn initialize(
+    core_id: x86::apic::ApicId,
+    init_function: extern "C" fn(*mut u64, *mut u64, *mut u64, *mut u64),
+    args: (*mut u64, *mut u64, *mut u64, *mut u64),
+    stack: &'static mut [u8],
+) {
+    // Make sure bootsrap code is at correct location in memory
+    copy_bootstrap_code();
+
+    // Initialize bootstrap assembly with correct parameters
+    let kcb = crate::arch::kcb::get_kcb();
+    setup_boostrap_code(
+        init_function as u64,
+        args,
+        kcb.init_vspace().pml4_address().into(),
+        &stack as *const _ as u64 + stack.len() as u64 - 16,
+    );
+
+    // Send IPIs
+    wakeup_core(core_id);
 }

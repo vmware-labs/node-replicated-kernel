@@ -82,6 +82,18 @@ start_ap_64:
     lea (x86_64_init_ap_stack_ptr)(%rip), %rcx
     mov (%rcx),%rsp
     mov %rsp, %rbp
+
+    /* Set up arguments 1-4 for entry function */
+
+    mov (x86_64_init_ap_arg1 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rdi
+    /* mov (%rdi),%rdi */
+    mov (x86_64_init_ap_arg2 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rsi
+    /* mov (%rsi),%rsi */
+    mov (x86_64_init_ap_arg3 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rdx
+    /* mov (%rdx),%rdx */
+    mov (x86_64_init_ap_arg4 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rcx
+    /* mov (%rcx),%rcx */
+
     /*
     Jump to the Rust entry point function for ap init.
     with an the address written into x86_64_init_ap_absolute_entry
@@ -89,9 +101,11 @@ start_ap_64:
     We find the location of x86_64_init_ap_absolute_entry using
     rip relative addressing.
     */
-    lea (x86_64_init_ap_absolute_entry)(%rip),%rcx
-    mov (%rcx),%rcx
-    call *%rcx
+    lea (x86_64_init_ap_absolute_entry)(%rip),%r10
+    mov (%r10),%r10
+    call *%r10
+
+
 
 /* We should not return here after the call */
 loop_ap:
@@ -116,6 +130,26 @@ gdt_ptr:
 .word gdt_ptr - gdt
 .long gdt - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET
 .long 0
+
+.align 8
+.global x86_64_init_ap_arg1
+x86_64_init_ap_arg1:
+.quad 0xbeefbeefbeefbe10
+
+.align 8
+.global x86_64_init_ap_arg2
+x86_64_init_ap_arg2:
+.quad 0xbeefbeefbeefbe20
+
+.align 8
+.global x86_64_init_ap_arg3
+x86_64_init_ap_arg3:
+.quad 0xbeefbeefbeefbe30
+
+.align 8
+.global x86_64_init_ap_arg4
+x86_64_init_ap_arg4:
+.quad 0xbeefbeefbeefbe40
 
 .align 64
 .global x86_64_init_ap_stack_ptr

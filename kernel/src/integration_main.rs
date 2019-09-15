@@ -207,26 +207,50 @@ pub fn xmain() {
 }
 
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
-static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
-
-#[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
     use arch::coreboot;
     use topology;
     use x86::apic::{ApicControl, ApicId};
 
+    // A simple stack for the app core (non bootstrap core)
+    static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
+
+    // Entry point for app. This function is called from start_ap.S:
+    pub extern "C" fn bespin_init_ap(
+        arg1: *mut u64,
+        arg2: *mut u64,
+        arg3: *mut u64,
+        arg4: *mut u64,
+    ) {
+        crate::arch::enable_sse();
+        crate::arch::enable_fsgsbase();
+
+        // Check that we can pass arguments:
+        assert_eq!(arg1, 1 as *mut u64);
+        assert_eq!(arg2, 2 as *mut u64);
+        assert_eq!(arg3, 3 as *mut u64);
+        assert_eq!(arg4, 4 as *mut u64);
+
+        // Don't change this string otherwise the test will fail:
+        sprintln!("Hello from the other side");
+        loop {}
+    }
+
     assert_eq!(topology::MACHINE_TOPOLOGY.num_threads(), 2, "No 2nd core?");
 
-    unsafe {
-        let kcb = crate::arch::kcb::get_kcb();
+    let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
+    let thread_to_boot = topology::MACHINE_TOPOLOGY
+        .threads()
+        .find(|t| t != &bsp_thread)
+        .expect("Didn't find an application core to boot...");
 
-        coreboot::copy_bootstrap_code();
-        coreboot::setup_boostrap_code(
-            crate::arch::bespin_init_ap as u64,
-            kcb.init_vspace().pml4_address().into(),
-            &COREBOOT_STACK as *const _ as u64 + 32 * 4096 - 16,
+    unsafe {
+        coreboot::initialize(
+            thread_to_boot.apic_id(),
+            bespin_init_ap,
+            (1 as *mut u64, 2 as *mut u64, 3 as *mut u64, 4 as *mut u64),
+            &mut COREBOOT_STACK,
         );
-        coreboot::wakeup_core(ApicId::XApic(1));
 
         // Wait for a while
         let break_time = x86::time::rdtsc() + 1000000;

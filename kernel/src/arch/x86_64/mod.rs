@@ -16,6 +16,7 @@ use x86::cpuid;
 //use apic::x2apic;
 use apic::xapic;
 
+pub mod coreboot;
 pub mod debug;
 pub mod gdt;
 pub mod irq;
@@ -24,7 +25,6 @@ pub mod memory;
 pub mod process;
 pub mod syscall;
 pub mod vspace;
-pub mod coreboot;
 
 use uefi::table::boot::MemoryType;
 
@@ -70,16 +70,6 @@ enum CmdToken {
     /// Regular expressions for parsing log-level.
     #[regex = "[a-zA-Z]+"]
     Text,
-}
-
-/// Entry point for AP (non bootstrap core). This function is called
-/// from start_ap.S for any core except core 0.
-#[no_mangle]
-pub extern "C" fn bespin_init_ap() {
-    enable_sse();
-    enable_fsgsbase();
-    sprintln!("Hello from the other side");
-    loop {}
 }
 
 /// Parse command line argument and initialize the logging infrastructure.
@@ -147,7 +137,10 @@ fn assert_required_cpu_features() {
 /// (yes this goes against conventional
 /// wisdom that thinks SSE instructions in the
 /// kernel are a bad idea)
-fn enable_sse() {
+///
+/// # TODO
+/// This is public because of the integration tests (and ideally shouldn't be).
+pub fn enable_sse() {
     // Follow the protocol described in Intel SDM, 13.1.3 Initialization of the SSE Extensions
     unsafe {
         let mut cr4 = controlregs::cr4();
@@ -171,7 +164,10 @@ fn enable_sse() {
 /// This allows us to conventiently read and write the fs and gs registers
 /// with 64 bit values (otherwise it's a bit of a pain)
 /// (used for our thread local storage implementation).
-fn enable_fsgsbase() {
+///
+/// # TODO
+/// This is public because of the integration tests (and ideally shouldn't be).
+pub fn enable_fsgsbase() {
     unsafe {
         let mut cr4: controlregs::Cr4 = controlregs::cr4();
         cr4 |= controlregs::Cr4::CR4_ENABLE_FSGSBASE;

@@ -583,10 +583,10 @@ fn coreboot_nrlog() {
         p.exp_string("ACPI Initialized")?;
         p.exp_string("Hello from the other side")?;
         p.exp_string("Core has started")?;
-        p.exp_string("Hello from the other side")?;
+        /*p.exp_string("Hello from the other side")?;
         p.exp_string("Core has started")?;
         p.exp_string("Hello from the other side")?;
-        p.exp_string("Core has started")?;
+        p.exp_string("Core has started")?;*/
         output = p.exp_eof()?;
         p.process.exit()
     };

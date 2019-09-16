@@ -206,6 +206,9 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Tests core bring-up.
+///
+/// Boots a single core, checks we can print and pass correct arguments.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
     use arch::coreboot;
@@ -259,7 +262,7 @@ pub fn xmain() {
                 break;
             }
         }
-        info!("Cores should've started?");
+        info!("Core should've started?");
     }
 
     arch::debug::shutdown(ExitReason::Ok);

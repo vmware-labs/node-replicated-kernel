@@ -21,8 +21,8 @@ members = [
     "usr/init",
     "lib/kpi",
     "lib/vibrio",
-    "lib/topology"
-    "lib/node-replication"
+    "lib/topology",
+    "lib/node-replication",
 ]
 
 # disable stack unwinding on panic for now

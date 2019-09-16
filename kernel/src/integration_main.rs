@@ -223,7 +223,7 @@ pub fn xmain() {
         arg1: *mut u64,
         arg2: *mut u64,
         arg3: *mut u64,
-        arg4: *mut u64,
+        initialized: *mut u64,
     ) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
@@ -232,10 +232,11 @@ pub fn xmain() {
         assert_eq!(arg1, 1 as *mut u64);
         assert_eq!(arg2, 2 as *mut u64);
         assert_eq!(arg3, 3 as *mut u64);
-        assert_eq!(arg4, 4 as *mut u64);
 
         // Don't change this string otherwise the test will fail:
         sprintln!("Hello from the other side");
+
+        unsafe { core::ptr::write_volatile(initialized, 1) };
         loop {}
     }
 
@@ -248,21 +249,42 @@ pub fn xmain() {
         .expect("Didn't find an application core to boot...");
 
     unsafe {
+        let mut initialized: u64 = 0;
+
         coreboot::initialize(
             thread_to_boot.apic_id(),
             bespin_init_ap,
-            (1 as *mut u64, 2 as *mut u64, 3 as *mut u64, 4 as *mut u64),
+            (
+                1 as *mut u64,
+                2 as *mut u64,
+                3 as *mut u64,
+                &mut initialized as *mut u64,
+            ),
             &mut COREBOOT_STACK,
         );
 
-        // Wait for a while
-        let break_time = x86::time::rdtsc() + 1000000;
+        // Wait until core is up or we time out
+        let mut is_initialized = 0;
+        let timeout = x86::time::rdtsc() + 10_000_000;
         loop {
-            if x86::time::rdtsc() > break_time {
+            // Did the core signal us initialization completed?
+            is_initialized = core::ptr::read_volatile(&mut initialized);
+            if is_initialized == 1 {
+                break;
+            }
+
+            // Have we waited long enough?
+            if x86::time::rdtsc() > timeout {
                 break;
             }
         }
-        info!("Core should've started?");
+
+        if is_initialized == 1 {
+            // Don't change this string otherwise the test will fail:
+            info!("Core has started");
+        } else {
+            panic!("Core didn't boot properly...");
+        }
     }
 
     arch::debug::shutdown(ExitReason::Ok);

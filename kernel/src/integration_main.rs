@@ -290,6 +290,89 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Tests booting of a system of multiple cores and using the node-replication
+/// log to communicate information.
+#[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
+pub fn xmain() {
+    use arch::coreboot;
+    use topology;
+    use x86::apic::{ApicControl, ApicId};
+
+    static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
+
+    // Entry point for app. This function is called from start_ap.S:
+    pub extern "C" fn bespin_init_ap(
+        arg1: *mut u64,
+        arg2: *mut u64,
+        arg3: *mut u64,
+        initialized: *mut u64,
+    ) {
+        crate::arch::enable_sse();
+        crate::arch::enable_fsgsbase();
+
+        // Check that we can pass arguments:
+        assert_eq!(arg1, 1 as *mut u64);
+        assert_eq!(arg2, 2 as *mut u64);
+        assert_eq!(arg3, 3 as *mut u64);
+
+        // Don't change this string otherwise the test will fail:
+        sprintln!("Hello from the other side");
+
+        unsafe { core::ptr::write_volatile(initialized, 1) };
+        loop {}
+    }
+
+    assert_eq!(topology::MACHINE_TOPOLOGY.num_threads(), 4, "Need 4 cores");
+
+    let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
+    let threads_to_boot = topology::MACHINE_TOPOLOGY
+        .threads()
+        .filter(|t| t != &bsp_thread);
+
+    unsafe {
+        for thread in threads_to_boot {
+            let mut initialized: u64 = 0;
+
+            coreboot::initialize(
+                thread.apic_id(),
+                bespin_init_ap,
+                (
+                    1 as *mut u64,
+                    2 as *mut u64,
+                    3 as *mut u64,
+                    &mut initialized as *mut u64,
+                ),
+                &mut COREBOOT_STACK,
+            );
+
+            // Wait until core is up or we time out
+            let mut is_initialized = 0;
+            let timeout = x86::time::rdtsc() + 10_000_000;
+            loop {
+                // Did the core signal us initialization completed?
+                is_initialized = core::ptr::read_volatile(&mut initialized);
+                if is_initialized == 1 {
+                    break;
+                }
+
+                // Have we waited long enough?
+                if x86::time::rdtsc() > timeout {
+                    break;
+                }
+            }
+
+            if is_initialized == 1 {
+                // Don't change this string otherwise the test will fail:
+                info!("Core has started");
+            } else {
+                panic!("Core didn't boot properly...");
+            }
+        }
+    }
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 #[cfg(all(feature = "integration-test", feature = "test-scheduler"))]
 pub fn xmain() {
     let cpuid = x86::cpuid::CpuId::new();

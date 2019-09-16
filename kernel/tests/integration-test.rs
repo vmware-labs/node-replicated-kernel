@@ -568,6 +568,32 @@ fn coreboot_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Test that we can multiple cores and use the node-replication log to communicate.
+#[test]
+fn coreboot_nrlog() {
+    let cmdline = RunnerArgs::new("test-coreboot-nrlog")
+        .cores(4)
+        // Adding this to qemu will print register state on CPU rests (triple-faults)
+        // helpful to debug core-booting related failures:
+        .qemu_arg("-d int,cpu_reset");
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        p.exp_string("ACPI Initialized")?;
+        p.exp_string("Hello from the other side")?;
+        p.exp_string("Core has started")?;
+        p.exp_string("Hello from the other side")?;
+        p.exp_string("Core has started")?;
+        p.exp_string("Hello from the other side")?;
+        p.exp_string("Core has started")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Tests that basic user-space support is functional.
 ///
 /// This tests various user-space components such as:

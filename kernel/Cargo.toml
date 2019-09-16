@@ -75,5 +75,7 @@ test-acpi-smoke = [ "integration-test" ]
 test-acpi-topology = [ "integration-test" ]
 # coreboot: Test that we can boot-up additional cores
 test-coreboot-smoke = ["integration-test" ]
+# coreboot: Test that we can boot-up additional cores
+test-coreboot-nrlog = ["integration-test" ]
 # userspace: run a test in user-space by spawning the init process
 test-userspace = ["integration-test"]

@@ -13,7 +13,7 @@ kpi = { path = "../kpi" }
 slabmalloc = { path = "../slabmalloc" }
 rawtime = { path = "../rawtime" }
 lineup = { path = "../lineup" }
-spin = { version = "0.4.8", default_features = false }
+spin = "0.5.2"
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false  }
 rumpkernel = { path = "../rumpkernel", optional = true }
 lkl = { path = "../linuxkernel", optional = true }

@@ -46,7 +46,6 @@ extern crate log;
 extern crate alloc;
 
 extern crate uefi;
-extern crate uefi_exts;
 extern crate uefi_services;
 
 extern crate elfloader;

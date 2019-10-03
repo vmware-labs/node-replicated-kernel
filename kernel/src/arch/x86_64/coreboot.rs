@@ -97,7 +97,7 @@ unsafe fn copy_bootstrap_code() {
 /// To be safe this function should only be invoked
 /// during initialization on the BSP core and after we invoked `copy_bootstrap_code`.
 ///
-/// `args` are read on the new core so we have to ensure whatever they point to
+/// `arg` is read on the new core so we have to ensure whatever they point to
 /// lives long enough.
 unsafe fn setup_boostrap_code<A>(
     entry_fn: u64,

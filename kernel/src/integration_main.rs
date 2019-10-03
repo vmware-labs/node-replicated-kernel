@@ -186,9 +186,9 @@ pub fn xmain() {
         assert_eq!(package.threads().count(), 10);
     }
 
-    // ... and each core has 10 siblings ...
+    // ... and each core has 9 siblings ...
     for core in MACHINE_TOPOLOGY.cores() {
-        assert_eq!(core.siblings().count(), 10);
+        assert_eq!(core.siblings().count(), 9);
     }
 
     // ... and one IOAPIC which starts from GSI 0
@@ -219,24 +219,19 @@ pub fn xmain() {
     static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
     // Entry point for app. This function is called from start_ap.S:
-    pub extern "C" fn bespin_init_ap(
-        arg1: *mut u64,
-        arg2: *mut u64,
-        arg3: *mut u64,
-        initialized: *mut u64,
-    ) {
+    pub fn bespin_init_ap(arg1: &u64, arg2: &u64, arg3: &u64, initialized: &mut bool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
         // Check that we can pass arguments:
-        assert_eq!(arg1, 1 as *mut u64);
-        assert_eq!(arg2, 2 as *mut u64);
-        assert_eq!(arg3, 3 as *mut u64);
+        assert_eq!(*arg1, 1);
+        assert_eq!(*arg2, 2);
+        assert_eq!(*arg3, 3);
 
         // Don't change this string otherwise the test will fail:
         sprintln!("Hello from the other side");
 
-        unsafe { core::ptr::write_volatile(initialized, 1) };
+        unsafe { core::ptr::write_volatile(initialized, true) };
         loop {}
     }
 
@@ -249,27 +244,23 @@ pub fn xmain() {
         .expect("Didn't find an application core to boot...");
 
     unsafe {
-        let mut initialized: u64 = 0;
+        let mut initialized: bool = false;
 
+        let (a, b, c): (u64, u64, u64) = (1, 2, 3);
         coreboot::initialize(
             thread_to_boot.apic_id(),
             bespin_init_ap,
-            (
-                1 as *mut u64,
-                2 as *mut u64,
-                3 as *mut u64,
-                &mut initialized as *mut u64,
-            ),
+            (&a, &b, &c, &mut initialized),
             &mut COREBOOT_STACK,
         );
 
         // Wait until core is up or we time out
-        let mut is_initialized = 0;
+        let mut is_initialized: bool = false;
         let timeout = x86::time::rdtsc() + 10_000_000;
         loop {
             // Did the core signal us initialization completed?
             is_initialized = core::ptr::read_volatile(&mut initialized);
-            if is_initialized == 1 {
+            if is_initialized {
                 break;
             }
 
@@ -279,7 +270,7 @@ pub fn xmain() {
             }
         }
 
-        if is_initialized == 1 {
+        if is_initialized {
             // Don't change this string otherwise the test will fail:
             info!("Core has started");
         } else {

@@ -6,7 +6,7 @@ use super::irq;
 use super::ExitReason;
 
 static PORT0: u16 = 0x3f8; /* COM1 */
-static PORT2: u16 = 0x2F8; /* COM1 */
+static PORT2: u16 = 0x2f8; /* COM2 */
 
 //static COM1_IRQ: usize = 4 + 32;
 //static COM1_IRQ: usize = 5 + 32; // XXX
@@ -20,7 +20,7 @@ pub fn init() {
         io::outb(PORT0 + 3, 0x03); // 8 bits, no parity, one stop bit
         io::outb(PORT0 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
         io::outb(PORT0 + 1, 0x01); // Enable receive data IRQ
-                                   //io::outb(PORT0 + 1, 0x00);    // Disable receive data IRQ
+                                   // io::outb(PORT0 + 1, 0x00);    // Disable receive data IRQ
 
         io::outb(PORT2 + 1, 0x00); // Disable all interrupts
         io::outb(PORT2 + 3, 0x80); // Enable DLAB (set baud rate divisor)

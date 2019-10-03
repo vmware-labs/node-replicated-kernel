@@ -81,10 +81,10 @@ pub struct Kcb {
     current_process: RefCell<Option<Box<Process>>>,
 
     /// Arguments passed to the kernel by the bootloader.
-    kernel_args: RefCell<&'static KernelArgs<[Module; 2]>>,
+    kernel_args: &'static KernelArgs<[Module; 2]>,
 
     /// A pointer to the memory location of the kernel ELF binary.
-    kernel_binary: RefCell<&'static [u8]>,
+    kernel_binary: &'static [u8],
 
     /// The initial VSpace as constructed by the bootloader.
     init_vspace: RefCell<VSpace>,
@@ -121,8 +121,8 @@ impl Kcb {
             syscall_stack_top: ptr::null_mut(),
             save_area: None,
             current_process: RefCell::new(None),
-            kernel_args: RefCell::new(kernel_args),
-            kernel_binary: RefCell::new(kernel_binary),
+            kernel_args: kernel_args,
+            kernel_binary: kernel_binary,
             init_vspace: RefCell::new(init_vspace),
             pmanager: RefCell::new(pmanager),
             apic: RefCell::new(apic),
@@ -190,11 +190,11 @@ impl Kcb {
         self.init_vspace.borrow_mut()
     }
 
-    pub fn kernel_binary(&self) -> Ref<&'static [u8]> {
-        self.kernel_binary.borrow()
+    pub fn kernel_binary(&self) -> &'static [u8] {
+        self.kernel_binary
     }
 
-    pub fn kernel_args(&self) -> Ref<&'static KernelArgs<[Module; 2]>> {
-        self.kernel_args.borrow()
+    pub fn kernel_args(&self) -> &'static KernelArgs<[Module; 2]> {
+        self.kernel_args
     }
 }

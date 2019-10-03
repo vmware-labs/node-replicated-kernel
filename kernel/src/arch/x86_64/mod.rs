@@ -208,6 +208,107 @@ fn find_apic_base() -> u64 {
 // Includes structs KernelArgs, and Module from bootloader
 include!("../../../../bootloader/src/shared.rs");
 
+/// Entry point for application cores. This is normally called from `start_ap.S`.
+///
+/// This is almost identical to `_start` which is initializing the BSP core
+/// (and called from UEFI instead).
+pub fn start_app_core(
+    mem_region: &'static Frame,
+    kernel_binary: &'static [u8],
+    kernel_args: &'static KernelArgs<[Module; 2]>,
+    initialized: &'static mut bool,
+) {
+    enable_sse();
+    enable_fsgsbase();
+    assert_required_cpu_features();
+
+    // TODO: this needs some work (we still have static mut for GDT, IDT):
+    //gdt::setup_gdt(); -> this also enables syscall and syscall stack is a "static mut" too
+    //irq::setup_idt();
+
+    let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();
+    unsafe {
+        fmanager.add_memory(*mem_region);
+    }
+
+    let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
+
+    let base = find_apic_base();
+    trace!("find_apic_base {:#x}", base);
+    let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
+    let mut apic = xapic::XAPICDriver::new(regs);
+    apic.attach();
+
+    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
+
+    kcb::init_kcb(&mut kcb);
+    let stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
+    kcb.set_syscall_stack(stack);
+
+    let save_area = Box::pin(kpi::x86_64::SaveArea::empty());
+    kcb.set_save_area(save_area);
+    core::mem::forget(kcb);
+
+    debug!("Memory allocation should work at this point...");
+
+    // Set up interrupts (which needs Box)
+    //irq::init_irq_handlers();
+
+    // Attach the driver to the registers:
+    {
+        let apic = kcb::get_kcb().apic();
+        info!(
+            "xAPIC id: {}, version: {:#x}, is bsp: {}",
+            apic.id(),
+            apic.version(),
+            apic.bsp()
+        );
+    } // Make sure to drop the reference to the APIC again
+
+    *initialized = true;
+
+    loop {
+        unsafe { x86::halt() };
+    }
+}
+
+/// Initialize the rest of the cores in the system.
+///
+/// # Notes
+/// Dependencies for calling this function are:
+///  - Initialized ACPI
+///  - Initialized topology
+///  - Local APIC driver
+fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs<[Module; 2]>) {
+    let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
+
+    // There should be different strategies
+    // replica_mapping_strategy = { per_thread, per_core, per_packet, per_numa_node }
+    // replica_executor_strategy = { flatcombining, master_delegation }
+
+    // For now just boot everything, except ourselves
+    // Create a single log and one replica...
+    let threads_to_boot = topology::MACHINE_TOPOLOGY
+        .threads()
+        .filter(|t| t != &bsp_thread);
+
+    for thread in threads_to_boot {
+        trace!("Booting {:?}", thread);
+
+        /*coreboot::initialize(
+            thread.id(),
+            start_app_core,
+            (
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ),
+            ptr::null_mut(),
+        );*/
+    }
+}
+
 /// Entry function that is called from UEFI
 /// At this point we are in x86-64 (long) mode,
 /// We have a simple GDT, our address space, and stack set-up.
@@ -351,11 +452,11 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     lazy_static::initialize(&topology::MACHINE_TOPOLOGY);
+    //info!("{:#?}", *topology::MACHINE_TOPOLOGY);
 
-    info!("{:#?}", *topology::MACHINE_TOPOLOGY);
-
-    // Do we want to enable IRQs here?
-    // irq::enable();
+    // Bring up the rest of the system
+    #[cfg(not(feature = "bsp-only"))]
+    boot_app_cores(kernel_binary, kernel_args);
 
     // No we go in the arch-independent part
     xmain();

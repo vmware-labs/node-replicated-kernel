@@ -147,8 +147,9 @@ unsafe fn setup_boostrap_code<A>(
 
     // Arguments
     let arg1_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_arg1 as *const _ as u64);
-    // Note that we need transmute here as `&*arg as *const _ as u64;` wouldn't work because
-    // Arc implicitly does borrow magic by implementing the `AsRef` trait...
+    // We get the address of the `ptr: NonNull<ArcInner<T>>`,
+    // the 1st (private) member inside the Arc, and pass it to the app core, there is probably
+    // a better/safer and much less ugly way to express this but we just use transmute for now:
     *arg1_pointer = core::mem::transmute::<Arc<A>, u64>(arg);
 
     // Page-table

@@ -3,9 +3,12 @@
 //! This code is closely intertwingled with the assembly code in `start_ap.S`,
 //! make sure these two files are and stay in sync.
 
+use core::slice;
+use core::sync::atomic::AtomicBool;
+
 use super::kcb;
 use super::vspace::MapAction;
-use core::slice;
+
 use x86::apic::{ApicControl, ApicId};
 use x86::current::paging::{PAddr, BASE_PAGE_SIZE};
 
@@ -96,9 +99,10 @@ unsafe fn copy_bootstrap_code() {
 ///
 /// `args` are read on the new core so we have to ensure whatever they point to
 /// lives long enough.
-unsafe fn setup_boostrap_code<A, B, C, D>(
+unsafe fn setup_boostrap_code<A>(
     entry_fn: u64,
-    args: (&A, &B, &C, &mut D),
+    arg: &A,
+    initialized: &AtomicBool,
     pml4: u64,
     stack_top: u64,
 ) {
@@ -111,18 +115,12 @@ unsafe fn setup_boostrap_code<A, B, C, D>(
         /// Bootstrap core uses this stack address when starting to execute at `x86_64_init_ap_absolute_entry`.
         static x86_64_init_ap_stack_ptr: *mut u64;
 
-        // TODO: the *const u64 below should be *const A,B,C,D
+        // TODO: the *const u64 below should be *const A
         // but this crashes rustc:
         // reported at: https://github.com/rust-lang/rust/issues/65025
 
         /// First argument for entry fn.
         static x86_64_init_ap_arg1: *mut u64;
-        /// 2nd argument for entry fn.
-        static x86_64_init_ap_arg2: *mut u64;
-        /// 3rd argument for entry fn.
-        static x86_64_init_ap_arg3: *mut u64;
-        /// 4th argument for entry fn.
-        static x86_64_init_ap_arg4: *mut u64;
 
         /// The ap lock to let us know when the app core currently booting is done
         /// with the initialization code section.
@@ -148,16 +146,7 @@ unsafe fn setup_boostrap_code<A, B, C, D>(
 
     // Arguments
     let arg1_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_arg1 as *const _ as u64);
-    *arg1_pointer = &*args.0 as *const _ as u64;
-
-    let arg2_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_arg2 as *const _ as u64);
-    *arg2_pointer = &*args.1 as *const _ as u64;
-
-    let arg3_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_arg3 as *const _ as u64);
-    *arg3_pointer = &*args.2 as *const _ as u64;
-
-    let arg4_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_arg4 as *const _ as u64);
-    *arg4_pointer = &*args.3 as *const _ as u64;
+    *arg1_pointer = &*arg as *const _ as u64;
 
     // Page-table
     let pml4_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_init_pml4 as *const _ as u64);
@@ -169,9 +158,9 @@ unsafe fn setup_boostrap_code<A, B, C, D>(
     *stack_pointer = stack_top;
 
     // Reset the initialization lock
-    // The APP core is supposed to set this to 1 after booting is done...
+    // The APP core is supposed to set this to `true` after booting is done...
     let ap_lock_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_lock as *const _ as u64);
-    *ap_lock_pointer = 0;
+    *ap_lock_pointer = &*initialized as *const _ as u64;
 
     trace!(
         "x86_64_init_ap_absolute_entry is at {:p} and set to {:#x}",
@@ -189,9 +178,16 @@ unsafe fn setup_boostrap_code<A, B, C, D>(
         *stack_pointer
     );
     trace!(
-        "x86_64_init_ap_lock is at {:p} and set to {:#x}",
+        "x86_64_init_ap_lock is at {:p} and set to {:#x}={:#x}",
         ap_lock_pointer,
-        *ap_lock_pointer
+        *ap_lock_pointer,
+        *((*ap_lock_pointer) as *const u64)
+    );
+    trace!(
+        "x86_64_init_ap_arg1 is at {:p} and set to {:#x}={:#x}",
+        arg1_pointer,
+        *arg1_pointer,
+        *((*arg1_pointer) as *const u64)
     );
 
     // TODO: probably want a fence here
@@ -249,10 +245,11 @@ unsafe fn wakeup_core(core_id: ApicId) {
 /// # Safety
 /// You're waking up a core that goes off and does random things
 /// (if not being careful), so this can be pretty bad for memory safety.
-pub unsafe fn initialize<A, B, C, D>(
+pub unsafe fn initialize<A>(
     core_id: x86::apic::ApicId,
-    init_function: fn(&A, &B, &C, &mut D),
-    args: (&A, &B, &C, &mut D),
+    init_function: fn(&A, &AtomicBool),
+    args: &A,
+    initialized: &AtomicBool,
     stack: &'static mut [u8],
 ) {
     // Make sure bootsrap code is at correct location in memory
@@ -263,6 +260,7 @@ pub unsafe fn initialize<A, B, C, D>(
     setup_boostrap_code(
         init_function as u64,
         args,
+        initialized,
         kcb.init_vspace().pml4_address().into(),
         &stack as *const _ as u64 + stack.len() as u64 - 16,
     );

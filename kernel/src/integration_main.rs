@@ -212,6 +212,7 @@ pub fn xmain() {
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
     use arch::coreboot;
+    use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
     use x86::apic::{ApicControl, ApicId};
 
@@ -219,19 +220,19 @@ pub fn xmain() {
     static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
     // Entry point for app. This function is called from start_ap.S:
-    pub fn bespin_init_ap(arg1: &u64, arg2: &u64, arg3: &u64, initialized: &mut bool) {
+    pub fn bespin_init_ap(arg1: &u64, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
         // Check that we can pass arguments:
-        assert_eq!(*arg1, 1);
-        assert_eq!(*arg2, 2);
-        assert_eq!(*arg3, 3);
+        assert_eq!(*arg1, 0xfefe);
+        assert_eq!(initialized.load(Ordering::SeqCst), false);
 
         // Don't change this string otherwise the test will fail:
         sprintln!("Hello from the other side");
 
-        unsafe { core::ptr::write_volatile(initialized, true) };
+        initialized.store(true, Ordering::SeqCst);
+        assert_eq!(initialized.load(Ordering::SeqCst), true);
         loop {}
     }
 
@@ -244,38 +245,34 @@ pub fn xmain() {
         .expect("Didn't find an application core to boot...");
 
     unsafe {
-        let mut initialized: bool = false;
+        let initialized: AtomicBool = AtomicBool::new(false);
 
-        let (a, b, c): (u64, u64, u64) = (1, 2, 3);
+        let arg: u64 = 0xfefe;
         coreboot::initialize(
             thread_to_boot.apic_id(),
             bespin_init_ap,
-            (&a, &b, &c, &mut initialized),
+            &arg,
+            &initialized,
             &mut COREBOOT_STACK,
         );
 
         // Wait until core is up or we time out
-        let mut is_initialized: bool = false;
         let timeout = x86::time::rdtsc() + 10_000_000;
         loop {
             // Did the core signal us initialization completed?
-            is_initialized = core::ptr::read_volatile(&mut initialized);
-            if is_initialized {
+            if initialized.load(Ordering::SeqCst) {
                 break;
             }
 
             // Have we waited long enough?
             if x86::time::rdtsc() > timeout {
-                break;
+                panic!("Core didn't boot properly...");
             }
         }
 
-        if is_initialized {
-            // Don't change this string otherwise the test will fail:
-            info!("Core has started");
-        } else {
-            panic!("Core didn't boot properly...");
-        }
+        assert!(initialized.load(Ordering::SeqCst));
+        // Don't change this string otherwise the test will fail:
+        info!("Core has started");
     }
 
     arch::debug::shutdown(ExitReason::Ok);
@@ -286,6 +283,7 @@ pub fn xmain() {
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
 pub fn xmain() {
     use arch::coreboot;
+    use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
     use x86::apic::{ApicControl, ApicId};
 
@@ -298,17 +296,9 @@ pub fn xmain() {
     static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
     // Entry point for app. This function is called from start_ap.S:
-    pub extern "C" fn bespin_init_ap(
-        log_ptr: *mut u64,
-        arg2: *mut u64,
-        arg3: *mut u64,
-        initialized: *mut u64,
-    ) {
+    pub fn bespin_init_ap(mylog: &Arc<Log<usize>>, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
-
-        let mylog: &mut Arc<Log<usize>> =
-            unsafe { core::mem::transmute::<*mut u64, &mut Arc<Log<usize>>>(log_ptr) };
 
         let r = mylog.append(&[0usize, 1usize]);
         assert!(r.is_some());
@@ -316,7 +306,7 @@ pub fn xmain() {
         // Don't change this string otherwise the test will fail:
         sprintln!("Hello from the other side");
 
-        unsafe { core::ptr::write_volatile(initialized, 1) };
+        initialized.store(true, Ordering::SeqCst);
         loop {}
     }
 
@@ -330,44 +320,34 @@ pub fn xmain() {
 
     unsafe {
         //for thread in threads_to_boot {
-        let mut initialized: u64 = 0;
+        let initialized: AtomicBool = AtomicBool::new(false);
         let mut alog = log.clone();
 
         coreboot::initialize(
             thread.apic_id(),
             bespin_init_ap,
-            (
-                &mut alog as *mut _ as *mut u64,
-                2 as *mut u64,
-                3 as *mut u64,
-                &mut initialized as *mut u64,
-            ),
+            &alog,
+            &initialized,
             &mut COREBOOT_STACK,
         );
 
         // Wait until core is up or we time out
-        let mut is_initialized = 0;
         let timeout = x86::time::rdtsc() + 10_000_000;
         loop {
             // Did the core signal us initialization completed?
-            is_initialized = core::ptr::read_volatile(&mut initialized);
-            if is_initialized == 1 {
+            if initialized.load(Ordering::SeqCst) {
                 break;
             }
 
             // Have we waited long enough?
             if x86::time::rdtsc() > timeout {
-                break;
+                panic!("Core didn't boot properly...");
             }
         }
 
-        if is_initialized == 1 {
-            // Don't change this string otherwise the test will fail:
-            info!("Core has started");
-        } else {
-            panic!("Core didn't boot properly...");
-        }
-        //}
+        assert!(initialized.load(Ordering::SeqCst));
+        // Don't change this string otherwise the test will fail:
+        info!("Core has started");
     }
 
     arch::debug::shutdown(ExitReason::Ok);

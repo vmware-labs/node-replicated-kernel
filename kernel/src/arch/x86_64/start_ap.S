@@ -60,14 +60,6 @@ start_ap_pm:
 	or $0x80010000, %eax      /* PG & WP */
 	mov %eax, %cr0
 
-    /* Load start-up lock */
-    mov $(x86_64_init_ap_lock - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %esi
-
-start_ap_spin:
-    /* store bit 0 fo the ap_lock in CF flag, set bit 0 to 1, signals BSP we're done */
-    lock bts $0,(%esi)
-    jc start_ap_spin
-
     /* jmp to long-mode to the linear address corresponding the */
     /* real mode segment REAL_MODE_SEGMENT */
     /* jmp LONG_MODE_CS:start_ap_64 */
@@ -83,16 +75,9 @@ start_ap_64:
     mov (%rcx),%rsp
     mov %rsp, %rbp
 
-    /* Set up arguments 1-4 for entry function */
-
+    /* Set up arguments 1 and 2 for entry function */
     mov (x86_64_init_ap_arg1 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rdi
-    /* mov (%rdi),%rdi */
-    mov (x86_64_init_ap_arg2 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rsi
-    /* mov (%rsi),%rsi */
-    mov (x86_64_init_ap_arg3 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rdx
-    /* mov (%rdx),%rdx */
-    mov (x86_64_init_ap_arg4 - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rcx
-    /* mov (%rcx),%rcx */
+    mov (x86_64_init_ap_lock - x86_64_start_ap + X86_64_REAL_MODE_LINEAR_OFFSET), %rsi
 
     /*
     Jump to the Rust entry point function for ap init.
@@ -104,8 +89,6 @@ start_ap_64:
     lea (x86_64_init_ap_absolute_entry)(%rip),%r10
     mov (%r10),%r10
     call *%r10
-
-
 
 /* We should not return here after the call */
 loop_ap:
@@ -165,8 +148,7 @@ x86_64_init_ap_absolute_entry:
 .align 64
 .global x86_64_init_ap_lock
 x86_64_init_ap_lock:
-.long 0x0
-.long 0x0
+.quad 0xbeefbeefbeefbeef
 
 .align 64
 .global x86_64_init_ap_init_pml4

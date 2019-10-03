@@ -1,3 +1,5 @@
+//! Code to manage and set-up the GDT and TSS.
+
 use core::mem::{size_of, transmute};
 
 use x86::bits64::segmentation::{load_cs, Descriptor64};
@@ -9,9 +11,32 @@ use x86::Ring;
 
 use super::syscall;
 
-#[derive(Default)]
+/// A temporary, statically allocated stack for interrupts that could happen
+/// (by a bug) early in a core initialization.
+///
+/// After initialization is done and we have memory allocation this
+/// should not be used anymore.
+static mut EARLY_IRQ_STACK: [u8; 32 * 4096] = [0; 32 * 4096];
+
+/// A GDT table that is in use during system initialization only.
+///
+/// During init, each core sets their own GDT that is stored in their respective KCBs.
+static mut EARLY_GDT: GdtTable = GdtTable {
+    null: Descriptor::NULL,
+    code_kernel: Descriptor::NULL,
+    stack_kernel: Descriptor::NULL,
+    code_user: Descriptor::NULL,
+    stack_user: Descriptor::NULL,
+    tss_segment: Descriptor64::NULL,
+};
+
+/// A TSS that is in use during system initialization only.
+///
+/// During init, each core sets their own TSS that is stored inside their respective KCBs.
+static mut EARLY_TSS: TaskStateSegment = TaskStateSegment::new();
+
 #[repr(C, packed)]
-struct GdtTable {
+pub struct GdtTable {
     null: Descriptor,
     /// 64 bit code
     code_kernel: Descriptor,
@@ -31,113 +56,132 @@ impl GdtTable {
     const CS_USER_INDEX: usize = 3;
     const SS_USER_INDEX: usize = 4;
     const TSS_INDEX: usize = 5;
-}
 
-static mut GDT: GdtTable = GdtTable {
-    null: Descriptor::NULL,
-    code_kernel: Descriptor::NULL,
-    stack_kernel: Descriptor::NULL,
-    code_user: Descriptor::NULL,
-    stack_user: Descriptor::NULL,
-    tss_segment: Descriptor64::NULL,
-};
+    /// Creates a new GdtTable with a provided TaskStateSegment.
+    ///
+    /// The other values will be set to x86-64 default values and
+    /// should not change.
+    fn new(tss: &TaskStateSegment) -> GdtTable {
+        GdtTable {
+            tss_segment: GdtTable::tss_descriptor(tss),
+            ..Default::default()
+        }
+    }
 
-pub fn get_user_code_selector() -> SegmentSelector {
-    SegmentSelector::new(GdtTable::CS_USER_INDEX as u16, Ring::Ring3) | SegmentSelector::TI_GDT
-}
-
-pub fn get_user_stack_selector() -> SegmentSelector {
-    SegmentSelector::new(GdtTable::SS_USER_INDEX as u16, Ring::Ring3) | SegmentSelector::TI_GDT
-}
-
-static mut TSS: TaskStateSegment = TaskStateSegment {
-    reserved: 0,
-    rsp: [0, 0, 0],
-    reserved2: 0,
-    ist: [0, 0, 0, 0, 0, 0, 0],
-    reserved3: 0,
-    reserved4: 0,
-    iomap_base: 0,
-};
-
-pub fn setup_gdt() {
-    // Put these in our new GDT, load the new GDT, then re-load the segments
-    unsafe {
-        GDT.null = Default::default();
-        GDT.code_kernel = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
-            .present()
-            .dpl(Ring::Ring0)
-            .limit_granularity_4kb()
-            .l()
-            .finish();
-        GDT.stack_kernel = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
-            .present()
-            .dpl(Ring::Ring0)
-            .limit_granularity_4kb()
-            .finish();
-        GDT.code_user = DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
-            .present()
-            .limit_granularity_4kb()
-            .l()
-            .dpl(Ring::Ring3)
-            .finish();
-        GDT.stack_user = DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
-            .present()
-            .limit_granularity_4kb()
-            .dpl(Ring::Ring3)
-            .finish();
-
-        let gdtptr = DescriptorTablePointer::new(&GDT);
+    /// Installs the GDT on the local core.
+    ///
+    /// # Safety
+    /// This is heavily unsafe, if done wrong it will crash your
+    /// system or change memory semantics.
+    unsafe fn install(&self) {
+        let gdtptr = DescriptorTablePointer::new(self);
         lgdt(&gdtptr);
 
-        // We need to re-load segments now with a new GDT:
-        let cs_selector = SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0)
-            | SegmentSelector::TI_GDT;
-        let ss_selector = SegmentSelector::new(GdtTable::SS_KERNEL_INDEX as u16, Ring::Ring0)
-            | SegmentSelector::TI_GDT;
+        // We need to re-load the segments when we change the GDT
+        GdtTable::reload_segment_selectors();
+    }
 
+    /// Reload all segment selectors (typically this has to be done
+    /// after a new GDT is installed).
+    ///
+    /// # Safety
+    /// Potential to crash the system if the GDT is malformed.
+    unsafe fn reload_segment_selectors() {
         load_ds(SegmentSelector::new(0, Ring::Ring0));
         load_es(SegmentSelector::new(0, Ring::Ring0));
         load_fs(SegmentSelector::new(0, Ring::Ring0));
         load_gs(SegmentSelector::new(0, Ring::Ring0));
-        debug!(
-            "load cs: cs_selector={} -> GDT.code_kernel={:#b}",
-            cs_selector,
-            GDT.code_kernel.as_u64()
-        );
-        load_cs(cs_selector);
-        debug!("loaded cs");
-        load_ss(ss_selector);
 
-        syscall::enable_fast_syscalls(cs_selector, ss_selector);
+        load_cs(GdtTable::kernel_cs_selector());
+        load_ss(GdtTable::kernel_ss_selector());
+        load_tr(GdtTable::tss_selector());
+
+        trace!("Re-loaded segment selectors.");
     }
 
-    debug!("Segments reloaded");
-    setup_tss();
-    debug!("TSS enabled");
-}
+    /// Generates a TSS descriptor that can be sticked into the `tss_segment`
+    ///
+    /// It uses address of the TaskStateSegment. While this is not `unsafe` by
+    /// itself, care must be taken as the `tss` should probably be 'static and
+    /// not go away during the life-time of the Gdt.
+    fn tss_descriptor(tss: &TaskStateSegment) -> Descriptor64 {
+        let tss_ptr = tss as *const _ as u64;
 
-static mut SYSCALL_STACK: [u8; 32 * 4096] = [0; 32 * 4096];
-
-fn setup_tss() {
-    unsafe {
-        // Complete setup of TSS descriptor (by inserting base address of TSS)
-        let tss_ptr = transmute::<&TaskStateSegment, u64>(&TSS);
-        debug!("tss = 0x{:x}", tss_ptr);
-
-        GDT.tss_segment = <DescriptorBuilder as GateDescriptorBuilder<u64>>::tss_descriptor(
+        <DescriptorBuilder as GateDescriptorBuilder<u64>>::tss_descriptor(
             tss_ptr as u64,
             size_of::<TaskStateSegment>() as u64,
             true,
         )
         .present()
         .dpl(Ring::Ring0)
-        .finish();
-        TSS.rsp[0] = transmute::<&[u8; 32 * 4096], u64>(&SYSCALL_STACK) + 32 * 4096;
-        debug!("tss.rsp[0] = 0x{:x}", TSS.rsp[0]);
-
-        load_tr(
-            SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT,
-        );
+        .finish()
     }
+
+    /// Return the selector for the kernel cs (code segment).
+    fn kernel_cs_selector() -> SegmentSelector {
+        SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0)
+            | SegmentSelector::TI_GDT
+    }
+
+    /// Return the selector for the kernel ss (stack segment).
+    fn kernel_ss_selector() -> SegmentSelector {
+        SegmentSelector::new(GdtTable::SS_KERNEL_INDEX as u16, Ring::Ring0)
+            | SegmentSelector::TI_GDT
+    }
+
+    /// Return the selector for the task segment.
+    fn tss_selector() -> SegmentSelector {
+        SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT
+    }
+}
+
+impl Default for GdtTable {
+    /// Sets-up a default GDT table conform to the format expecte by x86-64 bit mode.
+    fn default() -> Self {
+        GdtTable {
+            null: Descriptor::NULL,
+            code_kernel: DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
+                .present()
+                .dpl(Ring::Ring0)
+                .limit_granularity_4kb()
+                .l()
+                .finish(),
+            stack_kernel: DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
+                .present()
+                .dpl(Ring::Ring0)
+                .limit_granularity_4kb()
+                .finish(),
+            code_user: DescriptorBuilder::code_descriptor(0, 0, CodeSegmentType::ExecuteRead)
+                .present()
+                .limit_granularity_4kb()
+                .l()
+                .dpl(Ring::Ring3)
+                .finish(),
+            stack_user: DescriptorBuilder::data_descriptor(0, 0, DataSegmentType::ReadWrite)
+                .present()
+                .limit_granularity_4kb()
+                .dpl(Ring::Ring3)
+                .finish(),
+            tss_segment: Descriptor64::NULL,
+        }
+    }
+}
+
+/// Sets-up the EARLY_GDT for the system to react to faults,
+/// interrupts etc. during initialization.
+pub unsafe fn setup_gdt() {
+    EARLY_TSS.set_rsp(
+        x86::Ring::Ring0,
+        &EARLY_IRQ_STACK as *const _ as u64 + 32 * 4096,
+    );
+
+    EARLY_GDT = GdtTable::new(&EARLY_TSS);
+    EARLY_GDT.install();
+
+    syscall::enable_fast_syscalls(
+        GdtTable::kernel_cs_selector(),
+        GdtTable::kernel_ss_selector(),
+    );
+
+    trace!("Early GDT/TSS set, and fast system-calls enabled.");
 }

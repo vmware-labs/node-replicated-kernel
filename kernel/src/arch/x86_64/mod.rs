@@ -340,7 +340,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
 
     // Load a new GDT and initialize our IDT
-    gdt::setup_gdt();
+    unsafe { gdt::setup_gdt() };
     irq::setup_idt();
     // We should catch page-faults and general protection faults from here...
 

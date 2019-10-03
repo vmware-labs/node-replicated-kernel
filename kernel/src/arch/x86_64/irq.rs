@@ -40,8 +40,10 @@ use spin::Mutex;
 
 use log::debug;
 
-const IDT_SIZE: usize = 256;
+pub const IDT_SIZE: usize = 256;
 static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
+
+pub type IdtTable = [Descriptor64; IDT_SIZE];
 
 lazy_static! {
     static ref IRQ_HANDLERS: Mutex<Vec<Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>>> = {

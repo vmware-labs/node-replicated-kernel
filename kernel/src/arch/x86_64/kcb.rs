@@ -5,11 +5,13 @@ use core::cell::{Ref, RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
-use x86::current::segmentation;
+use x86::current::segmentation::{self, Descriptor64};
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use apic::xapic::XAPICDriver;
 
+use super::gdt::GdtTable;
+use super::irq::{IdtTable, IDT_SIZE};
 use super::process::Process;
 use super::vspace::VSpace;
 
@@ -95,6 +97,9 @@ pub struct Kcb {
     /// A handle to the core-local interrupt driver.
     apic: RefCell<XAPICDriver>,
 
+    gdt: GdtTable,
+    idt: IdtTable,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this memory location automatically (see gdt.rs).
@@ -126,6 +131,8 @@ impl Kcb {
             init_vspace: RefCell::new(init_vspace),
             pmanager: RefCell::new(pmanager),
             apic: RefCell::new(apic),
+            gdt: Default::default(),
+            idt: [Descriptor64::NULL; IDT_SIZE],
             interrupt_stack: None,
             syscall_stack: None,
         }

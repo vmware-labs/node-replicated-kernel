@@ -3,6 +3,7 @@
 //! This code is closely intertwingled with the assembly code in `start_ap.S`,
 //! make sure these two files are and stay in sync.
 
+use alloc::sync::Arc;
 use core::slice;
 use core::sync::atomic::AtomicBool;
 
@@ -101,7 +102,7 @@ unsafe fn copy_bootstrap_code() {
 /// lives long enough.
 unsafe fn setup_boostrap_code<A>(
     entry_fn: u64,
-    arg: &A,
+    arg: Arc<A>,
     initialized: &AtomicBool,
     pml4: u64,
     stack_top: u64,
@@ -146,7 +147,9 @@ unsafe fn setup_boostrap_code<A>(
 
     // Arguments
     let arg1_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_arg1 as *const _ as u64);
-    *arg1_pointer = &*arg as *const _ as u64;
+    // Note that we need transmute here as `&*arg as *const _ as u64;` wouldn't work because
+    // Arc implicitly does borrow magic by implementing the `AsRef` trait...
+    *arg1_pointer = core::mem::transmute::<Arc<A>, u64>(arg);
 
     // Page-table
     let pml4_pointer: *mut u64 = to_bootstrap_pointer(&x86_64_init_ap_init_pml4 as *const _ as u64);
@@ -247,8 +250,8 @@ unsafe fn wakeup_core(core_id: ApicId) {
 /// (if not being careful), so this can be pretty bad for memory safety.
 pub unsafe fn initialize<A>(
     core_id: x86::apic::ApicId,
-    init_function: fn(&A, &AtomicBool),
-    args: &A,
+    init_function: fn(Arc<A>, &AtomicBool),
+    args: Arc<A>,
     initialized: &AtomicBool,
     stack: &'static mut [u8],
 ) {

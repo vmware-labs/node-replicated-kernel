@@ -211,6 +211,7 @@ pub fn xmain() {
 /// Boots a single core, checks we can print and pass correct arguments.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
+    use alloc::sync::Arc;
     use arch::coreboot;
     use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
@@ -220,7 +221,7 @@ pub fn xmain() {
     static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
     // Entry point for app. This function is called from start_ap.S:
-    pub fn bespin_init_ap(arg1: &u64, initialized: &AtomicBool) {
+    pub fn bespin_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
@@ -247,11 +248,11 @@ pub fn xmain() {
     unsafe {
         let initialized: AtomicBool = AtomicBool::new(false);
 
-        let arg: u64 = 0xfefe;
+        let arg: Arc<u64> = Arc::new(0xfefe);
         coreboot::initialize(
             thread_to_boot.apic_id(),
             bespin_init_ap,
-            &arg,
+            Arc::clone(&arg),
             &initialized,
             &mut COREBOOT_STACK,
         );
@@ -296,7 +297,7 @@ pub fn xmain() {
     static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
     // Entry point for app. This function is called from start_ap.S:
-    pub fn bespin_init_ap(mylog: &Arc<Log<usize>>, initialized: &AtomicBool) {
+    pub fn bespin_init_ap(mylog: Arc<Log<usize>>, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
@@ -321,12 +322,11 @@ pub fn xmain() {
     unsafe {
         //for thread in threads_to_boot {
         let initialized: AtomicBool = AtomicBool::new(false);
-        let mut alog = log.clone();
 
         coreboot::initialize(
             thread.apic_id(),
             bespin_init_ap,
-            &alog,
+            log.clone(),
             &initialized,
             &mut COREBOOT_STACK,
         );

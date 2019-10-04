@@ -45,4 +45,4 @@
 	url = git@github.com:gz/rust-topology.git
 [submodule "lib/node-replication"]
 	path = lib/node-replication
-	url = git@github.com:gz/node-replication.git
+	url = https://gitlab.eng.vmware.com/ros/node-replication.git

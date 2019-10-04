@@ -406,6 +406,26 @@ fn exit() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Make sure the page-fault handler functions as expected  -- even if
+/// we're early on in initialization.
+/// In essence a trap should be raised but we can't get a backtrace yet
+/// since we don't have memory allocation.
+/*#[test]
+fn pfault_early() {
+    let cmdline = RunnerArgs::new("test-pfault-early");
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        p.exp_string("[IRQ] Page Fault")?;
+        p.exp_regex("Backtrace unavailable")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_exit(ExitStatus::PageFault, &cmdline, qemu_run(), output);
+}*/
+
 /// Make sure the page-fault handler functions as expected.
 /// In essence a trap should be raised and we should get a backtrace.
 #[test]
@@ -435,7 +455,7 @@ fn gpfault() {
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
         p.exp_string("[IRQ] GENERAL PROTECTION FAULT")?;
-        p.exp_regex("frame #2  - 0x[0-9a-fA-F]+ - bespin::xmain")?;
+        p.exp_regex("frame #3  - 0x[0-9a-fA-F]+ - bespin::xmain")?;
         output = p.exp_eof()?;
         p.process.exit()
     };

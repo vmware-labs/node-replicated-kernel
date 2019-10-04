@@ -77,3 +77,34 @@ pub fn shutdown(val: ExitReason) -> ! {
     // In case this doesn't work we hang.
     loop {}
 }
+
+#[cfg(any(
+    feature = "test-pfault-early",
+    all(feature = "integration-test", feature = "test-pfault")
+))]
+#[inline(never)]
+pub fn cause_pfault() {
+    use super::memory::{paddr_to_kernel_vaddr, PAddr};
+
+    unsafe {
+        let paddr = PAddr::from(0xdeadbeefu64);
+        let kernel_vaddr = paddr_to_kernel_vaddr(paddr);
+        let ptr: *mut u64 = kernel_vaddr.as_mut_ptr();
+        debug!("before causing the pfault");
+        let val = *ptr;
+        assert!(val != 0);
+    }
+}
+
+#[cfg(any(
+    feature = "test-gpfault-early",
+    all(feature = "integration-test", feature = "test-gpfault")
+))]
+pub fn cause_gpfault() {
+    // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
+    // So we cause a GP by loading garbage in the ss segment register.
+    use x86::segmentation::{load_ss, SegmentSelector};
+    unsafe {
+        load_ss(SegmentSelector::new(99, x86::Ring::Ring3));
+    }
+}

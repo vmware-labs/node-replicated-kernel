@@ -59,6 +59,10 @@ integration-test = []
 bsp-only = []
 # exit: test qemu exit functionality (used heavily for CI)
 test-exit = ["integration-test", "bsp-only"]
+# pfault-early: test page-fault handler early on during init
+test-pfault-early = ["bsp-only"]
+# gpfault-early: test general protection fault handler early on during init
+test-gpfault-early = ["bsp-only"]
 # pfault: test page-fault handler
 test-pfault = ["integration-test", "bsp-only"]
 # gpfault: test general protection fault handler

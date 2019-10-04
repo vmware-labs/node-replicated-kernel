@@ -184,6 +184,7 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
     }
     sprintln!("{:?}", a);
     backtrace();
+
     let kcb = get_kcb();
     sprintln!("Register State:\n{:?}", kcb.save_area);
     kcb.save_area.as_ref().map(|sa| {
@@ -199,7 +200,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     let err = PageFaultError::from_bits_truncate(a.exception as u32);
     sprintln!("{}", err);
 
-    // Enable user-space access to do backtraces in user-space
+    // Enable user-space access
     x86::current::rflags::stac();
 
     for i in 0..12 {
@@ -397,12 +398,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unreachable!("Should not come here")
 }
 
-pub unsafe fn acknowledge() {
-    let kcb = crate::kcb::get_kcb();
-    let mut apic = kcb.apic();
-    apic.eoi();
-}
-
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(
     vector: usize,
@@ -485,6 +480,12 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
             }
         }
     }
+}
+
+fn acknowledge() {
+    let kcb = crate::kcb::get_kcb();
+    let mut apic = kcb.apic();
+    apic.eoi();
 }
 
 pub fn enable() {

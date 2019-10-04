@@ -48,26 +48,14 @@ pub fn xmain() {
 #[cfg(all(feature = "integration-test", feature = "test-pfault"))]
 #[inline(never)]
 pub fn xmain() {
-    use arch::memory::{paddr_to_kernel_vaddr, PAddr};
-
-    unsafe {
-        let paddr = PAddr::from(0xdeadbeefu64);
-        let kernel_vaddr = paddr_to_kernel_vaddr(paddr);
-        let ptr: *mut u64 = kernel_vaddr.as_mut_ptr();
-        debug!("before causing the pfault");
-        let val = *ptr;
-        assert!(val != 0);
-    }
+    use arch::debug;
+    debug::cause_pfault();
 }
 
 #[cfg(all(feature = "integration-test", feature = "test-gpfault"))]
 pub fn xmain() {
-    // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
-    // So we cause a GP by loading garbage in the ss segment register.
-    use x86::segmentation::{load_ss, SegmentSelector};
-    unsafe {
-        load_ss(SegmentSelector::new(99, x86::Ring::Ring3));
-    }
+    use arch::debug;
+    debug::cause_gpfault();
 }
 
 #[cfg(all(feature = "integration-test", feature = "test-alloc"))]

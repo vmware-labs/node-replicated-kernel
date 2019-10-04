@@ -2,9 +2,12 @@
 //! The purpose of the arch specific part is to initialize the machine to
 //! a sane environment and then jump to the main() function.
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 
+use core::alloc::Layout;
 use core::mem::transmute;
 use core::slice;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use driverkit::DriverControl;
 
@@ -31,16 +34,17 @@ use uefi::table::boot::MemoryType;
 pub mod acpi;
 mod isr;
 
-use crate::memory::*;
-use crate::{xmain, ExitReason};
 use klogger;
 use log::Level;
 use logos::Logos;
+use spin::Mutex;
+
+use crate::memory::*;
+use crate::{xmain, ExitReason};
 
 use memory::*;
 use vspace::*;
 
-use spin::Mutex;
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
 /// Definition to parse the kernel command-line arguments.
@@ -208,27 +212,29 @@ fn find_apic_base() -> u64 {
 // Includes structs KernelArgs, and Module from bootloader
 include!("../../../../bootloader/src/shared.rs");
 
+struct AppCoreArgs {
+    mem_region: Frame,
+    kernel_binary: &'static [u8],
+    kernel_args: &'static KernelArgs<[Module; 2]>,
+}
+
 /// Entry point for application cores. This is normally called from `start_ap.S`.
 ///
 /// This is almost identical to `_start` which is initializing the BSP core
 /// (and called from UEFI instead).
-pub fn start_app_core(
-    mem_region: &'static Frame,
-    kernel_binary: &'static [u8],
-    kernel_args: &'static KernelArgs<[Module; 2]>,
-    initialized: &'static mut bool,
-) {
+fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     enable_sse();
     enable_fsgsbase();
     assert_required_cpu_features();
 
-    // TODO: this needs some work (we still have static mut for GDT, IDT):
-    //gdt::setup_gdt(); -> this also enables syscall and syscall stack is a "static mut" too
-    //irq::setup_idt();
+    unsafe {
+        gdt::setup_early_gdt();
+        irq::setup_early_idt();
+    };
 
     let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();
     unsafe {
-        fmanager.add_memory(*mem_region);
+        fmanager.add_memory(args.mem_region);
     }
 
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
@@ -239,7 +245,7 @@ pub fn start_app_core(
     let mut apic = xapic::XAPICDriver::new(regs);
     apic.attach();
 
-    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
+    let mut kcb = kcb::Kcb::new(args.kernel_args, args.kernel_binary, vspace, fmanager, apic);
 
     kcb::init_kcb(&mut kcb);
     let stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
@@ -265,8 +271,7 @@ pub fn start_app_core(
         );
     } // Make sure to drop the reference to the APIC again
 
-    *initialized = true;
-
+    initialized.store(true, Ordering::SeqCst);
     loop {
         unsafe { x86::halt() };
     }
@@ -295,17 +300,52 @@ fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs
     for thread in threads_to_boot {
         trace!("Booting {:?}", thread);
 
-        /*coreboot::initialize(
-            thread.id(),
-            start_app_core,
-            (
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-            ),
-            ptr::null_mut(),
-        );*/
+        use topology;
+        use x86::apic::{ApicControl, ApicId};
+
+        // A simple stack for the app core (non bootstrap core)
+        static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
+
+        let k = kcb::get_kcb();
+        let mem_region = unsafe {
+            k.pmanager()
+                .allocate(Layout::from_size_align_unchecked(1024 * 1024 * 2, 0x1000))
+                .unwrap()
+        };
+
+        let initialized: AtomicBool = AtomicBool::new(false);
+        let arg: Arc<AppCoreArgs> = Arc::new(AppCoreArgs {
+            mem_region,
+            kernel_binary,
+            kernel_args,
+        });
+
+        unsafe {
+            coreboot::initialize(
+                thread.apic_id(),
+                start_app_core,
+                arg.clone(),
+                &initialized,
+                &mut COREBOOT_STACK,
+            );
+
+            // Wait until core is up or we time out
+            let timeout = x86::time::rdtsc() + 10_000_000;
+            loop {
+                // Did the core signal us initialization completed?
+                if initialized.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                // Have we waited long enough?
+                if x86::time::rdtsc() > timeout {
+                    panic!("Core {:?} didn't boot properly...", thread.apic_id());
+                }
+            }
+        }
+
+        assert!(initialized.load(Ordering::SeqCst));
+        info!("Core {:?} has started", thread.apic_id());
     }
 }
 
@@ -342,6 +382,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::WALL_TIME_ANCHOR,
         *rawtime::BOOT_TIME_ANCHOR
     );
+
+    // At this point we should be able to handle exceptions:
+    #[cfg(all(feature = "test-pfault-early"))]
+    debug::cause_pfault();
+    #[cfg(all(feature = "test-gpfault-early"))]
+    debug::cause_gpfault();
 
     // Load a new GDT and initialize our IDT
     syscall::enable_fast_syscalls();

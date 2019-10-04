@@ -322,6 +322,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     enable_sse();
     enable_fsgsbase();
+    unsafe {
+        gdt::setup_early_gdt();
+        irq::setup_early_idt();
+    };
 
     // Make sure these constants are initialized early, for proper time accounting (otherwise because
     // they are lazy_static we may not end up using them until way later).
@@ -340,8 +344,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
 
     // Load a new GDT and initialize our IDT
-    unsafe { gdt::setup_gdt() };
-    irq::setup_idt();
+    syscall::enable_fast_syscalls();
+
     // We should catch page-faults and general protection faults from here...
 
     let kernel_args: &'static KernelArgs<[Module; 2]> =

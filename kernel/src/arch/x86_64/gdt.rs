@@ -16,11 +16,25 @@ use super::syscall;
 ///
 /// After initialization is done and we have memory allocation this
 /// should not be used anymore.
+///
+/// # Note
+/// In theory, this stack is shared by all cores on the system during boot-up
+/// as long as we boot cores sequentially (or nothing exceptional happens)
+/// it shouldn't cause any problems.
 static mut EARLY_IRQ_STACK: [u8; 32 * 4096] = [0; 32 * 4096];
 
 /// A GDT table that is in use during system initialization only.
 ///
 /// During init, each core sets their own GDT that is stored in their respective KCBs.
+/// However, before that they can use the `EARLY_GDT` as a simple way to get a
+/// Gdt that mostly works without having the Kcb fully initialized.
+///
+/// # Note
+/// This is the 2nd initial Gdt we have, there are two more: One as set-up by UEFI
+/// and used early-on in the bootstrap core, and another that is used by
+/// the app cores and lives in `start_ap.S`. So technically we could just use those
+/// but having a visible Gdt we modify from rust code makes it clearer what's going
+/// on.
 static mut EARLY_GDT: GdtTable = GdtTable {
     null: Descriptor::NULL,
     code_kernel: Descriptor::NULL,
@@ -33,6 +47,9 @@ static mut EARLY_GDT: GdtTable = GdtTable {
 /// A TSS that is in use during system initialization only.
 ///
 /// During init, each core sets their own TSS that is stored inside their respective KCBs.
+/// However, before that cores use the `EARLY_TSS` (through `EARLY_GDT`)
+/// and therefore the `EARLY_IRQ_STACK` as a stack for interrupts in case something goes
+/// wrong.
 static mut EARLY_TSS: TaskStateSegment = TaskStateSegment::new();
 
 #[repr(C, packed)]
@@ -118,13 +135,13 @@ impl GdtTable {
     }
 
     /// Return the selector for the kernel cs (code segment).
-    fn kernel_cs_selector() -> SegmentSelector {
+    pub fn kernel_cs_selector() -> SegmentSelector {
         SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0)
             | SegmentSelector::TI_GDT
     }
 
     /// Return the selector for the kernel ss (stack segment).
-    fn kernel_ss_selector() -> SegmentSelector {
+    pub fn kernel_ss_selector() -> SegmentSelector {
         SegmentSelector::new(GdtTable::SS_KERNEL_INDEX as u16, Ring::Ring0)
             | SegmentSelector::TI_GDT
     }
@@ -167,9 +184,9 @@ impl Default for GdtTable {
     }
 }
 
-/// Sets-up the EARLY_GDT for the system to react to faults,
+/// Sets-up the `EARLY_GDT` for the system to react to faults,
 /// interrupts etc. during initialization.
-pub unsafe fn setup_gdt() {
+pub unsafe fn setup_early_gdt() {
     EARLY_TSS.set_rsp(
         x86::Ring::Ring0,
         &EARLY_IRQ_STACK as *const _ as u64 + 32 * 4096,
@@ -178,10 +195,5 @@ pub unsafe fn setup_gdt() {
     EARLY_GDT = GdtTable::new(&EARLY_TSS);
     EARLY_GDT.install();
 
-    syscall::enable_fast_syscalls(
-        GdtTable::kernel_cs_selector(),
-        GdtTable::kernel_ss_selector(),
-    );
-
-    trace!("Early GDT/TSS set, and fast system-calls enabled.");
+    trace!("Early GDT/TSS set");
 }

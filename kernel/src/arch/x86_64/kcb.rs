@@ -11,7 +11,6 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 use apic::xapic::XAPICDriver;
 
 use super::gdt::GdtTable;
-use super::irq::{IdtTable, IDT_SIZE};
 use super::process::Process;
 use super::vspace::VSpace;
 
@@ -97,8 +96,8 @@ pub struct Kcb {
     /// A handle to the core-local interrupt driver.
     apic: RefCell<XAPICDriver>,
 
+    /// A per-core GdtTable
     gdt: GdtTable,
-    idt: IdtTable,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -132,7 +131,6 @@ impl Kcb {
             pmanager: RefCell::new(pmanager),
             apic: RefCell::new(apic),
             gdt: Default::default(),
-            idt: [Descriptor64::NULL; IDT_SIZE],
             interrupt_stack: None,
             syscall_stack: None,
         }

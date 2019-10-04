@@ -1,19 +1,28 @@
-// Systems that support both APIC and dual 8259 interrupt models must map global
-// system interrupts 0-15 to the 8259 IRQs 0-15, except where Interrupt Source
-// Overrides are provided (see Section 5.2.12.5, “Interrupt Source Override
-// Structure” below). This means that I/O APIC interrupt inputs 0-15 must be
-// mapped to global system interrupts 0-15 and have identical sources as the 8259
-// IRQs 0-15 unless overrides are used. This allows a platform to support OSPM
-// implementations that use the APIC model as well as OSPM implementations that
-// use the 8259 model (OSPM will only use one model; it will not mix models). When
-// OSPM supports the 8259 model, it will assume that all interrupt descriptors
-// reporting global system interrupts 0-15 correspond to 8259 IRQs. In the 8259
-// model all global system interrupts greater than 15 are ignored. If OSPM
-// implements APIC support, it will enable the APIC as described by the APIC
-// specification and will use all reported global system interrupts that fall
-// within the limits of the interrupt inputs defined by the I/O APIC structures.
-// For more information on hardware resource configuration see Section 6,
-// “Configuration.”
+//! Functionality to configure and deal with interrupts.
+//!
+//! # Note on legacy support
+//! We basically only support xAPIC mode, but we still receive e.g. serial
+//! interrupts that are considered legacy. These have to be mapped to
+//! GSI 0-15.
+//!
+//! From the ACPI specification:
+//!
+//! Systems that support both APIC and dual 8259 interrupt models must map globally
+//! system interrupts 0-15 to the 8259 IRQs 0-15, except where Interrupt Source
+//! Overrides are provided (see Section 5.2.12.5, “Interrupt Source Override
+//! Structure”). This means that I/O APIC interrupt inputs 0-15 must be
+//! mapped to global system interrupts 0-15 and have identical sources as the 8259
+//! IRQs 0-15 unless overrides are used. This allows a platform to support OSPM
+//! implementations that use the APIC model as well as OSPM implementations that
+//! use the 8259 model (OSPM will only use one model; it will not mix models). When
+//! OSPM supports the 8259 model, it will assume that all interrupt descriptors
+//! reporting global system interrupts 0-15 correspond to 8259 IRQs. In the 8259
+//! model all global system interrupts greater than 15 are ignored. If OSPM
+//! implements APIC support, it will enable the APIC as described by the APIC
+//! specification and will use all reported global system interrupts that fall
+//! within the limits of the interrupt inputs defined by the I/O APIC structures.
+//! For more information on hardware resource configuration see Section 6,
+//! “Configuration.”
 
 use core::fmt;
 
@@ -25,25 +34,134 @@ use x86::bits64::paging::VAddr;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
 use x86::irq;
-
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
 use x86::Ring;
 
-use crate::arch::debug;
-use crate::arch::kcb::get_kcb;
-use crate::arch::process::ResumeHandle;
-use crate::panic::{backtrace, backtrace_from};
-use crate::ExitReason;
+use log::debug;
 use spin::Mutex;
 
-use log::debug;
+use crate::panic::{backtrace, backtrace_from};
+use crate::ExitReason;
 
+use super::debug;
+use super::kcb::get_kcb;
+use super::process::ResumeHandle;
+
+/// A macro to initialize an entry in an IDT table.
+///
+/// This maks sure we have an external C declaration to the symbol
+/// in `isr.S` that is the entry point for the given interrupt `num`
+/// then continues to store a descriptor for it in the `idt_table`.
+///
+/// # Note
+/// See also `isr.S`
+macro_rules! idt_set {
+    ($idt_table:expr, $num:expr, $f:ident, $sel:expr, $flags:expr) => {{
+        extern "C" {
+            #[no_mangle]
+            fn $f();
+        }
+
+        $idt_table[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64)
+            .dpl(Ring::Ring3)
+            .present()
+            .finish();
+    }};
+}
+
+/// The IDT table can hold a maximum of 256 entries.
 pub const IDT_SIZE: usize = 256;
-static mut IDT: [Descriptor64; IDT_SIZE] = [Descriptor64::NULL; IDT_SIZE];
 
-pub type IdtTable = [Descriptor64; IDT_SIZE];
+/// The IDT table that is installed early on during initialization.
+///
+/// Later on each core is free to use their own IDT table
+/// or can remain using the `DEFAULT_IDT` since the `DEFAULT_IDT` does not contain
+/// any per-core shared state.
+static mut DEFAULT_IDT: IdtTable = IdtTable([Descriptor64::NULL; IDT_SIZE]);
+
+/// A wrapper type to represent the array of IDT entries
+pub struct IdtTable([Descriptor64; IDT_SIZE]);
+
+/// The default for an IdtTable.
+impl Default for IdtTable {
+    /// Initializes the given IdtTable by populating it with external
+    /// IRQ handler functions declares in `isr.S`.
+    ///
+    /// # Notes
+    /// Everything is declared as interrupt gates for now. Trap and Interrupt gates are similar,
+    /// and their descriptors are structurally the same, they differ only in the "type" field.
+    /// The difference is that for interrupt gates, interrupts are automatically disabled upon entry
+    /// and re-enabled upon IRET which restores the saved RFLAGS.
+    ///
+    /// In our code we currently don't  use IRET but rather SYSRET and we reset the RFLAGs manually.
+    fn default() -> Self {
+        debug!("Install IRQ handler");
+
+        let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
+
+        let seg = SegmentSelector::new(1, Ring::Ring0);
+        idt_set!(table.0, 0, isr_handler0, seg, 0x8E);
+        idt_set!(table.0, 1, isr_handler1, seg, 0x8E);
+        idt_set!(table.0, 2, isr_handler2, seg, 0x8E);
+        idt_set!(table.0, 3, isr_handler3, seg, 0x8E);
+        idt_set!(table.0, 4, isr_handler4, seg, 0x8E);
+        idt_set!(table.0, 5, isr_handler5, seg, 0x8E);
+        idt_set!(table.0, 6, isr_handler6, seg, 0x8E);
+        idt_set!(table.0, 7, isr_handler7, seg, 0x8E);
+        idt_set!(table.0, 8, isr_handler8, seg, 0x8E);
+        idt_set!(table.0, 9, isr_handler9, seg, 0x8E);
+        idt_set!(table.0, 10, isr_handler10, seg, 0x8E);
+        idt_set!(table.0, 11, isr_handler11, seg, 0x8E);
+        idt_set!(table.0, 12, isr_handler12, seg, 0x8E);
+        idt_set!(table.0, 13, isr_handler13, seg, 0x8E);
+        idt_set!(table.0, 14, isr_handler14, seg, 0x8E);
+        idt_set!(table.0, 15, isr_handler15, seg, 0x8E);
+
+        idt_set!(table.0, 32, isr_handler32, seg, 0x8E);
+        idt_set!(table.0, 33, isr_handler33, seg, 0x8E);
+        idt_set!(table.0, 34, isr_handler34, seg, 0x8E);
+        idt_set!(table.0, 35, isr_handler35, seg, 0x8E);
+        idt_set!(table.0, 36, isr_handler36, seg, 0x8E);
+        idt_set!(table.0, 37, isr_handler37, seg, 0x8E);
+        idt_set!(table.0, 38, isr_handler38, seg, 0x8E);
+        idt_set!(table.0, 39, isr_handler39, seg, 0x8E);
+        idt_set!(table.0, 40, isr_handler40, seg, 0x8E);
+        idt_set!(table.0, 41, isr_handler41, seg, 0x8E);
+        idt_set!(table.0, 42, isr_handler42, seg, 0x8E);
+        idt_set!(table.0, 43, isr_handler43, seg, 0x8E);
+        idt_set!(table.0, 44, isr_handler44, seg, 0x8E);
+        idt_set!(table.0, 45, isr_handler45, seg, 0x8E);
+        idt_set!(table.0, 46, isr_handler46, seg, 0x8E);
+        idt_set!(table.0, 47, isr_handler47, seg, 0x8E);
+
+        table
+    }
+}
+
+impl IdtTable {
+    /// Create a new IdtTable (with default entries).
+    fn new() -> IdtTable {
+        Default::default()
+    }
+
+    /// Install the IdtTable in the current core.
+    unsafe fn install(&self) {
+        let idtptr = dtables::DescriptorTablePointer::new_from_slice(&self.0);
+        dtables::lidt(&idtptr);
+        trace!("IDT set to {:p}", &idtptr);
+    }
+}
+
+/// Initializes and loads the IDT into the CPU.
+///
+/// With this done we should be able to catch basic pfaults and gpfaults.
+pub unsafe fn setup_early_idt() {
+    DEFAULT_IDT = IdtTable::new();
+    DEFAULT_IDT.install();
+    trace!("IDT table initialized.");
+}
 
 lazy_static! {
     static ref IRQ_HANDLERS: Mutex<Vec<Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>>> = {
@@ -175,21 +293,6 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
 
-/// Import the ISR assembly handler and add it to our IDT (see isr.S).
-macro_rules! idt_set {
-    ($num:expr, $f:ident, $sel:expr, $flags:expr) => {{
-        extern "C" {
-            #[no_mangle]
-            fn $f();
-        }
-
-        IDT[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64)
-            .dpl(Ring::Ring3)
-            .present()
-            .finish();
-    }};
-}
-
 /// Arguments as provided by the ISR generic call handler (see isr.S).
 /// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
 #[repr(C, packed)]
@@ -313,66 +416,6 @@ pub unsafe fn register_handler(
     info!("register irq handler for vector {}", vector);
     let mut handlers = IRQ_HANDLERS.lock();
     handlers[vector] = handler;
-}
-
-/// Initializes and loads the IDT into the CPU.
-///
-/// With this done we should be able to catch basic pfaults and gpfaults.
-pub fn setup_idt() {
-    unsafe {
-        //let mut old_idt: dtables::DescriptorTablePointer<Descriptor64> = Default::default();
-        //dtables::sidt(&mut old_idt);
-        //trace!("IDT was: {:?}", old_idt);
-
-        let idtptr = dtables::DescriptorTablePointer::new_from_slice(&IDT);
-        dtables::lidt(&idtptr);
-        trace!("IDT set to {:p}", &idtptr);
-
-        // Note everything is declared as interrupt gates for now.
-        // Trap and Interrupt gates are similar,
-        // and their descriptors are structurally the same,
-        // they differ only in the "type" field.
-        // The difference is that for interrupt gates,
-        // interrupts are automatically disabled upon entry
-        // and re-enabled upon IRET which restores the saved EFLAGS.
-
-        debug!("Install IRQ handler");
-        let seg = SegmentSelector::new(1, Ring::Ring0);
-        idt_set!(0, isr_handler0, seg, 0x8E);
-        idt_set!(1, isr_handler1, seg, 0x8E);
-        idt_set!(2, isr_handler2, seg, 0x8E);
-        idt_set!(3, isr_handler3, seg, 0x8E);
-        idt_set!(4, isr_handler4, seg, 0x8E);
-        idt_set!(5, isr_handler5, seg, 0x8E);
-        idt_set!(6, isr_handler6, seg, 0x8E);
-        idt_set!(7, isr_handler7, seg, 0x8E);
-        idt_set!(8, isr_handler8, seg, 0x8E);
-        idt_set!(9, isr_handler9, seg, 0x8E);
-        idt_set!(10, isr_handler10, seg, 0x8E);
-        idt_set!(11, isr_handler11, seg, 0x8E);
-        idt_set!(12, isr_handler12, seg, 0x8E);
-        idt_set!(13, isr_handler13, seg, 0x8E);
-        idt_set!(14, isr_handler14, seg, 0x8E);
-        idt_set!(15, isr_handler15, seg, 0x8E);
-
-        idt_set!(32, isr_handler32, seg, 0x8E);
-        idt_set!(33, isr_handler33, seg, 0x8E);
-        idt_set!(34, isr_handler34, seg, 0x8E);
-        idt_set!(35, isr_handler35, seg, 0x8E);
-        idt_set!(36, isr_handler36, seg, 0x8E);
-        idt_set!(37, isr_handler37, seg, 0x8E);
-        idt_set!(38, isr_handler38, seg, 0x8E);
-        idt_set!(39, isr_handler39, seg, 0x8E);
-        idt_set!(40, isr_handler40, seg, 0x8E);
-        idt_set!(41, isr_handler41, seg, 0x8E);
-        idt_set!(42, isr_handler42, seg, 0x8E);
-        idt_set!(43, isr_handler43, seg, 0x8E);
-        idt_set!(44, isr_handler44, seg, 0x8E);
-        idt_set!(45, isr_handler45, seg, 0x8E);
-        idt_set!(46, isr_handler46, seg, 0x8E);
-        idt_set!(47, isr_handler47, seg, 0x8E);
-    }
-    debug!("IDT table initialized.");
 }
 
 /// Finishes the initialization of IRQ handlers once we have memory allocation.

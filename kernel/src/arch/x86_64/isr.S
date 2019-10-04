@@ -69,8 +69,7 @@ isr_handler\ex:
 
     // We should not return form handle_generic_exception.
     // In case we do, cause a page-fault to ease debugging
-    movq  $0xdeadf, %rax
-    movq (%rax), %rax
+    movq  (0xdeadf), %rax
 
 isr.loop\ex:
 	hlt

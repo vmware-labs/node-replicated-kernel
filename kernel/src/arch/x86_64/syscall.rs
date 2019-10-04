@@ -9,6 +9,7 @@ use kpi::*;
 
 use crate::error::KError;
 
+use super::gdt::GdtTable;
 use super::process::{UserPtr, UserValue};
 use super::vspace;
 
@@ -222,7 +223,10 @@ pub extern "C" fn syscall_handle(
 }
 
 /// Enables syscall/sysret functionality.
-pub fn enable_fast_syscalls(cs_selector: SegmentSelector, ss_selector: SegmentSelector) {
+pub fn enable_fast_syscalls() {
+    let cs_selector = GdtTable::kernel_cs_selector();
+    let ss_selector = GdtTable::kernel_ss_selector();
+
     unsafe {
         let mut star = rdmsr(IA32_STAR);
         star |= (cs_selector.bits() as u64) << 32;

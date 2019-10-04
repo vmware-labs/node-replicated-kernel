@@ -6,6 +6,7 @@ use core::pin::Pin;
 use core::ptr;
 
 use x86::current::segmentation::{self, Descriptor64};
+use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use apic::xapic::XAPICDriver;
@@ -16,6 +17,7 @@ use super::vspace::VSpace;
 
 use crate::arch::{KernelArgs, Module};
 use crate::memory::buddy::BuddyFrameAllocator;
+use crate::stack::{OwnedStack, Stack};
 
 /// Try to retrieve the KCB by reading the gs register.
 pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
@@ -99,18 +101,20 @@ pub struct Kcb {
     /// A per-core GdtTable
     gdt: GdtTable,
 
+    /// A per-core TSS (task-state)
+    tss: TaskStateSegment,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this memory location automatically (see gdt.rs).
     /// This member should probably not be touched from normal code.
-    #[allow(dead_code)]
-    interrupt_stack: Option<Pin<Box<[u8; 64 * 0x1000]>>>,
+    interrupt_stack: Option<OwnedStack>,
 
     /// A handle to the syscall stack memory location.
     ///
     /// We switch rsp/rbp to point in here in exec.S.
     /// This member should probably not be touched from normal code.
-    syscall_stack: Option<Pin<Box<[u8; 64 * 0x1000]>>>,
+    syscall_stack: Option<OwnedStack>,
 }
 
 impl Kcb {
@@ -123,27 +127,51 @@ impl Kcb {
     ) -> Kcb {
         Kcb {
             syscall_stack_top: ptr::null_mut(),
-            save_area: None,
-            current_process: RefCell::new(None),
             kernel_args: kernel_args,
             kernel_binary: kernel_binary,
             init_vspace: RefCell::new(init_vspace),
             pmanager: RefCell::new(pmanager),
             apic: RefCell::new(apic),
             gdt: Default::default(),
+            tss: TaskStateSegment::new(),
+            // Can't initialize these yet, needs Kcb/pmanager for memory allocations:
+            save_area: None,
             interrupt_stack: None,
             syscall_stack: None,
+            // We don't have a process initially:
+            current_process: RefCell::new(None),
         }
     }
 
-    pub fn set_syscall_stack(&mut self, mut stack: Pin<Box<[u8; 64 * 0x1000]>>) {
+    pub fn finalize(&mut self) {
         unsafe {
-            self.syscall_stack_top = stack.as_mut_ptr().offset((stack.len()) as isize);
+            // Switch to our new, private Gdt:
+            self.gdt.install();
         }
+
+        // Reloading gdt means we lost the content in `gs` so we set the
+        // kcb again using `wrgsbase`:
+        init_kcb(self);
+    }
+
+    pub fn set_interrupt_stack(&mut self, stack: OwnedStack) {
+        // Add the stack-top to the TSS so the CPU ends up switching
+        // to this stack on an interrupt
+        self.tss.set_rsp(x86::Ring::Ring0, stack.base() as u64);
+        // Link TSS in Gdt
+
+        // It's important to only construct the GdtTable
+        // after we did `set_rsp` on the TSS, otherwise interrupts won't work.
+        self.gdt = GdtTable::new(&self.tss);
+        self.interrupt_stack = Some(stack);
+    }
+
+    pub fn set_syscall_stack(&mut self, stack: OwnedStack) {
+        self.syscall_stack_top = stack.base();
         debug!("Syscall stack top set to: {:p}", self.syscall_stack_top);
         self.syscall_stack = Some(stack);
 
-        // TODO: need a static assert and offsetof!
+        // TODO: Would profit from a static assert and offsetof...
         debug_assert_eq!(
             (&self.syscall_stack_top as *const _ as usize) - (self as *const _ as usize),
             0,
@@ -151,10 +179,14 @@ impl Kcb {
         );
     }
 
+    /// Set the core' save-area
+    ///
+    /// Register are store here in case we get an interrupt/ssytem call
     pub fn set_save_area(&mut self, save_area: Pin<Box<kpi::arch::SaveArea>>) {
         self.save_area = Some(save_area);
     }
 
+    /// Get a pointer to the cores save-area.
     pub fn get_save_area_ptr(&self) -> *const kpi::arch::SaveArea {
         // TODO: this probably doesn't need an unsafe, but I couldn't figure
         // out how to get that pointer out of the Option<Pin<Box>>>

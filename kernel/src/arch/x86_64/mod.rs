@@ -40,6 +40,7 @@ use logos::Logos;
 use spin::Mutex;
 
 use crate::memory::*;
+use crate::stack::{OwnedStack, Stack};
 use crate::{xmain, ExitReason};
 
 use memory::*;
@@ -248,11 +249,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let mut kcb = kcb::Kcb::new(args.kernel_args, args.kernel_binary, vspace, fmanager, apic);
 
     kcb::init_kcb(&mut kcb);
-    let stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
-    kcb.set_syscall_stack(stack);
+    kcb.set_interrupt_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
 
-    let save_area = Box::pin(kpi::x86_64::SaveArea::empty());
-    kcb.set_save_area(save_area);
     core::mem::forget(kcb);
 
     debug!("Memory allocation should work at this point...");
@@ -468,18 +468,19 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
     kcb::init_kcb(&mut kcb);
-    let stack = Box::pin([0; 64 * BASE_PAGE_SIZE]);
-    kcb.set_syscall_stack(stack);
+    debug!("Memory allocation should work at this point...");
 
-    let save_area = Box::pin(kpi::x86_64::SaveArea::empty());
-    kcb.set_save_area(save_area);
+    // Let's finish KCB initialization (easier as we have alloc now):
+    kcb.set_interrupt_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    kcb.finalize();
 
     // Make sure we don't drop the KCB and anything in it,
-    // the kcb is on the stack and remains allocated on it,
-    // this is (probably) fine as we never return to _start.
+    // the kcb is on the init stack and remains allocated on it,
+    // this is (probably) fine as we never reclaim this stack or
+    // return to _start.
     core::mem::forget(kcb);
-
-    debug!("Memory allocation should work at this point...");
 
     // Set up interrupts (which needs Box)
     irq::init_irq_handlers();
@@ -501,6 +502,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         assert!(r.is_ok());
     }
 
+    // Needs ACPI and alloc
     lazy_static::initialize(&topology::MACHINE_TOPOLOGY);
     //info!("{:#?}", *topology::MACHINE_TOPOLOGY);
 
@@ -508,7 +510,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     #[cfg(not(feature = "bsp-only"))]
     boot_app_cores(kernel_binary, kernel_args);
 
-    // No we go in the arch-independent part
+    // Done with initialization, now we go in
+    // the arch-independent part:
     xmain();
 
     debug!("Returned from main, shutting down...");

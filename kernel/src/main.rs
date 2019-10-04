@@ -18,7 +18,8 @@
     ptr_offset_from,
     box_into_raw_non_null,
     box_into_pin,
-    untagged_unions
+    untagged_unions,
+    const_raw_ptr_to_usize_cast
 )]
 #![allow(safe_packed_borrows)]
 
@@ -77,6 +78,7 @@ mod memory;
 #[macro_use]
 mod prelude;
 mod error;
+mod stack;
 
 #[cfg(target_os = "none")]
 extern crate acpica_sys;

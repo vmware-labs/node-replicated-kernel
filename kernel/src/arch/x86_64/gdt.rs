@@ -9,7 +9,9 @@ use x86::segmentation::*;
 use x86::task::load_tr;
 use x86::Ring;
 
+use super::kcb;
 use super::syscall;
+use crate::stack::{Stack, StaticStack};
 
 /// A temporary, statically allocated stack for interrupts that could happen
 /// (by a bug) early in a core initialization.
@@ -21,7 +23,7 @@ use super::syscall;
 /// In theory, this stack is shared by all cores on the system during boot-up
 /// as long as we boot cores sequentially (or nothing exceptional happens)
 /// it shouldn't cause any problems.
-static mut EARLY_IRQ_STACK: [u8; 32 * 4096] = [0; 32 * 4096];
+static mut EARLY_IRQ_STACK: StaticStack = StaticStack([0; 32 * 4096]);
 
 /// A GDT table that is in use during system initialization only.
 ///
@@ -78,7 +80,7 @@ impl GdtTable {
     ///
     /// The other values will be set to x86-64 default values and
     /// should not change.
-    fn new(tss: &TaskStateSegment) -> GdtTable {
+    pub fn new(tss: &TaskStateSegment) -> GdtTable {
         GdtTable {
             tss_segment: GdtTable::tss_descriptor(tss),
             ..Default::default()
@@ -90,7 +92,7 @@ impl GdtTable {
     /// # Safety
     /// This is heavily unsafe, if done wrong it will crash your
     /// system or change memory semantics.
-    unsafe fn install(&self) {
+    pub unsafe fn install(&self) {
         let gdtptr = DescriptorTablePointer::new(self);
         lgdt(&gdtptr);
 
@@ -187,10 +189,7 @@ impl Default for GdtTable {
 /// Sets-up the `EARLY_GDT` for the system to react to faults,
 /// interrupts etc. during initialization.
 pub unsafe fn setup_early_gdt() {
-    EARLY_TSS.set_rsp(
-        x86::Ring::Ring0,
-        &EARLY_IRQ_STACK as *const _ as u64 + 32 * 4096,
-    );
+    EARLY_TSS.set_rsp(x86::Ring::Ring0, EARLY_IRQ_STACK.base() as u64);
 
     EARLY_GDT = GdtTable::new(&EARLY_TSS);
     EARLY_GDT.install();

@@ -7,11 +7,13 @@ use alloc::sync::Arc;
 use core::slice;
 use core::sync::atomic::AtomicBool;
 
+use x86::apic::{ApicControl, ApicId};
+use x86::current::paging::{PAddr, BASE_PAGE_SIZE};
+
 use super::kcb;
 use super::vspace::MapAction;
 
-use x86::apic::{ApicControl, ApicId};
-use x86::current::paging::{PAddr, BASE_PAGE_SIZE};
+use crate::stack::Stack;
 
 /// The 16-bit segement where our bootstrap code is.
 const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
@@ -254,7 +256,7 @@ pub unsafe fn initialize<A>(
     init_function: fn(Arc<A>, &AtomicBool),
     args: Arc<A>,
     initialized: &AtomicBool,
-    stack: &'static mut [u8],
+    stack: &dyn Stack,
 ) {
     // Make sure bootsrap code is at correct location in memory
     copy_bootstrap_code();
@@ -266,7 +268,7 @@ pub unsafe fn initialize<A>(
         args,
         initialized,
         kcb.init_vspace().pml4_address().into(),
-        &stack as *const _ as u64 + stack.len() as u64 - 16,
+        stack.base() as u64,
     );
 
     // Send IPIs

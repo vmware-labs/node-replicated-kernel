@@ -8,7 +8,7 @@
 #define X86_64_REAL_MODE_LINEAR_OFFSET (X86_64_REAL_MODE_SEGMENT << 4)
 #define MSR_IA32_EFER 0xc0000080
 
-/* Put this code in the data section because we need to parts of it and .text will be read-only */
+/* Put this code in the data section because we need to modify parts of it and .text will be read-only */
 .data
 .balign 4096
 .code16
@@ -95,8 +95,8 @@ loop_ap:
     hlt
     /* Cause a page-fault which will (hopefully) make
        debugging easier if we ever come here */
-    mov $999, %rax
-    mov (%rax), %rax
+    //mov $999, %rax
+    //mov (%rax), %rax
     jmp loop_ap
 
 .align 16

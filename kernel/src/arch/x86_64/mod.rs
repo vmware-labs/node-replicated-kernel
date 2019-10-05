@@ -304,7 +304,7 @@ fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs
         use x86::apic::{ApicControl, ApicId};
 
         // A simple stack for the app core (non bootstrap core)
-        static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
+        let coreboot_stack: OwnedStack = OwnedStack::new(4096 * 32);
 
         let k = kcb::get_kcb();
         let mem_region = unsafe {
@@ -326,7 +326,7 @@ fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs
                 start_app_core,
                 arg.clone(),
                 &initialized,
-                &mut COREBOOT_STACK,
+                &coreboot_stack,
             );
 
             // Wait until core is up or we time out

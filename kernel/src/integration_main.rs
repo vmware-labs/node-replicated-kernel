@@ -199,14 +199,12 @@ pub fn xmain() {
 /// Boots a single core, checks we can print and pass correct arguments.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
+    use crate::stack::{OwnedStack, Stack};
     use alloc::sync::Arc;
     use arch::coreboot;
     use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
     use x86::apic::{ApicControl, ApicId};
-
-    // A simple stack for the app core (non bootstrap core)
-    static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
     // Entry point for app. This function is called from start_ap.S:
     pub fn bespin_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
@@ -235,6 +233,7 @@ pub fn xmain() {
 
     unsafe {
         let initialized: AtomicBool = AtomicBool::new(false);
+        let app_stack = OwnedStack::new(4096 * 32);
 
         let arg: Arc<u64> = Arc::new(0xfefe);
         coreboot::initialize(
@@ -242,7 +241,7 @@ pub fn xmain() {
             bespin_init_ap,
             Arc::clone(&arg),
             &initialized,
-            &mut COREBOOT_STACK,
+            &app_stack,
         );
 
         // Wait until core is up or we time out
@@ -271,6 +270,7 @@ pub fn xmain() {
 /// log to communicate information.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
 pub fn xmain() {
+    use crate::stack::{OwnedStack, Stack};
     use arch::coreboot;
     use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
@@ -280,9 +280,6 @@ pub fn xmain() {
     use node_replication::log::Log;
 
     let mut log: Arc<Log<usize>> = Arc::new(Log::<usize>::new(1024 * 1024 * 1));
-
-    /// XXX: use different stacks for cores!
-    static mut COREBOOT_STACK: [u8; 4096 * 32] = [0; 4096 * 32];
 
     // Entry point for app. This function is called from start_ap.S:
     pub fn bespin_init_ap(mylog: Arc<Log<usize>>, initialized: &AtomicBool) {
@@ -310,13 +307,14 @@ pub fn xmain() {
     unsafe {
         //for thread in threads_to_boot {
         let initialized: AtomicBool = AtomicBool::new(false);
+        let app_stack = OwnedStack::new(4096 * 32);
 
         coreboot::initialize(
             thread.apic_id(),
             bespin_init_ap,
             log.clone(),
             &initialized,
-            &mut COREBOOT_STACK,
+            &app_stack,
         );
 
         // Wait until core is up or we time out

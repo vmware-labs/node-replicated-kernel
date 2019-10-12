@@ -384,9 +384,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
 
     // At this point we should be able to handle exceptions:
-    #[cfg(all(feature = "test-pfault-early"))]
+    #[cfg(feature = "test-pfault-early")]
     debug::cause_pfault();
-    #[cfg(all(feature = "test-gpfault-early"))]
+    #[cfg(feature = "test-gpfault-early")]
     debug::cause_gpfault();
 
     // Load a new GDT and initialize our IDT

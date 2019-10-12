@@ -33,6 +33,8 @@ enum ExitStatus {
     PageFault,
     /// Unexpected process exit code when running a user-space test.
     UnexpectedUserSpaceExit,
+    /// Exception happened during kernel initialization.
+    ExceptionDuringInitialization,
     /// Kernel exited with unknown error status... Update the script.
     Unknown(i8),
 }
@@ -48,6 +50,7 @@ impl From<i8> for ExitStatus {
             5 => ExitStatus::GeneralProtectionFault,
             6 => ExitStatus::PageFault,
             7 => ExitStatus::UnexpectedUserSpaceExit,
+            8 => ExitStatus::ExceptionDuringInitialization,
             _ => ExitStatus::Unknown(exit_code),
         }
     }
@@ -69,6 +72,9 @@ impl Display for ExitStatus {
             ExitStatus::PageFault => "Encountered unexpected Page Fault",
             ExitStatus::UnexpectedUserSpaceExit => {
                 "Unexpected process exit code when running a user-space test"
+            }
+            ExitStatus::ExceptionDuringInitialization => {
+                "Got an interrupt/exception during kernel initialization"
             }
             ExitStatus::Unknown(_) => {
                 "Unknown: Kernel exited with unknown error status... Update the code!"
@@ -276,7 +282,7 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
     fn log_qemu_out(args: &RunnerArgs, output: String) {
         if !output.is_empty() {
             println!("\n===== QEMU LOG =====");
-            println!("{}", output);
+            println!("{}", &output);
             println!("===== END QEMU LOG =====");
         }
         let quoted_cmd = args
@@ -307,7 +313,7 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
         }
         Err(e) => {
             log_qemu_out(args, output);
-            panic!("Qemu testing failed: {}", e);
+            panic!("Qemu testing failed");
         }
         e => {
             log_qemu_out(args, output);
@@ -406,25 +412,30 @@ fn exit() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Make sure the page-fault handler functions as expected  -- even if
+/// Make sure the page-fault handler works as expected  -- even if
 /// we're early on in initialization.
 /// In essence a trap should be raised but we can't get a backtrace yet
 /// since we don't have memory allocation.
-/*#[test]
+#[test]
 fn pfault_early() {
-    let cmdline = RunnerArgs::new("test-pfault-early");
+    let cmdline = RunnerArgs::new("test-pfault-early").qemu_arg("-d int,cpu_reset");
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
-        p.exp_string("[IRQ] Page Fault")?;
-        p.exp_regex("Backtrace unavailable")?;
+        p.exp_string("[IRQ] Early Page Fault")?;
+        p.exp_string("Faulting address: 0x4000deadbeef")?;
         output = p.exp_eof()?;
         p.process.exit()
     };
 
-    check_for_exit(ExitStatus::PageFault, &cmdline, qemu_run(), output);
-}*/
+    check_for_exit(
+        ExitStatus::ExceptionDuringInitialization,
+        &cmdline,
+        qemu_run(),
+        output,
+    );
+}
 
 /// Make sure the page-fault handler functions as expected.
 /// In essence a trap should be raised and we should get a backtrace.
@@ -442,6 +453,30 @@ fn pfault() {
     };
 
     check_for_exit(ExitStatus::PageFault, &cmdline, qemu_run(), output);
+}
+
+/// Make sure the general-protection-fault handler works as expected  -- even if
+/// we're early on in initialization.
+/// In essence a trap should be raised but we can't get a backtrace yet
+/// since we don't have memory allocation.
+#[test]
+fn gpfault_early() {
+    let cmdline = RunnerArgs::new("test-gpfault-early").qemu_arg("-d int,cpu_reset");
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        p.exp_string("[IRQ] Early General Protection Fault")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_exit(
+        ExitStatus::ExceptionDuringInitialization,
+        &cmdline,
+        qemu_run(),
+        output,
+    );
 }
 
 /// Make sure general protection fault handling works as expected.

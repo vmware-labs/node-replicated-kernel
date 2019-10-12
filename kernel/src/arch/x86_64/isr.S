@@ -1,6 +1,13 @@
 .text
 .extern handle_generic_exception
 
+/**
+ * Generates isr_handler${num} service routines that save the context in
+ * the KCB and then call `handle_generic_exception`.
+ *
+ * This routine excepts that an initialized KCB is installed in the
+ * IA32_KERNEL_GSBASE MSR.
+ **/
 .macro isr_handler ex:req err=0
 .global isr_handler\ex
 isr_handler\ex:
@@ -76,52 +83,58 @@ isr.loop\ex:
 	jmp isr.loop\ex
 .endm
 
-
-.macro isr_handler2 ex:req err=0
-.global isr_handler2\ex
-isr_handler2\ex:
+/**
+ * Generates isr_handler_early${num} service routines that save the vector
+ * number on the stack then call `handle_generic_exception_early`.
+ *
+ * Minimal OS setup (i.e., just an IDT and interrupt stack) is required
+ * for this to work.
+ **/
+.macro isr_handler_early ex:req err=0
+.global isr_handler_early\ex
+isr_handler_early\ex:
 .if  \err
 .else
     pushq $0 /* Dummy error code for this type */
 .endif
+    // Push exception code on the stack
     pushq $\ex
-    /* Save state in SaveArea */
-    pushq %r15
-    swapgs
-    movabs $CURRENT_SAVE_AREA, %r15
-    movq %rax,  0*8(%r15)
-    movq %rbx,  1*8(%r15)
-    movq %rcx,  2*8(%r15)
-    movq %rdx,  3*8(%r15)
-    movq %rsi,  4*8(%r15)
-    movq %rdi,  5*8(%r15)
-    movq %rbp,  6*8(%r15)
-    /*movq %rsp,  7*8(%r15)*/
-    movq %r8,   8*8(%r15)
-    movq %r9,   9*8(%r15)
-    movq %r10, 10*8(%r15)
-    movq %r11, 11*8(%r15)
-    movq %r12, 12*8(%r15)
-    movq %r13, 13*8(%r15)
-    movq %r14, 14*8(%r15)
+    callq handle_generic_exception_early
 
-    /* Save original r15, pushed on stack previously */
-    movq %r15, %rax
-    popq %r15
-    movq %r15, 15*8(%rax)
-    /* Save the pushed RIP */
-    movq 2*8(%rsp), %r15
-    movq %r15, 16*8(%rax)
+    // We should not return form handle_generic_exception.
+    // In case we do, cause a page-fault to ease debugging
+    movq  (0xdeada), %rax
 
-    callq handle_generic_exception
-    /* We should not return form here, just in case,
-       cause a page-fault to ease debugging */
-    movq  $0xdeadf, %rax
-    movq (%rax), %rax
-isr.loop\ex:
+isr_early.loop\ex:
 	hlt
-	jmp isr.loop\ex
+	jmp isr_early.loop\ex
 .endm
+
+/* x86 Exceptions, early handlers */
+isr_handler_early 0
+isr_handler_early 1
+isr_handler_early 2
+isr_handler_early 3
+isr_handler_early 4
+isr_handler_early 5
+isr_handler_early 6
+isr_handler_early 7
+isr_handler_early 8,1
+isr_handler_early 9
+isr_handler_early 10,1
+isr_handler_early 11,1
+isr_handler_early 12,1
+isr_handler_early 13,1
+isr_handler_early 14,1
+/* 15: Reserved */
+isr_handler_early 16
+isr_handler_early 17,1
+isr_handler_early 18
+isr_handler_early 19
+isr_handler_early 20
+/* 21-29: Reserved */
+isr_handler_early 30,1
+/* 31: Reserved */
 
 /* x86 Exceptions */
 isr_handler 0
@@ -132,14 +145,22 @@ isr_handler 4
 isr_handler 5
 isr_handler 6
 isr_handler 7
-isr_handler 8,1
+/* Double-fault is always going to isr_handler_early8 */
 isr_handler 9
 isr_handler 10,1
 isr_handler 11,1
 isr_handler 12,1
 isr_handler 13,1
 isr_handler 14,1
-isr_handler 15
+/* 15: Reserved */
+isr_handler 16
+isr_handler 17,1
+/* Machine check is always going to isr_handler_early18 */
+isr_handler 19
+isr_handler 20
+/* 21-29: Reserved */
+isr_handler 30,1
+/* 31: Reserved */
 
 /* Classic PIC interrupts */
 isr_handler 32

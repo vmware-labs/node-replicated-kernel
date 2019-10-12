@@ -62,6 +62,7 @@ shell
 ```
 
 In runner settings (Web GUI), check mark "Run untagged jobs" (Indicates whether this runner can pick jobs without tags).
+You can also increase the runner timeout there (the default is 1h).
 
 ### Set-up software on gitlab runner account
 

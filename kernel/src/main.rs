@@ -164,6 +164,7 @@ pub enum ExitReason {
     GeneralProtectionFault = 5,
     PageFault = 6,
     UserSpaceError = 7,
+    ExceptionDuringInitialization = 8,
 }
 
 /// Kernel entry-point

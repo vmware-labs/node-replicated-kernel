@@ -33,7 +33,7 @@ use x86::apic::ApicControl;
 use x86::bits64::paging::VAddr;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
-use x86::irq;
+use x86::irq::{self, PageFaultError};
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
@@ -97,8 +97,6 @@ impl Default for IdtTable {
     ///
     /// In our code we currently don't  use IRET but rather SYSRET and we reset the RFLAGs manually.
     fn default() -> Self {
-        debug!("Install IRQ handler");
-
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
         let seg = SegmentSelector::new(1, Ring::Ring0);
@@ -110,15 +108,24 @@ impl Default for IdtTable {
         idt_set!(table.0, 5, isr_handler5, seg, 0x8E);
         idt_set!(table.0, 6, isr_handler6, seg, 0x8E);
         idt_set!(table.0, 7, isr_handler7, seg, 0x8E);
-        idt_set!(table.0, 8, isr_handler8, seg, 0x8E);
+        // For double-faults, we use the _early handler to abort in any case:
+        idt_set!(table.0, 8, isr_handler_early8, seg, 0x8E);
         idt_set!(table.0, 9, isr_handler9, seg, 0x8E);
         idt_set!(table.0, 10, isr_handler10, seg, 0x8E);
         idt_set!(table.0, 11, isr_handler11, seg, 0x8E);
         idt_set!(table.0, 12, isr_handler12, seg, 0x8E);
         idt_set!(table.0, 13, isr_handler13, seg, 0x8E);
         idt_set!(table.0, 14, isr_handler14, seg, 0x8E);
-        idt_set!(table.0, 15, isr_handler15, seg, 0x8E);
 
+        idt_set!(table.0, 16, isr_handler16, seg, 0x8E);
+        idt_set!(table.0, 17, isr_handler17, seg, 0x8E);
+        // For machine-check exceptions, we use the _early handler to abort in any case:
+        idt_set!(table.0, 18, isr_handler_early18, seg, 0x8E);
+        idt_set!(table.0, 19, isr_handler19, seg, 0x8E);
+        idt_set!(table.0, 20, isr_handler20, seg, 0x8E);
+        idt_set!(table.0, 30, isr_handler30, seg, 0x8E);
+
+        // PIC interrupts:
         idt_set!(table.0, 32, isr_handler32, seg, 0x8E);
         idt_set!(table.0, 33, isr_handler33, seg, 0x8E);
         idt_set!(table.0, 34, isr_handler34, seg, 0x8E);
@@ -141,6 +148,39 @@ impl Default for IdtTable {
 }
 
 impl IdtTable {
+    /// Create a very simple IDT table that always ends up in
+    /// `handle_generic_exception_early` which then aborts.
+    fn early() -> IdtTable {
+        let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
+
+        let seg = SegmentSelector::new(1, Ring::Ring0);
+        idt_set!(table.0, 0, isr_handler_early0, seg, 0x8E);
+        idt_set!(table.0, 1, isr_handler_early1, seg, 0x8E);
+        idt_set!(table.0, 2, isr_handler_early2, seg, 0x8E);
+        idt_set!(table.0, 3, isr_handler_early3, seg, 0x8E);
+        idt_set!(table.0, 4, isr_handler_early4, seg, 0x8E);
+        idt_set!(table.0, 5, isr_handler_early5, seg, 0x8E);
+        idt_set!(table.0, 6, isr_handler_early6, seg, 0x8E);
+        idt_set!(table.0, 7, isr_handler_early7, seg, 0x8E);
+        idt_set!(table.0, 8, isr_handler_early8, seg, 0x8E);
+        idt_set!(table.0, 9, isr_handler_early9, seg, 0x8E);
+        idt_set!(table.0, 10, isr_handler_early10, seg, 0x8E);
+        idt_set!(table.0, 11, isr_handler_early11, seg, 0x8E);
+        idt_set!(table.0, 12, isr_handler_early12, seg, 0x8E);
+        idt_set!(table.0, 13, isr_handler_early13, seg, 0x8E);
+        idt_set!(table.0, 14, isr_handler_early14, seg, 0x8E);
+
+        idt_set!(table.0, 16, isr_handler_early16, seg, 0x8E);
+        idt_set!(table.0, 17, isr_handler_early17, seg, 0x8E);
+        // For machine-check exceptions, we use the _early handler to abort in any case:
+        idt_set!(table.0, 18, isr_handler_early18, seg, 0x8E);
+        idt_set!(table.0, 19, isr_handler_early19, seg, 0x8E);
+        idt_set!(table.0, 20, isr_handler_early20, seg, 0x8E);
+        idt_set!(table.0, 30, isr_handler_early30, seg, 0x8E);
+
+        table
+    }
+
     /// Create a new IdtTable (with default entries).
     fn new() -> IdtTable {
         Default::default()
@@ -158,9 +198,9 @@ impl IdtTable {
 ///
 /// With this done we should be able to catch basic pfaults and gpfaults.
 pub unsafe fn setup_early_idt() {
-    DEFAULT_IDT = IdtTable::new();
+    DEFAULT_IDT = IdtTable::early();
     DEFAULT_IDT.install();
-    trace!("IDT table initialized.");
+    trace!("Early IDT table initialized.");
 }
 
 lazy_static! {
@@ -195,7 +235,6 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
 }
 
 unsafe fn pf_handler(a: &ExceptionArguments) {
-    use x86::irq::PageFaultError;
     sprintln!("[IRQ] Page Fault");
     let err = PageFaultError::from_bits_truncate(a.exception as u32);
     sprintln!("{}", err);
@@ -321,6 +360,37 @@ impl fmt::Debug for ExceptionArguments {
 
 fn kcb_resume_handle(kcb: &crate::kcb::Kcb) -> ResumeHandle {
     ResumeHandle::new_restore(kcb.get_save_area_ptr())
+}
+
+/// Handler for all exceptions that happen early
+/// during the initialization (i.e., before we have a KCB).
+///
+/// For early execptions we use different assembly bootstrap wrappers
+/// that don't do `swapgs` to get a KCB reference
+/// or save the context (because we don't have a KCB yet).
+///
+/// The only thing this is used for is to report as much as possible, and
+/// then exit.
+#[inline(never)]
+#[no_mangle]
+pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
+    sprintln!("[IRQ] Got an exception during kernel initialization:");
+    sprintln!("{:?}", a);
+
+    if a.vector == 0xe {
+        // Don't change the next line without changing the `pfault_early` test:
+        sprintln!("[IRQ] Early Page Fault");
+        let err = PageFaultError::from_bits_truncate(a.exception as u32);
+        sprintln!("{}", err);
+        let fault_addr = unsafe { x86::controlregs::cr2() };
+        // Don't change the next line without changing the `pfault_early` test:
+        sprintln!("Faulting address: {:#x}", fault_addr);
+    } else if a.vector == 13 {
+        // Don't change the next line without changing the `gpfault_early` test:
+        sprintln!("[IRQ] Early General Protection Fault");
+    }
+
+    debug::shutdown(ExitReason::ExceptionDuringInitialization);
 }
 
 /// Rust entry point for exception handling (see isr.S).

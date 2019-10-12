@@ -191,8 +191,6 @@ impl IdtTable {
 
         idt_set!(table.0, 16, isr_handler_early16, 0);
         idt_set!(table.0, 17, isr_handler_early17, 0);
-        // For machine-check exceptions, we use the
-        // _early handler to abort in any case:
         idt_set!(table.0, 18, isr_handler_early18, 0);
         idt_set!(table.0, 19, isr_handler_early19, 0);
         idt_set!(table.0, 20, isr_handler_early20, 0);
@@ -410,16 +408,7 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
         sprintln!("[IRQ] Early General Protection Fault");
     } else if a.vector == 0x8 {
         #[cfg(feature = "test-double-fault")]
-        {
-            // Verify that we're actually using the fault-stack
-            // as part of the test
-            let (low, high) = get_kcb().fault_stack_range();
-            let rsp = x86::current::registers::rsp();
-            debug_assert!(
-                rsp >= low && rsp <= high,
-                "We're not using the `unrecoverable_fault_stack`."
-            );
-        }
+        debug::assert_being_on_fault_stack();
 
         // Don't change the next line without changing the `double_fault` test:
         sprintln!("[IRQ] Double Fault");

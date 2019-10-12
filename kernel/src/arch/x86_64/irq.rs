@@ -37,7 +37,7 @@ use x86::apic::ApicControl;
 use x86::bits64::paging::VAddr;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
-use x86::irq::{self, PageFaultError};
+use x86::irq::*;
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
@@ -221,21 +221,39 @@ pub unsafe fn setup_early_idt() {
     trace!("Early IDT table initialized.");
 }
 
-lazy_static! {
-    static ref IRQ_HANDLERS: Mutex<Vec<Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>>> = {
-        let mut vec: Vec<Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>> =
-            Vec::with_capacity(IDT_SIZE);
-        for _ in 0..IDT_SIZE {
-            vec.push(Box::new(|e| unsafe { unhandled_irq(e) }));
-        }
-        Mutex::new(vec)
-    };
+/// Arguments as provided by the ISR generic call handler (see isr.S).
+/// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
+#[repr(C, packed)]
+pub struct ExceptionArguments {
+    vector: u64,
+    exception: u64,
+    rip: u64,
+    cs: u64,
+    rflags: u64,
+    rsp: u64,
+    ss: u64,
 }
 
+impl fmt::Debug for ExceptionArguments {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            write!(
+                f,
+                "ExceptionArguments {{ vec = 0x{:x} exception = 0x{:x} rip = 0x{:x}, cs = 0x{:x} rflags = 0x{:x} rsp = 0x{:x} ss = 0x{:x} }}",
+                self.vector, self.exception, self.rip, self.cs, self.rflags, self.rsp, self.ss
+            )
+        }
+    }
+}
+
+/// Handler for a vector that we're not expecting.
+///
+/// TODO: Right now we terminate kernel.
+/// Should log error and resume.
 unsafe fn unhandled_irq(a: &ExceptionArguments) {
     sprint!("\n[IRQ] UNHANDLED:");
     if a.vector < 16 {
-        let desc = &irq::EXCEPTIONS[a.vector as usize];
+        let desc = &EXCEPTIONS[a.vector as usize];
         sprintln!(" {}", desc);
     } else {
         sprintln!(" dev vector {}", a.vector);
@@ -252,6 +270,10 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::UnhandledInterrupt);
 }
 
+/// Handler for unexpected page-faults.
+///
+/// TODO: Right now we terminate kernel.
+/// Should abort process and resume.
 unsafe fn pf_handler(a: &ExceptionArguments) {
     sprintln!("[IRQ] Page Fault");
     let err = PageFaultError::from_bits_truncate(a.exception as u32);
@@ -308,8 +330,12 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::PageFault);
 }
 
+/// Handler for a debug exception.
+///
+/// The default behavior right now is just to print a warning and resume
+/// execution in user-space.
 unsafe fn dbg_handler(a: &ExceptionArguments) {
-    let desc = &irq::EXCEPTIONS[a.vector as usize];
+    let desc = &EXCEPTIONS[a.vector as usize];
     warn!("Got debug interrupt {}", desc.source);
 
     let kcb = crate::kcb::get_kcb();
@@ -317,8 +343,12 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     r.resume()
 }
 
+/// Handler for a general protection exception.
+///
+/// TODO: Right now we terminate kernel.
+/// Should abort process and resume.
 unsafe fn gp_handler(a: &ExceptionArguments) {
-    let desc = &irq::EXCEPTIONS[a.vector as usize];
+    let desc = &EXCEPTIONS[a.vector as usize];
     sprint!("\n[IRQ] GENERAL PROTECTION FAULT: ");
     sprintln!("From {}", desc.source);
 
@@ -351,40 +381,15 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
 
-/// Arguments as provided by the ISR generic call handler (see isr.S).
-/// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
-#[repr(C, packed)]
-pub struct ExceptionArguments {
-    vector: u64,
-    exception: u64,
-    rip: u64,
-    cs: u64,
-    rflags: u64,
-    rsp: u64,
-    ss: u64,
-}
-
-impl fmt::Debug for ExceptionArguments {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            write!(
-                f,
-                "ExceptionArguments {{ vec = 0x{:x} exception = 0x{:x} rip = 0x{:x}, cs = 0x{:x} rflags = 0x{:x} rsp = 0x{:x} ss = 0x{:x} }}",
-                self.vector, self.exception, self.rip, self.cs, self.rflags, self.rsp, self.ss
-            )
-        }
-    }
-}
-
 fn kcb_resume_handle(kcb: &crate::kcb::Kcb) -> ResumeHandle {
     ResumeHandle::new_restore(kcb.get_save_area_ptr())
 }
 
-/// Handler for all exceptions that happen early
-/// during the initialization (i.e., before we have a KCB).
+/// Handler for all exceptions that happen early during the initialization
+/// (i.e., before we have a KCB) or are unrecoverable errors.
 ///
-/// For early execptions we use different assembly bootstrap wrappers
-/// that don't do `swapgs` to get a KCB reference
+/// For these execptions we use different assembly bootstrap wrappers
+/// that don't assume `gs` has a KCB reference
 /// or save the context (because we don't have a KCB yet).
 ///
 /// The only thing this is used for is to report as much as possible, and
@@ -395,27 +400,45 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     sprintln!("[IRQ] Got an exception during kernel initialization:");
     sprintln!("{:?}", a);
 
-    if a.vector == 0xe {
-        // Don't change the next line without changing the `pfault_early` test:
-        sprintln!("[IRQ] Early Page Fault");
-        let err = PageFaultError::from_bits_truncate(a.exception as u32);
-        sprintln!("{}", err);
-        let fault_addr = unsafe { x86::controlregs::cr2() };
-        // Don't change the next line without changing the `pfault_early` test:
-        sprintln!("Faulting address: {:#x}", fault_addr);
-    } else if a.vector == 13 {
-        // Don't change the next line without changing the `gpfault_early` test:
-        sprintln!("[IRQ] Early General Protection Fault");
-    } else if a.vector == 0x8 {
-        #[cfg(feature = "test-double-fault")]
-        debug::assert_being_on_fault_stack();
+    match (a.vector as u8) {
+        GENERAL_PROTECTION_FAULT_VECTOR => {
+            // Don't change the next line without changing the `gpfault_early` test:
+            sprintln!("[IRQ] Early General Protection Fault");
+            debug::shutdown(ExitReason::ExceptionDuringInitialization);
+        }
+        PAGE_FAULT_VECTOR => {
+            // Don't change the next line without changing the `pfault_early` test:
+            sprintln!("[IRQ] Early Page Fault");
+            let err = PageFaultError::from_bits_truncate(a.exception as u32);
+            sprintln!("{}", err);
+            let fault_addr = unsafe { x86::controlregs::cr2() };
+            // Don't change the next line without changing the `pfault_early` test:
+            sprintln!("Faulting address: {:#x}", fault_addr);
+            debug::shutdown(ExitReason::ExceptionDuringInitialization);
+        }
+        DOUBLE_FAULT_VECTOR => {
+            #[cfg(feature = "test-double-fault")]
+            debug::assert_being_on_fault_stack();
 
-        // Don't change the next line without changing the `double_fault` test:
-        sprintln!("[IRQ] Double Fault");
-        debug::shutdown(ExitReason::UnrecoverableError);
-    }
-
-    debug::shutdown(ExitReason::ExceptionDuringInitialization);
+            // Don't change the next line without changing the `double_fault` test:
+            sprintln!("[IRQ] Double Fault");
+            debug::shutdown(ExitReason::UnrecoverableError);
+        }
+        MACHINE_CHECK_VECTOR => {
+            sprintln!("[IRQ] Machine Check Exception");
+            debug::shutdown(ExitReason::UnrecoverableError);
+        }
+        0...31 => {
+            sprintln!("[IRQ] Early Unexpected Exception");
+            let desc = &EXCEPTIONS[a.vector as usize];
+            sprintln!("{}", desc);
+            debug::shutdown(ExitReason::ExceptionDuringInitialization);
+        }
+        x => {
+            sprintln!("[IRQ] Early Unexpected Device Interrupt: {}", x);
+            debug::shutdown(ExitReason::ExceptionDuringInitialization);
+        }
+    };
 }
 
 /// Rust entry point for exception handling (see isr.S).
@@ -474,9 +497,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } // make sure we drop the KCB object here
 
         // Shortcut to handle protection and page faults
-        // that lock and IRQ_HANDLERS thing requires a bit
-        // too much machinery and is only set-up late in initialization
-        // and unfortunately! sometimes things break early on...
         if a.vector == 0xd {
             gp_handler(&a);
         } else if a.vector == 0xe {
@@ -485,9 +505,9 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             dbg_handler(&a);
         }
 
-        info!("handle_generic_exception {:?}", a);
-        let vec_handlers = IRQ_HANDLERS.lock();
-        (*vec_handlers)[a.vector as usize](&a);
+        //info!("handle_generic_exception {:?}", a);
+        //let vec_handlers = IRQ_HANDLERS.lock();
+        //(*vec_handlers)[a.vector as usize](&a);
     }
 
     unreachable!("Should not come here")
@@ -504,8 +524,8 @@ pub unsafe fn register_handler(
     }
 
     info!("register irq handler for vector {}", vector);
-    let mut handlers = IRQ_HANDLERS.lock();
-    handlers[vector] = handler;
+    //let mut handlers = IRQ_HANDLERS.lock();
+    //handlers[vector] = handler;
 }
 
 /// Establishes a route for a GSI on the IOAPIC.
@@ -575,12 +595,12 @@ fn acknowledge() {
 
 pub fn enable() {
     unsafe {
-        irq::enable();
+        x86::irq::enable();
     }
 }
 
 pub fn disable() {
     unsafe {
-        irq::disable();
+        x86::irq::disable();
     }
 }

@@ -411,6 +411,8 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     } else if a.vector == 0x8 {
         #[cfg(feature = "test-double-fault")]
         {
+            // Verify that we're actually using the fault-stack
+            // as part of the test
             let (low, high) = get_kcb().fault_stack_range();
             let rsp = x86::current::registers::rsp();
             debug_assert!(

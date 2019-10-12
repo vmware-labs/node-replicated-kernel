@@ -115,3 +115,15 @@ pub fn cause_double_fault() {
         x86::int!(0x8);
     }
 }
+
+/// Verify that we're actually using the fault-stack
+/// as part of the test
+#[cfg(feature = "test-double-fault")]
+pub fn assert_being_on_fault_stack() {
+    let (low, high) = super::kcb::get_kcb().fault_stack_range();
+    let rsp = x86::current::registers::rsp();
+    debug_assert!(
+        rsp >= low && rsp <= high,
+        "We're not using the `unrecoverable_fault_stack`."
+    );
+}

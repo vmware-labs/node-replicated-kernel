@@ -67,6 +67,8 @@ test-gpfault-early = ["bsp-only"]
 test-pfault = ["integration-test", "bsp-only"]
 # gpfault: test general protection fault handler
 test-gpfault = ["integration-test", "bsp-only"]
+# double_fault: test double fault handler
+test-double-fault = ["bsp-only"]
 # alloc: test memory allocation
 test-alloc = ["integration-test", "bsp-only"]
 # sse: test SIMD register are usable

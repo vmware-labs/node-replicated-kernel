@@ -489,6 +489,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // return to _start.
     core::mem::forget(kcb);
 
+    #[cfg(feature = "test-double-fault")]
+    debug::cause_double_fault();
+
     // Print APIC information
     {
         let apic = kcb::get_kcb().apic();

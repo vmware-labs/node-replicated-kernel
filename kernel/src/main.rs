@@ -165,6 +165,7 @@ pub enum ExitReason {
     PageFault = 6,
     UserSpaceError = 7,
     ExceptionDuringInitialization = 8,
+    UnrecoverableError = 9,
 }
 
 /// Kernel entry-point

@@ -69,12 +69,12 @@ pub struct GdtTable {
 
 impl GdtTable {
     #[allow(dead_code)]
-    const NULL_INDEX: usize = 0;
-    const CS_KERNEL_INDEX: usize = 1;
-    const SS_KERNEL_INDEX: usize = 2;
-    const CS_USER_INDEX: usize = 3;
-    const SS_USER_INDEX: usize = 4;
-    const TSS_INDEX: usize = 5;
+    pub const NULL_INDEX: usize = 0;
+    pub const CS_KERNEL_INDEX: usize = 1;
+    pub const SS_KERNEL_INDEX: usize = 2;
+    pub const CS_USER_INDEX: usize = 3;
+    pub const SS_USER_INDEX: usize = 4;
+    pub const TSS_INDEX: usize = 5;
 
     /// Creates a new GdtTable with a provided TaskStateSegment.
     ///

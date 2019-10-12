@@ -35,6 +35,8 @@ enum ExitStatus {
     UnexpectedUserSpaceExit,
     /// Exception happened during kernel initialization.
     ExceptionDuringInitialization,
+    /// An unrecoverable error happened (double-fault etc).
+    UnrecoverableError,
     /// Kernel exited with unknown error status... Update the script.
     Unknown(i8),
 }
@@ -51,6 +53,7 @@ impl From<i8> for ExitStatus {
             6 => ExitStatus::PageFault,
             7 => ExitStatus::UnexpectedUserSpaceExit,
             8 => ExitStatus::ExceptionDuringInitialization,
+            9 => ExitStatus::UnrecoverableError,
             _ => ExitStatus::Unknown(exit_code),
         }
     }
@@ -76,6 +79,7 @@ impl Display for ExitStatus {
             ExitStatus::ExceptionDuringInitialization => {
                 "Got an interrupt/exception during kernel initialization"
             }
+            ExitStatus::UnrecoverableError => "An unrecoverable error happened (double-fault etc).",
             ExitStatus::Unknown(_) => {
                 "Unknown: Kernel exited with unknown error status... Update the code!"
             }
@@ -314,7 +318,7 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
         }
         Err(e) => {
             log_qemu_out(args, output);
-            panic!("Qemu testing failed");
+            panic!("Qemu testing failed: {}", e);
         }
         e => {
             log_qemu_out(args, output);
@@ -502,6 +506,25 @@ fn gpfault() {
         qemu_run(),
         output,
     );
+}
+
+/// Make sure the double-fault handler works as expected.
+///
+/// Also the test verifies that we use a separate stack for
+/// faults that can always happen unexpected.
+#[test]
+fn double_fault() {
+    let cmdline = RunnerArgs::new("test-double-fault").qemu_arg("-d int,cpu_reset");
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        p.exp_string("[IRQ] Double Fault")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_exit(ExitStatus::UnrecoverableError, &cmdline, qemu_run(), output);
 }
 
 /// Make sure we can do kernel memory allocations.

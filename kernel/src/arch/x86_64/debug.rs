@@ -108,3 +108,10 @@ pub fn cause_gpfault() {
         load_ss(SegmentSelector::new(99, x86::Ring::Ring3));
     }
 }
+
+#[cfg(feature = "test-double-fault")]
+pub fn cause_double_fault() {
+    unsafe {
+        x86::int!(0x8);
+    }
+}

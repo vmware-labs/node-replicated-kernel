@@ -170,10 +170,10 @@ impl Kcb {
         init_kcb(self);
     }
 
-    pub fn set_interrupt_stacks(&mut self, stack: OwnedStack, fault_stack: OwnedStack) {
+    pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
         // Add the stack-top to the TSS so the CPU ends up switching
         // to this stack on an interrupt
-        self.tss.set_rsp(x86::Ring::Ring0, stack.base() as u64);
+        self.tss.set_rsp(x86::Ring::Ring0, ex_stack.base() as u64);
         // Prepare ist[0] in tss for the double-fault stack
         self.tss.set_ist(0, fault_stack.base() as u64);
 
@@ -183,7 +183,7 @@ impl Kcb {
         // interrupts won't work.
         self.gdt = GdtTable::new(&self.tss);
 
-        self.interrupt_stack = Some(stack);
+        self.interrupt_stack = Some(ex_stack);
         self.unrecoverable_fault_stack = Some(fault_stack);
     }
 
@@ -230,6 +230,18 @@ impl Kcb {
         );
 
         p
+    }
+
+    #[cfg(feature = "test-double-fault")]
+    pub fn fault_stack_range(&self) -> (u64, u64) {
+        (
+            self.unrecoverable_fault_stack
+                .as_ref()
+                .map_or(0, |s| s.limit() as u64),
+            self.unrecoverable_fault_stack
+                .as_ref()
+                .map_or(0, |s| s.base() as u64),
+        )
     }
 
     pub fn current_process(&self) -> RefMut<Option<Box<Process>>> {

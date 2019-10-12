@@ -1,5 +1,6 @@
 //! Functionality to configure and deal with interrupts.
 //!
+//!
 //! # Note on legacy support
 //! We basically only support xAPIC mode, but we still receive e.g. serial
 //! interrupts that are considered legacy. These have to be mapped to
@@ -23,6 +24,9 @@
 //! within the limits of the interrupt inputs defined by the I/O APIC structures.
 //! For more information on hardware resource configuration see Section 6,
 //! “Configuration.”
+//!
+//! # See also
+//!  - 6.10 INTERRUPT DESCRIPTOR TABLE (IDT) in the Intel SDM vol. 3
 
 use core::fmt;
 
@@ -46,6 +50,7 @@ use crate::panic::{backtrace, backtrace_from};
 use crate::ExitReason;
 
 use super::debug;
+use super::gdt::GdtTable;
 use super::kcb::get_kcb;
 use super::process::ResumeHandle;
 
@@ -55,17 +60,37 @@ use super::process::ResumeHandle;
 /// in `isr.S` that is the entry point for the given interrupt `num`
 /// then continues to store a descriptor for it in the `idt_table`.
 ///
+/// Everything is declared as interrupt gates for now. Trap and Interrupt gates are similar,
+/// and their descriptors are structurally the same, they differ only in the "type" field.
+/// The difference is that for interrupt gates, interrupts are automatically disabled upon entry
+/// and re-enabled upon IRET which restores the saved RFLAGS.
+///
+/// In our code we currently don't use IRET but rather SYSRET and we reset the RFLAGs manually.
+///
 /// # Note
 /// See also `isr.S`
 macro_rules! idt_set {
-    ($idt_table:expr, $num:expr, $f:ident, $sel:expr, $flags:expr) => {{
+    ($idt_table:expr, $num:expr, $f:ident, $ist:expr) => {{
         extern "C" {
             #[no_mangle]
             fn $f();
         }
 
-        $idt_table[$num] = DescriptorBuilder::interrupt_descriptor($sel, $f as u64)
+        // We are changing to the kernel code segment in ring 0:
+        let seg = SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0);
+
+        // Build an interrupt descriptor that switches to
+        //
+        // `f` points to external assembly functions like `isr_handlerX`.
+        //
+        // `dpl` is set to Ring3 so we allow interrupts from everywhere.
+        //
+        // $ist is normally set to 0, which means we use the interrupt_stack from the kcb.
+        // $ist is set to 1 for double-faults and other severe exceptions
+        // to use the `unrecoverable_fault_stack` from the kcb
+        $idt_table[$num] = DescriptorBuilder::interrupt_descriptor(seg, $f as u64)
             .dpl(Ring::Ring3)
+            .ist($ist)
             .present()
             .finish();
     }};
@@ -87,61 +112,56 @@ pub struct IdtTable([Descriptor64; IDT_SIZE]);
 /// The default for an IdtTable.
 impl Default for IdtTable {
     /// Initializes the given IdtTable by populating it with external
-    /// IRQ handler functions declares in `isr.S`.
+    /// IRQ handler functions as declared by `isr.S`.
     ///
-    /// # Notes
-    /// Everything is declared as interrupt gates for now. Trap and Interrupt gates are similar,
-    /// and their descriptors are structurally the same, they differ only in the "type" field.
-    /// The difference is that for interrupt gates, interrupts are automatically disabled upon entry
-    /// and re-enabled upon IRET which restores the saved RFLAGS.
-    ///
-    /// In our code we currently don't  use IRET but rather SYSRET and we reset the RFLAGs manually.
     fn default() -> Self {
+        // Our IdtTable starts out with 256 'NULL' descriptors
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
-        let seg = SegmentSelector::new(1, Ring::Ring0);
-        idt_set!(table.0, 0, isr_handler0, seg, 0x8E);
-        idt_set!(table.0, 1, isr_handler1, seg, 0x8E);
-        idt_set!(table.0, 2, isr_handler2, seg, 0x8E);
-        idt_set!(table.0, 3, isr_handler3, seg, 0x8E);
-        idt_set!(table.0, 4, isr_handler4, seg, 0x8E);
-        idt_set!(table.0, 5, isr_handler5, seg, 0x8E);
-        idt_set!(table.0, 6, isr_handler6, seg, 0x8E);
-        idt_set!(table.0, 7, isr_handler7, seg, 0x8E);
-        // For double-faults, we use the _early handler to abort in any case:
-        idt_set!(table.0, 8, isr_handler_early8, seg, 0x8E);
-        idt_set!(table.0, 9, isr_handler9, seg, 0x8E);
-        idt_set!(table.0, 10, isr_handler10, seg, 0x8E);
-        idt_set!(table.0, 11, isr_handler11, seg, 0x8E);
-        idt_set!(table.0, 12, isr_handler12, seg, 0x8E);
-        idt_set!(table.0, 13, isr_handler13, seg, 0x8E);
-        idt_set!(table.0, 14, isr_handler14, seg, 0x8E);
+        idt_set!(table.0, 0, isr_handler0, 0);
+        idt_set!(table.0, 1, isr_handler1, 0);
+        idt_set!(table.0, 2, isr_handler2, 0);
+        idt_set!(table.0, 3, isr_handler3, 0);
+        idt_set!(table.0, 4, isr_handler4, 0);
+        idt_set!(table.0, 5, isr_handler5, 0);
+        idt_set!(table.0, 6, isr_handler6, 0);
+        idt_set!(table.0, 7, isr_handler7, 0);
+        // For double-faults, we use the
+        // _early handler to abort in any case:
+        idt_set!(table.0, 8, isr_handler_early8, 1);
+        idt_set!(table.0, 9, isr_handler9, 0);
+        idt_set!(table.0, 10, isr_handler10, 0);
+        idt_set!(table.0, 11, isr_handler11, 0);
+        idt_set!(table.0, 12, isr_handler12, 0);
+        idt_set!(table.0, 13, isr_handler13, 0);
+        idt_set!(table.0, 14, isr_handler14, 0);
 
-        idt_set!(table.0, 16, isr_handler16, seg, 0x8E);
-        idt_set!(table.0, 17, isr_handler17, seg, 0x8E);
-        // For machine-check exceptions, we use the _early handler to abort in any case:
-        idt_set!(table.0, 18, isr_handler_early18, seg, 0x8E);
-        idt_set!(table.0, 19, isr_handler19, seg, 0x8E);
-        idt_set!(table.0, 20, isr_handler20, seg, 0x8E);
-        idt_set!(table.0, 30, isr_handler30, seg, 0x8E);
+        idt_set!(table.0, 16, isr_handler16, 0);
+        idt_set!(table.0, 17, isr_handler17, 0);
+        // For machine-check exceptions, we use the
+        // _early handler to abort in any case:
+        idt_set!(table.0, 18, isr_handler_early18, 1);
+        idt_set!(table.0, 19, isr_handler19, 0);
+        idt_set!(table.0, 20, isr_handler20, 0);
+        idt_set!(table.0, 30, isr_handler30, 0);
 
         // PIC interrupts:
-        idt_set!(table.0, 32, isr_handler32, seg, 0x8E);
-        idt_set!(table.0, 33, isr_handler33, seg, 0x8E);
-        idt_set!(table.0, 34, isr_handler34, seg, 0x8E);
-        idt_set!(table.0, 35, isr_handler35, seg, 0x8E);
-        idt_set!(table.0, 36, isr_handler36, seg, 0x8E);
-        idt_set!(table.0, 37, isr_handler37, seg, 0x8E);
-        idt_set!(table.0, 38, isr_handler38, seg, 0x8E);
-        idt_set!(table.0, 39, isr_handler39, seg, 0x8E);
-        idt_set!(table.0, 40, isr_handler40, seg, 0x8E);
-        idt_set!(table.0, 41, isr_handler41, seg, 0x8E);
-        idt_set!(table.0, 42, isr_handler42, seg, 0x8E);
-        idt_set!(table.0, 43, isr_handler43, seg, 0x8E);
-        idt_set!(table.0, 44, isr_handler44, seg, 0x8E);
-        idt_set!(table.0, 45, isr_handler45, seg, 0x8E);
-        idt_set!(table.0, 46, isr_handler46, seg, 0x8E);
-        idt_set!(table.0, 47, isr_handler47, seg, 0x8E);
+        idt_set!(table.0, 32, isr_handler32, 0);
+        idt_set!(table.0, 33, isr_handler33, 0);
+        idt_set!(table.0, 34, isr_handler34, 0);
+        idt_set!(table.0, 35, isr_handler35, 0);
+        idt_set!(table.0, 36, isr_handler36, 0);
+        idt_set!(table.0, 37, isr_handler37, 0);
+        idt_set!(table.0, 38, isr_handler38, 0);
+        idt_set!(table.0, 39, isr_handler39, 0);
+        idt_set!(table.0, 40, isr_handler40, 0);
+        idt_set!(table.0, 41, isr_handler41, 0);
+        idt_set!(table.0, 42, isr_handler42, 0);
+        idt_set!(table.0, 43, isr_handler43, 0);
+        idt_set!(table.0, 44, isr_handler44, 0);
+        idt_set!(table.0, 45, isr_handler45, 0);
+        idt_set!(table.0, 46, isr_handler46, 0);
+        idt_set!(table.0, 47, isr_handler47, 0);
 
         table
     }
@@ -153,30 +173,30 @@ impl IdtTable {
     fn early() -> IdtTable {
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
-        let seg = SegmentSelector::new(1, Ring::Ring0);
-        idt_set!(table.0, 0, isr_handler_early0, seg, 0x8E);
-        idt_set!(table.0, 1, isr_handler_early1, seg, 0x8E);
-        idt_set!(table.0, 2, isr_handler_early2, seg, 0x8E);
-        idt_set!(table.0, 3, isr_handler_early3, seg, 0x8E);
-        idt_set!(table.0, 4, isr_handler_early4, seg, 0x8E);
-        idt_set!(table.0, 5, isr_handler_early5, seg, 0x8E);
-        idt_set!(table.0, 6, isr_handler_early6, seg, 0x8E);
-        idt_set!(table.0, 7, isr_handler_early7, seg, 0x8E);
-        idt_set!(table.0, 8, isr_handler_early8, seg, 0x8E);
-        idt_set!(table.0, 9, isr_handler_early9, seg, 0x8E);
-        idt_set!(table.0, 10, isr_handler_early10, seg, 0x8E);
-        idt_set!(table.0, 11, isr_handler_early11, seg, 0x8E);
-        idt_set!(table.0, 12, isr_handler_early12, seg, 0x8E);
-        idt_set!(table.0, 13, isr_handler_early13, seg, 0x8E);
-        idt_set!(table.0, 14, isr_handler_early14, seg, 0x8E);
+        idt_set!(table.0, 0, isr_handler_early0, 0);
+        idt_set!(table.0, 1, isr_handler_early1, 0);
+        idt_set!(table.0, 2, isr_handler_early2, 0);
+        idt_set!(table.0, 3, isr_handler_early3, 0);
+        idt_set!(table.0, 4, isr_handler_early4, 0);
+        idt_set!(table.0, 5, isr_handler_early5, 0);
+        idt_set!(table.0, 6, isr_handler_early6, 0);
+        idt_set!(table.0, 7, isr_handler_early7, 0);
+        idt_set!(table.0, 8, isr_handler_early8, 0);
+        idt_set!(table.0, 9, isr_handler_early9, 0);
+        idt_set!(table.0, 10, isr_handler_early10, 0);
+        idt_set!(table.0, 11, isr_handler_early11, 0);
+        idt_set!(table.0, 12, isr_handler_early12, 0);
+        idt_set!(table.0, 13, isr_handler_early13, 0);
+        idt_set!(table.0, 14, isr_handler_early14, 0);
 
-        idt_set!(table.0, 16, isr_handler_early16, seg, 0x8E);
-        idt_set!(table.0, 17, isr_handler_early17, seg, 0x8E);
-        // For machine-check exceptions, we use the _early handler to abort in any case:
-        idt_set!(table.0, 18, isr_handler_early18, seg, 0x8E);
-        idt_set!(table.0, 19, isr_handler_early19, seg, 0x8E);
-        idt_set!(table.0, 20, isr_handler_early20, seg, 0x8E);
-        idt_set!(table.0, 30, isr_handler_early30, seg, 0x8E);
+        idt_set!(table.0, 16, isr_handler_early16, 0);
+        idt_set!(table.0, 17, isr_handler_early17, 0);
+        // For machine-check exceptions, we use the
+        // _early handler to abort in any case:
+        idt_set!(table.0, 18, isr_handler_early18, 0);
+        idt_set!(table.0, 19, isr_handler_early19, 0);
+        idt_set!(table.0, 20, isr_handler_early20, 0);
+        idt_set!(table.0, 30, isr_handler_early30, 0);
 
         table
     }
@@ -388,6 +408,20 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     } else if a.vector == 13 {
         // Don't change the next line without changing the `gpfault_early` test:
         sprintln!("[IRQ] Early General Protection Fault");
+    } else if a.vector == 0x8 {
+        #[cfg(feature = "test-double-fault")]
+        {
+            let (low, high) = get_kcb().fault_stack_range();
+            let rsp = x86::current::registers::rsp();
+            debug_assert!(
+                rsp >= low && rsp <= high,
+                "We're not using the `unrecoverable_fault_stack`."
+            );
+        }
+
+        // Don't change the next line without changing the `double_fault` test:
+        sprintln!("[IRQ] Double Fault");
+        debug::shutdown(ExitReason::UnrecoverableError);
     }
 
     debug::shutdown(ExitReason::ExceptionDuringInitialization);
@@ -543,7 +577,7 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
 }
 
 fn acknowledge() {
-    let kcb = crate::kcb::get_kcb();
+    let kcb = get_kcb();
     let mut apic = kcb.apic();
     apic.eoi();
 }

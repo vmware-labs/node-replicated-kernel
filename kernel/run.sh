@@ -342,6 +342,9 @@ if [ "${_arg_norun}" != "on" ]; then
 		8)
 		MESSAGE="[FAIL] Unexpected exception during kernel initialization."
 		;;
+		9)
+		MESSAGE="[FAIL] Got unrecoverable error (machine check, double fault)."
+		;;
         *)
         MESSAGE="[FAIL] Kernel exited with unknown error status $BESPIN_EXIT... Update the script!"
         ;;

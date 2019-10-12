@@ -285,6 +285,7 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
             println!("{}", &output);
             println!("===== END QEMU LOG =====");
         }
+
         let quoted_cmd = args
             .as_cmd()
             .into_iter()

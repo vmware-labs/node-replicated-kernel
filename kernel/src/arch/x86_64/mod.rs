@@ -249,7 +249,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let mut kcb = kcb::Kcb::new(args.kernel_args, args.kernel_binary, vspace, fmanager, apic);
 
     kcb::init_kcb(&mut kcb);
-    kcb.set_interrupt_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.set_interrupt_stacks(
+        OwnedStack::new(64 * BASE_PAGE_SIZE),
+        OwnedStack::new(64 * BASE_PAGE_SIZE),
+    );
     kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
     kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
 
@@ -389,6 +392,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     #[cfg(feature = "test-gpfault-early")]
     debug::cause_gpfault();
 
+    // Figure out what this machine supports,
+    // fail if it doesn't have what we need.
+    assert_required_cpu_features();
+
     // Load a new GDT and initialize our IDT
     syscall::enable_fast_syscalls();
 
@@ -407,10 +414,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         );
         mm_iter
     };
-
-    // Figure out what this machine supports,
-    // fail if it doesn't have what we need.
-    assert_required_cpu_features();
 
     // Initializes the serial console.
     // (this is already done in a very basic form by klogger/init_logging())
@@ -453,7 +456,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
     }
-    trace!("added memory regions");
+    trace!("Added memory regions");
 
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
@@ -463,6 +466,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     trace!("find_apic_base {:#x}", base);
     let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
     let mut apic = xapic::XAPICDriver::new(regs);
+    // Attach the driver to the registers:
     apic.attach();
 
     // Construct the Kcb so we can access these things later on in the code
@@ -471,7 +475,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     debug!("Memory allocation should work at this point...");
 
     // Let's finish KCB initialization (easier as we have alloc now):
-    kcb.set_interrupt_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.set_interrupt_stacks(
+        OwnedStack::new(64 * BASE_PAGE_SIZE),
+        OwnedStack::new(64 * BASE_PAGE_SIZE),
+    );
     kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
     kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     kcb.finalize();
@@ -482,10 +489,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // return to _start.
     core::mem::forget(kcb);
 
-    // Set up interrupts (which needs Box)
-    irq::init_irq_handlers();
-
-    // Attach the driver to the registers:
+    // Print APIC information
     {
         let apic = kcb::get_kcb().apic();
         info!(
@@ -502,9 +506,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         assert!(r.is_ok());
     }
 
-    // Needs ACPI and alloc
+    // Make sure we have a topology, needs ACPI and alloc:
     lazy_static::initialize(&topology::MACHINE_TOPOLOGY);
-    //info!("{:#?}", *topology::MACHINE_TOPOLOGY);
+    trace!("{:#?}", *topology::MACHINE_TOPOLOGY);
 
     // Bring up the rest of the system
     #[cfg(not(feature = "bsp-only"))]
@@ -514,6 +518,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // the arch-independent part:
     xmain();
 
-    debug!("Returned from main, shutting down...");
+    error!("Returned from main, shutting down...");
     debug::shutdown(ExitReason::ReturnFromMain);
 }

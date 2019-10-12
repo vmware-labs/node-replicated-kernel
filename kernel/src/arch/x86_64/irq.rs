@@ -187,14 +187,14 @@ impl IdtTable {
     }
 
     /// Install the IdtTable in the current core.
-    unsafe fn install(&self) {
+    pub unsafe fn install(&self) {
         let idtptr = dtables::DescriptorTablePointer::new_from_slice(&self.0);
         dtables::lidt(&idtptr);
         trace!("IDT set to {:p}", &idtptr);
     }
 }
 
-/// Initializes and loads the IDT into the CPU.
+/// Initializes and loads the early IDT into the CPU.
 ///
 /// With this done we should be able to catch basic pfaults and gpfaults.
 pub unsafe fn setup_early_idt() {
@@ -481,16 +481,6 @@ pub unsafe fn register_handler(
     info!("register irq handler for vector {}", vector);
     let mut handlers = IRQ_HANDLERS.lock();
     handlers[vector] = handler;
-}
-
-/// Finishes the initialization of IRQ handlers once we have memory allocation.
-pub fn init_irq_handlers() {
-    lazy_static::initialize(&IRQ_HANDLERS);
-
-    //unsafe {
-    //register_handler(13, Box::new(|e| gp_handler(e)));
-    //register_handler(14, Box::new(|e| pf_handler(e)));
-    //}
 }
 
 /// Establishes a route for a GSI on the IOAPIC.

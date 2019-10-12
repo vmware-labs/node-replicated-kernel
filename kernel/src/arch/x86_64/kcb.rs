@@ -12,6 +12,7 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 use apic::xapic::XAPICDriver;
 
 use super::gdt::GdtTable;
+use super::irq::IdtTable;
 use super::process::Process;
 use super::vspace::VSpace;
 
@@ -104,11 +105,23 @@ pub struct Kcb {
     /// A per-core TSS (task-state)
     tss: TaskStateSegment,
 
+    /// A per-core IDT (interrupt table)
+    idt: IdtTable,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
-    /// The CPU switches to this memory location automatically (see gdt.rs).
+    /// The CPU switches to this memory location automatically for normal interrupts
+    /// (see `set_interrupt_stacks`).
     /// This member should probably not be touched from normal code.
     interrupt_stack: Option<OwnedStack>,
+
+    /// A reliable stack that is used for unrecoverable faults only
+    /// (double-fault, machine-check exception etc.)
+    ///
+    /// The CPU switches to this memory location automatically
+    /// (see `set_interrupt_stacks`).
+    /// This member should probably not be touched from normal code.
+    unrecoverable_fault_stack: Option<OwnedStack>,
 
     /// A handle to the syscall stack memory location.
     ///
@@ -134,10 +147,12 @@ impl Kcb {
             apic: RefCell::new(apic),
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
+            idt: Default::default(),
             // Can't initialize these yet, needs Kcb/pmanager for memory allocations:
             save_area: None,
             interrupt_stack: None,
             syscall_stack: None,
+            unrecoverable_fault_stack: None,
             // We don't have a process initially:
             current_process: RefCell::new(None),
         }
@@ -145,25 +160,31 @@ impl Kcb {
 
     pub fn finalize(&mut self) {
         unsafe {
-            // Switch to our new, private Gdt:
+            // Switch to our new, core-local Gdt and Idt:
             self.gdt.install();
+            self.idt.install();
         }
 
-        // Reloading gdt means we lost the content in `gs` so we set the
-        // kcb again using `wrgsbase`:
+        // Reloading gdt means we lost the content in `gs` so we
+        // also set the kcb again using `wrgsbase`:
         init_kcb(self);
     }
 
-    pub fn set_interrupt_stack(&mut self, stack: OwnedStack) {
+    pub fn set_interrupt_stacks(&mut self, stack: OwnedStack, fault_stack: OwnedStack) {
         // Add the stack-top to the TSS so the CPU ends up switching
         // to this stack on an interrupt
         self.tss.set_rsp(x86::Ring::Ring0, stack.base() as u64);
-        // Link TSS in Gdt
+        // Prepare ist[0] in tss for the double-fault stack
+        self.tss.set_ist(0, fault_stack.base() as u64);
 
+        // Link TSS in Gdt
         // It's important to only construct the GdtTable
-        // after we did `set_rsp` on the TSS, otherwise interrupts won't work.
+        // after we did `set_rsp` on the TSS, otherwise
+        // interrupts won't work.
         self.gdt = GdtTable::new(&self.tss);
+
         self.interrupt_stack = Some(stack);
+        self.unrecoverable_fault_stack = Some(fault_stack);
     }
 
     pub fn set_syscall_stack(&mut self, stack: OwnedStack) {

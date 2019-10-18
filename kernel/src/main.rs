@@ -118,10 +118,10 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             ptr
         } else {
             let kcb = crate::kcb::get_kcb();
-            let mut fmanager = kcb.pmanager();
+            let mut mem_manager = kcb.mem_manager();
+            let f = mem_manager.allocate_frame(layout);
 
-            let f = fmanager.allocate(layout);
-            let ptr = f.map_or(core::ptr::null_mut(), |mut region| {
+            let ptr = f.ok().map_or(core::ptr::null_mut(), |mut region| {
                 region.zero();
                 region.kernel_vaddr().as_mut_ptr()
             });
@@ -138,14 +138,15 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
         } else {
             use arch::memory::{kernel_vaddr_to_paddr, VAddr};
             let kcb = crate::kcb::get_kcb();
-            let mut fmanager = kcb.pmanager();
-            fmanager.deallocate(
-                memory::Frame::new(
-                    kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
-                    layout.size(),
-                ),
-                layout,
+            let mut fmanager = kcb.mem_manager();
+
+            let frame = memory::Frame::new(
+                kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
+                layout.size(),
+                0,
             );
+
+            fmanager.deallocate_frame(frame, layout);
         }
     }
 }
@@ -183,7 +184,7 @@ pub fn xmain() {
     unsafe {
         {
             let mem_mgmt = kcb::get_kcb().pmanager();
-            mem_mgmt.print_info();
+            info!("{:?}", mem_mgmt);
         }
         let new_region: *mut u8 =
             alloc::alloc::alloc(Layout::from_size_align_unchecked(8192, 4096));
@@ -192,7 +193,7 @@ pub fn xmain() {
 
         {
             let mem_mgmt = kcb::get_kcb().pmanager();
-            mem_mgmt.print_info();
+            info!("{:?}", mem_mgmt);
         }
     }
 

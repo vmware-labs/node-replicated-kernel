@@ -1,4 +1,6 @@
+/*
 use core::alloc::Layout;
+
 
 use crate::memory::{Frame, PAddr, PhysicalAllocator, BASE_PAGE_SIZE};
 
@@ -105,3 +107,4 @@ impl FrameAllocator {
         }
     }
 }
+*/

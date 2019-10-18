@@ -559,7 +559,7 @@ pub(crate) fn init() -> Result<(), ACPI_STATUS> {
 
         let ret = AcpiInitializeObjects(full_init);
         assert_eq!(ret, AE_OK);
-        trace!("AcpiInitializeObjects {:?}", ret);
+        //trace!("AcpiInitializeObjects {:?}", ret);
     }
 
     info!("ACPI Initialized");

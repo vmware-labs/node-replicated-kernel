@@ -5,11 +5,10 @@ use core::cell::{Ref, RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
+use apic::xapic::XAPICDriver;
 use x86::current::segmentation::{self, Descriptor64};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
-
-use apic::xapic::XAPICDriver;
 
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
@@ -18,6 +17,8 @@ use super::vspace::VSpace;
 
 use crate::arch::{KernelArgs, Module};
 use crate::memory::buddy::BuddyFrameAllocator;
+use crate::memory::emem::EarlyPhysicalManager;
+use crate::memory::PhysicalAllocator;
 use crate::stack::{OwnedStack, Stack};
 
 /// Try to retrieve the KCB by reading the gs register.
@@ -93,9 +94,6 @@ pub struct Kcb {
     /// The initial VSpace as constructed by the bootloader.
     init_vspace: RefCell<VSpace>,
 
-    /// A handle to the physical memory manager.
-    pmanager: RefCell<BuddyFrameAllocator>,
-
     /// A handle to the core-local interrupt driver.
     apic: RefCell<XAPICDriver>,
 
@@ -107,6 +105,12 @@ pub struct Kcb {
 
     /// A per-core IDT (interrupt table)
     idt: IdtTable,
+
+    /// A handle to the physical memory manager.
+    pmanager: Option<RefCell<BuddyFrameAllocator>>,
+
+    /// A handle to the early memory manager.
+    emanager: RefCell<EarlyPhysicalManager>,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -135,7 +139,7 @@ impl Kcb {
         kernel_args: &'static KernelArgs<[Module; 2]>,
         kernel_binary: &'static [u8],
         init_vspace: VSpace,
-        pmanager: BuddyFrameAllocator,
+        emanager: EarlyPhysicalManager,
         apic: XAPICDriver,
     ) -> Kcb {
         Kcb {
@@ -143,12 +147,13 @@ impl Kcb {
             kernel_args: kernel_args,
             kernel_binary: kernel_binary,
             init_vspace: RefCell::new(init_vspace),
-            pmanager: RefCell::new(pmanager),
+            emanager: RefCell::new(emanager),
             apic: RefCell::new(apic),
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
             idt: Default::default(),
-            // Can't initialize these yet, needs Kcb/pmanager for memory allocations:
+            // Can't initialize these yet, needs Kcb for memory allocations:
+            pmanager: None,
             save_area: None,
             interrupt_stack: None,
             syscall_stack: None,
@@ -158,7 +163,8 @@ impl Kcb {
         }
     }
 
-    pub fn finalize(&mut self) {
+    /// Ties this KCB to the local CPU by setting the KCB's GDT and IDT.
+    pub fn install(&mut self) {
         unsafe {
             // Switch to our new, core-local Gdt and Idt:
             self.gdt.install();
@@ -168,6 +174,10 @@ impl Kcb {
         // Reloading gdt means we lost the content in `gs` so we
         // also set the kcb again using `wrgsbase`:
         init_kcb(self);
+    }
+
+    pub fn set_physical_memory_manager(&mut self, pmanager: BuddyFrameAllocator) {
+        self.pmanager = Some(RefCell::new(pmanager));
     }
 
     pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
@@ -248,8 +258,17 @@ impl Kcb {
         self.current_process.borrow_mut()
     }
 
-    pub fn pmanager(&self) -> RefMut<BuddyFrameAllocator> {
-        self.pmanager.borrow_mut()
+    /// Get a reference to the early memory manager.
+    pub fn emanager(&self) -> RefMut<EarlyPhysicalManager> {
+        self.emanager.borrow_mut()
+    }
+
+    /// Returns a reference to the physical memory manager if set,
+    /// otherwise returns the early physical memory manager.
+    pub fn mem_manager(&self) -> RefMut<dyn PhysicalAllocator> {
+        self.pmanager
+            .as_ref()
+            .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
 
     pub fn apic(&self) -> RefMut<XAPICDriver> {

@@ -80,8 +80,7 @@ macro_rules! idt_set {
         let seg = SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0);
 
         // Build an interrupt descriptor that switches to
-        //
-        // `f` points to external assembly functions like `isr_handlerX`.
+        // `f`, which points to external assembly functions like `isr_handlerX`.
         //
         // `dpl` is set to Ring3 so we allow interrupts from everywhere.
         //
@@ -113,7 +112,6 @@ pub struct IdtTable([Descriptor64; IDT_SIZE]);
 impl Default for IdtTable {
     /// Initializes the given IdtTable by populating it with external
     /// IRQ handler functions as declared by `isr.S`.
-    ///
     fn default() -> Self {
         // Our IdtTable starts out with 256 'NULL' descriptors
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
@@ -221,7 +219,9 @@ pub unsafe fn setup_early_idt() {
     trace!("Early IDT table initialized.");
 }
 
-/// Arguments as provided by the ISR generic call handler (see isr.S).
+/// Arguments as provided by the ISR generic call handler (see `isr.S`).
+///
+/// # See also
 /// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
 #[repr(C, packed)]
 pub struct ExceptionArguments {

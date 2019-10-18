@@ -4,6 +4,7 @@ use core::cell::{RefCell, RefMut};
 use core::ptr;
 
 use crate::memory::buddy::BuddyFrameAllocator;
+use crate::memory::PhysicalAllocator;
 
 static mut KCB: *mut Kcb = ptr::null_mut();
 
@@ -38,6 +39,12 @@ impl Kcb {
 
     pub fn pmanager(&self) -> RefMut<BuddyFrameAllocator> {
         self.pmanager.borrow_mut()
+    }
+
+    /// Returns a reference to the physical memory manager if set,
+    /// otherwise returns the early physical memory manager.
+    pub fn mem_manager(&self) -> RefMut<dyn PhysicalAllocator> {
+        self.pmanager()
     }
 }
 

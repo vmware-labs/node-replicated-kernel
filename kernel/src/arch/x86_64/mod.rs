@@ -1,6 +1,17 @@
 //! Contains initialization code for x86-64 cores.
+//!
 //! The purpose of the arch specific part is to initialize the machine to
-//! a sane environment and then jump to the main() function.
+//! a sane environment and then call the main() function.
+//!
+//! Unfortunately, lots of things have to happen to initialize a machine,
+//! so roughly this file tries to do three things:
+//!
+//! - In `_start` (entry point from bootloader) we process the information
+//!   we got from UEFI, and initialize the first core.
+//! - Set-up system services like ACPI and physical memory management,
+//!   parse the machine topology.
+//! - Boot the rest of the system (see `start_app_core`).
+//!
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 
@@ -10,6 +21,8 @@ use core::slice;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use driverkit::DriverControl;
+
+use smallvec::SmallVec;
 
 use x86::apic::ApicControl;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
@@ -29,7 +42,7 @@ pub mod process;
 pub mod syscall;
 pub mod vspace;
 
-use uefi::table::boot::MemoryType;
+use uefi::table::boot::{MemoryDescriptor, MemoryType};
 
 pub mod acpi;
 mod isr;
@@ -233,9 +246,9 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         irq::setup_early_idt();
     };
 
-    let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();
+    let mut emanager = emem::EarlyPhysicalManager::new(Frame::empty());
     unsafe {
-        fmanager.add_memory(args.mem_region);
+        //fmanager.add_frame(args.mem_region, None);
     }
 
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
@@ -246,7 +259,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let mut apic = xapic::XAPICDriver::new(regs);
     apic.attach();
 
-    let mut kcb = kcb::Kcb::new(args.kernel_args, args.kernel_binary, vspace, fmanager, apic);
+    let mut kcb = kcb::Kcb::new(args.kernel_args, args.kernel_binary, vspace, emanager, apic);
 
     kcb::init_kcb(&mut kcb);
     kcb.set_interrupt_stacks(
@@ -311,8 +324,8 @@ fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs
 
         let k = kcb::get_kcb();
         let mem_region = unsafe {
-            k.pmanager()
-                .allocate(Layout::from_size_align_unchecked(1024 * 1024 * 2, 0x1000))
+            k.mem_manager()
+                .allocate_frame(Layout::from_size_align_unchecked(1024 * 1024 * 2, 0x1000))
                 .unwrap()
         };
 
@@ -350,6 +363,61 @@ fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs
         assert!(initialized.load(Ordering::SeqCst));
         info!("Core {:?} has started", thread.apic_id());
     }
+}
+
+/// Annotate all physical memory frames we got from UEFI with NUMA affinity by
+/// walking through every region `memory_regions` and build subregions
+/// that are constructed with the correct NUMA affinity.
+///
+/// We split frames in `memory_regions` in case they overlap multiple NUMA regions,
+/// and let's hope it all fits in `annotated_regions`.
+///
+/// This really isn't the most efficient algorithm we could've built but we
+/// only run this once and don't expect thousands of NUMA nodes or
+/// memory regions anyways.
+///
+/// # Notes
+/// There are some implicit assumptions here that a memory region always has
+/// just one affinity -- which is also what `topology` assumes.
+fn identify_numa_affinity(
+    memory_regions: &SmallVec<[Frame; 64]>,
+    annotated_regions: &mut SmallVec<[Frame; 64]>,
+) {
+    if topology::MACHINE_TOPOLOGY.num_nodes() > 0 {
+        for orig_frame in memory_regions.iter() {
+            for node in topology::MACHINE_TOPOLOGY.nodes() {
+                // trying to find a NUMA memory affinity that contains the given `orig_frame`
+                for affinity_region in node.memory() {
+                    match affinity_region.contains(orig_frame.base.into(), orig_frame.end().into())
+                    {
+                        (_, mid, _) => {
+                            if mid.0 > 0 {
+                                let mid_paddr = (PAddr::from(mid.0), PAddr::from(mid.1));
+                                let annotated_frame = Frame::from_range(mid_paddr, node.id);
+                                info!("Identified NUMA region for {:?}", annotated_frame);
+                                annotated_regions.push(annotated_frame);
+                            }
+                        }
+                        (_, _, _) => {
+                            /* `orig_frame` does not overlap with this affinity region */
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // We are not running on a NUMA machine,
+        // so we just assume everything as node#0
+        // (and copy from original memory regions):
+        annotated_regions.extend_from_slice(memory_regions.as_slice());
+    }
+
+    // Sanity check our code the sum of total bytes in `annotated_regions`
+    // should be the equal to the sum of bytes in `memory_regions`:
+    assert_eq!(
+        annotated_regions.iter().fold(0, |sum, f| sum + f.size()),
+        memory_regions.iter().fold(0, |sum, f| sum + f.size())
+    );
 }
 
 /// Entry function that is called from UEFI
@@ -430,33 +498,59 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         )
     };
 
-    // Find the physical memory regions available and add them to the physical memory manager
-    let mut fmanager = crate::memory::buddy::BuddyFrameAllocator::new();
-    debug!("Finding RAM regions");
+    // Set up early memory management
+    //
+    // We walk the memory regions given to us by uefi, since this consumes
+    // the UEFI iterator we copy the frames into a `smallvec`.
+    //
+    // Ideally, if this works, we should end up with an EarlyPhysicalManager
+    // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
+    // regions of memory.
+    let mut emanager: Option<emem::EarlyPhysicalManager> = None;
+    let mut memory_regions = SmallVec::<[Frame; 64]>::new();
     for region in mm_iter {
-        trace!("{:?}", region);
         if region.ty == MemoryType::CONVENTIONAL {
-            let base = region.phys_start;
-            let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
+            debug!("Found physical memory region {:?}", region);
+            assert!(
+                memory_regions.len() < memory_regions.capacity(),
+                "Don't overflow memory_region capacity"
+            );
 
-            // TODO BAD: We can only add one region to the buddy allocator, so we need
-            // to pick a big one weee
-            if base > 0x100000 && size > BASE_PAGE_SIZE && region.page_count > 12000 {
-                debug!("region.base = {:#x} region.size = {:#x}", base, size);
-                unsafe {
-                    let f = Frame::new(PAddr::from(base), size);
-                    if fmanager.add_memory(f) {
-                        debug!("Added base={:#x} size={:#x}", base, size);
+            let base: PAddr = PAddr::from(region.phys_start);
+            let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
+            let f = Frame::new(base, size, 0);
+
+            const ONE_MIB: usize = 1 * 1024 * 1024;
+            const TEN_MIB: usize = 10 * 1024 * 1024;
+            if base.as_usize() >= ONE_MIB {
+                if size > TEN_MIB {
+                    // This seems like a good frame for the early allocator on the BSP core.
+                    // We don't have NUMA information yet so we'd hope that on
+                    // a NUMA machine this memory will be on node 0.
+                    // Ideally `mem_iter` is ordered by physical address which would increase
+                    // our chances, but the UEFI spec doesn't guarantee anything :S
+                    let (low, high) = f.split_at(TEN_MIB);
+                    emanager = Some(emem::EarlyPhysicalManager::new(low));
+                    if high.size() >= TEN_MIB {
+                        memory_regions.push(high);
                     } else {
-                        warn!("Unable to add base={:#x} size={:#x}", base, size)
+                        // Lose the `high` frame it's not worth the hassle.
                     }
+                } else {
+                    memory_regions.push(f);
                 }
             } else {
-                debug!("Ignore memory region at {:?}", region);
+                // Ignore all physical memory below 1 MiB
+                // because it's not worth the hassle of dealing with it
+                // Some of the memory here will be used by coreboot, there we just assume
+                // the memory is free for us to use -- so in case someone
+                // wants to change it have a look there first!
             }
         }
     }
-    trace!("Added memory regions");
+    assert!(emanager.is_some());
+    let emanager =
+        emanager.expect("Couldn't build an EarlyPhysicalManager, increase system main memory!");
 
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
@@ -470,7 +564,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     apic.attach();
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, fmanager, apic);
+    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, emanager, apic);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
 
@@ -481,7 +575,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
     kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
     kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
-    kcb.finalize();
+    kcb.install();
 
     // Make sure we don't drop the KCB and anything in it,
     // the kcb is on the init stack and remains allocated on it,
@@ -503,15 +597,29 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         );
     } // Make sure to drop the reference to the APIC again
 
-    // Init ACPI
+    // Initialize the ACPI sub-system (needs alloc)
     {
         let r = acpi::init();
         assert!(r.is_ok());
+        info!("ACPI initialized");
     }
 
-    // Make sure we have a topology, needs ACPI and alloc:
-    lazy_static::initialize(&topology::MACHINE_TOPOLOGY);
-    trace!("{:#?}", *topology::MACHINE_TOPOLOGY);
+    // Initialize the machine topology (needs ACPI and alloc):
+    {
+        lazy_static::initialize(&topology::MACHINE_TOPOLOGY);
+        info!("Topology parsed");
+        trace!("{:#?}", *topology::MACHINE_TOPOLOGY);
+    }
+
+    // Identify NUMA region for physical memory (needs topology)
+    let mut annotated_regions = SmallVec::<[Frame; 64]>::new();
+    identify_numa_affinity(&memory_regions, &mut annotated_regions);
+    // Make sure we don't accidentially use the memory_regions but rather,
+    // use the correctly `annotated_regions` now!
+    drop(memory_regions);
+
+    // Set-up a buddy region allocator for the BSP core/NUMA node 0
+    // (needs annotated memory regions):
 
     // Bring up the rest of the system
     #[cfg(not(feature = "bsp-only"))]

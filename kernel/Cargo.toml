@@ -13,7 +13,7 @@ edition = "2018"
 
 
 [dependencies]
-#test = { path = "../lib/ctest" }
+# Our own dependencies:
 x86 = { path = "../lib/x86" }
 raw-cpuid = { path = "../lib/cpuid" }
 klogger = { path = "../lib/klogger" }
@@ -25,18 +25,21 @@ driverkit = { path = "../lib/driverkit/" }
 lineup = { path = "../lib/lineup", optional = true }
 rawtime = { path = "../lib/rawtime" }
 custom_error = { path = "../lib/custom_error" }
-spin = "0.5.2"
-log = "0.4"
-lazy_static = { version = "1.3", features = ["spin_no_std"] }
-logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
-# Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
-cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
-acpica-sys = { git = "https://github.com/gz/acpica-sys.git" }
-uefi = { version = "0.3.2", features = ["exts"] }
-addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
-kpi = { path = "../lib/kpi" }
 topology = { path = "../lib/topology" }
 node-replication = { path = "../lib/node-replication" }
+kpi = { path = "../lib/kpi" }
+# External libraries we use:
+spin = "0.5.2"
+log = "0.4"
+uefi = { version = "0.3.2", features = ["exts"] }
+smallvec = { version = "0.6.10", default-features = false }
+lazy_static = { version = "1.3", features = ["spin_no_std"] }
+logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
+# Finally some external crates I forked due to issues with the current upstream version:
+cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false } # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
+acpica-sys = { git = "https://github.com/gz/acpica-sys.git" } # Need to upstream fixes
+addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
+
 
 [[bin]]
 name = "bespin"

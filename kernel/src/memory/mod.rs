@@ -1,4 +1,4 @@
-use core::alloc::Layout;
+use core::alloc::{AllocErr, Layout};
 use core::mem::transmute;
 
 use core::fmt;
@@ -6,6 +6,8 @@ use core::fmt;
 use x86::bits64::paging;
 
 pub mod buddy;
+pub mod emem;
+
 mod bump;
 
 pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
@@ -13,45 +15,110 @@ pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
 pub use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE};
 use slabmalloc::{ObjectPage, PageProvider};
 
+pub fn format_size(bytes: usize) -> (f64, &'static str) {
+    if bytes < 1024 {
+        (bytes as f64, "B")
+    } else if bytes < (1024 * 1024) {
+        (bytes as f64 / 1024.0, "KiB")
+    } else if bytes < (1024 * 1024 * 1024) {
+        (bytes as f64 / (1024 * 1024) as f64, "MiB")
+    } else {
+        (bytes as f64 / (1024 * 1024 * 1024) as f64, "GiB")
+    }
+}
+
 pub trait PhysicalAllocator {
-    fn init(&mut self) {}
+    /// Allocates a frame meeting the size and alignment
+    /// guarantees of layout.
+    ///
+    /// If this method returns an Ok(frame), then the frame returned
+    /// will be a frame pointing to a block of storage suitable for
+    /// holding an instance of layout.
+    ///
+    /// The returned block of storage may or may not have its
+    /// contents initialized.
+    ///
+    /// This method allocates at least a multiple of `BASE_PAGE_SIZE`
+    /// so it can result in large amounts of internal fragmentation.
+    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, &'static str>;
 
-    unsafe fn add_memory(&mut self, _region: Frame) -> bool {
-        false
-    }
-
-    unsafe fn allocate(&mut self, _layout: Layout) -> Option<Frame> {
-        None
-    }
-
-    unsafe fn deallocate(&mut self, _frame: Frame, _layout: Layout) {}
-
-    fn print_info(&self) {}
+    /// Give a frame previously allocated using `allocate_frame` back
+    /// to the physical memory allocator.
+    ///
+    /// # Safety
+    ///
+    /// - frame must denote a block of memory currently allocated via this allocator,
+    /// - layout must fit that block of memory,
+    /// - In addition to fitting the block of memory layout,
+    ///   the alignment of the layout must match the alignment
+    ///   used to allocate that block of memory.
+    unsafe fn deallocate_frame(&mut self, frame: Frame, layout: Layout);
 }
 
 /// Physical region of memory.
+///
+/// A frame is always aligned to a page-size.
+/// A frame's size is a multiple of `BASE_PAGE_SIZE`.
+///
+/// # Note on naming
+/// Historically frames refer to physical (base)-pages in OS terminology.
+/// In our case a frame can be a multiple of a page -- it may be more fitting
+/// to call it a memory-block.
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Frame {
     pub base: PAddr,
     pub size: usize,
+    pub affinity: topology::NodeId,
 }
 
 impl Frame {
-    pub const fn new(base: PAddr, size: usize) -> Frame {
+    /// Make a new Frame at `base` with `size`
+    pub const fn const_new(base: PAddr, size: usize, node: topology::NodeId) -> Frame {
         Frame {
             base: base,
             size: size,
+            affinity: 0,
         }
     }
 
-    #[allow(unused)]
-    const fn empty() -> Frame {
+    /// Create a new Frame given a PAddr range (from, to)
+    pub fn from_range(range: (PAddr, PAddr), node: topology::NodeId) -> Frame {
+        assert_eq!(range.0 % BASE_PAGE_SIZE, 0);
+        assert_eq!(range.1 % BASE_PAGE_SIZE, 0);
+        assert!(range.0 < range.1);
+
+        Frame {
+            base: range.0,
+            size: (range.1 - range.0).into(),
+            affinity: node,
+        }
+    }
+
+    /// Make a new Frame at `base` with `size` with affinity `node`.
+    pub fn new(base: PAddr, size: usize, node: topology::NodeId) -> Frame {
+        debug_assert_eq!(base % BASE_PAGE_SIZE, 0);
+        debug_assert_eq!(size % BASE_PAGE_SIZE, 0);
+
+        Frame {
+            base: base,
+            size: size,
+            affinity: node,
+        }
+    }
+
+    /// Construct an empty, zero-length Frame.
+    pub const fn empty() -> Frame {
         Frame {
             base: PAddr::zero(),
             size: 0,
+            affinity: 0,
         }
     }
 
+    /// Represent the Frame as a mutable slice of `T`.
+    ///
+    /// TODO: Bug (should we panic if we don't fit
+    /// T's exactly?)
     unsafe fn as_mut_slice<T>(&mut self) -> Option<&mut [T]> {
         if self.size % core::mem::size_of::<T>() == 0 {
             Some(core::slice::from_raw_parts_mut(
@@ -63,6 +130,21 @@ impl Frame {
         }
     }
 
+    /// Splits a given Frame into two, returns both.
+    pub fn split_at(self, size: usize) -> (Frame, Frame) {
+        assert_eq!(size % BASE_PAGE_SIZE, 0);
+        assert!(size < self.size());
+
+        let low = Frame::new(self.base, size, self.affinity);
+        let high = Frame::new(self.base + size, self.size() - size, self.affinity);
+
+        (low, high)
+    }
+
+    /// Represent the Frame as a slice of `T`.
+    ///
+    /// TODO: Bug (should we panic if we don't fit
+    /// T's exactly?)
     #[allow(unused)]
     unsafe fn as_slice<T>(&self) -> Option<&[T]> {
         if self.size % core::mem::size_of::<T>() == 0 {
@@ -75,6 +157,10 @@ impl Frame {
         }
     }
 
+    /// Fill the page with many `T`'s.
+    ///
+    /// TODO: Think about this, should maybe return uninitialized
+    /// instead?
     unsafe fn fill<T: Copy>(&mut self, pattern: T) -> bool {
         self.as_mut_slice::<T>().map_or(false, |obj| {
             for i in 0..obj.len() {
@@ -94,6 +180,11 @@ impl Frame {
         self.size
     }
 
+    pub fn end(&self) -> PAddr {
+        self.base + self.size
+    }
+
+    /// Zero the frame using `memset`.
     pub unsafe fn zero(&mut self) {
         self.fill(0);
     }
@@ -106,13 +197,16 @@ impl Frame {
 
 impl fmt::Debug for Frame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let (size_formatted, unit) = format_size(self.size);
         write!(
             f,
-            "Frame {{ 0x{:x} -- 0x{:x} (size = {}, pages = {} }}",
+            "Frame {{ 0x{:x} -- 0x{:x} (size = {:.2} {}, pages = {}, node#{} }}",
             self.base,
             self.base + self.size,
-            self.size,
-            self.base_pages()
+            size_formatted,
+            unit,
+            self.base_pages(),
+            self.affinity
         )
     }
 }
@@ -139,29 +233,31 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
     /// Allocate a PML4 table.
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
         let kcb = crate::kcb::get_kcb();
-        let mut fmanager = kcb.pmanager();
+        let mut fmanager = kcb.mem_manager();
         unsafe {
-            let f = fmanager.allocate(
-                Layout::new::<paging::Page>()
-                    .align_to(BASE_PAGE_SIZE)
-                    .unwrap(),
-            );
-            f.map(|frame| {
-                let pml4: &'b mut [paging::PML4Entry; 512] =
-                    transmute(paddr_to_kernel_vaddr(frame.base));
-                pml4
-            })
+            fmanager
+                .allocate_frame(
+                    Layout::new::<paging::Page>()
+                        .align_to(BASE_PAGE_SIZE)
+                        .unwrap(),
+                )
+                .map(|frame| {
+                    let pml4: &'b mut [paging::PML4Entry; 512] =
+                        transmute(paddr_to_kernel_vaddr(frame.base));
+                    pml4
+                })
+                .ok()
         }
     }
 
     /// Allocate a new page directory and return a PML4 entry for it.
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry> {
         let kcb = crate::kcb::get_kcb();
-        let mut fmanager = kcb.pmanager();
+        let mut fmanager = kcb.mem_manager();
 
         unsafe {
             fmanager
-                .allocate(
+                .allocate_frame(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
                         .unwrap(),
@@ -172,17 +268,18 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                         paging::PML4Flags::P | paging::PML4Flags::RW | paging::PML4Flags::US,
                     )
                 })
+                .ok()
         }
     }
 
     /// Allocate a new page directory and return a pdpt entry for it.
     fn new_pd(&mut self) -> Option<paging::PDPTEntry> {
         let kcb = crate::kcb::get_kcb();
-        let mut fmanager = kcb.pmanager();
+        let mut fmanager = kcb.mem_manager();
 
         unsafe {
             fmanager
-                .allocate(
+                .allocate_frame(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
                         .unwrap(),
@@ -193,17 +290,18 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                         paging::PDPTFlags::P | paging::PDPTFlags::RW | paging::PDPTFlags::US,
                     )
                 })
+                .ok()
         }
     }
 
     /// Allocate a new page-directory and return a page directory entry for it.
     fn new_pt(&mut self) -> Option<paging::PDEntry> {
         let kcb = crate::kcb::get_kcb();
-        let mut fmanager = kcb.pmanager();
+        let mut fmanager = kcb.mem_manager();
 
         unsafe {
             fmanager
-                .allocate(
+                .allocate_frame(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
                         .unwrap(),
@@ -214,17 +312,18 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                         paging::PDFlags::P | paging::PDFlags::RW | paging::PDFlags::US,
                     )
                 })
+                .ok()
         }
     }
 
     /// Allocate a new (4KiB) page and map it.
     fn new_page(&mut self) -> Option<paging::PTEntry> {
         let kcb = crate::kcb::get_kcb();
-        let mut fmanager = kcb.pmanager();
+        let mut fmanager = kcb.mem_manager();
 
         unsafe {
             fmanager
-                .allocate(
+                .allocate_frame(
                     Layout::new::<paging::Page>()
                         .align_to(BASE_PAGE_SIZE)
                         .unwrap(),
@@ -235,6 +334,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                         paging::PTFlags::P | paging::PTFlags::RW | paging::PTFlags::US,
                     )
                 })
+                .ok()
         }
     }
 }
@@ -253,21 +353,23 @@ impl BespinSlabsProvider {
 impl<'a> PageProvider<'a> for BespinSlabsProvider {
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
         let kcb = crate::kcb::get_kcb();
-        let mut fmanager = kcb.pmanager();
+        let mut fmanager = kcb.mem_manager();
 
-        let f = unsafe {
-            fmanager.allocate(
-                Layout::new::<paging::Page>()
-                    .align_to(BASE_PAGE_SIZE)
-                    .unwrap(),
-            )
-        };
-        f.map(|mut frame| unsafe {
-            frame.zero();
-            trace!("slabmalloc allocate frame.base = {:x}", frame.base);
-            let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
-            sp
-        })
+        unsafe {
+            fmanager
+                .allocate_frame(
+                    Layout::new::<paging::Page>()
+                        .align_to(BASE_PAGE_SIZE)
+                        .unwrap(),
+                )
+                .map(|mut frame| {
+                    frame.zero();
+                    trace!("slabmalloc allocate frame.base = {:x}", frame.base);
+                    let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
+                    sp
+                })
+                .ok()
+        }
     }
 
     fn release_page(&mut self, _p: &'a mut ObjectPage<'a>) {

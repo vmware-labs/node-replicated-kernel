@@ -53,7 +53,7 @@ impl MemoryMapper {
         if r == libc::MAP_FAILED {
             return None;
         } else {
-            let frame = Frame::new(PAddr::from(r as u64), size);
+            let frame = Frame::new(PAddr::from(r as u64), size, 0);
             self.currently_allocated += size;
             return Some(frame);
         }

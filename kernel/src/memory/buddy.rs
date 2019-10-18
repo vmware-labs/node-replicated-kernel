@@ -9,6 +9,7 @@
 
 use core::alloc::Layout;
 use core::cmp::{max, min};
+use core::fmt;
 use core::ptr;
 
 use crate::prelude::*;
@@ -51,10 +52,8 @@ pub struct BuddyFrameAllocator {
     min_block_size_log2: u8,
 }
 
-unsafe impl Send for BuddyFrameAllocator {}
-
-impl PhysicalAllocator for BuddyFrameAllocator {
-    unsafe fn add_memory(&mut self, region: Frame) -> bool {
+impl BuddyFrameAllocator {
+    pub unsafe fn add_memory(&mut self, region: Frame) -> bool {
         if self.region.base.as_u64() == 0 {
             let size = region.size.next_power_of_two() >> 1;
             self.region.size = region.size;
@@ -70,6 +69,21 @@ impl PhysicalAllocator for BuddyFrameAllocator {
         }
     }
 
+    fn print_info(&self) {
+        info!("Found the following physical memory regions:");
+        info!("{:?}", self.region);
+    }
+}
+
+impl fmt::Debug for BuddyFrameAllocator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "BuddyFrameAllocator {{ {:?} }}", self.region)
+    }
+}
+
+unsafe impl Send for BuddyFrameAllocator {}
+
+impl PhysicalAllocator for BuddyFrameAllocator {
     /// Allocate a block of physical memory large enough to contain `size` bytes,
     /// and aligned on `align`.
     ///
@@ -77,7 +91,7 @@ impl PhysicalAllocator for BuddyFrameAllocator {
     ///
     /// All allocated Frames must be passed to `deallocate` with the same
     /// `size` and `align` parameter.
-    unsafe fn allocate(&mut self, layout: Layout) -> Option<Frame> {
+    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, &'static str> {
         trace!("buddy allocate {:?}", layout);
         // Figure out which order block we need.
         if let Some(order_needed) = self.layout_to_order(layout) {
@@ -93,23 +107,24 @@ impl PhysicalAllocator for BuddyFrameAllocator {
                         self.split_free_block(block, order, order_needed);
                     }
 
-                    return Some(Frame::new(
+                    return Ok(Frame::new(
                         PAddr::from(kernel_vaddr_to_paddr(VAddr::from(block as usize))),
                         self.order_to_size(order_needed),
+                        0,
                     ));
                 }
             }
-            None
+            Err("Can't allocate in this order")
         } else {
             trace!("Allocation size too big for request {:?}", layout);
-            None
+            Err("Allocation size too big for request")
         }
     }
 
     /// Deallocate a block allocated using `allocate`.
     /// Layout value must match the value passed to
     /// `allocate`.
-    unsafe fn deallocate(&mut self, frame: Frame, layout: Layout) {
+    unsafe fn deallocate_frame(&mut self, frame: Frame, layout: Layout) {
         trace!("buddy deallocate {:?} {:?}", frame, layout);
         let initial_order = self
             .layout_to_order(layout)
@@ -138,11 +153,6 @@ impl PhysicalAllocator for BuddyFrameAllocator {
             return;
         }
     }
-
-    fn print_info(&self) {
-        info!("Found the following physical memory regions:");
-        info!("{:?}", self.region);
-    }
 }
 
 impl BuddyFrameAllocator {
@@ -153,6 +163,7 @@ impl BuddyFrameAllocator {
             region: Frame {
                 base: PAddr(0),
                 size: 0,
+                affinity: 0,
             },
             free_lists: [
                 ptr::null_mut(),

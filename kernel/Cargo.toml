@@ -32,7 +32,7 @@ kpi = { path = "../lib/kpi" }
 spin = "0.5.2"
 log = "0.4"
 uefi = { version = "0.3.2", features = ["exts"] }
-smallvec = { version = "0.6.10", default-features = false }
+arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
 lazy_static = { version = "1.3", features = ["spin_no_std"] }
 logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
 # Finally some external crates I forked due to issues with the current upstream version:
@@ -43,7 +43,6 @@ addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", d
 
 [[bin]]
 name = "bespin"
-harness = false
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = { version = "0.2.53", default-features = false }

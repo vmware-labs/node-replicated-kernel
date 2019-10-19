@@ -22,7 +22,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use driverkit::DriverControl;
 
-use smallvec::SmallVec;
+use arrayvec::ArrayVec;
 
 use x86::apic::ApicControl;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
@@ -380,8 +380,8 @@ fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs
 /// There are some implicit assumptions here that a memory region always has
 /// just one affinity -- which is also what `topology` assumes.
 fn identify_numa_affinity(
-    memory_regions: &SmallVec<[Frame; 64]>,
-    annotated_regions: &mut SmallVec<[Frame; 64]>,
+    memory_regions: &ArrayVec<[Frame; 64]>,
+    annotated_regions: &mut ArrayVec<[Frame; 64]>,
 ) {
     if topology::MACHINE_TOPOLOGY.num_nodes() > 0 {
         for orig_frame in memory_regions.iter() {
@@ -395,6 +395,7 @@ fn identify_numa_affinity(
                                 let mid_paddr = (PAddr::from(mid.0), PAddr::from(mid.1));
                                 let annotated_frame = Frame::from_range(mid_paddr, node.id);
                                 info!("Identified NUMA region for {:?}", annotated_frame);
+                                assert!(!annotated_regions.is_full());
                                 annotated_regions.push(annotated_frame);
                             }
                         }
@@ -409,7 +410,9 @@ fn identify_numa_affinity(
         // We are not running on a NUMA machine,
         // so we just assume everything as node#0
         // (and copy from original memory regions):
-        annotated_regions.extend_from_slice(memory_regions.as_slice());
+        annotated_regions
+            .try_extend_from_slice(memory_regions.as_slice())
+            .expect("Can't initialize annotated regions");
     }
 
     // Sanity check our code the sum of total bytes in `annotated_regions`
@@ -501,20 +504,16 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Set up early memory management
     //
     // We walk the memory regions given to us by uefi, since this consumes
-    // the UEFI iterator we copy the frames into a `smallvec`.
+    // the UEFI iterator we copy the frames into a `ArrayVec`.
     //
     // Ideally, if this works, we should end up with an EarlyPhysicalManager
     // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
     // regions of memory.
     let mut emanager: Option<emem::EarlyPhysicalManager> = None;
-    let mut memory_regions = SmallVec::<[Frame; 64]>::new();
+    let mut memory_regions = ArrayVec::<[Frame; 64]>::new();
     for region in mm_iter {
         if region.ty == MemoryType::CONVENTIONAL {
             debug!("Found physical memory region {:?}", region);
-            assert!(
-                memory_regions.len() < memory_regions.capacity(),
-                "Don't overflow memory_region capacity"
-            );
 
             let base: PAddr = PAddr::from(region.phys_start);
             let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
@@ -532,11 +531,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                     let (low, high) = f.split_at(TEN_MIB);
                     emanager = Some(emem::EarlyPhysicalManager::new(low));
                     if high.size() >= TEN_MIB {
+                        assert!(!memory_regions.is_full());
                         memory_regions.push(high);
                     } else {
                         // Lose the `high` frame it's not worth the hassle.
                     }
                 } else {
+                    assert!(!memory_regions.is_full());
                     memory_regions.push(f);
                 }
             } else {
@@ -612,7 +613,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     // Identify NUMA region for physical memory (needs topology)
-    let mut annotated_regions = SmallVec::<[Frame; 64]>::new();
+    let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
     identify_numa_affinity(&memory_regions, &mut annotated_regions);
     // Make sure we don't accidentially use the memory_regions but rather,
     // use the correctly `annotated_regions` now!

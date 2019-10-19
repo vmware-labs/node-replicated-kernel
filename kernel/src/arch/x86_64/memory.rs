@@ -1,7 +1,7 @@
 //! Function and definitions that are specific to how the
 //! x86-64 address space is laid out.
 
-pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
+pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 /// Start of the kernel address space.
 pub const KERNEL_BASE: u64 = 0x400000000000;

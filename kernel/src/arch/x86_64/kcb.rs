@@ -263,13 +263,17 @@ impl Kcb {
         self.emanager.borrow_mut()
     }
 
-    /// Returns a reference to the physical memory manager if set,
+    /// Returns a reference to the core-local physical memory manager if set,
     /// otherwise returns the early physical memory manager.
     pub fn mem_manager(&self) -> RefMut<dyn PhysicalAllocator> {
         self.pmanager
             .as_ref()
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
+
+    /// Returns a reference to the zone manager (that manges all memory for the local)
+    /// numa node.
+    pub fn zone_manager() {}
 
     pub fn apic(&self) -> RefMut<XAPICDriver> {
         self.apic.borrow_mut()

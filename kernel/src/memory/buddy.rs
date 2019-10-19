@@ -107,7 +107,7 @@ impl PhysicalAllocator for BuddyFrameAllocator {
                         self.split_free_block(block, order, order_needed);
                     }
 
-                    return Ok(Frame::new(
+                    return Ok(Frame::const_new(
                         PAddr::from(kernel_vaddr_to_paddr(VAddr::from(block as usize))),
                         self.order_to_size(order_needed),
                         0,
@@ -405,7 +405,8 @@ pub mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
+            let heap =
+                BuddyFrameAllocator::new_test_instance(Frame::const_new(pmem, heap_size, 0), 16);
             let power_of_twos: [usize; 21] = [
                 0,
                 1,
@@ -463,7 +464,8 @@ pub mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
+            let heap =
+                BuddyFrameAllocator::new_test_instance(Frame::const_new(pmem, heap_size, 0), 16);
 
             // Block orders.
             assert_eq!(
@@ -507,7 +509,8 @@ pub mod test {
             let heap_size = BASE_PAGE_SIZE;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, BASE_PAGE_SIZE));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
+            let heap =
+                BuddyFrameAllocator::new_test_instance(Frame::const_new(pmem, heap_size, 0), 16);
         }
     }
 
@@ -517,7 +520,8 @@ pub mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
+            let heap =
+                BuddyFrameAllocator::new_test_instance(Frame::const_new(pmem, heap_size, 0), 16);
 
             let block_16_0 = mem as *mut FreeBlock;
             let block_16_1 = mem.offset(16) as *mut FreeBlock;
@@ -545,67 +549,68 @@ pub mod test {
             let heap_size = 256;
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let mut heap = BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), 16);
+            let mut heap =
+                BuddyFrameAllocator::new_test_instance(Frame::const_new(pmem, heap_size, 0), 16);
 
             let block_16_0 = heap
-                .allocate(Layout::from_size_align_unchecked(8, 8))
+                .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem as u64, block_16_0.base.as_u64());
 
             let bigger_than_heap =
-                heap.allocate(Layout::from_size_align_unchecked(4096, heap_size));
-            assert!(bigger_than_heap.is_none());
+                heap.allocate_frame(Layout::from_size_align_unchecked(4096, heap_size));
+            assert!(bigger_than_heap.is_err());
 
             let bigger_than_free =
-                heap.allocate(Layout::from_size_align_unchecked(heap_size, heap_size));
-            assert!(bigger_than_free.is_none());
+                heap.allocate_frame(Layout::from_size_align_unchecked(heap_size, heap_size));
+            assert!(bigger_than_free.is_err());
 
             let block_16_1 = heap
-                .allocate(Layout::from_size_align_unchecked(8, 8))
+                .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem.offset(16) as u64, block_16_1.base.as_u64());
 
             let block_16_2 = heap
-                .allocate(Layout::from_size_align_unchecked(8, 8))
+                .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem.offset(32) as u64, block_16_2.base.as_u64());
 
             let block_32_2 = heap
-                .allocate(Layout::from_size_align_unchecked(32, 32))
+                .allocate_frame(Layout::from_size_align_unchecked(32, 32))
                 .unwrap();
             assert_eq!(mem.offset(64) as u64, block_32_2.base.as_u64());
 
             let block_16_3 = heap
-                .allocate(Layout::from_size_align_unchecked(8, 8))
+                .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem.offset(48) as u64, block_16_3.base.as_u64());
 
             let block_128_1 = heap
-                .allocate(Layout::from_size_align_unchecked(128, 128))
+                .allocate_frame(Layout::from_size_align_unchecked(128, 128))
                 .unwrap();
             assert_eq!(mem.offset(128) as u64, block_128_1.base.as_u64());
 
-            let too_fragmented = heap.allocate(Layout::from_size_align_unchecked(64, 64));
-            assert!(too_fragmented.is_none());
+            let too_fragmented = heap.allocate_frame(Layout::from_size_align_unchecked(64, 64));
+            assert!(too_fragmented.is_err());
 
-            heap.deallocate(block_32_2, Layout::from_size_align_unchecked(32, 32));
-            heap.deallocate(block_16_0, Layout::from_size_align_unchecked(16, 16));
-            heap.deallocate(block_16_3, Layout::from_size_align_unchecked(16, 16));
-            heap.deallocate(block_16_1, Layout::from_size_align_unchecked(16, 16));
-            heap.deallocate(block_16_2, Layout::from_size_align_unchecked(16, 16));
+            heap.deallocate_frame(block_32_2, Layout::from_size_align_unchecked(32, 32));
+            heap.deallocate_frame(block_16_0, Layout::from_size_align_unchecked(16, 16));
+            heap.deallocate_frame(block_16_3, Layout::from_size_align_unchecked(16, 16));
+            heap.deallocate_frame(block_16_1, Layout::from_size_align_unchecked(16, 16));
+            heap.deallocate_frame(block_16_2, Layout::from_size_align_unchecked(16, 16));
 
             let block_128_0 = heap
-                .allocate(Layout::from_size_align_unchecked(128, 128))
+                .allocate_frame(Layout::from_size_align_unchecked(128, 128))
                 .unwrap();
             assert_eq!(mem.offset(0) as u64, block_128_0.base.as_u64());
 
-            heap.deallocate(block_128_1, Layout::from_size_align_unchecked(128, 128));
-            heap.deallocate(block_128_0, Layout::from_size_align_unchecked(128, 128));
+            heap.deallocate_frame(block_128_1, Layout::from_size_align_unchecked(128, 128));
+            heap.deallocate_frame(block_128_0, Layout::from_size_align_unchecked(128, 128));
 
             // And allocate the whole heap, just to make sure everything
             // got cleaned up correctly.
             let block_256_0 = heap
-                .allocate(Layout::from_size_align_unchecked(256, 256))
+                .allocate_frame(Layout::from_size_align_unchecked(256, 256))
                 .unwrap();
             assert_eq!(mem.offset(0) as u64, block_256_0.base.as_u64());
         }
@@ -627,7 +632,7 @@ pub mod test {
                     let mut rand: u64 = 0;
                     let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
                     let mut heap = BuddyFrameAllocator::new_test_instance(
-                        Frame::new(pmem, heap_size),
+                        Frame::new(pmem, heap_size, 0),
                         BASE_PAGE_SIZE,
                     );
 
@@ -637,13 +642,13 @@ pub mod test {
                     let layout = Layout::from_size_align($size, alignment).unwrap();
 
                     for _ in 0..$allocations {
-                        let allocation = heap.allocate(layout);
+                        let allocation = heap.allocate_frame(layout);
                         match allocation {
-                            Some(frame) => {
+                            Ok(frame) => {
                                 assert_eq!(1, _rdrand64_step(&mut rand));
                                 objects.push((rand, Some(frame)));
                             }
-                            None => objects.push((0, None)),
+                            Err(_) => objects.push((0, None)),
                         }
                     }
 
@@ -673,13 +678,13 @@ pub mod test {
                     let objects2 = objects.clone();
                     for (_rand, frame) in objects.into_iter() {
                         frame.map(|f| {
-                            heap.deallocate(f, Layout::from_size_align_unchecked(f.size, 1))
+                            heap.deallocate_frame(f, Layout::from_size_align_unchecked(f.size, 1))
                         });
                     }
 
                     // then allocate everything again, should be deterministic (same as prev.)
                     for idx in 0..$allocations {
-                        assert_eq!(objects2[idx].1, heap.allocate(layout));
+                        assert_eq!(objects2[idx].1, heap.allocate_frame(layout).ok());
                     }
                 }
             }
@@ -711,8 +716,10 @@ pub mod test {
 
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
-            let mut heap =
-                BuddyFrameAllocator::new_test_instance(Frame::new(pmem, heap_size), BASE_PAGE_SIZE);
+            let mut heap = BuddyFrameAllocator::new_test_instance(
+                Frame::new(pmem, heap_size, 0),
+                BASE_PAGE_SIZE,
+            );
 
             let mut objects: Vec<(u64, Layout, Option<Frame>)> = Vec::new();
 
@@ -725,16 +732,16 @@ pub mod test {
                 )
                 .unwrap();
 
-                let allocation = heap.allocate(layout);
+                let allocation = heap.allocate_frame(layout);
 
                 match allocation {
-                    Some(frame) => {
+                    Ok(frame) => {
                         debug!("Allocated {:?} random_size = {}", frame, random_size);
                         let mut rand_fill_pattern: u64 = 0;
                         assert_eq!(1, _rdrand64_step(&mut rand_fill_pattern));
                         objects.push((rand_fill_pattern, layout, Some(frame)));
                     }
-                    None => objects.push((0, layout, None)),
+                    Err(_) => objects.push((0, layout, None)),
                 }
             }
 
@@ -764,12 +771,14 @@ pub mod test {
             // Deallocate all the objects
             let objects2 = objects.clone();
             for (_rand, _layout, frame) in objects.into_iter() {
-                frame.map(|f| heap.deallocate(f, Layout::from_size_align_unchecked(f.size, 1)));
+                frame.map(|f| {
+                    heap.deallocate_frame(f, Layout::from_size_align_unchecked(f.size, 1))
+                });
             }
 
             // then allocate everything again, should be deterministic (same as prev.)
             for idx in 0..allocations {
-                assert_eq!(objects2[idx].2, heap.allocate(objects2[idx].1));
+                assert_eq!(objects2[idx].2, heap.allocate_frame(objects2[idx].1).ok());
             }
         }
     }

@@ -111,6 +111,19 @@ impl SafeZoneAllocator {
 
 unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if layout.size() > 2 * 1024 * 1024 {
+            error!(
+                "!!!!Allocating more than 2 MiB!!!! {:?}",
+                memory::format_size(layout.size())
+            );
+        }
+        if layout.size() > 4096 {
+            error!(
+                "!!!!Allocating more than 4 KiB!!!! {:?}",
+                memory::format_size(layout.size())
+            );
+        }
+
         trace!("alloc layout={:?}", layout);
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
             let ptr = self.0.lock().allocate(layout);
@@ -151,6 +164,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     }
 }
 
+#[cfg(not(test))]
 #[global_allocator]
 static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
 
@@ -183,8 +197,8 @@ pub fn xmain() {
     debug!("allocating a region of mem");
     unsafe {
         {
-            let mem_mgmt = kcb::get_kcb().pmanager();
-            info!("{:?}", mem_mgmt);
+            let mem_mgmt = kcb::get_kcb().mem_manager();
+            //info!("{:?}", mem_mgmt);
         }
         let new_region: *mut u8 =
             alloc::alloc::alloc(Layout::from_size_align_unchecked(8192, 4096));
@@ -192,8 +206,8 @@ pub fn xmain() {
         assert!(!p.is_null());
 
         {
-            let mem_mgmt = kcb::get_kcb().pmanager();
-            info!("{:?}", mem_mgmt);
+            let mem_mgmt = kcb::get_kcb().mem_manager();
+            //info!("{:?}", mem_mgmt);
         }
     }
 

@@ -13,6 +13,7 @@ custom_error! {pub KError
     InvalidProcessOperation{a: u64} = "Invalid Process Operation (2nd syscall argument) supplied: {}",
     ProcessCreate{desc: String}  = "Unable to create process: {desc}",
     VSpace{source: crate::arch::vspace::VSpaceError} = "VSpace operation covers existing mapping",
+    PhysicalMemory{source: crate::memory::AllocationError} = "Memory allocation failed",
 }
 
 impl Into<SystemCallError> for KError {

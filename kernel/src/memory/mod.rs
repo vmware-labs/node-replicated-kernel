@@ -1,18 +1,23 @@
+use crate::alloc::string::ToString;
 use core::alloc::{AllocErr, Layout};
+use core::fmt;
 use core::mem::transmute;
 
-use core::fmt;
-
+use custom_error::custom_error;
 use x86::bits64::paging;
 
 pub mod buddy;
 pub mod emem;
+pub mod ncache;
+pub mod tcache;
 
 mod bump;
 
 pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
 
-pub use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE};
+pub use crate::arch::memory::{
+    paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
+};
 use slabmalloc::{ObjectPage, PageProvider};
 
 pub fn format_size(bytes: usize) -> (f64, &'static str) {
@@ -375,4 +380,57 @@ impl<'a> PageProvider<'a> for BespinSlabsProvider {
     fn release_page(&mut self, _p: &'a mut ObjectPage<'a>) {
         trace!("TODO!");
     }
+}
+
+custom_error! {pub AllocationError
+    OutOfMemory{size: usize} = "Couldn't allocate {size}.",
+    CacheExhausted = "Couldn't allocate bytes on this cache, need to re-grow first.",
+    CacheFull = "Cache can't hold any more objects.",
+    CantGrowFurther{count: usize} = "Cache full; only added {count} elements.",
+}
+
+/// A trait to allocate and release physical pages from an allocator.
+pub trait PhysicalPageProvider {
+    /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.
+    fn allocate_base_page(&mut self) -> Result<Frame, AllocationError>;
+    /// Release a `BASE_PAGE_SIZE` for the given architecture back to the allocator.
+    fn release_base_page(&mut self, f: Frame) -> Result<(), AllocationError>;
+
+    /// Allocate a `LARGE_PAGE_SIZE` for the given architecture from the allocator.
+    fn allocate_large_page(&mut self) -> Result<Frame, AllocationError>;
+    /// Release a `LARGE_PAGE_SIZE` for the given architecture back to the allocator.
+    fn release_large_page(&mut self, f: Frame) -> Result<(), AllocationError>;
+}
+
+/// The backend implementation necessary to implement if we want a client to be
+/// able to grow our allocator by providing a list of frames.
+pub trait GrowBackend {
+    /// How much capacity we have to add base pages.
+    fn base_page_capcacity(&self) -> usize;
+
+    /// Add a slice of base-pages to `self`.
+    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
+
+    /// How much capacity we have to add large pages.
+    fn large_page_capcacity(&self) -> usize;
+
+    /// Add a slice of large-pages to `self`.
+    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
+}
+
+/// The backend implementation necessary to implement if we want
+/// a system manager to take away be able to take away memory
+/// from our allocator.
+pub trait ReapBackend {
+    /// Ask to give base-pages back.
+    ///
+    /// An implementation should put the pages in the `free_list` and remove
+    /// them from the local allocator.
+    fn reap_base_pages(&mut self, free_list: &mut [Option<Frame>]);
+
+    /// Ask to give large-pages back.
+    ///
+    /// An implementation should put the pages in the `free_list` and remove
+    /// them from the local allocator.
+    fn reap_large_pages(&mut self, free_list: &mut [Option<Frame>]);
 }

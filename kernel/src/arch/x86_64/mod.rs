@@ -618,9 +618,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Make sure we don't accidentially use the memory_regions but rather,
     // use the correctly `annotated_regions` now!
     drop(memory_regions);
+    let global_memory = unsafe { crate::memory::GlobalMemory::new(annotated_regions) };
 
-    // Set-up a buddy region allocator for the BSP core/NUMA node 0
-    // (needs annotated memory regions):
+    // Initialize memory allocators (needs annotated memory regions)
+    // the memory for those alloacators needs to ne local to the region.
+    //  - Each `annotated_region` should be backed at the lowest level by a buddy allocator:
+    //  - For every node we should have one NCache
+    //  - For every core we should have one TCache
 
     // Bring up the rest of the system
     #[cfg(not(feature = "bsp-only"))]

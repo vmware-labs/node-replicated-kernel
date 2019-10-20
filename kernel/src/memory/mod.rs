@@ -3,7 +3,9 @@ use core::alloc::{AllocErr, Layout};
 use core::fmt;
 use core::mem::transmute;
 
+use arrayvec::ArrayVec;
 use custom_error::custom_error;
+use spin::Mutex;
 use x86::bits64::paging;
 
 pub mod buddy;
@@ -11,15 +13,24 @@ pub mod emem;
 pub mod ncache;
 pub mod tcache;
 
-mod bump;
-
-pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
-
+/// Re-export arch specific memory definitions
 pub use crate::arch::memory::{
     paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
+
+use crate::prelude::*;
 use slabmalloc::{ObjectPage, PageProvider};
 
+pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
+
+custom_error! {pub AllocationError
+    OutOfMemory{size: usize} = "Couldn't allocate {size}.",
+    CacheExhausted = "Couldn't allocate bytes on this cache, need to re-grow first.",
+    CacheFull = "Cache can't hold any more objects.",
+    CantGrowFurther{count: usize} = "Cache full; only added {count} elements.",
+}
+
+/// Given `bytes` return the quantity in a human readable.
 pub fn format_size(bytes: usize) -> (f64, &'static str) {
     if bytes < 1024 {
         (bytes as f64, "B")
@@ -30,6 +41,212 @@ pub fn format_size(bytes: usize) -> (f64, &'static str) {
     } else {
         (bytes as f64 / (1024 * 1024 * 1024) as f64, "GiB")
     }
+}
+
+/// How initial physical memory regions we support.
+pub const MAX_PHYSICAL_REGIONS: usize = 64;
+
+/// How many NUMA nodes we support in the system.
+pub const AFFINITY_REGIONS: usize = 16;
+
+/// Represents the global memory system in the kernel.
+///
+/// Has regions of memory that are maintained by a buddy allocator and
+/// are partitioned to represent memory from just a single NUMA node.
+///
+/// Memory from those allocators then get pushed into the `ncache` that is supposed
+/// to be fast and until they finally end up in the per-core TCache (which is found
+/// in the core's KCB).
+///
+/// NCaches and Buddies can be accessed concurrently and are currently protected
+/// by a simple spin-lock (for reclamation and allocation).
+/// TODO: This probably needs a more elaborate scheme in the future.
+#[derive(Default)]
+pub struct GlobalMemory {
+    /// Holds a small amount of memory for every node.
+    ///
+    /// Used to initialize the rest of the GlobalMemory structures and cores.
+    /// Not protected by locks since only the BSP core should ever try to access this.
+    emem: ArrayVec<[emem::EarlyPhysicalManager; AFFINITY_REGIONS]>,
+
+    /// All buddies in the system.
+    buddies: ArrayVec<
+        [CachePadded<(topology::NodeId, Mutex<&'static buddy::BuddyFrameAllocator>)>;
+            MAX_PHYSICAL_REGIONS],
+    >,
+
+    /// All node-caches in the system.
+    node_caches: ArrayVec<[CachePadded<Mutex<&'static ncache::NCache>>; AFFINITY_REGIONS]>,
+}
+
+impl GlobalMemory {
+    /// Construct a new global memory object from a range of initial memory frames.
+    /// This is typically invoked quite early (we're setting up support for memory allocation).
+    ///
+    /// We first chop off a small amount of memory from the frame to construct a EarlyPhysicalManager
+    /// for every NUMA node.
+    /// From the remaining frames we make buddy allocators.
+    /// Then we construct node-caches (NCache) and populate them with memory from the buddies.
+    ///
+    /// When this completes we have a bunch of global NUMA aware memory allocators that
+    /// are protected by spin-locks. `GlobalMemory` together with the `TCache` which is per-core
+    /// is our physical memory allocation system.
+    ///
+    /// # Safety
+    /// Pretty unsafe as we do lot of casting from frames to make space for our allocators.
+    /// A client needs to ensure that our frames are valid memory, not being used anywhere yet.
+    /// The good news is that we only invoke it once.
+    pub unsafe fn new(
+        mut memory: ArrayVec<[Frame; MAX_PHYSICAL_REGIONS]>,
+    ) -> Result<GlobalMemory, AllocationError> {
+        debug_assert!(!memory.is_empty());
+        let mut gm = GlobalMemory::default();
+
+        let max_affinity: usize = memory
+            .iter()
+            .map(|f| f.affinity as usize)
+            .max()
+            .expect("Need at least some frames");
+
+        // 1. Construct the `emem`'s for all NUMA nodes:
+        let mut cur_affinity = 0;
+        for frame in memory.iter_mut() {
+            // We have a frame that is big enough and witht he right affinity
+            const FOUR_MIB: usize = 4 * 1024 * 1024;
+            if frame.affinity == cur_affinity && frame.size() > FOUR_MIB {
+                let (low, high) = frame.split_at(FOUR_MIB);
+                info!("low {:?} high {:?}", low, high);
+                cur_affinity += 1;
+                debug_assert_eq!(low.size(), FOUR_MIB);
+
+                *frame = high;
+                gm.emem.push(emem::EarlyPhysicalManager::new(low));
+            }
+        }
+        debug_assert_eq!(
+            gm.emem.len(),
+            max_affinity + 1,
+            "Added early managers for all NUMA nodes"
+        );
+
+        // 2. Construct the buddies for all Frames
+        // We get memory from the frame-local NUMA node (using previosuly created emem),
+        // then we construct a buddy in the the uninitialized page memory
+        // and stick it in `gm.buddies`
+        for frame in memory {
+            // TODO: Should pack multpile buddy on the same page as long as space permits
+            // right now we have a page for every buddy (which is wasteful)
+            let mut buddy_memory = gm.emem[frame.affinity as usize].allocate_base_page()?;
+            let buddy_base_addr = buddy_memory.base;
+            buddy_memory.zero(); // TODO this happens twice atm (see emem)
+            let buddy_ptr = buddy_memory.uninitialized::<buddy::BuddyFrameAllocator>();
+            let buddy: &'static mut buddy::BuddyFrameAllocator =
+                buddy_ptr.write(buddy::BuddyFrameAllocator::new_with_frame(frame));
+            debug_assert_eq!(&*buddy as *const _ as u64, buddy_base_addr.as_u64());
+
+            gm.buddies
+                .push(CachePadded::new((frame.affinity, Mutex::new(buddy))));
+        }
+
+        // 3. Construct an NCache for all nodes
+        for affinity in 0..max_affinity {
+            let mut ncache_memory = gm.emem[affinity].allocate_large_page()?;
+            let ncache_memory_addr = ncache_memory.base;
+            ncache_memory.zero(); // TODO this happens twice atm (see emem)
+
+            let ncache_ptr = ncache_memory.uninitialized::<ncache::NCache>();
+            let ncache: &'static mut ncache::NCache =
+                ncache::NCache::init(ncache_ptr, affinity as topology::NodeId);
+            assert_eq!(&*ncache as *const _ as u64, ncache_memory_addr.as_u64());
+
+            gm.node_caches.push(CachePadded::new(Mutex::new(ncache)));
+        }
+
+        // 4. Initial population of NCaches with memory from buddies
+        for (ncache_affinity, ref ncache) in gm.node_caches.iter().enumerate() {
+            for buddy_cacheline in gm.buddies.iter() {
+                let buddy_affinity = buddy_cacheline.0;
+                let buddy = &buddy_cacheline.1;
+                if buddy_affinity == ncache_affinity as u64 {
+                    let buddy_locked = buddy.lock();
+                    let ncache_locked = ncache.lock();
+
+                    info!("{:?} {:?}", buddy_locked, ncache_locked);
+                }
+            }
+        }
+
+        Ok(gm)
+    }
+}
+
+/// A trait to allocate and release physical pages from an allocator.
+pub trait PhysicalPageProvider {
+    /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.
+    fn allocate_base_page(&mut self) -> Result<Frame, AllocationError>;
+    /// Release a `BASE_PAGE_SIZE` for the given architecture back to the allocator.
+    fn release_base_page(&mut self, f: Frame) -> Result<(), AllocationError>;
+
+    /// Allocate a `LARGE_PAGE_SIZE` for the given architecture from the allocator.
+    fn allocate_large_page(&mut self) -> Result<Frame, AllocationError>;
+    /// Release a `LARGE_PAGE_SIZE` for the given architecture back to the allocator.
+    fn release_large_page(&mut self, f: Frame) -> Result<(), AllocationError>;
+}
+
+/// The backend implementation necessary to implement if we want a client to be
+/// able to grow our allocator by providing a list of frames.
+pub trait GrowBackend {
+    /// How much capacity we have to add base pages.
+    fn base_page_capcacity(&self) -> usize;
+
+    /// Add a slice of base-pages to `self`.
+    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
+
+    /// How much capacity we have to add large pages.
+    fn large_page_capcacity(&self) -> usize;
+
+    /// Add a slice of large-pages to `self`.
+    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
+}
+
+/// The backend implementation necessary to implement if we want
+/// a system manager to take away be able to take away memory
+/// from our allocator.
+pub trait ReapBackend {
+    /// Ask to give base-pages back.
+    ///
+    /// An implementation should put the pages in the `free_list` and remove
+    /// them from the local allocator.
+    fn reap_base_pages(&mut self, free_list: &mut [Option<Frame>]);
+
+    /// Ask to give large-pages back.
+    ///
+    /// An implementation should put the pages in the `free_list` and remove
+    /// them from the local allocator.
+    fn reap_large_pages(&mut self, free_list: &mut [Option<Frame>]);
+}
+
+/// Provides information about the allocator.
+pub trait AllocatorStatistics {
+    /// Current free memory (in bytes) this allocator has.
+    fn free(&self) -> usize;
+
+    /// Memory (in bytes) that was handed out by this allocator
+    /// and has not yet been reclaimed (memory currently in use).
+    fn allocated(&self) -> usize;
+
+    /// Total memory (in bytes) that is maintained by this allocator.
+    fn size(&self) -> usize {
+        self.free() + self.allocated()
+    }
+
+    /// Potential capacity (in bytes) that the allocator can maintain.
+    ///
+    /// Some allocator may have unlimited capacity, in that case
+    /// they can return usize::max.
+    ///
+    /// e.g. this should hold `capacity() >= free() + allocated()`
+    fn capacity(&self) -> usize;
 }
 
 pub trait PhysicalAllocator {
@@ -45,7 +262,7 @@ pub trait PhysicalAllocator {
     ///
     /// This method allocates at least a multiple of `BASE_PAGE_SIZE`
     /// so it can result in large amounts of internal fragmentation.
-    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, &'static str>;
+    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, AllocationError>;
 
     /// Give a frame previously allocated using `allocate_frame` back
     /// to the physical memory allocator.
@@ -160,6 +377,18 @@ impl Frame {
         } else {
             None
         }
+    }
+
+    /// Represent the Frame as a `*mut T`.
+    fn as_mut_ptr<T>(self) -> *mut T {
+        debug_assert!(core::mem::size_of::<T>() <= self.size);
+        self.base.as_u64() as *mut T
+    }
+
+    /// Represent the Frame as MaybeUinit<T>
+    unsafe fn uninitialized<T>(self) -> &'static mut core::mem::MaybeUninit<T> {
+        debug_assert!(core::mem::size_of::<T>() <= self.size);
+        core::mem::transmute::<u64, &'static mut core::mem::MaybeUninit<T>>(self.base.into())
     }
 
     /// Fill the page with many `T`'s.
@@ -382,55 +611,68 @@ impl<'a> PageProvider<'a> for BespinSlabsProvider {
     }
 }
 
-custom_error! {pub AllocationError
-    OutOfMemory{size: usize} = "Couldn't allocate {size}.",
-    CacheExhausted = "Couldn't allocate bytes on this cache, need to re-grow first.",
-    CacheFull = "Cache can't hold any more objects.",
-    CantGrowFurther{count: usize} = "Cache full; only added {count} elements.",
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// A trait to allocate and release physical pages from an allocator.
-pub trait PhysicalPageProvider {
-    /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.
-    fn allocate_base_page(&mut self) -> Result<Frame, AllocationError>;
-    /// Release a `BASE_PAGE_SIZE` for the given architecture back to the allocator.
-    fn release_base_page(&mut self, f: Frame) -> Result<(), AllocationError>;
+    #[test]
+    fn frame_split_at() {
+        let f = Frame::new(PAddr::from(0xf000), 4096 * 10, 0);
+        let (low, high) = f.split_at(4 * 4096);
 
-    /// Allocate a `LARGE_PAGE_SIZE` for the given architecture from the allocator.
-    fn allocate_large_page(&mut self) -> Result<Frame, AllocationError>;
-    /// Release a `LARGE_PAGE_SIZE` for the given architecture back to the allocator.
-    fn release_large_page(&mut self, f: Frame) -> Result<(), AllocationError>;
-}
+        assert_eq!(low.base.as_u64(), 0xf000);
+        assert_eq!(low.size(), 4 * 4096);
+        assert_eq!(high.base.as_u64(), 0xf000 + 4 * 4096);
+        assert_eq!(high.size(), 6 * 4096);
+    }
 
-/// The backend implementation necessary to implement if we want a client to be
-/// able to grow our allocator by providing a list of frames.
-pub trait GrowBackend {
-    /// How much capacity we have to add base pages.
-    fn base_page_capcacity(&self) -> usize;
+    #[test]
+    fn frame_base_pages() {
+        let f = Frame::new(PAddr::from(0x1000), 4096 * 10, 0);
+        assert_eq!(f.base_pages(), 10);
+    }
 
-    /// Add a slice of base-pages to `self`.
-    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
+    #[test]
+    fn frame_size() {
+        let f = Frame::new(PAddr::from(0xf000), 4096 * 10, 0);
+        assert_eq!(f.size(), f.size);
+        assert_eq!(f.size(), 4096 * 10);
+    }
 
-    /// How much capacity we have to add large pages.
-    fn large_page_capcacity(&self) -> usize;
+    #[test]
+    fn frame_end() {
+        let f = Frame::new(PAddr::from(0x1000), 4096 * 10, 0);
+        assert_eq!(f.end(), PAddr::from(4096 * 10 + 0x1000));
+    }
 
-    /// Add a slice of large-pages to `self`.
-    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
-}
+    #[test]
+    #[should_panic]
+    /// Frames should be aligned to BASE_PAGE_SIZE.
+    fn frame_bad_alignment() {
+        let f = Frame::new(PAddr::from(core::usize::MAX), BASE_PAGE_SIZE, 0);
+    }
 
-/// The backend implementation necessary to implement if we want
-/// a system manager to take away be able to take away memory
-/// from our allocator.
-pub trait ReapBackend {
-    /// Ask to give base-pages back.
-    ///
-    /// An implementation should put the pages in the `free_list` and remove
-    /// them from the local allocator.
-    fn reap_base_pages(&mut self, free_list: &mut [Option<Frame>]);
+    #[test]
+    #[should_panic]
+    /// Frames size should be multiple of BASE_PAGE_SIZE.
+    fn frame_bad_size() {
+        let f = Frame::new(PAddr::from(0x1000), 0x13, 0);
+    }
 
-    /// Ask to give large-pages back.
-    ///
-    /// An implementation should put the pages in the `free_list` and remove
-    /// them from the local allocator.
-    fn reap_large_pages(&mut self, free_list: &mut [Option<Frame>]);
+    #[test]
+    fn size_formatting() {
+        let (a, unit) = format_size(LARGE_PAGE_SIZE);
+        assert_eq!(unit, "MiB");
+        assert_eq!(a, 2.0);
+
+        let (a, unit) = format_size(BASE_PAGE_SIZE);
+        assert_eq!(unit, "KiB");
+        assert_eq!(a, 4.0);
+
+        let (a, unit) = format_size(core::usize::MAX);
+        assert_eq!(unit, "GiB");
+
+        let (a, unit) = format_size(core::usize::MIN);
+        assert_eq!(unit, "B");
+    }
 }

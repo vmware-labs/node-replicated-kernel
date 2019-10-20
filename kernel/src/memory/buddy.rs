@@ -14,8 +14,8 @@ use core::ptr;
 
 use crate::prelude::*;
 
-use super::{Frame, PAddr, PhysicalAllocator, VAddr};
-use crate::arch::memory::{kernel_vaddr_to_paddr, BASE_PAGE_SIZE};
+use super::{AllocationError, Frame, PAddr, PhysicalAllocator, VAddr, BASE_PAGE_SIZE};
+use crate::arch::memory::kernel_vaddr_to_paddr;
 
 /// A free block in our heap.
 pub struct FreeBlock {
@@ -50,109 +50,6 @@ pub struct BuddyFrameAllocator {
 
     /// The log base 2 of our min block size.
     min_block_size_log2: u8,
-}
-
-impl BuddyFrameAllocator {
-    pub unsafe fn add_memory(&mut self, region: Frame) -> bool {
-        if self.region.base.as_u64() == 0 {
-            let size = region.size.next_power_of_two() >> 1;
-            self.region.size = region.size;
-            let order = self
-                .layout_to_order(Layout::from_size_align_unchecked(size, 1))
-                .expect("Failed to calculate order for root heap block");
-            //trace!("order = {} size = {}", order, region.size);
-            self.region.base = region.base;
-            self.free_list_insert(order, region.kernel_vaddr().as_mut_ptr::<FreeBlock>());
-            true
-        } else {
-            false
-        }
-    }
-
-    fn print_info(&self) {
-        info!("Found the following physical memory regions:");
-        info!("{:?}", self.region);
-    }
-}
-
-impl fmt::Debug for BuddyFrameAllocator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BuddyFrameAllocator {{ {:?} }}", self.region)
-    }
-}
-
-unsafe impl Send for BuddyFrameAllocator {}
-
-impl PhysicalAllocator for BuddyFrameAllocator {
-    /// Allocate a block of physical memory large enough to contain `size` bytes,
-    /// and aligned on `align`.
-    ///
-    /// Returns None in case the request can not be satisfied.
-    ///
-    /// All allocated Frames must be passed to `deallocate` with the same
-    /// `size` and `align` parameter.
-    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, &'static str> {
-        trace!("buddy allocate {:?}", layout);
-        // Figure out which order block we need.
-        if let Some(order_needed) = self.layout_to_order(layout) {
-            // Start with the smallest acceptable block size, and search
-            // upwards until we reach blocks the size of the entire heap.
-            for order in order_needed..self.free_lists.len() {
-                // Do we have a block of this size?
-                if let Some(block) = self.free_list_pop(order) {
-                    // If the block is too big, break it up.  This leaves
-                    // the address unchanged, because we always allocate at
-                    // the head of a block.
-                    if order > order_needed {
-                        self.split_free_block(block, order, order_needed);
-                    }
-
-                    return Ok(Frame::const_new(
-                        PAddr::from(kernel_vaddr_to_paddr(VAddr::from(block as usize))),
-                        self.order_to_size(order_needed),
-                        0,
-                    ));
-                }
-            }
-            Err("Can't allocate in this order")
-        } else {
-            trace!("Allocation size too big for request {:?}", layout);
-            Err("Allocation size too big for request")
-        }
-    }
-
-    /// Deallocate a block allocated using `allocate`.
-    /// Layout value must match the value passed to
-    /// `allocate`.
-    unsafe fn deallocate_frame(&mut self, frame: Frame, layout: Layout) {
-        trace!("buddy deallocate {:?} {:?}", frame, layout);
-        let initial_order = self
-            .layout_to_order(layout)
-            .expect("Tried to dispose of invalid block");
-
-        // See if we can merge block with it's neighbouring buddy.
-        // If so merge and continue walking up until done.
-        //
-        // `block` is the biggest merged block we have so far.
-        let mut block = frame.kernel_vaddr().as_mut_ptr::<FreeBlock>();
-        for order in initial_order..self.free_lists.len() {
-            // Would this block have a buddy?
-            if let Some(buddy) = self.buddy(order, block) {
-                // Is this block's buddy free?
-                if self.free_list_remove(order, buddy) {
-                    // Merge them!  The lower address of the two is the
-                    // newly-merged block.  Then we want to try again.
-                    block = min(block, buddy);
-                    continue;
-                }
-            }
-
-            // If we reach here, we didn't find a buddy block of this size,
-            // so take what we've got and mark it as free.
-            self.free_list_insert(order, block);
-            return;
-        }
-    }
 }
 
 impl BuddyFrameAllocator {
@@ -196,6 +93,28 @@ impl BuddyFrameAllocator {
             ],
             min_block_size: BASE_PAGE_SIZE,
             min_block_size_log2: 12,
+        }
+    }
+
+    pub fn new_with_frame(f: Frame) -> BuddyFrameAllocator {
+        let mut buddy = BuddyFrameAllocator::new();
+        unsafe { assert!(buddy.add_memory(f)) };
+        buddy
+    }
+
+    pub unsafe fn add_memory(&mut self, region: Frame) -> bool {
+        if self.region.base.as_u64() == 0 {
+            let size = region.size.next_power_of_two() >> 1;
+            self.region.size = region.size;
+            let order = self
+                .layout_to_order(Layout::from_size_align_unchecked(size, 1))
+                .expect("Failed to calculate order for root heap block");
+            //trace!("order = {} size = {}", order, region.size);
+            self.region.base = region.base;
+            self.free_list_insert(order, region.kernel_vaddr().as_mut_ptr::<FreeBlock>());
+            true
+        } else {
+            false
         }
     }
 
@@ -387,6 +306,96 @@ impl BuddyFrameAllocator {
                     .as_mut_ptr::<u8>()
                     .offset((relative ^ size) as isize) as *mut FreeBlock,
             )
+        }
+    }
+
+    fn print_info(&self) {
+        info!("Found the following physical memory regions:");
+        info!("{:?}", self.region);
+    }
+}
+
+impl fmt::Debug for BuddyFrameAllocator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "BuddyFrameAllocator {{ {:?} }}", self.region)
+    }
+}
+
+unsafe impl Send for BuddyFrameAllocator {}
+
+impl PhysicalAllocator for BuddyFrameAllocator {
+    /// Allocate a block of physical memory large enough to contain `size` bytes,
+    /// and aligned on `align`.
+    ///
+    /// Returns None in case the request can not be satisfied.
+    ///
+    /// All allocated Frames must be passed to `deallocate` with the same
+    /// `size` and `align` parameter.
+    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, AllocationError> {
+        trace!("buddy allocate {:?}", layout);
+        // Figure out which order block we need.
+        if let Some(order_needed) = self.layout_to_order(layout) {
+            // Start with the smallest acceptable block size, and search
+            // upwards until we reach blocks the size of the entire heap.
+            for order in order_needed..self.free_lists.len() {
+                // Do we have a block of this size?
+                if let Some(block) = self.free_list_pop(order) {
+                    // If the block is too big, break it up.  This leaves
+                    // the address unchanged, because we always allocate at
+                    // the head of a block.
+                    if order > order_needed {
+                        self.split_free_block(block, order, order_needed);
+                    }
+
+                    return Ok(Frame::const_new(
+                        PAddr::from(kernel_vaddr_to_paddr(VAddr::from(block as usize))),
+                        self.order_to_size(order_needed),
+                        0,
+                    ));
+                }
+            }
+            trace!("Can't allocate in this order");
+            Err(AllocationError::OutOfMemory {
+                size: layout.size(),
+            })
+        } else {
+            trace!("Allocation size too big for request {:?}", layout);
+            Err(AllocationError::OutOfMemory {
+                size: layout.size(),
+            })
+        }
+    }
+
+    /// Deallocate a block allocated using `allocate`.
+    /// Layout value must match the value passed to
+    /// `allocate`.
+    unsafe fn deallocate_frame(&mut self, frame: Frame, layout: Layout) {
+        trace!("buddy deallocate {:?} {:?}", frame, layout);
+        let initial_order = self
+            .layout_to_order(layout)
+            .expect("Tried to dispose of invalid block");
+
+        // See if we can merge block with it's neighbouring buddy.
+        // If so merge and continue walking up until done.
+        //
+        // `block` is the biggest merged block we have so far.
+        let mut block = frame.kernel_vaddr().as_mut_ptr::<FreeBlock>();
+        for order in initial_order..self.free_lists.len() {
+            // Would this block have a buddy?
+            if let Some(buddy) = self.buddy(order, block) {
+                // Is this block's buddy free?
+                if self.free_list_remove(order, buddy) {
+                    // Merge them!  The lower address of the two is the
+                    // newly-merged block.  Then we want to try again.
+                    block = min(block, buddy);
+                    continue;
+                }
+            }
+
+            // If we reach here, we didn't find a buddy block of this size,
+            // so take what we've got and mark it as free.
+            self.free_list_insert(order, block);
+            return;
         }
     }
 }
@@ -781,5 +790,12 @@ pub mod test {
                 assert_eq!(objects2[idx].2, heap.allocate_frame(objects2[idx].1).ok());
             }
         }
+    }
+
+    /// Buddy should fit within a page for our code (we allocate a pages
+    /// with correct NUMA locality and place buddies in there)
+    #[test]
+    fn buddy_is_less_than_page_sized() {
+        assert!(core::mem::size_of::<BuddyFrameAllocator>() <= super::BASE_PAGE_SIZE);
     }
 }

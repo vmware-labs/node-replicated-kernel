@@ -8,10 +8,15 @@
 //! - Can allocate and free 2 MiB and 4 KiB Frames very quickly using stacks.
 //! - Is not thread-safe, need to wrap it in a Mutex (ideall we have two
 //!   interior Mutex for base-page and large-page arrays but that's problematic
-//!   because our traits are currently using &mut self)
+//!   because our traits are currently using &mut self).
 //! - TODO: Should have a directory-style index to put a list of 2 MiB, 4KiB
 //!   pages stack into an entry within the NCache list.
 //!
+//!
+
+use core::fmt;
+use core::mem::MaybeUninit;
+
 use super::*;
 use crate::memory::*;
 
@@ -19,7 +24,7 @@ use crate::memory::*;
 ///
 /// Holds two stacks of pages for O(1) allocation/deallocation.
 /// Implements the `GrowBackend` to hand pages out.
-struct NCache {
+pub struct NCache {
     /// Which node the memory in this cache is from.
     node: topology::NodeId,
     /// A vector of free, cached base-page addresses
@@ -33,13 +38,21 @@ struct NCache {
 }
 
 impl NCache {
-    fn new(thread: topology::ThreadId, node: topology::NodeId) -> NCache {
+    pub fn new(node: topology::NodeId) -> NCache {
         NCache {
             node,
             base_page_addresses: arrayvec::ArrayVec::new(),
             large_page_addresses: arrayvec::ArrayVec::new(),
             //base_page_index: arrayvec::ArrayVec::new(),
             //large_page_index: arrayvec::ArrayVec::new(),
+        }
+    }
+
+    /// Initialize an uninitialized NCache and return it.
+    pub fn init<'a>(ncache: &'a mut MaybeUninit<NCache>, node: topology::NodeId) -> &'a mut NCache {
+        unsafe {
+            (*(ncache.as_mut_ptr())).node = node;
+            ncache.get_mut()
         }
     }
 
@@ -61,6 +74,19 @@ impl NCache {
     fn free(&self) -> usize {
         self.base_page_addresses.len() * BASE_PAGE_SIZE
             + self.large_page_addresses.len() * LARGE_PAGE_SIZE
+    }
+}
+
+impl fmt::Debug for NCache {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let (free, free_unit) = super::format_size(self.free());
+        let (capacity, capacity_unit) = super::format_size(self.capacity());
+
+        write!(
+            f,
+            "NCache {{ free: {:.2} {} capacity: {:.2} {} }}",
+            free, free_unit, capacity, capacity_unit
+        )
     }
 }
 
@@ -186,7 +212,7 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_base_frame_size() {
-        let mut ncache = NCache::new(1, 4);
+        let mut ncache = NCache::new(4);
         ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4));
     }
 
@@ -194,7 +220,7 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_base_frame_align() {
-        let mut ncache = NCache::new(1, 4);
+        let mut ncache = NCache::new(4);
         ncache.release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4));
     }
 
@@ -202,14 +228,14 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_affinity() {
-        let mut ncache = NCache::new(1, 1);
+        let mut ncache = NCache::new(1);
         ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4));
     }
 
     /// Test the grow interface of the NCache.
     #[test]
     fn ncache_grow_reap() {
-        let mut ncache = NCache::new(1, 4);
+        let mut ncache = NCache::new(4);
 
         // Insert some pages
         let frames = &[
@@ -252,7 +278,7 @@ mod test {
     /// Also verify free memory reporting along the way.
     #[test]
     fn ncache_release_allocate() {
-        let mut ncache = NCache::new(1, 2);
+        let mut ncache = NCache::new(2);
 
         // Insert some pages
         ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2));

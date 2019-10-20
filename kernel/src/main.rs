@@ -19,7 +19,9 @@
     box_into_raw_non_null,
     box_into_pin,
     untagged_unions,
-    const_raw_ptr_to_usize_cast
+    const_raw_ptr_to_usize_cast,
+    maybe_uninit_extra,
+    maybe_uninit_ref
 )]
 #![allow(safe_packed_borrows)]
 

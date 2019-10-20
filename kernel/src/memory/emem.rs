@@ -1,6 +1,9 @@
 //! A physical memory manager for early system initialization.
 
-use crate::memory::{Frame, PAddr, PhysicalAllocator, BASE_PAGE_SIZE};
+use crate::memory::{
+    AllocationError, Frame, PAddr, PhysicalAllocator, PhysicalPageProvider, BASE_PAGE_SIZE,
+    LARGE_PAGE_SIZE,
+};
 use crate::round_up;
 use core::alloc::{Alloc, AllocErr, Layout};
 
@@ -32,12 +35,9 @@ impl EarlyPhysicalManager {
     pub fn unwrap(self) -> Frame {
         self.region
     }
-}
 
-impl PhysicalAllocator for EarlyPhysicalManager {
-    /// Allocate a new physical Frame.
-    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, &'static str> {
-        assert!(layout.align() <= BASE_PAGE_SIZE, "Too much alignment.");
+    unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, AllocationError> {
+        assert!(layout.align() <= BASE_PAGE_SIZE, "Alignment mismatch.");
         let size = round_up!(layout.size(), BASE_PAGE_SIZE);
 
         if size < self.region.size() {
@@ -57,8 +57,43 @@ impl PhysicalAllocator for EarlyPhysicalManager {
 
             Ok(region)
         } else {
-            Err("Can't support requested allocation size.")
+            Err(AllocationError::OutOfMemory {
+                size: layout.size(),
+            })
         }
+    }
+}
+
+/// A trait to allocate and release physical pages from an allocator.
+impl PhysicalPageProvider for EarlyPhysicalManager {
+    fn allocate_base_page(&mut self) -> Result<Frame, AllocationError> {
+        unsafe {
+            let layout = Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE);
+            self.allocate_layout(layout)
+        }
+    }
+
+    fn release_base_page(&mut self, f: Frame) -> Result<(), AllocationError> {
+        unreachable!("EarlyPhysicalAllocator can't deallocate {:?}", f);
+    }
+
+    fn allocate_large_page(&mut self) -> Result<Frame, AllocationError> {
+        warn!("Allocating LARGE_PAGE_SIZE from an EarlyMemoryAllocator!");
+        unsafe {
+            let layout = Layout::from_size_align_unchecked(LARGE_PAGE_SIZE, BASE_PAGE_SIZE);
+            self.allocate_layout(layout)
+        }
+    }
+
+    fn release_large_page(&mut self, f: Frame) -> Result<(), AllocationError> {
+        unreachable!("EarlyPhysicalAllocator can't deallocate {:?}", f);
+    }
+}
+
+impl PhysicalAllocator for EarlyPhysicalManager {
+    /// Allocate a new physical Frame.
+    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, AllocationError> {
+        self.allocate_layout(layout)
     }
 
     /// Deallocate a Frame

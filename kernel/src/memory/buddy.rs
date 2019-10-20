@@ -110,7 +110,7 @@ impl BuddyFrameAllocator {
                 .layout_to_order(Layout::from_size_align_unchecked(size, 1))
                 .expect("Failed to calculate order for root heap block");
             //trace!("order = {} size = {}", order, region.size);
-            self.region.base = region.base;
+            self.region = region;
             self.free_list_insert(order, region.kernel_vaddr().as_mut_ptr::<FreeBlock>());
             true
         } else {
@@ -797,5 +797,26 @@ pub mod test {
     #[test]
     fn buddy_is_less_than_page_sized() {
         assert!(core::mem::size_of::<BuddyFrameAllocator>() <= super::BASE_PAGE_SIZE);
+    }
+
+    #[test]
+    /// Check that buddy takes on correct affinity from provided frame.
+    fn buddy_affinity() {
+        unsafe {
+            let alignment = 1;
+            let allocations = 1024;
+            let heap_size: usize = 128 * 1024 * 1024;
+            assert!(heap_size.is_power_of_two());
+
+            let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
+            let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
+
+            let mut heap = BuddyFrameAllocator::new_test_instance(
+                Frame::new(pmem, heap_size, 3),
+                BASE_PAGE_SIZE,
+            );
+
+            assert_eq!(heap.region.affinity, 3);
+        }
     }
 }

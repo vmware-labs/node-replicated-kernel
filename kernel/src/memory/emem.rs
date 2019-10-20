@@ -48,7 +48,7 @@ impl EarlyPhysicalManager {
             self.region.base = self.region.base + size;
             self.region.size -= size;
 
-            /// Zeroes the Frame
+            // Zeroes the Frame
             region.zero();
 
             debug_assert_eq!(region.base % layout.align(), 0);

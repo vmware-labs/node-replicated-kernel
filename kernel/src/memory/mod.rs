@@ -163,6 +163,7 @@ impl GlobalMemory {
         }
 
         // 4. Initial population of NCaches with memory from buddies
+        // Ideally we fully exhaust all buddies and put everything in the NCache
         for (ncache_affinity, ref ncache) in gm.node_caches.iter().enumerate() {
             for buddy_cacheline in gm.buddies.iter() {
                 let buddy_affinity = buddy_cacheline.0;
@@ -171,7 +172,7 @@ impl GlobalMemory {
                     let buddy_locked = buddy.lock();
                     let ncache_locked = ncache.lock();
 
-                    info!("{:?} {:?}", buddy_locked, ncache_locked);
+                    info!("{:?} {:?}", *buddy_locked, *ncache_locked);
                 }
             }
         }

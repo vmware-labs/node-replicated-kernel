@@ -84,8 +84,8 @@ impl fmt::Debug for NCache {
 
         write!(
             f,
-            "NCache {{ free: {:.2} {} capacity: {:.2} {} }}",
-            free, free_unit, capacity, capacity_unit
+            "NCache {{ free: {:.2} {}, capacity: {:.2} {}, affinity: {} }}",
+            free, free_unit, capacity, capacity_unit, self.node
         )
     }
 }

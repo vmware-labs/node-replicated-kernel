@@ -71,12 +71,14 @@ pub struct GlobalMemory {
 
     /// All buddies in the system.
     buddies: ArrayVec<
-        [CachePadded<(topology::NodeId, Mutex<&'static buddy::BuddyFrameAllocator>)>;
-            MAX_PHYSICAL_REGIONS],
+        [CachePadded<(
+            topology::NodeId,
+            Mutex<&'static mut buddy::BuddyFrameAllocator>,
+        )>; MAX_PHYSICAL_REGIONS],
     >,
 
     /// All node-caches in the system.
-    node_caches: ArrayVec<[CachePadded<Mutex<&'static ncache::NCache>>; AFFINITY_REGIONS]>,
+    node_caches: ArrayVec<[CachePadded<Mutex<&'static mut ncache::NCache>>; AFFINITY_REGIONS]>,
 }
 
 impl GlobalMemory {
@@ -111,7 +113,7 @@ impl GlobalMemory {
         // 1. Construct the `emem`'s for all NUMA nodes:
         let mut cur_affinity = 0;
         for frame in memory.iter_mut() {
-            // We have a frame that is big enough and witht he right affinity
+            // We have a frame that is big enough and with the right affinity
             const FOUR_MIB: usize = 4 * 1024 * 1024;
             if frame.affinity == cur_affinity && frame.size() > FOUR_MIB {
                 let (low, high) = frame.split_at(FOUR_MIB);
@@ -164,13 +166,47 @@ impl GlobalMemory {
 
         // 4. Initial population of NCaches with memory from buddies
         // Ideally we fully exhaust all buddies and put everything in the NCache
+        // The one thing we have to decide is how much goes into 4 KiB pages
+        // and how much goes into 2 MiB pages; ideally we use 2 MiB for
+        // almost everything so we aim for ~8% 4K pages of the total node memory
+        //
+        // TODO(perf): we really don't have to allocate from the buddy, just insert
+        // directly in NCache
         for (ncache_affinity, ref ncache) in gm.node_caches.iter().enumerate() {
             for buddy_cacheline in gm.buddies.iter() {
                 let buddy_affinity = buddy_cacheline.0;
                 let buddy = &buddy_cacheline.1;
                 if buddy_affinity == ncache_affinity as u64 {
-                    let buddy_locked = buddy.lock();
-                    let ncache_locked = ncache.lock();
+                    let mut buddy_locked = buddy.lock();
+                    let mut ncache_locked = ncache.lock();
+
+                    if buddy_locked.free() < LARGE_PAGE_SIZE {
+                        // If the buddy has less than 2 MiB of space
+                        // just fill the NCache up with base pages:
+                        while buddy_locked.free() > BASE_PAGE_SIZE {
+                            match buddy_locked.allocate_frame(Layout::from_size_align_unchecked(
+                                BASE_PAGE_SIZE,
+                                BASE_PAGE_SIZE,
+                            )) {
+                                Ok(frame) => ncache_locked.grow_base_pages(&[frame])?,
+                                Err(e) => {
+                                    debug!("Allocation from {:?} failed {:?}", *buddy_locked, e);
+                                    break;
+                                }
+                            };
+                        }
+                    } else {
+                        // Add large-pages first then the remaining 8% should be base-pages
+                        let how_many_base_pages = (buddy_locked.free() / BASE_PAGE_SIZE) * 8 / 100;
+                        let how_many_large_pages = (buddy_locked.free()
+                            - (how_many_base_pages * BASE_PAGE_SIZE))
+                            / LARGE_PAGE_SIZE;
+
+                        info!(
+                            "Add {} base, {} large",
+                            how_many_base_pages, how_many_large_pages
+                        );
+                    }
 
                     info!("{:?} {:?}", *buddy_locked, *ncache_locked);
                 }
@@ -230,16 +266,16 @@ pub trait ReapBackend {
 /// Provides information about the allocator.
 pub trait AllocatorStatistics {
     /// Current free memory (in bytes) this allocator has.
-    fn free(&self) -> usize;
+    fn free(&self) -> usize {
+        self.size() - self.allocated()
+    }
 
     /// Memory (in bytes) that was handed out by this allocator
     /// and has not yet been reclaimed (memory currently in use).
     fn allocated(&self) -> usize;
 
     /// Total memory (in bytes) that is maintained by this allocator.
-    fn size(&self) -> usize {
-        self.free() + self.allocated()
-    }
+    fn size(&self) -> usize;
 
     /// Potential capacity (in bytes) that the allocator can maintain.
     ///
@@ -248,6 +284,11 @@ pub trait AllocatorStatistics {
     ///
     /// e.g. this should hold `capacity() >= free() + allocated()`
     fn capacity(&self) -> usize;
+
+    /// Internal fragmentation produced by this allocator (in bytes).
+    ///
+    /// In some cases an allocator may not be able to calculate it.
+    fn internal_fragmentation(&self) -> usize;
 }
 
 pub trait PhysicalAllocator {
@@ -300,7 +341,7 @@ impl Frame {
         Frame {
             base: base,
             size: size,
-            affinity: 0,
+            affinity: node,
         }
     }
 

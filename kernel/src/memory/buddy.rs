@@ -14,7 +14,9 @@ use core::ptr;
 
 use crate::prelude::*;
 
-use super::{AllocationError, Frame, PAddr, PhysicalAllocator, VAddr, BASE_PAGE_SIZE};
+use super::{
+    AllocationError, AllocatorStatistics, Frame, PAddr, PhysicalAllocator, VAddr, BASE_PAGE_SIZE,
+};
 use crate::arch::memory::kernel_vaddr_to_paddr;
 
 /// A free block in our heap.
@@ -39,6 +41,12 @@ pub struct BuddyFrameAllocator {
     /// `MIN_HEAP_ALIGN` boundary.
     region: Frame,
 
+    /// Total bytes currently allocated (in use)
+    allocated_bytes: usize,
+
+    /// Current internal fragmentation (bytes)
+    internal_fragmentation: usize,
+
     /// The free lists for our heap.  The list at `free_lists[0]` contains
     /// the smallest block size we can allocate, and the list at the end
     /// can only contain a single free block the size of our entire heap,
@@ -62,6 +70,8 @@ impl BuddyFrameAllocator {
                 size: 0,
                 affinity: 0,
             },
+            allocated_bytes: 0,
+            internal_fragmentation: 0,
             free_lists: [
                 ptr::null_mut(),
                 ptr::null_mut(),
@@ -176,6 +186,8 @@ impl BuddyFrameAllocator {
 
         let mut result = BuddyFrameAllocator {
             region: region,
+            allocated_bytes: 0,
+            internal_fragmentation: 0,
             free_lists: free_list,
             min_block_size: min_block_size,
             min_block_size_log2: min_block_size.log2(),
@@ -347,11 +359,14 @@ impl PhysicalAllocator for BuddyFrameAllocator {
                         self.split_free_block(block, order, order_needed);
                     }
 
-                    return Ok(Frame::const_new(
+                    let f = Frame::const_new(
                         PAddr::from(kernel_vaddr_to_paddr(VAddr::from(block as usize))),
                         self.order_to_size(order_needed),
-                        0,
-                    ));
+                        self.region.affinity,
+                    );
+                    self.allocated_bytes += f.size();
+                    self.internal_fragmentation += f.size() - layout.size();
+                    return Ok(f);
                 }
             }
             trace!("Can't allocate in this order");
@@ -374,6 +389,8 @@ impl PhysicalAllocator for BuddyFrameAllocator {
         let initial_order = self
             .layout_to_order(layout)
             .expect("Tried to dispose of invalid block");
+        self.allocated_bytes -= frame.size();
+        self.internal_fragmentation -= frame.size() - layout.size();
 
         // See if we can merge block with it's neighbouring buddy.
         // If so merge and continue walking up until done.
@@ -397,6 +414,24 @@ impl PhysicalAllocator for BuddyFrameAllocator {
             self.free_list_insert(order, block);
             return;
         }
+    }
+}
+
+impl AllocatorStatistics for BuddyFrameAllocator {
+    fn allocated(&self) -> usize {
+        self.allocated_bytes
+    }
+
+    fn size(&self) -> usize {
+        self.region.size()
+    }
+
+    fn capacity(&self) -> usize {
+        self.region.size()
+    }
+
+    fn internal_fragmentation(&self) -> usize {
+        self.internal_fragmentation
     }
 }
 
@@ -552,6 +587,8 @@ pub mod test {
         }
     }
 
+    /// Simple check that exercises most of the buddy system
+    /// and also checks the `AllocatorStatistics` implementation for buddy.
     #[test]
     fn test_alloc_simple() {
         unsafe {
@@ -559,12 +596,18 @@ pub mod test {
             let mem = alloc::alloc(Layout::from_size_align_unchecked(heap_size, 4096));
             let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
             let mut heap =
-                BuddyFrameAllocator::new_test_instance(Frame::const_new(pmem, heap_size, 0), 16);
+                BuddyFrameAllocator::new_test_instance(Frame::const_new(pmem, heap_size, 8), 16);
+            assert_eq!(heap.size(), 256);
+            assert_eq!(heap.capacity(), 256);
+            assert_eq!(heap.internal_fragmentation(), 0);
 
             let block_16_0 = heap
                 .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem as u64, block_16_0.base.as_u64());
+            assert_eq!(heap.allocated(), 16);
+            assert_eq!(heap.internal_fragmentation(), 8);
+            assert_eq!(block_16_0.affinity, 8);
 
             let bigger_than_heap =
                 heap.allocate_frame(Layout::from_size_align_unchecked(4096, heap_size));
@@ -573,48 +616,70 @@ pub mod test {
             let bigger_than_free =
                 heap.allocate_frame(Layout::from_size_align_unchecked(heap_size, heap_size));
             assert!(bigger_than_free.is_err());
+            assert_eq!(heap.allocated(), 16);
+            assert_eq!(heap.internal_fragmentation(), 8);
 
             let block_16_1 = heap
                 .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem.offset(16) as u64, block_16_1.base.as_u64());
+            assert_eq!(heap.allocated(), 32);
+            assert_eq!(heap.internal_fragmentation(), 16);
+            assert_eq!(block_16_1.affinity, 8);
 
             let block_16_2 = heap
                 .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem.offset(32) as u64, block_16_2.base.as_u64());
+            assert_eq!(heap.allocated(), 48);
+            assert_eq!(heap.internal_fragmentation(), 24);
 
             let block_32_2 = heap
                 .allocate_frame(Layout::from_size_align_unchecked(32, 32))
                 .unwrap();
             assert_eq!(mem.offset(64) as u64, block_32_2.base.as_u64());
+            assert_eq!(heap.allocated(), 80);
+            assert_eq!(heap.internal_fragmentation(), 24);
 
             let block_16_3 = heap
                 .allocate_frame(Layout::from_size_align_unchecked(8, 8))
                 .unwrap();
             assert_eq!(mem.offset(48) as u64, block_16_3.base.as_u64());
+            assert_eq!(heap.allocated(), 96);
+            assert_eq!(heap.internal_fragmentation(), 32);
 
             let block_128_1 = heap
                 .allocate_frame(Layout::from_size_align_unchecked(128, 128))
                 .unwrap();
             assert_eq!(mem.offset(128) as u64, block_128_1.base.as_u64());
+            assert_eq!(heap.allocated(), 224);
+            assert_eq!(heap.internal_fragmentation(), 32);
 
             let too_fragmented = heap.allocate_frame(Layout::from_size_align_unchecked(64, 64));
             assert!(too_fragmented.is_err());
+            assert_eq!(heap.allocated(), 224);
+            assert_eq!(heap.internal_fragmentation(), 32);
 
             heap.deallocate_frame(block_32_2, Layout::from_size_align_unchecked(32, 32));
-            heap.deallocate_frame(block_16_0, Layout::from_size_align_unchecked(16, 16));
-            heap.deallocate_frame(block_16_3, Layout::from_size_align_unchecked(16, 16));
-            heap.deallocate_frame(block_16_1, Layout::from_size_align_unchecked(16, 16));
-            heap.deallocate_frame(block_16_2, Layout::from_size_align_unchecked(16, 16));
+            heap.deallocate_frame(block_16_0, Layout::from_size_align_unchecked(8, 8));
+            heap.deallocate_frame(block_16_3, Layout::from_size_align_unchecked(8, 8));
+            heap.deallocate_frame(block_16_1, Layout::from_size_align_unchecked(8, 8));
+            heap.deallocate_frame(block_16_2, Layout::from_size_align_unchecked(8, 8));
+            assert_eq!(heap.allocated(), 128);
+            assert_eq!(heap.internal_fragmentation(), 0);
 
             let block_128_0 = heap
                 .allocate_frame(Layout::from_size_align_unchecked(128, 128))
                 .unwrap();
             assert_eq!(mem.offset(0) as u64, block_128_0.base.as_u64());
+            assert_eq!(heap.allocated(), 256);
+            assert_eq!(heap.internal_fragmentation(), 0);
 
             heap.deallocate_frame(block_128_1, Layout::from_size_align_unchecked(128, 128));
             heap.deallocate_frame(block_128_0, Layout::from_size_align_unchecked(128, 128));
+            assert_eq!(heap.allocated(), 0);
+            assert_eq!(heap.size(), 256);
+            assert_eq!(heap.internal_fragmentation(), 0);
 
             // And allocate the whole heap, just to make sure everything
             // got cleaned up correctly.
@@ -622,6 +687,8 @@ pub mod test {
                 .allocate_frame(Layout::from_size_align_unchecked(256, 256))
                 .unwrap();
             assert_eq!(mem.offset(0) as u64, block_256_0.base.as_u64());
+            assert_eq!(heap.allocated(), 256);
+            assert_eq!(heap.internal_fragmentation(), 0);
         }
     }
 
@@ -815,8 +882,12 @@ pub mod test {
                 Frame::new(pmem, heap_size, 3),
                 BASE_PAGE_SIZE,
             );
-
             assert_eq!(heap.region.affinity, 3);
+
+            let block_128_0 = heap
+                .allocate_frame(Layout::from_size_align_unchecked(128, 128))
+                .unwrap();
+            assert_eq!(block_128_0.affinity, 3);
         }
     }
 }

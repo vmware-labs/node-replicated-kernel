@@ -628,7 +628,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // that's fine since it's on our BSP init stack (which isn't reclaimed)
     //
     // This call is safe here because we assume that our `annotated_regions` is correct.
-    let global_memory = unsafe { GlobalMemory::new(annotated_regions) };
+    let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]

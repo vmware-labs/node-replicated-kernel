@@ -596,7 +596,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             apic.version(),
             apic.bsp()
         );
-    } // Make sure to drop the reference to the APIC again
+    } // Make sure to drop the reference to the KCB/APIC again
 
     // Initialize the ACPI sub-system (needs alloc)
     {
@@ -618,15 +618,19 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Make sure we don't accidentially use the memory_regions but rather,
     // use the correctly `annotated_regions` now!
     drop(memory_regions);
-    let global_memory = unsafe { crate::memory::GlobalMemory::new(annotated_regions) };
 
-    // Initialize memory allocators (needs annotated memory regions)
-    // the memory for those alloacators needs to ne local to the region.
-    //  - Each `annotated_region` should be backed at the lowest level by a buddy allocator:
+    // Initialize memory allocators (needs annotated memory regions, KCB)
+    // the memory for those allocators needs to be local to the region.
+    //  - Each `annotated_region` should be backed at the lowest level by a buddy allocator
     //  - For every node we should have one NCache
-    //  - For every core we should have one TCache
+    // all this work is done in GlobalMemory, also GlobalMemory should live forver,
+    // (we hand out a reference to `global_memory` to every core)
+    // that's fine since it's on our BSP init stack (which isn't reclaimed)
+    //
+    // This call is safe here because we assume that our `annotated_regions` is correct.
+    let global_memory = unsafe { GlobalMemory::new(annotated_regions) };
 
-    // Bring up the rest of the system
+    // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]
     boot_app_cores(kernel_binary, kernel_args);
 

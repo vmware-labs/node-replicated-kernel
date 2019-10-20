@@ -30,7 +30,7 @@ custom_error! {pub AllocationError
     CantGrowFurther{count: usize} = "Cache full; only added {count} elements.",
 }
 
-/// Given `bytes` return the quantity in a human readable.
+/// Given `bytes` return the quantity in a human readable form.
 pub fn format_size(bytes: usize) -> (f64, &'static str) {
     if bytes < 1024 {
         (bytes as f64, "B")
@@ -157,7 +157,7 @@ impl GlobalMemory {
             let ncache_ptr = ncache_memory.uninitialized::<ncache::NCache>();
             let ncache: &'static mut ncache::NCache =
                 ncache::NCache::init(ncache_ptr, affinity as topology::NodeId);
-            assert_eq!(&*ncache as *const _ as u64, ncache_memory_addr.as_u64());
+            debug_assert_eq!(&*ncache as *const _ as u64, ncache_memory_addr.as_u64());
 
             gm.node_caches.push(CachePadded::new(Mutex::new(ncache)));
         }

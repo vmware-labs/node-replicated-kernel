@@ -29,6 +29,9 @@ use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
 use x86::cpuid;
 
+use node_replication::log::Log;
+use node_replication::replica::Replica;
+
 //use apic::x2apic;
 use apic::xapic;
 
@@ -53,6 +56,7 @@ use logos::Logos;
 use spin::Mutex;
 
 use crate::memory::*;
+use crate::nr::{KernelNode, Op};
 use crate::stack::{OwnedStack, Stack};
 use crate::{xmain, ExitReason};
 
@@ -230,6 +234,8 @@ struct AppCoreArgs {
     mem_region: Frame,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs<[Module; 2]>,
+    log: Arc<Log<'static, Op>>,
+    replica: Arc<Replica<'static, KernelNode>>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -300,7 +306,13 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 ///  - Initialized ACPI
 ///  - Initialized topology
 ///  - Local APIC driver
-fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs<[Module; 2]>) {
+fn boot_app_cores(
+    kernel_binary: &'static [u8],
+    kernel_args: &'static KernelArgs<[Module; 2]>,
+    global_memory: &GlobalMemory,
+    log: Arc<Log<'static, Op>>,
+    replica: Arc<Replica<'static, KernelNode>>,
+) {
     let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
 
     // There should be different strategies
@@ -334,6 +346,8 @@ fn boot_app_cores(kernel_binary: &'static [u8], kernel_args: &'static KernelArgs
             mem_region,
             kernel_binary,
             kernel_args,
+            log: log.clone(),
+            replica: replica.clone(),
         });
 
         unsafe {
@@ -630,9 +644,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // This call is safe here because we assume that our `annotated_regions` is correct.
     let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
 
+    let mut log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));
+    let mut replica = Arc::new(Replica::<KernelNode>::new(&log));
+    let local_ridx = replica
+        .register()
+        .expect("Failed to register with Replica.");
+
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]
-    boot_app_cores(kernel_binary, kernel_args);
+    boot_app_cores(
+        kernel_binary,
+        kernel_args,
+        &global_memory,
+        log.clone(),
+        replica.clone(),
+    );
 
     // Done with initialization, now we go in
     // the arch-independent part:

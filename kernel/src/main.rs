@@ -80,6 +80,7 @@ mod memory;
 #[macro_use]
 mod prelude;
 mod error;
+mod nr;
 mod stack;
 
 #[cfg(target_os = "none")]

@@ -16,6 +16,7 @@ use crate::prelude::*;
 
 use super::{
     AllocationError, AllocatorStatistics, Frame, PAddr, PhysicalAllocator, VAddr, BASE_PAGE_SIZE,
+    LARGE_PAGE_SIZE,
 };
 use crate::arch::memory::kernel_vaddr_to_paddr;
 
@@ -37,8 +38,8 @@ impl FreeBlock {
 /// heap somewhere, because every single byte of our heap is potentially
 /// available for allocation.
 pub struct BuddyFrameAllocator {
-    /// The physical region managed by this allocator. Its base must be aligned on a
-    /// `MIN_HEAP_ALIGN` boundary.
+    /// The physical region managed by this allocator. Its base shall be aligned on a
+    /// `min_heap_align` boundary (i.e., either 4 KiB or 2 MiB at the moment ).
     region: Frame,
 
     /// Total bytes currently allocated (in use)
@@ -53,6 +54,9 @@ pub struct BuddyFrameAllocator {
     /// and only when no memory is allocated.
     free_lists: [*mut FreeBlock; 27],
 
+    /// Our minimum block alignment (depends on region.base)
+    min_heap_align: usize,
+
     /// Our minimum block size.
     min_block_size: usize,
 
@@ -61,8 +65,6 @@ pub struct BuddyFrameAllocator {
 }
 
 impl BuddyFrameAllocator {
-    const MIN_HEAP_ALIGN: usize = BASE_PAGE_SIZE;
-
     pub fn new() -> BuddyFrameAllocator {
         BuddyFrameAllocator {
             region: Frame {
@@ -101,6 +103,7 @@ impl BuddyFrameAllocator {
                 ptr::null_mut(),
                 ptr::null_mut(),
             ],
+            min_heap_align: BASE_PAGE_SIZE,
             min_block_size: BASE_PAGE_SIZE,
             min_block_size_log2: 12,
         }
@@ -115,12 +118,27 @@ impl BuddyFrameAllocator {
     pub unsafe fn add_memory(&mut self, region: Frame) -> bool {
         if self.region.base.as_u64() == 0 {
             let size = region.size.next_power_of_two() >> 1;
-            self.region.size = region.size;
+            if size < region.size {
+                let ret = super::format_size(region.size - size);
+                // split the frame and return the rest of it
+                error!(
+                    "TODO: Buddy only deals with powers-of-two, we lost {:.2} {}.",
+                    ret.0, ret.1
+                );
+            }
+            self.region.size = size;
             let order = self
                 .layout_to_order(Layout::from_size_align_unchecked(size, 1))
                 .expect("Failed to calculate order for root heap block");
             //trace!("order = {} size = {}", order, region.size);
-            self.region = region;
+            self.region.affinity = region.affinity;
+
+            self.min_heap_align = if region.base.as_usize() % LARGE_PAGE_SIZE == 0 {
+                LARGE_PAGE_SIZE
+            } else {
+                BASE_PAGE_SIZE
+            };
+
             self.free_list_insert(order, region.kernel_vaddr().as_mut_ptr::<FreeBlock>());
             true
         } else {
@@ -130,14 +148,14 @@ impl BuddyFrameAllocator {
 
     /// Create a new heap.
     ///
-    /// * `heap_base` must be aligned on a `MIN_HEAP_ALIGN` boundary
+    /// * `heap_base` must be aligned on a 4 KiB or 2 MiB boundary
     /// * `heap_size` must be a power of 2
     /// * `heap_size / 2 ** (free_lists.len()-1)` must be greater than or equal to `size_of::<FreeBlock>()`.
     #[cfg(test)]
     pub unsafe fn new_test_instance(region: Frame, min_block_size: usize) -> BuddyFrameAllocator {
         assert!(region.base.as_u64() > (BASE_PAGE_SIZE as u64));
         assert!(region.size.is_power_of_two());
-        assert_eq!(region.base % BuddyFrameAllocator::MIN_HEAP_ALIGN, 0);
+        assert_eq!(region.base % BASE_PAGE_SIZE, 0);
 
         // TODO: this should be sized based on heap_size?
         // 27 with a min block size of 2**12 gives blocks of up to 512 GiB
@@ -184,12 +202,19 @@ impl BuddyFrameAllocator {
         // We must have one free list per possible heap block size.
         assert!(min_block_size * (2u32.pow(free_list.len() as u32 - 1)) as usize >= region.size);
 
+        let min_heap_align = if region.base.as_usize() % LARGE_PAGE_SIZE == 0 {
+            LARGE_PAGE_SIZE
+        } else {
+            BASE_PAGE_SIZE
+        };
+
         let mut result = BuddyFrameAllocator {
             region: region,
             allocated_bytes: 0,
             internal_fragmentation: 0,
             free_lists: free_list,
-            min_block_size: min_block_size,
+            min_heap_align,
+            min_block_size,
             min_block_size_log2: min_block_size.log2(),
         };
 
@@ -204,8 +229,8 @@ impl BuddyFrameAllocator {
 
     /// Get block size for allocation request.
     fn allocation_size(&self, layout: Layout) -> Option<usize> {
-        // Don't try to align more than our heap base alignment
-        if layout.align() > BuddyFrameAllocator::MIN_HEAP_ALIGN {
+        if layout.align() > self.min_heap_align {
+            trace!("Don't try to align more than our heap base alignment");
             return None;
         }
 
@@ -329,7 +354,18 @@ impl BuddyFrameAllocator {
 
 impl fmt::Debug for BuddyFrameAllocator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BuddyFrameAllocator {{ {:?} }}", self.region)
+        let cap = super::format_size(self.capacity());
+        let free = super::format_size(self.free());
+        let allocd = super::format_size(self.allocated());
+        let frag = super::format_size(self.internal_fragmentation());
+
+        write!(
+            f,
+            "BuddyFrameAllocator {{ region: {:#x} -- {:#x}, cap: {:.2} {}, free: {:.2} {}, allocated: {:.2} {}, internal_fragmentation: {:.2} {} }}",
+            self.region.base,
+            self.region.end(),
+            cap.0, cap.1, free.0, free.1, allocd.0, allocd.1, frag.0, frag.1
+        )
     }
 }
 
@@ -888,6 +924,63 @@ pub mod test {
                 .allocate_frame(Layout::from_size_align_unchecked(128, 128))
                 .unwrap();
             assert_eq!(block_128_0.affinity, 3);
+        }
+    }
+
+    #[test]
+    /// Test that we can allocate a 2 MiB page from a large enough frame.
+    fn can_alloc_two_mib() {
+        unsafe {
+            klogger::init(log::Level::Trace);
+
+            let heap_size: usize = 128 * 1024 * 1024;
+            assert!(heap_size.is_power_of_two());
+
+            let mem = alloc::alloc(Layout::from_size_align_unchecked(
+                heap_size,
+                LARGE_PAGE_SIZE,
+            ));
+            let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
+
+            let mut heap = BuddyFrameAllocator::new_test_instance(
+                Frame::new(pmem, heap_size, 3),
+                BASE_PAGE_SIZE,
+            );
+            let b = heap.allocate_frame(Layout::from_size_align_unchecked(
+                LARGE_PAGE_SIZE,
+                LARGE_PAGE_SIZE,
+            ));
+            assert!(b.is_ok());
+        }
+    }
+
+    #[test]
+    /// Test that we can allocate a 2 MiB page from a large enough frame.
+    fn two_mib_heap_exhaust() {
+        unsafe {
+            klogger::init(log::Level::Trace);
+
+            let heap_size: usize = 512 * 1024 * 1024;
+            assert!(heap_size.is_power_of_two());
+
+            let mem = alloc::alloc(Layout::from_size_align_unchecked(
+                heap_size,
+                LARGE_PAGE_SIZE,
+            ));
+            let pmem = kernel_vaddr_to_paddr(VAddr::from(mem as usize));
+
+            let mut heap = BuddyFrameAllocator::new_test_instance(
+                Frame::new(pmem, heap_size, 3),
+                BASE_PAGE_SIZE,
+            );
+
+            for _ in 0..(heap_size / LARGE_PAGE_SIZE) {
+                let b = heap.allocate_frame(Layout::from_size_align_unchecked(
+                    LARGE_PAGE_SIZE,
+                    LARGE_PAGE_SIZE,
+                ));
+                assert!(b.is_ok());
+            }
         }
     }
 }

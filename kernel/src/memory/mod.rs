@@ -31,6 +31,13 @@ custom_error! {pub AllocationError
 }
 
 /// Given `bytes` return the quantity in a human readable form.
+///
+/// # Example
+///
+/// ```no-run
+/// let ret = fromat_size(1024);
+/// format!(w, "{:.2} {}", ret.1, ret.2);
+/// ```
 pub fn format_size(bytes: usize) -> (f64, &'static str) {
     if bytes < 1024 {
         (bytes as f64, "B")
@@ -108,7 +115,8 @@ impl GlobalMemory {
             .iter()
             .map(|f| f.affinity as usize)
             .max()
-            .expect("Need at least some frames");
+            .expect("Need at least some frames")
+            + 1;
 
         // 1. Construct the `emem`'s for all NUMA nodes:
         let mut cur_affinity = 0;
@@ -117,7 +125,6 @@ impl GlobalMemory {
             const FOUR_MIB: usize = 4 * 1024 * 1024;
             if frame.affinity == cur_affinity && frame.size() > FOUR_MIB {
                 let (low, high) = frame.split_at(FOUR_MIB);
-                info!("low {:?} high {:?}", low, high);
                 cur_affinity += 1;
                 debug_assert_eq!(low.size(), FOUR_MIB);
 
@@ -127,11 +134,17 @@ impl GlobalMemory {
         }
         debug_assert_eq!(
             gm.emem.len(),
-            max_affinity + 1,
+            max_affinity,
             "Added early managers for all NUMA nodes"
         );
 
         // 2. Construct the buddies for all Frames
+        //
+        // TODO: We need to make sure that frame sizes are
+        // powers of two and we don't just chop away lots of
+        // memory in the buddy (ideally the buddy does the split
+        // and returns the rest of the frame to us).
+        //
         // We get memory from the frame-local NUMA node (using previosuly created emem),
         // then we construct a buddy in the the uninitialized page memory
         // and stick it in `gm.buddies`
@@ -180,35 +193,70 @@ impl GlobalMemory {
                     let mut buddy_locked = buddy.lock();
                     let mut ncache_locked = ncache.lock();
 
-                    if buddy_locked.free() < LARGE_PAGE_SIZE {
-                        // If the buddy has less than 2 MiB of space
-                        // just fill the NCache up with base pages:
-                        while buddy_locked.free() > BASE_PAGE_SIZE {
-                            match buddy_locked.allocate_frame(Layout::from_size_align_unchecked(
-                                BASE_PAGE_SIZE,
-                                BASE_PAGE_SIZE,
-                            )) {
-                                Ok(frame) => ncache_locked.grow_base_pages(&[frame])?,
-                                Err(e) => {
-                                    debug!("Allocation from {:?} failed {:?}", *buddy_locked, e);
-                                    break;
-                                }
-                            };
-                        }
+                    let how_many_base_pages = if buddy_locked.free() < LARGE_PAGE_SIZE {
+                        // All pages in this frame are made base-pages
+                        buddy_locked.free() / BASE_PAGE_SIZE
                     } else {
-                        // Add large-pages first then the remaining 8% should be base-pages
-                        let how_many_base_pages = (buddy_locked.free() / BASE_PAGE_SIZE) * 8 / 100;
-                        let how_many_large_pages = (buddy_locked.free()
-                            - (how_many_base_pages * BASE_PAGE_SIZE))
-                            / LARGE_PAGE_SIZE;
+                        // ~8% should be reserved as base-pages
+                        (buddy_locked.free() / BASE_PAGE_SIZE) * 8 / 100
+                    };
 
-                        info!(
-                            "Add {} base, {} large",
-                            how_many_base_pages, how_many_large_pages
-                        );
+                    let how_many_large_pages = (buddy_locked.free()
+                        - (how_many_base_pages * BASE_PAGE_SIZE))
+                        / LARGE_PAGE_SIZE;
+
+                    trace!(
+                        "Trying to add {} base-pages, {} large-pages to NCache",
+                        how_many_base_pages,
+                        how_many_large_pages
+                    );
+                    for cnt in 0..how_many_base_pages {
+                        match buddy_locked.allocate_frame(Layout::from_size_align_unchecked(
+                            BASE_PAGE_SIZE,
+                            BASE_PAGE_SIZE,
+                        )) {
+                            Ok(frame) => {
+                                ncache_locked.grow_base_pages(&[frame])?;
+                                //debug!("gave base page to ncache {:?}", frame);
+                            }
+                            Err(AllocationError::OutOfMemory { size: x }) => {
+                                debug_assert_eq!(x, BASE_PAGE_SIZE);
+                                break;
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Unexpcted error while filling NCache from {:?} (error was {:?})",
+                                    *buddy_locked, e
+                                );
+                                break;
+                            }
+                        };
                     }
 
-                    info!("{:?} {:?}", *buddy_locked, *ncache_locked);
+                    for cnt in 0..how_many_large_pages {
+                        match buddy_locked.allocate_frame(Layout::from_size_align_unchecked(
+                            LARGE_PAGE_SIZE,
+                            LARGE_PAGE_SIZE,
+                        )) {
+                            Ok(frame) => {
+                                ncache_locked.grow_large_pages(&[frame])?;
+                                //debug!("gave large page to ncache {:?}", frame);
+                            }
+                            Err(AllocationError::OutOfMemory { size: x }) => {
+                                debug_assert_eq!(x, LARGE_PAGE_SIZE);
+                                break;
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Unexpcted error while filling NCache from {:?} (error was {:?})",
+                                    *buddy_locked, e
+                                );
+                                break;
+                            }
+                        };
+                    }
+
+                    debug!("{:?} {:?}", *buddy_locked, *ncache_locked);
                 }
             }
         }

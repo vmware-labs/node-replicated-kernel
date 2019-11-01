@@ -98,45 +98,64 @@ fn backtrace_format(
 
 #[inline(always)]
 pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
-    sprintln!("Backtrace:");
     let kernel_info = kcb::try_get_kcb().map(|k| {
         (
             k.kernel_binary(),
             k.kernel_args().kernel_elf_offset.as_u64(),
         )
     });
-    let (elf_data, relocated_offset) = kernel_info.expect("Don't have kernel info");
-    let elf_binary =
-        elfloader::ElfBinary::new("kernel", &elf_data).expect("Can't parse kernel Binary");
-    let context = new_ctxt(&elf_binary);
 
-    let mut count = 0;
-    backtracer::trace_from(backtracer::EntryPoint::new(rbp, rsp, rip), |frame| {
-        count += 1;
-        backtrace_format(context.as_ref(), relocated_offset, count, frame)
-    });
+    if kernel_info.is_some() {
+        sprintln!("Backtrace:");
+        let (elf_data, relocated_offset) = kernel_info.expect("Don't have kernel info");
+        match elfloader::ElfBinary::new("kernel", &elf_data) {
+            Ok(elf_binary) => {
+                let context = new_ctxt(&elf_binary);
+
+                let mut count = 0;
+                backtracer::trace_from(backtracer::EntryPoint::new(rbp, rsp, rip), |frame| {
+                    count += 1;
+                    backtrace_format(context.as_ref(), relocated_offset, count, frame)
+                });
+            }
+            Err(e) => {
+                sprintln!("Backtrace unavailable (can't parse kernel binary: '{}')", e);
+            }
+        }
+    } else {
+        sprintln!("Backtrace unavailable (binary information missing)");
+    }
 }
 
 #[inline(always)]
 pub fn backtrace() {
-    sprintln!("Backtrace:");
-
     let kernel_info = kcb::try_get_kcb().map(|k| {
         (
             k.kernel_binary(),
             k.kernel_args().kernel_elf_offset.as_u64(),
         )
     });
-    let (elf_data, relocated_offset) = kernel_info.expect("Don't have kernel info.");
-    let elf_binary =
-        elfloader::ElfBinary::new("kernel", &elf_data).expect("Can't parse kernel binary.");
-    let context = new_ctxt(&elf_binary);
 
-    let mut count = 0;
-    backtracer::trace(|frame| {
-        count += 1;
-        backtrace_format(context.as_ref(), relocated_offset, count, frame)
-    });
+    if kernel_info.is_some() {
+        sprintln!("Backtrace:");
+
+        let (elf_data, relocated_offset) = kernel_info.expect("Don't have kernel info.");
+        match elfloader::ElfBinary::new("kernel", &elf_data) {
+            Ok(elf_binary) => {
+                let context = new_ctxt(&elf_binary);
+                let mut count = 0;
+                backtracer::trace(|frame| {
+                    count += 1;
+                    backtrace_format(context.as_ref(), relocated_offset, count, frame)
+                });
+            }
+            Err(e) => {
+                sprintln!("Backtrace unavailable (can't parse kernel binary: '{}')", e);
+            }
+        }
+    } else {
+        sprintln!("Backtrace unavailable (binary information missing)");
+    }
 }
 
 #[cfg_attr(target_os = "none", panic_handler)]

@@ -316,12 +316,14 @@ impl<'a> VSpace<'a> {
         let pt = self.get_pt(pd[pd_idx]);
         let mut pt_idx = pt_index(vbase);
         let mut mapped: usize = 0;
+        trace!("pt_idx = {} mapped = {} pszie = {}", pt_idx, mapped, psize);
         while mapped < psize && pt_idx < 512 {
             if !pt[pt_idx].is_present() {
                 pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
+                trace!("installed 4 KiB mapping: {:?}", pt[pt_idx]);
             } else {
                 assert!(
-                    pt[pt_idx].is_present(),
+                    !pt[pt_idx].is_present(),
                     "An existing mapping already covers the 4 KiB range we're trying to map?"
                 );
             }
@@ -346,7 +348,9 @@ impl<'a> VSpace<'a> {
 
     /// A simple wrapper function for allocating just oen page.
     pub(crate) fn allocate_one_page() -> PAddr {
-        VSpace::allocate_pages(1, uefi::table::boot::MemoryType(KERNEL_PT))
+        let paddr = VSpace::allocate_pages(1, uefi::table::boot::MemoryType(KERNEL_PT));
+        trace!("allocate_one_page {:#x}", paddr);
+        paddr
     }
 
     /// Does an allocation of physical memory where the base-address is a multiple of `align_to`.
@@ -400,15 +404,17 @@ impl<'a> VSpace<'a> {
             let st = system_table();
             st.as_ref()
                 .boot_services()
-                .free_pages(paddr.as_u64(), unaligned_unused_pages_bottom)
+                // This weird API will free the top-most page too? (that's why we do -1)
+                // (had a bug where it reused a page from the kernel text as stack)
+                .free_pages(paddr.as_u64(), unaligned_unused_pages_bottom - 1)
                 .expect_success("Can't free prev. allocated memory");
-        }
-
-        unsafe {
-            let st = system_table();
             st.as_ref()
                 .boot_services()
-                .free_pages(aligned_end.as_u64(), unaligned_unused_pages_top)
+                // Again + page size because I don't know how this API does things
+                .free_pages(
+                    aligned_end.as_u64() + BASE_PAGE_SIZE as u64,
+                    unaligned_unused_pages_top - 1,
+                )
                 .expect_success("Can't free prev. allocated memory");
         }
 

@@ -308,7 +308,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     kernel.vspace.map_identity(
         PAddr(0xfee00000u64),
         PAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
-        MapAction::ReadWriteExecuteKernel,
+        MapAction::ReadWriteKernel,
     );
 }
 
@@ -346,19 +346,36 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     trace!("Load the ELF binary into the address space");
     binary.load(&mut kernel).expect("Can't load the kernel");
 
-    trace!("Kernel stack allocation");
-    let stack_pages: usize = 128;
-    let stack_base: PAddr = allocate_pages(&st, stack_pages, MemoryType(KERNEL_STACK));
+    // On big machines with the init stack tends to put big structures
+    // on the stack so we reserve a fair amount of space:
+    let stack_pages: usize = 512;
+    let stack_region: PAddr = allocate_pages(&st, stack_pages, MemoryType(KERNEL_STACK));
+    let stack_protector: PAddr = stack_region;
+    let stack_base: PAddr = stack_region + BASE_PAGE_SIZE;
+
     let stack_size: usize = stack_pages * BASE_PAGE_SIZE;
     let stack_top: PAddr = stack_base + stack_size as u64;
-    assert_eq!(stack_top % 16usize, 0);
+    assert_eq!(stack_protector + BASE_PAGE_SIZE, stack_base);
+
+    kernel.vspace.map_identity_with_offset(
+        PAddr::from(KERNEL_OFFSET as u64),
+        stack_protector,
+        stack_protector + BASE_PAGE_SIZE,
+        MapAction::ReadUser, // TODO: should be MapAction::None
+    );
     kernel.vspace.map_identity_with_offset(
         PAddr::from(KERNEL_OFFSET as u64),
         stack_base,
         stack_top,
-        MapAction::ReadWriteExecuteKernel,
+        MapAction::ReadWriteKernel,
     );
-    debug!("Kernel stack starts at {:x}", stack_top);
+    debug!(
+        "Init stack memory: {:#x} -- {:#x} (protector at {:#x} -- {:#x})",
+        stack_base.as_u64(),
+        stack_top.as_u64(),
+        stack_protector,
+        stack_protector + BASE_PAGE_SIZE,
+    );
 
     // Make sure we still have access to the UEFI mappings:
     // Get the current memory map and 1:1 map all physical memory
@@ -458,7 +475,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
 
         // Finally switch to the kernel stack and entry function
         jump_to_kernel(
-            KERNEL_OFFSET as u64 + stack_top.as_u64(),
+            KERNEL_OFFSET as u64 + stack_top.as_u64() - (BASE_PAGE_SIZE as u64),
             kernel.offset.as_u64() + binary.entry_point(),
             paddr_to_kernel_vaddr(kernel_args_paddr).as_u64(),
         );

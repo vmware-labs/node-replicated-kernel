@@ -15,7 +15,7 @@ jump_to_kernel: // fn(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64)
 
     // We push 0 as return address in case we do stack backtracing we can
     // abort
-    push $0
+    pushq $0
 
     // absolute jump rather than call to the kernel entry point
     jmp *%rdx

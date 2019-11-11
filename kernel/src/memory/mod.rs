@@ -23,6 +23,7 @@ pub use crate::arch::memory::{
 };
 
 use crate::prelude::*;
+use crate::round_up;
 
 pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
 
@@ -599,15 +600,42 @@ impl Frame {
         }
     }
 
-    /// Splits a given Frame into two, returns both.
+    /// Splits a given Frame into two (`low`, `high`).
+    ///
+    /// - `high` will be aligned to LARGE_PAGE_SIZE or Frame::empty() if
+    ///    the frame can not be aligned to a large-page within its size.
+    /// - `low` will be everything below alignment or Frame::empty() if `self`
+    ///    is already aligned to `LARGE_PAGE_SIZE`
+    fn split_at_nearest_large_page_boundary(self) -> (Frame, Frame) {
+        if self.base % LARGE_PAGE_SIZE == 0 {
+            (Frame::empty(), self)
+        } else {
+            let new_high_base = PAddr::from(round_up!(self.base.as_usize(), LARGE_PAGE_SIZE));
+            let split_at = new_high_base - self.base;
+
+            self.split_at(split_at.as_usize())
+        }
+    }
+
+    /// Splits a given Frame into two, returns both as
+    /// a (`low`, `high`) tuple.
+    ///
+    /// If `size` is bigger than `self`, `high`
+    /// will be an `empty` frame.
+    ///
+    /// # Panics
+    /// Panics if size is not a multiple of base page-size.
     pub fn split_at(self, size: usize) -> (Frame, Frame) {
         assert_eq!(size % BASE_PAGE_SIZE, 0);
-        assert!(size < self.size());
 
-        let low = Frame::new(self.base, size, self.affinity);
-        let high = Frame::new(self.base + size, self.size() - size, self.affinity);
+        if size >= self.size() {
+            (self, Frame::empty())
+        } else {
+            let low = Frame::new(self.base, size, self.affinity);
+            let high = Frame::new(self.base + size, self.size() - size, self.affinity);
 
-        (low, high)
+            (low, high)
+        }
     }
 
     /// Represent the Frame as a slice of `T`.
@@ -658,6 +686,10 @@ impl Frame {
         self.size / BASE_PAGE_SIZE
     }
 
+    pub fn is_large_page_aligned(&self) -> bool {
+        self.base % LARGE_PAGE_SIZE == 0
+    }
+
     /// Size of the region (in bytes).
     pub fn size(&self) -> usize {
         self.size
@@ -675,6 +707,46 @@ impl Frame {
     /// The kernel virtual address for this region.
     pub fn kernel_vaddr(&self) -> VAddr {
         paddr_to_kernel_vaddr(self.base)
+    }
+}
+
+pub struct IntoBasePageIter {
+    frame: Frame,
+}
+
+impl core::iter::ExactSizeIterator for IntoBasePageIter {
+    fn len(&self) -> usize {
+        self.frame.size() / BASE_PAGE_SIZE
+    }
+}
+
+impl core::iter::FusedIterator for IntoBasePageIter {}
+
+impl core::iter::Iterator for IntoBasePageIter {
+    // we will be counting with usize
+    type Item = Frame;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.frame.size() > BASE_PAGE_SIZE {
+            let (low, high) = self.frame.split_at(BASE_PAGE_SIZE);
+            self.frame = high;
+            Some(low)
+        } else if self.frame.size() == BASE_PAGE_SIZE {
+            let mut last_page = Frame::empty();
+            core::mem::swap(&mut last_page, &mut self.frame);
+            Some(last_page)
+        } else {
+            None
+        }
+    }
+}
+
+impl core::iter::IntoIterator for Frame {
+    type Item = Frame;
+    type IntoIter = IntoBasePageIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoBasePageIter { frame: self }
     }
 }
 
@@ -805,6 +877,62 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frame_iter() {
+        let frame = Frame::new(PAddr::from(8 * 1024 * 1024), 4096 * 3, 0);
+        let mut iter = frame.into_iter();
+        assert_eq!(iter.len(), 3);
+
+        let f1 = iter.next().unwrap();
+        assert_eq!(f1.base, PAddr::from(8 * 1024 * 1024));
+        assert_eq!(f1.size(), BASE_PAGE_SIZE);
+
+        let f2 = iter.next().unwrap();
+        assert_eq!(f2.base, PAddr::from(8 * 1024 * 1024 + 4096));
+        assert_eq!(f2.size(), BASE_PAGE_SIZE);
+
+        let f3 = iter.next().unwrap();
+        assert_eq!(f3.base, PAddr::from(8 * 1024 * 1024 + 4096 + 4096));
+        assert_eq!(f3.size(), BASE_PAGE_SIZE);
+
+        let f4 = iter.next();
+        assert_eq!(f4, None);
+
+        let f4 = iter.next();
+        assert_eq!(f4, None);
+
+        assert_eq!(Frame::empty().into_iter().next(), None);
+    }
+
+    #[test]
+    fn frame_split_at_nearest_large_page_boundary() {
+        let f = Frame::new(PAddr::from(8 * 1024 * 1024), 4096 * 10, 0);
+        assert_eq!(
+            f.split_at_nearest_large_page_boundary(),
+            (Frame::empty(), f)
+        );
+
+        let f = Frame::new(PAddr::from(LARGE_PAGE_SIZE - 5 * 4096), 4096 * 10, 0);
+        let low = Frame::new(PAddr::from(LARGE_PAGE_SIZE - 5 * 4096), 4096 * 5, 0);
+        let high = Frame::new(PAddr::from(LARGE_PAGE_SIZE), 4096 * 5, 0);
+        assert_eq!(f.split_at_nearest_large_page_boundary(), (low, high));
+
+        let f = Frame::new(PAddr::from(BASE_PAGE_SIZE), 4096 * 5, 0);
+        assert_eq!(
+            f.split_at_nearest_large_page_boundary(),
+            (f, Frame::empty())
+        );
+    }
+
+    #[test]
+    fn frame_large_page_aligned() {
+        let f = Frame::new(PAddr::from(0xf000), 4096 * 10, 0);
+        assert!(!f.is_large_page_aligned());
+
+        let f = Frame::new(PAddr::from(8 * 1024 * 1024), 4096 * 10, 0);
+        assert!(f.is_large_page_aligned());
+    }
 
     #[test]
     fn frame_split_at() {

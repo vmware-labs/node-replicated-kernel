@@ -253,6 +253,11 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         let phys_range_end =
             PAddr::from(entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64);
 
+        if phys_range_start.as_u64() <= 0xfee00000u64 && phys_range_end.as_u64() >= 0xfee00000u64 {
+            debug!("{:?} covers APIC range, ignore for now.", entry);
+            continue;
+        }
+
         let rights: MapAction = match entry.ty {
             MemoryType::RESERVED => MapAction::None,
             MemoryType::LOADER_CODE => MapAction::ReadExecuteKernel,
@@ -312,12 +317,139 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     );
 }
 
+/// Initialize the screen to the highest possible resolution.
+fn setup_screen(st: &SystemTable<Boot>) {
+    /*
+    use uefi::proto::console::gop::GraphicsOutput;
+    use uefi::proto::console::text::Output;
+
+        if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
+            let gop = gop.expect("Warnings encountered while opening GOP");
+            let gop = unsafe { &mut *gop.get() };
+
+            let mode = gop
+                .modes()
+                .map(|mode| mode.expect("Warnings encountered while querying modes"))
+                .max_by(|ref x, ref y| x.info().resolution().cmp(&y.info().resolution()))
+                .unwrap();
+
+            gop.set_mode(&mode)
+                .expect_success("Failed to set graphics mode");
+        } else {
+            warn!("UEFI Graphics Output Protocol is not supported.");
+        }*/
+
+    /*if let Ok(stdout) = st.boot_services().locate_protocol::<Output>() {
+        let stdout = stdout.expect("Warnings encountered while opening Output");
+        let stdout = unsafe { &mut *stdout.get() };
+        let best_mode = stdout
+            .modes()
+            .last()
+            .unwrap()
+            .expect("Warnings encountered while querying text mode");
+        stdout
+            .set_mode(best_mode)
+            .expect_success("Failed to change text mode");
+    } else {
+        warn!("UEFI Output Protocol is not supported.");
+    }*/
+}
+
+fn serial_init(st: &SystemTable<Boot>) {
+    use uefi::proto::console::serial::{ControlBits, Serial};
+    if let Ok(serial) = st.boot_services().locate_protocol::<Serial>() {
+        let serial = serial.expect("Warnings encountered while opening serial protocol");
+        let serial = unsafe { &mut *serial.get() };
+
+        let old_ctrl_bits = serial
+            .get_control_bits()
+            .expect_success("Failed to get device control bits");
+
+        let mut ctrl_bits = ControlBits::empty();
+        ctrl_bits |= ControlBits::HARDWARE_FLOW_CONTROL_ENABLE;
+        ctrl_bits |= ControlBits::SOFTWARE_LOOPBACK_ENABLE;
+
+        serial
+            .set_control_bits(ctrl_bits)
+            .expect_success("Failed to set device control bits");
+
+        const OUTPUT: &[u8] = b"Serial output check";
+        const MSG_LEN: usize = OUTPUT.len();
+        serial
+            .write(OUTPUT)
+            .expect_success("Failed to write to serial port");
+    } else {
+        warn!("No serial device found.");
+    }
+}
+
+fn find_apic_base() -> u64 {
+    use x86::msr::{rdmsr, IA32_APIC_BASE};
+    unsafe {
+        let base = rdmsr(IA32_APIC_BASE);
+        info!("xAPIC MMIO base is at {:x}", base & !0xfff);
+        base & !0xfff
+    }
+}
+
+/// Make sure the machine supports what we require.
+fn assert_required_cpu_features() {
+    let cpuid = x86::cpuid::CpuId::new();
+
+    let fi = cpuid.get_feature_info();
+    let has_xsave = fi.as_ref().map_or(false, |f| f.has_xsave());
+    let has_sse = fi.as_ref().map_or(false, |f| f.has_sse());
+    let has_apic = fi.as_ref().map_or(false, |f| f.has_apic());
+    let has_x2apic = fi.as_ref().map_or(false, |f| f.has_x2apic());
+    let has_tsc = fi.as_ref().map_or(false, |f| f.has_tsc());
+    let has_pae = fi.as_ref().map_or(false, |f| f.has_pae());
+    let has_pse = fi.as_ref().map_or(false, |f| f.has_pse());
+    let has_msr = fi.as_ref().map_or(false, |f| f.has_msr());
+    let has_sse3 = fi.as_ref().map_or(false, |f| f.has_sse3());
+    let has_osfxsr = fi.as_ref().map_or(false, |f| f.has_fxsave_fxstor());
+
+    let efi = cpuid.get_extended_feature_info();
+    let has_smap = efi.as_ref().map_or(false, |f| f.has_smap());
+    let has_smep = efi.as_ref().map_or(false, |f| f.has_smep());
+    let has_fsgsbase = efi.as_ref().map_or(false, |f| f.has_fsgsbase());
+
+    let efni = cpuid.get_extended_function_info();
+    let has_1gib_pages = efni.as_ref().map_or(false, |f| f.has_1gib_pages());
+    let has_rdtscp = efni.as_ref().map_or(false, |f| f.has_rdtscp());
+    let has_syscall_sysret = efni.as_ref().map_or(false, |f| f.has_syscall_sysret());
+    let has_execute_disable = efni.as_ref().map_or(false, |f| f.has_execute_disable());
+    let has_invariant_tsc = efni.as_ref().map_or(false, |f| f.has_invariant_tsc());
+
+    assert!(has_sse3);
+    assert!(has_osfxsr);
+    assert!(has_smap);
+    assert!(has_smep);
+    assert!(has_xsave);
+    assert!(has_fsgsbase);
+    assert!(has_sse);
+    assert!(has_apic);
+    assert!(has_x2apic);
+    assert!(has_tsc);
+    assert!(has_pae);
+    assert!(has_pse);
+    assert!(has_msr);
+    assert!(has_1gib_pages);
+    assert!(has_rdtscp);
+    assert!(has_syscall_sysret);
+    assert!(has_execute_disable);
+    assert!(has_invariant_tsc);
+
+    debug!("CPU has all required features, continue");
+}
+
 /// Start function of the bootloader.
 /// The symbol name is defined through `/Entry:uefi_start` in `x86_64-uefi.json`.
 #[no_mangle]
 pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Status {
     uefi_services::init(&st).expect_success("Can't initialize UEFI");
     log::set_max_level(log::LevelFilter::Info);
+    //setup_screen(&st);
+    //serial_init(&st);
 
     debug!(
         "UEFI {}.{}",
@@ -327,6 +459,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     info!("UEFI Bootloader starting...");
     check_revision(st.uefi_revision());
 
+    let base = find_apic_base();
     let (kernel_module, kernel_blob) = load_binary_into_memory(&st, "kernel");
     let (init_module, _) = load_binary_into_memory(&st, "init");
 
@@ -382,13 +515,13 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     // dump_cr3();
     map_physical_memory(&st, &mut kernel);
     trace!("Replicated UEFI memory map");
+    assert_required_cpu_features();
 
     unsafe {
         // Enable cr4 features
         use x86::controlregs::{cr4, cr4_write, Cr4};
         let old_cr4 = cr4();
-        let new_cr4 = Cr4::CR4_ENABLE_PROTECTION_KEY
-            | Cr4::CR4_ENABLE_SMAP
+        let new_cr4 = Cr4::CR4_ENABLE_SMAP
             | Cr4::CR4_ENABLE_SMEP
             | Cr4::CR4_ENABLE_OS_XSAVE
             | Cr4::CR4_ENABLE_FSGSBASE
@@ -404,6 +537,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         if !new_cr4.contains(old_cr4) {
             warn!("UEFI has too many CR4 features enabled, so we disabled some: new cr4 {:?}, uefi cr4 was = {:?}", new_cr4, old_cr4);
         }
+        debug!("Switched to new page-table.");
 
         // Enable NXE bit (11)
         use x86::msr::{rdmsr, wrmsr, IA32_EFER};

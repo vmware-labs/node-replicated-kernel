@@ -63,6 +63,7 @@ pub fn xmain() {
     use alloc::vec::Vec;
     {
         let mut buf: Vec<u8> = Vec::with_capacity(0);
+        // test allocation sizes from 0 .. 8192
         for i in 0..1024 {
             buf.push(i as u8);
         }
@@ -70,13 +71,13 @@ pub fn xmain() {
     info!("small allocations work.");
 
     {
-        let size: usize = x86::bits64::paging::BASE_PAGE_SIZE;
+        let size: usize = x86::bits64::paging::BASE_PAGE_SIZE; // 0.03 MiB, 8 pages
         let mut buf: Vec<u8> = Vec::with_capacity(size);
         for i in 0..size {
             buf.push(i as u8);
         }
 
-        let size: usize = x86::bits64::paging::BASE_PAGE_SIZE * 256;
+        let size: usize = x86::bits64::paging::BASE_PAGE_SIZE * 256; // 8 MiB
         let mut buf: Vec<usize> = Vec::with_capacity(size);
         for i in 0..size {
             buf.push(i as usize);
@@ -286,8 +287,8 @@ pub fn xmain() {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
-        let r = mylog.append(&[0usize, 1usize]);
-        assert!(r.is_some());
+        mylog.append(&[0usize, 1usize], 1);
+        //assert!(r.is_some());
 
         // Don't change this string otherwise the test will fail:
         sprintln!("Hello from the other side");

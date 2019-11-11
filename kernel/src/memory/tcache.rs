@@ -4,7 +4,7 @@
 //!
 //! - Fits in a 4 KiB page
 //! - Can allocate and free 2 MiB and 4 KiB Frames very quickly using page-inlined stacks.
-//! - Is not thread-safe, to be used strictly on a single CPU
+//! - Is not thread-safe (intended to be used on a single CPU)
 
 use super::*;
 use crate::memory::*;
@@ -13,19 +13,19 @@ use crate::memory::*;
 ///
 /// Holds two stacks of pages for O(1) allocation/deallocation.
 /// Implements the `ReapBackend` to give pages back.
-struct TCache {
-    /// Which thread this TCache is used on
+pub struct TCache {
+    /// Which thread this TCache is used on.
     thread: topology::ThreadId,
     /// Which node the memory in this cache is from.
     node: topology::NodeId,
-    /// A vector of free, cached base-page addresses
+    /// A vector of free, cached base-page addresses.
     base_page_addresses: arrayvec::ArrayVec<[PAddr; 254]>,
-    /// A vector of free, cached large-page addresses
+    /// A vector of free, cached large-page addresses.
     large_page_addresses: arrayvec::ArrayVec<[PAddr; 254]>,
 }
 
 impl TCache {
-    fn new(thread: topology::ThreadId, node: topology::NodeId) -> TCache {
+    pub fn new(thread: topology::ThreadId, node: topology::NodeId) -> TCache {
         TCache {
             thread,
             node,
@@ -71,9 +71,9 @@ impl PhysicalPageProvider for TCache {
     }
 
     fn release_base_page(&mut self, frame: Frame) -> Result<(), AllocationError> {
-        debug_assert_eq!(frame.size(), BASE_PAGE_SIZE);
-        debug_assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
-        debug_assert_eq!(frame.affinity, self.node);
+        assert_eq!(frame.size(), BASE_PAGE_SIZE);
+        assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
+        assert_eq!(frame.affinity, self.node);
 
         self.base_page_addresses
             .try_push(frame.base)
@@ -95,9 +95,9 @@ impl PhysicalPageProvider for TCache {
     }
 
     fn release_large_page(&mut self, frame: Frame) -> Result<(), AllocationError> {
-        debug_assert_eq!(frame.size(), LARGE_PAGE_SIZE);
-        debug_assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
-        debug_assert_eq!(frame.affinity, self.node);
+        assert_eq!(frame.size(), LARGE_PAGE_SIZE);
+        assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
+        assert_eq!(frame.affinity, self.node);
 
         self.large_page_addresses
             .try_push(frame.base)
@@ -128,6 +128,43 @@ impl ReapBackend for TCache {
                 break;
             }
         }
+    }
+}
+
+impl GrowBackend for TCache {
+    fn base_page_capcacity(&self) -> usize {
+        self.base_page_addresses.capacity() - self.base_page_addresses.len()
+    }
+
+    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError> {
+        for frame in free_list {
+            assert_eq!(frame.size(), BASE_PAGE_SIZE);
+            assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
+            assert_eq!(frame.affinity, self.node);
+
+            self.base_page_addresses
+                .try_push(frame.base)
+                .map_err(|_e| AllocationError::CacheFull)?;
+        }
+        Ok(())
+    }
+
+    fn large_page_capcacity(&self) -> usize {
+        self.large_page_addresses.capacity() - self.large_page_addresses.len()
+    }
+
+    /// Add a slice of large-pages to `self`.
+    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError> {
+        for frame in free_list {
+            assert_eq!(frame.size(), LARGE_PAGE_SIZE);
+            assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
+            assert_eq!(frame.affinity, self.node);
+
+            self.large_page_addresses
+                .try_push(frame.base)
+                .map_err(|_e| AllocationError::CacheFull)?;
+        }
+        Ok(())
     }
 }
 

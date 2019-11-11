@@ -636,3 +636,55 @@ pub unsafe fn dump_table(pml4_table: &PML4, log_level: usize) {
         }
     }
 }
+
+use crate::graphviz as dot;
+use alloc::format;
+
+pub enum Nd<'a> {
+    L1(&'a PT),
+    L2(&'a PD),
+    L3(&'a PDPT),
+    L4(&'a PML4),
+}
+
+pub enum Ed {
+    ToTable(u64),
+    ToRam(u64),
+}
+
+impl<'a> dot::Labeller<'a> for VSpace {
+    type Node = Nd<'a>;
+    type Edge = Ed;
+
+    fn graph_id(&'a self) -> dot::Id<'a> {
+        dot::Id::new("vspace").unwrap()
+    }
+
+    fn node_id(&'a self, n: &Nd) -> dot::Id<'a> {
+        let label = match n {
+            Nd::L1(addr) => format!("PT#{:p}", addr),
+            Nd::L2(addr) => format!("PD#{:p}", addr),
+            Nd::L3(addr) => format!("PDPT#{:p}", addr),
+            Nd::L4(addr) => format!("PML4#{:p}", addr),
+        };
+
+        dot::Id::new(label).unwrap()
+    }
+}
+
+/*
+impl<'a> dot::GraphWalk<'a> for VSpace {
+    type Node = Nd;
+    type Edge = Ed;
+    fn nodes(&self) -> dot::Nodes<'a, Nd> {
+    }
+
+    fn edges(&'a self) -> dot::Edges<'a, Ed> {
+    }
+
+    fn source(&self, e: &Ed) -> Nd {
+    }
+
+    fn target(&self, e: &Ed) -> Nd {
+    }
+}*/

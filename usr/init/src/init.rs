@@ -20,8 +20,7 @@ use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
 #[global_allocator]
-static MEM_PROVIDER: vibrio::mem::SafeZoneAllocator =
-    vibrio::mem::SafeZoneAllocator::new(&vibrio::mem::PAGER);
+static MEM_PROVIDER: vibrio::mem::SafeZoneAllocator = vibrio::mem::SafeZoneAllocator::new();
 
 fn print_test() {
     let _r = vibrio::syscalls::print("test\r\n");

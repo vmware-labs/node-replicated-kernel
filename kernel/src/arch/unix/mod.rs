@@ -1,10 +1,11 @@
 use log::Level;
 
+use alloc::boxed::Box;
+
 use crate::xmain;
 use crate::ExitReason;
 
-use crate::memory::buddy::BuddyFrameAllocator;
-use crate::memory::PhysicalAllocator;
+use crate::memory::{buddy::BuddyFrameAllocator, tcache::TCache, GrowBackend, PhysicalAllocator};
 
 pub mod irq;
 pub mod kcb;
@@ -33,20 +34,29 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
 
     trace!("setting the kcb");
     // Allocate 32 MiB and add it to our heap
-    let mut mb = BuddyFrameAllocator::new();
+    let mut tc = TCache::new(0, 0);
     let mut mm = memory::MemoryMapper::new();
 
     unsafe {
-        let frame = mm
-            .allocate_frame(32 * 1024 * 1024)
-            .expect("We don't have vRAM available");
-        mb.add_memory(frame);
+        for _i in 0..1024 {
+            let frame = mm
+                .allocate_frame(4096)
+                .expect("We don't have vRAM available");
+            tc.grow_base_pages(&[frame]).expect("Can't add base-page");
+        }
+
+        for _i in 0..32 {
+            let frame = mm
+                .allocate_frame(2 * 1024 * 1024)
+                .expect("We don't have vRAM available");
+            tc.grow_large_pages(&[frame]).expect("Can't add large-page");
+        }
     }
 
     // Construct the Kcb so we can access these things later on in the code
 
-    let kcb = kcb::Kcb::new(mb);
-    kcb::init_kcb(kcb);
+    let kcb = box kcb::Kcb::new(tc);
+    kcb::init_kcb(Box::into_raw_non_null(kcb));
     debug!("Memory allocation should work at this point...");
 
     info!(

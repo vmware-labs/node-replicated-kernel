@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(
     intrinsics,
+    core_intrinsics,
     asm,
     lang_items,
     const_fn,
@@ -80,6 +81,7 @@ mod memory;
 #[macro_use]
 mod prelude;
 mod error;
+mod graphviz;
 mod nr;
 mod stack;
 
@@ -87,8 +89,6 @@ mod stack;
 extern crate acpica_sys;
 
 use core::alloc::{GlobalAlloc, Layout};
-use memory::{BespinSlabsProvider, PhysicalAllocator};
-use slabmalloc::{PageProvider, ZoneAllocator};
 use spin::Mutex;
 
 mod std {
@@ -100,79 +100,12 @@ mod std {
     pub use core::option;
 }
 
-#[allow(dead_code)]
-static PAGER: Mutex<BespinSlabsProvider> = Mutex::new(BespinSlabsProvider::new());
-
-#[allow(dead_code)]
-pub struct SafeZoneAllocator(Mutex<ZoneAllocator<'static>>);
-
-impl SafeZoneAllocator {
-    pub const fn new(provider: &'static Mutex<dyn PageProvider>) -> SafeZoneAllocator {
-        SafeZoneAllocator(Mutex::new(ZoneAllocator::new(provider)))
-    }
-}
-
-unsafe impl GlobalAlloc for SafeZoneAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.size() > 2 * 1024 * 1024 {
-            error!(
-                "!!!!Allocating more than 2 MiB!!!! {:?}",
-                memory::format_size(layout.size())
-            );
-        }
-        if layout.size() > 4096 {
-            error!(
-                "!!!!Allocating more than 4 KiB!!!! {:?}",
-                memory::format_size(layout.size())
-            );
-        }
-
-        trace!("alloc layout={:?}", layout);
-        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            let ptr = self.0.lock().allocate(layout);
-            trace!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
-            ptr
-        } else {
-            let kcb = crate::kcb::get_kcb();
-            let mut mem_manager = kcb.mem_manager();
-            let f = mem_manager.allocate_frame(layout);
-
-            let ptr = f.ok().map_or(core::ptr::null_mut(), |mut region| {
-                region.zero();
-                region.kernel_vaddr().as_mut_ptr()
-            });
-            trace!("allocated ptr=0x{:x} layout={:?}", ptr as usize, layout);
-            ptr
-        }
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        trace!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
-        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            //debug!("dealloc ptr = 0x{:x} layout={:?}", ptr as usize, layout);
-            self.0.lock().deallocate(ptr, layout);
-        } else {
-            use arch::memory::{kernel_vaddr_to_paddr, VAddr};
-            let kcb = crate::kcb::get_kcb();
-            let mut fmanager = kcb.mem_manager();
-
-            let frame = memory::Frame::new(
-                kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
-                layout.size(),
-                0,
-            );
-
-            fmanager.deallocate_frame(frame, layout);
-        }
-    }
-}
-
-#[cfg(not(test))]
-#[global_allocator]
-static MEM_PROVIDER: SafeZoneAllocator = SafeZoneAllocator::new(&PAGER);
-
+/// A kernel exit code (used to communicate the exit status for
+/// tests to qemu).
+///
+/// # Notes
+/// If this type is modified, update the `run.sh` script as well.
 #[repr(u8)]
-// If this type is modified, update run.sh script as well.
 pub enum ExitReason {
     Ok = 0,
     ReturnFromMain = 1,

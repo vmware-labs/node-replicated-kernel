@@ -34,7 +34,7 @@ impl PowersOf2 for u8 {
     }
 }
 
-#[allow(unions_with_drop_fields)]
+/*#[allow(unions_with_drop_fields)]
 #[derive(Copy)]
 union UnionFlag<T> {
     value: T,
@@ -48,7 +48,7 @@ impl<T: Clone> Clone for UnionFlag<T> {
             }
         }
     }
-}
+}*/
 
 use core::fmt;
 use core::ops::{Deref, DerefMut};

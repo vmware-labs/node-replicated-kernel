@@ -225,8 +225,8 @@ pub fn oom(layout: Layout) -> ! {
         layout.size(),
         layout.align()
     );
-    backtrace();
-
+    // Not worth initiating a backtrace as it would require memory.
+    // TODO: fall back to a backtrace function without allocations here.
     arch::debug::shutdown(ExitReason::OutOfMemory);
 }
 

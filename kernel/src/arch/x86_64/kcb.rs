@@ -6,6 +6,7 @@ use core::pin::Pin;
 use core::ptr;
 
 use apic::xapic::XAPICDriver;
+use slabmalloc::ZoneAllocator;
 use x86::current::segmentation::{self, Descriptor64};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -16,9 +17,10 @@ use super::process::Process;
 use super::vspace::VSpace;
 
 use crate::arch::{KernelArgs, Module};
-use crate::memory::buddy::BuddyFrameAllocator;
-use crate::memory::emem::EarlyPhysicalManager;
-use crate::memory::PhysicalAllocator;
+use crate::memory::{
+    buddy::BuddyFrameAllocator, emem::EarlyPhysicalManager, tcache::TCache, GlobalMemory,
+    PhysicalAllocator, PhysicalPageProvider,
+};
 use crate::stack::{OwnedStack, Stack};
 
 /// Try to retrieve the KCB by reading the gs register.
@@ -86,7 +88,7 @@ pub struct Kcb {
     current_process: RefCell<Option<Box<Process>>>,
 
     /// Arguments passed to the kernel by the bootloader.
-    kernel_args: &'static KernelArgs<[Module; 2]>,
+    kernel_args: &'static KernelArgs,
 
     /// A pointer to the memory location of the kernel ELF binary.
     kernel_binary: &'static [u8],
@@ -106,11 +108,17 @@ pub struct Kcb {
     /// A per-core IDT (interrupt table)
     idt: IdtTable,
 
-    /// A handle to the physical memory manager.
-    pmanager: Option<RefCell<BuddyFrameAllocator>>,
+    /// A handle to the global memory manager.
+    pub gmanager: Option<&'static GlobalMemory>,
 
     /// A handle to the early memory manager.
-    emanager: RefCell<EarlyPhysicalManager>,
+    pub emanager: RefCell<EarlyPhysicalManager>,
+
+    /// A handle to the per-core page-allocator.
+    pub pmanager: Option<RefCell<TCache>>,
+
+    /// A handle to the per-core ZoneAllocator.
+    pub zone_allocator: RefCell<ZoneAllocator<'static>>,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -132,11 +140,15 @@ pub struct Kcb {
     /// We switch rsp/rbp to point in here in exec.S.
     /// This member should probably not be touched from normal code.
     syscall_stack: Option<OwnedStack>,
+
+    /// Allocation affinity (which node we allocate from,
+    /// this is a hack remove once custom allocators land).
+    allocation_affinity: topology::NodeId,
 }
 
 impl Kcb {
     pub fn new(
-        kernel_args: &'static KernelArgs<[Module; 2]>,
+        kernel_args: &'static KernelArgs,
         kernel_binary: &'static [u8],
         init_vspace: VSpace,
         emanager: EarlyPhysicalManager,
@@ -153,13 +165,16 @@ impl Kcb {
             tss: TaskStateSegment::new(),
             idt: Default::default(),
             // Can't initialize these yet, needs Kcb for memory allocations:
+            gmanager: None,
             pmanager: None,
+            zone_allocator: RefCell::new(ZoneAllocator::new()),
             save_area: None,
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
             // We don't have a process initially:
             current_process: RefCell::new(None),
+            allocation_affinity: 0,
         }
     }
 
@@ -176,7 +191,15 @@ impl Kcb {
         init_kcb(self);
     }
 
-    pub fn set_physical_memory_manager(&mut self, pmanager: BuddyFrameAllocator) {
+    pub fn set_global_memory(&mut self, gm: &'static GlobalMemory) {
+        self.gmanager = Some(gm);
+    }
+
+    pub fn set_allocation_affinity(&mut self, node: topology::NodeId) {
+        self.allocation_affinity = node;
+    }
+
+    pub fn set_physical_memory_manager(&mut self, pmanager: TCache) {
         self.pmanager = Some(RefCell::new(pmanager));
     }
 
@@ -265,15 +288,11 @@ impl Kcb {
 
     /// Returns a reference to the core-local physical memory manager if set,
     /// otherwise returns the early physical memory manager.
-    pub fn mem_manager(&self) -> RefMut<dyn PhysicalAllocator> {
+    pub fn mem_manager(&self) -> RefMut<dyn PhysicalPageProvider> {
         self.pmanager
             .as_ref()
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
-
-    /// Returns a reference to the zone manager (that manges all memory for the local)
-    /// numa node.
-    pub fn zone_manager() {}
 
     pub fn apic(&self) -> RefMut<XAPICDriver> {
         self.apic.borrow_mut()
@@ -287,7 +306,7 @@ impl Kcb {
         self.kernel_binary
     }
 
-    pub fn kernel_args(&self) -> &'static KernelArgs<[Module; 2]> {
+    pub fn kernel_args(&self) -> &'static KernelArgs {
         self.kernel_args
     }
 }

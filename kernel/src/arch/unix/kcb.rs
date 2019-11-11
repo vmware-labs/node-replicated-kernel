@@ -3,8 +3,9 @@
 use core::cell::{RefCell, RefMut};
 use core::ptr;
 
-use crate::memory::buddy::BuddyFrameAllocator;
-use crate::memory::PhysicalAllocator;
+use crate::memory::{tcache::TCache, PhysicalPageProvider};
+
+use slabmalloc::ZoneAllocator;
 
 static mut KCB: *mut Kcb = ptr::null_mut();
 
@@ -27,28 +28,30 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
 }
 
 pub struct Kcb {
-    pmanager: RefCell<BuddyFrameAllocator>,
+    pmanager: RefCell<TCache>,
+    /// A handle to the per-core ZoneAllocator
+    pub zone_allocator: RefCell<ZoneAllocator<'static>>,
 }
 
 impl Kcb {
-    pub fn new(pmanager: BuddyFrameAllocator) -> Kcb {
+    pub fn new(pmanager: TCache) -> Kcb {
         Kcb {
             pmanager: RefCell::new(pmanager),
+            zone_allocator: RefCell::new(ZoneAllocator::new()),
         }
     }
 
-    pub fn pmanager(&self) -> RefMut<BuddyFrameAllocator> {
+    pub fn pmanager(&self) -> RefMut<dyn PhysicalPageProvider> {
         self.pmanager.borrow_mut()
     }
 
     /// Returns a reference to the physical memory manager if set,
     /// otherwise returns the early physical memory manager.
-    pub fn mem_manager(&self) -> RefMut<dyn PhysicalAllocator> {
+    pub fn mem_manager(&self) -> RefMut<dyn PhysicalPageProvider> {
         self.pmanager()
     }
 }
 
-pub(crate) fn init_kcb(mut kcb: Kcb) {
-    let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(&mut kcb);
+pub(crate) fn init_kcb(kptr: ptr::NonNull<Kcb>) {
     unsafe { set_kcb(kptr) };
 }

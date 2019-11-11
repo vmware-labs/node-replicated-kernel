@@ -12,8 +12,6 @@
 //! - TODO: Should have a directory-style index to put a list of 2 MiB, 4KiB
 //!   pages stack into an entry within the NCache list.
 //!
-//!
-
 use core::fmt;
 use core::mem::MaybeUninit;
 
@@ -106,9 +104,9 @@ impl PhysicalPageProvider for NCache {
     }
 
     fn release_base_page(&mut self, frame: Frame) -> Result<(), AllocationError> {
-        debug_assert_eq!(frame.size(), BASE_PAGE_SIZE);
-        debug_assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
-        debug_assert_eq!(frame.affinity, self.node);
+        assert_eq!(frame.size(), BASE_PAGE_SIZE);
+        assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
+        assert_eq!(frame.affinity, self.node);
 
         self.base_page_addresses
             .try_push(frame.base)
@@ -130,9 +128,9 @@ impl PhysicalPageProvider for NCache {
     }
 
     fn release_large_page(&mut self, frame: Frame) -> Result<(), AllocationError> {
-        debug_assert_eq!(frame.size(), LARGE_PAGE_SIZE);
-        debug_assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
-        debug_assert_eq!(frame.affinity, self.node);
+        assert_eq!(frame.size(), LARGE_PAGE_SIZE);
+        assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
+        assert_eq!(frame.affinity, self.node);
 
         self.large_page_addresses
             .try_push(frame.base)
@@ -199,6 +197,22 @@ impl ReapBackend for NCache {
 #[cfg(test)]
 mod test {
     use super::*;
+    extern crate std;
+
+    /// A hack to get an NCache without overflowing our stack in the tests :/
+    ///
+    /// A stack overflow results when trying allocate this the normal way
+    /// (even when using Box / box): https://github.com/rust-lang/rust/issues/53827
+    fn get_an_ncache() -> &'static mut NCache {
+        unsafe {
+            use core::alloc::Layout;
+            let layout = Layout::new::<NCache>();
+            let global_alloc = std::alloc::System;
+            let ptr = global_alloc.alloc_zeroed(layout);
+            core::mem::transmute(ptr as *mut NCache)
+        }
+    }
+
     /// NCache should be fit in a large-page.
     /// TODO: Ideally this would be an exact fit and the caches would be bigger,
     /// so we need to send a pull request to NCache to allow the sizes we need
@@ -212,7 +226,8 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_base_frame_size() {
-        let mut ncache = NCache::new(4);
+        let mut ncache = get_an_ncache();
+        ncache.node = 4;
         ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4));
     }
 
@@ -220,7 +235,8 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_base_frame_align() {
-        let mut ncache = NCache::new(4);
+        let mut ncache = get_an_ncache();
+        ncache.node = 4;
         ncache.release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4));
     }
 
@@ -228,14 +244,16 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_affinity() {
-        let mut ncache = NCache::new(1);
+        let mut ncache = get_an_ncache();
+        ncache.node = 1;
         ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4));
     }
 
     /// Test the grow interface of the NCache.
     #[test]
     fn ncache_grow_reap() {
-        let mut ncache = NCache::new(4);
+        let mut ncache = get_an_ncache();
+        ncache.node = 4;
 
         // Insert some pages
         let frames = &[
@@ -278,7 +296,8 @@ mod test {
     /// Also verify free memory reporting along the way.
     #[test]
     fn ncache_release_allocate() {
-        let mut ncache = NCache::new(2);
+        let mut ncache = get_an_ncache();
+        ncache.node = 2;
 
         // Insert some pages
         ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2));

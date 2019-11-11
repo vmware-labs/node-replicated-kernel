@@ -224,12 +224,21 @@ impl<'a> RunnerArgs<'a> {
         let kernel_features = String::from(self.kernel_features.join(","));
         let user_features = String::from(self.user_features.join(","));
 
+        let log_level = match std::env::var("RUST_LOG") {
+            Ok(lvl) if lvl == "debug" => "debug",
+            Ok(lvl) if lvl == "trace" => "trace",
+            Ok(lvl) if lvl == "warn" => "warn",
+            Ok(lvl) if lvl == "error" => "error",
+            Ok(lvl) if lvl == "info" => "info",
+            _ => "info",
+        };
+
         let mut cmd = vec![
             String::from("run.sh"),
             String::from("--kfeatures"),
             kernel_features,
             String::from("--cmd"),
-            String::from("log=info"),
+            format!("log={}", log_level),
         ];
 
         match self.user_features.is_empty() {

@@ -56,6 +56,7 @@ use core::mem::transmute;
 use core::slice;
 
 use uefi::prelude::*;
+use uefi::proto::console::gop::GraphicsOutput;
 use uefi::proto::media::file::*;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::table::boot::{AllocateType, MemoryDescriptor, MemoryType};
@@ -319,42 +320,20 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
 
 /// Initialize the screen to the highest possible resolution.
 fn setup_screen(st: &SystemTable<Boot>) {
-    /*
-    use uefi::proto::console::gop::GraphicsOutput;
-    use uefi::proto::console::text::Output;
-
-        if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
-            let gop = gop.expect("Warnings encountered while opening GOP");
-            let gop = unsafe { &mut *gop.get() };
-
-            let mode = gop
-                .modes()
-                .map(|mode| mode.expect("Warnings encountered while querying modes"))
-                .max_by(|ref x, ref y| x.info().resolution().cmp(&y.info().resolution()))
-                .unwrap();
-
-            gop.set_mode(&mode)
-                .expect_success("Failed to set graphics mode");
-        } else {
-            warn!("UEFI Graphics Output Protocol is not supported.");
-        }*/
-
-    /*if let Ok(stdout) = st.boot_services().locate_protocol::<Output>() {
-        let stdout = stdout.expect("Warnings encountered while opening Output");
-        let stdout = unsafe { &mut *stdout.get() };
-        let best_mode = stdout
+    if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
+        let gop = gop.expect("Warnings encountered while opening GOP");
+        let gop = unsafe { &mut *gop.get() };
+        let mode = gop
             .modes()
-            .last()
-            .unwrap()
-            .expect("Warnings encountered while querying text mode");
-        stdout
-            .set_mode(best_mode)
-            .expect_success("Failed to change text mode");
+            .map(|mode| mode.expect("Warnings encountered while querying modes"))
+            .max_by(|ref x, ref y| x.info().resolution().cmp(&y.info().resolution()))
+            .unwrap();
     } else {
-        warn!("UEFI Output Protocol is not supported.");
-    }*/
+        warn!("UEFI Graphics Output Protocol is not supported.");
+    }
 }
 
+/// Intialize the serial console.
 fn serial_init(st: &SystemTable<Boot>) {
     use uefi::proto::console::serial::{ControlBits, Serial};
     if let Ok(serial) = st.boot_services().locate_protocol::<Serial>() {
@@ -447,7 +426,7 @@ fn assert_required_cpu_features() {
 #[no_mangle]
 pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Status {
     uefi_services::init(&st).expect_success("Can't initialize UEFI");
-    log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(log::LevelFilter::Debug);
     //setup_screen(&st);
     //serial_init(&st);
 
@@ -562,11 +541,10 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         // This could theoretically be pushed on the stack too
         // but for now we just allocate a separate page (and don't care about
         // wasted memory)
-        assert!(mem::size_of::<KernelArgs<[Module; 2]>>() < BASE_PAGE_SIZE);
+        assert!(mem::size_of::<KernelArgs>() < BASE_PAGE_SIZE);
         let kernel_args_paddr = allocate_pages(&st, 1, MemoryType(KERNEL_ARGS));
-        let mut kernel_args = transmute::<VAddr, &mut KernelArgs<[Module; 2]>>(
-            paddr_to_uefi_vaddr(kernel_args_paddr),
-        );
+        let mut kernel_args =
+            transmute::<VAddr, &mut KernelArgs>(paddr_to_uefi_vaddr(kernel_args_paddr));
         trace!("Kernel args allocated.");
 
         // Initialize the KernelArgs
@@ -574,7 +552,10 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.pml4 = PAddr::from(kernel.vspace.pml4 as *const _ as u64);
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
         kernel_args.kernel_elf_offset = kernel.offset;
-        kernel_args.modules = [kernel_module, init_module];
+        kernel_args.modules = arrayvec::ArrayVec::new();
+
+        kernel_args.modules.push(kernel_module);
+        kernel_args.modules.push(init_module);
         for entry in st.config_table() {
             if entry.guid == ACPI2_GUID {
                 kernel_args.acpi2_rsdp = PAddr::from(entry.address as u64);
@@ -583,12 +564,30 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
             }
         }
 
+        if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
+            let gop = gop.expect("Warnings encountered while opening GOP");
+            let gop = unsafe { &mut *gop.get() };
+
+            let mut frame_buffer = gop.frame_buffer();
+            let frame_buf_ptr = frame_buffer.as_mut_ptr();
+            let size = frame_buffer.size();
+            let frame_buf_paddr = PAddr::from(frame_buf_ptr as u64);
+
+            kernel_args.frame_buffer = Some(core::slice::from_raw_parts_mut(
+                frame_buf_ptr.add(KERNEL_OFFSET),
+                size,
+            ));
+            kernel_args.mode_info = Some(gop.current_mode_info());
+        } else {
+            kernel_args.frame_buffer = None;
+            kernel_args.mode_info = None;
+        }
+
         info!(
             "Kernel will start to execute from: {:p}",
             kernel.offset + binary.entry_point()
         );
 
-        // We exit the UEFI boot services (and record the memory map)
         info!("Exiting boot services. About to jump...");
         let (_st, mmiter) = st
             .exit_boot_services(handle, mm_slice)

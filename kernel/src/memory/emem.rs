@@ -36,7 +36,7 @@ impl EarlyPhysicalManager {
         self.region
     }
 
-    unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, AllocationError> {
+    pub unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, AllocationError> {
         assert!(layout.align() <= BASE_PAGE_SIZE, "Alignment mismatch.");
         let size = round_up!(layout.size(), BASE_PAGE_SIZE);
 

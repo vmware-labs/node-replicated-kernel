@@ -11,9 +11,9 @@
 //! - Set-up system services like ACPI and physical memory management,
 //!   parse the machine topology.
 //! - Boot the rest of the system (see `start_app_core`).
-//!
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use core::alloc::Layout;
 use core::mem::transmute;
@@ -233,7 +233,8 @@ include!("../../../../bootloader/src/shared.rs");
 struct AppCoreArgs {
     mem_region: Frame,
     kernel_binary: &'static [u8],
-    kernel_args: &'static KernelArgs<[Module; 2]>,
+    kernel_args: &'static KernelArgs,
+    global_memory: &'static GlobalMemory,
     log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode>>,
 }
@@ -301,6 +302,13 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
 /// Initialize the rest of the cores in the system.
 ///
+/// # Arguments
+/// - `kernel_binary` - A slice of the kernel binary.
+/// - `kernel_args` - Intial arguments as passed by UEFI to the kernel.
+/// - `global_memory` - Memory allocator collection.
+/// - `log` - A reference to the operation log.
+/// - `bsp_replica` - Replica that the BSP core created and is registered to.
+///
 /// # Notes
 /// Dependencies for calling this function are:
 ///  - Initialized ACPI
@@ -308,16 +316,24 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 ///  - Local APIC driver
 fn boot_app_cores(
     kernel_binary: &'static [u8],
-    kernel_args: &'static KernelArgs<[Module; 2]>,
-    global_memory: &GlobalMemory,
+    kernel_args: &'static KernelArgs,
     log: Arc<Log<'static, Op>>,
-    replica: Arc<Replica<'static, KernelNode>>,
+    bsp_replica: Arc<Replica<'static, KernelNode>>,
 ) {
     let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
+    let kcb = kcb::get_kcb();
 
-    // There should be different strategies
-    // replica_mapping_strategy = { per_thread, per_core, per_packet, per_numa_node }
-    // replica_executor_strategy = { flatcombining, master_delegation }
+    // Let's go with one replica per system node for now:
+    let numa_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
+    let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> = Vec::with_capacity(numa_nodes);
+    for node in 0..topology::MACHINE_TOPOLOGY.num_nodes() {
+        debug!("Allocate a replica for {}", node);
+        kcb.set_allocation_affinity(node as topology::NodeId);
+        replicas.push(bsp_replica.clone());
+        kcb.set_allocation_affinity(0);
+    }
+
+    let global_memory = kcb.gmanager.expect("boot_app_cores requires kcb.gmanager");
 
     // For now just boot everything, except ourselves
     // Create a single log and one replica...
@@ -327,6 +343,9 @@ fn boot_app_cores(
 
     for thread in threads_to_boot {
         trace!("Booting {:?}", thread);
+        let node = thread.node_id.unwrap_or(0);
+
+        kcb.set_allocation_affinity(node);
 
         use topology;
         use x86::apic::{ApicControl, ApicId};
@@ -337,8 +356,8 @@ fn boot_app_cores(
         let k = kcb::get_kcb();
         let mem_region = unsafe {
             k.mem_manager()
-                .allocate_frame(Layout::from_size_align_unchecked(1024 * 1024 * 2, 0x1000))
-                .unwrap()
+                .allocate_large_page()
+                .expect("Can't allocate large page")
         };
 
         let initialized: AtomicBool = AtomicBool::new(false);
@@ -346,8 +365,9 @@ fn boot_app_cores(
             mem_region,
             kernel_binary,
             kernel_args,
+            global_memory,
             log: log.clone(),
-            replica: replica.clone(),
+            replica: bsp_replica.clone(),
         });
 
         unsafe {
@@ -376,6 +396,7 @@ fn boot_app_cores(
 
         assert!(initialized.load(Ordering::SeqCst));
         info!("Core {:?} has started", thread.apic_id());
+        kcb.set_allocation_affinity(0);
     }
 }
 
@@ -447,7 +468,6 @@ fn identify_numa_affinity(
 #[start]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
     sprint!("\r\n");
-
     enable_sse();
     enable_fsgsbase();
     unsafe {
@@ -480,16 +500,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Figure out what this machine supports,
     // fail if it doesn't have what we need.
     assert_required_cpu_features();
-
-    // Load a new GDT and initialize our IDT
     syscall::enable_fast_syscalls();
 
     // We should catch page-faults and general protection faults from here...
 
-    let kernel_args: &'static KernelArgs<[Module; 2]> =
-        unsafe { transmute::<u64, &'static KernelArgs<[Module; 2]>>(argc as u64) };
+    let mut kernel_args: &'static mut KernelArgs =
+        unsafe { transmute::<u64, &'static mut KernelArgs>(argc as u64) };
 
-    // TODO(fix): Because we pnly have a borrow of KernelArgs we have to work too hard to get mm_iter
+    // TODO(fix): Because we only have a borrow of KernelArgs we have to work too hard to get mm_iter
     let mm_iter = unsafe {
         let mut mm_iter: uefi::table::boot::MemoryMapIter<'static> = core::mem::uninitialized();
         core::ptr::copy_nonoverlapping(
@@ -536,7 +554,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             const ONE_MIB: usize = 1 * 1024 * 1024;
             const TEN_MIB: usize = 10 * 1024 * 1024;
             if base.as_usize() >= ONE_MIB {
-                if size > TEN_MIB {
+                if size > TEN_MIB && emanager.is_none() {
                     // This seems like a good frame for the early allocator on the BSP core.
                     // We don't have NUMA information yet so we'd hope that on
                     // a NUMA machine this memory will be on node 0.
@@ -563,9 +581,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
     }
-    assert!(emanager.is_some());
     let emanager =
-        emanager.expect("Couldn't build an EarlyPhysicalManager, increase system main memory!");
+        emanager.expect("Couldn't build an EarlyPhysicalManager, increase system main memory?");
 
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
@@ -577,6 +594,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut apic = xapic::XAPICDriver::new(regs);
     // Attach the driver to the registers:
     apic.attach();
+    info!(
+        "xAPIC id: {}, version: {:#x}, is bsp: {}",
+        apic.id(),
+        apic.version(),
+        apic.bsp()
+    );
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, emanager, apic);
@@ -585,10 +608,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Let's finish KCB initialization (easier as we have alloc now):
     kcb.set_interrupt_stacks(
-        OwnedStack::new(64 * BASE_PAGE_SIZE),
-        OwnedStack::new(64 * BASE_PAGE_SIZE),
+        OwnedStack::new(16 * BASE_PAGE_SIZE),
+        OwnedStack::new(16 * BASE_PAGE_SIZE),
     );
-    kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.set_syscall_stack(OwnedStack::new(16 * BASE_PAGE_SIZE));
     kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     kcb.install();
 
@@ -600,17 +623,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     #[cfg(feature = "test-double-fault")]
     debug::cause_double_fault();
-
-    // Print APIC information
-    {
-        let apic = kcb::get_kcb().apic();
-        info!(
-            "xAPIC id: {}, version: {:#x}, is bsp: {}",
-            apic.id(),
-            apic.version(),
-            apic.bsp()
-        );
-    } // Make sure to drop the reference to the KCB/APIC again
 
     // Initialize the ACPI sub-system (needs alloc)
     {
@@ -637,28 +649,31 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // the memory for those allocators needs to be local to the region.
     //  - Each `annotated_region` should be backed at the lowest level by a buddy allocator
     //  - For every node we should have one NCache
-    // all this work is done in GlobalMemory, also GlobalMemory should live forver,
-    // (we hand out a reference to `global_memory` to every core)
-    // that's fine since it's on our BSP init stack (which isn't reclaimed)
+    // all this work is done in GlobalMemory.
     //
     // This call is safe here because we assume that our `annotated_regions` is correct.
     let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
+    // Also GlobalMemory should live forver, (we hand out a reference to `global_memory` to every core)
+    // that's fine since it is allocated on our BSP init stack (which isn't reclaimed):
+    let global_memory_static =
+        unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
+
+    // Make sure our BSP core has a reference to GlobalMemory
+    {
+        let kcb = kcb::get_kcb();
+        kcb.set_global_memory(&global_memory_static);
+        let tcache = crate::memory::tcache::TCache::new(0, 0);
+    }
 
     let mut log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));
-    let mut replica = Arc::new(Replica::<KernelNode>::new(&log));
-    let local_ridx = replica
+    let mut bsp_replica = Arc::new(Replica::<KernelNode>::new(&log));
+    let local_ridx = bsp_replica
         .register()
         .expect("Failed to register with Replica.");
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]
-    boot_app_cores(
-        kernel_binary,
-        kernel_args,
-        &global_memory,
-        log.clone(),
-        replica.clone(),
-    );
+    boot_app_cores(kernel_binary, kernel_args, log.clone(), bsp_replica.clone());
 
     // Done with initialization, now we go in
     // the arch-independent part:

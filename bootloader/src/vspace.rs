@@ -109,11 +109,6 @@ pub struct VSpace<'a> {
 
 impl<'a> VSpace<'a> {
     /// Constructs an identity map but with an offset added to the region.
-    ///
-    /// # Example
-    /// `map_identity_with_offset(0x20000, 0x1000, 0x2000, ReadWriteKernel)`
-    /// will set the virtual addresses at 0x21000 -- 0x22000 to
-    /// point to physical 0x1000 - 0x2000.
     pub(crate) fn map_identity_with_offset(
         &mut self,
         at_offset: PAddr,

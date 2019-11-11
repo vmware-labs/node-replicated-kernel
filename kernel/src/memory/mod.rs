@@ -1,10 +1,14 @@
 use crate::alloc::string::ToString;
-use core::alloc::{AllocErr, Layout};
+use core::alloc::{AllocErr, GlobalAlloc, Layout};
+use core::borrow::BorrowMut;
 use core::fmt;
+use core::intrinsics::{likely, unlikely};
 use core::mem::transmute;
+use core::ptr;
 
 use arrayvec::ArrayVec;
 use custom_error::custom_error;
+use slabmalloc::ZoneAllocator;
 use spin::Mutex;
 use x86::bits64::paging;
 
@@ -15,13 +19,157 @@ pub mod tcache;
 
 /// Re-export arch specific memory definitions
 pub use crate::arch::memory::{
-    paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
+    kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
 
 use crate::prelude::*;
-use slabmalloc::{ObjectPage, PageProvider};
 
 pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
+
+#[cfg(not(test))]
+#[global_allocator]
+static MEM_PROVIDER: KernelAllocator = KernelAllocator;
+
+/// Implements the kernel memory allocation strategy.
+struct KernelAllocator;
+
+impl KernelAllocator {
+    /// Transfers memory from the shared `from` allocator to a
+    /// core-local `to` allocator.
+    fn refill_local(from: Mutex<&dyn ReapBackend>, to: &mut dyn GrowBackend) {
+        /*let mut free_list = [None, None];
+
+        let from_locked = from.lock();
+        from_locked.reap_base_pages(&mut free_list);
+        drop(from_locked);
+
+        to.grow_base_pages(free_list);*/
+    }
+}
+
+/// Implementation of GlobalAlloc for the kernel.
+///
+/// The algorithm in alloc/dealloc should take care of allocating kernel objects of
+/// various sizes and is responsible for balancing the memory between different
+/// allocators.
+unsafe impl GlobalAlloc for KernelAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // Check if we have a KCB already (otherwise we can't do memory allocations)
+        crate::kcb::try_get_kcb().map_or_else(
+            || {
+                error!("Trying to allocate {:?} without a KCB.", layout);
+                ptr::null_mut()
+            },
+            |kcb| {
+                // Distinguish between small and big allocations
+                if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE && layout.size() != BASE_PAGE_SIZE
+                {
+                    // Allocate a small object on the zone allocator
+                    let mut zone_allocator = kcb.zone_allocator.borrow_mut();
+                    match zone_allocator.allocate(layout) {
+                        Ok(ptr) => {
+                            trace!("Allocated ptr={:p} layout={:?}", ptr, layout);
+                            ptr.as_ptr()
+                        }
+                        Err(slabmalloc::AllocationError::OutOfMemory(l)) => {
+                            let mut mem_manager = kcb.mem_manager();
+                            let mut pmanager = mem_manager.borrow_mut();
+
+                            if l.size() <= ZoneAllocator::MAX_BASE_ALLOC_SIZE {
+                                let mut f = pmanager
+                                    .allocate_base_page()
+                                    .expect("TODO(error) handle refill-alloc failure");
+                                f.zero();
+                                let base_page_ptr: *mut slabmalloc::ObjectPage =
+                                    f.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
+                                zone_allocator
+                                    .refill(l, transmute(base_page_ptr))
+                                    .expect("TODO(error) Can't refill with base-page?");
+                            } else {
+                                let mut f = pmanager
+                                    .allocate_large_page()
+                                    .expect("TODO(error) handle refill-alloc failure");
+                                f.zero();
+                                let large_page_ptr: *mut slabmalloc::LargeObjectPage = f
+                                    .uninitialized::<slabmalloc::LargeObjectPage>()
+                                    .as_mut_ptr();
+                                zone_allocator
+                                    .refill_large(l, transmute(large_page_ptr))
+                                    .expect("TODO(error) Can't refill with large-page?");
+                            }
+                            zone_allocator
+                                .allocate(layout)
+                                .expect("Allocation must succeed since we refilled.")
+                                .as_ptr()
+                        }
+                        Err(e) => {
+                            error!("Unable to allocate {:?} (got error {:?}).", layout, e);
+                            ptr::null_mut()
+                        }
+                    }
+                }
+                // Here we allocate a large object (> 2 MiB), we need to multiple pages then map
+                // them somewhere to make it contiguous.
+                // The case where we need to map large objects should be rare (ideally never).
+                else {
+                    let mut mem_manager = kcb.mem_manager();
+                    let f = if layout.size() <= BASE_PAGE_SIZE {
+                        mem_manager.allocate_base_page()
+                    } else if layout.size() <= LARGE_PAGE_SIZE {
+                        mem_manager.allocate_large_page()
+                    } else {
+                        let fmt = format_size(layout.size());
+                        unreachable!("allocate >= 2 MiB: {} {}", fmt.0, fmt.1)
+                    };
+
+                    let ptr = f.ok().map_or(core::ptr::null_mut(), |mut region| {
+                        region.zero();
+                        region.kernel_vaddr().as_mut_ptr()
+                    });
+
+                    trace!("allocated ptr={:p} {:?}", ptr, layout);
+                    ptr
+                }
+            },
+        )
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        crate::kcb::try_get_kcb().map_or_else(
+            || {
+                unreachable!("Trying to deallocate {:p} {:?} without a KCB.", ptr, layout);
+            },
+            |kcb| {
+                if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE && layout.size() != BASE_PAGE_SIZE
+                {
+                    let mut zone_allocator = kcb.zone_allocator.borrow_mut();
+                    if likely(!ptr.is_null()) {
+                        zone_allocator
+                            .deallocate(ptr::NonNull::new_unchecked(ptr), layout)
+                            .expect("Can't deallocate?");
+                    } else {
+                        warn!("Ignore null pointer deallocation");
+                    }
+                } else {
+                    let kcb = crate::kcb::get_kcb();
+                    let mut fmanager = kcb.mem_manager();
+                    assert_eq!(layout.size(), BASE_PAGE_SIZE);
+                    assert_eq!(layout.align(), BASE_PAGE_SIZE);
+
+                    let frame = Frame::new(
+                        kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
+                        layout.size(),
+                        0,
+                    );
+
+                    fmanager
+                        .release_base_page(frame)
+                        .expect("Can't deallocate frame");
+                }
+            },
+        );
+    }
+}
 
 custom_error! {pub AllocationError
     OutOfMemory{size: usize} = "Couldn't allocate {size}.",
@@ -67,25 +215,25 @@ pub const AFFINITY_REGIONS: usize = 16;
 ///
 /// NCaches and Buddies can be accessed concurrently and are currently protected
 /// by a simple spin-lock (for reclamation and allocation).
-/// TODO: This probably needs a more elaborate scheme in the future.
+/// TODO(perf): This may need a more elaborate scheme in the future.
 #[derive(Default)]
 pub struct GlobalMemory {
-    /// Holds a small amount of memory for every node.
+    /// Holds a small amount of memory for every NUMA node.
     ///
-    /// Used to initialize the rest of the GlobalMemory structures and cores.
-    /// Not protected by locks since only the BSP core should ever try to access this.
-    emem: ArrayVec<[emem::EarlyPhysicalManager; AFFINITY_REGIONS]>,
+    /// Used to initialize the system.
+    pub(crate) emem: ArrayVec<[Mutex<emem::EarlyPhysicalManager>; AFFINITY_REGIONS]>,
 
-    /// All buddies in the system.
-    buddies: ArrayVec<
+    /// All physical mem. regions in the system are maintained by a buddy at the lowest level.
+    pub(crate) buddies: ArrayVec<
         [CachePadded<(
             topology::NodeId,
             Mutex<&'static mut buddy::BuddyFrameAllocator>,
         )>; MAX_PHYSICAL_REGIONS],
     >,
 
-    /// All node-caches in the system.
-    node_caches: ArrayVec<[CachePadded<Mutex<&'static mut ncache::NCache>>; AFFINITY_REGIONS]>,
+    /// All node-caches in the system (one for every NUMA node).
+    pub(crate) node_caches:
+        ArrayVec<[CachePadded<Mutex<&'static mut ncache::NCache>>; AFFINITY_REGIONS]>,
 }
 
 impl GlobalMemory {
@@ -129,7 +277,8 @@ impl GlobalMemory {
                 debug_assert_eq!(low.size(), FOUR_MIB);
 
                 *frame = high;
-                gm.emem.push(emem::EarlyPhysicalManager::new(low));
+                gm.emem
+                    .push(Mutex::new(emem::EarlyPhysicalManager::new(low)));
             }
         }
         debug_assert_eq!(
@@ -140,7 +289,7 @@ impl GlobalMemory {
 
         // 2. Construct the buddies for all Frames
         //
-        // TODO: We need to make sure that frame sizes are
+        // TODO(wasteful): We need to make sure that frame sizes are
         // powers of two and we don't just chop away lots of
         // memory in the buddy (ideally the buddy does the split
         // and returns the rest of the frame to us).
@@ -149,15 +298,20 @@ impl GlobalMemory {
         // then we construct a buddy in the the uninitialized page memory
         // and stick it in `gm.buddies`
         for frame in memory {
-            // TODO: Should pack multpile buddy on the same page as long as space permits
+            // TODO(efficiency): Should pack multpile buddy on the same page as long as space permits
             // right now we have a page for every buddy (which is wasteful)
-            let mut buddy_memory = gm.emem[frame.affinity as usize].allocate_base_page()?;
-            let buddy_base_addr = buddy_memory.base;
-            buddy_memory.zero(); // TODO this happens twice atm (see emem)
-            let buddy_ptr = buddy_memory.uninitialized::<buddy::BuddyFrameAllocator>();
+            let mut buddy_memory = gm.emem[frame.affinity as usize]
+                .lock()
+                .allocate_base_page()?;
+            let buddy_base_addr: PAddr = buddy_memory.base;
+            buddy_memory.zero(); // TODO(perf) this happens twice atm (see emem)?
+            let buddy_vptr = buddy_memory.uninitialized::<buddy::BuddyFrameAllocator>();
             let buddy: &'static mut buddy::BuddyFrameAllocator =
-                buddy_ptr.write(buddy::BuddyFrameAllocator::new_with_frame(frame));
-            debug_assert_eq!(&*buddy as *const _ as u64, buddy_base_addr.as_u64());
+                buddy_vptr.write(buddy::BuddyFrameAllocator::new_with_frame(frame));
+            debug_assert_eq!(
+                &*buddy as *const _ as u64,
+                paddr_to_kernel_vaddr(buddy_base_addr).as_u64()
+            );
 
             gm.buddies
                 .push(CachePadded::new((frame.affinity, Mutex::new(buddy))));
@@ -165,14 +319,17 @@ impl GlobalMemory {
 
         // 3. Construct an NCache for all nodes
         for affinity in 0..max_affinity {
-            let mut ncache_memory = gm.emem[affinity].allocate_large_page()?;
-            let ncache_memory_addr = ncache_memory.base;
-            ncache_memory.zero(); // TODO this happens twice atm (see emem)
+            let mut ncache_memory = gm.emem[affinity].lock().allocate_large_page()?;
+            let ncache_memory_addr: PAddr = ncache_memory.base;
+            ncache_memory.zero(); // TODO(perf) this happens twice atm (see emem)?
 
             let ncache_ptr = ncache_memory.uninitialized::<ncache::NCache>();
             let ncache: &'static mut ncache::NCache =
                 ncache::NCache::init(ncache_ptr, affinity as topology::NodeId);
-            debug_assert_eq!(&*ncache as *const _ as u64, ncache_memory_addr.as_u64());
+            debug_assert_eq!(
+                &*ncache as *const _ as u64,
+                paddr_to_kernel_vaddr(ncache_memory_addr).as_u64()
+            );
 
             gm.node_caches.push(CachePadded::new(Mutex::new(ncache)));
         }
@@ -408,8 +565,8 @@ impl Frame {
 
     /// Make a new Frame at `base` with `size` with affinity `node`.
     pub fn new(base: PAddr, size: usize, node: topology::NodeId) -> Frame {
-        debug_assert_eq!(base % BASE_PAGE_SIZE, 0);
-        debug_assert_eq!(size % BASE_PAGE_SIZE, 0);
+        assert_eq!(base % BASE_PAGE_SIZE, 0);
+        assert_eq!(size % BASE_PAGE_SIZE, 0);
 
         Frame {
             base: base,
@@ -476,9 +633,11 @@ impl Frame {
     }
 
     /// Represent the Frame as MaybeUinit<T>
-    unsafe fn uninitialized<T>(self) -> &'static mut core::mem::MaybeUninit<T> {
+    pub unsafe fn uninitialized<T>(self) -> &'static mut core::mem::MaybeUninit<T> {
         debug_assert!(core::mem::size_of::<T>() <= self.size);
-        core::mem::transmute::<u64, &'static mut core::mem::MaybeUninit<T>>(self.base.into())
+        core::mem::transmute::<u64, &'static mut core::mem::MaybeUninit<T>>(
+            self.kernel_vaddr().into(),
+        )
     }
 
     /// Fill the page with many `T`'s.
@@ -560,11 +719,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
         let mut fmanager = kcb.mem_manager();
         unsafe {
             fmanager
-                .allocate_frame(
-                    Layout::new::<paging::Page>()
-                        .align_to(BASE_PAGE_SIZE)
-                        .unwrap(),
-                )
+                .allocate_base_page()
                 .map(|frame| {
                     let pml4: &'b mut [paging::PML4Entry; 512] =
                         transmute(paddr_to_kernel_vaddr(frame.base));
@@ -581,11 +736,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
         unsafe {
             fmanager
-                .allocate_frame(
-                    Layout::new::<paging::Page>()
-                        .align_to(BASE_PAGE_SIZE)
-                        .unwrap(),
-                )
+                .allocate_base_page()
                 .map(|frame| {
                     paging::PML4Entry::new(
                         frame.base,
@@ -603,11 +754,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
         unsafe {
             fmanager
-                .allocate_frame(
-                    Layout::new::<paging::Page>()
-                        .align_to(BASE_PAGE_SIZE)
-                        .unwrap(),
-                )
+                .allocate_base_page()
                 .map(|frame| {
                     paging::PDPTEntry::new(
                         frame.base,
@@ -625,11 +772,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
         unsafe {
             fmanager
-                .allocate_frame(
-                    Layout::new::<paging::Page>()
-                        .align_to(BASE_PAGE_SIZE)
-                        .unwrap(),
-                )
+                .allocate_base_page()
                 .map(|frame| {
                     paging::PDEntry::new(
                         frame.base,
@@ -647,11 +790,7 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
 
         unsafe {
             fmanager
-                .allocate_frame(
-                    Layout::new::<paging::Page>()
-                        .align_to(BASE_PAGE_SIZE)
-                        .unwrap(),
-                )
+                .allocate_base_page()
                 .map(|frame| {
                     paging::PTEntry::new(
                         frame.base,
@@ -660,44 +799,6 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
                 })
                 .ok()
         }
-    }
-}
-
-pub struct BespinSlabsProvider;
-
-unsafe impl Send for BespinSlabsProvider {}
-unsafe impl Sync for BespinSlabsProvider {}
-
-impl BespinSlabsProvider {
-    pub const fn new() -> BespinSlabsProvider {
-        BespinSlabsProvider
-    }
-}
-
-impl<'a> PageProvider<'a> for BespinSlabsProvider {
-    fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
-        let kcb = crate::kcb::get_kcb();
-        let mut fmanager = kcb.mem_manager();
-
-        unsafe {
-            fmanager
-                .allocate_frame(
-                    Layout::new::<paging::Page>()
-                        .align_to(BASE_PAGE_SIZE)
-                        .unwrap(),
-                )
-                .map(|mut frame| {
-                    frame.zero();
-                    trace!("slabmalloc allocate frame.base = {:x}", frame.base);
-                    let sp: &'a mut ObjectPage = transmute(paddr_to_kernel_vaddr(frame.base));
-                    sp
-                })
-                .ok()
-        }
-    }
-
-    fn release_page(&mut self, _p: &'a mut ObjectPage<'a>) {
-        trace!("TODO!");
     }
 }
 

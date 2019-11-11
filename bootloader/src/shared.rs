@@ -74,25 +74,39 @@ impl core::fmt::Debug for Module {
 }
 
 /// Arguments that are passed on to the kernel by the bootloader.
+#[repr(C)]
 #[derive(Debug)]
-pub struct KernelArgs<T: ?Sized> {
+pub struct KernelArgs {
     /// Physical base address and size of the UEFI memory map (constructed on boot services exit).
     pub mm: (x86::bits64::paging::PAddr, usize),
+
     /// Iterator over memory map
     pub mm_iter: uefi::table::boot::MemoryMapIter<'static>,
+
+    /// A slice into the GPU frame-buffer
+    pub frame_buffer: Option<&'static mut [u8]>,
+
+    /// Current video mode that was set by the boot-loader
+    pub mode_info: Option<uefi::proto::console::gop::ModeInfo>,
+
     /// The physical base address of root PML4 (page) for the kernel
     /// address space that gets loaded in cr3.
     /// The kernel can also find this by reading cr3.
     pub pml4: x86::bits64::paging::PAddr,
+
     /// Kernel stack base address and stack size.
     pub stack: (x86::bits64::paging::PAddr, usize),
+
     /// The offset where the elfloader placed the kernel
     pub kernel_elf_offset: x86::bits64::paging::VAddr,
+
     /// The physical address of the ACPIv1 RSDP (Root System Description Pointer)
     pub acpi1_rsdp: x86::bits64::paging::PAddr,
+
     /// The physical address of the ACPIv2 RSDP (Root System Description Pointer)
     pub acpi2_rsdp: x86::bits64::paging::PAddr,
+
     /// Modules (ELF binaries found in the UEFI partition) passed to the kernel
     /// modules[0] is the kernel binary
-    pub modules: T,
+    pub modules: arrayvec::ArrayVec<[Module; 12]>,
 }

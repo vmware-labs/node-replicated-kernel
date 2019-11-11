@@ -11,7 +11,7 @@ use x86::current::paging::{PAddr, VAddr};
 
 use kpi::SystemCallError;
 
-use slabmalloc::{ObjectPage, PageProvider, ZoneAllocator};
+use slabmalloc::{ObjectPage, ZoneAllocator};
 
 macro_rules! round_up {
     ($num:expr, $s:expr) => {
@@ -24,7 +24,7 @@ pub static PAGER: Mutex<Pager> = Mutex::new(Pager(0x11100000));
 
 /// A silly pager.
 pub struct Pager(u64);
-
+/*
 impl<'a> PageProvider<'a> for Pager {
     /// Allocates a page for use with slabmalloc.
     fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
@@ -38,7 +38,7 @@ impl<'a> PageProvider<'a> for Pager {
 
     /// Releases a page back to slabmalloc.
     fn release_page(&mut self, page: &'a mut ObjectPage<'a>) {}
-}
+}*/
 
 impl Pager {
     pub(crate) fn allocate_new(
@@ -76,23 +76,25 @@ impl Pager {
 pub struct SafeZoneAllocator(Mutex<ZoneAllocator<'static>>);
 
 impl SafeZoneAllocator {
-    pub const fn new(provider: &'static Mutex<PageProvider>) -> SafeZoneAllocator {
-        SafeZoneAllocator(Mutex::new(ZoneAllocator::new(provider)))
+    pub const fn new() -> SafeZoneAllocator {
+        SafeZoneAllocator(Mutex::new(ZoneAllocator::new()))
     }
 }
 
 unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            self.0.lock().allocate(layout)
+            //self.0.lock().allocate(layout)
         } else {
-            PAGER.lock().allocate(layout)
+            //PAGER.lock().allocate(layout)
         }
+        core::ptr::null_mut()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            self.0.lock().deallocate(ptr, layout);
+
+            //self.0.lock().deallocate(ptr, layout);
         } else {
             //panic!("NYI dealloc");
             //error!("NYI dealloc");

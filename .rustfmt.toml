@@ -58,3 +58,5 @@ report_fixme = "Never"
 ignore = ["lib/rlib",]
 emit_mode = "Files"
 make_backup = false
+format_code_in_doc_comments = true
+format_doc_comments = true

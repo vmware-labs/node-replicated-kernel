@@ -1,17 +1,16 @@
 //! NCache is a physical memory manager used to maintain a per-NUMA node memory.
 //!
-//! It can be a cache but should be big enough to contain all memory on the node.
+//! It can be a cache but should be big enough to contain all memory on a node.
 //!
 //! It has the following properties:
 //!
 //! - Fits in a 2 MiB page
 //! - Can allocate and free 2 MiB and 4 KiB Frames very quickly using stacks.
-//! - Is not thread-safe, need to wrap it in a Mutex (ideall we have two
+//! - Is not thread-safe, need to wrap it in a Mutex (ideally we have two
 //!   interior Mutex for base-page and large-page arrays but that's problematic
 //!   because our traits are currently using &mut self).
 //! - TODO: Should have a directory-style index to put a list of 2 MiB, 4KiB
 //!   pages stack into an entry within the NCache list.
-//!
 use core::fmt;
 use core::mem::MaybeUninit;
 
@@ -29,10 +28,6 @@ pub struct NCache {
     base_page_addresses: arrayvec::ArrayVec<[PAddr; 65536]>,
     /// A vector of free, cached large-page addresses
     large_page_addresses: arrayvec::ArrayVec<[PAddr; 65536]>,
-    // A list of pages which are full of addresses of base pages.
-    //base_page_index: arrayvec::ArrayVec<[PAddr; 32768]>,
-    // A list of pages which are full of addresses of large pages.
-    //large_page_index: arrayvec::ArrayVec<[PAddr; 32768]>,
 }
 
 impl NCache {
@@ -41,9 +36,62 @@ impl NCache {
             node,
             base_page_addresses: arrayvec::ArrayVec::new(),
             large_page_addresses: arrayvec::ArrayVec::new(),
-            //base_page_index: arrayvec::ArrayVec::new(),
-            //large_page_index: arrayvec::ArrayVec::new(),
         }
+    }
+
+    /// Populate the NCache with the given `frame`.
+    ///
+    /// The Frame can be a multiple of page-size, the policy is
+    /// to divide it into ~8% base-pages and 92% large-pages.
+    pub fn populate(&mut self, frame: Frame) {
+        let mut how_many_large_pages = (frame.size() / LARGE_PAGE_SIZE) * 92 / 100;
+        if how_many_large_pages == 0 {
+            // Try to have at least one large-page if possible
+            how_many_large_pages = 1;
+        }
+        let (low_frame, mut large_page_aligned_frame) =
+            frame.split_at_nearest_large_page_boundary();
+
+        for base_page in low_frame.into_iter() {
+            self.base_page_addresses
+                .try_push(base_page.base)
+                .expect("Can't add base-page to NCache");
+        }
+
+        // Add large-pages
+        while how_many_large_pages > 0 && large_page_aligned_frame.size() >= LARGE_PAGE_SIZE {
+            let (large_page, rest) = large_page_aligned_frame.split_at(LARGE_PAGE_SIZE);
+            self.large_page_addresses
+                .try_push(large_page.base)
+                .expect("Can't push large page in NCache");
+
+            large_page_aligned_frame = rest;
+            how_many_large_pages -= 1;
+        }
+
+        // Put the rest as base-pages
+        let mut lost_pages = 0;
+        for base_page in large_page_aligned_frame.into_iter() {
+            match self.base_page_addresses.try_push(base_page.base) {
+                Ok(()) => continue,
+                Err(_) => {
+                    lost_pages += 1;
+                    break;
+                }
+            }
+        }
+
+        if lost_pages > 0 {
+            warn!(
+                "NCache population lost {} of memory",
+                super::DataSize::from_bytes(lost_pages * BASE_PAGE_SIZE)
+            );
+        }
+        debug!(
+            "NCache populated with {} base-pages and {} large-pages",
+            self.base_page_addresses.len(),
+            self.large_page_addresses.len()
+        );
     }
 
     /// Initialize an uninitialized NCache and return it.
@@ -77,13 +125,12 @@ impl NCache {
 
 impl fmt::Debug for NCache {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (free, free_unit) = super::format_size(self.free());
-        let (capacity, capacity_unit) = super::format_size(self.capacity());
-
         write!(
             f,
-            "NCache {{ free: {:.2} {}, capacity: {:.2} {}, affinity: {} }}",
-            free, free_unit, capacity, capacity_unit, self.node
+            "NCache {{ free: {}, capacity: {}, affinity: {} }}",
+            super::DataSize::from_bytes(self.free()),
+            super::DataSize::from_bytes(self.capacity()),
+            self.node
         )
     }
 }

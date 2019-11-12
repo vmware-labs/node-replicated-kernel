@@ -1,4 +1,4 @@
-//! TCache is a physical memory manager used to maintain a per-CPU page-cache.
+//! TCache is a physical memory manager used to maintain a smallish page-cache.
 //!
 //! It has the following properties:
 //!
@@ -34,21 +34,34 @@ impl TCache {
         }
     }
 
+    pub fn new_with_frame(
+        thread: topology::ThreadId,
+        node: topology::NodeId,
+        mem: Frame,
+    ) -> TCache {
+        let mut tcache = TCache::new(thread, node);
+        tcache.populate(mem);
+        tcache
+    }
+
     /// Populates a TCache with the memory from `frame`
     ///
     /// This works by repeatedly splitting the `frame`
     /// into smaller pages.
     fn populate(&mut self, frame: Frame) {
-        let how_many_base_pages = if frame.size() < LARGE_PAGE_SIZE {
-            // All pages in this frame are made base-pages
-            frame.size() / BASE_PAGE_SIZE
+        let mut how_many_large_pages = if frame.base_pages() > self.base_page_addresses.capacity() {
+            let bytes_left_after_base_full =
+                (frame.base_pages() - self.base_page_addresses.capacity()) * BASE_PAGE_SIZE;
+            bytes_left_after_base_full / LARGE_PAGE_SIZE
         } else {
-            // ~8% should be reserved as base-pages
-            (frame.size() / BASE_PAGE_SIZE) * 8 / 100
+            // If this assert fails, we have to rethink what to return here
+            debug_assert!(self.base_page_addresses.capacity() * BASE_PAGE_SIZE <= LARGE_PAGE_SIZE);
+            1
         };
-
-        let mut how_many_large_pages =
-            ((frame.size() - (how_many_base_pages * BASE_PAGE_SIZE)) / LARGE_PAGE_SIZE) + 1;
+        if how_many_large_pages == 0 {
+            // XXX: Try to have at least one large-page if possible
+            how_many_large_pages = 1;
+        }
 
         let (low_frame, mut large_page_aligned_frame) =
             frame.split_at_nearest_large_page_boundary();
@@ -56,11 +69,10 @@ impl TCache {
         for base_page in low_frame.into_iter() {
             self.base_page_addresses
                 .try_push(base_page.base)
-                .expect("Can't push base-page in TCache");
+                .expect("Can't add base-page from low_frame to TCache");
         }
 
-        // Add large pages
-        info!("how_many_large_pages = {}", how_many_large_pages);
+        // Add large-pages
         while how_many_large_pages > 0 && large_page_aligned_frame.size() >= LARGE_PAGE_SIZE {
             let (large_page, rest) = large_page_aligned_frame.split_at(LARGE_PAGE_SIZE);
             self.large_page_addresses
@@ -71,22 +83,29 @@ impl TCache {
             how_many_large_pages -= 1;
         }
 
-        // Make rest base-pages
+        // Put the rest as base-pages
+        let mut lost_pages = 0;
         for base_page in large_page_aligned_frame.into_iter() {
-            self.base_page_addresses
-                .try_push(base_page.base)
-                .expect("Can't push base-pages");
+            match self.base_page_addresses.try_push(base_page.base) {
+                Ok(()) => continue,
+                Err(_) => {
+                    lost_pages += 1;
+                }
+            }
         }
-    }
 
-    pub fn new_with_frame(
-        thread: topology::ThreadId,
-        node: topology::NodeId,
-        mem: Frame,
-    ) -> TCache {
-        let mut tcache = TCache::new(thread, node);
-        tcache.populate(mem);
-        tcache
+        if lost_pages > 0 {
+            warn!(
+                "TCache population lost {} of memory",
+                DataSize::from_bytes(lost_pages * BASE_PAGE_SIZE)
+            );
+        }
+
+        debug!(
+            "TCache populated with {} base-pages and {} large-pages",
+            self.base_page_addresses.len(),
+            self.large_page_addresses.len()
+        );
     }
 
     fn paddr_to_base_page(&self, pa: PAddr) -> Frame {

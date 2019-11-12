@@ -112,7 +112,7 @@ pub struct Kcb {
     pub gmanager: Option<&'static GlobalMemory>,
 
     /// A handle to the early memory manager.
-    pub emanager: RefCell<EarlyPhysicalManager>,
+    pub emanager: RefCell<TCache>,
 
     /// A handle to the per-core page-allocator.
     pub pmanager: Option<RefCell<TCache>>,
@@ -151,7 +151,7 @@ impl Kcb {
         kernel_args: &'static KernelArgs,
         kernel_binary: &'static [u8],
         init_vspace: VSpace,
-        emanager: EarlyPhysicalManager,
+        emanager: TCache,
         apic: XAPICDriver,
     ) -> Kcb {
         Kcb {
@@ -282,7 +282,7 @@ impl Kcb {
     }
 
     /// Get a reference to the early memory manager.
-    pub fn emanager(&self) -> RefMut<EarlyPhysicalManager> {
+    pub fn emanager(&self) -> RefMut<TCache> {
         self.emanager.borrow_mut()
     }
 

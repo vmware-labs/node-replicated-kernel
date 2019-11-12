@@ -227,6 +227,26 @@ fn find_apic_base() -> u64 {
     }
 }
 
+/// Construct the driver object to manipulate the interrupt controller (XAPIC)
+fn init_apic() -> xapic::XAPICDriver {
+    let base = find_apic_base();
+    trace!("find_apic_base {:#x}", base);
+    let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
+    let mut apic = xapic::XAPICDriver::new(regs);
+
+    // Attach the driver to take control of the APIC:
+    apic.attach();
+
+    info!(
+        "xAPIC id: {}, version: {:#x}, is bsp: {}",
+        apic.id(),
+        apic.version(),
+        apic.bsp()
+    );
+
+    apic
+}
+
 // Includes structs KernelArgs, and Module from bootloader
 include!("../../../../bootloader/src/shared.rs");
 
@@ -253,7 +273,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         irq::setup_early_idt();
     };
 
-    let mut emanager = emem::EarlyPhysicalManager::new(Frame::empty());
+    let mut emanager = tcache::TCache::new(0, 0);
     unsafe {
         //fmanager.add_frame(args.mem_region, None);
     }
@@ -332,7 +352,6 @@ fn boot_app_cores(
         replicas.push(bsp_replica.clone());
         kcb.set_allocation_affinity(0);
     }
-
     let global_memory = kcb.gmanager.expect("boot_app_cores requires kcb.gmanager");
 
     // For now just boot everything, except ourselves
@@ -541,7 +560,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Ideally, if this works, we should end up with an EarlyPhysicalManager
     // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
     // regions of memory.
-    let mut emanager: Option<emem::EarlyPhysicalManager> = None;
+    let mut emanager: Option<tcache::TCache> = None;
     let mut memory_regions = ArrayVec::<[Frame; 64]>::new();
     for region in mm_iter {
         if region.ty == MemoryType::CONVENTIONAL {
@@ -560,13 +579,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                     // a NUMA machine this memory will be on node 0.
                     // Ideally `mem_iter` is ordered by physical address which would increase
                     // our chances, but the UEFI spec doesn't guarantee anything :S
-                    let (low, high) = f.split_at(TEN_MIB);
-                    emanager = Some(emem::EarlyPhysicalManager::new(low));
-                    if high.size() >= TEN_MIB {
+                    let (ten_mib, high) = f.split_at(TEN_MIB);
+                    emanager = Some(tcache::TCache::new_with_frame(0, 0, ten_mib));
+
+                    if high != Frame::empty() {
                         assert!(!memory_regions.is_full());
                         memory_regions.push(high);
-                    } else {
-                        // Lose the `high` frame it's not worth the hassle.
                     }
                 } else {
                     assert!(!memory_regions.is_full());
@@ -581,25 +599,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
     }
-    let emanager =
-        emanager.expect("Couldn't build an EarlyPhysicalManager, increase system main memory?");
+    let emanager = emanager
+        .expect("Couldn't build an early physical memory manager, increase system main memory?");
 
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
 
-    // Construct the driver object to manipulate the interrupt controller (XAPIC)
-    let base = find_apic_base();
-    trace!("find_apic_base {:#x}", base);
-    let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
-    let mut apic = xapic::XAPICDriver::new(regs);
-    // Attach the driver to the registers:
-    apic.attach();
-    info!(
-        "xAPIC id: {}, version: {:#x}, is bsp: {}",
-        apic.id(),
-        apic.version(),
-        apic.bsp()
-    );
+    let apic = init_apic();
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, emanager, apic);
@@ -628,7 +634,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let r = acpi::init();
         assert!(r.is_ok());
-        info!("ACPI initialized");
     }
 
     // Initialize the machine topology (needs ACPI and alloc):
@@ -662,7 +667,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let kcb = kcb::get_kcb();
         kcb.set_global_memory(&global_memory_static);
-        let tcache = crate::memory::tcache::TCache::new(0, 0);
+        let tcache = tcache::TCache::new(0, 0);
     }
 
     let mut log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));

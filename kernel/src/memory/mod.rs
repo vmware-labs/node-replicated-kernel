@@ -1,3 +1,15 @@
+//! The core module for kernel memory management.
+//!
+//! Defines some core data-types and implements
+//! a bunch of different allocators for use in the system.
+//!
+//! From a high level the four most interesting types in here are:
+//!  * The Frame: Which is represents a block of physical memory, it's always
+//!    aligned to, and a multiple of a base-page. Ideally Rust affine types
+//!    should ensure we always only have one Frame covering a block of memory.
+//!  * The NCache: A big stack of base and large-pages.
+//!  * The TCache: A smaller stack of base and large-pages.
+//!  * The KernelAllocator: Which implements GlobalAlloc.
 use crate::alloc::string::ToString;
 use core::alloc::{AllocErr, GlobalAlloc, Layout};
 use core::borrow::BorrowMut;
@@ -34,20 +46,6 @@ static MEM_PROVIDER: KernelAllocator = KernelAllocator;
 /// Implements the kernel memory allocation strategy.
 struct KernelAllocator;
 
-impl KernelAllocator {
-    /// Transfers memory from the shared `from` allocator to a
-    /// core-local `to` allocator.
-    fn refill_local(from: Mutex<&dyn ReapBackend>, to: &mut dyn GrowBackend) {
-        /*let mut free_list = [None, None];
-
-        let from_locked = from.lock();
-        from_locked.reap_base_pages(&mut free_list);
-        drop(from_locked);
-
-        to.grow_base_pages(free_list);*/
-    }
-}
-
 /// Implementation of GlobalAlloc for the kernel.
 ///
 /// The algorithm in alloc/dealloc should take care of allocating kernel objects of
@@ -79,7 +77,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             if l.size() <= ZoneAllocator::MAX_BASE_ALLOC_SIZE {
                                 let mut f = pmanager
                                     .allocate_base_page()
-                                    .expect("TODO(error) handle refill-alloc failure");
+                                    .expect("TODO(error) handle refill-alloc base-page failure");
                                 f.zero();
                                 let base_page_ptr: *mut slabmalloc::ObjectPage =
                                     f.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
@@ -89,7 +87,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             } else {
                                 let mut f = pmanager
                                     .allocate_large_page()
-                                    .expect("TODO(error) handle refill-alloc failure");
+                                    .expect("TODO(error) handle refill-alloc large-page failure");
                                 f.zero();
                                 let large_page_ptr: *mut slabmalloc::LargeObjectPage = f
                                     .uninitialized::<slabmalloc::LargeObjectPage>()
@@ -119,8 +117,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     } else if layout.size() <= LARGE_PAGE_SIZE {
                         mem_manager.allocate_large_page()
                     } else {
-                        let fmt = format_size(layout.size());
-                        unreachable!("allocate >= 2 MiB: {} {}", fmt.0, fmt.1)
+                        unreachable!("allocate >= 2 MiB: {}", DataSize::from_bytes(layout.size()))
                     };
 
                     let ptr = f.ok().map_or(core::ptr::null_mut(), |mut region| {
@@ -179,23 +176,53 @@ custom_error! {pub AllocationError
     CantGrowFurther{count: usize} = "Cache full; only added {count} elements.",
 }
 
-/// Given `bytes` return the quantity in a human readable form.
+/// Human-readable representation of a data-size.
 ///
-/// # Example
-///
-/// ```no-run
-/// let ret = fromat_size(1024);
-/// format!(w, "{:.2} {}", ret.1, ret.2);
-/// ```
-pub fn format_size(bytes: usize) -> (f64, &'static str) {
-    if bytes < 1024 {
-        (bytes as f64, "B")
-    } else if bytes < (1024 * 1024) {
-        (bytes as f64 / 1024.0, "KiB")
-    } else if bytes < (1024 * 1024 * 1024) {
-        (bytes as f64 / (1024 * 1024) as f64, "MiB")
-    } else {
-        (bytes as f64 / (1024 * 1024 * 1024) as f64, "GiB")
+/// # Notes
+/// Use for pretty printing and debugging only.
+#[derive(PartialEq)]
+pub enum DataSize {
+    Bytes(f64),
+    KiB(f64),
+    MiB(f64),
+    GiB(f64),
+}
+
+impl DataSize {
+    /// Construct a new DataSize passing the amount of `bytes`
+    /// we want to convert
+    pub fn from_bytes(bytes: usize) -> DataSize {
+        if bytes < 1024 {
+            DataSize::Bytes(bytes as f64)
+        } else if bytes < (1024 * 1024) {
+            DataSize::KiB(bytes as f64 / 1024.0)
+        } else if bytes < (1024 * 1024 * 1024) {
+            DataSize::MiB(bytes as f64 / (1024 * 1024) as f64)
+        } else {
+            DataSize::GiB(bytes as f64 / (1024 * 1024 * 1024) as f64)
+        }
+    }
+
+    /// Write rounded size and SI unit to `f`
+    fn format(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            DataSize::Bytes(n) => write!(f, "{:.2} B", n),
+            DataSize::KiB(n) => write!(f, "{:.2} KiB", n),
+            DataSize::MiB(n) => write!(f, "{:.2} MiB", n),
+            DataSize::GiB(n) => write!(f, "{:.2} GiB", n),
+        }
+    }
+}
+
+impl fmt::Debug for DataSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.format(f)
+    }
+}
+
+impl fmt::Display for DataSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.format(f)
     }
 }
 
@@ -207,14 +234,7 @@ pub const AFFINITY_REGIONS: usize = 16;
 
 /// Represents the global memory system in the kernel.
 ///
-/// Has regions of memory that are maintained by a buddy allocator and
-/// are partitioned to represent memory from just a single NUMA node.
-///
-/// Memory from those allocators then get pushed into the `ncache` that is supposed
-/// to be fast and until they finally end up in the per-core TCache (which is found
-/// in the core's KCB).
-///
-/// NCaches and Buddies can be accessed concurrently and are currently protected
+/// `node_caches` and and `emem` can be accessed concurrently and are protected
 /// by a simple spin-lock (for reclamation and allocation).
 /// TODO(perf): This may need a more elaborate scheme in the future.
 #[derive(Default)]
@@ -222,15 +242,7 @@ pub struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<[Mutex<emem::EarlyPhysicalManager>; AFFINITY_REGIONS]>,
-
-    /// All physical mem. regions in the system are maintained by a buddy at the lowest level.
-    pub(crate) buddies: ArrayVec<
-        [CachePadded<(
-            topology::NodeId,
-            Mutex<&'static mut buddy::BuddyFrameAllocator>,
-        )>; MAX_PHYSICAL_REGIONS],
-    >,
+    pub(crate) emem: ArrayVec<[Mutex<tcache::TCache>; AFFINITY_REGIONS]>,
 
     /// All node-caches in the system (one for every NUMA node).
     pub(crate) node_caches:
@@ -241,25 +253,27 @@ impl GlobalMemory {
     /// Construct a new global memory object from a range of initial memory frames.
     /// This is typically invoked quite early (we're setting up support for memory allocation).
     ///
-    /// We first chop off a small amount of memory from the frame to construct a EarlyPhysicalManager
-    /// for every NUMA node.
-    /// From the remaining frames we make buddy allocators.
-    /// Then we construct node-caches (NCache) and populate them with memory from the buddies.
+    /// We first chop off a small amount of memory from the frames to construct an early
+    /// TCache (for every NUMA node). Then we construct the big node-caches (NCache) and
+    /// populate them with remaining (hopefully a lot) memory.
     ///
     /// When this completes we have a bunch of global NUMA aware memory allocators that
-    /// are protected by spin-locks. `GlobalMemory` together with the `TCache` which is per-core
-    /// is our physical memory allocation system.
+    /// are protected by spin-locks. `GlobalMemory` together with the core-local allocators
+    /// forms the tracking for our memory allocation system.
     ///
     /// # Safety
-    /// Pretty unsafe as we do lot of casting from frames to make space for our allocators.
-    /// A client needs to ensure that our frames are valid memory, not being used anywhere yet.
-    /// The good news is that we only invoke it once.
+    /// Pretty unsafe as we do lot of conjuring objects from frames to allocate memory
+    /// for our allocators.
+    /// A client needs to ensure that our frames are valid memory, and not yet
+    /// being used anywhere yet.
+    /// The good news is that we only invoke this once during bootstrap.
     pub unsafe fn new(
         mut memory: ArrayVec<[Frame; MAX_PHYSICAL_REGIONS]>,
     ) -> Result<GlobalMemory, AllocationError> {
         debug_assert!(!memory.is_empty());
         let mut gm = GlobalMemory::default();
 
+        // How many NUMA nodes are there in the system
         let max_affinity: usize = memory
             .iter()
             .map(|f| f.affinity as usize)
@@ -267,62 +281,46 @@ impl GlobalMemory {
             .expect("Need at least some frames")
             + 1;
 
-        // 1. Construct the `emem`'s for all NUMA nodes:
+        // Construct the `emem`'s for all NUMA nodes:
         let mut cur_affinity = 0;
+        // Top of the frames that we didn't end up using for the `emem` construction
+        let mut leftovers: ArrayVec<[Frame; MAX_PHYSICAL_REGIONS]> = ArrayVec::new();
         for frame in memory.iter_mut() {
-            // We have a frame that is big enough and with the right affinity
-            const FOUR_MIB: usize = 4 * 1024 * 1024;
-            if frame.affinity == cur_affinity && frame.size() > FOUR_MIB {
-                let (low, high) = frame.split_at(FOUR_MIB);
-                cur_affinity += 1;
-                debug_assert_eq!(low.size(), FOUR_MIB);
+            const EMEM_SIZE: usize = 2 * LARGE_PAGE_SIZE + 64 * BASE_PAGE_SIZE;
+            if frame.affinity == cur_affinity && frame.size() > EMEM_SIZE {
+                // Let's make sure we have a frame that starts at a 2 MiB boundary which makes it easier
+                // to populate the TCache
+                let (low, large_page_aligned_frame) = frame.split_at_nearest_large_page_boundary();
+                *frame = low;
 
-                *frame = high;
-                gm.emem
-                    .push(Mutex::new(emem::EarlyPhysicalManager::new(low)));
+                // Cut-away the top memory if the frame we got is too big
+                let (emem, leftover_mem) = large_page_aligned_frame.split_at(EMEM_SIZE);
+                if leftover_mem != Frame::empty() {
+                    // And safe it for later processing
+                    leftovers.push(leftover_mem);
+                }
+
+                gm.emem.push(Mutex::new(tcache::TCache::new_with_frame(
+                    0x0,
+                    cur_affinity,
+                    emem,
+                )));
+
+                cur_affinity += 1;
             }
         }
-        debug_assert_eq!(
+        // If this fails, memory is really fragmented or some nodes have no/little memory
+        assert_eq!(
             gm.emem.len(),
             max_affinity,
             "Added early managers for all NUMA nodes"
         );
 
-        // 2. Construct the buddies for all Frames
-        //
-        // TODO(wasteful): We need to make sure that frame sizes are
-        // powers of two and we don't just chop away lots of
-        // memory in the buddy (ideally the buddy does the split
-        // and returns the rest of the frame to us).
-        //
-        // We get memory from the frame-local NUMA node (using previosuly created emem),
-        // then we construct a buddy in the the uninitialized page memory
-        // and stick it in `gm.buddies`
-        for frame in memory {
-            // TODO(efficiency): Should pack multpile buddy on the same page as long as space permits
-            // right now we have a page for every buddy (which is wasteful)
-            let mut buddy_memory = gm.emem[frame.affinity as usize]
-                .lock()
-                .allocate_base_page()?;
-            let buddy_base_addr: PAddr = buddy_memory.base;
-            buddy_memory.zero(); // TODO(perf) this happens twice atm (see emem)?
-            let buddy_vptr = buddy_memory.uninitialized::<buddy::BuddyFrameAllocator>();
-            let buddy: &'static mut buddy::BuddyFrameAllocator =
-                buddy_vptr.write(buddy::BuddyFrameAllocator::new_with_frame(frame));
-            debug_assert_eq!(
-                &*buddy as *const _ as u64,
-                paddr_to_kernel_vaddr(buddy_base_addr).as_u64()
-            );
-
-            gm.buddies
-                .push(CachePadded::new((frame.affinity, Mutex::new(buddy))));
-        }
-
-        // 3. Construct an NCache for all nodes
+        // Construct an NCache for all nodes
         for affinity in 0..max_affinity {
             let mut ncache_memory = gm.emem[affinity].lock().allocate_large_page()?;
             let ncache_memory_addr: PAddr = ncache_memory.base;
-            ncache_memory.zero(); // TODO(perf) this happens twice atm (see emem)?
+            ncache_memory.zero(); // TODO(perf) this happens twice atm?
 
             let ncache_ptr = ncache_memory.uninitialized::<ncache::NCache>();
             let ncache: &'static mut ncache::NCache =
@@ -335,86 +333,20 @@ impl GlobalMemory {
             gm.node_caches.push(CachePadded::new(Mutex::new(ncache)));
         }
 
-        // 4. Initial population of NCaches with memory from buddies
-        // Ideally we fully exhaust all buddies and put everything in the NCache
-        // The one thing we have to decide is how much goes into 4 KiB pages
-        // and how much goes into 2 MiB pages; ideally we use 2 MiB for
-        // almost everything so we aim for ~8% 4K pages of the total node memory
-        //
-        // TODO(perf): we really don't have to allocate from the buddy, just insert
-        // directly in NCache
+        // Populate the NCaches with all remaining memory
+        // Ideally we fully exhaust all frames and put everything in the NCache
         for (ncache_affinity, ref ncache) in gm.node_caches.iter().enumerate() {
-            for buddy_cacheline in gm.buddies.iter() {
-                let buddy_affinity = buddy_cacheline.0;
-                let buddy = &buddy_cacheline.1;
-                if buddy_affinity == ncache_affinity as u64 {
-                    let mut buddy_locked = buddy.lock();
-                    let mut ncache_locked = ncache.lock();
-
-                    let how_many_base_pages = if buddy_locked.free() < LARGE_PAGE_SIZE {
-                        // All pages in this frame are made base-pages
-                        buddy_locked.free() / BASE_PAGE_SIZE
-                    } else {
-                        // ~8% should be reserved as base-pages
-                        (buddy_locked.free() / BASE_PAGE_SIZE) * 8 / 100
-                    };
-
-                    let how_many_large_pages = (buddy_locked.free()
-                        - (how_many_base_pages * BASE_PAGE_SIZE))
-                        / LARGE_PAGE_SIZE;
-
-                    trace!(
-                        "Trying to add {} base-pages, {} large-pages to NCache",
-                        how_many_base_pages,
-                        how_many_large_pages
-                    );
-                    for cnt in 0..how_many_base_pages {
-                        match buddy_locked.allocate_frame(Layout::from_size_align_unchecked(
-                            BASE_PAGE_SIZE,
-                            BASE_PAGE_SIZE,
-                        )) {
-                            Ok(frame) => {
-                                ncache_locked.grow_base_pages(&[frame])?;
-                                //debug!("gave base page to ncache {:?}", frame);
-                            }
-                            Err(AllocationError::OutOfMemory { size: x }) => {
-                                debug_assert_eq!(x, BASE_PAGE_SIZE);
-                                break;
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Unexpcted error while filling NCache from {:?} (error was {:?})",
-                                    *buddy_locked, e
-                                );
-                                break;
-                            }
-                        };
-                    }
-
-                    for cnt in 0..how_many_large_pages {
-                        match buddy_locked.allocate_frame(Layout::from_size_align_unchecked(
-                            LARGE_PAGE_SIZE,
-                            LARGE_PAGE_SIZE,
-                        )) {
-                            Ok(frame) => {
-                                ncache_locked.grow_large_pages(&[frame])?;
-                                //debug!("gave large page to ncache {:?}", frame);
-                            }
-                            Err(AllocationError::OutOfMemory { size: x }) => {
-                                debug_assert_eq!(x, LARGE_PAGE_SIZE);
-                                break;
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Unexpcted error while filling NCache from {:?} (error was {:?})",
-                                    *buddy_locked, e
-                                );
-                                break;
-                            }
-                        };
-                    }
-
-                    debug!("{:?} {:?}", *buddy_locked, *ncache_locked);
+            let mut ncache_locked = ncache.lock();
+            for frame in memory.iter() {
+                if frame.affinity == ncache_affinity as u64 {
+                    trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
+                    ncache_locked.populate(*frame);
+                }
+            }
+            for frame in leftovers.iter() {
+                if frame.affinity == ncache_affinity as u64 {
+                    trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
+                    ncache_locked.populate(*frame);
                 }
             }
         }
@@ -752,14 +684,12 @@ impl core::iter::IntoIterator for Frame {
 
 impl fmt::Debug for Frame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (size_formatted, unit) = format_size(self.size);
         write!(
             f,
-            "Frame {{ 0x{:x} -- 0x{:x} (size = {:.2} {}, pages = {}, node#{} }}",
+            "Frame {{ 0x{:x} -- 0x{:x} (size = {}, pages = {}, node#{} }}",
             self.base,
             self.base + self.size,
-            size_formatted,
-            unit,
+            DataSize::from_bytes(self.size),
             self.base_pages(),
             self.affinity
         )
@@ -980,18 +910,16 @@ mod tests {
 
     #[test]
     fn size_formatting() {
-        let (a, unit) = format_size(LARGE_PAGE_SIZE);
-        assert_eq!(unit, "MiB");
-        assert_eq!(a, 2.0);
+        let ds = DataSize::from_bytes(LARGE_PAGE_SIZE);
+        assert_eq!(ds, DataSize::MiB(2.0));
 
-        let (a, unit) = format_size(BASE_PAGE_SIZE);
-        assert_eq!(unit, "KiB");
-        assert_eq!(a, 4.0);
+        let ds = DataSize::from_bytes(BASE_PAGE_SIZE);
+        assert_eq!(ds, DataSize::KiB(4.0));
 
-        let (a, unit) = format_size(core::usize::MAX);
-        assert_eq!(unit, "GiB");
+        let ds = DataSize::from_bytes(1024 * LARGE_PAGE_SIZE);
+        assert_eq!(ds, DataSize::GiB(2.0));
 
-        let (a, unit) = format_size(core::usize::MIN);
-        assert_eq!(unit, "B");
+        let ds = DataSize::from_bytes(core::usize::MIN);
+        assert_eq!(ds, DataSize::Bytes(0.0));
     }
 }

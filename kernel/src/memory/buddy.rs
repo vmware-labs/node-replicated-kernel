@@ -3,9 +3,8 @@
 //! Some of this code was inspired by
 //! https://crates.io/crates/alloc_buddy_simple (Apache2 / MIT License)
 //!
-//! See also
+//! # See also
 //!   * https://en.wikipedia.org/wiki/Buddy_memory_allocation
-//!
 
 use core::alloc::Layout;
 use core::cmp::{max, min};
@@ -15,8 +14,8 @@ use core::ptr;
 use crate::prelude::*;
 
 use super::{
-    AllocationError, AllocatorStatistics, Frame, PAddr, PhysicalAllocator, VAddr, BASE_PAGE_SIZE,
-    LARGE_PAGE_SIZE,
+    AllocationError, AllocatorStatistics, DataSize, Frame, PAddr, PhysicalAllocator, VAddr,
+    BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
 use crate::arch::memory::kernel_vaddr_to_paddr;
 
@@ -119,11 +118,11 @@ impl BuddyFrameAllocator {
         if self.region.base.as_u64() == 0 {
             let size = region.size.next_power_of_two() >> 1;
             if size < region.size {
-                let ret = super::format_size(region.size - size);
+                let ret = DataSize::from_bytes(region.size - size);
                 // split the frame and return the rest of it
                 error!(
-                    "TODO: Buddy only deals with powers-of-two, we lost {:.2} {}.",
-                    ret.0, ret.1
+                    "TODO: Buddy only deals with powers-of-two, we lost {}.",
+                    ret
                 );
             }
             self.region.size = size;
@@ -354,17 +353,17 @@ impl BuddyFrameAllocator {
 
 impl fmt::Debug for BuddyFrameAllocator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let cap = super::format_size(self.capacity());
-        let free = super::format_size(self.free());
-        let allocd = super::format_size(self.allocated());
-        let frag = super::format_size(self.internal_fragmentation());
+        let cap = DataSize::from_bytes(self.capacity());
+        let free = DataSize::from_bytes(self.free());
+        let allocd = DataSize::from_bytes(self.allocated());
+        let frag = DataSize::from_bytes(self.internal_fragmentation());
 
         write!(
             f,
-            "BuddyFrameAllocator {{ region: {:#x} -- {:#x}, cap: {:.2} {}, free: {:.2} {}, allocated: {:.2} {}, internal_fragmentation: {:.2} {} }}",
+            "BuddyFrameAllocator {{ region: {:#x} -- {:#x}, cap: {}, free: {}, allocated: {}, internal_fragmentation: {} }}",
             self.region.base,
             self.region.end(),
-            cap.0, cap.1, free.0, free.1, allocd.0, allocd.1, frag.0, frag.1
+            cap, free, allocd, frag
         )
     }
 }

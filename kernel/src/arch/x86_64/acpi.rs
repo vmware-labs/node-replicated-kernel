@@ -562,6 +562,8 @@ pub(crate) fn init() -> Result<(), ACPI_STATUS> {
         //trace!("AcpiInitializeObjects {:?}", ret);
     }
 
+    // Required for integration test, don't modify without adjusting
+    // `acpi_topology` test
     info!("ACPI Initialized");
 
     Ok(())

@@ -40,7 +40,6 @@ cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = fa
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" } # Need to upstream fixes
 addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
 
-
 [[bin]]
 name = "bespin"
 
@@ -82,7 +81,7 @@ test-scheduler = [ "integration-test", "lineup", "bsp-only" ]
 # acpi: test ACPI can initialize
 test-acpi-smoke = [ "integration-test", "bsp-only" ]
 # acpi: test ACPI with complex topology
-test-acpi-topology = [ "integration-test" ]
+test-acpi-topology = [ "integration-test", "bsp-only" ]
 # coreboot: Test that we can boot-up additional cores
 test-coreboot-smoke = ["integration-test", "bsp-only" ]
 # coreboot: Test that we can boot-up additional cores

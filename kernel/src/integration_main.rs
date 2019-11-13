@@ -1,3 +1,4 @@
+/// Test time facilities in the kernel.
 #[cfg(all(feature = "integration-test", feature = "test-time"))]
 pub fn xmain() {
     unsafe {
@@ -25,26 +26,13 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-test", feature = "test-buddy"))]
-pub fn xmain() {
-    use buddy::FreeBlock;
-    use buddy::Heap;
-    let mut heap = Heap::new(
-        heap_base: *mut u8,
-        heap_size: usize,
-        free_lists: &mut [*mut FreeBlock],
-    );
-
-    let b = heap.allocate(4096, 4096);
-
-    arch::debug::shutdown(ExitReason::Ok);
-}
-
+/// Test that we can exit the machine.
 #[cfg(all(feature = "integration-test", feature = "test-exit"))]
 pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Test the debug facility for page-faults.
 #[cfg(all(feature = "integration-test", feature = "test-pfault"))]
 #[inline(never)]
 pub fn xmain() {
@@ -52,12 +40,14 @@ pub fn xmain() {
     debug::cause_pfault();
 }
 
+/// Test the debug facility for general-protection-faults.
 #[cfg(all(feature = "integration-test", feature = "test-gpfault"))]
 pub fn xmain() {
     use arch::debug;
     debug::cause_gpfault();
 }
 
+/// Test allocation and deallocation of objects of various sizes.
 #[cfg(all(feature = "integration-test", feature = "test-alloc"))]
 pub fn xmain() {
     use alloc::vec::Vec;
@@ -84,14 +74,13 @@ pub fn xmain() {
         }
     } // Make sure we drop here.
     info!("large allocations work.");
+
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Checks that we can initialize ACPI and query the ACPI tables.
-///
-/// # Note
-/// This test is supposed to spawn on a small machine with 1 socket, 2 cores
-/// and no numa nodes.
+/// Checks that we can initialize ACPI, query the ACPI tables,
+/// and parse the topology. The test ensures things work in case we
+/// have no numa nodes.
 #[cfg(all(feature = "integration-test", feature = "test-acpi-smoke"))]
 pub fn xmain() {
     use topology::MACHINE_TOPOLOGY;
@@ -121,11 +110,7 @@ pub fn xmain() {
 }
 
 /// Checks that we can initialize ACPI, query the ACPI tables
-/// and construct a large NUMA topology.
-///
-/// # Note
-/// This test is supposed to spawn on a topology with 2 sockets, 1 core each
-/// 2 numa nodes (one per socket) with 512 MiB RAM each.
+/// and correctly parse a large NUMA topology (8 sockets, 80 cores).
 #[cfg(all(feature = "integration-test", feature = "test-acpi-topology"))]
 pub fn xmain() {
     use topology::MACHINE_TOPOLOGY;
@@ -195,9 +180,10 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Tests core bring-up.
+/// Tests core booting.
 ///
-/// Boots a single core, checks we can print and pass correct arguments.
+/// Boots a single core, checks we can print from it and arguments
+/// get passed along correctly.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
     use crate::stack::{OwnedStack, Stack};
@@ -267,7 +253,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Tests booting of a system of multiple cores and using the node-replication
+/// Tests booting of a core and using the node-replication
 /// log to communicate information.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
 pub fn xmain() {
@@ -340,7 +326,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Tests that system initializaes all cores.
+/// Tests that the system initializes all cores.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
 pub fn xmain() {
     // If we've come here the test has already completed,
@@ -348,6 +334,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Test the scheduler.
 #[cfg(all(feature = "integration-test", feature = "test-scheduler"))]
 pub fn xmain() {
     let cpuid = x86::cpuid::CpuId::new();
@@ -385,6 +372,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Test process loading / user-space.
 #[cfg(all(feature = "integration-test", feature = "test-userspace"))]
 pub fn xmain() {
     let init_module = kcb::try_get_kcb()
@@ -408,6 +396,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Test SSE/floating point in the kernel.
 #[cfg(all(feature = "integration-test", feature = "test-sse"))]
 pub fn xmain() {
     info!("division = {}", 10.0 / 2.19);

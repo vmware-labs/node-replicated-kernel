@@ -671,15 +671,35 @@ fn coreboot_nrlog() {
         p.exp_string("ACPI Initialized")?;
         p.exp_string("Hello from the other side")?;
         p.exp_string("Core has started")?;
-        /*p.exp_string("Hello from the other side")?;
-        p.exp_string("Core has started")?;
-        p.exp_string("Hello from the other side")?;
-        p.exp_string("Core has started")?;*/
         output = p.exp_eof()?;
         p.process.exit()
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Test that we boot up all cores in the system.
+#[test]
+fn coreboot() {
+    let cmdline = &RunnerArgs::new("test-coreboot")
+        .cores(32)
+        .nodes(4)
+        .memory(4096);
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline).expect("Can't spawn QEMU instance");
+
+        for i in 1..32 {
+            // Check that we see all 32 cores booting up
+            let exptected_output = format!("Core #{} initialized.", i);
+            p.exp_string(exptected_output.as_str())?;
+        }
+
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output)
 }
 
 /// Tests that basic user-space support is functional.

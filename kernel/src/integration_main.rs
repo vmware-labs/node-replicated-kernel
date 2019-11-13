@@ -340,6 +340,14 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Tests that system initializaes all cores.
+#[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
+pub fn xmain() {
+    // If we've come here the test has already completed,
+    // as core initialization happens during init.
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 #[cfg(all(feature = "integration-test", feature = "test-scheduler"))]
 pub fn xmain() {
     let cpuid = x86::cpuid::CpuId::new();

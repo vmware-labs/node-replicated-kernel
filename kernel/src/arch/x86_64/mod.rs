@@ -222,7 +222,6 @@ fn find_apic_base() -> u64 {
     use x86::msr::{rdmsr, IA32_APIC_BASE};
     unsafe {
         let base = rdmsr(IA32_APIC_BASE);
-        debug!("xAPIC MMIO base is at {:x}", base & !0xfff);
         base & !0xfff
     }
 }
@@ -237,7 +236,7 @@ fn init_apic() -> xapic::XAPICDriver {
     // Attach the driver to take control of the APIC:
     apic.attach();
 
-    info!(
+    trace!(
         "xAPIC id: {}, version: {:#x}, is bsp: {}",
         apic.id(),
         apic.version(),
@@ -255,6 +254,8 @@ struct AppCoreArgs {
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
+    thread: topology::ThreadId,
+    node: topology::NodeId,
     log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode>>,
 }
@@ -267,29 +268,28 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     enable_sse();
     enable_fsgsbase();
     assert_required_cpu_features();
+    syscall::enable_fast_syscalls();
 
     unsafe {
         gdt::setup_early_gdt();
         irq::setup_early_idt();
     };
 
-    let mut emanager = tcache::TCache::new(0, 0);
-    unsafe {
-        //fmanager.(args.mem_region, None);
-    }
-
+    let mut emanager = tcache::TCache::new(args.thread, args.node);
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
+    let apic = init_apic();
 
-    let base = find_apic_base();
-    trace!("find_apic_base {:#x}", base);
-    let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
-    let mut apic = xapic::XAPICDriver::new(regs);
-    apic.attach();
-
-    let mut kcb = kcb::Kcb::new(args.kernel_args, args.kernel_binary, vspace, emanager, apic);
-    kcb::init_kcb(&mut kcb);
+    let mut kcb = kcb::Kcb::new(
+        args.kernel_args,
+        args.kernel_binary,
+        vspace,
+        emanager,
+        apic,
+        args.node,
+    );
     kcb.set_global_memory(args.global_memory);
-    kcb.set_physical_memory_manager(tcache::TCache::new(0, 0));
+    kcb.set_physical_memory_manager(tcache::TCache::new(args.thread, args.node));
+    kcb::init_kcb(&mut kcb);
 
     kcb.set_interrupt_stacks(
         OwnedStack::new(64 * BASE_PAGE_SIZE),
@@ -297,24 +297,16 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     );
     kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
     kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    kcb.install();
 
     core::mem::forget(kcb);
-    initialized.store(true, Ordering::SeqCst);
-    debug!("Memory allocation should work at this point...");
+    //debug!("Memory allocation should work at this point...");
 
     // Set up interrupts (which needs Box)
     //irq::init_irq_handlers();
 
-    // Attach the driver to the registers:
-    {
-        let apic = kcb::get_kcb().apic();
-        info!(
-            "xAPIC id: {}, version: {:#x}, is bsp: {}",
-            apic.id(),
-            apic.version(),
-            apic.bsp()
-        );
-    } // Make sure to drop the reference to the APIC again
+    info!("Core #{} initialized.", args.thread);
+    initialized.store(true, Ordering::SeqCst);
 
     loop {
         unsafe { x86::halt() };
@@ -362,13 +354,9 @@ fn boot_app_cores(
         .filter(|t| t != &bsp_thread);
 
     for thread in threads_to_boot {
-        trace!("Booting {:?}", thread);
         let node = thread.node_id.unwrap_or(0);
-
+        trace!("Booting {:?} on node {}", thread, node);
         kcb.set_allocation_affinity(node);
-
-        use topology;
-        use x86::apic::{ApicControl, ApicId};
 
         // A simple stack for the app core (non bootstrap core)
         let coreboot_stack: OwnedStack = OwnedStack::new(4096 * 32);
@@ -386,7 +374,9 @@ fn boot_app_cores(
             mem_region,
             kernel_binary,
             kernel_args,
+            node,
             global_memory,
+            thread: thread.id,
             log: log.clone(),
             replica: bsp_replica.clone(),
         });
@@ -401,7 +391,7 @@ fn boot_app_cores(
             );
 
             // Wait until core is up or we time out
-            let timeout = x86::time::rdtsc() + 70_000_000;
+            let timeout = x86::time::rdtsc() + 90_000_000;
             loop {
                 // Did the core signal us initialization completed?
                 if initialized.load(Ordering::SeqCst) {
@@ -416,7 +406,7 @@ fn boot_app_cores(
         }
 
         assert!(initialized.load(Ordering::SeqCst));
-        info!("Core {:?} has started", thread.apic_id());
+        debug!("Core {:?} has started", thread.apic_id());
         kcb.set_allocation_affinity(0);
     }
 }
@@ -610,7 +600,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let apic = init_apic();
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, emanager, apic);
+    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, emanager, apic, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
 

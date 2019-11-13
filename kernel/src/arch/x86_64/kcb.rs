@@ -156,6 +156,7 @@ impl Kcb {
         init_vspace: VSpace,
         emanager: TCache,
         apic: XAPICDriver,
+        node: topology::NodeId,
     ) -> Kcb {
         Kcb {
             syscall_stack_top: ptr::null_mut(),
@@ -177,7 +178,7 @@ impl Kcb {
             unrecoverable_fault_stack: None,
             // We don't have a process initially:
             current_process: RefCell::new(None),
-            node: 0,
+            node: node,
             allocation_affinity: 0,
         }
     }
@@ -226,7 +227,7 @@ impl Kcb {
 
     pub fn set_syscall_stack(&mut self, stack: OwnedStack) {
         self.syscall_stack_top = stack.base();
-        debug!("Syscall stack top set to: {:p}", self.syscall_stack_top);
+        trace!("Syscall stack top set to: {:p}", self.syscall_stack_top);
         self.syscall_stack = Some(stack);
 
         // TODO: Would profit from a static assert and offsetof...

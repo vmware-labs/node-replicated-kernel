@@ -426,7 +426,7 @@ fn assert_required_cpu_features() {
 #[no_mangle]
 pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Status {
     uefi_services::init(&st).expect_success("Can't initialize UEFI");
-    log::set_max_level(log::LevelFilter::Debug);
+    log::set_max_level(log::LevelFilter::Info);
     //setup_screen(&st);
     //serial_init(&st);
 

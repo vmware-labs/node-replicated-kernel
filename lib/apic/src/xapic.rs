@@ -55,22 +55,16 @@ impl ApicControl for XAPICDriver {
 
     /// Send a INIT IPI to a core.
     unsafe fn ipi_init(&mut self, core: ApicId) {
-        info!("ipi_init {:?}", core);
-
         self.inner.ipi_init(core)
     }
 
     /// Deassert INIT IPI.
     unsafe fn ipi_init_deassert(&mut self) {
-        info!("ipi_init_deassert ");
-
         self.inner.ipi_init_deassert()
     }
 
     /// Send a STARTUP IPI to a core.
     unsafe fn ipi_startup(&mut self, core: ApicId, start_page: u8) {
-        info!("ipi_startup ");
-
         self.inner.ipi_startup(core, start_page)
     }
 

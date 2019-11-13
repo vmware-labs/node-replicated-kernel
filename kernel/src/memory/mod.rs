@@ -66,7 +66,7 @@ impl From<core::cell::BorrowMutError> for AllocationError {
 }
 
 /// The global allocator in the kernel.
-#[cfg(not(test))]
+#[cfg(not(any(test, fuzzing)))]
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator;
 

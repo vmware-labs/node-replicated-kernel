@@ -31,6 +31,7 @@ kpi = { path = "../lib/kpi" }
 # External libraries we use:
 spin = "0.5.2"
 log = "0.4"
+ucs2 = "=0.1.0" ## xxx remove once 0.1.1 is yanked
 uefi = { version = "0.3.2", features = ["exts"] }
 arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
 lazy_static = { version = "1.3", features = ["spin_no_std"] }
@@ -42,6 +43,11 @@ addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", d
 
 [[bin]]
 name = "bespin"
+path = "src/main.rs"
+
+#[lib]
+#name = "bespin"
+#path = "src/lib.rs"
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = { version = "0.2.53", default-features = false }
@@ -81,10 +87,12 @@ test-scheduler = [ "integration-test", "lineup", "bsp-only" ]
 # acpi: test ACPI can initialize
 test-acpi-smoke = [ "integration-test", "bsp-only" ]
 # acpi: test ACPI with complex topology
-test-acpi-topology = [ "integration-test" ]
-# coreboot: Test that we can boot-up additional cores
+test-acpi-topology = [ "integration-test", "bsp-only" ]
+# coreboot_smoke: Test APIs to boot-up additional cores
 test-coreboot-smoke = ["integration-test", "bsp-only" ]
-# coreboot: Test that we can boot-up additional cores
+# coreboot_nrlog: Test APIs to boot-up additional cores and communicate using nr
 test-coreboot-nrlog = ["integration-test", "bsp-only" ]
+# coreboot: Test core booting logic (during actual system initialization)
+test-coreboot = ["integration-test" ]
 # userspace: run a test in user-space by spawning the init process
 test-userspace = ["integration-test", "bsp-only"]

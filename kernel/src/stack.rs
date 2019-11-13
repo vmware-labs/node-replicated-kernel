@@ -73,6 +73,7 @@ impl<'a> SliceStack<'a> {
     /// This function will automatically align the slice to make it suitable for
     /// use as a stack. However this function may panic if the slice is smaller
     /// than `STACK_ALIGNMENT`.
+    #[allow(unused)]
     pub fn new(slice: &'a mut [u8]) -> SliceStack<'a> {
         // Align the given slice so that it matches platform requirements
         let ptr = slice.as_ptr() as usize;

@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use node_replication::Dispatch;
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]

@@ -1,3 +1,6 @@
+use core::fmt;
+use core::ops::{Deref, DerefMut};
+
 #[macro_export]
 macro_rules! round_up {
     ($num:expr, $multiple:expr) => {
@@ -34,32 +37,7 @@ impl PowersOf2 for u8 {
     }
 }
 
-/*#[allow(unions_with_drop_fields)]
-#[derive(Copy)]
-union UnionFlag<T> {
-    value: T,
-}
-
-impl<T: Clone> Clone for UnionFlag<T> {
-    fn clone(&self) -> Self {
-        unsafe {
-            UnionFlag {
-                value: self.value.clone(),
-            }
-        }
-    }
-}*/
-
-use core::fmt;
-use core::ops::{Deref, DerefMut};
-
 /// Pads and aligns a value to the length of a cache line.
-///
-/// In concurrent programming, sometimes it is desirable to make sure commonly accessed pieces of
-/// data are not placed into the same cache line. Updating an atomic value invalides the whole
-/// cache line it belongs to, which makes the next access to the same cache line slower for other
-/// CPU cores. Use `CachePadded` to ensure updating one piece of data doesn't invalidate other
-/// cached data.
 ///
 /// Starting from Intel's Sandy Bridge, spatial prefetcher is now pulling pairs of 64-byte cache
 /// lines at a time, so we have to align to 128 bytes rather than 64.
@@ -71,7 +49,6 @@ use core::ops::{Deref, DerefMut};
 /// # Origin
 /// CachePadded is originally from from crossbeam-utils (https://github.com/crossbeam-rs)
 /// Apache/MIT License: with Copyright (c) 2019 The Crossbeam Project Developers
-///
 #[derive(Clone, Copy, Default, Hash, PartialEq, Eq)]
 #[cfg_attr(target_arch = "x86_64", repr(align(128)))]
 #[cfg_attr(not(target_arch = "x86_64"), repr(align(64)))]

@@ -10,6 +10,8 @@
 //! * [Graphviz](http://www.graphviz.org/)
 //! * [DOT language](http://www.graphviz.org/doc/info/lang.html)
 
+#![allow(unused)]
+
 use crate::alloc::string::ToString;
 use alloc::borrow::Cow;
 use alloc::format;

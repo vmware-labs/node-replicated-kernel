@@ -448,7 +448,7 @@ fn identify_numa_affinity(
                             if mid.0 > 0 {
                                 let mid_paddr = (PAddr::from(mid.0), PAddr::from(mid.1));
                                 let annotated_frame = Frame::from_range(mid_paddr, node.id);
-                                info!("Identified NUMA region for {:?}", annotated_frame);
+                                trace!("Identified NUMA region for {:?}", annotated_frame);
                                 assert!(!annotated_regions.is_full());
                                 annotated_regions.push(annotated_frame);
                             }
@@ -668,6 +668,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         let kcb = kcb::get_kcb();
         kcb.set_global_memory(&global_memory_static);
         let tcache = tcache::TCache::new(0, 0);
+        kcb.set_physical_memory_manager(tcache);
     }
 
     let mut log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));

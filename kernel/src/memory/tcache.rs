@@ -95,13 +95,13 @@ impl TCache {
         }
 
         if lost_pages > 0 {
-            warn!(
+            debug!(
                 "TCache population lost {} of memory",
                 DataSize::from_bytes(lost_pages * BASE_PAGE_SIZE)
             );
         }
 
-        debug!(
+        trace!(
             "TCache populated with {} base-pages and {} large-pages",
             self.base_page_addresses.len(),
             self.large_page_addresses.len()
@@ -120,6 +120,14 @@ impl TCache {
     fn capacity(&self) -> usize {
         self.base_page_addresses.capacity() * BASE_PAGE_SIZE
             + self.large_page_addresses.capacity() * LARGE_PAGE_SIZE
+    }
+
+    pub(crate) fn free_base_pages(&self) -> usize {
+        self.base_page_addresses.len()
+    }
+
+    pub(crate) fn free_large_pages(&self) -> usize {
+        self.large_page_addresses.len()
     }
 
     /// How much free memory (bytes) we have left.

@@ -44,6 +44,9 @@ impl NCache {
     /// The Frame can be a multiple of page-size, the policy is
     /// to divide it into ~8% base-pages and 92% large-pages.
     pub fn populate(&mut self, frame: Frame) {
+        let base_count_before_populate = self.base_page_addresses.len();
+        let large_count_before_populate = self.large_page_addresses.len();
+
         let mut how_many_large_pages = (frame.size() / LARGE_PAGE_SIZE) * 92 / 100;
         if how_many_large_pages == 0 {
             // Try to have at least one large-page if possible
@@ -88,9 +91,10 @@ impl NCache {
             );
         }
         debug!(
-            "NCache populated with {} base-pages and {} large-pages",
-            self.base_page_addresses.len(),
-            self.large_page_addresses.len()
+            "NCache#{} added {} base-pages and {} large-pages.",
+            self.node,
+            self.base_page_addresses.len() - base_count_before_populate,
+            self.large_page_addresses.len() - large_count_before_populate
         );
     }
 

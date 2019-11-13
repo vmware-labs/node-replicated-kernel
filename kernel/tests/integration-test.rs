@@ -369,7 +369,7 @@ fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     let mut o = process::Command::new("bash");
     o.args(args.as_cmd());
 
-    //eprintln!("Invoke QEMU: {:?}", o);
+    eprintln!("Invoke QEMU: {:?}", o);
     spawn_command(o, Some(15000))
 }
 
@@ -721,7 +721,6 @@ fn userspace_smoke() {
 ///  * BSD libOS network stack
 ///  * PCI/user-space drivers
 ///  * Interrupt registration and upcalls
-///
 #[test]
 fn userspace_rumprt_net() {
     let qemu_run = || -> Result<WaitStatus> {

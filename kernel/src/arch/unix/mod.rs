@@ -2,10 +2,14 @@ use log::Level;
 
 use alloc::boxed::Box;
 
+use arrayvec::ArrayVec;
+
 use crate::xmain;
 use crate::ExitReason;
 
-use crate::memory::{buddy::BuddyFrameAllocator, tcache::TCache, GrowBackend, PhysicalAllocator};
+use crate::memory::{
+    buddy::BuddyFrameAllocator, tcache::TCache, Frame, GlobalMemory, GrowBackend, PhysicalAllocator,
+};
 
 pub mod irq;
 pub mod kcb;
@@ -32,7 +36,6 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
-    trace!("setting the kcb");
     // Allocate 32 MiB and add it to our heap
     let mut tc = TCache::new(0, 0);
     let mut mm = memory::MemoryMapper::new();
@@ -53,9 +56,18 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
         }
     }
 
+    let frame = mm
+        .allocate_frame(10 * 1024 * 1024)
+        .expect("We don't have vRAM available");
+    let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
+    annotated_regions.push(frame);
+    let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
+    let global_memory_static =
+        unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
+
     // Construct the Kcb so we can access these things later on in the code
 
-    let kcb = box kcb::Kcb::new(tc);
+    let kcb = box kcb::Kcb::new(global_memory_static, tc);
     kcb::init_kcb(Box::into_raw_non_null(kcb));
     debug!("Memory allocation should work at this point...");
 

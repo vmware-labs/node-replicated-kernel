@@ -1,4 +1,4 @@
-// KCB is the local kernel control that stores all core local state.
+//! KCB is the local kernel control that stores all core local state.
 
 use alloc::boxed::Box;
 use core::cell::{Ref, RefCell, RefMut};
@@ -141,6 +141,9 @@ pub struct Kcb {
     /// This member should probably not be touched from normal code.
     syscall_stack: Option<OwnedStack>,
 
+    /// Which NUMA node this KCB / core belongs to
+    pub node: topology::NodeId,
+
     /// Allocation affinity (which node we allocate from,
     /// this is a hack remove once custom allocators land).
     allocation_affinity: topology::NodeId,
@@ -174,6 +177,7 @@ impl Kcb {
             unrecoverable_fault_stack: None,
             // We don't have a process initially:
             current_process: RefCell::new(None),
+            node: 0,
             allocation_affinity: 0,
         }
     }
@@ -288,10 +292,16 @@ impl Kcb {
 
     /// Returns a reference to the core-local physical memory manager if set,
     /// otherwise returns the early physical memory manager.
-    pub fn mem_manager(&self) -> RefMut<dyn PhysicalPageProvider> {
+    pub fn mem_manager(&self) -> RefMut<TCache> {
         self.pmanager
             .as_ref()
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
+    }
+
+    pub fn try_mem_manager(&self) -> Result<RefMut<TCache>, core::cell::BorrowMutError> {
+        self.pmanager
+            .as_ref()
+            .map_or(self.emanager.try_borrow_mut(), |pmem| pmem.try_borrow_mut())
     }
 
     pub fn apic(&self) -> RefMut<XAPICDriver> {

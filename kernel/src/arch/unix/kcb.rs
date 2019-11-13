@@ -1,9 +1,10 @@
 // LKCB is the local kernel control that stores all core local state.
 
+use core::borrow::BorrowMut;
 use core::cell::{RefCell, RefMut};
 use core::ptr;
 
-use crate::memory::{tcache::TCache, PhysicalPageProvider};
+use crate::memory::{tcache::TCache, GlobalMemory, PhysicalPageProvider};
 
 use slabmalloc::ZoneAllocator;
 
@@ -28,27 +29,34 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
 }
 
 pub struct Kcb {
-    pmanager: RefCell<TCache>,
-    /// A handle to the per-core ZoneAllocator
+    pmanager: Option<RefCell<TCache>>,
+    pub gmanager: Option<&'static GlobalMemory>,
     pub zone_allocator: RefCell<ZoneAllocator<'static>>,
+    pub node: topology::NodeId,
 }
 
 impl Kcb {
-    pub fn new(pmanager: TCache) -> Kcb {
+    pub fn new(gmanager: &'static GlobalMemory, pmanager: TCache) -> Kcb {
         Kcb {
-            pmanager: RefCell::new(pmanager),
+            gmanager: Some(gmanager),
+            pmanager: Some(RefCell::new(pmanager)),
             zone_allocator: RefCell::new(ZoneAllocator::new()),
+            node: 0,
         }
     }
 
-    pub fn pmanager(&self) -> RefMut<dyn PhysicalPageProvider> {
-        self.pmanager.borrow_mut()
+    pub fn pmanager(&self) -> RefMut<TCache> {
+        self.pmanager.as_ref().unwrap().borrow_mut()
     }
 
     /// Returns a reference to the physical memory manager if set,
     /// otherwise returns the early physical memory manager.
-    pub fn mem_manager(&self) -> RefMut<dyn PhysicalPageProvider> {
+    pub fn mem_manager(&self) -> RefMut<TCache> {
         self.pmanager()
+    }
+
+    pub fn try_mem_manager(&self) -> Result<RefMut<TCache>, core::cell::BorrowMutError> {
+        self.pmanager.as_ref().unwrap().try_borrow_mut()
     }
 }
 

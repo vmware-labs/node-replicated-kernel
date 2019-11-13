@@ -141,16 +141,10 @@ impl fmt::Debug for NCache {
 
 impl PhysicalPageProvider for NCache {
     fn allocate_base_page(&mut self) -> Result<Frame, AllocationError> {
-        if self.base_page_addresses.is_empty() {
-            return Err(AllocationError::CacheExhausted);
-        }
-
         let paddr = self
             .base_page_addresses
             .pop()
-            .ok_or(AllocationError::OutOfMemory {
-                size: BASE_PAGE_SIZE,
-            })?;
+            .ok_or(AllocationError::CacheExhausted)?;
         Ok(self.paddr_to_base_page(paddr))
     }
 
@@ -165,16 +159,10 @@ impl PhysicalPageProvider for NCache {
     }
 
     fn allocate_large_page(&mut self) -> Result<Frame, AllocationError> {
-        if self.large_page_addresses.is_empty() {
-            return Err(AllocationError::CacheExhausted);
-        }
-
         let paddr = self
             .large_page_addresses
             .pop()
-            .ok_or(AllocationError::OutOfMemory {
-                size: LARGE_PAGE_SIZE,
-            })?;
+            .ok_or(AllocationError::CacheExhausted)?;
         Ok(self.paddr_to_large_page(paddr))
     }
 

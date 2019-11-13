@@ -122,10 +122,12 @@ impl TCache {
             + self.large_page_addresses.capacity() * LARGE_PAGE_SIZE
     }
 
+    /// How many basepages we can allocate from the cache.
     pub(crate) fn free_base_pages(&self) -> usize {
         self.base_page_addresses.len()
     }
 
+    /// How many large-pages we can allocate from the cache.
     pub(crate) fn free_large_pages(&self) -> usize {
         self.large_page_addresses.len()
     }
@@ -139,16 +141,10 @@ impl TCache {
 
 impl PhysicalPageProvider for TCache {
     fn allocate_base_page(&mut self) -> Result<Frame, AllocationError> {
-        if self.base_page_addresses.is_empty() {
-            return Err(AllocationError::CacheExhausted);
-        }
-
         let paddr = self
             .base_page_addresses
             .pop()
-            .ok_or(AllocationError::OutOfMemory {
-                size: BASE_PAGE_SIZE,
-            })?;
+            .ok_or(AllocationError::CacheExhausted)?;
         Ok(self.paddr_to_base_page(paddr))
     }
 
@@ -163,16 +159,10 @@ impl PhysicalPageProvider for TCache {
     }
 
     fn allocate_large_page(&mut self) -> Result<Frame, AllocationError> {
-        if self.large_page_addresses.is_empty() {
-            return Err(AllocationError::CacheExhausted);
-        }
-
         let paddr = self
             .large_page_addresses
             .pop()
-            .ok_or(AllocationError::OutOfMemory {
-                size: LARGE_PAGE_SIZE,
-            })?;
+            .ok_or(AllocationError::CacheExhausted)?;
         Ok(self.paddr_to_large_page(paddr))
     }
 

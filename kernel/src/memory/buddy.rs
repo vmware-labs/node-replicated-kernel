@@ -405,14 +405,10 @@ impl PhysicalAllocator for BuddyFrameAllocator {
                 }
             }
             trace!("Can't allocate in this order");
-            Err(AllocationError::OutOfMemory {
-                size: layout.size(),
-            })
+            Err(AllocationError::CacheExhausted)
         } else {
             trace!("Allocation size too big for request {:?}", layout);
-            Err(AllocationError::OutOfMemory {
-                size: layout.size(),
-            })
+            Err(AllocationError::InvalidLayout)
         }
     }
 

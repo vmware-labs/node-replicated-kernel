@@ -81,7 +81,7 @@ test-scheduler = [ "integration-test", "lineup", "bsp-only" ]
 # acpi: test ACPI can initialize
 test-acpi-smoke = [ "integration-test", "bsp-only" ]
 # acpi: test ACPI with complex topology
-test-acpi-topology = [ "integration-test", "bsp-only" ]
+test-acpi-topology = [ "integration-test" ]
 # coreboot: Test that we can boot-up additional cores
 test-coreboot-smoke = ["integration-test", "bsp-only" ]
 # coreboot: Test that we can boot-up additional cores

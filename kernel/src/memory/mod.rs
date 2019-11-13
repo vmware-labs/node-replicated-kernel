@@ -41,7 +41,6 @@ use crate::round_up;
 pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
 
 custom_error! {pub AllocationError
-    OutOfMemory{size: usize} = "Couldn't allocate: {size}.",
     InvalidLayout = "Invalid layout for allocator provided.",
     CacheExhausted = "Couldn't allocate bytes on this cache, need to re-grow first.",
     CacheFull = "Cache can't hold any more objects.",
@@ -54,9 +53,8 @@ impl From<slabmalloc::AllocationError> for AllocationError {
     fn from(err: slabmalloc::AllocationError) -> AllocationError {
         match err {
             slabmalloc::AllocationError::InvalidLayout => AllocationError::InvalidLayout,
-            slabmalloc::AllocationError::OutOfMemory(l) => {
-                AllocationError::OutOfMemory { size: l.size() }
-            }
+            // slabmalloc OOM just means we have to refill:
+            slabmalloc::AllocationError::OutOfMemory => AllocationError::CacheExhausted,
         }
     }
 }
@@ -67,6 +65,7 @@ impl From<core::cell::BorrowMutError> for AllocationError {
     }
 }
 
+/// The global allocator in the kernel.
 #[cfg(not(test))]
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator;
@@ -126,7 +125,7 @@ impl KernelAllocator {
     /// We come here if a previous allocation failed.
     fn try_refill(&self, layout: Layout, e: AllocationError) -> Result<(), AllocationError> {
         match (KernelAllocator::allocator_for(layout), e) {
-            (Allocator::Zone, AllocationError::OutOfMemory { size: _ }) => {
+            (Allocator::Zone, AllocationError::CacheExhausted) => {
                 // Need to refill ZoneAllocator
                 self.maybe_refill_tcache(layout)?;
                 self.try_refill_zone(layout)
@@ -228,11 +227,11 @@ impl KernelAllocator {
     fn maybe_refill_tcache(&self, layout: Layout) -> Result<(), AllocationError> {
         let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
         let (needed_base_pages, needed_large_pages) = KernelAllocator::refill_amount(layout);
+
         let mut mem_manager = kcb.try_mem_manager()?;
         let free_bp = mem_manager.free_base_pages();
         let free_lp = mem_manager.free_large_pages();
-
-        // Dropping things, they get required in try_refill_tcache
+        // Dropping things, as they'll get reacquired in try_refill_tcache
         drop(mem_manager);
         drop(kcb);
 

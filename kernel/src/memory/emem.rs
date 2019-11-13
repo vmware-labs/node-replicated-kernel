@@ -50,9 +50,7 @@ impl EarlyPhysicalManager {
 
             Ok(low)
         } else {
-            Err(AllocationError::OutOfMemory {
-                size: layout.size(),
-            })
+            Err(AllocationError::CacheExhausted)
         }
     }
 }

@@ -275,7 +275,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     let mut emanager = tcache::TCache::new(0, 0);
     unsafe {
-        //fmanager.add_frame(args.mem_region, None);
+        //fmanager.(args.mem_region, None);
     }
 
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
@@ -287,8 +287,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     apic.attach();
 
     let mut kcb = kcb::Kcb::new(args.kernel_args, args.kernel_binary, vspace, emanager, apic);
-
     kcb::init_kcb(&mut kcb);
+    kcb.set_global_memory(args.global_memory);
+    kcb.set_physical_memory_manager(tcache::TCache::new(0, 0));
+
     kcb.set_interrupt_stacks(
         OwnedStack::new(64 * BASE_PAGE_SIZE),
         OwnedStack::new(64 * BASE_PAGE_SIZE),
@@ -297,7 +299,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
 
     core::mem::forget(kcb);
-
+    initialized.store(true, Ordering::SeqCst);
     debug!("Memory allocation should work at this point...");
 
     // Set up interrupts (which needs Box)
@@ -314,7 +316,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         );
     } // Make sure to drop the reference to the APIC again
 
-    initialized.store(true, Ordering::SeqCst);
     loop {
         unsafe { x86::halt() };
     }
@@ -374,7 +375,8 @@ fn boot_app_cores(
 
         let k = kcb::get_kcb();
         let mem_region = unsafe {
-            k.mem_manager()
+            global_memory.node_caches[node as usize]
+                .lock()
                 .allocate_large_page()
                 .expect("Can't allocate large page")
         };
@@ -399,7 +401,7 @@ fn boot_app_cores(
             );
 
             // Wait until core is up or we time out
-            let timeout = x86::time::rdtsc() + 10_000_000;
+            let timeout = x86::time::rdtsc() + 70_000_000;
             loop {
                 // Did the core signal us initialization completed?
                 if initialized.load(Ordering::SeqCst) {

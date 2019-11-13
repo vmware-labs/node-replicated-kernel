@@ -298,14 +298,12 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
     kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     kcb.install();
-
     core::mem::forget(kcb);
-    //debug!("Memory allocation should work at this point...");
 
-    // Set up interrupts (which needs Box)
-    //irq::init_irq_handlers();
-
+    // Don't modify this line without adjusting `coreboot` integration test:
     info!("Core #{} initialized.", args.thread);
+
+    // Signals to BSP core that we're done initializing.
     initialized.store(true, Ordering::SeqCst);
 
     loop {

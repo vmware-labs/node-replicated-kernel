@@ -1,3 +1,8 @@
+//! The bespin kernel.
+//!
+//! Here we define the core modules and the main function that the kernel runs after
+//! the arch-specific initialization is done (see `arch/x86_64/mod.rs` for an example).
+
 #![no_std]
 #![feature(
     intrinsics,
@@ -17,6 +22,7 @@
 )]
 #![allow(safe_packed_borrows)] // TODO(warnings)
 
+// TODO(cosmetics): Couldn't get rid of these three `extern crate` even though we're edition 2018:
 extern crate alloc;
 #[macro_use]
 extern crate log;
@@ -42,8 +48,13 @@ mod stack;
 #[cfg(target_os = "none")]
 pub mod panic;
 
-/// A kernel exit code (used to communicate the exit status for
-/// tests to qemu).
+/// A kernel exit status.
+///
+/// This is used to communicate the exit status
+/// (if somehow possible) to the outside world.
+///
+/// If we run in qemu a special ioport can be used
+/// to exit the VM and communicate the status to the host.
 ///
 /// # Notes
 /// If this type is modified, update the `run.sh` script as well.
@@ -61,7 +72,11 @@ pub enum ExitReason {
     UnrecoverableError = 9,
 }
 
-/// Kernel entry-point
+/// Kernel entry-point (after initialization has completed).
+///
+/// # Notes
+/// This function is executed from each core (which is
+/// different from a traditional main routine).
 #[no_mangle]
 #[cfg(not(feature = "integration-test"))]
 pub fn xmain() {
@@ -92,4 +107,6 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+// Including a series of other, custom `xmain` routines that get
+// selected when compiling for a specific integration test
 include!("integration_main.rs");

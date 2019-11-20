@@ -3,8 +3,6 @@ use x86::apic::{ApicControl, ApicId, Icr};
 
 use driverkit::{DriverControl, DriverState};
 
-use log::info;
-
 /// A device driver for an XAPIC.
 #[derive(Debug)]
 pub struct XAPICDriver {

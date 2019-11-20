@@ -1,6 +1,6 @@
 //! Code to manage and set-up the GDT and TSS.
 
-use core::mem::{size_of, transmute};
+use core::mem::size_of;
 
 use x86::bits64::segmentation::{load_cs, Descriptor64};
 use x86::bits64::task::*;
@@ -9,8 +9,6 @@ use x86::segmentation::*;
 use x86::task::load_tr;
 use x86::Ring;
 
-use super::kcb;
-use super::syscall;
 use crate::stack::{Stack, StaticStack};
 
 /// A temporary, statically allocated stack for interrupts that could happen

@@ -11,7 +11,7 @@ use x86::controlregs;
 use crate::is_page_aligned;
 use crate::round_up;
 
-use super::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+use crate::memory::{paddr_to_kernel_vaddr, KernelAllocator, PAddr, PhysicalPageProvider, VAddr};
 
 use super::vspace::*;
 
@@ -312,6 +312,7 @@ impl Process {
         }
 
         // Allocate a stack
+        // TODO(broken): Use map_frame!
         p.vspace
             .map(
                 p.stack_base,
@@ -329,6 +330,7 @@ impl Process {
         );
 
         // Allocate an upcall stack
+        // TODO(broken): Use map_frame!
         p.vspace
             .map(
                 p.upcall_stack_base,
@@ -347,6 +349,8 @@ impl Process {
         );
 
         // TODO: Install the kernel mappings (these should be global mappings)
+        // TODO(broken): BigMap allocaitons should be inserted here too..
+        // TODO(broken): Find a better way for this
         super::kcb::try_get_kcb().map(|kcb| {
             let kernel_pml_entry = kcb.init_vspace().pml4[128];
             trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
@@ -430,7 +434,7 @@ impl fmt::Debug for Process {
 }
 
 impl elfloader::ElfLoader for Process {
-    /// Makes sure the process vspace is backed for the regions
+    /// Makes sure the process' vspace is backed for the regions
     /// reported by the ELF loader as loadable.
     ///
     /// Our strategy is to first figure out how much space we need,
@@ -439,12 +443,6 @@ impl elfloader::ElfLoader for Process {
     /// This has the advantage that our address space is
     /// all a very simple 1:1 mapping of physical memory.
     fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
-        // Should contain what memory range we need to cover to contain
-        // loadable regions:
-        let mut min_base: VAddr = VAddr::from(usize::max_value());
-        let mut max_end: VAddr = VAddr::from(0usize);
-        let mut max_alignment: u64 = 0;
-
         for header in load_headers.into_iter() {
             let base = header.virtual_addr();
             let size = header.mem_size() as usize;
@@ -453,28 +451,19 @@ impl elfloader::ElfLoader for Process {
 
             // Calculate the offset and align to page boundaries
             // We can't expect to get something that is page-aligned from ELF
-            let page_base: VAddr = VAddr::from(base & !0xfff); // Round down to nearest page-size
-            let size_page = round_up!(size + (base & 0xfff) as usize, BASE_PAGE_SIZE as usize);
+            let page_mask = (LARGE_PAGE_SIZE - 1) as u64;
+            let page_base: VAddr = VAddr::from(base & !page_mask); // Round down to nearest page-size
+            let size_page = round_up!(size + (base & page_mask) as usize, LARGE_PAGE_SIZE as usize);
             assert!(size_page >= size);
-            assert_eq!(size_page % BASE_PAGE_SIZE, 0);
-            assert_eq!(page_base % BASE_PAGE_SIZE, 0);
+            assert_eq!(size_page % LARGE_PAGE_SIZE, 0);
+            assert_eq!(page_base % LARGE_PAGE_SIZE, 0);
 
-            // Update virtual range for ELF file [max, min] and alignment:
-            if max_alignment < align_to {
-                max_alignment = align_to;
-            }
-            if min_base > page_base {
-                min_base = page_base;
-            }
-            if page_base + size_page as u64 > max_end {
-                max_end = page_base + size_page as u64;
-            }
-
-            debug!(
-                "ELF Allocate: {:#x} -- {:#x} align to {:#x}",
+            info!(
+                "ELF Allocate: {:#x} -- {:#x} align to {:#x} with flags {:?}",
                 page_base,
                 page_base + size_page,
-                align_to
+                align_to,
+                flags,
             );
 
             let map_action = match (flags.is_execute(), flags.is_write(), flags.is_read()) {
@@ -488,6 +477,39 @@ impl elfloader::ElfLoader for Process {
                 (true, true, true) => MapAction::ReadWriteExecuteUser,
             };
 
+            let large_pages = size_page / LARGE_PAGE_SIZE;
+
+            debug!("page_base {} lps: {}", page_base, large_pages);
+
+            // TODO(correctness): add 20 as estimate of worst case pt requirements
+            KernelAllocator::try_refill_tcache(20, large_pages).expect("Refill didn't work");
+            self.offset = VAddr::from(0x1000_0000);
+
+            let kcb = crate::kcb::try_get_kcb().unwrap();
+            let mut pmanager = kcb.mem_manager();
+
+            // TODO(correctness): Will this work (we round-up and map large-pages?)
+            // TODO(efficiency): What about wasted memory
+            for i in 0..large_pages {
+                let frame = pmanager
+                    .allocate_large_page()
+                    .expect("We refilled so allocation should work.");
+                debug!(
+                    "process load vspace from {:#x} with {:?}",
+                    self.offset + page_base,
+                    frame
+                );
+
+                self.vspace
+                    .map_frame(
+                        self.offset + page_base + i * LARGE_PAGE_SIZE,
+                        frame,
+                        map_action,
+                        &mut pmanager,
+                    )
+                    .expect("Can't map ELF region");
+            }
+
             // We don't allocate yet -- just record the allocation parameters
             // This has the advantage that we know how much memory we need
             // and can reserve one consecutive chunk of physical memory
@@ -495,32 +517,10 @@ impl elfloader::ElfLoader for Process {
                 .push((page_base, size_page, align_to, map_action));
         }
 
-        assert!(
-            is_page_aligned!(min_base),
-            "min base is not aligned to page-size"
-        );
-        assert!(
-            is_page_aligned!(max_end),
-            "max end is not aligned to page-size"
-        );
-        let pbase = VSpace::allocate_pages_aligned(
-            ((max_end - min_base) >> BASE_PAGE_SHIFT) as usize,
-            ResourceType::Binary,
-            max_alignment,
-        );
-
-        self.offset = VAddr::from(pbase.as_usize());
         info!(
             "Binary loaded at address: {:#x} entry {:#x}",
             self.offset, self.entry_point
         );
-
-        // Do the mappings:
-        for (base, size, _alignment, action) in self.mapping.iter() {
-            self.vspace
-                .map_generic(self.offset + *base, (pbase + base.as_u64(), *size), *action)
-                .expect("Can't map ELF region");
-        }
 
         Ok(())
     }
@@ -539,9 +539,9 @@ impl elfloader::ElfLoader for Process {
             let vaddr = VAddr::from(destination + idx);
             let paddr = self.vspace.resolve_addr(vaddr);
             if paddr.is_some() {
-                // TODO: Inefficient byte-wise copy
-                // If this is allocated as a single block of physical memory
-                // we can just do paddr_to_vaddr and memcopy
+                // TODO(perf): Inefficient byte-wise copy
+                // also within a 4 KiB / 2 MiB page we don't have to resolve_addr
+                // every time
                 let ptr = paddr.unwrap().as_u64() as *mut u8;
                 unsafe {
                     *ptr = *val;
@@ -554,9 +554,9 @@ impl elfloader::ElfLoader for Process {
         Ok(())
     }
 
-    /// Relocating the kernel symbols.
+    /// Relocating the symbols.
     ///
-    /// Since the kernel is a position independent executable that is 'statically' linked
+    /// Since the binary is a position independent executable that is 'statically' linked
     /// with all dependencies we only expect to get relocations of type RELATIVE.
     /// Otherwise, the build would be broken or you got a garbage ELF file.
     /// We return an error in this case.

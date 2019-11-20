@@ -7,7 +7,6 @@
 //! - Is not thread-safe (intended to be used on a single CPU)
 
 use super::*;
-use crate::memory::*;
 
 /// A simple page-cache for a CPU thread.
 ///

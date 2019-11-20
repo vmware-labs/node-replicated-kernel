@@ -4,14 +4,15 @@
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::transmute;
+use core::ptr::{self, NonNull};
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
 
 use kpi::SystemCallError;
 
-use slabmalloc::{ObjectPage, ZoneAllocator};
+use slabmalloc::*;
 
 macro_rules! round_up {
     ($num:expr, $s:expr) => {
@@ -19,60 +20,80 @@ macro_rules! round_up {
     };
 }
 
-/// A static reference to our silly pager.
-pub static PAGER: Mutex<Pager> = Mutex::new(Pager(0x11100000));
-
-/// A silly pager.
-pub struct Pager(u64);
-/*
-impl<'a> PageProvider<'a> for Pager {
-    /// Allocates a page for use with slabmalloc.
-    fn allocate_page(&mut self) -> Option<&'a mut ObjectPage<'a>> {
-        unsafe {
-            let r = crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.0, 0x1000);
-            let sp: &'a mut ObjectPage = transmute(self.0);
-            self.0 += 0x1000;
-            Some(sp)
-        }
-    }
-
-    /// Releases a page back to slabmalloc.
-    fn release_page(&mut self, page: &'a mut ObjectPage<'a>) {}
-}*/
+/// To use a ZoneAlloactor we require a lower-level allocator
+/// (not provided by this crate) that can supply the allocator
+/// with backing memory for `LargeObjectPage` and `ObjectPage` structs.
+///
+/// In our dummy implementation we just rely on the OS system allocator `alloc::System`.
+pub struct Pager {
+    sbrk: u64,
+}
 
 impl Pager {
-    pub(crate) fn allocate_new(
-        &mut self,
-        layout: Layout,
-    ) -> Result<(VAddr, PAddr), SystemCallError> {
+    const BASE_PAGE_SIZE: usize = 4096;
+    const LARGE_PAGE_SIZE: usize = 2 * 1024 * 1024;
+
+    /// Allocates a given `page_size`.
+    fn alloc_page(&mut self, page_size: usize) -> Option<*mut u8> {
+        let (vaddr, _paddr) = unsafe {
+            self.allocate(Layout::from_size_align(page_size, page_size).unwrap())
+                .expect("Can't allocate")
+        };
+        assert_ne!(vaddr.as_mut_ptr::<u8>(), ptr::null_mut());
+
+        Some(vaddr.as_mut_ptr())
+    }
+
+    /// Allocates a given `page_size`.
+    fn dealloc_page(&mut self, ptr: *mut u8, page_size: usize) {
+        warn!("dealloc page");
+    }
+
+    pub(crate) fn allocate(&mut self, layout: Layout) -> Result<(VAddr, PAddr), SystemCallError> {
         let size = round_up!(layout.size(), 4096) as u64;
-        self.0 = round_up!(self.0 as usize, core::cmp::max(layout.align(), 4096)) as u64;
+        self.sbrk = round_up!(self.sbrk as usize, core::cmp::max(layout.align(), 4096)) as u64;
 
         unsafe {
-            let r = crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.0, size)?;
-            self.0 += size;
+            let r =
+                crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.sbrk, size)?;
+            self.sbrk += size;
             Ok(r)
         }
     }
 
-    /// Allocates an arbitray layout (> 4K) in the address space.
-    fn allocate(&mut self, layout: Layout) -> *mut u8 {
-        //debug!("layout {:?}", layout);
+    /// Allocates a new ObjectPage from the System.
+    fn allocate_page(&mut self) -> Option<&'static mut ObjectPage<'static>> {
+        self.alloc_page(Pager::BASE_PAGE_SIZE)
+            .map(|r| unsafe { transmute(r as usize) })
+    }
 
-        let size = round_up!(layout.size(), 4096) as u64;
-        self.0 = round_up!(self.0 as usize, core::cmp::max(layout.align(), 4096)) as u64;
+    /// Release a ObjectPage back to the System.
+    #[allow(unused)]
+    fn release_page(&mut self, p: &'static mut ObjectPage<'static>) {
+        warn!("lost ObjectPage");
+    }
 
-        unsafe {
-            let r = crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.0, size);
-            let sp: *mut u8 = transmute(self.0);
-            self.0 += size;
-            sp
-        }
+    /// Allocates a new LargeObjectPage from the system.
+    fn allocate_large_page(&mut self) -> Option<&'static mut LargeObjectPage<'static>> {
+        self.alloc_page(Pager::LARGE_PAGE_SIZE)
+            .map(|r| unsafe { transmute(r as usize) })
+    }
+
+    /// Release a LargeObjectPage back to the System.
+    #[allow(unused)]
+    fn release_large_page(&mut self, p: &'static mut LargeObjectPage<'static>) {
+        warn!("lost LargeObjectPage");
     }
 }
 
-/// The SafeZoneAllocator is just a Mutex wrapped version
-/// of the [`slabmalloc::ZoneAllocator`].
+/// A pager for GlobalAlloc.
+pub static mut PAGER: Mutex<Pager> = Mutex::new(Pager { sbrk: 0x3700_0000 });
+
+/// A SafeZoneAllocator that wraps the ZoneAllocator in a Mutex.
+///
+/// Note: This is not very scalable since we use a single big lock
+/// around the allocator. There are better ways make the ZoneAllocator
+/// thread-safe directly, but they are not implemented yet.
 pub struct SafeZoneAllocator(Mutex<ZoneAllocator<'static>>);
 
 impl SafeZoneAllocator {
@@ -83,21 +104,81 @@ impl SafeZoneAllocator {
 
 unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
-            //self.0.lock().allocate(layout)
-        } else {
-            //PAGER.lock().allocate(layout)
+        match layout.size() {
+            Pager::BASE_PAGE_SIZE => {
+                // Best to use the underlying backend directly to allocate pages
+                // to avoid fragmentation
+                PAGER.lock().allocate_page().expect("Can't allocate page?") as *mut _ as *mut u8
+            }
+            0..=ZoneAllocator::MAX_ALLOC_SIZE => {
+                let mut zone_allocator = self.0.lock();
+                match zone_allocator.allocate(layout) {
+                    Ok(nptr) => nptr.as_ptr(),
+                    Err(AllocationError::OutOfMemory) => {
+                        if layout.size() <= ZoneAllocator::MAX_BASE_ALLOC_SIZE {
+                            PAGER
+                                .lock()
+                                .allocate_page()
+                                .map_or(ptr::null_mut(), |page| {
+                                    zone_allocator
+                                        .refill(layout, page)
+                                        .expect("Could not refill?");
+                                    zone_allocator
+                                        .allocate(layout)
+                                        .expect("Should succeed after refill")
+                                        .as_ptr()
+                                })
+                        } else {
+                            // layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE
+                            PAGER.lock().allocate_large_page().map_or(
+                                ptr::null_mut(),
+                                |large_page| {
+                                    zone_allocator
+                                        .refill_large(layout, large_page)
+                                        .expect("Could not refill?");
+                                    zone_allocator
+                                        .allocate(layout)
+                                        .expect("Should succeed after refill")
+                                        .as_ptr()
+                                },
+                            )
+                        }
+                    }
+                    Err(AllocationError::InvalidLayout) => panic!("Can't allocate this size"),
+                }
+            }
+            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
+                // Best to use the underlying backend directly to allocate large
+                // to avoid fragmentation
+                PAGER
+                    .lock()
+                    .allocate_large_page()
+                    .expect("Can't allocate page?") as *mut _ as *mut u8
+            }
+            _ => unimplemented!("Can't handle it, probably needs another allocator."),
         }
-        core::ptr::null_mut()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
+        match layout.size() {
+            Pager::BASE_PAGE_SIZE => PAGER.lock().dealloc_page(ptr, Pager::BASE_PAGE_SIZE),
+            0..=ZoneAllocator::MAX_ALLOC_SIZE => {
+                if let Some(nptr) = NonNull::new(ptr) {
+                    self.0
+                        .lock()
+                        .deallocate(nptr, layout)
+                        .expect("Couldn't deallocate");
+                } else {
+                    // Nothing to do (don't dealloc null pointers).
+                }
 
-            //self.0.lock().deallocate(ptr, layout);
-        } else {
-            //panic!("NYI dealloc");
-            //error!("NYI dealloc");
+                // An proper reclamation strategy could be implemented here
+                // to release empty pages back from the ZoneAllocator to the PAGER
+            }
+            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
+                PAGER.lock().dealloc_page(ptr, Pager::LARGE_PAGE_SIZE)
+            }
+            _ => unimplemented!("Can't handle it, probably needs another allocator."),
         }
     }
 }

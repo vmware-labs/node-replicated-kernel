@@ -1,8 +1,8 @@
 //! A physical memory manager for early system initialization.
 
-use crate::memory::{AllocationError, Frame, PAddr, PhysicalPageProvider, BASE_PAGE_SIZE};
+use crate::memory::{AllocationError, Frame, PhysicalPageProvider, BASE_PAGE_SIZE};
 use crate::round_up;
-use core::alloc::{Alloc, AllocErr, Layout};
+use core::alloc::Layout;
 
 /// A very simple allocator that only allocates and doesn't allow
 /// deallocations (bump-style allocator).

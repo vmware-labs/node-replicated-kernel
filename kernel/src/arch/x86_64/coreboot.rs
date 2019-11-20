@@ -4,11 +4,10 @@
 //! make sure these two files are and stay in sync.
 
 use alloc::sync::Arc;
-use core::slice;
 use core::sync::atomic::AtomicBool;
 
 use x86::apic::{ApicControl, ApicId};
-use x86::current::paging::{PAddr, BASE_PAGE_SIZE};
+use x86::current::paging::PAddr;
 
 use super::kcb;
 use super::vspace::MapAction;

@@ -1,6 +1,4 @@
-use driverkit::bitops::BitField;
 use driverkit::{DriverControl, DriverState};
-use log::{debug, trace};
 use x86::apic::x2apic::X2APIC;
 use x86::apic::{ApicControl, ApicId, Icr};
 

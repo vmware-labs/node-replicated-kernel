@@ -213,7 +213,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     let layout = Layout::from_size_align_unchecked(size, alignment);
 
     let mut p = crate::mem::PAGER.lock();
-    let r = (*p).allocate_new(layout);
+    let r = (*p).allocate(layout);
     match r {
         Ok((vaddr, paddr)) => {
             *vptr = vaddr.as_u64();

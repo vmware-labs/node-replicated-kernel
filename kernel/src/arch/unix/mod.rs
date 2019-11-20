@@ -67,7 +67,9 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
 
     // Construct the Kcb so we can access these things later on in the code
 
-    let kcb = box kcb::Kcb::new(global_memory_static, tc);
+    let vspace = vspace::VSpace::new();
+
+    let kcb = box kcb::Kcb::new(global_memory_static, tc, vspace);
     kcb::init_kcb(Box::into_raw_non_null(kcb));
     debug!("Memory allocation should work at this point...");
 

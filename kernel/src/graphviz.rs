@@ -137,13 +137,13 @@ impl<'a> Id<'a> {
     /// quotes, ...) will return an empty `Err` value.
     pub fn new<Name: Into<Cow<'a, str>>>(name: Name) -> Result<Id<'a>, ()> {
         let name = name.into();
-        match name.chars().next() {
+        /*match name.chars().next() {
             Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
             _ => return Err(()),
         }
         if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             return Err(());
-        }
+        }*/
 
         Ok(Id { name })
     }
@@ -338,6 +338,7 @@ pub enum RenderOption {
     NoNodeLabels,
     NoEdgeStyles,
     NoNodeStyles,
+    RankDirectionLR,
 }
 
 /// Returns vec holding all the default render options.
@@ -364,7 +365,15 @@ where
     E: Clone + 'a,
     G: Labeller<'a, Node = N, Edge = E> + GraphWalk<'a, Node = N, Edge = E>,
 {
+    // test vspace_debug depends on this line:
+    sprintln!("===== graphviz =====");
+
     sprintln!("digraph {} {{", g.graph_id().as_slice());
+
+    if options.contains(&RenderOption::RankDirectionLR) {
+        sprintln!("graph [ rankdir = \"LR\" ];");
+    }
+
     for n in g.nodes().iter() {
         sprint!("    ");
         let id = g.node_id(n);
@@ -412,4 +421,7 @@ where
     }
 
     sprintln!("}}");
+
+    // test vspace_debug depends on this line:
+    sprintln!("===== end graphviz =====");
 }

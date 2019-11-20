@@ -5,7 +5,9 @@ extern crate rexpect;
 extern crate matches;
 
 use std::fmt::{self, Display, Formatter};
-use std::io::{self, Write};
+use std::fs::File;
+use std::io;
+use std::io::prelude::*;
 use std::process;
 
 use rexpect::errors::*;
@@ -112,6 +114,8 @@ struct RunnerArgs<'a> {
     norun: bool,
     /// Parameters to add to the QEMU command line
     qemu_args: Vec<&'a str>,
+    /// Timeout in ms
+    timeout: u64,
 }
 
 #[allow(unused)]
@@ -128,6 +132,7 @@ impl<'a> RunnerArgs<'a> {
             release: false,
             norun: false,
             qemu_args: Vec::new(),
+            timeout: 15_000,
         }
     }
 
@@ -217,6 +222,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn timeout(mut self, timeout: u64) -> RunnerArgs<'a> {
+        self.timeout = timeout;
+        self
+    }
+
     /// Converts the RunnerArgs to a run.sh command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
@@ -288,7 +298,7 @@ impl<'a> RunnerArgs<'a> {
 }
 
 fn check_for_successful_exit(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
-    check_for_exit(ExitStatus::Success, args, r, output)
+    check_for_exit(ExitStatus::Success, args, r, output);
 }
 
 fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
@@ -370,7 +380,7 @@ fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     o.args(args.as_cmd());
 
     eprintln!("Invoke QEMU: {:?}", o);
-    spawn_command(o, Some(15000))
+    spawn_command(o, Some(args.timeout))
 }
 
 /// Spawns a DHCP server on our host
@@ -547,9 +557,9 @@ fn alloc() {
 
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
-        p.exp_string("small allocations work.")?;
-        p.exp_string("large allocations work.")?;
-        output = p.exp_eof()?;
+        output += p.exp_string("small allocations work.")?.as_str();
+        output += p.exp_string("large allocations work.")?.as_str();
+        output += p.exp_eof()?.as_str();
         p.process.exit()
     };
 
@@ -610,7 +620,7 @@ fn acpi_topology() {
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output)
+    check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology
@@ -628,7 +638,7 @@ fn acpi_smoke() {
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output)
+    check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
 /// Test that we can boot an additional core.
@@ -699,7 +709,7 @@ fn coreboot() {
         p.process.exit()
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output)
+    check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
 /// Tests that basic user-space support is functional.
@@ -796,4 +806,47 @@ fn userspace_rumprt_fs() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Checks output for graphviz content, and creates PNGs from it
+fn plot_vspace(output: &String) -> io::Result<()> {
+    let mut file = File::create("vspace.dot")?;
+    file.write_all(output.as_bytes())?;
+    eprintln!("About to invoke dot...");
+
+    let o = process::Command::new("sfdp")
+        .args(&["-Tsvg", "vspace.dot", "-O"])
+        .output()
+        .expect("failed to create graph");
+    if !o.status.success() {
+        io::stdout().write_all(&o.stdout).unwrap();
+        io::stderr().write_all(&o.stderr).unwrap();
+        panic!("Graphviz invocation failed: {:?}");
+    }
+
+    Ok(())
+}
+
+/// Checks vspace debug functionality.
+#[test]
+fn vspace_debug() {
+    let cmdline = &RunnerArgs::new("test-vspace-debug")
+        .timeout(45_000)
+        .memory(2048);
+    let mut output = String::new();
+    let mut graphviz_output = String::new();
+
+    const GRAPHVIZ_START: &'static str = "===== graphviz =====";
+    const GRAPHVIZ_END: &'static str = "===== end graphviz =====";
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        output += p.exp_string(GRAPHVIZ_START)?.as_str();
+        graphviz_output = p.exp_string(GRAPHVIZ_END)?;
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+    plot_vspace(&graphviz_output);
 }

@@ -15,7 +15,6 @@ use core::fmt;
 use core::mem::MaybeUninit;
 
 use super::*;
-use crate::memory::*;
 
 /// A simple page-cache for a NUMA node.
 ///

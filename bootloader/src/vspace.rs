@@ -505,7 +505,7 @@ impl<'a> VSpace<'a> {
     }
 
     /// Back a region of virtual address space with
-    /// allocated physical memory (that got aligned to `palignment`).
+    /// allocated physical memory.
     ///
     ///  * The base should be a multiple of `BASE_PAGE_SIZE`.
     ///  * The size should be a multiple of `BASE_PAGE_SIZE`.

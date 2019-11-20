@@ -1,13 +1,13 @@
 //! KCB is the local kernel control that stores all core local state.
 
 use alloc::boxed::Box;
-use core::cell::{Ref, RefCell, RefMut};
+use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
 use apic::xapic::XAPICDriver;
 use slabmalloc::ZoneAllocator;
-use x86::current::segmentation::{self, Descriptor64};
+use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
@@ -16,11 +16,8 @@ use super::irq::IdtTable;
 use super::process::Process;
 use super::vspace::VSpace;
 
-use crate::arch::{KernelArgs, Module};
-use crate::memory::{
-    buddy::BuddyFrameAllocator, emem::EarlyPhysicalManager, tcache::TCache, GlobalMemory,
-    PhysicalAllocator, PhysicalPageProvider,
-};
+use crate::arch::KernelArgs;
+use crate::memory::{tcache::TCache, GlobalMemory};
 use crate::stack::{OwnedStack, Stack};
 
 /// Try to retrieve the KCB by reading the gs register.

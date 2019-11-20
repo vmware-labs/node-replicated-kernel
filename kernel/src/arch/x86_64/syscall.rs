@@ -1,7 +1,6 @@
-use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
+use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
-use x86::segmentation::SegmentSelector;
 use x86::tlb;
 
 use kpi::arch::VirtualCpu;
@@ -104,24 +103,67 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     match op {
         VSpaceOperation::Map => unsafe {
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
-                let (paddr, size) = (*p).vspace.map(
-                    base,
-                    bound as usize,
-                    vspace::MapAction::ReadWriteUser,
-                    0x1000,
-                )?;
+                use crate::memory::PhysicalPageProvider;
+                let (bp, lp) = crate::memory::size_to_pages(bound as usize);
+
+                crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)
+                    .expect("Refill didn't work");
+                let mut pmanager = kcb.mem_manager();
+
+                let mut base = base;
+                let mut paddr = None;
+
+                for i in 0..lp {
+                    let frame = pmanager
+                        .allocate_large_page()
+                        .expect("We refilled so allocation should work.");
+
+                    (*p).vspace.map_frame(
+                        base,
+                        frame,
+                        vspace::MapAction::ReadWriteUser,
+                        &mut pmanager,
+                    )?;
+
+                    base += LARGE_PAGE_SIZE;
+                    if paddr.is_none() {
+                        paddr = Some(frame.base);
+                    }
+                }
+                for i in 0..bp {
+                    let frame = pmanager
+                        .allocate_base_page()
+                        .expect("We refilled so allocation should work.");
+
+                    (*p).vspace.map_frame(
+                        base,
+                        frame,
+                        vspace::MapAction::ReadWriteUser,
+                        &mut pmanager,
+                    )?;
+
+                    if paddr.is_none() {
+                        paddr = Some(frame.base);
+                    }
+                    base += BASE_PAGE_SIZE;
+                }
 
                 tlb::flush_all();
-                Ok((paddr.as_u64(), size as u64))
+                // TODO(broken): The PAddr we return is not very meaningful (just paddr of first frame)
+                Ok((paddr.unwrap_or(PAddr::zero()).as_u64(), bound))
             })
         },
         VSpaceOperation::MapDevice => unsafe {
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
                 let paddr = PAddr::from(base.as_u64());
+                let kcb = crate::kcb::try_get_kcb().unwrap();
+                let mut pmanager = kcb.mem_manager();
+
                 p.vspace.map_generic(
                     base,
                     (paddr, (bound - base.as_u64()) as usize),
                     vspace::MapAction::ReadWriteUser,
+                    &mut pmanager,
                 )?;
 
                 tlb::flush_all();

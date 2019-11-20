@@ -15,7 +15,6 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use core::alloc::Layout;
 use core::mem::transmute;
 use core::slice;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -45,7 +44,7 @@ pub mod process;
 pub mod syscall;
 pub mod vspace;
 
-use uefi::table::boot::{MemoryDescriptor, MemoryType};
+use uefi::table::boot::MemoryType;
 
 pub mod acpi;
 mod isr;
@@ -57,7 +56,7 @@ use spin::Mutex;
 
 use crate::memory::*;
 use crate::nr::{KernelNode, Op};
-use crate::stack::{OwnedStack, Stack};
+use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
 
 use memory::*;
@@ -518,7 +517,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // TODO(fix): Because we only have a borrow of KernelArgs we have to work too hard to get mm_iter
     let mm_iter = unsafe {
-        let mut mm_iter: uefi::table::boot::MemoryMapIter<'static> = core::mem::uninitialized();
+        let mut mm_iter: uefi::table::boot::MemoryMapIter<'static> =
+            unsafe { core::mem::MaybeUninit::zeroed().assume_init() };
         core::ptr::copy_nonoverlapping(
             &kernel_args.mm_iter as *const uefi::table::boot::MemoryMapIter,
             &mut mm_iter as *mut uefi::table::boot::MemoryMapIter,

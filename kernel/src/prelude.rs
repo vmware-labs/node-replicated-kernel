@@ -15,6 +15,13 @@ macro_rules! is_page_aligned {
     };
 }
 
+#[macro_export]
+macro_rules! is_large_page_aligned {
+    ($num:expr) => {
+        $num % LARGE_PAGE_SIZE as u64 == 0
+    };
+}
+
 pub trait PowersOf2 {
     fn log2(self) -> u8;
 }

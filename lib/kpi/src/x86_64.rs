@@ -30,7 +30,7 @@ pub struct VirtualCpu {
 
 impl VirtualCpu {
     /// Is the vCPU currently disabled or executing in a critical section?
-    pub fn upcalls_disabled(&self, rip: VAddr) -> bool {
+    pub fn upcalls_disabled(&self, _rip: VAddr) -> bool {
         self.is_disabled //|| self.pc_disabled.0 <= rip && rip <= self.pc_disabled.1
     }
 

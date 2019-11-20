@@ -403,3 +403,15 @@ pub fn xmain() {
     info!("division by zero = {}", 10.0 / 0.0);
     arch::debug::shutdown(ExitReason::Ok);
 }
+
+/// Test VSpace debugging.
+#[cfg(all(feature = "integration-test", feature = "test-vspace-debug"))]
+pub fn xmain() {
+    use core::borrow::Borrow;
+    use graphviz::*;
+
+    let kcb = kcb::get_kcb();
+    graphviz::render_opts(&*kcb.init_vspace(), &[RenderOption::RankDirectionLR]);
+
+    arch::debug::shutdown(ExitReason::Ok);
+}

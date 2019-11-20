@@ -31,7 +31,6 @@
 use core::fmt;
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 
 use x86::apic::ApicControl;
 use x86::bits64::paging::VAddr;
@@ -44,7 +43,6 @@ use x86::segmentation::{
 use x86::Ring;
 
 use log::debug;
-use spin::Mutex;
 
 use crate::panic::{backtrace, backtrace_from};
 use crate::ExitReason;
@@ -400,7 +398,7 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     sprintln!("[IRQ] Got an exception during kernel initialization:");
     sprintln!("{:?}", a);
 
-    match (a.vector as u8) {
+    match a.vector as u8 {
         GENERAL_PROTECTION_FAULT_VECTOR => {
             // Don't change the next line without changing the `gpfault_early` test:
             sprintln!("[IRQ] Early General Protection Fault");
@@ -428,7 +426,7 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
             sprintln!("[IRQ] Machine Check Exception");
             debug::shutdown(ExitReason::UnrecoverableError);
         }
-        0...31 => {
+        0..=31 => {
             sprintln!("[IRQ] Early Unexpected Exception");
             let desc = &EXCEPTIONS[a.vector as usize];
             sprintln!("{}", desc);

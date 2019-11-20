@@ -23,6 +23,7 @@ members = [
     "lib/vibrio",
     "lib/topology",
     "lib/node-replication",
+    #"lib/vspace",
 ]
 
 # disable stack unwinding on panic for now

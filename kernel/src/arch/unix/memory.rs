@@ -1,4 +1,4 @@
-use core::mem::{transmute, uninitialized};
+use core::mem::transmute;
 
 use crate::memory::Frame;
 pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, CACHE_LINE_SIZE, LARGE_PAGE_SIZE};
@@ -41,20 +41,32 @@ impl MemoryMapper {
     ///
     /// Uses `mmap` to map.
     pub(crate) fn allocate_frame(&mut self, size: usize) -> Option<Frame> {
-        let mut addr: libc::c_void = unsafe { uninitialized() };
-        let len: libc::size_t = size as libc::size_t;
-        let prot = libc::PROT_READ | libc::PROT_WRITE;
-        let flags = libc::MAP_PRIVATE | libc::MAP_ANON;
-        let fd = -1;
-        let offset = 0;
-
-        let r = unsafe { libc::mmap(&mut addr, len as libc::size_t, prot, flags, fd, offset) };
-        if r == libc::MAP_FAILED {
+        if size % BASE_PAGE_SIZE != 0 {
             return None;
-        } else {
-            let frame = Frame::new(PAddr::from(r as u64), size, 0);
+        }
+        let mut addr: *mut libc::c_void = core::ptr::null_mut();
+        let len: libc::size_t = size as libc::size_t;
+
+        let alignment = match size {
+            BASE_PAGE_SIZE => BASE_PAGE_SIZE,
+            _ => LARGE_PAGE_SIZE,
+        };
+
+        let r =
+            unsafe { libc::posix_memalign(&mut addr as *mut *mut libc::c_void, size, alignment) };
+
+        if r == 0 {
+            let addr_ptr = addr as *const _ as *const u64;
+            let mut frame = unsafe { Frame::new(PAddr::from(addr_ptr as u64), size, 0) };
+            unsafe {
+                frame.zero();
+            }
+
             self.currently_allocated += size;
-            return Some(frame);
+            Some(frame)
+        } else {
+            error!("Got posix memalign return {:?}", r);
+            None
         }
     }
 
@@ -65,10 +77,7 @@ impl MemoryMapper {
     fn release_frame(&mut self, p: Frame) {
         let addr: *mut libc::c_void = unsafe { transmute(p.base) };
         let len: libc::size_t = p.size;
-        let r = unsafe { libc::munmap(addr, len) };
-        if r != 0 {
-            panic!("munmap failed!");
-        }
+        unsafe { libc::free(addr) };
 
         self.currently_allocated -= p.size;
     }

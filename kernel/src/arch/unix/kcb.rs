@@ -1,11 +1,9 @@
-// LKCB is the local kernel control that stores all core local state.
-
-use core::borrow::BorrowMut;
+//! KCB is the local kernel control that stores all core local state.
 use core::cell::{RefCell, RefMut};
 use core::ptr;
 
 use crate::arch::vspace::VSpace;
-use crate::memory::{tcache::TCache, GlobalMemory, PhysicalPageProvider};
+use crate::memory::{tcache::TCache, GlobalMemory};
 
 use slabmalloc::ZoneAllocator;
 

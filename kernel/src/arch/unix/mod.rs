@@ -7,9 +7,7 @@ use arrayvec::ArrayVec;
 use crate::xmain;
 use crate::ExitReason;
 
-use crate::memory::{
-    buddy::BuddyFrameAllocator, tcache::TCache, Frame, GlobalMemory, GrowBackend, PhysicalAllocator,
-};
+use crate::memory::{tcache::TCache, Frame, GlobalMemory, GrowBackend};
 
 pub mod irq;
 pub mod kcb;
@@ -41,7 +39,7 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let mut mm = memory::MemoryMapper::new();
 
     unsafe {
-        for _i in 0..1024 {
+        for _i in 0..254 {
             let frame = mm
                 .allocate_frame(4096)
                 .expect("We don't have vRAM available");
@@ -57,7 +55,7 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
     }
 
     let frame = mm
-        .allocate_frame(10 * 1024 * 1024)
+        .allocate_frame(16 * 1024 * 1024)
         .expect("We don't have vRAM available");
     let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
     annotated_regions.push(frame);

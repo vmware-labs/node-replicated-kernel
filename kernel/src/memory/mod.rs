@@ -67,7 +67,8 @@ impl From<core::cell::BorrowMutError> for AllocationError {
 }
 
 /// The global allocator in the kernel.
-#[cfg(not(any(test, fuzzing)))]
+//#[cfg(not(any(test, fuzzing)))]
+#[cfg(target_os = "none")]
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator {
     big_objects_sbrk: AtomicU64::new(
@@ -628,9 +629,11 @@ impl GlobalMemory {
         for affinity in 0..max_affinity {
             let mut ncache_memory = gm.emem[affinity].lock().allocate_large_page()?;
             let ncache_memory_addr: PAddr = ncache_memory.base;
+            assert!(ncache_memory_addr != PAddr::zero());
             ncache_memory.zero(); // TODO(perf) this happens twice atm?
 
             let ncache_ptr = ncache_memory.uninitialized::<ncache::NCache>();
+
             let ncache: &'static mut ncache::NCache =
                 ncache::NCache::init(ncache_ptr, affinity as topology::NodeId);
             debug_assert_eq!(
@@ -784,6 +787,10 @@ pub struct Frame {
 impl Frame {
     /// Make a new Frame at `base` with `size`
     pub const fn const_new(base: PAddr, size: usize, node: topology::NodeId) -> Frame {
+        //assert_ne!(base, PAddr::zero());
+        //assert_eq!(base % BASE_PAGE_SIZE, 0);
+        //assert!(node < MAX_TOPOLOGIES);
+
         Frame {
             base: base,
             size: size,

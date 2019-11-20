@@ -26,8 +26,8 @@ lineup = { path = "../lib/lineup", optional = true }
 rawtime = { path = "../lib/rawtime" }
 custom_error = { path = "../lib/custom_error" }
 topology = { path = "../lib/topology" }
+node-replication = { path = "../lib/node-replication" }
 kpi = { path = "../lib/kpi" }
-node-replication = { git = "https://github.com/gz/node-replication.git", branch = "nostd" }
 # External libraries we use:
 spin = "0.5.2"
 log = "0.4"

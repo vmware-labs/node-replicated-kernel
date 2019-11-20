@@ -10,7 +10,9 @@ before_script:
   - rustc --version
   - cargo --version
   - cargo +nightly fmt --version
-  - sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+  #- sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+  # Leave node-replication alone for the moment:
+  - sed -i'' -e '/git@github.com:gz\/node-replication.git/!s/git@github.com:/https:\/\/github.com\//' .gitmodules
   - git submodule update --init --recursive
 
 build:

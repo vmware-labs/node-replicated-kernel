@@ -402,7 +402,10 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     return nptr.as_ptr();
                 }
                 Err(AllocationError::KcbUnavailable) => {
-                    unreachable!("Bug; trying to get KCB 2x in allocation routine");
+                    unreachable!(
+                        "Bug; trying to get KCB 2x in allocation routine {:?}",
+                        layout
+                    );
                 }
                 Err(AllocationError::ManagerAlreadyBorrowed) => {
                     unreachable!("Bug; trying to get mem manager 2x in allocation routine");

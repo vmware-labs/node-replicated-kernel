@@ -260,8 +260,8 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
     backtrace();
 
     let kcb = get_kcb();
-    sprintln!("Register State:\n{:?}", kcb.save_area);
-    kcb.save_area.as_ref().map(|sa| {
+    sprintln!("Register State:\n{:?}", kcb.arch.save_area);
+    kcb.arch.save_area.as_ref().map(|sa| {
         backtrace_from(sa.rbp, sa.rsp, sa.rip);
     });
 
@@ -319,9 +319,9 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 
     sprintln!("{:?}", a);
     let kcb = get_kcb();
-    sprintln!("Register State:\n{:?}", kcb.save_area);
+    sprintln!("Register State:\n{:?}", kcb.arch.save_area);
 
-    kcb.save_area.as_ref().map(|sa| {
+    kcb.arch.save_area.as_ref().map(|sa| {
         backtrace_from(sa.rbp, sa.rsp, sa.rip);
     });
 
@@ -337,7 +337,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     warn!("Got debug interrupt {}", desc.source);
 
     let kcb = crate::kcb::get_kcb();
-    let r = ResumeHandle::new_restore(kcb.get_save_area_ptr());
+    let r = ResumeHandle::new_restore(kcb.arch.get_save_area_ptr());
     r.resume()
 }
 
@@ -371,8 +371,8 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
 
     sprintln!("{:?}", a);
     let kcb = get_kcb();
-    sprintln!("Register State:\n{:?}", kcb.save_area);
-    kcb.save_area.as_ref().map(|sa| {
+    sprintln!("Register State:\n{:?}", kcb.arch.save_area);
+    kcb.arch.save_area.as_ref().map(|sa| {
         backtrace_from(sa.rbp, sa.rsp, sa.rip);
     });
 
@@ -380,7 +380,7 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
 }
 
 fn kcb_resume_handle(kcb: &crate::kcb::Kcb) -> ResumeHandle {
-    ResumeHandle::new_restore(kcb.get_save_area_ptr())
+    ResumeHandle::new_restore(kcb.arch.get_save_area_ptr())
 }
 
 /// Handler for all exceptions that happen early during the initialization
@@ -479,7 +479,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                     // Copy CURRENT_SAVE_AREA to process enabled save area
                     // then resume in the upcall handler
                     let _was_disabled = p.vcpu_ctl.as_mut().map(|vcpu| {
-                        kcb.save_area.as_ref().map(|sa| {
+                        kcb.arch.save_area.as_ref().map(|sa| {
                             vcpu.enabled_state = **sa;
                         });
                     });
@@ -587,7 +587,7 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
 
 fn acknowledge() {
     let kcb = get_kcb();
-    let mut apic = kcb.apic();
+    let mut apic = kcb.arch.apic();
     apic.eoi();
 }
 

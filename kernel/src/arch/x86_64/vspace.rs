@@ -1030,3 +1030,77 @@ impl<'a> dot::GraphWalk<'a> for VSpace {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn create_vspace() {
+        env_logger::try_init();
+        let mut vspace = VSpace::new();
+
+        let base = VAddr::from(0xfee0_0000u64);
+        let size = BASE_PAGE_SIZE;
+        let rights = MapAction::ReadWriteExecuteKernel;
+        let palignment = BASE_PAGE_SIZE as u64;
+
+        vspace
+            .map(base, size, rights, palignment)
+            .expect("Can't map stuff");
+    }
+
+    prop_compose! {
+        fn base_pages(max: u64)(base in 0..max) -> u64 { base & !0xfff }
+    }
+
+    prop_compose! {
+        fn large_pages(max: u64)(base in 0..max) -> u64 { base & !0x1fffff }
+    }
+
+    fn map_strategy() -> impl Strategy<Value = MapAction> {
+        prop_oneof![
+            //Just(MapAction::None),
+            Just(MapAction::ReadUser),
+            Just(MapAction::ReadKernel),
+            Just(MapAction::ReadWriteUser),
+            Just(MapAction::ReadWriteKernel),
+            Just(MapAction::ReadExecuteUser),
+            Just(MapAction::ReadExecuteKernel),
+            Just(MapAction::ReadWriteExecuteUser),
+            Just(MapAction::ReadWriteExecuteKernel),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn map_base_doesnt_crash(base in base_pages(0xffee_0000), size in base_pages(0xff_0000), action in map_strategy()) {
+            let mut vspace = VSpace::new();
+
+            let base = VAddr::from(base);
+            let size = size as usize;
+            let rights = action;
+            let palignment = BASE_PAGE_SIZE as u64;
+
+            vspace
+                .map(base, size, rights, palignment)
+                .expect("Can't map stuff");
+        }
+
+        #[test]
+        fn map_large_doesnt_crash(base in large_pages(0xffee_0000), size in base_pages(0xff_0000), action in map_strategy()) {
+            let mut vspace = VSpace::new();
+
+            let base = VAddr::from(base);
+            let size = size as usize;
+            let rights = action;
+            let palignment = BASE_PAGE_SIZE as u64;
+
+            vspace
+                .map(base, size, rights, palignment)
+                .expect("Can't map stuff");
+        }
+    }
+}

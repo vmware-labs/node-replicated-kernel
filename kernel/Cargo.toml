@@ -55,6 +55,7 @@ libc = { version = "0.2.53", default-features = false }
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
 rexpect = "0.3"
 matches = "0.1.8"
+#proptest = "0.9.4"
 
 [build-dependencies]
 cc = "1.0"

@@ -1,4 +1,5 @@
 use driverkit::{DriverControl, DriverState};
+use log::info;
 use x86::apic::x2apic::X2APIC;
 use x86::apic::{ApicControl, ApicId, Icr};
 
@@ -67,7 +68,6 @@ impl ApicControl for X2APICDriver {
 
     /// Send a generic IPI.
     unsafe fn send_ipi(&mut self, icr: Icr) {
-        use log::info;
         info!("sending icr {:?}", icr);
 
         self.inner.send_ipi(icr)

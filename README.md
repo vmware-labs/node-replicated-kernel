@@ -36,8 +36,8 @@ in the kernel directory (run.sh will do that on your behalf).
 
 ### Testing
 To run the unit tests of the kernel:
-1. cd kernel
-1. RUST_BACKTRACE=1 RUST_TEST_THREADS=1 cargo test --bin bespin
+1. `cd kernel`
+1. `RUST_BACKTRACE=1 RUST_TEST_THREADS=1 cargo test --bin bespin`
 
 To run the integration tests of the kernel:
 1. `cd kernel`

@@ -120,7 +120,7 @@ pub fn cause_double_fault() {
 /// as part of the test
 #[cfg(feature = "test-double-fault")]
 pub fn assert_being_on_fault_stack() {
-    let (low, high) = super::kcb::get_kcb().fault_stack_range();
+    let (low, high) = super::kcb::get_kcb().arch.fault_stack_range();
     let rsp = x86::current::registers::rsp();
     debug_assert!(
         rsp >= low && rsp <= high,

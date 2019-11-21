@@ -15,6 +15,10 @@ pub mod memory;
 pub mod process;
 pub mod vspace;
 
+use crate::kcb::Kcb;
+
+pub struct KernelArgs {}
+
 pub mod debug {
     use crate::ExitReason;
     pub fn shutdown(val: ExitReason) -> ! {
@@ -65,10 +69,21 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
 
     // Construct the Kcb so we can access these things later on in the code
 
+    let kernel_args = Box::new(KernelArgs {});
+    let kernel_binary: &'static [u8] = &[0u8; 1];
     let vspace = vspace::VSpace::new();
+    let arch_kcb = kcb::ArchKcb {};
 
-    let kcb = box kcb::Kcb::new(global_memory_static, tc, vspace);
-    kcb::init_kcb(Box::into_raw_non_null(kcb));
+    let kcb = box Kcb::new(
+        Box::leak(kernel_args),
+        &kernel_binary,
+        vspace,
+        tc,
+        arch_kcb,
+        0 as topology::NodeId,
+    );
+
+    kcb::init_kcb(Box::leak(kcb));
     debug!("Memory allocation should work at this point...");
 
     info!(

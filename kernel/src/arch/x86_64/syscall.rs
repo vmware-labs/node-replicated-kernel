@@ -239,7 +239,7 @@ pub extern "C" fn syscall_handle(
 
         let _retcode = match status {
             Ok((a1, a2)) => {
-                kcb.save_area.as_mut().map(|sa| {
+                kcb.arch.save_area.as_mut().map(|sa| {
                     sa.set_syscall_ret1(a1);
                     sa.set_syscall_ret2(a2);
                     sa.set_syscall_error_code(SystemCallError::Ok);
@@ -247,7 +247,7 @@ pub extern "C" fn syscall_handle(
             }
             Err(status) => {
                 error!("System call returned with error: {:?}", status);
-                kcb.save_area.as_mut().map(|sa| {
+                kcb.arch.save_area.as_mut().map(|sa| {
                     sa.set_syscall_error_code(status.into());
                 });
             }
@@ -258,7 +258,7 @@ pub extern "C" fn syscall_handle(
             kcb.save_area
         );*/
 
-        super::process::ResumeHandle::new_restore(kcb.get_save_area_ptr())
+        super::process::ResumeHandle::new_restore(kcb.arch.get_save_area_ptr())
     };
 
     unsafe { r.resume() }

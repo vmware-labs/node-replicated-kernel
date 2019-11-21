@@ -54,6 +54,7 @@ use log::Level;
 use logos::Logos;
 use spin::Mutex;
 
+use crate::kcb::Kcb;
 use crate::memory::*;
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
@@ -276,26 +277,29 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     let mut emanager = tcache::TCache::new(args.thread, args.node);
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
-    let apic = init_apic();
 
-    let mut kcb = kcb::Kcb::new(
+    let arch = kcb::ArchKcb::new(init_apic());
+    let mut kcb = Kcb::new(
         args.kernel_args,
         args.kernel_binary,
         vspace,
         emanager,
-        apic,
+        arch,
         args.node,
     );
+
     kcb.set_global_memory(args.global_memory);
     kcb.set_physical_memory_manager(tcache::TCache::new(args.thread, args.node));
     kcb::init_kcb(&mut kcb);
 
-    kcb.set_interrupt_stacks(
+    kcb.arch.set_interrupt_stacks(
         OwnedStack::new(64 * BASE_PAGE_SIZE),
         OwnedStack::new(64 * BASE_PAGE_SIZE),
     );
-    kcb.set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
-    kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    kcb.arch
+        .set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+    kcb.arch
+        .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     kcb.install();
     core::mem::forget(kcb);
 
@@ -595,20 +599,22 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
 
-    let apic = init_apic();
+    let arch = kcb::ArchKcb::new(init_apic());
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = kcb::Kcb::new(kernel_args, kernel_binary, vspace, emanager, apic, 0);
+    let mut kcb = Kcb::new(kernel_args, kernel_binary, vspace, emanager, arch, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
 
     // Let's finish KCB initialization (easier as we have alloc now):
-    kcb.set_interrupt_stacks(
+    kcb.arch.set_interrupt_stacks(
         OwnedStack::new(16 * BASE_PAGE_SIZE),
         OwnedStack::new(16 * BASE_PAGE_SIZE),
     );
-    kcb.set_syscall_stack(OwnedStack::new(16 * BASE_PAGE_SIZE));
-    kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    kcb.arch
+        .set_syscall_stack(OwnedStack::new(16 * BASE_PAGE_SIZE));
+    kcb.arch
+        .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     kcb.install();
 
     // Make sure we don't drop the KCB and anything in it,

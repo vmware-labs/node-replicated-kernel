@@ -1,4 +1,5 @@
-//! KCB is the local kernel control that stores all core local state.
+//! Arch specific data-structures and accessor functions for the
+//! kernel control block.
 
 use alloc::boxed::Box;
 use core::cell::{RefCell, RefMut};
@@ -6,21 +7,20 @@ use core::pin::Pin;
 use core::ptr;
 
 use apic::xapic::XAPICDriver;
-use slabmalloc::ZoneAllocator;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
-use super::process::Process;
-use super::vspace::VSpace;
 
-use crate::arch::KernelArgs;
-use crate::memory::{tcache::TCache, GlobalMemory};
+use crate::kcb::Kcb;
 use crate::stack::{OwnedStack, Stack};
 
 /// Try to retrieve the KCB by reading the gs register.
+///
+/// This may return None if they KCB is not yet set
+/// (i.e., during initialization).
 pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
     unsafe {
         let kcb = segmentation::rdgsbase() as *mut Kcb;
@@ -47,11 +47,12 @@ pub fn get_kcb<'a>() -> &'a mut Kcb {
     }
 }
 
-/// Installs the KCB by setting the gs register to point to it.
+/// Installs the KCB by setting storing a pointer to it in the `gs`
+/// register.
 ///
-/// We also set IA32_KERNEL_GSBASE to the kcb pointer to make sure
-/// when we call swapgs on a syscall entry, we restore the pointer
-/// to the KCB (since user-space may change gs register for
+/// We also set IA32_KERNEL_GSBASE to the pointer to make sure
+/// when we call `swapgs` on a syscall entry, we restore the pointer
+/// to the KCB (user-space may change the `gs` register for
 /// TLS etc.).
 unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
     // Set up the GS register to point to the KCB
@@ -68,11 +69,12 @@ pub(crate) fn init_kcb(kcb: &mut Kcb) {
     unsafe { set_kcb(kptr) };
 }
 
-/// The Kernel Control Block for a given core. It contains all core-local state of the kernel.
-pub struct Kcb {
+/// Contains the arch-specific contents of the KCB.
+#[repr(C)]
+pub struct ArchKcb {
     /// Pointer to the syscall stack (this is referenced in assembly early on in exec.S)
     /// and should therefore always be at offset 0 of the Kcb struct!
-    syscall_stack_top: *mut u8,
+    pub(crate) syscall_stack_top: *mut u8,
 
     /// Pointer to the save area of the core,
     /// this is referenced on trap/syscall entries to save the CPU state into it.
@@ -81,50 +83,26 @@ pub struct Kcb {
     /// to handle upcalls (in the general state it is stored/resumed from here).
     pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
 
-    /// A handle to the currently active (scheduled) process.
-    current_process: RefCell<Option<Box<Process>>>,
-
-    /// Arguments passed to the kernel by the bootloader.
-    kernel_args: &'static KernelArgs,
-
-    /// A pointer to the memory location of the kernel ELF binary.
-    kernel_binary: &'static [u8],
-
-    /// The initial VSpace as constructed by the bootloader.
-    init_vspace: RefCell<VSpace>,
-
     /// A handle to the core-local interrupt driver.
-    apic: RefCell<XAPICDriver>,
+    pub(crate) apic: RefCell<XAPICDriver>,
 
     /// A per-core GdtTable
-    gdt: GdtTable,
+    pub(crate) gdt: GdtTable,
 
     /// A per-core TSS (task-state)
-    tss: TaskStateSegment,
+    pub(crate) tss: TaskStateSegment,
 
     /// A per-core IDT (interrupt table)
-    idt: IdtTable,
-
-    /// A handle to the global memory manager.
-    pub gmanager: Option<&'static GlobalMemory>,
-
-    /// A handle to the early memory manager.
-    pub emanager: RefCell<TCache>,
-
-    /// A handle to the per-core page-allocator.
-    pub pmanager: Option<RefCell<TCache>>,
-
-    /// A handle to the per-core ZoneAllocator.
-    pub zone_allocator: RefCell<ZoneAllocator<'static>>,
+    pub(crate) idt: IdtTable,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
-    /// The CPU switches to this memory location automatically for normal interrupts
+    /// The CPU switches to this stack automatically for normal interrupts
     /// (see `set_interrupt_stacks`).
     /// This member should probably not be touched from normal code.
     interrupt_stack: Option<OwnedStack>,
 
-    /// A reliable stack that is used for unrecoverable faults only
+    /// A reliable stack that is used for unrecoverable faults
     /// (double-fault, machine-check exception etc.)
     ///
     /// The CPU switches to this memory location automatically
@@ -134,75 +112,28 @@ pub struct Kcb {
 
     /// A handle to the syscall stack memory location.
     ///
-    /// We switch rsp/rbp to point in here in exec.S.
+    /// We switch rsp/rbp to this stack in `exec.S`.
     /// This member should probably not be touched from normal code.
     syscall_stack: Option<OwnedStack>,
-
-    /// Which NUMA node this KCB / core belongs to
-    pub node: topology::NodeId,
-
-    /// Allocation affinity (which node we allocate from,
-    /// this is a hack remove once custom allocators land).
-    allocation_affinity: topology::NodeId,
 }
 
-impl Kcb {
-    pub fn new(
-        kernel_args: &'static KernelArgs,
-        kernel_binary: &'static [u8],
-        init_vspace: VSpace,
-        emanager: TCache,
-        apic: XAPICDriver,
-        node: topology::NodeId,
-    ) -> Kcb {
-        Kcb {
+impl ArchKcb {
+    pub(crate) fn new(apic: XAPICDriver) -> ArchKcb {
+        ArchKcb {
             syscall_stack_top: ptr::null_mut(),
-            kernel_args: kernel_args,
-            kernel_binary: kernel_binary,
-            init_vspace: RefCell::new(init_vspace),
-            emanager: RefCell::new(emanager),
             apic: RefCell::new(apic),
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
             idt: Default::default(),
-            // Can't initialize these yet, needs Kcb for memory allocations:
-            gmanager: None,
-            pmanager: None,
-            zone_allocator: RefCell::new(ZoneAllocator::new()),
             save_area: None,
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
-            // We don't have a process initially:
-            current_process: RefCell::new(None),
-            node: node,
-            allocation_affinity: 0,
         }
     }
 
-    /// Ties this KCB to the local CPU by setting the KCB's GDT and IDT.
-    pub fn install(&mut self) {
-        unsafe {
-            // Switch to our new, core-local Gdt and Idt:
-            self.gdt.install();
-            self.idt.install();
-        }
-
-        // Reloading gdt means we lost the content in `gs` so we
-        // also set the kcb again using `wrgsbase`:
-        init_kcb(self);
-    }
-
-    pub fn set_global_memory(&mut self, gm: &'static GlobalMemory) {
-        self.gmanager = Some(gm);
-    }
-
-    pub fn set_allocation_affinity(&mut self, node: topology::NodeId) {
-        self.allocation_affinity = node;
-    }
-
-    pub fn set_physical_memory_manager(&mut self, pmanager: TCache) {
-        self.pmanager = Some(RefCell::new(pmanager));
+    pub fn apic(&self) -> RefMut<XAPICDriver> {
+        self.apic.borrow_mut()
     }
 
     pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
@@ -235,36 +166,30 @@ impl Kcb {
         );
     }
 
-    /// Set the core' save-area
+    /// Install a CPU register save-area.
     ///
-    /// Register are store here in case we get an interrupt/ssytem call
+    /// Register are store here in case we get an interrupt/sytem call
     pub fn set_save_area(&mut self, save_area: Pin<Box<kpi::arch::SaveArea>>) {
         self.save_area = Some(save_area);
     }
 
+    pub(crate) fn install(&mut self) {
+        unsafe {
+            // Switch to our new, core-local Gdt and Idt:
+            self.gdt.install();
+            self.idt.install();
+        }
+    }
+
     /// Get a pointer to the cores save-area.
     pub fn get_save_area_ptr(&self) -> *const kpi::arch::SaveArea {
-        // TODO: this probably doesn't need an unsafe, but I couldn't figure
+        // TODO(unsafe): this probably doesn't need an unsafe, but I couldn't figure
         // out how to get that pointer out of the Option<Pin<Box>>>
         unsafe {
             core::mem::transmute::<_, *const kpi::arch::SaveArea>(
                 &*(*self.save_area.as_ref().unwrap()),
             )
         }
-    }
-
-    /// Swaps out current process with a new process. Returns the old process.
-    pub fn swap_current_process(&self, new_current_process: Box<Process>) -> Option<Box<Process>> {
-        let p = self.current_process.replace(Some(new_current_process));
-
-        // TODO: need static assert and offsetof!
-        debug_assert_eq!(
-            (&self.save_area as *const _ as usize) - (self as *const _ as usize),
-            8,
-            "The current process entry should be at offset 8 (for assembly)"
-        );
-
-        p
     }
 
     #[cfg(feature = "test-double-fault")]
@@ -277,44 +202,5 @@ impl Kcb {
                 .as_ref()
                 .map_or(0, |s| s.base() as u64),
         )
-    }
-
-    pub fn current_process(&self) -> RefMut<Option<Box<Process>>> {
-        self.current_process.borrow_mut()
-    }
-
-    /// Get a reference to the early memory manager.
-    pub fn emanager(&self) -> RefMut<TCache> {
-        self.emanager.borrow_mut()
-    }
-
-    /// Returns a reference to the core-local physical memory manager if set,
-    /// otherwise returns the early physical memory manager.
-    pub fn mem_manager(&self) -> RefMut<TCache> {
-        self.pmanager
-            .as_ref()
-            .map_or(self.emanager(), |pmem| pmem.borrow_mut())
-    }
-
-    pub fn try_mem_manager(&self) -> Result<RefMut<TCache>, core::cell::BorrowMutError> {
-        self.pmanager
-            .as_ref()
-            .map_or(self.emanager.try_borrow_mut(), |pmem| pmem.try_borrow_mut())
-    }
-
-    pub fn apic(&self) -> RefMut<XAPICDriver> {
-        self.apic.borrow_mut()
-    }
-
-    pub fn init_vspace(&self) -> RefMut<VSpace> {
-        self.init_vspace.borrow_mut()
-    }
-
-    pub fn kernel_binary(&self) -> &'static [u8] {
-        self.kernel_binary
-    }
-
-    pub fn kernel_args(&self) -> &'static KernelArgs {
-        self.kernel_args
     }
 }

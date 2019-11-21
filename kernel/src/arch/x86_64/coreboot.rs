@@ -239,9 +239,9 @@ unsafe fn wakeup_core(core_id: ApicId) {
     let kcb = kcb::get_kcb();
 
     // x86 core boot protocol, without sleeping:
-    kcb.apic().ipi_init(core_id);
-    kcb.apic().ipi_init_deassert();
-    kcb.apic().ipi_startup(core_id, REAL_MODE_PAGE);
+    kcb.arch.apic().ipi_init(core_id);
+    kcb.arch.apic().ipi_init_deassert();
+    kcb.arch.apic().ipi_startup(core_id, REAL_MODE_PAGE);
 }
 
 /// Starts up the core identified by `core_id`, after initialization it begins

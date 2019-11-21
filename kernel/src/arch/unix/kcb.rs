@@ -1,5 +1,7 @@
 //! KCB is the local kernel control that stores all core local state.
+use alloc::boxed::Box;
 use core::cell::{RefCell, RefMut};
+use core::pin::Pin;
 use core::ptr;
 
 use crate::arch::vspace::VSpace;
@@ -36,8 +38,45 @@ pub(crate) fn init_kcb(kcb: &mut Kcb) {
     unsafe { set_kcb(kptr) };
 }
 
-pub struct ArchKcb {}
+#[repr(C)]
+pub struct ArchKcb {
+    /// Pointer to the syscall stack (this is referenced in assembly early on in exec.S)
+    /// and should therefore always be at offset 0 of the Kcb struct!
+    pub(crate) syscall_stack_top: *mut u8,
+
+    /// Pointer to the save area of the core,
+    /// this is referenced on trap/syscall entries to save the CPU state into it.
+    ///
+    /// State from the save_area may be copied into current_process` save area
+    /// to handle upcalls (in the general state it is stored/resumed from here).
+    pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
+}
+
+impl Default for ArchKcb {
+    fn default() -> ArchKcb {
+        ArchKcb {
+            syscall_stack_top: ptr::null_mut(),
+            save_area: None,
+        }
+    }
+}
 
 impl ArchKcb {
     pub(crate) fn install(&mut self) {}
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use core::mem::{self, MaybeUninit};
+
+    #[test]
+    fn save_area_offset() {
+        let kcb: ArchKcb = unsafe { MaybeUninit::zeroed().assume_init() };
+        assert_eq!(
+            (&kcb.save_area as *const _ as usize) - (&kcb as *const _ as usize),
+            8,
+            "The save_area entry should be at offset 8 of KCB (for assembly)"
+        );
+    }
 }

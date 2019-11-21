@@ -1031,6 +1031,8 @@ impl<'a> dot::GraphWalk<'a> for VSpace {
     }
 }
 
+/*
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1104,3 +1106,4 @@ mod test {
         }
     }
 }
+*/

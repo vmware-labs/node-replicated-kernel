@@ -37,6 +37,10 @@ pub mod arch;
 #[path = "arch/unix/mod.rs"]
 pub mod arch;
 
+//#[cfg(all(test, target_arch = "x86_64", target_family = "unix"))]
+//#[path = "arch/x86_64/mod.rs"]
+//pub mod x86_64_arch;
+
 mod error;
 mod graphviz;
 mod kcb;

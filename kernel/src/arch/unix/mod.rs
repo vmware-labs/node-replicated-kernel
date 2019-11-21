@@ -72,7 +72,7 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let kernel_args = Box::new(KernelArgs {});
     let kernel_binary: &'static [u8] = &[0u8; 1];
     let vspace = vspace::VSpace::new();
-    let arch_kcb = kcb::ArchKcb {};
+    let arch_kcb = Default::default();
 
     let kcb = box Kcb::new(
         Box::leak(kernel_args),

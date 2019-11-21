@@ -300,7 +300,7 @@ pub struct Process {
 
 impl Process {
     /// Create a process from a Module (i.e., a struct passed by UEFI)
-    pub fn from(module: crate::arch::Module) -> Result<Process, KError> {
+    pub fn from(module: super::Module) -> Result<Process, KError> {
         let mut p = Process::new(0);
 
         // Load the Module into the process address-space

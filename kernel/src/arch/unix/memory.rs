@@ -57,9 +57,10 @@ impl MemoryMapper {
 
         if r == 0 {
             let addr_ptr = addr as *const _ as *const u64;
+            assert_eq!(addr_ptr as u64 % alignment as u64, 0);
             let mut frame = unsafe { Frame::new(PAddr::from(addr_ptr as u64), size, 0) };
             unsafe {
-                frame.zero();
+                //frame.zero();
             }
 
             self.currently_allocated += size;

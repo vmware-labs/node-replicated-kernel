@@ -415,7 +415,7 @@ pub fn xmain() {
     use graphviz::*;
 
     let kcb = kcb::get_kcb();
-    graphviz::render_opts(&*kcb.init_vspace(), &[RenderOption::RankDirectionLR]);
+    graphviz::render_opts(&*kcb.arch.init_vspace(), &[RenderOption::RankDirectionLR]);
 
     arch::debug::shutdown(ExitReason::Ok);
 }

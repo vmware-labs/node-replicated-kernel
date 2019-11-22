@@ -14,7 +14,7 @@ use crate::memory::vspace::{AddressSpaceError, MapAction, ResourceType};
 use crate::memory::Frame;
 
 use super::kcb::get_kcb;
-use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
+use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 
 pub struct VSpace {
     pub pml4: Pin<Box<PML4>>,
@@ -308,27 +308,21 @@ impl VSpace {
     }
 
     fn new_pt(&self, pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDEntry {
-        let paddr: PAddr = pager
-            .allocate_base_page()
-            .expect("Allocation must work")
-            .base;
-        return PDEntry::new(paddr, PDFlags::P | PDFlags::RW | PDFlags::US);
+        let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
+        unsafe { frame.zero() };
+        return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
     }
 
     fn new_pd(&self, pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDPTEntry {
-        let paddr: PAddr = pager
-            .allocate_base_page()
-            .expect("Allocation must work")
-            .base;
-        return PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
+        let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
+        unsafe { frame.zero() };
+        return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
     }
 
     fn new_pdpt(&self, pager: &mut dyn crate::memory::PhysicalPageProvider) -> PML4Entry {
-        let paddr: PAddr = pager
-            .allocate_base_page()
-            .expect("Allocation must work")
-            .base;
-        return PML4Entry::new(paddr, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
+        let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
+        unsafe { frame.zero() };
+        return PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
     }
 
     /// Resolve a PDEntry to a page table.
@@ -436,7 +430,7 @@ impl VSpace {
         let paddr =
             VSpace::allocate_pages_aligned(size / BASE_PAGE_SIZE, ResourceType::Memory, palignment);
 
-        let kcb = get_kcb();
+        let kcb = crate::kcb::get_kcb();
         let mut pmanager = kcb.mem_manager();
         self.map_generic(base, (paddr, size), rights, &mut pmanager)?;
         Ok((paddr, size))
@@ -504,7 +498,7 @@ impl VSpace {
     /// TODO(broken): remove it!
     pub(crate) fn allocate_pages(how_many: usize, _typ: ResourceType) -> PAddr {
         let new_region: *mut u8 = unsafe {
-            alloc::alloc::alloc(core::alloc::Layout::from_size_align_unchecked(
+            alloc::alloc::alloc_zeroed(core::alloc::Layout::from_size_align_unchecked(
                 how_many * BASE_PAGE_SIZE,
                 4096,
             ))
@@ -917,17 +911,15 @@ impl<'a> dot::GraphWalk<'a> for VSpace {
     }
 }
 
-/*
-
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::*;
+    use core::ptr;
     use proptest::prelude::*;
 
-    #[test]
+    /*#[test]
     fn create_vspace() {
-        env_logger::try_init();
         let mut vspace = VSpace::new();
 
         let base = VAddr::from(0xfee0_0000u64);
@@ -938,7 +930,7 @@ mod test {
         vspace
             .map(base, size, rights, palignment)
             .expect("Can't map stuff");
-    }
+    }*/
 
     prop_compose! {
         fn base_pages(max: u64)(base in 0..max) -> u64 { base & !0xfff }
@@ -965,6 +957,7 @@ mod test {
     proptest! {
         #[test]
         fn map_base_doesnt_crash(base in base_pages(0xffee_0000), size in base_pages(0xff_0000), action in map_strategy()) {
+            crate::arch::start(0, ptr::null_mut());
             let mut vspace = VSpace::new();
 
             let base = VAddr::from(base);
@@ -979,6 +972,8 @@ mod test {
 
         #[test]
         fn map_large_doesnt_crash(base in large_pages(0xffee_0000), size in base_pages(0xff_0000), action in map_strategy()) {
+            crate::arch::start(0, ptr::null_mut());
+
             let mut vspace = VSpace::new();
 
             let base = VAddr::from(base);
@@ -992,4 +987,3 @@ mod test {
         }
     }
 }
-*/

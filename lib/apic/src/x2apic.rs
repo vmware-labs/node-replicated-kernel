@@ -1,5 +1,6 @@
-use driverkit::{DriverControl, DriverState};
 use log::info;
+
+use driverkit::{DriverControl, DriverState};
 use x86::apic::x2apic::X2APIC;
 use x86::apic::{ApicControl, ApicId, Icr};
 

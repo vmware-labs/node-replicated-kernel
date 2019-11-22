@@ -32,11 +32,11 @@ pub mod debug {
 }
 
 #[start]
-fn start(_argc: isize, _argv: *const *const u8) -> isize {
+pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     // Note anything lower than Info is currently broken
     // because macros in mem management will do a recursive
     // allocation and this stuff is not reentrant...
-    klogger::init(Level::Info).expect("Can't set-up logging");
+    let _r = klogger::init(Level::Info);
 
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
@@ -89,6 +89,7 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::BOOT_TIME_ANCHOR
     );
 
+    #[cfg(not(test))]
     xmain();
 
     ExitReason::ReturnFromMain as isize

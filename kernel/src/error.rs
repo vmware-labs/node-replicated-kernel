@@ -12,7 +12,7 @@ custom_error! {pub KError
     InvalidVSpaceOperation{a: u64} = "Invalid VSpace Operation (2nd syscall argument) supplied: {}",
     InvalidProcessOperation{a: u64} = "Invalid Process Operation (2nd syscall argument) supplied: {}",
     ProcessCreate{desc: String}  = "Unable to create process: {desc}",
-    VSpace{source: crate::arch::vspace::VSpaceError} = "VSpace operation covers existing mapping",
+    VSpace{source: crate::memory::vspace::AddressSpaceError} = "VSpace operation covers existing mapping",
     PhysicalMemory{source: crate::memory::AllocationError} = "Memory allocation failed",
 }
 

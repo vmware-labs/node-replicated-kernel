@@ -4,13 +4,16 @@ use core::alloc::Layout;
 use core::ffi::VaList;
 use core::ptr;
 
-use super::memory::{paddr_to_kernel_vaddr, PAddr};
-use crate::alloc::alloc;
 use acpica_sys::*;
 use cstr_core::CStr;
 use log::trace;
 
-use super::vspace::MapAction;
+use crate::alloc::alloc;
+use crate::kcb::Kcb;
+use crate::memory::vspace::{MapAction, ResourceType};
+
+use super::kcb::{try_get_kcb, Arch86Kcb};
+use super::memory::{paddr_to_kernel_vaddr, PAddr};
 
 use x86::io;
 
@@ -34,8 +37,8 @@ pub extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
 pub extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
     let root_ptr: ACPI_PHYSICAL_ADDRESS = 0x0;
 
-    let (rsdp1_root, rsdp2_root) = crate::kcb::try_get_kcb().map_or((None, None), |k| {
-        let args = k.kernel_args();
+    let (rsdp1_root, rsdp2_root) = try_get_kcb().map_or((None, None), |k: &mut Kcb<Arch86Kcb>| {
+        let args = k.arch.kernel_args();
         (Some(args.acpi1_rsdp), Some(args.acpi2_rsdp))
     });
 
@@ -172,8 +175,8 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
     let p = PAddr::from((location & !0xfff) as u64);
 
     use crate::round_up;
-    crate::kcb::try_get_kcb().map(|k| {
-        let mut vspace = k.init_vspace();
+    super::kcb::try_get_kcb().map(|k: &mut Kcb<Arch86Kcb>| {
+        let mut vspace = k.arch.init_vspace();
         vspace
             .map_identity_with_offset(
                 PAddr::from(super::memory::KERNEL_BASE),

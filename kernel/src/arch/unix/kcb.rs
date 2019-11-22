@@ -4,79 +4,71 @@ use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
-use crate::arch::vspace::VSpace;
-use crate::kcb::Kcb;
-use crate::memory::{tcache::TCache, GlobalMemory};
-
 use slabmalloc::ZoneAllocator;
 
-static mut KCB: *mut Kcb = ptr::null_mut();
+use crate::kcb::{ArchSpecificKcb, Kcb};
+use crate::memory::{tcache::TCache, GlobalMemory};
 
-pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
+use super::vspace::VSpace;
+use super::KernelArgs;
+
+static mut KCB: *mut Kcb<ArchKcb> = ptr::null_mut();
+
+pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<ArchKcb>> {
     unsafe {
         if !KCB.is_null() {
-            Some(&mut *KCB as &mut Kcb)
+            Some(&mut *KCB as &mut Kcb<ArchKcb>)
         } else {
             None
         }
     }
 }
 
-pub fn get_kcb<'a>() -> &'a mut Kcb {
-    unsafe { &mut *KCB as &mut Kcb }
+pub fn get_kcb<'a>() -> &'a mut Kcb<ArchKcb> {
+    unsafe { &mut *KCB as &mut Kcb<ArchKcb> }
 }
 
-unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
+unsafe fn set_kcb(kcb: ptr::NonNull<Kcb<ArchKcb>>) {
     KCB = kcb.as_ptr();
 }
-
+use core::any::Any;
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb(kcb: &mut Kcb) {
-    let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(kcb);
-    unsafe { set_kcb(kptr) };
+pub(crate) fn init_kcb<A: Any>(mut kcb: &'static mut Kcb<A>) {
+    let any_kcb = &mut kcb as &mut dyn Any;
+    if let Some(ckcb) = any_kcb.downcast_mut::<&'static mut Kcb<ArchKcb>>() {
+        let kptr: ptr::NonNull<Kcb<ArchKcb>> = (*ckcb).into();
+        unsafe { set_kcb(kptr) };
+    } else {
+        panic!("Tried to install incompatible KCB.");
+    }
 }
 
 #[repr(C)]
 pub struct ArchKcb {
-    /// Pointer to the syscall stack (this is referenced in assembly early on in exec.S)
-    /// and should therefore always be at offset 0 of the Kcb struct!
-    pub(crate) syscall_stack_top: *mut u8,
-
-    /// Pointer to the save area of the core,
-    /// this is referenced on trap/syscall entries to save the CPU state into it.
-    ///
-    /// State from the save_area may be copied into current_process` save area
-    /// to handle upcalls (in the general state it is stored/resumed from here).
-    pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
-}
-
-impl Default for ArchKcb {
-    fn default() -> ArchKcb {
-        ArchKcb {
-            syscall_stack_top: ptr::null_mut(),
-            save_area: None,
-        }
-    }
+    init_vspace: RefCell<VSpace>,
+    /// Arguments passed to the kernel by the bootloader.
+    kernel_args: &'static KernelArgs,
 }
 
 impl ArchKcb {
-    pub(crate) fn install(&mut self) {}
+    pub fn new(kernel_args: &'static KernelArgs) -> ArchKcb {
+        ArchKcb {
+            kernel_args,
+            init_vspace: RefCell::new(VSpace::new()),
+        }
+    }
+
+    pub fn init_vspace(&self) -> RefMut<VSpace> {
+        self.init_vspace.borrow_mut()
+    }
+
+    pub fn kernel_args(&self) -> &'static KernelArgs {
+        self.kernel_args
+    }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use core::mem::{self, MaybeUninit};
-
-    #[test]
-    fn save_area_offset() {
-        let kcb: ArchKcb = unsafe { MaybeUninit::zeroed().assume_init() };
-        assert_eq!(
-            (&kcb.save_area as *const _ as usize) - (&kcb as *const _ as usize),
-            8,
-            "The save_area entry should be at offset 8 of KCB (for assembly)"
-        );
-    }
+impl ArchSpecificKcb for ArchKcb {
+    fn install(&mut self) {}
 }

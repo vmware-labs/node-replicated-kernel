@@ -28,6 +28,7 @@ pub mod buddy;
 pub mod emem;
 pub mod ncache;
 pub mod tcache;
+pub mod vspace;
 
 /// Re-export arch specific memory definitions
 pub use crate::arch::memory::{
@@ -38,6 +39,7 @@ pub use crate::arch::memory::{
 use crate::kcb;
 use crate::prelude::*;
 use crate::round_up;
+use vspace::MapAction;
 
 pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
 
@@ -168,7 +170,7 @@ impl KernelAllocator {
 
                 let base_ptr = unsafe { ptr::NonNull::new_unchecked(start_at as *mut u8) };
 
-                let mut kvspace = kcb.init_vspace();
+                let mut kvspace = kcb.arch.init_vspace();
                 for _ in 0..large {
                     let f = pmanager
                         .allocate_large_page()
@@ -178,7 +180,7 @@ impl KernelAllocator {
                         .map_generic(
                             VAddr::from(start_at),
                             (f.base, f.size()),
-                            crate::arch::vspace::MapAction::ReadWriteKernel,
+                            MapAction::ReadWriteKernel,
                             &mut pmanager,
                         )
                         .expect("Can't create the mapping");
@@ -194,7 +196,7 @@ impl KernelAllocator {
                         .map_generic(
                             VAddr::from(start_at),
                             (f.base, f.size()),
-                            crate::arch::vspace::MapAction::ReadWriteKernel,
+                            MapAction::ReadWriteKernel,
                             &mut pmanager,
                         )
                         .expect("Can't create the mapping");

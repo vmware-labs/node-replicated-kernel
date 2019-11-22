@@ -17,7 +17,10 @@ pub mod vspace;
 
 use crate::kcb::Kcb;
 
-pub struct KernelArgs {}
+pub struct KernelArgs {
+    /// The offset where the elfloader placed the kernel
+    pub kernel_elf_offset: x86::bits64::paging::VAddr,
+}
 
 pub mod debug {
     use crate::ExitReason;
@@ -69,19 +72,13 @@ fn start(_argc: isize, _argv: *const *const u8) -> isize {
 
     // Construct the Kcb so we can access these things later on in the code
 
-    let kernel_args = Box::new(KernelArgs {});
+    let kernel_args = Box::new(KernelArgs {
+        kernel_elf_offset: x86::bits64::paging::VAddr::from_u64(0),
+    });
     let kernel_binary: &'static [u8] = &[0u8; 1];
-    let vspace = vspace::VSpace::new();
-    let arch_kcb = Default::default();
+    let arch_kcb: kcb::ArchKcb = kcb::ArchKcb::new(Box::leak(kernel_args));
 
-    let kcb = box Kcb::new(
-        Box::leak(kernel_args),
-        &kernel_binary,
-        vspace,
-        tc,
-        arch_kcb,
-        0 as topology::NodeId,
-    );
+    let kcb = box Kcb::new(&kernel_binary, tc, arch_kcb, 0 as topology::NodeId);
 
     kcb::init_kcb(Box::leak(kcb));
     debug!("Memory allocation should work at this point...");

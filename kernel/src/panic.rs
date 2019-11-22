@@ -101,7 +101,7 @@ pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
     let kernel_info = kcb::try_get_kcb().map(|k| {
         (
             k.kernel_binary(),
-            k.kernel_args().kernel_elf_offset.as_u64(),
+            k.arch.kernel_args().kernel_elf_offset.as_u64(),
         )
     });
 
@@ -132,7 +132,7 @@ pub fn backtrace() {
     let kernel_info = kcb::try_get_kcb().map(|k| {
         (
             k.kernel_binary(),
-            k.kernel_args().kernel_elf_offset.as_u64(),
+            k.arch.kernel_args().kernel_elf_offset.as_u64(),
         )
     });
 
@@ -158,6 +158,7 @@ pub fn backtrace() {
     }
 }
 
+#[cfg(target_os = "none")]
 #[cfg_attr(target_os = "none", panic_handler)]
 #[no_mangle]
 pub fn panic_impl(info: &PanicInfo) -> ! {
@@ -176,6 +177,7 @@ pub fn panic_impl(info: &PanicInfo) -> ! {
     arch::debug::shutdown(ExitReason::KernelPanic);
 }
 
+#[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub enum _Unwind_Reason_Code {
@@ -190,13 +192,18 @@ pub enum _Unwind_Reason_Code {
     _URC_CONTINUE_UNWIND = 8,
 }
 
+#[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
 pub struct _Unwind_Context;
 
+#[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
 pub type _Unwind_Action = u32;
+
+#[cfg(target_os = "none")]
 static _UA_SEARCH_PHASE: _Unwind_Action = 1;
 
+#[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct _Unwind_Exception {
@@ -205,6 +212,7 @@ pub struct _Unwind_Exception {
     private: [u64; 2],
 }
 
+#[cfg(target_os = "none")]
 #[cfg_attr(target_os = "none", lang = "eh_personality")]
 #[no_mangle]
 pub fn rust_eh_personality(
@@ -217,6 +225,7 @@ pub fn rust_eh_personality(
     loop {}
 }
 
+#[cfg(target_os = "none")]
 #[no_mangle]
 #[cfg_attr(target_os = "none", lang = "oom")]
 pub fn oom(layout: Layout) -> ! {
@@ -230,6 +239,7 @@ pub fn oom(layout: Layout) -> ! {
     arch::debug::shutdown(ExitReason::OutOfMemory);
 }
 
+#[cfg(target_os = "none")]
 #[no_mangle]
 #[allow(non_snake_case)]
 pub fn _Unwind_Resume() {

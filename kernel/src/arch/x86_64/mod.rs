@@ -55,12 +55,14 @@ use logos::Logos;
 use spin::Mutex;
 
 use crate::kcb::Kcb;
-use crate::memory::*;
+use crate::memory::{
+    ncache, tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
+};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
 
-use memory::*;
+use memory::paddr_to_kernel_vaddr;
 use vspace::*;
 
 pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
@@ -276,31 +278,30 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     };
 
     let mut emanager = tcache::TCache::new(args.thread, args.node);
-    let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
+    let init_vspace = unsafe { find_current_vspace() }; // Safe, done once during init
 
-    let arch = kcb::ArchKcb::new(init_apic());
-    let mut kcb = Kcb::new(
-        args.kernel_args,
-        args.kernel_binary,
-        vspace,
-        emanager,
-        arch,
-        args.node,
-    );
+    let arch = kcb::Arch86Kcb::new(args.kernel_args, init_apic(), init_vspace);
+    let mut kcb = Kcb::<kcb::Arch86Kcb>::new(args.kernel_binary, emanager, arch, args.node);
 
     kcb.set_global_memory(args.global_memory);
     kcb.set_physical_memory_manager(tcache::TCache::new(args.thread, args.node));
     kcb::init_kcb(&mut kcb);
 
-    kcb.arch.set_interrupt_stacks(
+    let static_kcb = unsafe {
+        core::mem::transmute::<&mut Kcb<kcb::Arch86Kcb>, &'static mut Kcb<kcb::Arch86Kcb>>(&mut kcb)
+    };
+
+    static_kcb.arch.set_interrupt_stacks(
         OwnedStack::new(64 * BASE_PAGE_SIZE),
         OwnedStack::new(64 * BASE_PAGE_SIZE),
     );
-    kcb.arch
+    static_kcb
+        .arch
         .set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
-    kcb.arch
+    static_kcb
+        .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
-    kcb.install();
+    static_kcb.install();
     core::mem::forget(kcb);
 
     // Don't modify this line without adjusting `coreboot` integration test:
@@ -475,6 +476,7 @@ fn identify_numa_affinity(
 /// We have a simple GDT, our address space, and stack set-up.
 /// The argc argument is abused as a pointer ot the KernelArgs struct
 /// passed by UEFI.
+#[cfg(target_os = "none")]
 #[lang = "start"]
 #[no_mangle]
 #[start]
@@ -596,26 +598,32 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let emanager = emanager
         .expect("Couldn't build an early physical memory manager, increase system main memory?");
 
-    let vspace = unsafe { find_current_vspace() }; // Safe, done once during init
+    let init_vspace = unsafe { find_current_vspace() }; // Safe, done once during init
     trace!("vspace found");
 
-    let arch = kcb::ArchKcb::new(init_apic());
+    let arch = kcb::Arch86Kcb::new(kernel_args, init_apic(), init_vspace);
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = Kcb::new(kernel_args, kernel_binary, vspace, emanager, arch, 0);
+    let mut kcb = Kcb::new(kernel_binary, emanager, arch, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
 
+    let static_kcb = unsafe {
+        core::mem::transmute::<&mut Kcb<kcb::Arch86Kcb>, &'static mut Kcb<kcb::Arch86Kcb>>(&mut kcb)
+    };
+
     // Let's finish KCB initialization (easier as we have alloc now):
-    kcb.arch.set_interrupt_stacks(
+    static_kcb.arch.set_interrupt_stacks(
         OwnedStack::new(16 * BASE_PAGE_SIZE),
         OwnedStack::new(16 * BASE_PAGE_SIZE),
     );
-    kcb.arch
+    static_kcb
+        .arch
         .set_syscall_stack(OwnedStack::new(16 * BASE_PAGE_SIZE));
-    kcb.arch
+    static_kcb
+        .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
-    kcb.install();
+    static_kcb.install();
 
     // Make sure we don't drop the KCB and anything in it,
     // the kcb is on the init stack and remains allocated on it,

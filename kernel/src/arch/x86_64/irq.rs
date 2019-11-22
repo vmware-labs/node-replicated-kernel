@@ -49,7 +49,7 @@ use crate::ExitReason;
 
 use super::debug;
 use super::gdt::GdtTable;
-use super::kcb::get_kcb;
+use super::kcb::{get_kcb, Arch86Kcb};
 use super::process::ResumeHandle;
 
 /// A macro to initialize an entry in an IDT table.
@@ -310,7 +310,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
         kcb::try_get_kcb().map(|k| {
             sprintln!(
                 " (in ELF: {:#x})",
-                a.rip - k.kernel_args().kernel_elf_offset.as_u64()
+                a.rip - k.arch.kernel_args().kernel_elf_offset.as_u64()
             )
         });
     } else {
@@ -336,7 +336,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
     warn!("Got debug interrupt {}", desc.source);
 
-    let kcb = crate::kcb::get_kcb();
+    let kcb = get_kcb();
     let r = ResumeHandle::new_restore(kcb.arch.get_save_area_ptr());
     r.resume()
 }
@@ -362,7 +362,7 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     // Print the RIP that triggered the fault:
     //use crate::arch::kcb;
     sprint!("Instruction Pointer: {:#x}", a.rip);
-    /*kcb::try_get_kcb().map(|k| {
+    /*kcb::try_get_kcb::<Arch86Kcb>().map(|k| {
         sprintln!(
             " (in ELF: {:#x})",
             a.rip - k.kernel_args().kernel_elf_offset.as_u64()
@@ -379,7 +379,7 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
 
-fn kcb_resume_handle(kcb: &crate::kcb::Kcb) -> ResumeHandle {
+fn kcb_resume_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> ResumeHandle {
     ResumeHandle::new_restore(kcb.arch.get_save_area_ptr())
 }
 
@@ -455,8 +455,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         if a.vector > 30 || a.vector == 3 {
             trace!("handle_generic_exception {:?}", a);
 
-            let kcb = crate::kcb::get_kcb();
-            let mut plock = kcb.current_process();
+            let kcb = get_kcb();
+            let mut plock = kcb.arch.current_process();
             let p = plock.as_mut().unwrap();
 
             let resumer = {
@@ -533,16 +533,15 @@ pub unsafe fn register_handler(
 /// core 0. This is because, we should probably just support MSI(X)
 /// and don't invest a lot in legacy interrupts...
 pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
-    use crate::arch::vspace::MapAction;
-    use crate::memory::{paddr_to_kernel_vaddr, PAddr};
+    use crate::memory::{paddr_to_kernel_vaddr, vspace::MapAction, PAddr};
 
     for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
         debug!("Initialize IO APIC {:?}", io_apic);
         let addr = PAddr::from(io_apic.address as u64);
 
         // map it
-        let kcb = crate::kcb::get_kcb();
-        let mut plock = kcb.current_process();
+        let kcb = get_kcb();
+        let mut plock = kcb.arch.current_process();
 
         plock.as_mut().map(|p| {
             trace!(

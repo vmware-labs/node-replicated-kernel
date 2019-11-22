@@ -8,14 +8,16 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
+use crate::error::KError;
 use crate::is_page_aligned;
+use crate::kcb::Kcb;
+use crate::memory::vspace::{MapAction, ResourceType};
+use crate::memory::{paddr_to_kernel_vaddr, KernelAllocator, PAddr, PhysicalPageProvider, VAddr};
+use crate::process::Process;
 use crate::round_up;
 
-use crate::memory::{paddr_to_kernel_vaddr, KernelAllocator, PAddr, PhysicalPageProvider, VAddr};
-
+use super::kcb::Arch86Kcb;
 use super::vspace::*;
-
-use crate::error::KError;
 
 pub struct UserPtr<T> {
     value: *mut T,
@@ -263,12 +265,12 @@ impl ResumeHandle {
 
 /// A process representation.
 #[repr(C, packed)]
-pub struct Process {
+pub struct Ring3Process {
     /// CPU context save area (must be first, see exec.S).
     pub save_area: kpi::x86_64::SaveArea,
     /// ELF File mappings that were installed into the address space.
     pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
-    /// Process ID.
+    /// Ring3Process ID.
     pub pid: u64,
     /// The address space of the process.
     pub vspace: VSpace,
@@ -298,10 +300,10 @@ pub struct Process {
     pub vcpu_ctl: Option<UserPtr<kpi::arch::VirtualCpu>>,
 }
 
-impl Process {
+impl Ring3Process {
     /// Create a process from a Module (i.e., a struct passed by UEFI)
-    pub fn from(module: super::Module) -> Result<Process, KError> {
-        let mut p = Process::new(0);
+    pub fn from(module: super::Module) -> Result<Ring3Process, KError> {
+        let mut p = Ring3Process::new(0);
 
         // Load the Module into the process address-space
         // Safe since we don't modify the kernel page-table
@@ -351,8 +353,9 @@ impl Process {
         // TODO: Install the kernel mappings (these should be global mappings)
         // TODO(broken): BigMap allocaitons should be inserted here too..
         // TODO(broken): Find a better way for this
-        super::kcb::try_get_kcb().map(|kcb| {
-            let kernel_pml_entry = kcb.init_vspace().pml4[128];
+
+        super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
+            let kernel_pml_entry = kcb.arch.init_vspace().pml4[128];
             trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
             p.vspace.pml4[128] = kernel_pml_entry;
         });
@@ -361,7 +364,7 @@ impl Process {
     }
 
     /// Create a new `empty` process.
-    fn new<'b>(pid: u64) -> Process {
+    fn new<'b>(pid: u64) -> Ring3Process {
         // TODO: stack_base address should not be hard-coded
         let stack_base = VAddr::from(0xadf000_0000usize);
         let stack_size = 128 * BASE_PAGE_SIZE;
@@ -372,7 +375,7 @@ impl Process {
         let upcall_stack_size = 128 * BASE_PAGE_SIZE;
         let upcall_stack_top = upcall_stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
 
-        Process {
+        Ring3Process {
             offset: VAddr::from(0usize),
             mapping: Vec::with_capacity(64),
             pid: pid,
@@ -427,13 +430,17 @@ impl Process {
     }
 }
 
-impl fmt::Debug for Process {
+impl fmt::Debug for Ring3Process {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Process {}:\nSaveArea: {:?}", self.pid, self.save_area)
+        write!(
+            f,
+            "Ring3Process {}:\nSaveArea: {:?}",
+            self.pid, self.save_area
+        )
     }
 }
 
-impl elfloader::ElfLoader for Process {
+impl elfloader::ElfLoader for Ring3Process {
     /// Makes sure the process' vspace is backed for the regions
     /// reported by the ELF loader as loadable.
     ///
@@ -485,7 +492,7 @@ impl elfloader::ElfLoader for Process {
             KernelAllocator::try_refill_tcache(20, large_pages).expect("Refill didn't work");
             self.offset = VAddr::from(0x1000_0000);
 
-            let kcb = crate::kcb::try_get_kcb().unwrap();
+            let kcb = crate::kcb::get_kcb();
             let mut pmanager = kcb.mem_manager();
 
             // TODO(correctness): Will this work (we round-up and map large-pages?)
@@ -611,3 +618,5 @@ impl elfloader::ElfLoader for Process {
         Ok(())
     }
 }
+
+impl Process for Ring3Process {}

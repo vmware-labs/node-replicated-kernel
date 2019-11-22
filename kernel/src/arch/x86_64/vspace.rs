@@ -5,130 +5,16 @@ use core::pin::Pin;
 use alloc::boxed::Box;
 use alloc::string::String;
 
+use kpi::SystemCallError;
 use x86::bits64::paging::*;
 use x86::controlregs;
 
-use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
+use crate::alloc::string::ToString;
+use crate::memory::vspace::{AddressSpaceError, MapAction, ResourceType};
 use crate::memory::Frame;
 
-use custom_error::custom_error;
-
-use crate::alloc::string::ToString;
-use kpi::SystemCallError;
-
-custom_error! {pub VSpaceError
-    AlreadyMapped{from: u64, to: u64} = "VSpace operation covers existing mapping ({from} -- {to})",
-}
-
-impl Into<SystemCallError> for VSpaceError {
-    fn into(self) -> SystemCallError {
-        match self {
-            VSpaceError::AlreadyMapped { from: _, to: _ } => SystemCallError::VSpaceAlreadyMapped,
-        }
-    }
-}
-
-/// Mapping rights to give to address translation.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-#[allow(unused)]
-pub enum MapAction {
-    /// Don't map
-    None,
-    /// Map region read-only.
-    ReadUser,
-    /// Map region read-only for kernel.
-    ReadKernel,
-    /// Map region read-write.
-    ReadWriteUser,
-    /// Map region read-write for kernel.
-    ReadWriteKernel,
-    /// Map region read-executable.
-    ReadExecuteUser,
-    /// Map region read-executable for kernel.
-    ReadExecuteKernel,
-    /// Map region read-write-executable.
-    ReadWriteExecuteUser,
-    /// Map region read-write-executable for kernel.
-    ReadWriteExecuteKernel,
-}
-
-/// Type of resource we're trying to allocate
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum ResourceType {
-    /// ELF Binary data
-    Binary,
-    /// Physical memory
-    Memory,
-    /// Page-table meta-data
-    PageTable,
-}
-
-impl MapAction {
-    /// Transform MapAction into rights for 1 GiB page.
-    fn to_pdpt_rights(&self) -> PDPTFlags {
-        use MapAction::*;
-        match self {
-            None => PDPTFlags::empty(),
-            ReadUser => PDPTFlags::XD | PDPTFlags::US,
-            ReadKernel => PDPTFlags::XD,
-            ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
-            ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
-            ReadExecuteUser => PDPTFlags::US,
-            ReadExecuteKernel => PDPTFlags::empty(),
-            ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
-            ReadWriteExecuteKernel => PDPTFlags::RW,
-        }
-    }
-
-    /// Transform MapAction into rights for 2 MiB page.
-    fn to_pd_rights(&self) -> PDFlags {
-        use MapAction::*;
-        match self {
-            None => PDFlags::empty(),
-            ReadUser => PDFlags::XD | PDFlags::US,
-            ReadKernel => PDFlags::XD,
-            ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
-            ReadWriteKernel => PDFlags::RW | PDFlags::XD,
-            ReadExecuteUser => PDFlags::US,
-            ReadExecuteKernel => PDFlags::empty(),
-            ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
-            ReadWriteExecuteKernel => PDFlags::RW,
-        }
-    }
-
-    /// Transform MapAction into rights for 4KiB page.
-    fn to_pt_rights(&self) -> PTFlags {
-        use MapAction::*;
-        match self {
-            None => PTFlags::empty(),
-            ReadUser => PTFlags::XD | PTFlags::US,
-            ReadKernel => PTFlags::XD,
-            ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
-            ReadWriteKernel => PTFlags::RW | PTFlags::XD,
-            ReadExecuteUser => PTFlags::US,
-            ReadExecuteKernel => PTFlags::empty(),
-            ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
-            ReadWriteExecuteKernel => PTFlags::RW,
-        }
-    }
-}
-
-impl fmt::Display for MapAction {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use MapAction::*;
-        match self {
-            None => write!(f, " ---"),
-            ReadUser => write!(f, "uR--"),
-            ReadKernel => write!(f, "kR--"),
-            ReadWriteUser => write!(f, "uRW-"),
-            ReadWriteKernel => write!(f, "kRW-"),
-            ReadExecuteUser => write!(f, "uR-X"),
-            ReadExecuteKernel => write!(f, "kR-X"),
-            ReadWriteExecuteUser => write!(f, "uRWX"),
-            ReadWriteExecuteKernel => write!(f, "kRWX"),
-        }
-    }
-}
+use super::kcb::get_kcb;
+use super::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 
 pub struct VSpace {
     pub pml4: Pin<Box<PML4>>,
@@ -136,7 +22,7 @@ pub struct VSpace {
 
 impl Drop for VSpace {
     fn drop(&mut self) {
-        panic!("Drop for VSpace!");
+        //panic!("Drop for VSpace!");
     }
 }
 
@@ -169,7 +55,7 @@ impl VSpace {
         pbase: PAddr,
         end: PAddr,
         rights: MapAction,
-    ) -> Result<(), VSpaceError> {
+    ) -> Result<(), AddressSpaceError> {
         // TODO: maybe better to provide a length instead of end
         // so harder for things to break
         assert!(end > pbase, "End should be bigger than pbase");
@@ -183,7 +69,7 @@ impl VSpace {
             pbase,
             pbase + size
         );
-        let kcb = crate::kcb::try_get_kcb().unwrap();
+        let kcb = crate::kcb::get_kcb();
         let mut pmanager = kcb.mem_manager();
 
         self.map_generic(vbase, (pbase, size), rights, &mut pmanager)
@@ -211,7 +97,7 @@ impl VSpace {
         pregion: (PAddr, usize),
         rights: MapAction,
         pager: &mut crate::memory::tcache::TCache,
-    ) -> Result<(), VSpaceError> {
+    ) -> Result<(), AddressSpaceError> {
         let (pbase, psize) = pregion;
         assert_eq!(pbase % BASE_PAGE_SIZE, 0);
         assert_eq!(psize % BASE_PAGE_SIZE, 0);
@@ -500,7 +386,7 @@ impl VSpace {
         base: VAddr,
         frames: Vec<(Frame, MapAction)>,
         pager: &mut crate::memory::tcache::TCache,
-    ) -> Result<(), VSpaceError> {
+    ) -> Result<(), AddressSpaceError> {
         assert!(frames.len() > 0);
         assert_eq!(
             base % frames[0].0.size(),
@@ -524,7 +410,7 @@ impl VSpace {
         frame: Frame,
         action: MapAction,
         pager: &mut crate::memory::tcache::TCache,
-    ) -> Result<(), VSpaceError> {
+    ) -> Result<(), AddressSpaceError> {
         self.map_generic(base, (frame.base, frame.size()), action, pager);
         Ok(())
         // TODO(metadata) add frame to vspace
@@ -544,13 +430,13 @@ impl VSpace {
         size: usize,
         rights: MapAction,
         palignment: u64,
-    ) -> Result<(PAddr, usize), VSpaceError> {
+    ) -> Result<(PAddr, usize), AddressSpaceError> {
         assert_eq!(base % BASE_PAGE_SIZE, 0, "base is not page-aligned");
         assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
         let paddr =
             VSpace::allocate_pages_aligned(size / BASE_PAGE_SIZE, ResourceType::Memory, palignment);
 
-        let kcb = crate::kcb::try_get_kcb().unwrap();
+        let kcb = get_kcb();
         let mut pmanager = kcb.mem_manager();
         self.map_generic(base, (paddr, size), rights, &mut pmanager)?;
         Ok((paddr, size))

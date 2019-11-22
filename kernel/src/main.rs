@@ -29,17 +29,21 @@ extern crate log;
 #[macro_use]
 extern crate klogger;
 
+/// The x86-64 platform specific code.
 #[cfg(all(target_arch = "x86_64", target_os = "none"))]
 #[path = "arch/x86_64/mod.rs"]
 pub mod arch;
 
+/// The unix platform specific code.
 #[cfg(all(target_arch = "x86_64", target_family = "unix"))]
 #[path = "arch/unix/mod.rs"]
 pub mod arch;
 
-//#[cfg(all(test, target_arch = "x86_64", target_family = "unix"))]
-//#[path = "arch/x86_64/mod.rs"]
-//pub mod x86_64_arch;
+/// To write unit-tests for our bare-metal code, we include the x86_64
+/// arch-specific code on the `unix` platform.
+#[cfg(all(test, target_arch = "x86_64", target_family = "unix"))]
+#[path = "arch/x86_64/mod.rs"]
+pub mod x86_64_arch;
 
 mod error;
 mod graphviz;
@@ -47,9 +51,9 @@ mod kcb;
 mod memory;
 mod nr;
 mod prelude;
+mod process;
 mod stack;
 
-#[cfg(target_os = "none")]
 pub mod panic;
 
 /// A kernel exit status.

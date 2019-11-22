@@ -376,20 +376,24 @@ pub fn xmain() {
 #[cfg(all(feature = "integration-test", feature = "test-userspace"))]
 pub fn xmain() {
     let init_module = kcb::try_get_kcb()
-        .map(|kcb| kcb.kernel_args().modules[1].clone())
+        .map(|kcb| kcb.arch.kernel_args().modules[1].clone())
         .expect("Need to have an init module.");
 
     trace!("init {:?}", init_module);
     let mut process = alloc::boxed::Box::new(
-        arch::process::Process::from(init_module).expect("Couldn't load init."),
+        arch::process::Ring3Process::from(init_module).expect("Couldn't load init."),
     );
 
     info!("Created the init process, about to go there...");
-    let no = kcb::get_kcb().swap_current_process(process);
+    let no = kcb::get_kcb().arch.swap_current_process(process);
     assert!(no.is_none());
 
     unsafe {
-        let rh = kcb::get_kcb().current_process().as_mut().map(|p| p.start());
+        let rh = kcb::get_kcb()
+            .arch
+            .current_process()
+            .as_mut()
+            .map(|p| p.start());
         rh.unwrap().resume();
     }
 

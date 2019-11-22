@@ -7,6 +7,7 @@ use kpi::arch::VirtualCpu;
 use kpi::*;
 
 use crate::error::KError;
+use crate::memory::vspace::MapAction;
 
 use super::gdt::GdtTable;
 use super::process::{UserPtr, UserValue};
@@ -54,15 +55,15 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             process_print(UserValue::new(user_str))
         }
         ProcessOperation::InstallVCpuArea => unsafe {
-            let kcb = crate::kcb::get_kcb();
-            let mut plock = kcb.current_process();
+            let kcb = super::kcb::get_kcb();
+            let mut plock = kcb.arch.current_process();
 
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
                 let cpu_ctl_addr = VAddr::from(arg2);
                 p.vspace.map(
                     cpu_ctl_addr,
                     BASE_PAGE_SIZE,
-                    vspace::MapAction::ReadWriteUser,
+                    MapAction::ReadWriteUser,
                     0x1000,
                 )?;
 
@@ -97,8 +98,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     let bound = arg3;
     trace!("{:?} {:#x} {:#x}", op, base, bound);
 
-    let kcb = crate::kcb::get_kcb();
-    let mut plock = kcb.current_process();
+    let kcb = super::kcb::get_kcb();
+    let mut plock = kcb.arch.current_process();
 
     match op {
         VSpaceOperation::Map => unsafe {
@@ -118,12 +119,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                         .allocate_large_page()
                         .expect("We refilled so allocation should work.");
 
-                    (*p).vspace.map_frame(
-                        base,
-                        frame,
-                        vspace::MapAction::ReadWriteUser,
-                        &mut pmanager,
-                    )?;
+                    (*p).vspace
+                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut pmanager)?;
 
                     base += LARGE_PAGE_SIZE;
                     if paddr.is_none() {
@@ -135,12 +132,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                         .allocate_base_page()
                         .expect("We refilled so allocation should work.");
 
-                    (*p).vspace.map_frame(
-                        base,
-                        frame,
-                        vspace::MapAction::ReadWriteUser,
-                        &mut pmanager,
-                    )?;
+                    (*p).vspace
+                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut pmanager)?;
 
                     if paddr.is_none() {
                         paddr = Some(frame.base);
@@ -156,13 +149,13 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         VSpaceOperation::MapDevice => unsafe {
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
                 let paddr = PAddr::from(base.as_u64());
-                let kcb = crate::kcb::try_get_kcb().unwrap();
+                let kcb = crate::kcb::get_kcb();
                 let mut pmanager = kcb.mem_manager();
 
                 p.vspace.map_generic(
                     base,
                     (paddr, (bound - base.as_u64()) as usize),
-                    vspace::MapAction::ReadWriteUser,
+                    MapAction::ReadWriteUser,
                     &mut pmanager,
                 )?;
 
@@ -235,7 +228,7 @@ pub extern "C" fn syscall_handle(
     };
 
     let r = {
-        let kcb = crate::kcb::get_kcb();
+        let kcb = super::kcb::get_kcb();
 
         let _retcode = match status {
             Ok((a1, a2)) => {

@@ -13,6 +13,9 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
+use super::process::Ring3Process;
+use super::vspace::VSpace;
+use super::KernelArgs;
 
 use crate::kcb::Kcb;
 use crate::stack::{OwnedStack, Stack};
@@ -21,9 +24,9 @@ use crate::stack::{OwnedStack, Stack};
 ///
 /// This may return None if they KCB is not yet set
 /// (i.e., during initialization).
-pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
+pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<Arch86Kcb>> {
     unsafe {
-        let kcb = segmentation::rdgsbase() as *mut Kcb;
+        let kcb = segmentation::rdgsbase() as *mut Kcb<Arch86Kcb>;
         if kcb != ptr::null_mut() {
             let kptr = ptr::NonNull::new_unchecked(kcb);
             Some(&mut *kptr.as_ptr())
@@ -38,9 +41,9 @@ pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb> {
 /// # Panic
 /// This will fail in case the KCB is not yet set (i.e., early on during
 /// initialization).
-pub fn get_kcb<'a>() -> &'a mut Kcb {
+pub fn get_kcb<'a>() -> &'a mut Kcb<Arch86Kcb> {
     unsafe {
-        let kcb = segmentation::rdgsbase() as *mut Kcb;
+        let kcb = segmentation::rdgsbase() as *mut Kcb<Arch86Kcb>;
         assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
         let kptr = ptr::NonNull::new_unchecked(kcb);
         &mut *kptr.as_ptr()
@@ -54,7 +57,7 @@ pub fn get_kcb<'a>() -> &'a mut Kcb {
 /// when we call `swapgs` on a syscall entry, we restore the pointer
 /// to the KCB (user-space may change the `gs` register for
 /// TLS etc.).
-unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
+unsafe fn set_kcb<A>(kcb: ptr::NonNull<Kcb<A>>) {
     // Set up the GS register to point to the KCB
     segmentation::wrgsbase(kcb.as_ptr() as u64);
     // Set up swapgs instruction to reset the gs register to the KCB on irq, trap or syscall
@@ -64,15 +67,15 @@ unsafe fn set_kcb(kcb: ptr::NonNull<Kcb>) {
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb(kcb: &mut Kcb) {
-    let kptr: ptr::NonNull<Kcb> = ptr::NonNull::from(kcb);
+pub(crate) fn init_kcb<A>(kcb: &mut Kcb<A>) {
+    let kptr: ptr::NonNull<Kcb<A>> = ptr::NonNull::from(kcb);
     unsafe { set_kcb(kptr) };
 }
 
 /// Contains the arch-specific contents of the KCB.
 #[repr(C)]
-pub struct ArchKcb {
-    /// Pointer to the syscall stack (this is referenced in assembly early on in exec.S)
+pub struct Arch86Kcb {
+    /// Pointer to the syscall stack (this is )
     /// and should therefore always be at offset 0 of the Kcb struct!
     pub(crate) syscall_stack_top: *mut u8,
 
@@ -94,6 +97,15 @@ pub struct ArchKcb {
 
     /// A per-core IDT (interrupt table)
     pub(crate) idt: IdtTable,
+
+    /// Arguments passed to the kernel by the bootloader.
+    kernel_args: &'static KernelArgs,
+
+    /// A handle to the currently active (scheduled) process.
+    current_process: RefCell<Option<Box<Ring3Process>>>,
+
+    /// A handle to the initial address space (created for us by the bootloader)
+    init_vspace: RefCell<VSpace>,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -117,15 +129,23 @@ pub struct ArchKcb {
     syscall_stack: Option<OwnedStack>,
 }
 
-impl ArchKcb {
-    pub(crate) fn new(apic: XAPICDriver) -> ArchKcb {
-        ArchKcb {
+impl Arch86Kcb {
+    pub(crate) fn new(
+        kernel_args: &'static KernelArgs,
+        apic: XAPICDriver,
+        init_vspace: VSpace,
+    ) -> Arch86Kcb {
+        Arch86Kcb {
+            kernel_args,
             syscall_stack_top: ptr::null_mut(),
             apic: RefCell::new(apic),
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
             idt: Default::default(),
+            // We don't have a process initially
+            current_process: RefCell::new(None),
             save_area: None,
+            init_vspace: RefCell::new(init_vspace),
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
@@ -134,6 +154,22 @@ impl ArchKcb {
 
     pub fn apic(&self) -> RefMut<XAPICDriver> {
         self.apic.borrow_mut()
+    }
+
+    pub fn init_vspace(&self) -> RefMut<VSpace> {
+        self.init_vspace.borrow_mut()
+    }
+
+    /// Swaps out current process with a new process. Returns the old process.
+    pub fn swap_current_process(
+        &self,
+        new_current_process: Box<Ring3Process>,
+    ) -> Option<Box<Ring3Process>> {
+        self.current_process.replace(Some(new_current_process))
+    }
+
+    pub fn current_process(&self) -> RefMut<Option<Box<Ring3Process>>> {
+        self.current_process.borrow_mut()
     }
 
     pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
@@ -173,14 +209,6 @@ impl ArchKcb {
         self.save_area = Some(save_area);
     }
 
-    pub(crate) fn install(&mut self) {
-        unsafe {
-            // Switch to our new, core-local Gdt and Idt:
-            self.gdt.install();
-            self.idt.install();
-        }
-    }
-
     /// Get a pointer to the cores save-area.
     pub fn get_save_area_ptr(&self) -> *const kpi::arch::SaveArea {
         // TODO(unsafe): this probably doesn't need an unsafe, but I couldn't figure
@@ -190,6 +218,10 @@ impl ArchKcb {
                 &*(*self.save_area.as_ref().unwrap()),
             )
         }
+    }
+
+    pub fn kernel_args(&self) -> &'static KernelArgs {
+        self.kernel_args
     }
 
     #[cfg(feature = "test-double-fault")]
@@ -202,5 +234,41 @@ impl ArchKcb {
                 .as_ref()
                 .map_or(0, |s| s.base() as u64),
         )
+    }
+}
+
+impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
+    fn install(&mut self) {
+        unsafe {
+            // Switch to our new, core-local Gdt and Idt:
+            self.gdt.install();
+            self.idt.install();
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use core::mem::{self, MaybeUninit};
+
+    #[test]
+    fn syscall_stack_top_offset() {
+        let akcb: Arch86Kcb = unsafe { MaybeUninit::zeroed().assume_init() };
+        assert_eq!(
+            (&akcb.syscall_stack_top as *const _ as usize) - (&akcb as *const _ as usize),
+            0,
+            "The syscall_stack_top entry must be at offset 0 of KCB (referenced in assembly early on in exec.S)"
+        );
+    }
+
+    #[test]
+    fn save_area_offset() {
+        let akcb: Arch86Kcb = unsafe { MaybeUninit::zeroed().assume_init() };
+        assert_eq!(
+            (&akcb.save_area as *const _ as usize) - (&akcb as *const _ as usize),
+            8,
+            "The save_area entry must be at offset 8 of KCB (for assembly code)"
+        );
     }
 }

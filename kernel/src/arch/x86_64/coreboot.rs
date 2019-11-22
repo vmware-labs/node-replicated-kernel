@@ -9,10 +9,10 @@ use core::sync::atomic::AtomicBool;
 use x86::apic::{ApicControl, ApicId};
 use x86::current::paging::PAddr;
 
-use super::kcb;
-use super::vspace::MapAction;
-
+use crate::memory::vspace::MapAction;
 use crate::stack::Stack;
+
+use super::kcb;
 
 /// The 16-bit segement where our bootstrap code is.
 const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
@@ -77,7 +77,7 @@ unsafe fn copy_bootstrap_code() {
     let real_mode_destination: &'static mut [u8] = get_boostrap_code_region();
 
     let kcb = kcb::get_kcb();
-    kcb.init_vspace().map_identity(
+    kcb.arch.init_vspace().map_identity(
         PAddr::from(REAL_MODE_BASE as u64),
         PAddr::from(REAL_MODE_BASE + boot_code_size).align_up_to_base_page(),
         MapAction::ReadWriteExecuteKernel,
@@ -261,12 +261,12 @@ pub unsafe fn initialize<A>(
     copy_bootstrap_code();
 
     // Initialize bootstrap assembly with correct parameters
-    let kcb = crate::arch::kcb::get_kcb();
+    let kcb = super::kcb::get_kcb();
     setup_boostrap_code(
         init_function as u64,
         args,
         initialized,
-        kcb.init_vspace().pml4_address().into(),
+        kcb.arch.init_vspace().pml4_address().into(),
         stack.base() as u64,
     );
 

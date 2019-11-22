@@ -11,10 +11,9 @@ use x86::controlregs;
 
 use crate::alloc::string::ToString;
 use crate::memory::vspace::{AddressSpaceError, MapAction, ResourceType};
-use crate::memory::Frame;
+use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
 use super::kcb::get_kcb;
-use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr};
 
 pub struct VSpace {
     pub pml4: Pin<Box<PML4>>,

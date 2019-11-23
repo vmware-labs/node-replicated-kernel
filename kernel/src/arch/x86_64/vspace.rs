@@ -917,20 +917,6 @@ mod test {
     use core::ptr;
     use proptest::prelude::*;
 
-    /*#[test]
-    fn create_vspace() {
-        let mut vspace = VSpace::new();
-
-        let base = VAddr::from(0xfee0_0000u64);
-        let size = BASE_PAGE_SIZE;
-        let rights = MapAction::ReadWriteExecuteKernel;
-        let palignment = BASE_PAGE_SIZE as u64;
-
-        vspace
-            .map(base, size, rights, palignment)
-            .expect("Can't map stuff");
-    }*/
-
     prop_compose! {
         fn base_pages(max: u64)(base in 0..max) -> u64 { base & !0xfff }
     }

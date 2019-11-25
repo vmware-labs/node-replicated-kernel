@@ -1,14 +1,11 @@
 //! KCB is the local kernel control that stores all core local state.
 
-use alloc::boxed::Box;
 use core::cell::{RefCell, RefMut};
 
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
-use crate::arch::KernelArgs;
-use crate::memory::{tcache::TCache, vspace::AddressSpace, GlobalMemory};
-use crate::process::Process;
+use crate::memory::{tcache::TCache, GlobalMemory};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 

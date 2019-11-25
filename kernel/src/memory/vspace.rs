@@ -2,16 +2,23 @@
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use core::cmp::PartialEq;
 use core::fmt;
 
 use custom_error::custom_error;
 use kpi::SystemCallError;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 
-use super::{Frame, PAddr, PhysicalPageProvider, VAddr, BASE_PAGE_SIZE};
+use super::{Frame, PAddr, PhysicalPageProvider, VAddr};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TlbFlushHandle {}
+
+impl Default for TlbFlushHandle {
+    fn default() -> TlbFlushHandle {
+        TlbFlushHandle {}
+    }
+}
 
 /// Generic address space functionality.
 pub trait AddressSpace {
@@ -38,13 +45,16 @@ pub trait AddressSpace {
 
     /// Maps the given `frame` at `base` in the address space
     /// with the access rights defined by `action`.
+    ///
+    /// Will return an error if new mapping overlaps with
+    /// something already mapped.
     fn map_frame(
         &mut self,
         base: VAddr,
         frame: Frame,
         action: MapAction,
         pager: &mut dyn PhysicalPageProvider,
-    ) -> Result<PAddr, AddressSpaceError>;
+    ) -> Result<(), AddressSpaceError>;
 
     /// Estimates how many base-pages are needed (for page-tables)
     /// to map the given list of frames in the address space starting at `base`.
@@ -53,11 +63,11 @@ pub trait AddressSpace {
     /// before invoking map calls.
     fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize;
 
-    /// Changes the rights of all mapped Frames fully encapsulated by the range
-    /// given by `base` -- `base` + `length` to `rights`.
+    /// Changes the rights of frames for the region
+    /// given by [`base`, `base` + `length`) to `rights`.
     ///
     /// # Returns
-    /// How many frames were adjusted or an error.
+    /// How many pages were adjusted if successful.
     fn adjust(
         &mut self,
         base: VAddr,
@@ -86,17 +96,21 @@ pub trait AddressSpace {
 custom_error! {
 #[derive(PartialEq)]
 pub AddressSpaceError
-    AlreadyMapped{from: u64, to: u64} = "Address space operation covers existing mapping ({from} -- {to})",
+    InvalidFrame = "Supplied frame was invalid",
+    AlreadyMapped = "Address space operation covers existing mapping",
     BaseOverflow{base: u64} = "Provided virtual base was invalid (led to overflow on mappings).",
     NotMapped = "The requested mapping was not found",
+    InvalidLength = "The supplied length was invalid",
 }
 
 impl Into<SystemCallError> for AddressSpaceError {
     fn into(self) -> SystemCallError {
         match self {
-            AddressSpaceError::AlreadyMapped { from: _, to: _ } => SystemCallError::InternalError,
+            AddressSpaceError::InvalidFrame => SystemCallError::InternalError,
+            AddressSpaceError::AlreadyMapped => SystemCallError::InternalError,
             AddressSpaceError::BaseOverflow { base: _ } => SystemCallError::InternalError,
             AddressSpaceError::NotMapped => SystemCallError::InternalError,
+            AddressSpaceError::InvalidLength => SystemCallError::InternalError,
         }
     }
 }
@@ -175,6 +189,114 @@ impl MapAction {
     }
 }
 
+impl From<PTFlags> for MapAction {
+    fn from(f: PTFlags) -> MapAction {
+        use MapAction::*;
+        let irrelevant_bits: PTFlags =
+            PTFlags::PWT | PTFlags::PCD | PTFlags::A | PTFlags::D | PTFlags::G | PTFlags::PWT;
+
+        let mut cleaned = f;
+        cleaned.remove(irrelevant_bits);
+
+        // Ugly if else (due to https://github.com/bitflags/bitflags/issues/201)
+        if cleaned == PTFlags::P | PTFlags::US | PTFlags::XD {
+            MapAction::ReadUser
+        } else if cleaned == PTFlags::XD | PTFlags::P {
+            MapAction::ReadKernel
+        } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::US | PTFlags::P {
+            ReadWriteUser
+        } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::P {
+            ReadWriteKernel
+        } else if cleaned == PTFlags::US | PTFlags::P {
+            ReadExecuteUser
+        } else if cleaned == PTFlags::RW | PTFlags::US | PTFlags::P {
+            ReadWriteExecuteUser
+        } else if cleaned == PTFlags::RW | PTFlags::P {
+            ReadWriteExecuteKernel
+        } else if cleaned == PTFlags::P {
+            ReadExecuteKernel
+        } else {
+            None
+        }
+    }
+}
+
+impl From<PDFlags> for MapAction {
+    fn from(f: PDFlags) -> MapAction {
+        use MapAction::*;
+
+        let irrelevant_bits = PDFlags::PWT
+            | PDFlags::PCD
+            | PDFlags::A
+            | PDFlags::D
+            | PDFlags::PS
+            | PDFlags::G
+            | PDFlags::PAT;
+
+        let mut cleaned = f;
+        cleaned.remove(irrelevant_bits);
+
+        // Ugly if else (due to https://github.com/bitflags/bitflags/issues/201)
+        if cleaned == PDFlags::P | PDFlags::US | PDFlags::XD {
+            MapAction::ReadUser
+        } else if cleaned == PDFlags::XD | PDFlags::P {
+            MapAction::ReadKernel
+        } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::US | PDFlags::P {
+            ReadWriteUser
+        } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::P {
+            ReadWriteKernel
+        } else if cleaned == PDFlags::US | PDFlags::P {
+            ReadExecuteUser
+        } else if cleaned == PDFlags::RW | PDFlags::US | PDFlags::P {
+            ReadWriteExecuteUser
+        } else if cleaned == PDFlags::RW | PDFlags::P {
+            ReadWriteExecuteKernel
+        } else if cleaned == PDFlags::P {
+            ReadExecuteKernel
+        } else {
+            None
+        }
+    }
+}
+
+impl From<PDPTFlags> for MapAction {
+    fn from(f: PDPTFlags) -> MapAction {
+        use MapAction::*;
+
+        let irrelevant_bits: PDPTFlags = PDPTFlags::PWT
+            | PDPTFlags::PCD
+            | PDPTFlags::A
+            | PDPTFlags::D
+            | PDPTFlags::PS
+            | PDPTFlags::G
+            | PDPTFlags::PAT;
+
+        let mut cleaned = f;
+        cleaned.remove(irrelevant_bits);
+
+        // Ugly if else (due to https://github.com/bitflags/bitflags/issues/201)
+        if cleaned == PDPTFlags::P | PDPTFlags::US | PDPTFlags::XD {
+            MapAction::ReadUser
+        } else if cleaned == PDPTFlags::XD | PDPTFlags::P {
+            MapAction::ReadKernel
+        } else if cleaned == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US | PDPTFlags::P {
+            ReadWriteUser
+        } else if cleaned == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::P {
+            ReadWriteKernel
+        } else if cleaned == PDPTFlags::US | PDPTFlags::P {
+            ReadExecuteUser
+        } else if cleaned == PDPTFlags::RW | PDPTFlags::US | PDPTFlags::P {
+            ReadWriteExecuteUser
+        } else if cleaned == PDPTFlags::RW | PDPTFlags::P {
+            ReadWriteExecuteKernel
+        } else if cleaned == PDPTFlags::P {
+            ReadExecuteKernel
+        } else {
+            None
+        }
+    }
+}
+
 impl fmt::Display for MapAction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use MapAction::*;
@@ -195,12 +317,8 @@ impl fmt::Display for MapAction {
 /// Type of resource we're trying to allocate
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ResourceType {
-    /// ELF Binary data
-    Binary,
     /// Physical memory
     Memory,
-    /// Page-table meta-data
-    PageTable,
 }
 
 /// Implementation of a model vspace (for testing)
@@ -237,19 +355,25 @@ pub(crate) mod model {
             frame: Frame,
             action: MapAction,
             pager: &mut dyn PhysicalPageProvider,
-        ) -> Result<PAddr, AddressSpaceError> {
+        ) -> Result<(), AddressSpaceError> {
+            if frame.size() == 0 {
+                return Err(AddressSpaceError::InvalidFrame);
+            }
             let covering_range = base.as_usize()..(base.as_usize() + frame.size());
 
             // Check that no previous mapping covers the range we're trying to map
-            if self.mappings.range(covering_range).count() == 0 {
-                self.mappings.insert(base.as_usize(), (frame, action));
-                Ok(frame.base)
-            } else {
-                Err(AddressSpaceError::AlreadyMapped {
-                    from: base.as_u64(),
-                    to: base.as_u64() + frame.size() as u64,
-                })
+            for (vbase, (frame, rights)) in self.mappings.iter() {
+                let total_range = core::cmp::max(*vbase + frame.size(), covering_range.end)
+                    - core::cmp::min(*vbase, covering_range.start);
+                let sum_ranges =
+                    ((vbase + frame.size()) - *vbase) + (covering_range.end - covering_range.start);
+                if sum_ranges > total_range {
+                    return Err(AddressSpaceError::AlreadyMapped);
+                }
             }
+
+            self.mappings.insert(base.as_usize(), (frame, action));
+            Ok(())
         }
 
         fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize {
@@ -279,7 +403,8 @@ pub(crate) mod model {
             for (base, (frame, rights)) in self.mappings.iter() {
                 let covering_range = *base..(*base + frame.size());
                 if covering_range.contains(&vaddr.as_usize()) {
-                    return Ok((frame.base, *rights));
+                    let offset = vaddr.as_usize() - covering_range.start;
+                    return Ok((frame.base + offset, *rights));
                 }
             }
 
@@ -309,7 +434,6 @@ pub(crate) mod model {
         let ret = a
             .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
             .expect("Can't map frame");
-        assert_eq!(ret, frame_base);
 
         let (ret_paddr, ret_rights) = a.resolve(va).expect("Can't resolve");
         assert_eq!(ret_paddr, frame_base);
@@ -341,5 +465,65 @@ pub(crate) mod model {
             .unmap(va)
             .expect_err("unmap of not mapped region succeeds?");
         assert_eq!(e, AddressSpaceError::NotMapped);
+    }
+
+    #[test]
+    fn model_bug_already_mapped() {
+        let mut a: ModelAddressSpace = Default::default();
+        let mut tcache = TCache::new(0, 0);
+
+        let va = VAddr::from(0x489000);
+        let frame_base = PAddr::from(0xdeaf_0000u64);
+        let frame = Frame::new(frame_base, 4096, 0);
+
+        let ret = a
+            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .expect("Can't map frame");
+
+        let va = VAddr::from(0xd4000);
+        let frame_base = PAddr::from(0xde_0000);
+        let frame = Frame::new(frame_base, 0x3b6000, 0);
+
+        let ret = a
+            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .expect_err("Could map frame");
+    }
+
+    #[test]
+    fn model_bug_already_mapped2() {
+        let _r = env_logger::try_init();
+        let mut a: ModelAddressSpace = Default::default();
+        let mut tcache = TCache::new(0, 0);
+
+        let va = VAddr::from(0x1ad000);
+        let frame_base = PAddr::from(0x0);
+        let frame = Frame::new(frame_base, 0xa7000, 0);
+
+        let ret = a
+            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .expect("Failed to map frame?");
+
+        let va = VAddr::from(0x1ae000);
+        let frame_base = PAddr::from(0x0);
+        let frame = Frame::new(frame_base, 0x1000, 0);
+
+        let ret = a
+            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .expect_err("Could map frame?");
+    }
+
+    /// If written as match converting from PTFlags etc. has
+    /// problems
+    /// https://github.com/bitflags/bitflags/issues/201
+    #[test]
+    fn from_ptflags() {
+        let ru = PTFlags::P | PTFlags::US | PTFlags::XD;
+        let ma: MapAction = ru.into();
+        assert_eq!(ma, MapAction::ReadUser);
+
+        let rk = PTFlags::XD | PTFlags::P;
+        assert_ne!(ru, rk);
+        let ma: MapAction = rk.into();
+        assert_eq!(ma, MapAction::ReadKernel);
     }
 }

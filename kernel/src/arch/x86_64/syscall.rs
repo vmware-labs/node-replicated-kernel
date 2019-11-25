@@ -7,11 +7,11 @@ use kpi::arch::VirtualCpu;
 use kpi::*;
 
 use crate::error::KError;
-use crate::memory::vspace::MapAction;
+use crate::memory::vspace::{AddressSpace, MapAction};
+use crate::memory::PhysicalPageProvider;
 
 use super::gdt::GdtTable;
 use super::process::{UserPtr, UserValue};
-use super::vspace;
 
 extern "C" {
     #[no_mangle]
@@ -104,7 +104,6 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     match op {
         VSpaceOperation::Map => unsafe {
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
-                use crate::memory::PhysicalPageProvider;
                 let (bp, lp) = crate::memory::size_to_pages(bound as usize);
 
                 crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)
@@ -114,26 +113,26 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                 let mut base = base;
                 let mut paddr = None;
 
-                for i in 0..lp {
+                for _i in 0..lp {
                     let frame = pmanager
                         .allocate_large_page()
                         .expect("We refilled so allocation should work.");
 
                     (*p).vspace
-                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut pmanager)?;
+                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut *pmanager)?;
 
                     base += LARGE_PAGE_SIZE;
                     if paddr.is_none() {
                         paddr = Some(frame.base);
                     }
                 }
-                for i in 0..bp {
+                for _i in 0..bp {
                     let frame = pmanager
                         .allocate_base_page()
                         .expect("We refilled so allocation should work.");
 
                     (*p).vspace
-                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut pmanager)?;
+                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut *pmanager)?;
 
                     if paddr.is_none() {
                         paddr = Some(frame.base);
@@ -156,7 +155,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                     base,
                     (paddr, (bound - base.as_u64()) as usize),
                     MapAction::ReadWriteUser,
-                    &mut pmanager,
+                    &mut *pmanager,
                 )?;
 
                 tlb::flush_all();

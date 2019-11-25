@@ -27,12 +27,6 @@ impl EarlyPhysicalManager {
         }
     }
 
-    /// Consumes the allocator and recovers the underlying memory
-    /// by returning the remaining Frame.
-    pub fn unwrap(self) -> Frame {
-        self.region
-    }
-
     pub unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, AllocationError> {
         assert!(layout.align() <= BASE_PAGE_SIZE, "Alignment mismatch.");
         let size = round_up!(layout.size(), BASE_PAGE_SIZE);

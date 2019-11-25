@@ -195,11 +195,6 @@ impl IdtTable {
         table
     }
 
-    /// Create a new IdtTable (with default entries).
-    fn new() -> IdtTable {
-        Default::default()
-    }
-
     /// Install the IdtTable in the current core.
     pub unsafe fn install(&self) {
         let idtptr = dtables::DescriptorTablePointer::new_from_slice(&self.0);
@@ -514,7 +509,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 /// Registers a handler IRQ handler function.
 pub unsafe fn register_handler(
     vector: usize,
-    handler: Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>,
+    _handler: Box<dyn Fn(&ExceptionArguments) -> () + Send + 'static>,
 ) {
     if vector > IDT_SIZE - 1 {
         debug!("Invalid vector!");

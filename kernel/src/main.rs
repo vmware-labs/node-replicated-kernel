@@ -97,19 +97,10 @@ pub fn xmain() {
 
     debug!("allocating a region of mem");
     unsafe {
-        {
-            let mem_mgmt = kcb::get_kcb().mem_manager();
-            //info!("{:?}", mem_mgmt);
-        }
         let new_region: *mut u8 =
             alloc::alloc::alloc(core::alloc::Layout::from_size_align_unchecked(8192, 4096));
         let p: *mut u8 = new_region.offset(4096);
         assert!(!p.is_null());
-
-        {
-            let mem_mgmt = kcb::get_kcb().mem_manager();
-            //info!("{:?}", mem_mgmt);
-        }
     }
 
     arch::debug::shutdown(ExitReason::Ok);

@@ -266,7 +266,9 @@ mod test {
     fn ncache_invalid_base_frame_size() {
         let mut ncache = get_an_ncache();
         ncache.node = 4;
-        ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4));
+        ncache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4))
+            .expect("release");
     }
 
     /// Can't add wrong size.
@@ -275,7 +277,9 @@ mod test {
     fn ncache_invalid_base_frame_align() {
         let mut ncache = get_an_ncache();
         ncache.node = 4;
-        ncache.release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4));
+        ncache
+            .release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4))
+            .expect("release");
     }
 
     /// Can't add wrong affinity.
@@ -284,7 +288,9 @@ mod test {
     fn ncache_invalid_affinity() {
         let mut ncache = get_an_ncache();
         ncache.node = 1;
-        ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4));
+        ncache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
+            .expect("release");
     }
 
     /// Test the grow interface of the NCache.
@@ -298,13 +304,13 @@ mod test {
             Frame::new(PAddr::from(0x2000), 0x1000, 4),
             Frame::new(PAddr::from(0x3000), 0x1000, 4),
         ];
-        ncache.grow_base_pages(frames);
+        ncache.grow_base_pages(frames).expect("release");
 
         let frames = &[
             Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 4),
             Frame::new(PAddr::from(LARGE_PAGE_SIZE * 4), LARGE_PAGE_SIZE, 4),
         ];
-        ncache.grow_large_pages(frames);
+        ncache.grow_large_pages(frames).expect("release");
 
         let mut free_list = [None];
         ncache.reap_base_pages(&mut free_list);
@@ -338,15 +344,23 @@ mod test {
         ncache.node = 2;
 
         // Insert some pages
-        ncache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2));
-        ncache.release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 2));
+        ncache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2))
+            .expect("release");
+        ncache
+            .release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 2))
+            .expect("release");
 
-        ncache.release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 2));
-        ncache.release_large_page(Frame::new(
-            PAddr::from(LARGE_PAGE_SIZE * 2),
-            LARGE_PAGE_SIZE,
-            2,
-        ));
+        ncache
+            .release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 2))
+            .expect("release");
+        ncache
+            .release_large_page(Frame::new(
+                PAddr::from(LARGE_PAGE_SIZE * 2),
+                LARGE_PAGE_SIZE,
+                2,
+            ))
+            .expect("release");
         assert_eq!(ncache.free(), 2 * BASE_PAGE_SIZE + 2 * LARGE_PAGE_SIZE);
 
         // Can we allocate

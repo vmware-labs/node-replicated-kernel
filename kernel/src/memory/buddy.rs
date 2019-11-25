@@ -344,11 +344,6 @@ impl BuddyFrameAllocator {
             )
         }
     }
-
-    fn print_info(&self) {
-        info!("Found the following physical memory regions:");
-        info!("{:?}", self.region);
-    }
 }
 
 impl fmt::Debug for BuddyFrameAllocator {
@@ -507,7 +502,7 @@ pub mod test {
             ];
 
             for size in 0..8192 {
-                for align in power_of_twos.into_iter() {
+                for align in power_of_twos.iter() {
                     // Simple allocations just round up to next block size.
                     // Aligned allocations use alignment as block size.
                     match Layout::from_size_align(size, *align) {
@@ -926,7 +921,7 @@ pub mod test {
     /// Test that we can allocate a 2 MiB page from a large enough frame.
     fn can_alloc_two_mib() {
         unsafe {
-            klogger::init(log::Level::Trace);
+            klogger::init(log::Level::Trace).expect("Logger init");
 
             let heap_size: usize = 128 * 1024 * 1024;
             assert!(heap_size.is_power_of_two());
@@ -953,7 +948,7 @@ pub mod test {
     /// Test that we can allocate a 2 MiB page from a large enough frame.
     fn two_mib_heap_exhaust() {
         unsafe {
-            klogger::init(log::Level::Trace);
+            klogger::init(log::Level::Trace).expect("logger init");
 
             let heap_size: usize = 512 * 1024 * 1024;
             assert!(heap_size.is_power_of_two());

@@ -70,7 +70,6 @@ fn get_boostrap_code_size() -> usize {
 /// by just excluding everything below 1 MiB from every being
 /// allocated).
 unsafe fn copy_bootstrap_code() {
-    let (start_address, _end_address) = ap_code_address_range();
     let boot_code_size = get_boostrap_code_size();
 
     let ap_bootstrap_code: &'static [u8] = get_orignal_bootstrap_code();

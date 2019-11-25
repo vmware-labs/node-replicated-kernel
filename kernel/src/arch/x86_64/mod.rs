@@ -55,9 +55,7 @@ use logos::Logos;
 use spin::Mutex;
 
 use crate::kcb::Kcb;
-use crate::memory::{
-    ncache, tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
-};
+use crate::memory::{tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -277,7 +275,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         irq::setup_early_idt();
     };
 
-    let mut emanager = tcache::TCache::new(args.thread, args.node);
+    let emanager = tcache::TCache::new(args.thread, args.node);
     let init_vspace = unsafe { find_current_vspace() }; // Safe, done once during init
 
     let arch = kcb::Arch86Kcb::new(args.kernel_args, init_apic(), init_vspace);
@@ -362,14 +360,10 @@ fn boot_app_cores(
 
         // A simple stack for the app core (non bootstrap core)
         let coreboot_stack: OwnedStack = OwnedStack::new(4096 * 32);
-
-        let k = kcb::get_kcb();
-        let mem_region = unsafe {
-            global_memory.node_caches[node as usize]
-                .lock()
-                .allocate_large_page()
-                .expect("Can't allocate large page")
-        };
+        let mem_region = global_memory.node_caches[node as usize]
+            .lock()
+            .allocate_large_page()
+            .expect("Can't allocate large page");
 
         let initialized: AtomicBool = AtomicBool::new(false);
         let arg: Arc<AppCoreArgs> = Arc::new(AppCoreArgs {
@@ -447,9 +441,6 @@ fn identify_numa_affinity(
                                 annotated_regions.push(annotated_frame);
                             }
                         }
-                        (_, _, _) => {
-                            /* `orig_frame` does not overlap with this affinity region */
-                        }
                     }
                 }
             }
@@ -518,13 +509,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // We should catch page-faults and general protection faults from here...
 
-    let mut kernel_args: &'static mut KernelArgs =
-        unsafe { transmute::<u64, &'static mut KernelArgs>(argc as u64) };
+    let kernel_args: &'static KernelArgs =
+        unsafe { transmute::<u64, &'static KernelArgs>(argc as u64) };
 
     // TODO(fix): Because we only have a borrow of KernelArgs we have to work too hard to get mm_iter
     let mm_iter = unsafe {
         let mut mm_iter: uefi::table::boot::MemoryMapIter<'static> =
-            unsafe { core::mem::MaybeUninit::zeroed().assume_init() };
+            core::mem::MaybeUninit::zeroed().assume_init();
         core::ptr::copy_nonoverlapping(
             &kernel_args.mm_iter as *const uefi::table::boot::MemoryMapIter,
             &mut mm_iter as *mut uefi::table::boot::MemoryMapIter,
@@ -675,9 +666,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_physical_memory_manager(tcache);
     }
 
-    let mut log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));
-    let mut bsp_replica = Arc::new(Replica::<KernelNode>::new(&log));
-    let local_ridx = bsp_replica
+    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));
+    let bsp_replica = Arc::new(Replica::<KernelNode>::new(&log));
+    let _local_ridx = bsp_replica
         .register()
         .expect("Failed to register with Replica.");
 

@@ -13,8 +13,6 @@ use super::*;
 /// Holds two stacks of pages for O(1) allocation/deallocation.
 /// Implements the `ReapBackend` to give pages back.
 pub struct TCache {
-    /// Which thread this TCache is used on.
-    thread: topology::ThreadId,
     /// Which node the memory in this cache is from.
     node: topology::NodeId,
     /// A vector of free, cached base-page addresses.
@@ -24,9 +22,8 @@ pub struct TCache {
 }
 
 impl TCache {
-    pub fn new(thread: topology::ThreadId, node: topology::NodeId) -> TCache {
+    pub fn new(_thread: topology::ThreadId, node: topology::NodeId) -> TCache {
         TCache {
-            thread,
             node,
             base_page_addresses: arrayvec::ArrayVec::new(),
             large_page_addresses: arrayvec::ArrayVec::new(),
@@ -115,12 +112,6 @@ impl TCache {
         Frame::new(pa, LARGE_PAGE_SIZE, self.node)
     }
 
-    /// How much free memory we can maintain.
-    fn capacity(&self) -> usize {
-        self.base_page_addresses.capacity() * BASE_PAGE_SIZE
-            + self.large_page_addresses.capacity() * LARGE_PAGE_SIZE
-    }
-
     /// How many basepages we can allocate from the cache.
     pub(crate) fn free_base_pages(&self) -> usize {
         self.base_page_addresses.len()
@@ -130,11 +121,31 @@ impl TCache {
     pub(crate) fn free_large_pages(&self) -> usize {
         self.large_page_addresses.len()
     }
+}
 
+impl AllocatorStatistics for TCache {
     /// How much free memory (bytes) we have left.
     fn free(&self) -> usize {
         self.base_page_addresses.len() * BASE_PAGE_SIZE
             + self.large_page_addresses.len() * LARGE_PAGE_SIZE
+    }
+
+    /// How much free memory we can maintain.
+    fn capacity(&self) -> usize {
+        self.base_page_addresses.capacity() * BASE_PAGE_SIZE
+            + self.large_page_addresses.capacity() * LARGE_PAGE_SIZE
+    }
+
+    fn allocated(&self) -> usize {
+        0
+    }
+
+    fn size(&self) -> usize {
+        0
+    }
+
+    fn internal_fragmentation(&self) -> usize {
+        0
     }
 }
 
@@ -274,7 +285,9 @@ mod test {
     #[should_panic]
     fn tcache_invalid_base_frame_size() {
         let mut tcache = TCache::new(1, 4);
-        tcache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4));
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4))
+            .expect("release");
     }
 
     /// Can't add wrong size.
@@ -282,7 +295,9 @@ mod test {
     #[should_panic]
     fn tcache_invalid_base_frame_align() {
         let mut tcache = TCache::new(1, 4);
-        tcache.release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4));
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4))
+            .expect("release");
     }
 
     /// Can't add wrong affinity.
@@ -290,7 +305,9 @@ mod test {
     #[should_panic]
     fn tcache_invalid_affinity() {
         let mut tcache = TCache::new(1, 1);
-        tcache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4));
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
+            .expect("release");
     }
 
     /// Test that reap interface of the TCache.
@@ -299,15 +316,23 @@ mod test {
         let mut tcache = TCache::new(1, 4);
 
         // Insert some pages
-        tcache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4));
-        tcache.release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 4));
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
+            .expect("release");
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 4))
+            .expect("release");
 
-        tcache.release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 4));
-        tcache.release_large_page(Frame::new(
-            PAddr::from(LARGE_PAGE_SIZE * 4),
-            LARGE_PAGE_SIZE,
-            4,
-        ));
+        tcache
+            .release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 4))
+            .expect("release");
+        tcache
+            .release_large_page(Frame::new(
+                PAddr::from(LARGE_PAGE_SIZE * 4),
+                LARGE_PAGE_SIZE,
+                4,
+            ))
+            .expect("release");
 
         let mut free_list = [None];
         tcache.reap_base_pages(&mut free_list);
@@ -340,15 +365,23 @@ mod test {
         let mut tcache = TCache::new(1, 2);
 
         // Insert some pages
-        tcache.release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2));
-        tcache.release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 2));
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2))
+            .expect("release");
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 2))
+            .expect("release");
 
-        tcache.release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 2));
-        tcache.release_large_page(Frame::new(
-            PAddr::from(LARGE_PAGE_SIZE * 2),
-            LARGE_PAGE_SIZE,
-            2,
-        ));
+        tcache
+            .release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 2))
+            .expect("release");
+        tcache
+            .release_large_page(Frame::new(
+                PAddr::from(LARGE_PAGE_SIZE * 2),
+                LARGE_PAGE_SIZE,
+                2,
+            ))
+            .expect("release");
         assert_eq!(tcache.free(), 2 * BASE_PAGE_SIZE + 2 * LARGE_PAGE_SIZE);
 
         // Can we allocate

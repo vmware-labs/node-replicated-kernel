@@ -1,22 +1,114 @@
-use core::fmt;
 use core::mem::transmute;
 use core::pin::Pin;
 
 use alloc::boxed::Box;
 use alloc::string::String;
 
-use kpi::SystemCallError;
 use x86::bits64::paging::*;
 use x86::controlregs;
 
-use crate::alloc::string::ToString;
-use crate::memory::vspace::{AddressSpaceError, MapAction, ResourceType};
-use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
-
-use super::kcb::get_kcb;
+use crate::memory::vspace::*;
+use crate::memory::{
+    kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, PhysicalPageProvider, VAddr,
+};
 
 pub struct VSpace {
     pub pml4: Pin<Box<PML4>>,
+}
+
+impl AddressSpace for VSpace {
+    fn map_frame(
+        &mut self,
+        base: VAddr,
+        frame: Frame,
+        action: MapAction,
+        pager: &mut dyn PhysicalPageProvider,
+    ) -> Result<(), AddressSpaceError> {
+        if frame.size() == 0 {
+            return Err(AddressSpaceError::InvalidFrame);
+        }
+
+        // This will check that the current region doesn't overlap
+        // with an already mapped one (and return AddressSpaceError if so)
+        // TODO(performance): This can be done faster (rather than trying
+        // to map with a None action)
+        self.map_generic(base, (frame.base, frame.size()), MapAction::None, pager)?;
+
+        self.map_generic(base, (frame.base, frame.size()), action, pager)
+    }
+
+    fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {
+        20
+    }
+
+    fn adjust(
+        &mut self,
+        _base: VAddr,
+        _length: usize,
+        _rights: MapAction,
+    ) -> Result<usize, AddressSpaceError> {
+        Ok(0)
+    }
+
+    fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
+        let pml4_idx = pml4_index(addr);
+        if self.pml4[pml4_idx].is_present() {
+            let pdpt_idx = pdpt_index(addr);
+            let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+            if pdpt[pdpt_idx].is_present() {
+                if pdpt[pdpt_idx].is_page() {
+                    // Page is a 1 GiB mapping, we have to return here
+                    let page_offset = addr.huge_page_offset();
+                    let paddr = pdpt[pdpt_idx].address() + page_offset;
+                    let flags: MapAction = pdpt[pdpt_idx].flags().into();
+                    info!(
+                        "resolve 1 GiB flags = {:?} action = {:?}",
+                        pdpt[pdpt_idx].flags(),
+                        flags
+                    );
+                    return Ok((paddr, flags));
+                } else {
+                    let pd_idx = pd_index(addr);
+                    let pd = self.get_pd(pdpt[pdpt_idx]);
+                    if pd[pd_idx].is_present() {
+                        if pd[pd_idx].is_page() {
+                            // Encountered a 2 MiB mapping, we have to return here
+                            let page_offset = addr.large_page_offset();
+                            let paddr = pd[pd_idx].address() + page_offset;
+                            let flags: MapAction = pd[pd_idx].flags().into();
+                            info!(
+                                "resolve 2 MiB flags = {:?} action = {:?}",
+                                pd[pd_idx].flags(),
+                                flags
+                            );
+                            return Ok((paddr, flags));
+                        } else {
+                            let pt_idx = pt_index(addr);
+                            let pt = self.get_pt(pd[pd_idx]);
+                            if pt[pt_idx].is_present() {
+                                let page_offset = addr.base_page_offset();
+                                let paddr = pt[pt_idx].address() + page_offset;
+                                let flags: MapAction = pt[pt_idx].flags().into();
+                                info!(
+                                    "resolve 4 KiB flags = {:?} action = {:?}",
+                                    pt[pt_idx].flags(),
+                                    flags
+                                );
+                                return Ok((paddr, flags));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // else:
+        Err(AddressSpaceError::NotMapped)
+    }
+
+    fn unmap(&mut self, _base: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+        //Ok((Default::default(), Frame::empty()))
+        Err(AddressSpaceError::NotMapped)
+    }
 }
 
 impl Drop for VSpace {
@@ -71,7 +163,7 @@ impl VSpace {
         let kcb = crate::kcb::get_kcb();
         let mut pmanager = kcb.mem_manager();
 
-        self.map_generic(vbase, (pbase, size), rights, &mut pmanager)
+        self.map_generic(vbase, (pbase, size), rights, &mut *pmanager)
     }
 
     /// Constructs an identity map in this region of memory.
@@ -95,13 +187,12 @@ impl VSpace {
         vbase: VAddr,
         pregion: (PAddr, usize),
         rights: MapAction,
-        pager: &mut crate::memory::tcache::TCache,
+        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
         let (pbase, psize) = pregion;
         assert_eq!(pbase % BASE_PAGE_SIZE, 0);
         assert_eq!(psize % BASE_PAGE_SIZE, 0);
         assert_eq!(vbase % BASE_PAGE_SIZE, 0);
-        assert_ne!(rights, MapAction::None, "TODO: Should we allow that?");
 
         debug!(
             "map_generic {:#x} -- {:#x} -> {:#x} -- {:#x} {}",
@@ -124,7 +215,6 @@ impl VSpace {
 
         let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
         let mut pdpt_idx = pdpt_index(vbase);
-        // TODO: if we support None mappings, this is if not good enough:
         if !pdpt[pdpt_idx].is_present() {
             // The virtual address corresponding to our position within the page-table
             let vaddr_pos: usize = PML4_SLOT_SIZE * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx;
@@ -141,18 +231,26 @@ impl VSpace {
                 // Add entries to PDPT as long as we're within this allocated PDPT table
                 // and have 1 GiB chunks to map:
                 while mapped < psize && ((psize - mapped) >= HUGE_PAGE_SIZE) && pdpt_idx < 512 {
-                    assert!(!pdpt[pdpt_idx].is_present());
-                    pdpt[pdpt_idx] = PDPTEntry::new(
-                        pbase + mapped,
-                        PDPTFlags::P | PDPTFlags::PS | rights.to_pdpt_rights(),
-                    );
-                    trace!(
-                        "Mapped 1GiB range {:#x} -- {:#x} -> {:#x} -- {:#x}",
-                        vbase + mapped,
-                        (vbase + mapped) + HUGE_PAGE_SIZE,
-                        pbase + mapped,
-                        (vbase + mapped) + HUGE_PAGE_SIZE
-                    );
+                    if let MapAction::None = rights {
+                        // Check if we could map in theory (no overlap)
+                        if pdpt[pdpt_idx].is_present() {
+                            return Err(AddressSpaceError::AlreadyMapped);
+                        }
+                    } else {
+                        assert!(!pdpt[pdpt_idx].is_present());
+                        pdpt[pdpt_idx] = PDPTEntry::new(
+                            pbase + mapped,
+                            PDPTFlags::P | PDPTFlags::PS | rights.to_pdpt_rights(),
+                        );
+
+                        trace!(
+                            "Mapped 1GiB range {:#x} -- {:#x} -> {:#x} -- {:#x}",
+                            vbase + mapped,
+                            (vbase + mapped) + HUGE_PAGE_SIZE,
+                            pbase + mapped,
+                            (vbase + mapped) + HUGE_PAGE_SIZE
+                        );
+                    }
 
                     pdpt_idx += 1;
                     mapped += HUGE_PAGE_SIZE;
@@ -190,10 +288,17 @@ impl VSpace {
             pdpt[pdpt_idx].is_present(),
             "The PDPT entry we're relying on is not allocated?"
         );
-        assert!(
-            !pdpt[pdpt_idx].is_page(),
-            "An existing mapping already covers the 1 GiB range we're trying to map in?"
-        );
+
+        if pdpt[pdpt_idx].is_page() {
+            if let MapAction::None = rights {
+                // Check if we could map in theory (no overlap)
+                return Err(AddressSpaceError::AlreadyMapped);
+            } else {
+                panic!(
+                    "An existing mapping already covers the 1 GiB range we're trying to map in?"
+                );
+            }
+        }
 
         let pd = self.get_pd(pdpt[pdpt_idx]);
         let mut pd_idx = pd_index(vbase);
@@ -211,21 +316,25 @@ impl VSpace {
                 // Add entries as long as we are within this allocated PDPT table
                 // and have at least 2 MiB things to map
                 while mapped < psize && ((psize - mapped) >= LARGE_PAGE_SIZE) && pd_idx < 512 {
-                    if pd[pd_idx].is_present() {
-                        panic!("Already mapped pd at {:#x}", pbase + mapped);
+                    if let MapAction::None = rights {
+                        if pd[pd_idx].is_present() {
+                            // Check if we could map in theory (no overlap)
+                            return Err(AddressSpaceError::AlreadyMapped);
+                        }
+                    } else {
+                        assert!(!pd[pd_idx].is_present());
+                        pd[pd_idx] = PDEntry::new(
+                            pbase + mapped,
+                            PDFlags::P | PDFlags::PS | rights.to_pd_rights(),
+                        );
+                        trace!(
+                            "Mapped 2 MiB region {:#x} -- {:#x} -> {:#x} -- {:#x}",
+                            vbase + mapped,
+                            (vbase + mapped) + LARGE_PAGE_SIZE,
+                            pbase + mapped,
+                            (pbase + mapped) + LARGE_PAGE_SIZE
+                        );
                     }
-
-                    pd[pd_idx] = PDEntry::new(
-                        pbase + mapped,
-                        PDFlags::P | PDFlags::PS | rights.to_pd_rights(),
-                    );
-                    trace!(
-                        "Mapped 2 MiB region {:#x} -- {:#x} -> {:#x} -- {:#x}",
-                        vbase + mapped,
-                        (vbase + mapped) + LARGE_PAGE_SIZE,
-                        pbase + mapped,
-                        (pbase + mapped) + LARGE_PAGE_SIZE
-                    );
 
                     pd_idx += 1;
                     mapped += LARGE_PAGE_SIZE;
@@ -263,22 +372,33 @@ impl VSpace {
             pd[pd_idx].is_present(),
             "The PD entry we're relying on is not allocated?"
         );
-        assert!(
-            !pd[pd_idx].is_page(),
-            "An existing mapping already covers the 2 MiB range we're trying to map in?"
-        );
+
+        if pd[pd_idx].is_page() {
+            if let MapAction::None = rights {
+                // Check if we could map in theory (no overlap)
+                return Err(AddressSpaceError::AlreadyMapped);
+            } else {
+                panic!(
+                    "An existing mapping already covers the 2 MiB range we're trying to map in?"
+                );
+            }
+        }
 
         let pt = self.get_pt(pd[pd_idx]);
         let mut pt_idx = pt_index(vbase);
         let mut mapped: usize = 0;
         while mapped < psize && pt_idx < 512 {
-            if !pt[pt_idx].is_present() {
-                pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
+            if let MapAction::None = rights {
+                if pt[pt_idx].is_present() {
+                    // Check if we could map in theory (no overlap)
+                    return Err(AddressSpaceError::AlreadyMapped);
+                }
             } else {
                 assert!(
-                    pt[pt_idx].is_present(),
+                    !pt[pt_idx].is_present(),
                     "An existing mapping already covers the 4 KiB range we're trying to map?"
                 );
+                pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
             }
 
             mapped += BASE_PAGE_SIZE;
@@ -339,6 +459,7 @@ impl VSpace {
         unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
+    /// TODO(deprecated): remove, use resolve() instead
     pub(crate) fn resolve_addr(&self, addr: VAddr) -> Option<PAddr> {
         let pml4_idx = pml4_index(addr);
         if self.pml4[pml4_idx].is_present() {
@@ -396,19 +517,6 @@ impl VSpace {
         Ok(())
     }
 
-    /// New API replaces map()
-    pub(crate) fn map_frame(
-        &mut self,
-        base: VAddr,
-        frame: Frame,
-        action: MapAction,
-        pager: &mut crate::memory::tcache::TCache,
-    ) -> Result<(), AddressSpaceError> {
-        self.map_generic(base, (frame.base, frame.size()), action, pager);
-        Ok(())
-        // TODO(metadata) add frame to vspace
-    }
-
     /// Back a region of virtual address space with
     /// allocated physical memory (that got aligned to `palignment`).
     ///
@@ -431,7 +539,7 @@ impl VSpace {
 
         let kcb = crate::kcb::get_kcb();
         let mut pmanager = kcb.mem_manager();
-        self.map_generic(base, (paddr, size), rights, &mut pmanager)?;
+        self.map_generic(base, (paddr, size), rights, &mut *pmanager)?;
         Ok((paddr, size))
     }
 
@@ -606,13 +714,13 @@ impl<'a> dot::Labeller<'a> for VSpace {
 
     fn node_shape(&'a self, n: &Self::Node) -> Option<dot::LabelText<'a>> {
         match n {
-            Nd::PT(pt, _) => Some(dot::LabelText::label("record")),
-            Nd::PD(pd, _) => Some(dot::LabelText::label("record")),
-            Nd::PDPT(pdpt, _) => Some(dot::LabelText::label("record")),
-            Nd::PML4(pml4, _) => Some(dot::LabelText::label("record")),
-            Nd::Page(addr) => None,
-            Nd::LargePage(addr) => None,
-            Nd::HugePage(addr) => None,
+            Nd::PT(_pt, _) => Some(dot::LabelText::label("record")),
+            Nd::PD(_pd, _) => Some(dot::LabelText::label("record")),
+            Nd::PDPT(_pdpt, _) => Some(dot::LabelText::label("record")),
+            Nd::PML4(_pml4, _) => Some(dot::LabelText::label("record")),
+            Nd::Page(_addr) => None,
+            Nd::LargePage(_addr) => None,
+            Nd::HugePage(_addr) => None,
         }
     }
 
@@ -811,9 +919,9 @@ impl VSpace {
                                 pdpt_item.address().as_u64(),
                             ));
                             if pdpt_item.is_page() {
-                                let vaddr: usize = (512 * (512 * (512 * 0x1000))) * pml_idx
+                                let _vaddr: usize = (512 * (512 * (512 * 0x1000))) * pml_idx
                                     + (512 * (512 * 0x1000)) * pdpt_idx;
-                                let to = Nd::HugePage(pdpt_item.address());
+                                let _to = Nd::HugePage(pdpt_item.address());
                             //nodes.push(to.clone());
                             //edges.push((from.clone(), to.clone()));
                             } else {
@@ -829,11 +937,11 @@ impl VSpace {
                                         ));
 
                                         if pd_item.is_page() {
-                                            let vaddr: usize = (512 * (512 * (512 * 0x1000)))
+                                            let _vaddr: usize = (512 * (512 * (512 * 0x1000)))
                                                 * pml_idx
                                                 + (512 * (512 * 0x1000)) * pdpt_idx
                                                 + (512 * 0x1000) * pd_idx;
-                                            let to = Nd::LargePage(pd_item.address());
+                                        //let to = Nd::LargePage(pd_item.address());
                                         //nodes.push(to.clone());
                                         //edges.push((from.clone(), to.clone()));
                                         } else {
@@ -841,7 +949,7 @@ impl VSpace {
                                             nodes.push(to.clone());
                                             edges.push(((from.clone(), pd_idx), (to.clone(), 0)));
 
-                                            let from = to.clone();
+                                            /*let from = to.clone();
                                             assert!(!pd_item.is_page());
                                             for (pte_idx, pte) in ptes.iter().enumerate() {
                                                 let vaddr: usize = (512 * (512 * (512 * 0x1000)))
@@ -851,11 +959,11 @@ impl VSpace {
                                                     + (0x1000) * pte_idx;
 
                                                 if pte.is_present() {
-                                                    //let to = Nd::Page(pte.address());
-                                                    //nodes.push(to.clone());
-                                                    //edges.push((from.clone(), to.clone()));
+                                                    let to = Nd::Page(pte.address());
+                                                    nodes.push(to.clone());
+                                                    edges.push((from.clone(), to.clone()));
                                                 }
-                                            }
+                                            }*/
                                         }
                                     }
                                 }
@@ -912,10 +1020,77 @@ impl<'a> dot::GraphWalk<'a> for VSpace {
 
 #[cfg(test)]
 mod test {
+    use core::cmp::{Eq, PartialEq};
+    use core::ptr;
+
+    use proptest::prelude::*;
+
     use super::*;
     use crate::*;
-    use core::ptr;
-    use proptest::prelude::*;
+
+    use crate::memory::tcache::TCache;
+    use crate::memory::vspace::model::ModelAddressSpace;
+
+    #[test]
+    fn map_resolve() {
+        /*env_logger::try_init();
+        let mut a: VSpace = VSpace::new();
+        let mut tcache = TCache::new(0, 0);
+
+        let va = VAddr::from(0x1ad000);
+        let frame_base = PAddr::from(0x0);
+        let frame = Frame::new(frame_base, 0xa7000, 0);
+
+        let ret = a
+            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .expect("Failed to map frame?");
+
+        let va = VAddr::from(0x1ae000);
+        let frame_base = PAddr::from(0x0);
+        let frame = Frame::new(frame_base, 0x1000, 0);
+
+        let ret = a
+            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .expect_err("Could map frame?");
+
+        Map(0x7c000, Frame { 0x27c000 -- 0x600000 (size = 3.52 MiB, pages = 900, node#0 }, ReadUser), Resolve(0x200000)*/
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum TestAction {
+        Map(VAddr, Frame, MapAction),
+        Adjust(VAddr, usize, MapAction),
+        Resolve(VAddr),
+        Unmap(VAddr),
+    }
+
+    fn action() -> impl Strategy<Value = TestAction> {
+        prop_oneof![
+            (
+                vaddrs(0x60_0000),
+                frames(0x60_0000, 0x40_0000),
+                map_rights()
+            )
+                .prop_map(|(a, b, c)| TestAction::Map(a, b, c)),
+            //(vaddrs(0x60_0000), any::<usize>(), map_rights())
+            //    .prop_map(|(a, b, c)| TestAction::Adjust(a, b, c)),
+            //vaddrs(0x60_0000).prop_map(TestAction::Unmap),
+            vaddrs(0x60_0000).prop_map(TestAction::Resolve),
+        ]
+    }
+
+    fn actions() -> impl Strategy<Value = Vec<TestAction>> {
+        prop::collection::vec(action(), 0..512)
+    }
+
+    prop_compose! {
+        fn frames(max_base: u64, max_size: usize)(base in base_pages(max_base), size in 0..max_size) -> Frame {
+            Frame::new(PAddr::from(base), size & !0xfff, 0)
+        }
+    }
+    prop_compose! {
+        fn vaddrs(max: u64)(base in 0..max) -> VAddr { VAddr::from(base & !0xfff) }
+    }
 
     prop_compose! {
         fn base_pages(max: u64)(base in 0..max) -> u64 { base & !0xfff }
@@ -925,7 +1100,7 @@ mod test {
         fn large_pages(max: u64)(base in 0..max) -> u64 { base & !0x1fffff }
     }
 
-    fn map_strategy() -> impl Strategy<Value = MapAction> {
+    fn map_rights() -> impl Strategy<Value = MapAction> {
         prop_oneof![
             //Just(MapAction::None),
             Just(MapAction::ReadUser),
@@ -939,36 +1114,56 @@ mod test {
         ]
     }
 
-    proptest! {
-        #[test]
-        fn map_base_doesnt_crash(base in base_pages(0xffee_0000), size in base_pages(0xff_0000), action in map_strategy()) {
-            crate::arch::start(0, ptr::null_mut());
-            let mut vspace = VSpace::new();
-
-            let base = VAddr::from(base);
-            let size = size as usize;
-            let rights = action;
-            let palignment = BASE_PAGE_SIZE as u64;
-
-            vspace
-                .map(base, size, rights, palignment)
-                .expect("Can't map stuff");
+    prop_compose! {
+        fn do_action()(action in action(),
+                       base in base_pages(0x600000),
+                       frame in frames(0x600000, 0x400000),
+                       length in 0..(10*4096usize),
+                       rights in map_rights()) -> (TestAction, VAddr, Frame, usize, MapAction)
+        {
+            (action, VAddr::from(base), frame, length, rights)
         }
+    }
 
+    proptest! {
+        /// Verify that our implementation behaves according to the `ModelAddressSpace`.
         #[test]
-        fn map_large_doesnt_crash(base in large_pages(0xffee_0000), size in base_pages(0xff_0000), action in map_strategy()) {
-            crate::arch::start(0, ptr::null_mut());
+        fn model_equivalence(ops in actions()) {
+            let _r = env_logger::try_init();
+            //trace!("doing ops = {:?}", ops);
+            use TestAction::*;
+            let mut mm = crate::arch::memory::MemoryMapper::new();
+            let f = mm.allocate_frame(16 * 1024 * 1024).unwrap();
+            let mut tcache = TCache::new_with_frame(0, 0, f);
 
-            let mut vspace = VSpace::new();
+            let mut totest = VSpace::new();
+            let mut model: ModelAddressSpace = Default::default();
 
-            let base = VAddr::from(base);
-            let size = size as usize;
-            let rights = action;
-            let palignment = BASE_PAGE_SIZE as u64;
-
-            vspace
-                .map(base, size, rights, palignment)
-                .expect("Can't map stuff");
+            for action in ops {
+                //trace!("execute action {:?}", action);
+                match action {
+                    Map(base, frame, rights) => {
+                        let rmodel = model.map_frame(base, frame, rights, &mut tcache);
+                        let rtotest = totest.map_frame(base, frame, rights, &mut tcache);
+                        assert_eq!(rmodel, rtotest);
+                    }
+                    Adjust(base, len, rights) => {
+                        let rmodel = model.adjust(base, len, rights);
+                        let rtotest = totest.adjust(base, len, rights);
+                        assert_eq!(rmodel, rtotest);
+                    }
+                    Resolve(base) => {
+                        let rmodel = model.resolve(base);
+                        let rtotest = totest.resolve(base);
+                        assert_eq!(rmodel, rtotest);
+                    }
+                    Unmap(base) => {
+                        let rmodel = model.unmap(base);
+                        let rtotest = totest.unmap(base);
+                        assert_eq!(rmodel, rtotest);
+                    }
+                }
+            }
         }
     }
 }

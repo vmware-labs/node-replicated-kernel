@@ -10,7 +10,7 @@ use log::trace;
 
 use crate::alloc::alloc;
 use crate::kcb::Kcb;
-use crate::memory::vspace::{MapAction, ResourceType};
+use crate::memory::vspace::MapAction;
 
 use super::kcb::{try_get_kcb, Arch86Kcb};
 use super::memory::{paddr_to_kernel_vaddr, PAddr};

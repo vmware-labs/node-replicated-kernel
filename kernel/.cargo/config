@@ -1,4 +1,4 @@
 [target.x86_64-bespin]
 rustflags = [
-    "-C", "target-feature=+sse2,+sse,+mmx,+rdrand",
+    "-C", "target-feature=+sse2",
 ]

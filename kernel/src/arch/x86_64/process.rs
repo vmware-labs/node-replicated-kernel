@@ -9,9 +9,8 @@ use x86::bits64::rflags;
 use x86::controlregs;
 
 use crate::error::KError;
-use crate::is_page_aligned;
 use crate::kcb::Kcb;
-use crate::memory::vspace::{MapAction, ResourceType};
+use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, KernelAllocator, PAddr, PhysicalPageProvider, VAddr};
 use crate::process::Process;
 use crate::round_up;
@@ -512,7 +511,7 @@ impl elfloader::ElfLoader for Ring3Process {
                         self.offset + page_base + i * LARGE_PAGE_SIZE,
                         frame,
                         map_action,
-                        &mut pmanager,
+                        &mut *pmanager,
                     )
                     .expect("Can't map ELF region");
             }

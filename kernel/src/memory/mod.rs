@@ -24,8 +24,8 @@ use slabmalloc::ZoneAllocator;
 use spin::Mutex;
 use x86::bits64::paging;
 
-pub mod buddy;
-pub mod emem;
+//pub mod buddy;
+//pub mod emem;
 pub mod ncache;
 pub mod tcache;
 pub mod vspace;
@@ -40,8 +40,6 @@ use crate::kcb;
 use crate::prelude::*;
 use crate::round_up;
 use vspace::MapAction;
-
-pub use self::buddy::BuddyFrameAllocator as PhysicalMemoryAllocator;
 
 custom_error! {pub AllocationError
     InvalidLayout = "Invalid layout for allocator provided.",
@@ -63,7 +61,7 @@ impl From<slabmalloc::AllocationError> for AllocationError {
 }
 
 impl From<core::cell::BorrowMutError> for AllocationError {
-    fn from(err: core::cell::BorrowMutError) -> AllocationError {
+    fn from(_err: core::cell::BorrowMutError) -> AllocationError {
         AllocationError::ManagerAlreadyBorrowed
     }
 }
@@ -181,7 +179,7 @@ impl KernelAllocator {
                             VAddr::from(start_at),
                             (f.base, f.size()),
                             MapAction::ReadWriteKernel,
-                            &mut pmanager,
+                            &mut *pmanager,
                         )
                         .expect("Can't create the mapping");
 
@@ -197,7 +195,7 @@ impl KernelAllocator {
                             VAddr::from(start_at),
                             (f.base, f.size()),
                             MapAction::ReadWriteKernel,
-                            &mut pmanager,
+                            &mut *pmanager,
                         )
                         .expect("Can't create the mapping");
                     start_at += BASE_PAGE_SIZE as u64;
@@ -292,14 +290,14 @@ impl KernelAllocator {
         let needed_large_pages =
             core::cmp::min(mem_manager.large_page_capcacity(), needed_large_pages);
 
-        for i in 0..needed_base_pages {
+        for _i in 0..needed_base_pages {
             let frame = ncache.allocate_base_page()?;
             mem_manager
                 .grow_base_pages(&[frame])
                 .expect("We ensure to not overfill the TCache above.");
         }
 
-        for i in 0..needed_large_pages {
+        for _i in 0..needed_large_pages {
             let frame = ncache.allocate_large_page()?;
             mem_manager
                 .grow_large_pages(&[frame])
@@ -377,16 +375,6 @@ impl KernelAllocator {
 
         Ok(())
     }
-
-    /// Try to reap memory from our core-local zone allocator -> ncache.
-    fn try_reap_zone(&self) -> Result<(), AllocationError> {
-        unimplemented!()
-    }
-
-    /// Try reap memory from our core-local tcache -> ncache.
-    fn try_reap_tcache(&self) -> Result<(), AllocationError> {
-        unimplemented!()
-    }
 }
 
 /// Implementation of GlobalAlloc for the kernel.
@@ -396,7 +384,7 @@ impl KernelAllocator {
 /// allocators.
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        for tries in 0..3 {
+        for _tries in 0..3 {
             let res = self.try_alloc(layout);
             match res {
                 // Allocation worked
@@ -427,7 +415,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             error!("Bug; trying to get mem manager 2x in allocation routine");
                             break;
                         }
-                        Err(e) => {
+                        Err(_e) => {
                             // Refilling failed, re-try allocation
                             return ptr::null_mut();
                         }
@@ -906,12 +894,6 @@ impl Frame {
         }
     }
 
-    /// Represent the Frame as a `*mut T`.
-    fn as_mut_ptr<T>(self) -> *mut T {
-        debug_assert!(core::mem::size_of::<T>() <= self.size);
-        self.base.as_u64() as *mut T
-    }
-
     /// Represent the Frame as MaybeUinit<T>
     pub unsafe fn uninitialized<T>(self) -> &'static mut core::mem::MaybeUninit<T> {
         debug_assert!(core::mem::size_of::<T>() <= self.size);
@@ -1056,17 +1038,15 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
         let kcb = kcb::get_kcb();
         let mut fmanager = kcb.mem_manager();
 
-        unsafe {
-            fmanager
-                .allocate_base_page()
-                .map(|frame| {
-                    paging::PML4Entry::new(
-                        frame.base,
-                        paging::PML4Flags::P | paging::PML4Flags::RW | paging::PML4Flags::US,
-                    )
-                })
-                .ok()
-        }
+        fmanager
+            .allocate_base_page()
+            .map(|frame| {
+                paging::PML4Entry::new(
+                    frame.base,
+                    paging::PML4Flags::P | paging::PML4Flags::RW | paging::PML4Flags::US,
+                )
+            })
+            .ok()
     }
 
     /// Allocate a new page directory and return a pdpt entry for it.
@@ -1074,17 +1054,15 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
         let kcb = kcb::get_kcb();
         let mut fmanager = kcb.mem_manager();
 
-        unsafe {
-            fmanager
-                .allocate_base_page()
-                .map(|frame| {
-                    paging::PDPTEntry::new(
-                        frame.base,
-                        paging::PDPTFlags::P | paging::PDPTFlags::RW | paging::PDPTFlags::US,
-                    )
-                })
-                .ok()
-        }
+        fmanager
+            .allocate_base_page()
+            .map(|frame| {
+                paging::PDPTEntry::new(
+                    frame.base,
+                    paging::PDPTFlags::P | paging::PDPTFlags::RW | paging::PDPTFlags::US,
+                )
+            })
+            .ok()
     }
 
     /// Allocate a new page-directory and return a page directory entry for it.
@@ -1092,17 +1070,15 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
         let kcb = kcb::get_kcb();
         let mut fmanager = kcb.mem_manager();
 
-        unsafe {
-            fmanager
-                .allocate_base_page()
-                .map(|frame| {
-                    paging::PDEntry::new(
-                        frame.base,
-                        paging::PDFlags::P | paging::PDFlags::RW | paging::PDFlags::US,
-                    )
-                })
-                .ok()
-        }
+        fmanager
+            .allocate_base_page()
+            .map(|frame| {
+                paging::PDEntry::new(
+                    frame.base,
+                    paging::PDFlags::P | paging::PDFlags::RW | paging::PDFlags::US,
+                )
+            })
+            .ok()
     }
 
     /// Allocate a new (4KiB) page and map it.
@@ -1110,17 +1086,15 @@ impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
         let kcb = kcb::get_kcb();
         let mut fmanager = kcb.mem_manager();
 
-        unsafe {
-            fmanager
-                .allocate_base_page()
-                .map(|frame| {
-                    paging::PTEntry::new(
-                        frame.base,
-                        paging::PTFlags::P | paging::PTFlags::RW | paging::PTFlags::US,
-                    )
-                })
-                .ok()
-        }
+        fmanager
+            .allocate_base_page()
+            .map(|frame| {
+                paging::PTEntry::new(
+                    frame.base,
+                    paging::PTFlags::P | paging::PTFlags::RW | paging::PTFlags::US,
+                )
+            })
+            .ok()
     }
 }
 

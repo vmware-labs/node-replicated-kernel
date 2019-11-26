@@ -16,7 +16,7 @@ pub struct TCache {
     /// Which node the memory in this cache is from.
     node: topology::NodeId,
     /// A vector of free, cached base-page addresses.
-    base_page_addresses: arrayvec::ArrayVec<[PAddr; 254]>,
+    base_page_addresses: arrayvec::ArrayVec<[PAddr; 255]>,
     /// A vector of free, cached large-page addresses.
     large_page_addresses: arrayvec::ArrayVec<[PAddr; 254]>,
 }

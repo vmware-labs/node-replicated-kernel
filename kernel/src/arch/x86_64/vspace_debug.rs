@@ -98,6 +98,7 @@ impl VSpace {
     }
 }
 
+#[allow(unused)]
 pub unsafe fn dump_current_table(log_level: usize) {
     let cr_three: u64 = controlregs::cr3();
     let pml4: PAddr = PAddr::from(cr_three);
@@ -106,6 +107,7 @@ pub unsafe fn dump_current_table(log_level: usize) {
     dump_table(pml4_table, log_level);
 }
 
+#[allow(unused)]
 pub unsafe fn dump_table(pml4_table: &PML4, log_level: usize) {
     for (pml_idx, pml_item) in pml4_table.iter().enumerate() {
         if pml_item.is_present() {
@@ -171,8 +173,6 @@ pub unsafe fn dump_table(pml4_table: &PML4, log_level: usize) {
 #[derive(Copy, Clone)]
 pub enum Nd<'a> {
     HugePage(PAddr),
-    LargePage(PAddr),
-    Page(PAddr),
     PT(&'a PT, Option<usize>),
     PD(&'a PD, Option<usize>),
     PDPT(&'a PDPT, Option<usize>),
@@ -196,8 +196,6 @@ impl<'a> dot::Labeller<'a> for VSpace {
             Nd::PD(_pd, _) => Some(dot::LabelText::label("record")),
             Nd::PDPT(_pdpt, _) => Some(dot::LabelText::label("record")),
             Nd::PML4(_pml4, _) => Some(dot::LabelText::label("record")),
-            Nd::Page(_addr) => None,
-            Nd::LargePage(_addr) => None,
             Nd::HugePage(_addr) => None,
         }
     }
@@ -332,8 +330,6 @@ impl<'a> dot::Labeller<'a> for VSpace {
                 }
                 node_label
             }
-            Nd::Page(addr) => format!("Page4K_{:#x}", addr),
-            Nd::LargePage(addr) => format!("Page2MiB_{:#x}", addr),
             Nd::HugePage(addr) => format!("Page1GiB_{:#x}", addr),
         };
 
@@ -350,8 +346,6 @@ impl<'a> dot::Labeller<'a> for VSpace {
             Nd::PD(pd, Some(slot)) => format!("PD_{:p}:f{}", *pd, slot),
             Nd::PDPT(pdpt, Some(slot)) => format!("PDPT_{:p}:f{}", *pdpt, slot),
             Nd::PML4(pml4, Some(slot)) => format!("PML4_{:p}:f{}", *pml4, slot),
-            Nd::Page(addr) => format!("Page4K_{:#x}", addr),
-            Nd::LargePage(addr) => format!("Page2MiB_{:#x}", addr),
             Nd::HugePage(addr) => format!("Page1GiB_{:#x}", addr),
         };
 
@@ -375,8 +369,6 @@ impl<'a> dot::GraphWalk<'a> for VSpace {
     fn source(&self, e: &Ed<'a>) -> Nd<'a> {
         match (e.0).0 {
             Nd::HugePage(_) => (e.0).0,
-            Nd::LargePage(_) => (e.0).0,
-            Nd::Page(_) => (e.0).0,
             Nd::PT(ptr, None) => Nd::PT(ptr, Some((e.0).1)),
             Nd::PD(ptr, None) => Nd::PD(ptr, Some((e.0).1)),
             Nd::PDPT(ptr, None) => Nd::PDPT(ptr, Some((e.0).1)),
@@ -388,8 +380,6 @@ impl<'a> dot::GraphWalk<'a> for VSpace {
     fn target(&self, e: &Ed<'a>) -> Nd<'a> {
         match (e.1).0 {
             Nd::HugePage(_) => (e.1).0,
-            Nd::LargePage(_) => (e.1).0,
-            Nd::Page(_) => (e.1).0,
             Nd::PT(ptr, None) => Nd::PT(ptr, Some((e.1).1)),
             Nd::PD(ptr, None) => Nd::PD(ptr, Some((e.1).1)),
             Nd::PDPT(ptr, None) => Nd::PDPT(ptr, Some((e.1).1)),

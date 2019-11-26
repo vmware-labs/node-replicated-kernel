@@ -27,12 +27,12 @@ pub trait AddressSpace {
     fn map_frames(
         &mut self,
         base: VAddr,
-        frames: Vec<(Frame, MapAction)>,
+        frames: &Vec<(Frame, MapAction)>,
         pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
         let mut cur_base = base;
         for (frame, action) in frames.into_iter() {
-            self.map_frame(cur_base, frame, action, pager)?;
+            self.map_frame(cur_base, *frame, *action, pager)?;
             cur_base = VAddr::from(cur_base.as_usize().checked_add(frame.size()).ok_or(
                 AddressSpaceError::BaseOverflow {
                     base: base.as_u64(),
@@ -312,13 +312,6 @@ impl fmt::Display for MapAction {
             ReadWriteExecuteKernel => write!(f, "kRWX"),
         }
     }
-}
-
-/// Type of resource we're trying to allocate
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum ResourceType {
-    /// Physical memory
-    Memory,
 }
 
 /// Implementation of a model vspace (for testing)

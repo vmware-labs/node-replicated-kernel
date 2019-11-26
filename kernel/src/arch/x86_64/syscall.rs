@@ -55,22 +55,27 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             process_print(UserValue::new(user_str))
         }
         ProcessOperation::InstallVCpuArea => unsafe {
+            crate::memory::KernelAllocator::try_refill_tcache(7 + 1, 0)
+                .expect("Refill didn't work");
+
             let kcb = super::kcb::get_kcb();
             let mut plock = kcb.arch.current_process();
+            let mut pmanager = kcb.mem_manager();
 
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
                 let cpu_ctl_addr = VAddr::from(arg2);
-                p.vspace.map(
+                let frame = pmanager
+                    .allocate_base_page()
+                    .expect("Can't allocate vCPU area?");
+                p.vspace.map_frame(
                     cpu_ctl_addr,
-                    BASE_PAGE_SIZE,
+                    frame,
                     MapAction::ReadWriteUser,
-                    0x1000,
+                    &mut *pmanager,
                 )?;
 
                 x86::tlb::flush_all();
-
                 p.vcpu_ctl = Some(UserPtr::new(cpu_ctl_addr.as_u64() as *mut VirtualCpu));
-
                 warn!("installed vcpu area {:p}", cpu_ctl_addr,);
 
                 Ok((cpu_ctl_addr.as_u64(), 0))
@@ -169,9 +174,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         VSpaceOperation::Identify => unsafe {
             trace!("Identify base {:#x}.", base);
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
-                let paddr = p.vspace.resolve_addr(base);
-
-                Ok((paddr.map(|pnum| pnum.as_u64()).unwrap_or(0x0), 0x0))
+                let (paddr, _rights) = p.vspace.resolve(base)?;
+                Ok((paddr.as_u64(), 0x0))
             })
         },
         VSpaceOperation::Unknown => {

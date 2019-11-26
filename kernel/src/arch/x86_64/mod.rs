@@ -43,6 +43,7 @@ pub mod memory;
 pub mod process;
 pub mod syscall;
 pub mod vspace;
+mod vspace_debug;
 
 use uefi::table::boot::MemoryType;
 

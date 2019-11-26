@@ -312,34 +312,54 @@ impl Ring3Process {
             e.load(&mut p)?;
         }
 
-        // Allocate a stack
-        // TODO(broken): Use map_frame!
-        p.vspace
-            .map(
+        let stack_pages = p.stack_size / BASE_PAGE_SIZE;
+        KernelAllocator::try_refill_tcache(20 + stack_pages, 0).expect("Refill didn't work");
+        {
+            let mut frames = Vec::with_capacity(stack_pages);
+            let kcb = crate::kcb::get_kcb();
+            let mut pmanager = kcb.mem_manager();
+            for _i in 0..stack_pages {
+                frames.push((
+                    pmanager
+                        .allocate_base_page()
+                        .expect("Can't allocate base-page"),
+                    MapAction::ReadWriteExecuteUser,
+                ));
+            }
+
+            // XXX: subtle frames has to be a refernce otherwise it may be dropped in map_frames
+            // while we've borrowed the pmanager...
+            p.vspace
+                .map_frames(p.stack_base, &frames, &mut *pmanager)
+                .expect("Can't map user-space upcall stack.");
+
+            info!(
+                "stack base {:#x} size: {} end {:#x}",
                 p.stack_base,
                 p.stack_size,
-                MapAction::ReadWriteExecuteUser,
-                BASE_PAGE_SIZE as u64,
-            )
-            .expect("Can't map user-space stack");
+                p.stack_base + p.stack_size
+            );
+        }
 
-        info!(
-            "stack base {:#x} size: {} end {:#x}",
-            p.stack_base,
-            p.stack_size,
-            p.stack_base + p.stack_size
-        );
+        let stack_pages = p.upcall_stack_size / BASE_PAGE_SIZE;
+        KernelAllocator::try_refill_tcache(20 + stack_pages, 0).expect("Refill didn't work");
+        {
+            let mut frames = Vec::with_capacity(stack_pages);
+            let kcb = crate::kcb::get_kcb();
+            let mut pmanager = kcb.mem_manager();
+            for _i in 0..stack_pages {
+                frames.push((
+                    pmanager
+                        .allocate_base_page()
+                        .expect("Can't allocate base-page"),
+                    MapAction::ReadWriteExecuteUser,
+                ));
+            }
 
-        // Allocate an upcall stack
-        // TODO(broken): Use map_frame!
-        p.vspace
-            .map(
-                p.upcall_stack_base,
-                p.upcall_stack_size,
-                MapAction::ReadWriteExecuteUser,
-                BASE_PAGE_SIZE as u64,
-            )
-            .expect("Can't map user-space upcall stack.");
+            p.vspace
+                .map_frames(p.upcall_stack_base, &frames, &mut *pmanager)
+                .expect("Can't map user-space upcall stack.");
+        }
 
         // TODO: Install the kernel mappings (these should be global mappings)
         // TODO(broken): BigMap allocaitons should be inserted here too..
@@ -547,17 +567,17 @@ impl elfloader::ElfLoader for Ring3Process {
         // Load the region at destination in the kernel space
         for (idx, val) in region.iter().enumerate() {
             let vaddr = VAddr::from(destination + idx);
-            let paddr = self.vspace.resolve_addr(vaddr);
-            if paddr.is_some() {
-                // TODO(perf): Inefficient byte-wise copy
-                // also within a 4 KiB / 2 MiB page we don't have to resolve_addr
-                // every time
-                let ptr = paddr.unwrap().as_u64() as *mut u8;
-                unsafe {
-                    *ptr = *val;
-                }
-            } else {
-                return Err("Can't write to the resolved address in the kernel vspace.");
+            let (paddr, _rights) = self
+                .vspace
+                .resolve(vaddr)
+                .map_err(|_e| "Can't write to the resolved address in the kernel vspace.")?;
+
+            // TODO(perf): Inefficient byte-wise copy
+            // also within a 4 KiB / 2 MiB page we don't have to resolve_addr
+            // every time
+            let ptr = paddr.as_u64() as *mut u8;
+            unsafe {
+                *ptr = *val;
             }
         }
 
@@ -578,10 +598,7 @@ impl elfloader::ElfLoader for Ring3Process {
         let addr = self.offset + entry.get_offset();
 
         // Translate `addr` into a kernel vaddr we can write to:
-        let paddr = self
-            .vspace
-            .resolve_addr(addr)
-            .expect("Can't resolve address");
+        let (paddr, _rights) = self.vspace.resolve(addr).expect("Can't resolve address");
         let kernel_addr: VAddr = paddr_to_kernel_vaddr(paddr);
 
         debug!(

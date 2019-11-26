@@ -419,3 +419,15 @@ pub fn xmain() {
 
     arch::debug::shutdown(ExitReason::Ok);
 }
+
+#[cfg(all(
+    feature = "integration-test",
+    any(
+        feature = "test-pfault-early",
+        feature = "test-gpfault-early",
+        feature = "test-double-fault"
+    )
+))]
+pub fn xmain() {
+    arch::debug::shutdown(ExitReason::ReturnFromMain);
+}

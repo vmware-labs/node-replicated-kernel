@@ -30,7 +30,7 @@ pub struct NCache {
 }
 
 impl NCache {
-    pub fn new(node: topology::NodeId) -> NCache {
+    pub fn _new(node: topology::NodeId) -> NCache {
         NCache {
             node,
             base_page_addresses: arrayvec::ArrayVec::new(),

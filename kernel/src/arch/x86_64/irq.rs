@@ -498,9 +498,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             dbg_handler(&a);
         }
 
-        //info!("handle_generic_exception {:?}", a);
-        //let vec_handlers = IRQ_HANDLERS.lock();
-        //(*vec_handlers)[a.vector as usize](&a);
+        unhandled_irq(&a);
     }
 
     unreachable!("Should not come here")

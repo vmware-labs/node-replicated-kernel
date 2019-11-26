@@ -45,20 +45,18 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let mut tc = TCache::new(0, 0);
     let mut mm = memory::MemoryMapper::new();
 
-    unsafe {
-        for _i in 0..254 {
-            let frame = mm
-                .allocate_frame(4096)
-                .expect("We don't have vRAM available");
-            tc.grow_base_pages(&[frame]).expect("Can't add base-page");
-        }
+    for _i in 0..254 {
+        let frame = mm
+            .allocate_frame(4096)
+            .expect("We don't have vRAM available");
+        tc.grow_base_pages(&[frame]).expect("Can't add base-page");
+    }
 
-        for _i in 0..32 {
-            let frame = mm
-                .allocate_frame(2 * 1024 * 1024)
-                .expect("We don't have vRAM available");
-            tc.grow_large_pages(&[frame]).expect("Can't add large-page");
-        }
+    for _i in 0..32 {
+        let frame = mm
+            .allocate_frame(2 * 1024 * 1024)
+            .expect("We don't have vRAM available");
+        tc.grow_large_pages(&[frame]).expect("Can't add large-page");
     }
 
     let frame = mm
@@ -67,7 +65,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
     annotated_regions.push(frame);
     let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
-    let global_memory_static =
+    let _global_memory_static =
         unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
 
     // Construct the Kcb so we can access these things later on in the code

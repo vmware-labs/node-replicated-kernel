@@ -176,12 +176,18 @@ impl VSpace {
             .expect("Can't identity map region");
     }
 
-    /// A pretty generic map function, it puts the physical memory range `pregion` with base and
-    /// size into the virtual base at address `vbase`.
+    /// A pretty generic map function, it puts the physical memory range
+    /// `pregion` with base and size into the virtual base at address `vbase`.
     ///
-    /// The algorithm tries to allocate the biggest page-sizes possible for the allocations.
-    /// We require that `vbase` and `pregion` values are all aligned to a page-size.
-    /// TODO: We panic in case there is already a mapping covering the region (should return error).
+    /// The function will try to allocate memory for page-tables as needed by
+    /// using the supplied `pager`.
+    ///
+    /// The function tries to allocate the biggest possible pages for the allocations
+    /// (1 GiB, 2 MiB, 4 KiB). We require that `vbase` and `pregion` values are all aligned
+    /// to a base-page.
+    ///
+    /// Will return an error in case a existing mapping already exists (and is not the same)
+    /// at a given location we're trying to map.
     pub(crate) fn map_generic(
         &mut self,
         vbase: VAddr,
@@ -205,15 +211,16 @@ impl VSpace {
 
         let pml4_idx = pml4_index(vbase);
         if !self.pml4[pml4_idx].is_present() {
-            trace!("New PDPDT for {:?} @ PML4[{}]", vbase, pml4_idx);
-            self.pml4[pml4_idx] = self.new_pdpt(pager);
+            trace!("Need new PDPDT for {:?} @ PML4[{}]", vbase, pml4_idx);
+            self.pml4[pml4_idx] = VSpace::new_pdpt(pager);
         }
+
         assert!(
             self.pml4[pml4_idx].is_present(),
             "The PML4 slot we need was not allocated?"
         );
+        let pdpt = self.get_pdpt_mut(self.pml4[pml4_idx]);
 
-        let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
         let mut pdpt_idx = pdpt_index(vbase);
         if !pdpt[pdpt_idx].is_present() {
             // The virtual address corresponding to our position within the page-table
@@ -234,10 +241,22 @@ impl VSpace {
                     if let MapAction::None = rights {
                         // Check if we could map in theory (no overlap)
                         if pdpt[pdpt_idx].is_present() {
-                            return Err(AddressSpaceError::AlreadyMapped);
+                            let address = pdpt[pdpt_idx].address();
+                            let cur_rights: MapAction = pdpt[pdpt_idx].flags().into();
+                            if address != pbase + mapped || cur_rights != rights {
+                                return Err(AddressSpaceError::AlreadyMapped);
+                            }
                         }
                     } else {
-                        assert!(!pdpt[pdpt_idx].is_present());
+                        if pdpt[pdpt_idx].is_present() {
+                            let address = pdpt[pdpt_idx].address();
+                            let cur_rights: MapAction = pdpt[pdpt_idx].flags().into();
+                            if address != pbase + mapped || cur_rights != rights {
+                                panic!(
+                                    "Trying to map 1 GiB page but conflicts with existing mapping"
+                                );
+                            }
+                        }
                         pdpt[pdpt_idx] = PDPTEntry::new(
                             pbase + mapped,
                             PDPTFlags::P | PDPTFlags::PS | rights.to_pdpt_rights(),
@@ -281,7 +300,7 @@ impl VSpace {
                     vbase,
                     vbase + psize
                 );
-                pdpt[pdpt_idx] = self.new_pd(pager);
+                pdpt[pdpt_idx] = VSpace::new_pd(pager);
             }
         }
         assert!(
@@ -299,8 +318,10 @@ impl VSpace {
                 );
             }
         }
+        let pdpt_entry = pdpt[pdpt_idx];
+        drop(pdpt); // Makes sure we can borrow pd
 
-        let pd = self.get_pd(pdpt[pdpt_idx]);
+        let pd = self.get_pd_mut(pdpt_entry);
         let mut pd_idx = pd_index(vbase);
         if !pd[pd_idx].is_present() {
             let vaddr_pos: usize =
@@ -317,12 +338,25 @@ impl VSpace {
                 // and have at least 2 MiB things to map
                 while mapped < psize && ((psize - mapped) >= LARGE_PAGE_SIZE) && pd_idx < 512 {
                     if let MapAction::None = rights {
+                        // Check if we could map in theory (no overlap)
                         if pd[pd_idx].is_present() {
-                            // Check if we could map in theory (no overlap)
-                            return Err(AddressSpaceError::AlreadyMapped);
+                            let address = pd[pd_idx].address();
+                            let cur_rights: MapAction = pd[pd_idx].flags().into();
+                            if address != pbase + mapped || cur_rights != rights {
+                                return Err(AddressSpaceError::AlreadyMapped);
+                            }
                         }
                     } else {
-                        assert!(!pd[pd_idx].is_present());
+                        if pd[pd_idx].is_present() {
+                            let address = pd[pd_idx].address();
+                            let cur_rights: MapAction = pd[pd_idx].flags().into();
+                            if address != pbase + mapped || cur_rights != rights {
+                                panic!(
+                                    "Trying to map 2 MiB page but it conflicts with existing mapping"
+                                );
+                            }
+                        }
+
                         pd[pd_idx] = PDEntry::new(
                             pbase + mapped,
                             PDFlags::P | PDFlags::PS | rights.to_pd_rights(),
@@ -365,7 +399,7 @@ impl VSpace {
                     vbase,
                     vbase + psize
                 );
-                pd[pd_idx] = self.new_pt(pager);
+                pd[pd_idx] = VSpace::new_pt(pager);
             }
         }
         assert!(
@@ -383,21 +417,31 @@ impl VSpace {
                 );
             }
         }
+        let pd_entry = pd[pd_idx];
+        drop(pd);
 
-        let pt = self.get_pt(pd[pd_idx]);
+        let pt = self.get_pt_mut(pd_entry);
         let mut pt_idx = pt_index(vbase);
         let mut mapped: usize = 0;
         while mapped < psize && pt_idx < 512 {
             if let MapAction::None = rights {
+                // Check if we could map in theory (no overlap)
                 if pt[pt_idx].is_present() {
-                    // Check if we could map in theory (no overlap)
-                    return Err(AddressSpaceError::AlreadyMapped);
+                    let address = pt[pt_idx].address();
+                    let cur_rights: MapAction = pt[pt_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        return Err(AddressSpaceError::AlreadyMapped);
+                    }
                 }
             } else {
-                assert!(
-                    !pt[pt_idx].is_present(),
-                    "An existing mapping already covers the 4 KiB range we're trying to map?"
-                );
+                if pt[pt_idx].is_present() {
+                    let address = pt[pt_idx].address();
+                    let cur_rights: MapAction = pt[pt_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        panic!("Trying to map 4 KiB page but it conflicts with existing mapping");
+                    }
+                }
+
                 pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
             }
 
@@ -426,36 +470,57 @@ impl VSpace {
         }
     }
 
-    fn new_pt(&self, pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDEntry {
+    fn new_pt(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDEntry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
         unsafe { frame.zero() };
         return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
     }
 
-    fn new_pd(&self, pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDPTEntry {
+    fn new_pd(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDPTEntry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
         unsafe { frame.zero() };
         return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
     }
 
-    fn new_pdpt(&self, pager: &mut dyn crate::memory::PhysicalPageProvider) -> PML4Entry {
+    fn new_pdpt(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PML4Entry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
         unsafe { frame.zero() };
         return PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
     }
 
     /// Resolve a PDEntry to a page table.
-    fn get_pt<'b>(&self, entry: PDEntry) -> &'b mut PT {
+    fn get_pt(&self, entry: PDEntry) -> &PT {
+        assert_ne!(entry.address(), PAddr::zero());
         unsafe { transmute::<VAddr, &mut PT>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
     /// Resolve a PDPTEntry to a page directory.
-    fn get_pd<'b>(&self, entry: PDPTEntry) -> &'b mut PD {
+    fn get_pd(&self, entry: PDPTEntry) -> &PD {
+        assert_ne!(entry.address(), PAddr::zero());
         unsafe { transmute::<VAddr, &mut PD>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
     /// Resolve a PML4Entry to a PDPT.
-    fn get_pdpt<'b>(&self, entry: PML4Entry) -> &'b mut PDPT {
+    fn get_pdpt(&self, entry: PML4Entry) -> &PDPT {
+        assert_ne!(entry.address(), PAddr::zero());
+        unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
+    }
+
+    /// Resolve a PDEntry to a page table.
+    fn get_pt_mut(&mut self, entry: PDEntry) -> &mut PT {
+        assert_ne!(entry.address(), PAddr::zero());
+        unsafe { transmute::<VAddr, &mut PT>(paddr_to_kernel_vaddr(entry.address())) }
+    }
+
+    /// Resolve a PDPTEntry to a page directory.
+    fn get_pd_mut(&mut self, entry: PDPTEntry) -> &mut PD {
+        assert_ne!(entry.address(), PAddr::zero());
+        unsafe { transmute::<VAddr, &mut PD>(paddr_to_kernel_vaddr(entry.address())) }
+    }
+
+    /// Resolve a PML4Entry to a PDPT.
+    fn get_pdpt_mut(&mut self, entry: PML4Entry) -> &mut PDPT {
+        assert_ne!(entry.address(), PAddr::zero());
         unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
     }
 
@@ -1129,7 +1194,7 @@ mod test {
         /// Verify that our implementation behaves according to the `ModelAddressSpace`.
         #[test]
         fn model_equivalence(ops in actions()) {
-            let _r = env_logger::try_init();
+            //let _r = env_logger::try_init();
             //trace!("doing ops = {:?}", ops);
             use TestAction::*;
             let mut mm = crate::arch::memory::MemoryMapper::new();

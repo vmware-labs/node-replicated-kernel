@@ -10,7 +10,7 @@ use log::trace;
 
 use crate::alloc::alloc;
 use crate::kcb::Kcb;
-use crate::memory::vspace::MapAction;
+use crate::memory::vspace::{AddressSpaceError, MapAction};
 
 use super::kcb::{try_get_kcb, Arch86Kcb};
 use super::memory::{paddr_to_kernel_vaddr, PAddr};
@@ -177,17 +177,24 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
     use crate::round_up;
     super::kcb::try_get_kcb().map(|k: &mut Kcb<Arch86Kcb>| {
         let mut vspace = k.arch.init_vspace();
-        vspace
-            .map_identity_with_offset(
-                PAddr::from(super::memory::KERNEL_BASE),
-                p,
-                PAddr::from(round_up!(
-                    (location + len) as usize,
-                    x86::bits64::paging::BASE_PAGE_SIZE
-                ) as u64),
-                MapAction::ReadWriteKernel,
-            )
-            .expect("Can't map ACPI memory");
+        match vspace.map_identity_with_offset(
+            PAddr::from(super::memory::KERNEL_BASE),
+            p,
+            PAddr::from(round_up!(
+                (location + len) as usize,
+                x86::bits64::paging::BASE_PAGE_SIZE
+            ) as u64),
+            MapAction::ReadWriteKernel,
+        ) {
+            Ok(_) => {}
+            Err(AddressSpaceError::AlreadyMapped) => {
+                // TODO(correctness) we are ignoring this error because we don't properly
+                // implement unmap, ACPI sometimes unmaps/remaps things
+            }
+            Err(e) => {
+                panic!("Can't map ACPI memory");
+            }
+        }
     });
 
     let vaddr = paddr_to_kernel_vaddr(p);

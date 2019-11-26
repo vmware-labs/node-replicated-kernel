@@ -20,6 +20,7 @@
     box_into_pin,
     maybe_uninit_ref
 )]
+#![cfg_attr(target_os = "none", deny(warnings))]
 #![allow(safe_packed_borrows)] // TODO(warnings)
 
 // TODO(cosmetics): Couldn't get rid of these three `extern crate` even though we're edition 2018:

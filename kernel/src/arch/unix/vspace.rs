@@ -1,13 +1,10 @@
 //! A dummy vspace implementation for the unix platform.
 
 use alloc::boxed::Box;
-use core::fmt;
 use core::pin::Pin;
 
-use crate::alloc::string::ToString;
-use crate::memory::vspace::{AddressSpaceError, MapAction, ResourceType};
+use crate::memory::vspace::{AddressSpaceError, MapAction};
 
-use kpi::SystemCallError;
 use x86::bits64::paging::*;
 
 pub struct VSpace {
@@ -31,8 +28,8 @@ impl VSpace {
         &mut self,
         base: VAddr,
         size: usize,
-        rights: MapAction,
-        palignment: u64,
+        _rights: MapAction,
+        _palignment: u64,
     ) -> Result<(PAddr, usize), AddressSpaceError> {
         assert_eq!(base % BASE_PAGE_SIZE, 0, "base is not page-aligned");
         assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
@@ -41,10 +38,10 @@ impl VSpace {
 
     pub(crate) fn map_generic(
         &mut self,
-        vbase: VAddr,
-        pregion: (PAddr, usize),
-        rights: MapAction,
-        pager: &mut crate::memory::tcache::TCache,
+        _vbase: VAddr,
+        _pregion: (PAddr, usize),
+        _rights: MapAction,
+        _pager: &mut crate::memory::tcache::TCache,
     ) -> Result<(), AddressSpaceError> {
         Ok(())
     }

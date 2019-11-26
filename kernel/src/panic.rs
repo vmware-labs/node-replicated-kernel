@@ -1,8 +1,12 @@
+#[cfg(target_os = "none")]
 use core::alloc::Layout;
+#[cfg(target_os = "none")]
 use core::panic::PanicInfo;
 
+#[cfg(target_os = "none")]
 use crate::arch;
 use crate::kcb;
+#[cfg(target_os = "none")]
 use crate::ExitReason;
 use backtracer;
 

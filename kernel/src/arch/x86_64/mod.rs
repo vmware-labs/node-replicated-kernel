@@ -250,14 +250,14 @@ fn init_apic() -> xapic::XAPICDriver {
 include!("../../../../bootloader/src/shared.rs");
 
 struct AppCoreArgs {
-    mem_region: Frame,
+    _mem_region: Frame,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
     thread: topology::ThreadId,
     node: topology::NodeId,
-    log: Arc<Log<'static, Op>>,
-    replica: Arc<Replica<'static, KernelNode>>,
+    _log: Arc<Log<'static, Op>>,
+    _replica: Arc<Replica<'static, KernelNode>>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -367,14 +367,14 @@ fn boot_app_cores(
 
         let initialized: AtomicBool = AtomicBool::new(false);
         let arg: Arc<AppCoreArgs> = Arc::new(AppCoreArgs {
-            mem_region,
+            _mem_region: mem_region,
             kernel_binary,
             kernel_args,
             node,
             global_memory,
             thread: thread.id,
-            log: log.clone(),
-            replica: bsp_replica.clone(),
+            _log: log.clone(),
+            _replica: bsp_replica.clone(),
         });
 
         unsafe {
@@ -507,22 +507,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     assert_required_cpu_features();
     syscall::enable_fast_syscalls();
 
-    // We should catch page-faults and general protection faults from here...
-
-    let kernel_args: &'static KernelArgs =
-        unsafe { transmute::<u64, &'static KernelArgs>(argc as u64) };
-
-    // TODO(fix): Because we only have a borrow of KernelArgs we have to work too hard to get mm_iter
-    let mm_iter = unsafe {
-        let mut mm_iter: uefi::table::boot::MemoryMapIter<'static> =
-            core::mem::MaybeUninit::zeroed().assume_init();
-        core::ptr::copy_nonoverlapping(
-            &kernel_args.mm_iter as *const uefi::table::boot::MemoryMapIter,
-            &mut mm_iter as *mut uefi::table::boot::MemoryMapIter,
-            1,
-        );
-        mm_iter
-    };
+    // We construct a &'static mut for KernelArgs (mut is just because of `mm_iter`)
+    let kernel_args: &'static mut KernelArgs =
+        unsafe { transmute::<u64, &'static mut KernelArgs>(argc as u64) };
 
     // Initializes the serial console.
     // (this is already done in a very basic form by klogger/init_logging())
@@ -549,7 +536,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // regions of memory.
     let mut emanager: Option<tcache::TCache> = None;
     let mut memory_regions = ArrayVec::<[Frame; 64]>::new();
-    for region in mm_iter {
+    for region in &mut kernel_args.mm_iter {
         if region.ty == MemoryType::CONVENTIONAL {
             debug!("Found physical memory region {:?}", region);
 
@@ -598,7 +585,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut kcb = Kcb::new(kernel_binary, emanager, arch, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
-
     let static_kcb = unsafe {
         core::mem::transmute::<&mut Kcb<kcb::Arch86Kcb>, &'static mut Kcb<kcb::Arch86Kcb>>(&mut kcb)
     };

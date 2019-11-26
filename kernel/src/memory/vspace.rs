@@ -491,7 +491,7 @@ pub(crate) mod model {
 
     #[test]
     fn model_bug_already_mapped2() {
-        let _r = env_logger::try_init();
+        //let _r = env_logger::try_init();
         let mut a: ModelAddressSpace = Default::default();
         let mut tcache = TCache::new(0, 0);
 

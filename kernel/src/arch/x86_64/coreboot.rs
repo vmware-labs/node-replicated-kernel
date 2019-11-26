@@ -10,9 +10,11 @@ use x86::apic::{ApicControl, ApicId};
 use x86::current::paging::PAddr;
 
 use crate::memory::vspace::MapAction;
+use crate::round_up;
 use crate::stack::Stack;
 
 use super::kcb;
+use super::memory::BASE_PAGE_SIZE;
 
 /// The 16-bit segement where our bootstrap code is.
 const X86_64_REAL_MODE_SEGMENT: u16 = 0x0600;
@@ -76,11 +78,16 @@ unsafe fn copy_bootstrap_code() {
     let real_mode_destination: &'static mut [u8] = get_boostrap_code_region();
 
     let kcb = kcb::get_kcb();
-    kcb.arch.init_vspace().map_identity(
-        PAddr::from(REAL_MODE_BASE as u64),
-        PAddr::from(REAL_MODE_BASE + boot_code_size).align_up_to_base_page(),
-        MapAction::ReadWriteExecuteKernel,
-    );
+    let mut pmanager = kcb.mem_manager();
+    kcb.arch
+        .init_vspace()
+        .map_identity(
+            PAddr::from(REAL_MODE_BASE as u64),
+            round_up!(boot_code_size, BASE_PAGE_SIZE),
+            MapAction::ReadWriteExecuteKernel,
+            &mut *pmanager,
+        )
+        .expect("Can't map bootstrap code");
 
     real_mode_destination.copy_from_slice(ap_bootstrap_code);
 }

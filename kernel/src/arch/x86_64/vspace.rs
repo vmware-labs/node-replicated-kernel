@@ -61,11 +61,6 @@ impl AddressSpace for VSpace {
                     let page_offset = addr.huge_page_offset();
                     let paddr = pdpt[pdpt_idx].address() + page_offset;
                     let flags: MapAction = pdpt[pdpt_idx].flags().into();
-                    info!(
-                        "resolve 1 GiB flags = {:?} action = {:?}",
-                        pdpt[pdpt_idx].flags(),
-                        flags
-                    );
                     return Ok((paddr, flags));
                 } else {
                     let pd_idx = pd_index(addr);
@@ -76,11 +71,6 @@ impl AddressSpace for VSpace {
                             let page_offset = addr.large_page_offset();
                             let paddr = pd[pd_idx].address() + page_offset;
                             let flags: MapAction = pd[pd_idx].flags().into();
-                            info!(
-                                "resolve 2 MiB flags = {:?} action = {:?}",
-                                pd[pd_idx].flags(),
-                                flags
-                            );
                             return Ok((paddr, flags));
                         } else {
                             let pt_idx = pt_index(addr);
@@ -89,11 +79,6 @@ impl AddressSpace for VSpace {
                                 let page_offset = addr.base_page_offset();
                                 let paddr = pt[pt_idx].address() + page_offset;
                                 let flags: MapAction = pt[pt_idx].flags().into();
-                                info!(
-                                    "resolve 4 KiB flags = {:?} action = {:?}",
-                                    pt[pt_idx].flags(),
-                                    flags
-                                );
                                 return Ok((paddr, flags));
                             }
                         }
@@ -101,6 +86,7 @@ impl AddressSpace for VSpace {
                 }
             }
         }
+
         // else:
         Err(AddressSpaceError::NotMapped)
     }
@@ -136,23 +122,20 @@ impl VSpace {
 
     /// Constructs an identity map but with an offset added to the region.
     ///
-    /// # Example
-    /// `map_identity_with_offset(0x20000, 0x1000, 0x2000, ReadWriteKernel)`
-    /// will set the virtual addresses at 0x21000 -- 0x22000 to
-    /// point to physical 0x1000 - 0x2000.
+    /// This can be useful for example to map physical memory above `KERNEL_BASE`.
     pub(crate) fn map_identity_with_offset(
         &mut self,
         at_offset: PAddr,
         pbase: PAddr,
-        end: PAddr,
+        size: usize,
         rights: MapAction,
+        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
-        // TODO: maybe better to provide a length instead of end
-        // so harder for things to break
-        assert!(end > pbase, "End should be bigger than pbase");
+        assert!(at_offset.is_base_page_aligned());
+        assert!(pbase.is_base_page_aligned());
+        assert_eq!(size % BASE_PAGE_SIZE, 0, "Size not a multiple of page-size");
 
         let vbase = VAddr::from_u64((at_offset + pbase).as_u64());
-        let size = (end - pbase).as_usize();
         debug!(
             "map_identity_with_offset {:#x} -- {:#x} -> {:#x} -- {:#x}",
             vbase,
@@ -160,20 +143,292 @@ impl VSpace {
             pbase,
             pbase + size
         );
-        let kcb = crate::kcb::get_kcb();
-        let mut pmanager = kcb.mem_manager();
 
-        self.map_generic(vbase, (pbase, size), rights, &mut *pmanager)
+        self.map_generic(vbase, (pbase, size), rights, pager)
     }
 
-    /// Constructs an identity map in this region of memory.
+    /// Identity maps a given physical memory range [`base`, `base` + `size`]
+    /// in the address space.
+    pub(crate) fn map_identity(
+        &mut self,
+        base: PAddr,
+        size: usize,
+        rights: MapAction,
+        pager: &mut dyn PhysicalPageProvider,
+    ) -> Result<(), AddressSpaceError> {
+        self.map_identity_with_offset(PAddr::from(0x0), base, size, rights, pager)
+    }
+
+    /// Retrieves the relevant PDPT table for a given virtual address `vbase`.
     ///
-    /// # Example
-    /// `map_identity(0x2000, 0x3000)` will map everything between 0x2000 and 0x3000 to
-    /// physical address 0x2000 -- 0x3000.
-    pub(crate) fn map_identity(&mut self, base: PAddr, end: PAddr, rights: MapAction) {
-        self.map_identity_with_offset(PAddr::from(0x0), base, end, rights)
-            .expect("Can't identity map region");
+    /// Allocates the PDPT page if it doesn't exist yet.
+    fn get_or_alloc_pdpt(
+        &mut self,
+        vbase: VAddr,
+        pager: &mut dyn PhysicalPageProvider,
+    ) -> &mut PDPT {
+        let pml4_idx = pml4_index(vbase);
+        if !self.pml4[pml4_idx].is_present() {
+            trace!("Need new PDPDT for {:?} @ PML4[{}]", vbase, pml4_idx);
+            self.pml4[pml4_idx] = VSpace::new_pdpt(pager);
+        }
+        assert!(
+            self.pml4[pml4_idx].is_present(),
+            "The PML4 slot we need was not allocated?"
+        );
+
+        self.get_pdpt_mut(self.pml4[pml4_idx])
+    }
+
+    /// Check if we can just insert a huge page for the current mapping
+    fn can_map_as_huge_page(pbase: PAddr, psize: usize, pos_in_pt: VAddr, vbase: VAddr) -> bool {
+        let want_to_map_here = vbase == pos_in_pt;
+        let physical_frame_is_aligned = pbase % HUGE_PAGE_SIZE == 0;
+        let want_to_map_at_least_1gib = psize >= HUGE_PAGE_SIZE;
+
+        want_to_map_here && physical_frame_is_aligned && want_to_map_at_least_1gib
+    }
+
+    /// Check if we can just insert a huge page for the current mapping
+    fn can_map_as_large_page(pbase: PAddr, psize: usize, pos_in_pt: VAddr, vbase: VAddr) -> bool {
+        let want_to_map_here = vbase == pos_in_pt;
+        let physical_frame_is_aligned = pbase % LARGE_PAGE_SIZE == 0;
+        let want_to_map_at_least_2mib = psize >= LARGE_PAGE_SIZE;
+
+        want_to_map_here && physical_frame_is_aligned && want_to_map_at_least_2mib
+    }
+
+    /// Starts to insert huge-pages for `vbase` at the given `pdpt_idx`.
+    fn insert_huge_mappings(
+        &mut self,
+        mut pdpt_idx: usize,
+        vbase: VAddr,
+        pbase: PAddr,
+        psize: usize,
+        rights: MapAction,
+        pager: &mut dyn PhysicalPageProvider,
+    ) -> Result<(), AddressSpaceError> {
+        let pdpt = self.get_or_alloc_pdpt(vbase, pager);
+
+        // To track how much space we've mapped so far
+        let mut mapped = 0;
+
+        // Add entries to PDPT as long as we're within this allocated PDPT table
+        // and have 1 GiB chunks to map:
+        while mapped < psize && ((psize - mapped) >= HUGE_PAGE_SIZE) && pdpt_idx < pdpt.len() {
+            if let MapAction::None = rights {
+                // Check if we could map in theory (no overlap)
+                if pdpt[pdpt_idx].is_present() {
+                    let address = pdpt[pdpt_idx].address();
+                    let cur_rights: MapAction = pdpt[pdpt_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        // Return an error if a frame is present,
+                        // and it's not exactly the frame+rights combo we're
+                        // trying to map anyways
+                        return Err(AddressSpaceError::AlreadyMapped);
+                    }
+                }
+            } else {
+                if pdpt[pdpt_idx].is_present() {
+                    let address = pdpt[pdpt_idx].address();
+                    let cur_rights: MapAction = pdpt[pdpt_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        panic!("Trying to map 1 GiB page but it conflicts with existing mapping");
+                    }
+                }
+
+                // Construct a 1 GiB mapping to `pbase` + `mapped`, mark it as present and 1 GiB sized
+                pdpt[pdpt_idx] = PDPTEntry::new(
+                    pbase + mapped,
+                    PDPTFlags::P | PDPTFlags::PS | rights.to_pdpt_rights(),
+                );
+
+                trace!(
+                    "Mapped 1GiB range {:#x} -- {:#x} -> {:#x} -- {:#x}",
+                    vbase + mapped,
+                    (vbase + mapped) + HUGE_PAGE_SIZE,
+                    pbase + mapped,
+                    (vbase + mapped) + HUGE_PAGE_SIZE
+                );
+            }
+
+            pdpt_idx += 1;
+            mapped += HUGE_PAGE_SIZE;
+        }
+        assert!(mapped <= psize);
+
+        if mapped == psize {
+            // Everything fit in 1 GiB pages and within the same PDPT, we're done with mappings
+            return Ok(());
+        } else {
+            // mapped < psize: Need to map more (either as 2 MiB or 4 KiB pages or continue on the
+            // next PDPT)
+            trace!(
+                "insert_huge_mappings recurse to map_generic to finish {:#x} -- {:#x} -> {:#x} -- {:#x}",
+                vbase + mapped,
+                vbase + (psize - mapped),
+                (pbase + mapped),
+                pbase + (psize - mapped),
+            );
+
+            return self.map_generic(
+                vbase + mapped,
+                ((pbase + mapped), psize - mapped),
+                rights,
+                pager,
+            );
+        }
+    }
+
+    /// Starts to insert large-pages for `vbase` at the given `pd_idx`.
+    fn insert_large_mappings(
+        &mut self,
+        pdpt_entry: PDPTEntry,
+        mut pd_idx: usize,
+        vbase: VAddr,
+        pbase: PAddr,
+        psize: usize,
+        rights: MapAction,
+        pager: &mut dyn PhysicalPageProvider,
+    ) -> Result<(), AddressSpaceError> {
+        let pd = self.get_pd_mut(pdpt_entry);
+
+        // To track how much space we've mapped so far
+        let mut mapped = 0;
+
+        // Add entries as long as we are within this allocated PDPT table
+        // and have at least 2 MiB things to map
+        while mapped < psize && ((psize - mapped) >= LARGE_PAGE_SIZE) && pd_idx < pd.len() {
+            if let MapAction::None = rights {
+                // Check if we could map in theory (no overlap)
+                if pd[pd_idx].is_present() {
+                    let address = pd[pd_idx].address();
+                    let cur_rights: MapAction = pd[pd_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        // Return an error if a frame is present,
+                        // and it's not exactly the frame+rights combo we're
+                        // trying to map anyways
+                        return Err(AddressSpaceError::AlreadyMapped);
+                    }
+                }
+            } else {
+                if pd[pd_idx].is_present() {
+                    let address = pd[pd_idx].address();
+                    let cur_rights: MapAction = pd[pd_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        panic!("Trying to map 2 MiB page but it conflicts with existing mapping");
+                    }
+                }
+
+                pd[pd_idx] = PDEntry::new(
+                    pbase + mapped,
+                    PDFlags::P | PDFlags::PS | rights.to_pd_rights(),
+                );
+                trace!(
+                    "Mapped 2 MiB region {:#x} -- {:#x} -> {:#x} -- {:#x}",
+                    vbase + mapped,
+                    (vbase + mapped) + LARGE_PAGE_SIZE,
+                    pbase + mapped,
+                    (pbase + mapped) + LARGE_PAGE_SIZE
+                );
+            }
+
+            pd_idx += 1;
+            mapped += LARGE_PAGE_SIZE;
+        }
+        assert!(mapped <= psize);
+
+        if mapped == psize {
+            // Everything fit in 2 MiB pages and within the same PD, we're done with mappings
+            return Ok(());
+        } else {
+            // mapped < psize: Need to map more (as 4 KiB pages or continue on the
+            // next PD)
+            trace!(
+                "insert_large_mappings recurse to map_generic to finish {:#x} -- {:#x} -> {:#x} -- {:#x}",
+                vbase + mapped,
+                vbase + (psize - mapped),
+                (pbase + mapped),
+                pbase + (psize - mapped),
+            );
+
+            return self.map_generic(
+                vbase + mapped,
+                ((pbase + mapped), psize - mapped),
+                rights,
+                pager,
+            );
+        }
+    }
+
+    /// Starts to insert base-pages for `vbase` at the given `pt_idx`.
+    fn insert_base_mappings(
+        &mut self,
+        pd_entry: PDEntry,
+        vbase: VAddr,
+        pbase: PAddr,
+        psize: usize,
+        rights: MapAction,
+        pager: &mut dyn PhysicalPageProvider,
+    ) -> Result<(), AddressSpaceError> {
+        let pt = self.get_pt_mut(pd_entry);
+        let mut pt_idx = pt_index(vbase);
+
+        // To track how much space we've mapped so far
+        let mut mapped: usize = 0;
+
+        while mapped < psize && pt_idx < pt.len() {
+            if let MapAction::None = rights {
+                // Check if we could map in theory (no overlap)
+                if pt[pt_idx].is_present() {
+                    let address = pt[pt_idx].address();
+                    let cur_rights: MapAction = pt[pt_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        // Return an error if a frame is present,
+                        // and it's not exactly the frame+rights combo we're
+                        // trying to map anyways
+                        return Err(AddressSpaceError::AlreadyMapped);
+                    }
+                }
+            } else {
+                if pt[pt_idx].is_present() {
+                    let address = pt[pt_idx].address();
+                    let cur_rights: MapAction = pt[pt_idx].flags().into();
+                    if address != pbase + mapped || cur_rights != rights {
+                        panic!("Trying to map 4 KiB page but it conflicts with existing mapping");
+                    }
+                }
+
+                pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
+            }
+
+            mapped += BASE_PAGE_SIZE;
+            pt_idx += 1;
+        }
+        assert!(mapped <= psize);
+
+        if mapped == psize {
+            // Everything fit in 4 KiB pages and within the same PT, we're done with mappings
+            return Ok(());
+        } else {
+            // mapped < psize: Need to map more (as 4 KiB pages or continue on the
+            // next PD)
+
+            trace!(
+                "insert_base_mappings recurse to map_generic to finish {:#x} -- {:#x} -> {:#x} -- {:#x}",
+                vbase + mapped,
+                vbase + (psize - mapped),
+                (pbase + mapped),
+                pbase + (psize - mapped),
+            );
+
+            return self.map_generic(
+                vbase + mapped,
+                ((pbase + mapped), psize - mapped),
+                rights,
+                pager,
+            );
+        }
     }
 
     /// A pretty generic map function, it puts the physical memory range
@@ -210,90 +465,16 @@ impl VSpace {
         );
 
         let pml4_idx = pml4_index(vbase);
-        if !self.pml4[pml4_idx].is_present() {
-            trace!("Need new PDPDT for {:?} @ PML4[{}]", vbase, pml4_idx);
-            self.pml4[pml4_idx] = VSpace::new_pdpt(pager);
-        }
+        let pdpt = self.get_or_alloc_pdpt(vbase, pager);
+        let pdpt_idx = pdpt_index(vbase);
 
-        assert!(
-            self.pml4[pml4_idx].is_present(),
-            "The PML4 slot we need was not allocated?"
-        );
-        let pdpt = self.get_pdpt_mut(self.pml4[pml4_idx]);
-
-        let mut pdpt_idx = pdpt_index(vbase);
         if !pdpt[pdpt_idx].is_present() {
             // The virtual address corresponding to our position within the page-table
-            let vaddr_pos: usize = PML4_SLOT_SIZE * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx;
-
-            // In case we can map something at a 1 GiB granularity and
-            // we still have at least 1 GiB to map, create huge-page mappings
-            if vbase.as_usize() == vaddr_pos
-                && (pbase % HUGE_PAGE_SIZE == 0)
-                && psize >= HUGE_PAGE_SIZE
-            {
-                // To track how much space we've covered
-                let mut mapped = 0;
-
-                // Add entries to PDPT as long as we're within this allocated PDPT table
-                // and have 1 GiB chunks to map:
-                while mapped < psize && ((psize - mapped) >= HUGE_PAGE_SIZE) && pdpt_idx < 512 {
-                    if let MapAction::None = rights {
-                        // Check if we could map in theory (no overlap)
-                        if pdpt[pdpt_idx].is_present() {
-                            let address = pdpt[pdpt_idx].address();
-                            let cur_rights: MapAction = pdpt[pdpt_idx].flags().into();
-                            if address != pbase + mapped || cur_rights != rights {
-                                return Err(AddressSpaceError::AlreadyMapped);
-                            }
-                        }
-                    } else {
-                        if pdpt[pdpt_idx].is_present() {
-                            let address = pdpt[pdpt_idx].address();
-                            let cur_rights: MapAction = pdpt[pdpt_idx].flags().into();
-                            if address != pbase + mapped || cur_rights != rights {
-                                panic!(
-                                    "Trying to map 1 GiB page but conflicts with existing mapping"
-                                );
-                            }
-                        }
-                        pdpt[pdpt_idx] = PDPTEntry::new(
-                            pbase + mapped,
-                            PDPTFlags::P | PDPTFlags::PS | rights.to_pdpt_rights(),
-                        );
-
-                        trace!(
-                            "Mapped 1GiB range {:#x} -- {:#x} -> {:#x} -- {:#x}",
-                            vbase + mapped,
-                            (vbase + mapped) + HUGE_PAGE_SIZE,
-                            pbase + mapped,
-                            (vbase + mapped) + HUGE_PAGE_SIZE
-                        );
-                    }
-
-                    pdpt_idx += 1;
-                    mapped += HUGE_PAGE_SIZE;
-                }
-
-                if mapped < psize {
-                    trace!(
-                        "map_generic recurse from 1 GiB map to finish {:#x} -- {:#x} -> {:#x} -- {:#x}",
-                        vbase + mapped,
-                        vbase + (psize - mapped),
-                        (pbase + mapped),
-                        pbase + (psize - mapped),
-                    );
-                    return self.map_generic(
-                        vbase + mapped,
-                        ((pbase + mapped), psize - mapped),
-                        rights,
-                        pager,
-                    );
-                } else {
-                    // Everything fit in 1 GiB ranges,
-                    // We're done with mappings
-                    return Ok(());
-                }
+            let vaddr_pos = VAddr::from(PML4_SLOT_SIZE * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx);
+            if VSpace::can_map_as_huge_page(pbase, psize, vaddr_pos, vbase) {
+                drop(pdpt);
+                // Start inserting mappings here in case we can map something as 1 GiB pages
+                return self.insert_huge_mappings(pdpt_idx, vbase, pbase, psize, rights, pager);
             } else {
                 trace!(
                     "Mapping 0x{:x} -- 0x{:x} is smaller than 1 GiB, going deeper.",
@@ -322,77 +503,18 @@ impl VSpace {
         drop(pdpt); // Makes sure we can borrow pd
 
         let pd = self.get_pd_mut(pdpt_entry);
-        let mut pd_idx = pd_index(vbase);
+        let pd_idx = pd_index(vbase);
         if !pd[pd_idx].is_present() {
-            let vaddr_pos: usize =
-                PML4_SLOT_SIZE * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx + LARGE_PAGE_SIZE * pd_idx;
-
+            // The virtual address corresponding to our position within the page-table
+            let vaddr_pos: VAddr = VAddr::from(
+                PML4_SLOT_SIZE * pml4_idx + HUGE_PAGE_SIZE * pdpt_idx + LARGE_PAGE_SIZE * pd_idx,
+            );
             // In case we can map something at a 2 MiB granularity and
             // we still have at least 2 MiB to map create large-page mappings
-            if vbase.as_usize() == vaddr_pos
-                && (pbase % LARGE_PAGE_SIZE == 0)
-                && psize >= LARGE_PAGE_SIZE
-            {
-                let mut mapped = 0;
-                // Add entries as long as we are within this allocated PDPT table
-                // and have at least 2 MiB things to map
-                while mapped < psize && ((psize - mapped) >= LARGE_PAGE_SIZE) && pd_idx < 512 {
-                    if let MapAction::None = rights {
-                        // Check if we could map in theory (no overlap)
-                        if pd[pd_idx].is_present() {
-                            let address = pd[pd_idx].address();
-                            let cur_rights: MapAction = pd[pd_idx].flags().into();
-                            if address != pbase + mapped || cur_rights != rights {
-                                return Err(AddressSpaceError::AlreadyMapped);
-                            }
-                        }
-                    } else {
-                        if pd[pd_idx].is_present() {
-                            let address = pd[pd_idx].address();
-                            let cur_rights: MapAction = pd[pd_idx].flags().into();
-                            if address != pbase + mapped || cur_rights != rights {
-                                panic!(
-                                    "Trying to map 2 MiB page but it conflicts with existing mapping"
-                                );
-                            }
-                        }
-
-                        pd[pd_idx] = PDEntry::new(
-                            pbase + mapped,
-                            PDFlags::P | PDFlags::PS | rights.to_pd_rights(),
-                        );
-                        trace!(
-                            "Mapped 2 MiB region {:#x} -- {:#x} -> {:#x} -- {:#x}",
-                            vbase + mapped,
-                            (vbase + mapped) + LARGE_PAGE_SIZE,
-                            pbase + mapped,
-                            (pbase + mapped) + LARGE_PAGE_SIZE
-                        );
-                    }
-
-                    pd_idx += 1;
-                    mapped += LARGE_PAGE_SIZE;
-                }
-
-                if mapped < psize {
-                    trace!(
-                        "map_generic recurse from 2 MiB map to finish {:#x} -- {:#x} -> {:#x} -- {:#x}",
-                        vbase + mapped,
-                        vbase + (psize - mapped),
-                        (pbase + mapped),
-                        pbase + (psize - mapped),
-                    );
-                    return self.map_generic(
-                        vbase + mapped,
-                        ((pbase + mapped), psize - mapped),
-                        rights,
-                        pager,
-                    );
-                } else {
-                    // Everything fit in 2 MiB ranges,
-                    // We're done with mappings
-                    return Ok(());
-                }
+            if VSpace::can_map_as_large_page(pbase, psize, vaddr_pos, vbase) {
+                drop(pd);
+                return self
+                    .insert_large_mappings(pdpt_entry, pd_idx, vbase, pbase, psize, rights, pager);
             } else {
                 trace!(
                     "Mapping 0x{:x} -- 0x{:x} is smaller than 2 MiB, going deeper.",
@@ -420,54 +542,7 @@ impl VSpace {
         let pd_entry = pd[pd_idx];
         drop(pd);
 
-        let pt = self.get_pt_mut(pd_entry);
-        let mut pt_idx = pt_index(vbase);
-        let mut mapped: usize = 0;
-        while mapped < psize && pt_idx < 512 {
-            if let MapAction::None = rights {
-                // Check if we could map in theory (no overlap)
-                if pt[pt_idx].is_present() {
-                    let address = pt[pt_idx].address();
-                    let cur_rights: MapAction = pt[pt_idx].flags().into();
-                    if address != pbase + mapped || cur_rights != rights {
-                        return Err(AddressSpaceError::AlreadyMapped);
-                    }
-                }
-            } else {
-                if pt[pt_idx].is_present() {
-                    let address = pt[pt_idx].address();
-                    let cur_rights: MapAction = pt[pt_idx].flags().into();
-                    if address != pbase + mapped || cur_rights != rights {
-                        panic!("Trying to map 4 KiB page but it conflicts with existing mapping");
-                    }
-                }
-
-                pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
-            }
-
-            mapped += BASE_PAGE_SIZE;
-            pt_idx += 1;
-        }
-
-        // Need go to different PD/PDPT/PML4 slot
-        if mapped < psize {
-            trace!(
-                "map_generic recurse from 4 KiB map to finish {:#x} -- {:#x} -> {:#x} -- {:#x}",
-                vbase + mapped,
-                vbase + (psize - mapped),
-                (pbase + mapped),
-                pbase + (psize - mapped),
-            );
-            return self.map_generic(
-                vbase + mapped,
-                ((pbase + mapped), psize - mapped),
-                rights,
-                pager,
-            );
-        } else {
-            // else we're done here, return
-            Ok(())
-        }
+        self.insert_base_mappings(pd_entry, vbase, pbase, psize, rights, pager)
     }
 
     fn new_pt(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDEntry {

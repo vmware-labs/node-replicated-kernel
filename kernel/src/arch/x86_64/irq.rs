@@ -535,6 +535,7 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
         // map it
         let kcb = get_kcb();
         let mut plock = kcb.arch.current_process();
+        let mut pmanager = kcb.mem_manager();
 
         plock.as_mut().map(|p| {
             trace!(
@@ -548,8 +549,9 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
                 .map_identity_with_offset(
                     PAddr::from(crate::arch::memory::KERNEL_BASE),
                     addr,
-                    addr + x86::bits64::paging::BASE_PAGE_SIZE,
+                    x86::bits64::paging::BASE_PAGE_SIZE,
                     MapAction::ReadWriteKernel,
+                    &mut *pmanager,
                 )
                 .expect("Can't map IO APIC?");
         });

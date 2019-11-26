@@ -512,9 +512,7 @@ pub(crate) mod model {
             .expect_err("Could map frame?");
     }
 
-    /// If written as match converting from PTFlags etc. has
-    /// problems
-    /// https://github.com/bitflags/bitflags/issues/201
+    /// map_frame should allow increase of mapping
     #[test]
     fn from_ptflags() {
         let ru = PTFlags::P | PTFlags::US | PTFlags::XD;

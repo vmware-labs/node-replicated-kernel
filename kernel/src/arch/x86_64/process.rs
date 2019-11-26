@@ -341,19 +341,23 @@ impl Ring3Process {
             )
             .expect("Can't map user-space upcall stack.");
 
-        // TODO: make sure we have APIC base (these should be part of kernel
-        // mappings and above KERNEL_BASE), should not be hardcoded
-        p.vspace.map_identity(
-            PAddr(0xfee00000u64),
-            PAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
-            MapAction::ReadWriteExecuteKernel,
-        );
-
         // TODO: Install the kernel mappings (these should be global mappings)
         // TODO(broken): BigMap allocaitons should be inserted here too..
         // TODO(broken): Find a better way for this
-
         super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
+            let mut pmanager = kcb.mem_manager();
+
+            // TODO: make sure we have APIC base (these should be part of kernel
+            // mappings and above KERNEL_BASE), should not be hardcoded
+            p.vspace
+                .map_identity(
+                    PAddr(0xfee00000u64),
+                    BASE_PAGE_SIZE,
+                    MapAction::ReadWriteExecuteKernel,
+                    &mut *pmanager,
+                )
+                .expect("Can't map APIC");
+
             let kernel_pml_entry = kcb.arch.init_vspace().pml4[128];
             trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
             p.vspace.pml4[128] = kernel_pml_entry;

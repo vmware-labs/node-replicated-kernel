@@ -44,8 +44,8 @@ impl AddressSpace for VSpace {
         _base: VAddr,
         _length: usize,
         _rights: MapAction,
-    ) -> Result<usize, AddressSpaceError> {
-        Ok(0)
+    ) -> Result<(), AddressSpaceError> {
+        Ok(())
     }
 
     fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
@@ -89,7 +89,11 @@ impl AddressSpace for VSpace {
         Err(AddressSpaceError::NotMapped)
     }
 
-    fn unmap(&mut self, _base: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+    fn unmap(
+        &mut self,
+        _base: VAddr,
+        _length: usize,
+    ) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
         //Ok((Default::default(), Frame::empty()))
         Err(AddressSpaceError::NotMapped)
     }
@@ -600,6 +604,7 @@ impl VSpace {
 
 #[cfg(test)]
 mod test {
+    use alloc::vec::Vec;
     use core::cmp::{Eq, PartialEq};
     use core::ptr;
 
@@ -616,7 +621,7 @@ mod test {
         Map(VAddr, Frame, MapAction),
         Adjust(VAddr, usize, MapAction),
         Resolve(VAddr),
-        Unmap(VAddr),
+        Unmap(VAddr, usize),
     }
 
     fn action() -> impl Strategy<Value = TestAction> {
@@ -712,9 +717,9 @@ mod test {
                         let rtotest = totest.resolve(base);
                         assert_eq!(rmodel, rtotest);
                     }
-                    Unmap(base) => {
-                        let rmodel = model.unmap(base);
-                        let rtotest = totest.unmap(base);
+                    Unmap(base, length) => {
+                        let rmodel = model.unmap(base, length);
+                        let rtotest = totest.unmap(base, length);
                         assert_eq!(rmodel, rtotest);
                     }
                 }

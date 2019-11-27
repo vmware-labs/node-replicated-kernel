@@ -47,7 +47,7 @@ path = "src/main.rs"
 libc = { version = "0.2.53", default-features = false }
 
 [target.'cfg(target_os = "none")'.dev-dependencies]
-#proptest = { version = "0.9.4", default-features = false, features = ["alloc", "unstable", "hardware-rng"] }
+#proptest = { version = "0.9.4" }
 proptest = { git = "https://github.com/gz/proptest.git", default-features = false, features = ["alloc", "unstable", "hardware-rng"], branch = "compilefix" }
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
@@ -55,8 +55,9 @@ rexpect = "0.3"
 matches = "0.1.8"
 # Need to force no-std here too; due to https://github.com/rust-lang/cargo/issues/1796
 #proptest = { version = "0.9.4" }
-proptest = { git = "https://github.com/gz/proptest.git", default-features = false, features = ["alloc", "unstable", "hardware-rng"], branch = "compilefix" }
 #env_logger = "*"
+proptest = { git = "https://github.com/gz/proptest.git", default-features = false, features = ["alloc", "unstable", "hardware-rng"], branch = "compilefix" }
+
 
 [build-dependencies]
 cc = "1.0"

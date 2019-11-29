@@ -547,18 +547,18 @@ pub(crate) mod model {
 
         let va = VAddr::from(0x1ad000);
         let frame_base = PAddr::from(0x0);
-        let frame = Frame::new(frame_base, 0xa7000, 0);
+        let frame = Frame::new(frame_base, 0x1000, 0);
 
         let ret = a
             .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
             .expect("Failed to map frame?");
 
-        let va = VAddr::from(0x1ae000);
+        let va = VAddr::from(0x1ad000);
         let frame_base = PAddr::from(0x0);
         let frame = Frame::new(frame_base, 0x1000, 0);
 
         let ret = a
-            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .map_frame(va, frame, MapAction::ReadExecuteUser, &mut tcache)
             .expect_err("Could map frame?");
     }
 

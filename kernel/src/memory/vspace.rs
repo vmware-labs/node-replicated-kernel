@@ -64,35 +64,26 @@ pub trait AddressSpace {
     /// before invoking map calls.
     fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize;
 
-    /// Changes the rights of frames for the region
-    /// given by [`base`, `base` + `length`) to `rights`.
+    /// Changes the mapping permissions of the region containing `vaddr` to `rights`.
     ///
     /// # Returns
-    /// How many pages were adjusted if successful.
+    /// The range (vregion) that was adjusted if successfull.
     fn adjust(
         &mut self,
-        base: VAddr,
-        length: usize,
+        vaddr: VAddr,
         rights: MapAction,
-    ) -> Result<(), AddressSpaceError>;
+    ) -> Result<(VAddr, usize), AddressSpaceError>;
 
     /// Given a virtual address `vaddr` it returns the corresponding `PAddr`
     /// and access rights or an error in case no mapping is found.
     fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError>;
 
-    /// Removes the frame mapped at `base` from the address space.
-    ///
-    /// # Arguments
-    ///  - `base` - should be at the start virtual address of the to be unmapped frame.
+    /// Removes the frame from the address space that contains `vaddr`.
     ///
     /// # Returns
     /// The frame to the caller along with a `TlbFlushHandle` that may have to be
     /// invoked to flush the TLB.
-    fn unmap(
-        &mut self,
-        base: VAddr,
-        length: usize,
-    ) -> Result<(TlbFlushHandle, Frame), AddressSpaceError>;
+    fn unmap(&mut self, vaddr: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError>;
 
     // Returns an iterator of all currently mapped memory regions.
     //fn mappings()
@@ -106,7 +97,7 @@ pub AddressSpaceError
     BaseOverflow{base: u64} = "Provided virtual base was invalid (led to overflow on mappings).",
     NotMapped = "The requested mapping was not found",
     InvalidLength = "The supplied length was invalid",
-    RegionNotFound = "The supplied (vaddr, length) was not found as a mapping in the address space",
+    InvalidBase = "The supplied base was invalid (alignment?)",
 }
 
 impl Into<SystemCallError> for AddressSpaceError {
@@ -117,7 +108,7 @@ impl Into<SystemCallError> for AddressSpaceError {
             AddressSpaceError::BaseOverflow { base: _ } => SystemCallError::InternalError,
             AddressSpaceError::NotMapped => SystemCallError::InternalError,
             AddressSpaceError::InvalidLength => SystemCallError::InternalError,
-            AddressSpaceError::RegionNotFound => SystemCallError::InternalError,
+            AddressSpaceError::InvalidBase => SystemCallError::InternalError,
         }
     }
 }
@@ -342,7 +333,7 @@ pub(crate) mod model {
 
     impl ModelAddressSpace {
         /// Checks if there is overlap between two ranges
-        fn overlaps<T: PartialOrd>(a: core::ops::Range<T>, b: core::ops::Range<T>) -> bool {
+        fn overlaps<T: PartialOrd>(a: &core::ops::Range<T>, b: &core::ops::Range<T>) -> bool {
             a.start < b.end && b.start < a.end
         }
 
@@ -351,7 +342,7 @@ pub(crate) mod model {
             a: core::ops::Range<usize>,
             b: core::ops::Range<usize>,
         ) -> Option<core::ops::Range<usize>> {
-            if ModelAddressSpace::overlaps(a.clone(), b.clone()) {
+            if ModelAddressSpace::overlaps(&a, &b) {
                 let mut min = usize::max_value();
                 let mut max = 0;
 
@@ -388,13 +379,32 @@ pub(crate) mod model {
             if frame.size() == 0 {
                 return Err(AddressSpaceError::InvalidFrame);
             }
+            if frame.base % frame.size() != 0 {
+                // phys addr should be aligned to page-size
+                return Err(AddressSpaceError::InvalidFrame);
+            }
+            if base % frame.size() != 0 {
+                // virtual addr should be aligned to page-size
+                return Err(AddressSpaceError::InvalidBase);
+            }
 
             // Is there an existing mapping that conflicts with the new mapping?
-            for (cur_vaddr, cur_paddr, length, rights) in self.oplog.iter().rev() {
+            for (cur_vaddr, cur_paddr, length, rights) in self.oplog.iter_mut().rev() {
                 let cur_range = cur_vaddr.as_usize()..cur_vaddr.as_usize() + *length;
                 let new_range = base.as_usize()..base.as_usize() + frame.size();
-                if ModelAddressSpace::overlaps(cur_range, new_range) {
-                    return Err(AddressSpaceError::AlreadyMapped);
+                if ModelAddressSpace::overlaps(&cur_range, &new_range) {
+                    if cur_range.start == new_range.start
+                        && cur_range.end <= new_range.end
+                        && *cur_paddr == frame.base
+                        && *rights == action
+                    {
+                        // Promote frame size in the special case where we can just extend
+                        // an existing mapping
+                        *length = frame.size();
+                        return Ok(());
+                    } else {
+                        return Err(AddressSpaceError::AlreadyMapped);
+                    }
                 }
             }
 
@@ -412,17 +422,20 @@ pub(crate) mod model {
         fn adjust(
             &mut self,
             base: VAddr,
-            length: usize,
             new_rights: MapAction,
-        ) -> Result<(), AddressSpaceError> {
+        ) -> Result<(VAddr, usize), AddressSpaceError> {
+            if !base.is_base_page_aligned() {
+                return Err(AddressSpaceError::InvalidBase);
+            }
+
             for (cur_vaddr, cur_paddr, cur_length, cur_rights) in self.oplog.iter_mut().rev() {
-                if *cur_vaddr == base && *cur_length == length {
+                if base >= *cur_vaddr && base < (*cur_vaddr + *cur_length) {
                     *cur_rights = new_rights;
-                    return Ok(());
+                    return Ok((*cur_vaddr, *cur_length));
                 }
             }
 
-            Err(AddressSpaceError::RegionNotFound)
+            Err(AddressSpaceError::NotMapped)
         }
 
         fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
@@ -440,18 +453,25 @@ pub(crate) mod model {
             Err(AddressSpaceError::NotMapped)
         }
 
-        fn unmap(
-            &mut self,
-            base: VAddr,
-            length: usize,
-        ) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
-            for (cur_vaddr, cur_paddr, cur_length, cur_rights) in self.oplog.iter().rev() {
-                if *cur_vaddr == base && *cur_length == length {
-                    return Ok((TlbFlushHandle {}, Frame::new(*cur_paddr, *cur_length, 0)));
-                }
+        fn unmap(&mut self, base: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+            if !base.is_base_page_aligned() {
+                return Err(AddressSpaceError::InvalidBase);
             }
 
-            Err(AddressSpaceError::RegionNotFound)
+            let mut found =
+                self.oplog
+                    .drain_filter(|(cur_vaddr, cur_paddr, cur_length, cur_rights)| {
+                        base >= *cur_vaddr && base < (*cur_vaddr + *cur_length)
+                    });
+
+            let element = found.next();
+            if element.is_some() {
+                let (cur_vaddr, cur_paddr, cur_length, cur_rights) = element.unwrap();
+                assert!(found.next().is_none(), "Only found one relevant mapping");
+                Ok((TlbFlushHandle {}, Frame::new(cur_paddr, cur_length, 0)))
+            } else {
+                Err(AddressSpaceError::NotMapped)
+            }
         }
     }
 
@@ -463,7 +483,7 @@ pub(crate) mod model {
 
         let va = VAddr::from(0xffff_0000u64);
         let frame_base = PAddr::from(0xdeaf_0000u64);
-        let frame = Frame::new(frame_base, 4096, 0);
+        let frame = Frame::new(frame_base, BASE_PAGE_SIZE, 0);
 
         let ret = a
             .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
@@ -478,21 +498,21 @@ pub(crate) mod model {
             .expect_err("resolve should not have succeeded");
         assert_eq!(e, AddressSpaceError::NotMapped);
 
-        a.adjust(va, 4096, MapAction::ReadWriteUser)
+        a.adjust(va, MapAction::ReadWriteUser)
             .expect("Can't adjust");
 
-        a.adjust(VAddr::from(0xffff_1000u64), 4096, MapAction::None)
-            .expect("Can't adjust");
+        a.adjust(VAddr::from(0xffff_1000u64), MapAction::None)
+            .expect_err("Adjusted unmapped region?");
 
         let (ret_paddr, ret_rights) = a.resolve(va).expect("Can't resolve");
         assert_eq!(ret_paddr, frame_base);
         assert_eq!(ret_rights, MapAction::ReadWriteUser);
 
-        let (handle, ret_frame) = a.unmap(va, 0).expect("Can't unmap");
+        let (handle, ret_frame) = a.unmap(va).expect("Can't unmap");
         assert_eq!(ret_frame, frame);
 
         let e = a
-            .unmap(va, 0)
+            .unmap(va)
             .expect_err("unmap of not mapped region succeeds?");
         assert_eq!(e, AddressSpaceError::NotMapped);
     }
@@ -559,31 +579,31 @@ pub(crate) mod model {
     fn half_range_overlaps() {
         let r1 = 1..3;
         let r2 = 2..5;
-        assert!(ModelAddressSpace::overlaps(r1, r2));
+        assert!(ModelAddressSpace::overlaps(&r1, &r2));
 
         let r1 = 5..15;
         let r2 = 0..5;
-        assert!(!ModelAddressSpace::overlaps(r1, r2));
+        assert!(!ModelAddressSpace::overlaps(&r1, &r2));
 
         let r1 = 10..15;
         let r2 = 0..10;
-        assert!(!ModelAddressSpace::overlaps(r1, r2));
+        assert!(!ModelAddressSpace::overlaps(&r1, &r2));
 
         let r1 = 0..10;
         let r2 = 10..15;
-        assert!(!ModelAddressSpace::overlaps(r1, r2));
+        assert!(!ModelAddressSpace::overlaps(&r1, &r2));
 
         let r1 = 0..10;
         let r2 = 9..10;
-        assert!(ModelAddressSpace::overlaps(r1, r2));
+        assert!(ModelAddressSpace::overlaps(&r1, &r2));
 
         let r1 = 0..10;
         let r2 = 9..11;
-        assert!(ModelAddressSpace::overlaps(r1, r2));
+        assert!(ModelAddressSpace::overlaps(&r1, &r2));
 
         let r1 = 0..10;
         let r2 = 11..12;
-        assert!(!ModelAddressSpace::overlaps(r1, r2));
+        assert!(!ModelAddressSpace::overlaps(&r1, &r2));
     }
 
     #[test]

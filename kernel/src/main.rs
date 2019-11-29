@@ -18,7 +18,8 @@
     c_variadic,
     box_into_raw_non_null,
     box_into_pin,
-    maybe_uninit_ref
+    maybe_uninit_ref,
+    drain_filter
 )]
 #![cfg_attr(
     all(not(test), not(feature = "integration-test"), target_os = "none"),

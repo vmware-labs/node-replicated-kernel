@@ -52,7 +52,7 @@ impl MemoryMapper {
         };
 
         let r =
-            unsafe { libc::posix_memalign(&mut addr as *mut *mut libc::c_void, size, alignment) };
+            unsafe { libc::posix_memalign(&mut addr as *mut *mut libc::c_void, alignment, size) };
 
         if r == 0 {
             let addr_ptr = addr as *const _ as *const u64;

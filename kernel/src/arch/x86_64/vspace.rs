@@ -257,7 +257,7 @@ impl VSpace {
         no_underlying_2mib_mappings
     }
 
-    /// Check if we can just insert a huge page for the current mapping
+    /// Check if we can just insert a large page for the current mapping
     fn can_map_as_large_page(
         &mut self,
         pdpt_entry: PDPTEntry,

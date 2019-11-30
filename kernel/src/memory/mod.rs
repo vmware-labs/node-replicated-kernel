@@ -179,6 +179,7 @@ impl KernelAllocator {
                             VAddr::from(start_at),
                             (f.base, f.size()),
                             MapAction::ReadWriteKernel,
+                            true,
                             &mut *pmanager,
                         )
                         .expect("Can't create the mapping");
@@ -195,6 +196,7 @@ impl KernelAllocator {
                             VAddr::from(start_at),
                             (f.base, f.size()),
                             MapAction::ReadWriteKernel,
+                            true,
                             &mut *pmanager,
                         )
                         .expect("Can't create the mapping");

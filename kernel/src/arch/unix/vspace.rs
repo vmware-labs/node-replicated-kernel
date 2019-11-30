@@ -41,6 +41,7 @@ impl VSpace {
         _vbase: VAddr,
         _pregion: (PAddr, usize),
         _rights: MapAction,
+        _create_mappings: bool,
         _pager: &mut crate::memory::tcache::TCache,
     ) -> Result<(), AddressSpaceError> {
         Ok(())

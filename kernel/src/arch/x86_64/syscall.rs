@@ -160,7 +160,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                     base,
                     (paddr, (bound - base.as_u64()) as usize),
                     MapAction::ReadWriteUser,
-                    false,
+                    true,
                     &mut *pmanager,
                 )?;
 

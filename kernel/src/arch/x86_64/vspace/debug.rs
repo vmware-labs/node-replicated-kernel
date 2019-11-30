@@ -7,11 +7,9 @@ use core::pin::Pin;
 use x86::controlregs;
 use x86::current::paging::*;
 
-use crate::arch::memory::paddr_to_kernel_vaddr;
+use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+use crate::arch::vspace::*;
 use crate::graphviz as dot;
-
-use super::memory::{PAddr, VAddr};
-use super::vspace::*;
 
 impl VSpace {
     fn parse_nodes_edges<'a>(&'a self) -> (dot::Nodes<'a, Nd<'a>>, dot::Edges<'a, Ed<'a>>) {

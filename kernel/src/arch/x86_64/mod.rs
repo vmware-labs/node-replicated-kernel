@@ -43,7 +43,6 @@ pub mod memory;
 pub mod process;
 pub mod syscall;
 pub mod vspace;
-mod vspace_debug;
 
 use uefi::table::boot::MemoryType;
 
@@ -53,7 +52,6 @@ mod isr;
 use klogger;
 use log::Level;
 use logos::Logos;
-use spin::Mutex;
 
 use crate::kcb::Kcb;
 use crate::memory::{tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE};
@@ -63,8 +61,6 @@ use crate::{xmain, ExitReason};
 
 use memory::paddr_to_kernel_vaddr;
 use vspace::*;
-
-pub static KERNEL_BINARY: Mutex<Option<&'static [u8]>> = Mutex::new(None);
 
 /// Definition to parse the kernel command-line arguments.
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]

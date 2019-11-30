@@ -236,6 +236,8 @@ impl VSpace {
         } else {
             // We go and check if the underlying page-table is emtpy
             // (previous mappings could've left a PD here which since has been emptied)
+            // TODO(efficiency): If we had 4 KiB mappings (that are empty below the PD) we
+            // don't currently detect that.
             let mut all_entries_empty: bool = true;
             let pd = self.get_pd(pdpt_entry);
             for i in 0..pd.len() {

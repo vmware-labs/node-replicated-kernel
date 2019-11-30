@@ -23,6 +23,7 @@ members = [
     "lib/vibrio",
     "lib/topology",
     "lib/node-replication",
+    "lib/crossbeam-queue",
     #"lib/vspace",
 ]
 

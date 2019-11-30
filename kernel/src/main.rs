@@ -57,6 +57,7 @@ mod memory;
 mod nr;
 mod prelude;
 mod process;
+mod scheduler;
 mod stack;
 
 pub mod panic;

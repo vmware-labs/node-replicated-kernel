@@ -25,10 +25,10 @@ impl Into<SystemCallError> for KError {
     fn into(self) -> SystemCallError {
         match self {
             KError::VSpace { source: s } => s.into(),
-            KError::InvalidSyscallArgument1 { a: _ } => SystemCallError::NotSupported,
-            KError::InvalidVSpaceOperation { a: _ } => SystemCallError::NotSupported,
-            KError::InvalidProcessOperation { a: _ } => SystemCallError::NotSupported,
-            KError::ProcessCreate { desc: _ } => SystemCallError::InternalError,
+            KError::InvalidSyscallArgument1 { .. } => SystemCallError::NotSupported,
+            KError::InvalidVSpaceOperation { .. } => SystemCallError::NotSupported,
+            KError::InvalidProcessOperation { .. } => SystemCallError::NotSupported,
+            KError::ProcessCreate { .. } => SystemCallError::InternalError,
             _ => SystemCallError::InternalError,
         }
     }

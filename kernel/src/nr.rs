@@ -4,7 +4,13 @@ use node_replication::Dispatch;
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub enum Op {
-    HelloWorld(u32),
+    NewProcess,
+    DestroyProcess,
+    AllocateProcessor,
+    DeallocateProcessor,
+    Schedule,
+    Map,
+    Unmap,
     Bye,
     Invalid,
 }
@@ -16,7 +22,9 @@ impl Default for Op {
 }
 
 #[derive(Eq, PartialEq)]
-pub struct KernelNode {}
+pub struct KernelNode {
+    // HashMap of processes
+}
 
 impl Default for KernelNode {
     fn default() -> KernelNode {
@@ -30,8 +38,14 @@ impl Dispatch for KernelNode {
 
     fn dispatch(&mut self, op: Self::Operation) -> Self::Response {
         match op {
-            Op::HelloWorld(v) => info!("Op::HelloWorld {}", v),
-            Op::Bye => info!("Op::Bye"),
+            Op::NewProcess => unreachable!(),
+            Op::DestroyProcess => unreachable!(),
+            Op::AllocateProcessor => unreachable!(),
+            Op::DeallocateProcessor => unreachable!(),
+            Op::Schedule => unreachable!(),
+            Op::Map => unreachable!(),
+            Op::Unmap => unreachable!(),
+            Op::Bye => unreachable!(),
             Op::Invalid => panic!("Got invalid OP"),
         };
     }

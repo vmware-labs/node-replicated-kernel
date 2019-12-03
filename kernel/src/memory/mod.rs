@@ -326,7 +326,6 @@ impl KernelAllocator {
 
         // Dropping things, as they'll get reacquired in try_refill_tcache
         drop(mem_manager);
-        drop(kcb);
 
         if needed_base_pages > free_bp || needed_large_pages > free_lp {
             debug!(

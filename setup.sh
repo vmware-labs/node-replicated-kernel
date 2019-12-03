@@ -7,7 +7,7 @@ if [ ! -x "$(command -v qemu-system-x86_64)" ]; then
         brew install qemu
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
         sudo apt-get update
-        sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 isc-dhcp-server socat
+        sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 isc-dhcp-server socat zlib1g-dev make gcc build-essential
     fi
 fi
 

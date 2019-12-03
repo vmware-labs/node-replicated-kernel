@@ -317,9 +317,13 @@ impl<'a> VSpace<'a> {
                 pt[pt_idx] = PTEntry::new(pbase + mapped, PTFlags::P | rights.to_pt_rights());
                 trace!("installed 4 KiB mapping: {:?}", pt[pt_idx]);
             } else {
-                assert!(
-                    !pt[pt_idx].is_present(),
-                    "An existing mapping already covers the 4 KiB range we're trying to map?"
+                let vaddr_pos: usize = GIB_512 * pml4_idx
+                    + HUGE_PAGE_SIZE * pdpt_idx
+                    + LARGE_PAGE_SIZE * pd_idx
+                    + BASE_PAGE_SIZE * pt_idx;
+                unreachable!(
+                    "An existing mapping already covers the 4 KiB range we're trying to map? {:#x} -> {:?} {}",
+                    vaddr_pos, pbase + mapped, rights
                 );
             }
 
@@ -397,20 +401,25 @@ impl<'a> VSpace<'a> {
         // Free unused top and bottom regions again:
         unsafe {
             let st = system_table();
-            st.as_ref()
-                .boot_services()
-                // This weird API will free the top-most page too? (that's why we do -1)
-                // (had a bug where it reused a page from the kernel text as stack)
-                .free_pages(paddr.as_u64(), unaligned_unused_pages_bottom - 1)
-                .expect_success("Can't free prev. allocated memory");
-            st.as_ref()
-                .boot_services()
-                // Again + page size because I don't know how this API does things
-                .free_pages(
-                    aligned_end.as_u64() + BASE_PAGE_SIZE as u64,
-                    unaligned_unused_pages_top - 1,
-                )
-                .expect_success("Can't free prev. allocated memory");
+            if unaligned_unused_pages_bottom > 1 {
+                st.as_ref()
+                    .boot_services()
+                    // This weird API will free the top-most page too? (that's why we do -1)
+                    // (had a bug where it reused a page from the kernel text as stack)
+                    .free_pages(paddr.as_u64(), unaligned_unused_pages_bottom - 1)
+                    .expect_success("Can't free prev. allocated memory");
+            }
+
+            if unaligned_unused_pages_top > 1 {
+                st.as_ref()
+                    .boot_services()
+                    // Again + page size because I don't know how this API does things
+                    .free_pages(
+                        aligned_end.as_u64() + BASE_PAGE_SIZE as u64,
+                        unaligned_unused_pages_top - 1,
+                    )
+                    .expect_success("Can't free prev. allocated memory");
+            }
         }
 
         PAddr::from(aligned_paddr)

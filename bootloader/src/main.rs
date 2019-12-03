@@ -465,7 +465,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     let stack_protector: PAddr = stack_region;
     let stack_base: PAddr = stack_region + BASE_PAGE_SIZE;
 
-    let stack_size: usize = stack_pages * BASE_PAGE_SIZE;
+    let stack_size: usize = (stack_pages - 1) * BASE_PAGE_SIZE;
     let stack_top: PAddr = stack_base + stack_size as u64;
     assert_eq!(stack_protector + BASE_PAGE_SIZE, stack_base);
 

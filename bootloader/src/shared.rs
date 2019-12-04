@@ -11,7 +11,7 @@
 #[derive(Clone)]
 pub struct Module {
     /// Name of the module (ELF file).
-    pub name: [u8; 32],
+    pub name: [u8; Module::MAX_NAME_LEN],
     /// Length of name
     pub name_len: usize,
     /// Where in memory the binary is and how big it is (in bytes).
@@ -19,17 +19,20 @@ pub struct Module {
 }
 
 impl Module {
+    /// Maximum supported name for a module
+    pub const MAX_NAME_LEN: usize = 32;
+
     /// Create a new module to pass to the kernel.
     /// The name will be truncated to 32 bytes.
     pub fn new(name: &str, binary: (x86::bits64::paging::VAddr, usize)) -> Module {
-        let mut name_slice: [u8; 32] = [0; 32];
-        let len = core::cmp::min(name.len(), 32);
+        let mut name_slice: [u8; Module::MAX_NAME_LEN] = [0; Module::MAX_NAME_LEN];
+        let len = core::cmp::min(name.len(), Module::MAX_NAME_LEN);
         name_slice[0..len].copy_from_slice(&name.as_bytes()[0..len]);
 
         Module {
             name: name_slice,
             name_len: len,
-            binary: binary,
+            binary,
         }
     }
 
@@ -108,5 +111,9 @@ pub struct KernelArgs {
 
     /// Modules (ELF binaries found in the UEFI partition) passed to the kernel
     /// modules[0] is the kernel binary
-    pub modules: arrayvec::ArrayVec<[Module; 12]>,
+    pub modules: arrayvec::ArrayVec<[Module; KernelArgs::MAX_MODULES]>,
+}
+
+impl KernelArgs {
+    pub const MAX_MODULES: usize = 32;
 }

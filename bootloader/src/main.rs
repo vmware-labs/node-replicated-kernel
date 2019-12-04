@@ -57,8 +57,6 @@ use core::slice;
 
 use uefi::prelude::*;
 use uefi::proto::console::gop::GraphicsOutput;
-use uefi::proto::media::file::*;
-use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::table::boot::{AllocateType, MemoryDescriptor, MemoryType};
 use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
 
@@ -69,13 +67,16 @@ use x86::bits64::paging::*;
 use x86::controlregs;
 
 mod kernel;
+mod modules;
 mod shared;
 mod vspace;
 
 use kernel::*;
+use modules::*;
 use shared::*;
 use vspace::*;
 
+#[macro_export]
 macro_rules! round_up {
     ($num:expr, $s:expr) => {
         (($num + $s - 1) / $s) * $s
@@ -98,91 +99,9 @@ fn check_revision(rev: uefi::table::Revision) {
     assert!(major >= 2 && minor >= 30, "Require UEFI version >= 2.30");
 }
 
-/// Trying to get the file handle for the kernel binary.
-fn locate_binary(st: &SystemTable<Boot>, name: &str) -> RegularFile {
-    let fhandle = st
-        .boot_services()
-        .locate_protocol::<SimpleFileSystem>()
-        .expect_success("Don't have SimpleFileSystem support");
-    let fhandle = unsafe { &mut *fhandle.get() };
-    let mut root_file = fhandle.open_volume().expect_success("Can't open volume");
-
-    // Look for the given binary name in the root folder of our EFI partition
-    // in our case this is `target/x86_64-uefi/debug/esp/`
-    // whereas the esp dir gets mounted with qemu using
-    // `-drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp`
-    let binary_file = root_file
-        .open(
-            format!("\\{}", name).as_str(),
-            FileMode::Read,
-            FileAttribute::READ_ONLY,
-        )
-        .expect_success("Unable to locate binary")
-        .into_type()
-        .expect_success("Can't cast it to a file common type??");
-
-    let binary_file: RegularFile = match binary_file {
-        FileType::Regular(t) => t,
-        _ => panic!("Binary was found but is not a regular file type, check your build."),
-    };
-
-    debug!("Found the binary {}", name);
-    binary_file
-}
-
-/// Determine the size of a regular file,
-///
-/// The only -- crappy -- way to do this with UEFI, seems to be
-/// to seek to infinity and then call get_position on it?
-fn determine_file_size(file: &mut RegularFile) -> usize {
-    file.set_position(0xFFFFFFFFFFFFFFFF)
-        .expect_success("Seek to the end of kernel");
-    let file_size = file
-        .get_position()
-        .expect_success("Couldn't determine binary size") as usize;
-    file.set_position(0)
-        .expect_success("Reset file handle position failed");
-
-    file_size
-}
-
-/// Load a binary from the UEFI FAT partition, and return
-/// a slice to the data in memory along with a Module struct
-/// that can be passed to the kernel.
-fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &'static mut [u8]) {
-    // Get the binary, this should be a plain old
-    // ELF executable.
-    let mut module_file = locate_binary(&st, name);
-    let module_size = determine_file_size(&mut module_file);
-    debug!("Found {} binary with {} bytes", name, module_size);
-    let module_base_paddr = allocate_pages(
-        &st,
-        round_up!(module_size, BASE_PAGE_SIZE) / BASE_PAGE_SIZE,
-        MemoryType(MODULE),
-    );
-    trace!("Load the {} binary (in a vector)", name);
-    let module_blob: &mut [u8] = unsafe {
-        slice::from_raw_parts_mut(
-            paddr_to_uefi_vaddr(module_base_paddr).as_mut_ptr::<u8>(),
-            module_size,
-        )
-    };
-    module_file
-        .read(module_blob)
-        .expect_success("Can't read the module file");
-
-    (
-        Module::new(
-            name,
-            (paddr_to_kernel_vaddr(module_base_paddr), module_size),
-        ),
-        module_blob,
-    )
-}
-
 /// Allocates `pages` * `BASE_PAGE_SIZE` bytes of physical memory
 /// and return the address.
-fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> PAddr {
+pub fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> PAddr {
     let num = st
         .boot_services()
         .allocate_pages(AllocateType::AnyPages, typ, pages)
@@ -319,11 +238,11 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
 }
 
 /// Initialize the screen to the highest possible resolution.
-fn setup_screen(st: &SystemTable<Boot>) {
+fn _setup_screen(st: &SystemTable<Boot>) {
     if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
         let gop = gop.expect("Warnings encountered while opening GOP");
         let gop = unsafe { &mut *gop.get() };
-        let mode = gop
+        let _mode = gop
             .modes()
             .map(|mode| mode.expect("Warnings encountered while querying modes"))
             .max_by(|ref x, ref y| x.info().resolution().cmp(&y.info().resolution()))
@@ -334,13 +253,13 @@ fn setup_screen(st: &SystemTable<Boot>) {
 }
 
 /// Intialize the serial console.
-fn serial_init(st: &SystemTable<Boot>) {
+fn _serial_init(st: &SystemTable<Boot>) {
     use uefi::proto::console::serial::{ControlBits, Serial};
     if let Ok(serial) = st.boot_services().locate_protocol::<Serial>() {
         let serial = serial.expect("Warnings encountered while opening serial protocol");
         let serial = unsafe { &mut *serial.get() };
 
-        let old_ctrl_bits = serial
+        let _old_ctrl_bits = serial
             .get_control_bits()
             .expect_success("Failed to get device control bits");
 
@@ -438,9 +357,10 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     info!("UEFI Bootloader starting...");
     check_revision(st.uefi_revision());
 
-    let base = find_apic_base();
+    let _base = find_apic_base();
+
     let (kernel_module, kernel_blob) = load_binary_into_memory(&st, "kernel");
-    let (init_module, _) = load_binary_into_memory(&st, "init");
+    let modules = load_modules(&st, "\\");
 
     // Next create an address space for our kernel
     trace!("Allocate a PML4 (page-table root)");
@@ -524,11 +444,11 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         wrmsr(IA32_EFER, efer);
     }
 
-    // Preparing to jump to the kernel
-    // * Switch to the kernel address space
-    // * Exit boot services
-    // * Switch stack and do a jump to kernel ELF entry point
     unsafe {
+        // Preparing to jump to the kernel
+        // * Switch to the kernel address space
+        // * Exit boot services
+        // * Switch stack and do a jump to kernel ELF entry point
         // Get an estimate of the memory map size:
         let mm_size = estimate_memory_map_size(&st);
         assert_eq!(mm_size % BASE_PAGE_SIZE, 0);
@@ -553,9 +473,12 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
         kernel_args.kernel_elf_offset = kernel.offset;
         kernel_args.modules = arrayvec::ArrayVec::new();
-
         kernel_args.modules.push(kernel_module);
-        kernel_args.modules.push(init_module);
+        for (name, module) in modules {
+            if name != "kernel" {
+                kernel_args.modules.push(module);
+            }
+        }
         for entry in st.config_table() {
             if entry.guid == ACPI2_GUID {
                 kernel_args.acpi2_rsdp = PAddr::from(entry.address as u64);
@@ -566,12 +489,12 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
 
         if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
             let gop = gop.expect("Warnings encountered while opening GOP");
-            let gop = unsafe { &mut *gop.get() };
+            let gop = &mut *gop.get();
 
             let mut frame_buffer = gop.frame_buffer();
             let frame_buf_ptr = frame_buffer.as_mut_ptr();
             let size = frame_buffer.size();
-            let frame_buf_paddr = PAddr::from(frame_buf_ptr as u64);
+            let _frame_buf_paddr = PAddr::from(frame_buf_ptr as u64);
 
             kernel_args.frame_buffer = Some(core::slice::from_raw_parts_mut(
                 frame_buf_ptr.add(KERNEL_OFFSET),
@@ -612,7 +535,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
             kernel.offset.as_u64() + binary.entry_point(),
             paddr_to_kernel_vaddr(kernel_args_paddr).as_u64(),
         );
-    }
 
-    unreachable!("UEFI Bootloader: We are not supposed to return here from the kernel?");
+        unreachable!("UEFI Bootloader: We are not supposed to return here from the kernel?");
+    }
 }

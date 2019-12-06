@@ -34,6 +34,7 @@ uefi = { version = "0.3.2", features = ["exts"] }
 arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
 lazy_static = { version = "1.3", features = ["spin_no_std"] }
 logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
+hashbrown = { version = "0.6.0", features = [ "nightly" ] }
 crossbeam-queue = { path = "../lib/crossbeam-queue", default-features = false }
 # Finally some external crates I forked due to issues with the current upstream version:
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false } # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
@@ -102,3 +103,5 @@ test-coreboot = ["integration-test" ]
 test-userspace = ["integration-test", "bsp-only"]
 # vspace_debug: print initial vspace in graphviz format
 test-vspace-debug = ["integration-test", "bsp-only"]
+# userspace_multi: Test that we can dispatch two processes simultaneously (on a single core)
+test-userspace-multi = ["integration-test", "bsp-only"]

@@ -19,7 +19,8 @@
     box_into_raw_non_null,
     box_into_pin,
     maybe_uninit_ref,
-    drain_filter
+    drain_filter,
+    alloc_prelude
 )]
 #![cfg_attr(
     all(not(test), not(feature = "integration-test"), target_os = "none"),
@@ -57,7 +58,6 @@ mod memory;
 mod nr;
 mod prelude;
 mod process;
-mod scheduler;
 mod stack;
 
 pub mod panic;

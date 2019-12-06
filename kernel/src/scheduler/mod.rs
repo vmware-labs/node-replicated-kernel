@@ -1,15 +1,43 @@
 #![allow(warnings)]
+
+use alloc::boxed::Box;
 use crossbeam_queue;
 use topology::MACHINE_TOPOLOGY;
 
-mod process;
+pub mod process;
 
+/*
+use crate::arch::process::Ring3Process;
+use crate::kcb;
+
+pub fn schedule_process(process: Box<Ring3Process>) {
+    let no = kcb::get_kcb().arch.swap_current_process(process);
+    assert!(no.is_none());
+
+    unsafe {
+        let rh = kcb::get_kcb()
+            .arch
+            .current_process()
+            .as_mut()
+            .map(|p| p.start());
+        rh.unwrap().resume()
+    }
+}
+
+/// Determines which process to run next and executes it on the current CPU.
+pub fn schedule() -> ! {
+    unimplemented!()
+}
+*/
+
+/// Errors that the scheduler/process logic can return.
 #[derive(Debug)]
 enum SchedulerError<P> {
     NothingToRun,
     OutOfCapacity(P),
 }
 
+/// A MPMC queue that contains processes.
 struct FifoScheduler<P: process::Process> {
     queue: crossbeam_queue::ArrayQueue<P>,
 }

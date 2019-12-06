@@ -8,7 +8,7 @@
 // That's also the reason why this isn't a rustdoc comment.
 
 /// Describes an ELF binary we loaded from the UEFI image into memory.
-#[derive(Clone)]
+#[derive(Eq, PartialEq, Clone)]
 pub struct Module {
     /// Name of the module (ELF file).
     pub name: [u8; Module::MAX_NAME_LEN],

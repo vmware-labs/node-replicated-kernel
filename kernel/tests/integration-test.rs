@@ -808,28 +808,28 @@ fn userspace_rumprt_fs() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Checks output for graphviz content, and creates PNGs from it
-fn plot_vspace(output: &String) -> io::Result<()> {
-    let mut file = File::create("vspace.dot")?;
-    file.write_all(output.as_bytes())?;
-    eprintln!("About to invoke dot...");
-
-    let o = process::Command::new("sfdp")
-        .args(&["-Tsvg", "vspace.dot", "-O"])
-        .output()
-        .expect("failed to create graph");
-    if !o.status.success() {
-        io::stdout().write_all(&o.stdout).unwrap();
-        io::stderr().write_all(&o.stderr).unwrap();
-        panic!("Graphviz invocation failed: {:?}");
-    }
-
-    Ok(())
-}
-
 /// Checks vspace debug functionality.
 #[test]
 fn vspace_debug() {
+    /// Checks output for graphviz content, and creates PNGs from it
+    fn plot_vspace(output: &String) -> io::Result<()> {
+        let mut file = File::create("vspace.dot")?;
+        file.write_all(output.as_bytes())?;
+        eprintln!("About to invoke dot...");
+
+        let o = process::Command::new("sfdp")
+            .args(&["-Tsvg", "vspace.dot", "-O"])
+            .output()
+            .expect("failed to create graph");
+        if !o.status.success() {
+            io::stdout().write_all(&o.stdout).unwrap();
+            io::stderr().write_all(&o.stderr).unwrap();
+            panic!("Graphviz invocation failed: {:?}");
+        }
+
+        Ok(())
+    }
+
     let cmdline = &RunnerArgs::new("test-vspace-debug")
         .timeout(45_000)
         .memory(2048);
@@ -849,4 +849,21 @@ fn vspace_debug() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
     plot_vspace(&graphviz_output);
+}
+
+fn multi_process() {
+    let cmdline = &RunnerArgs::new("test-userspace-multi").user_feature("test-loopy");
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        output += p.exp_string("Process 1 looping")?;
+        output += p.exp_string("Process 2 looping")?;
+        output += p.exp_string("Process 1 looping")?;
+        output += p.exp_string("Process 2 looping")?;
+        output += p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
 }

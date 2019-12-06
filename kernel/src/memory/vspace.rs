@@ -105,7 +105,7 @@ impl Into<SystemCallError> for AddressSpaceError {
         match self {
             AddressSpaceError::InvalidFrame => SystemCallError::InternalError,
             AddressSpaceError::AlreadyMapped => SystemCallError::InternalError,
-            AddressSpaceError::BaseOverflow { base: _ } => SystemCallError::InternalError,
+            AddressSpaceError::BaseOverflow { .. } => SystemCallError::InternalError,
             AddressSpaceError::NotMapped => SystemCallError::InternalError,
             AddressSpaceError::InvalidLength => SystemCallError::InternalError,
             AddressSpaceError::InvalidBase => SystemCallError::InternalError,

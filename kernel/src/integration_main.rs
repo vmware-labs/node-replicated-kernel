@@ -431,3 +431,39 @@ pub fn xmain() {
 pub fn xmain() {
     arch::debug::shutdown(ExitReason::ReturnFromMain);
 }
+
+/// Test process loading / user-space.
+#[cfg(all(feature = "integration-test", feature = "test-userspace-two"))]
+pub fn xmain() {
+    let init_module1 = kcb::try_get_kcb()
+        .map(|kcb| kcb.arch.kernel_args().modules[1].clone())
+        .expect("Need to have an init module.");
+    trace!("init1 {:?}", init_module);
+
+    let init_module2 = kcb::try_get_kcb()
+        .map(|kcb| kcb.arch.kernel_args().modules[1].clone())
+        .expect("Need to have an init module.");
+    trace!("init2 {:?}", init_module);
+
+    let mut process_1 = alloc::boxed::Box::new(
+        arch::process::Ring3Process::from(init_module1).expect("Couldn't load init."),
+    );
+    let mut process_2 = alloc::boxed::Box::new(
+        arch::process::Ring3Process::from(init_module2).expect("Couldn't load init."),
+    );
+
+    info!("Created the init process, about to go there...");
+    let no = kcb::get_kcb().arch.swap_current_process(process);
+    assert!(no.is_none());
+
+    unsafe {
+        let rh = kcb::get_kcb()
+            .arch
+            .current_process()
+            .as_mut()
+            .map(|p| p.start());
+        rh.unwrap().resume();
+    }
+
+    arch::debug::shutdown(ExitReason::Ok);
+}

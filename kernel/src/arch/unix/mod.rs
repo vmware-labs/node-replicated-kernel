@@ -17,6 +17,14 @@ pub mod vspace;
 
 use crate::kcb::Kcb;
 
+// Includes structs KernelArgs, and Module from bootloader
+//include!("../../../../bootloader/src/shared.rs");
+
+#[derive(Eq, PartialEq, Debug)]
+pub struct Module {
+    data: &'static [u8],
+}
+
 pub struct KernelArgs {
     /// The offset where the elfloader placed the kernel
     pub kernel_elf_offset: x86::bits64::paging::VAddr,

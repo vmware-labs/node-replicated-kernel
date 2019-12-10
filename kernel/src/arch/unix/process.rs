@@ -32,7 +32,7 @@ impl Executor for UnixThread {
 impl Process for UnixProcess {
     type E = UnixThread;
 
-    fn new(module: &Module) -> Result<Self, ProcessError> {
+    fn new(_module: &Module) -> Result<Self, ProcessError> {
         Ok(UnixProcess {})
     }
 
@@ -40,5 +40,5 @@ impl Process for UnixProcess {
         UnixThread {}
     }
 
-    fn remove_dispatcher(&mut self, d: Self::E) {}
+    fn remove_dispatcher(&mut self, _d: Self::E) {}
 }

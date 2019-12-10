@@ -5,7 +5,7 @@ use crate::prelude::*;
 use hashbrown::HashMap;
 
 use crate::arch::Module;
-use crate::process::{Executor, Process};
+use crate::process::{Eid, Executor, Pid, Process};
 
 use node_replication::Dispatch;
 
@@ -34,12 +34,6 @@ impl Default for Op {
     }
 }
 
-/// Process ID.
-type Pid = u64;
-
-/// Executor ID.
-type Eid = u64;
-
 #[derive(Copy, Eq, PartialEq, Debug, Clone)]
 pub enum NodeResult {
     ProcCreated(Pid),
@@ -62,7 +56,7 @@ impl Default for NodeResult {
 }
 
 pub struct KernelNode<P: Process> {
-    current_pid: u64,
+    current_pid: Pid,
     process_map: HashMap<Pid, Box<P>>,
 }
 
@@ -81,7 +75,7 @@ impl<P: Process> Dispatch for KernelNode<P> {
 
     fn dispatch(&mut self, op: Self::Operation) -> Self::Response {
         match op {
-            Op::ProcCreate(module) => match P::new(module) {
+            Op::ProcCreate(module) => match P::new(module, self.current_pid) {
                 Ok(process) => {
                     //self.process_map.try_reserve(1);
                     let pid = self.current_pid;
@@ -95,8 +89,8 @@ impl<P: Process> Dispatch for KernelNode<P> {
                 }
             },
             Op::ProcDestroy(pid) => {
-                // TODO(correctness): This is just a trivial, wrong implementation
-                // at the moment
+                // TODO(correctness): This is just a trivial,
+                // wrong implementation at the moment
                 let process = self.process_map.remove(&pid);
                 if process.is_some() {
                     drop(process);

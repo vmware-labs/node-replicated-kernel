@@ -1,3 +1,4 @@
+use alloc::collections::TryReserveError;
 use core::fmt;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
@@ -8,11 +9,13 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
-use crate::error::KError;
+use crate::arch::Module;
 use crate::kcb::Kcb;
 use crate::memory::vspace::{AddressSpace, MapAction};
-use crate::memory::{paddr_to_kernel_vaddr, KernelAllocator, PAddr, PhysicalPageProvider, VAddr};
-use crate::process::Process;
+use crate::memory::{
+    paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, PhysicalPageProvider, VAddr,
+};
+use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle};
 use crate::round_up;
 
 use super::kcb::Arch86Kcb;
@@ -96,7 +99,7 @@ impl<T> Drop for UserValue<T> {
     }
 }
 
-/// A ResumeHandle that can either be an upcall or a context restore.
+/// A Ring3Resumer that can either be an upcall or a context restore.
 ///
 /// # TODO
 /// This two should ideally be separate with a common resume trait once impl Trait
@@ -104,7 +107,7 @@ impl<T> Drop for UserValue<T> {
 /// The interface is not really safe at the moment (we use it in very restricted ways
 /// i.e., get the handle and immediatle resume but we can def. make this more safe
 /// to use...)
-pub struct ResumeHandle {
+pub struct Ring3Resumer {
     is_upcall: bool,
     pub save_area: *const kpi::arch::SaveArea,
 
@@ -115,9 +118,15 @@ pub struct ResumeHandle {
     exception: u64,
 }
 
-impl ResumeHandle {
-    pub fn new_restore(save_area: *const kpi::arch::SaveArea) -> ResumeHandle {
-        ResumeHandle {
+impl ResumeHandle for Ring3Resumer {
+    unsafe fn resume(self) {
+        unimplemented!()
+    }
+}
+
+impl Ring3Resumer {
+    pub fn new_restore(save_area: *const kpi::arch::SaveArea) -> Ring3Resumer {
+        Ring3Resumer {
             is_upcall: false,
             save_area: save_area,
             entry_point: VAddr::zero(),
@@ -134,8 +143,8 @@ impl ResumeHandle {
         cpu_ctl: u64,
         vector: u64,
         exception: u64,
-    ) -> ResumeHandle {
-        ResumeHandle {
+    ) -> Ring3Resumer {
+        Ring3Resumer {
             is_upcall: true,
             save_area: ptr::null(),
             entry_point: entry_point,
@@ -262,179 +271,111 @@ impl ResumeHandle {
     }
 }
 
-/// A process representation.
-#[repr(C, packed)]
-pub struct Ring3Process {
+/// An executor is a thread running in a ring 3 in the context
+/// (address-space) of a specific process.
+///
+/// # Notes
+/// repr(C): Because `save_area` in is struct is written to from assembly
+/// (and therefore should be first).
+#[repr(C)]
+struct Ring3Executor {
     /// CPU context save area (must be first, see exec.S).
     pub save_area: kpi::x86_64::SaveArea,
-    /// ELF File mappings that were installed into the address space.
-    pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
-    /// Ring3Process ID.
-    pub pid: u64,
-    /// The address space of the process.
-    pub vspace: VSpace,
-    /// Offset where ELF is located.
-    pub offset: VAddr,
-    /// The entry point of the ELF file.
-    pub entry_point: VAddr,
 
-    // TODO: The stuff that comes next is actually per core
-    // so we should take it out of here and move it into
-    // a separate dispatcher object:
-    /// Initial allocated stack (base address).
+    /// Allocated stack (base address).
     pub stack_base: VAddr,
-    /// Initial allocated stack (top address).
-    pub stack_top: VAddr,
-    /// Initial allocated stack size.
-    pub stack_size: usize,
 
-    /// Upcall allocated stack (base address).
+    /// Up-call stack (base address).
     pub upcall_stack_base: VAddr,
-    /// Upcall allocated stack (top address).
-    pub upcall_stack_top: VAddr,
-    /// Upcall allocated stack size.
-    pub upcall_stack_size: usize,
+
+    pub eid: Eid,
+    pub affinity: topology::NodeId,
 
     /// Virtual CPU control used by the user-space upcall mechanism.
-    pub vcpu_ctl: Option<UserPtr<kpi::arch::VirtualCpu>>,
+    pub vcpu_ctl: UserPtr<kpi::arch::VirtualCpu>,
+
+    /// Entry point where the executor should start executing from
+    ///
+    /// Usually ELF start point (for the first dispatcher) then somthing set by process
+    /// after.
+    ///
+    /// e.g. in process this can be computed as self.offset + self.entry_point
+    pub entry_point: VAddr,
+
+    /// A handle to the vspace PML4 entry point.
+    pub pml4: PAddr,
 }
 
-impl Ring3Process {
-    /// Create a process from a Module (i.e., a struct passed by UEFI)
-    pub fn from(module: super::Module) -> Result<Ring3Process, KError> {
-        let mut p = Ring3Process::new(0);
+impl Ring3Executor {
+    /// Size of the init stack (i.e., initial stack when the dispatcher starts running).
+    const INIT_STACK_SIZE: usize = 24 * BASE_PAGE_SIZE;
+    /// Size of the upcall signal stack for the dispatcher.
+    const UPCALL_STACK_SIZE: usize = 24 * BASE_PAGE_SIZE;
 
-        // Load the Module into the process address-space
-        // Safe since we don't modify the kernel page-table
-        unsafe {
-            let e = elfloader::ElfBinary::new(module.name(), module.as_slice())?;
-            p.entry_point = VAddr::from(e.entry_point());
-            e.load(&mut p)?;
-        }
+    fn new(eid: Eid, region: (VAddr, VAddr), affinity: topology::NodeId) -> Self {
+        unimplemented!("see below");
+        let (from, to) = region;
+        assert!(to > from, "Malformed region");
+        assert!(
+            (from - to).as_usize()
+                >= Ring3Executor::INIT_STACK_SIZE
+                    + Ring3Executor::UPCALL_STACK_SIZE
+                    + core::mem::size_of::<kpi::arch::VirtualCpu>(),
+            "Virtual region not big enough"
+        );
 
-        let stack_pages = p.stack_size / BASE_PAGE_SIZE;
-        KernelAllocator::try_refill_tcache(20 + stack_pages, 0).expect("Refill didn't work");
-        {
-            let mut frames = Vec::with_capacity(stack_pages);
-            let kcb = crate::kcb::get_kcb();
-            let mut pmanager = kcb.mem_manager();
-            for _i in 0..stack_pages {
-                frames.push((
-                    pmanager
-                        .allocate_base_page()
-                        .expect("Can't allocate base-page"),
-                    MapAction::ReadWriteExecuteUser,
-                ));
-            }
+        let stack_base = from;
+        let upcall_stack_base = from + Ring3Executor::INIT_STACK_SIZE;
 
-            // XXX: subtle frames has to be a refernce otherwise it may be dropped in map_frames
-            // while we've borrowed the pmanager...
-            p.vspace
-                .map_frames(p.stack_base, &frames, &mut *pmanager)
-                .expect("Can't map user-space upcall stack.");
+        let vcpu_vaddr: *mut kpi::arch::VirtualCpu =
+            (from + Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE).as_mut_ptr();
+        let vcpu_ctl = UserPtr::new(vcpu_vaddr);
 
-            info!(
-                "stack base {:#x} size: {} end {:#x}",
-                p.stack_base,
-                p.stack_size,
-                p.stack_base + p.stack_size
-            );
-        }
-
-        let stack_pages = p.upcall_stack_size / BASE_PAGE_SIZE;
-        KernelAllocator::try_refill_tcache(20 + stack_pages, 0).expect("Refill didn't work");
-        {
-            let mut frames = Vec::with_capacity(stack_pages);
-            let kcb = crate::kcb::get_kcb();
-            let mut pmanager = kcb.mem_manager();
-            for _i in 0..stack_pages {
-                frames.push((
-                    pmanager
-                        .allocate_base_page()
-                        .expect("Can't allocate base-page"),
-                    MapAction::ReadWriteExecuteUser,
-                ));
-            }
-
-            p.vspace
-                .map_frames(p.upcall_stack_base, &frames, &mut *pmanager)
-                .expect("Can't map user-space upcall stack.");
-        }
-
-        // TODO: Install the kernel mappings (these should be global mappings)
-        // TODO(broken): BigMap allocaitons should be inserted here too..
-        // TODO(broken): Find a better way for this
-        super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
-            let mut pmanager = kcb.mem_manager();
-
-            // TODO: make sure we have APIC base (these should be part of kernel
-            // mappings and above KERNEL_BASE), should not be hardcoded
-            p.vspace
-                .map_identity(
-                    PAddr(0xfee00000u64),
-                    BASE_PAGE_SIZE,
-                    MapAction::ReadWriteExecuteKernel,
-                    &mut *pmanager,
-                )
-                .expect("Can't map APIC");
-
-            let kernel_pml_entry = kcb.arch.init_vspace().pml4[128];
-            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
-            p.vspace.pml4[128] = kernel_pml_entry;
-        });
-
-        Ok(p)
-    }
-
-    /// Create a new `empty` process.
-    fn new<'b>(pid: u64) -> Ring3Process {
-        // TODO: stack_base address should not be hard-coded
-        let stack_base = VAddr::from(0xadf000_0000usize);
-        let stack_size = 128 * BASE_PAGE_SIZE;
-        let stack_top = stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
-
-        // TODO: upcall stack address should not be hard-coded
-        let upcall_stack_base = VAddr::from(0xad2000_0000usize);
-        let upcall_stack_size = 128 * BASE_PAGE_SIZE;
-        let upcall_stack_top = upcall_stack_base + stack_size - 8usize; // -8 due to x86 stack alignemnt requirements
-
-        Ring3Process {
-            offset: VAddr::from(0usize),
-            mapping: Vec::with_capacity(64),
-            pid: pid,
-            vspace: VSpace::new(),
+        Ring3Executor {
+            stack_base,
+            upcall_stack_base,
+            eid,
+            affinity,
+            vcpu_ctl,
             save_area: Default::default(),
-            entry_point: VAddr::from(0usize),
-            stack_base: stack_base,
-            stack_top: stack_top,
-            stack_size: stack_size,
-            upcall_stack_base: upcall_stack_base,
-            upcall_stack_size: upcall_stack_size,
-            upcall_stack_top: upcall_stack_top,
-            vcpu_ctl: None,
+            entry_point: VAddr::zero(), // XXX: supply as argument!
+            pml4: PAddr::zero(),        // XXX: supply as argument!
         }
     }
+
+    fn stack_top(&self) -> VAddr {
+        // -8 due to x86 stack alignemnt requirements
+        self.stack_base + Ring3Executor::INIT_STACK_SIZE - 8usize
+    }
+
+    fn upcall_stack_top(&self) -> VAddr {
+        // -8 due to x86 stack alignemnt requirements
+        self.upcall_stack_base + Ring3Executor::UPCALL_STACK_SIZE - 8usize
+    }
+}
+
+impl Executor for Ring3Executor {
+    type Resumer = Ring3Resumer;
 
     /// Start the process (run it for the first time).
-    pub fn start(&mut self) -> ResumeHandle {
+    fn start(&mut self) -> Ring3Resumer {
         self.maybe_switch_vspace();
-        ResumeHandle::new_upcall(self.offset + self.entry_point, self.stack_top, 0, 0, 0)
+        Ring3Resumer::new_upcall(self.entry_point, self.stack_top(), 0, 0, 0)
     }
 
-    pub fn resume(&self) -> ResumeHandle {
+    fn resume(&self) -> Ring3Resumer {
         self.maybe_switch_vspace();
-        ResumeHandle::new_restore(&self.save_area as *const kpi::arch::SaveArea)
+        Ring3Resumer::new_restore(&self.save_area as *const kpi::arch::SaveArea)
     }
 
-    pub fn upcall(&mut self, vector: u64, exception: u64) -> ResumeHandle {
+    fn upcall(&mut self, vector: u64, exception: u64) -> Ring3Resumer {
         self.maybe_switch_vspace();
-        let (entry_point, cpu_ctl) = self.vcpu_ctl.as_mut().map_or((VAddr::zero(), 0), |ctl| {
-            (ctl.resume_with_upcall, ctl.vaddr().into())
-        });
+        let entry_point = self.vcpu_ctl.resume_with_upcall;
+        let cpu_ctl = self.vcpu_ctl.vaddr().as_u64();
 
-        ResumeHandle::new_upcall(
+        Ring3Resumer::new_upcall(
             entry_point,
-            self.upcall_stack_top,
+            self.upcall_stack_top(),
             cpu_ctl,
             vector,
             exception,
@@ -444,22 +385,56 @@ impl Ring3Process {
     fn maybe_switch_vspace(&self) {
         unsafe {
             let current_pml4 = PAddr::from(controlregs::cr3());
-            let process_pml4 = self.vspace.pml4_address();
-            if current_pml4 != process_pml4 {
-                trace!("Switching to 0x{:x}", process_pml4);
-                controlregs::cr3_write(process_pml4.into());
+            if current_pml4 != self.pml4 {
+                trace!("Switching to 0x{:x}", self.pml4);
+                controlregs::cr3_write(self.pml4.into());
             }
+        }
+    }
+}
+
+/// A process representation.
+pub struct Ring3Process {
+    /// Ring3Process ID.
+    pub pid: Pid,
+    /// Ring3Executor ID.
+    pub current_eid: Eid,
+    /// The address space of the process.
+    pub vspace: VSpace,
+    /// Offset where ELF is located.
+    pub offset: VAddr,
+    /// The entry point of the ELF file (set during elfloading).
+    pub entry_point: VAddr,
+    /// Executor cache (holds a per-region cache of executors)
+    pub executor_cache: arrayvec::ArrayVec<[Option<Vec<Ring3Executor>>; super::MAX_NUMA_NODES]>,
+    /// Offset where executor memory is located in user-space.
+    pub executor_offset: VAddr,
+}
+
+impl Ring3Process {
+    fn create(pid: Pid) -> Self {
+        let mut executor_cache: arrayvec::ArrayVec<
+            [Option<Vec<Ring3Executor>>; super::MAX_NUMA_NODES],
+        > = Default::default();
+        for _i in 0..super::MAX_NUMA_NODES {
+            executor_cache.push(None);
+        }
+
+        Ring3Process {
+            pid,
+            offset: VAddr::from(0x20_0000_0000usize),
+            current_eid: 0,
+            vspace: VSpace::new(),
+            entry_point: VAddr::from(0usize),
+            executor_cache,
+            executor_offset: VAddr::from(0x21_0000_0000usize),
         }
     }
 }
 
 impl fmt::Debug for Ring3Process {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Ring3Process {}:\nSaveArea: {:?}",
-            self.pid, self.save_area
-        )
+        write!(f, "Ring3Process {}", self.pid)
     }
 }
 
@@ -513,7 +488,6 @@ impl elfloader::ElfLoader for Ring3Process {
 
             // TODO(correctness): add 20 as estimate of worst case pt requirements
             KernelAllocator::try_refill_tcache(20, large_pages).expect("Refill didn't work");
-            self.offset = VAddr::from(0x1000_0000);
 
             let kcb = crate::kcb::get_kcb();
             let mut pmanager = kcb.mem_manager();
@@ -539,12 +513,6 @@ impl elfloader::ElfLoader for Ring3Process {
                     )
                     .expect("Can't map ELF region");
             }
-
-            // We don't allocate yet -- just record the allocation parameters
-            // This has the advantage that we know how much memory we need
-            // and can reserve one consecutive chunk of physical memory
-            self.mapping
-                .push((page_base, size_page, align_to, map_action));
         }
 
         info!(
@@ -639,4 +607,86 @@ impl elfloader::ElfLoader for Ring3Process {
     }
 }
 
-impl Process for Ring3Process {}
+impl Process for Ring3Process {
+    type E = Ring3Executor;
+
+    /// Create a process from a module
+    fn new(module: &Module, pid: Pid) -> Result<Ring3Process, ProcessError> {
+        let mut p = Ring3Process::create(pid);
+
+        // Load the Module into the process address-space
+        // This needs mostly sanitation work on elfloader and
+        // ElfLoad trait impl for process to be safe
+        unsafe {
+            let e = elfloader::ElfBinary::new(module.name(), module.as_slice())?;
+            p.entry_point = VAddr::from(e.entry_point());
+            e.load(&mut p)?;
+        }
+
+        // Install the kernel mappings
+        // TODO(efficiency): These should probably be global mappings
+        // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
+        // TODO(ugly): Find a better way to express this mess
+        super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
+            let mut pmanager = kcb.mem_manager();
+
+            // TODO: make sure we have APIC base (these should be part of kernel
+            // mappings and above KERNEL_BASE), should not be hardcoded
+            p.vspace
+                .map_identity(
+                    PAddr(0xfee00000u64),
+                    BASE_PAGE_SIZE,
+                    MapAction::ReadWriteExecuteKernel,
+                    &mut *pmanager,
+                )
+                .expect("Can't map APIC");
+
+            let kernel_pml_entry = kcb.arch.init_vspace().pml4[128];
+            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+            p.vspace.pml4[128] = kernel_pml_entry;
+        });
+
+        Ok(p)
+    }
+
+    fn try_reserve_dispatchers(
+        how_many: usize,
+        affinity: topology::NodeId,
+    ) -> Result<(), TryReserveError> {
+        // TODO(correctness): Lacking impl
+        Ok(())
+    }
+
+    /// Create a series of dispatcher objects for the process within the local replica
+    fn allocate_dispatchers(&mut self, memory: Frame) -> Result<(), ProcessError> {
+        /*KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
+        {
+            let kcb = crate::kcb::get_kcb();
+            let mut pmanager = kcb.mem_manager();
+            self.vspace
+                .map_frames(self.cur_stack_base, &stack_frames, &mut *pmanager)
+                .expect("Can't map user-space upcall stack.");
+
+            info!(
+                "stack base {:#x} size: {} end {:#x}",
+                p.stack_base,
+                p.stack_size,
+                p.stack_base + p.stack_size
+            );
+        }
+
+        KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
+        {
+            let kcb = crate::kcb::get_kcb();
+            let mut pmanager = kcb.mem_manager();
+            self.vspace
+                .map_frames(self.cur_upcall_stack_base, &upcall_frames, &mut *pmanager)
+                .expect("Can't map user-space upcall stack.");
+        }
+
+        let executor = Ring3Executor::new(self.current_eid, VAddr::zero(), VAddr::zero());
+        self.current_eid + 1;
+        executor*/
+        Err(ProcessError::UnableToLoad)
+    }
+}

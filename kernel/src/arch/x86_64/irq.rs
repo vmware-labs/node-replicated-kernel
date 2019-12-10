@@ -45,12 +45,13 @@ use x86::Ring;
 use log::debug;
 
 use crate::panic::{backtrace, backtrace_from};
+use crate::process::Executor;
 use crate::ExitReason;
 
 use super::debug;
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
-use super::process::ResumeHandle;
+use super::process::{Ring3Executor, Ring3Resumer};
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -332,7 +333,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     warn!("Got debug interrupt {}", desc.source);
 
     let kcb = get_kcb();
-    let r = ResumeHandle::new_restore(kcb.arch.get_save_area_ptr());
+    let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
     r.resume()
 }
 
@@ -374,8 +375,8 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
 
-fn kcb_resume_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> ResumeHandle {
-    ResumeHandle::new_restore(kcb.arch.get_save_area_ptr())
+fn kcb_resume_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
+    Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr())
 }
 
 /// Handler for all exceptions that happen early during the initialization

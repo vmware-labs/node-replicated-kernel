@@ -20,7 +20,8 @@
     box_into_pin,
     maybe_uninit_ref,
     drain_filter,
-    alloc_prelude
+    alloc_prelude,
+    try_reserve
 )]
 #![cfg_attr(
     all(not(test), not(feature = "integration-test"), target_os = "none"),

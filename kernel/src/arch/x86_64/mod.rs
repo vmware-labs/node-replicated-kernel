@@ -60,7 +60,10 @@ use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
 
 use memory::paddr_to_kernel_vaddr;
+use process::Ring3Process;
 use vspace::*;
+
+pub const MAX_NUMA_NODES: usize = 12;
 
 /// Definition to parse the kernel command-line arguments.
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
@@ -254,7 +257,7 @@ struct AppCoreArgs {
     thread: topology::ThreadId,
     node: topology::NodeId,
     _log: Arc<Log<'static, Op>>,
-    _replica: Arc<Replica<'static, KernelNode>>,
+    _replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -328,14 +331,15 @@ fn boot_app_cores(
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     log: Arc<Log<'static, Op>>,
-    bsp_replica: Arc<Replica<'static, KernelNode>>,
+    bsp_replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
 ) {
     let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
 
     // Let's go with one replica per system node for now:
     let numa_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
-    let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> = Vec::with_capacity(numa_nodes);
+    let mut replicas: Vec<Arc<Replica<'static, KernelNode<Ring3Process>>>> =
+        Vec::with_capacity(numa_nodes);
     for node in 0..topology::MACHINE_TOPOLOGY.num_nodes() {
         debug!("Allocate a replica for {}", node);
         kcb.set_allocation_affinity(node as topology::NodeId);
@@ -650,7 +654,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));
-    let bsp_replica = Arc::new(Replica::<KernelNode>::new(&log));
+    let bsp_replica = Arc::new(Replica::<KernelNode<Ring3Process>>::new(&log));
     let _local_ridx = bsp_replica
         .register()
         .expect("Failed to register with Replica.");

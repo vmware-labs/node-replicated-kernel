@@ -255,7 +255,7 @@ pub extern "C" fn syscall_handle(
             kcb.save_area
         );*/
 
-        super::process::ResumeHandle::new_restore(kcb.arch.get_save_area_ptr())
+        super::process::Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr())
     };
 
     unsafe { r.resume() }

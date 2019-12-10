@@ -1,7 +1,12 @@
-//! Generic process trait
-use core::marker::PhantomData;
-
+//! Generic process traits
 use crate::arch::Module;
+use crate::memory::Frame;
+
+/// Process ID.
+pub type Pid = u64;
+
+/// Executor ID.
+pub type Eid = u64;
 
 #[derive(Debug)]
 pub enum ProcessError {
@@ -12,12 +17,15 @@ pub enum ProcessError {
 pub trait Process {
     type E: Executor;
 
-    fn new(module: &Module) -> Result<Self, ProcessError>
+    fn new(module: &Module, pid: Pid) -> Result<Self, ProcessError>
     where
         Self: core::marker::Sized;
 
-    fn add_dispatcher(&mut self) -> Self::E;
-    fn remove_dispatcher(&mut self, d: Self::E);
+    fn try_reserve_dispatchers(
+        how_many: usize,
+        affinity: topology::NodeId,
+    ) -> Result<(), alloc::collections::TryReserveError>;
+    fn allocate_dispatchers(&mut self, frame: Frame) -> Result<(), ProcessError>;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU

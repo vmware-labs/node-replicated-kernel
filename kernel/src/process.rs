@@ -1,4 +1,6 @@
 //! Generic process traits
+use custom_error::custom_error;
+
 use crate::arch::Module;
 use crate::memory::Frame;
 
@@ -8,9 +10,16 @@ pub type Pid = u64;
 /// Executor ID.
 pub type Eid = u64;
 
-#[derive(Debug)]
-pub enum ProcessError {
-    UnableToLoad,
+custom_error! {
+#[derive(PartialEq)]
+pub ProcessError
+    UnableToLoad = "Couldn't load process, invalid ELF file?",
+}
+
+impl From<&str> for ProcessError {
+    fn from(err: &str) -> Self {
+        ProcessError::UnableToLoad
+    }
 }
 
 /// Abstract definition of a process.

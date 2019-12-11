@@ -28,6 +28,8 @@
 //! # See also
 //!  - 6.10 INTERRUPT DESCRIPTOR TABLE (IDT) in the Intel SDM vol. 3
 
+#![allow(warnings)]
+
 use core::fmt;
 
 use alloc::boxed::Box;
@@ -51,7 +53,7 @@ use crate::ExitReason;
 use super::debug;
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
-use super::process::{Ring3Executor, Ring3Resumer};
+use super::process::Ring3Resumer;
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -456,16 +458,17 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             let p = plock.as_mut().unwrap();
 
             let resumer = {
-                let was_disabled = p.vcpu_ctl.as_mut().map_or(true, |vcpu| {
+                let was_disabled = {
                     trace!(
                         "vcpu state is: pc_disabled {:?} is_disabled {:?}",
-                        vcpu.pc_disabled,
-                        vcpu.is_disabled
+                        p.vcpu_ctl.pc_disabled,
+                        p.vcpu_ctl.is_disabled
                     );
-                    let was_disabled = vcpu.upcalls_disabled(VAddr::from(0x0));
-                    vcpu.disable_upcalls();
+
+                    let was_disabled = p.vcpu_ctl.upcalls_disabled(VAddr::from(0x0));
+                    p.vcpu_ctl.disable_upcalls();
                     was_disabled
-                });
+                };
 
                 if was_disabled {
                     // Resume to the current save area...
@@ -474,10 +477,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 } else {
                     // Copy CURRENT_SAVE_AREA to process enabled save area
                     // then resume in the upcall handler
-                    let _was_disabled = p.vcpu_ctl.as_mut().map(|vcpu| {
-                        kcb.arch.save_area.as_ref().map(|sa| {
-                            vcpu.enabled_state = **sa;
-                        });
+                    kcb.arch.save_area.as_ref().map(|sa| {
+                        p.vcpu_ctl.enabled_state = **sa;
                     });
 
                     p.upcall(a.vector, a.exception)
@@ -546,15 +547,17 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
             );
 
             // TODO: The mapping should be in global kernel-space!
-            p.vspace
-                .map_identity_with_offset(
-                    PAddr::from(crate::arch::memory::KERNEL_BASE),
-                    addr,
-                    x86::bits64::paging::BASE_PAGE_SIZE,
-                    MapAction::ReadWriteKernel,
-                    &mut *pmanager,
-                )
-                .expect("Can't map IO APIC?");
+            unimplemented!();
+            /*p.vspace
+            .map_identity_with_offset(
+                PAddr::from(crate::arch::memory::KERNEL_BASE),
+                addr,
+                x86::bits64::paging::BASE_PAGE_SIZE,
+                MapAction::ReadWriteKernel,
+                &mut *pmanager,
+            )
+            .expect("Can't map IO APIC?");
+            */
         });
 
         let mut inst =

@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use alloc::collections::TryReserveError;
 use core::fmt;
 use core::ops::{Deref, DerefMut};
@@ -278,7 +280,7 @@ impl Ring3Resumer {
 /// repr(C): Because `save_area` in is struct is written to from assembly
 /// (and therefore should be first).
 #[repr(C)]
-struct Ring3Executor {
+pub struct Ring3Executor {
     /// CPU context save area (must be first, see exec.S).
     pub save_area: kpi::x86_64::SaveArea,
 
@@ -314,6 +316,7 @@ impl Ring3Executor {
 
     fn new(eid: Eid, region: (VAddr, VAddr), affinity: topology::NodeId) -> Self {
         unimplemented!("see below");
+
         let (from, to) = region;
         assert!(to > from, "Malformed region");
         assert!(

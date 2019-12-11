@@ -13,7 +13,7 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
-use super::process::Ring3Process;
+use super::process::Ring3Executor;
 use super::vspace::VSpace;
 use super::KernelArgs;
 
@@ -102,7 +102,7 @@ pub struct Arch86Kcb {
     kernel_args: &'static KernelArgs,
 
     /// A handle to the currently active (scheduled) process.
-    current_process: RefCell<Option<Box<Ring3Process>>>,
+    current_process: RefCell<Option<Box<Ring3Executor>>>,
 
     /// A handle to the initial address space (created for us by the bootloader)
     init_vspace: RefCell<VSpace>,
@@ -163,12 +163,12 @@ impl Arch86Kcb {
     /// Swaps out current process with a new process. Returns the old process.
     pub fn swap_current_process(
         &self,
-        new_current_process: Box<Ring3Process>,
-    ) -> Option<Box<Ring3Process>> {
+        new_current_process: Box<Ring3Executor>,
+    ) -> Option<Box<Ring3Executor>> {
         self.current_process.replace(Some(new_current_process))
     }
 
-    pub fn current_process(&self) -> RefMut<Option<Box<Ring3Process>>> {
+    pub fn current_process(&self) -> RefMut<Option<Box<Ring3Executor>>> {
         self.current_process.borrow_mut()
     }
 

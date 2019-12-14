@@ -857,11 +857,11 @@ fn multi_process() {
 
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
-        output += p.exp_string("Process 1 looping")?;
-        output += p.exp_string("Process 2 looping")?;
-        output += p.exp_string("Process 1 looping")?;
-        output += p.exp_string("Process 2 looping")?;
-        output += p.exp_eof()?;
+        output += p.exp_string("Process 1 looping")?.as_str();
+        output += p.exp_string("Process 2 looping")?.as_str();
+        output += p.exp_string("Process 1 looping")?.as_str();
+        output += p.exp_string("Process 2 looping")?.as_str();
+        output += p.exp_eof()?.as_str();
         p.process.exit()
     };
 

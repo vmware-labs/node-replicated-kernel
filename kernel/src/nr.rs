@@ -1,13 +1,16 @@
 #![allow(unused)]
 
 use crate::prelude::*;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use hashbrown::HashMap;
+use node_replication::Dispatch;
 
 use crate::arch::Module;
+use crate::memory::vspace::{AddressSpace, MapAction};
+use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process};
-
-use node_replication::Dispatch;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Op {
@@ -16,15 +19,15 @@ pub enum Op {
     ProcInstallVCpuArea(Pid, u64),
     ProcAllocIrqVector,
     ProcRaiseIrq,
-    DispAlloc,
+    DispAlloc(Pid, Frame),
     DispDealloc,
     DispSchedule,
-    MemMapFrames,
-    MemMapFrame,
+    MemMapFrames(Pid, VAddr, Frame, MapAction), // Vec<Frame> doesn't implement copy
+    MemMapFrame(Pid, VAddr, Frame, MapAction),
     MemMapDevice,
     MemAdjust,
     MemUnmap,
-    MemResolve,
+    MemResolve(Pid, VAddr),
     Invalid,
 }
 
@@ -35,21 +38,19 @@ impl Default for Op {
 }
 
 #[derive(Copy, Eq, PartialEq, Debug, Clone)]
-pub enum NodeResult {
+pub enum NodeResult<E: Executor> {
     ProcCreated(Pid),
     ProcDestroyed,
     VectorAllocated(u64),
-    DispAllocated(Eid),
-    DispDeallocated,
-    DispSchedule(Eid),
+    ReqExecutor(*mut E),
     Mapped,
     Adjusted,
     Unmapped,
-    Resolved,
+    Resolved(PAddr, MapAction),
     Error,
 }
 
-impl Default for NodeResult {
+impl<E: Executor> Default for NodeResult<E> {
     fn default() -> Self {
         NodeResult::Error
     }
@@ -69,9 +70,13 @@ impl<P: Process> Default for KernelNode<P> {
     }
 }
 
-impl<P: Process> Dispatch for KernelNode<P> {
+impl<P> Dispatch for KernelNode<P>
+where
+    P: Process,
+    P::E: Copy,
+{
     type Operation = Op;
-    type Response = NodeResult;
+    type Response = NodeResult<P::E>;
 
     fn dispatch(&mut self, op: Self::Operation) -> Self::Response {
         match op {
@@ -103,15 +108,36 @@ impl<P: Process> Dispatch for KernelNode<P> {
             Op::ProcInstallVCpuArea(_, _) => unreachable!(),
             Op::ProcAllocIrqVector => unreachable!(),
             Op::ProcRaiseIrq => unreachable!(),
-            Op::DispAlloc => unreachable!(),
+            Op::DispAlloc(pid, frame) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let p = process_lookup.expect("TODO: DispAlloc process lookup failed");
+                p.allocate_executors(frame)
+                    .expect("Can't allocate dispatchers");
+                let executor = p
+                    .get_executor(0) // TODO (fixnow): Hard-coded 0
+                    .expect("Can't get an executor for process");
+                //NodeResult::ReqExecutor(executor)
+                NodeResult::ReqExecutor(Box::into_raw(executor))
+            }
             Op::DispDealloc => unreachable!(),
             Op::DispSchedule => unreachable!(),
-            Op::MemMapFrames => unreachable!(),
-            Op::MemMapFrame => unreachable!(),
+            Op::MemMapFrames(pid, base, frames, action) => unimplemented!("MemMapFrames"),
+            Op::MemMapFrame(pid, base, frame, action) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let kcb = crate::kcb::get_kcb();
+                let mut pmanager = kcb.mem_manager();
+
+                let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
+                info!("base {:?} frame {:?} action {:?}", base, frame, action);
+                p.vspace()
+                    .map_frame(base, frame, action, &mut *pmanager)
+                    .expect("TODO: MemMapFrame map_frame failed");
+                NodeResult::Mapped
+            }
             Op::MemMapDevice => unreachable!(),
             Op::MemAdjust => unreachable!(),
             Op::MemUnmap => unreachable!(),
-            Op::MemResolve => unreachable!(),
+            Op::MemResolve(pid, base) => unimplemented!("MemResolve"),
             Op::Invalid => unreachable!("Got invalid OP"),
         }
     }

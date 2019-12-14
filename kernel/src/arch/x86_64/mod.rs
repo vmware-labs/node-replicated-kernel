@@ -54,7 +54,9 @@ use log::Level;
 use logos::Logos;
 
 use crate::kcb::Kcb;
-use crate::memory::{tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE};
+use crate::memory::{
+    tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
+};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -653,11 +655,18 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_physical_memory_manager(tcache);
     }
 
-    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(BASE_PAGE_SIZE));
+    // Create the global operation log and first replica
+    // and store it in the BSP kcb
+    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
     let bsp_replica = Arc::new(Replica::<KernelNode<Ring3Process>>::new(&log));
-    let _local_ridx = bsp_replica
+    let local_ridx = bsp_replica
         .register()
         .expect("Failed to register with Replica.");
+    {
+        let kcb = kcb::get_kcb();
+        kcb.arch
+            .setup_node_replication(bsp_replica.clone(), local_ridx);
+    }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]

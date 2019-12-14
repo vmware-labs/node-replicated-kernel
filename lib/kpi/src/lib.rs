@@ -53,7 +53,7 @@ pub enum ProcessOperation {
     Log = 2,
     /// Sets the process control and save area for trap/IRQ forwarding
     /// to user-space for this process and CPU.
-    InstallVCpuArea = 3,
+    GetVCpuArea = 3,
     /// Allocate a device interrupt vector.
     AllocateVector = 4,
     /// Subscribe to a trap and/or interrupt events.
@@ -67,7 +67,7 @@ impl From<u64> for ProcessOperation {
         match op {
             1 => ProcessOperation::Exit,
             2 => ProcessOperation::Log,
-            3 => ProcessOperation::InstallVCpuArea,
+            3 => ProcessOperation::GetVCpuArea,
             4 => ProcessOperation::AllocateVector,
             5 => ProcessOperation::SubscribeEvent,
             _ => ProcessOperation::Unknown,
@@ -81,7 +81,7 @@ impl From<&str> for ProcessOperation {
         match op {
             "Exit" => ProcessOperation::Exit,
             "Log" => ProcessOperation::Log,
-            "InstallVCpuArea" => ProcessOperation::InstallVCpuArea,
+            "GetVCpuArea" => ProcessOperation::GetVCpuArea,
             "AllocateVector" => ProcessOperation::AllocateVector,
             "SubscribeEvent" => ProcessOperation::SubscribeEvent,
             _ => ProcessOperation::Unknown,

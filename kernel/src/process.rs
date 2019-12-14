@@ -1,7 +1,10 @@
 //! Generic process traits
+use alloc::boxed::Box;
+
 use custom_error::custom_error;
 
 use crate::arch::Module;
+use crate::memory::vspace::AddressSpace;
 use crate::memory::Frame;
 
 /// Process ID.
@@ -14,27 +17,34 @@ custom_error! {
 #[derive(PartialEq)]
 pub ProcessError
     UnableToLoad = "Couldn't load process, invalid ELF file?",
+    NoExecutorAllocated = "Didn't have any executors allocate for this region and process."
 }
 
 impl From<&str> for ProcessError {
-    fn from(err: &str) -> Self {
+    fn from(_err: &str) -> Self {
         ProcessError::UnableToLoad
     }
 }
 
 /// Abstract definition of a process.
 pub trait Process {
-    type E: Executor;
+    type E: Executor + Copy;
+    type A: AddressSpace;
 
     fn new(module: &Module, pid: Pid) -> Result<Self, ProcessError>
     where
         Self: core::marker::Sized;
 
-    fn try_reserve_dispatchers(
+    fn try_reserve_executors(
+        &self,
         how_many: usize,
         affinity: topology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
-    fn allocate_dispatchers(&mut self, frame: Frame) -> Result<(), ProcessError>;
+    fn allocate_executors(&mut self, frame: Frame) -> Result<(), ProcessError>;
+
+    fn vspace(&mut self) -> &mut Self::A;
+
+    fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError>;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU

@@ -1,7 +1,8 @@
 //! A dummy process implementation for the unix platform.
 
 use crate::arch::Module;
-use crate::process::{Executor, Process, ProcessError, ResumeHandle};
+use crate::memory::Frame;
+use crate::process::{Executor, Pid, Process, ProcessError, ResumeHandle};
 
 pub struct UnixProcess {}
 pub struct UnixThread {}
@@ -32,13 +33,18 @@ impl Executor for UnixThread {
 impl Process for UnixProcess {
     type E = UnixThread;
 
-    fn new(_module: &Module) -> Result<Self, ProcessError> {
+    fn new(_module: &Module, pid: Pid) -> Result<Self, ProcessError> {
         Ok(UnixProcess {})
     }
 
-    fn add_dispatcher(&mut self) -> Self::E {
-        UnixThread {}
+    fn try_reserve_executors(
+        how_many: usize,
+        affinity: topology::NodeId,
+    ) -> Result<(), alloc::collections::TryReserveError> {
+        Ok(())
     }
 
-    fn remove_dispatcher(&mut self, _d: Self::E) {}
+    fn allocate_executors(&mut self, frame: Frame) -> Result<(), ProcessError> {
+        Ok(())
+    }
 }

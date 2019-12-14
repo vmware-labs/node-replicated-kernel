@@ -216,23 +216,19 @@ pub fn print(buffer: &str) -> Result<(), SystemCallError> {
 ///
 /// This is allocated and controlled by the kernel, it doesn't move and
 /// should live as long as the current CPU is allocated to the process.
-pub fn vcpu_control_area(vcpu_ctl: VAddr) -> Result<&'static mut VirtualCpu, SystemCallError> {
-    assert!(vcpu_ctl.is_base_page_aligned());
-
+pub fn vcpu_control_area() -> Result<&'static mut VirtualCpu, SystemCallError> {
     let (r, control) = unsafe {
         syscall!(
             SystemCall::Process as u64,
-            ProcessOperation::InstallVCpuArea as u64,
-            vcpu_ctl.as_u64(),
+            ProcessOperation::GetVCpuArea as u64,
             2
         )
     };
 
     if r == 0 {
         let vaddr = VAddr::from(control);
-        assert_eq!(vaddr, vcpu_ctl);
+        assert!(vaddr.is_base_page_aligned());
         let vcpu_ctl: *mut VirtualCpu = vaddr.as_mut_ptr::<VirtualCpu>();
-
         unsafe { Ok(&mut *vcpu_ctl) }
     } else {
         Err(SystemCallError::from(r))

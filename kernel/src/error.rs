@@ -7,6 +7,7 @@ use kpi::SystemCallError;
 
 custom_error! {pub KError
     ProcessNotSet = "CURRENT_PROCESS is not set",
+    ReplicaNotSet = "Replica is not set-up in the KCB",
     NotSupported = "Request is not yet supported",
     InvalidSyscallArgument1{a: u64} = "Invalid 1st syscall argument supplied: {}",
     InvalidVSpaceOperation{a: u64} = "Invalid VSpace Operation (2nd syscall argument) supplied: {}",

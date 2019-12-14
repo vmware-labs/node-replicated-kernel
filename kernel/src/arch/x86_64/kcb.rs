@@ -2,11 +2,13 @@
 //! kernel control block.
 
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
 use apic::xapic::XAPICDriver;
+use node_replication::replica::Replica;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -17,7 +19,9 @@ use super::process::Ring3Executor;
 use super::vspace::VSpace;
 use super::KernelArgs;
 
+use crate::arch::process::Ring3Process;
 use crate::kcb::Kcb;
+use crate::nr::KernelNode;
 use crate::stack::{OwnedStack, Stack};
 
 /// Try to retrieve the KCB by reading the gs register.
@@ -107,6 +111,12 @@ pub struct Arch86Kcb {
     /// A handle to the initial address space (created for us by the bootloader)
     init_vspace: RefCell<VSpace>,
 
+    /// A handle to the node-local kernel replica.
+    pub replica: Option<Arc<Replica<'static, KernelNode<Ring3Process>>>>,
+
+    /// The registration ID of the current KCB for the `replica`.
+    pub replica_idx: usize,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this stack automatically for normal interrupts
@@ -149,6 +159,8 @@ impl Arch86Kcb {
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
+            replica: None,
+            replica_idx: 0,
         }
     }
 
@@ -158,6 +170,15 @@ impl Arch86Kcb {
 
     pub fn init_vspace(&self) -> RefMut<VSpace> {
         self.init_vspace.borrow_mut()
+    }
+
+    pub fn setup_node_replication(
+        &mut self,
+        replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
+        idx: usize,
+    ) {
+        self.replica_idx = idx;
+        self.replica = Some(replica);
     }
 
     /// Swaps out current process with a new process. Returns the old process.

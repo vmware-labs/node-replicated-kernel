@@ -1,5 +1,6 @@
 #![allow(warnings)]
 
+use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
 use core::fmt;
 use core::ops::{Deref, DerefMut};
@@ -279,6 +280,7 @@ impl Ring3Resumer {
 /// # Notes
 /// repr(C): Because `save_area` in is struct is written to from assembly
 /// (and therefore should be first).
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct Ring3Executor {
     /// CPU context save area (must be first, see exec.S).
@@ -290,11 +292,17 @@ pub struct Ring3Executor {
     /// Up-call stack (base address).
     pub upcall_stack_base: VAddr,
 
+    /// Process identifier
+    pub pid: Pid,
+
+    /// Executor Identifier
     pub eid: Eid,
+
+    /// Memory affinity of the Executor
     pub affinity: topology::NodeId,
 
     /// Virtual CPU control used by the user-space upcall mechanism.
-    pub vcpu_ctl: UserPtr<kpi::arch::VirtualCpu>,
+    pub vcpu_ctl: VAddr,
 
     /// Entry point where the executor should start executing from
     ///
@@ -314,13 +322,16 @@ impl Ring3Executor {
     /// Size of the upcall signal stack for the dispatcher.
     const UPCALL_STACK_SIZE: usize = 24 * BASE_PAGE_SIZE;
 
-    fn new(eid: Eid, region: (VAddr, VAddr), affinity: topology::NodeId) -> Self {
-        unimplemented!("see below");
-
+    fn new(
+        process: &Ring3Process,
+        eid: Eid,
+        region: (VAddr, VAddr),
+        affinity: topology::NodeId,
+    ) -> Self {
         let (from, to) = region;
         assert!(to > from, "Malformed region");
         assert!(
-            (from - to).as_usize()
+            (to - from).as_usize()
                 >= Ring3Executor::INIT_STACK_SIZE
                     + Ring3Executor::UPCALL_STACK_SIZE
                     + core::mem::size_of::<kpi::arch::VirtualCpu>(),
@@ -330,20 +341,28 @@ impl Ring3Executor {
         let stack_base = from;
         let upcall_stack_base = from + Ring3Executor::INIT_STACK_SIZE;
 
-        let vcpu_vaddr: *mut kpi::arch::VirtualCpu =
-            (from + Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE).as_mut_ptr();
-        let vcpu_ctl = UserPtr::new(vcpu_vaddr);
+        let vcpu_vaddr: VAddr =
+            from + Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE;
 
         Ring3Executor {
             stack_base,
             upcall_stack_base,
+            pid: process.pid,
             eid,
             affinity,
-            vcpu_ctl,
+            vcpu_ctl: vcpu_vaddr,
             save_area: Default::default(),
-            entry_point: VAddr::zero(), // XXX: supply as argument!
-            pml4: PAddr::zero(),        // XXX: supply as argument!
+            entry_point: process.offset + process.entry_point,
+            pml4: process.vspace.pml4_address(),
         }
+    }
+
+    pub fn vcpu(&self) -> UserPtr<kpi::arch::VirtualCpu> {
+        UserPtr::new(self.vcpu_ctl.as_mut_ptr())
+    }
+
+    pub fn vcpu_addr(&self) -> VAddr {
+        self.vcpu_ctl
     }
 
     fn stack_top(&self) -> VAddr {
@@ -373,8 +392,8 @@ impl Executor for Ring3Executor {
 
     fn upcall(&mut self, vector: u64, exception: u64) -> Ring3Resumer {
         self.maybe_switch_vspace();
-        let entry_point = self.vcpu_ctl.resume_with_upcall;
-        let cpu_ctl = self.vcpu_ctl.vaddr().as_u64();
+        let entry_point = self.vcpu().resume_with_upcall;
+        let cpu_ctl = self.vcpu().vaddr().as_u64();
 
         Ring3Resumer::new_upcall(
             entry_point,
@@ -409,7 +428,8 @@ pub struct Ring3Process {
     /// The entry point of the ELF file (set during elfloading).
     pub entry_point: VAddr,
     /// Executor cache (holds a per-region cache of executors)
-    pub executor_cache: arrayvec::ArrayVec<[Option<Vec<Ring3Executor>>; super::MAX_NUMA_NODES]>,
+    pub executor_cache:
+        arrayvec::ArrayVec<[Option<Vec<Box<Ring3Executor>>>; super::MAX_NUMA_NODES]>,
     /// Offset where executor memory is located in user-space.
     pub executor_offset: VAddr,
 }
@@ -417,7 +437,7 @@ pub struct Ring3Process {
 impl Ring3Process {
     fn create(pid: Pid) -> Self {
         let mut executor_cache: arrayvec::ArrayVec<
-            [Option<Vec<Ring3Executor>>; super::MAX_NUMA_NODES],
+            [Option<Vec<Box<Ring3Executor>>>; super::MAX_NUMA_NODES],
         > = Default::default();
         for _i in 0..super::MAX_NUMA_NODES {
             executor_cache.push(None);
@@ -612,6 +632,7 @@ impl elfloader::ElfLoader for Ring3Process {
 
 impl Process for Ring3Process {
     type E = Ring3Executor;
+    type A = VSpace;
 
     /// Create a process from a module
     fn new(module: &Module, pid: Pid) -> Result<Ring3Process, ProcessError> {
@@ -652,7 +673,8 @@ impl Process for Ring3Process {
         Ok(p)
     }
 
-    fn try_reserve_dispatchers(
+    fn try_reserve_executors(
+        &self,
         how_many: usize,
         affinity: topology::NodeId,
     ) -> Result<(), TryReserveError> {
@@ -660,36 +682,89 @@ impl Process for Ring3Process {
         Ok(())
     }
 
-    /// Create a series of dispatcher objects for the process within the local replica
-    fn allocate_dispatchers(&mut self, memory: Frame) -> Result<(), ProcessError> {
-        /*KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
-        {
-            let kcb = crate::kcb::get_kcb();
-            let mut pmanager = kcb.mem_manager();
-            self.vspace
-                .map_frames(self.cur_stack_base, &stack_frames, &mut *pmanager)
-                .expect("Can't map user-space upcall stack.");
+    fn vspace(&mut self) -> &mut VSpace {
+        &mut self.vspace
+    }
 
-            info!(
-                "stack base {:#x} size: {} end {:#x}",
-                p.stack_base,
-                p.stack_size,
-                p.stack_base + p.stack_size
-            );
+    fn get_executor(
+        &mut self,
+        for_region: topology::NodeId,
+    ) -> Result<Box<Ring3Executor>, ProcessError> {
+        info!("get executor {}", for_region);
+        match &mut self.executor_cache[for_region as usize] {
+            Some(ref mut executor_list) => {
+                let ret = executor_list.pop().ok_or(ProcessError::NoExecutorAllocated);
+                info!("executor list {:?}", ret);
+                ret
+            }
+            None => Err(ProcessError::NoExecutorAllocated),
         }
+    }
 
+    /// Create a series of dispatcher objects for the process
+    fn allocate_executors(&mut self, memory: Frame) -> Result<(), ProcessError> {
         KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
         {
             let kcb = crate::kcb::get_kcb();
             let mut pmanager = kcb.mem_manager();
+
             self.vspace
-                .map_frames(self.cur_upcall_stack_base, &upcall_frames, &mut *pmanager)
-                .expect("Can't map user-space upcall stack.");
+                .map_frame(
+                    self.executor_offset,
+                    memory,
+                    MapAction::ReadWriteUser,
+                    &mut *pmanager,
+                )
+                .expect("Can't map user-space executor memory.");
+
+            info!(
+                "executor space base expanded {:#x} size: {} end {:#x}",
+                self.executor_offset,
+                memory.size(),
+                self.executor_offset + memory.size()
+            );
         }
 
-        let executor = Ring3Executor::new(self.current_eid, VAddr::zero(), VAddr::zero());
-        self.current_eid + 1;
-        executor*/
-        Err(ProcessError::UnableToLoad)
+        let executor_space_requirement =
+            Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE + BASE_PAGE_SIZE;
+        let executors_to_create = memory.size() / executor_space_requirement;
+        info!(
+            "about to create {} on {}",
+            executors_to_create, memory.affinity
+        );
+
+        let cur_offset = self.executor_offset;
+        for cnt in 0..executors_to_create {
+            let executor_vmem_start = cur_offset;
+            let executor_vmem_end = executor_vmem_start + executor_space_requirement;
+
+            let upcall_stack_base = cur_offset + Ring3Executor::INIT_STACK_SIZE;
+            let vcpu_ctl =
+                cur_offset + Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE;
+
+            let executor = Box::new(Ring3Executor::new(
+                &self,
+                self.current_eid,
+                (executor_vmem_start, executor_vmem_end),
+                memory.affinity,
+            ));
+
+            use alloc::vec;
+            match &mut self.executor_cache[memory.affinity as usize] {
+                Some(ref mut vector) => vector.push(executor),
+                None => self.executor_cache[memory.affinity as usize] = Some(vec![executor]),
+            }
+
+            self.current_eid + 1;
+        }
+
+        info!(
+            "created allocators in {:#x} -- {:#x}",
+            self.executor_offset,
+            self.executor_offset + memory.size()
+        );
+
+        self.executor_offset += memory.size();
+        Ok(())
     }
 }

@@ -375,17 +375,53 @@ pub fn xmain() {
 /// Test process loading / user-space.
 #[cfg(all(feature = "integration-test", feature = "test-userspace"))]
 pub fn xmain() {
-    let init_module = kcb::try_get_kcb()
-        .map(|kcb| kcb.arch.kernel_args().modules[1].clone())
-        .expect("Need to have an init module.");
+    use crate::memory::KernelAllocator;
+    use crate::memory::PhysicalPageProvider;
+    use crate::process::Executor;
+    use crate::process::Process;
+    use alloc::boxed::Box;
+    use alloc::vec;
+
+    let kcb = kcb::get_kcb();
+    let init_module = &kcb.arch.kernel_args().modules[1];
 
     trace!("init {:?}", init_module);
+
     let mut process = alloc::boxed::Box::new(
-        arch::process::Ring3Process::from(init_module).expect("Couldn't load init."),
+        arch::process::Ring3Process::new(&init_module, 0).expect("Couldn't load init."),
     );
+    KernelAllocator::try_refill_tcache(20, 1).expect("Refill didn't work");
+
+    let frame = {
+        let kcb = crate::kcb::get_kcb();
+        let mut pmanager = kcb.mem_manager();
+        pmanager.allocate_large_page().expect("Can't allocate lp")
+    };
+
+    let replica = kcb.arch.replica.as_ref().expect("Replica not set");
+    let mut o = vec![];
+
+    // Create a new process
+    replica.execute(nr::Op::ProcCreate(&init_module), kcb.arch.replica_idx);
+    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+    debug_assert_eq!(o.len(), 1, "Should get reply");
+    let pid = match o[0] {
+        nr::NodeResult::ProcCreated(pid) => pid,
+        _ => unreachable!("Got unexpected response"),
+    };
+    o.clear();
+
+    replica.execute(nr::Op::DispAlloc(pid, frame), kcb.arch.replica_idx);
+    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+    debug_assert_eq!(o.len(), 1, "Should get reply");
+    let e = match o[0] {
+        nr::NodeResult::ReqExecutor(e) => e,
+        _ => unreachable!("Got unexpected response"),
+    };
+    let executor = unsafe { Box::from_raw(e) };
 
     info!("Created the init process, about to go there...");
-    let no = kcb::get_kcb().arch.swap_current_process(process);
+    let no = kcb::get_kcb().arch.swap_current_process(executor);
     assert!(no.is_none());
 
     unsafe {
@@ -396,8 +432,6 @@ pub fn xmain() {
             .map(|p| p.start());
         rh.unwrap().resume();
     }
-
-    arch::debug::shutdown(ExitReason::Ok);
 }
 
 /// Test SSE/floating point in the kernel.

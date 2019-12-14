@@ -461,12 +461,12 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 let was_disabled = {
                     trace!(
                         "vcpu state is: pc_disabled {:?} is_disabled {:?}",
-                        p.vcpu_ctl.pc_disabled,
-                        p.vcpu_ctl.is_disabled
+                        p.vcpu().pc_disabled,
+                        p.vcpu().is_disabled
                     );
 
-                    let was_disabled = p.vcpu_ctl.upcalls_disabled(VAddr::from(0x0));
-                    p.vcpu_ctl.disable_upcalls();
+                    let was_disabled = p.vcpu().upcalls_disabled(VAddr::from(0x0));
+                    p.vcpu().disable_upcalls();
                     was_disabled
                 };
 
@@ -478,7 +478,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                     // Copy CURRENT_SAVE_AREA to process enabled save area
                     // then resume in the upcall handler
                     kcb.arch.save_area.as_ref().map(|sa| {
-                        p.vcpu_ctl.enabled_state = **sa;
+                        p.vcpu().enabled_state = **sa;
                     });
 
                     p.upcall(a.vector, a.exception)

@@ -1,17 +1,22 @@
+#![allow(warnings)]
+
+use alloc::vec;
+use alloc::vec::Vec;
+
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
-use x86::tlb;
+//use x86::tlb;
 
-use kpi::arch::VirtualCpu;
 use kpi::*;
 
 use crate::error::KError;
-use crate::memory::vspace::{AddressSpace, MapAction};
+use crate::memory::vspace::MapAction;
 use crate::memory::PhysicalPageProvider;
+use crate::nr;
 
 use super::gdt::GdtTable;
-use super::process::{UserPtr, UserValue};
+use super::process::UserValue;
 
 extern "C" {
     #[no_mangle]
@@ -54,31 +59,13 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
 
             process_print(UserValue::new(user_str))
         }
-        ProcessOperation::InstallVCpuArea => unsafe {
+        ProcessOperation::GetVCpuArea => unsafe {
             crate::memory::KernelAllocator::try_refill_tcache(7 + 1, 0)
                 .expect("Refill didn't work");
-
             let kcb = super::kcb::get_kcb();
             let mut plock = kcb.arch.current_process();
-            let mut pmanager = kcb.mem_manager();
-
-            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
-                let cpu_ctl_addr = VAddr::from(arg2);
-                let frame = pmanager
-                    .allocate_base_page()
-                    .expect("Can't allocate vCPU area?");
-                p.vspace.map_frame(
-                    cpu_ctl_addr,
-                    frame,
-                    MapAction::ReadWriteUser,
-                    &mut *pmanager,
-                )?;
-
-                x86::tlb::flush_all();
-                p.vcpu_ctl = Some(UserPtr::new(cpu_ctl_addr.as_u64() as *mut VirtualCpu));
-                warn!("installed vcpu area {:p}", cpu_ctl_addr,);
-
-                Ok((cpu_ctl_addr.as_u64(), 0))
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                Ok((p.vcpu_addr().as_u64(), 0))
             })
         },
         ProcessOperation::AllocateVector => {
@@ -110,44 +97,66 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         VSpaceOperation::Map => unsafe {
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
                 let (bp, lp) = crate::memory::size_to_pages(bound as usize);
-
+                let mut frames = Vec::with_capacity(bp + lp);
                 crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)
                     .expect("Refill didn't work");
-                let mut pmanager = kcb.mem_manager();
 
-                let mut base = base;
                 let mut paddr = None;
+                {
+                    let mut pmanager = kcb.mem_manager();
 
-                for _i in 0..lp {
-                    let frame = pmanager
-                        .allocate_large_page()
-                        .expect("We refilled so allocation should work.");
-
-                    (*p).vspace
-                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut *pmanager)?;
-
-                    base += LARGE_PAGE_SIZE;
-                    if paddr.is_none() {
-                        paddr = Some(frame.base);
+                    for _i in 0..lp {
+                        let frame = pmanager
+                            .allocate_large_page()
+                            .expect("We refilled so allocation should work.");
+                        frames.push(frame);
+                        if paddr.is_none() {
+                            paddr = Some(frame.base);
+                        }
+                    }
+                    for _i in 0..bp {
+                        let frame = pmanager
+                            .allocate_base_page()
+                            .expect("We refilled so allocation should work.");
+                        frames.push(frame);
+                        if paddr.is_none() {
+                            paddr = Some(frame.base);
+                        }
                     }
                 }
-                for _i in 0..bp {
-                    let frame = pmanager
-                        .allocate_base_page()
-                        .expect("We refilled so allocation should work.");
 
-                    (*p).vspace
-                        .map_frame(base, frame, MapAction::ReadWriteUser, &mut *pmanager)?;
+                kcb.arch
+                    .replica
+                    .as_ref()
+                    .map_or(Err(KError::ReplicaNotSet), |replica| {
+                        let mut o = vec![];
 
-                    if paddr.is_none() {
-                        paddr = Some(frame.base);
-                    }
-                    base += BASE_PAGE_SIZE;
-                }
+                        // TODO(api-ergonomics): Fix ugly execute API
+                        let mut virtual_offset = 0;
+                        for frame in frames {
+                            replica.execute(
+                                nr::Op::MemMapFrame(
+                                    p.pid,
+                                    base + virtual_offset,
+                                    frame,
+                                    MapAction::ReadWriteUser,
+                                ),
+                                kcb.arch.replica_idx,
+                            );
+                            while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                            debug_assert_eq!(o.len(), 1, "Should get reply");
 
-                tlb::flush_all();
-                // TODO(broken): The PAddr we return is not very meaningful (just paddr of first frame)
-                Ok((paddr.unwrap_or(PAddr::zero()).as_u64(), bound))
+                            match o[0] {
+                                nr::NodeResult::Mapped => {}
+                                _ => unreachable!("Got unexpected response"),
+                            };
+
+                            virtual_offset += frame.size();
+                            o.clear(); // XXX
+                        }
+
+                        Ok((paddr.unwrap_or(PAddr::zero()).as_u64(), bound))
+                    })
             })
         },
         VSpaceOperation::MapDevice => unsafe {
@@ -156,7 +165,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                 let kcb = crate::kcb::get_kcb();
                 let mut pmanager = kcb.mem_manager();
 
-                p.vspace.map_generic(
+                /*p.vspace.map_generic(
                     base,
                     (paddr, (bound - base.as_u64()) as usize),
                     MapAction::ReadWriteUser,
@@ -165,7 +174,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                 )?;
 
                 tlb::flush_all();
-                Ok((paddr.as_u64(), bound))
+                Ok((paddr.as_u64(), bound))*/
+                unimplemented!("MapDevice");
             })
         },
         VSpaceOperation::Unmap => {
@@ -175,8 +185,23 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         VSpaceOperation::Identify => unsafe {
             trace!("Identify base {:#x}.", base);
             plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
-                let (paddr, _rights) = p.vspace.resolve(base)?;
-                Ok((paddr.as_u64(), 0x0))
+                /* let (paddr, _rights) = p.vspace.resolve(base)?; */
+                kcb.arch
+                    .replica
+                    .as_ref()
+                    .map_or(Err(KError::ReplicaNotSet), |replica| {
+                        let mut o = vec![];
+
+                        // TODO(api-ergonomics): Fix ugly execute API
+                        replica.execute(nr::Op::MemResolve(p.pid, base), kcb.arch.replica_idx);
+                        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                        debug_assert_eq!(o.len(), 1, "Should get reply");
+
+                        match o[0] {
+                            nr::NodeResult::Resolved(paddr, rights) => Ok((paddr.as_u64(), 0x0)),
+                            _ => unreachable!("Got unexpected response"),
+                        }
+                    })
             })
         },
         VSpaceOperation::Unknown => {

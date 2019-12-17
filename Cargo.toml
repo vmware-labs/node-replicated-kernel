@@ -24,7 +24,7 @@ members = [
     "lib/topology",
     "lib/node-replication",
     "lib/crossbeam-queue",
-    #"lib/vspace",
+    "lib/bootloader_shared"
 ]
 
 # disable stack unwinding on panic for now

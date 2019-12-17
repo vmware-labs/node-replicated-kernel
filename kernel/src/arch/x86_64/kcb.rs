@@ -13,16 +13,15 @@ use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
-use super::gdt::GdtTable;
-use super::irq::IdtTable;
-use super::process::Ring3Executor;
-use super::vspace::VSpace;
-use super::KernelArgs;
-
-use crate::arch::process::Ring3Process;
 use crate::kcb::Kcb;
 use crate::nr::KernelNode;
 use crate::stack::{OwnedStack, Stack};
+
+use super::gdt::GdtTable;
+use super::irq::IdtTable;
+use super::process::{Ring3Executor, Ring3Process};
+use super::vspace::VSpace;
+use super::KernelArgs;
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
@@ -108,7 +107,10 @@ pub struct Arch86Kcb {
     /// A handle to the currently active (scheduled) process.
     current_process: RefCell<Option<Box<Ring3Executor>>>,
 
-    /// A handle to the initial address space (created for us by the bootloader)
+    /// A handle to the initial kernel address space (created for us by the bootloader)
+    /// It contains a 1:1 mapping of
+    ///  * all physical memory (above `KERNEL_BASE`)
+    ///  * IO APIC and local APIC memory (after initialization has completed)
     init_vspace: RefCell<VSpace>,
 
     /// A handle to the node-local kernel replica.

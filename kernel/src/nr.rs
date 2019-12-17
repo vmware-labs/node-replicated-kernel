@@ -3,6 +3,7 @@
 use crate::prelude::*;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use alloc::vec;
 
 use hashbrown::HashMap;
 use node_replication::Dispatch;
@@ -11,6 +12,7 @@ use crate::arch::Module;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process};
+use crate::error::KError;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Op {
@@ -24,7 +26,7 @@ pub enum Op {
     DispSchedule,
     MemMapFrames(Pid, VAddr, Frame, MapAction), // Vec<Frame> doesn't implement copy
     MemMapFrame(Pid, VAddr, Frame, MapAction),
-    MemMapDevice,
+    MemMapDevice(Pid, Frame, MapAction),
     MemAdjust,
     MemUnmap,
     MemResolve(Pid, VAddr),
@@ -68,6 +70,85 @@ impl<P: Process> Default for KernelNode<P> {
             process_map: HashMap::with_capacity(256),
         }
     }
+}
+
+// TODO(api-ergonomics): Fix ugly execute API
+impl<P: Process> KernelNode<P> {
+
+    pub fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+
+                replica.execute(Op::MemResolve(pid, base), kcb.arch.replica_idx);
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get reply");
+
+                match o[0] {
+                    NodeResult::Resolved(paddr, rights) => Ok((paddr.as_u64(), 0x0)),
+                    _ => unreachable!("Got unexpected response"),
+                }
+            })
+    }
+
+    pub fn map_device_frame(pid: Pid, frame: Frame, action: MapAction) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+
+                replica.execute(Op::MemMapDevice(pid, frame, action), kcb.arch.replica_idx);
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get reply");
+
+                match o[0] {
+                    NodeResult::Mapped => Ok((frame.base.as_u64(), frame.size() as u64)),
+                    _ => unreachable!("Got unexpected response"),
+                }
+            })
+    }
+
+    pub fn map_frames(pid: Pid, base: VAddr, frames: Vec<Frame>, action: MapAction) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+
+                let mut virtual_offset = 0;
+                for frame in frames {
+                    replica.execute(
+                        Op::MemMapFrame(
+                            pid,
+                            base + virtual_offset,
+                            frame,
+                            action,
+                        ),
+                        kcb.arch.replica_idx,
+                    );
+                    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                    debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                    match o[0] {
+                        NodeResult::Mapped => {}
+                        _ => unreachable!("Got unexpected response"),
+                    };
+
+                    virtual_offset += frame.size();
+                    o.clear();
+                }
+
+                Ok((base.as_u64(), virtual_offset as u64))
+            })
+    }
+
+
 }
 
 impl<P> Dispatch for KernelNode<P>
@@ -128,16 +209,36 @@ where
                 let mut pmanager = kcb.mem_manager();
 
                 let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
-                info!("base {:?} frame {:?} action {:?}", base, frame, action);
                 p.vspace()
                     .map_frame(base, frame, action, &mut *pmanager)
                     .expect("TODO: MemMapFrame map_frame failed");
                 NodeResult::Mapped
             }
-            Op::MemMapDevice => unreachable!(),
+            Op::MemMapDevice(pid, frame, action) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let kcb = crate::kcb::get_kcb();
+                let mut pmanager = kcb.mem_manager();
+
+                let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
+
+                let base = VAddr::from(frame.base.as_u64());
+                p.vspace()
+                    .map_frame(base, frame, action, &mut *pmanager)
+                    .expect("TODO: MemMapFrame map_frame failed");
+                NodeResult::Mapped
+            },
             Op::MemAdjust => unreachable!(),
             Op::MemUnmap => unreachable!(),
-            Op::MemResolve(pid, base) => unimplemented!("MemResolve"),
+            Op::MemResolve(pid, base) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let kcb = crate::kcb::get_kcb();
+                let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
+
+                let (paddr, rights) = p.vspace()
+                    .resolve(base)
+                    .expect("TODO: MemMapFrame map_frame failed");
+                NodeResult::Resolved(paddr, rights)
+            },
             Op::Invalid => unreachable!("Got invalid OP"),
         }
     }

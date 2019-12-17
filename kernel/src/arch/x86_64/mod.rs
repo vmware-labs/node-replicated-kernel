@@ -655,6 +655,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_physical_memory_manager(tcache);
     }
 
+    // Set-up interrupt routing drivers (I/O APIC controllers)
+    irq::ioapic_initialize();
+
+
     // Create the global operation log and first replica
     // and store it in the BSP kcb
     let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));

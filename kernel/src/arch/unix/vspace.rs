@@ -3,7 +3,8 @@
 use alloc::boxed::Box;
 use core::pin::Pin;
 
-use crate::memory::vspace::{AddressSpaceError, MapAction};
+use crate::memory::vspace::{AddressSpaceError, AddressSpace, MapAction, TlbFlushHandle};
+use crate::memory::{PhysicalPageProvider, Frame};
 
 use x86::bits64::paging::*;
 
@@ -20,23 +21,7 @@ impl VSpace {
         }
     }
 
-    pub fn map_identity(&mut self, base: VAddr, end: VAddr) {
-        unreachable!("map_identity 0x{:x} -- 0x{:x}", base, end);
-    }
-
-    pub fn map(
-        &mut self,
-        base: VAddr,
-        size: usize,
-        _rights: MapAction,
-        _palignment: u64,
-    ) -> Result<(PAddr, usize), AddressSpaceError> {
-        assert_eq!(base % BASE_PAGE_SIZE, 0, "base is not page-aligned");
-        assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
-        Ok((PAddr::from(base.as_u64()), size))
-    }
-
-    pub(crate) fn map_generic(
+    pub fn map_generic(
         &mut self,
         _vbase: VAddr,
         _pregion: (PAddr, usize),
@@ -45,6 +30,38 @@ impl VSpace {
         _pager: &mut crate::memory::tcache::TCache,
     ) -> Result<(), AddressSpaceError> {
         Ok(())
+    }
+}
+
+impl AddressSpace for VSpace {
+    fn map_frame(
+        &mut self,
+        base: VAddr,
+        frame: Frame,
+        action: MapAction,
+        pager: &mut dyn PhysicalPageProvider,
+    ) -> Result<(), AddressSpaceError> {
+        unimplemented!("map_frame");
+    }
+
+    fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize {
+        unimplemented!("map_memory_requirements");
+    }
+
+    fn adjust(
+        &mut self,
+        vaddr: VAddr,
+        rights: MapAction,
+    ) -> Result<(VAddr, usize), AddressSpaceError> {
+        unimplemented!("adjust");
+    }
+
+    fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
+        unimplemented!("resolve");
+    }
+
+    fn unmap(&mut self, vaddr: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+        unimplemented!("unmap");
     }
 }
 

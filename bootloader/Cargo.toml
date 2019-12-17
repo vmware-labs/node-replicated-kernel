@@ -2,11 +2,17 @@
 name = "bootloader"
 version = "0.0.1"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+edition = "2018"
 
 [dependencies]
-uefi = { version = "0.3.2", features = ["exts"] }
-uefi-services = { version = "0.1.0" }
-log = { version = "0.4", default-features = false }
-arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
+## Internal dependencies
+bootloader_shared = { path = "../lib/bootloader_shared" }
 elfloader = { path = "../lib/elfloader" }
 x86 = { path = "../lib/x86" }
+
+## External dependencies
+log = { version = "0.4", default-features = false }
+arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
+# Move back to version once 0.4.2 is released (15e3bd3)
+uefi = { git = "https://github.com/gz/uefi-rs.git", features = ["exts", "alloc"] }
+uefi-services = { git = "https://github.com/gz/uefi-rs.git" }

@@ -35,7 +35,6 @@ use core::fmt;
 use alloc::boxed::Box;
 
 use x86::apic::ApicControl;
-use x86::bits64::paging::VAddr;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
 use x86::irq::*;
@@ -49,7 +48,9 @@ use log::debug;
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::Executor;
 use crate::ExitReason;
+use crate::memory::{vspace::MapAction, Frame};
 
+use super::memory::{PAddr, VAddr, KERNEL_BASE, BASE_PAGE_SIZE};
 use super::debug;
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
@@ -521,6 +522,27 @@ pub unsafe fn register_handler(
     //handlers[vector] = handler;
 }
 
+/// Initialize IO APICs by enumerating them
+/// and making sure the device registers are mapped
+/// in the kernel-space.
+pub fn ioapic_initialize() {
+    let ioapic_len = topology::MACHINE_TOPOLOGY.io_apics().count();
+    crate::memory::KernelAllocator::try_refill_tcache(4 * ioapic_len, 0)
+        .expect("Refill didn't work");
+
+    let kcb = get_kcb();
+    let mut pmanager = kcb.mem_manager();
+
+    for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
+        info!("Initialize IO APIC {:?}", io_apic);
+
+        let paddr = PAddr::from(io_apic.address as u64);
+        let ioapic_frame = Frame::new(paddr, BASE_PAGE_SIZE, 0);
+        let vbase = PAddr::from(KERNEL_BASE);
+        kcb.arch.init_vspace().map_identity_with_offset(vbase, ioapic_frame.base, ioapic_frame.size(), MapAction::ReadWriteKernel, &mut *pmanager).expect("Can't create APIC mapping?");
+    }
+}
+
 /// Establishes a route for a GSI on the IOAPIC.
 ///
 /// # TODO
@@ -531,34 +553,7 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
     use crate::memory::{paddr_to_kernel_vaddr, vspace::MapAction, PAddr};
 
     for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
-        debug!("Initialize IO APIC {:?}", io_apic);
         let addr = PAddr::from(io_apic.address as u64);
-
-        // map it
-        let kcb = get_kcb();
-        let mut plock = kcb.arch.current_process();
-        let mut pmanager = kcb.mem_manager();
-
-        plock.as_mut().map(|p| {
-            trace!(
-                "Map IOAPIC at: {:#x}, p is at {:p}",
-                PAddr::from(crate::arch::memory::KERNEL_BASE) + addr,
-                p
-            );
-
-            // TODO: The mapping should be in global kernel-space!
-            unimplemented!();
-            /*p.vspace
-            .map_identity_with_offset(
-                PAddr::from(crate::arch::memory::KERNEL_BASE),
-                addr,
-                x86::bits64::paging::BASE_PAGE_SIZE,
-                MapAction::ReadWriteKernel,
-                &mut *pmanager,
-            )
-            .expect("Can't map IO APIC?");
-            */
-        });
 
         let mut inst =
             unsafe { x86::apic::ioapic::IoApic::new(paddr_to_kernel_vaddr(addr).as_usize()) };

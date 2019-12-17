@@ -12,11 +12,11 @@ use kpi::*;
 
 use crate::error::KError;
 use crate::memory::vspace::MapAction;
-use crate::memory::PhysicalPageProvider;
+use crate::memory::{Frame, PhysicalPageProvider};
 use crate::nr;
 
 use super::gdt::GdtTable;
-use super::process::UserValue;
+use super::process::{Ring3Process, UserValue};
 
 extern "C" {
     #[no_mangle]
@@ -33,7 +33,6 @@ fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
 /// System call handler for process exit
 fn process_exit(code: u64) -> Result<(u64, u64), KError> {
     debug!("Process got exit, we are done for now...");
-
     // TODO: For now just a dummy version that exits Qemu
     if code != 0 {
         // When testing we want to indicate to our integration
@@ -87,16 +86,16 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
 fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
     let op = VSpaceOperation::from(arg1);
     let base = VAddr::from(arg2);
-    let bound = arg3;
-    trace!("{:?} {:#x} {:#x}", op, base, bound);
+    let region_size = arg3;
+    trace!("{:?} {:#x} {:#x}", op, base, region_size);
 
     let kcb = super::kcb::get_kcb();
     let mut plock = kcb.arch.current_process();
 
     match op {
         VSpaceOperation::Map => unsafe {
-            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
-                let (bp, lp) = crate::memory::size_to_pages(bound as usize);
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
                 let mut frames = Vec::with_capacity(bp + lp);
                 crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)
                     .expect("Refill didn't work");
@@ -125,57 +124,28 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                     }
                 }
 
-                kcb.arch
-                    .replica
-                    .as_ref()
-                    .map_or(Err(KError::ReplicaNotSet), |replica| {
-                        let mut o = vec![];
-
-                        // TODO(api-ergonomics): Fix ugly execute API
-                        let mut virtual_offset = 0;
-                        for frame in frames {
-                            replica.execute(
-                                nr::Op::MemMapFrame(
-                                    p.pid,
-                                    base + virtual_offset,
-                                    frame,
-                                    MapAction::ReadWriteUser,
-                                ),
-                                kcb.arch.replica_idx,
-                            );
-                            while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                            debug_assert_eq!(o.len(), 1, "Should get reply");
-
-                            match o[0] {
-                                nr::NodeResult::Mapped => {}
-                                _ => unreachable!("Got unexpected response"),
-                            };
-
-                            virtual_offset += frame.size();
-                            o.clear(); // XXX
-                        }
-
-                        Ok((paddr.unwrap_or(PAddr::zero()).as_u64(), bound))
-                    })
+                nr::KernelNode::<Ring3Process>::map_frames(
+                    p.pid,
+                    base,
+                    frames,
+                    MapAction::ReadWriteUser,
+                )
             })
         },
         VSpaceOperation::MapDevice => unsafe {
-            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
                 let paddr = PAddr::from(base.as_u64());
-                let kcb = crate::kcb::get_kcb();
-                let mut pmanager = kcb.mem_manager();
+                let size = region_size as usize;
 
-                /*p.vspace.map_generic(
-                    base,
-                    (paddr, (bound - base.as_u64()) as usize),
-                    MapAction::ReadWriteUser,
-                    true,
-                    &mut *pmanager,
-                )?;
+                let frame = Frame::new(paddr, size, kcb.node);
 
-                tlb::flush_all();
-                Ok((paddr.as_u64(), bound))*/
-                unimplemented!("MapDevice");
+                plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                    nr::KernelNode::<Ring3Process>::map_device_frame(
+                        p.pid,
+                        frame,
+                        MapAction::ReadWriteUser,
+                    )
+                })
             })
         },
         VSpaceOperation::Unmap => {
@@ -184,24 +154,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         }
         VSpaceOperation::Identify => unsafe {
             trace!("Identify base {:#x}.", base);
-            plock.as_mut().map_or(Err(KError::ProcessNotSet), |p| {
-                /* let (paddr, _rights) = p.vspace.resolve(base)?; */
-                kcb.arch
-                    .replica
-                    .as_ref()
-                    .map_or(Err(KError::ReplicaNotSet), |replica| {
-                        let mut o = vec![];
-
-                        // TODO(api-ergonomics): Fix ugly execute API
-                        replica.execute(nr::Op::MemResolve(p.pid, base), kcb.arch.replica_idx);
-                        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                        debug_assert_eq!(o.len(), 1, "Should get reply");
-
-                        match o[0] {
-                            nr::NodeResult::Resolved(paddr, rights) => Ok((paddr.as_u64(), 0x0)),
-                            _ => unreachable!("Got unexpected response"),
-                        }
-                    })
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                nr::KernelNode::<Ring3Process>::resolve(p.pid, base)
             })
         },
         VSpaceOperation::Unknown => {
@@ -274,11 +228,6 @@ pub extern "C" fn syscall_handle(
                 });
             }
         };
-
-        /*info!(
-            "resume from syscall with kcb save area = {:?}",
-            kcb.save_area
-        );*/
 
         super::process::Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr())
     };

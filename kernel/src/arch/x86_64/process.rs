@@ -12,7 +12,6 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
-use crate::arch::Module;
 use crate::kcb::Kcb;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{
@@ -23,6 +22,7 @@ use crate::round_up;
 
 use super::kcb::Arch86Kcb;
 use super::vspace::*;
+use super::Module;
 
 pub struct UserPtr<T> {
     value: *mut T,

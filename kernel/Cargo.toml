@@ -27,10 +27,10 @@ custom_error = { path = "../lib/custom_error" }
 topology = { path = "../lib/topology" }
 node-replication = { path = "../lib/node-replication" }
 kpi = { path = "../lib/kpi" }
+bootloader_shared = { path = "../lib/bootloader_shared" }
 # External libraries we use:
 spin = "0.5.2"
 log = "0.4"
-uefi = { version = "0.3.2", features = ["exts"] }
 arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
 lazy_static = { version = "1.3", features = ["spin_no_std"] }
 logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
@@ -40,6 +40,8 @@ crossbeam-queue = { path = "../lib/crossbeam-queue", default-features = false }
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false } # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" } # Need to upstream fixes
 addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
+# Move back to version once 0.4.2 is released (15e3bd3)
+uefi = { git = "https://github.com/gz/uefi-rs.git", features = ["exts"] }
 
 [[bin]]
 name = "bespin"

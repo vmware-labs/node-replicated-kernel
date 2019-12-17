@@ -1,9 +1,15 @@
 //! KCB is the local kernel control that stores all core local state.
+
 use core::cell::{RefCell, RefMut};
 use core::ptr;
+use alloc::sync::Arc;
+
+use node_replication::replica::Replica;
 
 use crate::kcb::{ArchSpecificKcb, Kcb};
+use crate::nr::KernelNode;
 
+use super::process::UnixProcess;
 use super::vspace::VSpace;
 use super::KernelArgs;
 
@@ -45,6 +51,8 @@ pub struct ArchKcb {
     init_vspace: RefCell<VSpace>,
     /// Arguments passed to the kernel by the bootloader.
     kernel_args: &'static KernelArgs,
+    pub replica: Option<Arc<Replica<'static, KernelNode<UnixProcess>>>>,
+    pub replica_idx: usize,
 }
 
 impl ArchKcb {
@@ -52,6 +60,8 @@ impl ArchKcb {
         ArchKcb {
             kernel_args,
             init_vspace: RefCell::new(VSpace::new()),
+            replica: None,
+            replica_idx: 0
         }
     }
 

@@ -14,10 +14,10 @@ use uefi::{CStr16, Char16};
 use x86::bits64::paging::BASE_PAGE_SIZE;
 
 use crate::allocate_pages;
+use crate::kernel::MODULE;
+use crate::kernel::{paddr_to_kernel_vaddr, paddr_to_uefi_vaddr};
+use crate::round_up;
 use crate::{KernelArgs, Module};
-use kernel::MODULE;
-use kernel::{paddr_to_kernel_vaddr, paddr_to_uefi_vaddr};
-use round_up;
 
 /// Trying to get the file handle for the kernel binary.
 fn locate_binary(st: &SystemTable<Boot>, name: &str) -> RegularFile {

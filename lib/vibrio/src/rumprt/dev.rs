@@ -167,12 +167,11 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
     trace!("rumpcomp_pci_map {:#x} {:#x}", addr, len);
 
     let start = PAddr::from(addr);
-    let end = PAddr::from(addr) + len;
 
     let r = crate::syscalls::vspace(
         crate::syscalls::VSpaceOperation::MapDevice,
         start.as_u64(),
-        end.as_u64(),
+        len as u64,
     );
 
     match r {

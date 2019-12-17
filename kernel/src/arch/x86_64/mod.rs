@@ -49,6 +49,7 @@ use uefi::table::boot::MemoryType;
 pub mod acpi;
 mod isr;
 
+pub use bootloader_shared::*;
 use klogger;
 use log::Level;
 use logos::Logos;
@@ -247,9 +248,6 @@ fn init_apic() -> xapic::XAPICDriver {
 
     apic
 }
-
-// Includes structs KernelArgs, and Module from bootloader
-include!("../../../../bootloader/src/shared.rs");
 
 struct AppCoreArgs {
     _mem_region: Frame,
@@ -657,7 +655,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
-
 
     // Create the global operation log and first replica
     // and store it in the BSP kcb

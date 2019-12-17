@@ -1,0 +1,12 @@
+[package]
+name = "bootloader_shared"
+version = "0.0.1"
+authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+edition = "2018"
+
+[dependencies]
+x86 = { path = "../x86" }
+
+arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
+# Move back to version once 0.4.2 is released (15e3bd3)
+uefi = { git = "https://github.com/gz/uefi-rs.git" }

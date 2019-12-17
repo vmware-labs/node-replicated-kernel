@@ -60,18 +60,17 @@ use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
 use crate::alloc::vec::Vec;
 
 use x86::bits64::paging::*;
-
 use x86::controlregs;
 
 mod kernel;
 mod modules;
-mod shared;
 mod vspace;
 
 use kernel::*;
 use modules::*;
-use shared::*;
 use vspace::*;
+
+use bootloader_shared::*;
 
 #[macro_export]
 macro_rules! round_up {

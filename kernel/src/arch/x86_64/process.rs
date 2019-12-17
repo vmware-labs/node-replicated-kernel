@@ -717,7 +717,7 @@ impl Process for Ring3Process {
                 )
                 .expect("Can't map user-space executor memory.");
 
-            info!(
+            debug!(
                 "executor space base expanded {:#x} size: {} end {:#x}",
                 self.executor_offset,
                 memory.size(),
@@ -728,10 +728,6 @@ impl Process for Ring3Process {
         let executor_space_requirement =
             Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE + BASE_PAGE_SIZE;
         let executors_to_create = memory.size() / executor_space_requirement;
-        info!(
-            "about to create {} on {}",
-            executors_to_create, memory.affinity
-        );
 
         let cur_offset = self.executor_offset;
         for cnt in 0..executors_to_create {
@@ -758,7 +754,7 @@ impl Process for Ring3Process {
             self.current_eid + 1;
         }
 
-        info!(
+        debug!(
             "created allocators in {:#x} -- {:#x}",
             self.executor_offset,
             self.executor_offset + memory.size()

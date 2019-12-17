@@ -1,11 +1,14 @@
-// A set of data-structures that are shared between the booatloader
-// and the kernel (i.e., they are passed by the bootloader
-// to the kernel).
-//
-// # Notes
-// This file is imported using include!() from the kernel source
-// so we have to be careful with imports (use full qualifiers).
-// That's also the reason why this isn't a rustdoc comment.
+//! A set of data-structures that are shared between the booatloader
+//! and the kernel (i.e., they are passed by the bootloader
+//! to the kernel).
+//!
+//! # Warnings
+//! This is a bit shady since we pass these structs as in-memory blobs
+//! between the kernel and bootloader (both of which have different
+//! architectural targets). In a best-case scenario where this
+//! just works :O these structs should really stay plain-old-data
+//! without implementations.
+#![no_std]
 
 /// Describes an ELF binary we loaded from the UEFI image into memory.
 #[derive(Eq, PartialEq, Clone)]
@@ -112,6 +115,13 @@ pub struct KernelArgs {
     /// Modules (ELF binaries found in the UEFI partition) passed to the kernel
     /// modules[0] is the kernel binary
     pub modules: arrayvec::ArrayVec<[Module; KernelArgs::MAX_MODULES]>,
+}
+
+impl Default for KernelArgs {
+    fn default() -> KernelArgs {
+        use core::mem::{self, MaybeUninit};
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
 }
 
 impl KernelArgs {

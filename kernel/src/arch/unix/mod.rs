@@ -16,19 +16,9 @@ pub mod process;
 pub mod vspace;
 
 use crate::kcb::Kcb;
+use x86::current::paging::PAddr;
 
-// Includes structs KernelArgs, and Module from bootloader
-//include!("../../../../bootloader/src/shared.rs");
-
-#[derive(Eq, PartialEq, Debug)]
-pub struct Module {
-    data: &'static [u8],
-}
-
-pub struct KernelArgs {
-    /// The offset where the elfloader placed the kernel
-    pub kernel_elf_offset: x86::bits64::paging::VAddr,
-}
+pub use bootloader_shared::*;
 
 pub mod debug {
     use crate::ExitReason;
@@ -77,10 +67,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
         unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
 
     // Construct the Kcb so we can access these things later on in the code
-
-    let kernel_args = Box::new(KernelArgs {
-        kernel_elf_offset: x86::bits64::paging::VAddr::from_u64(0),
-    });
+    let kernel_args: Box<KernelArgs> = Box::new(Default::default());
     let kernel_binary: &'static [u8] = &[0u8; 1];
     let arch_kcb: kcb::ArchKcb = kcb::ArchKcb::new(Box::leak(kernel_args));
 

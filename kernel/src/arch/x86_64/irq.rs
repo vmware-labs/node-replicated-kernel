@@ -45,15 +45,15 @@ use x86::Ring;
 
 use log::debug;
 
+use crate::memory::{vspace::MapAction, Frame};
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::Executor;
 use crate::ExitReason;
-use crate::memory::{vspace::MapAction, Frame};
 
-use super::memory::{PAddr, VAddr, KERNEL_BASE, BASE_PAGE_SIZE};
 use super::debug;
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
+use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::Ring3Resumer;
 
 /// A macro to initialize an entry in an IDT table.
@@ -539,7 +539,16 @@ pub fn ioapic_initialize() {
         let paddr = PAddr::from(io_apic.address as u64);
         let ioapic_frame = Frame::new(paddr, BASE_PAGE_SIZE, 0);
         let vbase = PAddr::from(KERNEL_BASE);
-        kcb.arch.init_vspace().map_identity_with_offset(vbase, ioapic_frame.base, ioapic_frame.size(), MapAction::ReadWriteKernel, &mut *pmanager).expect("Can't create APIC mapping?");
+        kcb.arch
+            .init_vspace()
+            .map_identity_with_offset(
+                vbase,
+                ioapic_frame.base,
+                ioapic_frame.size(),
+                MapAction::ReadWriteKernel,
+                &mut *pmanager,
+            )
+            .expect("Can't create APIC mapping?");
     }
 }
 

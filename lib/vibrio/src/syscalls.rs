@@ -258,7 +258,10 @@ pub unsafe fn vspace(
 ) -> Result<(VAddr, PAddr), SystemCallError> {
     let (err, paddr, size) = syscall!(SystemCall::VSpace as u64, op as u64, base, bound, 3);
     if err == 0 {
-        debug_assert_eq!(bound, size, "VSpace Map should return mapped region size as 2nd argument");
+        debug_assert_eq!(
+            bound, size,
+            "VSpace Map should return mapped region size as 2nd argument"
+        );
         Ok((VAddr::from(base), PAddr::from(paddr)))
     } else {
         Err(SystemCallError::from(err))

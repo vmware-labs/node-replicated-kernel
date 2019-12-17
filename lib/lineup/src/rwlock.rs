@@ -207,7 +207,7 @@ impl RwLockInner {
         let tid = Environment::tid();
 
         let can_upgrade = match self.owner {
-            Some(Right(reader_count)) => reader_count == 1, // TODO: This assume we're the reader...
+            Some(Right(reader_count)) => reader_count == 1, /* TODO: This assume we're the reader... */
             _ => false,
         };
 

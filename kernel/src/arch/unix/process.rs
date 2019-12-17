@@ -16,7 +16,6 @@ pub struct UnixThread {}
 
 pub struct UnixResumeHandle {}
 
-
 impl ResumeHandle for UnixResumeHandle {
     unsafe fn resume(self) {}
 }
@@ -45,7 +44,7 @@ impl Process for UnixProcess {
 
     fn new(_module: &Module, pid: Pid) -> Result<Self, ProcessError> {
         Ok(UnixProcess {
-            vspace: VSpace::new()
+            vspace: VSpace::new(),
         })
     }
 
@@ -68,5 +67,4 @@ impl Process for UnixProcess {
     fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError> {
         Ok(Box::new(UnixThread {}))
     }
-
 }

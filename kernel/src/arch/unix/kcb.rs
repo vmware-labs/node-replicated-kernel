@@ -1,8 +1,8 @@
 //! KCB is the local kernel control that stores all core local state.
 
+use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::ptr;
-use alloc::sync::Arc;
 
 use node_replication::replica::Replica;
 
@@ -61,7 +61,7 @@ impl ArchKcb {
             kernel_args,
             init_vspace: RefCell::new(VSpace::new()),
             replica: None,
-            replica_idx: 0
+            replica_idx: 0,
         }
     }
 

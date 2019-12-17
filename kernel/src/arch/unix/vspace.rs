@@ -3,8 +3,8 @@
 use alloc::boxed::Box;
 use core::pin::Pin;
 
-use crate::memory::vspace::{AddressSpaceError, AddressSpace, MapAction, TlbFlushHandle};
-use crate::memory::{PhysicalPageProvider, Frame};
+use crate::memory::vspace::{AddressSpace, AddressSpaceError, MapAction, TlbFlushHandle};
+use crate::memory::{Frame, PhysicalPageProvider};
 
 use x86::bits64::paging::*;
 

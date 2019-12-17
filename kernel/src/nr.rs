@@ -2,17 +2,17 @@
 
 use crate::prelude::*;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 
 use hashbrown::HashMap;
 use node_replication::Dispatch;
 
 use crate::arch::Module;
+use crate::error::KError;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process};
-use crate::error::KError;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Op {
@@ -74,7 +74,6 @@ impl<P: Process> Default for KernelNode<P> {
 
 // TODO(api-ergonomics): Fix ugly execute API
 impl<P: Process> KernelNode<P> {
-
     pub fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
@@ -94,7 +93,11 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
-    pub fn map_device_frame(pid: Pid, frame: Frame, action: MapAction) -> Result<(u64, u64), KError> {
+    pub fn map_device_frame(
+        pid: Pid,
+        frame: Frame,
+        action: MapAction,
+    ) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .replica
@@ -113,7 +116,12 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
-    pub fn map_frames(pid: Pid, base: VAddr, frames: Vec<Frame>, action: MapAction) -> Result<(u64, u64), KError> {
+    pub fn map_frames(
+        pid: Pid,
+        base: VAddr,
+        frames: Vec<Frame>,
+        action: MapAction,
+    ) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .replica
@@ -124,12 +132,7 @@ impl<P: Process> KernelNode<P> {
                 let mut virtual_offset = 0;
                 for frame in frames {
                     replica.execute(
-                        Op::MemMapFrame(
-                            pid,
-                            base + virtual_offset,
-                            frame,
-                            action,
-                        ),
+                        Op::MemMapFrame(pid, base + virtual_offset, frame, action),
                         kcb.arch.replica_idx,
                     );
                     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
@@ -147,8 +150,6 @@ impl<P: Process> KernelNode<P> {
                 Ok((base.as_u64(), virtual_offset as u64))
             })
     }
-
-
 }
 
 impl<P> Dispatch for KernelNode<P>
@@ -226,7 +227,7 @@ where
                     .map_frame(base, frame, action, &mut *pmanager)
                     .expect("TODO: MemMapFrame map_frame failed");
                 NodeResult::Mapped
-            },
+            }
             Op::MemAdjust => unreachable!(),
             Op::MemUnmap => unreachable!(),
             Op::MemResolve(pid, base) => {
@@ -234,11 +235,12 @@ where
                 let kcb = crate::kcb::get_kcb();
                 let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
 
-                let (paddr, rights) = p.vspace()
+                let (paddr, rights) = p
+                    .vspace()
                     .resolve(base)
                     .expect("TODO: MemMapFrame map_frame failed");
                 NodeResult::Resolved(paddr, rights)
-            },
+            }
             Op::Invalid => unreachable!("Got invalid OP"),
         }
     }

@@ -51,7 +51,6 @@ mod isr;
 
 pub use bootloader_shared::*;
 use klogger;
-use log::Level;
 use logos::Logos;
 
 use crate::kcb::Kcb;
@@ -92,8 +91,10 @@ enum CmdToken {
     #[token = "log="]
     Log,
 
-    /// Regular expressions for parsing log-level.
-    #[regex = "[a-zA-Z]+"]
+    /// Regular expressions for parsing log-filter.
+    /// Example: 'info' or 'bespin::memory=debug,topology::acpi=debug'
+    /// TODO::Improve the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
+    #[regex = "[a-zA-Z:,=]+"]
     Text,
 }
 
@@ -102,30 +103,26 @@ enum CmdToken {
 /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
 fn init_logging(args: &str) {
     let mut lexer = CmdToken::lexer(args);
-    let level: Level = loop {
-        let mut level = Level::Info;
+    let filter: &str = loop {
+        let mut filter = "info";
         lexer.advance();
         match (lexer.token, lexer.slice()) {
             (CmdToken::Binary, bin) => assert_eq!(bin, "./kernel"),
             (CmdToken::Log, _) => {
                 lexer.advance();
-                level = match (lexer.token, lexer.slice()) {
-                    (CmdToken::Text, "trace") => Level::Trace,
-                    (CmdToken::Text, "debug") => Level::Debug,
-                    (CmdToken::Text, "info") => Level::Info,
-                    (CmdToken::Text, "warn") => Level::Warn,
-                    (CmdToken::Text, "error") => Level::Error,
-                    (_, _) => Level::Error,
+                filter = match (lexer.token, lexer.slice()) {
+                    (CmdToken::Text, text) => text,
+                    (_, _) => "error",
                 };
             }
-            (CmdToken::End, _) => level = Level::Info,
+            (CmdToken::End, _) => filter = "info",
             (_, _) => continue,
         };
 
-        break level;
+        break filter;
     };
 
-    klogger::init(level).expect("Can't set-up logging");
+    klogger::init(filter).expect("Can't set-up logging");
 }
 
 /// Make sure the machine supports what we require.

@@ -165,6 +165,36 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     }
 }
 
+fn handle_fileio(
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+) -> Result<(u64, u64), KError> {
+    let op = FileOperation::from(arg1);
+
+    let kcb = super::kcb::get_kcb();
+    let mut plock = kcb.arch.current_process();
+
+    match op {
+        FileOperation::Create => unsafe {
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                let pathname = arg2;
+                let modes = arg3;
+                nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, modes)
+            })
+        },
+        FileOperation::Open => Ok((1, 0)),
+        FileOperation::Read | FileOperation::Write => Ok((1, 0)),
+        FileOperation::Close => Ok((1, 0)),
+        FileOperation::Unknown => {
+            unreachable!("FileOperation not allowed");
+            Err(KError::NotSupported)
+        }
+    }
+}
+
 #[allow(unused)]
 fn debug_print_syscall(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) {
     sprint!("syscall: {:?}", SystemCall::new(function));
@@ -190,6 +220,16 @@ fn debug_print_syscall(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64
                 arg5
             );
         }
+        SystemCall::FileIO => {
+            sprintln!(
+                " {:?} {} {} {} {}",
+                FileOperation::from(arg1),
+                arg2,
+                arg3,
+                arg4,
+                arg5
+            );
+        }
         SystemCall::Unknown => unreachable!(),
     }
 }
@@ -201,12 +241,13 @@ pub extern "C" fn syscall_handle(
     arg1: u64,
     arg2: u64,
     arg3: u64,
-    _arg4: u64,
-    _arg5: u64,
+    arg4: u64,
+    arg5: u64,
 ) -> ! {
     let status: Result<(u64, u64), KError> = match SystemCall::new(function) {
         SystemCall::Process => handle_process(arg1, arg2, arg3),
         SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
+        SystemCall::FileIO => handle_fileio(arg1, arg2, arg3, arg4, arg5),
         _ => Err(KError::InvalidSyscallArgument1 { a: function }),
     };
 

@@ -130,6 +130,51 @@ impl From<&str> for VSpaceOperation {
     }
 }
 
+/// Flags for the fs related system call
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[repr(u64)]
+pub enum FileOperation {
+    /// Create a file
+    Create = 1,
+    /// Open a file
+    Open = 2,
+    /// Read from a file
+    Read = 3,
+    /// Write to a file
+    Write = 4,
+    /// Close an opened file.
+    Close = 5,
+    Unknown
+}
+
+impl From<u64> for FileOperation {
+    /// Construct a SystemCall enum based on a 64-bit value.
+    fn from(op: u64) -> FileOperation {
+        match op {
+            1 => FileOperation::Create,
+            2 => FileOperation::Open,
+            3 => FileOperation::Read,
+            4 => FileOperation::Write,
+            5 => FileOperation::Close,
+            _ => FileOperation::Unknown,
+        }
+    }
+}
+
+impl From<&str> for FileOperation {
+    /// Construct a FileOperation enum based on a str.
+    fn from(op: &str) -> FileOperation {
+        match op {
+            "Create" => FileOperation::Create,
+            "Open" => FileOperation::Open,
+            "Read" => FileOperation::Read,
+            "Write" => FileOperation::Write,
+            "Close" => FileOperation::Close,
+            _ => FileOperation::Unknown,
+        }
+    }
+}
+
 /// SystemCall is the type of call we are invoking.
 ///
 /// It is passed to the kernel in the %rdi register.
@@ -138,6 +183,7 @@ impl From<&str> for VSpaceOperation {
 pub enum SystemCall {
     Process = 1,
     VSpace = 3,
+    FileIO = 5,
     Unknown,
 }
 
@@ -147,6 +193,7 @@ impl SystemCall {
         match domain {
             1 => SystemCall::Process,
             3 => SystemCall::VSpace,
+            5 => SystemCall::FileIO,
             _ => SystemCall::Unknown,
         }
     }
@@ -158,6 +205,7 @@ impl From<&str> for SystemCall {
         match op {
             "Process" => SystemCall::Process,
             "VSpace" => SystemCall::VSpace,
+            "FileIO" => SystemCall::FileIO,
             _ => SystemCall::Unknown,
         }
     }

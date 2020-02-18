@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use custom_error::custom_error;
 
 use crate::arch::Module;
+use crate::fs::FileDescriptor;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::Frame;
 
@@ -30,6 +31,7 @@ impl From<&str> for ProcessError {
 pub trait Process {
     type E: Executor + Copy;
     type A: AddressSpace;
+    type F: FileDescriptor;
 
     fn new(module: &Module, pid: Pid) -> Result<Self, ProcessError>
     where
@@ -45,6 +47,10 @@ pub trait Process {
     fn vspace(&mut self) -> &mut Self::A;
 
     fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError>;
+
+    fn allocate_fd(&mut self) -> Option<(u64, &mut Self::F)>;
+
+    fn get_fd(&mut self, index: usize) -> &mut Self::F;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU

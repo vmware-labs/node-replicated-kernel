@@ -54,6 +54,7 @@ pub mod arch;
 pub mod x86_64_arch;
 
 mod error;
+mod fs;
 mod graphviz;
 mod kcb;
 mod memory;

@@ -12,6 +12,7 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
+use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
 use crate::kcb::Kcb;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{
@@ -432,6 +433,8 @@ pub struct Ring3Process {
         arrayvec::ArrayVec<[Option<Vec<Box<Ring3Executor>>>; super::MAX_NUMA_NODES]>,
     /// Offset where executor memory is located in user-space.
     pub executor_offset: VAddr,
+    /// File descriptors for the opened file.
+    pub fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]>,
 }
 
 impl Ring3Process {
@@ -442,6 +445,10 @@ impl Ring3Process {
         for _i in 0..super::MAX_NUMA_NODES {
             executor_cache.push(None);
         }
+        let mut fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]> = Default::default();
+        for _i in 0..MAX_FILES_PER_PROCESS {
+            fds.push(None);
+        }
 
         Ring3Process {
             pid,
@@ -451,6 +458,7 @@ impl Ring3Process {
             entry_point: VAddr::from(0usize),
             executor_cache,
             executor_offset: VAddr::from(0x21_0000_0000usize),
+            fds,
         }
     }
 }
@@ -633,6 +641,7 @@ impl elfloader::ElfLoader for Ring3Process {
 impl Process for Ring3Process {
     type E = Ring3Executor;
     type A = VSpace;
+    type F = Fd;
 
     /// Create a process from a module
     fn new(module: &Module, pid: Pid) -> Result<Ring3Process, ProcessError> {
@@ -766,5 +775,32 @@ impl Process for Ring3Process {
 
         self.executor_offset += memory.size();
         Ok(())
+    }
+
+    fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
+        let mut fd: i64 = -1;
+        for i in 0..MAX_FILES_PER_PROCESS {
+            match self.fds[i] {
+                None => {
+                    fd = i as i64;
+                    break;
+                }
+                _ => continue,
+            }
+        }
+
+        match fd {
+            -1 => None,
+            f => {
+                let filedesc = Fd::init_fd();
+                self.fds[f as usize] = Some(Default::default());
+                Some((f as u64, self.fds[f as usize].as_mut().unwrap()))
+            }
+        }
+    }
+
+    fn get_fd(&mut self, index: usize) -> &mut Fd {
+        info!("{:?}", self.fds);
+        self.fds[index].as_mut().unwrap()
     }
 }

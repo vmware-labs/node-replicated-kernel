@@ -2,6 +2,7 @@
 use alloc::boxed::Box;
 
 use crate::arch::Module;
+use crate::fs::Fd;
 use crate::memory::Frame;
 use crate::process::{Executor, Pid, Process, ProcessError, ResumeHandle};
 
@@ -9,6 +10,7 @@ use super::vspace::VSpace;
 
 pub struct UnixProcess {
     vspace: VSpace,
+    fd: Fd,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -41,10 +43,12 @@ impl Executor for UnixThread {
 impl Process for UnixProcess {
     type E = UnixThread;
     type A = VSpace;
+    type F = Fd;
 
     fn new(_module: &Module, pid: Pid) -> Result<Self, ProcessError> {
         Ok(UnixProcess {
             vspace: VSpace::new(),
+            fd: Default::default(),
         })
     }
 
@@ -66,5 +70,13 @@ impl Process for UnixProcess {
 
     fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError> {
         Ok(Box::new(UnixThread {}))
+    }
+
+    fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
+        Some((1, &mut self.fd))
+    }
+
+    fn get_fd(&mut self, index: usize) -> &mut Fd {
+        &mut self.fd
     }
 }

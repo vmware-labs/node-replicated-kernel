@@ -286,6 +286,28 @@ pub fn test_rump_net() {
     }
 }
 
+fn fs_test() {
+    use vibrio::io::O_RDWR;
+    let base: u64 = 0xff000;
+    let size: u64 = 0x1000 * 64;
+    unsafe {
+        vibrio::syscalls::vspace(vibrio::syscalls::VSpaceOperation::Map, base, size)
+            .expect("Map syscall failed");
+
+        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
+        for i in slice.iter_mut() {
+            *i = 0xb;
+        }
+        assert_eq!(slice[99], 0xb);
+
+        let fd = vibrio::syscalls::file_create(vibrio::syscalls::FileOperation::Create, "file.txt\0", O_RDWR)
+            .expect("Map syscall failed");
+        assert_eq!(fd, 0);
+    }
+
+    info!("fs_test OK");
+}
+
 pub fn install_vcpu_area() {
     use x86::bits64::paging::VAddr;
     let ctl = vibrio::syscalls::vcpu_control_area().expect("Can't read vcpu control area.");
@@ -334,6 +356,9 @@ pub extern "C" fn _start() -> ! {
         #[cfg(all(not(feature = "test-rump-tmpfs"), feature = "test-rump-net"))]
         test_rump_net();
     }
+
+    #[cfg(feature = "test-fs")]
+    fs_test();
 
     debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::exit(0);

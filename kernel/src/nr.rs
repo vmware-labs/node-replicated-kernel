@@ -10,6 +10,7 @@ use node_replication::Dispatch;
 
 use crate::arch::Module;
 use crate::error::KError;
+use crate::fs::{FileDescriptor, MemFS};
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process};
@@ -30,6 +31,7 @@ pub enum Op {
     MemAdjust,
     MemUnmap,
     MemResolve(Pid, VAddr),
+    FileCreate(Pid, u64, u64),
     Invalid,
 }
 
@@ -49,6 +51,7 @@ pub enum NodeResult<E: Executor> {
     Adjusted,
     Unmapped,
     Resolved(PAddr, MapAction),
+    FileCreated(u64),
     Invalid,
 }
 
@@ -72,6 +75,7 @@ impl Default for NodeResultError {
 pub struct KernelNode<P: Process> {
     current_pid: Pid,
     process_map: HashMap<Pid, Box<P>>,
+    fs: MemFS,
 }
 
 impl<P: Process> Default for KernelNode<P> {
@@ -79,6 +83,7 @@ impl<P: Process> Default for KernelNode<P> {
         KernelNode {
             current_pid: 1,
             process_map: HashMap::with_capacity(256),
+            fs: MemFS::init(),
         }
     }
 }
@@ -159,6 +164,25 @@ impl<P: Process> KernelNode<P> {
                 }
 
                 Ok((base.as_u64(), virtual_offset as u64))
+            })
+    }
+
+    pub fn map_fd(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+                replica.execute(Op::FileCreate(pid, pathname, modes), kcb.arch.replica_idx);
+
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                match o[0] {
+                    Ok(NodeResult::FileCreated(fd)) => Ok((fd, 0)),
+                    _ => unreachable!("Got unexpected response"),
+                }
             })
     }
 }
@@ -260,6 +284,20 @@ where
                     .resolve(base)
                     .expect("TODO: MemMapFrame map_frame failed");
                 Ok(NodeResult::Resolved(paddr, rights))
+            }
+            Op::FileCreate(pid, pathname, modes) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let fd = p.allocate_fd();
+
+                match fd {
+                    None => Err(NodeResultError::Error),
+                    Some(mut fd) => {
+                        let memnode = self.fs.creat(pathname, 0);
+                        fd.1.update_fd(memnode, modes);
+                        Ok(NodeResult::FileCreated(fd.0))
+                    }
+                }
             }
             Op::Invalid => unreachable!("Got invalid OP"),
         }

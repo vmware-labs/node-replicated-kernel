@@ -290,3 +290,18 @@ pub fn irqalloc(vec: u64, core: u64) -> Result<(), SystemCallError> {
         Err(SystemCallError::from(r))
     }
 }
+
+pub unsafe fn file_create(op: FileOperation, pathname: &str, modes: u64) -> Result<u64, SystemCallError> {
+    let (r, fd) = unsafe {
+            syscall_4_2(SystemCall::FileIO as u64,
+                op as u64,
+                pathname.as_ptr() as u64,
+            modes)
+    };
+
+    if r == 0 {
+        Ok(fd)
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}

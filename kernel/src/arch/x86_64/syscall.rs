@@ -187,7 +187,10 @@ fn handle_fileio(
         },
         FileOperation::Open => Ok((1, 0)),
         FileOperation::Read | FileOperation::Write => Ok((1, 0)),
-        FileOperation::Close => Ok((1, 0)),
+        FileOperation::Close => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+            let fd = arg2;
+            nr::KernelNode::<Ring3Process>::unmap_fd(p.pid, fd)
+        }),
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

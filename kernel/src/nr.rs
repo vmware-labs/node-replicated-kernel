@@ -32,6 +32,7 @@ pub enum Op {
     MemUnmap,
     MemResolve(Pid, VAddr),
     FileCreate(Pid, u64, u64),
+    FileClose(Pid, u64),
     Invalid,
 }
 
@@ -52,6 +53,7 @@ pub enum NodeResult<E: Executor> {
     Unmapped,
     Resolved(PAddr, MapAction),
     FileCreated(u64),
+    FileClosed(u64),
     Invalid,
 }
 
@@ -185,6 +187,25 @@ impl<P: Process> KernelNode<P> {
                 }
             })
     }
+
+    pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+                replica.execute(Op::FileClose(pid, fd), kcb.arch.replica_idx);
+
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                match o[0] {
+                    Ok(NodeResult::FileClosed(0)) => Ok((0, 0)),
+                    _ => Err(KError::NotSupported),
+                }
+            })
+    }
 }
 
 impl<P> Dispatch for KernelNode<P>
@@ -297,6 +318,17 @@ where
                         fd.1.update_fd(memnode, modes);
                         Ok(NodeResult::FileCreated(fd.0))
                     }
+                }
+            }
+            Op::FileClose(pid, fd) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let ret = p.deallocate_fd(fd as usize);
+
+                if ret == fd as usize {
+                    Ok(NodeResult::FileClosed(fd))
+                } else {
+                    Err(NodeResultError::Error)
                 }
             }
             Op::Invalid => unreachable!("Got invalid OP"),

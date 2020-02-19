@@ -76,6 +76,10 @@ impl Process for UnixProcess {
         Some((1, &mut self.fd))
     }
 
+    fn deallocate_fd(&mut self, fd: usize) -> usize {
+        0
+    }
+
     fn get_fd(&mut self, index: usize) -> &mut Fd {
         &mut self.fd
     }

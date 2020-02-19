@@ -50,6 +50,8 @@ pub trait Process {
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut Self::F)>;
 
+    fn deallocate_fd(&mut self, fd: usize) -> usize;
+
     fn get_fd(&mut self, index: usize) -> &mut Self::F;
 }
 

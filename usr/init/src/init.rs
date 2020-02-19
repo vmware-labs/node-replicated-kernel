@@ -300,9 +300,17 @@ fn fs_test() {
         }
         assert_eq!(slice[99], 0xb);
 
-        let fd = vibrio::syscalls::file_create(vibrio::syscalls::FileOperation::Create, "file.txt\0", O_RDWR)
-            .expect("Map syscall failed");
+        let fd = vibrio::syscalls::file_create(
+            vibrio::syscalls::FileOperation::Create,
+            "file.txt\0",
+            O_RDWR,
+        )
+        .expect("FileCreate syscall failed");
         assert_eq!(fd, 0);
+
+        let ret = vibrio::syscalls::file_close(vibrio::syscalls::FileOperation::Close, fd)
+            .expect("FileClose syscall failed");
+        assert_eq!(ret, 0);
     }
 
     info!("fs_test OK");

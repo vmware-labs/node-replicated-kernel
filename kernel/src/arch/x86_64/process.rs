@@ -799,6 +799,22 @@ impl Process for Ring3Process {
         }
     }
 
+    fn deallocate_fd(&mut self, fd: usize) -> usize {
+        let is_fd = {
+            if fd >= 0 && fd < MAX_FILES_PER_PROCESS && self.fds[fd].is_some() {
+                true
+            } else {
+                false
+            }
+        };
+
+        if is_fd {
+            self.fds[fd] = None;
+            return fd;
+        }
+        MAX_FILES_PER_PROCESS + 1
+    }
+
     fn get_fd(&mut self, index: usize) -> &mut Fd {
         self.fds[index].as_mut().unwrap()
     }

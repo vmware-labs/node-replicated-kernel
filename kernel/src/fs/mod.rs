@@ -1,5 +1,4 @@
 //! The core module for file management.
-//!
 
 mod file;
 mod name;

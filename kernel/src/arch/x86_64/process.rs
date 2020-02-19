@@ -800,7 +800,6 @@ impl Process for Ring3Process {
     }
 
     fn get_fd(&mut self, index: usize) -> &mut Fd {
-        info!("{:?}", self.fds);
         self.fds[index].as_mut().unwrap()
     }
 }

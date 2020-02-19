@@ -293,7 +293,7 @@ where
                 match fd {
                     None => Err(NodeResultError::Error),
                     Some(mut fd) => {
-                        let memnode = self.fs.creat(pathname, 0);
+                        let memnode = self.fs.create(pathname, 0);
                         fd.1.update_fd(memnode, modes);
                         Ok(NodeResult::FileCreated(fd.0))
                     }

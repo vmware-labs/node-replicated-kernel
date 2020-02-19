@@ -7,8 +7,11 @@ mod name;
 use alloc::string::String;
 use alloc::string::ToString;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use cstr_core::CStr;
 use hashbrown::HashMap;
+use x86::bits64::paging::VAddr;
 
+use crate::arch::process::UserPtr;
 use crate::fs::file::{MemNode, NodeType};
 
 pub const MAX_FILES_PER_PROCESS: usize = 8;
@@ -73,8 +76,21 @@ impl MemFS {
         self.nextmemnode.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn creat(&mut self, pathname: u64, modes: Modes) -> u64 {
-        let filename = "abc";
+    pub fn create(&mut self, pathname: u64, modes: Modes) -> u64 {
+        let mut user_ptr = VAddr::from(pathname);
+        let str_ptr = UserPtr::new(&mut user_ptr);
+
+        // TODO: Assume that all files are in the root directory.
+        // Later, parse the full path into directory and file.
+        let filename;
+        unsafe {
+            match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                Ok(path) => {
+                    filename = path;
+                }
+                Err(_) => unreachable!("FileCreate: Unable to convert u64 to str"),
+            }
+        }
 
         let mnode_num = self.get_next_ino() as u64;
         let memnode = MemNode::new(mnode_num, filename, modes, NodeType::File);

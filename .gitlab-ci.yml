@@ -59,12 +59,10 @@ pages:
   stage: document
   script:
     - cd doc
-    - mdbook build -d ../public
+    - mdbook build -d ../gh-pages/book
     - cd ..
-    - mkdir -p /home/gitlab/pages-root/bespin/
-    - cp -rf public /home/gitlab/pages-root/bespin/book/
-    - cargo doc
-    - cp -rf target/doc /home/gitlab/pages-root/bespin/doc/
+    - ghp-import -p gh-pages/
+    - rm -rf gh-pages/
   dependencies:
     - build
   variables:

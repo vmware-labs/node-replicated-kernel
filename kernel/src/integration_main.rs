@@ -273,7 +273,7 @@ pub fn xmain() {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
-        mylog.append(&[0usize, 1usize], 1, 1, |_o: usize, _i: usize| {});
+        mylog.append(&[0usize, 1usize], 1, |_o: usize, _i: usize| {});
         //assert!(r.is_some());
 
         // Don't change this string otherwise the test will fail:

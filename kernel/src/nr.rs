@@ -49,12 +49,23 @@ pub enum NodeResult<E: Executor> {
     Adjusted,
     Unmapped,
     Resolved(PAddr, MapAction),
-    Error,
+    Invalid,
 }
 
 impl<E: Executor> Default for NodeResult<E> {
     fn default() -> Self {
-        NodeResult::Error
+        NodeResult::Invalid
+    }
+}
+
+#[derive(Copy, Eq, PartialEq, Debug, Clone)]
+pub enum NodeResultError {
+    Error,
+}
+
+impl Default for NodeResultError {
+    fn default() -> Self {
+        NodeResultError::Error
     }
 }
 
@@ -87,7 +98,7 @@ impl<P: Process> KernelNode<P> {
                 debug_assert_eq!(o.len(), 1, "Should get reply");
 
                 match o[0] {
-                    NodeResult::Resolved(paddr, rights) => Ok((paddr.as_u64(), 0x0)),
+                    Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
                     _ => unreachable!("Got unexpected response"),
                 }
             })
@@ -110,7 +121,7 @@ impl<P: Process> KernelNode<P> {
                 debug_assert_eq!(o.len(), 1, "Should get reply");
 
                 match o[0] {
-                    NodeResult::Mapped => Ok((frame.base.as_u64(), frame.size() as u64)),
+                    Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
                     _ => unreachable!("Got unexpected response"),
                 }
             })
@@ -139,7 +150,7 @@ impl<P: Process> KernelNode<P> {
                     debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
                     match o[0] {
-                        NodeResult::Mapped => {}
+                        Ok(NodeResult::Mapped) => {}
                         _ => unreachable!("Got unexpected response"),
                     };
 
@@ -157,10 +168,19 @@ where
     P: Process,
     P::E: Copy,
 {
-    type Operation = Op;
+    type ReadOperation = ();
+    type WriteOperation = Op;
     type Response = NodeResult<P::E>;
+    type ResponseError = NodeResultError;
 
-    fn dispatch(&mut self, op: Self::Operation) -> Self::Response {
+    fn dispatch(&self, op: Self::ReadOperation) -> Result<Self::Response, Self::ResponseError> {
+        unimplemented!("dispatch");
+    }
+
+    fn dispatch_mut(
+        &mut self,
+        op: Self::WriteOperation,
+    ) -> Result<Self::Response, Self::ResponseError> {
         match op {
             Op::ProcCreate(module) => match P::new(module, self.current_pid) {
                 Ok(process) => {
@@ -168,11 +188,11 @@ where
                     let pid = self.current_pid;
                     self.process_map.insert(pid, Box::new(process));
                     self.current_pid += 1;
-                    NodeResult::ProcCreated(pid)
+                    Ok(NodeResult::ProcCreated(pid))
                 }
                 Err(e) => {
                     error!("Failed to create process {:?}", e);
-                    NodeResult::Error
+                    Err(NodeResultError::Error)
                 }
             },
             Op::ProcDestroy(pid) => {
@@ -181,10 +201,10 @@ where
                 let process = self.process_map.remove(&pid);
                 if process.is_some() {
                     drop(process);
-                    NodeResult::ProcDestroyed
+                    Ok(NodeResult::ProcDestroyed)
                 } else {
                     error!("Process not found");
-                    NodeResult::Error
+                    Err(NodeResultError::Error)
                 }
             }
             Op::ProcInstallVCpuArea(_, _) => unreachable!(),
@@ -199,7 +219,7 @@ where
                     .get_executor(0) // TODO (fixnow): Hard-coded 0
                     .expect("Can't get an executor for process");
                 //NodeResult::ReqExecutor(executor)
-                NodeResult::ReqExecutor(Box::into_raw(executor))
+                Ok(NodeResult::ReqExecutor(Box::into_raw(executor)))
             }
             Op::DispDealloc => unreachable!(),
             Op::DispSchedule => unreachable!(),
@@ -213,7 +233,7 @@ where
                 p.vspace()
                     .map_frame(base, frame, action, &mut *pmanager)
                     .expect("TODO: MemMapFrame map_frame failed");
-                NodeResult::Mapped
+                Ok(NodeResult::Mapped)
             }
             Op::MemMapDevice(pid, frame, action) => {
                 let process_lookup = self.process_map.get_mut(&pid);
@@ -226,7 +246,7 @@ where
                 p.vspace()
                     .map_frame(base, frame, action, &mut *pmanager)
                     .expect("TODO: MemMapFrame map_frame failed");
-                NodeResult::Mapped
+                Ok(NodeResult::Mapped)
             }
             Op::MemAdjust => unreachable!(),
             Op::MemUnmap => unreachable!(),
@@ -239,7 +259,7 @@ where
                     .vspace()
                     .resolve(base)
                     .expect("TODO: MemMapFrame map_frame failed");
-                NodeResult::Resolved(paddr, rights)
+                Ok(NodeResult::Resolved(paddr, rights))
             }
             Op::Invalid => unreachable!("Got invalid OP"),
         }

@@ -74,6 +74,19 @@ sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 isc-d
 cargo install xargo mdbook
 ```
 
+### Connect github repo with gitlab.com
+
+1. Go to https://gitlab.com/projects/new
+2. Select tab 'CI/CD for external repo'
+3. Click github button
+4. Go to https://github.com/settings/tokens make a token with the `repo` privilege
+5. Paste token in gitlab, select repo, click Connect
+6. In the gitlab.com project settings go to CI / CD to get the token ID for the setup
+7. On the same page, click on 'Disable shared Runners' to not use the gitlab.com pre-configured runner (won't work with our current CI scripts)
+8. Register the runner using `sudo gitlab-runner register` (see above for configuration steps)
+9. In github.com Settings tab under Webhooks, change trigger to `push` events only (this avoid CI triggered twice when a pull request is created and
+when a push is made to the pull request)
+
 ### Install webserver
 Deprecate this once we have gitlab pages support.
 

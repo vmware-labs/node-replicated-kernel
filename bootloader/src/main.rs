@@ -376,7 +376,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
 
     // On big machines with the init stack tends to put big structures
     // on the stack so we reserve a fair amount of space:
-    let stack_pages: usize = 512;
+    let stack_pages: usize = 768;
     let stack_region: PAddr = allocate_pages(&st, stack_pages, MemoryType(KERNEL_STACK));
     let stack_protector: PAddr = stack_region;
     let stack_base: PAddr = stack_region + BASE_PAGE_SIZE;

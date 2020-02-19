@@ -13,6 +13,5 @@ x86 = { path = "../lib/x86" }
 ## External dependencies
 log = { version = "0.4", default-features = false }
 arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
-# Move back to version once 0.4.2 is released (15e3bd3)
-uefi = { git = "https://github.com/gz/uefi-rs.git", features = ["exts", "alloc"] }
-uefi-services = { git = "https://github.com/gz/uefi-rs.git" }
+uefi = "0.4.2"
+uefi-services = "0.2.1"

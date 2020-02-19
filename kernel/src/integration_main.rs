@@ -273,7 +273,7 @@ pub fn xmain() {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
-        mylog.append(&[0usize, 1usize], 1);
+        mylog.append(&[0usize, 1usize], 1, 1, |_o: usize, _i: usize| {});
         //assert!(r.is_some());
 
         // Don't change this string otherwise the test will fail:
@@ -406,7 +406,7 @@ pub fn xmain() {
     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
     debug_assert_eq!(o.len(), 1, "Should get reply");
     let pid = match o[0] {
-        nr::NodeResult::ProcCreated(pid) => pid,
+        Ok(nr::NodeResult::ProcCreated(pid)) => pid,
         _ => unreachable!("Got unexpected response"),
     };
     o.clear();
@@ -415,7 +415,7 @@ pub fn xmain() {
     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
     debug_assert_eq!(o.len(), 1, "Should get reply");
     let e = match o[0] {
-        nr::NodeResult::ReqExecutor(e) => e,
+        Ok(nr::NodeResult::ReqExecutor(e)) => e,
         _ => unreachable!("Got unexpected response"),
     };
     let executor = unsafe { Box::from_raw(e) };

@@ -287,10 +287,19 @@ pub fn test_rump_net() {
 }
 
 fn fs_test() {
-    use vibrio::io::O_RDWR;
     let base: u64 = 0xff000;
     let size: u64 = 0x1000 * 64;
     unsafe {
+        // Open a file
+        let fd = vibrio::syscalls::file_create(
+            vibrio::syscalls::FileOperation::Create,
+            "file.txt\0",
+            vibrio::io::O_RDWR,
+        )
+        .expect("FileCreate syscall failed");
+        assert_eq!(fd, 0);
+
+        // Allocate a buffer and write data into it, which is later written to the file.
         vibrio::syscalls::vspace(vibrio::syscalls::VSpaceOperation::Map, base, size)
             .expect("Map syscall failed");
 
@@ -300,14 +309,23 @@ fn fs_test() {
         }
         assert_eq!(slice[99], 0xb);
 
-        let fd = vibrio::syscalls::file_create(
-            vibrio::syscalls::FileOperation::Create,
-            "file.txt\0",
-            O_RDWR,
-        )
-        .expect("FileCreate syscall failed");
-        assert_eq!(fd, 0);
+        // Write the slice content to the created file.
+        let ret = vibrio::syscalls::fileio(vibrio::syscalls::FileOperation::Write, fd, slice, 256)
+            .expect("FileWrite syscall failed");
+        assert_eq!(ret, 256);
 
+        // Reset the slice content. And read the file content from the file and
+        // check if it's same as the date which was written to the file.
+        for i in slice.iter_mut() {
+            *i = 0;
+        }
+        let ret = vibrio::syscalls::fileio(vibrio::syscalls::FileOperation::Read, fd, slice, 256)
+            .expect("FileWrite syscall failed");
+        assert_eq!(ret, 256);
+        assert_eq!(slice[255], 0xb);
+        assert_eq!(slice[256], 0);
+
+        // Close the file.
         let ret = vibrio::syscalls::file_close(vibrio::syscalls::FileOperation::Close, fd)
             .expect("FileClose syscall failed");
         assert_eq!(ret, 0);

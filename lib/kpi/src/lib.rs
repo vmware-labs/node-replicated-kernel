@@ -144,7 +144,7 @@ pub enum FileOperation {
     Write = 4,
     /// Close an opened file.
     Close = 5,
-    Unknown
+    Unknown,
 }
 
 impl From<u64> for FileOperation {

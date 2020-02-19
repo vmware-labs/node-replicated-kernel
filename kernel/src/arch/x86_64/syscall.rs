@@ -8,7 +8,7 @@ use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 //use x86::tlb;
 
-use kpi::*;
+use kpi::{FileOperation, ProcessOperation, SystemCall, SystemCallError, VSpaceOperation};
 
 use crate::error::KError;
 use crate::memory::vspace::MapAction;
@@ -185,8 +185,16 @@ fn handle_fileio(
                 nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, modes)
             })
         },
-        FileOperation::Open => Ok((1, 0)),
-        FileOperation::Read | FileOperation::Write => Ok((1, 0)),
+        FileOperation::Open => unimplemented!("FileOpen not implemented"),
+        FileOperation::Read | FileOperation::Write => {
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                let fd = arg2;
+                let buffer = arg3;
+                let len = arg4;
+
+                nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len)
+            })
+        }
         FileOperation::Close => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let fd = arg2;
             nr::KernelNode::<Ring3Process>::unmap_fd(p.pid, fd)

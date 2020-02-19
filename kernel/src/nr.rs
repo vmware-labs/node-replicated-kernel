@@ -4,13 +4,13 @@ use crate::prelude::*;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-
 use hashbrown::HashMap;
+use kpi::FileOperation;
 use node_replication::Dispatch;
 
 use crate::arch::Module;
 use crate::error::KError;
-use crate::fs::{FileDescriptor, MemFS};
+use crate::fs::{Buffer, FileDescriptor, Filename, Len, MemFS, Modes, FD};
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process};
@@ -31,8 +31,10 @@ pub enum Op {
     MemAdjust,
     MemUnmap,
     MemResolve(Pid, VAddr),
-    FileCreate(Pid, u64, u64),
-    FileClose(Pid, u64),
+    FileCreate(Pid, Filename, Modes),
+    FileRead(Pid, FD, Buffer, Len),
+    FileWrite(Pid, FD, Buffer, Len),
+    FileClose(Pid, FD),
     Invalid,
 }
 
@@ -52,8 +54,9 @@ pub enum NodeResult<E: Executor> {
     Adjusted,
     Unmapped,
     Resolved(PAddr, MapAction),
-    FileCreated(u64),
+    FileCreated(FD),
     FileClosed(u64),
+    FileAccessed(Len),
     Invalid,
 }
 
@@ -169,7 +172,7 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
-    pub fn map_fd(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+    pub fn map_fd(pid: Pid, pathname: u64, modes: u64) -> Result<(FD, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .replica
@@ -204,6 +207,47 @@ impl<P: Process> KernelNode<P> {
                     Ok(NodeResult::FileClosed(0)) => Ok((0, 0)),
                     _ => Err(KError::NotSupported),
                 }
+            })
+    }
+
+    pub fn file_io(
+        op: FileOperation,
+        pid: Pid,
+        fd: u64,
+        buffer: u64,
+        len: u64,
+    ) -> Result<(Len, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| match op {
+                FileOperation::Read => {
+                    let mut o = vec![];
+                    replica.execute(Op::FileRead(pid, fd, buffer, len), kcb.arch.replica_idx);
+
+                    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                    debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                    match o[0] {
+                        Ok(NodeResult::FileAccessed(len)) => Ok((len, 0)),
+                        _ => Err(KError::NotSupported),
+                    }
+                }
+
+                FileOperation::Write => {
+                    let mut o = vec![];
+                    replica.execute(Op::FileWrite(pid, fd, buffer, len), kcb.arch.replica_idx);
+
+                    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                    debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                    match o[0] {
+                        Ok(NodeResult::FileAccessed(len)) => Ok((len, 0)),
+                        _ => Err(KError::NotSupported),
+                    }
+                }
+                _ => unreachable!(),
             })
     }
 }
@@ -318,6 +362,28 @@ where
                         fd.1.update_fd(memnode, modes);
                         Ok(NodeResult::FileCreated(fd.0))
                     }
+                }
+            }
+            Op::FileRead(pid, fd, buffer, len) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let mnode_num = p.get_fd(fd as usize).get_mnode();
+                let ret = self.fs.read(mnode_num, buffer, len);
+
+                match ret {
+                    0 => Err(NodeResultError::Error),
+                    len => Ok(NodeResult::FileAccessed(len)),
+                }
+            }
+            Op::FileWrite(pid, fd, buffer, len) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let mnode_num = p.get_fd(fd as usize).get_mnode();
+                let ret = self.fs.write(mnode_num, buffer, len);
+
+                match ret {
+                    0 => Err(NodeResultError::Error),
+                    len => Ok(NodeResult::FileAccessed(len)),
                 }
             }
             Op::FileClose(pid, fd) => {

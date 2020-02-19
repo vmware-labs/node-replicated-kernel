@@ -71,6 +71,16 @@ macro_rules! syscall {
             $arg4 as u64,
         )
     };
+
+    ($arg0:expr, $arg1:expr, $arg2:expr, $arg3:expr, $arg4:expr, 2) => {
+        crate::syscalls::syscall_5_2(
+            $arg0 as u64,
+            $arg1 as u64,
+            $arg2 as u64,
+            $arg3 as u64,
+            $arg4 as u64,
+        )
+    };
 }
 
 #[inline(always)]
@@ -173,6 +183,17 @@ unsafe fn syscall_5_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> 
                    : "rcx", "r11", "memory"
                    : "volatile");
     ret
+}
+
+#[inline(always)]
+unsafe fn syscall_5_2(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> (u64, u64) {
+    let ret: u64;
+    let ret2: u64;
+    asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
+                   : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3), "{r10}" (arg4), "{r8}" (arg5)
+                   : "rcx", "r11", "memory"
+                   : "volatile");
+    (ret, ret2)
 }
 
 #[inline(always)]
@@ -317,6 +338,28 @@ pub fn file_close(op: FileOperation, fd: u64) -> Result<u64, SystemCallError> {
 
     if r == 0 {
         Ok(r)
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}
+
+pub fn fileio(op: FileOperation, fd: u64, buffer: &[u8], len: u64) -> Result<u64, SystemCallError> {
+    if buffer.len() < len as usize {
+        return Err(SystemCallError::Unknown);
+    }
+
+    let (r, len) = unsafe {
+        syscall_5_2(
+            SystemCall::FileIO as u64,
+            op as u64,
+            fd,
+            buffer.as_ptr() as u64,
+            len,
+        )
+    };
+
+    if r == 0 {
+        Ok(len)
     } else {
         Err(SystemCallError::from(r))
     }

@@ -15,13 +15,18 @@ use crate::fs::file::{MemNode, NodeType};
 
 pub const MAX_FILES_PER_PROCESS: usize = 8;
 
-type Mnode = u64;
-type Flags = u64;
-type Modes = u64;
+pub type Mnode = u64;
+pub type Flags = u64;
+pub type Modes = u64;
+pub type FD = u64;
+pub type Buffer = u64;
+pub type Len = u64;
+pub type Filename = u64;
 
 pub trait FileDescriptor {
     fn init_fd() -> Fd;
     fn update_fd(&mut self, mnode: Mnode, flags: Flags);
+    fn get_mnode(&self) -> Mnode;
 }
 
 #[derive(Debug, Default)]
@@ -38,6 +43,10 @@ impl FileDescriptor for Fd {
     fn update_fd(&mut self, mnode: Mnode, flags: Flags) {
         self.mnode = mnode;
         self.flags = flags;
+    }
+
+    fn get_mnode(&self) -> Mnode {
+        self.mnode.clone()
     }
 }
 
@@ -75,7 +84,7 @@ impl MemFS {
         self.nextmemnode.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn create(&mut self, pathname: u64, modes: Modes) -> u64 {
+    pub fn create(&mut self, pathname: Filename, modes: Modes) -> u64 {
         let mut user_ptr = VAddr::from(pathname);
         let str_ptr = UserPtr::new(&mut user_ptr);
 
@@ -97,5 +106,19 @@ impl MemFS {
         self.mnodes.insert(mnode_num, memnode);
 
         mnode_num
+    }
+
+    pub fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
+        match self.mnodes.get_mut(&mnode_num) {
+            Some(mnode) => mnode.write(buffer, len),
+            None => 0,
+        }
+    }
+
+    pub fn read(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
+        match self.mnodes.get_mut(&mnode_num) {
+            Some(mnode) => mnode.read(buffer, len),
+            None => 0,
+        }
     }
 }

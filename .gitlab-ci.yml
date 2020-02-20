@@ -65,6 +65,7 @@ pages:
     - git clone bespin-gh-pages:gz/bespin gh-pages
     - cd gh-pages
     - git checkout gh-pages
+    - rm -rf ./book
     - mv ../book ./
     - git add .
     - git commit -a -m "Added documentation."

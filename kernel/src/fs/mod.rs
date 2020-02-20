@@ -121,4 +121,26 @@ impl MemFS {
             None => 0,
         }
     }
+
+    pub fn lookup(&self, pathname: u64) -> (bool, Option<Mnode>) {
+        let mut user_ptr = VAddr::from(pathname);
+        let str_ptr = UserPtr::new(&mut user_ptr);
+
+        // TODO: Assume that all files are in the root directory.
+        // Later, parse the full path into directory and file.
+        let filename;
+        unsafe {
+            match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                Ok(path) => {
+                    filename = path;
+                }
+                Err(_) => unreachable!("FileCreate: Unable to convert u64 to str"),
+            }
+        }
+
+        match self.files.get(&filename.to_string()) {
+            Some(mnode) => (true, Some(*mnode)),
+            None => (false, None),
+        }
+    }
 }

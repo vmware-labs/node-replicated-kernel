@@ -5,12 +5,14 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
-use kpi::FileOperation;
+use kpi::{io::*, FileOperation};
 use node_replication::Dispatch;
 
 use crate::arch::Module;
 use crate::error::KError;
-use crate::fs::{Buffer, FileDescriptor, Filename, Len, MemFS, Modes, FD};
+use crate::fs::{
+    Buffer, FileDescriptor, Filename, Flags, Len, MemFS, Modes, FD, MAX_FILES_PER_PROCESS,
+};
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process};
@@ -31,7 +33,7 @@ pub enum Op {
     MemAdjust,
     MemUnmap,
     MemResolve(Pid, VAddr),
-    FileCreate(Pid, Filename, Modes),
+    FileOpen(Pid, Filename, Flags, Modes),
     FileRead(Pid, FD, Buffer, Len),
     FileWrite(Pid, FD, Buffer, Len),
     FileClose(Pid, FD),
@@ -54,7 +56,7 @@ pub enum NodeResult<E: Executor> {
     Adjusted,
     Unmapped,
     Resolved(PAddr, MapAction),
-    FileCreated(FD),
+    FileOpened(FD),
     FileClosed(u64),
     FileAccessed(Len),
     Invalid,
@@ -172,20 +174,23 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
-    pub fn map_fd(pid: Pid, pathname: u64, modes: u64) -> Result<(FD, u64), KError> {
+    pub fn map_fd(pid: Pid, pathname: u64, flags: u64, modes: u64) -> Result<(FD, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
                 let mut o = vec![];
-                replica.execute(Op::FileCreate(pid, pathname, modes), kcb.arch.replica_idx);
+                replica.execute(
+                    Op::FileOpen(pid, pathname, flags, modes),
+                    kcb.arch.replica_idx,
+                );
 
                 while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                 debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
                 match o[0] {
-                    Ok(NodeResult::FileCreated(fd)) => Ok((fd, 0)),
+                    Ok(NodeResult::FileOpened(fd)) => Ok((fd, 0)),
                     _ => unreachable!("Got unexpected response"),
                 }
             })
@@ -350,17 +355,27 @@ where
                     .expect("TODO: MemMapFrame map_frame failed");
                 Ok(NodeResult::Resolved(paddr, rights))
             }
-            Op::FileCreate(pid, pathname, modes) => {
+            Op::FileOpen(pid, pathname, flags, modes) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-                let fd = p.allocate_fd();
 
+                let (is_file, mnode) = self.fs.lookup(pathname);
+                if !is_file && !is_present!(flags, O_CREAT) {
+                    return Err(NodeResultError::Error);
+                }
+
+                let fd = p.allocate_fd();
                 match fd {
                     None => Err(NodeResultError::Error),
                     Some(mut fd) => {
-                        let memnode = self.fs.create(pathname, 0);
-                        fd.1.update_fd(memnode, modes);
-                        Ok(NodeResult::FileCreated(fd.0))
+                        let mnode_num;
+                        if !is_file {
+                            mnode_num = self.fs.create(pathname, flags);
+                        } else {
+                            mnode_num = mnode.unwrap();
+                        }
+                        fd.1.update_fd(mnode_num, modes);
+                        Ok(NodeResult::FileOpened(fd.0))
                     }
                 }
             }

@@ -2,6 +2,7 @@
 //! and associated data-types.
 #![no_std]
 
+pub mod io;
 pub mod x86_64;
 
 /// A short-cut to the architecture specific part that this crate was compiled for.

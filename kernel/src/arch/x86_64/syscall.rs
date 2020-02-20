@@ -178,14 +178,15 @@ fn handle_fileio(
     let mut plock = kcb.arch.current_process();
 
     match op {
-        FileOperation::Create => unsafe {
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                let pathname = arg2;
-                let modes = arg3;
-                nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, modes)
-            })
-        },
-        FileOperation::Open => unimplemented!("FileOpen not implemented"),
+        FileOperation::Create => {
+            unreachable!("Create is changed to Open with O_CREAT flag in vibrio")
+        }
+        FileOperation::Open => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+            let pathname = arg2;
+            let flags = arg3;
+            let modes = arg4;
+            nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, flags, modes)
+        }),
         FileOperation::Read | FileOperation::Write => {
             plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
                 let fd = arg2;

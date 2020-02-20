@@ -21,6 +21,7 @@
 #![allow(unused)]
 
 pub use kpi::arch::{SaveArea, VirtualCpu};
+pub use kpi::io::*;
 pub use kpi::*;
 
 use x86::bits64::paging::{PAddr, VAddr};
@@ -317,11 +318,25 @@ pub unsafe fn file_create(
     pathname: &str,
     modes: u64,
 ) -> Result<u64, SystemCallError> {
+    file_open(op, pathname, O_WRONLY | O_CREAT | O_TRUNC, modes)
+}
+
+pub fn file_open(
+    op: FileOperation,
+    pathname: &str,
+    flags: u64,
+    modes: u64,
+) -> Result<u64, SystemCallError> {
+    if pathname.is_empty() && (op == FileOperation::Open || op == FileOperation::Create) {
+        return Err(SystemCallError::NotSupported);
+    }
+
     let (r, fd) = unsafe {
-        syscall_4_2(
+        syscall_5_2(
             SystemCall::FileIO as u64,
-            op as u64,
+            FileOperation::Open as u64,
             pathname.as_ptr() as u64,
+            flags,
             modes,
         )
     };

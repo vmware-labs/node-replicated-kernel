@@ -16,6 +16,8 @@
 extern crate alloc;
 extern crate kpi;
 
+pub use kpi::io;
+
 #[cfg(feature = "rumprt")]
 extern crate lazy_static;
 
@@ -32,6 +34,7 @@ pub mod rumprt;
 
 #[cfg(feature = "lklrt")]
 pub mod lklrt;
+<<<<<<< HEAD
 
 #[cfg(target_os = "bespin")]
 #[panic_handler]
@@ -64,3 +67,5 @@ pub extern "C" fn eh_personality() {}
 fn oom(layout: core::alloc::Layout) -> ! {
     panic!("oom {:?}", layout)
 }
+=======
+>>>>>>> Outline open() system-call.

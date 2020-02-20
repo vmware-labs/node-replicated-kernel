@@ -2,25 +2,25 @@
 
 ## Git
 
-Git better usability with submodules:
+To have better usability when working with submodules:
 
-Update submodules automatically on pull etc.
+Update submodules automatically when doing `git pull` etc.
 ```
 git config --global submodule.recurse true
 ```
 
-Fetch in parallel:
+Fetch submodules in parallel:
 ```
 git config --global submodule.fetchJobs 20
 ```
 
-## Gitlab configuration
+## CI
 
-### Install gitlab-runner
+### Install gitlab-runner CI software
 
-Install the software (https://docs.gitlab.com/runner/install/linux-manually.html):
+Install the CI software (steps explained in detail here https://docs.gitlab.com/runner/install/linux-manually.html):
 
-Add User
+Add a separate user (it currently needs `sudo`)
 
 ```
 sudo useradd --comment 'GitLab Runner' --create-home gitlab --shell /bin/bash
@@ -29,22 +29,20 @@ visudo
 # gitlab  ALL=(ALL) NOPASSWD: ALL
 ```
 
-Install gitlab-runner:
+Install gitlab-runner software:
 ```
 sudo curl -L --output /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-amd64
 sudo chmod +x /usr/local/bin/gitlab-runner
 ```
 
-Set-up runner:
-
+Set-up the runner daemon:
 ```
 sudo gitlab-runner uninstall
 sudo gitlab-runner install --user=gitlab --working-directory=/home/gitlab
 sudo gitlab-runner start
 ```
 
-Next, register the runner (https://docs.gitlab.com/runner/register/index.html) should look like this:
-
+Next, create/register a runner (https://docs.gitlab.com/runner/register/index.html), it should look like this:
 ```
 $ sudo gitlab-runner register
 
@@ -61,10 +59,12 @@ Please enter the executor: ssh, virtualbox, docker+machine, kubernetes, docker, 
 shell
 ```
 
-In runner settings (Web GUI), check mark "Run untagged jobs" (Indicates whether this runner can pick jobs without tags).
-You can also increase the runner timeout there (the default is 1h).
+In runner settings (Gitlab Web GUI), check-mark "Run untagged jobs" (Indicates whether this runner can pick jobs without tags).
+You can also increase the runner timeout there if necessary (the default is 1h).
 
-### Set-up software on gitlab runner account
+### Configure gitlab runner account
+
+Install necessary software for use by the runner:
 
 ```
 su gitlab
@@ -74,7 +74,15 @@ sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 isc-d
 cargo install xargo mdbook
 ```
 
-### Connect github repo with gitlab.com
+In the gitlab runner `~/.ssh/config` add the following (this should be in-sync with the `.gitlab-ci.yml` file).
+```
+Host bespin-gh-pages
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_rsa_bespin
+```
+
+### Connect github.com with gitlab.com to run CI on pull requests
 
 1. Go to https://gitlab.com/projects/new
 2. Select tab 'CI/CD for external repo'
@@ -86,31 +94,4 @@ cargo install xargo mdbook
 8. Register the runner using `sudo gitlab-runner register` (see above for configuration steps)
 9. In github.com Settings tab under Webhooks, change trigger to `push` events only (this avoid CI triggered twice when a pull request is created and
 when a push is made to the pull request)
-
-### Install webserver
-Deprecate this once we have gitlab pages support.
-
-```
-su gitlab
-cargo install miniserve
-sudo vim /etc/systemd/system/bespin-doc.service
-```
-
-```
-[Unit]
-Description=Bespin Documentation
-
-[Service]
-User=gitlab
-WorkingDirectory=/home/gitlab
-ExecStart=/home/gitlab/.cargo/bin/miniserve /home/gitlab/pages-root
-SuccessExitStatus=143
-TimeoutStopSec=10
-Restart=on-failure
-RestartSec=5
-```
-
-```
-sudo systemctl start bespin-doc.service
-sudo systemctl status bespin-doc.service
-```
+10. Add `id_rsa_bespin.pub` SSH key as a deploy key (github.com repo -> Settings -> Deploy keys), (see also section on Configure gitlab runner account)

@@ -58,11 +58,19 @@ test:
 pages:
   stage: document
   script:
+    - source ~/.cargo/env
     - cd doc
-    - mdbook build -d ../gh-pages/book
+    - mdbook build -d ../book
     - cd ..
-    - ghp-import -p gh-pages/
-    - rm -rf gh-pages/
+    - git clone bespin-gh-pages:gz/bespin gh-pages
+    - cd gh-pages
+    - git checkout gh-pages
+    - mv ../book ./
+    - git add .
+    - git commit -a -m "Added documentation."
+    - git push origin gh-pages
+    - cd ..
+    - rm -rf gh-pages/ book/
   dependencies:
     - build
   variables:

@@ -191,7 +191,7 @@ impl<P: Process> KernelNode<P> {
 
                 match o[0] {
                     Ok(NodeResult::FileOpened(fd)) => Ok((fd, 0)),
-                    _ => unreachable!("Got unexpected response"),
+                    _ => Err(KError::BadFileDescriptor),
                 }
             })
     }
@@ -210,7 +210,7 @@ impl<P: Process> KernelNode<P> {
 
                 match o[0] {
                     Ok(NodeResult::FileClosed(0)) => Ok((0, 0)),
-                    _ => Err(KError::NotSupported),
+                    _ => Err(KError::BadFileDescriptor),
                 }
             })
     }
@@ -236,7 +236,7 @@ impl<P: Process> KernelNode<P> {
 
                     match o[0] {
                         Ok(NodeResult::FileAccessed(len)) => Ok((len, 0)),
-                        _ => Err(KError::NotSupported),
+                        _ => Err(KError::BadAddress),
                     }
                 }
 
@@ -249,7 +249,7 @@ impl<P: Process> KernelNode<P> {
 
                     match o[0] {
                         Ok(NodeResult::FileAccessed(len)) => Ok((len, 0)),
-                        _ => Err(KError::NotSupported),
+                        _ => Err(KError::BadAddress),
                     }
                 }
                 _ => unreachable!(),
@@ -360,7 +360,7 @@ where
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
 
                 let (is_file, mnode) = self.fs.lookup(pathname);
-                if !is_file && !is_present!(flags, O_CREAT) {
+                if !is_file && !is_allowed!(flags, O_CREAT) {
                     return Err(NodeResultError::Error);
                 }
 
@@ -370,11 +370,11 @@ where
                     Some(mut fd) => {
                         let mnode_num;
                         if !is_file {
-                            mnode_num = self.fs.create(pathname, flags);
+                            mnode_num = self.fs.create(pathname, modes);
                         } else {
                             mnode_num = mnode.unwrap();
                         }
-                        fd.1.update_fd(mnode_num, modes);
+                        fd.1.update_fd(mnode_num, flags);
                         Ok(NodeResult::FileOpened(fd.0))
                     }
                 }
@@ -382,9 +382,16 @@ where
             Op::FileRead(pid, fd, buffer, len) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-                let mnode_num = p.get_fd(fd as usize).get_mnode();
-                let ret = self.fs.read(mnode_num, buffer, len);
+                let fd = p.get_fd(fd as usize);
+                let mnode_num = fd.get_mnode();
+                let flags = fd.get_flags();
 
+                // Check if the file has read-only or read-write permissions before reading it.
+                if !is_allowed!(flags, O_RDONLY) || !is_allowed!(flags, O_RDWR) {
+                    return Err(NodeResultError::Error);
+                }
+
+                let ret = self.fs.read(mnode_num, buffer, len);
                 match ret {
                     0 => Err(NodeResultError::Error),
                     len => Ok(NodeResult::FileAccessed(len)),
@@ -393,9 +400,16 @@ where
             Op::FileWrite(pid, fd, buffer, len) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-                let mnode_num = p.get_fd(fd as usize).get_mnode();
-                let ret = self.fs.write(mnode_num, buffer, len);
+                let fd = p.get_fd(fd as usize);
+                let mnode_num = fd.get_mnode();
+                let flags = fd.get_flags();
 
+                // Check if the file has read-only or read-write permissions before reading it.
+                if !is_allowed!(flags, O_WRONLY) || !is_allowed!(flags, O_RDWR) {
+                    return Err(NodeResultError::Error);
+                }
+
+                let ret = self.fs.write(mnode_num, buffer, len);
                 match ret {
                     0 => Err(NodeResultError::Error),
                     len => Ok(NodeResult::FileAccessed(len)),

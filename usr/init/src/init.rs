@@ -287,16 +287,18 @@ pub fn test_rump_net() {
 }
 
 fn fs_test() {
+    use vibrio::io::*;
     let base: u64 = 0xff000;
     let size: u64 = 0x1000 * 64;
     unsafe {
         // Open a file
-        let fd = vibrio::syscalls::file_create(
-            vibrio::syscalls::FileOperation::Create,
+        let fd = vibrio::syscalls::file_open(
+            vibrio::syscalls::FileOperation::Open,
             "file.txt\0",
-            vibrio::io::O_RDWR,
+            O_RDWR | O_CREAT,
+            ALL_PERM,
         )
-        .expect("FileCreate syscall failed");
+        .expect("FileOpen syscall failed");
         assert_eq!(fd, 0);
 
         // Allocate a buffer and write data into it, which is later written to the file.

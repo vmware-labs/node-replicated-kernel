@@ -1,17 +1,20 @@
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use kpi::io::*;
 use x86::bits64::paging::VAddr;
 
 use crate::arch::process::{UserPtr, UserValue};
-use crate::fs::Mnode;
+use crate::fs::{Mnode, Modes};
 
+/// Each memory-node can be of two types: directory or a file.
 #[derive(Debug)]
 pub enum NodeType {
     Directory,
     File,
 }
 
+/// Memnode representation, similar to Inode for a memory-fs.
 #[derive(Debug)]
 pub struct MemNode {
     mnode_num: Mnode,
@@ -21,10 +24,11 @@ pub struct MemNode {
 }
 
 impl MemNode {
-    pub fn new(mnode_num: Mnode, pathname: &str, flags: u64, node_type: NodeType) -> MemNode {
+    /// Initialize a memory-node for a directory or a file.
+    pub fn new(mnode_num: Mnode, pathname: &str, modes: Modes, node_type: NodeType) -> MemNode {
         let file = match node_type {
             NodeType::Directory => None,
-            NodeType::File => Some(File::new(flags)),
+            NodeType::File => Some(File::new(modes)),
         };
 
         MemNode {
@@ -35,7 +39,13 @@ impl MemNode {
         }
     }
 
+    /// Write to an in-memory file.
     pub fn write(&mut self, buffer: u64, len: u64) -> u64 {
+        let modes = self.file.as_ref().unwrap().modes;
+        // Return if the user doesn't have write permissions for the file.
+        if !is_allowed!(modes, S_IWUSR) {
+            return 0;
+        }
         let buffer: *const u8 = buffer as *const u8;
         let len: usize = len as usize;
 
@@ -50,7 +60,13 @@ impl MemNode {
         len as u64
     }
 
+    /// Read from an in-memory file.
     pub fn read(&mut self, buffer: u64, len: u64) -> u64 {
+        let modes = self.file.as_ref().unwrap().modes;
+        // Return if the user doesn't have read permissions for the file.
+        if !is_allowed!(modes, S_IRUSR) {
+            return 0;
+        }
         let mut user_ptr = VAddr::from(buffer);
         let slice_ptr = UserPtr::new(&mut user_ptr);
         let len: usize = len as usize;
@@ -62,18 +78,19 @@ impl MemNode {
     }
 }
 
+/// An in-memory file, which is just a vector and stores permissions.
 #[derive(Debug)]
 pub struct File {
     data: Vec<u8>,
-    flags: u64,
+    modes: Modes,
     // TODO: Add more file related attributes
 }
 
 impl File {
-    pub fn new(flags: u64) -> File {
+    pub fn new(modes: Modes) -> File {
         File {
             data: Vec::new(),
-            flags,
+            modes,
         }
     }
 }

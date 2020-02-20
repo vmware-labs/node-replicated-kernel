@@ -165,6 +165,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     }
 }
 
+/// System call handler for file operations
 fn handle_fileio(
     arg1: u64,
     arg2: u64,

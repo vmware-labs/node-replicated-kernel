@@ -27,6 +27,10 @@ pub enum SystemCallError {
     OutOfMemory = 4,
     /// Internal error that should not have happened.
     InternalError = 5,
+    /// The userspace pointer can't be used for various reasons.
+    BadAddress = 6,
+    /// There is something wrong with the file descriptor.
+    BadFileDescriptor = 7,
     /// Placeholder for an invalid, unknown error code.
     Unknown,
 }
@@ -39,6 +43,9 @@ impl From<u64> for SystemCallError {
             2 => SystemCallError::NotSupported,
             3 => SystemCallError::VSpaceAlreadyMapped,
             4 => SystemCallError::OutOfMemory,
+            5 => SystemCallError::InternalError,
+            6 => SystemCallError::BadAddress,
+            7 => SystemCallError::BadFileDescriptor,
             _ => SystemCallError::Unknown,
         }
     }

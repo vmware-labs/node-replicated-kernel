@@ -15,6 +15,8 @@ custom_error! {pub KError
     ProcessCreate{desc: String}  = "Unable to create process: {desc}",
     VSpace{source: crate::memory::vspace::AddressSpaceError} = "VSpace operation covers existing mapping",
     PhysicalMemory{source: crate::memory::AllocationError} = "Memory allocation failed",
+    BadAddress = "Userspace pointer is not usable",
+    BadFileDescriptor = "Something is wrong with the file descriptor",
 }
 
 impl Into<SystemCallError> for KError {
@@ -30,6 +32,8 @@ impl Into<SystemCallError> for KError {
             KError::InvalidVSpaceOperation { .. } => SystemCallError::NotSupported,
             KError::InvalidProcessOperation { .. } => SystemCallError::NotSupported,
             KError::ProcessCreate { .. } => SystemCallError::InternalError,
+            KError::BadAddress { .. } => SystemCallError::BadAddress,
+            KError::BadFileDescriptor { .. } => SystemCallError::BadFileDescriptor,
             _ => SystemCallError::InternalError,
         }
     }

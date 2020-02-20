@@ -313,6 +313,7 @@ pub fn irqalloc(vec: u64, core: u64) -> Result<(), SystemCallError> {
     }
 }
 
+/// Create a file. The function internally calls file_open with O_CREAT flag.
 pub unsafe fn file_create(
     op: FileOperation,
     pathname: &str,
@@ -321,14 +322,15 @@ pub unsafe fn file_create(
     file_open(op, pathname, O_WRONLY | O_CREAT | O_TRUNC, modes)
 }
 
+/// Open a file. Return `fd` if successful; error otherwise.
 pub fn file_open(
     op: FileOperation,
     pathname: &str,
     flags: u64,
     modes: u64,
 ) -> Result<u64, SystemCallError> {
-    if pathname.is_empty() && (op == FileOperation::Open || op == FileOperation::Create) {
-        return Err(SystemCallError::NotSupported);
+    if pathname.is_empty() && (op != FileOperation::Open || op != FileOperation::Create) {
+        return Err(SystemCallError::BadAddress);
     }
 
     let (r, fd) = unsafe {
@@ -348,6 +350,8 @@ pub fn file_open(
     }
 }
 
+/// Close a file. This function will remove the file descriptor from the process.
+/// It doesn't do anything to the file.
 pub fn file_close(op: FileOperation, fd: u64) -> Result<u64, SystemCallError> {
     let r = unsafe { syscall_3_1(SystemCall::FileIO as u64, op as u64, fd) };
 
@@ -358,9 +362,14 @@ pub fn file_close(op: FileOperation, fd: u64) -> Result<u64, SystemCallError> {
     }
 }
 
+/// Read or write an opened file. `fd` is the file descriptor for the opened file.
 pub fn fileio(op: FileOperation, fd: u64, buffer: &[u8], len: u64) -> Result<u64, SystemCallError> {
     if buffer.len() < len as usize {
-        return Err(SystemCallError::Unknown);
+        return Err(SystemCallError::BadAddress);
+    }
+
+    if len <= 0 {
+        return Err(SystemCallError::BadFileDescriptor);
     }
 
     let (r, len) = unsafe {

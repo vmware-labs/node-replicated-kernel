@@ -13,22 +13,33 @@ use x86::bits64::paging::VAddr;
 use crate::arch::process::UserPtr;
 use crate::fs::file::{MemNode, NodeType};
 
+/// The maximum number of open files for a process.
 pub const MAX_FILES_PER_PROCESS: usize = 8;
 
+/// Mnode number.
 pub type Mnode = u64;
+/// Flags for fs calls.
 pub type Flags = u64;
+/// Modes for fs calls
 pub type Modes = u64;
+/// File descriptor.
 pub type FD = u64;
+/// Userspace buffer pointer to read or write a file.
 pub type Buffer = u64;
+/// Number of bytes to read or write a file.
 pub type Len = u64;
+/// Userspace-pointer to filename.
 pub type Filename = u64;
 
+/// Abstract definition of a file descriptor.
 pub trait FileDescriptor {
     fn init_fd() -> Fd;
     fn update_fd(&mut self, mnode: Mnode, flags: Flags);
     fn get_mnode(&self) -> Mnode;
+    fn get_flags(&self) -> Flags;
 }
 
+/// A file descriptor representation.
 #[derive(Debug, Default)]
 pub struct Fd {
     mnode: Mnode,
@@ -48,8 +59,13 @@ impl FileDescriptor for Fd {
     fn get_mnode(&self) -> Mnode {
         self.mnode.clone()
     }
+
+    fn get_flags(&self) -> Flags {
+        self.flags.clone()
+    }
 }
 
+/// The in-memory file-system representation.
 #[derive(Debug)]
 pub struct MemFS {
     mnodes: HashMap<Mnode, MemNode>,
@@ -59,6 +75,7 @@ pub struct MemFS {
 }
 
 impl MemFS {
+    /// Initialize the file system from the root directory.
     pub fn init() -> MemFS {
         let rootdir = "/";
         let rootmnode = 1;
@@ -80,10 +97,12 @@ impl MemFS {
         }
     }
 
-    fn get_next_ino(&mut self) -> usize {
+    /// Get the next available memnode number.
+    fn get_next_mno(&mut self) -> usize {
         self.nextmemnode.fetch_add(1, Ordering::Relaxed)
     }
 
+    /// Create a file in the root directory.
     pub fn create(&mut self, pathname: Filename, modes: Modes) -> u64 {
         let mut user_ptr = VAddr::from(pathname);
         let str_ptr = UserPtr::new(&mut user_ptr);
@@ -100,7 +119,7 @@ impl MemFS {
             }
         }
 
-        let mnode_num = self.get_next_ino() as u64;
+        let mnode_num = self.get_next_mno() as u64;
         let memnode = MemNode::new(mnode_num, filename, modes, NodeType::File);
         self.files.insert(filename.to_string(), mnode_num);
         self.mnodes.insert(mnode_num, memnode);
@@ -108,6 +127,7 @@ impl MemFS {
         mnode_num
     }
 
+    /// Write data to a file.
     pub fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
         match self.mnodes.get_mut(&mnode_num) {
             Some(mnode) => mnode.write(buffer, len),
@@ -115,6 +135,7 @@ impl MemFS {
         }
     }
 
+    /// Read data from a file.
     pub fn read(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
         match self.mnodes.get_mut(&mnode_num) {
             Some(mnode) => mnode.read(buffer, len),
@@ -122,6 +143,7 @@ impl MemFS {
         }
     }
 
+    /// Check if a file exists in the file system or not.
     pub fn lookup(&self, pathname: u64) -> (bool, Option<Mnode>) {
         let mut user_ptr = VAddr::from(pathname);
         let str_ptr = UserPtr::new(&mut user_ptr);

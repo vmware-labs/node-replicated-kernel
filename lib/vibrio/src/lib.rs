@@ -1,6 +1,6 @@
 //! vibrio is the user-space library that interacts with the kernel.
 //!
-//! It also incorporates and exports the [kpi] crate defines the interface between
+//! It also incorporates and exports the [kpi] crate which defines the interface between
 //! the kernel and user-space (clients should only have to rely on this crate).
 #![no_std]
 #![feature(

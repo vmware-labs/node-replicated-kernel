@@ -126,13 +126,13 @@ impl MemFS {
 
         // Check if the file with the same name already exists.
         match self.files.get(&filename.to_string()) {
-            Some(mnode) => return None,
+            Some(_) => return None,
             None => {}
         }
 
         let mnode_num = self.get_next_mno() as u64;
         let memnode = MemNode::new(mnode_num, filename, modes, NodeType::File);
-        let ret = self.files.insert(filename.to_string(), mnode_num);
+        self.files.insert(filename.to_string(), mnode_num);
         self.mnodes.insert(mnode_num, memnode);
 
         Some(mnode_num)

@@ -2,6 +2,7 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(unused)]
 
+extern crate alloc;
 extern crate either;
 extern crate fringe;
 extern crate hashbrown;
@@ -24,7 +25,6 @@ mod ds {
 
 #[cfg(not(test))]
 mod ds {
-    extern crate alloc;
     pub use alloc::boxed::Box;
     pub use alloc::sync::Arc;
     pub use alloc::vec::Vec;
@@ -38,13 +38,16 @@ use core::time::Duration;
 use log::*;
 
 use fringe::generator::{Generator, Yielder};
-use fringe::OwnedStack;
+use fringe::Stack;
 
 pub mod condvar;
 pub mod mutex;
 pub mod rwlock;
 pub mod semaphore;
+pub mod stack;
 pub mod tls;
+
+use stack::LineupStack;
 
 fn noop_curlwp() -> u64 {
     0
@@ -87,6 +90,11 @@ enum YieldRequest {
     Unrunnable(ThreadId),
     RunnableList(ds::Vec<ThreadId>),
     Spawn(
+        Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
+        *mut u8,
+    ),
+    SpawnWithStack(
+        LineupStack,
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
     ),
@@ -133,16 +141,17 @@ impl fmt::Debug for Thread {
 impl Thread {
     unsafe fn new<'a, F>(
         tid: ThreadId,
-        stack_size: usize,
+        stack: LineupStack,
         f: F,
         arg: *mut u8,
         upcalls: Upcalls,
-    ) -> (Thread, Generator<'a, YieldResume, YieldRequest, OwnedStack>)
+    ) -> (
+        Thread,
+        Generator<'a, YieldResume, YieldRequest, LineupStack>,
+    )
     where
         F: 'static + FnOnce(*mut u8) + Send,
     {
-        let stack = OwnedStack::new(stack_size);
-
         let thread = Thread {
             id: tid,
             return_with: None,
@@ -155,6 +164,7 @@ impl Thread {
                 yielder: yielder,
                 upcalls: upcalls,
                 rump_lwp: ptr::null_mut(),
+                rumprun_lwp: ptr::null_mut(),
             };
             tls::set_thread_state((&mut ts) as *mut ThreadState);
             let r = f(arg);
@@ -181,7 +191,13 @@ impl Hash for Thread {
 }
 
 pub struct Scheduler<'a> {
-    threads: ds::HashMap<ThreadId, (Thread, Generator<'a, YieldResume, YieldRequest, OwnedStack>)>,
+    threads: ds::HashMap<
+        ThreadId,
+        (
+            Thread,
+            Generator<'a, YieldResume, YieldRequest, LineupStack>,
+        ),
+    >,
     runnable: ds::Vec<ThreadId>,
     waiting: ds::Vec<(ThreadId, Instant)>,
     run_idx: usize,
@@ -210,7 +226,7 @@ impl<'a> Scheduler<'a> {
     fn add_thread(
         &mut self,
         handle: Thread,
-        generator: Generator<'a, YieldResume, YieldRequest, OwnedStack>,
+        generator: Generator<'a, YieldResume, YieldRequest, LineupStack>,
     ) -> Option<ThreadId> {
         let tid = handle.id.clone();
         assert!(
@@ -274,7 +290,27 @@ impl<'a> Scheduler<'a> {
         F: 'static + FnOnce(*mut u8) + Send,
     {
         let tid = ThreadId(self.tid_counter);
-        let (handle, generator) = unsafe { Thread::new(tid, stack_size, f, arg, self.upcalls) };
+        let stack = LineupStack::from_size(stack_size);
+        let (handle, generator) = unsafe { Thread::new(tid, stack, f, arg, self.upcalls) };
+
+        self.add_thread(handle, generator).map(|tid| {
+            self.mark_runnable(tid);
+            self.tid_counter += 1;
+            tid
+        })
+    }
+
+    pub fn spawn_with_stack<F>(
+        &mut self,
+        stack: LineupStack,
+        f: F,
+        arg: *mut u8,
+    ) -> Option<ThreadId>
+    where
+        F: 'static + FnOnce(*mut u8) + Send,
+    {
+        let tid = ThreadId(self.tid_counter);
+        let (handle, generator) = unsafe { Thread::new(tid, stack, f, arg, self.upcalls) };
 
         self.add_thread(handle, generator).map(|tid| {
             self.mark_runnable(tid);
@@ -433,6 +469,19 @@ impl<'a> Scheduler<'a> {
                         .expect("Can't spawn the thread");
                     (false, YieldResume::Spawned(tid))
                 }
+                Some(YieldRequest::SpawnWithStack(stack, function, arg)) => {
+                    trace!("self.spawn {:?} {:p}", function, arg);
+                    let tid = self
+                        .spawn_with_stack(
+                            stack,
+                            move |arg| unsafe {
+                                (function.unwrap())(arg);
+                            },
+                            arg,
+                        )
+                        .expect("Can't spawn the thread");
+                    (false, YieldResume::Spawned(tid))
+                }
             };
 
             // If thread is not done we need to preserve TLS
@@ -462,6 +511,7 @@ pub struct ThreadState<'a> {
     tid: ThreadId,
     pub upcalls: Upcalls,
     pub rump_lwp: *const u64,
+    pub rumprun_lwp: *const u64,
 }
 
 impl<'a> ThreadState<'a> {
@@ -471,6 +521,19 @@ impl<'a> ThreadState<'a> {
 
     pub fn set_lwp(&mut self, lwp_ptr: *const u64) {
         self.rump_lwp = lwp_ptr;
+    }
+
+    pub fn spawn_with_stack(
+        &self,
+        s: LineupStack,
+        f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
+        arg: *mut u8,
+    ) -> Option<ThreadId> {
+        let request = YieldRequest::SpawnWithStack(s, f, arg);
+        match self.yielder().suspend(request) {
+            YieldResume::Spawned(tid) => Some(tid),
+            _ => None,
+        }
     }
 
     pub fn spawn(

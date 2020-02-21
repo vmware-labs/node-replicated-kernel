@@ -1,16 +1,15 @@
-use super::threads;
-use super::RumpError;
 use alloc::boxed::Box;
 use core::ops::Add;
 
-use log::{error, info, trace};
-
+use log::trace;
 use rawtime::Duration;
 
 use lineup::condvar::CondVar;
 use lineup::mutex::Mutex;
 use lineup::rwlock::{RwLock, RwLockIntent};
 use lineup::tls::Environment;
+
+use super::{c_int, errno, threads};
 
 const RUMPUSER_MTX_SPIN: i64 = 0x01;
 const RUMPUSER_MTX_KMUTEX: i64 = 0x02;
@@ -43,12 +42,12 @@ pub unsafe extern "C" fn rumpuser_mutex_enter_nowrap(mtx: *mut Mutex) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_mutex_tryenter(mtx: *mut Mutex) -> i64 {
+pub unsafe extern "C" fn rumpuser_mutex_tryenter(mtx: *mut Mutex) -> c_int {
     trace!("{:?} rumpuser_mutex_tryenter {:p}", Environment::tid(), mtx);
     if (*mtx).try_enter() {
-        0i64
+        0
     } else {
-        RumpError::EBUSY as i64
+        errno::EBUSY
     }
 }
 
@@ -102,22 +101,22 @@ pub unsafe extern "C" fn rumpuser_rw_enter(flag: i64, rw: *mut RwLock) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_tryenter(flag: i64, rw: *mut RwLock) -> i64 {
+pub unsafe extern "C" fn rumpuser_rw_tryenter(flag: i64, rw: *mut RwLock) -> c_int {
     trace!("rumpuser_rw_tryenter {:p}", rw);
     if (*rw).try_enter(flag_to_intent(flag)) {
         0
     } else {
-        RumpError::EBUSY as i64
+        errno::EBUSY
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_rw_tryupgrade(rw: *mut RwLock) -> i64 {
+pub unsafe extern "C" fn rumpuser_rw_tryupgrade(rw: *mut RwLock) -> c_int {
     trace!("rumpuser_rw_tryupgrade {:p}", rw);
     if (*rw).try_upgrade() {
         0
     } else {
-        RumpError::EBUSY as i64
+        errno::EBUSY
     }
 }
 
@@ -191,7 +190,7 @@ pub unsafe extern "C" fn rumpuser_cv_timedwait(
     mtx: *mut Mutex,
     sec: u64,
     nanos: u64,
-) -> i64 {
+) -> c_int {
     trace!(
         "{:?} rumpuser_cv_timedwait {:p} {:p} {} {}",
         lineup::tls::Environment::tid(),
@@ -205,7 +204,7 @@ pub unsafe extern "C" fn rumpuser_cv_timedwait(
         0
     } else {
         trace!("ETIMEDOUT {:p} {:p} {} {}", cv, mtx, sec, nanos);
-        RumpError::ETIMEDOUT as i64
+        errno::ETIMEDOUT
     }
 }
 

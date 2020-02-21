@@ -9,14 +9,14 @@
     panic_info_message,
     c_variadic,
     ptr_internals,
-    asm
+    ptr_offset_from,
+    asm,
+    lang_items
 )]
-
 extern crate alloc;
 extern crate kpi;
 
 #[cfg(feature = "rumprt")]
-#[macro_use]
 extern crate lazy_static;
 
 pub mod syscalls;
@@ -31,3 +31,35 @@ pub mod rumprt;
 
 #[cfg(feature = "lklrt")]
 pub mod lklrt;
+
+#[cfg(target_os = "bespin")]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    sys_println!("System panic encountered");
+    if let Some(message) = info.message() {
+        sys_print!(": '{}'", message);
+    }
+    if let Some(location) = info.location() {
+        sys_println!(" in {}:{}", location.file(), location.line());
+    } else {
+        sys_println!("");
+    }
+
+    crate::syscalls::exit(99)
+}
+
+#[cfg(target_os = "bespin")]
+#[no_mangle]
+pub unsafe extern "C" fn _Unwind_Resume() {
+    unreachable!("_Unwind_Resume");
+}
+
+#[cfg(target_os = "bespin")]
+#[lang = "eh_personality"]
+pub extern "C" fn eh_personality() {}
+
+#[cfg(target_os = "bespin")]
+#[alloc_error_handler]
+fn oom(layout: core::alloc::Layout) -> ! {
+    panic!("oom {:?}", layout)
+}

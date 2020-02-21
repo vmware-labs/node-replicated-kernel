@@ -18,10 +18,11 @@
 //! from Linux which tries to squeeze in one more syscall
 //! argument by adding `%rax` to the mix.
 
+#![allow(unused)]
+
 pub use kpi::arch::{SaveArea, VirtualCpu};
 pub use kpi::*;
 
-use log::info;
 use x86::bits64::paging::{PAddr, VAddr};
 
 macro_rules! syscall {

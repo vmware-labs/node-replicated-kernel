@@ -1,13 +1,6 @@
 use super::{c_int, c_uint, c_ulong, c_void};
 
-/*use crate::arch::memory::{kernel_vaddr_to_paddr, PAddr, VAddr};
-use crate::arch::vspace::{MapAction, VSpace};
-use crate::kcb::{get_kcb, Kcb};
-use crate::memory::PhysicalAllocator;*/
-
-use alloc::boxed::Box;
 use core::alloc::Layout;
-use core::cell::RefMut;
 use core::fmt;
 use core::ptr;
 
@@ -15,7 +8,7 @@ use log::trace;
 use x86::current::paging::{PAddr, VAddr};
 use x86::io;
 
-use log::{error, info, warn};
+use log::{error, warn};
 
 static PCI_CONF_ADDR: u16 = 0xcf8;
 static PCI_CONF_DATA: u16 = 0xcfc;
@@ -175,8 +168,8 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
     );
 
     match r {
-        Ok((vaddr, paddr)) => vaddr.as_u64() as *mut c_void,
-        Err(e) => ptr::null_mut(),
+        Ok((vaddr, _paddr)) => vaddr.as_u64() as *mut c_void,
+        Err(_e) => ptr::null_mut(),
     }
 }
 
@@ -227,7 +220,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
 
             0
         }
-        Err(e) => 1,
+        Err(_e) => 1,
     }
 }
 
@@ -273,7 +266,6 @@ pub unsafe extern "C" fn rumpcomp_pci_dmamem_map(
         //trace!("rumpcomp_pci_dmamem_map vap={:p}", *vap);
         0
     } else {
-        panic!("nseg > 1");
-        1
+        panic!("nseg > 1")
     }
 }

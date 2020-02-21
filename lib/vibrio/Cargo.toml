@@ -6,6 +6,15 @@ edition = "2018"
 description = "A small user-space runtime that interacts with the bespin kernel."
 build = "build.rs"
 
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
 [dependencies]
 log = "0.4"
 x86 = { path = "../x86" }

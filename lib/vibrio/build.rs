@@ -46,6 +46,9 @@ fn rumprt_includes() {
     println!("cargo:rustc-link-lib=static=rumpdev_pci_usbhc");
     println!("cargo:rustc-link-lib=static=rumpdev_usb");
     println!("cargo:rustc-link-lib=static=rumpdev_umass");
+
+    // mmap integration layer
+    println!("cargo:rustc-link-lib=static=rumpkern_mman");
 }
 
 #[allow(unused)]

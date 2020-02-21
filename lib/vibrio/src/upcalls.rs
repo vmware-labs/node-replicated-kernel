@@ -10,7 +10,7 @@
 //! [2]: www.barrelfish.org/publications/TN-010-Spec.pdf
 //! [3]: http://www.barrelfish.org/publications/ma-fuchs-tm-mp.pdf
 
-use log::{debug, info, trace};
+use log::trace;
 
 /// This is invoked through the kernel whenever we get an
 /// upcall (trap happened or interrupt came in) we resume

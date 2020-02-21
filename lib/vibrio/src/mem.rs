@@ -6,7 +6,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::mem::transmute;
 use core::ptr::{self, NonNull};
 
-use log::{debug, error, info, warn};
+use log::{error, warn};
 use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
 
@@ -19,6 +19,10 @@ macro_rules! round_up {
         (($num + $s - 1) / $s) * $s
     };
 }
+
+#[cfg(target_os = "bespin")]
+#[global_allocator]
+static MEM_PROVIDER: crate::mem::SafeZoneAllocator = crate::mem::SafeZoneAllocator::new();
 
 /// To use a ZoneAlloactor we require a lower-level allocator
 /// (not provided by this crate) that can supply the allocator
@@ -35,10 +39,9 @@ impl Pager {
 
     /// Allocates a given `page_size`.
     fn alloc_page(&mut self, page_size: usize) -> Option<*mut u8> {
-        let (vaddr, _paddr) = unsafe {
-            self.allocate(Layout::from_size_align(page_size, page_size).unwrap())
-                .expect("Can't allocate")
-        };
+        let (vaddr, _paddr) = self
+            .allocate(Layout::from_size_align(page_size, page_size).unwrap())
+            .expect("Can't allocate");
         assert_ne!(vaddr.as_mut_ptr::<u8>(), ptr::null_mut());
 
         Some(vaddr.as_mut_ptr())
@@ -46,7 +49,7 @@ impl Pager {
 
     /// Allocates a given `page_size`.
     fn dealloc_page(&mut self, ptr: *mut u8, page_size: usize) {
-        warn!("dealloc page");
+        error!("NYI dealloc page {:p} {:#x}", ptr, page_size);
     }
 
     pub(crate) fn allocate(&mut self, layout: Layout) -> Result<(VAddr, PAddr), SystemCallError> {
@@ -155,7 +158,24 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     .allocate_large_page()
                     .expect("Can't allocate page?") as *mut _ as *mut u8
             }
-            _ => unimplemented!("Can't handle it, probably needs another allocator."),
+            big_size => {
+                // int a = (59 + (4 - 1)) / 4;
+                let required_pages =
+                    (big_size + Pager::LARGE_PAGE_SIZE - 1) / Pager::LARGE_PAGE_SIZE;
+                let mut first: *mut u8 = ptr::null_mut();
+                for _page_idx in 0..required_pages {
+                    let ptr = PAGER
+                        .lock()
+                        .allocate_large_page()
+                        .expect("Can't allocate page for big allocation?")
+                        as *mut _ as *mut u8;
+                    if first.is_null() {
+                        first = ptr;
+                    }
+                }
+
+                first
+            }
         }
     }
 

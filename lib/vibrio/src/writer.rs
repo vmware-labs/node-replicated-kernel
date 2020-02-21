@@ -4,7 +4,7 @@
 use core::fmt;
 use core::ops;
 
-use log::{Level, Metadata, Record, SetLoggerError};
+use log::{Level, Metadata, Record};
 
 /// println macro that uses the logging syscall.
 #[macro_export]
@@ -53,7 +53,7 @@ impl ops::Drop for Writer {
 impl fmt::Write for Writer {
     /// Write stuff to serial out.
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        crate::syscalls::print(s);
+        crate::syscalls::print(s).expect("Can't write string");
         Ok(())
     }
 }
@@ -69,7 +69,7 @@ impl WriterNoDrop {
 impl fmt::Write for WriterNoDrop {
     /// Write stuff to serial out.
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        crate::syscalls::print(s);
+        crate::syscalls::print(s).expect("Can't write string");
         Ok(())
     }
 }

@@ -1,3 +1,20 @@
+//! The rump runtime support module.
+//!
+//! # Organization
+//!
+//! File organization is as follows:
+//! * The implementation to run a rumpkernel are contained in the files in the [rumprt] base.
+//! * The necessary symbols for linking with `libc` are implemented in [crt] (C runtime).
+//! * The necessary symbols for linking with `pthreads` are implemented in [prt] (pthread runtime).
+//!
+//! crt and prt could be feature gated so we could enable/disable the support at compile time,
+//! however we don't do this at the moment.
+//!
+//! # Note on `unsafe`
+//! Unfortunately, lot's of unsafe code here since pretty much everything we do has to interface
+//! with the NetBSD C code, and we pass a lot of pointers etc.
+//! Once the implementation grows we can think about having a safe wrapper/layer.
+
 use crate::alloc::alloc;
 use core::alloc::Layout;
 use core::arch::x86_64::_rdrand16_step;
@@ -12,29 +29,20 @@ use log::{error, info, trace};
 use lineup::mutex::Mutex;
 
 pub mod dev;
+pub mod errno;
 pub mod fs;
 pub mod locking;
+pub mod sp;
 pub mod threads;
 
-pub enum RumpError {
-    ENOENT = 2,
-    EIO = 5,
-    ENXIO = 6,
-    E2BIG = 7,
-    EBADF = 9,
-    ENOMEM = 12,
-    EBUSY = 16,
-    EINVAL = 22, // same as EGENERIC
-    EROFS = 30,
-    ETIMEDOUT = 60,
-    ENOSYS = 78,
-}
+// The crt clashes with the normal libc
+#[cfg(target_os = "bespin")]
+pub mod crt;
+pub mod prt;
 
 const RUMPUSER_CLOCK_RELWALL: u64 = 0;
 const RUMPUSER_CLOCK_ABSMONO: u64 = 1;
 
-#[allow(non_camel_case_types)]
-pub type pid_t = u64;
 #[allow(non_camel_case_types)]
 pub type c_int = i32;
 #[allow(non_camel_case_types)]
@@ -48,7 +56,14 @@ pub type c_void = u64;
 #[allow(non_camel_case_types)]
 pub type c_char = u8;
 #[allow(non_camel_case_types)]
-pub type c_size_t = u64;
+pub type c_size_t = usize;
+#[allow(non_camel_case_types)]
+pub type c_ssize_t = isize;
+
+#[allow(non_camel_case_types)]
+pub type pid_t = u64;
+#[allow(non_camel_case_types)]
+pub type lwpid_t = i32;
 
 /// typedef void (*rump_biodone_fn)(void *, size_t, int);
 #[allow(non_camel_case_types)]
@@ -184,10 +199,10 @@ pub unsafe extern "C" fn rumpuser_putchar(ch: i64) {
     let mut buf: [u8; 4] = [0; 4]; // A buffer of length 4 is large enough to encode any char
     if ch as i64 == '\n' as u8 as i64 {
         let utf8_char = '\r'.encode_utf8(&mut buf);
-        crate::syscalls::print(utf8_char);
+        crate::syscalls::print(utf8_char).expect("Can't write in rumpuser_putchar");
     }
     let utf8_char = (ch as u8 as char).encode_utf8(&mut buf);
-    crate::syscalls::print(utf8_char);
+    crate::syscalls::print(utf8_char).expect("Can't write in rumpuser_putchar");
 }
 
 /// void rumpuser_dprintf(const char *fmt, ...)
@@ -239,7 +254,7 @@ pub unsafe extern "C" fn rumpuser_getparam(
     name: *const i8,
     buf: *mut u8,
     len: usize,
-) -> usize {
+) -> c_int {
     let param_name = CStr::from_ptr(name).to_str().unwrap_or("");
     trace!("rumpuser_getparam {}", param_name);
 
@@ -249,9 +264,9 @@ pub unsafe extern "C" fn rumpuser_getparam(
         "RUMP_THREADS" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "_RUMPUSER_HOSTNAME" => CStr::from_bytes_with_nul_unchecked(b"btest\0"),
         "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"134217728\0"), // 128 MiB
-        //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"2097152\0"), // 2MIB
-        //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"197152\0"), // 2MIB
-        _ => return RumpError::ENOENT as usize,
+        //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"2097152\0"), // 2 MiB
+        //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"197152\0"), // very little MiB
+        _ => return errno::ENOENT,
     };
 
     assert!(len >= cstr.to_bytes_with_nul().len());

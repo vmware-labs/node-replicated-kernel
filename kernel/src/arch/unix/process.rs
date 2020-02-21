@@ -29,25 +29,13 @@ impl<T> UserPtr<T> {
 impl<T> Deref for UserPtr<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        unsafe {
-            rflags::stac();
-            &*self.value
-        }
+        unsafe { &*self.value }
     }
 }
 
 impl<T> DerefMut for UserPtr<T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe {
-            rflags::stac();
-            &mut *self.value
-        }
-    }
-}
-
-impl<T> Drop for UserPtr<T> {
-    fn drop(&mut self) {
-        unsafe { rflags::clac() };
+        unsafe { &mut *self.value }
     }
 }
 
@@ -68,25 +56,13 @@ impl<T> UserValue<T> {
 impl<T> Deref for UserValue<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        unsafe {
-            rflags::stac();
-            &self.value
-        }
+        unsafe { &self.value }
     }
 }
 
 impl<T> DerefMut for UserValue<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {
-            rflags::stac();
-            &mut self.value
-        }
-    }
-}
-
-impl<T> Drop for UserValue<T> {
-    fn drop(&mut self) {
-        unsafe { rflags::clac() };
+        unsafe { &mut self.value }
     }
 }
 

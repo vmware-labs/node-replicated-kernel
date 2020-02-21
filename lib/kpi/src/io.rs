@@ -27,7 +27,7 @@ pub const ALL_PERM: u64 = 0x777;
 
 #[macro_export]
 macro_rules! is_allowed {
-    ($flags:ident, $flag:ident) => {
+    ($flags:expr, $flag:ident) => {
         ($flags & $flag == $flag)
     };
 }

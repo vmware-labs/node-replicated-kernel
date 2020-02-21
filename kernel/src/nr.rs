@@ -370,7 +370,10 @@ where
                     Some(mut fd) => {
                         let mnode_num;
                         if !is_file {
-                            mnode_num = self.fs.create(pathname, modes);
+                            match self.fs.create(pathname, modes) {
+                                Some(m_num) => mnode_num = m_num,
+                                None => return Err(NodeResultError::Error),
+                            }
                         } else {
                             mnode_num = mnode.unwrap();
                         }

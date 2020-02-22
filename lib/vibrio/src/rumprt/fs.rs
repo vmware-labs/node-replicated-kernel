@@ -4,6 +4,8 @@ use cstr_core::CStr;
 
 use log::{error, trace};
 
+use crate::syscalls::*;
+
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub struct rumpuser_iovec {
@@ -13,17 +15,36 @@ pub struct rumpuser_iovec {
 
 /// int rumpuser_open(const char *name, int mode, int *fdp)
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_open(name: *const i8, _mode: c_int, _fdp: *const c_int) -> c_int {
+pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c_int) -> c_int {
     let param_name = CStr::from_ptr(name).to_str().unwrap_or("unknown");
+<<<<<<< HEAD
     error!("rumpuser_open {}", param_name);
     unimplemented!("rumpuser_open");
+=======
+    match file_open(FileOperation::Open, param_name, 0, mode as u64) {
+        Ok(fd) => {
+            *fdp = fd as i32;
+            return 0;
+        }
+        Err(_) => {
+            return RumpError::EINVAL as i32;
+        }
+    }
+>>>>>>> Call open and close syscall from rumprt.
 }
 
 /// int rumpuser_close(int fd)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_close(fd: c_int) -> c_int {
+<<<<<<< HEAD
     trace!("rumpuser_close {}", fd);
     unimplemented!("rumpuser_close");
+=======
+    match file_close(FileOperation::Close, fd as u64) {
+        Ok(_) => return 0,
+        Err(_) => return RumpError::EBADF as i32,
+    }
+>>>>>>> Call open and close syscall from rumprt.
 }
 
 /// int rumpuser_getfileinfo(const char *name, uint64_t *size, int *type)

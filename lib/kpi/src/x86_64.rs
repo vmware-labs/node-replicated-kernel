@@ -1,5 +1,7 @@
 //! Defines the public kernel interface that is specific to x86-64.
 
+#![allow(safe_packed_borrows)]
+
 use core::fmt;
 
 use x86::bits64::paging::VAddr;

@@ -279,7 +279,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     // Enable user-space access
     x86::current::rflags::stac();
 
-    for i in 0..12 {
+    for i in 0..32 {
         let ptr = (a.rsp as *const u64).offset(i);
         sprintln!("stack[{}] = {:#x}", i, *ptr);
     }
@@ -349,6 +349,9 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     sprint!("\n[IRQ] GENERAL PROTECTION FAULT: ");
     sprintln!("From {}", desc.source);
 
+    // Enable user-space access
+    x86::current::rflags::stac();
+
     if a.exception > 0 {
         sprintln!(
             "Error value: {:?}",
@@ -371,6 +374,12 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     sprintln!("{:?}", a);
     let kcb = get_kcb();
     sprintln!("Register State:\n{:?}", kcb.arch.save_area);
+
+    for i in 0..12 {
+        let ptr = (a.rsp as *const u64).offset(i);
+        sprintln!("stack[{}] = {:#x}", i, *ptr);
+    }
+
     kcb.arch.save_area.as_ref().map(|sa| {
         backtrace_from(sa.rbp, sa.rsp, sa.rip);
     });

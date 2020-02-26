@@ -272,7 +272,7 @@ find $ESP_DIR
 # Making a bootable image
 #
 rm -rf uefi.img
-dd if=/dev/zero of=uefi.img bs=1k count=65536
+dd if=/dev/zero of=uefi.img bs=1k count=131072
 mkfs.vfat uefi.img -F 32
 mcopy -si uefi.img $ESP_DIR/* ::/
 
@@ -283,7 +283,7 @@ if [ "${_arg_norun}" != "on" ]; then
     set +e
     cat /proc/modules | grep kvm_intel
     if [ $? -eq 0 ]; then
-        KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc,+x2apic' #
+        KVM_ARG='-enable-kvm -cpu host,migratable=no,+invtsc,+tsc,+x2apic,+fsgsbase' #
     else
 		echo "No KVM, system will fail in initializtion since we're missing fs/gs base instructions."
 		exit 1

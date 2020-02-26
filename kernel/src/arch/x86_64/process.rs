@@ -643,6 +643,10 @@ impl Process for Ring3Process {
         // ElfLoad trait impl for process to be safe
         unsafe {
             let e = elfloader::ElfBinary::new(module.name(), module.as_slice())?;
+            if !e.is_pie() {
+                // We don't have an offset for non-pie applications (rump apps)
+                p.offset = VAddr::zero();
+            }
             p.entry_point = VAddr::from(e.entry_point());
             e.load(&mut p)?;
         }

@@ -757,7 +757,11 @@ fn userspace_rumprt_net() {
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
 
-        let mut p = spawn_bespin(&RunnerArgs::new("test-userspace").user_feature("test-rump-net"))?;
+        let mut p = spawn_bespin(
+            &RunnerArgs::new("test-userspace")
+                .user_feature("test-rump-net")
+                .timeout(20_000),
+        )?;
 
         // Test that DHCP works:
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
@@ -794,7 +798,9 @@ fn userspace_rumprt_net() {
 /// management, IO and device interrupts.
 #[test]
 fn userspace_rumprt_fs() {
-    let cmdline = &RunnerArgs::new("test-userspace").user_feature("test-rump-tmpfs");
+    let cmdline = &RunnerArgs::new("test-userspace")
+        .user_feature("test-rump-tmpfs")
+        .timeout(20_000);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {

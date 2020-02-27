@@ -51,9 +51,8 @@ mod isr;
 
 pub use bootloader_shared::*;
 use klogger;
-use logos::Logos;
 
-use crate::kcb::Kcb;
+use crate::kcb::{CommandLineArgs, Kcb};
 use crate::memory::{
     tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
@@ -66,64 +65,6 @@ use process::Ring3Process;
 use vspace::*;
 
 pub const MAX_NUMA_NODES: usize = 12;
-
-/// Definition to parse the kernel command-line arguments.
-#[derive(Logos, Debug, PartialEq, Clone, Copy)]
-enum CmdToken {
-    /// Logos requires that we define two default variants,
-    /// one for end of input source,
-    #[end]
-    End,
-
-    /// Binary name
-    #[regex = "./[a-zA-Z]+"]
-    Binary,
-
-    /// Argument separator (1 space)
-    #[token = " "]
-    ArgSeparator,
-
-    /// Anything not properly encoded
-    #[error]
-    Error,
-
-    /// Log token.
-    #[token = "log="]
-    Log,
-
-    /// Regular expressions for parsing log-filter.
-    /// Example: 'info' or 'bespin::memory=debug,topology::acpi=debug'
-    /// TODO::Improve the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
-    #[regex = "[a-zA-Z:,=]+"]
-    Text,
-}
-
-/// Parse command line argument and initialize the logging infrastructure.
-///
-/// Example: If args is './kernel log=trace' -> sets level to Level::Trace
-fn init_logging(args: &str) {
-    let mut lexer = CmdToken::lexer(args);
-    let filter: &str = loop {
-        let mut filter = "info";
-        lexer.advance();
-        match (lexer.token, lexer.slice()) {
-            (CmdToken::Binary, bin) => assert_eq!(bin, "./kernel"),
-            (CmdToken::Log, _) => {
-                lexer.advance();
-                filter = match (lexer.token, lexer.slice()) {
-                    (CmdToken::Text, text) => text,
-                    (_, _) => "error",
-                };
-            }
-            (CmdToken::End, _) => filter = "info",
-            (_, _) => continue,
-        };
-
-        break filter;
-    };
-
-    klogger::init(filter).expect("Can't set-up logging");
-}
 
 /// Make sure the machine supports what we require.
 fn assert_required_cpu_features() {
@@ -248,6 +189,7 @@ fn init_apic() -> xapic::XAPICDriver {
 
 struct AppCoreArgs {
     _mem_region: Frame,
+    cmdline: CommandLineArgs,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
@@ -276,7 +218,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let init_vspace = unsafe { find_current_vspace() }; // Safe, done once during init
 
     let arch = kcb::Arch86Kcb::new(args.kernel_args, init_apic(), init_vspace);
-    let mut kcb = Kcb::<kcb::Arch86Kcb>::new(args.kernel_binary, emanager, arch, args.node);
+    let mut kcb =
+        Kcb::<kcb::Arch86Kcb>::new(args.kernel_binary, args.cmdline, emanager, arch, args.node);
 
     kcb.set_global_memory(args.global_memory);
     kcb.set_physical_memory_manager(tcache::TCache::new(args.thread, args.node));
@@ -325,6 +268,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 ///  - Initialized topology
 ///  - Local APIC driver
 fn boot_app_cores(
+    cmdline: CommandLineArgs,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     log: Arc<Log<'static, Op>>,
@@ -366,6 +310,7 @@ fn boot_app_cores(
         let initialized: AtomicBool = AtomicBool::new(false);
         let arg: Arc<AppCoreArgs> = Arc::new(AppCoreArgs {
             _mem_region: mem_region,
+            cmdline,
             kernel_binary,
             kernel_args,
             node,
@@ -486,8 +431,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Parse the command line arguments
     // TODO: This should be passed on over using the UEFI bootloader
     // https://stackoverflow.com/questions/17702725/how-to-access-command-line-arguments-in-uefi
-    let args = include_str!("../../../cmdline.in");
-    init_logging(args);
+    let args_str = include_str!("../../../cmdline.in");
+    let cmdline = CommandLineArgs::from_str(args_str);
+    klogger::init(cmdline.log_filter).expect("Can't set-up logging");
+
     info!(
         "Started at {} with {:?} since CPU startup",
         *rawtime::WALL_TIME_ANCHOR,
@@ -580,7 +527,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let arch = kcb::Arch86Kcb::new(kernel_args, init_apic(), init_vspace);
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = Kcb::new(kernel_binary, emanager, arch, 0);
+    let mut kcb = Kcb::new(kernel_binary, cmdline, emanager, arch, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
     let static_kcb = unsafe {
@@ -668,7 +615,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]
-    boot_app_cores(kernel_binary, kernel_args, log.clone(), bsp_replica.clone());
+    boot_app_cores(
+        cmdline,
+        kernel_binary,
+        kernel_args,
+        log.clone(),
+        bsp_replica.clone(),
+    );
 
     // Done with initialization, now we go in
     // the arch-independent part:

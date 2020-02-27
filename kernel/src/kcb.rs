@@ -2,6 +2,7 @@
 
 use core::cell::{RefCell, RefMut};
 
+use logos::Logos;
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
@@ -9,11 +10,105 @@ use crate::memory::{tcache::TCache, GlobalMemory};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 
+/// Definition to parse the kernel command-line arguments.
+#[derive(Logos, Debug, PartialEq, Clone, Copy)]
+enum CmdToken {
+    /// Logos requires that we define two default variants,
+    /// one for end of input source,
+    #[end]
+    End,
+
+    /// Kernel binary name
+    #[regex = "./[a-zA-Z]+"]
+    Binary,
+
+    /// Argument separator (1 space)
+    #[token = " "]
+    ArgSeparator,
+
+    /// Anything not properly encoded
+    #[error]
+    Error,
+
+    /// Test binary.
+    #[token = "testbinary="]
+    TestBinary,
+
+    /// Log token.
+    #[token = "log="]
+    Log,
+
+    /// Something looks like a filename
+    #[regex = "[a-zA-Z0-9.-]+"]
+    FileName,
+
+    /// Regular expressions for parsing log-filter.
+    ///
+    /// Example: 'bespin::memory=debug,topology::acpi=debug'
+    /// TODO(improve): the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
+    #[regex = "[a-zA-Z:,=]+"]
+    ComplexLogFilter,
+}
+
+#[derive(Copy, Clone)]
+pub struct CommandLineArgs {
+    pub log_filter: &'static str,
+    pub test_binary: &'static str,
+}
+
+impl CommandLineArgs {
+    /// Parse command line argument and initialize the logging infrastructure.
+    ///
+    /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
+    pub fn from_str(args: &'static str) -> CommandLineArgs {
+        let mut parsed_args: CommandLineArgs = Default::default();
+        let mut lexer = CmdToken::lexer(args);
+
+        loop {
+            lexer.advance();
+            match (lexer.token, lexer.slice()) {
+                (CmdToken::Binary, bin) => assert_eq!(bin, "./kernel"),
+                (CmdToken::Log, _) => {
+                    lexer.advance();
+                    parsed_args.log_filter = match (lexer.token, lexer.slice()) {
+                        // matches for simple things like `info`, `error` etc.
+                        (CmdToken::FileName, text) => text,
+                        (CmdToken::ComplexLogFilter, text) => text,
+                        (_, _) => "debug",
+                    };
+                }
+                (CmdToken::TestBinary, _) => {
+                    lexer.advance();
+                    parsed_args.test_binary = match (lexer.token, lexer.slice()) {
+                        (CmdToken::FileName, file_name) => file_name,
+                        (_, _) => "init",
+                    };
+                }
+                (CmdToken::End, _) => break,
+                (_, _) => continue,
+            };
+        }
+
+        parsed_args
+    }
+}
+
+impl Default for CommandLineArgs {
+    fn default() -> CommandLineArgs {
+        CommandLineArgs {
+            log_filter: "info",
+            test_binary: "init",
+        }
+    }
+}
+
 /// The Kernel Control Block for a given core.
 /// It contains all core-local state of the kernel.
 pub struct Kcb<A> {
     /// Architecture specific members of the KCB.
     pub arch: A,
+
+    pub cmdline: CommandLineArgs,
 
     /// A pointer to the memory location of the kernel (ELF binary).
     kernel_binary: &'static [u8],
@@ -41,12 +136,14 @@ pub struct Kcb<A> {
 impl<A: ArchSpecificKcb> Kcb<A> {
     pub fn new(
         kernel_binary: &'static [u8],
+        cmdline: CommandLineArgs,
         emanager: TCache,
         arch: A,
         node: topology::NodeId,
     ) -> Kcb<A> {
         Kcb {
             arch,
+            cmdline,
             kernel_binary,
             emanager: RefCell::new(emanager),
             zone_allocator: RefCell::new(ZoneAllocator::new()),

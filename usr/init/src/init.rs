@@ -4,6 +4,7 @@
 #![allow(unused_imports, dead_code)]
 extern crate alloc;
 extern crate spin;
+extern crate vibrio;
 
 extern crate lineup;
 
@@ -18,9 +19,6 @@ use vibrio::{sys_print, sys_println};
 
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
-
-#[global_allocator]
-static MEM_PROVIDER: vibrio::mem::SafeZoneAllocator = vibrio::mem::SafeZoneAllocator::new();
 
 fn print_test() {
     let _r = vibrio::syscalls::print("test\r\n");
@@ -341,26 +339,6 @@ pub extern "C" fn _start() -> ! {
     vibrio::syscalls::exit(0);
 }
 
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    sys_println!("System panic encountered");
-    if let Some(message) = info.message() {
-        sys_print!(": '{}'", message);
-    }
-    if let Some(location) = info.location() {
-        sys_println!(" in {}:{}", location.file(), location.line());
-    } else {
-        sys_println!("");
-    }
-
-    vibrio::syscalls::exit(99);
-}
-
-#[alloc_error_handler]
-fn oom(layout: core::alloc::Layout) -> ! {
-    panic!("oom {:?}", layout)
-}
-
 #[allow(non_camel_case_types)]
 #[repr(C)]
 pub enum _Unwind_Reason_Code {
@@ -388,22 +366,4 @@ pub struct _Unwind_Exception {
     exception_class: u64,
     exception_cleanup: fn(_Unwind_Reason_Code, *const _Unwind_Exception),
     private: [u64; 2],
-}
-
-#[cfg_attr(target_os = "none", lang = "eh_personality")]
-#[no_mangle]
-pub fn rust_eh_personality(
-    _version: isize,
-    _actions: _Unwind_Action,
-    _exception_class: u64,
-    _exception_object: &_Unwind_Exception,
-    _context: &_Unwind_Context,
-) -> _Unwind_Reason_Code {
-    loop {}
-}
-
-#[no_mangle]
-#[allow(non_snake_case)]
-pub fn _Unwind_Resume() {
-    loop {}
 }

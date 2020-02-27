@@ -82,6 +82,17 @@ macro_rules! syscall {
             $arg4 as u64,
         )
     };
+
+    ($arg0:expr, $arg1:expr, $arg2:expr, $arg3:expr, $arg4:expr, $arg5:expr, 2) => {
+        crate::syscalls::syscall_6_2(
+            $arg0 as u64,
+            $arg1 as u64,
+            $arg2 as u64,
+            $arg3 as u64,
+            $arg4 as u64,
+            $arg5 as u64,
+        )
+    };
 }
 
 #[inline(always)]
@@ -214,6 +225,25 @@ unsafe fn syscall6_1(
                    : "rcx", "r11", "memory"
                    : "volatile");
     ret
+}
+
+#[inline(always)]
+unsafe fn syscall_6_2(
+    arg0: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+) -> (u64, u64) {
+    let ret: u64;
+    let ret2: u64;
+    asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
+                   : "{rax}" (arg0), "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3),
+                     "{r10}" (arg4), "{r8}" (arg5)
+                   : "rcx", "r11", "memory"
+                   : "volatile");
+    (ret, ret2)
 }
 
 /// Print `buffer` on the console.
@@ -369,6 +399,41 @@ pub fn fileio(op: FileOperation, fd: u64, buffer: u64, len: u64) -> Result<u64, 
     }
 
     let (r, len) = unsafe { syscall_5_2(SystemCall::FileIO as u64, op as u64, fd, buffer, len) };
+
+    if r == 0 {
+        Ok(len)
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}
+
+/// Read or write an opened file starting at the offset.
+pub fn fileio_at(
+    op: FileOperation,
+    fd: u64,
+    buffer: u64,
+    len: u64,
+    offset: i64,
+) -> Result<u64, SystemCallError> {
+    if len <= 0 {
+        return Err(SystemCallError::BadFileDescriptor);
+    }
+
+    if offset == -1 {
+        return fileio(op, fd, buffer, len);
+    }
+
+    /// If read or write is performed at the specific offset.
+    let (r, len) = unsafe {
+        syscall_6_2(
+            SystemCall::FileIO as u64,
+            op as u64,
+            fd,
+            buffer,
+            len,
+            offset as u64,
+        )
+    };
 
     if r == 0 {
         Ok(len)

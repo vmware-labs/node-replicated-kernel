@@ -71,16 +71,12 @@ pub unsafe extern "C" fn rumpuser_iovread(
     off: i64,
     retv: *mut c_size_t,
 ) -> c_int {
-    // TODO: Implement read at offset logic.
-    if off != RUMPUSER_IOV_NOSEEK {
-        unimplemented!()
-    }
-
-    match fileio(
-        FileOperation::Read,
+    match fileio_at(
+        FileOperation::ReadAt,
         fd as u64,
         (*ruiov).iov_base as u64,
         iovlen,
+        off,
     ) {
         Ok(len) => {
             *retv = len;
@@ -99,15 +95,12 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
     off: i64,
     retv: *mut c_size_t,
 ) -> c_int {
-    if off != RUMPUSER_IOV_NOSEEK {
-        unimplemented!()
-    }
-
-    match fileio(
-        FileOperation::Write,
+    match fileio_at(
+        FileOperation::WriteAt,
         fd as u64,
         (*ruiov).iov_base as u64,
         iovlen,
+        off,
     ) {
         Ok(len) => {
             *retv = len;

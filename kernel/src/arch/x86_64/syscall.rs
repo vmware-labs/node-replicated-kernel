@@ -194,7 +194,17 @@ fn handle_fileio(
                 let buffer = arg3;
                 let len = arg4;
 
-                nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len)
+                nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, -1)
+            })
+        }
+        FileOperation::ReadAt | FileOperation::WriteAt => {
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                let fd = arg2;
+                let buffer = arg3;
+                let len = arg4;
+                let offset = arg5 as i64;
+
+                nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, offset)
             })
         }
         FileOperation::Close => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {

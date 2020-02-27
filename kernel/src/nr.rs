@@ -11,7 +11,7 @@ use node_replication::Dispatch;
 use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::{
-    Buffer, FileDescriptor, Filename, Flags, Len, MemFS, Modes, FD, MAX_FILES_PER_PROCESS,
+    Buffer, FileDescriptor, Filename, Flags, Len, MemFS, Modes, Offset, FD, MAX_FILES_PER_PROCESS,
 };
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
@@ -34,8 +34,8 @@ pub enum Op {
     MemUnmap,
     MemResolve(Pid, VAddr),
     FileOpen(Pid, Filename, Flags, Modes),
-    FileRead(Pid, FD, Buffer, Len),
-    FileWrite(Pid, FD, Buffer, Len),
+    FileRead(Pid, FD, Buffer, Len, Offset),
+    FileWrite(Pid, FD, Buffer, Len, Offset),
     FileClose(Pid, FD),
     Invalid,
 }
@@ -221,15 +221,19 @@ impl<P: Process> KernelNode<P> {
         fd: u64,
         buffer: u64,
         len: u64,
+        offset: i64,
     ) -> Result<(Len, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| match op {
-                FileOperation::Read => {
+                FileOperation::Read | FileOperation::ReadAt => {
                     let mut o = vec![];
-                    replica.execute(Op::FileRead(pid, fd, buffer, len), kcb.arch.replica_idx);
+                    replica.execute(
+                        Op::FileRead(pid, fd, buffer, len, offset),
+                        kcb.arch.replica_idx,
+                    );
 
                     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                     debug_assert_eq!(o.len(), 1, "Should get a reply?");
@@ -240,9 +244,12 @@ impl<P: Process> KernelNode<P> {
                     }
                 }
 
-                FileOperation::Write => {
+                FileOperation::Write | FileOperation::WriteAt => {
                     let mut o = vec![];
-                    replica.execute(Op::FileWrite(pid, fd, buffer, len), kcb.arch.replica_idx);
+                    replica.execute(
+                        Op::FileWrite(pid, fd, buffer, len, offset),
+                        kcb.arch.replica_idx,
+                    );
 
                     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                     debug_assert_eq!(o.len(), 1, "Should get a reply?");
@@ -382,7 +389,7 @@ where
                     }
                 }
             }
-            Op::FileRead(pid, fd, buffer, len) => {
+            Op::FileRead(pid, fd, buffer, len, _offset) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);
@@ -400,7 +407,7 @@ where
                     len => Ok(NodeResult::FileAccessed(len)),
                 }
             }
-            Op::FileWrite(pid, fd, buffer, len) => {
+            Op::FileWrite(pid, fd, buffer, len, _offset) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);

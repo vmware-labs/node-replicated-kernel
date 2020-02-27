@@ -148,10 +148,14 @@ pub enum FileOperation {
     Open = 2,
     /// Read from a file
     Read = 3,
+    /// Read from a file from the given offset
+    ReadAt = 4,
     /// Write to a file
-    Write = 4,
+    Write = 5,
+    /// Write to a file
+    WriteAt = 6,
     /// Close an opened file.
-    Close = 5,
+    Close = 7,
     Unknown,
 }
 
@@ -162,8 +166,10 @@ impl From<u64> for FileOperation {
             1 => FileOperation::Create,
             2 => FileOperation::Open,
             3 => FileOperation::Read,
-            4 => FileOperation::Write,
-            5 => FileOperation::Close,
+            4 => FileOperation::ReadAt,
+            5 => FileOperation::Write,
+            6 => FileOperation::WriteAt,
+            7 => FileOperation::Close,
             _ => FileOperation::Unknown,
         }
     }
@@ -176,7 +182,9 @@ impl From<&str> for FileOperation {
             "Create" => FileOperation::Create,
             "Open" => FileOperation::Open,
             "Read" => FileOperation::Read,
+            "ReadAt" => FileOperation::ReadAt,
             "Write" => FileOperation::Write,
+            "WriteAt" => FileOperation::WriteAt,
             "Close" => FileOperation::Close,
             _ => FileOperation::Unknown,
         }

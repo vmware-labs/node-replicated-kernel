@@ -31,6 +31,8 @@ pub type Buffer = u64;
 pub type Len = u64;
 /// Userspace-pointer to filename.
 pub type Filename = u64;
+/// File offset
+pub type Offset = i64;
 
 /// Abstract definition of a file descriptor.
 pub trait FileDescriptor {

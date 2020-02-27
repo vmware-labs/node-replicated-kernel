@@ -42,6 +42,7 @@ pub mod prt;
 
 const RUMPUSER_CLOCK_RELWALL: u64 = 0;
 const RUMPUSER_CLOCK_ABSMONO: u64 = 1;
+const RUMPUSER_IOV_NOSEEK: i64 = -1;
 
 // C types (specific for x86_64)
 #[allow(non_camel_case_types)]

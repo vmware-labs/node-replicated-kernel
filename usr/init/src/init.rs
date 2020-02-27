@@ -294,7 +294,7 @@ fn fs_test() {
         // Open a file
         let fd = vibrio::syscalls::file_open(
             vibrio::syscalls::FileOperation::Open,
-            "file.txt\0",
+            "file.txt\0".as_ptr() as u64,
             O_RDWR | O_CREAT,
             ALL_PERM,
         )
@@ -312,8 +312,13 @@ fn fs_test() {
         assert_eq!(slice[99], 0xb);
 
         // Write the slice content to the created file.
-        let ret = vibrio::syscalls::fileio(vibrio::syscalls::FileOperation::Write, fd, slice, 256)
-            .expect("FileWrite syscall failed");
+        let ret = vibrio::syscalls::fileio(
+            vibrio::syscalls::FileOperation::Write,
+            fd,
+            slice.as_ptr() as u64,
+            256,
+        )
+        .expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
 
         // Reset the slice content. And read the file content from the file and
@@ -321,8 +326,13 @@ fn fs_test() {
         for i in slice.iter_mut() {
             *i = 0;
         }
-        let ret = vibrio::syscalls::fileio(vibrio::syscalls::FileOperation::Read, fd, slice, 256)
-            .expect("FileWrite syscall failed");
+        let ret = vibrio::syscalls::fileio(
+            vibrio::syscalls::FileOperation::Read,
+            fd,
+            slice.as_ptr() as u64,
+            256,
+        )
+        .expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
         assert_eq!(slice[255], 0xb);
         assert_eq!(slice[256], 0);

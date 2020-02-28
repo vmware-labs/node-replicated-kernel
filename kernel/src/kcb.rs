@@ -38,16 +38,15 @@ enum CmdToken {
     #[token = "log="]
     Log,
 
-    /// Something looks like a filename
-    #[regex = "[a-zA-Z0-9.-]+"]
-    FileName,
+    #[regex = "[a-zA-Z]+\\.bin"]
+    File,
 
-    /// Regular expressions for parsing log-filter.
+    /// Regular expressions for parsing log-filter or file-path names.
     ///
     /// Example: 'bespin::memory=debug,topology::acpi=debug'
     /// TODO(improve): the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
     #[regex = "[a-zA-Z:,=]+"]
-    ComplexLogFilter,
+    Value,
 }
 
 #[derive(Copy, Clone)]
@@ -72,16 +71,15 @@ impl CommandLineArgs {
                     lexer.advance();
                     parsed_args.log_filter = match (lexer.token, lexer.slice()) {
                         // matches for simple things like `info`, `error` etc.
-                        (CmdToken::FileName, text) => text,
-                        (CmdToken::ComplexLogFilter, text) => text,
-                        (_, _) => "debug",
+                        (CmdToken::Value, text) => text,
+                        (_t, _v) => "debug",
                     };
                 }
                 (CmdToken::TestBinary, _) => {
                     lexer.advance();
                     parsed_args.test_binary = match (lexer.token, lexer.slice()) {
-                        (CmdToken::FileName, file_name) => file_name,
-                        (_, _) => "init",
+                        (CmdToken::File, file_name) => file_name,
+                        (_t, _v) => "init",
                     };
                 }
                 (CmdToken::End, _) => break,

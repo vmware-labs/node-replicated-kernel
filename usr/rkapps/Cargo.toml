@@ -1,0 +1,19 @@
+[package]
+name = "rkapps"
+version = "0.0.1"
+authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+edition = "2018"
+build = "build.rs"
+links = "rumpkernel"
+
+[dependencies]
+rumpkernel = { path = "../../lib/rumpkernel" }
+vibrio = { path = "../../lib/vibrio", features = ["rumprt"] }
+
+[build-dependencies]
+num_cpus = "1.9"
+
+[features]
+redis = []
+default = ["redis"]
+

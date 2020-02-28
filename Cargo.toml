@@ -18,17 +18,19 @@ members = [
     "lib/rawtime",
     "lib/ctest",
     "lib/custom_error",
-    "usr/init",
     "lib/kpi",
     "lib/vibrio",
     "lib/topology",
     "lib/node-replication",
     "lib/crossbeam-queue",
-    "lib/bootloader_shared"
+    "lib/bootloader_shared",
+    "usr/init",
+    "usr/rkapps",
 ]
 
 # disable stack unwinding on panic for now
 [profile.dev]
 panic = "abort"
+
 [profile.release]
 panic = "abort"

@@ -431,9 +431,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Parse the command line arguments
     // TODO: This should be passed on over using the UEFI bootloader
     // https://stackoverflow.com/questions/17702725/how-to-access-command-line-arguments-in-uefi
+    klogger::init("info").expect("Can't set-up logging");
     let args_str = include_str!("../../../cmdline.in");
     let cmdline = CommandLineArgs::from_str(args_str);
-    klogger::init(cmdline.log_filter).expect("Can't set-up logging");
+    //klogger::init(cmdline.log_filter).expect("Can't set-up logging");
 
     info!(
         "Started at {} with {:?} since CPU startup",

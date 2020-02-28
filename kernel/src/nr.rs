@@ -1,13 +1,16 @@
 #![allow(unused)]
 
 use crate::prelude::*;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
+use cstr_core::CStr;
 use hashbrown::HashMap;
 use kpi::{io::*, FileOperation};
 use node_replication::Dispatch;
 
+use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::{
@@ -366,7 +369,23 @@ where
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
 
-                let (is_file, mnode) = self.fs.lookup(pathname);
+                let mut user_ptr = VAddr::from(pathname);
+                let str_ptr = UserPtr::new(&mut user_ptr);
+
+                let filename;
+                unsafe {
+                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                        Ok(path) => {
+                            if !path.is_ascii() || path.is_empty() {
+                                return Err(NodeResultError::Error);
+                            }
+                            filename = path;
+                        }
+                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
+                    }
+                }
+
+                let (is_file, mnode) = self.fs.lookup(filename);
                 if !is_file && !is_allowed!(flags, O_CREAT) {
                     return Err(NodeResultError::Error);
                 }
@@ -377,9 +396,13 @@ where
                     Some(mut fd) => {
                         let mnode_num;
                         if !is_file {
-                            match self.fs.create(pathname, modes) {
+                            match self.fs.create(filename, modes) {
                                 Some(m_num) => mnode_num = m_num,
-                                None => return Err(NodeResultError::Error),
+                                None => {
+                                    let fdesc = fd.0 as usize;
+                                    p.deallocate_fd(fdesc);
+                                    return Err(NodeResultError::Error);
+                                }
                             }
                         } else {
                             mnode_num = mnode.unwrap();

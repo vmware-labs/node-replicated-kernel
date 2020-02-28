@@ -3,15 +3,11 @@
 mod file;
 mod name;
 
-use alloc::string::String;
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use core::sync::atomic::{AtomicUsize, Ordering};
-use cstr_core::CStr;
 use hashbrown::HashMap;
 use kpi::io::*;
-use x86::bits64::paging::VAddr;
 
-use crate::arch::process::UserPtr;
 use crate::fs::file::{MemNode, NodeType};
 
 /// The maximum number of open files for a process.
@@ -110,31 +106,16 @@ impl MemFS {
     }
 
     /// Create a file in the root directory.
-    pub fn create(&mut self, pathname: Filename, modes: Modes) -> Option<u64> {
-        let mut user_ptr = VAddr::from(pathname);
-        let str_ptr = UserPtr::new(&mut user_ptr);
-
-        // TODO: Assume that all files are in the root directory.
-        // Later, parse the full path into directory and file.
-        let filename;
-        unsafe {
-            match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                Ok(path) => {
-                    filename = path;
-                }
-                Err(_) => unreachable!("FileCreate: Unable to convert u64 to str"),
-            }
-        }
-
+    pub fn create(&mut self, pathname: &str, modes: Modes) -> Option<u64> {
         // Check if the file with the same name already exists.
-        match self.files.get(&filename.to_string()) {
+        match self.files.get(&pathname.to_string()) {
             Some(_) => return None,
             None => {}
         }
 
         let mnode_num = self.get_next_mno() as u64;
-        let memnode = MemNode::new(mnode_num, filename, modes, NodeType::File);
-        self.files.insert(filename.to_string(), mnode_num);
+        let memnode = MemNode::new(mnode_num, pathname, modes, NodeType::File);
+        self.files.insert(pathname.to_string(), mnode_num);
         self.mnodes.insert(mnode_num, memnode);
 
         Some(mnode_num)
@@ -157,23 +138,8 @@ impl MemFS {
     }
 
     /// Check if a file exists in the file system or not.
-    pub fn lookup(&self, pathname: u64) -> (bool, Option<Mnode>) {
-        let mut user_ptr = VAddr::from(pathname);
-        let str_ptr = UserPtr::new(&mut user_ptr);
-
-        // TODO: Assume that all files are in the root directory.
-        // Later, parse the full path into directory and file.
-        let filename;
-        unsafe {
-            match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                Ok(path) => {
-                    filename = path;
-                }
-                Err(_) => unreachable!("FileCreate: Unable to convert u64 to str"),
-            }
-        }
-
-        match self.files.get(&filename.to_string()) {
+    pub fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>) {
+        match self.files.get(&pathname.to_string()) {
             Some(mnode) => (true, Some(*mnode)),
             None => (false, None),
         }
@@ -219,8 +185,8 @@ pub mod test {
     /// Create a file on in-memory fs and verify all the values.
     fn test_file_create() {
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, S_IRUSR).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, S_IRUSR).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
@@ -231,8 +197,8 @@ pub mod test {
     fn test_file_read_permission_error() {
         let buffer = &[0; 10];
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, S_IWUSR).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, S_IWUSR).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
@@ -245,8 +211,8 @@ pub mod test {
     fn test_file_write_permission_error() {
         let mut buffer = &[0; 10];
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, S_IRUSR).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, S_IRUSR).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
@@ -259,8 +225,8 @@ pub mod test {
     fn test_file_write() {
         let mut buffer = &[0; 10];
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, ALL_PERM).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, ALL_PERM).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
@@ -275,8 +241,8 @@ pub mod test {
         let mut rbuffer: &mut [u8; 10] = &mut [0; 10];
 
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, ALL_PERM).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, ALL_PERM).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
@@ -296,12 +262,12 @@ pub mod test {
     /// Create a file and lookup for it.
     fn test_file_lookup() {
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, ALL_PERM).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, ALL_PERM).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        let (is_present, mnode) = memfs.lookup(filename.as_ptr() as u64);
+        let (is_present, mnode) = memfs.lookup(filename);
         assert_eq!(is_present, true);
         assert_eq!(mnode, Some(2));
     }
@@ -310,12 +276,12 @@ pub mod test {
     /// Lookup for a fake file.
     fn test_file_fake_lookup() {
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, ALL_PERM).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, ALL_PERM).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        let (is_present, mnode) = memfs.lookup("filename".as_ptr() as u64);
+        let (is_present, mnode) = memfs.lookup("filename");
         assert_eq!(is_present, false);
         assert_eq!(mnode, None);
     }
@@ -324,11 +290,11 @@ pub mod test {
     /// Try to create a file with same name.
     fn test_file_duplicate_create() {
         let mut memfs = MemFS::init();
-        let filename = "file.txt\0";
-        let mnode = memfs.create(filename.as_ptr() as u64, ALL_PERM).unwrap();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, ALL_PERM).unwrap();
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        assert_eq!(memfs.create(filename.as_ptr() as u64, ALL_PERM), None);
+        assert_eq!(memfs.create(filename, ALL_PERM), None);
     }
 }

@@ -130,8 +130,8 @@ impl MemFS {
     }
 
     /// Read data from a file.
-    pub fn read(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
-        match self.mnodes.get_mut(&mnode_num) {
+    pub fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
+        match self.mnodes.get(&mnode_num) {
             Some(mnode) => mnode.read(buffer, len),
             None => 0,
         }

@@ -122,17 +122,17 @@ impl MemFS {
     }
 
     /// Write data to a file.
-    pub fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
+    pub fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
         match self.mnodes.get_mut(&mnode_num) {
-            Some(mnode) => mnode.write(buffer, len),
+            Some(mnode) => mnode.write(buffer, len, offset),
             None => 0,
         }
     }
 
     /// Read data from a file.
-    pub fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len) -> u64 {
+    pub fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
         match self.mnodes.get(&mnode_num) {
-            Some(mnode) => mnode.read(buffer, len),
+            Some(mnode) => mnode.read(buffer, len, offset),
             None => 0,
         }
     }
@@ -203,7 +203,7 @@ pub mod test {
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
         // On error read returns 0.
-        assert_eq!(memfs.read(2, buffer.as_ptr() as u64, 10), 0);
+        assert_eq!(memfs.read(2, buffer.as_ptr() as u64, 10, -1), 0);
     }
 
     #[test]
@@ -217,7 +217,7 @@ pub mod test {
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
         // On error read returns 0.
-        assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10), 0);
+        assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1), 0);
     }
 
     #[test]
@@ -230,7 +230,7 @@ pub mod test {
         assert_eq!(mnode, 2);
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10), 10);
+        assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1), 10);
     }
 
     #[test]
@@ -247,11 +247,11 @@ pub mod test {
         assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
         assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
         assert_eq!(
-            memfs.write(2, wbuffer.as_ptr() as u64, len as u64),
+            memfs.write(2, wbuffer.as_ptr() as u64, len as u64, -1),
             len as u64
         );
         assert_eq!(
-            memfs.read(2, rbuffer.as_ptr() as u64, len as u64),
+            memfs.read(2, rbuffer.as_ptr() as u64, len as u64, -1),
             len as u64
         );
         assert_eq!(rbuffer[0], 0xb);

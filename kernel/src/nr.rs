@@ -412,7 +412,7 @@ where
                     }
                 }
             }
-            Op::FileRead(pid, fd, buffer, len, _offset) => {
+            Op::FileRead(pid, fd, buffer, len, offset) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);
@@ -424,13 +424,13 @@ where
                     return Err(NodeResultError::Error);
                 }
 
-                let ret = self.fs.read(mnode_num, buffer, len);
+                let ret = self.fs.read(mnode_num, buffer, len, offset);
                 match ret {
                     0 => Err(NodeResultError::Error),
                     len => Ok(NodeResult::FileAccessed(len)),
                 }
             }
-            Op::FileWrite(pid, fd, buffer, len, _offset) => {
+            Op::FileWrite(pid, fd, buffer, len, offset) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);
@@ -442,7 +442,7 @@ where
                     return Err(NodeResultError::Error);
                 }
 
-                let ret = self.fs.write(mnode_num, buffer, len);
+                let ret = self.fs.write(mnode_num, buffer, len, offset);
                 match ret {
                     0 => Err(NodeResultError::Error),
                     len => Ok(NodeResult::FileAccessed(len)),

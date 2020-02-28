@@ -1,4 +1,4 @@
-use super::{c_int, c_size_t, c_void, rump_biodone_fn, RumpError, RUMPUSER_IOV_NOSEEK};
+use super::{c_int, c_size_t, c_void, rump_biodone_fn, RumpError};
 use cstr_core::CStr;
 
 use log::{error, trace};

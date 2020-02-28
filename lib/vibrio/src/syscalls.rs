@@ -423,7 +423,7 @@ pub fn fileio_at(
         return fileio(op, fd, buffer, len);
     }
 
-    /// If read or write is performed at the specific offset.
+    // If read or write is performed at the specific offset.
     let (r, len) = unsafe {
         syscall_6_2(
             SystemCall::FileIO as u64,

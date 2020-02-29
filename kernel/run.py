@@ -107,9 +107,6 @@ def build_kernel(args):
     "Builds the kernel binary"
     log("Build kernel")
     with local.cwd(KERNEL_PATH):
-        # TODO(hack): Write kernel command-line (better put it in UEFI dir)
-        with open('cmdline.in', 'w') as cmdfile:
-            cmdfile.write('{}'.format(args.cmd))
         with local.env(RUST_TARGET_PATH=(KERNEL_PATH / 'src' / 'arch' / ARCH).absolute()):
             # TODO(cross-compilation): in case we use a cross compiler/linker
             # also set: CARGO_TARGET_X86_64_BESPIN_LINKER=x86_64-elf-ld
@@ -184,6 +181,10 @@ def deploy(args):
     # Deploy kernel
     shutil.copy2(uefi_build_path / 'bootloader.efi',
                  esp_boot_path / 'BootX64.efi')
+
+    # Write kernel cmd-line file in ESP dir
+    with open(esp_path / 'cmdline.in', 'w') as cmdfile:
+        cmdfile.write('./kernel {}'.format(args.cmd))
 
     # Deploy user-modules
     for module in args.mods:

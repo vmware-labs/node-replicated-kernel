@@ -356,6 +356,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     let _base = find_apic_base();
 
     let (kernel_module, kernel_blob) = load_binary_into_memory(&st, "kernel");
+    let (cmdline_module, cmdline_blob) = load_binary_into_memory(&st, "cmdline.in");
     let modules = load_modules(&st, "\\");
 
     // Next create an address space for our kernel
@@ -464,6 +465,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         trace!("Kernel args allocated.");
 
         // Initialize the KernelArgs
+        kernel_args.command_line = core::str::from_utf8_unchecked(cmdline_blob);
         kernel_args.mm = (mm_paddr + KERNEL_OFFSET, mm_size);
         kernel_args.pml4 = PAddr::from(kernel.vspace.pml4 as *const _ as u64);
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);

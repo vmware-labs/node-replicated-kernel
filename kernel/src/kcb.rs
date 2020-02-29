@@ -26,10 +26,6 @@ enum CmdToken {
     #[token = " "]
     ArgSeparator,
 
-    /// Anything not properly encoded
-    #[error]
-    Error,
-
     /// Test binary.
     #[token = "testbinary="]
     TestBinary,
@@ -38,15 +34,23 @@ enum CmdToken {
     #[token = "log="]
     Log,
 
-    #[regex = "[a-zA-Z]+\\.bin"]
-    File,
+    #[regex = "(trace|debug|info|warn|error)"]
+    LogLevelSimple,
 
     /// Regular expressions for parsing log-filter or file-path names.
     ///
     /// Example: 'bespin::memory=debug,topology::acpi=debug'
     /// TODO(improve): the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
     #[regex = "[a-zA-Z:,=]+"]
-    Value,
+    LogComplex,
+
+    /// A file that we want to execute
+    #[regex = "[a-zA-Z]+(\\.bin)?"]
+    File,
+
+    /// Anything not properly encoded
+    #[error]
+    Error,
 }
 
 #[derive(Copy, Clone)]
@@ -71,15 +75,21 @@ impl CommandLineArgs {
                     lexer.advance();
                     parsed_args.log_filter = match (lexer.token, lexer.slice()) {
                         // matches for simple things like `info`, `error` etc.
-                        (CmdToken::Value, text) => text,
-                        (_t, _v) => "debug",
+                        (CmdToken::LogComplex, text) => text,
+                        (CmdToken::LogLevelSimple, level) => level,
+                        (key, v) => {
+                            unreachable!("Malformed command-line parsing log: {:?} -> {:?}", key, v)
+                        }
                     };
                 }
                 (CmdToken::TestBinary, _) => {
                     lexer.advance();
                     parsed_args.test_binary = match (lexer.token, lexer.slice()) {
                         (CmdToken::File, file_name) => file_name,
-                        (_t, _v) => "init",
+                        (key, v) => unreachable!(
+                            "Malformed command-line parsing testbinary: {:?} -> {:?}",
+                            key, v
+                        ),
                     };
                 }
                 (CmdToken::End, _) => break,

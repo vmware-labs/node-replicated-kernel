@@ -428,13 +428,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
+    // We construct a &'static mut for KernelArgs (mut is just because of `mm_iter`)
+    let kernel_args: &'static mut KernelArgs =
+        unsafe { transmute::<u64, &'static mut KernelArgs>(argc as u64) };
+
     // Parse the command line arguments
-    // TODO: This should be passed on over using the UEFI bootloader
-    // https://stackoverflow.com/questions/17702725/how-to-access-command-line-arguments-in-uefi
-    klogger::init("info").expect("Can't set-up logging");
-    let args_str = include_str!("../../../cmdline.in");
-    let cmdline = CommandLineArgs::from_str(args_str);
-    //klogger::init(cmdline.log_filter).expect("Can't set-up logging");
+    let cmdline = CommandLineArgs::from_str(kernel_args.command_line);
+    klogger::init(cmdline.log_filter).expect("Can't set-up logging");
 
     info!(
         "Started at {} with {:?} since CPU startup",
@@ -452,10 +452,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // fail if it doesn't have what we need.
     assert_required_cpu_features();
     syscall::enable_fast_syscalls();
-
-    // We construct a &'static mut for KernelArgs (mut is just because of `mm_iter`)
-    let kernel_args: &'static mut KernelArgs =
-        unsafe { transmute::<u64, &'static mut KernelArgs>(argc as u64) };
 
     // Initializes the serial console.
     // (this is already done in a very basic form by klogger/init_logging())

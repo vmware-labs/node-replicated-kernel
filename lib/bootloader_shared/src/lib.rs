@@ -89,6 +89,9 @@ pub struct KernelArgs {
     /// Iterator over memory map
     pub mm_iter: uefi::table::boot::MemoryMapIter<'static>,
 
+    /// String of the command line
+    pub command_line: &'static str,
+
     /// A slice into the GPU frame-buffer
     pub frame_buffer: Option<&'static mut [u8]>,
 

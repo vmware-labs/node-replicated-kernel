@@ -73,7 +73,7 @@ pub mod panic;
 /// to exit the VM and communicate the status to the host.
 ///
 /// # Notes
-/// If this type is modified, update the `run.sh` script as well.
+/// If this type is modified, update the `run.py` script and `tests/integration-test.rs` as well.
 #[repr(u8)]
 pub enum ExitReason {
     Ok = 0,

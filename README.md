@@ -26,11 +26,11 @@ to link ELF files. You can execute `bash setup_mac_binutils.sh` to download and 
 
 ### Build and run
 1. `cd kernel`
-1. `bash ./run.sh`
+1. `python3 ./run.py`
 
 If you just want to compile the code you can also execute:
 1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
-in the kernel directory (run.sh will do that on your behalf).
+in the kernel directory (run.py will do that on your behalf).
 
 ## Development
 
@@ -62,7 +62,7 @@ Create a new feature branch:
 Make sure that the code compiles without warnings, is properly formatted and passes tests:
 1. `cd kernel`
 1. `cargo +nightly fmt`
-1. `RUSTFLAGS='-D warnings' bash ./run.sh`
+1. `RUSTFLAGS='-D warnings' python3 ./run.py`
 1. `RUSTFLAGS='-D warnings' RUST_TEST_THREADS=1 cargo test --test integration-test`
 
 Commit changes and push

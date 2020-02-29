@@ -9,12 +9,6 @@ build = "build.rs"
 name = "init"
 path = "src/init.rs"
 
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-
 [dependencies]
 spin = { version = "0.4.8", default_features = false }
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }

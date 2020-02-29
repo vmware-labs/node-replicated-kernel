@@ -91,7 +91,7 @@ impl Display for ExitStatus {
     }
 }
 
-/// Arguments passed to the run.sh script to configure a test.
+/// Arguments passed to the run.py script to configure a test.
 #[derive(Clone)]
 struct RunnerArgs<'a> {
     /// Test name of kernel integration test.
@@ -227,7 +227,7 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
-    /// Converts the RunnerArgs to a run.sh command line invocation.
+    /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
         // Add features for build
@@ -244,7 +244,7 @@ impl<'a> RunnerArgs<'a> {
         };
 
         let mut cmd = vec![
-            String::from("run.sh"),
+            String::from("run.py"),
             String::from("--kfeatures"),
             kernel_features,
             String::from("--cmd"),
@@ -260,7 +260,6 @@ impl<'a> RunnerArgs<'a> {
         };
 
         // Form arguments for QEMU
-        cmd.push(String::from("--qemu"));
         let mut qemu_args: Vec<String> = self.qemu_args.iter().map(|arg| arg.to_string()).collect();
         qemu_args.push(format!("-m {}M", self.memory));
 
@@ -283,7 +282,7 @@ impl<'a> RunnerArgs<'a> {
                 ));
             }
         }
-        cmd.push(String::from(qemu_args.join(" ")));
+        cmd.push(format!("--qemu-settings={}", qemu_args.join(" ")));
 
         // Don't run qemu, just build?
         match self.norun {
@@ -363,7 +362,7 @@ fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     let cloned_args = args.clone();
     let compile_args = cloned_args.norun();
 
-    let o = process::Command::new("bash")
+    let o = process::Command::new("python3")
         .args(compile_args.as_cmd())
         .output()
         .expect("failed to build");
@@ -376,7 +375,7 @@ fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
         );
     }
 
-    let mut o = process::Command::new("bash");
+    let mut o = process::Command::new("python3");
     o.args(args.as_cmd());
 
     eprintln!("Invoke QEMU: {:?}", o);
@@ -386,7 +385,7 @@ fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
 /// Spawns a DHCP server on our host
 ///
 /// It uses our dhcpd config and listens on the tap0 interface
-/// (that we set up in our run.sh script).
+/// (that we set up in our run.py script).
 fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:

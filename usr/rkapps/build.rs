@@ -26,7 +26,7 @@ fn apps_built(path: &Path) -> bool {
 /// Format is: (folder_name, baking_output_binary, baking_input_binary)
 ///
 /// The baking output binary should be placed in 'target/x86_64-bespin-none/debug|release/build'
-/// (If you change this also don't forget to adapt the `run.sh` script)
+/// (If you change this also don't forget to adapt the `run.py` script)
 /// in the same location where static C library builds are stored
 /// this goes slightly against convention that we shouldn't place
 /// things out of OUT_DIR, but since we're abusing build.rs already anyways ¯\_(ツ)_/¯

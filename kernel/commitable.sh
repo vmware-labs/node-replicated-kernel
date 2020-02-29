@@ -5,7 +5,7 @@ set -ex
 RUSTFLAGS="-D warnings -C link-arg=-T./kernel/src/arch/x86_64/link.ld -C link-arg=-n -C target-feature=+sse" RUST_TARGET_PATH=`pwd`/src/arch/x86_64  xargo build -vv --target=x86_64-bespin
 
 # run
-bash run.sh
+python run.py
 
 # unix
 cargo run

@@ -10,12 +10,6 @@ build = "build.rs"
 name = "vibrio"
 crate-type = ["staticlib", "rlib"]
 
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-
 [dependencies]
 log = "0.4"
 x86 = { path = "../x86" }

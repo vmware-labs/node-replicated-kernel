@@ -25,7 +25,7 @@ run-qemu:
   stage: run
   script:
     - cd kernel
-    - bash run.sh --cmd log=trace
+    - python3 run.py --cmd log=trace
   dependencies:
     - build
   variables:

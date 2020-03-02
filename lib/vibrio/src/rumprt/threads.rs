@@ -156,12 +156,3 @@ pub unsafe extern "C" fn rumpuser_clock_sleep(enum_rumpclock: u32, sec: i64, nan
 
     retval
 }
-
-#[no_mangle]
-pub unsafe extern "C" fn rumpuser_seterrno(code: c_int) {
-    trace!("rumpuser_seterrno {}", code);
-    /*
-    int *threrr = bmk_sched_geterrno();
-    *threrr = err;
-    */
-}

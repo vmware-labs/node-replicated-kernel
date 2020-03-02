@@ -74,7 +74,7 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
     _off: i64,
     _retv: *const c_size_t,
 ) -> c_int {
-    unimplemented!();
+    unimplemented!("rumpuser_iovwrite");
 }
 
 /// int rumpuser_syncfd(int fd, int flags, uint64_t start, uint64_t len)
@@ -85,5 +85,5 @@ pub unsafe extern "C" fn rumpuser_syncfd(
     _start: u64,
     _len: u64,
 ) -> c_int {
-    unimplemented!();
+    unimplemented!("rumpuser_syncfd");
 }

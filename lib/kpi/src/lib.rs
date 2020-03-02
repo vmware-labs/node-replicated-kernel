@@ -162,6 +162,8 @@ pub enum FileOperation {
     WriteAt = 6,
     /// Close an opened file.
     Close = 7,
+    /// Get the information related to the file.
+    GetInfo = 8,
     Unknown,
 }
 
@@ -176,6 +178,7 @@ impl From<u64> for FileOperation {
             5 => FileOperation::Write,
             6 => FileOperation::WriteAt,
             7 => FileOperation::Close,
+            8 => FileOperation::GetInfo,
             _ => FileOperation::Unknown,
         }
     }
@@ -192,6 +195,7 @@ impl From<&str> for FileOperation {
             "Write" => FileOperation::Write,
             "WriteAt" => FileOperation::WriteAt,
             "Close" => FileOperation::Close,
+            "GetInfo" => FileOperation::GetInfo,
             _ => FileOperation::Unknown,
         }
     }

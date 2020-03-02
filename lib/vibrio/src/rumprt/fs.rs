@@ -39,13 +39,17 @@ pub unsafe extern "C" fn rumpuser_close(fd: c_int) -> c_int {
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_getfileinfo(
     name: *const i8,
-    size: *const u64,
-    typ: *const c_int,
+    size: *mut u64,
+    typ: *mut c_int,
 ) -> c_int {
-    let param_name = CStr::from_ptr(name).to_str().unwrap_or("unknown");
-    trace!("rumpuser_getfileinfo {} {} {}", param_name, *size, *typ);
-
-    errno::ENOENT
+    match file_getinfo(FileOperation::GetInfo, name as u64) {
+        Ok((s, t)) => {
+            *size = s;
+            *typ = t as i32;
+            return 0;
+        }
+        Err(_) => return RumpError::ENOENT as c_int,
+    }
 }
 
 /// void rumpuser_bio(int fd, int op, void *data, size_t dlen, int64_t off, rump_biodone_fn biodone, void *donearg)

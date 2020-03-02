@@ -51,6 +51,10 @@ macro_rules! syscall {
         crate::syscalls::syscall_3_2($arg0 as u64, $arg1 as u64, $arg2 as u64)
     };
 
+    ($arg0:expr, $arg1:expr, $arg2:expr, 3) => {
+        crate::syscalls::syscall_3_3($arg0 as u64, $arg1 as u64, $arg2 as u64)
+    };
+
     ($arg0:expr, $arg1:expr, $arg2:expr, $arg3:expr, 1) => {
         crate::syscalls::syscall_4_1($arg0 as u64, $arg1 as u64, $arg2 as u64, $arg3 as u64)
     };
@@ -155,6 +159,17 @@ unsafe fn syscall_3_2(arg1: u64, arg2: u64, arg3: u64) -> (u64, u64) {
                    : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
                    : "rcx", "r11", "memory" : "volatile");
     (ret1, ret2)
+}
+
+#[inline(always)]
+unsafe fn syscall_3_3(arg1: u64, arg2: u64, arg3: u64) -> (u64, u64, u64) {
+    let ret1: u64;
+    let ret2: u64;
+    let ret3: u64;
+    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) "={rsi}" (ret3)
+                   : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
+                   : "rcx", "r11", "memory" : "volatile");
+    (ret1, ret2, ret3)
 }
 
 #[inline(always)]
@@ -437,6 +452,17 @@ pub fn fileio_at(
 
     if r == 0 {
         Ok(len)
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}
+
+pub fn file_getinfo(op: FileOperation, name: u64) -> Result<(u64, u64), SystemCallError> {
+    let (r, size, ftype) =
+        unsafe { syscall_3_3(SystemCall::FileIO as u64, op as u64, name as u64) };
+
+    if r == 0 {
+        Ok((size, ftype))
     } else {
         Err(SystemCallError::from(r))
     }

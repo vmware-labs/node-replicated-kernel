@@ -106,7 +106,7 @@ impl MemFS {
         self.nextmemnode.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Create a file in the root directory.
+    /// Create a file relative to the root directory.
     pub fn create(&mut self, pathname: &str, modes: Modes) -> Option<u64> {
         // Check if the file with the same name already exists.
         match self.files.get(&pathname.to_string()) {
@@ -115,6 +115,8 @@ impl MemFS {
         }
 
         let mnode_num = self.get_next_mno() as u64;
+        //TODO: For now all newly created mnode are for file. How to differentiate
+        // between a file and a directory. Take input from the user?
         let memnode = MemNode::new(mnode_num, pathname, modes, NodeType::File);
         self.files.insert(pathname.to_string(), mnode_num);
         self.mnodes.insert(mnode_num, memnode);
@@ -143,6 +145,17 @@ impl MemFS {
         match self.files.get(&pathname.to_string()) {
             Some(mnode) => (true, Some(*mnode)),
             None => (false, None),
+        }
+    }
+
+    /// Find the size and type by giving the mnode number.
+    pub fn file_info(&self, mnode: Mnode) -> (u64, u64) {
+        match self.mnodes.get(&mnode) {
+            Some(mnode) => match mnode.get_mnode_type() {
+                NodeType::Directory => (0, NodeType::Directory.into()),
+                NodeType::File => (mnode.get_file_size(), NodeType::File.into()),
+            },
+            None => unreachable!("file_info: shouldn't reach here"),
         }
     }
 }
@@ -318,6 +331,18 @@ pub mod test {
     #[test]
     /// Try to create a file with same name.
     fn test_file_duplicate_create() {
+        let mut memfs = MemFS::init();
+        let filename = "file.txt";
+        let mnode = memfs.create(filename, ALL_PERM).unwrap();
+        assert_eq!(mnode, 2);
+        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
+        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+        assert_eq!(memfs.create(filename, ALL_PERM), None);
+    }
+
+    #[test]
+    /// Try to create a file with same name.
+    fn test_file_info() {
         let mut memfs = MemFS::init();
         let filename = "file.txt";
         let mnode = memfs.create(filename, ALL_PERM).unwrap();

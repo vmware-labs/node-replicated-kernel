@@ -41,6 +41,7 @@ pub enum Op {
     FileRead(Pid, FD, Buffer, Len, Offset),
     FileWrite(Pid, FD, Buffer, Len, Offset),
     FileClose(Pid, FD),
+    FileInfo(Pid, Filename),
     Invalid,
 }
 
@@ -63,6 +64,7 @@ pub enum NodeResult<E: Executor> {
     FileOpened(FD),
     FileClosed(u64),
     FileAccessed(Len),
+    FileInfo(Len, u64),
     Invalid,
 }
 
@@ -257,6 +259,26 @@ impl<P: Process> KernelNode<P> {
                     }
                 }
                 _ => unreachable!(),
+            })
+    }
+
+    pub fn file_info(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+                replica.execute(Op::FileInfo(pid, name), kcb.arch.replica_idx);
+
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                match &o[0] {
+                    Ok(NodeResult::FileInfo(len, ftype)) => Ok((*len, *ftype)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
             })
     }
 }
@@ -463,6 +485,37 @@ where
                     Err(KError::FileSystem {
                         source: FileSystemError::InvalidFileDescriptor,
                     })
+                }
+            }
+            Op::FileInfo(pid, name) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+
+                let mut user_ptr = VAddr::from(name);
+                let str_ptr = UserPtr::new(&mut user_ptr);
+
+                let filename;
+                unsafe {
+                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                        Ok(path) => {
+                            if !path.is_ascii() || path.is_empty() {
+                                return Err(KError::NotSupported);
+                            }
+                            filename = path;
+                        }
+                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
+                    }
+                }
+
+                match self.fs.lookup(filename) {
+                    // match on (file_exists, mnode_number)
+                    (true, Some(mnode)) => {
+                        let (size, ftype) = self.fs.file_info(mnode);
+                        Ok(NodeResult::FileInfo(size, ftype))
+                    }
+                    (false, _) | (true, None) => Err(KError::FileSystem {
+                        source: FileSystemError::InvalidFile,
+                    }),
                 }
             }
             Op::Invalid => unreachable!("Got invalid OP"),

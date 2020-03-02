@@ -9,10 +9,22 @@ use crate::arch::process::{UserPtr, UserValue};
 use crate::fs::{Mnode, Modes};
 
 /// Each memory-node can be of two types: directory or a file.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[repr(u64)]
 pub enum NodeType {
-    Directory,
-    File,
+    /// The mnode is of directory type
+    Directory = 1,
+    /// The mnode is of regular type
+    File = 2,
+}
+
+impl Into<u64> for NodeType {
+    fn into(self) -> u64 {
+        match self {
+            NodeType::Directory => 1,
+            NodeType::File => 2,
+        }
+    }
 }
 
 /// Memnode representation, similar to Inode for a memory-fs.
@@ -125,6 +137,16 @@ impl MemNode {
             return true;
         }
         false
+    }
+
+    /// Get the file size
+    pub fn get_file_size(&self) -> u64 {
+        self.file.as_ref().unwrap().data.len() as u64
+    }
+
+    /// Get the type of mnode; Directory or file.
+    pub fn get_mnode_type(&self) -> NodeType {
+        self.node_type
     }
 }
 

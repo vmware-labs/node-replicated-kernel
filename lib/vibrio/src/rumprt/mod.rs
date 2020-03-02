@@ -44,7 +44,16 @@ const RUMPUSER_CLOCK_RELWALL: u64 = 0;
 const RUMPUSER_CLOCK_ABSMONO: u64 = 1;
 const RUMPUSER_IOV_NOSEEK: i64 = -1;
 
-// C types (specific for x86_64)
+/// Same number as NodeType in src/kernel/fs.
+#[derive(Debug)]
+pub enum Rump_FileType {
+    Directory = 1,
+    File = 2,
+    Unknown,
+}
+
+#[allow(non_camel_case_types)]
+pub type pid_t = u64;
 #[allow(non_camel_case_types)]
 pub type c_int = i32;
 #[allow(non_camel_case_types)]

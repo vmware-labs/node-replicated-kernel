@@ -9,15 +9,21 @@ fn apps_built(path: &Path) -> bool {
     let apps = build_plan();
     let mut all_app_binaries_exist = true;
 
-    for (app, bake_out, _bake_in) in apps {
-        let mut append_path: PathBuf = path.clone().into();
-        append_path.push(app);
-        append_path.push(bake_out);
+    for (app, bake_out, bake_in) in apps {
+        let mut bake_out_path: PathBuf = path.clone().into();
+        bake_out_path.push(app);
+        bake_out_path.push(bake_out);
 
-        all_app_binaries_exist = all_app_binaries_exist && append_path.as_path().exists();
+        let mut bake_in_path: PathBuf = path.clone().into();
+        bake_in_path.push(app);
+        bake_in_path.push(bake_in);
+
+        all_app_binaries_exist =
+            all_app_binaries_exist && bake_out_path.as_path().exists() && bake_out_path.exists();
     }
 
-    all_app_binaries_exist
+    //all_app_binaries_exist
+    false
 }
 
 /// Returns a vector of build path information with an entry
@@ -43,6 +49,15 @@ fn build_plan() -> Vec<(&'static str, &'static str, &'static str)> {
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_dir_path = PathBuf::from(out_dir.clone());
+
+    // Re-run in case we changed libvibrio.a
+    let mut vib_path: PathBuf = out_dir_path.clone();
+    vib_path.push("..");
+    vib_path.push("..");
+    vib_path.push("..");
+    vib_path.push("..");
+    vib_path.push("libvibrio.a");
+    println!("cargo:rerun-if-changed={}", vib_path.as_path().display());
 
     println!("OUT_DIR {:?}", out_dir);
     let apps_built = apps_built(out_dir_path.as_path());

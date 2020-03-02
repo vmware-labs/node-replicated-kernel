@@ -119,7 +119,7 @@ def build_kernel(args):
 
 def build_user_libraries(args):
     "Builds bespin vibrio lib to provide runtime support for other rump based apps"
-    log("Build user-space libs")
+    log("Build user-space lib vibrio")
     build_args = ['build', '--target', USER_TARGET]
     build_args += ["--features", "rumprt"]
     build_args += CARGO_DEFAULT_ARGS

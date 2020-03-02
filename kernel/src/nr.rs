@@ -14,7 +14,8 @@ use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::{
-    Buffer, FileDescriptor, Filename, Flags, Len, MemFS, Modes, Offset, FD, MAX_FILES_PER_PROCESS,
+    Buffer, FileDescriptor, FileSystemError, Filename, Flags, Len, MemFS, Modes, Offset, FD,
+    MAX_FILES_PER_PROCESS,
 };
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
@@ -68,17 +69,6 @@ pub enum NodeResult<E: Executor> {
 impl<E: Executor> Default for NodeResult<E> {
     fn default() -> Self {
         NodeResult::Invalid
-    }
-}
-
-#[derive(Copy, Eq, PartialEq, Debug, Clone)]
-pub enum NodeResultError {
-    Error,
-}
-
-impl Default for NodeResultError {
-    fn default() -> Self {
-        NodeResultError::Error
     }
 }
 
@@ -192,9 +182,10 @@ impl<P: Process> KernelNode<P> {
                 while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                 debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
-                match o[0] {
-                    Ok(NodeResult::FileOpened(fd)) => Ok((fd, 0)),
-                    _ => Err(KError::BadFileDescriptor),
+                match &o[0] {
+                    Ok(NodeResult::FileOpened(fd)) => Ok((*fd, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -211,9 +202,10 @@ impl<P: Process> KernelNode<P> {
                 while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                 debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
-                match o[0] {
+                match &o[0] {
                     Ok(NodeResult::FileClosed(0)) => Ok((0, 0)),
-                    _ => Err(KError::BadFileDescriptor),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -241,9 +233,10 @@ impl<P: Process> KernelNode<P> {
                     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                     debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
-                    match o[0] {
-                        Ok(NodeResult::FileAccessed(len)) => Ok((len, 0)),
-                        _ => Err(KError::BadAddress),
+                    match &o[0] {
+                        Ok(NodeResult::FileAccessed(len)) => Ok((*len, 0)),
+                        Ok(_) => unreachable!("Got unexpected response"),
+                        Err(r) => Err(r.clone()),
                     }
                 }
 
@@ -257,9 +250,10 @@ impl<P: Process> KernelNode<P> {
                     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                     debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
-                    match o[0] {
-                        Ok(NodeResult::FileAccessed(len)) => Ok((len, 0)),
-                        _ => Err(KError::BadAddress),
+                    match &o[0] {
+                        Ok(NodeResult::FileAccessed(len)) => Ok((*len, 0)),
+                        Ok(_) => unreachable!("Got unexpected response"),
+                        Err(r) => Err(r.clone()),
                     }
                 }
                 _ => unreachable!(),
@@ -275,7 +269,7 @@ where
     type ReadOperation = ();
     type WriteOperation = Op;
     type Response = NodeResult<P::E>;
-    type ResponseError = NodeResultError;
+    type ResponseError = KError;
 
     fn dispatch(&self, op: Self::ReadOperation) -> Result<Self::Response, Self::ResponseError> {
         unimplemented!("dispatch");
@@ -296,7 +290,9 @@ where
                 }
                 Err(e) => {
                     error!("Failed to create process {:?}", e);
-                    Err(NodeResultError::Error)
+                    Err(KError::ProcessCreate {
+                        desc: e.to_string(),
+                    })
                 }
             },
             Op::ProcDestroy(pid) => {
@@ -308,7 +304,7 @@ where
                     Ok(NodeResult::ProcDestroyed)
                 } else {
                     error!("Process not found");
-                    Err(NodeResultError::Error)
+                    Err(KError::NotSupported)
                 }
             }
             Op::ProcInstallVCpuArea(_, _) => unreachable!(),
@@ -377,7 +373,7 @@ where
                     match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
                         Ok(path) => {
                             if !path.is_ascii() || path.is_empty() {
-                                return Err(NodeResultError::Error);
+                                return Err(KError::NotSupported);
                             }
                             filename = path;
                         }
@@ -387,12 +383,14 @@ where
 
                 let (is_file, mnode) = self.fs.lookup(filename);
                 if !is_file && !is_allowed!(flags, O_CREAT) {
-                    return Err(NodeResultError::Error);
+                    return Err(KError::FileSystem {
+                        source: FileSystemError::PermissionError,
+                    });
                 }
 
                 let fd = p.allocate_fd();
                 match fd {
-                    None => Err(NodeResultError::Error),
+                    None => Err(KError::NotSupported),
                     Some(mut fd) => {
                         let mnode_num;
                         if !is_file {
@@ -401,7 +399,9 @@ where
                                 None => {
                                     let fdesc = fd.0 as usize;
                                     p.deallocate_fd(fdesc);
-                                    return Err(NodeResultError::Error);
+                                    return Err(KError::FileSystem {
+                                        source: FileSystemError::OutOfMemory,
+                                    });
                                 }
                             }
                         } else {
@@ -421,12 +421,14 @@ where
 
                 // Check if the file has read-only or read-write permissions before reading it.
                 if !is_allowed!(flags, O_RDONLY) || !is_allowed!(flags, O_RDWR) {
-                    return Err(NodeResultError::Error);
+                    return Err(KError::FileSystem {
+                        source: FileSystemError::PermissionError,
+                    });
                 }
 
                 let ret = self.fs.read(mnode_num, buffer, len, offset);
                 match ret {
-                    0 => Err(NodeResultError::Error),
+                    0 => Err(KError::NotSupported),
                     len => Ok(NodeResult::FileAccessed(len)),
                 }
             }
@@ -437,14 +439,16 @@ where
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();
 
-                // Check if the file has read-only or read-write permissions before reading it.
+                // Check if the file has write-only or read-write permissions before reading it.
                 if !is_allowed!(flags, O_WRONLY) || !is_allowed!(flags, O_RDWR) {
-                    return Err(NodeResultError::Error);
+                    return Err(KError::FileSystem {
+                        source: FileSystemError::PermissionError,
+                    });
                 }
 
                 let ret = self.fs.write(mnode_num, buffer, len, offset);
                 match ret {
-                    0 => Err(NodeResultError::Error),
+                    0 => Err(KError::NotSupported),
                     len => Ok(NodeResult::FileAccessed(len)),
                 }
             }
@@ -456,7 +460,9 @@ where
                 if ret == fd as usize {
                     Ok(NodeResult::FileClosed(fd))
                 } else {
-                    Err(NodeResultError::Error)
+                    Err(KError::FileSystem {
+                        source: FileSystemError::InvalidFileDescriptor,
+                    })
                 }
             }
             Op::Invalid => unreachable!("Got invalid OP"),

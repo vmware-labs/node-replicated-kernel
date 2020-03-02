@@ -1,12 +1,13 @@
 //! The core module for file management.
 
 mod file;
-mod name;
 
 use alloc::string::{String, ToString};
 use core::sync::atomic::{AtomicUsize, Ordering};
+use custom_error::custom_error;
 use hashbrown::HashMap;
 use kpi::io::*;
+use kpi::SystemCallError;
 
 use crate::fs::file::{MemNode, NodeType};
 
@@ -142,6 +143,34 @@ impl MemFS {
         match self.files.get(&pathname.to_string()) {
             Some(mnode) => (true, Some(*mnode)),
             None => (false, None),
+        }
+    }
+}
+
+custom_error! {
+    #[derive(PartialEq, Clone)]
+    pub FileSystemError
+    InvalidFileDescriptor = "Supplied file descriptor was invalid",
+    InvalidFile = "Supplied file was invalid",
+    InvalidFlags = "Supplied flags were invalid",
+    PermissionError = "File/directory can't be read or written",
+    AlreadyPresent = "Fd/File already exists",
+    DirectoryError = "Can't read or write to a directory",
+    OpenFileLimit = "Maximum files are opened for a process",
+    OutOfMemory = "Unable to allocate memory for file",
+}
+
+impl Into<SystemCallError> for FileSystemError {
+    fn into(self) -> SystemCallError {
+        match self {
+            FileSystemError::InvalidFileDescriptor => SystemCallError::BadFileDescriptor,
+            FileSystemError::InvalidFile => SystemCallError::BadFileDescriptor,
+            FileSystemError::InvalidFlags => SystemCallError::BadFlags,
+            FileSystemError::PermissionError => SystemCallError::PermissionError,
+            FileSystemError::AlreadyPresent => SystemCallError::PermissionError,
+            FileSystemError::DirectoryError => SystemCallError::PermissionError,
+            FileSystemError::OpenFileLimit => SystemCallError::OutOfMemory,
+            FileSystemError::OutOfMemory => SystemCallError::OutOfMemory,
         }
     }
 }

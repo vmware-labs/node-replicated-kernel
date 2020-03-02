@@ -31,6 +31,10 @@ pub enum SystemCallError {
     BadAddress = 6,
     /// There is something wrong with the file descriptor.
     BadFileDescriptor = 7,
+    /// The flags are incorrect to access the file.
+    BadFlags = 8,
+    /// Operation is not permitted.
+    PermissionError = 9,
     /// Placeholder for an invalid, unknown error code.
     Unknown,
 }
@@ -46,6 +50,8 @@ impl From<u64> for SystemCallError {
             5 => SystemCallError::InternalError,
             6 => SystemCallError::BadAddress,
             7 => SystemCallError::BadFileDescriptor,
+            8 => SystemCallError::BadFlags,
+            9 => SystemCallError::PermissionError,
             _ => SystemCallError::Unknown,
         }
     }

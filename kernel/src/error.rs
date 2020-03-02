@@ -5,7 +5,9 @@ use alloc::string::ToString;
 
 use kpi::SystemCallError;
 
-custom_error! {pub KError
+custom_error! {
+    #[derive(PartialEq, Clone)]
+    pub KError
     ProcessNotSet = "CURRENT_PROCESS is not set",
     ReplicaNotSet = "Replica is not set-up in the KCB",
     NotSupported = "Request is not yet supported",
@@ -16,7 +18,7 @@ custom_error! {pub KError
     VSpace{source: crate::memory::vspace::AddressSpaceError} = "VSpace operation covers existing mapping",
     PhysicalMemory{source: crate::memory::AllocationError} = "Memory allocation failed",
     BadAddress = "Userspace pointer is not usable",
-    BadFileDescriptor = "Something is wrong with the file descriptor",
+    FileSystem{source: crate::fs::FileSystemError} = "FileSystem operation does file based io",
 }
 
 impl Into<SystemCallError> for KError {
@@ -33,9 +35,15 @@ impl Into<SystemCallError> for KError {
             KError::InvalidProcessOperation { .. } => SystemCallError::NotSupported,
             KError::ProcessCreate { .. } => SystemCallError::InternalError,
             KError::BadAddress { .. } => SystemCallError::BadAddress,
-            KError::BadFileDescriptor { .. } => SystemCallError::BadFileDescriptor,
+            KError::FileSystem { source: s } => s.into(),
             _ => SystemCallError::InternalError,
         }
+    }
+}
+
+impl Default for KError {
+    fn default() -> KError {
+        KError::NotSupported
     }
 }
 

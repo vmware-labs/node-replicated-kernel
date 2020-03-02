@@ -41,7 +41,9 @@ use crate::prelude::*;
 use crate::round_up;
 use vspace::MapAction;
 
-custom_error! {pub AllocationError
+custom_error! {
+    #[derive(PartialEq, Clone)]
+    pub AllocationError
     InvalidLayout = "Invalid layout for allocator provided.",
     CacheExhausted = "Couldn't allocate bytes on this cache, need to re-grow first.",
     CacheFull = "Cache can't hold any more objects.",

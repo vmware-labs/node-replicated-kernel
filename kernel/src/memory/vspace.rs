@@ -90,7 +90,7 @@ pub trait AddressSpace {
 }
 
 custom_error! {
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub AddressSpaceError
     InvalidFrame = "Supplied frame was invalid",
     AlreadyMapped = "Address space operation covers existing mapping",

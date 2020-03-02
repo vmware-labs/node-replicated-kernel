@@ -22,8 +22,7 @@ fn apps_built(path: &Path) -> bool {
             all_app_binaries_exist && bake_out_path.as_path().exists() && bake_out_path.exists();
     }
 
-    //all_app_binaries_exist
-    false
+    all_app_binaries_exist
 }
 
 /// Returns a vector of build path information with an entry
@@ -86,40 +85,40 @@ fn main() {
         for (key, value) in env::vars() {
             println!("{}: {}", key, value);
         }
-
-        let rump_env = env::var("DEP_RKAPPS_BIN_TARGET").expect("Need a rumpkernel target dir");
-        let path_env = env::var("PATH").expect("We don't have PATH already set?");
-
-        // Path to application directories we want to build
-        let apps = build_plan();
-        let cpus = format!("{}", num_cpus::get());
-
-        for (app, bake_in, bake_out) in apps {
-            let build_args = &["-j", cpus.as_str()];
-            let mut app_dir = out_dir_path.clone();
-            app_dir.push(app);
-
-            let status = Command::new("make")
-                .args(build_args)
-                .env("PATH", format!("{}:{}", rump_env.clone(), path_env))
-                .env("RUMPRUN_TOOLCHAIN_TUPLE", "x86_64-rumprun-netbsd")
-                .current_dir(app_dir.as_path())
-                .status()
-                .expect("Can't make app dir");
-            assert!(status.success(), "Can't make app dir");
-
-            // TODO: maybe we meed to make baking app specific
-            let bake_args = &["bespin_generic", bake_in, bake_out];
-            let status = Command::new("rumprun-bake")
-                .args(bake_args)
-                .env("PATH", format!("{}:{}", rump_env.clone(), path_env))
-                .env("RUMPRUN_TOOLCHAIN_TUPLE", "x86_64-rumprun-netbsd")
-                .current_dir(app_dir.as_path())
-                .status()
-                .expect("Can't bake binary");
-            assert!(status.success(), "Can't bake binary");
-        }
-
-        println!("OUT_DIR {:?}", out_dir);
     }
+
+    let rump_env = env::var("DEP_RKAPPS_BIN_TARGET").expect("Need a rumpkernel target dir");
+    let path_env = env::var("PATH").expect("We don't have PATH already set?");
+
+    // Path to application directories we want to build
+    let apps = build_plan();
+    let cpus = format!("{}", num_cpus::get());
+
+    for (app, bake_in, bake_out) in apps {
+        let build_args = &["-j", cpus.as_str()];
+        let mut app_dir = out_dir_path.clone();
+        app_dir.push(app);
+
+        let status = Command::new("make")
+            .args(build_args)
+            .env("PATH", format!("{}:{}", rump_env.clone(), path_env))
+            .env("RUMPRUN_TOOLCHAIN_TUPLE", "x86_64-rumprun-netbsd")
+            .current_dir(app_dir.as_path())
+            .status()
+            .expect("Can't make app dir");
+        assert!(status.success(), "Can't make app dir");
+
+        // TODO: maybe we meed to make baking app specific
+        let bake_args = &["bespin_generic", bake_in, bake_out];
+        let status = Command::new("rumprun-bake")
+            .args(bake_args)
+            .env("PATH", format!("{}:{}", rump_env.clone(), path_env))
+            .env("RUMPRUN_TOOLCHAIN_TUPLE", "x86_64-rumprun-netbsd")
+            .current_dir(app_dir.as_path())
+            .status()
+            .expect("Can't bake binary");
+        assert!(status.success(), "Can't bake binary");
+    }
+
+    println!("OUT_DIR {:?}", out_dir);
 }

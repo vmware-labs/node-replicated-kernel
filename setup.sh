@@ -7,9 +7,11 @@ if [ "$(uname)" == "Darwin" ]; then
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
     sudo apt-get update
     # bespin build dependencies
-    sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 isc-dhcp-server socat zlib1g-dev make gcc build-essential python3 python3-plumbum
-    # For rump packages
+    sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 zlib1g-dev make gcc build-essential python3 python3-plumbum
+    # For building rump packages (rkapps)
     sudo apt-get install -y genisoimage
+    # bespin integration-test dependencies
+    sudo apt-get install -y isc-dhcp-server socat netcat-openbsd
 fi
 
 if [ -f $HOME/.cargo/env ]; then

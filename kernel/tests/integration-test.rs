@@ -248,8 +248,13 @@ impl<'a> RunnerArgs<'a> {
             String::from("--kfeatures"),
             kernel_features,
             String::from("--cmd"),
-            format!("log={}", log_level),
+            format!("log={} {}", log_level, self.cmd.unwrap_or("")),
         ];
+
+        if !self.mods.is_empty() {
+            cmd.push("--mods".to_string());
+            cmd.push(self.mods.join(" "));
+        }
 
         match self.user_features.is_empty() {
             false => {
@@ -413,6 +418,10 @@ fn spawn_receiver() -> Result<rexpect::session::PtySession> {
 /// Helper function that tries to ping the QEMU guest.
 fn spawn_ping() -> Result<rexpect::session::PtySession> {
     spawn("ping 172.31.0.10", Some(20000))
+}
+
+fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
+    spawn(format!("nc 172.31.0.10 {}", port).as_str(), Some(20000))
 }
 
 /// Make sure exiting the kernel works.
@@ -871,4 +880,59 @@ fn multi_process() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Tests that user-space application redis is functional
+/// by spawing it and connecting to it from the network.
+///
+/// This tests various user-space components such as:
+///  * Build and linking of user-space libraries
+///  * BSD libOS network stack, libc and pthreads
+///  * PCI/user-space drivers
+///  * Interrupt registration and upcalls
+///  * (kernel memfs eventually for DB persistence)
+#[test]
+fn redis_smoke() {
+    const REDIS_PORT: u16 = 6379;
+
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut dhcp_server = spawn_dhcpd()?;
+
+        let mut p = spawn_bespin(
+            &RunnerArgs::new("test-userspace")
+                .module("rkapps")
+                .user_feature("rkapps:redis")
+                .cmd("testbinary=redis.bin")
+                .timeout(20_000),
+        )?;
+
+        // Test that DHCP works:
+        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
+        p.exp_string("# Server started, Redis version 3.0.6")?;
+
+        let mut redis_client = spawn_nc(REDIS_PORT)?;
+        // Test that redis commands work as expected:
+        redis_client.send_line("ping")?;
+        redis_client.exp_string("+PONG")?;
+        redis_client.send_line("set msg \"Hello, World!\"")?;
+        redis_client.exp_string("+OK")?;
+        redis_client.send_line("get msg")?;
+        redis_client.exp_string("$13")?;
+        redis_client.exp_string("Hello, World!")?;
+
+        // We can get the key--value pair with a second client too:
+        let mut redis_client2 = spawn_nc(REDIS_PORT)?;
+        redis_client2.send_line("get msg")?;
+        redis_client2.exp_string("$13")?;
+        redis_client2.exp_string("Hello, World!")?;
+
+        dhcp_server.send_control('c')?;
+        redis_client.process.kill(SIGTERM)?;
+        p.process.kill(SIGTERM)
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Signaled(_, SIGTERM, _)
+    );
 }

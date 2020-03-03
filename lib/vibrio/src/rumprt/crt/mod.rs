@@ -148,6 +148,7 @@ pub extern "C" fn main() {
 
         fn rump_boot_setsigmodel(sig: usize);
         fn rump_init() -> u64;
+        fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
         fn _libc_init();
         fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
         fn rumprun_main1(argc: c_int, argv: *const *const i8);
@@ -200,6 +201,16 @@ pub extern "C" fn main() {
                 core::mem::size_of::<tmpfs_args>(),
             );
 
+            let iface = CStr::from_bytes_with_nul(b"wm0\0");
+            info!("before rump_pub_netconfig_dhcp_ipv4_oneshot");
+
+            let r = rump_pub_netconfig_dhcp_ipv4_oneshot(iface.unwrap().as_ptr());
+            assert_eq!(r, 0, "rump_pub_netconfig_dhcp_ipv4_oneshot");
+            info!(
+                "rump_pub_netconfig_dhcp_ipv4_oneshot done in {:?}",
+                start.elapsed()
+            );
+
             let tls_buffer: *mut u8 = initialize_tls();
             x86::current::segmentation::wrfsbase(tls_buffer as u64);
             info!(
@@ -247,7 +258,21 @@ pub extern "C" fn main() {
         core::ptr::null_mut(),
     );
 
-    scheduler.run();
+    scheduler
+        .spawn(
+            32 * 1024,
+            |_yielder| unsafe {
+                crate::rumprt::dev::irq_handler(core::ptr::null_mut());
+                unreachable!("should not exit");
+            },
+            core::ptr::null_mut(),
+        )
+        .expect("Can't create IRQ thread?");
+
+    loop {
+        scheduler.run();
+    }
+
     core::mem::forget(scheduler);
     unreachable!("rump main returned?");
 }

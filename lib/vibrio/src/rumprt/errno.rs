@@ -368,7 +368,7 @@ pub const EMOVEFD: c_int = 6;
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_seterrno(code: c_int) {
-    trace!("rumpuser_seterrno: {}", super::errno::errno_to_str(code));
+    trace!("rumpuser_seterrno: {}", errno_to_str(code));
     *super::crt::error::__errno() = code;
 }
 

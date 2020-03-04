@@ -1,12 +1,10 @@
 //! A dummy process implementation for the unix platform.
 use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut};
-use x86::bits64::paging::*;
-use x86::bits64::rflags;
 
 use crate::arch::Module;
 use crate::fs::Fd;
-use crate::memory::Frame;
+use crate::memory::{Frame, VAddr};
 use crate::process::{Executor, Pid, Process, ProcessError, ResumeHandle};
 
 use super::vspace::VSpace;

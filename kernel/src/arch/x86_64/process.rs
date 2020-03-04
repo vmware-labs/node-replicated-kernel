@@ -277,21 +277,21 @@ impl Ring3Resumer {
         // %r11 RFlags
         trace!("Jumping to {:#x}", self.entry_point);
         asm!("
-                movq       $0, %rax
-                movq       $0, %rbx
+                movq       $$0, %rax
+                movq       $$0, %rbx
                 // rcx has entry point
                 // rdi: 1st argument
                 // rsi: 2nd argument
                 // rdx: 3rd argument
                 // rsp and rbp are set to provided `stack_top`
-                movq       $0, %r8
-                movq       $0, %r9
-                movq       $0, %r10
+                movq       $$0, %r8
+                movq       $$0, %r9
+                movq       $$0, %r10
                 // r11 register is used for RFlags
-                movq       $0, %r12
-                movq       $0, %r13
-                movq       $0, %r14
-                movq       $0, %r15
+                movq       $$0, %r12
+                movq       $$0, %r13
+                movq       $$0, %r14
+                movq       $$0, %r15
 
                 // Reset vector registers
                 fninit
@@ -301,13 +301,17 @@ impl Ring3Resumer {
 
                 sysretq
             " ::
+            // TODO(correctness): if you run into page-faults here it might be because
+            // the rbp is read from after it has already been loaded with the
+            // new stack address -- the sane thing to do is probably
+            // to change them manually only right before the `sysretq`
+            "{rsp}" (self.stack_top.as_u64())
+            "{rbp}" (self.stack_top.as_u64())
             "{rcx}" (self.entry_point.as_u64())
             "{rdi}" (self.cpu_ctl)
             "{rsi}" (self.vector)
             "{rdx}" (self.exception)
             "{r11}" (user_flags.bits())
-            "{rsp}" (self.stack_top.as_u64())
-            "{rbp}" (self.stack_top.as_u64())
         );
 
         unreachable!("We should not come here!");

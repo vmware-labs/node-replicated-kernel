@@ -31,6 +31,8 @@ members = [
 # disable stack unwinding on panic for now
 [profile.dev]
 panic = "abort"
+debug = true
 
 [profile.release]
 panic = "abort"
+debug = true

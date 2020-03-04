@@ -23,7 +23,6 @@ extern crate lazy_static;
 
 pub mod syscalls;
 
-pub mod io;
 pub mod mem;
 pub mod writer;
 

@@ -1,9 +1,11 @@
-use super::{c_int, c_size_t, c_void, rump_biodone_fn, RumpError};
+use core::convert::TryInto;
+
+use super::{c_int, c_size_t, c_void, rump_biodone_fn};
 use cstr_core::CStr;
 
-use log::{error, trace};
+use kpi::FileOperation;
 
-use crate::syscalls::*;
+use crate::syscalls::{file_close, file_getinfo, file_open, fileio_at};
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -17,12 +19,10 @@ pub struct rumpuser_iovec {
 pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c_int) -> c_int {
     match file_open(FileOperation::Open, name as u64, 0, mode as u64) {
         Ok(fd) => {
-            *fdp = fd as i32;
-            return 0;
+            *fdp = fd as c_int;
+            0
         }
-        Err(_) => {
-            return RumpError::EINVAL as i32;
-        }
+        Err(_) => super::errno::EINVAL as c_int,
     }
 }
 
@@ -30,8 +30,8 @@ pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_close(fd: c_int) -> c_int {
     match file_close(FileOperation::Close, fd as u64) {
-        Ok(_) => return 0,
-        Err(_) => return RumpError::EBADF as i32,
+        Ok(_) => 0,
+        Err(_) => super::errno::EBADF as c_int,
     }
 }
 
@@ -46,9 +46,9 @@ pub unsafe extern "C" fn rumpuser_getfileinfo(
         Ok((s, t)) => {
             *size = s;
             *typ = t as i32;
-            return 0;
+            0
         }
-        Err(_) => return RumpError::ENOENT as c_int,
+        Err(_) => super::errno::ENOENT as c_int,
     }
 }
 
@@ -79,14 +79,14 @@ pub unsafe extern "C" fn rumpuser_iovread(
         FileOperation::ReadAt,
         fd as u64,
         (*ruiov).iov_base as u64,
-        iovlen,
+        iovlen.try_into().unwrap(),
         off,
     ) {
         Ok(len) => {
-            *retv = len;
-            return 0;
+            *retv = len.try_into().unwrap();
+            0
         }
-        Err(_) => return RumpError::EINVAL as i32,
+        Err(_) => super::errno::EINVAL as i32,
     }
 }
 
@@ -103,14 +103,14 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
         FileOperation::WriteAt,
         fd as u64,
         (*ruiov).iov_base as u64,
-        iovlen,
+        iovlen.try_into().unwrap(),
         off,
     ) {
         Ok(len) => {
-            *retv = len;
-            return 0;
+            *retv = len.try_into().unwrap();
+            0
         }
-        Err(_) => return RumpError::EINVAL as i32,
+        Err(_) => super::errno::EINVAL as i32,
     }
 }
 

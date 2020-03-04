@@ -53,8 +53,6 @@ pub enum Rump_FileType {
 }
 
 #[allow(non_camel_case_types)]
-pub type pid_t = u64;
-#[allow(non_camel_case_types)]
 pub type c_int = i32;
 #[allow(non_camel_case_types)]
 pub type c_uint = u32;

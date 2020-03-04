@@ -11,7 +11,7 @@ elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
     # For building rump packages (rkapps)
     sudo apt-get install -y genisoimage
     # bespin integration-test dependencies
-    sudo apt-get install -y isc-dhcp-server socat netcat-openbsd
+    sudo apt-get install -y isc-dhcp-server socat netcat-openbsd redis-tools
 fi
 
 if [ -f $HOME/.cargo/env ]; then

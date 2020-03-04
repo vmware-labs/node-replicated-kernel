@@ -1,6 +1,6 @@
 //! Functions to interact/modify process state
 
-use log::{error, info};
+use log::{error, info, trace};
 
 use crate::rumprt::{c_int, c_void, pid_t};
 
@@ -29,8 +29,9 @@ pub unsafe extern "C" fn _exit(exit_val: c_int) {
 
 /// Forks the process.
 #[no_mangle]
-pub unsafe extern "C" fn __fork() {
-    unimplemented!("__fork");
+pub unsafe extern "C" fn __fork() -> c_int {
+    info!("__fork called, not supported");
+    crate::rumprt::errno::ENOTSUP
 }
 
 /// Returns information describing the resources used by the current process,

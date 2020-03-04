@@ -122,7 +122,7 @@ pub struct KernelArgs {
 
 impl Default for KernelArgs {
     fn default() -> KernelArgs {
-        use core::mem::{self, MaybeUninit};
+        use core::mem::MaybeUninit;
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
 }

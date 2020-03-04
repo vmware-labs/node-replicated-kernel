@@ -14,8 +14,8 @@ use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::{
-    Buffer, FileDescriptor, FileSystemError, Filename, Flags, Len, MemFS, Modes, Offset, FD,
-    MAX_FILES_PER_PROCESS,
+    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MemFS, Modes,
+    Offset, FD, MAX_FILES_PER_PROCESS,
 };
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
@@ -85,7 +85,7 @@ impl<P: Process> Default for KernelNode<P> {
         KernelNode {
             current_pid: 1,
             process_map: HashMap::with_capacity(256),
-            fs: MemFS::init(),
+            fs: Default::default(),
         }
     }
 }

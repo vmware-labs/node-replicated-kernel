@@ -1,15 +1,19 @@
 //! The core module for file management.
 
-mod file;
-
 use alloc::string::{String, ToString};
 use core::sync::atomic::{AtomicUsize, Ordering};
+
 use custom_error::custom_error;
 use hashbrown::HashMap;
+
 use kpi::io::*;
 use kpi::SystemCallError;
 
 use crate::fs::file::{MemNode, NodeType};
+
+mod file;
+#[cfg(test)]
+mod test;
 
 /// The maximum number of open files for a process.
 pub const MAX_FILES_PER_PROCESS: usize = 8;
@@ -30,6 +34,43 @@ pub type Len = u64;
 pub type Filename = u64;
 /// File offset
 pub type Offset = i64;
+
+custom_error! {
+    #[derive(PartialEq, Clone)]
+    pub FileSystemError
+    InvalidFileDescriptor = "Supplied file descriptor was invalid",
+    InvalidFile = "Supplied file was invalid",
+    InvalidFlags = "Supplied flags were invalid",
+    PermissionError = "File/directory can't be read or written",
+    AlreadyPresent = "Fd/File already exists",
+    DirectoryError = "Can't read or write to a directory",
+    OpenFileLimit = "Maximum files are opened for a process",
+    OutOfMemory = "Unable to allocate memory for file",
+}
+
+impl Into<SystemCallError> for FileSystemError {
+    fn into(self) -> SystemCallError {
+        match self {
+            FileSystemError::InvalidFileDescriptor => SystemCallError::BadFileDescriptor,
+            FileSystemError::InvalidFile => SystemCallError::BadFileDescriptor,
+            FileSystemError::InvalidFlags => SystemCallError::BadFlags,
+            FileSystemError::PermissionError => SystemCallError::PermissionError,
+            FileSystemError::AlreadyPresent => SystemCallError::PermissionError,
+            FileSystemError::DirectoryError => SystemCallError::PermissionError,
+            FileSystemError::OpenFileLimit => SystemCallError::OutOfMemory,
+            FileSystemError::OutOfMemory => SystemCallError::OutOfMemory,
+        }
+    }
+}
+
+/// Abstract definition of file-system interface operations.
+pub trait FileSystem {
+    fn create(&mut self, pathname: &str, modes: Modes) -> Option<u64>;
+    fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64;
+    fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64;
+    fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>);
+    fn file_info(&self, mnode: Mnode) -> (u64, u64);
+}
 
 /// Abstract definition of a file descriptor.
 pub trait FileDescriptor {
@@ -79,8 +120,15 @@ pub struct MemFS {
 }
 
 impl MemFS {
+    /// Get the next available memnode number.
+    fn get_next_mno(&mut self) -> usize {
+        self.nextmemnode.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
+impl Default for MemFS {
     /// Initialize the file system from the root directory.
-    pub fn init() -> MemFS {
+    fn default() -> MemFS {
         let rootdir = "/";
         let rootmnode = 1;
 
@@ -100,14 +148,11 @@ impl MemFS {
             nextmemnode: AtomicUsize::new(2),
         }
     }
+}
 
-    /// Get the next available memnode number.
-    fn get_next_mno(&mut self) -> usize {
-        self.nextmemnode.fetch_add(1, Ordering::Relaxed)
-    }
-
+impl FileSystem for MemFS {
     /// Create a file relative to the root directory.
-    pub fn create(&mut self, pathname: &str, modes: Modes) -> Option<u64> {
+    fn create(&mut self, pathname: &str, modes: Modes) -> Option<u64> {
         // Check if the file with the same name already exists.
         match self.files.get(&pathname.to_string()) {
             Some(_) => return None,
@@ -125,7 +170,7 @@ impl MemFS {
     }
 
     /// Write data to a file.
-    pub fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
+    fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
         match self.mnodes.get_mut(&mnode_num) {
             Some(mnode) => mnode.write(buffer, len, offset),
             None => 0,
@@ -133,7 +178,7 @@ impl MemFS {
     }
 
     /// Read data from a file.
-    pub fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
+    fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
         match self.mnodes.get(&mnode_num) {
             Some(mnode) => mnode.read(buffer, len, offset),
             None => 0,
@@ -141,7 +186,7 @@ impl MemFS {
     }
 
     /// Check if a file exists in the file system or not.
-    pub fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>) {
+    fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>) {
         match self.files.get(&pathname.to_string()) {
             Some(mnode) => (true, Some(*mnode)),
             None => (false, None),
@@ -149,7 +194,7 @@ impl MemFS {
     }
 
     /// Find the size and type by giving the mnode number.
-    pub fn file_info(&self, mnode: Mnode) -> (u64, u64) {
+    fn file_info(&self, mnode: Mnode) -> (u64, u64) {
         match self.mnodes.get(&mnode) {
             Some(mnode) => match mnode.get_mnode_type() {
                 NodeType::Directory => (0, NodeType::Directory.into()),
@@ -157,198 +202,5 @@ impl MemFS {
             },
             None => unreachable!("file_info: shouldn't reach here"),
         }
-    }
-}
-
-custom_error! {
-    #[derive(PartialEq, Clone)]
-    pub FileSystemError
-    InvalidFileDescriptor = "Supplied file descriptor was invalid",
-    InvalidFile = "Supplied file was invalid",
-    InvalidFlags = "Supplied flags were invalid",
-    PermissionError = "File/directory can't be read or written",
-    AlreadyPresent = "Fd/File already exists",
-    DirectoryError = "Can't read or write to a directory",
-    OpenFileLimit = "Maximum files are opened for a process",
-    OutOfMemory = "Unable to allocate memory for file",
-}
-
-impl Into<SystemCallError> for FileSystemError {
-    fn into(self) -> SystemCallError {
-        match self {
-            FileSystemError::InvalidFileDescriptor => SystemCallError::BadFileDescriptor,
-            FileSystemError::InvalidFile => SystemCallError::BadFileDescriptor,
-            FileSystemError::InvalidFlags => SystemCallError::BadFlags,
-            FileSystemError::PermissionError => SystemCallError::PermissionError,
-            FileSystemError::AlreadyPresent => SystemCallError::PermissionError,
-            FileSystemError::DirectoryError => SystemCallError::PermissionError,
-            FileSystemError::OpenFileLimit => SystemCallError::OutOfMemory,
-            FileSystemError::OutOfMemory => SystemCallError::OutOfMemory,
-        }
-    }
-}
-
-#[cfg(test)]
-pub mod test {
-    use super::*;
-    use crate::alloc::borrow::ToOwned;
-    use crate::alloc::vec::Vec;
-    use core::sync::atomic::Ordering;
-    use core::u64::MAX;
-    use kpi::io::*;
-
-    #[test]
-    /// Initialize and update file descriptor mnode number and permission flags.
-    fn test_file_descriptor() {
-        let mut fd = Fd::init_fd();
-        assert_eq!(fd.get_mnode(), MAX);
-        assert_eq!(fd.get_flags(), 0);
-
-        fd.update_fd(1, O_RDWR);
-        assert_eq!(fd.get_mnode(), 1);
-        assert_eq!(fd.get_flags(), O_RDWR);
-    }
-
-    #[test]
-    /// Initialize memfs for root and verify the values.
-    fn test_memfs_init() {
-        let memfs = MemFS::init();
-        let root = String::from("/");
-        assert_eq!(memfs.root, (root.to_owned(), 1));
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 2);
-        assert_eq!(memfs.files.get(&root), Some(&1));
-        assert_eq!(
-            memfs.mnodes.get(&1),
-            Some(&MemNode::new(1, "/", ALL_PERM, NodeType::Directory))
-        );
-    }
-
-    #[test]
-    /// Create a file on in-memory fs and verify all the values.
-    fn test_file_create() {
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, S_IRUSR).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-    }
-
-    #[test]
-    /// Create a file with non-read permission and try to read it.
-    fn test_file_read_permission_error() {
-        let buffer = &[0; 10];
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, S_IWUSR).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        // On error read returns 0.
-        assert_eq!(memfs.read(2, buffer.as_ptr() as u64, 10, -1), 0);
-    }
-
-    #[test]
-    /// Create a file with non-write permission and try to write it.
-    fn test_file_write_permission_error() {
-        let mut buffer = &[0; 10];
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, S_IRUSR).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        // On error read returns 0.
-        assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1), 0);
-    }
-
-    #[test]
-    /// Create a file and write to it.
-    fn test_file_write() {
-        let mut buffer = &[0; 10];
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, ALL_PERM).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1), 10);
-    }
-
-    #[test]
-    /// Create a file, write to it and then later read. Verify the content.
-    fn test_file_read() {
-        let len = 10;
-        let wbuffer: &[u8; 10] = &[0xb; 10];
-        let mut rbuffer: &mut [u8; 10] = &mut [0; 10];
-
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, ALL_PERM).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        assert_eq!(
-            memfs.write(2, wbuffer.as_ptr() as u64, len as u64, -1),
-            len as u64
-        );
-        assert_eq!(
-            memfs.read(2, rbuffer.as_ptr() as u64, len as u64, -1),
-            len as u64
-        );
-        assert_eq!(rbuffer[0], 0xb);
-        assert_eq!(rbuffer[9], 0xb);
-    }
-
-    #[test]
-    /// Create a file and lookup for it.
-    fn test_file_lookup() {
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, ALL_PERM).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        let (is_present, mnode) = memfs.lookup(filename);
-        assert_eq!(is_present, true);
-        assert_eq!(mnode, Some(2));
-    }
-
-    #[test]
-    /// Lookup for a fake file.
-    fn test_file_fake_lookup() {
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, ALL_PERM).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        let (is_present, mnode) = memfs.lookup("filename");
-        assert_eq!(is_present, false);
-        assert_eq!(mnode, None);
-    }
-
-    #[test]
-    /// Try to create a file with same name.
-    fn test_file_duplicate_create() {
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, ALL_PERM).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        assert_eq!(memfs.create(filename, ALL_PERM), None);
-    }
-
-    #[test]
-    /// Try to create a file with same name.
-    fn test_file_info() {
-        let mut memfs = MemFS::init();
-        let filename = "file.txt";
-        let mnode = memfs.create(filename, ALL_PERM).unwrap();
-        assert_eq!(mnode, 2);
-        assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-        assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-        assert_eq!(memfs.create(filename, ALL_PERM), None);
     }
 }

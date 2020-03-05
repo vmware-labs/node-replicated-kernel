@@ -6,6 +6,7 @@ use kpi::io::*;
 use x86::bits64::paging::VAddr;
 
 use crate::arch::process::{UserPtr, UserValue};
+use crate::fs::file::*;
 use crate::fs::{Mnode, Modes};
 
 /// Each memory-node can be of two types: directory or a file.
@@ -69,7 +70,7 @@ impl MemNode {
     pub fn write(&mut self, buffer: u64, len: u64, offset: i64) -> u64 {
         // Return if the user doesn't have write permissions for the file.
         if self.node_type != NodeType::File
-            || !is_allowed!(self.file.as_ref().unwrap().modes, S_IWUSR)
+            || !is_allowed!(self.file.as_ref().unwrap().get_mode(), S_IWUSR)
         {
             return 0;
         }
@@ -79,33 +80,27 @@ impl MemNode {
         let user_slice = unsafe { &mut core::slice::from_raw_parts(buffer, len) };
         let userval = UserValue::new(user_slice);
 
-        // If offset is specified, then resize the file to the offset.
-        // If offset is less than file size then truncate the file; otherwise
-        // fill the file with zeros till the offset.
-        if offset != -1 {
-            self.file.as_mut().unwrap().data.resize(offset as usize, 0);
-        }
-
-        self.file
+        match self
+            .file
             .as_mut()
             .unwrap()
-            .data
-            .append(&mut userval.to_vec());
-
-        len as u64
+            .write_file(&mut userval.to_vec(), len, offset)
+        {
+            Ok(len) => len as u64,
+            Err(_) => 0,
+        }
     }
 
     /// Read from an in-memory file.
     pub fn read(&self, buffer: u64, len: u64, offset: i64) -> u64 {
-        let modes = self.file.as_ref().unwrap().modes;
+        let modes = self.file.as_ref().unwrap().get_mode();
         // Return if the user doesn't have read permissions for the file.
         if !is_allowed!(modes, S_IRUSR) {
             return 0;
         }
 
         let len: usize = len as usize;
-        let file = self.file.as_ref().unwrap();
-        let file_size = file.data.len();
+        let file_size = self.get_file_size();
 
         // If offset is specified and its less than the file size,
         // then update the current offset.
@@ -120,19 +115,27 @@ impl MemNode {
         if new_offset > file_offset {
             let mut user_ptr = VAddr::from(buffer);
             let slice_ptr = UserPtr::new(&mut user_ptr);
-            let user_slice =
+            let user_slice: &mut [u8] =
                 unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
-            user_slice.copy_from_slice(&file.data.as_slice()[file_offset..new_offset]);
-            self.update_offset(new_offset);
-
-            return bytes_to_read as u64;
+            match self
+                .file
+                .as_ref()
+                .unwrap()
+                .read_file(user_slice, file_offset, new_offset)
+            {
+                Ok(len) => {
+                    self.update_offset(file_offset + len);
+                    return len as u64;
+                }
+                Err(_) => return 0,
+            }
         }
         return 0;
     }
 
     /// Update the offset after reading the file.
     fn update_offset(&self, new_offset: usize) -> bool {
-        if new_offset <= self.file.as_ref().unwrap().data.len() {
+        if new_offset <= self.get_file_size() as usize {
             self.offset.store(new_offset, Ordering::Release);
             return true;
         }
@@ -140,8 +143,8 @@ impl MemNode {
     }
 
     /// Get the file size
-    pub fn get_file_size(&self) -> u64 {
-        self.file.as_ref().unwrap().data.len() as u64
+    pub fn get_file_size(&self) -> usize {
+        self.file.as_ref().unwrap().get_size()
     }
 
     /// Get the type of mnode; Directory or file.
@@ -150,34 +153,9 @@ impl MemNode {
     }
 }
 
-/// An in-memory file, which is just a vector and stores permissions.
-#[derive(Debug, Eq, PartialEq)]
-pub struct File {
-    data: Vec<u8>,
-    modes: Modes,
-    // TODO: Add more file related attributes
-}
-
-impl File {
-    pub fn new(modes: Modes) -> File {
-        File {
-            data: Vec::new(),
-            modes,
-        }
-    }
-}
-
 #[cfg(test)]
 pub mod test {
     use super::*;
-
-    #[test]
-    /// Initialize a file and check the permissions.
-    fn test_init_file() {
-        let file = File::new(ALL_PERM);
-        assert_eq!(file.modes, ALL_PERM);
-        assert_eq!(file.data.len(), 0);
-    }
 
     #[test]
     /// Create mnode directory and verify the values.
@@ -341,9 +319,12 @@ pub mod test {
         let buffer: &[u8; 10] = &[0xb; 10];
         assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1), 10);
         assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, 0), 10);
-        assert_eq!(memnode.file.as_ref().unwrap().data[0], 0xb);
-        assert_eq!(memnode.file.as_ref().unwrap().data[9], 0xb);
-        assert_eq!(10, memnode.file.as_ref().unwrap().data.len());
+
+        let rbuffer: &mut [u8; 10] = &mut [0; 10];
+        assert_eq!(memnode.read(rbuffer.as_ptr() as u64, 10, 0), 10);
+        assert_eq!(rbuffer[0], 0xb);
+        assert_eq!(rbuffer[9], 0xb);
+        assert_eq!(10, memnode.get_file_size());
     }
 
     #[test]
@@ -352,16 +333,20 @@ pub mod test {
         let filename = "file.txt";
         let mut memnode = MemNode::new(1, filename, S_IRWXU, NodeType::File);
         let buffer: &[u8; 10] = &[0xb; 10];
+        let rbuffer: &mut [u8; 20] = &mut [0; 20];
+
         assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1), 10);
-        assert_eq!(memnode.file.as_ref().unwrap().data[0], 0xb);
-        assert_eq!(memnode.file.as_ref().unwrap().data[9], 0xb);
+        assert_eq!(memnode.read(rbuffer.as_ptr() as u64, 10, -1), 10);
+        assert_eq!(rbuffer[0], 0xb);
+        assert_eq!(rbuffer[9], 0xb);
 
         // This will fill the file between EOF and offset with zeros
         assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, 20), 10);
-        assert_eq!(memnode.file.as_ref().unwrap().data[10], 0);
-        assert_eq!(memnode.file.as_ref().unwrap().data[19], 0);
-        assert_eq!(memnode.file.as_ref().unwrap().data[20], 0xb);
-        assert_eq!(memnode.file.as_ref().unwrap().data[29], 0xb);
-        assert_eq!(30, memnode.file.as_ref().unwrap().data.len());
+        assert_eq!(memnode.read(rbuffer.as_ptr() as u64, 20, -1), 20);
+        assert_eq!(rbuffer[0], 0);
+        assert_eq!(rbuffer[9], 0);
+        assert_eq!(rbuffer[10], 0xb);
+        assert_eq!(rbuffer[19], 0xb);
+        assert_eq!(30, memnode.get_file_size());
     }
 }

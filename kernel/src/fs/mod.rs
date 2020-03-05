@@ -11,6 +11,7 @@ use kpi::SystemCallError;
 
 use crate::fs::mnode::{MemNode, NodeType};
 
+mod file;
 mod mnode;
 #[cfg(test)]
 mod test;
@@ -198,7 +199,7 @@ impl FileSystem for MemFS {
         match self.mnodes.get(&mnode) {
             Some(mnode) => match mnode.get_mnode_type() {
                 NodeType::Directory => (0, NodeType::Directory.into()),
-                NodeType::File => (mnode.get_file_size(), NodeType::File.into()),
+                NodeType::File => (mnode.get_file_size() as u64, NodeType::File.into()),
             },
             None => unreachable!("file_info: shouldn't reach here"),
         }

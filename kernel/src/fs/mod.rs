@@ -9,9 +9,9 @@ use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::SystemCallError;
 
-use crate::fs::file::{MemNode, NodeType};
+use crate::fs::mnode::{MemNode, NodeType};
 
-mod file;
+mod mnode;
 #[cfg(test)]
 mod test;
 

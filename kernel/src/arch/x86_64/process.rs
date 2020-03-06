@@ -277,9 +277,9 @@ impl Ring3Resumer {
         // %r11 RFlags
         trace!("Jumping to {:#x}", self.entry_point);
         asm!("
-                movq       $$0, %rax
+                // rax: contains stack pointer
                 movq       $$0, %rbx
-                // rcx has entry point
+                // rcx: has entry point
                 // rdi: 1st argument
                 // rsi: 2nd argument
                 // rdx: 3rd argument
@@ -299,18 +299,16 @@ impl Ring3Resumer {
                 swapgs
                 // TODO: restore fs register
 
+                movq %rax, %rbp
+                movq %rax, %rsp
+
                 sysretq
             " ::
-            // TODO(correctness): if you run into page-faults here it might be because
-            // the rbp is read from after it has already been loaded with the
-            // new stack address -- the sane thing to do is probably
-            // to change them manually only right before the `sysretq`
-            "{rsp}" (self.stack_top.as_u64())
-            "{rbp}" (self.stack_top.as_u64())
             "{rcx}" (self.entry_point.as_u64())
             "{rdi}" (self.cpu_ctl)
             "{rsi}" (self.vector)
             "{rdx}" (self.exception)
+            "{rax}" (self.stack_top.as_u64())
             "{r11}" (user_flags.bits())
         );
 

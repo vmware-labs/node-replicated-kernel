@@ -99,7 +99,6 @@ impl Executor for UnixThread {
 impl Process for UnixProcess {
     type E = UnixThread;
     type A = VSpace;
-    type F = Fd;
 
     fn new(_module: &Module, pid: Pid) -> Result<Self, ProcessError> {
         Ok(UnixProcess {

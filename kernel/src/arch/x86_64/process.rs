@@ -641,7 +641,6 @@ impl elfloader::ElfLoader for Ring3Process {
 impl Process for Ring3Process {
     type E = Ring3Executor;
     type A = VSpace;
-    type F = Fd;
 
     /// Create a process from a module
     fn new(module: &Module, pid: Pid) -> Result<Ring3Process, ProcessError> {

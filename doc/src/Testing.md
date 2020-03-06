@@ -42,3 +42,120 @@ Set to Virtual Floppy
 Map virtual media: Select ISO file, attach uefi.img
 
 Then reboot
+
+## Creating an Ubuntu VM (for comparisons)
+
+This is how we create the `ubuntu-testing.img` disk in using the ubuntu-minimal installer:
+
+```
+wget http://archive.ubuntu.com/ubuntu/dists/bionic/main/installer-amd64/current/images/netboot/mini.iso
+qemu-img create -f vmdk -o size=20G ubuntu-testing.img
+qemu-system-x86_64 -M 2048 --smp 2 --cpu host -drive mini.iso,device=cdrom -drive ubuntu-testing.img
+# Follow installer instructions
+```
+
+Afterwards the image can be booted using
+
+```
+kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img
+```
+
+To enable serial output, edit the grub configuration (/etc/default/grub) as follows
+```
+GRUB_CMDLINE_LINUX_DEFAULT=""
+GRUB_TERMINAL='serial console'
+GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200n8"
+GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
+```
+Following which you must run update-grub to update the menu entries.
+From now on boot the VM using:
+```
+qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img -nographic
+```
+
+### Redis benchmarking steps (on Linux)
+
+Once the VM is created the following steps are taken to install redis on the guest:
+
+```
+sudo apt install vim git build-essential libjemalloc1 libjemalloc-dev net-tools
+git clone https://github.com/antirez/redis.git
+cd redis
+git checkout 3.0.6
+make
+```
+
+To have the same benchmarks conditions as bespin (e.g., use a tap device) launch the VM like this:
+```
+qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img -nographic -net nic,model=e1000,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0
+```
+
+On the guest execute:
+```
+cd redis/src
+rm dump.rdb && ./redis-server
+```
+
+On the host execute:
+```
+# Launch a DHCP server (can reuse bespin config)
+cd bespin/kernel
+sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf
+
+# Execute redis-benchmark
+sudo apt-get install redis-tools
+redis-benchmark -h 172.31.0.10 -t get,set,ping
+```
+
+Should yield output similar to this:
+```
+====== PING_INLINE ======
+  100000 requests completed in 1.83 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+83.84% <= 1 milliseconds
+99.31% <= 2 milliseconds
+99.90% <= 3 milliseconds
+99.98% <= 4 milliseconds
+100.00% <= 4 milliseconds
+54585.15 requests per second
+
+====== PING_BULK ======
+  100000 requests completed in 1.92 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+79.65% <= 1 milliseconds
+98.92% <= 2 milliseconds
+99.89% <= 3 milliseconds
+100.00% <= 4 milliseconds
+100.00% <= 4 milliseconds
+51975.05 requests per second
+
+====== SET ======
+  100000 requests completed in 1.94 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+78.46% <= 1 milliseconds
+98.93% <= 2 milliseconds
+99.92% <= 3 milliseconds
+100.00% <= 3 milliseconds
+51572.98 requests per second
+
+====== GET ======
+  100000 requests completed in 1.93 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+77.14% <= 1 milliseconds
+98.79% <= 2 milliseconds
+99.93% <= 3 milliseconds
+100.00% <= 3 milliseconds
+51813.47 requests per second
+```

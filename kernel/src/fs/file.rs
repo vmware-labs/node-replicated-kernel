@@ -174,11 +174,10 @@ impl File {
 
         // Write to the allocated buffers
         let mut start = 0;
-        let mut end = 0;
+        let mut end;
         let mut copied = 0;
         let offset = self.get_size();
         let mut buffer_num = offset / BASE_PAGE_SIZE;
-        let offset = offset - (buffer_num * BASE_PAGE_SIZE);
 
         while copied < len {
             let filled = self.mcache[buffer_num].data.len();

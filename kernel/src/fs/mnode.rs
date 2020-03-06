@@ -1,6 +1,5 @@
 use alloc::string::String;
 use alloc::string::ToString;
-use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use kpi::io::*;
 use x86::bits64::paging::VAddr;

@@ -114,7 +114,9 @@ fn test_memfs_init() {
     assert_eq!(memfs.files.get(&root), Some(&1));
     assert_eq!(
         memfs.mnodes.get(&1),
-        Some(&MemNode::new(1, "/", ALL_PERM, NodeType::Directory).unwrap())
+        Some(&Arc::new(
+            MemNode::new(1, "/", ALL_PERM, NodeType::Directory).unwrap()
+        ))
     );
 }
 
@@ -258,5 +260,27 @@ fn test_file_info() {
     assert_eq!(
         memfs.create(filename, ALL_PERM),
         Err(FileSystemError::AlreadyPresent)
+    );
+}
+
+/// Test file deletion.
+#[test]
+fn test_file_delete() {
+    let mut memfs: MemFS = Default::default();
+    let filename = "file.txt";
+    let buffer: &mut [u8; 10] = &mut [0xb; 10];
+
+    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    assert_eq!(mnode, 2);
+    assert_eq!(memfs.delete(filename), Ok(true));
+    assert_eq!(memfs.delete(filename).is_err(), true);
+    assert_eq!(memfs.lookup(filename), (false, None));
+    assert_eq!(
+        memfs.write(2, buffer.as_ptr() as u64, 10, -1),
+        Err(FileSystemError::InvalidFile)
+    );
+    assert_eq!(
+        memfs.read(2, buffer.as_ptr() as u64, 10, -1),
+        Err(FileSystemError::InvalidFile)
     );
 }

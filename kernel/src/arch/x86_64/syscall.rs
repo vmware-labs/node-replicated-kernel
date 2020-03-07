@@ -215,6 +215,11 @@ fn handle_fileio(
             let name = arg2;
             nr::KernelNode::<Ring3Process>::file_info(p.pid, name)
         }),
+        FileOperation::Delete => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+            let kcb = super::kcb::get_kcb();
+            let name = arg2;
+            nr::KernelNode::<Ring3Process>::file_delete(p.pid, name)
+        }),
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

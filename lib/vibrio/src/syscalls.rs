@@ -467,3 +467,13 @@ pub fn file_getinfo(op: FileOperation, name: u64) -> Result<(u64, u64), SystemCa
         Err(SystemCallError::from(r))
     }
 }
+
+pub fn file_delete(op: FileOperation, name: u64) -> Result<bool, SystemCallError> {
+    let (r, is_deleted) = unsafe { syscall_3_2(SystemCall::FileIO as u64, op as u64, name) };
+
+    if r == 0 && is_deleted == 0 {
+        Ok(true)
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}

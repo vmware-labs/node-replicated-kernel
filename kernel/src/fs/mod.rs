@@ -1,6 +1,7 @@
 //! The core module for file management.
 
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use custom_error::custom_error;
@@ -85,6 +86,7 @@ pub trait FileSystem {
     ) -> Result<usize, FileSystemError>;
     fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>);
     fn file_info(&self, mnode: Mnode) -> (u64, u64);
+    fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
 }
 
 /// Abstract definition of a file descriptor.
@@ -128,7 +130,7 @@ impl FileDescriptor for Fd {
 /// The in-memory file-system representation.
 #[derive(Debug)]
 pub struct MemFS {
-    mnodes: HashMap<Mnode, MemNode>,
+    mnodes: HashMap<Mnode, Arc<MemNode>>,
     files: HashMap<String, Mnode>,
     root: (String, Mnode),
     nextmemnode: AtomicUsize,
@@ -150,7 +152,7 @@ impl Default for MemFS {
         let mut mnodes = HashMap::new();
         mnodes.insert(
             rootmnode,
-            MemNode::new(rootmnode, rootdir, ALL_PERM, NodeType::Directory).unwrap(),
+            Arc::new(MemNode::new(rootmnode, rootdir, ALL_PERM, NodeType::Directory).unwrap()),
         );
         let mut files = HashMap::new();
         files.insert(rootdir.to_string(), 1);
@@ -178,7 +180,7 @@ impl FileSystem for MemFS {
         //TODO: For now all newly created mnode are for file. How to differentiate
         // between a file and a directory. Take input from the user?
         let memnode = match MemNode::new(mnode_num, pathname, modes, NodeType::File) {
-            Ok(memnode) => memnode,
+            Ok(memnode) => Arc::new(memnode),
             Err(e) => return Err(e),
         };
         self.files.insert(pathname.to_string(), mnode_num);
@@ -196,7 +198,7 @@ impl FileSystem for MemFS {
         offset: Offset,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get_mut(&mnode_num) {
-            Some(mnode) => mnode.write(buffer, len, offset),
+            Some(mnode) => Arc::get_mut(mnode).unwrap().write(buffer, len, offset),
             None => Err(FileSystemError::InvalidFile),
         }
     }
@@ -231,6 +233,29 @@ impl FileSystem for MemFS {
                 NodeType::File => (mnode.get_file_size() as u64, NodeType::File.into()),
             },
             None => unreachable!("file_info: shouldn't reach here"),
+        }
+    }
+
+    /// Delete a file from the file-system.
+    fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
+        let mnode = match self.files.get(&pathname.to_string()) {
+            Some(mnode) => mnode.clone(),
+            None => return Err(FileSystemError::InvalidFile),
+        };
+
+        let refcnt = match self.mnodes.get(&mnode) {
+            Some(memnode) => Arc::strong_count(memnode),
+            None => return Err(FileSystemError::InvalidFile),
+        };
+
+        // If the pathname is the only link to the memnode, then remove it.
+        match refcnt {
+            1 => {
+                self.files.remove(&pathname.to_string());
+                self.mnodes.remove(&mnode);
+                Ok(true)
+            }
+            _ => return Err(FileSystemError::PermissionError),
         }
     }
 }

@@ -42,6 +42,7 @@ pub enum Op {
     FileWrite(Pid, FD, Buffer, Len, Offset),
     FileClose(Pid, FD),
     FileInfo(Pid, Filename),
+    FileDelete(Pid, Filename),
     Invalid,
 }
 
@@ -65,6 +66,7 @@ pub enum NodeResult<E: Executor> {
     FileClosed(u64),
     FileAccessed(Len),
     FileInfo(Len, u64),
+    FileDeleted(bool),
     Invalid,
 }
 
@@ -276,6 +278,26 @@ impl<P: Process> KernelNode<P> {
 
                 match &o[0] {
                     Ok(NodeResult::FileInfo(len, ftype)) => Ok((*len, *ftype)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
+
+    pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+                replica.execute(Op::FileDelete(pid, name), kcb.arch.replica_idx);
+
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                match &o[0] {
+                    Ok(NodeResult::FileDeleted(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -512,6 +534,30 @@ where
                     (false, _) | (true, None) => Err(KError::FileSystem {
                         source: FileSystemError::InvalidFile,
                     }),
+                }
+            }
+            Op::FileDelete(pid, pathname) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+
+                let mut user_ptr = VAddr::from(pathname);
+                let str_ptr = UserPtr::new(&mut user_ptr);
+
+                let filename;
+                unsafe {
+                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                        Ok(path) => {
+                            if !path.is_ascii() || path.is_empty() {
+                                return Err(KError::NotSupported);
+                            }
+                            filename = path;
+                        }
+                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
+                    }
+                }
+                match self.fs.delete(filename) {
+                    Ok(is_deleted) => Ok(NodeResult::FileDeleted(is_deleted)),
+                    Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }
             Op::Invalid => unreachable!("Got invalid OP"),

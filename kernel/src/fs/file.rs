@@ -1,5 +1,6 @@
-use crate::fs::Modes;
+use crate::fs::{FileSystemError, Modes};
 use alloc::vec::Vec;
+use core::mem::size_of;
 use x86::bits64::paging::BASE_PAGE_SIZE;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -12,11 +13,11 @@ struct Buffer {
 impl Buffer {
     /// This function tries to allocate a vector of BASE_PAGE_SIZE long
     /// and returns a buffer in case of the success; error otherwise.
-    pub fn try_alloc_buffer() -> Result<Buffer, ()> {
+    pub fn try_alloc_buffer() -> Result<Buffer, FileSystemError> {
         let mut data = Vec::new();
         match data.try_reserve(BASE_PAGE_SIZE) {
             Ok(_) => Ok(Buffer { data }),
-            Err(_) => Err(()),
+            Err(_) => Err(FileSystemError::OutOfMemory),
         }
     }
 }
@@ -31,11 +32,16 @@ pub struct File {
 
 impl File {
     /// Initialize a file. Pre-intialize the buffer list with 128 size.
-    pub fn new(modes: Modes) -> File {
-        File {
-            mcache: Vec::with_capacity(128),
-            modes,
+    pub fn new(modes: Modes) -> Result<File, FileSystemError> {
+        let mut mcache: Vec<Buffer> = Vec::new();
+        match mcache.try_reserve(64 * size_of::<Buffer>()) {
+            Err(_) => return Err(FileSystemError::OutOfMemory),
+            Ok(_) => {}
         }
+        Ok(File {
+            mcache: mcache,
+            modes,
+        })
     }
 
     /// This method returns the current-size of the file. This method follows
@@ -168,7 +174,7 @@ impl File {
         user_slice: &mut [u8],
         start_offset: usize,
         end_offset: usize,
-    ) -> Result<usize, ()> {
+    ) -> Result<usize, FileSystemError> {
         let mut buffer_num = offset_to_buffernum(start_offset, BASE_PAGE_SIZE);
         let mut offset_in_buffer = start_offset - (buffer_num * BASE_PAGE_SIZE);
         let mut copied = 0;
@@ -210,12 +216,12 @@ impl File {
         user_slice: &mut [u8],
         len: usize,
         start_offset: i64,
-    ) -> Result<usize, ()> {
+    ) -> Result<usize, FileSystemError> {
         // If offset is specified, then resize the file to the offset + len.
         // If offset is less than file size then truncate the file; otherwise
         // fill the file with zeros till the offset.
         if start_offset != -1 && !self.resize_file(start_offset as usize) {
-            return Err(());
+            return Err(FileSystemError::OutOfMemory);
         }
 
         let free_in_last_buffer = match self.mcache.last() {
@@ -230,7 +236,7 @@ impl File {
             for _ in 0..add_empty_buffer {
                 match Buffer::try_alloc_buffer() {
                     Ok(buffer) => vec.push(buffer),
-                    Err(_) => return Err(()),
+                    Err(e) => return Err(e),
                 }
             }
             self.mcache.append(&mut vec);
@@ -322,20 +328,20 @@ pub mod test {
     #[test]
     /// Initialize a file and check the permissions.
     fn test_init_file() {
-        let file = File::new(ALL_PERM);
+        let file = File::new(ALL_PERM).unwrap();
         assert_eq!(file.get_mode(), ALL_PERM);
         assert_eq!(file.get_size(), 0);
         assert_eq!(file.mcache.len(), 0);
-        assert_eq!(file.mcache.capacity(), 128);
+        assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
     }
 
     #[test]
     /// This tests the resize file method.
     fn test_resize_file() {
-        let mut file = File::new(ALL_PERM);
+        let mut file = File::new(ALL_PERM).unwrap();
         assert_eq!(file.get_mode(), ALL_PERM);
         assert_eq!(file.mcache.len(), 0);
-        assert_eq!(file.mcache.capacity(), 128);
+        assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
 
         assert_eq!(file.get_size(), 0);
 
@@ -357,14 +363,14 @@ pub mod test {
     #[test]
     /// Tests the writing to a file and later check if the content was written properly or not.
     fn test_write_file() {
-        let mut file = File::new(ALL_PERM);
+        let mut file = File::new(ALL_PERM).unwrap();
         assert_eq!(file.get_mode(), ALL_PERM);
         assert_eq!(file.mcache.len(), 0);
-        assert_eq!(file.mcache.capacity(), 128);
+        assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
 
         let buffer: &mut [u8] = &mut [0xb; 10000];
         for i in 0..10000 {
-            file.write_file(buffer, i, 0);
+            file.write_file(buffer, i, 0).unwrap();
             assert_eq!(file.get_size(), i);
         }
 
@@ -377,19 +383,19 @@ pub mod test {
     #[test]
     /// This test writes to the file and later it reads and verifies the content of the file.
     fn test_read_file() {
-        let mut file = File::new(ALL_PERM);
+        let mut file = File::new(ALL_PERM).unwrap();
         assert_eq!(file.get_mode(), ALL_PERM);
         assert_eq!(file.mcache.len(), 0);
-        assert_eq!(file.mcache.capacity(), 128);
+        assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
 
         let wbuffer: &mut [u8] = &mut [0xb; 10000];
         let rbuffer: &mut [u8] = &mut [0; 10000];
 
-        file.write_file(wbuffer, 10000, -1);
+        assert_eq!(file.write_file(wbuffer, 10000, -1), Ok(10000));
         assert_eq!(file.get_size(), 10000);
 
         for i in 0..10000 {
-            file.read_file(&mut rbuffer[i..i + 1], i, i + 1);
+            file.read_file(&mut rbuffer[i..i + 1], i, i + 1).unwrap();
             assert_eq!(rbuffer[i], 0xb);
         }
     }

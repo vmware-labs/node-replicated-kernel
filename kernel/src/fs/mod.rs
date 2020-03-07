@@ -42,6 +42,7 @@ custom_error! {
     InvalidFileDescriptor = "Supplied file descriptor was invalid",
     InvalidFile = "Supplied file was invalid",
     InvalidFlags = "Supplied flags were invalid",
+    InvalidOffset = "Supplied offset was invalid",
     PermissionError = "File/directory can't be read or written",
     AlreadyPresent = "Fd/File already exists",
     DirectoryError = "Can't read or write to a directory",
@@ -55,6 +56,7 @@ impl Into<SystemCallError> for FileSystemError {
             FileSystemError::InvalidFileDescriptor => SystemCallError::BadFileDescriptor,
             FileSystemError::InvalidFile => SystemCallError::BadFileDescriptor,
             FileSystemError::InvalidFlags => SystemCallError::BadFlags,
+            FileSystemError::InvalidOffset => SystemCallError::PermissionError,
             FileSystemError::PermissionError => SystemCallError::PermissionError,
             FileSystemError::AlreadyPresent => SystemCallError::PermissionError,
             FileSystemError::DirectoryError => SystemCallError::PermissionError,
@@ -66,9 +68,21 @@ impl Into<SystemCallError> for FileSystemError {
 
 /// Abstract definition of file-system interface operations.
 pub trait FileSystem {
-    fn create(&mut self, pathname: &str, modes: Modes) -> Option<u64>;
-    fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64;
-    fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64;
+    fn create(&mut self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError>;
+    fn write(
+        &mut self,
+        mnode_num: Mnode,
+        buffer: Buffer,
+        len: Len,
+        offset: Offset,
+    ) -> Result<usize, FileSystemError>;
+    fn read(
+        &self,
+        mnode_num: Mnode,
+        buffer: Buffer,
+        len: Len,
+        offset: Offset,
+    ) -> Result<usize, FileSystemError>;
     fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>);
     fn file_info(&self, mnode: Mnode) -> (u64, u64);
 }
@@ -81,7 +95,7 @@ pub trait FileDescriptor {
     fn get_flags(&self) -> Flags;
 }
 
-/// A file descriptor representation.
+/// A file descriptor representaFileSystemError::OutOfMemorytion.
 #[derive(Debug, Default)]
 pub struct Fd {
     mnode: Mnode,
@@ -136,7 +150,7 @@ impl Default for MemFS {
         let mut mnodes = HashMap::new();
         mnodes.insert(
             rootmnode,
-            MemNode::new(rootmnode, rootdir, ALL_PERM, NodeType::Directory),
+            MemNode::new(rootmnode, rootdir, ALL_PERM, NodeType::Directory).unwrap(),
         );
         let mut files = HashMap::new();
         files.insert(rootdir.to_string(), 1);
@@ -153,36 +167,51 @@ impl Default for MemFS {
 
 impl FileSystem for MemFS {
     /// Create a file relative to the root directory.
-    fn create(&mut self, pathname: &str, modes: Modes) -> Option<u64> {
+    fn create(&mut self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError> {
         // Check if the file with the same name already exists.
         match self.files.get(&pathname.to_string()) {
-            Some(_) => return None,
+            Some(_) => return Err(FileSystemError::AlreadyPresent),
             None => {}
         }
 
         let mnode_num = self.get_next_mno() as u64;
         //TODO: For now all newly created mnode are for file. How to differentiate
         // between a file and a directory. Take input from the user?
-        let memnode = MemNode::new(mnode_num, pathname, modes, NodeType::File);
+        let memnode = match MemNode::new(mnode_num, pathname, modes, NodeType::File) {
+            Ok(memnode) => memnode,
+            Err(e) => return Err(e),
+        };
         self.files.insert(pathname.to_string(), mnode_num);
         self.mnodes.insert(mnode_num, memnode);
 
-        Some(mnode_num)
+        Ok(mnode_num)
     }
 
     /// Write data to a file.
-    fn write(&mut self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
+    fn write(
+        &mut self,
+        mnode_num: Mnode,
+        buffer: Buffer,
+        len: Len,
+        offset: Offset,
+    ) -> Result<usize, FileSystemError> {
         match self.mnodes.get_mut(&mnode_num) {
             Some(mnode) => mnode.write(buffer, len, offset),
-            None => 0,
+            None => Err(FileSystemError::InvalidFile),
         }
     }
 
     /// Read data from a file.
-    fn read(&self, mnode_num: Mnode, buffer: Buffer, len: Len, offset: Offset) -> u64 {
+    fn read(
+        &self,
+        mnode_num: Mnode,
+        buffer: Buffer,
+        len: Len,
+        offset: Offset,
+    ) -> Result<usize, FileSystemError> {
         match self.mnodes.get(&mnode_num) {
             Some(mnode) => mnode.read(buffer, len, offset),
-            None => 0,
+            None => Err(FileSystemError::InvalidFile),
         }
     }
 

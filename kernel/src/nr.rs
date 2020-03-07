@@ -417,13 +417,11 @@ where
                         let mnode_num;
                         if !is_file {
                             match self.fs.create(filename, modes) {
-                                Some(m_num) => mnode_num = m_num,
-                                None => {
+                                Ok(m_num) => mnode_num = m_num,
+                                Err(e) => {
                                     let fdesc = fd.0 as usize;
                                     p.deallocate_fd(fdesc);
-                                    return Err(KError::FileSystem {
-                                        source: FileSystemError::OutOfMemory,
-                                    });
+                                    return Err(KError::FileSystem { source: e });
                                 }
                             }
                         } else {
@@ -448,10 +446,9 @@ where
                     });
                 }
 
-                let ret = self.fs.read(mnode_num, buffer, len, offset);
-                match ret {
-                    0 => Err(KError::NotSupported),
-                    len => Ok(NodeResult::FileAccessed(len)),
+                match self.fs.read(mnode_num, buffer, len, offset) {
+                    Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
+                    Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }
             Op::FileWrite(pid, fd, buffer, len, offset) => {
@@ -468,10 +465,9 @@ where
                     });
                 }
 
-                let ret = self.fs.write(mnode_num, buffer, len, offset);
-                match ret {
-                    0 => Err(KError::NotSupported),
-                    len => Ok(NodeResult::FileAccessed(len)),
+                match self.fs.write(mnode_num, buffer, len, offset) {
+                    Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
+                    Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }
             Op::FileClose(pid, fd) => {

@@ -114,7 +114,7 @@ fn test_memfs_init() {
     assert_eq!(memfs.files.get(&root), Some(&1));
     assert_eq!(
         memfs.mnodes.get(&1),
-        Some(&MemNode::new(1, "/", ALL_PERM, NodeType::Directory))
+        Some(&MemNode::new(1, "/", ALL_PERM, NodeType::Directory).unwrap())
     );
 }
 
@@ -141,13 +141,13 @@ fn test_file_read_permission_error() {
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
     // On error read returns 0.
-    assert_eq!(memfs.read(2, buffer.as_ptr() as u64, 10, -1), 0);
+    assert_eq!(memfs.read(2, buffer.as_ptr() as u64, 10, -1).is_err(), true);
 }
 
 /// Create a file with non-write permission and try to write it.
 #[test]
 fn test_file_write_permission_error() {
-    let mut buffer = &[0; 10];
+    let buffer = &[0; 10];
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, S_IRUSR).unwrap();
@@ -155,20 +155,23 @@ fn test_file_write_permission_error() {
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
     // On error read returns 0.
-    assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1), 0);
+    assert_eq!(
+        memfs.write(2, buffer.as_ptr() as u64, 10, -1),
+        Err(FileSystemError::PermissionError)
+    );
 }
 
 /// Create a file and write to it.
 #[test]
 fn test_file_write() {
-    let mut buffer = &[0; 10];
+    let buffer = &[0; 10];
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, ALL_PERM).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-    assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1), 10);
+    assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
 }
 
 /// Create a file, write to it and then later read. Verify the content.
@@ -176,7 +179,7 @@ fn test_file_write() {
 fn test_file_read() {
     let len = 10;
     let wbuffer: &[u8; 10] = &[0xb; 10];
-    let mut rbuffer: &mut [u8; 10] = &mut [0; 10];
+    let rbuffer: &mut [u8; 10] = &mut [0; 10];
 
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
@@ -185,12 +188,16 @@ fn test_file_read() {
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
     assert_eq!(
-        memfs.write(2, wbuffer.as_ptr() as u64, len as u64, -1),
-        len as u64
+        memfs
+            .write(2, wbuffer.as_ptr() as u64, len as u64, -1)
+            .unwrap(),
+        len
     );
     assert_eq!(
-        memfs.read(2, rbuffer.as_ptr() as u64, len as u64, -1),
-        len as u64
+        memfs
+            .read(2, rbuffer.as_ptr() as u64, len as u64, -1)
+            .unwrap(),
+        len
     );
     assert_eq!(rbuffer[0], 0xb);
     assert_eq!(rbuffer[9], 0xb);
@@ -233,7 +240,10 @@ fn test_file_duplicate_create() {
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-    assert_eq!(memfs.create(filename, ALL_PERM), None);
+    assert_eq!(
+        memfs.create(filename, ALL_PERM),
+        Err(FileSystemError::AlreadyPresent)
+    );
 }
 
 /// Try to create a file with same name.
@@ -245,5 +255,8 @@ fn test_file_info() {
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
-    assert_eq!(memfs.create(filename, ALL_PERM), None);
+    assert_eq!(
+        memfs.create(filename, ALL_PERM),
+        Err(FileSystemError::AlreadyPresent)
+    );
 }

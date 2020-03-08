@@ -1,33 +1,94 @@
-/// Flags to create/open the file.
-pub const O_RDONLY: u64 = 0x0001; /* open for reading only */
-pub const O_WRONLY: u64 = 0x0002; /* open for writing only */
-pub const O_RDWR: u64 = 0x0003; /* open for reading and writing */
+use bitflags::*;
 
-pub const O_CREAT: u64 = 0x0200; /* create if nonexistant */
-pub const O_TRUNC: u64 = 0x0400; /* truncate to zero length */
-pub const O_EXCL: u64 = 0x0800; /* error if already exists */
+bitflags! {
+    /// File flags to open the file
+    pub struct FileFlags:u64 {
+        const O_NONE = 0x0000;
+        const O_RDONLY = 0x0001; /* open for reading only */
+        const O_WRONLY = 0x0002; /* open for writing only */
+        const O_RDWR = 0x0003; /* open for reading and writing */
+        const O_CREAT = 0x0200; /* create if nonexistant */
+        const O_TRUNC = 0x0400; /* truncate to zero length */
+    }
+}
 
-/// Modes for the opened file
-pub const S_IRWXU: u64 = 0x700; /* RWX mask for owner */
-pub const S_IRUSR: u64 = 0x400; /* R for owner */
-pub const S_IWUSR: u64 = 0x200; /* W for owner */
-pub const S_IXUSR: u64 = 0x100; /* X for owner */
+/// Needed to implement default for memnode.
+impl Default for FileFlags {
+    fn default() -> FileFlags {
+        FileFlags::O_NONE
+    }
+}
 
-pub const S_IRWXG: u64 = 0x070; /* RWX mask for group */
-pub const S_IRGRP: u64 = 0x040; /* R for group */
-pub const S_IWGRP: u64 = 0x020; /* W for group */
-pub const S_IXGRP: u64 = 0x010; /* X for group */
+/// Convert u64 to FileFlags.
+impl From<u64> for FileFlags {
+    fn from(flag: u64) -> FileFlags {
+        FileFlags::from_bits_truncate(flag)
+    }
+}
 
-pub const S_IRWXO: u64 = 0x007; /* RWX mask for other */
-pub const S_IROTH: u64 = 0x004; /* R for other */
-pub const S_IWOTH: u64 = 0x002; /* W for other */
-pub const S_IXOTH: u64 = 0x001; /* X for other */
+/// Convert FileFlags to u64.
+impl From<FileFlags> for u64 {
+    fn from(flag: FileFlags) -> u64 {
+        flag.bits()
+    }
+}
 
-pub const ALL_PERM: u64 = 0x777;
+/// Implementation for FileFlags to check if the file is opened using
+/// readable, writable or create flags.
+impl FileFlags {
+    pub fn is_read(&self) -> bool {
+        (*self & FileFlags::O_RDONLY) == FileFlags::O_RDONLY
+    }
 
-#[macro_export]
-macro_rules! is_allowed {
-    ($flags:expr, $flag:ident) => {
-        ($flags & $flag == $flag)
-    };
+    pub fn is_write(&self) -> bool {
+        (*self & FileFlags::O_WRONLY) == FileFlags::O_WRONLY
+    }
+
+    pub fn is_create(&self) -> bool {
+        (*self & FileFlags::O_CREAT) == FileFlags::O_CREAT
+    }
+
+    pub fn is_truncate(&self) -> bool {
+        (*self & FileFlags::O_TRUNC) == FileFlags::O_TRUNC
+    }
+}
+
+bitflags! {
+    /// FileModes to store the file in the memory. A file can be stored in
+    /// readable, writable or executable mode.
+    pub struct FileModes: u64 {
+        const S_IRWXU = 0x007; /* RWX mask for user */
+        const S_IRUSR = 0x004; /* R for user */
+        const S_IWUSR = 0x002; /* W for user */
+        const S_IXUSR = 0x001; /* X for user */
+    }
+}
+
+/// Convert u64 to FileModes.
+impl From<u64> for FileModes {
+    fn from(mode: u64) -> FileModes {
+        FileModes::from_bits_truncate(mode)
+    }
+}
+
+/// Convert FileModes to u64.
+impl From<FileModes> for u64 {
+    fn from(mode: FileModes) -> u64 {
+        mode.bits()
+    }
+}
+
+/// Implementation of FileModes to check if the file is readable, writable or executable.
+impl FileModes {
+    pub fn is_readable(&self) -> bool {
+        (*self & FileModes::S_IRUSR) == FileModes::S_IRUSR
+    }
+
+    pub fn is_writable(&self) -> bool {
+        (*self & FileModes::S_IWUSR) == FileModes::S_IWUSR
+    }
+
+    pub fn is_executable(&self) -> bool {
+        (*self & FileModes::S_IXUSR) == FileModes::S_IXUSR
+    }
 }

@@ -97,11 +97,11 @@ proptest! {
 fn test_file_descriptor() {
     let mut fd = Fd::init_fd();
     assert_eq!(fd.get_mnode(), MAX);
-    assert_eq!(fd.get_flags(), 0);
+    assert_eq!(fd.get_flags(), FileFlags::O_NONE);
 
-    fd.update_fd(1, O_RDWR);
+    fd.update_fd(1, FileFlags::O_RDWR);
     assert_eq!(fd.get_mnode(), 1);
-    assert_eq!(fd.get_flags(), O_RDWR);
+    assert_eq!(fd.get_flags(), FileFlags::O_RDWR);
 }
 
 /// Initialize memfs for root and verify the values.
@@ -111,12 +111,10 @@ fn test_memfs_init() {
     let root = String::from("/");
     assert_eq!(memfs.root, (root.to_owned(), 1));
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 2);
-    assert_eq!(memfs.files.get(&root), Some(&1));
+    assert_eq!(memfs.files.get(&root), Some(&Arc::new(1)));
     assert_eq!(
         memfs.mnodes.get(&1),
-        Some(&Arc::new(
-            MemNode::new(1, "/", ALL_PERM, NodeType::Directory).unwrap()
-        ))
+        Some(&MemNode::new(1, "/", FileModes::S_IRWXU.into(), NodeType::Directory).unwrap())
     );
 }
 
@@ -125,10 +123,13 @@ fn test_memfs_init() {
 fn test_file_create() {
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, S_IRUSR).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+    assert_eq!(
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
 }
 
 /// Create a file with non-read permission and try to read it.
@@ -138,10 +139,13 @@ fn test_file_read_permission_error() {
     let buffer = &[0; 10];
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, S_IWUSR).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IWUSR.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+    assert_eq!(
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
     // On error read returns 0.
     assert_eq!(memfs.read(2, buffer.as_ptr() as u64, 10, -1).is_err(), true);
 }
@@ -152,10 +156,13 @@ fn test_file_write_permission_error() {
     let buffer = &[0; 10];
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, S_IRUSR).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+    assert_eq!(
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
     // On error read returns 0.
     assert_eq!(
         memfs.write(2, buffer.as_ptr() as u64, 10, -1),
@@ -169,10 +176,13 @@ fn test_file_write() {
     let buffer = &[0; 10];
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+    assert_eq!(
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
     assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
 }
 
@@ -185,10 +195,13 @@ fn test_file_read() {
 
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+    assert_eq!(
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
     assert_eq!(
         memfs
             .write(2, wbuffer.as_ptr() as u64, len as u64, -1)
@@ -210,13 +223,16 @@ fn test_file_read() {
 fn test_file_lookup() {
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+    assert_eq!(
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
     let (is_present, mnode) = memfs.lookup(filename);
     assert_eq!(is_present, true);
-    assert_eq!(mnode, Some(2));
+    assert_eq!(mnode, Some(Arc::new(2)));
 }
 
 /// Lookup for a fake file.
@@ -224,10 +240,13 @@ fn test_file_lookup() {
 fn test_file_fake_lookup() {
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
+    assert_eq!(
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
     let (is_present, mnode) = memfs.lookup("filename");
     assert_eq!(is_present, false);
     assert_eq!(mnode, None);
@@ -238,12 +257,15 @@ fn test_file_fake_lookup() {
 fn test_file_duplicate_create() {
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
     assert_eq!(
-        memfs.create(filename, ALL_PERM),
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
+    assert_eq!(
+        memfs.create(filename, FileModes::S_IRWXU.into()),
         Err(FileSystemError::AlreadyPresent)
     );
 }
@@ -253,12 +275,15 @@ fn test_file_duplicate_create() {
 fn test_file_info() {
     let mut memfs: MemFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(memfs.files.get(&String::from("file.txt")), Some(&2));
     assert_eq!(
-        memfs.create(filename, ALL_PERM),
+        memfs.files.get(&String::from("file.txt")),
+        Some(&Arc::new(2))
+    );
+    assert_eq!(
+        memfs.create(filename, FileModes::S_IRWXU.into()),
         Err(FileSystemError::AlreadyPresent)
     );
 }
@@ -270,7 +295,7 @@ fn test_file_delete() {
     let filename = "file.txt";
     let buffer: &mut [u8; 10] = &mut [0xb; 10];
 
-    let mnode = memfs.create(filename, ALL_PERM).unwrap();
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.delete(filename), Ok(true));
     assert_eq!(memfs.delete(filename).is_err(), true);

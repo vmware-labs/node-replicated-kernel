@@ -75,16 +75,16 @@ pub trait FileSystem {
         mnode_num: Mnode,
         buffer: Buffer,
         len: Len,
-        offset: Offset,
+        offset: i64,
     ) -> Result<usize, FileSystemError>;
     fn read(
         &self,
         mnode_num: Mnode,
         buffer: Buffer,
         len: Len,
-        offset: Offset,
+        offset: i64,
     ) -> Result<usize, FileSystemError>;
-    fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>);
+    fn lookup(&self, pathname: &str) -> (bool, Option<Arc<Mnode>>);
     fn file_info(&self, mnode: Mnode) -> (u64, u64);
     fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
 }
@@ -92,16 +92,16 @@ pub trait FileSystem {
 /// Abstract definition of a file descriptor.
 pub trait FileDescriptor {
     fn init_fd() -> Fd;
-    fn update_fd(&mut self, mnode: Mnode, flags: Flags);
+    fn update_fd(&mut self, mnode: Mnode, flags: FileFlags);
     fn get_mnode(&self) -> Mnode;
-    fn get_flags(&self) -> Flags;
+    fn get_flags(&self) -> FileFlags;
 }
 
 /// A file descriptor representaFileSystemError::OutOfMemorytion.
 #[derive(Debug, Default)]
 pub struct Fd {
     mnode: Mnode,
-    flags: Flags,
+    flags: FileFlags,
 }
 
 impl FileDescriptor for Fd {
@@ -109,11 +109,11 @@ impl FileDescriptor for Fd {
         Fd {
             // Intial values are just the place-holders and shouldn't be used.
             mnode: core::u64::MAX,
-            flags: 0,
+            flags: Default::default(),
         }
     }
 
-    fn update_fd(&mut self, mnode: Mnode, flags: Flags) {
+    fn update_fd(&mut self, mnode: Mnode, flags: FileFlags) {
         self.mnode = mnode;
         self.flags = flags;
     }
@@ -122,7 +122,7 @@ impl FileDescriptor for Fd {
         self.mnode.clone()
     }
 
-    fn get_flags(&self) -> Flags {
+    fn get_flags(&self) -> FileFlags {
         self.flags.clone()
     }
 }
@@ -130,8 +130,8 @@ impl FileDescriptor for Fd {
 /// The in-memory file-system representation.
 #[derive(Debug)]
 pub struct MemFS {
-    mnodes: HashMap<Mnode, Arc<MemNode>>,
-    files: HashMap<String, Mnode>,
+    mnodes: HashMap<Mnode, MemNode>,
+    files: HashMap<String, Arc<Mnode>>,
     root: (String, Mnode),
     nextmemnode: AtomicUsize,
 }
@@ -152,10 +152,16 @@ impl Default for MemFS {
         let mut mnodes = HashMap::new();
         mnodes.insert(
             rootmnode,
-            Arc::new(MemNode::new(rootmnode, rootdir, ALL_PERM, NodeType::Directory).unwrap()),
+            MemNode::new(
+                rootmnode,
+                rootdir,
+                FileModes::S_IRWXU.into(),
+                NodeType::Directory,
+            )
+            .unwrap(),
         );
         let mut files = HashMap::new();
-        files.insert(rootdir.to_string(), 1);
+        files.insert(rootdir.to_string(), Arc::new(1));
         let root = (rootdir.to_string(), 1);
 
         MemFS {
@@ -180,10 +186,10 @@ impl FileSystem for MemFS {
         //TODO: For now all newly created mnode are for file. How to differentiate
         // between a file and a directory. Take input from the user?
         let memnode = match MemNode::new(mnode_num, pathname, modes, NodeType::File) {
-            Ok(memnode) => Arc::new(memnode),
+            Ok(memnode) => memnode,
             Err(e) => return Err(e),
         };
-        self.files.insert(pathname.to_string(), mnode_num);
+        self.files.insert(pathname.to_string(), Arc::new(mnode_num));
         self.mnodes.insert(mnode_num, memnode);
 
         Ok(mnode_num)
@@ -195,10 +201,10 @@ impl FileSystem for MemFS {
         mnode_num: Mnode,
         buffer: Buffer,
         len: Len,
-        offset: Offset,
+        offset: i64,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get_mut(&mnode_num) {
-            Some(mnode) => Arc::get_mut(mnode).unwrap().write(buffer, len, offset),
+            Some(mnode) => mnode.write(buffer, len, offset),
             None => Err(FileSystemError::InvalidFile),
         }
     }
@@ -209,7 +215,7 @@ impl FileSystem for MemFS {
         mnode_num: Mnode,
         buffer: Buffer,
         len: Len,
-        offset: Offset,
+        offset: i64,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get(&mnode_num) {
             Some(mnode) => mnode.read(buffer, len, offset),
@@ -218,9 +224,9 @@ impl FileSystem for MemFS {
     }
 
     /// Check if a file exists in the file system or not.
-    fn lookup(&self, pathname: &str) -> (bool, Option<Mnode>) {
+    fn lookup(&self, pathname: &str) -> (bool, Option<Arc<Mnode>>) {
         match self.files.get(&pathname.to_string()) {
-            Some(mnode) => (true, Some(*mnode)),
+            Some(mnode) => (true, Some(Arc::clone(mnode))),
             None => (false, None),
         }
     }
@@ -238,24 +244,21 @@ impl FileSystem for MemFS {
 
     /// Delete a file from the file-system.
     fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
-        let mnode = match self.files.get(&pathname.to_string()) {
-            Some(mnode) => mnode.clone(),
-            None => return Err(FileSystemError::InvalidFile),
-        };
-
-        let refcnt = match self.mnodes.get(&mnode) {
-            Some(memnode) => Arc::strong_count(memnode),
-            None => return Err(FileSystemError::InvalidFile),
-        };
-
-        // If the pathname is the only link to the memnode, then remove it.
-        match refcnt {
-            1 => {
-                self.files.remove(&pathname.to_string());
-                self.mnodes.remove(&mnode);
-                Ok(true)
+        match self.files.remove(&pathname.to_string()) {
+            Some(mnode) => {
+                // If the pathname is the only link to the memnode, then remove it.
+                match Arc::strong_count(&mnode) {
+                    1 => {
+                        self.mnodes.remove(&mnode);
+                        return Ok(true);
+                    }
+                    _ => {
+                        self.files.insert(pathname.to_string(), mnode);
+                        return Err(FileSystemError::PermissionError);
+                    }
+                }
             }
-            _ => return Err(FileSystemError::PermissionError),
-        }
+            None => return Err(FileSystemError::InvalidFile),
+        };
     }
 }

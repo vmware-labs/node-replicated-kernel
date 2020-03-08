@@ -2,6 +2,8 @@
 //! and associated data-types.
 #![no_std]
 
+#[allow(non_snake_case)]
+
 pub mod io;
 pub mod x86_64;
 

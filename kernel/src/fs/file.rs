@@ -1,6 +1,7 @@
 use crate::fs::{FileSystemError, Modes};
 use alloc::vec::Vec;
 use core::mem::size_of;
+use kpi::io::*;
 use x86::bits64::paging::BASE_PAGE_SIZE;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -26,13 +27,14 @@ impl Buffer {
 /// File type has a list of buffers and modes to access the file
 pub struct File {
     mcache: Vec<Buffer>,
-    modes: Modes,
+    modes: FileModes,
     // TODO: Add more file related attributes
 }
 
 impl File {
     /// Initialize a file. Pre-intialize the buffer list with 128 size.
     pub fn new(modes: Modes) -> Result<File, FileSystemError> {
+        let modes = FileModes::from(modes);
         let mut mcache: Vec<Buffer> = Vec::new();
         match mcache.try_reserve(64 * size_of::<Buffer>()) {
             Err(_) => return Err(FileSystemError::OutOfMemory),
@@ -68,7 +70,7 @@ impl File {
     }
 
     /// This method returns the mode in which file is created.
-    pub fn get_mode(&self) -> Modes {
+    pub fn get_mode(&self) -> FileModes {
         self.modes
     }
 
@@ -290,7 +292,6 @@ fn offset_to_buffernum(offset: usize, buffer_size: usize) -> usize {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::fs::ALL_PERM;
 
     #[test]
     /// This method test the offset to buffer number conversion for a file.
@@ -328,8 +329,8 @@ pub mod test {
     #[test]
     /// Initialize a file and check the permissions.
     fn test_init_file() {
-        let file = File::new(ALL_PERM).unwrap();
-        assert_eq!(file.get_mode(), ALL_PERM);
+        let file = File::new(FileModes::S_IRWXU.into()).unwrap();
+        assert_eq!(file.get_mode(), FileModes::S_IRWXU);
         assert_eq!(file.get_size(), 0);
         assert_eq!(file.mcache.len(), 0);
         assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
@@ -338,8 +339,8 @@ pub mod test {
     #[test]
     /// This tests the resize file method.
     fn test_resize_file() {
-        let mut file = File::new(ALL_PERM).unwrap();
-        assert_eq!(file.get_mode(), ALL_PERM);
+        let mut file = File::new(FileModes::S_IRWXU.into()).unwrap();
+        assert_eq!(file.get_mode(), FileModes::S_IRWXU);
         assert_eq!(file.mcache.len(), 0);
         assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
 
@@ -363,8 +364,8 @@ pub mod test {
     #[test]
     /// Tests the writing to a file and later check if the content was written properly or not.
     fn test_write_file() {
-        let mut file = File::new(ALL_PERM).unwrap();
-        assert_eq!(file.get_mode(), ALL_PERM);
+        let mut file = File::new(FileModes::S_IRWXU.into()).unwrap();
+        assert_eq!(file.get_mode(), FileModes::S_IRWXU);
         assert_eq!(file.mcache.len(), 0);
         assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
 
@@ -383,8 +384,8 @@ pub mod test {
     #[test]
     /// This test writes to the file and later it reads and verifies the content of the file.
     fn test_read_file() {
-        let mut file = File::new(ALL_PERM).unwrap();
-        assert_eq!(file.get_mode(), ALL_PERM);
+        let mut file = File::new(FileModes::S_IRWXU.into()).unwrap();
+        assert_eq!(file.get_mode(), FileModes::S_IRWXU);
         assert_eq!(file.mcache.len(), 0);
         assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
 

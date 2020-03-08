@@ -295,8 +295,8 @@ fn fs_test() {
         let fd = vibrio::syscalls::file_open(
             vibrio::syscalls::FileOperation::Open,
             "file.txt\0".as_ptr() as u64,
-            O_RDWR | O_CREAT,
-            ALL_PERM,
+            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+            u64::from(FileModes::S_IRWXU),
         )
         .expect("FileOpen syscall failed");
         assert_eq!(fd, 0);

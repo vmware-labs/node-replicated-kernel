@@ -364,7 +364,9 @@ pub unsafe fn file_create(
     pathname: u64,
     modes: u64,
 ) -> Result<u64, SystemCallError> {
-    file_open(op, pathname, O_WRONLY | O_CREAT | O_TRUNC, modes)
+    let flags: u64 = u64::from(FileFlags::O_WRONLY | FileFlags::O_CREAT);
+    assert_eq!(flags, 0x202);
+    file_open(op, pathname, flags, modes)
 }
 
 /// Open a file. Return `fd` if successful; error otherwise.

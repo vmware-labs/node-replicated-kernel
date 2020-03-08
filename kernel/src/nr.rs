@@ -425,8 +425,9 @@ where
                     }
                 }
 
+                let flags = FileFlags::from(flags);
                 let (is_file, mnode) = self.fs.lookup(filename);
-                if !is_file && !is_allowed!(flags, O_CREAT) {
+                if !is_file && !flags.is_create() {
                     return Err(KError::FileSystem {
                         source: FileSystemError::PermissionError,
                     });
@@ -447,7 +448,7 @@ where
                                 }
                             }
                         } else {
-                            mnode_num = mnode.unwrap();
+                            mnode_num = *mnode.unwrap();
                         }
                         fd.1.update_fd(mnode_num, flags);
                         Ok(NodeResult::FileOpened(fd.0))
@@ -462,7 +463,7 @@ where
                 let flags = fd.get_flags();
 
                 // Check if the file has read-only or read-write permissions before reading it.
-                if !is_allowed!(flags, O_RDONLY) || !is_allowed!(flags, O_RDWR) {
+                if !flags.is_read() {
                     return Err(KError::FileSystem {
                         source: FileSystemError::PermissionError,
                     });
@@ -481,7 +482,7 @@ where
                 let flags = fd.get_flags();
 
                 // Check if the file has write-only or read-write permissions before reading it.
-                if !is_allowed!(flags, O_WRONLY) || !is_allowed!(flags, O_RDWR) {
+                if !flags.is_write() {
                     return Err(KError::FileSystem {
                         source: FileSystemError::PermissionError,
                     });
@@ -528,7 +529,7 @@ where
                 match self.fs.lookup(filename) {
                     // match on (file_exists, mnode_number)
                     (true, Some(mnode)) => {
-                        let (size, ftype) = self.fs.file_info(mnode);
+                        let (size, ftype) = self.fs.file_info(*mnode);
                         Ok(NodeResult::FileInfo(size, ftype))
                     }
                     (false, _) | (true, None) => Err(KError::FileSystem {

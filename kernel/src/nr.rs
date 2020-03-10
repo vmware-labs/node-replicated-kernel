@@ -10,7 +10,7 @@ use hashbrown::HashMap;
 use kpi::{io::*, FileOperation};
 use node_replication::Dispatch;
 
-use crate::arch::process::UserPtr;
+use crate::arch::process::{UserPtr, UserSlice};
 use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::{
@@ -456,6 +456,7 @@ where
                 }
             }
             Op::FileRead(pid, fd, buffer, len, offset) => {
+                let mut userslice = UserSlice::new(buffer, len as usize);
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);
@@ -469,12 +470,13 @@ where
                     });
                 }
 
-                match self.fs.read(mnode_num, buffer, len, offset) {
+                match self.fs.read(mnode_num, &mut userslice, offset) {
                     Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }
             Op::FileWrite(pid, fd, buffer, len, offset) => {
+                let mut userslice = UserSlice::new(buffer, len as usize);
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);
@@ -488,7 +490,7 @@ where
                     });
                 }
 
-                match self.fs.write(mnode_num, buffer, len, offset) {
+                match self.fs.write(mnode_num, &mut userslice, offset) {
                     Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }

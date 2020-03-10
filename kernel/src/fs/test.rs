@@ -3,7 +3,6 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::{Eq, PartialEq};
-use core::ptr;
 use core::sync::atomic::Ordering;
 use core::u64::MAX;
 
@@ -147,7 +146,12 @@ fn test_file_read_permission_error() {
         Some(&Arc::new(2))
     );
     // On error read returns 0.
-    assert_eq!(memfs.read(2, buffer.as_ptr() as u64, 10, -1).is_err(), true);
+    assert_eq!(
+        memfs
+            .read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+            .is_err(),
+        true
+    );
 }
 
 /// Create a file with non-write permission and try to write it.
@@ -165,7 +169,7 @@ fn test_file_write_permission_error() {
     );
     // On error read returns 0.
     assert_eq!(
-        memfs.write(2, buffer.as_ptr() as u64, 10, -1),
+        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
         Err(FileSystemError::PermissionError)
     );
 }
@@ -183,7 +187,12 @@ fn test_file_write() {
         memfs.files.get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
-    assert_eq!(memfs.write(2, buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+    assert_eq!(
+        memfs
+            .write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+            .unwrap(),
+        10
+    );
 }
 
 /// Create a file, write to it and then later read. Verify the content.
@@ -204,13 +213,13 @@ fn test_file_read() {
     );
     assert_eq!(
         memfs
-            .write(2, wbuffer.as_ptr() as u64, len as u64, -1)
+            .write(2, &mut UserSlice::new(wbuffer.as_ptr() as u64, len), -1)
             .unwrap(),
         len
     );
     assert_eq!(
         memfs
-            .read(2, rbuffer.as_ptr() as u64, len as u64, -1)
+            .read(2, &mut UserSlice::new(rbuffer.as_ptr() as u64, len), -1)
             .unwrap(),
         len
     );
@@ -298,11 +307,11 @@ fn test_file_delete() {
     assert_eq!(memfs.delete(filename).is_err(), true);
     assert_eq!(memfs.lookup(filename), (false, None));
     assert_eq!(
-        memfs.write(2, buffer.as_ptr() as u64, 10, -1),
+        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
         Err(FileSystemError::InvalidFile)
     );
     assert_eq!(
-        memfs.read(2, buffer.as_ptr() as u64, 10, -1),
+        memfs.read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
         Err(FileSystemError::InvalidFile)
     );
 }

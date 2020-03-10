@@ -103,6 +103,45 @@ impl<T> Drop for UserValue<T> {
     }
 }
 
+pub struct UserSlice<'a> {
+    pub buffer: &'a mut [u8],
+}
+
+impl<'a> UserSlice<'a> {
+    pub fn new(base: u64, len: usize) -> UserSlice<'a> {
+        let mut user_ptr = VAddr::from(base);
+        let slice_ptr = UserPtr::new(&mut user_ptr);
+        let user_slice: &mut [u8] =
+            unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
+        UserSlice { buffer: user_slice }
+    }
+}
+
+impl<'a> Deref for UserSlice<'a> {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            rflags::stac();
+            &*self.buffer
+        }
+    }
+}
+
+impl<'a> DerefMut for UserSlice<'a> {
+    fn deref_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            rflags::stac();
+            self.buffer
+        }
+    }
+}
+
+impl<'a> Drop for UserSlice<'a> {
+    fn drop(&mut self) {
+        unsafe { rflags::clac() };
+    }
+}
+
 /// A Ring3Resumer that can either be an upcall or a context restore.
 ///
 /// # TODO

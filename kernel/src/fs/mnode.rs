@@ -1,9 +1,8 @@
 use alloc::string::String;
 use alloc::string::ToString;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use x86::bits64::paging::VAddr;
 
-use crate::arch::process::{UserPtr, UserValue};
+use crate::arch::process::UserSlice;
 use crate::fs::file::*;
 use crate::fs::{FileSystemError, Mnode, Modes};
 
@@ -73,32 +72,28 @@ impl MemNode {
     }
 
     /// Write to an in-memory file.
-    pub fn write(&mut self, buffer: u64, len: u64, offset: i64) -> Result<usize, FileSystemError> {
+    pub fn write(&mut self, buffer: &mut UserSlice, offset: i64) -> Result<usize, FileSystemError> {
         // Return if the user doesn't have write permissions for the file.
         if self.node_type != NodeType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
             return Err(FileSystemError::PermissionError);
         }
-        let buffer: *const u8 = buffer as *const u8;
-        let len: usize = len as usize;
-
-        let user_slice = unsafe { &mut core::slice::from_raw_parts(buffer, len) };
-        let userval = UserValue::new(user_slice);
+        let len: usize = buffer.len();
 
         self.file
             .as_mut()
             .unwrap()
-            .write_file(&mut userval.to_vec(), len, offset)
+            .write_file(&mut *buffer, len, offset)
     }
 
     /// Read from an in-memory file.
-    pub fn read(&self, buffer: u64, len: u64, offset: i64) -> Result<usize, FileSystemError> {
+    pub fn read(&self, buffer: &mut UserSlice, offset: i64) -> Result<usize, FileSystemError> {
         // Return if the user doesn't have read permissions for the file.
         if !self.file.as_ref().unwrap().get_mode().is_readable() {
             return Err(FileSystemError::PermissionError);
         }
 
-        let len: usize = len as usize;
+        let len: usize = buffer.len();
         let file_size = self.get_file_size();
 
         // If offset is specified and its less than the file size,
@@ -116,15 +111,11 @@ impl MemNode {
 
         // Read from file only if its not at EOF.
         if new_offset > file_offset {
-            let mut user_ptr = VAddr::from(buffer);
-            let slice_ptr = UserPtr::new(&mut user_ptr);
-            let user_slice: &mut [u8] =
-                unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
             match self
                 .file
                 .as_ref()
                 .unwrap()
-                .read_file(user_slice, file_offset, new_offset)
+                .read_file(&mut *buffer, file_offset, new_offset)
             {
                 Ok(len) => {
                     self.update_offset(file_offset + len);
@@ -198,7 +189,7 @@ pub mod test {
         assert_eq!(memnode.node_type, NodeType::Directory);
         let buffer: &[u8; 10] = &[0xb; 10];
         assert_eq!(
-            memnode.write(buffer.as_ptr() as u64, 10, -1),
+            memnode.write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
             Err(FileSystemError::PermissionError)
         );
     }
@@ -217,7 +208,12 @@ pub mod test {
         assert_eq!(memnode.name, filename.to_string());
         assert_eq!(memnode.node_type, NodeType::File);
         let buffer: &[u8; 10] = &[0xb; 10];
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
     }
 
     #[test]
@@ -235,7 +231,7 @@ pub mod test {
         assert_eq!(memnode.node_type, NodeType::File);
         let buffer: &[u8; 10] = &[0xb; 10];
         assert_eq!(
-            memnode.write(buffer.as_ptr() as u64, 10, -1),
+            memnode.write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
             Err(FileSystemError::PermissionError)
         );
     }
@@ -254,9 +250,19 @@ pub mod test {
         assert_eq!(memnode.name, filename.to_string());
         assert_eq!(memnode.node_type, NodeType::File);
         let buffer: &[u8; 10] = &[0xb; 10];
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
         let buffer: &mut [u8; 10] = &mut [0; 10];
-        assert_eq!(memnode.read(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
         assert_eq!(buffer[0], 0xb);
         assert_eq!(buffer[9], 0xb);
     }
@@ -275,7 +281,7 @@ pub mod test {
         assert_eq!(memnode.node_type, NodeType::File);
         let buffer: &[u8; 10] = &[0xb; 10];
         assert_eq!(
-            memnode.read(buffer.as_ptr() as u64, 10, -1),
+            memnode.read(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
             Err(FileSystemError::PermissionError)
         );
     }
@@ -297,17 +303,32 @@ pub mod test {
         let mut memnode =
             MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
         let buffer: &[u8; 10] = &[0xb; 10];
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
 
         for i in 0..10 {
             assert_eq!(i, memnode.offset.load(Ordering::Relaxed));
             let buffer: &mut [u8; 1] = &mut [0; 1];
-            assert_eq!(memnode.read(buffer.as_ptr() as u64, 1, -1).unwrap(), 1);
+            assert_eq!(
+                memnode
+                    .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), -1)
+                    .unwrap(),
+                1
+            );
             assert_eq!(buffer[0], 0xb);
         }
 
         let buffer: &mut [u8; 1] = &mut [0; 1];
-        assert_eq!(memnode.read(buffer.as_ptr() as u64, 1, -1).is_err(), true);
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), -1)
+                .is_err(),
+            true
+        );
         assert_eq!(buffer[0], 0);
         assert_eq!(10, memnode.offset.load(Ordering::Relaxed));
     }
@@ -319,15 +340,30 @@ pub mod test {
         let mut memnode =
             MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
         let buffer: &[u8; 10] = &[0xb; 10];
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
 
         let buffer: &mut [u8; 1] = &mut [0; 1];
-        assert_eq!(memnode.read(buffer.as_ptr() as u64, 1, 9).unwrap(), 1);
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), 9)
+                .unwrap(),
+            1
+        );
         assert_eq!(buffer[0], 0xb);
         assert_eq!(10, memnode.offset.load(Ordering::Relaxed));
 
         let buffer: &mut [u8; 1] = &mut [0; 1];
-        assert_eq!(memnode.read(buffer.as_ptr() as u64, 1, -1).is_err(), true);
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), -1)
+                .is_err(),
+            true
+        );
         assert_eq!(buffer[0], 0);
         assert_eq!(10, memnode.offset.load(Ordering::Relaxed));
     }
@@ -339,10 +375,20 @@ pub mod test {
         let mut memnode =
             MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
         let buffer: &[u8; 10] = &[0xb; 10];
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
 
         let buffer: &mut [u8; 1] = &mut [0; 1];
-        assert_eq!(memnode.read(buffer.as_ptr() as u64, 1, 10).is_err(), true);
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), 10)
+                .is_err(),
+            true
+        );
         assert_eq!(buffer[0], 0);
         assert_eq!(10, memnode.offset.load(Ordering::Relaxed));
     }
@@ -354,11 +400,26 @@ pub mod test {
         let mut memnode =
             MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
         let buffer: &[u8; 10] = &[0xb; 10];
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, 0).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
+                .unwrap(),
+            10
+        );
 
         let rbuffer: &mut [u8; 10] = &mut [0; 10];
-        assert_eq!(memnode.read(rbuffer.as_ptr() as u64, 10, 0).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(rbuffer.as_ptr() as u64, 10), 0)
+                .unwrap(),
+            10
+        );
         assert_eq!(rbuffer[0], 0xb);
         assert_eq!(rbuffer[9], 0xb);
         assert_eq!(10, memnode.get_file_size());
@@ -373,14 +434,34 @@ pub mod test {
         let buffer: &[u8; 10] = &[0xb; 10];
         let rbuffer: &mut [u8; 20] = &mut [0; 20];
 
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, -1).unwrap(), 10);
-        assert_eq!(memnode.read(rbuffer.as_ptr() as u64, 10, -1).unwrap(), 10);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(rbuffer.as_ptr() as u64, 10), -1)
+                .unwrap(),
+            10
+        );
         assert_eq!(rbuffer[0], 0xb);
         assert_eq!(rbuffer[9], 0xb);
 
         // This will fill the file between EOF and offset with zeros
-        assert_eq!(memnode.write(buffer.as_ptr() as u64, 10, 20).unwrap(), 10);
-        assert_eq!(memnode.read(rbuffer.as_ptr() as u64, 20, -1).unwrap(), 20);
+        assert_eq!(
+            memnode
+                .write(&mut UserSlice::new(buffer.as_ptr() as u64, 10), 20)
+                .unwrap(),
+            10
+        );
+        assert_eq!(
+            memnode
+                .read(&mut UserSlice::new(rbuffer.as_ptr() as u64, 20), -1)
+                .unwrap(),
+            20
+        );
         assert_eq!(rbuffer[0], 0);
         assert_eq!(rbuffer[9], 0);
         assert_eq!(rbuffer[10], 0xb);

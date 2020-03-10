@@ -260,6 +260,7 @@ impl File {
             } else {
                 end = start + free_in_buffer;
             }
+            // TODO: Use copy_from_slice and make userslice immutable.
             self.mcache[buffer_num]
                 .data
                 .append(&mut user_slice[start..end].to_vec());

@@ -1,5 +1,6 @@
 //! The core module for file management.
 
+use crate::arch::process::UserSlice;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -73,15 +74,13 @@ pub trait FileSystem {
     fn write(
         &mut self,
         mnode_num: Mnode,
-        buffer: Buffer,
-        len: Len,
+        buffer: &mut UserSlice,
         offset: i64,
     ) -> Result<usize, FileSystemError>;
     fn read(
         &self,
         mnode_num: Mnode,
-        buffer: Buffer,
-        len: Len,
+        buffer: &mut UserSlice,
         offset: i64,
     ) -> Result<usize, FileSystemError>;
     fn lookup(&self, pathname: &str) -> (bool, Option<Arc<Mnode>>);
@@ -199,12 +198,11 @@ impl FileSystem for MemFS {
     fn write(
         &mut self,
         mnode_num: Mnode,
-        buffer: Buffer,
-        len: Len,
+        buffer: &mut UserSlice,
         offset: i64,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get_mut(&mnode_num) {
-            Some(mnode) => mnode.write(buffer, len, offset),
+            Some(mnode) => mnode.write(buffer, offset),
             None => Err(FileSystemError::InvalidFile),
         }
     }
@@ -213,12 +211,11 @@ impl FileSystem for MemFS {
     fn read(
         &self,
         mnode_num: Mnode,
-        buffer: Buffer,
-        len: Len,
+        buffer: &mut UserSlice,
         offset: i64,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get(&mnode_num) {
-            Some(mnode) => mnode.read(buffer, len, offset),
+            Some(mnode) => mnode.read(buffer, offset),
             None => Err(FileSystemError::InvalidFile),
         }
     }

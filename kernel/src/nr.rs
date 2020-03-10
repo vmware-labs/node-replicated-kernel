@@ -41,7 +41,7 @@ pub enum Op {
     FileRead(Pid, FD, Buffer, Len, Offset),
     FileWrite(Pid, FD, Buffer, Len, Offset),
     FileClose(Pid, FD),
-    FileInfo(Pid, Filename),
+    FileInfo(Pid, Filename, u64),
     FileDelete(Pid, Filename),
     Invalid,
 }
@@ -65,7 +65,7 @@ pub enum NodeResult<E: Executor> {
     FileOpened(FD),
     FileClosed(u64),
     FileAccessed(Len),
-    FileInfo(Len, u64),
+    FileInfo(u64),
     FileDeleted(bool),
     Invalid,
 }
@@ -264,20 +264,20 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
-    pub fn file_info(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
+    pub fn file_info(pid: Pid, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
                 let mut o = vec![];
-                replica.execute(Op::FileInfo(pid, name), kcb.arch.replica_idx);
+                replica.execute(Op::FileInfo(pid, name, info_ptr), kcb.arch.replica_idx);
 
                 while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                 debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
                 match &o[0] {
-                    Ok(NodeResult::FileInfo(len, ftype)) => Ok((*len, *ftype)),
+                    Ok(NodeResult::FileInfo(f_info)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -506,7 +506,7 @@ where
                     })
                 }
             }
-            Op::FileInfo(pid, name) => {
+            Op::FileInfo(pid, name, info_ptr) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
 
@@ -529,8 +529,13 @@ where
                 match self.fs.lookup(filename) {
                     // match on (file_exists, mnode_number)
                     (true, Some(mnode)) => {
-                        let (size, ftype) = self.fs.file_info(*mnode);
-                        Ok(NodeResult::FileInfo(size, ftype))
+                        let f_info = self.fs.file_info(*mnode);
+
+                        let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
+                        unsafe {
+                            *user_ptr.as_mut_ptr::<FileInfo>() = f_info;
+                        }
+                        Ok(NodeResult::FileInfo(0))
                     }
                     (false, _) | (true, None) => Err(KError::FileSystem {
                         source: FileSystemError::InvalidFile,

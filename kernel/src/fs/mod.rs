@@ -85,7 +85,7 @@ pub trait FileSystem {
         offset: i64,
     ) -> Result<usize, FileSystemError>;
     fn lookup(&self, pathname: &str) -> (bool, Option<Arc<Mnode>>);
-    fn file_info(&self, mnode: Mnode) -> (u64, u64);
+    fn file_info(&self, mnode: Mnode) -> FileInfo;
     fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
 }
 
@@ -232,11 +232,17 @@ impl FileSystem for MemFS {
     }
 
     /// Find the size and type by giving the mnode number.
-    fn file_info(&self, mnode: Mnode) -> (u64, u64) {
+    fn file_info(&self, mnode: Mnode) -> FileInfo {
         match self.mnodes.get(&mnode) {
             Some(mnode) => match mnode.get_mnode_type() {
-                NodeType::Directory => (0, NodeType::Directory.into()),
-                NodeType::File => (mnode.get_file_size() as u64, NodeType::File.into()),
+                NodeType::Directory => FileInfo {
+                    fsize: 0,
+                    ftype: NodeType::Directory.into(),
+                },
+                NodeType::File => FileInfo {
+                    fsize: mnode.get_file_size() as u64,
+                    ftype: NodeType::File.into(),
+                },
             },
             None => unreachable!("file_info: shouldn't reach here"),
         }

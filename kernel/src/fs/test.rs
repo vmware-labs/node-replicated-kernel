@@ -270,7 +270,7 @@ fn test_file_duplicate_create() {
     );
 }
 
-/// Try to create a file with same name.
+/// Test file_info.
 #[test]
 fn test_file_info() {
     let mut memfs: MemFS = Default::default();
@@ -282,10 +282,7 @@ fn test_file_info() {
         memfs.files.get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
-    assert_eq!(
-        memfs.create(filename, FileModes::S_IRWXU.into()),
-        Err(FileSystemError::AlreadyPresent)
-    );
+    assert_eq!(memfs.file_info(2), FileInfo { ftype: 2, fsize: 0 });
 }
 
 /// Test file deletion.

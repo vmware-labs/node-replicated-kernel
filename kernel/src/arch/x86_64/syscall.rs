@@ -213,7 +213,8 @@ fn handle_fileio(
         }),
         FileOperation::GetInfo => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let name = arg2;
-            nr::KernelNode::<Ring3Process>::file_info(p.pid, name)
+            let info_ptr = arg3;
+            nr::KernelNode::<Ring3Process>::file_info(p.pid, name, info_ptr)
         }),
         FileOperation::Delete => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let kcb = super::kcb::get_kcb();

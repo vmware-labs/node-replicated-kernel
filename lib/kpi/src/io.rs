@@ -1,5 +1,12 @@
 use bitflags::*;
 
+/// Struct used in `file_getinfo` systemcall.
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+pub struct FileInfo {
+    pub ftype: u64,
+    pub fsize: u64,
+}
+
 bitflags! {
     /// File flags to open the file
     pub struct FileFlags:u64 {

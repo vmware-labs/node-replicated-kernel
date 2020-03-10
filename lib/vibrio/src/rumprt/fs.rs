@@ -43,9 +43,9 @@ pub unsafe extern "C" fn rumpuser_getfileinfo(
     typ: *mut c_int,
 ) -> c_int {
     match file_getinfo(FileOperation::GetInfo, name as u64) {
-        Ok((s, t)) => {
-            *size = s;
-            *typ = t as i32;
+        Ok(fileinfo) => {
+            *size = fileinfo.fsize;
+            *typ = fileinfo.ftype as i32;
             0
         }
         Err(_) => super::errno::ENOENT as c_int,

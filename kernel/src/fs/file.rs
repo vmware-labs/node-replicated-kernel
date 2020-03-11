@@ -32,7 +32,7 @@ pub struct File {
 }
 
 impl File {
-    /// Initialize a file. Pre-intialize the buffer list with 128 size.
+    /// Initialize a file. Pre-intialize the buffer list with 64 size.
     pub fn new(modes: Modes) -> Result<File, FileSystemError> {
         let modes = FileModes::from(modes);
         let mut mcache: Vec<Buffer> = Vec::new();
@@ -55,16 +55,22 @@ impl File {
             0 => 0,
             1 => self.mcache[buffer_num - 1].data.len(),
             _ => {
-                let mut len = 0;
-                //TODO: Can we do better?
-                for buf in &self.mcache {
-                    let curr_buff_len = buf.data.len();
-                    if curr_buff_len == 0 {
-                        break;
+                match self.mcache[buffer_num - 1].data.len() {
+                    // If resize_file()/write() added some empty buffers to be filled
+                    // later, then scan all the buffers to get the file-size.
+                    0 => {
+                        let mut len = 0;
+                        for buf in &self.mcache {
+                            match buf.data.len() {
+                                0 => break,
+                                curr_buff_len => len += curr_buff_len,
+                            }
+                        }
+                        len
                     }
-                    len += curr_buff_len;
+                    // If file is filled till last buffer
+                    last_buffer_len => ((buffer_num - 1) * BASE_PAGE_SIZE + last_buffer_len),
                 }
-                len
             }
         }
     }

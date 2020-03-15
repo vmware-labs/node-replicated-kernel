@@ -127,14 +127,15 @@ pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
 
     let mut nlock: i32 = 1;
     loop {
-        x86::irq::disable();
+        //x86::irq::disable();
 
+        let start = rawtime::Instant::now();
         super::rumpkern_sched(&nlock, None);
         let r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);
         //assert_eq!(r, 1, "IRQ handler should return 1 (I don't actually know)?");
         super::rumpkern_unsched(&mut nlock, None);
 
-        x86::irq::enable();
+        //x86::irq::enable();
 
         let thread = lineup::tls::Environment::thread();
         thread.block(); // Wake up on next IRQ

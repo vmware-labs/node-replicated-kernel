@@ -125,6 +125,8 @@ pub enum MapAction {
     ReadKernel,
     /// Map region read-write.
     ReadWriteUser,
+    /// Map region read-write, disable page-cache for IO regions.
+    ReadWriteUserNoCache,
     /// Map region read-write for kernel.
     ReadWriteKernel,
     /// Map region read-executable.
@@ -146,6 +148,7 @@ impl MapAction {
             ReadUser => PDPTFlags::XD | PDPTFlags::US,
             ReadKernel => PDPTFlags::XD,
             ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
+            ReadWriteUserNoCache => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
             ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
             ReadExecuteUser => PDPTFlags::US,
             ReadExecuteKernel => PDPTFlags::empty(),
@@ -162,6 +165,7 @@ impl MapAction {
             ReadUser => PDFlags::XD | PDFlags::US,
             ReadKernel => PDFlags::XD,
             ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
+            ReadWriteUserNoCache => PDFlags::RW | PDFlags::XD | PDFlags::US,
             ReadWriteKernel => PDFlags::RW | PDFlags::XD,
             ReadExecuteUser => PDFlags::US,
             ReadExecuteKernel => PDFlags::empty(),
@@ -178,6 +182,7 @@ impl MapAction {
             ReadUser => PTFlags::XD | PTFlags::US,
             ReadKernel => PTFlags::XD,
             ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
+            ReadWriteUserNoCache => PTFlags::RW | PTFlags::XD | PTFlags::US,
             ReadWriteKernel => PTFlags::RW | PTFlags::XD,
             ReadExecuteUser => PTFlags::US,
             ReadExecuteKernel => PTFlags::empty(),
@@ -191,7 +196,7 @@ impl From<PTFlags> for MapAction {
     fn from(f: PTFlags) -> MapAction {
         use MapAction::*;
         let irrelevant_bits: PTFlags =
-            PTFlags::PWT | PTFlags::PCD | PTFlags::A | PTFlags::D | PTFlags::G | PTFlags::PWT;
+            PTFlags::PWT | PTFlags::A | PTFlags::D | PTFlags::G | PTFlags::PWT;
 
         let mut cleaned = f;
         cleaned.remove(irrelevant_bits);
@@ -201,6 +206,8 @@ impl From<PTFlags> for MapAction {
             MapAction::ReadUser
         } else if cleaned == PTFlags::XD | PTFlags::P {
             MapAction::ReadKernel
+        } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::US | PTFlags::P | PTFlags::PCD {
+            ReadWriteUserNoCache
         } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::US | PTFlags::P {
             ReadWriteUser
         } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::P {
@@ -223,13 +230,8 @@ impl From<PDFlags> for MapAction {
     fn from(f: PDFlags) -> MapAction {
         use MapAction::*;
 
-        let irrelevant_bits = PDFlags::PWT
-            | PDFlags::PCD
-            | PDFlags::A
-            | PDFlags::D
-            | PDFlags::PS
-            | PDFlags::G
-            | PDFlags::PAT;
+        let irrelevant_bits =
+            PDFlags::PWT | PDFlags::A | PDFlags::D | PDFlags::PS | PDFlags::G | PDFlags::PAT;
 
         let mut cleaned = f;
         cleaned.remove(irrelevant_bits);
@@ -239,6 +241,8 @@ impl From<PDFlags> for MapAction {
             MapAction::ReadUser
         } else if cleaned == PDFlags::XD | PDFlags::P {
             MapAction::ReadKernel
+        } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::US | PDFlags::P | PDFlags::PCD {
+            ReadWriteUserNoCache
         } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::US | PDFlags::P {
             ReadWriteUser
         } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::P {
@@ -262,7 +266,6 @@ impl From<PDPTFlags> for MapAction {
         use MapAction::*;
 
         let irrelevant_bits: PDPTFlags = PDPTFlags::PWT
-            | PDPTFlags::PCD
             | PDPTFlags::A
             | PDPTFlags::D
             | PDPTFlags::PS
@@ -277,6 +280,10 @@ impl From<PDPTFlags> for MapAction {
             MapAction::ReadUser
         } else if cleaned == PDPTFlags::XD | PDPTFlags::P {
             MapAction::ReadKernel
+        } else if cleaned
+            == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US | PDPTFlags::P | PDPTFlags::PCD
+        {
+            ReadWriteUserNoCache
         } else if cleaned == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US | PDPTFlags::P {
             ReadWriteUser
         } else if cleaned == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::P {
@@ -303,6 +310,7 @@ impl fmt::Display for MapAction {
             ReadUser => write!(f, "uR--"),
             ReadKernel => write!(f, "kR--"),
             ReadWriteUser => write!(f, "uRW-"),
+            ReadWriteUserNoCache => write!(f, "uRW-IO"),
             ReadWriteKernel => write!(f, "kRW-"),
             ReadExecuteUser => write!(f, "uR-X"),
             ReadExecuteKernel => write!(f, "kR-X"),

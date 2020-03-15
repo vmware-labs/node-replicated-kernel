@@ -159,3 +159,40 @@ Should yield output similar to this:
 100.00% <= 3 milliseconds
 51813.47 requests per second
 ```
+
+
+## Redis benchmarking (default rump-unikernel)
+
+Install the toolchain
+```
+# Rumprun install
+./build-rr.sh hw -- -F CFLAGS='-w'
+. "/root/rumprun/./obj-amd64-hw/config-PATH.sh"
+```
+
+Build an application
+```
+# Packages install
+git clone https://github.com/gz/rumprun-packages.git
+cd rumprun-packages
+
+cp config.mk.dist config.mk
+vim config.mk
+
+cd redis
+make -j8
+rumprun-bake hw_generic redis.bin bin/redis-server
+```
+
+Run the unikernel
+```
+# Run using virtio (leads to ~100k PING)
+rumprun kvm -i -M 256 -I if,vioif,'-net tap,script=no,ifname=tap0'  -g '-curses'  -W if,inet,dhcp  -b images/data.iso,/data -- redis.bin
+# Run using e1000 (leads to ~30k PING)
+rumprun kvm -i -M 256 -I if,wm,'-net tap,ifname=tap0'  -g '-curses -serial -net nic,model=e1000'  -W if,inet,dhcp  -b images/data.iso,/data -- redis.bin
+```
+
+Run the benchmark
+```
+redis-benchmark -h 172.31.0.10
+```

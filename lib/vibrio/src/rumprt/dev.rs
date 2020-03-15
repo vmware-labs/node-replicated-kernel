@@ -203,7 +203,13 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     pptr: *mut c_ulong,
     vptr: *mut c_ulong,
 ) -> c_int {
-    let layout = Layout::from_size_align_unchecked(size, alignment);
+    let size = if size > 4096 {
+        log::error!("rumpcomp_pci_dmalloc size is {} {}", size, alignment);
+        2 * 1024 * 1024
+    } else {
+        4096
+    };
+    let layout = Layout::from_size_align_unchecked(size, size);
 
     let mut p = crate::mem::PAGER.lock();
     let r = (*p).allocate(layout);

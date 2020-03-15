@@ -38,6 +38,8 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
         trace!("got networked interrupt...");
         let scheduler = lineup::tls::Environment::scheduler();
         scheduler.add_to_runlist(lineup::ThreadId(1));
+    } else {
+        log::error!("got unknown interrupt... {}", vector);
     }
     unsafe {
         x86::irq::enable();

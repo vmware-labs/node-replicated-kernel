@@ -235,7 +235,9 @@ def run(args):
                               'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
         # Enable networking with outside world
-        qemu_default_args += ['-net', 'nic,model=e1000,netdev=n0']
+        nic_model = "e1000"  # could be "virtio"
+        qemu_default_args += ['-net',
+                              'nic,model={},netdev=n0'.format(nic_model)]
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
 
         if args.qemu_debug_cpu:

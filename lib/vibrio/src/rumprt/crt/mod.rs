@@ -201,7 +201,10 @@ pub extern "C" fn main() {
                 core::mem::size_of::<tmpfs_args>(),
             );
 
-            let iface = CStr::from_bytes_with_nul(b"wm0\0");
+            //let nic_model_virtio = b"vioif0\0";
+            let nic_model_e1000 = b"wm0\0";
+            let iface = CStr::from_bytes_with_nul(nic_model_e1000);
+
             info!("before rump_pub_netconfig_dhcp_ipv4_oneshot");
 
             let r = rump_pub_netconfig_dhcp_ipv4_oneshot(iface.unwrap().as_ptr());

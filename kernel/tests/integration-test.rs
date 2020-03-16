@@ -974,8 +974,7 @@ fn redis_benchmark() {
         }
 
         let mut redis_client = spawn_bencher(REDIS_PORT)?;
-        // redis reports the tputs as floating points, but we don't really care
-        // about the 0.xx requests
+        // redis reports the tputs as floating points
         redis_client.exp_string("\"PING_INLINE\",\"")?;
         let (_line, ping_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
         redis_client.exp_string("\"")?;
@@ -997,8 +996,9 @@ fn redis_benchmark() {
         let set_tput: f64 = set_tput.parse().unwrap_or(404.0);
         let get_tput: f64 = get_tput.parse().unwrap_or(404.0);
 
+        // Append parsed results to a CSV file
         let file_name = "redis_benchmark.csv";
-        // write headers only to new file
+        // write headers only to a new file
         let write_headers = !Path::new(file_name).exists();
         let mut csv_file = OpenOptions::new()
             .append(true)

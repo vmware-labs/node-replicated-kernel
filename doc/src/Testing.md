@@ -8,14 +8,17 @@ The `kernel/run.py` script provides a simple way to build, deploy and run the sy
 For a complete set of parameters and config options refer to the `run.py --help` instructions.
 
 As an example, the following invocation
+
 ```bash
 python3 run.py --kfeatures test-userspace --cmd='log=info testbinary=redis.bin' --mods rkapps init --ufeatures rkapps:redis --machine qemu --qemu-settings='-m 1024M' --qemu-cores 2
 ```
+
 will
- * compile the kernel with Cargo feature `test-userspace`
- * pass the kernel the command-line arguments `log=info testbinary=redis.bin` on start-up (sets logging to info and starts redis.bin for testing)
- * Compile two user-space modules `rkapps` (with cargo feature redis) and `init` (with no features)
- * Deploy and run the compiled system on `qemu` with 1024 MiB of memory and 2 cores allocated to the VM
+
+* compile the kernel with Cargo feature `test-userspace`
+* pass the kernel the command-line arguments `log=info testbinary=redis.bin` on start-up (sets logging to info and starts redis.bin for testing)
+* Compile two user-space modules `rkapps` (with cargo feature redis) and `init` (with no features)
+* Deploy and run the compiled system on `qemu` with 1024 MiB of memory and 2 cores allocated to the VM
 
 ## Writing an integration test (for the kernel)
 
@@ -30,7 +33,7 @@ Build produces an uefi.img FAT32 file that can be loaded on real hardware.
 Settings on iDRAC
 COM2 or COM1 should work
 
-ssh <idrac ip>
+ssh `<idrac ip>`
 console com2
 
 Ctrl+\ to exit
@@ -115,7 +118,7 @@ redis-benchmark -h 172.31.0.10 -t get,set,ping
 
 Should yield output similar to this:
 
-```
+```log
 ====== PING_INLINE ======
   100000 requests completed in 1.83 seconds
   50 parallel clients
@@ -166,7 +169,6 @@ Should yield output similar to this:
 100.00% <= 3 milliseconds
 51813.47 requests per second
 ```
-
 
 ## Redis benchmarking (default rump-unikernel)
 

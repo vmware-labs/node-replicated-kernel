@@ -100,6 +100,9 @@ def build_bootloader(args):
 
     with local.cwd(BOOTLOADER_PATH):
         with local.env(RUST_TARGET_PATH=BOOTLOADER_PATH.absolute()):
+            if args.verbose:
+                print("cd {}".format(BOOTLOADER_PATH))
+                print("RUST_TARGET_PATH={} xargo ".format(BOOTLOADER_PATH.absolute()) + " ".join(uefi_build_args))
             xargo(*uefi_build_args)
 
 
@@ -114,6 +117,9 @@ def build_kernel(args):
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
             build_args += CARGO_DEFAULT_ARGS
+            if args.verbose:
+                print("cd {}".format(KERNEL_PATH))
+                print("RUST_TARGET_PATH={} xargo ".format(KERNEL_PATH / 'src' / 'arch' / ARCH) + " ".join(build_args))
             xargo(*build_args)
 
 
@@ -128,6 +134,9 @@ def build_user_libraries(args):
     # For linking with rumpkernel
     with local.cwd(LIBS_PATH / "vibrio"):
         with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
+            if args.verbose:
+                print("cd {}".format(LIBS_PATH / "vibrio"))
+                print("RUST_TARGET_PATH={} xargo ".format(USR_PATH.absolute()) + " ".join(build_args))
             xargo(*build_args)
 
 
@@ -151,6 +160,9 @@ def build_userspace(args):
                     else:
                         build_args += ['--features', feature]
                 log("Build user-module {}".format(module))
+                if args.verbose:
+                    print("cd {}".format(USR_PATH / module))
+                    print("RUST_TARGET_PATH={} xargo ".format(USR_PATH.absolute()) + " ".join(build_args))
                 xargo(*build_args)
 
 

@@ -47,7 +47,7 @@ Then reboot
 
 This is how we create the `ubuntu-testing.img` disk in using the ubuntu-minimal installer:
 
-```
+```bash
 wget http://archive.ubuntu.com/ubuntu/dists/bionic/main/installer-amd64/current/images/netboot/mini.iso
 qemu-img create -f vmdk -o size=20G ubuntu-testing.img
 qemu-system-x86_64 -M 2048 --smp 2 --cpu host -drive mini.iso,device=cdrom -drive ubuntu-testing.img
@@ -56,20 +56,23 @@ qemu-system-x86_64 -M 2048 --smp 2 --cpu host -drive mini.iso,device=cdrom -driv
 
 Afterwards the image can be booted using
 
-```
+```bash
 kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img
 ```
 
 To enable serial output, edit the grub configuration (/etc/default/grub) as follows
+
 ```
 GRUB_CMDLINE_LINUX_DEFAULT=""
 GRUB_TERMINAL='serial console'
 GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200n8"
 GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
 ```
+
 Following which you must run update-grub to update the menu entries.
 From now on boot the VM using:
-```
+
+```bash
 qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img -nographic
 ```
 
@@ -77,7 +80,7 @@ qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.
 
 Once the VM is created the following steps are taken to install redis on the guest:
 
-```
+```bash
 sudo apt install vim git build-essential libjemalloc1 libjemalloc-dev net-tools
 git clone https://github.com/antirez/redis.git
 cd redis
@@ -86,18 +89,21 @@ make
 ```
 
 To have the same benchmarks conditions as bespin (e.g., use a tap device) launch the VM like this:
-```
+
+```bash
 qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img -nographic -net nic,model=e1000,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0
 ```
 
 On the guest execute:
-```
+
+```bash
 cd redis/src
 rm dump.rdb && ./redis-server
 ```
 
 On the host execute:
-```
+
+```bash
 # Launch a DHCP server (can reuse bespin config)
 cd bespin/kernel
 sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf
@@ -108,6 +114,7 @@ redis-benchmark -h 172.31.0.10 -t get,set,ping
 ```
 
 Should yield output similar to this:
+
 ```
 ====== PING_INLINE ======
   100000 requests completed in 1.83 seconds
@@ -164,14 +171,16 @@ Should yield output similar to this:
 ## Redis benchmarking (default rump-unikernel)
 
 Install the toolchain
-```
+
+```bash
 # Rumprun install
 ./build-rr.sh hw -- -F CFLAGS='-w'
 . "/root/rumprun/./obj-amd64-hw/config-PATH.sh"
 ```
 
 Build an application
-```
+
+```bash
 # Packages install
 git clone https://github.com/gz/rumprun-packages.git
 cd rumprun-packages
@@ -185,7 +194,8 @@ rumprun-bake hw_generic redis.bin bin/redis-server
 ```
 
 Run the unikernel
-```
+
+```bash
 # Run using virtio (leads to ~100k PING)
 rumprun kvm -i -M 256 -I if,vioif,'-net tap,script=no,ifname=tap0'  -g '-curses'  -W if,inet,dhcp  -b images/data.iso,/data -- redis.bin
 # Run using e1000 (leads to ~30k PING)
@@ -193,6 +203,7 @@ rumprun kvm -i -M 256 -I if,wm,'-net tap,ifname=tap0'  -g '-curses -serial -net 
 ```
 
 Run the benchmark
-```
+
+```bash
 redis-benchmark -h 172.31.0.10
 ```

@@ -48,6 +48,8 @@ path = "src/main.rs"
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = { version = "0.2.53", default-features = false }
+csv = "1.1"
+serde = { version = "1", features = ["derive"] }
 
 [target.'cfg(target_os = "none")'.dev-dependencies]
 #proptest = { version = "0.9.4" }

@@ -5,16 +5,21 @@ extern crate rexpect;
 extern crate matches;
 
 use std::fmt::{self, Display, Formatter};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::prelude::*;
+use std::io::Write;
+use std::path::Path;
 use std::process;
 
+use csv::WriterBuilder;
 use rexpect::errors::*;
-use rexpect::process::signal::SIGTERM;
-use rexpect::process::wait::WaitStatus;
+use rexpect::process::{signal::SIGTERM, wait::WaitStatus};
 use rexpect::session::spawn_command;
 use rexpect::{spawn, spawn_bash};
+use serde::Serialize;
+
+const REDIS_PORT: u16 = 6379;
 
 /// Different ExitStatus codes as returned by Bespin.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
@@ -263,6 +268,10 @@ impl<'a> RunnerArgs<'a> {
             }
             true => {}
         };
+
+        if self.release {
+            cmd.push(String::from("--release"));
+        }
 
         // Form arguments for QEMU
         let mut qemu_args: Vec<String> = self.qemu_args.iter().map(|arg| arg.to_string()).collect();
@@ -893,8 +902,6 @@ fn multi_process() {
 ///  * (kernel memfs eventually for DB persistence)
 #[test]
 fn redis_smoke() {
-    const REDIS_PORT: u16 = 6379;
-
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -925,6 +932,110 @@ fn redis_smoke() {
         redis_client2.send_line("get msg")?;
         redis_client2.exp_string("$13")?;
         redis_client2.exp_string("Hello, World!")?;
+
+        dhcp_server.send_control('c')?;
+        redis_client.process.kill(SIGTERM)?;
+        p.process.kill(SIGTERM)
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Signaled(_, SIGTERM, _)
+    );
+}
+
+#[test]
+fn redis_benchmark() {
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut dhcp_server = spawn_dhcpd()?;
+
+        let mut p = spawn_bespin(
+            &RunnerArgs::new("test-userspace")
+                .module("rkapps")
+                .user_feature("rkapps:redis")
+                .cmd("testbinary=redis.bin")
+                .release()
+                .timeout(20_000),
+        )?;
+
+        // Test that DHCP works:
+        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
+        p.exp_string("# Server started, Redis version 3.0.6")?;
+
+        fn spawn_bencher(port: u16) -> Result<rexpect::session::PtySession> {
+            spawn(
+                format!(
+                    "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set --csv",
+                    port
+                )
+                .as_str(),
+                Some(20000),
+            )
+        }
+
+        let mut redis_client = spawn_bencher(REDIS_PORT)?;
+        // redis reports the tputs as floating points, but we don't really care
+        // about the 0.xx requests
+        redis_client.exp_string("\"PING_INLINE\",\"")?;
+        let (_line, ping_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+        redis_client.exp_string("\"")?;
+
+        redis_client.exp_string("\"PING_BULK\",\"")?;
+        let (_line, ping_bulk_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+        redis_client.exp_string("\"")?;
+
+        redis_client.exp_string("\"SET\",\"")?;
+        let (_line, set_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+        redis_client.exp_string("\"")?;
+
+        redis_client.exp_string("\"GET\",\"")?;
+        let (line, get_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+        redis_client.exp_string("\"")?;
+
+        let ping_tput: f64 = ping_tput.parse().unwrap_or(404.0);
+        let ping_bulk_tput: f64 = ping_bulk_tput.parse().unwrap_or(404.0);
+        let set_tput: f64 = set_tput.parse().unwrap_or(404.0);
+        let get_tput: f64 = get_tput.parse().unwrap_or(404.0);
+
+        let file_name = "redis_benchmark.csv";
+        // write headers only to new file
+        let write_headers = !Path::new(file_name).exists();
+        let mut csv_file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(file_name)
+            .expect("Can't open file");
+
+        let mut wtr = WriterBuilder::new()
+            .has_headers(write_headers)
+            .from_writer(csv_file);
+
+        #[derive(Serialize)]
+        struct Record {
+            git_rev: &'static str,
+            ping: f64,
+            ping_bulk: f64,
+            set: f64,
+            get: f64,
+        };
+        let record = Record {
+            git_rev: env!("GIT_HASH"),
+            ping: ping_tput,
+            ping_bulk: ping_bulk_tput,
+            set: set_tput,
+            get: get_tput,
+        };
+        wtr.serialize(record);
+
+        println!("git_rev,ping,ping_bulk,set,get");
+        println!(
+            "{},{},{},{},{}",
+            env!("GIT_HASH"),
+            ping_tput,
+            ping_bulk_tput,
+            set_tput,
+            get_tput
+        );
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;

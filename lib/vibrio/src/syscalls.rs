@@ -325,6 +325,16 @@ pub unsafe fn vspace(
     bound: u64,
 ) -> Result<(VAddr, PAddr), SystemCallError> {
     let (err, paddr, size) = syscall!(SystemCall::VSpace as u64, op as u64, base, bound, 3);
+
+    log::trace!(
+        "OP={:?} {:#x} -- {:#x} --> {:#x} -- {:#x}",
+        op,
+        base,
+        base + bound,
+        paddr,
+        paddr + bound,
+    );
+
     if err == 0 {
         debug_assert_eq!(
             bound, size,

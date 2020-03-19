@@ -129,16 +129,16 @@ pub unsafe extern "C" fn rumpuser_clock_sleep(enum_rumpclock: u32, sec: i64, nan
         sec,
         nanos
     );
-    // TODO: ignored _enum_rumpclock
 
     let mut nlocks = 0;
     super::rumpkern_unsched(&mut nlocks, None);
 
     let (until, retval) = match enum_rumpclock as u64 {
         super::RUMPUSER_CLOCK_ABSMONO => {
-            // TODO: this will negative overflow panic on bad timed irq
+            let now = Instant::now();
             (
-                Instant::from_nanos((sec as u128) * 1_000_000_000 + nanos as u128) - Instant::now(),
+                // TODO: this may negative overflow panic on bad timed irq
+                Instant::from_nanos((sec as u128) * 1_000_000_000 + nanos as u128) - now,
                 0,
             )
         }

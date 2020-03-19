@@ -30,19 +30,16 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
         vector,
         error
     );
-    unsafe {
-        x86::irq::disable();
-    }
 
     if vector == 0x2a {
         trace!("got networked interrupt...");
+        // TODO(correctness): this will use gs, can it?
         let scheduler = lineup::tls::Environment::scheduler();
-        scheduler.add_to_runlist(lineup::ThreadId(1));
+        scheduler
+            .signal_irq
+            .store(true, core::sync::atomic::Ordering::Relaxed);
     } else {
         log::error!("got unknown interrupt... {}", vector);
-    }
-    unsafe {
-        x86::irq::enable();
     }
 
     trace!("upcall_while_enabled: renable and resume...");
@@ -81,10 +78,10 @@ pub unsafe fn resume(control: &mut kpi::arch::VirtualCpu) -> ! {
             movq  1*8(%rsi), %rbx
             movq  2*8(%rsi), %rcx
             movq  3*8(%rsi), %rdx
-            // rsi is restored at the end
+            // rsi is restored at the end (before iretq)
             movq  5*8(%rsi), %rdi
             movq  6*8(%rsi), %rbp
-            movq  7*8(%rsi), %rsp
+            // rsp is restored through iretq at the end
             movq  8*8(%rsi), %r8
             movq  9*8(%rsi), %r9
             movq 10*8(%rsi), %r10
@@ -94,12 +91,23 @@ pub unsafe fn resume(control: &mut kpi::arch::VirtualCpu) -> ! {
             movq 14*8(%rsi), %r14
             movq 15*8(%rsi), %r15
 
-            // set up stack for retq below
-            pushq 16*8(%rsi)
+            //
+            // Set-up stack to return from interrupt
+            //
 
+            // SS
+            pushq $$35
+            // %rsp
+            pushq 7*8(%rsi)
+            // RFLAGS
+            pushq 17*8(%rsi)
+            // code-segment
+            pushq $$27
+            // %rip
+            pushq 16*8(%rsi)
             // Restore rsi register last, since it was used to reach `state`
-            movq  4*8(%rsi), %rsi
-            retq
+            movq 4*8(%rsi), %rsi
+            iretq
 
             resume_end:"
     : /* No output */

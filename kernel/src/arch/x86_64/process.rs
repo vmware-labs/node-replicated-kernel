@@ -190,11 +190,11 @@ impl Ring3Resumer {
         Ring3Resumer {
             is_upcall: true,
             save_area: ptr::null(),
-            entry_point: entry_point,
-            stack_top: stack_top,
-            cpu_ctl: cpu_ctl,
-            vector: vector,
-            exception: exception,
+            entry_point,
+            stack_top,
+            cpu_ctl,
+            vector,
+            exception,
         }
     }
 

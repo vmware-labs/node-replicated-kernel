@@ -15,7 +15,7 @@ use x86::bits64::rflags::RFlags;
 /// This struct is referenced by several assembly code pieces through the kernel
 /// and in [vibrio]. Care must be taken to adjust them after any changes to
 /// this struct.
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug)]
 pub struct VirtualCpu {
     /// CPU state if interrupted while not disabled
@@ -53,8 +53,8 @@ impl VirtualCpu {
 /// and in [vibrio]. Care must be taken to adjust them after any changes to
 /// this struct.
 /// Grep for SaveArea to find all occurences.
-#[derive(Copy, Clone)]
 #[repr(C, packed)]
+#[derive(Copy, Clone)]
 pub struct SaveArea {
     /// 0: ret val, not preserved, holds 1st ret arg (error code)
     /// for syscalls

@@ -4,11 +4,9 @@ use core::alloc::Layout;
 use core::fmt;
 use core::ptr;
 
-use log::trace;
+use log::{error, info, trace, warn};
 use x86::current::paging::{PAddr, VAddr};
 use x86::io;
-
-use log::{error, warn};
 
 static PCI_CONF_ADDR: u16 = 0xcf8;
 static PCI_CONF_DATA: u16 = 0xcfc;
@@ -115,6 +113,8 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     0
 }
 
+static mut counter: u64 = 0;
+
 #[allow(unused)]
 pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     let s = lineup::tls::Environment::scheduler();
@@ -128,6 +128,10 @@ pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     let mut nlock: i32 = 1;
     loop {
         //x86::irq::disable();
+        counter += 1;
+        if counter % 100 == 0 {
+            trace!("IRQ cnt is at: {}", counter);
+        }
 
         let start = rawtime::Instant::now();
         super::rumpkern_sched(&nlock, None);
@@ -185,15 +189,15 @@ pub unsafe extern "C" fn rumpcomp_pci_virt_to_mach(vaddr: *mut c_void) -> c_ulon
         0x0,
     )
     .unwrap();
-    let paddr = paddr + vaddr.base_page_offset();
+    let paddr_aligned = paddr + vaddr.base_page_offset();
 
     trace!(
         "rumpcomp_pci_virt_to_mach va:{:#x} -> pa:{:#x}",
         vaddr,
-        paddr
+        paddr_aligned
     );
 
-    paddr.as_u64()
+    paddr_aligned.as_u64()
 }
 
 #[no_mangle]
@@ -203,12 +207,13 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     pptr: *mut c_ulong,
     vptr: *mut c_ulong,
 ) -> c_int {
-    let size = if size > 4096 {
-        log::error!("rumpcomp_pci_dmalloc size is {} {}", size, alignment);
-        2 * 1024 * 1024
-    } else {
-        4096
-    };
+    assert!(
+        size <= 2 * 1024 * 1024,
+        "Can't handle anything above 2 MiB (needs to be consecutive physically)"
+    );
+    let size = if size > 4096 { 2 * 1024 * 1024 } else { 4096 };
+    error!("rumpcomp_pci_dmalloc adjusted size {} to", size);
+
     let layout = Layout::from_size_align_unchecked(size, size);
 
     let mut p = crate::mem::PAGER.lock();

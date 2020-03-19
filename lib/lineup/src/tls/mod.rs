@@ -1,5 +1,6 @@
 use crate::{ThreadId, ThreadState};
 use core::ptr;
+use core::sync::atomic::AtomicBool;
 
 use log::trace;
 
@@ -92,6 +93,7 @@ impl Environment {
 
 #[derive(Debug)]
 pub struct SchedulerState {
+    pub signal_irq: AtomicBool,
     pub rump_upcalls: *const u64,
     pub rump_version: i64,
     pub(crate) make_runnable: crate::ds::Vec<ThreadId>,
@@ -100,6 +102,7 @@ pub struct SchedulerState {
 impl SchedulerState {
     pub fn new() -> SchedulerState {
         SchedulerState {
+            signal_irq: AtomicBool::new(false),
             rump_upcalls: ptr::null(),
             rump_version: 0,
             make_runnable: crate::ds::Vec::with_capacity(crate::Scheduler::MAX_THREADS),

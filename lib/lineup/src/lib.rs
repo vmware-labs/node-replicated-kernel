@@ -321,6 +321,16 @@ impl<'a> Scheduler<'a> {
 
     pub fn run(&mut self) {
         loop {
+            let is_irq_pending = self
+                .state
+                .signal_irq
+                .swap(false, core::sync::atomic::Ordering::AcqRel);
+
+            // TODO(correctness): Hard-coded assumption that threadId 1 is IRQ handler
+            if is_irq_pending {
+                self.runnable.push(ThreadId(1));
+            }
+
             // Try to add any threads in SchedulerState to runlist
             for tid in self.state.make_runnable.iter() {
                 trace!("making {:?} from mark_runnable runnable!", tid);

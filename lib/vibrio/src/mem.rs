@@ -90,7 +90,7 @@ impl Pager {
 }
 
 /// A pager for GlobalAlloc.
-pub static mut PAGER: Mutex<Pager> = Mutex::new(Pager { sbrk: 0x3700_0000 });
+pub static mut PAGER: Mutex<Pager> = Mutex::new(Pager { sbrk: 0x4700_0000 });
 
 /// A SafeZoneAllocator that wraps the ZoneAllocator in a Mutex.
 ///

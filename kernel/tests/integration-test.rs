@@ -1037,8 +1037,8 @@ fn redis_benchmark() {
             get_tput
         );
         assert!(
-            get_tput > 30_000.0,
-            "Redis throughput seems rather low (GET < 30k)?"
+            get_tput > 20_000.0,
+            "Redis throughput seems rather low (GET < 20k)?"
         );
 
         dhcp_server.send_control('c')?;

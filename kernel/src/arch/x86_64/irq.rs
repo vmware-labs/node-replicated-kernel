@@ -469,13 +469,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             let resumer = {
                 let was_disabled = {
-                    trace!(
-                        "vcpu state is: pc_disabled {:?} is_disabled {:?}",
-                        p.vcpu().pc_disabled,
-                        p.vcpu().is_disabled
-                    );
-
-                    let was_disabled = p.vcpu().upcalls_disabled(VAddr::from(0x0));
+                    trace!("vcpu state is: pc_disabled {:?}", p.vcpu().pc_disabled);
+                    let was_disabled = p.vcpu().upcalls_disabled(VAddr::from(a.rip));
                     p.vcpu().disable_upcalls();
                     was_disabled
                 };

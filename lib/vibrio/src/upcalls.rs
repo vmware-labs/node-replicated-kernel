@@ -37,7 +37,7 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
         let scheduler = lineup::tls::Environment::scheduler();
         scheduler
             .signal_irq
-            .store(true, core::sync::atomic::Ordering::Relaxed);
+            .store(true, core::sync::atomic::Ordering::SeqCst);
     } else {
         log::error!("got unknown interrupt... {}", vector);
     }
@@ -108,7 +108,7 @@ pub unsafe fn resume(control: &mut kpi::arch::VirtualCpu) -> ! {
             // Restore rsi register last, since it was used to reach `state`
             movq 4*8(%rsi), %rsi
             iretq
-
+            .global resume_end
             resume_end:"
     : /* No output */
     :

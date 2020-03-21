@@ -112,6 +112,31 @@ pub fn install_vcpu_area() {
     let ctl = crate::syscalls::vcpu_control_area().expect("Can't read vcpu control area.");
     ctl.resume_with_upcall =
         VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64);
+
+    let upcall_begin_rip = crate::upcalls::resume as *const fn() as u64;
+    extern "C" {
+        fn resume_end();
+    }
+    let upcall_end_rip = resume_end as *const fn() as u64;
+
+    info!(
+        "upcall_begin_rip {:#x} upcall_end_rip {:#x}",
+        upcall_begin_rip, upcall_end_rip
+    );
+
+    // We assume: functions compiled in upcall.rs appear in consecutive order in the binary
+    // (as they are listed in the file)
+    // and that there are no other symbols (from other files) added inbetween...
+    // I realize this is asking for much.
+    assert!(
+        upcall_begin_rip < upcall_end_rip,
+        "Beginning is before the end?"
+    );
+    assert!(
+        upcall_end_rip - upcall_begin_rip < 0x1000,
+        "Unusually large code footprint of resume()?"
+    );
+    ctl.pc_disabled = (VAddr::from(upcall_begin_rip), VAddr::from(upcall_end_rip));
 }
 
 /// Entry point for libc.
@@ -201,9 +226,9 @@ pub extern "C" fn main() {
                 core::mem::size_of::<tmpfs_args>(),
             );
 
-            //let nic_model_virtio = b"vioif0\0";
-            let nic_model_e1000 = b"wm0\0";
-            let iface = CStr::from_bytes_with_nul(nic_model_e1000);
+            let nic_model = b"vioif0\0";
+            let nic_model = b"wm0\0";
+            let iface = CStr::from_bytes_with_nul(nic_model);
 
             info!("before rump_pub_netconfig_dhcp_ipv4_oneshot");
 

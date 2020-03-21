@@ -79,6 +79,22 @@ From now on boot the VM using:
 qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img -nographic
 ```
 
+Results when pinging from the guest:
+
+```log
+e1000:
+64 bytes from 172.31.0.10: icmp_seq=1 ttl=64 time=0.259 ms
+64 bytes from 172.31.0.10: icmp_seq=2 ttl=64 time=0.245 ms
+64 bytes from 172.31.0.10: icmp_seq=3 ttl=64 time=0.267 ms
+64 bytes from 172.31.0.10: icmp_seq=4 ttl=64 time=0.200 ms
+
+virtio:
+64 bytes from 172.31.0.10: icmp_seq=4 ttl=64 time=0.420 ms
+64 bytes from 172.31.0.10: icmp_seq=5 ttl=64 time=0.206 ms
+64 bytes from 172.31.0.10: icmp_seq=6 ttl=64 time=0.292 ms
+64 bytes from 172.31.0.10: icmp_seq=7 ttl=64 time=0.196 ms
+```
+
 ### Redis benchmarking steps (on Linux)
 
 Once the VM is created the following steps are taken to install redis on the guest:

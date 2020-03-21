@@ -320,15 +320,20 @@ impl<'a> Scheduler<'a> {
     }
 
     pub fn run(&mut self) {
+        unsafe {
+            tls::arch::set_tls((&mut self.tls) as *mut tls::ThreadLocalStorage);
+            tls::set_scheduler_state((&mut self.state) as *mut tls::SchedulerState);
+        }
+
         loop {
+            // Get previous IRQ state and reset it
             let is_irq_pending = self
                 .state
                 .signal_irq
                 .swap(false, core::sync::atomic::Ordering::AcqRel);
-
             // TODO(correctness): Hard-coded assumption that threadId 1 is IRQ handler
             if is_irq_pending {
-                self.runnable.push(ThreadId(1));
+                self.runnable.insert(0, ThreadId(1));
             }
 
             // Try to add any threads in SchedulerState to runlist
@@ -386,9 +391,6 @@ impl<'a> Scheduler<'a> {
                     .expect("Can't find thread state?")
                     .0;
 
-                tls::arch::set_tls((&mut self.tls) as *mut tls::ThreadLocalStorage);
-                tls::set_scheduler_state((&mut self.state) as *mut tls::SchedulerState);
-
                 // if this is the first time we run this,
                 // we should not overwrite thread state
                 // the thread will do it for us.
@@ -397,22 +399,10 @@ impl<'a> Scheduler<'a> {
                 }
             }
 
-            // TODO: this should abstracted (hooks?)
-            //#[cfg(all(target_arch = "x86_64", target_os = "none"))]
-            unsafe {
-                x86::irq::enable();
-            }
-
             let result = {
                 let generator = &mut self.threads.get_mut(&tid).unwrap().1;
                 generator.resume(action)
             };
-
-            // TODO: this should abstracted (hooks?)
-            //#[cfg(all(target_arch = "x86_64", target_os = "none"))]
-            unsafe {
-                x86::irq::disable();
-            }
 
             let (is_done, retresult) = match result {
                 None => {
@@ -427,7 +417,7 @@ impl<'a> Scheduler<'a> {
                     self.threads.remove(&tid);
 
                     unsafe {
-                        tls::arch::set_tls(ptr::null_mut());
+                        tls::set_thread_state(ptr::null_mut());
                     }
                     (true, YieldResume::Completed)
                 }
@@ -508,7 +498,7 @@ impl<'a> Scheduler<'a> {
 
                 unsafe {
                     thread.state = tls::get_thread_state();
-                    //tls::arch::set_tls(ptr::null_mut());
+                    tls::set_thread_state(ptr::null_mut());
                 }
             }
         }

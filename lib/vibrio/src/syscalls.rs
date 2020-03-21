@@ -471,8 +471,14 @@ pub fn fileio_at(
 
 pub fn file_getinfo(op: FileOperation, name: u64) -> Result<FileInfo, SystemCallError> {
     let fileinfo: FileInfo = Default::default();
-    let r =
-        unsafe { syscall_4_1(SystemCall::FileIO as u64, op as u64, name as u64, &fileinfo as *const FileInfo as u64) };
+    let r = unsafe {
+        syscall_4_1(
+            SystemCall::FileIO as u64,
+            op as u64,
+            name as u64,
+            &fileinfo as *const FileInfo as u64,
+        )
+    };
 
     if r == 0 {
         Ok(fileinfo)

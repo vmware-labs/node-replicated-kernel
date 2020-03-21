@@ -349,14 +349,12 @@ impl<'a> Scheduler<'a> {
             let now = Instant::now();
 
             // TODO: Don't have to pay 2n for this
-            //trace!("waiting: {:?}", self.waiting);
             for (tid, timeout) in self.waiting.iter() {
                 if *timeout <= now {
                     self.runnable.push(*tid);
                 }
             }
             self.waiting.drain_filter(|(tid, timeout)| *timeout <= now);
-            //trace!("waiting after draining: {:?}", self.waiting);
 
             // If there is nothing to run anymore, we are done.
             if self.runnable.is_empty() {

@@ -71,6 +71,8 @@ parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
 parser.add_argument("-o", "--qemu-monitor", action="store_true",
                     help="Launch the QEMU monitor (for qemu)")
+parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio"],
+                    help='What NIC model to use for emulation', required=False)
 
 BESPIN_EXIT_CODES = {
     0: "[SUCCESS]",
@@ -247,9 +249,8 @@ def run(args):
                               'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
         # Enable networking with outside world
-        nic_model = "e1000"  # could be "virtio"
         qemu_default_args += ['-net',
-                              'nic,model={},netdev=n0'.format(nic_model)]
+                              'nic,model={},netdev=n0'.format(args.nic)]
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
 
         if args.qemu_debug_cpu:
@@ -280,6 +281,8 @@ def run(args):
 
         # Run a QEMU instance
         cmd = ' '.join(['qemu-system-x86_64'] + qemu_args)
+        if args.verbose:
+            print(cmd)
         execution = subprocess.run(cmd, shell=True, stderr=subprocess.PIPE)
         bespin_exit_code = execution.returncode >> 1
         if BESPIN_EXIT_CODES.get(bespin_exit_code):

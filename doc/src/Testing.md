@@ -53,7 +53,7 @@ This is how we create the `ubuntu-testing.img` disk in using the ubuntu-minimal 
 ```bash
 wget http://archive.ubuntu.com/ubuntu/dists/bionic/main/installer-amd64/current/images/netboot/mini.iso
 qemu-img create -f vmdk -o size=20G ubuntu-testing.img
-qemu-system-x86_64 -M 2048 --smp 2 --cpu host -drive mini.iso,device=cdrom -drive ubuntu-testing.img
+kvm -m 2048 -k en-us --smp 2 --cpu host -cdrom mini.iso -hdd ubuntu-testing.img
 # Follow installer instructions
 ```
 
@@ -72,7 +72,7 @@ GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200n8"
 GRUB_SERIAL_COMMAND="serial --speed=115200 --unit=0 --word=8 --parity=no --stop=1"
 ```
 
-Following which you must run update-grub to update the menu entries.
+Following which you must run `update-grub` to update the menu entries.
 From now on boot the VM using:
 
 ```bash
@@ -93,8 +93,16 @@ make
 
 To have the same benchmarks conditions as bespin (e.g., use a tap device) launch the VM like this:
 
+* e1000 NIC:
+
 ```bash
 qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img -nographic -net nic,model=e1000,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0
+```
+
+* virtio NIC:
+
+```bash
+qemu-system-x86_64 --enable-kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img -nographic -net nic,model=virtio,netdev=n0 -netdev tap,id=n0,script=no,ifname=tap0
 ```
 
 On the guest execute:

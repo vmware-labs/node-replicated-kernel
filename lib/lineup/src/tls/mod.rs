@@ -123,11 +123,12 @@ impl SchedulerState {
 
 #[test]
 fn test_tls() {
+    let _r = env_logger::try_init();
     use crate::DEFAULT_UPCALLS;
     let mut s = crate::Scheduler::new(DEFAULT_UPCALLS);
 
     s.spawn(
-        4096,
+        32 * 4096,
         move |mut yielder| {
             let s = Environment::scheduler();
             s.rump_upcalls = 0xdead as *mut u64;
@@ -140,7 +141,7 @@ fn test_tls() {
     );
 
     s.spawn(
-        4096,
+        32 * 4096,
         move |mut yielder| {
             let s = Environment::scheduler();
             s.rump_upcalls = 0xbeef as *mut u64;

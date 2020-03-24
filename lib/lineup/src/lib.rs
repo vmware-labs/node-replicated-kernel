@@ -8,7 +8,6 @@ extern crate fringe;
 extern crate hashbrown;
 extern crate log;
 extern crate rawtime;
-extern crate x86;
 
 use core::fmt;
 use rawtime::Instant;
@@ -499,6 +498,11 @@ impl<'a> Scheduler<'a> {
                     tls::set_thread_state(ptr::null_mut());
                 }
             }
+        }
+
+        unsafe {
+            tls::set_thread_state(ptr::null_mut());
+            tls::set_scheduler_state(ptr::null_mut());
         }
     }
 }

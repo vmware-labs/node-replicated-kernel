@@ -141,9 +141,11 @@ impl RwLockInner {
                         // Acquired lock, change to writeable
                         self.lock_type
                             .store(RwLockStatus::Writeable as usize, Ordering::SeqCst);
+                        self.wait.exit();
                         true
                     } else {
                         // Already locked (either read or write)
+                        self.wait.exit();
                         false
                     }
                 }
@@ -167,23 +169,23 @@ impl RwLockInner {
                                 self.wait.exit();
                                 return false;
                             }
-                        } else {
-                            match self.readers.compare_exchange(
-                                readers,
-                                readers + 1,
-                                Ordering::SeqCst,
-                                Ordering::SeqCst,
-                            ) {
-                                Ok(previous) => {
-                                    // Successfully increased reader
-                                    self.wait.exit();
-                                    return true;
-                                }
-                                Err(previous) => {
-                                    // Couldn't increase readers try again with new value
-                                    readers = previous;
-                                    continue;
-                                }
+                        }
+
+                        match self.readers.compare_exchange(
+                            readers,
+                            readers + 1,
+                            Ordering::SeqCst,
+                            Ordering::SeqCst,
+                        ) {
+                            Ok(previous) => {
+                                // Successfully increased reader
+                                self.wait.exit();
+                                return true;
+                            }
+                            Err(previous) => {
+                                // Couldn't increase readers try again with new value
+                                readers = previous;
+                                continue;
                             }
                         }
                     }
@@ -191,7 +193,7 @@ impl RwLockInner {
             }
         } else {
             // Someone is inside this RwLock at the moment
-            false
+            return false;
         }
     }
 

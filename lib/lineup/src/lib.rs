@@ -3,11 +3,6 @@
 #![allow(unused)]
 
 extern crate alloc;
-extern crate either;
-extern crate fringe;
-extern crate hashbrown;
-extern crate log;
-extern crate rawtime;
 
 use core::fmt;
 use rawtime::Instant;

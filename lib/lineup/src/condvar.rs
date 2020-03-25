@@ -86,7 +86,6 @@ impl CondVarInner {
         mtx.exit();
     }
 
-    // cv_sched_enter
     fn cv_reschedule(&mut self, mtx: &Mutex, rid: &i32) {
         let yielder: &mut ThreadState = Environment::thread();
 
@@ -99,19 +98,23 @@ impl CondVarInner {
         }
     }
 
+    /// SMP: ok
     pub fn wait(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
         let yielder: &mut ThreadState = Environment::thread();
 
         let mut rid = 0;
-        self.cv_unschedule(mtx, &mut rid);
         self.waiters.push(tid);
+        self.cv_unschedule(mtx, &mut rid);
+
         trace!("waiting for {:?}", tid);
         yielder.make_unrunnable(tid);
         self.cv_reschedule(mtx, &rid);
-        self.waiters.remove_item(&tid);
+        let r = self.waiters.remove_item(&tid);
+        debug_assert!(r.is_none(), "signal/broadcast must remove");
     }
 
+    /// SMP: ok
     pub fn wait_nowrap(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
         let yielder: &mut ThreadState = Environment::thread();
@@ -121,10 +124,12 @@ impl CondVarInner {
         mtx.exit();
         yielder.make_unrunnable(tid);
         mtx.enter_nowrap();
-        self.waiters.remove_item(&tid);
+        let r = self.waiters.remove_item(&tid);
+        debug_assert!(r.is_none(), "signal/broadcast must remove");
     }
 
     /// Returns false on time-out, or true if woken up by other event
+    /// SMP:ok
     pub fn timed_wait(&mut self, mtx: &Mutex, d: Duration) -> bool {
         let mut rid: i32 = 0;
         let wakup_time = Instant::now().add(d);
@@ -146,7 +151,10 @@ impl CondVarInner {
         Instant::now() < wakup_time
     }
 
+    // SMP: ok
     pub fn signal(&mut self) {
+        // The thread shall own the mutex with which it called
+        // pthread_cond_wait() or pthread_cond_timedwait().
         let waking_tid = self.waiters.pop();
         trace!(
             "{:?} CondVarInner.signal {:p} {:?}",
@@ -161,7 +169,10 @@ impl CondVarInner {
         });
     }
 
+    // SMP: ok
     pub fn broadcast(&mut self) {
+        // The thread shall own the mutex with which it called
+        // pthread_cond_wait() or pthread_cond_timedwait().
         let waiters = self.waiters.clone();
         self.waiters.clear();
         trace!(

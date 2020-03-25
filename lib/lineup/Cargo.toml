@@ -12,6 +12,7 @@ log = "0.4.6"
 hashbrown = { version = "0.6.0", features = [ "nightly" ] }
 rawtime = { path = "../rawtime" }
 backtracer = { path = "../backtracer" }
+x86 = { path = "../x86" }
 
 [target.'cfg(target_family = "unix")'.dev-dependencies]
 env_logger = "*"

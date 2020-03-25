@@ -52,7 +52,7 @@ impl SemaphoreInner {
     pub fn new(count: isize) -> SemaphoreInner {
         SemaphoreInner {
             count: count,
-            mutex: Mutex::new(false, false),
+            mutex: Mutex::new(false, true),
             cv: CondVar::new(),
         }
     }

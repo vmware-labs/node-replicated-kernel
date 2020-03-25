@@ -86,6 +86,7 @@ impl CondVarInner {
         mtx.exit();
     }
 
+    // cv_sched_enter
     fn cv_reschedule(&mut self, mtx: &Mutex, rid: &i32) {
         let yielder: &mut ThreadState = Environment::thread();
 
@@ -182,6 +183,8 @@ impl CondVarInner {
 
 #[test]
 fn test_condvar() {
+    let _r = env_logger::try_init();
+
     use crate::DEFAULT_UPCALLS;
     use core::ptr;
     let mut s = Scheduler::new(DEFAULT_UPCALLS);
@@ -191,7 +194,7 @@ fn test_condvar() {
     let cv1: ds::Arc<CondVar> = cv.clone();
     let cv2: ds::Arc<CondVar> = cv.clone();
 
-    let mtx = ds::Arc::new(Mutex::new(false, false));
+    let mtx = ds::Arc::new(Mutex::new(false, true));
     let m2: ds::Arc<Mutex> = mtx.clone();
 
     s.spawn(

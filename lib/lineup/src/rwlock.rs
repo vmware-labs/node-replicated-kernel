@@ -1,8 +1,13 @@
 use core::cell::UnsafeCell;
+use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
+
+use crossbeam_utils::CachePadded;
 use either::{Either, Left, Right};
 
+use crate::mutex::Mutex;
 use crate::tls::Environment;
 use crate::{ds, Scheduler, ThreadId, ThreadState};
+
 use log::trace;
 
 #[derive(Debug, Clone, Copy)]
@@ -57,173 +62,189 @@ impl RwLock {
     }
 }
 
+/// Holds the current status of the reader-writer lock.
+#[repr(usize)]
+enum RwLockStatus {
+    /// Lock not in use.
+    Free = 0,
+    /// Locked as writeable.
+    Writeable = 1,
+    /// Locked as readable.
+    Readable = 2,
+}
+
 #[derive(Debug)]
 struct RwLockInner {
-    owner: Option<Either<*const u64, usize>>,
-    wait_for_read: ds::Vec<ThreadId>,
-    wait_for_write: ds::Vec<ThreadId>,
+    access: Mutex,
+    wait: Mutex,
+    readers: CachePadded<AtomicUsize>,
+    lock_type: CachePadded<AtomicUsize>,
 }
 
 impl RwLockInner {
+    // SMP ok
     pub fn new() -> RwLockInner {
         RwLockInner {
-            owner: None,
-            wait_for_read: ds::Vec::with_capacity(Scheduler::MAX_THREADS),
-            wait_for_write: ds::Vec::with_capacity(Scheduler::MAX_THREADS),
+            access: Mutex::new(false, true),
+            wait: Mutex::new(false, true),
+            readers: CachePadded::new(AtomicUsize::new(0)),
+            lock_type: CachePadded::new(AtomicUsize::new(RwLockStatus::Free as usize)),
         }
     }
 
+    /// SMP ok
     pub fn held(&self, opt: RwLockIntent) -> bool {
-        let tid = Environment::tid();
-        let thread = Environment::thread();
-
-        let held = match (opt, self.owner) {
-            (_, None) => false,
-            (RwLockIntent::Read, Some(Left(_))) => false,
-            (RwLockIntent::Write, Some(Right(_))) => false,
-            // If we have readers and our intent is read, we 'own' the lock
-            (RwLockIntent::Read, Some(Right(_readers))) => true,
-            (RwLockIntent::Write, Some(Left(owner))) => thread.rump_lwp == owner,
+        let held = match opt {
+            RwLockIntent::Read => {
+                self.lock_type.load(Ordering::SeqCst) == RwLockStatus::Readable as usize
+            }
+            RwLockIntent::Write => {
+                self.lock_type.load(Ordering::SeqCst) == RwLockStatus::Writeable as usize
+            }
         };
 
         trace!("holding rwlock with opt {:?}: {}", opt, held);
         held
     }
 
+    // SMP ok
     pub fn enter(&mut self, opt: RwLockIntent) {
-        let tid = Environment::tid();
-        let yielder: &mut ThreadState = Environment::thread();
+        self.wait.enter();
 
-        let mut rid = 0;
-        match (self.try_enter(opt), opt) {
-            (true, _) => return,
-            (false, RwLockIntent::Read) => {
-                (yielder.upcalls.deschedule)(&mut rid, None);
-                self.wait_for_read.push(tid);
-                yielder.make_unrunnable(tid);
-                assert!(self.try_enter(opt));
-                (yielder.upcalls.schedule)(&rid, None);
+        match opt {
+            RwLockIntent::Write => {
+                // Get access and set the lock type
+                self.access.enter();
+                self.lock_type
+                    .store(RwLockStatus::Writeable as usize, Ordering::SeqCst);
             }
-            (false, RwLockIntent::Write) => {
-                (yielder.upcalls.deschedule)(&mut rid, None);
-                self.wait_for_write.push(tid);
-                yielder.make_unrunnable(tid);
-                assert!(self.try_enter(opt));
-                (yielder.upcalls.schedule)(&rid, None);
+            RwLockIntent::Read => {
+                // We are the first reader, get access and set lock type
+                if self.readers.fetch_add(1, Ordering::SeqCst) == 0 {
+                    self.access.enter();
+                    self.lock_type
+                        .store(RwLockStatus::Readable as usize, Ordering::SeqCst);
+                }
+                // else: Someone already has the read-lock, just increasing readers is fine
             }
         }
+
+        self.wait.exit();
     }
 
+    // SMP ok
     pub fn try_enter(&mut self, opt: RwLockIntent) -> bool {
-        let tid = Environment::tid();
-
-        match (opt, self.owner) {
-            (RwLockIntent::Read, Some(Left(_owner))) => false,
-            (RwLockIntent::Write, Some(Left(_owner))) => false,
-            (RwLockIntent::Write, Some(Right(_reader_count))) => false,
-            (RwLockIntent::Read, Some(Right(reader_count))) => {
-                self.owner = Some(Right(reader_count + 1));
-                true
-            }
-            (RwLockIntent::Read, None) => {
-                if self.wait_for_write.len() == 0 {
-                    self.owner = Some(Right(1));
-                    true
-                } else {
-                    false
+        if self.wait.try_enter() {
+            match opt {
+                RwLockIntent::Write => {
+                    if self.access.try_enter() {
+                        // Acquired lock, change to writeable
+                        self.lock_type
+                            .store(RwLockStatus::Writeable as usize, Ordering::SeqCst);
+                        true
+                    } else {
+                        // Already locked (either read or write)
+                        false
+                    }
+                }
+                RwLockIntent::Read => {
+                    // want to be a reader?
+                    // If you're the first need to get the access mutex & increment readers
+                    // else need to just increment readers
+                    let mut readers = self.readers.load(Ordering::SeqCst);
+                    loop {
+                        // Are we the first reader?
+                        if readers == 0 {
+                            if self.access.try_enter() {
+                                // Managed to gain access to the RwLock
+                                self.readers.store(1, Ordering::SeqCst);
+                                self.lock_type
+                                    .store(RwLockStatus::Readable as usize, Ordering::SeqCst);
+                                self.wait.exit();
+                                return true;
+                            } else {
+                                // Probably locked as writeable
+                                self.wait.exit();
+                                return false;
+                            }
+                        } else {
+                            match self.readers.compare_exchange(
+                                readers,
+                                readers + 1,
+                                Ordering::SeqCst,
+                                Ordering::SeqCst,
+                            ) {
+                                Ok(previous) => {
+                                    // Successfully increased reader
+                                    self.wait.exit();
+                                    return true;
+                                }
+                                Err(previous) => {
+                                    // Couldn't increase readers try again with new value
+                                    readers = previous;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            (RwLockIntent::Write, None) => {
-                self.owner = Some(Left(Environment::thread().rump_lwp));
-                true
-            }
-        }
-    }
-
-    // Wake-up strategy prioritize writers over readers to avoid starvations of writes.
-    fn wakeup_writer_then_readers(&mut self, tid: ThreadId) {
-        let yielder: &mut ThreadState = Environment::thread();
-
-        if self.wait_for_write.len() > 0 {
-            self.owner = Some(Left(yielder.rump_lwp));
-            yielder.make_runnable(tid);
-        } else if self.wait_for_read.len() > 0 {
-            self.owner = Some(Right(self.wait_for_read.len()));
-            let wait_for_read = self.wait_for_read.clone();
-            self.wait_for_read.clear();
-            yielder.make_all_runnable(wait_for_read);
-        }
-    }
-
-    pub fn exit(&mut self) {
-        let tid = Environment::tid();
-        trace!(
-            "rwlock exit {:?} {:?} {:?}",
-            tid,
-            self.wait_for_read,
-            self.wait_for_write
-        );
-
-        match self.owner {
-            Some(Left(_owner)) => {
-                self.owner = None;
-                self.wakeup_writer_then_readers(tid);
-            }
-            Some(Right(reader_count)) => {
-                if reader_count > 1 {
-                    self.owner = Some(Right(reader_count - 1));
-                } else {
-                    self.owner = None;
-                    self.wakeup_writer_then_readers(tid);
-                }
-            }
-            None => {
-                unreachable!("Can't exit lock that we don't hold!");
-            }
-        }
-    }
-
-    pub fn downgrade(&mut self) {
-        let tid = Environment::tid();
-
-        let owner = self.owner.unwrap().left();
-        assert_eq!(
-            owner,
-            Some(Environment::thread().rump_lwp),
-            "Need to own the lock!"
-        );
-
-        self.owner = Some(Right(self.wait_for_read.len() + 1));
-        if self.wait_for_read.len() > 0 {
-            let wait_for_read = self.wait_for_read.clone();
-            self.wait_for_read.clear();
-
-            let yielder: &mut ThreadState = Environment::thread();
-            yielder.make_all_runnable(wait_for_read);
-        }
-    }
-
-    pub fn try_upgrade(&mut self) -> bool {
-        let tid = Environment::tid();
-
-        let can_upgrade = match self.owner {
-            Some(Right(reader_count)) => reader_count == 1, /* TODO: This assume we're the reader... */
-            _ => false,
-        };
-
-        if can_upgrade {
-            trace!("try_upgrade upgrade successful");
-            self.owner = Some(Left(Environment::thread().rump_lwp));
-            true
         } else {
-            trace!("can not upgrade reader_count is {:?}", self.owner);
+            // Someone is inside this RwLock at the moment
             false
+        }
+    }
+
+    // SMP ok
+    pub fn exit(&mut self) {
+        if self.lock_type.load(Ordering::SeqCst) == RwLockStatus::Writeable as usize
+            || self.readers.fetch_sub(1, Ordering::SeqCst) == 1
+        {
+            // Writer or last reader is leaving
+            self.lock_type
+                .store(RwLockStatus::Free as usize, Ordering::SeqCst);
+            self.access.exit();
+        } else {
+            // A reader is leaving but we still have more readers
+        }
+    }
+
+    // SMP ok
+    pub fn downgrade(&mut self) {
+        self.lock_type
+            .store(RwLockStatus::Readable as usize, Ordering::SeqCst);
+        if self.readers.fetch_add(1, Ordering::SeqCst) != 0 {
+            // If we're going from writer -> reader but we're not the first reader
+            // (race with enter) we should give up the lock so 1st reader can acquire it
+            self.access.exit();
+        }
+    }
+
+    // SMP
+    pub fn try_upgrade(&mut self) -> bool {
+        let assumed_readers = 1;
+        match self
+            .readers
+            .compare_exchange(assumed_readers, 0, Ordering::SeqCst, Ordering::SeqCst)
+        {
+            Ok(_previous) => {
+                // We are the only reader
+                self.lock_type
+                    .store(RwLockStatus::Writeable as usize, Ordering::SeqCst);
+                true
+            }
+            Err(_previous) => {
+                // There are other readers
+                false
+            }
         }
     }
 }
 
 #[test]
 fn test_rwlock() {
+    let _r = env_logger::try_init();
+
     use crate::DEFAULT_UPCALLS;
     use core::ptr;
     let mut s = Scheduler::new(DEFAULT_UPCALLS);

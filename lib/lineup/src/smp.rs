@@ -1,11 +1,3 @@
-//!  A user-space thread scheduler with support for synchronization primitives.
-
-#![feature(vec_remove_item, linkage, drain_filter)]
-#![cfg_attr(not(test), no_std)]
-#![allow(unused)]
-
-extern crate alloc;
-
 use core::fmt;
 use rawtime::Instant;
 
@@ -33,171 +25,13 @@ use core::ptr;
 use core::time::Duration;
 use log::*;
 
+use super::mutex;
+use super::stack::LineupStack;
+use super::tls;
+use super::*;
+
 use fringe::generator::{Generator, Yielder};
 use fringe::Stack;
-
-pub mod condvar;
-pub mod mutex;
-pub mod rwlock;
-pub mod semaphore;
-pub mod smp;
-pub mod stack;
-pub mod tls;
-
-use stack::LineupStack;
-
-fn noop_curlwp() -> u64 {
-    0
-}
-
-fn noop_unschedule(_nlocks: &mut i32, _mtx: Option<&mutex::Mutex>) {}
-
-fn noop_schedule(_nlocks: &i32, _mtx: Option<&mutex::Mutex>) {}
-
-pub static DEFAULT_UPCALLS: Upcalls = Upcalls {
-    curlwp: noop_curlwp,
-    schedule: noop_schedule,
-    deschedule: noop_unschedule,
-};
-
-/// Notification up-calls from the scheduler to the application
-/// (here to support the rump runtime).
-#[derive(Clone, Copy)]
-pub struct Upcalls {
-    pub curlwp: fn() -> u64,
-    pub schedule: fn(&i32, Option<&mutex::Mutex>),
-    pub deschedule: fn(&mut i32, Option<&mutex::Mutex>),
-}
-
-impl fmt::Debug for Upcalls {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Upcalls {{}}")
-    }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    Interrupted,
-    TimedOut,
-}
-
-/// Requests back to from the thread-context to the scheduler.
-#[derive(Debug, PartialEq)]
-enum YieldRequest {
-    /// Just yield for now?
-    None,
-    /// Block thread until we reach Instant.
-    Timeout(Instant),
-    /// Tell scheduler to make ThreadId runnable.
-    Runnable(ThreadId),
-    /// Tell scheduler to make ThreadId unrunnable.
-    Unrunnable(ThreadId),
-    /// Make everything in the given list runnable.
-    RunnableList(ds::Vec<ThreadId>),
-    /// Spawn a new thread that runs the provided function and argument.
-    Spawn(
-        Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
-        *mut u8,
-    ),
-    /// Spawn a new thread that runs function/argument on the provided stack.
-    SpawnWithStack(
-        LineupStack,
-        Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
-        *mut u8,
-    ),
-}
-
-//unsafe impl Send for YieldRequest {}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum YieldResume {
-    Started,
-    Completed,
-    TimedOut,
-    Interrupted,
-    Spawned(ThreadId),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ThreadId(pub usize);
-
-impl Hash for ThreadId {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
-
-impl fmt::Display for ThreadId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-pub struct Thread {
-    id: ThreadId,
-    return_with: Option<YieldResume>,
-    /// TODO(correctness): It's not really static (it's on the thread's stack),
-    /// but keeps it easier for now.
-    state: *mut ThreadState<'static>,
-}
-
-impl fmt::Debug for Thread {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Thread#{}", self.id.0)
-    }
-}
-
-impl Thread {
-    unsafe fn new<'a, F>(
-        tid: ThreadId,
-        stack: LineupStack,
-        f: F,
-        arg: *mut u8,
-        upcalls: Upcalls,
-    ) -> (
-        Thread,
-        Generator<'a, YieldResume, YieldRequest, LineupStack>,
-    )
-    where
-        F: 'static + FnOnce(*mut u8) + Send,
-    {
-        let thread = Thread {
-            id: tid,
-            return_with: None,
-            state: ptr::null_mut(),
-        };
-
-        let generator = Generator::unsafe_new(stack, move |yielder, _| {
-            let mut ts = ThreadState {
-                tid: tid,
-                yielder: yielder,
-                upcalls: upcalls,
-                rump_lwp: ptr::null_mut(),
-                rumprun_lwp: ptr::null_mut(),
-            };
-            tls::set_thread_state((&mut ts) as *mut ThreadState);
-            let r = f(arg);
-            tls::set_thread_state(ptr::null_mut() as *mut ThreadState);
-            r
-        });
-
-        (thread, generator)
-    }
-}
-
-impl PartialEq for Thread {
-    fn eq(&self, other: &Thread) -> bool {
-        self.id.0 == other.id.0
-    }
-}
-
-impl Eq for Thread {}
-
-impl Hash for Thread {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
 
 pub struct Scheduler<'a> {
     threads: ds::HashMap<
@@ -605,4 +439,20 @@ impl<'a> ThreadState<'a> {
     pub fn relinquish(&self) {
         self.suspend(YieldRequest::None);
     }
+}
+
+#[test]
+fn smp_sched() {
+    use crate::ds;
+    use crate::mutex::Mutex;
+
+    let mut s = Scheduler::new(DEFAULT_UPCALLS);
+    let mtx = ds::Arc::new(Mutex::new(false, true));
+    let m1: ds::Arc<Mutex> = mtx.clone();
+    let m2: ds::Arc<Mutex> = mtx.clone();
+
+    s.spawn_core(0);
+    s.spawn_core(1);
+    s.spawn_core(2);
+    s.spawn_core(3);
 }

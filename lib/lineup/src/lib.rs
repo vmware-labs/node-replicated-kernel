@@ -98,16 +98,19 @@ enum YieldRequest {
     Spawn(
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
+        CoreId
     ),
     /// Spawn a new thread that runs function/argument on the provided stack.
     SpawnWithStack(
         LineupStack,
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
+        CoreId
     ),
 }
 
 //unsafe impl Send for YieldRequest {}
+type CoreId = usize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum YieldResume {
@@ -116,12 +119,15 @@ enum YieldResume {
     TimedOut,
     Interrupted,
     Spawned(ThreadId),
+    /// Thread has completed (and has been removed from the scheduler state)
+    DoNotResume,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ThreadId(pub usize);
 
 impl Hash for ThreadId {
+    /// For hashing we only rely on the ID as the affinity can change.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
@@ -129,12 +135,13 @@ impl Hash for ThreadId {
 
 impl fmt::Display for ThreadId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "ThreadId {{ id={} }}", self.0)
     }
 }
 
 pub struct Thread {
     id: ThreadId,
+    affinity: CoreId,
     return_with: Option<YieldResume>,
     /// TODO(correctness): It's not really static (it's on the thread's stack),
     /// but keeps it easier for now.
@@ -150,6 +157,7 @@ impl fmt::Debug for Thread {
 impl Thread {
     unsafe fn new<'a, F>(
         tid: ThreadId,
+        affinity: CoreId,
         stack: LineupStack,
         f: F,
         arg: *mut u8,
@@ -163,6 +171,7 @@ impl Thread {
     {
         let thread = Thread {
             id: tid,
+            affinity,
             return_with: None,
             state: ptr::null_mut(),
         };
@@ -313,7 +322,7 @@ impl<'a> Scheduler<'a> {
     {
         let tid = ThreadId(self.tid_counter);
         let stack = LineupStack::from_size(stack_size);
-        let (handle, generator) = unsafe { Thread::new(tid, stack, f, arg, self.upcalls) };
+        let (handle, generator) = unsafe { Thread::new(tid, 0, stack, f, arg, self.upcalls) };
 
         self.add_thread(handle, generator).map(|tid| {
             self.mark_runnable(tid);
@@ -332,7 +341,7 @@ impl<'a> Scheduler<'a> {
         F: 'static + FnOnce(*mut u8) + Send,
     {
         let tid = ThreadId(self.tid_counter);
-        let (handle, generator) = unsafe { Thread::new(tid, stack, f, arg, self.upcalls) };
+        let (handle, generator) = unsafe { Thread::new(tid, 0, stack, f, arg, self.upcalls) };
 
         self.add_thread(handle, generator).map(|tid| {
             self.mark_runnable(tid);
@@ -476,7 +485,7 @@ impl<'a> Scheduler<'a> {
                     self.mark_unrunnable(tid);
                     (false, YieldResume::Completed)
                 }
-                Some(YieldRequest::Spawn(function, arg)) => {
+                Some(YieldRequest::Spawn(function, arg, _)) => {
                     trace!("self.spawn {:?} {:p}", function, arg);
                     let tid = self
                         .spawn(
@@ -489,7 +498,7 @@ impl<'a> Scheduler<'a> {
                         .expect("Can't spawn the thread");
                     (false, YieldResume::Spawned(tid))
                 }
-                Some(YieldRequest::SpawnWithStack(stack, function, arg)) => {
+                Some(YieldRequest::SpawnWithStack(stack, function, arg, _)) => {
                     trace!("self.spawn {:?} {:p}", function, arg);
                     let tid = self
                         .spawn_with_stack(
@@ -554,7 +563,7 @@ impl<'a> ThreadState<'a> {
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
     ) -> Option<ThreadId> {
-        let request = YieldRequest::SpawnWithStack(s, f, arg);
+        let request = YieldRequest::SpawnWithStack(s, f, arg, 0);
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,
@@ -566,7 +575,7 @@ impl<'a> ThreadState<'a> {
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
     ) -> Option<ThreadId> {
-        let request = YieldRequest::Spawn(f, arg);
+        let request = YieldRequest::Spawn(f, arg, 0);
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,

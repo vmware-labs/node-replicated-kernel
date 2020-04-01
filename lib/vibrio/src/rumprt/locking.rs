@@ -7,7 +7,7 @@ use rawtime::Duration;
 use lineup::condvar::CondVar;
 use lineup::mutex::Mutex;
 use lineup::rwlock::{RwLock, RwLockIntent};
-use lineup::tls::Environment;
+use lineup::tls2::Environment;
 
 use super::{c_int, errno, threads};
 
@@ -19,7 +19,7 @@ pub unsafe extern "C" fn rumpuser_mutex_init(new_mtx: *mut *mut Mutex, flag: i64
     let is_spin = flag & RUMPUSER_MTX_SPIN > 0;
     let is_kmutex = flag & RUMPUSER_MTX_KMUTEX > 0;
 
-    let alloc_mtx: Box<Mutex> = Box::new(Mutex::new(is_spin, is_kmutex));
+    let alloc_mtx: Box<Mutex> = Box::new(Mutex::new_with_flags(is_spin, is_kmutex));
     *new_mtx = Box::into_raw(alloc_mtx);
 
     trace!("rumpuser_mutex_init {:p} {}", *new_mtx, flag);
@@ -170,12 +170,12 @@ pub unsafe extern "C" fn rumpuser_cv_wait(cv: *mut CondVar, mtx: *mut Mutex) {
 pub unsafe extern "C" fn rumpuser_cv_wait_nowrap(cv: *mut CondVar, mtx: *mut Mutex) {
     trace!(
         "{:?} rumpuser_cv_wait_nowrap {:p} {:p}",
-        lineup::tls::Environment::tid(),
+        lineup::tls2::Environment::tid(),
         cv,
         mtx
     );
 
-    /*if lineup::tls::Environment::tid() == lineup::ThreadId(1)
+    /*if lineup::tls2::Environment::tid() == lineup::ThreadId(1)
         && (cv as *const u64) == (0xffffffff81f0ba80 as *const u64)
     {
         crate::panic::backtrace();
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn rumpuser_cv_timedwait(
 ) -> c_int {
     trace!(
         "{:?} rumpuser_cv_timedwait {:p} {:p} {} {}",
-        lineup::tls::Environment::tid(),
+        lineup::tls2::Environment::tid(),
         cv,
         mtx,
         sec,

@@ -5,7 +5,7 @@ use core::ptr;
 
 use log::info;
 
-use lineup::tls::Environment;
+use lineup::tls2::Environment;
 use rawtime::{Duration, Instant};
 
 use super::{c_int, c_long, c_size_t, c_ssize_t, c_void, clockid_t, lwpid_t, time_t};

@@ -17,8 +17,8 @@ pub(crate) unsafe fn get_scb() -> *const SchedulerControlBlock {
     segmentation::rdgsbase() as *const SchedulerControlBlock
 }
 
-pub(crate) unsafe fn set_scb(t: &'static SchedulerControlBlock) {
-    segmentation::wrgsbase(t as *const _ as u64)
+pub(crate) unsafe fn set_scb(scb: *const SchedulerControlBlock) {
+    segmentation::wrgsbase(scb as *const _ as u64)
 }
 
 /// Determines the necessary space for per-thread TLS memory region.

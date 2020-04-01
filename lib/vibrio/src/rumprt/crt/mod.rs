@@ -187,13 +187,13 @@ pub extern "C" fn main() {
     debug!("Initialized logging");
     install_vcpu_area();
 
-    let up = lineup::Upcalls {
+    let up = lineup::upcalls::Upcalls {
         curlwp: super::rumpkern_curlwp,
         deschedule: super::rumpkern_unsched,
         schedule: super::rumpkern_sched,
     };
 
-    let mut scheduler = lineup::Scheduler::new(up);
+    let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
     scheduler.spawn(
         32 * 4096,
         |_yielder| unsafe {
@@ -254,7 +254,7 @@ pub extern "C" fn main() {
             super::crt::environ = c_environ.as_mut_ptr();
 
             // Set up the lwp pointer stuff
-            let t = lineup::tls::Environment::thread();
+            let t = lineup::tls2::Environment::thread();
             let mut mainthread = rumprun_lwp {
                 id: 1,
                 rl_lwpctl: lwpctl {
@@ -284,6 +284,7 @@ pub extern "C" fn main() {
             rumprun_main1(0, c_args.as_ptr());
         },
         core::ptr::null_mut(),
+        0
     );
 
     scheduler
@@ -294,11 +295,14 @@ pub extern "C" fn main() {
                 unreachable!("should not exit");
             },
             core::ptr::null_mut(),
+            0
         )
         .expect("Can't create IRQ thread?");
 
+    use lineup::tls2::SchedulerControlBlock;
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     loop {
-        scheduler.run();
+        scheduler.run(&scb);
     }
 
     core::mem::forget(scheduler);

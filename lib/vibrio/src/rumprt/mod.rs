@@ -111,8 +111,8 @@ pub fn rumpkern_curlwp() -> u64 {
 }
 
 pub fn rumpkern_unsched(nlocks: &mut i32, mtx: Option<&Mutex>) {
-    let s = lineup::tls::Environment::scheduler();
-    let upcalls = s.rump_upcalls as *const RumpHyperUpcalls;
+    let s = lineup::tls2::Environment::scheduler();
+    let upcalls = s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     unsafe {
@@ -127,8 +127,8 @@ pub fn rumpkern_unsched(nlocks: &mut i32, mtx: Option<&Mutex>) {
 }
 
 pub fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
-    let s = lineup::tls::Environment::scheduler();
-    let upcalls = s.rump_upcalls as *const RumpHyperUpcalls;
+    let s = lineup::tls2::Environment::scheduler();
+    let upcalls = s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     trace!("rumpkern_sched {} {:p}", *nlocks, mtx);
@@ -142,7 +142,7 @@ pub fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
 pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *mut RumpHyperUpcalls) -> i64 {
     info!("rumpuser_init ver {} {:p}", version, hyp);
 
-    let s = lineup::tls::Environment::scheduler();
+    let s = lineup::tls2::Environment::scheduler();
     s.set_rump_context(version, hyp as *mut u64);
 
     0

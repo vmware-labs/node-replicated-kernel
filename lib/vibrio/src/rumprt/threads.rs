@@ -3,7 +3,7 @@
 use core::ops::Add;
 
 use cstr_core::CStr;
-use lineup::tls::Environment;
+use lineup::tls2::Environment;
 use log::{info, trace};
 use rawtime::{Duration, Instant};
 
@@ -52,7 +52,7 @@ pub unsafe extern "C" fn rumpuser_thread_create(
         cookie
     );
 
-    let s = lineup::tls::Environment::thread();
+    let s = lineup::tls2::Environment::thread();
     s.spawn(fun, arg);
 
     0
@@ -61,9 +61,9 @@ pub unsafe extern "C" fn rumpuser_thread_create(
 /// Called when a thread created with rumpuser_thread_create() exits.
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_thread_exit() {
-    let t = lineup::tls::Environment::thread();
+    let t = lineup::tls2::Environment::thread();
     loop {
-        info!("rumpuser_thread_exit {:?}", lineup::tls::Environment::tid());
+        info!("rumpuser_thread_exit {:?}", lineup::tls2::Environment::tid());
         t.block();
         unreachable!("rumpuser_thread_exit");
     }
@@ -79,11 +79,11 @@ pub unsafe extern "C" fn rumpuser_thread_join(_cookie: *mut u8) -> i64 {
 pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i64 {
     trace!(
         "{:?} rumpuser_curlwpop op={} lwp={:p}",
-        lineup::tls::Environment::tid(),
+        lineup::tls2::Environment::tid(),
         op,
         lwp
     );
-    let t = lineup::tls::Environment::thread();
+    let t = lineup::tls2::Environment::thread();
 
     if op == RUMPLWPOP_RUMPUSER_LWP_SET {
         t.set_lwp(lwp as *const u64);
@@ -99,8 +99,8 @@ pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i6
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_curlwp() -> *mut lwp {
     //debug!("rumpuser_curlwp");
-    let t = lineup::tls::Environment::thread();
-    if t.rump_lwp == core::ptr::null() {
+    let t = lineup::tls2::Environment::thread();
+    /*if t.rump_lwp == core::ptr::null() {
         let fsbase = x86::current::segmentation::rdfsbase();
         if fsbase > 0 {
             *(fsbase as *mut u64) = fsbase;
@@ -109,7 +109,7 @@ pub unsafe extern "C" fn rumpuser_curlwp() -> *mut lwp {
         log::info!("fs = {:#x}", x86::segmentation::fs());
         log::info!("gs = {:#x}", x86::segmentation::gs());
         error!("rump lwp is null");*/
-    }
+    }*/
     t.rump_lwp as *mut lwp
 }
 

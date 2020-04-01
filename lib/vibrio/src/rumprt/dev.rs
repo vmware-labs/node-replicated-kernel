@@ -117,8 +117,8 @@ static mut counter: u64 = 0;
 
 #[allow(unused)]
 pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
-    let s = lineup::tls::Environment::scheduler();
-    let upcalls = s.rump_upcalls as *const super::RumpHyperUpcalls;
+    let s = lineup::tls2::Environment::scheduler();
+    let upcalls = s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const super::RumpHyperUpcalls;
 
     (*upcalls).hyp_schedule.expect("rump_upcalls set")();
     (*upcalls).hyp_lwproc_newlwp.expect("rump_upcalls set")(0);
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
         //assert_eq!(r, 1, "IRQ handler should return 1 (I don't actually know)?");
         super::rumpkern_unsched(&mut nlock, None);
 
-        let thread = lineup::tls::Environment::thread();
+        let thread = lineup::tls2::Environment::thread();
         thread.block(); // Wake up on next IRQ
     }
 }

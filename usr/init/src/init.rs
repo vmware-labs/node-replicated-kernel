@@ -17,6 +17,8 @@ use core::slice::from_raw_parts_mut;
 use vibrio::rumprt;
 use vibrio::{sys_print, sys_println};
 
+use lineup::tls2::SchedulerControlBlock;
+
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
@@ -56,8 +58,7 @@ fn alloc_test() {
 }
 
 fn scheduler_test() {
-    use lineup::DEFAULT_UPCALLS;
-    let mut s = lineup::Scheduler::new(DEFAULT_UPCALLS);
+    let mut s: lineup::scheduler::SmpScheduler = Default::default();
 
     s.spawn(
         32 * 4096,
@@ -65,6 +66,7 @@ fn scheduler_test() {
             info!("Hello from t1");
         },
         ptr::null_mut(),
+        0
     );
 
     s.spawn(
@@ -73,9 +75,11 @@ fn scheduler_test() {
             info!("Hello from t2");
         },
         ptr::null_mut(),
+        0
     );
 
-    s.run();
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    s.run(&scb);
 
     info!("scheduler_test OK");
 }
@@ -105,13 +109,13 @@ fn test_rump_tmpfs() {
         fn write(fd: i64, buf: *const i8, bytes: u64) -> i64;
     }
 
-    let up = lineup::Upcalls {
+    let up = lineup::upcalls::Upcalls {
         curlwp: rumprt::rumpkern_curlwp,
         deschedule: rumprt::rumpkern_unsched,
         schedule: rumprt::rumpkern_sched,
     };
 
-    let mut scheduler = lineup::Scheduler::new(up);
+    let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
     scheduler.spawn(
         32 * 4096,
         |_yielder| unsafe {
@@ -162,9 +166,12 @@ fn test_rump_tmpfs() {
             info!("bytes_read: {:?}", read_bytes);
         },
         core::ptr::null_mut(),
+        0
     );
 
-    scheduler.run();
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    scheduler.run(&scb);
+
     // TODO: Don't drop the scheduler for now,
     // so we don't panic because of unfinished generators:
     core::mem::forget(scheduler);
@@ -201,13 +208,13 @@ pub fn test_rump_net() {
         fn close(sock: i64) -> i64;
     }
 
-    let up = lineup::Upcalls {
+    let up = lineup::upcalls::Upcalls {
         curlwp: rumprt::rumpkern_curlwp,
         deschedule: rumprt::rumpkern_unsched,
         schedule: rumprt::rumpkern_sched,
     };
 
-    let mut scheduler = lineup::Scheduler::new(up);
+    let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
     scheduler.spawn(
         32 * 4096,
         |_yielder| unsafe {
@@ -259,7 +266,7 @@ pub fn test_rump_net() {
                     core::mem::size_of::<sockaddr_in>(),
                 );
                 assert_eq!(r, buf.len() as i64);
-                let _r = lineup::tls::Environment::thread().relinquish();
+                let _r = lineup::tls2::Environment::thread().relinquish();
             }
 
             info!("test_rump_net OK");
@@ -268,6 +275,7 @@ pub fn test_rump_net() {
             assert_eq!(r, 0);
         },
         core::ptr::null_mut(),
+        0
     );
 
     scheduler
@@ -278,11 +286,13 @@ pub fn test_rump_net() {
                 unreachable!("should not exit");
             },
             core::ptr::null_mut(),
+            0
         )
         .expect("Can't create IRQ thread?");
 
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     loop {
-        scheduler.run();
+        scheduler.run(&scb);
     }
 }
 

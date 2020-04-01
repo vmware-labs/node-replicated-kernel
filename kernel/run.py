@@ -20,7 +20,7 @@ def exception_handler(exception_type, exception, traceback):
 # run.py script settings
 #
 SCRIPT_PATH = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
-CARGO_DEFAULT_ARGS = ["--color", "always"]
+CARGO_DEFAULT_ARGS = ["--color", "always", "-Zfeatures=all"]
 ARCH = "x86_64"
 # TODO: should be generated for enabling parallel builds
 QEMU_TAP_NAME = 'tap0'
@@ -104,7 +104,8 @@ def build_bootloader(args):
         with local.env(RUST_TARGET_PATH=BOOTLOADER_PATH.absolute()):
             if args.verbose:
                 print("cd {}".format(BOOTLOADER_PATH))
-                print("RUST_TARGET_PATH={} xargo ".format(BOOTLOADER_PATH.absolute()) + " ".join(uefi_build_args))
+                print("RUST_TARGET_PATH={} xargo ".format(
+                    BOOTLOADER_PATH.absolute()) + " ".join(uefi_build_args))
             xargo(*uefi_build_args)
 
 
@@ -121,7 +122,8 @@ def build_kernel(args):
             build_args += CARGO_DEFAULT_ARGS
             if args.verbose:
                 print("cd {}".format(KERNEL_PATH))
-                print("RUST_TARGET_PATH={} xargo ".format(KERNEL_PATH / 'src' / 'arch' / ARCH) + " ".join(build_args))
+                print("RUST_TARGET_PATH={} xargo ".format(
+                    KERNEL_PATH / 'src' / 'arch' / ARCH) + " ".join(build_args))
             xargo(*build_args)
 
 
@@ -138,7 +140,8 @@ def build_user_libraries(args):
         with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
             if args.verbose:
                 print("cd {}".format(LIBS_PATH / "vibrio"))
-                print("RUST_TARGET_PATH={} xargo ".format(USR_PATH.absolute()) + " ".join(build_args))
+                print("RUST_TARGET_PATH={} xargo ".format(
+                    USR_PATH.absolute()) + " ".join(build_args))
             xargo(*build_args)
 
 
@@ -164,7 +167,8 @@ def build_userspace(args):
                 log("Build user-module {}".format(module))
                 if args.verbose:
                     print("cd {}".format(USR_PATH / module))
-                    print("RUST_TARGET_PATH={} xargo ".format(USR_PATH.absolute()) + " ".join(build_args))
+                    print("RUST_TARGET_PATH={} xargo ".format(
+                        USR_PATH.absolute()) + " ".join(build_args))
                 xargo(*build_args)
 
 

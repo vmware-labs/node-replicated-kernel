@@ -23,3 +23,9 @@ binutils-*
 public
 .gdb_history
 .DS_Store
+
+# Build/test artefacts
+proptest-regressions
+redis_benchmark.csv
+vspace.dot
+vspace.dot.svg

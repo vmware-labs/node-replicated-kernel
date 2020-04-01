@@ -1,8 +1,8 @@
 use core::cell::UnsafeCell;
 use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
 
-use crate::tls::Environment;
-use crate::{ds, Scheduler, ThreadId, ThreadState};
+use crate::tls2::{Environment, ThreadControlBlock};
+use crate::{ds, Scheduler, ThreadId};
 
 use crossbeam_utils::CachePadded;
 use log::*;
@@ -87,7 +87,7 @@ impl MutexInner {
                 trace!(
                     "Mutex {:p} try_enter failed by {:?}, currently owned by {:?}",
                     self,
-                    crate::tls::Environment::tid(),
+                    Environment::tid(),
                     self.owner
                 );
                 return false;
@@ -101,7 +101,7 @@ impl MutexInner {
             // else: failed to acquire, retry
         }
 
-        let thread_state = crate::tls::Environment::thread();
+        let thread_state = Environment::thread();
         self.owner = Some(tid);
         self.lwp_ptr = Some(thread_state.rump_lwp);
         true
@@ -110,7 +110,7 @@ impl MutexInner {
     // SMP ready [1 TODO!]
     fn enter(&mut self) {
         let tid = Environment::tid();
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
 
         if self.is_spin {
             self.enter_nowrap();
@@ -158,7 +158,7 @@ impl MutexInner {
     /// SMP ready [1 TODO!]
     fn exit(&mut self) {
         let tid = Environment::tid();
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
 
         self.owner = None;
         self.lwp_ptr = None;
@@ -185,34 +185,41 @@ impl Drop for MutexInner {
 #[test]
 fn test_mutex() {
     let _r = env_logger::try_init();
+    use crate::smp::SmpScheduler;
+    use crate::tls2::SchedulerControlBlock;
+    use crate::{DEFAULT_THREAD_SIZE, DEFAULT_UPCALLS};
 
-    use crate::DEFAULT_UPCALLS;
     use core::ptr;
 
-    let mut s = Scheduler::new(DEFAULT_UPCALLS);
+    let mut s = SmpScheduler::new(DEFAULT_UPCALLS);
     let mtx = ds::Arc::new(Mutex::new(false, true));
     let m1: ds::Arc<Mutex> = mtx.clone();
     let m2: ds::Arc<Mutex> = mtx.clone();
 
     s.spawn(
-        32 * 4096,
+        DEFAULT_THREAD_SIZE,
         move |_| {
+            info!("before try enter");
             assert!(m2.try_enter());
+            info!("after try enter");
             Environment::thread().relinquish();
             m2.exit();
         },
         ptr::null_mut(),
+        0,
     );
 
     s.spawn(
-        32 * 4096,
+        DEFAULT_THREAD_SIZE,
         move |_| {
             assert!(!m1.try_enter());
             m1.enter();
             m1.exit();
         },
         ptr::null_mut(),
+        0,
     );
 
-    s.run();
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    s.run(&scb);
 }

@@ -1,8 +1,11 @@
 //!  A user-space thread scheduler with support for synchronization primitives.
 
-#![feature(vec_remove_item, linkage, drain_filter)]
+#![feature(vec_remove_item)]
+#![feature(drain_filter)]
+#![feature(linkage)]
+#![feature(ptr_offset_from)]
+#![feature(thread_local)]
 #![cfg_attr(not(test), no_std)]
-#![allow(unused)]
 
 extern crate alloc;
 
@@ -15,6 +18,7 @@ extern crate env_logger;
 #[cfg(test)]
 mod ds {
     pub use hashbrown::HashMap;
+    pub use std::collections::VecDeque;
     pub use std::sync::Arc;
     pub use std::vec::Vec;
 }
@@ -22,6 +26,7 @@ mod ds {
 #[cfg(not(test))]
 mod ds {
     pub use alloc::boxed::Box;
+    pub use alloc::collections::VecDeque;
     pub use alloc::sync::Arc;
     pub use alloc::vec::Vec;
     pub use hashbrown::HashMap;
@@ -34,7 +39,6 @@ use core::time::Duration;
 use log::*;
 
 use fringe::generator::{Generator, Yielder};
-use fringe::Stack;
 
 pub mod condvar;
 pub mod mutex;
@@ -44,7 +48,14 @@ pub mod smp;
 pub mod stack;
 pub mod tls;
 
+pub mod tls2;
+
+use crate::tls2::ThreadControlBlock;
 use stack::LineupStack;
+
+/// Stack size in bytes for tests.
+#[cfg(test)]
+pub const DEFAULT_THREAD_SIZE: usize = 32 * 4096;
 
 fn noop_curlwp() -> u64 {
     0
@@ -98,14 +109,14 @@ enum YieldRequest {
     Spawn(
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
-        CoreId
+        CoreId,
     ),
     /// Spawn a new thread that runs function/argument on the provided stack.
     SpawnWithStack(
         LineupStack,
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
-        CoreId
+        CoreId,
     ),
 }
 
@@ -143,9 +154,16 @@ pub struct Thread {
     id: ThreadId,
     affinity: CoreId,
     return_with: Option<YieldResume>,
+
+    /// Storage to remember the pointer to the TCB
+    ///
+    /// If a thread runs the first time this is null since a thread creates
+    /// it's own TCB before running. After the first yield this will
+    /// be used to memorize it for future resumes.
+    ///
     /// TODO(correctness): It's not really static (it's on the thread's stack),
     /// but keeps it easier for now.
-    state: *mut ThreadState<'static>,
+    state: *mut ThreadControlBlock<'static>,
 }
 
 impl fmt::Debug for Thread {
@@ -177,16 +195,24 @@ impl Thread {
         };
 
         let generator = Generator::unsafe_new(stack, move |yielder, _| {
-            let mut ts = ThreadState {
-                tid: tid,
-                yielder: yielder,
-                upcalls: upcalls,
+            use crate::tls2::ThreadControlBlock;
+            let mut ts = tls2::ThreadControlBlock {
+                tid,
+                yielder,
+                upcalls,
+                current_core: affinity,
                 rump_lwp: ptr::null_mut(),
                 rumprun_lwp: ptr::null_mut(),
             };
-            tls::set_thread_state((&mut ts) as *mut ThreadState);
+
+            /// Install TCB/TLS
+            tls2::arch::set_tcb((&mut ts) as *mut ThreadControlBlock);
+
             let r = f(arg);
-            tls::set_thread_state(ptr::null_mut() as *mut ThreadState);
+
+            // Reset TCB/TLS once thread completes
+            tls2::arch::set_tcb(ptr::null_mut() as *mut ThreadControlBlock);
+
             r
         });
 
@@ -424,7 +450,7 @@ impl<'a> Scheduler<'a> {
                 // we should not overwrite thread state
                 // the thread will do it for us.
                 if !thread.state.is_null() {
-                    tls::set_thread_state(thread.state);
+                    tls2::arch::set_tcb(thread.state);
                 }
             }
 
@@ -446,7 +472,7 @@ impl<'a> Scheduler<'a> {
                     self.threads.remove(&tid);
 
                     unsafe {
-                        tls::set_thread_state(ptr::null_mut());
+                        tls2::arch::set_tcb(ptr::null_mut());
                     }
                     (true, YieldResume::Completed)
                 }
@@ -526,14 +552,14 @@ impl<'a> Scheduler<'a> {
                 thread.return_with = Some(retresult);
 
                 unsafe {
-                    thread.state = tls::get_thread_state();
-                    tls::set_thread_state(ptr::null_mut());
+                    thread.state = tls2::arch::get_tcb();
+                    tls2::arch::set_tcb(ptr::null_mut());
                 }
             }
         }
 
         unsafe {
-            tls::set_thread_state(ptr::null_mut());
+            tls2::arch::set_tcb(ptr::null_mut());
             tls::set_scheduler_state(ptr::null_mut());
         }
     }
@@ -588,7 +614,7 @@ impl<'a> ThreadState<'a> {
     }
 
     pub fn block(&self) {
-        let request = YieldRequest::Unrunnable(tls::Environment::tid());
+        let request = YieldRequest::Unrunnable(tls2::Environment::tid());
         self.yielder().suspend(request);
     }
 

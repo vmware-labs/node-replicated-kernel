@@ -64,7 +64,7 @@ unsafe fn get_scheduler_state<'a>() -> *mut SchedulerState {
 
 pub(crate) unsafe fn set_scheduler_state(s: *mut SchedulerState) {
     let raw_tls = arch::get_tls();
-    assert!(!raw_tls.is_null(), "Don't have TLS?");
+    assert!(!raw_tls.is_null(), "Don't have TLS set?");
     let ts: &mut ThreadLocalStorage = &mut *raw_tls;
     ts.scheduler = s;
 }

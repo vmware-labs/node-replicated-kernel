@@ -6,8 +6,8 @@ use log::trace;
 use rawtime::Instant;
 
 use crate::mutex::Mutex;
-use crate::tls::Environment;
-use crate::{ds, Scheduler, ThreadId, ThreadState, YieldRequest};
+use crate::tls2::{Environment, ThreadControlBlock};
+use crate::{ds, Scheduler, ThreadId, YieldRequest};
 
 #[derive(Debug)]
 pub struct CondVar {
@@ -81,13 +81,13 @@ impl CondVarInner {
 
     fn cv_unschedule(&mut self, mtx: &Mutex, rid: &mut i32) {
         trace!("cv_unschedule");
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
         (yielder.upcalls.deschedule)(rid, Some(mtx));
         mtx.exit();
     }
 
     fn cv_reschedule(&mut self, mtx: &Mutex, rid: &i32) {
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
 
         if mtx.is_spin() && mtx.is_kmutex() {
             (yielder.upcalls.schedule)(&rid, Some(mtx));
@@ -101,7 +101,7 @@ impl CondVarInner {
     /// SMP: ok
     pub fn wait(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
 
         let mut rid = 0;
         self.waiters.push(tid);
@@ -117,7 +117,7 @@ impl CondVarInner {
     /// SMP: ok
     pub fn wait_nowrap(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
         trace!("waiters are {:?}", self.waiters);
 
         self.waiters.push(tid);
@@ -139,7 +139,7 @@ impl CondVarInner {
         self.cv_unschedule(mtx, &mut rid);
         // TODO: if an event wakes us up the scheduler will still wait until
         // the timeout is reached due to the Timeout YieldRequest
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
         yielder.suspend(YieldRequest::Timeout(wakup_time));
         self.cv_reschedule(mtx, &rid);
         self.waiters.remove_item(&tid);
@@ -164,7 +164,7 @@ impl CondVarInner {
         );
 
         waking_tid.map(|tid| {
-            let yielder: &mut ThreadState = Environment::thread();
+            let yielder: &mut ThreadControlBlock = Environment::thread();
             yielder.make_runnable(tid);
         });
     }
@@ -181,7 +181,7 @@ impl CondVarInner {
             waiters
         );
 
-        let yielder: &mut ThreadState = Environment::thread();
+        let yielder: &mut ThreadControlBlock = Environment::thread();
         if !waiters.is_empty() {
             yielder.make_all_runnable(waiters);
         }
@@ -194,12 +194,14 @@ impl CondVarInner {
 
 #[test]
 fn test_condvar() {
-    let _r = env_logger::try_init();
-
+    use crate::smp::SmpScheduler;
+    use crate::tls2::SchedulerControlBlock;
     use crate::DEFAULT_UPCALLS;
     use core::ptr;
-    let mut s = Scheduler::new(DEFAULT_UPCALLS);
 
+    let _r = env_logger::try_init();
+
+    let mut s = SmpScheduler::new(DEFAULT_UPCALLS);
     let cv = ds::Arc::new(CondVar::new());
 
     let cv1: ds::Arc<CondVar> = cv.clone();
@@ -209,7 +211,7 @@ fn test_condvar() {
     let m2: ds::Arc<Mutex> = mtx.clone();
 
     s.spawn(
-        32 * 4096,
+        crate::DEFAULT_THREAD_SIZE,
         move |mut yielder| {
             for _i in 0..5 {
                 m2.enter();
@@ -218,10 +220,11 @@ fn test_condvar() {
             }
         },
         ptr::null_mut(),
+        0,
     );
 
     s.spawn(
-        32 * 4096,
+        crate::DEFAULT_THREAD_SIZE,
         move |mut yielder| {
             for _i in 0..5 {
                 cv1.signal();
@@ -229,7 +232,9 @@ fn test_condvar() {
             }
         },
         ptr::null_mut(),
+        0,
     );
 
-    s.run();
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    s.run(&scb);
 }

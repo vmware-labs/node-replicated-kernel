@@ -1,11 +1,11 @@
 use core::cell::UnsafeCell;
-use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crossbeam_utils::CachePadded;
 use either::{Either, Left, Right};
 
 use crate::mutex::Mutex;
-use crate::tls::Environment;
+use crate::tls2::{Environment, ThreadControlBlock};
 use crate::{ds, Scheduler, ThreadId, ThreadState};
 
 use log::trace;
@@ -82,7 +82,6 @@ struct RwLockInner {
 }
 
 impl RwLockInner {
-    // SMP ok
     pub fn new() -> RwLockInner {
         RwLockInner {
             access: Mutex::new(false, true),
@@ -92,7 +91,6 @@ impl RwLockInner {
         }
     }
 
-    /// SMP ok
     pub fn held(&self, opt: RwLockIntent) -> bool {
         let held = match opt {
             RwLockIntent::Read => {
@@ -107,8 +105,7 @@ impl RwLockInner {
         held
     }
 
-    // SMP ok
-    pub fn enter(&mut self, opt: RwLockIntent) {
+    pub fn enter(&self, opt: RwLockIntent) {
         self.wait.enter();
 
         match opt {
@@ -132,8 +129,7 @@ impl RwLockInner {
         self.wait.exit();
     }
 
-    // SMP ok
-    pub fn try_enter(&mut self, opt: RwLockIntent) -> bool {
+    pub fn try_enter(&self, opt: RwLockIntent) -> bool {
         if self.wait.try_enter() {
             match opt {
                 RwLockIntent::Write => {
@@ -197,8 +193,7 @@ impl RwLockInner {
         }
     }
 
-    // SMP ok
-    pub fn exit(&mut self) {
+    pub fn exit(&self) {
         if self.lock_type.load(Ordering::SeqCst) == RwLockStatus::Writeable as usize
             || self.readers.fetch_sub(1, Ordering::SeqCst) == 1
         {
@@ -211,8 +206,7 @@ impl RwLockInner {
         }
     }
 
-    // SMP ok
-    pub fn downgrade(&mut self) {
+    pub fn downgrade(&self) {
         self.lock_type
             .store(RwLockStatus::Readable as usize, Ordering::SeqCst);
         if self.readers.fetch_add(1, Ordering::SeqCst) != 0 {
@@ -222,8 +216,7 @@ impl RwLockInner {
         }
     }
 
-    // SMP
-    pub fn try_upgrade(&mut self) -> bool {
+    pub fn try_upgrade(&self) -> bool {
         let assumed_readers = 1;
         match self
             .readers
@@ -247,7 +240,7 @@ impl RwLockInner {
 fn test_rwlock() {
     let _r = env_logger::try_init();
 
-    use crate::DEFAULT_UPCALLS;
+    use crate::{DEFAULT_UPCALLS, DEFAULT_THREAD_SIZE};
     use core::ptr;
     let mut s = Scheduler::new(DEFAULT_UPCALLS);
 
@@ -256,7 +249,7 @@ fn test_rwlock() {
     let rwlock2: ds::Arc<RwLock> = rwlock.clone();
 
     s.spawn(
-        32 * 4096,
+        DEFAULT_THREAD_SIZE,
         move |_| {
             rwlock2.enter(RwLockIntent::Read);
             Environment::thread().relinquish();
@@ -275,7 +268,7 @@ fn test_rwlock() {
     );
 
     s.spawn(
-        32 * 4096,
+        DEFAULT_THREAD_SIZE,
         move |_| {
             for _i in 0..5 {
                 rwlock1.enter(RwLockIntent::Read);

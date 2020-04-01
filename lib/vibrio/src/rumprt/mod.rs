@@ -139,11 +139,11 @@ pub fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
 
 // int rumpuser_init(int version, struct rump_hyperup *hyp)
 #[no_mangle]
-pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *const RumpHyperUpcalls) -> i64 {
+pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *mut RumpHyperUpcalls) -> i64 {
     info!("rumpuser_init ver {} {:p}", version, hyp);
 
     let s = lineup::tls::Environment::scheduler();
-    s.set_rump_context(version, hyp as *const u64);
+    s.set_rump_context(version, hyp as *mut u64);
 
     0
 }

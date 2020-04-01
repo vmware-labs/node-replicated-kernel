@@ -1,0 +1,44 @@
+//! A mechanism for upcalls that the scheduler uses to notify
+//! an application about events: a thread is blocking etc.
+//!
+//! In the current form, simply modelled to support rump upcalls.
+//! Should be generalized in the future.
+
+use crate::mutex;
+use core::fmt;
+
+/// Notification up-calls from the scheduler to the application
+/// (here to support the rump runtime).
+#[derive(Clone, Copy)]
+pub struct Upcalls {
+    pub curlwp: fn() -> u64,
+    pub schedule: fn(&i32, Option<&mutex::Mutex>),
+    pub deschedule: fn(&mut i32, Option<&mutex::Mutex>),
+}
+
+impl Default for Upcalls {
+    fn default() -> Self {
+        Upcalls {
+            curlwp: noop_curlwp,
+            schedule: noop_schedule,
+            deschedule: noop_unschedule,
+        }
+    }
+}
+
+impl fmt::Debug for Upcalls {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Upcalls {{}}")
+    }
+}
+
+/// Dummy implementation of noop_curlwp().
+fn noop_curlwp() -> u64 {
+    0
+}
+
+/// Dummy implementation of unschedule().
+fn noop_unschedule(_nlocks: &mut i32, _mtx: Option<&mutex::Mutex>) {}
+
+/// Dummy implementation of schedule().
+fn noop_schedule(_nlocks: &i32, _mtx: Option<&mutex::Mutex>) {}

@@ -1,15 +1,15 @@
 use alloc::vec::Vec;
+use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::ptr;
-use core::fmt;
 
-use rawtime::Instant;
 use fringe::generator::Generator;
+use rawtime::Instant;
 
-use crate::Upcalls;
-use crate::CoreId;
-use crate::tls2::{self, ThreadControlBlock};
 use crate::stack::LineupStack;
+use crate::tls2::{self, ThreadControlBlock};
+use crate::upcalls::Upcalls;
+use crate::CoreId;
 
 /// Type alias for our generic generator.
 pub(crate) type Runnable<'a> = Generator<'a, YieldResume, YieldRequest, LineupStack>;

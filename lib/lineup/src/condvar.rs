@@ -1,14 +1,14 @@
+use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::ops::Add;
 use core::time::Duration;
-use alloc::vec::Vec;
 
 use log::trace;
 use rawtime::Instant;
 
 use crate::mutex::Mutex;
-use crate::tls2::{Environment, ThreadControlBlock};
 use crate::threads::{ThreadId, YieldRequest};
+use crate::tls2::{Environment, ThreadControlBlock};
 
 #[derive(Debug)]
 pub struct CondVar {
@@ -200,21 +200,20 @@ fn test_condvar() {
 
     use crate::scheduler::SmpScheduler;
     use crate::tls2::SchedulerControlBlock;
-    use crate::DEFAULT_UPCALLS;
 
     let _r = env_logger::try_init();
 
-    let s = SmpScheduler::new(DEFAULT_UPCALLS);
+    let s: SmpScheduler = Default::default();
     let cv = Arc::new(CondVar::new());
 
     let cv1: Arc<CondVar> = cv.clone();
     let cv2: Arc<CondVar> = cv.clone();
 
-    let mtx = Arc::new(Mutex::new(false, true));
+    let mtx = Arc::new(Mutex::new_kmutex());
     let m2: Arc<Mutex> = mtx.clone();
 
     s.spawn(
-        crate::DEFAULT_STACK_SIZE_BYTES,
+        crate::stack::DEFAULT_STACK_SIZE_BYTES,
         move |_yielder| {
             for _i in 0..5 {
                 m2.enter();
@@ -227,7 +226,7 @@ fn test_condvar() {
     );
 
     s.spawn(
-        crate::DEFAULT_STACK_SIZE_BYTES,
+        crate::stack::DEFAULT_STACK_SIZE_BYTES,
         move |_yielder| {
             for _i in 0..5 {
                 cv1.signal();

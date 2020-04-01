@@ -1,9 +1,11 @@
 use alloc::alloc::alloc;
 use alloc::alloc::dealloc;
-
 use core::alloc::Layout;
 
 use fringe::Stack;
+
+/// Default stack size in bytes.
+pub const DEFAULT_STACK_SIZE_BYTES: usize = 32 * 4096;
 
 /// LineupStack holds a non-guarded, heap-allocated stack.
 #[derive(Debug, PartialEq)]
@@ -11,6 +13,12 @@ pub struct LineupStack {
     base_ptr: *mut u8,
     layout: Layout,
     dealloc: bool,
+}
+
+impl Default for LineupStack {
+    fn default() -> Self {
+        LineupStack::from_size(DEFAULT_STACK_SIZE_BYTES)
+    }
 }
 
 impl LineupStack {

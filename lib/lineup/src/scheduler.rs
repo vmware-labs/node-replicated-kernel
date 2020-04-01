@@ -13,14 +13,15 @@ use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use arr_macro::arr;
-use rawtime::Instant;
-use log::{trace, info, error};
 use fringe::generator::Generator;
+use log::{error, trace};
+use rawtime::Instant;
 
 use crate::stack::LineupStack;
+use crate::threads::{Runnable, Thread, ThreadId, YieldRequest, YieldResume};
 use crate::tls2::{self, SchedulerControlBlock};
-use crate::threads::{ThreadId, Thread, YieldRequest, YieldResume, Runnable};
-use crate::{Upcalls, CoreId};
+use crate::upcalls::Upcalls;
+use crate::CoreId;
 
 /// Scheduler per-core state.
 ///
@@ -70,12 +71,20 @@ pub struct SmpScheduler<'a> {
 unsafe impl Send for SmpScheduler<'static> {}
 unsafe impl Sync for SmpScheduler<'static> {}
 
+impl<'a> Default for SmpScheduler<'a> {
+    fn default() -> Self {
+        SmpScheduler::with_upcalls(Default::default())
+    }
+}
+
 impl<'a> SmpScheduler<'a> {
     pub const MAX_THREADS: usize = 64;
 
-    pub fn new(upcalls: Upcalls) -> Self {
+    pub fn with_upcalls(upcalls: Upcalls) -> Self {
         Self {
-            generators: spin::Mutex::new(hashbrown::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
+            generators: spin::Mutex::new(hashbrown::HashMap::with_capacity(
+                SmpScheduler::MAX_THREADS,
+            )),
             threads: spin::Mutex::new(hashbrown::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
             upcalls,
             tid_counter: AtomicUsize::new(1),
@@ -393,26 +402,26 @@ impl<'a> SmpScheduler<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
-    use core::time::Duration;
     use alloc::sync::Arc;
+    use core::time::Duration;
+    use std::thread;
 
     use crossbeam_queue::ArrayQueue;
+    use log::info;
 
     use super::*;
-    use crate::*;
+    use crate::stack::DEFAULT_STACK_SIZE_BYTES;
     use crate::threads::*;
     use crate::tls2::Environment;
-    use crate::{DEFAULT_UPCALLS, DEFAULT_STACK_SIZE_BYTES};
+    use crate::*;
 
     /// Test that the runnable list of a core can be accessed in parallel
     /// This is done by spawning two pthreads that dispatch from the core 0
     /// lineup waitlist.
     #[test]
     fn runnable_is_scheduler_aware() {
-
         // Create a scheduler and reference to it
-        let s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s: Arc<SmpScheduler> = Arc::new(Default::default());
         let s1 = s.clone();
         let s2 = s.clone();
 
@@ -479,7 +488,7 @@ mod tests {
         let _r = env_logger::try_init();
 
         // Create a scheduler and reference to it
-        let s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s: Arc<SmpScheduler> = Arc::new(Default::default());
         let s1 = s.clone();
         let s2 = s.clone();
 
@@ -569,8 +578,8 @@ mod tests {
         assert!(t1n < t2n);
 
         // Make two schedulers
-        let s1 = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
-        let s2 = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s1: Arc<SmpScheduler> = Default::default();
+        let s2: Arc<SmpScheduler> = Default::default();
 
         // Insert in both different order:
         s1.waitlist_insert(t0, 0, t0n);
@@ -602,7 +611,7 @@ mod tests {
         let _r = env_logger::try_init();
         use crossbeam_queue::ArrayQueue;
 
-        let s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s: Arc<SmpScheduler> = Default::default();
 
         let timelog: Arc<ArrayQueue<(ThreadId, Instant)>> = Arc::new(ArrayQueue::new(4));
         let timelog1 = timelog.clone();

@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
 
+use crate::threads::ThreadId;
 use crate::tls2::{Environment, ThreadControlBlock};
-use crate::threads::{ThreadId};
 
 use crossbeam_utils::CachePadded;
 use log::*;
@@ -16,7 +16,23 @@ unsafe impl Send for Mutex {}
 unsafe impl Sync for Mutex {}
 
 impl Mutex {
-    pub fn new(is_spin: bool, is_kmutex: bool) -> Mutex {
+    pub fn new_spin_kmutex() -> Self {
+        Mutex::new_with_flags(true, true)
+    }
+
+    pub fn new_kmutex() -> Self {
+        Mutex::new_with_flags(false, true)
+    }
+
+    pub fn new_spin() -> Self {
+        Mutex::new_with_flags(true, false)
+    }
+
+    pub fn new() -> Self {
+        Mutex::new_with_flags(false, false)
+    }
+
+    pub fn new_with_flags(is_spin: bool, is_kmutex: bool) -> Mutex {
         Mutex {
             inner: UnsafeCell::new(MutexInner {
                 owner: None,
@@ -76,7 +92,6 @@ struct MutexInner {
 }
 
 impl MutexInner {
-    // SMP ready
     fn try_enter(&mut self) -> bool {
         let tid = Environment::tid();
         assert!(self.owner != Some(tid), "Locking mutex against itself.");
@@ -133,7 +148,6 @@ impl MutexInner {
         self.lwp_ptr = Some(yielder.rump_lwp);
     }
 
-    // SMP Ready
     fn enter_nowrap(&mut self) {
         loop {
             // Wait till lock is free (counter is 0):
@@ -190,14 +204,13 @@ fn test_mutex() {
     use core::ptr;
 
     use crate::scheduler::SmpScheduler;
+    use crate::stack::DEFAULT_STACK_SIZE_BYTES;
     use crate::tls2::SchedulerControlBlock;
-    use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
-
 
     let _r = env_logger::try_init();
 
-    let s = SmpScheduler::new(DEFAULT_UPCALLS);
-    let mtx = Arc::new(Mutex::new(false, true));
+    let s: SmpScheduler = Default::default();
+    let mtx = Arc::new(Mutex::new_kmutex());
     let m1: Arc<Mutex> = mtx.clone();
     let m2: Arc<Mutex> = mtx.clone();
 

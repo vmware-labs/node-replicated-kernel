@@ -81,8 +81,8 @@ struct RwLockInner {
 impl RwLockInner {
     pub fn new() -> RwLockInner {
         RwLockInner {
-            access: Mutex::new(false, true),
-            wait: Mutex::new(false, true),
+            access: Mutex::new_kmutex(),
+            wait: Mutex::new_kmutex(),
             readers: CachePadded::new(AtomicUsize::new(0)),
             lock_type: CachePadded::new(AtomicUsize::new(RwLockStatus::Free as usize)),
         }
@@ -240,9 +240,11 @@ fn test_rwlock() {
     use alloc::sync::Arc;
     use core::ptr;
 
+    use crate::scheduler::SmpScheduler;
+    use crate::stack::DEFAULT_STACK_SIZE_BYTES;
     use crate::tls2::{Environment, SchedulerControlBlock};
-    use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
-    let s = crate::scheduler::SmpScheduler::new(DEFAULT_UPCALLS);
+
+    let s: SmpScheduler = Default::default();
 
     let rwlock = Arc::new(RwLock::new());
     let rwlock1: Arc<RwLock> = rwlock.clone();

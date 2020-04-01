@@ -201,11 +201,49 @@ impl Environment {
 }
 
 #[test]
-fn smp_tls() {
+fn test_tls() {
     let _r = env_logger::try_init();
+    use crate::{DEFAULT_UPCALLS, DEFAULT_THREAD_SIZE};
+    use crate::tls2::Environment;
 
-    arch::calculate_tls_size();
-    unsafe {
-        info!("FOO is {} ", FOO.get());
+    let mut s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+
+    s.spawn(
+        DEFAULT_THREAD_SIZE,
+        move |mut yielder| {
+            let s = Environment::scheduler();
+            s.rump_upcalls.store(0xdead as *mut u64, core::sync::atomic::Ordering::Relaxed);
+            assert_eq!(Environment::scheduler().rump_upcalls.load(Ordering::Relaxed), 0xdead  as *mut u64);
+            for _i in 0..5 {
+                // Thread control-block (and tid) should change:
+                assert_eq!(Environment::tid(), ThreadId(1));
+                // Force context switch:
+                Environment::thread().relinquish();
+            }
+        },
+        ptr::null_mut(),
+        0
+    );
+
+    s.spawn(
+        DEFAULT_THREAD_SIZE,
+        move |mut yielder| {
+            let s = Environment::scheduler();
+            // Scheduler should be preserved across threads
+            assert_eq!(Environment::scheduler().rump_upcalls.load(Ordering::Relaxed), 0xdead  as *mut u64);
+            for _i in 0..5 {
+                // Thread control-block (and tid) should change
+                assert_eq!(Environment::tid(), ThreadId(2));
+                // Force context switch:
+                Environment::thread().relinquish();
+            }
+        },
+        ptr::null_mut(),
+        0
+    );
+
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    for _i in 0..10 {
+        s.run(&scb);
     }
 }

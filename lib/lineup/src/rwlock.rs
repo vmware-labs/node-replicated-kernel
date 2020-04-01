@@ -237,13 +237,16 @@ impl RwLockInner {
 fn test_rwlock() {
     let _r = env_logger::try_init();
 
-    use crate::{DEFAULT_THREAD_SIZE, DEFAULT_UPCALLS};
+    use alloc::sync::Arc;
     use core::ptr;
-    let mut s = Scheduler::new(DEFAULT_UPCALLS);
 
-    let rwlock = ds::Arc::new(RwLock::new());
-    let rwlock1: ds::Arc<RwLock> = rwlock.clone();
-    let rwlock2: ds::Arc<RwLock> = rwlock.clone();
+    use crate::tls2::{Environment, SchedulerControlBlock};
+    use crate::{DEFAULT_THREAD_SIZE, DEFAULT_UPCALLS};
+    let mut s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+
+    let rwlock = Arc::new(RwLock::new());
+    let rwlock1: Arc<RwLock> = rwlock.clone();
+    let rwlock2: Arc<RwLock> = rwlock.clone();
 
     s.spawn(
         DEFAULT_THREAD_SIZE,
@@ -262,6 +265,7 @@ fn test_rwlock() {
             rwlock2.exit();
         },
         ptr::null_mut(),
+        0
     );
 
     s.spawn(
@@ -276,7 +280,9 @@ fn test_rwlock() {
             }
         },
         ptr::null_mut(),
+        0
     );
 
-    s.run();
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    s.run(&scb);
 }

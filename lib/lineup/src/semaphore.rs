@@ -70,33 +70,40 @@ impl SemaphoreInner {
 
 #[test]
 fn test_semaphore() {
-    use crate::DEFAULT_UPCALLS;
+    use alloc::sync::Arc;
     use core::ptr;
-    let mut s = Scheduler::new(DEFAULT_UPCALLS);
 
-    let cv = ds::Arc::new(Semaphore::new(0));
-    let cv1: ds::Arc<Semaphore> = cv.clone();
-    let cv2: ds::Arc<Semaphore> = cv.clone();
+    use crate::{DEFAULT_UPCALLS, DEFAULT_THREAD_SIZE};
+    use crate::tls2::SchedulerControlBlock;
+
+    let mut s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+
+    let cv = Arc::new(Semaphore::new(0));
+    let cv1: Arc<Semaphore> = cv.clone();
+    let cv2: Arc<Semaphore> = cv.clone();
 
     s.spawn(
-        32 * 4096,
+        DEFAULT_THREAD_SIZE,
         move |mut yielder| {
             for _i in 0..5 {
                 cv2.down();
             }
         },
         ptr::null_mut(),
+        0,
     );
 
     s.spawn(
-        32 * 4096,
+        DEFAULT_THREAD_SIZE,
         move |mut yielder| {
             for _i in 0..5 {
                 cv1.up();
             }
         },
         ptr::null_mut(),
+        0,
     );
 
-    s.run();
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    s.run(&scb);
 }

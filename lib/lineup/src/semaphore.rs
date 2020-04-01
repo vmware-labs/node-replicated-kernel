@@ -73,18 +73,18 @@ fn test_semaphore() {
     use alloc::sync::Arc;
     use core::ptr;
 
-    use crate::{DEFAULT_UPCALLS, DEFAULT_THREAD_SIZE};
     use crate::tls2::SchedulerControlBlock;
+    use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
 
-    let mut s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+    let s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
 
     let cv = Arc::new(Semaphore::new(0));
     let cv1: Arc<Semaphore> = cv.clone();
     let cv2: Arc<Semaphore> = cv.clone();
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
-        move |mut yielder| {
+        DEFAULT_STACK_SIZE_BYTES,
+        move |_yielder| {
             for _i in 0..5 {
                 cv2.down();
             }
@@ -94,8 +94,8 @@ fn test_semaphore() {
     );
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
-        move |mut yielder| {
+        DEFAULT_STACK_SIZE_BYTES,
+        move |_yielder| {
             for _i in 0..5 {
                 cv1.up();
             }

@@ -13,7 +13,6 @@
 //! A random blog post: https://chao-tic.github.io/blog/2018/12/25/tls#introduction
 
 use alloc::vec::Vec;
-use core::cell::Cell;
 
 use core::ops::Add;
 use core::ptr;
@@ -36,9 +35,6 @@ pub mod unix;
 #[cfg(target_family = "unix")]
 pub use crate::tls2::unix as arch;
 
-#[thread_local]
-pub static FOO: Cell<u64> = Cell::new(3);
-
 /// Per thread state of the scheduler.
 ///
 /// This is what the `fs` register points to.
@@ -46,10 +42,9 @@ pub static FOO: Cell<u64> = Cell::new(3);
 /// in front of that structure (since we do the TLS variant 2).
 pub struct ThreadControlBlock<'a> {
     pub(crate) yielder: &'a Yielder<YieldResume, YieldRequest>,
-
     pub(crate) tid: ThreadId,
-    pub(crate) current_core: CoreId,
 
+    pub current_core: CoreId,
     pub upcalls: Upcalls,
     pub rump_lwp: *const u64,
     pub rumprun_lwp: *const u64,
@@ -203,17 +198,23 @@ impl Environment {
 #[test]
 fn test_tls() {
     let _r = env_logger::try_init();
-    use crate::{DEFAULT_UPCALLS, DEFAULT_THREAD_SIZE};
     use crate::tls2::Environment;
+    use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
 
-    let mut s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+    let s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
-        move |mut yielder| {
+        DEFAULT_STACK_SIZE_BYTES,
+        move |_yielder| {
             let s = Environment::scheduler();
-            s.rump_upcalls.store(0xdead as *mut u64, core::sync::atomic::Ordering::Relaxed);
-            assert_eq!(Environment::scheduler().rump_upcalls.load(Ordering::Relaxed), 0xdead  as *mut u64);
+            s.rump_upcalls
+                .store(0xdead as *mut u64, core::sync::atomic::Ordering::Relaxed);
+            assert_eq!(
+                Environment::scheduler()
+                    .rump_upcalls
+                    .load(Ordering::Relaxed),
+                0xdead as *mut u64
+            );
             for _i in 0..5 {
                 // Thread control-block (and tid) should change:
                 assert_eq!(Environment::tid(), ThreadId(1));
@@ -222,15 +223,20 @@ fn test_tls() {
             }
         },
         ptr::null_mut(),
-        0
+        0,
     );
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
-        move |mut yielder| {
-            let s = Environment::scheduler();
+        DEFAULT_STACK_SIZE_BYTES,
+        move |_yielder| {
+            let _s = Environment::scheduler();
             // Scheduler should be preserved across threads
-            assert_eq!(Environment::scheduler().rump_upcalls.load(Ordering::Relaxed), 0xdead  as *mut u64);
+            assert_eq!(
+                Environment::scheduler()
+                    .rump_upcalls
+                    .load(Ordering::Relaxed),
+                0xdead as *mut u64
+            );
             for _i in 0..5 {
                 // Thread control-block (and tid) should change
                 assert_eq!(Environment::tid(), ThreadId(2));
@@ -239,7 +245,7 @@ fn test_tls() {
             }
         },
         ptr::null_mut(),
-        0
+        0,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);

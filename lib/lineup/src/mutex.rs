@@ -2,7 +2,7 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
 
 use crate::tls2::{Environment, ThreadControlBlock};
-use crate::{ds, Scheduler, ThreadId};
+use crate::{ds, ThreadId};
 
 use crossbeam_utils::CachePadded;
 use log::*;
@@ -19,9 +19,9 @@ impl Mutex {
         Mutex {
             inner: UnsafeCell::new(MutexInner {
                 owner: None,
-                is_kmutex: is_kmutex,
-                is_spin: is_spin,
-                waitlist: ds::Vec::with_capacity(Scheduler::MAX_THREADS),
+                is_kmutex,
+                is_spin,
+                waitlist: ds::Vec::with_capacity(crate::smp::SmpScheduler::MAX_THREADS),
                 lwp_ptr: None,
                 counter: CachePadded::new(AtomicUsize::new(0)),
             }),
@@ -187,17 +187,17 @@ fn test_mutex() {
     let _r = env_logger::try_init();
     use crate::smp::SmpScheduler;
     use crate::tls2::SchedulerControlBlock;
-    use crate::{DEFAULT_THREAD_SIZE, DEFAULT_UPCALLS};
+    use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
 
     use core::ptr;
 
-    let mut s = SmpScheduler::new(DEFAULT_UPCALLS);
+    let s = SmpScheduler::new(DEFAULT_UPCALLS);
     let mtx = ds::Arc::new(Mutex::new(false, true));
     let m1: ds::Arc<Mutex> = mtx.clone();
     let m2: ds::Arc<Mutex> = mtx.clone();
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
+        DEFAULT_STACK_SIZE_BYTES,
         move |_| {
             info!("before try enter");
             assert!(m2.try_enter());
@@ -210,7 +210,7 @@ fn test_mutex() {
     );
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
+        DEFAULT_STACK_SIZE_BYTES,
         move |_| {
             assert!(!m1.try_enter());
             m1.enter();

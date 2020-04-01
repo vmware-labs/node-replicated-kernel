@@ -7,7 +7,7 @@ use rawtime::Instant;
 
 use crate::mutex::Mutex;
 use crate::tls2::{Environment, ThreadControlBlock};
-use crate::{ds, Scheduler, ThreadId, YieldRequest};
+use crate::{ds, ThreadId, YieldRequest};
 
 #[derive(Debug)]
 pub struct CondVar {
@@ -75,7 +75,7 @@ impl Drop for CondVarInner {
 impl CondVarInner {
     pub fn new() -> CondVarInner {
         CondVarInner {
-            waiters: ds::Vec::with_capacity(Scheduler::MAX_THREADS),
+            waiters: ds::Vec::with_capacity(crate::smp::SmpScheduler::MAX_THREADS),
         }
     }
 
@@ -201,7 +201,7 @@ fn test_condvar() {
 
     let _r = env_logger::try_init();
 
-    let mut s = SmpScheduler::new(DEFAULT_UPCALLS);
+    let s = SmpScheduler::new(DEFAULT_UPCALLS);
     let cv = ds::Arc::new(CondVar::new());
 
     let cv1: ds::Arc<CondVar> = cv.clone();
@@ -211,8 +211,8 @@ fn test_condvar() {
     let m2: ds::Arc<Mutex> = mtx.clone();
 
     s.spawn(
-        crate::DEFAULT_THREAD_SIZE,
-        move |mut yielder| {
+        crate::DEFAULT_STACK_SIZE_BYTES,
+        move |_yielder| {
             for _i in 0..5 {
                 m2.enter();
                 cv2.wait(&m2);
@@ -224,8 +224,8 @@ fn test_condvar() {
     );
 
     s.spawn(
-        crate::DEFAULT_THREAD_SIZE,
-        move |mut yielder| {
+        crate::DEFAULT_STACK_SIZE_BYTES,
+        move |_yielder| {
             for _i in 0..5 {
                 cv1.signal();
                 Environment::thread().relinquish();

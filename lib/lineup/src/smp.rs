@@ -36,9 +36,6 @@ struct SchedulerCoreState {
     ///
     /// Protected by a mutex because anyone could put threads here.
     waiting: spin::Mutex<ds::Vec<(Instant, ThreadId)>>,
-
-    /// To communicate a list of threads to the scheduler
-    pub(crate) make_runnable: ds::Vec<ThreadId>,
 }
 
 impl SchedulerCoreState {
@@ -46,7 +43,6 @@ impl SchedulerCoreState {
         SchedulerCoreState {
             runnable: spin::Mutex::new(VecDeque::with_capacity(SmpScheduler::MAX_THREADS)),
             waiting: spin::Mutex::new(ds::Vec::with_capacity(SmpScheduler::MAX_THREADS)),
-            make_runnable: ds::Vec::with_capacity(SmpScheduler::MAX_THREADS),
         }
     }
 }
@@ -132,7 +128,7 @@ impl<'a> SmpScheduler<'a> {
             tid
         );
 
-        if self.threads.lock().len() <= Scheduler::MAX_THREADS {
+        if self.threads.lock().len() <= SmpScheduler::MAX_THREADS {
             self.threads.lock().insert(tid, handle);
             self.generators.lock().insert(tid, generator);
             Some(tid)
@@ -397,21 +393,20 @@ impl<'a> SmpScheduler<'a> {
 mod tests {
     use alloc::sync::Arc;
     use std::thread;
+    use core::time::Duration;
+    use crossbeam_queue::ArrayQueue;
 
     use super::*;
-    use crate::mutex::Mutex;
     use crate::tls2::Environment;
-    use crate::*;
 
     /// Test that the runnable list of a core can be accessed in parallel
     /// This is done by spawning two pthreads that dispatch from the core 0
     /// lineup waitlist.
     #[test]
     fn runnable_is_smp_aware() {
-        use crossbeam_queue::ArrayQueue;
 
         // Create a scheduler and reference to it
-        let mut s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
         let s1 = s.clone();
         let s2 = s.clone();
 
@@ -422,7 +417,7 @@ mod tests {
 
         // Spawn two lineup threads on "core 0", each thread pushes its underlying posix thread id
         s.spawn(
-            DEFAULT_THREAD_SIZE,
+            DEFAULT_STACK_SIZE_BYTES,
             move |_| {
                 let _r = seen_threads1.push(thread::current().id());
             },
@@ -430,7 +425,7 @@ mod tests {
             0,
         );
         s.spawn(
-            DEFAULT_THREAD_SIZE,
+            DEFAULT_STACK_SIZE_BYTES,
             move |_| {
                 let _r = seen_threads2.push(thread::current().id());
             },
@@ -442,14 +437,14 @@ mod tests {
         // to test concurrency
         let t1 = thread::spawn(move || {
             let scb1: SchedulerControlBlock = SchedulerControlBlock::new(0);
-            for i in 1..10 {
+            for _i in 1..10 {
                 s1.run(&scb1);
             }
         });
 
         let t2 = thread::spawn(move || {
             let scb2: SchedulerControlBlock = SchedulerControlBlock::new(1);
-            for i in 1..10 {
+            for _i in 1..10 {
                 s2.run(&scb2);
             }
         });
@@ -478,7 +473,7 @@ mod tests {
         let _r = env_logger::try_init();
 
         // Create a scheduler and reference to it
-        let mut s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
         let s1 = s.clone();
         let s2 = s.clone();
 
@@ -500,7 +495,7 @@ mod tests {
 
         // Spawn two lineup threads (with two underlying pthreads), each thread computes is_prime
         s.spawn(
-            DEFAULT_THREAD_SIZE,
+            DEFAULT_STACK_SIZE_BYTES,
             move |_| {
                 is_prime(the_prime);
             },
@@ -508,7 +503,7 @@ mod tests {
             0,
         );
         s.spawn(
-            DEFAULT_THREAD_SIZE,
+            DEFAULT_STACK_SIZE_BYTES,
             move |_| {
                 is_prime(the_prime);
             },
@@ -568,8 +563,8 @@ mod tests {
         assert!(t1n < t2n);
 
         // Make two schedulers
-        let mut s1 = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
-        let mut s2 = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s1 = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s2 = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
 
         // Insert in both different order:
         s1.waitlist_insert(t0, 0, t0n);
@@ -601,7 +596,7 @@ mod tests {
         let _r = env_logger::try_init();
         use crossbeam_queue::ArrayQueue;
 
-        let mut s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
+        let s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));
 
         let timelog: Arc<ArrayQueue<(ThreadId, Instant)>> = Arc::new(ArrayQueue::new(4));
         let timelog1 = timelog.clone();
@@ -613,7 +608,7 @@ mod tests {
         // Spawn two threads that sleep for the given wait times
         // log their sleep and wakeup time
         s.spawn(
-            DEFAULT_THREAD_SIZE,
+            DEFAULT_STACK_SIZE_BYTES,
             move |_| {
                 let _r = timelog1.push((Environment::tid(), Instant::now()));
                 Environment::thread().sleep(t1_waittime);
@@ -624,7 +619,7 @@ mod tests {
         );
 
         s.spawn(
-            DEFAULT_THREAD_SIZE,
+            DEFAULT_STACK_SIZE_BYTES,
             move |_| {
                 let _r = timelog2.push((Environment::tid(), Instant::now()));
                 Environment::thread().sleep(t2_waittime);
@@ -649,7 +644,7 @@ mod tests {
         let mut t2_start: Option<Instant> = None;
         let mut t2_observed: Option<Duration> = None;
 
-        for i in 0..4 {
+        for _i in 0..4 {
             let (tid, instant) = timelog.pop().unwrap();
             info!("got tid {:?} instant {:?}", tid, instant);
             if tid == ThreadId(1) {

@@ -241,15 +241,15 @@ fn test_rwlock() {
     use core::ptr;
 
     use crate::tls2::{Environment, SchedulerControlBlock};
-    use crate::{DEFAULT_THREAD_SIZE, DEFAULT_UPCALLS};
-    let mut s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+    use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
+    let s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
 
     let rwlock = Arc::new(RwLock::new());
     let rwlock1: Arc<RwLock> = rwlock.clone();
     let rwlock2: Arc<RwLock> = rwlock.clone();
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
+        DEFAULT_STACK_SIZE_BYTES,
         move |_| {
             rwlock2.enter(RwLockIntent::Read);
             Environment::thread().relinquish();
@@ -265,11 +265,11 @@ fn test_rwlock() {
             rwlock2.exit();
         },
         ptr::null_mut(),
-        0
+        0,
     );
 
     s.spawn(
-        DEFAULT_THREAD_SIZE,
+        DEFAULT_STACK_SIZE_BYTES,
         move |_| {
             for _i in 0..5 {
                 rwlock1.enter(RwLockIntent::Read);
@@ -280,7 +280,7 @@ fn test_rwlock() {
             }
         },
         ptr::null_mut(),
-        0
+        0,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);

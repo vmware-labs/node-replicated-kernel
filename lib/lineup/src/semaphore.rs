@@ -76,7 +76,7 @@ fn test_semaphore() {
     use crate::tls2::SchedulerControlBlock;
     use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
 
-    let s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+    let s = crate::scheduler::SmpScheduler::new(DEFAULT_UPCALLS);
 
     let cv = Arc::new(Semaphore::new(0));
     let cv1: Arc<Semaphore> = cv.clone();

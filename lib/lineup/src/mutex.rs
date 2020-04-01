@@ -1,8 +1,9 @@
+use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
 
 use crate::tls2::{Environment, ThreadControlBlock};
-use crate::{ds, ThreadId};
+use crate::threads::{ThreadId};
 
 use crossbeam_utils::CachePadded;
 use log::*;
@@ -21,7 +22,7 @@ impl Mutex {
                 owner: None,
                 is_kmutex,
                 is_spin,
-                waitlist: ds::Vec::with_capacity(crate::smp::SmpScheduler::MAX_THREADS),
+                waitlist: Vec::with_capacity(crate::scheduler::SmpScheduler::MAX_THREADS),
                 lwp_ptr: None,
                 counter: CachePadded::new(AtomicUsize::new(0)),
             }),
@@ -67,7 +68,7 @@ impl Mutex {
 #[derive(Debug)]
 struct MutexInner {
     owner: Option<ThreadId>,
-    waitlist: ds::Vec<ThreadId>,
+    waitlist: Vec<ThreadId>,
     is_kmutex: bool,
     is_spin: bool,
     lwp_ptr: Option<*const u64>,
@@ -182,19 +183,23 @@ impl Drop for MutexInner {
     }
 }
 
+#[cfg(test)]
 #[test]
 fn test_mutex() {
-    let _r = env_logger::try_init();
-    use crate::smp::SmpScheduler;
+    use alloc::sync::Arc;
+    use core::ptr;
+
+    use crate::scheduler::SmpScheduler;
     use crate::tls2::SchedulerControlBlock;
     use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
 
-    use core::ptr;
+
+    let _r = env_logger::try_init();
 
     let s = SmpScheduler::new(DEFAULT_UPCALLS);
-    let mtx = ds::Arc::new(Mutex::new(false, true));
-    let m1: ds::Arc<Mutex> = mtx.clone();
-    let m2: ds::Arc<Mutex> = mtx.clone();
+    let mtx = Arc::new(Mutex::new(false, true));
+    let m1: Arc<Mutex> = mtx.clone();
+    let m2: Arc<Mutex> = mtx.clone();
 
     s.spawn(
         DEFAULT_STACK_SIZE_BYTES,

@@ -23,7 +23,8 @@ use fringe::generator::Yielder;
 use rawtime::{Duration, Instant};
 
 use crate::stack::LineupStack;
-use crate::{CoreId, ThreadId, Upcalls, YieldRequest, YieldResume};
+use crate::{CoreId, Upcalls};
+use crate::threads::{ThreadId, YieldRequest, YieldResume};
 
 #[cfg(target_os = "bespin")]
 pub mod bespin;
@@ -201,7 +202,7 @@ fn test_tls() {
     use crate::tls2::Environment;
     use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
 
-    let s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+    let s = crate::scheduler::SmpScheduler::new(DEFAULT_UPCALLS);
 
     s.spawn(
         DEFAULT_STACK_SIZE_BYTES,

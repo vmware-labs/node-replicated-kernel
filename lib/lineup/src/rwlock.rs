@@ -242,7 +242,7 @@ fn test_rwlock() {
 
     use crate::tls2::{Environment, SchedulerControlBlock};
     use crate::{DEFAULT_STACK_SIZE_BYTES, DEFAULT_UPCALLS};
-    let s = crate::smp::SmpScheduler::new(DEFAULT_UPCALLS);
+    let s = crate::scheduler::SmpScheduler::new(DEFAULT_UPCALLS);
 
     let rwlock = Arc::new(RwLock::new());
     let rwlock1: Arc<RwLock> = rwlock.clone();

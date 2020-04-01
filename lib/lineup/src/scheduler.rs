@@ -1,24 +1,26 @@
 //! The core logic of the scheduler.
+//!
+//! Has the following properties:
+//! * Cooperative scheduling (threads can yield voluntarily)
+//! * Round robin scheduling (per-core)
+//! * Per core run and wait lists
+//! * Thread affinity can be defined upon thread creation (currently no migration)
+//! * Waitlist is sorted according to thread wake-up times.
 
-use arr_macro::arr;
-
-use rawtime::Instant;
-
-use super::*;
 use alloc::collections::VecDeque;
-
-#[cfg(test)]
-extern crate env_logger;
-
+use alloc::vec::Vec;
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use super::stack::LineupStack;
-use super::tls2::{self, SchedulerControlBlock};
-
+use arr_macro::arr;
+use rawtime::Instant;
+use log::{trace, info, error};
 use fringe::generator::Generator;
 
-type Runnable<'a> = Generator<'a, YieldResume, YieldRequest, LineupStack>;
+use crate::stack::LineupStack;
+use crate::tls2::{self, SchedulerControlBlock};
+use crate::threads::{ThreadId, Thread, YieldRequest, YieldResume, Runnable};
+use crate::{Upcalls, CoreId};
 
 /// Scheduler per-core state.
 ///
@@ -35,14 +37,14 @@ struct SchedulerCoreState {
     /// Per-core list of `waiting` threads.
     ///
     /// Protected by a mutex because anyone could put threads here.
-    waiting: spin::Mutex<ds::Vec<(Instant, ThreadId)>>,
+    waiting: spin::Mutex<Vec<(Instant, ThreadId)>>,
 }
 
 impl SchedulerCoreState {
     fn new() -> Self {
         SchedulerCoreState {
             runnable: spin::Mutex::new(VecDeque::with_capacity(SmpScheduler::MAX_THREADS)),
-            waiting: spin::Mutex::new(ds::Vec::with_capacity(SmpScheduler::MAX_THREADS)),
+            waiting: spin::Mutex::new(Vec::with_capacity(SmpScheduler::MAX_THREADS)),
         }
     }
 }
@@ -51,9 +53,9 @@ pub struct SmpScheduler<'a> {
     /// All thread generators need to dispatch threads.
     ///
     /// These will be absent if currently in use.
-    generators: spin::Mutex<ds::HashMap<ThreadId, Runnable<'a>>>,
+    generators: spin::Mutex<hashbrown::HashMap<ThreadId, Runnable<'a>>>,
     /// All threads in the scheduler.
-    threads: spin::Mutex<ds::HashMap<ThreadId, Thread>>,
+    threads: spin::Mutex<hashbrown::HashMap<ThreadId, Thread>>,
     /// Scheduler upcalls (as set by the client).
     upcalls: Upcalls,
     /// Per-core scheduler state
@@ -73,8 +75,8 @@ impl<'a> SmpScheduler<'a> {
 
     pub fn new(upcalls: Upcalls) -> Self {
         Self {
-            generators: spin::Mutex::new(ds::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
-            threads: spin::Mutex::new(ds::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
+            generators: spin::Mutex::new(hashbrown::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
+            threads: spin::Mutex::new(hashbrown::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
             upcalls,
             tid_counter: AtomicUsize::new(1),
             per_core: arr![SchedulerCoreState::new(); 64], // MAX_THREADS
@@ -391,19 +393,23 @@ impl<'a> SmpScheduler<'a> {
 
 #[cfg(test)]
 mod tests {
-    use alloc::sync::Arc;
     use std::thread;
     use core::time::Duration;
+    use alloc::sync::Arc;
+
     use crossbeam_queue::ArrayQueue;
 
     use super::*;
+    use crate::*;
+    use crate::threads::*;
     use crate::tls2::Environment;
+    use crate::{DEFAULT_UPCALLS, DEFAULT_STACK_SIZE_BYTES};
 
     /// Test that the runnable list of a core can be accessed in parallel
     /// This is done by spawning two pthreads that dispatch from the core 0
     /// lineup waitlist.
     #[test]
-    fn runnable_is_smp_aware() {
+    fn runnable_is_scheduler_aware() {
 
         // Create a scheduler and reference to it
         let s = Arc::new(SmpScheduler::new(DEFAULT_UPCALLS));

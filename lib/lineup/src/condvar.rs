@@ -1,13 +1,14 @@
 use core::cell::UnsafeCell;
 use core::ops::Add;
 use core::time::Duration;
+use alloc::vec::Vec;
 
 use log::trace;
 use rawtime::Instant;
 
 use crate::mutex::Mutex;
 use crate::tls2::{Environment, ThreadControlBlock};
-use crate::{ds, ThreadId, YieldRequest};
+use crate::threads::{ThreadId, YieldRequest};
 
 #[derive(Debug)]
 pub struct CondVar {
@@ -60,7 +61,7 @@ impl CondVar {
 
 #[derive(Debug)]
 struct CondVarInner {
-    waiters: ds::Vec<ThreadId>,
+    waiters: Vec<ThreadId>,
 }
 
 impl Drop for CondVarInner {
@@ -75,7 +76,7 @@ impl Drop for CondVarInner {
 impl CondVarInner {
     pub fn new() -> CondVarInner {
         CondVarInner {
-            waiters: ds::Vec::with_capacity(crate::smp::SmpScheduler::MAX_THREADS),
+            waiters: Vec::with_capacity(crate::scheduler::SmpScheduler::MAX_THREADS),
         }
     }
 
@@ -194,21 +195,23 @@ impl CondVarInner {
 
 #[test]
 fn test_condvar() {
-    use crate::smp::SmpScheduler;
+    use alloc::sync::Arc;
+    use core::ptr;
+
+    use crate::scheduler::SmpScheduler;
     use crate::tls2::SchedulerControlBlock;
     use crate::DEFAULT_UPCALLS;
-    use core::ptr;
 
     let _r = env_logger::try_init();
 
     let s = SmpScheduler::new(DEFAULT_UPCALLS);
-    let cv = ds::Arc::new(CondVar::new());
+    let cv = Arc::new(CondVar::new());
 
-    let cv1: ds::Arc<CondVar> = cv.clone();
-    let cv2: ds::Arc<CondVar> = cv.clone();
+    let cv1: Arc<CondVar> = cv.clone();
+    let cv2: Arc<CondVar> = cv.clone();
 
-    let mtx = ds::Arc::new(Mutex::new(false, true));
-    let m2: ds::Arc<Mutex> = mtx.clone();
+    let mtx = Arc::new(Mutex::new(false, true));
+    let m2: Arc<Mutex> = mtx.clone();
 
     s.spawn(
         crate::DEFAULT_STACK_SIZE_BYTES,

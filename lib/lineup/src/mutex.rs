@@ -157,7 +157,7 @@ impl MutexInner {
 
     /// SMP ready [1 TODO!]
     fn exit(&mut self) {
-        let tid = Environment::tid();
+        let _tid = Environment::tid();
         let yielder: &mut ThreadControlBlock = Environment::thread();
 
         self.owner = None;

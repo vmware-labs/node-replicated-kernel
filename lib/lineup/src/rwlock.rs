@@ -2,11 +2,8 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crossbeam_utils::CachePadded;
-use either::{Either, Left, Right};
 
 use crate::mutex::Mutex;
-use crate::tls2::{Environment, ThreadControlBlock};
-use crate::{ds, Scheduler, ThreadId, ThreadState};
 
 use log::trace;
 
@@ -173,7 +170,7 @@ impl RwLockInner {
                             Ordering::SeqCst,
                             Ordering::SeqCst,
                         ) {
-                            Ok(previous) => {
+                            Ok(_previous) => {
                                 // Successfully increased reader
                                 self.wait.exit();
                                 return true;
@@ -240,7 +237,7 @@ impl RwLockInner {
 fn test_rwlock() {
     let _r = env_logger::try_init();
 
-    use crate::{DEFAULT_UPCALLS, DEFAULT_THREAD_SIZE};
+    use crate::{DEFAULT_THREAD_SIZE, DEFAULT_UPCALLS};
     use core::ptr;
     let mut s = Scheduler::new(DEFAULT_UPCALLS);
 

@@ -1,15 +1,7 @@
 use core::cell::UnsafeCell;
-use core::ops::Add;
-use core::time::Duration;
-
-use log::trace;
-use rawtime::Instant;
 
 use crate::condvar::CondVar;
 use crate::mutex::Mutex;
-
-use crate::tls::Environment;
-use crate::{ds, Scheduler, ThreadId, ThreadState, YieldRequest};
 
 #[derive(Debug)]
 pub struct Semaphore {

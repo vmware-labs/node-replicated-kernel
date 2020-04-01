@@ -411,7 +411,7 @@ impl<'a> Scheduler<'a> {
                     self.runnable.push(*tid);
                 }
             }
-            self.waiting.drain_filter(|(tid, timeout)| *timeout <= now);
+            self.waiting.drain_filter(|(_tid, timeout)| *timeout <= now);
 
             // If there is nothing to run anymore, we are done.
             if self.runnable.is_empty() {

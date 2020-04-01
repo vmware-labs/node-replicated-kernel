@@ -2,7 +2,6 @@ use alloc::alloc::alloc;
 use alloc::alloc::dealloc;
 
 use core::alloc::Layout;
-use core::slice;
 
 use fringe::Stack;
 

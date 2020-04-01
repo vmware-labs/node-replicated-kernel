@@ -14,17 +14,17 @@
 
 use alloc::vec::Vec;
 use core::cell::Cell;
-use core::mem;
+
 use core::ops::Add;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use fringe::generator::Yielder;
-use log::{info, trace};
+
 use rawtime::{Duration, Instant};
 
 use crate::stack::LineupStack;
-use crate::{CoreId, ThreadId, ThreadState, Upcalls, YieldRequest, YieldResume};
+use crate::{CoreId, ThreadId, Upcalls, YieldRequest, YieldResume};
 
 #[cfg(target_os = "bespin")]
 pub mod bespin;

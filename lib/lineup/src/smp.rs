@@ -1,7 +1,7 @@
 //! The core logic of the scheduler.
 
 use arr_macro::arr;
-use core::fmt;
+
 use rawtime::Instant;
 
 use super::*;
@@ -10,19 +10,13 @@ use alloc::collections::VecDeque;
 #[cfg(test)]
 extern crate env_logger;
 
-use core::hash::{Hash, Hasher};
-use core::ops::Add;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use core::time::Duration;
-use log::*;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use super::mutex;
 use super::stack::LineupStack;
 use super::tls2::{self, SchedulerControlBlock};
 
-use fringe::generator::{Generator, Yielder};
-use fringe::Stack;
+use fringe::generator::Generator;
 
 type Runnable<'a> = Generator<'a, YieldResume, YieldRequest, LineupStack>;
 
@@ -170,7 +164,7 @@ impl<'a> SmpScheduler<'a> {
         let to_insert = (until, tid);
         match waiting.binary_search_by(|probe| probe.cmp(&to_insert).reverse()) {
             Err(pos) => waiting.insert(pos, to_insert),
-            Ok(pos) => panic!("Thread already in waitlist?"),
+            Ok(_pos) => panic!("Thread already in waitlist?"),
         }
         trace!("Waitlist is {:?}", waiting);
     }
@@ -221,8 +215,7 @@ impl<'a> SmpScheduler<'a> {
                 if rtid == tid {
                     // No-op (already popped tid from running) but force context switch:
                     YieldResume::Interrupted
-                }
-                else {
+                } else {
                     // Slow path
                     self.mark_unrunnable(rtid, rtid_affinity);
                     // Do not need to context switch, continue running
@@ -323,10 +316,7 @@ impl<'a> SmpScheduler<'a> {
             self.check_wakeups(core_id);
 
             // The next thread ID we want to run
-            let next_tid = self.per_core[core_id]
-                .runnable
-                .lock()
-                .pop_front();
+            let next_tid = self.per_core[core_id].runnable.lock().pop_front();
             match next_tid {
                 Some(tid) => {
                     let mut generator = self
@@ -366,7 +356,8 @@ impl<'a> SmpScheduler<'a> {
 
                             // And preserve the TLS value in the Thread struct:
                             let mut thread_map = self.threads.lock();
-                            let thread = thread_map.get_mut(&tid).expect("Can't find thread state?");
+                            let thread =
+                                thread_map.get_mut(&tid).expect("Can't find thread state?");
                             // Also preserve the TLS
                             if thread.state.is_null() {
                                 unsafe {

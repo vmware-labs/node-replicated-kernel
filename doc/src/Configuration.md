@@ -87,7 +87,7 @@ Host bespin-gh-pages
 1. Go to https://gitlab.com/projects/new
 2. Select tab 'CI/CD for external repo'
 3. Click github button
-4. Go to https://github.com/settings/tokens make a token with the `repo` privilege
+4. Go to https://github.com/settings/tokens make a token with the `repo` and `admin:repo_hook` privilege
 5. Paste token in gitlab, select repo, click Connect
 6. In the gitlab.com project settings go to CI / CD to get the token ID for the setup
 7. On the same page, click on 'Disable shared Runners' to not use the gitlab.com pre-configured runner (won't work with our current CI scripts)

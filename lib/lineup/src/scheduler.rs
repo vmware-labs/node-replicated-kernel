@@ -407,7 +407,6 @@ mod tests {
     use std::thread;
 
     use crossbeam_queue::ArrayQueue;
-    use log::info;
 
     use super::*;
     use crate::stack::DEFAULT_STACK_SIZE_BYTES;
@@ -503,16 +502,16 @@ mod tests {
         }
 
         // Find out how long it takes on one core
-        let the_prime: u64 = 10000789;
+        let the_prime: u64 = 96001891;
         let ref_start = Instant::now();
-        let r = is_prime(the_prime);
+        let r = core::hint::black_box(is_prime(the_prime));
         let ref_end = Instant::now();
 
         // Spawn two lineup threads (with two underlying pthreads), each thread computes is_prime
         s.spawn(
             DEFAULT_STACK_SIZE_BYTES,
             move |_| {
-                is_prime(the_prime);
+                core::hint::black_box(is_prime(the_prime));
             },
             ptr::null_mut(),
             0,
@@ -520,7 +519,7 @@ mod tests {
         s.spawn(
             DEFAULT_STACK_SIZE_BYTES,
             move |_| {
-                is_prime(the_prime);
+                core::hint::black_box(is_prime(the_prime));
             },
             ptr::null_mut(),
             1,
@@ -551,15 +550,15 @@ mod tests {
             ref_end - ref_start > Duration::from_millis(100),
             "Baseline should take a sufficient amount of time"
         );
+
         // Running computation twice on two threads shouldn't take longer than running it once
-        assert!(
-            exp_duration >= ref_duration - Duration::from_millis(50),
-            "Lineup was too fast?"
-        );
-        assert!(
-            exp_duration <= ref_duration + Duration::from_millis(50),
-            "Lineup was too slow?"
-        );
+        #[cfg(debug_assertions)]
+        let bound = Duration::from_millis(500);
+        #[cfg(not(debug_assertions))]
+        let bound = Duration::from_millis(100);
+
+        assert!(exp_duration >= ref_duration - bound, "Lineup was too fast?");
+        assert!(exp_duration <= ref_duration + bound, "Lineup was too slow?");
     }
 
     /// Test that waitlist inserts are inserted with correct order.
@@ -661,7 +660,7 @@ mod tests {
 
         for _i in 0..4 {
             let (tid, instant) = timelog.pop().unwrap();
-            info!("got tid {:?} instant {:?}", tid, instant);
+            trace!("got tid {:?} instant {:?}", tid, instant);
             if tid == ThreadId(1) {
                 t1_start.map_or_else(
                     || t1_start = Some(instant),

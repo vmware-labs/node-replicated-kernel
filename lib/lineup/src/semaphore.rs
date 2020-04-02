@@ -43,7 +43,7 @@ impl Drop for SemaphoreInner {
 impl SemaphoreInner {
     pub fn new(count: isize) -> SemaphoreInner {
         SemaphoreInner {
-            count: count,
+            count,
             mutex: Mutex::new_kmutex(),
             cv: CondVar::new(),
         }

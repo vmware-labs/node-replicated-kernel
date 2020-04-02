@@ -288,3 +288,125 @@ fn test_rwlock() {
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     s.run(&scb);
 }
+
+/// A test for the RW lock on multiple cores.
+#[cfg(test)]
+#[test]
+fn test_rwlock_smp() {
+    use alloc::sync::Arc;
+    use core::ptr;
+    use std::thread;
+
+    use rawtime::Instant;
+
+    use crate::scheduler::SmpScheduler;
+    use crate::stack::DEFAULT_STACK_SIZE_BYTES;
+    use crate::tls2::SchedulerControlBlock;
+
+    // Silly unsafe cell that is sync to test mutual exclusion
+    struct UnsafeSyncCell<T: ?Sized> {
+        inner: UnsafeCell<T>,
+    }
+    impl<T> UnsafeSyncCell<T> {
+        fn new(v: T) -> Self {
+            UnsafeSyncCell {
+                inner: UnsafeCell::new(v),
+            }
+        }
+    }
+    unsafe impl<T: ?Sized + Send> Send for UnsafeSyncCell<T> {}
+    unsafe impl<T: ?Sized + Send> Sync for UnsafeSyncCell<T> {}
+
+    let _r = env_logger::try_init();
+
+    let corecnt = 4;
+    let readers = 3;
+    let writers = 1;
+
+    let s: Arc<SmpScheduler> = Default::default();
+
+    let rwlock: Arc<RwLock> = Arc::new(RwLock::new());
+
+    // Some counters to test the RWlock:
+    // If we increment `reads` in the reader lock and they're truly concurrent
+    // we'll highly likely miss some (i.e., reads < actual_reads)
+    // whereas `writes` should be correct...
+    let reads: Arc<UnsafeSyncCell<usize>> = Arc::new(UnsafeSyncCell::new(0));
+    let writes: Arc<UnsafeSyncCell<usize>> = Arc::new(UnsafeSyncCell::new(0));
+    pub const READ_LOCK_PER_THREAD: usize = 100_000;
+    pub const WRITE_LOCK_PER_THREAD: usize = 5000;
+
+    // spawn readers
+    for idx in 0..readers {
+        let rwlock = rwlock.clone();
+        let reads = reads.clone();
+
+        log::trace!("spawn reader {} on {}", idx, idx % corecnt);
+        s.spawn(
+            DEFAULT_STACK_SIZE_BYTES,
+            move |_| {
+                for _i in 0..READ_LOCK_PER_THREAD {
+                    rwlock.enter(RwLockIntent::Read);
+                    unsafe {
+                        *reads.inner.get() += 1;
+                    }
+                    rwlock.exit();
+                }
+            },
+            ptr::null_mut(),
+            idx % corecnt,
+        );
+    }
+
+    // spawn writers
+    for idx in 0..writers {
+        let rwlock = rwlock.clone();
+        let writes = writes.clone();
+
+        log::trace!("spawn reader {} on {}", idx, idx % corecnt);
+        s.spawn(
+            DEFAULT_STACK_SIZE_BYTES,
+            move |_| {
+                for _i in 0..WRITE_LOCK_PER_THREAD {
+                    rwlock.enter(RwLockIntent::Write);
+                    unsafe {
+                        *writes.inner.get() += 1;
+                    }
+                    rwlock.exit();
+                }
+            },
+            ptr::null_mut(),
+            idx % corecnt,
+        );
+    }
+
+    let mut cores = Vec::with_capacity(corecnt);
+    for idx in 0..corecnt {
+        let s1 = s.clone();
+        cores.push(thread::spawn(move || {
+            let scb: SchedulerControlBlock = SchedulerControlBlock::new(idx);
+            let start = Instant::now();
+            while start.elapsed().as_secs() < 3 {
+                s1.run(&scb);
+            }
+        }));
+    }
+
+    for c in cores {
+        let _r = c.join().unwrap();
+    }
+
+    unsafe {
+        log::trace!("reads = {}", *reads.inner.get());
+        assert!(*reads.inner.get() > 0, "Counted no reads is unlikely.");
+        assert!(
+            *reads.inner.get() < readers * READ_LOCK_PER_THREAD,
+            "Counted all reads is unlikely too."
+        );
+        assert_eq!(
+            *writes.inner.get(),
+            writers * WRITE_LOCK_PER_THREAD,
+            "Writes should be exact."
+        );
+    }
+}

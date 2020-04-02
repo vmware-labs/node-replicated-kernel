@@ -1,17 +1,18 @@
-use alloc::vec::Vec;
-use core::cell::UnsafeCell;
+use core::cell::Cell;
 use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
 
 use crate::threads::ThreadId;
 use crate::tls2::{Environment, ThreadControlBlock};
 
+use crossbeam_queue::SegQueue;
 use crossbeam_utils::CachePadded;
 use log::*;
 
 #[derive(Debug)]
 pub struct Mutex {
-    inner: UnsafeCell<MutexInner>,
+    inner: MutexInner,
 }
+
 unsafe impl Send for Mutex {}
 unsafe impl Sync for Mutex {}
 
@@ -34,67 +35,65 @@ impl Mutex {
 
     pub fn new_with_flags(is_spin: bool, is_kmutex: bool) -> Mutex {
         Mutex {
-            inner: UnsafeCell::new(MutexInner {
-                owner: None,
+            inner: MutexInner {
+                owner: Cell::new(None),
+                lwp_ptr: Cell::new(None),
                 is_kmutex,
                 is_spin,
-                waitlist: Vec::with_capacity(crate::scheduler::SmpScheduler::MAX_THREADS),
-                lwp_ptr: None,
+                waitlist: SegQueue::new(),
                 counter: CachePadded::new(AtomicUsize::new(0)),
-            }),
+            },
         }
     }
 
     pub fn is_kmutex(&self) -> bool {
-        let mtx = unsafe { &*self.inner.get() };
-        mtx.is_kmutex
+        self.inner.is_kmutex
     }
 
     pub fn is_spin(&self) -> bool {
-        let mtx = unsafe { &*self.inner.get() };
-        mtx.is_spin
+        self.inner.is_spin
     }
 
     pub fn try_enter(&self) -> bool {
-        let mtx = unsafe { &mut *self.inner.get() };
-        mtx.try_enter()
+        self.inner.try_enter()
     }
 
     pub fn enter(&self) {
-        let mtx = unsafe { &mut *self.inner.get() };
-        mtx.enter();
+        self.inner.enter();
     }
 
     pub fn enter_nowrap(&self) {
-        let mtx = unsafe { &mut *self.inner.get() };
-        mtx.enter_nowrap();
+        self.inner.enter_nowrap();
     }
 
     pub fn exit(&self) {
-        let mtx = unsafe { &mut *self.inner.get() };
-        mtx.exit();
+        self.inner.exit();
     }
 
     pub fn owner(&self) -> *const u64 {
-        let mtx = unsafe { &mut *self.inner.get() };
-        mtx.owner()
+        self.inner.owner()
     }
 }
 
 #[derive(Debug)]
 struct MutexInner {
-    owner: Option<ThreadId>,
-    waitlist: Vec<ThreadId>,
     is_kmutex: bool,
     is_spin: bool,
-    lwp_ptr: Option<*const u64>,
+
+    owner: Cell<Option<ThreadId>>,
+    lwp_ptr: Cell<Option<*const u64>>,
+
+    waitlist: SegQueue<ThreadId>,
     counter: CachePadded<AtomicUsize>,
 }
 
 impl MutexInner {
-    fn try_enter(&mut self) -> bool {
+    fn try_enter(&self) -> bool {
         let tid = Environment::tid();
-        assert!(self.owner != Some(tid), "Locking mutex against itself.");
+        assert!(
+            self.owner.get() != Some(tid),
+            "Locking mutex against itself."
+        );
 
         let counter = self.counter.load(Ordering::Relaxed);
         loop {
@@ -118,13 +117,12 @@ impl MutexInner {
         }
 
         let thread_state = Environment::thread();
-        self.owner = Some(tid);
-        self.lwp_ptr = Some(thread_state.rump_lwp);
+        self.owner.replace(Some(tid));
+        self.lwp_ptr.replace(Some(thread_state.rump_lwp));
         true
     }
 
-    // SMP ready [1 TODO!]
-    fn enter(&mut self) {
+    fn enter(&self) {
         let tid = Environment::tid();
         let yielder: &mut ThreadControlBlock = Environment::thread();
 
@@ -139,16 +137,35 @@ impl MutexInner {
             let mut rid = 0;
             trace!("try_enter failed deschedule");
             (yielder.upcalls.deschedule)(&mut rid, None);
-            self.waitlist.push(tid); // TODO: this needs to be atomic?
+            // What if another core makes this runnable/runs it before we're made unrunnable?
+            // (i.e., counter+1, waitlist.push, exit, make unrunnable)
+            // A problem is if we would steal the thread and execute it on another core (we don't currently)
+            // It would likely error because we wouldn't find the generator in the hashmap (it's taken out of the
+            // map whenever we run a thread)
+            // A better idea is probably to provide a callback to the yielder which then pushes
+            // us in the waitlist after we've restored the generator (this would ensure we only update waitlist
+            // after the generator has switched back to the scheduler context and is in a consistent state)
+            self.waitlist.push(tid);
+
+            // This is fine as long as tid == self, in the scheduler we will just pop the front of runnable
+            // instead of searching the whole list and discarding everhting that is tid:
+            // if that were the case we would have a race when `exit` inserts us again at the end of runnable
+            // before we call unrunnable here (and then removing all tids...)
+            // Right now since we don't migrate:
+            // push -> exit (put `tid` on back of runnable) -> unrunnable (pop `tid` in front or runnable)
+            // is a fine ordering
             yielder.make_unrunnable(tid);
             (yielder.upcalls.schedule)(&rid, None)
+        } else {
+            // Acquired immediately
         }
+
         // Acquired the lock
-        self.owner = Some(tid);
-        self.lwp_ptr = Some(yielder.rump_lwp);
+        self.owner.replace(Some(tid));
+        self.lwp_ptr.replace(Some(yielder.rump_lwp));
     }
 
-    fn enter_nowrap(&mut self) {
+    fn enter_nowrap(&self) {
         loop {
             // Wait till lock is free (counter is 0):
             while self.counter.load(Ordering::Relaxed) != 0 {
@@ -166,34 +183,47 @@ impl MutexInner {
         let tid = Environment::tid();
         let thread_state = Environment::thread();
         // Acquired the lock
-        self.owner = Some(tid);
-        self.lwp_ptr = Some(thread_state.rump_lwp);
+        self.owner.replace(Some(tid));
+        self.lwp_ptr.replace(Some(thread_state.rump_lwp));
     }
 
-    /// SMP ready [1 TODO!]
-    fn exit(&mut self) {
+    fn exit(&self) {
         let _tid = Environment::tid();
         let yielder: &mut ThreadControlBlock = Environment::thread();
 
-        self.owner = None;
-        self.lwp_ptr = None;
+        self.owner.replace(None);
+        self.lwp_ptr.replace(None);
         if self.counter.fetch_sub(1, Ordering::SeqCst) != 1 {
-            assert!(!self.waitlist.is_empty());
-            let next = self.waitlist.pop(); // TODO: this may have to be atomic...
-            yielder.make_runnable(next.unwrap());
+            // Need to resolve a race where we call `exit`
+            // but another thread that called enter has incremented
+            // counter but not put itself in the waitlist yet
+            loop {
+                while self.waitlist.is_empty() {
+                    core::sync::atomic::spin_loop_hint();
+                }
+                match self.waitlist.pop() {
+                    Ok(next) => {
+                        yielder.make_runnable(next);
+                        break;
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+            }
         }
     }
 
     fn owner(&self) -> *const u64 {
-        self.lwp_ptr.unwrap_or(core::ptr::null())
+        self.lwp_ptr.get().unwrap_or(core::ptr::null())
     }
 }
 
 impl Drop for MutexInner {
     fn drop(&mut self) {
         assert!(self.waitlist.is_empty());
-        assert!(self.owner.is_none());
-        assert!(self.lwp_ptr.is_none());
+        assert!(self.owner.get().is_none());
+        assert!(self.lwp_ptr.get().is_none());
     }
 }
 
@@ -217,9 +247,9 @@ fn test_mutex() {
     s.spawn(
         DEFAULT_STACK_SIZE_BYTES,
         move |_| {
-            info!("before try enter");
+            trace!("before try enter");
             assert!(m2.try_enter());
-            info!("after try enter");
+            trace!("after try enter");
             Environment::thread().relinquish();
             m2.exit();
         },
@@ -240,4 +270,110 @@ fn test_mutex() {
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     s.run(&scb);
+}
+
+#[cfg(test)]
+#[test]
+fn test_mutex_smp() {
+    use alloc::sync::Arc;
+    use core::cell::UnsafeCell;
+    use core::ptr;
+    use std::thread;
+
+    use rawtime::Instant;
+
+    use crate::scheduler::SmpScheduler;
+    use crate::stack::DEFAULT_STACK_SIZE_BYTES;
+    use crate::tls2::SchedulerControlBlock;
+
+    // Silly unsafe cell that is sync to test mutual exclusion of
+    // mutex
+    struct UnsafeSyncCell<T: ?Sized> {
+        inner: UnsafeCell<T>,
+    }
+    impl<T> UnsafeSyncCell<T> {
+        fn new(v: T) -> Self {
+            UnsafeSyncCell {
+                inner: UnsafeCell::new(v),
+            }
+        }
+    }
+    unsafe impl<T: ?Sized + Send> Send for UnsafeSyncCell<T> {}
+    unsafe impl<T: ?Sized + Send> Sync for UnsafeSyncCell<T> {}
+
+    let _r = env_logger::try_init();
+
+    // Spawn 4 threads on three cores
+    let n = 4;
+    let c = 3;
+
+    let s: Arc<SmpScheduler> = Default::default();
+    // Make a spinning mutex
+    let spin_increment = 1000;
+    let mtx = Arc::new(Mutex::new_spin());
+    // A counter to test the mutex
+    let spin_counter: Arc<UnsafeSyncCell<usize>> = Arc::new(UnsafeSyncCell::new(0));
+    // And a 'kernel' mutex
+    let kmtx_increment = 500;
+    let kmtx = Arc::new(Mutex::new_kmutex());
+    // A counter to test the kmutex
+    let kcounter: Arc<UnsafeSyncCell<usize>> = Arc::new(UnsafeSyncCell::new(0));
+
+    // Threads increment unprotected counter with mutex n*X times
+    for idx in 0..n {
+        let mtx: Arc<Mutex> = mtx.clone();
+        let spin_counter = spin_counter.clone();
+
+        let kmtx: Arc<Mutex> = kmtx.clone();
+        let kcounter = kcounter.clone();
+
+        log::info!("spawn in c %idx = {}", idx % c);
+        s.spawn(
+            DEFAULT_STACK_SIZE_BYTES,
+            move |_| {
+                for _i in 0..spin_increment {
+                    mtx.enter();
+
+                    unsafe {
+                        *spin_counter.inner.get() += 1;
+                    }
+                    mtx.exit();
+                }
+
+                for i in 0..kmtx_increment {
+                    kmtx.enter();
+                    unsafe {
+                        *kcounter.inner.get() += 1;
+                    }
+                    if i % 45 == 0 {
+                        Environment::thread().relinquish();
+                    }
+                    kmtx.exit();
+                }
+            },
+            ptr::null_mut(),
+            idx % c,
+        );
+    }
+
+    let mut cores = Vec::with_capacity(c);
+    for idx in 0..c {
+        let s1 = s.clone();
+        cores.push(thread::spawn(move || {
+            let scb: SchedulerControlBlock = SchedulerControlBlock::new(idx);
+            let start = Instant::now();
+            while start.elapsed().as_secs() < 2 {
+                s1.run(&scb);
+            }
+        }));
+    }
+
+    for c in cores {
+        let _r = c.join().unwrap();
+    }
+
+    unsafe {
+        assert_eq!(*spin_counter.inner.get(), n * spin_increment);
+        assert_eq!(*kcounter.inner.get(), n * kmtx_increment);
+    }
 }

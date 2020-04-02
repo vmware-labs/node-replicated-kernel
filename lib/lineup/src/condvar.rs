@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::ops::Add;
+use core::ptr;
 use core::time::Duration;
 
 use log::trace;
@@ -62,6 +63,11 @@ impl CondVar {
 #[derive(Debug)]
 struct CondVarInner {
     waiters: Vec<ThreadId>,
+    /// This is pretty bad and can lead to unsafe memory accesses
+    /// in the general case (mutex goes away before cv etc.)
+    /// but helps to verify some sanity assertions about
+    /// correct CV usage.
+    dbg_mutex: *const Mutex,
 }
 
 impl Drop for CondVarInner {
@@ -77,6 +83,7 @@ impl CondVarInner {
     pub fn new() -> CondVarInner {
         CondVarInner {
             waiters: Vec::with_capacity(crate::scheduler::SmpScheduler::MAX_THREADS),
+            dbg_mutex: ptr::null(),
         }
     }
 
@@ -99,12 +106,15 @@ impl CondVarInner {
         }
     }
 
-    /// SMP: ok
     pub fn wait(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
         let yielder: &mut ThreadControlBlock = Environment::thread();
+        self.dbg_mutex = mtx as *const Mutex;
 
         let mut rid = 0;
+        // TODO(smp): Similar race as in Mutex here:
+        // (if we push -> run again on other core -> unschedule in here)
+        // not problematic as long as dont support thread stealing...
         self.waiters.push(tid);
         self.cv_unschedule(mtx, &mut rid);
 
@@ -115,12 +125,13 @@ impl CondVarInner {
         debug_assert!(r.is_none(), "signal/broadcast must remove");
     }
 
-    /// SMP: ok
     pub fn wait_nowrap(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
         let yielder: &mut ThreadControlBlock = Environment::thread();
         trace!("waiters are {:?}", self.waiters);
+        self.dbg_mutex = mtx as *const Mutex;
 
+        // TODO(smp): Same issue as in `wait` here:
         self.waiters.push(tid);
         mtx.exit();
         yielder.make_unrunnable(tid);
@@ -130,11 +141,11 @@ impl CondVarInner {
     }
 
     /// Returns false on time-out, or true if woken up by other event
-    /// SMP:ok
     pub fn timed_wait(&mut self, mtx: &Mutex, d: Duration) -> bool {
         let mut rid: i32 = 0;
         let wakup_time = Instant::now().add(d);
         let tid = Environment::tid();
+        self.dbg_mutex = mtx as *const Mutex;
 
         self.waiters.push(tid);
         self.cv_unschedule(mtx, &mut rid);
@@ -152,10 +163,20 @@ impl CondVarInner {
         Instant::now() < wakup_time
     }
 
-    // SMP: ok
+    /// TODO(smp): see comment
     pub fn signal(&mut self) {
-        // The thread shall own the mutex with which it called
-        // pthread_cond_wait() or pthread_cond_timedwait().
+        // The pthread_cond_broadcast() or pthread_cond_signal()
+        // functions may be called by a thread whether or not it
+        // currently owns the mutex
+        unsafe {
+            // We don't support this at the moment
+            debug_assert!(
+                self.dbg_mutex.is_null()
+                    || ((*self.dbg_mutex).owner() == ptr::null()
+                        || (*self.dbg_mutex).owner() == Environment::thread().rump_lwp)
+            );
+        }
+
         let waking_tid = self.waiters.pop();
         trace!(
             "{:?} CondVarInner.signal {:p} {:?}",
@@ -170,10 +191,20 @@ impl CondVarInner {
         });
     }
 
-    // SMP: ok
+    // SMP: not ok!
     pub fn broadcast(&mut self) {
-        // The thread shall own the mutex with which it called
-        // pthread_cond_wait() or pthread_cond_timedwait().
+        // The pthread_cond_broadcast() or pthread_cond_signal()
+        // functions may be called by a thread whether or not it
+        // currently owns the mutex
+        unsafe {
+            // We don't support this at the moment
+            debug_assert!(
+                self.dbg_mutex.is_null()
+                    || ((*self.dbg_mutex).owner() == ptr::null()
+                        || (*self.dbg_mutex).owner() == Environment::thread().rump_lwp)
+            );
+        }
+
         let waiters = self.waiters.clone();
         self.waiters.clear();
         trace!(
@@ -239,4 +270,163 @@ fn test_condvar() {
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     s.run(&scb);
+}
+
+/// A simple multi-producer/multi-consumer test using conditional variables.
+///
+/// We test that we consume the correct amount of produced elements by
+/// keeping track of a sum of everything seen so far.
+#[cfg(test)]
+#[test]
+fn test_condvar_smp() {
+    use alloc::sync::Arc;
+    use core::ptr;
+    use std::thread;
+
+    use rawtime::Instant;
+
+    use crate::scheduler::SmpScheduler;
+    use crate::stack::DEFAULT_STACK_SIZE_BYTES;
+    use crate::tls2::SchedulerControlBlock;
+
+    // Silly unsafe cell that is sync to test mutual exclusion of
+    // mutex
+    struct UnsafeSyncCell<T: ?Sized> {
+        inner: UnsafeCell<T>,
+    }
+    impl<T> UnsafeSyncCell<T> {
+        fn new(v: T) -> Self {
+            UnsafeSyncCell {
+                inner: UnsafeCell::new(v),
+            }
+        }
+    }
+    unsafe impl<T: ?Sized + Send> Send for UnsafeSyncCell<T> {}
+    unsafe impl<T: ?Sized + Send> Sync for UnsafeSyncCell<T> {}
+
+    let _r = env_logger::try_init();
+
+    let corecnt = 3;
+    let producer = 3;
+    let consumer = 4;
+
+    let s: Arc<SmpScheduler> = Default::default();
+    let mtx = Arc::new(Mutex::new_spin());
+    let more = Arc::new(CondVar::new());
+    let less = Arc::new(CondVar::new());
+
+    // A counter to test the mutex
+    const BATCH_SIZE: isize = 32;
+    let buf: Arc<UnsafeSyncCell<[isize; BATCH_SIZE as usize]>> =
+        Arc::new(UnsafeSyncCell::new([0; BATCH_SIZE as usize]));
+    let occupied: Arc<UnsafeSyncCell<isize>> = Arc::new(UnsafeSyncCell::new(0));
+    let nextin: Arc<UnsafeSyncCell<isize>> = Arc::new(UnsafeSyncCell::new(0));
+    let nextout: Arc<UnsafeSyncCell<isize>> = Arc::new(UnsafeSyncCell::new(0));
+
+    // To verify correctness
+    let aggregate_counter: Arc<UnsafeSyncCell<isize>> = Arc::new(UnsafeSyncCell::new(0));
+
+    // spawn producer
+    for idx in 0..producer {
+        let mtx: Arc<Mutex> = mtx.clone();
+        let more = more.clone();
+        let less = less.clone();
+        let nextin = nextin.clone();
+        let occupied = occupied.clone();
+        let buf = buf.clone();
+
+        log::trace!("spawn producer {} on {}", idx, idx % corecnt);
+        s.spawn(
+            DEFAULT_STACK_SIZE_BYTES,
+            move |_| {
+                for i in 0..1000 {
+                    mtx.enter();
+                    unsafe {
+                        while *occupied.inner.get() >= BATCH_SIZE {
+                            less.wait(&mtx);
+                        }
+                        assert!(*occupied.inner.get() < BATCH_SIZE);
+                        let buf = buf.inner.get();
+                        (*buf)[*nextin.inner.get() as usize] = i;
+
+                        *nextin.inner.get() += 1;
+                        *nextin.inner.get() = *nextin.inner.get() % BATCH_SIZE;
+                        *occupied.inner.get() += 1;
+                    }
+                    more.signal();
+                    mtx.exit();
+                }
+            },
+            ptr::null_mut(),
+            idx % corecnt,
+        );
+    }
+
+    // spawn consumer
+    for idx in 0..consumer {
+        let mtx: Arc<Mutex> = mtx.clone();
+        let aggregate_counter = aggregate_counter.clone();
+        let more = more.clone();
+        let less = less.clone();
+        let nextout = nextout.clone();
+        let occupied = occupied.clone();
+        let buf = buf.clone();
+
+        log::trace!("spawn consumer {} on {}", idx, idx % corecnt);
+        s.spawn(
+            DEFAULT_STACK_SIZE_BYTES,
+            move |_| {
+                for _i in 0..1000 {
+                    mtx.enter();
+                    unsafe {
+                        while *occupied.inner.get() <= 0 {
+                            more.wait(&mtx);
+                        }
+                        assert!(*occupied.inner.get() > 0);
+                        let buf = buf.inner.get();
+                        let element = (*buf)[*nextout.inner.get() as usize];
+
+                        *aggregate_counter.inner.get() += element;
+
+                        *nextout.inner.get() += 1;
+                        *nextout.inner.get() = *nextout.inner.get() % BATCH_SIZE;
+                        *occupied.inner.get() -= 1;
+                    }
+                    less.signal();
+                    mtx.exit();
+                }
+            },
+            ptr::null_mut(),
+            idx % corecnt,
+        );
+    }
+
+    let mut cores = Vec::with_capacity(corecnt);
+    for idx in 0..corecnt {
+        let s1 = s.clone();
+        cores.push(thread::spawn(move || {
+            let scb: SchedulerControlBlock = SchedulerControlBlock::new(idx);
+            let start = Instant::now();
+            while start.elapsed().as_secs() < 1 {
+                s1.run(&scb);
+            }
+        }));
+    }
+
+    for c in cores {
+        let _r = c.join().unwrap();
+    }
+
+    // \sum 0..1000: i
+    let expected_aggregate = (999 * (999 + 1)) / 2;
+    unsafe {
+        assert_eq!(
+            producer * expected_aggregate,
+            *aggregate_counter.inner.get() as usize
+        );
+    }
+    // Silly method to avoid panic due to dropping unfinished generators
+    // (consumer threads may be blocked inside a wait condition once consumers are done)
+    // TODO(fix): Should probably have some sort of kill API for threads...
+    core::mem::forget(s);
 }

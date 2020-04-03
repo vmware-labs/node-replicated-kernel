@@ -20,10 +20,10 @@
 
 #![allow(unused)]
 
-pub use kpi::arch::{SaveArea, VirtualCpu};
-pub use kpi::process::ProcessInfo;
-pub use kpi::io::*;
-pub use kpi::*;
+pub use crate::arch::{SaveArea, VirtualCpu};
+pub use crate::process::ProcessInfo;
+pub use crate::io::*;
+pub use crate::*;
 
 use x86::bits64::paging::{PAddr, VAddr};
 

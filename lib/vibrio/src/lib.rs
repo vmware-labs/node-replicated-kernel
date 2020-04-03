@@ -11,17 +11,17 @@
     ptr_internals,
     ptr_offset_from,
     asm,
-    lang_items
+    lang_items,
+    thread_local
 )]
 extern crate alloc;
 extern crate kpi;
 
 pub use kpi::io;
+pub use kpi::syscalls;
 
 #[cfg(feature = "rumprt")]
 extern crate lazy_static;
-
-pub mod syscalls;
 
 pub mod mem;
 pub mod writer;

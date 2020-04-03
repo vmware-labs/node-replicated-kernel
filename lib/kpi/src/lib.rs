@@ -1,11 +1,20 @@
 //! Defines the public kernel interface (i.e., system call interface)
 //! and associated data-types.
 #![no_std]
+#![feature(asm)]
+
 #[allow(non_snake_case)]
+
+#[cfg(target_os = "bespin")]
+extern crate alloc;
 
 pub mod io;
 pub mod x86_64;
 pub mod process;
+
+/// The syscall layer (only relevant for Ring3 code -> target_os = bespin)
+#[cfg(target_os = "bespin")]
+pub mod syscalls;
 
 /// A short-cut to the architecture specific part that this crate was compiled for.
 pub mod arch {

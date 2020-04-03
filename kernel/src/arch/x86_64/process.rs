@@ -689,7 +689,7 @@ impl elfloader::ElfLoader for Ring3Process {
         align: u64
     ) -> Result<(), &'static str> {
         self.pinfo.has_tls = true;
-        self.pinfo.tls_data = tdata_start;
+        self.pinfo.tls_data = self.offset.as_u64() + tdata_start;
         self.pinfo.tls_data_len = tdata_length;
         self.pinfo.tls_len_total = total_size;
         self.pinfo.alignment = align;

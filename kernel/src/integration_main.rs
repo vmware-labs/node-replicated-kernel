@@ -334,44 +334,6 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Test the scheduler.
-#[cfg(all(feature = "integration-test", feature = "test-scheduler"))]
-pub fn xmain() {
-    let cpuid = x86::cpuid::CpuId::new();
-    assert!(
-        cpuid
-            .get_extended_feature_info()
-            .map_or(false, |ef| ef.has_fsgsbase()),
-        "FS/GS base instructions supported"
-    );
-    use lineup::tls::Environment;
-
-    let mut s = lineup::Scheduler::new(lineup::DEFAULT_UPCALLS);
-    s.spawn(
-        4096,
-        |arg| {
-            let _r = Environment::thread().relinquish();
-            info!("lwt1 {:?}", Environment::tid());
-        },
-        core::ptr::null_mut(),
-    );
-
-    s.spawn(
-        4096,
-        |arg| {
-            info!("lwt2 {:?}", Environment::tid());
-        },
-        core::ptr::null_mut(),
-    );
-
-    s.run();
-    s.run();
-    s.run();
-    s.run();
-
-    arch::debug::shutdown(ExitReason::Ok);
-}
-
 /// Test process loading / user-space.
 #[cfg(all(feature = "integration-test", feature = "test-userspace"))]
 pub fn xmain() {

@@ -603,23 +603,6 @@ fn sse() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Tests the scheduler (in kernel-space).
-#[test]
-fn scheduler() {
-    let cmdline = RunnerArgs::new("test-scheduler");
-    let mut output = String::new();
-
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
-        p.exp_string("lwt2 ThreadId(1)")?;
-        p.exp_string("lwt1 ThreadId(0)")?;
-        output = p.exp_eof()?;
-        p.process.exit()
-    };
-
-    check_for_successful_exit(&cmdline, qemu_run(), output);
-}
-
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology.
 #[test]
 fn acpi_topology() {

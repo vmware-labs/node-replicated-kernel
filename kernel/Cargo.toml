@@ -21,7 +21,6 @@ elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
 driverkit = { path = "../lib/driverkit/" }
-lineup = { path = "../lib/lineup", optional = true }
 rawtime = { path = "../lib/rawtime" }
 custom_error = { path = "../lib/custom_error" }
 topology = { path = "../lib/topology" }
@@ -83,8 +82,6 @@ test-alloc = ["integration-test", "bsp-only"]
 test-sse = ["integration-test", "bsp-only"]
 # test time
 test-time = ["integration-test", "bsp-only"]
-# scheduler: test cooperative scheduler
-test-scheduler = [ "integration-test", "lineup", "bsp-only" ]
 # acpi: test ACPI can initialize
 test-acpi-smoke = [ "integration-test", "bsp-only" ]
 # acpi: test ACPI with complex topology

@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::ptr;
+use core::mem;
 
 use fringe::generator::Generator;
 use rawtime::Instant;
@@ -99,14 +100,23 @@ impl Thread {
                 rumprun_lwp: ptr::null_mut(),
             };
 
+            let (initial_tdata, tls_layout) = crate::tls2::arch::calculate_tls_size2();
+            log::info!("initial_tdata.len() = {} tls_layout = {:?}", initial_tdata.len(), tls_layout);
+            // Set up a TLS block (variant 2: [tdata, tbss, TCB], and start of TCB goes in fs)
+            let tls_base: *mut u8 = alloc::alloc::alloc_zeroed(tls_layout);
+            // TODO(correctness): So this doesn't really respect alignment of ThreadControlBlock :(
+            let tcb = tls_base.offset((tls_layout.size() - mem::size_of::<ThreadControlBlock>()) as isize);
+            *(tcb as *mut ThreadControlBlock) = ts;
+            tls_base.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());
+
             // Install TCB/TLS
-            tls2::arch::set_tcb((&mut ts) as *mut ThreadControlBlock);
+            tls2::arch::set_tcb(tcb as *mut ThreadControlBlock);
 
             let r = f(arg);
 
             // Reset TCB/TLS once thread completes
             tls2::arch::set_tcb(ptr::null_mut() as *mut ThreadControlBlock);
-
+            alloc::alloc::dealloc(tls_base, tls_layout);
             r
         });
 

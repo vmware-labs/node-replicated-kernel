@@ -32,7 +32,7 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
     );
 
     if vector == 0x2a {
-        trace!("got networked interrupt...");
+        log::info!("got networked interrupt...");
         // TODO(correctness): this will use gs, can it?
         let scheduler = lineup::tls2::Environment::scheduler();
         scheduler

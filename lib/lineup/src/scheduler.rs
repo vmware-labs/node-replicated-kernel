@@ -297,6 +297,19 @@ impl<'a> SmpScheduler<'a> {
         }
     }
 
+    /// Check for an incoming interrupt.
+    fn check_interrupt(&self, state: &SchedulerControlBlock) {
+        let is_irq_pending = state
+            .signal_irq
+            .swap(false, core::sync::atomic::Ordering::AcqRel);
+
+        // TODO(correctness): Hard-coded assumption that threadId 1 is IRQ handler
+        if is_irq_pending {
+            log::info!("insert thread 1");
+            self.per_core[state.core_id].runnable.lock().push_back(ThreadId(1));
+        }
+    }
+
     /// Dispatches one thread, runs it until it yields again.
     ///
     /// Also checks if any waiting threads need to be woken up.
@@ -320,6 +333,7 @@ impl<'a> SmpScheduler<'a> {
 
         // Run until `runnable` is empty.
         loop {
+            self.check_interrupt(scb);
             self.check_wakeups(core_id);
 
             // The next thread ID we want to run

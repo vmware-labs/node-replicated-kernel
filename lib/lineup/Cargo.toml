@@ -17,5 +17,8 @@ log = "0.4.6"
 spin = "0.5"
 arr_macro = "0.1"
 
+[target.'cfg(target_os = "bespin")'.dependencies]
+kpi = { path = "../../lib/kpi" }
+
 [target.'cfg(target_family = "unix")'.dev-dependencies]
 env_logger = "*"

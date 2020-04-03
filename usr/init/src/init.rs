@@ -70,7 +70,7 @@ fn scheduler_test() {
     s.spawn(
         32 * 4096,
         move |_| {
-            info!("Hello from t1");
+            info!("Hello from t1, FOO = {:?}", FOO[0]);
         },
         ptr::null_mut(),
         0
@@ -79,7 +79,7 @@ fn scheduler_test() {
     s.spawn(
         32 * 4096,
         move |_| {
-            info!("Hello from t2");
+            info!("Hello from t2, FOO = {:?}", FOO[0]);
         },
         ptr::null_mut(),
         0

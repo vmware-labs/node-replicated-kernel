@@ -1,6 +1,10 @@
 #![no_std]
 #![no_main]
-#![feature(asm, alloc_error_handler, const_fn, panic_info_message)]
+#![feature(thread_local)]
+#![feature(asm)]
+#![feature(alloc_error_handler)]
+#![feature(const_fn)]
+#![feature(panic_info_message)]
 #![allow(unused_imports, dead_code)]
 extern crate alloc;
 extern crate spin;
@@ -21,6 +25,9 @@ use lineup::tls2::SchedulerControlBlock;
 
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
+
+#[thread_local]
+pub static FOO: [&str; 1] = [ "Hello" ];
 
 fn print_test() {
     let _r = vibrio::syscalls::print("test\r\n");

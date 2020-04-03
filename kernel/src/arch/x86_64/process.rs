@@ -467,6 +467,8 @@ pub struct Ring3Process {
     pub vspace: VSpace,
     /// Offset where ELF is located.
     pub offset: VAddr,
+    /// Process info struct (can be retrieved by user-space)
+    pub pinfo: kpi::process::ProcessInfo,
     /// The entry point of the ELF file (set during elfloading).
     pub entry_point: VAddr,
     /// Executor cache (holds a per-region cache of executors)
@@ -500,6 +502,7 @@ impl Ring3Process {
             executor_cache,
             executor_offset: VAddr::from(0x21_0000_0000usize),
             fds,
+            pinfo: Default::default()
         }
     }
 }
@@ -677,6 +680,22 @@ impl elfloader::ElfLoader for Ring3Process {
         let _to = self.offset + base + size;
         Ok(())
     }
+
+    fn tls(
+        &mut self,
+        tdata_start: u64,
+        tdata_length: u64,
+        total_size: u64,
+        align: u64
+    ) -> Result<(), &'static str> {
+        self.pinfo.has_tls = true;
+        self.pinfo.tls_data = tdata_start;
+        self.pinfo.tls_data_len = tdata_length;
+        self.pinfo.tls_len_total = total_size;
+        self.pinfo.alignment = align;
+        Ok(())
+    }
+
 }
 
 impl Process for Ring3Process {
@@ -857,5 +876,9 @@ impl Process for Ring3Process {
 
     fn get_fd(&mut self, index: usize) -> &mut Fd {
         self.fds[index].as_mut().unwrap()
+    }
+
+    fn pinfo(&self) -> &kpi::process::ProcessInfo {
+        &self.pinfo
     }
 }

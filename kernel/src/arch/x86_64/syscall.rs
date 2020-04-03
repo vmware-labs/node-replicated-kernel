@@ -78,6 +78,27 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let exit_code = arg2;
             process_exit(exit_code)
         }
+        ProcessOperation::GetProcessInfo => {
+            let vaddr_buf = arg2; // buf.as_mut_ptr() as u64
+            let vaddr_buf_len = arg3; // buf.len() as u64
+            let kcb = super::kcb::get_kcb();
+            let mut plock = kcb.arch.current_process();
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                let pinfo = nr::KernelNode::<Ring3Process>::pinfo(
+                    p.pid
+                ).expect("Can't get pinfo?");
+                info!("got pinfo = {:?}", pinfo);
+
+                let serialized = serde_cbor::to_vec(&pinfo).unwrap();
+                if serialized.len() <= vaddr_buf_len as usize {
+                    let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
+                    user_slice.copy_from_slice(serialized.as_slice());
+                }
+                log::info!("serialized.len = {}", serialized.len());
+
+                Ok((serialized.len() as u64, 0))
+            })
+        }
         _ => Err(KError::InvalidProcessOperation { a: arg1 }),
     }
 }

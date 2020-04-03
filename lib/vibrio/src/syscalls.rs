@@ -21,6 +21,7 @@
 #![allow(unused)]
 
 pub use kpi::arch::{SaveArea, VirtualCpu};
+pub use kpi::process::ProcessInfo;
 pub use kpi::io::*;
 pub use kpi::*;
 
@@ -275,6 +276,25 @@ pub fn print(buffer: &str) -> Result<(), SystemCallError> {
 
     if r == 0 {
         Ok(())
+    } else {
+        Err(SystemCallError::from(r))
+    }
+}
+
+/// Query process specific information.
+pub fn process_info() -> Result<ProcessInfo, SystemCallError> {
+    let mut buf = alloc::vec![0; 128];
+    let (r, len) = unsafe {
+        syscall_4_2(SystemCall::Process as u64, ProcessOperation::GetProcessInfo as u64,
+        buf.as_mut_ptr() as u64, buf.len() as u64)
+    };
+
+    if r == 0 {
+        let len = len as usize;
+        debug_assert!(len <= buf.len());
+        buf.resize(len, 0);
+        let deserialized: ProcessInfo = serde_cbor::from_slice(&buf).unwrap();
+        Ok(deserialized)
     } else {
         Err(SystemCallError::from(r))
     }

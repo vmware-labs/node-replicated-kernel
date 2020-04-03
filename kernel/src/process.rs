@@ -52,6 +52,8 @@ pub trait Process {
     fn deallocate_fd(&mut self, fd: usize) -> usize;
 
     fn get_fd(&mut self, index: usize) -> &mut Fd;
+
+    fn pinfo(&self) -> &kpi::process::ProcessInfo;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU

@@ -1,11 +1,11 @@
 //! Defines the public kernel interface (i.e., system call interface)
 //! and associated data-types.
 #![no_std]
-
 #[allow(non_snake_case)]
 
 pub mod io;
 pub mod x86_64;
+pub mod process;
 
 /// A short-cut to the architecture specific part that this crate was compiled for.
 pub mod arch {
@@ -74,6 +74,8 @@ pub enum ProcessOperation {
     AllocateVector = 4,
     /// Subscribe to a trap and/or interrupt events.
     SubscribeEvent = 5,
+    /// Query info about the current process.
+    GetProcessInfo = 6,
     Unknown,
 }
 
@@ -86,6 +88,7 @@ impl From<u64> for ProcessOperation {
             3 => ProcessOperation::GetVCpuArea,
             4 => ProcessOperation::AllocateVector,
             5 => ProcessOperation::SubscribeEvent,
+            6 => ProcessOperation::GetProcessInfo,
             _ => ProcessOperation::Unknown,
         }
     }
@@ -100,6 +103,7 @@ impl From<&str> for ProcessOperation {
             "GetVCpuArea" => ProcessOperation::GetVCpuArea,
             "AllocateVector" => ProcessOperation::AllocateVector,
             "SubscribeEvent" => ProcessOperation::SubscribeEvent,
+            "GetProcessInfo" => ProcessOperation::GetProcessInfo,
             _ => ProcessOperation::Unknown,
         }
     }

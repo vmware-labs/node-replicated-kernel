@@ -7,7 +7,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use cstr_core::CStr;
 use hashbrown::HashMap;
-use kpi::{io::*, FileOperation};
+use kpi::{io::*, FileOperation, process::ProcessInfo};
 use node_replication::Dispatch;
 
 use crate::arch::process::{UserPtr, UserSlice};
@@ -20,6 +20,11 @@ use crate::fs::{
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process};
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum ReadOps {
+    ProcessInfo(Pid),
+}
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Op {
@@ -67,6 +72,7 @@ pub enum NodeResult<E: Executor> {
     FileAccessed(Len),
     FileInfo(u64),
     FileDeleted(bool),
+    ProcessInfo(ProcessInfo),
     Invalid,
 }
 
@@ -303,6 +309,27 @@ impl<P: Process> KernelNode<P> {
                 }
             })
     }
+
+    pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+                replica.execute_ro(ReadOps::ProcessInfo(pid), kcb.arch.replica_idx);
+
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                match &o[0] {
+                    Ok(NodeResult::ProcessInfo(pinfo)) => Ok(*pinfo),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
+
 }
 
 impl<P> Dispatch for KernelNode<P>
@@ -310,13 +337,19 @@ where
     P: Process,
     P::E: Copy,
 {
-    type ReadOperation = ();
+    type ReadOperation = ReadOps;
     type WriteOperation = Op;
     type Response = NodeResult<P::E>;
     type ResponseError = KError;
 
     fn dispatch(&self, op: Self::ReadOperation) -> Result<Self::Response, Self::ResponseError> {
-        unimplemented!("dispatch");
+        match op {
+            ReadOps::ProcessInfo(pid) => {
+                let process_lookup = self.process_map.get(&pid);
+                let p = process_lookup.expect("TODO: DispAlloc process lookup failed");
+                Ok(NodeResult::ProcessInfo(*p.pinfo()))
+            }
+        }
     }
 
     fn dispatch_mut(

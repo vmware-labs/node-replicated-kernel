@@ -96,7 +96,7 @@ pub trait FileDescriptor {
     fn get_flags(&self) -> FileFlags;
 }
 
-/// A file descriptor representaFileSystemError::OutOfMemorytion.
+/// A file descriptor representaion.
 #[derive(Debug, Default)]
 pub struct Fd {
     mnode: Mnode,

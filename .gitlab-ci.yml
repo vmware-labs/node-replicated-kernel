@@ -19,7 +19,7 @@ build:
   stage: build
   script:
     - cd kernel
-    - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin
+    - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin -Zfeatures=all
 
 run-qemu:
   stage: run

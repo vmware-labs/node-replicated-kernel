@@ -9,7 +9,7 @@ before_script:
   - rustup --version
   - rustc --version
   - cargo --version
-  - cargo +nightly fmt --version
+  #- cargo +nightly fmt --version
   #- sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
   # Leave node-replication alone for the moment:
   - sed -i'' -e '/git@github.com:gz\/node-replication.git/!s/git@github.com:/https:\/\/github.com\//' .gitmodules
@@ -48,7 +48,7 @@ test:
     #- sudo ifconfig tap0 down || true
     #- sudo tunctl -d tap0 || true
     - cd kernel
-    - cargo +nightly fmt --package bespin -- --check
+    #- cargo +nightly fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test
   dependencies:
     - build

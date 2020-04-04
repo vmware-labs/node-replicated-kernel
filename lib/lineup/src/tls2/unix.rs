@@ -34,8 +34,8 @@ pub(crate) unsafe fn set_scb(scb: *const SchedulerControlBlock) {
 
 /// A poor way to estimate the TLS size on unix.
 #[cfg(target_family = "unix")]
-pub fn calculate_tls_size() -> (usize, usize, usize) {
+pub fn get_tls_info() -> (&'static [u8], Layout) {
     // We only use this for tests, so we just estimate our TLS size...
     // Ideally we parse the ELF of our process to determine the static TLS size
-    (2048, 1024, mem::size_of::<ThreadControlBlock>())
+    (&[], Layout::new::<ThreadControlBlock>())
 }

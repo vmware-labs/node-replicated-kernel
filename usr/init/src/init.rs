@@ -27,7 +27,7 @@ use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
 #[thread_local]
-pub static FOO: [&str; 1] = [ "Hello" ];
+pub static mut TLS_TEST: [&str; 2] = [ "abcd", "efgh" ];
 
 fn print_test() {
     let _r = vibrio::syscalls::print("test\r\n");
@@ -65,27 +65,48 @@ fn alloc_test() {
 }
 
 fn scheduler_test() {
+    use lineup::threads::ThreadId;
+
     let mut s: lineup::scheduler::SmpScheduler = Default::default();
 
     s.spawn(
         32 * 4096,
         move |_| {
-            info!("Hello from t1, FOO = {:?}", FOO[0]);
+
+            unsafe {
+                info!("Hello from t1");
+                assert_eq!(TLS_TEST[0], "abcd");
+                assert_eq!(TLS_TEST[1], "efgh");
+                TLS_TEST[0] = "xxxx";
+                TLS_TEST[1] = "xxxx";
+                assert_eq!(TLS_TEST[0], "xxxx");
+            }
+            assert_eq!(lineup::tls2::Environment::scheduler().core_id, 2);
+            assert_eq!(lineup::tls2::Environment::thread().current_core, 2);
+            assert_eq!(lineup::tls2::Environment::tid(), ThreadId(0));
+
         },
         ptr::null_mut(),
-        0
+        2
     );
 
     s.spawn(
         32 * 4096,
         move |_| {
-            info!("Hello from t2, FOO = {:?}", FOO[0]);
+            unsafe {
+                assert_eq!(TLS_TEST[0], "abcd");
+                assert_eq!(TLS_TEST[1], "efgh");
+                info!("Hello from t2");
+            }
+            assert_eq!(lineup::tls2::Environment::scheduler().core_id, 2);
+            assert_eq!(lineup::tls2::Environment::thread().current_core, 2);
+            assert_eq!(lineup::tls2::Environment::tid(), ThreadId(1));
         },
         ptr::null_mut(),
-        0
+        2
     );
 
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(2);
     s.run(&scb);
 
     info!("scheduler_test OK");

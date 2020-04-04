@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 
 use core::ops::Add;
 use core::ptr;
+use core::mem;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use fringe::generator::Yielder;
@@ -40,34 +41,99 @@ pub use crate::tls2::unix as arch;
 /// Per thread state of the scheduler.
 ///
 /// This is what the `fs` register points to.
+///
 /// The thread-local-storage region is allocated
-/// in front of that structure (since we do the TLS variant 2).
+/// in front of that structure (since we do TLS variant 2).
+///
+/// The first three arguments essentially mirror the rump/NetBSD
+/// `tls_tcb` struct for compatibility with NetBSD libpthread.
+///
+/// ```
+/// struct tls_tcb {
+///   void *tcb_self;  // 0
+///   void **tcb_dtv;  // 8
+///   void *tcb_pthread; // 16
+/// };
+/// ```
+///
+/// This struct is `repr(C)` because we depend on the order
+/// of the first three elements.
+#[repr(C)]
 pub struct ThreadControlBlock<'a> {
-    pub(crate) yielder: &'a Yielder<YieldResume, YieldRequest>,
+    /// Points to self (this makes sure mov %fs:0x0 works
+    /// because it will look up the pointer here)
+    tcb_myself: *mut ThreadControlBlock<'a>,
+    /// Unused but needed for compatibility since we don't do dynamic linking.
+    tcb_dtv: *const *const u8,
+    /// Used by libpthread (rump) to access pthread internal state.
+    pub tcb_pthread: *mut u8,
+
+    /// Our yielder for communicating to the scheduler.
+    pub(crate) yielder: Option<&'a Yielder<YieldResume, YieldRequest>>,
+
+    /// Thread ID.
     pub(crate) tid: ThreadId,
 
+    /// Core affinity.
     pub current_core: CoreId,
+    /// Contains upcalls (TODO: can't this be in SchedulerControlBlock?)
     pub upcalls: Upcalls,
+
+    /// Stores pointer to lwp (TODO: figure this out can probably be thread local now)
     pub rump_lwp: *const u64,
+    /// Stores pointer to lwp (TODO: figure this out can probably be thread local now)
     pub rumprun_lwp: *const u64,
 }
 
 impl<'a> ThreadControlBlock<'a> {
+
+    pub  unsafe fn new_tls_area() -> *mut ThreadControlBlock<'a> {
+        let mut ts_template = ThreadControlBlock {
+            tcb_myself: ptr::null_mut(),
+            tcb_dtv: ptr::null(),
+            tcb_pthread: ptr::null_mut(),
+            yielder: None,
+            tid: ThreadId(0),
+            current_core: 0,
+            upcalls: Default::default(),
+            rump_lwp: ptr::null_mut(),
+            rumprun_lwp: ptr::null_mut(),
+        };
+
+        let (initial_tdata, tls_layout) = arch::get_tls_info();
+
+        // Allocate memory for a TLS block (variant 2: [tdata, tbss, TCB], and start of TCB goes in fs)
+        let tls_base: *mut u8 = alloc::alloc::alloc_zeroed(tls_layout);
+
+        // TODO(correctness): This doesn't really respect alignment of ThreadControlBlock :(
+        // since we align to the TLS alignment requirements by ELF
+        let tcb = tls_base.offset((tls_layout.size() - mem::size_of::<ThreadControlBlock>()) as isize);
+        *(tcb as *mut ThreadControlBlock) = ts_template;
+        // Initialize TCB self
+        (*(tcb as *mut ThreadControlBlock)).tcb_myself = tcb as *mut ThreadControlBlock;
+
+        // Copy data
+        tls_base.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());
+
+        tcb as *mut ThreadControlBlock
+    }
+
     fn yielder(&self) -> &'a Yielder<YieldResume, YieldRequest> {
-        self.yielder
+        self.yielder.unwrap()
     }
 
     pub fn set_lwp(&mut self, lwp_ptr: *const u64) {
         self.rump_lwp = lwp_ptr;
     }
 
-    pub fn spawn_with_stack(
+    pub fn spawn_with_args(
         &self,
         s: LineupStack,
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
+        tcb: *mut ThreadControlBlock<'static>
     ) -> Option<ThreadId> {
-        let request = YieldRequest::SpawnWithStack(s, f, arg, 0);
+        let request = YieldRequest::SpawnWithArgs(s, f, arg, self.current_core, tcb);
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,
@@ -79,7 +145,7 @@ impl<'a> ThreadControlBlock<'a> {
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
     ) -> Option<ThreadId> {
-        let request = YieldRequest::Spawn(f, arg, 0);
+        let request = YieldRequest::Spawn(f, arg, self.current_core);
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,
@@ -172,16 +238,16 @@ pub struct Environment {}
 impl Environment {
     pub fn tid() -> ThreadId {
         unsafe {
-            let ts = arch::get_tcb();
-            assert!(!ts.is_null(), "Don't have TCB available?");
-            (*ts).tid
+            let tcb = x86::current::segmentation::fs_deref() as *const ThreadControlBlock;
+            assert!(!tcb.is_null(), "Don't have TCB available?");
+            (*tcb).tid
         }
     }
 
     // TODO(correctness): this needs some hardending to avoid aliasing of ThreadState!
     pub fn thread<'a>() -> &'a mut ThreadControlBlock<'static> {
         unsafe {
-            let tcb = arch::get_tcb();
+            let tcb = x86::current::segmentation::fs_deref() as *mut ThreadControlBlock;
             assert!(!tcb.is_null(), "Don't have TCB available?");
             &mut *tcb
         }
@@ -190,7 +256,7 @@ impl Environment {
     // TODO(correctness): this needs some hardending to avoid aliasing of ThreadState!
     pub fn scheduler<'a>() -> &'a SchedulerControlBlock {
         unsafe {
-            let scb = arch::get_scb();
+            let scb = arch::get_scb() as *mut SchedulerControlBlock;
             assert!(!scb.is_null(), "Don't have SCB state available?");
             &*scb
         }

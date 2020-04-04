@@ -32,8 +32,9 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
     );
 
     if vector == 0x2a {
-        log::info!("got networked interrupt...");
-        // TODO(correctness): this will use gs, can it?
+        // TODO(correctness): this will use `gs` to access the SchedulerControlBlock
+        // that assumes that we have already called scheduler.run() and we preserve
+        // the SchedulerControlBlock register even if we return from run()
         let scheduler = lineup::tls2::Environment::scheduler();
         scheduler
             .signal_irq

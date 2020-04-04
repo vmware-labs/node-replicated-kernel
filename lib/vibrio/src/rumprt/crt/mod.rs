@@ -17,8 +17,6 @@ pub mod signals;
 pub mod tls;
 pub mod unsupported;
 
-use tls::initialize_tls;
-
 /// A pointer to the environment variables.
 #[no_mangle]
 pub static mut environ: *mut *const i8 = ptr::null_mut();
@@ -237,13 +235,6 @@ pub extern "C" fn main() {
             info!(
                 "rump_pub_netconfig_dhcp_ipv4_oneshot done in {:?}",
                 start.elapsed()
-            );
-
-            let tls_buffer: *mut u8 = initialize_tls();
-            x86::current::segmentation::wrfsbase(tls_buffer as u64);
-            info!(
-                "tls buffer set to {:#x}",
-                x86::current::segmentation::rdfsbase()
             );
 
             // Set up a garbage environment

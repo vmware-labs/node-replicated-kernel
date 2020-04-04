@@ -19,7 +19,7 @@ use rawtime::Instant;
 
 use crate::stack::LineupStack;
 use crate::threads::{Runnable, Thread, ThreadId, YieldRequest, YieldResume};
-use crate::tls2::{self, SchedulerControlBlock};
+use crate::tls2::{self, ThreadControlBlock, SchedulerControlBlock};
 use crate::upcalls::Upcalls;
 use crate::CoreId;
 
@@ -87,17 +87,18 @@ impl<'a> SmpScheduler<'a> {
             )),
             threads: spin::Mutex::new(hashbrown::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
             upcalls,
-            tid_counter: AtomicUsize::new(1),
+            tid_counter: AtomicUsize::new(0),
             per_core: arr![SchedulerCoreState::new(); 64], // MAX_THREADS
         }
     }
 
-    pub fn spawn_with_stack<F>(
+    pub fn spawn_with_args<F>(
         &self,
         stack: LineupStack,
         f: F,
         arg: *mut u8,
         affinity: CoreId,
+        tls: *mut ThreadControlBlock<'static>
     ) -> Option<ThreadId>
     where
         F: 'static + FnOnce(*mut u8) + Send,
@@ -105,7 +106,7 @@ impl<'a> SmpScheduler<'a> {
         let t = self.tid_counter.fetch_add(1, Ordering::Relaxed);
         let tid = ThreadId(t);
         let (handle, generator) =
-            unsafe { Thread::new(tid, affinity, stack, f, arg, self.upcalls) };
+            unsafe { Thread::new(tid, affinity, stack, f, arg, self.upcalls, tls) };
 
         self.add_thread(handle, generator).map(|tid| {
             self.mark_runnable(tid, affinity);
@@ -124,7 +125,8 @@ impl<'a> SmpScheduler<'a> {
         F: 'static + FnOnce(*mut u8) + Send,
     {
         let stack = LineupStack::from_size(stack_size);
-        self.spawn_with_stack(stack, f, arg, affinity)
+        let tls = unsafe { tls2::ThreadControlBlock::new_tls_area() };
+        self.spawn_with_args(stack, f, arg, affinity, tls)
     }
 
     fn add_thread(
@@ -163,6 +165,20 @@ impl<'a> SmpScheduler<'a> {
     fn mark_unrunnable(&self, tid: ThreadId, affinity: CoreId) {
         let mut runnable = self.per_core[affinity].runnable.lock();
         runnable.retain(|&ltid| ltid != tid);
+    }
+
+    /// Remove a thread from the waitlist.
+    ///
+    /// TODO(performance): This has ugly runtime complexity.
+    /// Maybe better do this right and use a linked-list after all.
+    /// Another alternative: The only time when we have to do this
+    /// is when the CondVar does a timedwait and someone wakes us
+    /// up using `signal` and `broadcast` so we can remove calls
+    /// here except in these situation if we track it better
+    /// i.e. save in thread state if its waiting...
+    fn waitlist_remove(&self, tid: ThreadId, affinity: CoreId) {
+        let mut waiting = self.per_core[affinity].waiting.lock();
+        waiting.retain(|&(_instant, wtid)| wtid != tid);
     }
 
     /// Insert thread in a sorted waitlist
@@ -208,6 +224,7 @@ impl<'a> SmpScheduler<'a> {
                     .get(&rtid)
                     .expect("Can't find thread")
                     .affinity;
+                self.waitlist_remove(rtid, rtid_affinity);
                 self.mark_runnable(rtid, rtid_affinity);
                 YieldResume::Completed
             }
@@ -238,6 +255,7 @@ impl<'a> SmpScheduler<'a> {
                         .get(&rtid)
                         .expect("Can't find thread")
                         .affinity;
+                    self.waitlist_remove(*rtid, rtid_affinity);
                     self.mark_runnable(*rtid, rtid_affinity);
                 }
                 YieldResume::Completed
@@ -266,16 +284,17 @@ impl<'a> SmpScheduler<'a> {
                     .expect("Can't spawn the thread");
                 YieldResume::Spawned(tid)
             }
-            Some(YieldRequest::SpawnWithStack(stack, function, arg, affinity)) => {
+            Some(YieldRequest::SpawnWithArgs(stack, function, arg, affinity, tls_private)) => {
                 trace!("self.spawn {:?} {:p}", function, arg);
                 let tid = self
-                    .spawn_with_stack(
+                    .spawn_with_args(
                         stack,
                         move |arg| unsafe {
                             (function.unwrap())(arg);
                         },
                         arg,
                         affinity,
+                        tls_private
                     )
                     .expect("Can't spawn the thread");
                 YieldResume::Spawned(tid)
@@ -305,7 +324,7 @@ impl<'a> SmpScheduler<'a> {
 
         // TODO(correctness): Hard-coded assumption that threadId 1 is IRQ handler
         if is_irq_pending {
-            log::info!("insert thread 1");
+            log::trace!("Got interrupt");
             self.per_core[state.core_id].runnable.lock().push_back(ThreadId(1));
         }
     }
@@ -350,16 +369,10 @@ impl<'a> SmpScheduler<'a> {
                         let thread_map = self.threads.lock();
                         let thread = thread_map.get(&tid).expect("Can't find thread state?");
                         trace!("Thread = {:?}", thread);
-
-                        // Only overwrite the thread control block in case this is
-                        // not null (i.e., not a new thread). A new thread will
-                        // allocate the TCB itself
-                        if !thread.state.is_null() {
-                            unsafe {
-                                tls2::arch::set_tcb(thread.state);
-                            }
+                        // Switch the TCB to the new thread:
+                        unsafe {
+                            tls2::arch::set_tcb(thread.state);
                         }
-
                         thread.return_with.unwrap_or(YieldResume::Completed)
                     };
 

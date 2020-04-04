@@ -4,7 +4,7 @@ use core::hash::{Hash, Hasher};
 use core::ptr;
 use core::mem;
 
-use fringe::generator::Generator;
+use fringe::generator::{Yielder, Generator};
 use rawtime::Instant;
 
 use crate::stack::LineupStack;
@@ -39,10 +39,6 @@ pub(crate) struct Thread {
 
     /// Storage to remember the pointer to the TCB
     ///
-    /// If a thread runs the first time this is null since a thread creates
-    /// it's own TCB before running. After the first yield this will
-    /// be used to memorize it for future resumes.
-    ///
     /// TODO(correctness): It's not really static (it's on the thread's stack),
     /// but keeps it easier for now.
     pub(crate) state: *mut ThreadControlBlock<'static>,
@@ -76,6 +72,7 @@ impl Thread {
         f: F,
         arg: *mut u8,
         upcalls: Upcalls,
+        tcb: *mut ThreadControlBlock<'static>,
     ) -> (
         Thread,
         Generator<'a, YieldResume, YieldRequest, LineupStack>,
@@ -83,40 +80,33 @@ impl Thread {
     where
         F: 'static + FnOnce(*mut u8) + Send,
     {
+        // Finish initalization of TCB (except for yielder, see generator)
+        unsafe {
+            (*tcb).tid = tid;
+            (*tcb).current_core = affinity;
+            (*tcb).upcalls = upcalls;
+        }
+
         let thread = Thread {
             id: tid,
             affinity,
             return_with: None,
-            state: ptr::null_mut(),
+            state: tcb,
         };
 
         let generator = Generator::unsafe_new(stack, move |yielder, _| {
-            let mut ts = tls2::ThreadControlBlock {
-                tid,
-                yielder,
-                upcalls,
-                current_core: affinity,
-                rump_lwp: ptr::null_mut(),
-                rumprun_lwp: ptr::null_mut(),
-            };
+            tls2::Environment::thread().yielder = Some(mem::transmute::<&Yielder<YieldResume, YieldRequest>, &'static Yielder<YieldResume, YieldRequest>>(yielder));
 
-            let (initial_tdata, tls_layout) = crate::tls2::arch::calculate_tls_size2();
-            log::info!("initial_tdata.len() = {} tls_layout = {:?}", initial_tdata.len(), tls_layout);
-            // Set up a TLS block (variant 2: [tdata, tbss, TCB], and start of TCB goes in fs)
-            let tls_base: *mut u8 = alloc::alloc::alloc_zeroed(tls_layout);
-            // TODO(correctness): So this doesn't really respect alignment of ThreadControlBlock :(
-            let tcb = tls_base.offset((tls_layout.size() - mem::size_of::<ThreadControlBlock>()) as isize);
-            *(tcb as *mut ThreadControlBlock) = ts;
-            tls_base.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());
-
-            // Install TCB/TLS
-            tls2::arch::set_tcb(tcb as *mut ThreadControlBlock);
-
+            // rump lwp switchproc stuff here
             let r = f(arg);
 
             // Reset TCB/TLS once thread completes
-            tls2::arch::set_tcb(ptr::null_mut() as *mut ThreadControlBlock);
-            alloc::alloc::dealloc(tls_base, tls_layout);
+            tls2::arch::set_tcb(ptr::null_mut());
+
+            // deallocate TLS? this shouldnt be done if the tls pointer comes from _rtld_tls_alloc
+            // just ignore it for now
+            //alloc::alloc::dealloc(tls_base, tls_layout);
+
             r
         });
 
@@ -144,11 +134,12 @@ pub(crate) enum YieldRequest {
         CoreId,
     ),
     /// Spawn a new thread that runs function/argument on the provided stack.
-    SpawnWithStack(
+    SpawnWithArgs(
         LineupStack,
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
         CoreId,
+        *mut ThreadControlBlock<'static>
     ),
 }
 

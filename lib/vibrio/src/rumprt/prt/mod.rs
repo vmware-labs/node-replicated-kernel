@@ -51,15 +51,16 @@ pub struct TimeSpec {
 pub unsafe extern "C" fn rumprun_makelwp(
     start: LwpMain,
     arg: *mut c_void,
-    private: *mut c_void,
+    tls_private: *mut c_void,
     stack_base: *mut c_void,
     stack_size: c_size_t,
     flags: usize,
     lid: *mut lwpid_t,
 ) -> c_int {
+    error!("TODO what happen to lid");
     info!(
         "rumprun_makelwp {:p} {:p} {:p}--{} {} {:p}",
-        arg, private, stack_base, stack_size, flags, lid
+        arg, tls_private, stack_base, stack_size, flags, lid
     );
 
     let free_automatically = false;
@@ -67,7 +68,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
         lineup::stack::LineupStack::from_ptr(stack_base as *mut u8, stack_size, free_automatically);
 
     let s = Environment::thread();
-    s.spawn_with_stack(stack, start, arg as *mut u8);
+    s.spawn_with_args(stack, start, arg as *mut u8, tls_private as *mut lineup::tls2::ThreadControlBlock<'static>);
     0
 }
 

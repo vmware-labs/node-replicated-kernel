@@ -40,16 +40,20 @@ cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = fa
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" } # Need to upstream fixes
 addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
 uefi = "0.4.4"
-serde_cbor = { version = "0.11", default-features = false, features = ["alloc"] }
 
 [[bin]]
 name = "bespin"
 path = "src/main.rs"
 
+[target.'cfg(target_os = "none")'.dependencies]
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
+serde_cbor = { version = "0.11", default-features = false }
+
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = { version = "0.2.53", default-features = false }
 csv = "1.1"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1" }
+serde_cbor = { version = "0.11" }
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
 rexpect = "0.3"

@@ -94,6 +94,7 @@ impl<'a> DerefMut for UserSlice<'a> {
 pub struct UnixProcess {
     vspace: VSpace,
     fd: Fd,
+    pinfo: kpi::process::ProcessInfo,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -131,6 +132,7 @@ impl Process for UnixProcess {
         Ok(UnixProcess {
             vspace: VSpace::new(),
             fd: Default::default(),
+            pinfo: Default::default()
         })
     }
 
@@ -164,5 +166,9 @@ impl Process for UnixProcess {
 
     fn get_fd(&mut self, index: usize) -> &mut Fd {
         &mut self.fd
+    }
+
+    fn pinfo(&self) -> &kpi::process::ProcessInfo {
+        &self.pinfo
     }
 }

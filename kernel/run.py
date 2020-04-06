@@ -132,6 +132,9 @@ def build_user_libraries(args):
     log("Build user-space lib vibrio")
     build_args = ['build', '--target', USER_TARGET]
     build_args += ["--features", "rumprt"]
+    if args.nic == "virtio":
+        build_args += ["--features", "virtio"]
+    # else: use e1000 / wm0
     build_args += CARGO_DEFAULT_ARGS
 
     # Make sure we build a static (.a) vibrio library

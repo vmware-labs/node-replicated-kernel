@@ -224,7 +224,9 @@ pub extern "C" fn main() {
                 core::mem::size_of::<tmpfs_args>(),
             );
 
-            //let nic_model = b"vioif0\0";
+            #[cfg(feature = "virtio")]
+            let nic_model = b"vioif0\0";
+            #[cfg(not(feature = "virtio"))]
             let nic_model = b"wm0\0";
             let iface = CStr::from_bytes_with_nul(nic_model);
 

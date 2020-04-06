@@ -134,6 +134,8 @@ struct RunnerArgs<'a> {
     qemu_args: Vec<&'a str>,
     /// Timeout in ms
     timeout: u64,
+    /// Default network interface for QEMU
+    nic: &'static str,
 }
 
 #[allow(unused)]
@@ -151,6 +153,7 @@ impl<'a> RunnerArgs<'a> {
             norun: false,
             qemu_args: Vec::new(),
             timeout: 15_000,
+            nic: "e1000"
         }
     }
 
@@ -183,6 +186,13 @@ impl<'a> RunnerArgs<'a> {
         self.nodes = nodes;
         self
     }
+
+    /// How many NUMA nodes QEMU should simulate.
+    fn use_virtio(mut self) -> RunnerArgs<'a> {
+        self.nic = "virtio";
+        self
+    }
+
 
     /// How many cores QEMU should simulate.
     fn cores(mut self, cores: usize) -> RunnerArgs<'a> {
@@ -267,6 +277,8 @@ impl<'a> RunnerArgs<'a> {
             kernel_features,
             String::from("--cmd"),
             format!("log={} {}", log_level, self.cmd.unwrap_or("")),
+            String::from("--nic"),
+            String::from(self.nic),
         ];
 
         if !self.mods.is_empty() {
@@ -940,8 +952,126 @@ fn s05_redis_smoke() {
     );
 }
 
+fn redis_benchmark(nic: &'static str) -> Result<rexpect::session::PtySession> {
+    fn spawn_bencher(port: u16) -> Result<rexpect::session::PtySession> {
+        spawn(
+            format!(
+                "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set -n 2000000 -P 30 --csv",
+                port
+            )
+            .as_str(),
+            Some(25000),
+        )
+    }
+
+    let mut redis_client = spawn_bencher(REDIS_PORT)?;
+    // redis reports the tputs as floating points
+    redis_client.exp_string("\"PING_INLINE\",\"")?;
+    let (_line, ping_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+    redis_client.exp_string("\"")?;
+
+    redis_client.exp_string("\"PING_BULK\",\"")?;
+    let (_line, ping_bulk_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+    redis_client.exp_string("\"")?;
+
+    redis_client.exp_string("\"SET\",\"")?;
+    let (_line, set_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+    redis_client.exp_string("\"")?;
+
+    redis_client.exp_string("\"GET\",\"")?;
+    let (line, get_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+    redis_client.exp_string("\"")?;
+
+    let ping_tput: f64 = ping_tput.parse().unwrap_or(404.0);
+    let ping_bulk_tput: f64 = ping_bulk_tput.parse().unwrap_or(404.0);
+    let set_tput: f64 = set_tput.parse().unwrap_or(404.0);
+    let get_tput: f64 = get_tput.parse().unwrap_or(404.0);
+
+    // Append parsed results to a CSV file
+    let file_name = "redis_benchmark.csv";
+    // write headers only to a new file
+    let write_headers = !Path::new(file_name).exists();
+    let mut csv_file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(file_name)
+        .expect("Can't open file");
+
+    let mut wtr = WriterBuilder::new()
+        .has_headers(write_headers)
+        .from_writer(csv_file);
+
+    #[derive(Serialize)]
+    struct Record {
+        git_rev: &'static str,
+        ping: f64,
+        ping_bulk: f64,
+        set: f64,
+        get: f64,
+    };
+
+    let record = Record {
+        git_rev: env!("GIT_HASH"),
+        ping: ping_tput,
+        ping_bulk: ping_bulk_tput,
+        set: set_tput,
+        get: get_tput,
+    };
+
+    wtr.serialize(record);
+
+    println!("git_rev,nic,ping,ping_bulk,set,get");
+    println!(
+        "{},{},{},{},{},{}",
+        env!("GIT_HASH"),
+        nic,
+        ping_tput,
+        ping_bulk_tput,
+        set_tput,
+        get_tput
+    );
+    assert!(
+        get_tput > 200_000.0,
+        "Redis throughput seems rather low (GET < 200k)?"
+    );
+
+    Ok(redis_client)
+}
+
 #[test]
-fn s06_redis_benchmark() {
+fn s06_redis_benchmark_virtio() {
+    let qemu_run = || -> Result<WaitStatus> {
+        let mut dhcp_server = spawn_dhcpd()?;
+
+        let mut p = spawn_bespin(
+            &RunnerArgs::new("test-userspace")
+                .module("rkapps")
+                .user_feature("rkapps:redis")
+                .cmd("testbinary=redis.bin")
+                .use_virtio()
+                .release()
+                .timeout(25_000),
+        )?;
+
+        // Test that DHCP works:
+        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
+        p.exp_string("# Server started, Redis version 3.0.6")?;
+
+        let mut redis_client = redis_benchmark("virtio")?;
+
+        dhcp_server.send_control('c')?;
+        redis_client.process.kill(SIGTERM)?;
+        p.process.kill(SIGTERM)
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Signaled(_, SIGTERM, _)
+    );
+}
+
+#[test]
+fn s06_redis_benchmark_e1000() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -951,91 +1081,14 @@ fn s06_redis_benchmark() {
                 .user_feature("rkapps:redis")
                 .cmd("testbinary=redis.bin")
                 .release()
-                .timeout(20_000),
+                .timeout(25_000),
         )?;
 
         // Test that DHCP works:
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
         p.exp_string("# Server started, Redis version 3.0.6")?;
 
-        fn spawn_bencher(port: u16) -> Result<rexpect::session::PtySession> {
-            spawn(
-                format!(
-                    "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set --csv",
-                    port
-                )
-                .as_str(),
-                Some(20000),
-            )
-        }
-
-        let mut redis_client = spawn_bencher(REDIS_PORT)?;
-        // redis reports the tputs as floating points
-        redis_client.exp_string("\"PING_INLINE\",\"")?;
-        let (_line, ping_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
-        redis_client.exp_string("\"")?;
-
-        redis_client.exp_string("\"PING_BULK\",\"")?;
-        let (_line, ping_bulk_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
-        redis_client.exp_string("\"")?;
-
-        redis_client.exp_string("\"SET\",\"")?;
-        let (_line, set_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
-        redis_client.exp_string("\"")?;
-
-        redis_client.exp_string("\"GET\",\"")?;
-        let (line, get_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
-        redis_client.exp_string("\"")?;
-
-        let ping_tput: f64 = ping_tput.parse().unwrap_or(404.0);
-        let ping_bulk_tput: f64 = ping_bulk_tput.parse().unwrap_or(404.0);
-        let set_tput: f64 = set_tput.parse().unwrap_or(404.0);
-        let get_tput: f64 = get_tput.parse().unwrap_or(404.0);
-
-        // Append parsed results to a CSV file
-        let file_name = "redis_benchmark.csv";
-        // write headers only to a new file
-        let write_headers = !Path::new(file_name).exists();
-        let mut csv_file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(file_name)
-            .expect("Can't open file");
-
-        let mut wtr = WriterBuilder::new()
-            .has_headers(write_headers)
-            .from_writer(csv_file);
-
-        #[derive(Serialize)]
-        struct Record {
-            git_rev: &'static str,
-            ping: f64,
-            ping_bulk: f64,
-            set: f64,
-            get: f64,
-        };
-        let record = Record {
-            git_rev: env!("GIT_HASH"),
-            ping: ping_tput,
-            ping_bulk: ping_bulk_tput,
-            set: set_tput,
-            get: get_tput,
-        };
-        wtr.serialize(record);
-
-        println!("git_rev,ping,ping_bulk,set,get");
-        println!(
-            "{},{},{},{},{}",
-            env!("GIT_HASH"),
-            ping_tput,
-            ping_bulk_tput,
-            set_tput,
-            get_tput
-        );
-        assert!(
-            get_tput > 20_000.0,
-            "Redis throughput seems rather low (GET < 20k)?"
-        );
+        let mut redis_client = redis_benchmark("e1000")?;
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;

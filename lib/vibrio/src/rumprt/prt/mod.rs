@@ -57,7 +57,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
     flags: usize,
     lid: *mut lwpid_t,
 ) -> c_int {
-    error!("TODO what happen to lid");
+    log::error!("TODO what happen to lid");
     info!(
         "rumprun_makelwp {:p} {:p} {:p}--{} {} {:p}",
         arg, tls_private, stack_base, stack_size, flags, lid

@@ -1,3 +1,16 @@
+//! A set of integration tests to ensure OS functionality is as expected.
+//! These tests spawn a QEMU instance and run the OS on it.
+//! The output from serial/QEMU is parsed and verified for expected output.
+//!
+//! The naming scheme of the tests ensures a somewhat useful order of test
+//! execution taking into account the dependency chain:
+//! * `s00_*`: Core kernel functionality like boot-up and fault handling
+//! * `s01_*`: Low level kernel services: SSE, memory allocation etc.
+//! * `s02_*`: High level kernel services: ACPI, core booting mechanism, NR, VSpace etc.
+//! * `s03_*`: High level kernel functionality: Spawn cores, run user-space programs
+//! * `s04_*`: User-space runtimes
+//! * `s05_*`: User-space applications
+//! * `s06_*`: User-space applications benchmarks
 #![feature(vec_remove_item)]
 
 extern crate rexpect;
@@ -439,7 +452,7 @@ fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
 /// qemu and some parsing logic to read the exit code
 /// and communicate if our tests passed or failed.
 #[test]
-fn exit() {
+fn s00_exit() {
     let cmdline = RunnerArgs::new("test-exit");
     let mut output = String::new();
 
@@ -458,7 +471,7 @@ fn exit() {
 /// In essence a trap should be raised but we can't get a backtrace yet
 /// since we don't have memory allocation.
 #[test]
-fn pfault_early() {
+fn s00_pfault_early() {
     let cmdline = RunnerArgs::new("test-pfault-early").qemu_arg("-d int,cpu_reset");
     let mut output = String::new();
 
@@ -481,7 +494,7 @@ fn pfault_early() {
 /// Make sure the page-fault handler functions as expected.
 /// In essence a trap should be raised and we should get a backtrace.
 #[test]
-fn pfault() {
+fn s01_pfault() {
     let cmdline = RunnerArgs::new("test-pfault");
     let mut output = String::new();
 
@@ -501,7 +514,7 @@ fn pfault() {
 /// In essence a trap should be raised but we can't get a backtrace yet
 /// since we don't have memory allocation.
 #[test]
-fn gpfault_early() {
+fn s00_gpfault_early() {
     let cmdline = RunnerArgs::new("test-gpfault-early").qemu_arg("-d int,cpu_reset");
     let mut output = String::new();
 
@@ -524,7 +537,7 @@ fn gpfault_early() {
 ///
 /// Again we'd expect a trap and a backtrace.
 #[test]
-fn gpfault() {
+fn s01_gpfault() {
     let cmdline = RunnerArgs::new("test-gpfault");
     let mut output = String::new();
 
@@ -549,7 +562,7 @@ fn gpfault() {
 /// Also the test verifies that we use a separate stack for
 /// faults that can always happen unexpected.
 #[test]
-fn double_fault() {
+fn s01_double_fault() {
     let cmdline = RunnerArgs::new("test-double-fault").qemu_arg("-d int,cpu_reset");
     let mut output = String::new();
 
@@ -568,7 +581,7 @@ fn double_fault() {
 /// This smoke tests the physical memory allocator
 /// and the global allocator integration.
 #[test]
-fn alloc() {
+fn s01_alloc() {
     let cmdline = RunnerArgs::new("test-alloc");
     let mut output = String::new();
 
@@ -588,7 +601,7 @@ fn alloc() {
 /// Tests that we have correctly set-up the hardware to deal with floating
 /// point.
 #[test]
-fn sse() {
+fn s01_sse() {
     let cmdline = RunnerArgs::new("test-sse");
     let mut output = String::new();
 
@@ -605,7 +618,7 @@ fn sse() {
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology.
 #[test]
-fn acpi_topology() {
+fn s02_acpi_topology() {
     let cmdline = &RunnerArgs::new("test-acpi-topology")
         .cores(80)
         .nodes(8)
@@ -626,7 +639,7 @@ fn acpi_topology() {
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology
 /// (a different one than acpi_smoke).
 #[test]
-fn acpi_smoke() {
+fn s02_acpi_smoke() {
     let cmdline = &RunnerArgs::new("test-acpi-smoke").cores(2).memory(1024);
     let mut output = String::new();
 
@@ -646,7 +659,7 @@ fn acpi_smoke() {
 /// Utilizes the app core initializtion logic
 /// as well as the APIC driver (sending IPIs).
 #[test]
-fn coreboot_smoke() {
+fn s02_coreboot_smoke() {
     let cmdline = RunnerArgs::new("test-coreboot-smoke")
         .cores(2)
         // Adding this to qemu will print register state on CPU rests (triple-faults)
@@ -668,7 +681,7 @@ fn coreboot_smoke() {
 
 /// Test that we can multiple cores and use the node-replication log to communicate.
 #[test]
-fn coreboot_nrlog() {
+fn s02_coreboot_nrlog() {
     let cmdline = RunnerArgs::new("test-coreboot-nrlog")
         .cores(4)
         // Adding this to qemu will print register state on CPU rests (triple-faults)
@@ -690,7 +703,7 @@ fn coreboot_nrlog() {
 
 /// Test that we boot up all cores in the system.
 #[test]
-fn coreboot() {
+fn s03_coreboot() {
     let cmdline = &RunnerArgs::new("test-coreboot")
         .cores(32)
         .nodes(4)
@@ -720,7 +733,7 @@ fn coreboot() {
 ///  * user-space scheduling and upcalls
 ///  * BSD libOS in user-space
 #[test]
-fn userspace_smoke() {
+fn s03_userspace_smoke() {
     let cmdline = RunnerArgs::new("test-userspace").user_features(&[
         "test-print",
         "test-map",
@@ -752,7 +765,7 @@ fn userspace_smoke() {
 ///  * PCI/user-space drivers
 ///  * Interrupt registration and upcalls
 #[test]
-fn userspace_rumprt_net() {
+fn s04_userspace_rumprt_net() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
@@ -797,7 +810,7 @@ fn userspace_rumprt_net() {
 /// This implicitly tests many components such as the scheduler, memory
 /// management, IO and device interrupts.
 #[test]
-fn userspace_rumprt_fs() {
+fn s04_userspace_rumprt_fs() {
     let cmdline = &RunnerArgs::new("test-userspace")
         .user_feature("test-rump-tmpfs")
         .timeout(20_000);
@@ -816,7 +829,7 @@ fn userspace_rumprt_fs() {
 
 /// Checks vspace debug functionality.
 #[test]
-fn vspace_debug() {
+fn s02_vspace_debug() {
     /// Checks output for graphviz content, and creates PNGs from it
     fn plot_vspace(output: &String) -> io::Result<()> {
         let mut file = File::create("vspace.dot")?;
@@ -884,7 +897,7 @@ fn multi_process() {
 ///  * Interrupt registration and upcalls
 ///  * (kernel memfs eventually for DB persistence)
 #[test]
-fn redis_smoke() {
+fn s05_redis_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -928,7 +941,7 @@ fn redis_smoke() {
 }
 
 #[test]
-fn redis_benchmark() {
+fn s06_redis_benchmark() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
 

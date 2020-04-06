@@ -65,7 +65,7 @@ kvm -m 2048 -k en-us --smp 2 -boot d ubuntu-testing.img
 
 To enable serial output, edit the grub configuration (/etc/default/grub) as follows
 
-```
+```cfg
 GRUB_CMDLINE_LINUX_DEFAULT=""
 GRUB_TERMINAL='serial console'
 GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200n8"
@@ -140,7 +140,7 @@ sudo apt-get install redis-tools
 redis-benchmark -h 172.31.0.10 -t get,set,ping
 ```
 
-Should yield output similar to this:
+Should yield output similar to this (using qemu e1000):
 
 ```log
 ====== PING_INLINE ======
@@ -194,6 +194,53 @@ Should yield output similar to this:
 51813.47 requests per second
 ```
 
+Using Linux / virtio / pipelining:
+
+```log
+redis-benchmark -h 172.31.0.10 -n 10000000 -p 6379 -t ping,get,set -P 29
+====== PING_INLINE ======
+  10000000 requests completed in 4.27 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+98.91% <= 1 milliseconds
+100.00% <= 2 milliseconds
+100.00% <= 2 milliseconds
+2340824.00 requests per second
+
+====== PING_BULK ======
+  10000000 requests completed in 3.32 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+99.82% <= 1 milliseconds
+100.00% <= 1 milliseconds
+3011141.25 requests per second
+
+====== SET ======
+  10000000 requests completed in 5.42 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+89.68% <= 1 milliseconds
+99.97% <= 2 milliseconds
+100.00% <= 2 milliseconds
+1844678.12 requests per second
+
+====== GET ======
+  10000000 requests completed in 4.30 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+99.36% <= 1 milliseconds
+100.00% <= 1 milliseconds
+2327205.00 requests per second
+```
+
 ## Redis benchmarking (default rump-unikernel)
 
 Install the toolchain
@@ -232,4 +279,70 @@ Run the benchmark
 
 ```bash
 redis-benchmark -h 172.31.0.10
+```
+
+## Redis benchmarking (bespin)
+
+Using virtio:
+
+```log
+redis-benchmark -h 172.31.0.10 -n 10000000 -p 6379 -t ping,get,set -P 29
+====== PING_INLINE ======
+  10000000 requests completed in 12.47 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+0.12% <= 1 milliseconds
+95.08% <= 2 milliseconds
+99.66% <= 3 milliseconds
+99.97% <= 4 milliseconds
+100.00% <= 4 milliseconds
+802117.56 requests per second
+
+====== PING_BULK ======
+  10000000 requests completed in 10.21 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+0.38% <= 1 milliseconds
+98.57% <= 2 milliseconds
+99.94% <= 3 milliseconds
+99.97% <= 4 milliseconds
+100.00% <= 4 milliseconds
+979527.88 requests per second
+
+====== SET ======
+  10000000 requests completed in 10.29 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+0.31% <= 1 milliseconds
+98.53% <= 2 milliseconds
+99.89% <= 3 milliseconds
+100.00% <= 4 milliseconds
+100.00% <= 4 milliseconds
+972100.75 requests per second
+
+====== GET ======
+  10000000 requests completed in 19.97 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+0.14% <= 1 milliseconds
+6.35% <= 2 milliseconds
+77.66% <= 3 milliseconds
+94.62% <= 4 milliseconds
+97.04% <= 5 milliseconds
+99.35% <= 6 milliseconds
+99.76% <= 7 milliseconds
+99.94% <= 8 milliseconds
+99.99% <= 9 milliseconds
+99.99% <= 10 milliseconds
+100.00% <= 11 milliseconds
+100.00% <= 11 milliseconds
+500726.03 requests per second
 ```

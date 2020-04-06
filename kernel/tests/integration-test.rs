@@ -956,7 +956,7 @@ fn redis_benchmark(nic: &'static str) -> Result<rexpect::session::PtySession> {
     fn spawn_bencher(port: u16) -> Result<rexpect::session::PtySession> {
         spawn(
             format!(
-                "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set -n 2000000 -P 30 --csv",
+                "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set -n 4000000 -P 30 --csv",
                 port
             )
             .as_str(),

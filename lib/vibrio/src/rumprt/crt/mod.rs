@@ -149,6 +149,8 @@ pub unsafe extern "C" fn __libc_start_main() {
     unreachable!("return from main() in __libc_start_main?");
 }
 
+extern "C" fn ready() {}
+
 #[no_mangle]
 pub extern "C" fn main() {
     use cstr_core::CStr;
@@ -170,7 +172,7 @@ pub extern "C" fn main() {
         static __init_array_end: extern "C" fn();
 
         fn rump_boot_setsigmodel(sig: usize);
-        fn rump_init() -> u64;
+        fn rump_init(fnptr: extern "C" fn()) -> u64;
         fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
         fn _libc_init();
         fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
@@ -197,7 +199,7 @@ pub extern "C" fn main() {
         |_yielder| unsafe {
             let start = rawtime::Instant::now();
             rump_boot_setsigmodel(0);
-            let ri = rump_init();
+            let ri = rump_init(ready);
             assert_eq!(ri, 0);
             info!("rump_init({}) done in {:?}", ri, start.elapsed());
 

@@ -125,6 +125,9 @@ pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     (*upcalls).hyp_unschedule.expect("rump_upcalls set")();
     trace!("irq_handler");
 
+    let thread = lineup::tls2::Environment::thread();
+    thread.block(); // Wake up on next IRQ
+
     let mut nlock: i32 = 1;
     loop {
         counter += 1;

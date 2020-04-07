@@ -26,6 +26,11 @@ pub unsafe extern "C" fn rumpuser_mutex_init(new_mtx: *mut *mut Mutex, flag: i64
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rumpuser_mutex_spin_p(mtx: *mut Mutex) {
+    (*mtx).is_spin();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rumpuser_mutex_enter(mtx: *mut Mutex) {
     trace!("{:?} rumpuser_mutex_enter {:p}", Environment::tid(), mtx);
     (*mtx).enter();

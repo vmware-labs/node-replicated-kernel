@@ -206,6 +206,8 @@ fn test_rump_tmpfs() {
     info!("test_rump_tmpfs OK");
 }
 
+extern "C" fn ready() {}
+
 #[cfg(feature = "rumprt")]
 pub fn test_rump_net() {
     use cstr_core::CStr;
@@ -221,7 +223,7 @@ pub fn test_rump_net() {
 
     extern "C" {
         fn rump_boot_setsigmodel(sig: usize);
-        fn rump_init() -> u64;
+        fn rump_init(fnptr: extern "C" fn()) -> u64;
         fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
 
         fn socket(domain: i64, typ: i64, protocol: i64) -> i64;
@@ -248,7 +250,7 @@ pub fn test_rump_net() {
         |_yielder| unsafe {
             let start = rawtime::Instant::now();
             rump_boot_setsigmodel(1);
-            let ri = rump_init();
+            let ri = rump_init(ready);
             assert_eq!(ri, 0);
             info!("rump_init({}) done in {:?}", ri, start.elapsed());
 

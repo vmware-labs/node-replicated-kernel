@@ -59,13 +59,17 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             process_print(UserValue::new(user_str))
         }
         ProcessOperation::GetVCpuArea => unsafe {
-            crate::memory::KernelAllocator::try_refill_tcache(7 + 1, 0)
-                .expect("Refill didn't work");
             let kcb = super::kcb::get_kcb();
-            let mut plock = kcb.arch.current_process();
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                Ok((p.vcpu_addr().as_u64(), 0))
-            })
+
+            let vcpu_vaddr = kcb
+                .arch
+                .current_process()
+                .as_ref()
+                .ok_or(KError::ProcessNotSet)?
+                .vcpu_addr()
+                .as_u64();
+
+            Ok((vcpu_vaddr, 0))
         },
         ProcessOperation::AllocateVector => {
             // TODO: missing proper IRQ resource allocation...
@@ -82,19 +86,26 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let vaddr_buf = arg2; // buf.as_mut_ptr() as u64
             let vaddr_buf_len = arg3; // buf.len() as u64
             let kcb = super::kcb::get_kcb();
-            let mut plock = kcb.arch.current_process();
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                let pinfo = nr::KernelNode::<Ring3Process>::pinfo(p.pid).expect("Can't get pinfo?");
 
-                let serialized = serde_cbor::to_vec(&pinfo).unwrap();
-                if serialized.len() <= vaddr_buf_len as usize {
-                    let mut user_slice =
-                        super::process::UserSlice::new(vaddr_buf, serialized.len());
-                    user_slice.copy_from_slice(serialized.as_slice());
-                }
+            let pid = kcb.current_pid()?;
+            let pinfo = nr::KernelNode::<Ring3Process>::pinfo(pid)?;
 
-                Ok((serialized.len() as u64, 0))
-            })
+            let serialized = serde_cbor::to_vec(&pinfo).unwrap();
+            if serialized.len() <= vaddr_buf_len as usize {
+                let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
+                user_slice.copy_from_slice(serialized.as_slice());
+            }
+
+            Ok((serialized.len() as u64, 0))
+        }
+        ProcessOperation::RequestCore => {
+            let gtid = arg2;
+            let kcb = super::kcb::get_kcb();
+
+            let pid = kcb.current_pid()?;
+            let eid = nr::KernelNode::<Ring3Process>::allocate_core_to_process(pid, gtid)?;
+
+            Ok((eid, 0))
         }
         _ => Err(KError::InvalidProcessOperation { a: arg1 }),
     }
@@ -115,8 +126,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
                 let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
                 let mut frames = Vec::with_capacity(bp + lp);
-                crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)
-                    .expect("Refill didn't work");
+                crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)?;
 
                 // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
                 // first frame mapped but if you map multiple Frames, no chance getting that

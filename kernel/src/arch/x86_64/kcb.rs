@@ -13,8 +13,10 @@ use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
+use crate::error::KError;
 use crate::kcb::Kcb;
 use crate::nr::KernelNode;
+use crate::process::Pid;
 use crate::stack::{OwnedStack, Stack};
 
 use super::gdt::GdtTable;
@@ -267,6 +269,17 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
             self.gdt.install();
             self.idt.install();
         }
+    }
+}
+
+impl Kcb<Arch86Kcb> {
+    pub fn current_pid(&self) -> Result<Pid, KError> {
+        Ok(self
+            .arch
+            .current_process()
+            .as_ref()
+            .ok_or(KError::ProcessNotSet)?
+            .pid)
     }
 }
 

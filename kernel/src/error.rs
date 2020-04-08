@@ -11,6 +11,7 @@ custom_error! {
     ProcessNotSet = "CURRENT_PROCESS is not set",
     ReplicaNotSet = "Replica is not set-up in the KCB",
     NotSupported = "Request is not yet supported",
+    CoreAlreadyAllocated = "The requested core is already allocated by another process.",
     InvalidSyscallArgument1{a: u64} = "Invalid 1st syscall argument supplied: {}",
     InvalidVSpaceOperation{a: u64} = "Invalid VSpace Operation (2nd syscall argument) supplied: {}",
     InvalidProcessOperation{a: u64} = "Invalid Process Operation (2nd syscall argument) supplied: {}",
@@ -19,6 +20,7 @@ custom_error! {
     PhysicalMemory{source: crate::memory::AllocationError} = "Memory allocation failed",
     BadAddress = "Userspace pointer is not usable",
     FileSystem{source: crate::fs::FileSystemError} = "FileSystem operation does file based io",
+    ProcessError{source: crate::process::ProcessError} = "Process Operation failed",
 }
 
 impl Into<SystemCallError> for KError {

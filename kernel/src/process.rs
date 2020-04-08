@@ -15,8 +15,9 @@ pub type Pid = u64;
 pub type Eid = u64;
 
 custom_error! {
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub ProcessError
+    NoProcessFoundForPid = "No process was associated with the given Pid.",
     UnableToLoad = "Couldn't load process, invalid ELF file?",
     NoExecutorAllocated = "Didn't have any executors allocate for this region and process."
 }

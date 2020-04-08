@@ -97,7 +97,7 @@ pub struct UnixProcess {
     pinfo: kpi::process::ProcessInfo,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct UnixThread {
     eid: Eid,
 }
@@ -159,7 +159,7 @@ impl Process for UnixProcess {
     }
 
     fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError> {
-        Ok(Box::new(UnixThread {}))
+        Ok(Box::new(UnixThread::default()))
     }
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {

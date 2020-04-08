@@ -1,5 +1,3 @@
-use log::Level;
-
 use alloc::boxed::Box;
 
 use arrayvec::ArrayVec;
@@ -16,7 +14,6 @@ pub mod process;
 pub mod vspace;
 
 use crate::kcb::{CommandLineArgs, Kcb};
-use x86::current::paging::PAddr;
 
 pub use bootloader_shared::*;
 

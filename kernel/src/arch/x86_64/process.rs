@@ -421,6 +421,10 @@ impl Ring3Executor {
 impl Executor for Ring3Executor {
     type Resumer = Ring3Resumer;
 
+    fn id(&self) -> Eid {
+        self.eid
+    }
+
     /// Start the process (run it for the first time).
     fn start(&mut self) -> Ring3Resumer {
         self.maybe_switch_vspace();
@@ -764,8 +768,10 @@ impl Process for Ring3Process {
         info!("get executor {}", for_region);
         match &mut self.executor_cache[for_region as usize] {
             Some(ref mut executor_list) => {
-                let ret = executor_list.pop().ok_or(ProcessError::NoExecutorAllocated);
-                info!("executor list {:?}", ret);
+                let ret = executor_list
+                    .pop()
+                    .ok_or(ProcessError::ExecutorCacheExhausted);
+                info!("Got executor: {:?}", ret);
                 ret
             }
             None => Err(ProcessError::NoExecutorAllocated),
@@ -800,7 +806,7 @@ impl Process for Ring3Process {
             Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE + BASE_PAGE_SIZE;
         let executors_to_create = memory.size() / executor_space_requirement;
 
-        let cur_offset = self.executor_offset;
+        let mut cur_offset = self.executor_offset;
         for cnt in 0..executors_to_create {
             let executor_vmem_start = cur_offset;
             let executor_vmem_end = executor_vmem_start + executor_space_requirement;
@@ -816,13 +822,16 @@ impl Process for Ring3Process {
                 memory.affinity,
             ));
 
+            info!("Created {:?}", executor);
+
             use alloc::vec;
             match &mut self.executor_cache[memory.affinity as usize] {
                 Some(ref mut vector) => vector.push(executor),
                 None => self.executor_cache[memory.affinity as usize] = Some(vec![executor]),
             }
 
-            self.current_eid + 1;
+            self.current_eid += 1;
+            cur_offset += executor_space_requirement;
         }
 
         debug!(

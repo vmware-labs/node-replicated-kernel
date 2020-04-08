@@ -102,8 +102,16 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let gtid = arg2;
             let kcb = super::kcb::get_kcb();
 
+            let mut affinity = None;
+            for thread in topology::MACHINE_TOPOLOGY.threads() {
+                if thread.id == gtid {
+                    affinity = Some(thread.node_id.unwrap_or(0));
+                }
+            }
+            let affinity = affinity.ok_or(crate::process::ProcessError::InvalidGlobalThreadId)?;
             let pid = kcb.current_pid()?;
-            let eid = nr::KernelNode::<Ring3Process>::allocate_core_to_process(pid, gtid)?;
+            let eid =
+                nr::KernelNode::<Ring3Process>::allocate_core_to_process(pid, gtid, affinity)?;
 
             Ok((eid, 0))
         }

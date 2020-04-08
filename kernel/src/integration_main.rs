@@ -340,7 +340,6 @@ pub fn xmain() {
     use crate::memory::KernelAllocator;
     use crate::memory::PhysicalPageProvider;
     use crate::process::Executor;
-    use crate::process::Process;
     use alloc::boxed::Box;
     use alloc::vec;
 

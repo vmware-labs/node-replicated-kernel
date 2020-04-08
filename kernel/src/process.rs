@@ -21,7 +21,9 @@ pub ProcessError
     ProcessCreate{desc: String}  = "Unable to create process: {desc}",
     NoProcessFoundForPid = "No process was associated with the given Pid.",
     UnableToLoad = "Couldn't load process, invalid ELF file?",
-    NoExecutorAllocated = "Didn't have any executors allocate for this region and process."
+    NoExecutorAllocated = "We never allocated executors for this affinity region and process (need to fill cache).",
+    ExecutorCacheExhausted = "The executor cache for given affinity is empty (need to refill)",
+    InvalidGlobalThreadId = "Specified an invalid core",
 }
 
 impl From<&str> for ProcessError {
@@ -77,6 +79,7 @@ pub trait ResumeHandle {
 pub trait Executor {
     type Resumer: ResumeHandle;
 
+    fn id(&self) -> Eid;
     fn start(&mut self) -> Self::Resumer;
     fn resume(&self) -> Self::Resumer;
     fn upcall(&mut self, vector: u64, exception: u64) -> Self::Resumer;

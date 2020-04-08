@@ -5,7 +5,7 @@ use core::ops::{Deref, DerefMut};
 use crate::arch::Module;
 use crate::fs::Fd;
 use crate::memory::{Frame, VAddr};
-use crate::process::{Executor, Pid, Process, ProcessError, ResumeHandle};
+use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle};
 
 use super::vspace::VSpace;
 
@@ -98,7 +98,9 @@ pub struct UnixProcess {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct UnixThread {}
+pub struct UnixThread {
+    eid: Eid,
+}
 
 pub struct UnixResumeHandle {}
 
@@ -108,6 +110,10 @@ impl ResumeHandle for UnixResumeHandle {
 
 impl Executor for UnixThread {
     type Resumer = UnixResumeHandle;
+
+    fn id(&self) -> Eid {
+        self.eid
+    }
 
     fn start(&mut self) -> Self::Resumer {
         UnixResumeHandle {}

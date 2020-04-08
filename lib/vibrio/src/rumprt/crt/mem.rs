@@ -99,6 +99,16 @@ pub unsafe extern "C" fn munmap() {
     error!("munmap");
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn mlockall() -> c_int {
+    return 0;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn minherit() -> c_int {
+    return 0;
+}
+
 /// The msync() system call writes all pages with shared modifications in the
 /// specified region of the process's address space back to permanent stor-
 /// age, and, if requested, invalidates cached data mapped in the region.

@@ -107,7 +107,7 @@ pub unsafe fn netbsd_userlevel_init() {
 
 pub fn install_vcpu_area() {
     use x86::bits64::paging::VAddr;
-    let ctl = crate::syscalls::vcpu_control_area().expect("Can't read vcpu control area.");
+    let ctl = crate::syscalls::Process::vcpu_control_area().expect("Can't read vcpu control area.");
     ctl.resume_with_upcall =
         VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64);
 
@@ -279,7 +279,7 @@ pub extern "C" fn main() {
             rumprun_main1(0, c_args.as_ptr());
         },
         core::ptr::null_mut(),
-        0
+        0,
     );
 
     scheduler
@@ -290,7 +290,7 @@ pub extern "C" fn main() {
                 unreachable!("should not exit");
             },
             core::ptr::null_mut(),
-            0
+            0,
         )
         .expect("Can't create IRQ thread?");
 

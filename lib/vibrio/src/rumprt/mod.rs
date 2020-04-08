@@ -112,7 +112,8 @@ pub fn rumpkern_curlwp() -> u64 {
 
 pub fn rumpkern_unsched(nlocks: &mut i32, mtx: Option<&Mutex>) {
     let s = lineup::tls2::Environment::scheduler();
-    let upcalls = s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
+    let upcalls =
+        s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     unsafe {
@@ -128,7 +129,8 @@ pub fn rumpkern_unsched(nlocks: &mut i32, mtx: Option<&Mutex>) {
 
 pub fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
     let s = lineup::tls2::Environment::scheduler();
-    let upcalls = s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
+    let upcalls =
+        s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     trace!("rumpkern_sched {} {:p}", *nlocks, mtx);
@@ -213,10 +215,10 @@ pub unsafe extern "C" fn rumpuser_putchar(ch: i64) {
     let mut buf: [u8; 4] = [0; 4]; // A buffer of length 4 is large enough to encode any char
     if ch as i64 == '\n' as u8 as i64 {
         let utf8_char = '\r'.encode_utf8(&mut buf);
-        crate::syscalls::print(utf8_char).expect("Can't write in rumpuser_putchar");
+        crate::syscalls::Process::print(utf8_char).expect("Can't write in rumpuser_putchar");
     }
     let utf8_char = (ch as u8 as char).encode_utf8(&mut buf);
-    crate::syscalls::print(utf8_char).expect("Can't write in rumpuser_putchar");
+    crate::syscalls::Process::print(utf8_char).expect("Can't write in rumpuser_putchar");
 }
 
 /// void rumpuser_dprintf(const char *fmt, ...)

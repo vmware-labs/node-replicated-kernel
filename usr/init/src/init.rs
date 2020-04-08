@@ -16,6 +16,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "rumprt")]
 use vibrio::rumprt;
@@ -27,10 +28,10 @@ use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
 #[thread_local]
-pub static mut TLS_TEST: [&str; 2] = [ "abcd", "efgh" ];
+pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
 
 fn print_test() {
-    let _r = vibrio::syscalls::print("test\r\n");
+    let _r = vibrio::syscalls::Process::print("test\r\n");
     info!("print_test OK");
 }
 
@@ -38,8 +39,7 @@ fn map_test() {
     let base: u64 = 0xff000;
     let size: u64 = 0x1000 * 64;
     unsafe {
-        vibrio::syscalls::vspace(vibrio::syscalls::VSpaceOperation::Map, base, size)
-            .expect("Map syscall failed");
+        vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");
 
         let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
         for i in slice.iter_mut() {
@@ -64,15 +64,32 @@ fn alloc_test() {
     info!("alloc_test OK");
 }
 
+fn scheduler_test_smp() {
+    use lineup::threads::ThreadId;
+    let mut s: lineup::scheduler::SmpScheduler = Default::default();
+
+    for idx in 0..3 {
+        /*let r = vibrio::syscalls::Process::request_core(idx, |core_id| {
+            info!("Hello from core {}", core_id);
+        });
+
+        info!(
+            "{}",
+            match r {
+                Ok(_ctoken) => "Spawned core",
+                Err(_e) => "Couldn't Spawn core",
+            }
+        );*/
+    }
+}
+
 fn scheduler_test() {
     use lineup::threads::ThreadId;
-
     let mut s: lineup::scheduler::SmpScheduler = Default::default();
 
     s.spawn(
         32 * 4096,
         move |_| {
-
             unsafe {
                 info!("Hello from t1");
                 assert_eq!(TLS_TEST[0], "abcd");
@@ -84,10 +101,9 @@ fn scheduler_test() {
             assert_eq!(lineup::tls2::Environment::scheduler().core_id, 2);
             assert_eq!(lineup::tls2::Environment::thread().current_core, 2);
             assert_eq!(lineup::tls2::Environment::tid(), ThreadId(0));
-
         },
         ptr::null_mut(),
-        2
+        2,
     );
 
     s.spawn(
@@ -103,7 +119,7 @@ fn scheduler_test() {
             assert_eq!(lineup::tls2::Environment::tid(), ThreadId(1));
         },
         ptr::null_mut(),
-        2
+        2,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(2);
@@ -194,7 +210,7 @@ fn test_rump_tmpfs() {
             info!("bytes_read: {:?}", read_bytes);
         },
         core::ptr::null_mut(),
-        0
+        0,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
@@ -206,7 +222,11 @@ fn test_rump_tmpfs() {
     info!("test_rump_tmpfs OK");
 }
 
-extern "C" fn ready() {}
+static READY_FLAG: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn ready() {
+    READY_FLAG.store(true, Ordering::Relaxed);
+}
 
 #[cfg(feature = "rumprt")]
 pub fn test_rump_net() {
@@ -221,21 +241,30 @@ pub fn test_rump_net() {
         zero: [u8; 8],
     }
 
+    #[repr(C)]
+    struct timespec_t {
+        tv_sec: i64,  // time_t
+        tv_nsec: u64, // long
+    }
+
     extern "C" {
         fn rump_boot_setsigmodel(sig: usize);
         fn rump_init(fnptr: extern "C" fn()) -> u64;
         fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
 
         fn socket(domain: i64, typ: i64, protocol: i64) -> i64;
-        fn rump___sysimpl_sendto(
+        fn sendto(
             fd: i64,
             buf: *const i8,
-            flags: i64,
             len: usize,
+            flags: i64,
             addr: *const sockaddr_in,
             len: usize,
         ) -> i64;
+        fn send(fd: i64, buf: *const i8, len: usize, flags: i64) -> i64;
+        fn connect(fd: i64, addr: *const sockaddr_in, len: usize) -> i64;
         fn close(sock: i64) -> i64;
+        fn nanosleep(rqtp: *const timespec_t, rmtp: *mut timespec_t) -> i64;
     }
 
     let up = lineup::upcalls::Upcalls {
@@ -253,8 +282,17 @@ pub fn test_rump_net() {
             let ri = rump_init(ready);
             assert_eq!(ri, 0);
             info!("rump_init({}) done in {:?}", ri, start.elapsed());
+            let s = lineup::tls2::Environment::scheduler();
+            while !READY_FLAG.load(Ordering::Relaxed) {
+                let _r = lineup::tls2::Environment::thread().relinquish();
+            }
 
-            let iface = CStr::from_bytes_with_nul(b"wm0\0");
+            #[cfg(feature = "virtio")]
+            let iface = b"vioif0\0";
+            #[cfg(not(feature = "virtio"))]
+            let iface = b"wm0\0";
+
+            let iface = CStr::from_bytes_with_nul(iface);
             info!("before rump_pub_netconfig_dhcp_ipv4_oneshot");
 
             let r = rump_pub_netconfig_dhcp_ipv4_oneshot(iface.unwrap().as_ptr());
@@ -266,8 +304,15 @@ pub fn test_rump_net() {
 
             const AF_INET: i64 = 2;
             const SOCK_DGRAM: i64 = 2;
+            const SOCK_STREAM: i64 = 2;
 
-            let sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+            const IPPROTO_UDP: i64 = 17;
+            const IPPROTO_TCP: i64 = 6;
+
+            const MSG_NOSIGNAL: i64 = 0x0400;
+            const MSG_DONTWAIT: i64 = 0x0080;
+
+            let sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
             assert!(sockfd > 0);
             info!("socket done in {:?}", start.elapsed());
 
@@ -279,24 +324,34 @@ pub fn test_rump_net() {
                 zero: [0; 8],
             };
 
-            for i in 0..5 {
-                info!("sendto msg = {}", i);
+            let _r = lineup::tls2::Environment::thread().relinquish();
 
+            for i in 0..20 {
+                info!("sendto msg = {}", i);
                 use alloc::format;
                 let buf = format!("pkt {}\n\0", i);
                 let cstr = CStr::from_bytes_with_nul(buf.as_str().as_bytes()).unwrap();
-                core::mem::forget(cstr);
 
-                let r = rump___sysimpl_sendto(
+                let r = sendto(
                     sockfd,
                     cstr.as_ptr() as *const i8,
-                    buf.len() as i64,
-                    0,
+                    buf.len(),
+                    MSG_DONTWAIT,
                     &addr as *const sockaddr_in,
                     core::mem::size_of::<sockaddr_in>(),
                 );
                 assert_eq!(r, buf.len() as i64);
-                let _r = lineup::tls2::Environment::thread().relinquish();
+                core::mem::forget(cstr);
+
+                // Add some sleep time here, as otherwise
+                // we send the packet too fast and nothing appears on the other side
+                // it seems after 6s (pkt 6) things start working.
+                // I suspect it's due to some ARP resolution issue, but unclear.
+                let sleep_dur = timespec_t {
+                    tv_sec: 1,
+                    tv_nsec: 0,
+                };
+                nanosleep(&sleep_dur as *const timespec_t, ptr::null_mut());
             }
 
             info!("test_rump_net OK");
@@ -305,7 +360,7 @@ pub fn test_rump_net() {
             assert_eq!(r, 0);
         },
         core::ptr::null_mut(),
-        0
+        0,
     );
 
     scheduler
@@ -316,7 +371,7 @@ pub fn test_rump_net() {
                 unreachable!("should not exit");
             },
             core::ptr::null_mut(),
-            0
+            0,
         )
         .expect("Can't create IRQ thread?");
 
@@ -332,8 +387,7 @@ fn fs_test() {
     let size: u64 = 0x1000 * 64;
     unsafe {
         // Open a file
-        let fd = vibrio::syscalls::file_open(
-            vibrio::syscalls::FileOperation::Open,
+        let fd = vibrio::syscalls::Fs::open(
             "file.txt\0".as_ptr() as u64,
             u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
             u64::from(FileModes::S_IRWXU),
@@ -342,8 +396,7 @@ fn fs_test() {
         assert_eq!(fd, 0);
 
         // Allocate a buffer and write data into it, which is later written to the file.
-        vibrio::syscalls::vspace(vibrio::syscalls::VSpaceOperation::Map, base, size)
-            .expect("Map syscall failed");
+        vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");
 
         let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
         for i in slice.iter_mut() {
@@ -352,20 +405,12 @@ fn fs_test() {
         assert_eq!(slice[99], 0xb);
 
         // Write the slice content to the created file.
-        let ret = vibrio::syscalls::fileio(
-            vibrio::syscalls::FileOperation::Write,
-            fd,
-            slice.as_ptr() as u64,
-            256,
-        )
-        .expect("FileWrite syscall failed");
+        let ret = vibrio::syscalls::Fs::write(fd, slice.as_ptr() as u64, 256)
+            .expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
 
-        let fileinfo = vibrio::syscalls::file_getinfo(
-            vibrio::syscalls::FileOperation::GetInfo,
-            "file.txt\0".as_ptr() as u64,
-        )
-        .expect("FileOpen syscall failed");
+        let fileinfo = vibrio::syscalls::Fs::getinfo("file.txt\0".as_ptr() as u64)
+            .expect("FileOpen syscall failed");
         assert_eq!(fileinfo.fsize, 256);
         assert_eq!(fileinfo.ftype, rumprt::Rump_FileType::File as u64);
 
@@ -374,28 +419,19 @@ fn fs_test() {
         for i in slice.iter_mut() {
             *i = 0;
         }
-        let ret = vibrio::syscalls::fileio(
-            vibrio::syscalls::FileOperation::Read,
-            fd,
-            slice.as_ptr() as u64,
-            256,
-        )
-        .expect("FileWrite syscall failed");
+        let ret = vibrio::syscalls::Fs::read(fd, slice.as_ptr() as u64, 256)
+            .expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
         assert_eq!(slice[255], 0xb);
         assert_eq!(slice[256], 0);
 
         // Close the file.
-        let ret = vibrio::syscalls::file_close(vibrio::syscalls::FileOperation::Close, fd)
-            .expect("FileClose syscall failed");
+        let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
         assert_eq!(ret, 0);
 
         // Delete the file.
-        let ret = vibrio::syscalls::file_delete(
-            vibrio::syscalls::FileOperation::Delete,
-            "file.txt\0".as_ptr() as u64,
-        )
-        .expect("FileDelete syscall failed");
+        let ret = vibrio::syscalls::Fs::delete("file.txt\0".as_ptr() as u64)
+            .expect("FileDelete syscall failed");
         assert_eq!(ret, true);
     }
 
@@ -404,7 +440,8 @@ fn fs_test() {
 
 pub fn install_vcpu_area() {
     use x86::bits64::paging::VAddr;
-    let ctl = vibrio::syscalls::vcpu_control_area().expect("Can't read vcpu control area.");
+    let ctl =
+        vibrio::syscalls::Process::vcpu_control_area().expect("Can't read vcpu control area.");
     ctl.resume_with_upcall =
         VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64);
 }
@@ -455,7 +492,7 @@ pub extern "C" fn _start() -> ! {
     fs_test();
 
     debug!("Done with init tests, if we came here probably everything is good.");
-    vibrio::syscalls::exit(0);
+    vibrio::syscalls::Process::exit(0);
 }
 
 #[allow(non_camel_case_types)]

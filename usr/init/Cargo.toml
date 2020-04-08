@@ -21,6 +21,8 @@ vibrio = { path = "../../lib/vibrio" }
 [features]
 rumprt = ["vibrio/rumprt"]
 default = ["rumprt"]
+# Use virtio instead of e1000
+virtio = []
 
 # Some smoke tests we run with CI,
 # they test that the base features of

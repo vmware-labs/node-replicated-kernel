@@ -57,8 +57,7 @@ impl Pager {
         self.sbrk = round_up!(self.sbrk as usize, core::cmp::max(layout.align(), 4096)) as u64;
 
         unsafe {
-            let r =
-                crate::syscalls::vspace(crate::syscalls::VSpaceOperation::Map, self.sbrk, size)?;
+            let r = crate::syscalls::VSpace::map(self.sbrk, size)?;
             self.sbrk += size;
             Ok(r)
         }

@@ -5,7 +5,7 @@ use cstr_core::CStr;
 
 use kpi::FileOperation;
 
-use crate::syscalls::{file_close, file_getinfo, file_open, fileio_at};
+use crate::syscalls::Fs;
 
 #[allow(non_camel_case_types)]
 #[repr(C)]
@@ -17,7 +17,7 @@ pub struct rumpuser_iovec {
 /// int rumpuser_open(const char *name, int mode, int *fdp)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c_int) -> c_int {
-    match file_open(FileOperation::Open, name as u64, 0, mode as u64) {
+    match Fs::open(name as u64, 0, mode as u64) {
         Ok(fd) => {
             *fdp = fd as c_int;
             0
@@ -29,7 +29,7 @@ pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c
 /// int rumpuser_close(int fd)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_close(fd: c_int) -> c_int {
-    match file_close(FileOperation::Close, fd as u64) {
+    match Fs::close(fd as u64) {
         Ok(_) => 0,
         Err(_) => super::errno::EBADF as c_int,
     }
@@ -42,7 +42,7 @@ pub unsafe extern "C" fn rumpuser_getfileinfo(
     size: *mut u64,
     typ: *mut c_int,
 ) -> c_int {
-    match file_getinfo(FileOperation::GetInfo, name as u64) {
+    match Fs::getinfo(name as u64) {
         Ok(fileinfo) => {
             *size = fileinfo.fsize;
             *typ = fileinfo.ftype as i32;
@@ -75,8 +75,7 @@ pub unsafe extern "C" fn rumpuser_iovread(
     off: i64,
     retv: *mut c_size_t,
 ) -> c_int {
-    match fileio_at(
-        FileOperation::ReadAt,
+    match Fs::read_at(
         fd as u64,
         (*ruiov).iov_base as u64,
         iovlen.try_into().unwrap(),
@@ -99,8 +98,7 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
     off: i64,
     retv: *mut c_size_t,
 ) -> c_int {
-    match fileio_at(
-        FileOperation::WriteAt,
+    match Fs::write_at(
         fd as u64,
         (*ruiov).iov_base as u64,
         iovlen.try_into().unwrap(),

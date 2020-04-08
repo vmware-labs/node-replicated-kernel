@@ -153,7 +153,7 @@ impl<'a> RunnerArgs<'a> {
             norun: false,
             qemu_args: Vec::new(),
             timeout: 15_000,
-            nic: "e1000"
+            nic: "e1000",
         }
     }
 
@@ -192,7 +192,6 @@ impl<'a> RunnerArgs<'a> {
         self.nic = "virtio";
         self
     }
-
 
     /// How many cores QEMU should simulate.
     fn cores(mut self, cores: usize) -> RunnerArgs<'a> {
@@ -792,11 +791,11 @@ fn s04_userspace_rumprt_net() {
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
 
         // Test that sendto works:
-        // Currently swallows first packet (see also: https://github.com/rumpkernel/rumprun/issues/131)
-        //receiver.exp_string("pkt 1")?;
-        receiver.exp_string("pkt 2")?;
-        receiver.exp_string("pkt 3")?;
-        receiver.exp_string("pkt 4")?;
+        // Used to swallow just the first packet (see also: https://github.com/rumpkernel/rumprun/issues/131)
+        // Update: Now on NetBSD v8 it swallows the first 6 packets
+        receiver.exp_string("pkt 6")?;
+        receiver.exp_string("pkt 7")?;
+        receiver.exp_string("pkt 8")?;
 
         // Test that ping works:
         let mut ping = spawn_ping()?;
@@ -879,7 +878,7 @@ fn s02_vspace_debug() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
-    plot_vspace(&graphviz_output);
+    plot_vspace(&graphviz_output).expect("Can't plot vspace");
 }
 
 fn multi_process() {
@@ -1018,7 +1017,7 @@ fn redis_benchmark(nic: &'static str) -> Result<rexpect::session::PtySession> {
         get: get_tput,
     };
 
-    wtr.serialize(record);
+    wtr.serialize(record).expect("Can't writ results");
 
     println!("git_rev,nic,ping,ping_bulk,set,get");
     println!(

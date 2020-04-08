@@ -47,7 +47,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         sys_println!("");
     }
 
-    crate::syscalls::exit(99)
+    crate::syscalls::Process::exit(99)
 }
 
 #[cfg(target_os = "bespin")]

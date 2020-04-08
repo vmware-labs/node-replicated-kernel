@@ -1,5 +1,5 @@
-use core::{mem, ptr};
 use core::alloc::Layout;
+use core::{mem, ptr};
 
 use log::info;
 use x86::bits64::segmentation;
@@ -28,18 +28,24 @@ pub(crate) unsafe fn set_scb(scb: *const SchedulerControlBlock) {
 /// and a statically defined extra section.
 /// (i.e., the sum of all return values)
 pub fn get_tls_info() -> (&'static [u8], Layout) {
-    let pinfo: kpi::process::ProcessInfo = kpi::syscalls::process_info().expect("Can't get pinfo?");
+    let pinfo: kpi::process::ProcessInfo =
+        kpi::syscalls::Process::process_info().expect("Can't get pinfo?");
     if pinfo.has_tls {
         let bss_size = pinfo.tls_len_total - pinfo.tls_data_len;
         unsafe {
             // Safe: We know this exists because our ELF loader put TLS there (hopefully)
-            (core::slice::from_raw_parts(pinfo.tls_data as *const u8, pinfo.tls_data_len as usize),
-            Layout::from_size_align_unchecked(pinfo.tls_len_total as usize + core::mem::size_of::<ThreadControlBlock>(), pinfo.alignment as usize))
+            (
+                core::slice::from_raw_parts(
+                    pinfo.tls_data as *const u8,
+                    pinfo.tls_data_len as usize,
+                ),
+                Layout::from_size_align_unchecked(
+                    pinfo.tls_len_total as usize + core::mem::size_of::<ThreadControlBlock>(),
+                    pinfo.alignment as usize,
+                ),
+            )
         }
-    }
-    else {
+    } else {
         (&[], Layout::new::<ThreadControlBlock>())
     }
 }
-
-

@@ -4,13 +4,12 @@
 #![feature(asm)]
 
 #[allow(non_snake_case)]
-
 #[cfg(target_os = "bespin")]
 extern crate alloc;
 
 pub mod io;
-pub mod x86_64;
 pub mod process;
+pub mod x86_64;
 
 /// The syscall layer (only relevant for Ring3 code -> target_os = bespin)
 #[cfg(target_os = "bespin")]
@@ -85,6 +84,8 @@ pub enum ProcessOperation {
     SubscribeEvent = 5,
     /// Query info about the current process.
     GetProcessInfo = 6,
+    /// Request a new core for the process.
+    RequestCore = 7,
     Unknown,
 }
 
@@ -98,6 +99,7 @@ impl From<u64> for ProcessOperation {
             4 => ProcessOperation::AllocateVector,
             5 => ProcessOperation::SubscribeEvent,
             6 => ProcessOperation::GetProcessInfo,
+            7 => ProcessOperation::RequestCore,
             _ => ProcessOperation::Unknown,
         }
     }
@@ -113,6 +115,7 @@ impl From<&str> for ProcessOperation {
             "AllocateVector" => ProcessOperation::AllocateVector,
             "SubscribeEvent" => ProcessOperation::SubscribeEvent,
             "GetProcessInfo" => ProcessOperation::GetProcessInfo,
+            "RequestCore" => ProcessOperation::RequestCore,
             _ => ProcessOperation::Unknown,
         }
     }

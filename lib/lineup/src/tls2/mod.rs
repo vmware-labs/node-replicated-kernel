@@ -14,9 +14,9 @@
 
 use alloc::vec::Vec;
 
+use core::mem;
 use core::ops::Add;
 use core::ptr;
-use core::mem;
 use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use fringe::generator::Yielder;
@@ -86,8 +86,7 @@ pub struct ThreadControlBlock<'a> {
 }
 
 impl<'a> ThreadControlBlock<'a> {
-
-    pub  unsafe fn new_tls_area() -> *mut ThreadControlBlock<'a> {
+    pub unsafe fn new_tls_area() -> *mut ThreadControlBlock<'a> {
         let mut ts_template = ThreadControlBlock {
             tcb_myself: ptr::null_mut(),
             tcb_dtv: ptr::null(),
@@ -107,7 +106,8 @@ impl<'a> ThreadControlBlock<'a> {
 
         // TODO(correctness): This doesn't really respect alignment of ThreadControlBlock :(
         // since we align to the TLS alignment requirements by ELF
-        let tcb = tls_base.offset((tls_layout.size() - mem::size_of::<ThreadControlBlock>()) as isize);
+        let tcb =
+            tls_base.offset((tls_layout.size() - mem::size_of::<ThreadControlBlock>()) as isize);
         *(tcb as *mut ThreadControlBlock) = ts_template;
         // Initialize TCB self
         (*(tcb as *mut ThreadControlBlock)).tcb_myself = tcb as *mut ThreadControlBlock;
@@ -131,7 +131,7 @@ impl<'a> ThreadControlBlock<'a> {
         s: LineupStack,
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
-        tcb: *mut ThreadControlBlock<'static>
+        tcb: *mut ThreadControlBlock<'static>,
     ) -> Option<ThreadId> {
         let request = YieldRequest::SpawnWithArgs(s, f, arg, self.current_core, tcb);
         match self.yielder().suspend(request) {

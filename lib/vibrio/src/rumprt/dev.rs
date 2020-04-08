@@ -108,7 +108,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     IRQS[0].vector = vector;
     IRQS[0].cookie = cookie;
 
-    crate::syscalls::irqalloc(vector as u64, 0).ok();
+    crate::syscalls::Irq::irqalloc(vector as u64, 0).ok();
 
     0
 }
@@ -118,7 +118,8 @@ static mut counter: u64 = 0;
 #[allow(unused)]
 pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
     let s = lineup::tls2::Environment::scheduler();
-    let upcalls = s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const super::RumpHyperUpcalls;
+    let upcalls = s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed)
+        as *const super::RumpHyperUpcalls;
 
     (*upcalls).hyp_schedule.expect("rump_upcalls set")();
     (*upcalls).hyp_lwproc_newlwp.expect("rump_upcalls set")(0);
@@ -166,11 +167,7 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
 
     let start = PAddr::from(addr);
 
-    let r = crate::syscalls::vspace(
-        crate::syscalls::VSpaceOperation::MapDevice,
-        start.as_u64(),
-        len as u64,
-    );
+    let r = crate::syscalls::VSpace::map_device(start.as_u64(), len as u64);
 
     match r {
         Ok((vaddr, _paddr)) => vaddr.as_u64() as *mut c_void,
@@ -183,12 +180,8 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
 pub unsafe extern "C" fn rumpcomp_pci_virt_to_mach(vaddr: *mut c_void) -> c_ulong {
     let vaddr = VAddr::from(vaddr as u64);
 
-    let (_, paddr) = crate::syscalls::vspace(
-        crate::syscalls::VSpaceOperation::Identify,
-        vaddr.align_down_to_base_page().into(),
-        0x0,
-    )
-    .unwrap();
+    let (_, paddr) =
+        crate::syscalls::VSpace::identify(vaddr.align_down_to_base_page().into()).unwrap();
     let paddr_aligned = paddr + vaddr.base_page_offset();
 
     trace!(

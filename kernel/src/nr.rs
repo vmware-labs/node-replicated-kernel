@@ -7,7 +7,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use cstr_core::CStr;
 use hashbrown::HashMap;
-use kpi::{io::*, FileOperation, process::ProcessInfo};
+use kpi::{io::*, process::ProcessInfo, FileOperation};
 use node_replication::Dispatch;
 
 use crate::arch::process::{UserPtr, UserSlice};
@@ -329,7 +329,6 @@ impl<P: Process> KernelNode<P> {
                 }
             })
     }
-
 }
 
 impl<P> Dispatch for KernelNode<P>

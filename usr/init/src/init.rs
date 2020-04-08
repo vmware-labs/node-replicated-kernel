@@ -64,14 +64,12 @@ fn alloc_test() {
     info!("alloc_test OK");
 }
 
-fn scheduler_test_smp() {
+fn scheduler_smp_test() {
     use lineup::threads::ThreadId;
     let mut s: lineup::scheduler::SmpScheduler = Default::default();
 
     for idx in 0..3 {
-        /*let r = vibrio::syscalls::Process::request_core(idx, |core_id| {
-            info!("Hello from core {}", core_id);
-        });
+        let r = vibrio::syscalls::Process::request_core(idx);
 
         info!(
             "{}",
@@ -79,7 +77,7 @@ fn scheduler_test_smp() {
                 Ok(_ctoken) => "Spawned core",
                 Err(_e) => "Couldn't Spawn core",
             }
-        );*/
+        );
     }
 }
 
@@ -476,6 +474,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();
+
+    #[cfg(feature = "test-scheduler-smp")]
+    scheduler_smp_test();
 
     #[cfg(feature = "rumprt")]
     {

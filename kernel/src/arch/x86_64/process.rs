@@ -502,7 +502,7 @@ impl Ring3Process {
             executor_cache,
             executor_offset: VAddr::from(0x21_0000_0000usize),
             fds,
-            pinfo: Default::default()
+            pinfo: Default::default(),
         }
     }
 }
@@ -686,7 +686,7 @@ impl elfloader::ElfLoader for Ring3Process {
         tdata_start: u64,
         tdata_length: u64,
         total_size: u64,
-        align: u64
+        align: u64,
     ) -> Result<(), &'static str> {
         self.pinfo.has_tls = true;
         self.pinfo.tls_data = self.offset.as_u64() + tdata_start;
@@ -695,7 +695,6 @@ impl elfloader::ElfLoader for Ring3Process {
         self.pinfo.alignment = align;
         Ok(())
     }
-
 }
 
 impl Process for Ring3Process {

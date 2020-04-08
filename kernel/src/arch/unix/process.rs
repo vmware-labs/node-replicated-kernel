@@ -132,7 +132,7 @@ impl Process for UnixProcess {
         Ok(UnixProcess {
             vspace: VSpace::new(),
             fd: Default::default(),
-            pinfo: Default::default()
+            pinfo: Default::default(),
         })
     }
 

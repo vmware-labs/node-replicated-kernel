@@ -384,21 +384,15 @@ where
         op: Self::WriteOperation,
     ) -> Result<Self::Response, Self::ResponseError> {
         match op {
-            Op::ProcCreate(module) => match P::new(module, self.current_pid) {
-                Ok(process) => {
+            Op::ProcCreate(module) => P::new(module, self.current_pid)
+                .and_then(|process| {
                     //self.process_map.try_reserve(1);
                     let pid = self.current_pid;
                     self.process_map.insert(pid, Box::new(process));
                     self.current_pid += 1;
                     Ok(NodeResult::ProcCreated(pid))
-                }
-                Err(e) => {
-                    error!("Failed to create process {:?}", e);
-                    Err(KError::ProcessCreate {
-                        desc: e.to_string(),
-                    })
-                }
-            },
+                })
+                .map_err(|e| e.into()),
             Op::ProcDestroy(pid) => {
                 // TODO(correctness): This is just a trivial,
                 // wrong implementation at the moment
@@ -408,7 +402,7 @@ where
                     Ok(NodeResult::ProcDestroyed)
                 } else {
                     error!("Process not found");
-                    Err(KError::NotSupported)
+                    Err(ProcessError::NoProcessFoundForPid.into())
                 }
             }
             Op::ProcInstallVCpuArea(_, _) => unreachable!(),

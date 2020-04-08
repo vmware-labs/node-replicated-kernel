@@ -1,5 +1,6 @@
 //! Generic process traits
 use alloc::boxed::Box;
+use alloc::string::{String, ToString};
 
 use custom_error::custom_error;
 
@@ -17,6 +18,7 @@ pub type Eid = u64;
 custom_error! {
 #[derive(PartialEq, Clone)]
 pub ProcessError
+    ProcessCreate{desc: String}  = "Unable to create process: {desc}",
     NoProcessFoundForPid = "No process was associated with the given Pid.",
     UnableToLoad = "Couldn't load process, invalid ELF file?",
     NoExecutorAllocated = "Didn't have any executors allocate for this region and process."

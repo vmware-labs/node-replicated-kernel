@@ -249,7 +249,26 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     initialized.store(true, Ordering::SeqCst);
 
     loop {
-        unsafe { x86::halt() };
+        use crate::nr;
+        //info!("Core #{} initialized.", args.thread);
+        //let thread = topology::MACHINE_TOPOLOGY.current_thread();
+        //let mut o: Vec<u8> = alloc::vec::Vec::with_capacity(2);
+        //let kcb = kcb::get_kcb();
+        /*
+        let replica = kcb.arch.replica.as_ref().expect("Replica not set");
+        let mut o = alloc::vec::Vec::with_capacity(2);
+
+        // Get an executor
+        replica.execute_ro(nr::ReadOps::CurrentExecutor(1), kcb.arch.replica_idx);
+        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+        debug_assert_eq!(o.len(), 1, "Should get reply");
+        let executor = match &o[0] {
+            Ok(nr::NodeResult::Executor(e)) => info!("YYYYYYYYYYYYYYYYYYYYYY {:?}", e),
+            e => unreachable!("Got unexpected response {:?}", e),
+        };
+        o.clear();*/
+
+        //unsafe { x86::halt() };
     }
 }
 
@@ -343,6 +362,7 @@ fn boot_app_cores(
                 }
             }
         }
+        core::mem::forget(coreboot_stack);
 
         assert!(initialized.load(Ordering::SeqCst));
         debug!("Core {:?} has started", thread.apic_id());

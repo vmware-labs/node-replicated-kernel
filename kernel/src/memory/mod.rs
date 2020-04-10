@@ -147,12 +147,24 @@ impl KernelAllocator {
                 // * We can't really allocate more than what fits in a TCache
 
                 // Figure out how much we need to map:
-                let (base, large) = KernelAllocator::layout_to_pages(layout);
+                let (mut base, mut large) = KernelAllocator::layout_to_pages(layout);
                 info!(
                     "Got a large allocation {:?}, need bp {} lp {}",
                     layout, base, large
                 );
 
+                // TODO(hack): Fetching more than 254 base pages would exhaust our TCache so might
+                // as well get a large-page instead:
+                // Slightly better: Should at least have well defined constants for `254`
+                // A bit better: TCache should probably have more space base pages (like 2MiB of base pages?)
+                // More better: If we need more pages than what fits in the TCache, we should get it directly
+                // from the NCache?
+                // Even Better: Find a good way to express this API, and maybe the whole GlobalAllocator
+                // infrastructure that doesn't require estimating the pages upfront?
+                if base > 254 {
+                    base = 0;
+                    large += 1;
+                }
                 // TODO(correctness): Make sure we have 20 pages for page-tables
                 // so vspace ops don't fail us :/
                 self.maybe_refill_tcache(base + 20, large)?;

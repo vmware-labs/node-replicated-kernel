@@ -115,7 +115,7 @@ impl Executor for UnixThread {
         self.eid
     }
 
-    fn start(&mut self) -> Self::Resumer {
+    fn start(&self) -> Self::Resumer {
         UnixResumeHandle {}
     }
 
@@ -123,11 +123,19 @@ impl Executor for UnixThread {
         UnixResumeHandle {}
     }
 
-    fn upcall(&mut self, _vector: u64, _exception: u64) -> Self::Resumer {
+    fn upcall(&self, _vector: u64, _exception: u64) -> Self::Resumer {
+        UnixResumeHandle {}
+    }
+
+    fn new_core_upcall(&self) -> Self::Resumer {
         UnixResumeHandle {}
     }
 
     fn maybe_switch_vspace(&self) {}
+
+    fn vcpu_kernel(&self) -> *mut kpi::arch::VirtualCpu {
+        core::ptr::null_mut()
+    }
 }
 
 impl Process for UnixProcess {
@@ -150,7 +158,7 @@ impl Process for UnixProcess {
         Ok(())
     }
 
-    fn allocate_executors(&mut self, frame: Frame) -> Result<0, ProcessError> {
+    fn allocate_executors(&mut self, frame: Frame) -> Result<usize, ProcessError> {
         Ok(0)
     }
 

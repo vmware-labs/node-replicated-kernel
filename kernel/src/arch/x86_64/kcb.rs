@@ -2,7 +2,7 @@
 //! kernel control block.
 
 use alloc::boxed::Box;
-use alloc::sync::{Arc};
+use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;

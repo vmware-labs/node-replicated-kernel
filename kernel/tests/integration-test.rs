@@ -771,13 +771,15 @@ fn s03_userspace_smoke() {
 
 #[test]
 fn s03_userspace_smp() {
-    let cmdline = RunnerArgs::new("test-userspace-smp").user_features(&[
-        "test-print",
-        "test-map",
-        "test-alloc",
-        "test-upcall",
-        "test-scheduler",
-    ]).cores(4);
+    let cmdline = RunnerArgs::new("test-userspace-smp")
+        .user_features(&[
+            "test-print",
+            "test-map",
+            "test-alloc",
+            "test-upcall",
+            "test-scheduler",
+        ])
+        .cores(4);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {

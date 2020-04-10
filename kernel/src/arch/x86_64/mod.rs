@@ -196,7 +196,7 @@ struct AppCoreArgs {
     global_memory: &'static GlobalMemory,
     thread: topology::ThreadId,
     node: topology::NodeId,
-    log: Arc<Log<'static, Op>>,
+    _log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
 }
 
@@ -275,7 +275,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
         debug_assert_eq!(o.len(), 1, "Should get reply");
 
-        let executor = match &o[0] {
+        match &o[0] {
             Ok(nr::NodeResult::Executor(executor)) => {
                 use alloc::sync::Weak;
                 let no = kcb
@@ -362,7 +362,7 @@ fn boot_app_cores(
             node,
             global_memory,
             thread: thread.id,
-            log: log.clone(),
+            _log: log.clone(),
             replica: bsp_replica.clone(),
         });
 

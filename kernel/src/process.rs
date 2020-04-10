@@ -4,7 +4,6 @@ use alloc::string::{String, ToString};
 
 use custom_error::custom_error;
 
-use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;

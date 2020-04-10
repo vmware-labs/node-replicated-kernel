@@ -1,5 +1,6 @@
 //! KCB is the local kernel control that stores all core local state.
 
+use alloc::string::String;
 use core::cell::{RefCell, RefMut};
 
 use logos::Logos;
@@ -139,6 +140,8 @@ pub struct Kcb<A> {
     /// Allocation affinity (which node we allocate from,
     /// this is a hack remove once custom allocators land).
     allocation_affinity: topology::NodeId,
+
+    pub print_buffer: Option<String>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -161,6 +164,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             // memory allocations:
             gmanager: None,
             pmanager: None,
+            print_buffer: None,
         }
     }
 
@@ -183,6 +187,10 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn set_physical_memory_manager(&mut self, pmanager: TCache) {
         self.pmanager = Some(RefCell::new(pmanager));
+    }
+
+    pub fn enable_print_buffering(&mut self, buffer: String) {
+        self.print_buffer = Some(buffer);
     }
 
     /// Get a reference to the early memory manager.

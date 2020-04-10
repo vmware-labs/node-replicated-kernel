@@ -12,6 +12,7 @@
 //!   parse the machine topology.
 //! - Boot the rest of the system (see `start_app_core`).
 use alloc::boxed::Box;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -195,8 +196,8 @@ struct AppCoreArgs {
     global_memory: &'static GlobalMemory,
     thread: topology::ThreadId,
     node: topology::NodeId,
-    _log: Arc<Log<'static, Op>>,
-    _replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
+    log: Arc<Log<'static, Op>>,
+    replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -239,36 +240,62 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    static_kcb.enable_print_buffering(String::with_capacity(128));
     static_kcb.install();
     core::mem::forget(kcb);
+
+    {
+        let kcb = kcb::get_kcb();
+        let local_ridx = args
+            .replica
+            .register()
+            .expect("Failed to register with Replica.");
+        kcb.arch
+            .setup_node_replication(args.replica.clone(), local_ridx);
+    }
 
     // Don't modify this line without adjusting `coreboot` integration test:
     info!("Core #{} initialized.", args.thread);
 
     // Signals to BSP core that we're done initializing.
     initialized.store(true, Ordering::SeqCst);
+    let mut o = alloc::vec::Vec::with_capacity(2);
 
     loop {
         use crate::nr;
-        //info!("Core #{} initialized.", args.thread);
-        //let thread = topology::MACHINE_TOPOLOGY.current_thread();
-        //let mut o: Vec<u8> = alloc::vec::Vec::with_capacity(2);
-        //let kcb = kcb::get_kcb();
-        /*
+        let thread = topology::MACHINE_TOPOLOGY.current_thread();
+        let kcb = kcb::get_kcb();
         let replica = kcb.arch.replica.as_ref().expect("Replica not set");
-        let mut o = alloc::vec::Vec::with_capacity(2);
 
         // Get an executor
-        replica.execute_ro(nr::ReadOps::CurrentExecutor(1), kcb.arch.replica_idx);
+        replica.execute_ro(
+            nr::ReadOps::CurrentExecutor(thread.id),
+            kcb.arch.replica_idx,
+        );
         while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
         debug_assert_eq!(o.len(), 1, "Should get reply");
-        let executor = match &o[0] {
-            Ok(nr::NodeResult::Executor(e)) => info!("YYYYYYYYYYYYYYYYYYYYYY {:?}", e),
-            e => unreachable!("Got unexpected response {:?}", e),
-        };
-        o.clear();*/
 
-        //unsafe { x86::halt() };
+        let executor = match &o[0] {
+            Ok(nr::NodeResult::Executor(executor)) => {
+                use alloc::sync::Weak;
+                let no = kcb
+                    .arch
+                    .swap_current_process(Weak::upgrade(&executor).unwrap());
+                assert!(no.is_none());
+                use crate::process::Executor;
+
+                unsafe {
+                    let rh = kcb::get_kcb()
+                        .arch
+                        .current_process()
+                        .map(|p| p.new_core_upcall());
+                    rh.unwrap().resume();
+                }
+            }
+            Err(crate::error::KError::NoExecutorForCore) => { /* continue, but clear o */ }
+            _ => unsafe { x86::halt() },
+        };
+        o.clear();
     }
 }
 
@@ -335,8 +362,8 @@ fn boot_app_cores(
             node,
             global_memory,
             thread: thread.id,
-            _log: log.clone(),
-            _replica: bsp_replica.clone(),
+            log: log.clone(),
+            replica: bsp_replica.clone(),
         });
 
         unsafe {
@@ -562,6 +589,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    static_kcb.enable_print_buffering(String::with_capacity(128));
     static_kcb.install();
 
     // Make sure we don't drop the KCB and anything in it,

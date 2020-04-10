@@ -9,6 +9,8 @@ extern crate alloc;
 
 pub mod io;
 pub mod process;
+pub mod system;
+pub mod upcall;
 pub mod x86_64;
 
 /// The syscall layer (only relevant for Ring3 code -> target_os = bespin)
@@ -223,15 +225,45 @@ impl From<&str> for FileOperation {
     }
 }
 
+/// Operations that query/set system-wide information.
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[repr(u64)]
+pub enum SystemOperation {
+    /// Query information about available hardware threads in the system
+    GetHardwareThreads = 1,
+    Unknown,
+}
+
+impl From<u64> for SystemOperation {
+    /// Construct a SystemCall enum based on a 64-bit value.
+    fn from(op: u64) -> SystemOperation {
+        match op {
+            1 => SystemOperation::GetHardwareThreads,
+            _ => SystemOperation::Unknown,
+        }
+    }
+}
+
+impl From<&str> for SystemOperation {
+    /// Construct a SystemOperation enum based on a str.
+    fn from(op: &str) -> SystemOperation {
+        match op {
+            "GetHardwareThreads" => SystemOperation::GetHardwareThreads,
+            _ => SystemOperation::Unknown,
+        }
+    }
+}
+
 /// SystemCall is the type of call we are invoking.
 ///
 /// It is passed to the kernel in the %rdi register.
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
 pub enum SystemCall {
-    Process = 1,
+    System = 1,
+    Process = 2,
     VSpace = 3,
-    FileIO = 5,
+    FileIO = 4,
     Unknown,
 }
 
@@ -239,7 +271,8 @@ impl SystemCall {
     /// Construct a SystemCall enum based on a 64-bit value.
     pub fn new(domain: u64) -> SystemCall {
         match domain {
-            1 => SystemCall::Process,
+            1 => SystemCall::System,
+            2 => SystemCall::Process,
             3 => SystemCall::VSpace,
             5 => SystemCall::FileIO,
             _ => SystemCall::Unknown,
@@ -251,6 +284,7 @@ impl From<&str> for SystemCall {
     /// Construct a SystemCall enum based on a str.
     fn from(op: &str) -> SystemCall {
         match op {
+            "System" => SystemCall::System,
             "Process" => SystemCall::Process,
             "VSpace" => SystemCall::VSpace,
             "FileIO" => SystemCall::FileIO,

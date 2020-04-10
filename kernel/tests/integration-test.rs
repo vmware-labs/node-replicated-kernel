@@ -769,6 +769,32 @@ fn s03_userspace_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+#[test]
+fn s03_userspace_smp() {
+    let cmdline = RunnerArgs::new("test-userspace-smp").user_features(&[
+        "test-print",
+        "test-map",
+        "test-alloc",
+        "test-upcall",
+        "test-scheduler",
+    ]).cores(4);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+
+        p.exp_string("print_test OK")?;
+        p.exp_string("upcall_test OK")?;
+        p.exp_string("map_test OK")?;
+        p.exp_string("alloc_test OK")?;
+        p.exp_string("scheduler_test OK")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Tests that user-space networking is functional.
 ///
 /// This tests various user-space components such as:

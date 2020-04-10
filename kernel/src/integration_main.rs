@@ -335,67 +335,98 @@ pub fn xmain() {
 }
 
 /// Test process loading / user-space.
-#[cfg(all(feature = "integration-test", feature = "test-userspace"))]
+#[cfg(all(feature = "integration-test", any(feature = "test-userspace", feature = "test-userspace-smp")))]
 pub fn xmain() {
     use crate::memory::KernelAllocator;
-    use crate::memory::PhysicalPageProvider;
+    use crate::memory::{VAddr, PhysicalPageProvider};
     use crate::process::Executor;
+    use crate::arch::process::Ring3Process;
+
     use alloc::boxed::Box;
     use alloc::vec;
 
-    let kcb = kcb::get_kcb();
+    let pid = {
+        let kcb = kcb::get_kcb();
 
-    // Lookup binary name we want to load for the test
-    let mut test_module = None;
-    for module in &kcb.arch.kernel_args().modules {
-        if module.name() == kcb.cmdline.test_binary {
-            test_module = Some(module);
+        // Lookup binary name we want to load for the test
+        let mut test_module = None;
+        for module in &kcb.arch.kernel_args().modules {
+            if module.name() == kcb.cmdline.test_binary {
+                test_module = Some(module);
+            }
         }
-    }
-    use alloc::format;
-    let test_module =
-        test_module.expect(format!("Couldn't find '{}' binary.", kcb.cmdline.test_binary).as_str());
-    info!("{} {:?}", kcb.cmdline.test_binary, test_module);
+        use alloc::format;
+        let test_module =
+            test_module.expect(format!("Couldn't find '{}' binary.", kcb.cmdline.test_binary).as_str());
+        info!("{} {:?}", kcb.cmdline.test_binary, test_module);
 
-    KernelAllocator::try_refill_tcache(20, 1).expect("Refill didn't work");
-    let frame = {
-        let kcb = crate::kcb::get_kcb();
-        let mut pmanager = kcb.mem_manager();
-        pmanager.allocate_large_page().expect("Can't allocate lp")
+        KernelAllocator::try_refill_tcache(20, 1).expect("Refill didn't work");
+        let frame = {
+            let kcb = crate::kcb::get_kcb();
+            let mut pmanager = kcb.mem_manager();
+            pmanager.allocate_large_page().expect("Can't allocate lp")
+        };
+
+        let replica = kcb.arch.replica.as_ref().expect("Replica not set");
+        let mut o = vec![];
+
+        // Create a new process
+        replica.execute(nr::Op::ProcCreate(&test_module), kcb.arch.replica_idx);
+        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+        debug_assert_eq!(o.len(), 1, "Should get reply");
+        let pid = match o[0] {
+            Ok(nr::NodeResult::ProcCreated(pid)) => pid,
+            _ => unreachable!("Got unexpected response"),
+        };
+        o.clear();
+
+        // Create dispatchers
+        replica.execute(
+            nr::Op::DispatcherAllocation(pid, frame),
+            kcb.arch.replica_idx,
+        );
+        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+        debug_assert_eq!(o.len(), 1, "Should get reply");
+        let e = match o[0] {
+            Ok(nr::NodeResult::ExecutorsCreated(how_many)) => {
+                assert!(how_many > 0);
+            }
+            _ => unreachable!("Got unexpected response"),
+        };
+        o.clear();
+
+        pid
     };
 
+    let thread = topology::MACHINE_TOPOLOGY.current_thread();
+
+    // Set current thread to run executor from our process
+    let (gtid, eid) = {
+        nr::KernelNode::<Ring3Process>::allocate_core_to_process(pid, VAddr::from(0xdeadbfffu64), thread.node_id.or(Some(0)), Some(thread.id)).expect("Can't allocate core")
+    };
+
+    let kcb = kcb::get_kcb();
     let replica = kcb.arch.replica.as_ref().expect("Replica not set");
     let mut o = vec![];
 
-    // Create a new process
-    replica.execute(nr::Op::ProcCreate(&test_module), kcb.arch.replica_idx);
+    // Get an executor
+    replica.execute_ro(nr::ReadOps::CurrentExecutor(thread.id), kcb.arch.replica_idx);
     while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
     debug_assert_eq!(o.len(), 1, "Should get reply");
-    let pid = match o[0] {
-        Ok(nr::NodeResult::ProcCreated(pid)) => pid,
-        _ => unreachable!("Got unexpected response"),
+    let executor = match &o[0] {
+        Ok(nr::NodeResult::Executor(e)) => e,
+        e => unreachable!("Got unexpected response {:?}", e),
     };
-    o.clear();
-
-    // Create a dispatcher
-    replica.execute(nr::Op::DispAlloc(pid, frame), kcb.arch.replica_idx);
-    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-    debug_assert_eq!(o.len(), 1, "Should get reply");
-    let e = match o[0] {
-        Ok(nr::NodeResult::ReqExecutor(e)) => e,
-        _ => unreachable!("Got unexpected response"),
-    };
-    let executor = unsafe { Box::from_raw(e) };
 
     info!("Created the init process, about to go there...");
-    let no = kcb::get_kcb().arch.swap_current_process(executor);
+    use alloc::sync::Weak;
+    let no = kcb::get_kcb().arch.swap_current_process(Weak::upgrade(&executor).unwrap());
     assert!(no.is_none());
 
     unsafe {
         let rh = kcb::get_kcb()
             .arch
             .current_process()
-            .as_mut()
             .map(|p| p.start());
         rh.unwrap().resume();
     }

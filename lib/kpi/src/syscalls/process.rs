@@ -10,19 +10,21 @@ use x86::bits64::paging::{PAddr, VAddr};
 pub struct Process;
 
 impl Process {
-    /// Request a new core.
-    pub fn request_core(core_id: usize) -> Result<CoreToken, SystemCallError> {
-        let (r, token) = unsafe {
+    /// Request to run on `core_id` starting at `entry_point`.
+    pub fn request_core(core_id: usize, entry_point: VAddr) -> Result<CoreToken, SystemCallError> {
+        let (r, gtid, eid) = unsafe {
             syscall!(
                 SystemCall::Process as u64,
                 ProcessOperation::RequestCore as u64,
                 core_id as u64,
-                2
+                entry_point.as_u64(),
+                3
             )
         };
 
         if r == 0 {
-            Ok(CoreToken::from(token))
+            debug_assert_eq!(gtid as usize, core_id, "Should this hold?");
+            Ok(CoreToken::from(gtid))
         } else {
             Err(SystemCallError::from(r))
         }
@@ -47,10 +49,10 @@ impl Process {
         }
     }
 
-    /// Sets the VCPU memory location for the upcall mechanism.
+    /// Gets the VCPU memory location for the current core of the thread.
     ///
     /// This is allocated and controlled by the kernel, it doesn't move and
-    /// should live as long as the current CPU is allocated to the process.
+    /// will be valid as long as the current CPU is allocated to the process.
     pub fn vcpu_control_area() -> Result<&'static mut VirtualCpu, SystemCallError> {
         let (r, control) = unsafe {
             syscall!(

@@ -23,6 +23,7 @@ use vibrio::rumprt;
 use vibrio::{sys_print, sys_println};
 
 use lineup::tls2::SchedulerControlBlock;
+use x86::bits64::paging::VAddr;
 
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
@@ -66,18 +67,52 @@ fn alloc_test() {
 
 fn scheduler_smp_test() {
     use lineup::threads::ThreadId;
-    let mut s: lineup::scheduler::SmpScheduler = Default::default();
+    use lineup::tls2::Environment;
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
-    for idx in 0..3 {
-        let r = vibrio::syscalls::Process::request_core(idx);
+    let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
 
-        info!(
-            "{}",
-            match r {
-                Ok(_ctoken) => "Spawned core",
-                Err(_e) => "Couldn't Spawn core",
-            }
+    for thread in threads {
+        if thread.id == 0 {
+            continue;
+        }
+
+        let r = vibrio::syscalls::Process::request_core(
+            thread.id,
+            VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
         );
+        match r {
+            Ok(_ctoken) => {
+                s.spawn(
+                    32 * 4096,
+                    move |_| {
+                        info!(
+                            "Hello from core {}",
+                            lineup::tls2::Environment::scheduler().core_id
+                        );
+                    },
+                    ptr::null_mut(),
+                    thread.id,
+                );
+            }
+            Err(_e) => {
+                error!("Failed to spawn to core {}", thread.id);
+            }
+        };
+    }
+
+    s.spawn(
+        32 * 4096,
+        move |_| unsafe {
+            info!("Hello from t1");
+        },
+        ptr::null_mut(),
+        0,
+    );
+
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    loop {
+        s.run(&scb);
     }
 }
 
@@ -437,7 +472,6 @@ fn fs_test() {
 }
 
 pub fn install_vcpu_area() {
-    use x86::bits64::paging::VAddr;
     let ctl =
         vibrio::syscalls::Process::vcpu_control_area().expect("Can't read vcpu control area.");
     ctl.resume_with_upcall =

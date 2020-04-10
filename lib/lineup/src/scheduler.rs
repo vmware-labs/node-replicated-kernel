@@ -19,7 +19,7 @@ use rawtime::Instant;
 
 use crate::stack::LineupStack;
 use crate::threads::{Runnable, Thread, ThreadId, YieldRequest, YieldResume};
-use crate::tls2::{self, ThreadControlBlock, SchedulerControlBlock};
+use crate::tls2::{self, SchedulerControlBlock, ThreadControlBlock};
 use crate::upcalls::Upcalls;
 use crate::CoreId;
 
@@ -98,7 +98,7 @@ impl<'a> SmpScheduler<'a> {
         f: F,
         arg: *mut u8,
         affinity: CoreId,
-        tls: *mut ThreadControlBlock<'static>
+        tls: *mut ThreadControlBlock<'static>,
     ) -> Option<ThreadId>
     where
         F: 'static + FnOnce(*mut u8) + Send,
@@ -294,7 +294,7 @@ impl<'a> SmpScheduler<'a> {
                         },
                         arg,
                         affinity,
-                        tls_private
+                        tls_private,
                     )
                     .expect("Can't spawn the thread");
                 YieldResume::Spawned(tid)
@@ -325,7 +325,10 @@ impl<'a> SmpScheduler<'a> {
         // TODO(correctness): Hard-coded assumption that threadId 1 is IRQ handler
         if is_irq_pending {
             log::trace!("Got interrupt");
-            self.per_core[state.core_id].runnable.lock().push_back(ThreadId(1));
+            self.per_core[state.core_id]
+                .runnable
+                .lock()
+                .push_back(ThreadId(1));
         }
     }
 

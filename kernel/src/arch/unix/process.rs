@@ -150,8 +150,8 @@ impl Process for UnixProcess {
         Ok(())
     }
 
-    fn allocate_executors(&mut self, frame: Frame) -> Result<(), ProcessError> {
-        Ok(())
+    fn allocate_executors(&mut self, frame: Frame) -> Result<0, ProcessError> {
+        Ok(0)
     }
 
     fn vspace(&mut self) -> &mut Self::A {

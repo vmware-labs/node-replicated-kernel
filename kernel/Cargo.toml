@@ -99,7 +99,7 @@ test-coreboot-nrlog = ["integration-test", "bsp-only" ]
 test-coreboot = ["integration-test" ]
 # userspace: run a test in user-space by spawning the init process
 test-userspace = ["integration-test", "bsp-only"]
+# userspace_smp: Test that we can dispatch a process on multiple cores
+test-userspace-smp = ["integration-test"]
 # vspace_debug: print initial vspace in graphviz format
 test-vspace-debug = ["integration-test", "bsp-only"]
-# userspace_multi: Test that we can dispatch two processes simultaneously (on a single core)
-test-userspace-multi = ["integration-test", "bsp-only"]

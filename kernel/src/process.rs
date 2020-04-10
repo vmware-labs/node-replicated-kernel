@@ -4,6 +4,7 @@ use alloc::string::{String, ToString};
 
 use custom_error::custom_error;
 
+use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;
@@ -19,11 +20,14 @@ custom_error! {
 #[derive(PartialEq, Clone)]
 pub ProcessError
     ProcessCreate{desc: String}  = "Unable to create process: {desc}",
+    ProcessNotSet = "The core has no current process set.",
     NoProcessFoundForPid = "No process was associated with the given Pid.",
     UnableToLoad = "Couldn't load process, invalid ELF file?",
     NoExecutorAllocated = "We never allocated executors for this affinity region and process (need to fill cache).",
     ExecutorCacheExhausted = "The executor cache for given affinity is empty (need to refill)",
     InvalidGlobalThreadId = "Specified an invalid core",
+    ExecutorNoLongerValid = "The excutor was removed from the current core.",
+    ExecutorAlreadyBorrowed = "The executor on the core was already borrowed (that's a bug).",
 }
 
 impl From<&str> for ProcessError {
@@ -46,7 +50,7 @@ pub trait Process {
         how_many: usize,
         affinity: topology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
-    fn allocate_executors(&mut self, frame: Frame) -> Result<(), ProcessError>;
+    fn allocate_executors(&mut self, frame: Frame) -> Result<usize, ProcessError>;
 
     fn vspace(&mut self) -> &mut Self::A;
 
@@ -69,8 +73,8 @@ pub trait ResumeHandle {
 
 /// Abstract executor definition.
 ///
-/// An executor is a per-replica execution unit of a process.
-/// There exists an 1:M relationship (a process can have many executor).
+/// An executor is a execution unit of a process.
+/// There exists an 1:M relationship (a process can have many executors).
 ///
 /// # Naming
 /// Some operating-systems (K42, Nemesis, Barrelfish etc.) would call this
@@ -78,10 +82,11 @@ pub trait ResumeHandle {
 /// dispatch trait.
 pub trait Executor {
     type Resumer: ResumeHandle;
-
     fn id(&self) -> Eid;
-    fn start(&mut self) -> Self::Resumer;
+    fn start(&self) -> Self::Resumer;
     fn resume(&self) -> Self::Resumer;
-    fn upcall(&mut self, vector: u64, exception: u64) -> Self::Resumer;
+    fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer;
+    fn new_core_upcall(&self) -> Self::Resumer;
     fn maybe_switch_vspace(&self);
+    fn vcpu_kernel(&self) -> *mut kpi::arch::VirtualCpu;
 }

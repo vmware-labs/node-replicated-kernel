@@ -346,10 +346,13 @@ pub struct Ring3Executor {
     /// Virtual CPU control used by the user-space upcall mechanism.
     pub vcpu_ctl: VAddr,
 
+    /// Alias to `vcpu_ctl` but accessible in kernel space.
+    pub vcpu_ctl_kernel: VAddr,
+
     /// Entry point where the executor should start executing from
     ///
-    /// Usually ELF start point (for the first dispatcher) then somthing set by process
-    /// after.
+    /// Usually an ELF start point (for the first dispatcher) then somthing set
+    /// by the process after.
     ///
     /// e.g. in process this can be computed as self.offset + self.entry_point
     pub entry_point: VAddr,
@@ -367,6 +370,7 @@ impl Ring3Executor {
     fn new(
         process: &Ring3Process,
         eid: Eid,
+        vcpu_ctl_kernel: VAddr,
         region: (VAddr, VAddr),
         affinity: topology::NodeId,
     ) -> Self {
@@ -392,6 +396,7 @@ impl Ring3Executor {
             pid: process.pid,
             eid,
             affinity,
+            vcpu_ctl_kernel,
             vcpu_ctl: vcpu_vaddr,
             save_area: Default::default(),
             entry_point: process.offset + process.entry_point,
@@ -418,6 +423,12 @@ impl Ring3Executor {
     }
 }
 
+impl fmt::Display for Ring3Executor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ring3Executor {}", self.eid)
+    }
+}
+
 impl Executor for Ring3Executor {
     type Resumer = Ring3Resumer;
 
@@ -425,8 +436,12 @@ impl Executor for Ring3Executor {
         self.eid
     }
 
+    fn vcpu_kernel(&self) -> *mut kpi::arch::VirtualCpu {
+        self.vcpu_ctl_kernel.as_mut_ptr()
+    }
+
     /// Start the process (run it for the first time).
-    fn start(&mut self) -> Ring3Resumer {
+    fn start(&self) -> Ring3Resumer {
         self.maybe_switch_vspace();
         Ring3Resumer::new_upcall(self.entry_point, self.stack_top(), 0, 0, 0)
     }
@@ -436,7 +451,25 @@ impl Executor for Ring3Executor {
         Ring3Resumer::new_restore(&self.save_area as *const kpi::arch::SaveArea)
     }
 
-    fn upcall(&mut self, vector: u64, exception: u64) -> Ring3Resumer {
+    /// This is similar to `upcall` as it starts executing the defined upcall
+    /// handler, but on the regular stack (for that dispatcher) and not
+    /// the upcall stack. It's used to add a new core to a process.
+    fn new_core_upcall(&self) -> Ring3Resumer {
+        self.maybe_switch_vspace();
+        let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
+        info!("ENTRY POINT IS {:#x}", entry_point);
+        let cpu_ctl = self.vcpu().vaddr().as_u64();
+
+        Ring3Resumer::new_upcall(
+            entry_point,
+            self.stack_top(),
+            cpu_ctl,
+            kpi::upcall::NEW_CORE,
+            topology::MACHINE_TOPOLOGY.current_thread().id,
+        )
+    }
+
+    fn upcall(&self, vector: u64, exception: u64) -> Ring3Resumer {
         self.maybe_switch_vspace();
         let entry_point = self.vcpu().resume_with_upcall;
         let cpu_ctl = self.vcpu().vaddr().as_u64();
@@ -771,7 +804,6 @@ impl Process for Ring3Process {
                 let ret = executor_list
                     .pop()
                     .ok_or(ProcessError::ExecutorCacheExhausted);
-                info!("Got executor: {:?}", ret);
                 ret
             }
             None => Err(ProcessError::NoExecutorAllocated),
@@ -779,7 +811,7 @@ impl Process for Ring3Process {
     }
 
     /// Create a series of dispatcher objects for the process
-    fn allocate_executors(&mut self, memory: Frame) -> Result<(), ProcessError> {
+    fn allocate_executors(&mut self, memory: Frame) -> Result<usize, ProcessError> {
         KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
         {
             let kcb = crate::kcb::get_kcb();
@@ -806,23 +838,31 @@ impl Process for Ring3Process {
             Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE + BASE_PAGE_SIZE;
         let executors_to_create = memory.size() / executor_space_requirement;
 
+        let mut cur_paddr_offset = memory.base;
         let mut cur_offset = self.executor_offset;
         for cnt in 0..executors_to_create {
             let executor_vmem_start = cur_offset;
+            let executor_pmem_start = cur_paddr_offset;
+
             let executor_vmem_end = executor_vmem_start + executor_space_requirement;
+            let executor_pmem_end = executor_pmem_start + executor_space_requirement;
 
             let upcall_stack_base = cur_offset + Ring3Executor::INIT_STACK_SIZE;
             let vcpu_ctl =
                 cur_offset + Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE;
+            let vcpu_ctl_paddr = cur_paddr_offset
+                + Ring3Executor::INIT_STACK_SIZE
+                + Ring3Executor::UPCALL_STACK_SIZE;
 
             let executor = Box::new(Ring3Executor::new(
                 &self,
                 self.current_eid,
+                crate::memory::paddr_to_kernel_vaddr(PAddr::from(vcpu_ctl_paddr)),
                 (executor_vmem_start, executor_vmem_end),
                 memory.affinity,
             ));
 
-            info!("Created {:?}", executor);
+            debug!("Created {}", executor);
 
             use alloc::vec;
             match &mut self.executor_cache[memory.affinity as usize] {
@@ -841,7 +881,7 @@ impl Process for Ring3Process {
         );
 
         self.executor_offset += memory.size();
-        Ok(())
+        Ok(executors_to_create)
     }
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {

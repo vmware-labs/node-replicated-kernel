@@ -2,7 +2,7 @@
 //! kernel control block.
 
 use alloc::boxed::Box;
-use alloc::sync::Arc;
+use alloc::sync::{Arc};
 use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
@@ -16,7 +16,7 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 use crate::error::KError;
 use crate::kcb::Kcb;
 use crate::nr::KernelNode;
-use crate::process::Pid;
+use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
 
 use super::gdt::GdtTable;
@@ -107,7 +107,7 @@ pub struct Arch86Kcb {
     kernel_args: &'static KernelArgs,
 
     /// A handle to the currently active (scheduled) process.
-    current_process: RefCell<Option<Box<Ring3Executor>>>,
+    current_process: Option<Arc<Ring3Executor>>,
 
     /// A handle to the initial kernel address space (created for us by the bootloader)
     /// It contains a 1:1 mapping of
@@ -157,7 +157,7 @@ impl Arch86Kcb {
             tss: TaskStateSegment::new(),
             idt: Default::default(),
             // We don't have a process initially
-            current_process: RefCell::new(None),
+            current_process: None,
             save_area: None,
             init_vspace: RefCell::new(init_vspace),
             interrupt_stack: None,
@@ -187,14 +187,18 @@ impl Arch86Kcb {
 
     /// Swaps out current process with a new process. Returns the old process.
     pub fn swap_current_process(
-        &self,
-        new_current_process: Box<Ring3Executor>,
-    ) -> Option<Box<Ring3Executor>> {
-        self.current_process.replace(Some(new_current_process))
+        &mut self,
+        new_current_process: Arc<Ring3Executor>,
+    ) -> Option<Arc<Ring3Executor>> {
+        self.current_process.replace(new_current_process)
     }
 
-    pub fn current_process(&self) -> RefMut<Option<Box<Ring3Executor>>> {
-        self.current_process.borrow_mut()
+    pub fn current_process(&self) -> Result<Arc<Ring3Executor>, ProcessError> {
+        let p = self
+            .current_process
+            .as_ref()
+            .ok_or(ProcessError::ProcessNotSet)?;
+        Ok(p.clone())
     }
 
     pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
@@ -274,12 +278,7 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
 
 impl Kcb<Arch86Kcb> {
     pub fn current_pid(&self) -> Result<Pid, KError> {
-        Ok(self
-            .arch
-            .current_process()
-            .as_ref()
-            .ok_or(KError::ProcessNotSet)?
-            .pid)
+        Ok(self.arch.current_process()?.pid)
     }
 }
 

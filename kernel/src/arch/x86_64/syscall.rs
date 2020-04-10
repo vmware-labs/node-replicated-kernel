@@ -8,7 +8,9 @@ use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 //use x86::tlb;
 
-use kpi::{FileOperation, ProcessOperation, SystemCall, SystemCallError, VSpaceOperation};
+use kpi::{
+    FileOperation, ProcessOperation, SystemCall, SystemCallError, SystemOperation, VSpaceOperation,
+};
 
 use crate::error::KError;
 use crate::memory::vspace::MapAction;
@@ -23,10 +25,61 @@ extern "C" {
     fn syscall_enter();
 }
 
+fn handle_system(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
+    let op = SystemOperation::from(arg1);
+
+    match op {
+        SystemOperation::GetHardwareThreads => {
+            let vaddr_buf = arg2; // buf.as_mut_ptr() as u64
+            let vaddr_buf_len = arg3; // buf.len() as u64
+
+            let hwthreads = topology::MACHINE_TOPOLOGY.threads();
+            let mut return_threads = Vec::with_capacity(topology::MACHINE_TOPOLOGY.num_threads());
+            for hwthread in hwthreads {
+                return_threads.push(kpi::system::CpuThread {
+                    id: hwthread.id as usize,
+                    node_id: hwthread.node_id.unwrap_or(0) as usize,
+                    package_id: hwthread.package_id as usize,
+                    core_id: hwthread.core_id as usize,
+                    thread_id: hwthread.thread_id as usize,
+                });
+            }
+
+            let serialized = serde_cbor::to_vec(&return_threads).unwrap();
+            if serialized.len() <= vaddr_buf_len as usize {
+                let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
+                user_slice.copy_from_slice(serialized.as_slice());
+            }
+
+            Ok((serialized.len() as u64, 0))
+        }
+        SystemOperation::Unknown => Err(KError::InvalidSystemOperation { a: arg1 }),
+    }
+}
+
 /// System call handler for printing
 fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
+    let mut kcb = super::kcb::get_kcb();
     let buffer: &str = *buf;
-    sprint!("{}", buffer);
+    let r = klogger::SERIAL_LINE_MUTEX.lock();
+
+    // A poor mans line buffer scheme:
+    match &mut kcb.print_buffer {
+        Some(kbuf) => match buffer.find("\r\n") {
+            Some(idx) => {
+                let (low, high) = buffer.split_at(idx + 2);
+                kbuf.push_str(low);
+                sprint!("{}", kbuf);
+                kbuf.clear();
+                kbuf.push_str(high);
+            }
+            None => kbuf.push_str(buffer),
+        },
+        None => {
+            sprint!("{}", buffer);
+        }
+    }
+
     Ok((0, 0))
 }
 
@@ -61,13 +114,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
         ProcessOperation::GetVCpuArea => unsafe {
             let kcb = super::kcb::get_kcb();
 
-            let vcpu_vaddr = kcb
-                .arch
-                .current_process()
-                .as_ref()
-                .ok_or(KError::ProcessNotSet)?
-                .vcpu_addr()
-                .as_u64();
+            let vcpu_vaddr = kcb.arch.current_process()?.vcpu_addr().as_u64();
 
             Ok((vcpu_vaddr, 0))
         },
@@ -100,6 +147,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
         }
         ProcessOperation::RequestCore => {
             let gtid = arg2;
+            let entry_point = arg3;
             let kcb = super::kcb::get_kcb();
 
             let mut affinity = None;
@@ -110,10 +158,14 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             }
             let affinity = affinity.ok_or(crate::process::ProcessError::InvalidGlobalThreadId)?;
             let pid = kcb.current_pid()?;
-            let eid =
-                nr::KernelNode::<Ring3Process>::allocate_core_to_process(pid, gtid, affinity)?;
+            let (gtid, eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
+                pid,
+                VAddr::from(entry_point),
+                Some(affinity),
+                Some(gtid),
+            )?;
 
-            Ok((eid, 0))
+            Ok((gtid, eid))
         }
         _ => Err(KError::InvalidProcessOperation { a: arg1 }),
     }
@@ -279,6 +331,16 @@ fn debug_print_syscall(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64
     sprint!("syscall: {:?}", SystemCall::new(function));
 
     match SystemCall::new(function) {
+        SystemCall::System => {
+            sprintln!(
+                " {:?} {} {} {} {}",
+                SystemOperation::from(arg1),
+                arg2,
+                arg3,
+                arg4,
+                arg5
+            );
+        }
         SystemCall::Process => {
             sprintln!(
                 " {:?} {} {} {} {}",
@@ -324,6 +386,7 @@ pub extern "C" fn syscall_handle(
     arg5: u64,
 ) -> ! {
     let status: Result<(u64, u64), KError> = match SystemCall::new(function) {
+        SystemCall::System => handle_system(arg1, arg2, arg3),
         SystemCall::Process => handle_process(arg1, arg2, arg3),
         SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
         SystemCall::FileIO => handle_fileio(arg1, arg2, arg3, arg4, arg5),

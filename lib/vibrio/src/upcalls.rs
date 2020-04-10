@@ -10,7 +10,22 @@
 //! [2]: www.barrelfish.org/publications/TN-010-Spec.pdf
 //! [3]: http://www.barrelfish.org/publications/ma-fuchs-tm-mp.pdf
 
+use lazy_static::lazy_static;
 use log::trace;
+
+lazy_static! {
+    pub static ref PROCESS_SCHEDULER: lineup::scheduler::SmpScheduler<'static> = {
+        if cfg!(features = "rumprt") {
+            lineup::scheduler::SmpScheduler::with_upcalls(lineup::upcalls::Upcalls {
+                curlwp: crate::rumprt::rumpkern_curlwp,
+                deschedule: crate::rumprt::rumpkern_unsched,
+                schedule: crate::rumprt::rumpkern_sched,
+            })
+        } else {
+            lineup::scheduler::SmpScheduler::default()
+        }
+    };
+}
 
 /// This is invoked through the kernel whenever we get an
 /// upcall (trap happened or interrupt came in) we resume
@@ -23,15 +38,27 @@ use log::trace;
 ///   where we left off before we got interrupted.
 /// * The [kpi::arch::VirtualCpu] `disabled` flag was set to true and
 ///   needs to be cleared again.
-pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, error: u64) -> ! {
+pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: u64) -> ! {
     trace!(
         "upcall_while_enabled {:?} vec={:#x} err={}",
         control,
-        vector,
-        error
+        cmd,
+        arg
     );
 
-    if vector == 0x2a {
+    if cmd == kpi::upcall::NEW_CORE {
+        use lineup::tls2::SchedulerControlBlock;
+        let core_id = arg;
+        log::info!("Got a new core ({}) assigned to us.", core_id);
+
+        let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id as usize);
+        let sched = &PROCESS_SCHEDULER;
+        loop {
+            sched.run(&scb);
+        }
+    }
+
+    if cmd == 0x2a {
         // TODO(correctness): this will use `gs` to access the SchedulerControlBlock
         // that assumes that we have already called scheduler.run() and we preserve
         // the SchedulerControlBlock register even if we return from run()
@@ -40,7 +67,7 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, vector: u64, er
             .signal_irq
             .store(true, core::sync::atomic::Ordering::SeqCst);
     } else {
-        log::error!("got unknown interrupt... {}", vector);
+        log::error!("got unknown interrupt... {}", cmd);
     }
 
     trace!("upcall_while_enabled: renable and resume...");

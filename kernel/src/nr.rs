@@ -2,7 +2,7 @@
 
 use crate::prelude::*;
 use alloc::string::{String, ToString};
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use cstr_core::CStr;
@@ -23,6 +23,7 @@ use crate::process::{Eid, Executor, Pid, Process, ProcessError};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
+    CurrentExecutor(topology::GlobalThreadId),
     ProcessInfo(Pid),
 }
 
@@ -33,10 +34,16 @@ pub enum Op {
     ProcInstallVCpuArea(Pid, u64),
     ProcAllocIrqVector,
     ProcRaiseIrq,
-    ProcAllocateCore(Pid, topology::GlobalThreadId, topology::NodeId),
-    DispAlloc(Pid, Frame),
-    DispDealloc,
-    DispSchedule,
+    /// Assign a core to a process.
+    ProcAllocateCore(
+        Pid,
+        Option<topology::NodeId>,
+        Option<topology::GlobalThreadId>,
+        VAddr,
+    ),
+    DispatcherAllocation(Pid, Frame),
+    DispatcherDeallocation,
+    DispatcherSchedule,
     MemMapFrames(Pid, VAddr, Frame, MapAction), // Vec<Frame> doesn't implement copy
     MemMapFrame(Pid, VAddr, Frame, MapAction),
     MemMapDevice(Pid, Frame, MapAction),
@@ -58,14 +65,14 @@ impl Default for Op {
     }
 }
 
-#[derive(Copy, Eq, PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum NodeResult<E: Executor> {
     ProcCreated(Pid),
     ProcDestroyed,
     ProcessInfo(ProcessInfo),
-    CoreAllocated(Eid),
+    CoreAllocated(topology::GlobalThreadId, Eid),
     VectorAllocated(u64),
-    ReqExecutor(*mut E),
+    ExecutorsCreated(usize),
     Mapped,
     Adjusted,
     Unmapped,
@@ -75,7 +82,7 @@ pub enum NodeResult<E: Executor> {
     FileAccessed(Len),
     FileInfo(u64),
     FileDeleted(bool),
-
+    Executor(Weak<E>),
     Invalid,
 }
 
@@ -88,7 +95,7 @@ impl<E: Executor> Default for NodeResult<E> {
 pub struct KernelNode<P: Process> {
     current_pid: Pid,
     process_map: HashMap<Pid, Box<P>>,
-    scheduler_map: HashMap<topology::GlobalThreadId, (Pid, Box<P::E>)>,
+    scheduler_map: HashMap<topology::GlobalThreadId, Arc<P::E>>,
     fs: MemFS,
 }
 
@@ -337,9 +344,10 @@ impl<P: Process> KernelNode<P> {
 
     pub fn allocate_core_to_process(
         pid: Pid,
-        gtid: topology::GlobalThreadId,
-        affinity: topology::NodeId,
-    ) -> Result<Eid, KError> {
+        entry_point: VAddr,
+        affinity: Option<topology::NodeId>,
+        gtid: Option<topology::GlobalThreadId>,
+    ) -> Result<(topology::GlobalThreadId, Eid), KError> {
         let kcb = super::kcb::get_kcb();
 
         kcb.arch
@@ -348,7 +356,7 @@ impl<P: Process> KernelNode<P> {
             .map_or(Err(KError::ReplicaNotSet), |replica| {
                 let mut o = vec![];
                 replica.execute(
-                    Op::ProcAllocateCore(pid, gtid, affinity),
+                    Op::ProcAllocateCore(pid, gtid, affinity, entry_point),
                     kcb.arch.replica_idx,
                 );
 
@@ -356,7 +364,10 @@ impl<P: Process> KernelNode<P> {
                 debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
                 match &o[0] {
-                    Ok(NodeResult::CoreAllocated(eid)) => Ok(*eid),
+                    Ok(NodeResult::CoreAllocated(rgtid, eid)) => {
+                        let _r = gtid.map(|gtid| debug_assert_eq!(gtid, *rgtid));
+                        Ok((*rgtid, *eid))
+                    }
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -378,8 +389,15 @@ where
         match op {
             ReadOps::ProcessInfo(pid) => {
                 let process_lookup = self.process_map.get(&pid);
-                let p = process_lookup.expect("TODO: DispAlloc process lookup failed");
+                let p = process_lookup.expect("TODO: process lookup failed");
                 Ok(NodeResult::ProcessInfo(*p.pinfo()))
+            }
+            ReadOps::CurrentExecutor(gtid) => {
+                let executor = self
+                    .scheduler_map
+                    .get(&gtid)
+                    .ok_or(KError::NoExecutorForCore)?;
+                Ok(NodeResult::Executor(Arc::downgrade(executor)))
             }
         }
     }
@@ -413,21 +431,16 @@ where
             Op::ProcInstallVCpuArea(_, _) => unreachable!(),
             Op::ProcAllocIrqVector => unreachable!(),
             Op::ProcRaiseIrq => unreachable!(),
-            Op::DispAlloc(pid, frame) => {
+            Op::DispatcherAllocation(pid, frame) => {
                 let p = self
                     .process_map
                     .get_mut(&pid)
                     .ok_or(ProcessError::NoProcessFoundForPid)?;
-                p.allocate_executors(frame)
-                    .expect("Can't allocate dispatchers");
-                let executor = p
-                    .get_executor(0) // TODO (fixnow): Hard-coded 0
-                    .expect("Can't get an executor for process");
-                //NodeResult::ReqExecutor(executor)
-                Ok(NodeResult::ReqExecutor(Box::into_raw(executor)))
+                let how_many = p.allocate_executors(frame)?;
+                Ok(NodeResult::ExecutorsCreated(how_many))
             }
-            Op::DispDealloc => unreachable!(),
-            Op::DispSchedule => unreachable!(),
+            Op::DispatcherDeallocation => unreachable!(),
+            Op::DispatcherSchedule => unreachable!(),
             Op::MemMapFrames(pid, base, frames, action) => unimplemented!("MemMapFrames"),
             Op::MemMapFrame(pid, base, frame, action) => {
                 let process_lookup = self.process_map.get_mut(&pid);
@@ -629,22 +642,28 @@ where
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }
-            Op::ProcAllocateCore(pid, gtid, region) => match self.scheduler_map.get(&gtid) {
-                Some((cpid, ceid)) => {
-                    error!("Core {} already used by {} {}", gtid, cpid, ceid.id());
-                    Err(KError::CoreAlreadyAllocated)
+            Op::ProcAllocateCore(pid, Some(gtid), Some(region), entry_point) => {
+                match self.scheduler_map.get(&gtid) {
+                    Some(executor) => {
+                        error!("Core {} already used by {}", gtid, executor.id());
+                        Err(KError::CoreAlreadyAllocated)
+                    }
+                    None => {
+                        let process = self
+                            .process_map
+                            .get_mut(&pid)
+                            .ok_or(ProcessError::NoProcessFoundForPid)?;
+                        let mut executor = process.get_executor(region)?;
+                        let eid = executor.id();
+                        unsafe {
+                            (*executor.vcpu_kernel()).resume_with_upcall = entry_point;
+                        }
+                        self.scheduler_map.insert(gtid, executor.into());
+                        Ok(NodeResult::CoreAllocated(gtid, eid))
+                    }
                 }
-                None => {
-                    let process = self
-                        .process_map
-                        .get_mut(&pid)
-                        .ok_or(ProcessError::NoProcessFoundForPid)?;
-                    let executor = process.get_executor(region)?;
-                    let eid = executor.id();
-                    self.scheduler_map.insert(gtid, (pid, executor));
-                    Ok(NodeResult::CoreAllocated(eid))
-                }
-            },
+            }
+            Op::ProcAllocateCore(pid, a, b, entry_point) => unimplemented!(),
             Op::Invalid => unreachable!("Got invalid OP"),
         }
     }

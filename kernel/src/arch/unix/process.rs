@@ -194,6 +194,10 @@ impl Process for UnixProcess {
     }
 
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError> {
-        Ok(0)
+        Err(ProcessError::InvalidFrameId)
+    }
+
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError> {
+        Err(ProcessError::InvalidFrameId)
     }
 }

@@ -68,7 +68,12 @@ pub unsafe extern "C" fn rumprun_makelwp(
         lineup::stack::LineupStack::from_ptr(stack_base as *mut u8, stack_size, free_automatically);
 
     let s = Environment::thread();
-    s.spawn_with_args(stack, start, arg as *mut u8, tls_private as *mut lineup::tls2::ThreadControlBlock<'static>);
+    s.spawn_with_args(
+        stack,
+        start,
+        arg as *mut u8,
+        tls_private as *mut lineup::tls2::ThreadControlBlock<'static>,
+    );
     0
 }
 

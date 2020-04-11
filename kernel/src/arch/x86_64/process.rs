@@ -8,10 +8,10 @@ use core::ptr;
 
 use alloc::vec::Vec;
 
+use kpi::process::FrameId;
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
-use kpi::process::FrameId;
 
 use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
 use crate::kcb::Kcb;
@@ -941,7 +941,9 @@ impl Process for Ring3Process {
     }
 
     fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError> {
-        self.frames.get(frame_id).cloned().ok_or(ProcessError::InvalidFrameId)
+        self.frames
+            .get(frame_id)
+            .cloned()
+            .ok_or(ProcessError::InvalidFrameId)
     }
-
 }

@@ -7,8 +7,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use cstr_core::CStr;
 use hashbrown::HashMap;
+use kpi::process::{FrameId, ProcessInfo};
 use kpi::{io::*, FileOperation};
-use kpi::process::{ProcessInfo, FrameId};
 
 use node_replication::Dispatch;
 
@@ -45,10 +45,7 @@ pub enum Op {
         VAddr,
     ),
     /// Assign a physical frame to a process (returns a FrameId).
-    AllocateFrameToProcess(
-        Pid,
-        Frame,
-    ),
+    AllocateFrameToProcess(Pid, Frame),
     DispatcherAllocation(Pid, Frame),
     DispatcherDeallocation,
     DispatcherSchedule,
@@ -170,7 +167,10 @@ impl<P: Process> KernelNode<P> {
             .map_or(Err(KError::ReplicaNotSet), |replica| {
                 let mut o = vec![];
 
-                replica.execute(Op::MemMapFrameId(pid, base, frame_id, action), kcb.arch.replica_idx);
+                replica.execute(
+                    Op::MemMapFrameId(pid, base, frame_id, action),
+                    kcb.arch.replica_idx,
+                );
                 while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                 debug_assert_eq!(o.len(), 1, "Should get reply");
 
@@ -366,10 +366,7 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
-    pub fn allocate_frame_to_process(
-        pid: Pid,
-        frame: Frame,
-    ) -> Result<FrameId, KError> {
+    pub fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
         let kcb = super::kcb::get_kcb();
 
         kcb.arch
@@ -377,24 +374,18 @@ impl<P: Process> KernelNode<P> {
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
                 let mut o = vec![];
-                replica.execute(
-                    Op::AllocateFrameToProcess(pid, frame),
-                    kcb.arch.replica_idx,
-                );
+                replica.execute(Op::AllocateFrameToProcess(pid, frame), kcb.arch.replica_idx);
 
                 while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
                 debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
                 match &o[0] {
-                    Ok(NodeResult::FrameId(fid)) => {
-                        Ok(*fid)
-                    }
+                    Ok(NodeResult::FrameId(fid)) => Ok(*fid),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
             })
     }
-
 }
 
 impl<P> Dispatch for KernelNode<P>
@@ -509,7 +500,10 @@ where
                 Ok(NodeResult::Mapped)
             }
             Op::MemMapFrameId(pid, base, frame_id, action) => {
-                let p = self.process_map.get_mut(&pid).ok_or(ProcessError::NoProcessFoundForPid)?;
+                let p = self
+                    .process_map
+                    .get_mut(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
                 let frame = p.get_frame(frame_id)?;
 
                 crate::memory::KernelAllocator::try_refill_tcache(7, 0)?;
@@ -517,8 +511,7 @@ where
                 let kcb = crate::kcb::get_kcb();
                 let mut pmanager = kcb.mem_manager();
 
-                p.vspace()
-                    .map_frame(base, frame, action, &mut *pmanager)?;
+                p.vspace().map_frame(base, frame, action, &mut *pmanager)?;
                 Ok(NodeResult::MappedFrameId(frame.base, frame.size))
             }
             Op::MemAdjust => unreachable!(),

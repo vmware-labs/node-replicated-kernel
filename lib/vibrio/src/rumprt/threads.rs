@@ -63,7 +63,10 @@ pub unsafe extern "C" fn rumpuser_thread_create(
 pub unsafe extern "C" fn rumpuser_thread_exit() {
     let t = lineup::tls2::Environment::thread();
     loop {
-        info!("rumpuser_thread_exit {:?}", lineup::tls2::Environment::tid());
+        info!(
+            "rumpuser_thread_exit {:?}",
+            lineup::tls2::Environment::tid()
+        );
         t.block();
         unreachable!("rumpuser_thread_exit");
     }

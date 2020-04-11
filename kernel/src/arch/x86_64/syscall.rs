@@ -9,10 +9,10 @@ use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 //use x86::tlb;
 
+use kpi::process::FrameId;
 use kpi::{
     FileOperation, ProcessOperation, SystemCall, SystemCallError, SystemOperation, VSpaceOperation,
 };
-use kpi::process::FrameId;
 
 use crate::error::KError;
 use crate::fs::FileSystem;
@@ -185,9 +185,8 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             // Figure out what memory to allocate
             let (bp, lp) = if page_size == BASE_PAGE_SIZE {
                 (1, 0)
-            }
-            else {
-                (0,1)
+            } else {
+                (0, 1)
             };
             crate::memory::KernelAllocator::try_refill_tcache(bp, lp)?;
 
@@ -195,20 +194,16 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let mut pmanager = kcb.mem_manager();
             let frame = if page_size == BASE_PAGE_SIZE {
                 pmanager.allocate_base_page()?
-            }
-            else {
+            } else {
                 pmanager.allocate_large_page()?
             };
 
             // Associate memory with the process
             let pid = kcb.current_pid()?;
-            let fid = nr::KernelNode::<Ring3Process>::allocate_frame_to_process(
-                pid,
-                frame,
-            )?;
+            let fid = nr::KernelNode::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
             Ok((fid as u64, frame.base.as_u64()))
-        },
+        }
         ProcessOperation::SubscribeEvent => Err(KError::InvalidProcessOperation { a: arg1 }),
         ProcessOperation::Unknown => Err(KError::InvalidProcessOperation { a: arg1 }),
     }
@@ -292,7 +287,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         VSpaceOperation::MapFrame => unsafe {
             plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
                 let base = VAddr::from(arg2);
-                let frame_id: FrameId = arg3.try_into().map_err(|_e| ProcessError::InvalidFrameId)?;
+                let frame_id: FrameId =
+                    arg3.try_into().map_err(|_e| ProcessError::InvalidFrameId)?;
 
                 let (paddr, size) = nr::KernelNode::<Ring3Process>::map_frame_id(
                     p.pid,

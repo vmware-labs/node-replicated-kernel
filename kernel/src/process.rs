@@ -45,7 +45,6 @@ impl From<alloc::collections::TryReserveError> for ProcessError {
     }
 }
 
-
 /// Abstract definition of a process.
 pub trait Process {
     type E: Executor + Copy;

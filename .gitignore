@@ -29,3 +29,10 @@ proptest-regressions
 redis_benchmark.csv
 vspace.dot
 vspace.dot.svg
+out.log
+
+# RLS logs
+rls*.log
+
+# Random notes
+*NOTES*

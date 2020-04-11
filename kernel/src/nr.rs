@@ -55,6 +55,7 @@ pub enum Op {
     MemMapFrames(Pid, VAddr, Frame, MapAction), // Vec<Frame> doesn't implement copy
     MemMapFrame(Pid, VAddr, Frame, MapAction),
     MemMapDevice(Pid, Frame, MapAction),
+    MemMapFrameId(Pid, VAddr, FrameId, MapAction),
     MemAdjust,
     MemUnmap,
     MemResolve(Pid, VAddr),
@@ -81,6 +82,7 @@ pub enum NodeResult<E: Executor> {
     VectorAllocated(u64),
     ExecutorsCreated(usize),
     Mapped,
+    MappedFrameId(PAddr, usize),
     Adjusted,
     Unmapped,
     Resolved(PAddr, MapAction),
@@ -151,6 +153,31 @@ impl<P: Process> KernelNode<P> {
                 match response {
                     Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
                     _ => unreachable!("Got unexpected response"),
+                }
+            })
+    }
+
+    pub fn map_frame_id(
+        pid: Pid,
+        frame_id: FrameId,
+        base: VAddr,
+        action: MapAction,
+    ) -> Result<(PAddr, usize), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+
+                replica.execute(Op::MemMapFrameId(pid, base, frame_id, action), kcb.arch.replica_idx);
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get reply");
+
+                match &o[0] {
+                    Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((*paddr, *size)),
+                    Err(e) => unreachable!("MappedFrameId {:?}", e),
+                    _ => unreachable!("unexpected response"),
                 }
             })
     }
@@ -480,6 +507,19 @@ where
                     .map_frame(base, frame, action, &mut *pmanager)
                     .expect("TODO: MemMapFrame map_frame failed");
                 Ok(NodeResult::Mapped)
+            }
+            Op::MemMapFrameId(pid, base, frame_id, action) => {
+                let p = self.process_map.get_mut(&pid).ok_or(ProcessError::NoProcessFoundForPid)?;
+                let frame = p.get_frame(frame_id)?;
+
+                crate::memory::KernelAllocator::try_refill_tcache(7, 0)?;
+
+                let kcb = crate::kcb::get_kcb();
+                let mut pmanager = kcb.mem_manager();
+
+                p.vspace()
+                    .map_frame(base, frame, action, &mut *pmanager)?;
+                Ok(NodeResult::MappedFrameId(frame.base, frame.size))
             }
             Op::MemAdjust => unreachable!(),
             Op::MemUnmap => unreachable!(),

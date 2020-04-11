@@ -939,4 +939,9 @@ impl Process for Ring3Process {
         self.frames.push(frame);
         Ok(self.frames.len() - 1)
     }
+
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError> {
+        self.frames.get(frame_id).cloned().ok_or(ProcessError::InvalidFrameId)
+    }
+
 }

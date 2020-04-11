@@ -29,7 +29,8 @@ pub ProcessError
     InvalidGlobalThreadId = "Specified an invalid core",
     ExecutorNoLongerValid = "The excutor was removed from the current core.",
     ExecutorAlreadyBorrowed = "The executor on the core was already borrowed (that's a bug).",
-    NotEnoughMemory = "Unable to reserve memory for internal process data-structures."
+    NotEnoughMemory = "Unable to reserve memory for internal process data-structures.",
+    InvalidFrameId = "The provided FrameId is not registered with the process",
 }
 
 impl From<&str> for ProcessError {
@@ -74,6 +75,7 @@ pub trait Process {
     fn pinfo(&self) -> &kpi::process::ProcessInfo;
 
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError>;
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError>;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU

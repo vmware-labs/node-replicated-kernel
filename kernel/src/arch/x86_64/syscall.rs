@@ -12,12 +12,14 @@ use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 use kpi::{
     FileOperation, ProcessOperation, SystemCall, SystemCallError, SystemOperation, VSpaceOperation,
 };
+use kpi::process::FrameId;
 
 use crate::error::KError;
 use crate::fs::FileSystem;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider};
 use crate::nr;
+use crate::process::ProcessError;
 
 use super::gdt::GdtTable;
 use super::process::{Ring3Process, UserValue};
@@ -289,7 +291,16 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         },
         VSpaceOperation::MapFrame => unsafe {
             plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                unreachable!()
+                let base = VAddr::from(arg2);
+                let frame_id: FrameId = arg3.try_into().map_err(|_e| ProcessError::InvalidFrameId)?;
+
+                let (paddr, size) = nr::KernelNode::<Ring3Process>::map_frame_id(
+                    p.pid,
+                    frame_id,
+                    base,
+                    MapAction::ReadWriteUser,
+                )?;
+                Ok((paddr.as_u64(), size as u64))
             })
         },
         VSpaceOperation::Unmap => {

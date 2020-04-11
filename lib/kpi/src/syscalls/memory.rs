@@ -30,11 +30,20 @@ impl VSpace {
         frame_id: FrameId,
         base: u64,
     ) -> Result<(VAddr, PAddr), SystemCallError> {
-        VSpace::vspace(
-            VSpaceOperation::MapFrame,
-            frame_id.try_into().unwrap(),
+        let frame_id: u64 = frame_id.try_into().unwrap();
+        let (err, paddr, size) = syscall!(
+            SystemCall::VSpace as u64,
+            VSpaceOperation::MapFrame as u64,
             base,
-        )
+            frame_id,
+            3
+        );
+
+        if err == 0 {
+            Ok((VAddr::from(base), PAddr::from(paddr)))
+        } else {
+            Err(SystemCallError::from(err))
+        }
     }
 
     pub unsafe fn identify(base: u64) -> Result<(VAddr, PAddr), SystemCallError> {

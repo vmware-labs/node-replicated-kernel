@@ -14,21 +14,22 @@ fn maponly_bencher() {
         PhysicalMemory::allocate_base_page().expect("Can't allocate a memory obj");
     info!("Got frame_id {:#?}", frame_id);
 
-    let tid = lineup::tls2::Environment::tid();
-    let mut base: u64 = (0x1200_0000_0000 * tid.0 as u64) + 0xdeef_f000;
+    let vspace_offset = lineup::tls2::Environment::tid().0 + 1;
+    let mut base: u64 = (0x1200_0000_0000 * vspace_offset as u64) + 0xdeef_f000;
     let size: u64 = BASE_PAGE_SIZE as u64;
+    info!("start mapping at {:#x}", base);
 
-    let mut iops = 0;
+    let mut vops = 0;
     let mut iterations = 10;
     while iterations > 0 {
         let start = rawtime::Instant::now();
-        while start.elapsed().as_millis() < 250 {
-            unsafe { VSpace::map(base, size).expect("Map syscall failed") };
-            iops += 1;
+        while start.elapsed().as_secs() < 1 {
+            unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
+            vops += 1;
             base += BASE_PAGE_SIZE as u64;
         }
-        info!("IOPS {}", iops);
-        iops = 0;
+        info!("VMOPS {}", vops);
+        vops = 0;
         iterations -= 1;
     }
 }

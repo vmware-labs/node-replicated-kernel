@@ -1,6 +1,8 @@
 use core::convert::TryInto;
 use serde::{Deserialize, Serialize};
 
+pub type FrameId = usize;
+
 pub struct CoreToken(usize);
 
 impl CoreToken {

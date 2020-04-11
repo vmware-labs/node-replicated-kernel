@@ -7,7 +7,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use cstr_core::CStr;
 use hashbrown::HashMap;
-use kpi::{io::*, process::ProcessInfo, FileOperation};
+use kpi::{io::*, FileOperation};
+use kpi::process::{ProcessInfo, FrameId};
+
 use node_replication::Dispatch;
 
 use crate::arch::process::{UserPtr, UserSlice};
@@ -41,6 +43,11 @@ pub enum Op {
         Option<topology::NodeId>,
         Option<topology::GlobalThreadId>,
         VAddr,
+    ),
+    /// Assign a physical frame to a process (returns a FrameId).
+    AllocateFrameToProcess(
+        Pid,
+        Frame,
     ),
     DispatcherAllocation(Pid, Frame),
     DispatcherDeallocation,
@@ -83,6 +90,7 @@ pub enum NodeResult<E: Executor> {
     FileInfo(u64),
     FileDeleted(bool),
     Executor(Weak<E>),
+    FrameId(usize),
     Invalid,
 }
 
@@ -330,6 +338,36 @@ impl<P: Process> KernelNode<P> {
                 }
             })
     }
+
+    pub fn allocate_frame_to_process(
+        pid: Pid,
+        frame: Frame,
+    ) -> Result<FrameId, KError> {
+        let kcb = super::kcb::get_kcb();
+
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut o = vec![];
+                replica.execute(
+                    Op::AllocateFrameToProcess(pid, frame),
+                    kcb.arch.replica_idx,
+                );
+
+                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
+                debug_assert_eq!(o.len(), 1, "Should get a reply?");
+
+                match &o[0] {
+                    Ok(NodeResult::FrameId(fid)) => {
+                        Ok(*fid)
+                    }
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
+
 }
 
 impl<P> Dispatch for KernelNode<P>
@@ -621,6 +659,15 @@ where
                 }
             }
             Op::ProcAllocateCore(pid, a, b, entry_point) => unimplemented!(),
+            Op::AllocateFrameToProcess(pid, frame) => {
+                let process = self
+                    .process_map
+                    .get_mut(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                let fid = process.add_frame(frame)?;
+
+                Ok(NodeResult::FrameId(fid))
+            }
             Op::Invalid => unreachable!("Got invalid OP"),
         }
     }

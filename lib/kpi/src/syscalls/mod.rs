@@ -4,11 +4,11 @@
 
 mod io;
 mod macros;
+mod memory;
 mod process;
 mod system;
-mod vspace;
 
 pub use io::{Fs, Irq};
+pub use memory::{PhysicalMemory, VSpace};
 pub use process::Process;
 pub use system::System;
-pub use vspace::VSpace;

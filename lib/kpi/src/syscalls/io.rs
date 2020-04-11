@@ -1,3 +1,5 @@
+//! Abstraction for system calls to access the global file-system and control interrupts.
+
 use crate::io::*;
 use crate::*;
 

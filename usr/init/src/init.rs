@@ -31,6 +31,9 @@ use x86::bits64::paging::VAddr;
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
+#[cfg(feature = "bench-vmops")]
+mod vmops;
+
 #[thread_local]
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
 
@@ -545,6 +548,9 @@ pub extern "C" fn _start() -> ! {
     }
     debug!("Initialized logging");
     install_vcpu_area();
+
+    #[cfg(feature = "bench-vmops")]
+    vmops::bench();
 
     #[cfg(feature = "test-print")]
     print_test();

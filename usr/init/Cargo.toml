@@ -36,5 +36,8 @@ test-scheduler-smp = []
 test-rump-tmpfs = [ "rumprt" ]
 test-rump-net = [ "rumprt" ]
 test-fs = []
+
+# Simple micro-benchmarks
+bench-vmops = []
 fs-bench = []
 fs-write = []

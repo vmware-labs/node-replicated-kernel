@@ -88,6 +88,8 @@ pub enum ProcessOperation {
     GetProcessInfo = 6,
     /// Request a new core for the process.
     RequestCore = 7,
+    /// Allocate a physical memory page as a mem object to the process.
+    AllocatePhysical = 8,
     Unknown,
 }
 
@@ -102,6 +104,7 @@ impl From<u64> for ProcessOperation {
             5 => ProcessOperation::SubscribeEvent,
             6 => ProcessOperation::GetProcessInfo,
             7 => ProcessOperation::RequestCore,
+            8 => ProcessOperation::AllocatePhysical,
             _ => ProcessOperation::Unknown,
         }
     }
@@ -118,6 +121,7 @@ impl From<&str> for ProcessOperation {
             "SubscribeEvent" => ProcessOperation::SubscribeEvent,
             "GetProcessInfo" => ProcessOperation::GetProcessInfo,
             "RequestCore" => ProcessOperation::RequestCore,
+            "AllocatePhysical" => ProcessOperation::AllocatePhysical,
             _ => ProcessOperation::Unknown,
         }
     }
@@ -133,8 +137,10 @@ pub enum VSpaceOperation {
     Unmap = 2,
     /// Identity map some device memory
     MapDevice = 3,
+    /// Map a previously allocated physical frame,
+    MapFrame = 4,
     /// Resolve a virtual to a physical address
-    Identify = 4,
+    Identify = 5,
     Unknown,
 }
 
@@ -145,7 +151,8 @@ impl From<u64> for VSpaceOperation {
             1 => VSpaceOperation::Map,
             2 => VSpaceOperation::Unmap,
             3 => VSpaceOperation::MapDevice,
-            4 => VSpaceOperation::Identify,
+            4 => VSpaceOperation::MapFrame,
+            5 => VSpaceOperation::Identify,
             _ => VSpaceOperation::Unknown,
         }
     }
@@ -158,6 +165,7 @@ impl From<&str> for VSpaceOperation {
             "Map" => VSpaceOperation::Map,
             "Unmap" => VSpaceOperation::Unmap,
             "MapDevice" => VSpaceOperation::MapDevice,
+            "MapFrame" => VSpaceOperation::MapFrame,
             "Identify" => VSpaceOperation::Identify,
             _ => VSpaceOperation::Unknown,
         }

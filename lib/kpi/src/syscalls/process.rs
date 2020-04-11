@@ -1,3 +1,5 @@
+//! Abstraction for system calls to do control the current process.
+
 use crate::io::*;
 use crate::*;
 

@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
+use kpi::process::FrameId;
 
 use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
 use crate::kcb::Kcb;
@@ -515,6 +516,8 @@ pub struct Ring3Process {
     pub executor_offset: VAddr,
     /// File descriptors for the opened file.
     pub fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]>,
+    /// Physical frame objects registered to the process.
+    pub frames: Vec<Frame>,
 }
 
 impl Ring3Process {
@@ -540,6 +543,7 @@ impl Ring3Process {
             executor_offset: VAddr::from(0x21_0000_0000usize),
             fds,
             pinfo: Default::default(),
+            frames: Vec::with_capacity(12),
         }
     }
 }
@@ -928,5 +932,11 @@ impl Process for Ring3Process {
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo {
         &self.pinfo
+    }
+
+    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError> {
+        self.frames.try_reserve(1)?;
+        self.frames.push(frame);
+        Ok(self.frames.len() - 1)
     }
 }

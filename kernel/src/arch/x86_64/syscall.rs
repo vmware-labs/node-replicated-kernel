@@ -2,6 +2,7 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
+use core::convert::TryInto;
 
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use x86::bits64::rflags;
@@ -168,7 +169,46 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
 
             Ok((gtid, eid))
         }
-        _ => Err(KError::InvalidProcessOperation { a: arg1 }),
+        ProcessOperation::AllocatePhysical => {
+            let page_size: usize = arg2.try_into().unwrap_or(0);
+            //let affinity: usize = arg3.try_into().unwrap_or(0);
+
+            // Validate input
+            if page_size != BASE_PAGE_SIZE && page_size != LARGE_PAGE_SIZE {
+                return Err(KError::InvalidSyscallArgument1 { a: arg2 });
+            }
+
+            let kcb = super::kcb::get_kcb();
+
+            // Figure out what memory to allocate
+            let (bp, lp) = if page_size == BASE_PAGE_SIZE {
+                (1, 0)
+            }
+            else {
+                (0,1)
+            };
+            crate::memory::KernelAllocator::try_refill_tcache(bp, lp)?;
+
+            // Allocate the page
+            let mut pmanager = kcb.mem_manager();
+            let frame = if page_size == BASE_PAGE_SIZE {
+                pmanager.allocate_base_page()?
+            }
+            else {
+                pmanager.allocate_large_page()?
+            };
+
+            // Associate memory with the process
+            let pid = kcb.current_pid()?;
+            let fid = nr::KernelNode::<Ring3Process>::allocate_frame_to_process(
+                pid,
+                frame,
+            )?;
+
+            Ok((fid as u64, frame.base.as_u64()))
+        },
+        ProcessOperation::SubscribeEvent => Err(KError::InvalidProcessOperation { a: arg1 }),
+        ProcessOperation::Unknown => Err(KError::InvalidProcessOperation { a: arg1 }),
     }
 }
 
@@ -245,6 +285,11 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                         MapAction::ReadWriteUser,
                     )
                 })
+            })
+        },
+        VSpaceOperation::MapFrame => unsafe {
+            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+                unreachable!()
             })
         },
         VSpaceOperation::Unmap => {

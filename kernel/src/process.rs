@@ -4,6 +4,8 @@ use alloc::string::{String, ToString};
 
 use custom_error::custom_error;
 
+use kpi::process::FrameId;
+
 use crate::arch::Module;
 use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;
@@ -27,6 +29,7 @@ pub ProcessError
     InvalidGlobalThreadId = "Specified an invalid core",
     ExecutorNoLongerValid = "The excutor was removed from the current core.",
     ExecutorAlreadyBorrowed = "The executor on the core was already borrowed (that's a bug).",
+    NotEnoughMemory = "Unable to reserve memory for internal process data-structures."
 }
 
 impl From<&str> for ProcessError {
@@ -34,6 +37,13 @@ impl From<&str> for ProcessError {
         ProcessError::UnableToLoad
     }
 }
+
+impl From<alloc::collections::TryReserveError> for ProcessError {
+    fn from(_err: alloc::collections::TryReserveError) -> Self {
+        ProcessError::NotEnoughMemory
+    }
+}
+
 
 /// Abstract definition of a process.
 pub trait Process {
@@ -62,6 +72,8 @@ pub trait Process {
     fn get_fd(&self, index: usize) -> &Fd;
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo;
+
+    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError>;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU

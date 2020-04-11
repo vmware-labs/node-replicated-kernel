@@ -55,9 +55,10 @@ impl NCache {
             frame.split_at_nearest_large_page_boundary();
 
         for base_page in low_frame.into_iter() {
-            self.base_page_addresses
-                .try_push(base_page.base)
-                .expect("Can't add base-page to NCache");
+            match self.base_page_addresses.try_push(base_page.base) {
+                Ok(_x) => continue,
+                Err(_e) => break,
+            }
         }
 
         // Add large-pages

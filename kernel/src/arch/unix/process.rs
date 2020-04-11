@@ -2,6 +2,8 @@
 use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut};
 
+use kpi::process::FrameId;
+
 use crate::arch::Module;
 use crate::fs::Fd;
 use crate::memory::{Frame, VAddr};
@@ -189,5 +191,9 @@ impl Process for UnixProcess {
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo {
         &self.pinfo
+    }
+
+    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError> {
+        Ok(0)
     }
 }

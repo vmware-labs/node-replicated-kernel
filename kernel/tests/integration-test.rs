@@ -1018,7 +1018,7 @@ fn redis_benchmark(nic: &'static str) -> Result<rexpect::session::PtySession> {
     let file_name = "redis_benchmark.csv";
     // write headers only to a new file
     let write_headers = !Path::new(file_name).exists();
-    let mut csv_file = OpenOptions::new()
+    let csv_file = OpenOptions::new()
         .append(true)
         .create(true)
         .open(file_name)
@@ -1130,6 +1130,61 @@ fn s06_redis_benchmark_e1000() {
         qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
         WaitStatus::Signaled(_, SIGTERM, _)
     );
+}
+
+#[test]
+fn s06_vmops_benchmark() {
+    let qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+        let mut p = spawn_bespin(
+            &RunnerArgs::new("test-userspace-smp")
+                .module("init")
+                .user_feature("bench-vmops")
+                .release()
+                .memory(8192)
+                .cores(with_cores)
+                .timeout(25_000),
+        )?;
+
+        // Parse lines like
+        // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
+        // write them to a CSV file
+        let expected_lines = with_cores * 11;
+        for _i in 0..expected_lines {
+            let (_prev, matched) =
+                p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+
+            // Append parsed results to a CSV file
+            let file_name = "vmops_benchmark.csv";
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+
+            let parts: Vec<&str> = matched.split("init::vmops: ").collect();
+            if write_headers {
+                let r = csv_file.write(
+                    "thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations\n"
+                        .as_bytes(),
+                );
+                assert!(r.is_ok());
+            }
+            let r = csv_file.write(parts[1].as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+        }
+
+        p.process.kill(SIGTERM)
+    };
+
+    for i in 1..7 {
+        assert_matches!(
+            qemu_run(i).unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+            WaitStatus::Signaled(_, SIGTERM, _)
+        );
+    }
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use core::ptr;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use log::{error, info};
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
@@ -6,7 +7,9 @@ use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
 use lineup::threads::ThreadId;
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
-fn maponly_bencher() {
+static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
+
+fn maponly_bencher(cores: usize) {
     use vibrio::io::*;
     use vibrio::syscalls::*;
 
@@ -20,58 +23,74 @@ fn maponly_bencher() {
     info!("start mapping at {:#x}", base);
 
     let mut vops = 0;
-    let mut iterations = 10;
-    while iterations > 0 {
+    let mut iteration = 0;
+    while iteration <= 10 {
         let start = rawtime::Instant::now();
         while start.elapsed().as_secs() < 1 {
             unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
             vops += 1;
             base += BASE_PAGE_SIZE as u64;
         }
-        info!("VMOPS {}", vops);
+        info!(
+            "{},maponly,{},{},{},{},{},{}",
+            Environment::tid().0,
+            Environment::scheduler().core_id,
+            cores,
+            4096,
+            10000,
+            iteration * 1000,
+            vops
+        );
         vops = 0;
-        iterations -= 1;
+        iteration += 1;
     }
 }
 
 pub fn bench() {
-    let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+    info!("thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations");
+
+    let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
-    for thread in threads {
-        if thread.id == 0 {
-            continue;
+    let mut maximum = 1; // We already have core 0
+    for hwthread in hwthreads.iter() {
+        if hwthread.id != 0 {
+            match vibrio::syscalls::Process::request_core(
+                hwthread.id,
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+            ) {
+                Ok(_) => {
+                    maximum += 1;
+                    continue;
+                }
+                Err(e) => {
+                    error!("Can't spawn on {:?}: {:?}", hwthread.id, e);
+                    break;
+                }
+            }
         }
-
-        let r = vibrio::syscalls::Process::request_core(
-            thread.id,
-            VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-        );
-        match r {
-            Ok(_ctoken) => {
-                s.spawn(
-                    32 * 4096,
-                    move |_| {
-                        maponly_bencher();
-                    },
-                    ptr::null_mut(),
-                    thread.id,
-                );
-            }
-            Err(_e) => {
-                error!("Failed to spawn to core {}", thread.id);
-            }
-        };
     }
+    info!("Spawned {} cores", maximum);
 
-    s.spawn(
-        32 * 4096,
-        move |_| unsafe {
-            maponly_bencher();
-        },
-        ptr::null_mut(),
-        0,
-    );
+    POOR_MANS_BARRIER.store(maximum, Ordering::SeqCst);
+
+    for hwthread in hwthreads.iter().take(maximum) {
+        s.spawn(
+            32 * 4096,
+            move |_| {
+                POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
+                while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
+                    core::sync::atomic::spin_loop_hint();
+                }
+
+                maponly_bencher(maximum);
+
+                POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
+            },
+            ptr::null_mut(),
+            hwthread.id,
+        );
+    }
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     loop {

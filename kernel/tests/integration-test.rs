@@ -820,10 +820,10 @@ fn s04_userspace_rumprt_net() {
 
         // Test that sendto works:
         // Used to swallow just the first packet (see also: https://github.com/rumpkernel/rumprun/issues/131)
-        // Update: Now on NetBSD v8 it swallows the first 6 packets
-        receiver.exp_string("pkt 6")?;
-        receiver.exp_string("pkt 7")?;
-        receiver.exp_string("pkt 8")?;
+        // Update: Now on NetBSD v8 it swallows the first 6-8 packets
+        receiver.exp_string("pkt 10")?;
+        receiver.exp_string("pkt 11")?;
+        receiver.exp_string("pkt 12")?;
 
         // Test that ping works:
         let mut ping = spawn_ping()?;
@@ -1164,10 +1164,9 @@ fn s06_vmops_benchmark() {
 
             let parts: Vec<&str> = matched.split("init::vmops: ").collect();
             if write_headers {
-                let r = csv_file.write(
-                    "thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations\n"
-                        .as_bytes(),
-                );
+                let row =
+                    "thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations\n";
+                let r = csv_file.write(row.as_bytes());
                 assert!(r.is_ok());
             }
             let r = csv_file.write(parts[1].as_bytes());

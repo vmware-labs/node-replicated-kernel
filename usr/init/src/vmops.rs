@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -8,6 +9,12 @@ use lineup::threads::ThreadId;
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
+
+unsafe extern "C" fn maponly_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
+    let cores = arg1 as usize;
+    maponly_bencher(cores);
+    ptr::null_mut()
+}
 
 fn maponly_bencher(cores: usize) {
     use vibrio::io::*;
@@ -22,6 +29,12 @@ fn maponly_bencher(cores: usize) {
     let size: u64 = BASE_PAGE_SIZE as u64;
     info!("start mapping at {:#x}", base);
 
+    // Synchronize with all cores
+    POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
+    while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
+        core::sync::atomic::spin_loop_hint();
+    }
+
     let mut vops = 0;
     let mut iteration = 0;
     while iteration <= 10 {
@@ -32,8 +45,7 @@ fn maponly_bencher(cores: usize) {
             base += BASE_PAGE_SIZE as u64;
         }
         info!(
-            "{},maponly,{},{},{},{},{},{}",
-            Environment::tid().0,
+            "{},maponly,{},{},{},{},{}",
             Environment::scheduler().core_id,
             cores,
             4096,
@@ -44,6 +56,8 @@ fn maponly_bencher(cores: usize) {
         vops = 0;
         iteration += 1;
     }
+
+    POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
 }
 
 pub fn bench() {
@@ -72,28 +86,39 @@ pub fn bench() {
     }
     info!("Spawned {} cores", maximum);
 
-    POOR_MANS_BARRIER.store(maximum, Ordering::SeqCst);
+    s.spawn(
+        32 * 4096,
+        move |_| {
+            // use `for idx in 1..maximum+1` to run over all cores
+            // currently we'll run out of 4 KiB frames
+            for idx in maximum..maximum + 1 {
+                let mut thandles = Vec::with_capacity(idx);
+                // Set up barrier
+                POOR_MANS_BARRIER.store(idx, Ordering::SeqCst);
 
-    for hwthread in hwthreads.iter().take(maximum) {
-        s.spawn(
-            32 * 4096,
-            move |_| {
-                POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
-                while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
-                    core::sync::atomic::spin_loop_hint();
+                for core_id in 0..idx {
+                    thandles.push(
+                        Environment::thread()
+                            .spawn_on_core(
+                                Some(maponly_bencher_trampoline),
+                                idx as *mut u8,
+                                core_id,
+                            )
+                            .expect("Can't spawn bench thread?"),
+                    );
                 }
 
-                maponly_bencher(maximum);
-
-                POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
-            },
-            ptr::null_mut(),
-            hwthread.id,
-        );
-    }
+                for thandle in thandles {
+                    Environment::thread().join(thandle);
+                }
+            }
+        },
+        ptr::null_mut(),
+        0,
+    );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
-    loop {
+    while s.has_active_threads() {
         s.run(&scb);
     }
 }

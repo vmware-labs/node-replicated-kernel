@@ -79,43 +79,36 @@ fn scheduler_smp_test() {
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
 
     for thread in threads {
-        if thread.id == 0 {
-            continue;
+        if thread.id != 0 {
+            let r = vibrio::syscalls::Process::request_core(
+                thread.id,
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+            );
+            match r {
+                Ok(ctoken) => {
+                    info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                }
+                Err(_e) => {
+                    panic!("Failed to spawn to core {}", thread.id);
+                    continue;
+                }
+            }
         }
 
-        let r = vibrio::syscalls::Process::request_core(
-            thread.id,
-            VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-        );
-        match r {
-            Ok(_ctoken) => {
-                s.spawn(
-                    32 * 4096,
-                    move |_| {
-                        info!(
-                            "Hello from core {}",
-                            lineup::tls2::Environment::scheduler().core_id
-                        );
-                    },
-                    ptr::null_mut(),
-                    thread.id,
+        s.spawn(
+            32 * 4096,
+            move |_| {
+                info!(
+                    "Hello from core {}",
+                    lineup::tls2::Environment::scheduler().core_id
                 );
-            }
-            Err(_e) => {
-                error!("Failed to spawn to core {}", thread.id);
-            }
-        };
+            },
+            ptr::null_mut(),
+            thread.id,
+        );
     }
 
-    s.spawn(
-        32 * 4096,
-        move |_| unsafe {
-            info!("Hello from t1");
-        },
-        ptr::null_mut(),
-        0,
-    );
-
+    // Run scheduler on core 0
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     loop {
         s.run(&scb);

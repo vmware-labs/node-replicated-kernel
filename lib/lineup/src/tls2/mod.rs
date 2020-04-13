@@ -87,7 +87,7 @@ pub struct ThreadControlBlock<'a> {
 
 impl<'a> ThreadControlBlock<'a> {
     pub unsafe fn new_tls_area() -> *mut ThreadControlBlock<'a> {
-        let mut ts_template = ThreadControlBlock {
+        let ts_template = ThreadControlBlock {
             tcb_myself: ptr::null_mut(),
             tcb_dtv: ptr::null(),
             tcb_pthread: ptr::null_mut(),
@@ -140,6 +140,19 @@ impl<'a> ThreadControlBlock<'a> {
         }
     }
 
+    pub fn spawn_on_core(
+        &self,
+        f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
+        arg: *mut u8,
+        core_id: CoreId,
+    ) -> Option<ThreadId> {
+        let request = YieldRequest::Spawn(f, arg, core_id);
+        match self.yielder().suspend(request) {
+            YieldResume::Spawned(tid) => Some(tid),
+            _ => None,
+        }
+    }
+
     pub fn spawn(
         &self,
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
@@ -174,6 +187,11 @@ impl<'a> ThreadControlBlock<'a> {
 
     pub fn make_unrunnable(&self, tid: ThreadId) {
         let request = YieldRequest::Unrunnable(tid);
+        self.yielder().suspend(request);
+    }
+
+    pub fn join(&self, tid: ThreadId) {
+        let request = YieldRequest::JoinOn(tid);
         self.yielder().suspend(request);
     }
 
@@ -236,6 +254,7 @@ impl SchedulerControlBlock {
 pub struct Environment {}
 
 impl Environment {
+    #[cfg(target_os = "bespin")]
     pub fn tid() -> ThreadId {
         unsafe {
             let tcb = x86::current::segmentation::fs_deref() as *const ThreadControlBlock;
@@ -244,10 +263,29 @@ impl Environment {
         }
     }
 
+    #[cfg(target_family = "unix")]
+    pub fn tid() -> ThreadId {
+        unsafe {
+            let tcb = arch::get_tcb() as *mut ThreadControlBlock;
+            assert!(!tcb.is_null(), "Don't have TCB available?");
+            (*tcb).tid
+        }
+    }
+
     // TODO(correctness): this needs some hardending to avoid aliasing of ThreadState!
+    #[cfg(target_os = "bespin")]
     pub fn thread<'a>() -> &'a mut ThreadControlBlock<'static> {
         unsafe {
             let tcb = x86::current::segmentation::fs_deref() as *mut ThreadControlBlock;
+            assert!(!tcb.is_null(), "Don't have TCB available?");
+            &mut *tcb
+        }
+    }
+
+    #[cfg(target_family = "unix")]
+    pub fn thread<'a>() -> &'a mut ThreadControlBlock<'static> {
+        unsafe {
+            let tcb = arch::get_tcb() as *mut ThreadControlBlock;
             assert!(!tcb.is_null(), "Don't have TCB available?");
             &mut *tcb
         }

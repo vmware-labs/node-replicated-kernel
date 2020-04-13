@@ -2,6 +2,7 @@
 //!
 //! Super meta since we use posix/thread_local to
 //! implement it.
+use core::alloc::Layout;
 use core::cell::Cell;
 use core::{mem, ptr};
 

@@ -1,10 +1,10 @@
 use alloc::vec::Vec;
 use core::fmt;
 use core::hash::{Hash, Hasher};
-use core::ptr;
 use core::mem;
+use core::ptr;
 
-use fringe::generator::{Yielder, Generator};
+use fringe::generator::{Generator, Yielder};
 use rawtime::Instant;
 
 use crate::stack::LineupStack;
@@ -36,6 +36,9 @@ pub(crate) struct Thread {
     pub(crate) id: ThreadId,
     pub(crate) affinity: CoreId,
     pub(crate) return_with: Option<YieldResume>,
+
+    /// Threads currently waiting (join, blocked) on us to exit.
+    pub(crate) joinlist: Vec<(ThreadId, CoreId)>,
 
     /// Storage to remember the pointer to the TCB
     ///
@@ -81,21 +84,23 @@ impl Thread {
         F: 'static + FnOnce(*mut u8) + Send,
     {
         // Finish initalization of TCB (except for yielder, see generator)
-        unsafe {
-            (*tcb).tid = tid;
-            (*tcb).current_core = affinity;
-            (*tcb).upcalls = upcalls;
-        }
+        (*tcb).tid = tid;
+        (*tcb).current_core = affinity;
+        (*tcb).upcalls = upcalls;
 
         let thread = Thread {
             id: tid,
             affinity,
             return_with: None,
+            joinlist: Vec::with_capacity(crate::scheduler::SmpScheduler::MAX_THREADS),
             state: tcb,
         };
 
         let generator = Generator::unsafe_new(stack, move |yielder, _| {
-            tls2::Environment::thread().yielder = Some(mem::transmute::<&Yielder<YieldResume, YieldRequest>, &'static Yielder<YieldResume, YieldRequest>>(yielder));
+            tls2::Environment::thread().yielder = Some(mem::transmute::<
+                &Yielder<YieldResume, YieldRequest>,
+                &'static Yielder<YieldResume, YieldRequest>,
+            >(yielder));
 
             // rump lwp switchproc stuff here
             let r = f(arg);
@@ -127,6 +132,8 @@ pub(crate) enum YieldRequest {
     Unrunnable(ThreadId),
     /// Make everything in the given list runnable.
     RunnableList(Vec<ThreadId>),
+    /// Wait until the thread with given ID is finished.
+    JoinOn(ThreadId),
     /// Spawn a new thread that runs the provided function and argument.
     Spawn(
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
@@ -139,7 +146,7 @@ pub(crate) enum YieldRequest {
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
         CoreId,
-        *mut ThreadControlBlock<'static>
+        *mut ThreadControlBlock<'static>,
     ),
 }
 

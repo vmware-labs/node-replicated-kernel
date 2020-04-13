@@ -208,10 +208,21 @@ impl<'a> SmpScheduler<'a> {
             None => {
                 trace!("Thread {} has terminated.", tid);
                 self.mark_unrunnable(tid, affinity);
-                self.threads
+                let thread = self
+                    .threads
                     .lock()
                     .remove(&tid)
                     .expect("Can't remove thread?");
+
+                // Wake up all the waiters
+                for (sleeping_tid, sleeping_affinity) in thread.joinlist {
+                    log::debug!(
+                        "{} will return from join on core {}",
+                        sleeping_tid,
+                        sleeping_affinity
+                    );
+                    self.mark_runnable(sleeping_tid, sleeping_affinity);
+                }
                 YieldResume::DoNotResume
             }
             Some(YieldRequest::None) => {
@@ -276,6 +287,31 @@ impl<'a> SmpScheduler<'a> {
                 self.waitlist_insert(tid, affinity, until);
                 // Already popped from running, force context switch
                 YieldResume::Interrupted
+            }
+            Some(YieldRequest::JoinOn(wait_on_tid)) => {
+                trace!(
+                    "The thread #{:?} is waiting for #{:?} to complete.",
+                    tid,
+                    wait_on_tid
+                );
+
+                match self.threads.lock().get_mut(&wait_on_tid) {
+                    // If we find `wait_on_tid` in self.threads, put ourselves
+                    // on its thread join-waitlist
+                    Some(running_thread) => {
+                        running_thread.joinlist.push((tid, affinity));
+                        // Return interrupted to force a context switch
+                        // We will be woken up again in the thread exit
+                        // logic (e.g., the None arm above)
+                        //self.mark_unrunnable(tid, affinity);
+                        YieldResume::Interrupted
+                    }
+                    // If we don't find wait_on_tid, thread has already
+                    // exited, (note this implementation means we'll never
+                    // reuse thread ids because otherwise we would have
+                    // a race here)
+                    None => YieldResume::Completed,
+                }
             }
             Some(YieldRequest::Spawn(function, arg, affinity)) => {
                 trace!("self.spawn {:?} {:p}", function, arg);
@@ -373,7 +409,7 @@ impl<'a> SmpScheduler<'a> {
                         .generators
                         .lock()
                         .remove(&tid)
-                        .expect("Can't find thread state?");
+                        .expect("Can't find generator thread state?");
 
                     let mut resume_action: YieldResume = {
                         let thread_map = self.threads.lock();
@@ -389,11 +425,11 @@ impl<'a> SmpScheduler<'a> {
                     // Run the thread until `handle_yield_request` decides on a context-switch
                     // or the thread is done:
                     loop {
-                        trace!("generator.resume = {:?}", resume_action);
+                        trace!("{:?} generator.resume = {:?}", tid, resume_action);
                         let yielded_with = generator.resume(resume_action);
                         trace!("yielded_with = {:?}", yielded_with);
                         resume_action = self.handle_yield_request(tid, yielded_with);
-                        trace!("resume_action = {:?}", resume_action);
+                        trace!("{:?} resume_action = {:?}", tid, resume_action);
                         if resume_action == YieldResume::Interrupted {
                             // If we're not done we need to put the generator back:
                             self.generators.lock().insert(tid, generator);
@@ -413,6 +449,13 @@ impl<'a> SmpScheduler<'a> {
                         }
                         if resume_action == YieldResume::DoNotResume {
                             // We're done with this thread for good
+                            trace!("TODO: dropping generator for {}", tid);
+                            // TODO(memory-reclamation): Ideally we would just drop the generator here,
+                            // but that fails our `joining` test below (sigmem).
+                            // Ideally all stack references are gone so I couldn't figure
+                            // out exactly why we can't just let go of it here.
+                            // Needs some more investigation.
+                            self.generators.lock().insert(tid, generator);
                             break;
                         }
                     }
@@ -515,6 +558,126 @@ mod tests {
         );
     }
 
+    /// Checks that threads can join on other threads.
+    /// (In passing this also checks parameter passing to new threads)
+    #[test]
+    fn joining() {
+        use crossbeam_queue::SegQueue;
+        let _r = env_logger::try_init();
+
+        let end_times: Arc<SegQueue<ThreadId>> = Arc::new(SegQueue::new());
+        let et1 = end_times.clone();
+
+        // Create a scheduler and reference to it
+        let s: Arc<SmpScheduler> = Arc::new(Default::default());
+        let s1 = s.clone();
+        let s2 = s.clone();
+
+        unsafe extern "C" fn do_nothing(arg: *mut u8) -> *mut u8 {
+            let et: Arc<SegQueue<ThreadId>> = Arc::from_raw(arg as *const SegQueue<_>);
+            et.push(Environment::tid());
+            ptr::null_mut()
+        }
+
+        unsafe extern "C" fn spawn_more(arg: *mut u8) -> *mut u8 {
+            let et: Arc<SegQueue<ThreadId>> = Arc::from_raw(arg as *const SegQueue<_>);
+
+            let mut handles = vec![];
+            for i in 0..3 {
+                handles.push(
+                    Environment::thread()
+                        .spawn_on_core(
+                            Some(do_nothing),
+                            Arc::into_raw(et.clone()) as *const _ as *mut u8,
+                            i % 2,
+                        )
+                        .unwrap(),
+                );
+            }
+
+            for handle in handles {
+                Environment::thread().join(handle);
+            }
+
+            et.push(Environment::tid());
+            ptr::null_mut()
+        }
+
+        // Spawn a thread that spawns a bunch more threads
+        // and waits until they all exit.
+        s.spawn(
+            DEFAULT_STACK_SIZE_BYTES,
+            move |_| {
+                for i in 0..3 {
+                    let handle = Environment::thread().spawn_on_core(
+                        Some(spawn_more),
+                        Arc::into_raw(et1.clone()) as *const _ as *mut u8,
+                        i % 2,
+                    );
+                    Environment::thread().join(handle.expect("Didn't get a handle lol"));
+                }
+                et1.push(Environment::tid());
+            },
+            ptr::null_mut(),
+            0,
+        );
+
+        // Spawn two pthreads each will dispatch lineup threads from "two cores"
+        // to test concurrency
+        let t1 = thread::spawn(move || {
+            let scb1: SchedulerControlBlock = SchedulerControlBlock::new(0);
+            let start = Instant::now();
+            while start.elapsed().as_secs() < 2 {
+                s1.run(&scb1);
+            }
+        });
+
+        let t2 = thread::spawn(move || {
+            let scb2: SchedulerControlBlock = SchedulerControlBlock::new(1);
+            let start = Instant::now();
+            while start.elapsed().as_secs() < 2 {
+                s2.run(&scb2);
+            }
+        });
+        let _r = t1.join();
+        let _r = t2.join();
+
+        // The join invariant for tids should be (a -> b = a finishes before b):
+        // [ [#2, #3, #4] -> #1 ->
+        //   [#6, #7, #8] -> #5 ->
+        //   [#10, #11, #12] -> #9 -> # 0 ]
+        assert_eq!(end_times.len(), 13);
+
+        let mut group = [
+            end_times.pop().unwrap(),
+            end_times.pop().unwrap(),
+            end_times.pop().unwrap(),
+        ];
+        group.sort();
+        assert_eq!(group, [ThreadId(2), ThreadId(3), ThreadId(4)]);
+        assert_eq!(end_times.pop().unwrap(), ThreadId(1));
+
+        let mut group = [
+            end_times.pop().unwrap(),
+            end_times.pop().unwrap(),
+            end_times.pop().unwrap(),
+        ];
+        group.sort();
+        assert_eq!(group, [ThreadId(6), ThreadId(7), ThreadId(8)]);
+        assert_eq!(end_times.pop().unwrap(), ThreadId(5));
+
+        let mut group = [
+            end_times.pop().unwrap(),
+            end_times.pop().unwrap(),
+            end_times.pop().unwrap(),
+        ];
+        group.sort();
+        assert_eq!(group, [ThreadId(10), ThreadId(11), ThreadId(12)]);
+        assert_eq!(end_times.pop().unwrap(), ThreadId(9));
+
+        assert_eq!(end_times.pop().unwrap(), ThreadId(0));
+    }
+
     /// Checks that the scheduler can run in parallel.
     ///
     /// Running two long computations on two cores shouldn't take
@@ -562,7 +725,7 @@ mod tests {
             1,
         );
 
-        // Spawn two pthreads each will dispatch lineup threads from "core 0"
+        // Spawn two pthreads each will dispatch lineup threads from "two cores"
         // to test concurrency
         let pstart = Instant::now();
         let t1 = thread::spawn(move || {

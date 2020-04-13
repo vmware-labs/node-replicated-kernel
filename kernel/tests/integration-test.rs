@@ -778,6 +778,7 @@ fn s04_userspace_multicore() {
     let cmdline = RunnerArgs::new("test-userspace-smp")
         .user_features(&["test-scheduler-smp"])
         .cores(NUM_CORES)
+        .memory(18192)
         .timeout(25_000);
     let mut output = String::new();
 

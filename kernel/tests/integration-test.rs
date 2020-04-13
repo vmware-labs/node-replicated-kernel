@@ -778,7 +778,7 @@ fn s04_userspace_multicore() {
     let cmdline = RunnerArgs::new("test-userspace-smp")
         .user_features(&["test-scheduler-smp"])
         .cores(NUM_CORES)
-        .memory(18192)
+        .memory(2048)
         .timeout(25_000);
     let mut output = String::new();
 
@@ -791,11 +791,13 @@ fn s04_userspace_multicore() {
             output += r.1.as_str();
         }
 
-        output += p.exp_eof()?.as_str();
-        p.process.exit()
+        p.process.kill(SIGTERM)
     };
 
-    check_for_successful_exit(&cmdline, qemu_run(), output);
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Signaled(_, SIGTERM, _)
+    );
 }
 
 /// Tests that user-space networking is functional.

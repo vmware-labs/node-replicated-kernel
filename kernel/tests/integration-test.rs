@@ -1141,8 +1141,8 @@ fn s06_vmops_benchmark() {
         let cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
-            .memory(18192)
-            .timeout(18_000)
+            .memory(10_000)
+            .timeout(18_000 + cores as u64 * 3000)
             .cores(cores)
             .release();
         let mut output = String::new();

@@ -3,9 +3,11 @@ use serde::{Deserialize, Serialize};
 
 pub type FrameId = usize;
 
+#[derive(Debug)]
 pub struct CoreToken(usize);
 
 impl CoreToken {
+    #[allow(unused)]
     pub(crate) fn from(ret: u64) -> Self {
         CoreToken(ret.try_into().unwrap())
     }

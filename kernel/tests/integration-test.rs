@@ -1134,7 +1134,7 @@ fn s06_redis_benchmark_e1000() {
 
 #[test]
 fn s06_vmops_benchmark() {
-    for cores in 1..12 {
+    for cores in 1..=12 {
         let cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")

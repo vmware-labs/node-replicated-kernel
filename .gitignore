@@ -27,9 +27,14 @@ public
 # Build/test artefacts
 proptest-regressions
 redis_benchmark.csv
+vmops_benchmark.csv
 vspace.dot
 vspace.dot.svg
 out.log
+*.pdf
+*.png
+*.img
+*.iso
 
 # RLS logs
 rls*.log

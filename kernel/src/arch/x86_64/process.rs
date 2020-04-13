@@ -367,6 +367,10 @@ impl Ring3Executor {
     const INIT_STACK_SIZE: usize = 24 * BASE_PAGE_SIZE;
     /// Size of the upcall signal stack for the dispatcher.
     const UPCALL_STACK_SIZE: usize = 24 * BASE_PAGE_SIZE;
+    /// Total memory consumption (in a process' vspace) that the executor uses.
+    /// (2 stacks plus the VirtualCpu struct.)
+    const EXECUTOR_SPACE_REQUIREMENT: usize =
+        Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE + BASE_PAGE_SIZE;
 
     fn new(
         process: &Ring3Process,
@@ -458,7 +462,7 @@ impl Executor for Ring3Executor {
     fn new_core_upcall(&self) -> Ring3Resumer {
         self.maybe_switch_vspace();
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
-        info!("ENTRY POINT IS {:#x}", entry_point);
+        trace!("Added core entry point is at {:#x}", entry_point);
         let cpu_ctl = self.vcpu().vaddr().as_u64();
 
         Ring3Resumer::new_upcall(
@@ -802,13 +806,13 @@ impl Process for Ring3Process {
         &mut self,
         for_region: topology::NodeId,
     ) -> Result<Box<Ring3Executor>, ProcessError> {
-        info!("get executor {}", for_region);
         match &mut self.executor_cache[for_region as usize] {
             Some(ref mut executor_list) => {
                 let ret = executor_list
                     .pop()
-                    .ok_or(ProcessError::ExecutorCacheExhausted);
-                ret
+                    .ok_or(ProcessError::ExecutorCacheExhausted)?;
+                info!("get executor {} with affinity {}", ret.eid, for_region);
+                Ok(ret)
             }
             None => Err(ProcessError::NoExecutorAllocated),
         }
@@ -838,8 +842,11 @@ impl Process for Ring3Process {
             );
         }
 
-        let executor_space_requirement =
-            Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE + BASE_PAGE_SIZE;
+        debug!(
+            "Ring3Executor::EXECUTOR_SPACE_REQUIREMENT = {}",
+            Ring3Executor::EXECUTOR_SPACE_REQUIREMENT
+        );
+        let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
 
         let mut cur_paddr_offset = memory.base;
@@ -879,9 +886,10 @@ impl Process for Ring3Process {
         }
 
         debug!(
-            "created allocators in {:#x} -- {:#x}",
+            "Created allocators in {:#x} -- {:#x} (we now have {} in total)",
             self.executor_offset,
-            self.executor_offset + memory.size()
+            self.executor_offset + memory.size(),
+            self.current_eid
         );
 
         self.executor_offset += memory.size();

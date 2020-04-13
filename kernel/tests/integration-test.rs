@@ -357,7 +357,7 @@ fn check_for_exit(expected: ExitStatus, args: &RunnerArgs, r: Result<WaitStatus>
             .collect::<Vec<String>>()
             .join(" ");
 
-        println!("We invoked: bash {}", quoted_cmd);
+        println!("We invoked: python3 {}", quoted_cmd);
     }
 
     match r {
@@ -769,28 +769,28 @@ fn s03_userspace_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Tests the lineup scheduler multi-core ability.
+///
+/// Makes sure we can request cores and spawn threads on said cores.
 #[test]
-fn s03_userspace_smp() {
+fn s04_userspace_multicore() {
+    const NUM_CORES: usize = 56;
     let cmdline = RunnerArgs::new("test-userspace-smp")
-        .user_features(&[
-            "test-print",
-            "test-map",
-            "test-alloc",
-            "test-upcall",
-            "test-scheduler",
-        ])
-        .cores(4);
+        .user_features(&["test-scheduler-smp"])
+        .cores(NUM_CORES)
+        .timeout(25_000);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
 
-        p.exp_string("print_test OK")?;
-        p.exp_string("upcall_test OK")?;
-        p.exp_string("map_test OK")?;
-        p.exp_string("alloc_test OK")?;
-        p.exp_string("scheduler_test OK")?;
-        output = p.exp_eof()?;
+        for _i in 0..NUM_CORES {
+            let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
+            output += r.0.as_str();
+            output += r.1.as_str();
+        }
+
+        output += p.exp_eof()?.as_str();
         p.process.exit()
     };
 
@@ -1006,7 +1006,7 @@ fn redis_benchmark(nic: &'static str) -> Result<rexpect::session::PtySession> {
     redis_client.exp_string("\"")?;
 
     redis_client.exp_string("\"GET\",\"")?;
-    let (line, get_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
+    let (_line, get_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
     redis_client.exp_string("\"")?;
 
     let ping_tput: f64 = ping_tput.parse().unwrap_or(404.0);
@@ -1134,55 +1134,58 @@ fn s06_redis_benchmark_e1000() {
 
 #[test]
 fn s06_vmops_benchmark() {
-    let qemu_run = |with_cores: usize| -> Result<WaitStatus> {
-        let mut p = spawn_bespin(
-            &RunnerArgs::new("test-userspace-smp")
-                .module("init")
-                .user_feature("bench-vmops")
-                .release()
-                .memory(8192)
-                .cores(with_cores)
-                .timeout(25_000),
-        )?;
+    for cores in 1..12 {
+        let cmdline = RunnerArgs::new("test-userspace-smp")
+            .module("init")
+            .user_feature("bench-vmops")
+            .memory(8192)
+            .timeout(18_000)
+            .cores(cores)
+            .release();
+        let mut output = String::new();
 
-        // Parse lines like
-        // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
-        // write them to a CSV file
-        let expected_lines = with_cores * 11;
-        for _i in 0..expected_lines {
-            let (_prev, matched) =
-                p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+        let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+            let mut p = spawn_bespin(&cmdline)?;
 
-            // Append parsed results to a CSV file
-            let file_name = "vmops_benchmark.csv";
-            let write_headers = !Path::new(file_name).exists();
-            let mut csv_file = OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(file_name)
-                .expect("Can't open file");
+            // Parse lines like
+            // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
+            // write them to a CSV file
+            let expected_lines = with_cores * 11;
+            for _i in 0..expected_lines {
+                let (prev, matched) =
+                    p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+                output += prev.as_str();
+                output += matched.as_str();
 
-            let parts: Vec<&str> = matched.split("init::vmops: ").collect();
-            if write_headers {
-                let row =
-                    "thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations\n";
-                let r = csv_file.write(row.as_bytes());
+                // Append parsed results to a CSV file
+                let file_name = "vmops_benchmark.csv";
+                let write_headers = !Path::new(file_name).exists();
+                let mut csv_file = OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(file_name)
+                    .expect("Can't open file");
+                if write_headers {
+                    let row =
+                        "git_rev,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
+                    let r = csv_file.write(row.as_bytes());
+                    assert!(r.is_ok());
+                }
+
+                let parts: Vec<&str> = matched.split("init::vmops: ").collect();
+                let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write(parts[1].as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write("\n".as_bytes());
                 assert!(r.is_ok());
             }
-            let r = csv_file.write(parts[1].as_bytes());
-            assert!(r.is_ok());
-            let r = csv_file.write("\n".as_bytes());
-            assert!(r.is_ok());
-        }
 
-        p.process.kill(SIGTERM)
-    };
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
 
-    for i in 1..7 {
-        assert_matches!(
-            qemu_run(i).unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-            WaitStatus::Signaled(_, SIGTERM, _)
-        );
+        check_for_successful_exit(&cmdline, qemu_run(cores), output);
     }
 }
 

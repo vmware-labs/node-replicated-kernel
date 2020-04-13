@@ -449,13 +449,7 @@ impl<'a> SmpScheduler<'a> {
                         }
                         if resume_action == YieldResume::DoNotResume {
                             // We're done with this thread for good
-                            trace!("TODO: dropping generator for {}", tid);
-                            // TODO(memory-reclamation): Ideally we would just drop the generator here,
-                            // but that fails our `joining` test below (sigmem).
-                            // Ideally all stack references are gone so I couldn't figure
-                            // out exactly why we can't just let go of it here.
-                            // Needs some more investigation.
-                            self.generators.lock().insert(tid, generator);
+                            trace!("Dropping generator for {}", tid);
                             break;
                         }
                     }

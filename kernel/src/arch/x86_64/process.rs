@@ -922,8 +922,8 @@ impl Process for Ring3Process {
         MAX_FILES_PER_PROCESS + 1
     }
 
-    fn get_fd(&mut self, index: usize) -> &mut Fd {
-        self.fds[index].as_mut().unwrap()
+    fn get_fd(&self, index: usize) -> &Fd {
+        self.fds[index].as_ref().unwrap()
     }
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo {

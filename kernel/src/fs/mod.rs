@@ -83,7 +83,7 @@ pub trait FileSystem {
         buffer: &mut UserSlice,
         offset: i64,
     ) -> Result<usize, FileSystemError>;
-    fn lookup(&self, pathname: &str) -> (bool, Option<Arc<Mnode>>);
+    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
     fn file_info(&self, mnode: Mnode) -> FileInfo;
     fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
 }
@@ -221,11 +221,10 @@ impl FileSystem for MemFS {
     }
 
     /// Check if a file exists in the file system or not.
-    fn lookup(&self, pathname: &str) -> (bool, Option<Arc<Mnode>>) {
-        match self.files.get(&pathname.to_string()) {
-            Some(mnode) => (true, Some(Arc::clone(mnode))),
-            None => (false, None),
-        }
+    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
+        self.files
+            .get(&pathname.to_string())
+            .map(|mnode| Arc::clone(mnode))
     }
 
     /// Find the size and type by giving the mnode number.

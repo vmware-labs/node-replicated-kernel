@@ -249,8 +249,8 @@ pub(crate) unsafe fn syscall_6_2(
     let ret: u64;
     let ret2: u64;
     asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
-                   : "{rax}" (arg0), "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3),
-                     "{r10}" (arg4), "{r8}" (arg5)
+                   : "{rdi}" (arg0), "{rsi}" (arg1), "{rdx}" (arg2), "{r10}" (arg3),
+                     "{r8}" (arg4), "{r9}" (arg5)
                    : "rcx", "r11", "memory"
                    : "volatile");
     (ret, ret2)

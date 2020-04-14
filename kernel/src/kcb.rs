@@ -7,6 +7,7 @@ use logos::Logos;
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
+use crate::fs::{FileSystem, MemFS};
 use crate::memory::{tcache::TCache, GlobalMemory};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
@@ -141,6 +142,10 @@ pub struct Kcb<A> {
     /// this is a hack remove once custom allocators land).
     allocation_affinity: topology::NodeId,
 
+    /// A dummy in-memory file system to test the memory
+    /// system and file system operations with NR.
+    pub memfs: Option<MemFS>,
+
     pub print_buffer: Option<String>,
 }
 
@@ -164,6 +169,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             // memory allocations:
             gmanager: None,
             pmanager: None,
+            memfs: None,
             print_buffer: None,
         }
     }
@@ -214,6 +220,13 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn kernel_binary(&self) -> &'static [u8] {
         self.kernel_binary
+    }
+
+    /// Initialized the dummy file-system to measure the write() system call
+    /// overhead. Accessing the memfs in multiple threads is unsafe.
+    pub fn init_memfs(&mut self) {
+        self.memfs = Some(Default::default());
+        let _result = self.memfs.as_mut().unwrap().create("bespin", 0x007);
     }
 }
 

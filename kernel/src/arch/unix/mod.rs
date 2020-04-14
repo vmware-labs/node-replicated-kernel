@@ -73,6 +73,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
 
     kcb::init_kcb(Box::leak(kcb));
     debug!("Memory allocation should work at this point...");
+    kcb::get_kcb().init_memfs();
 
     info!(
         "Started at {} with {:?} since CPU startup",

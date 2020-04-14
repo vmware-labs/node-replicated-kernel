@@ -259,7 +259,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     // Signals to BSP core that we're done initializing.
     initialized.store(true, Ordering::SeqCst);
-    let mut o = alloc::vec::Vec::with_capacity(2);
 
     loop {
         use crate::nr;
@@ -268,14 +267,12 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         let replica = kcb.arch.replica.as_ref().expect("Replica not set");
 
         // Get an executor
-        replica.execute_ro(
+        let response = replica.execute_ro(
             nr::ReadOps::CurrentExecutor(thread.id),
             kcb.arch.replica_idx,
         );
-        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-        debug_assert_eq!(o.len(), 1, "Should get reply");
 
-        match &o[0] {
+        match &response {
             Ok(nr::NodeResult::Executor(executor)) => {
                 use alloc::sync::Weak;
                 let no = kcb
@@ -295,7 +292,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
             Err(crate::error::KError::NoExecutorForCore) => { /* continue, but clear o */ }
             _ => unsafe { x86::halt() },
         };
-        o.clear();
     }
 }
 
@@ -640,6 +636,11 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_global_memory(&global_memory_static);
         let tcache = tcache::TCache::new(0, 0);
         kcb.set_physical_memory_manager(tcache);
+    }
+
+    {
+        let kcb = kcb::get_kcb();
+        kcb.init_memfs();
     }
 
     // Set-up interrupt routing drivers (I/O APIC controllers)

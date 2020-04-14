@@ -25,6 +25,7 @@ use crate::process::{Eid, Executor, Pid, Process, ProcessError};
 pub enum ReadOps {
     CurrentExecutor(topology::GlobalThreadId),
     ProcessInfo(Pid),
+    FileRead(Pid, FD, Buffer, Len, Offset),
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -51,7 +52,6 @@ pub enum Op {
     MemUnmap,
     MemResolve(Pid, VAddr),
     FileOpen(Pid, Filename, Flags, Modes),
-    FileRead(Pid, FD, Buffer, Len, Offset),
     FileWrite(Pid, FD, Buffer, Len, Offset),
     FileClose(Pid, FD),
     FileInfo(Pid, Filename, u64),
@@ -118,13 +118,9 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
+                let response = replica.execute(Op::MemResolve(pid, base), kcb.arch.replica_idx);
 
-                replica.execute(Op::MemResolve(pid, base), kcb.arch.replica_idx);
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get reply");
-
-                match o[0] {
+                match response {
                     Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
                     _ => unreachable!("Got unexpected response"),
                 }
@@ -141,13 +137,10 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
+                let response =
+                    replica.execute(Op::MemMapDevice(pid, frame, action), kcb.arch.replica_idx);
 
-                replica.execute(Op::MemMapDevice(pid, frame, action), kcb.arch.replica_idx);
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get reply");
-
-                match o[0] {
+                match response {
                     Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
                     _ => unreachable!("Got unexpected response"),
                 }
@@ -165,24 +158,19 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-
                 let mut virtual_offset = 0;
                 for frame in frames {
-                    replica.execute(
+                    let response = replica.execute(
                         Op::MemMapFrame(pid, base + virtual_offset, frame, action),
                         kcb.arch.replica_idx,
                     );
-                    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                    debug_assert_eq!(o.len(), 1, "Should get a reply?");
 
-                    match o[0] {
+                    match response {
                         Ok(NodeResult::Mapped) => {}
                         _ => unreachable!("Got unexpected response"),
                     };
 
                     virtual_offset += frame.size();
-                    o.clear();
                 }
 
                 Ok((base.as_u64(), virtual_offset as u64))
@@ -195,16 +183,12 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-                replica.execute(
+                let response = replica.execute(
                     Op::FileOpen(pid, pathname, flags, modes),
                     kcb.arch.replica_idx,
                 );
 
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                match &o[0] {
+                match &response {
                     Ok(NodeResult::FileOpened(fd)) => Ok((*fd, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
@@ -218,13 +202,9 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-                replica.execute(Op::FileClose(pid, fd), kcb.arch.replica_idx);
+                let response = replica.execute(Op::FileClose(pid, fd), kcb.arch.replica_idx);
 
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                match &o[0] {
+                match &response {
                     Ok(NodeResult::FileClosed(0)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
@@ -246,16 +226,12 @@ impl<P: Process> KernelNode<P> {
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| match op {
                 FileOperation::Read | FileOperation::ReadAt => {
-                    let mut o = vec![];
-                    replica.execute(
-                        Op::FileRead(pid, fd, buffer, len, offset),
+                    let response = replica.execute_ro(
+                        ReadOps::FileRead(pid, fd, buffer, len, offset),
                         kcb.arch.replica_idx,
                     );
 
-                    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                    debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                    match &o[0] {
+                    match &response {
                         Ok(NodeResult::FileAccessed(len)) => Ok((*len, 0)),
                         Ok(_) => unreachable!("Got unexpected response"),
                         Err(r) => Err(r.clone()),
@@ -263,16 +239,12 @@ impl<P: Process> KernelNode<P> {
                 }
 
                 FileOperation::Write | FileOperation::WriteAt => {
-                    let mut o = vec![];
-                    replica.execute(
+                    let response = replica.execute(
                         Op::FileWrite(pid, fd, buffer, len, offset),
                         kcb.arch.replica_idx,
                     );
 
-                    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                    debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                    match &o[0] {
+                    match &response {
                         Ok(NodeResult::FileAccessed(len)) => Ok((*len, 0)),
                         Ok(_) => unreachable!("Got unexpected response"),
                         Err(r) => Err(r.clone()),
@@ -288,13 +260,10 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-                replica.execute(Op::FileInfo(pid, name, info_ptr), kcb.arch.replica_idx);
+                let response =
+                    replica.execute(Op::FileInfo(pid, name, info_ptr), kcb.arch.replica_idx);
 
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                match &o[0] {
+                match &response {
                     Ok(NodeResult::FileInfo(f_info)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
@@ -308,13 +277,9 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-                replica.execute(Op::FileDelete(pid, name), kcb.arch.replica_idx);
+                let response = replica.execute(Op::FileDelete(pid, name), kcb.arch.replica_idx);
 
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                match &o[0] {
+                match &response {
                     Ok(NodeResult::FileDeleted(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
@@ -328,13 +293,9 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-                replica.execute_ro(ReadOps::ProcessInfo(pid), kcb.arch.replica_idx);
+                let response = replica.execute_ro(ReadOps::ProcessInfo(pid), kcb.arch.replica_idx);
 
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                match &o[0] {
+                match &response {
                     Ok(NodeResult::ProcessInfo(pinfo)) => Ok(*pinfo),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
@@ -354,16 +315,12 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-                replica.execute(
+                let response = replica.execute(
                     Op::ProcAllocateCore(pid, gtid, affinity, entry_point),
                     kcb.arch.replica_idx,
                 );
 
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                match &o[0] {
+                match &response {
                     Ok(NodeResult::CoreAllocated(rgtid, eid)) => {
                         let _r = gtid.map(|gtid| debug_assert_eq!(gtid, *rgtid));
                         Ok((*rgtid, *eid))
@@ -387,6 +344,26 @@ where
 
     fn dispatch(&self, op: Self::ReadOperation) -> Result<Self::Response, Self::ResponseError> {
         match op {
+            ReadOps::FileRead(pid, fd, buffer, len, offset) => {
+                let mut userslice = UserSlice::new(buffer, len as usize);
+                let process_lookup = self.process_map.get(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let fd = p.get_fd(fd as usize);
+                let mnode_num = fd.get_mnode();
+                let flags = fd.get_flags();
+
+                // Check if the file has read-only or read-write permissions before reading it.
+                if !flags.is_read() {
+                    return Err(KError::FileSystem {
+                        source: FileSystemError::PermissionError,
+                    });
+                }
+
+                match self.fs.read(mnode_num, &mut userslice, offset) {
+                    Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
+                    Err(e) => Err(KError::FileSystem { source: e }),
+                }
+            }
             ReadOps::ProcessInfo(pid) => {
                 let process_lookup = self.process_map.get(&pid);
                 let p = process_lookup.expect("TODO: process lookup failed");
@@ -500,8 +477,8 @@ where
                 }
 
                 let flags = FileFlags::from(flags);
-                let (is_file, mnode) = self.fs.lookup(filename);
-                if !is_file && !flags.is_create() {
+                let mnode = self.fs.lookup(filename);
+                if mnode.is_none() && !flags.is_create() {
                     return Err(KError::FileSystem {
                         source: FileSystemError::PermissionError,
                     });
@@ -512,7 +489,7 @@ where
                     None => Err(KError::NotSupported),
                     Some(mut fd) => {
                         let mnode_num;
-                        if !is_file {
+                        if mnode.is_none() {
                             match self.fs.create(filename, modes) {
                                 Ok(m_num) => mnode_num = m_num,
                                 Err(e) => {
@@ -527,26 +504,6 @@ where
                         fd.1.update_fd(mnode_num, flags);
                         Ok(NodeResult::FileOpened(fd.0))
                     }
-                }
-            }
-            Op::FileRead(pid, fd, buffer, len, offset) => {
-                let mut userslice = UserSlice::new(buffer, len as usize);
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-                let fd = p.get_fd(fd as usize);
-                let mnode_num = fd.get_mnode();
-                let flags = fd.get_flags();
-
-                // Check if the file has read-only or read-write permissions before reading it.
-                if !flags.is_read() {
-                    return Err(KError::FileSystem {
-                        source: FileSystemError::PermissionError,
-                    });
-                }
-
-                match self.fs.read(mnode_num, &mut userslice, offset) {
-                    Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
-                    Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }
             Op::FileWrite(pid, fd, buffer, len, offset) => {
@@ -604,7 +561,7 @@ where
 
                 match self.fs.lookup(filename) {
                     // match on (file_exists, mnode_number)
-                    (true, Some(mnode)) => {
+                    Some(mnode) => {
                         let f_info = self.fs.file_info(*mnode);
 
                         let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
@@ -613,7 +570,7 @@ where
                         }
                         Ok(NodeResult::FileInfo(0))
                     }
-                    (false, _) | (true, None) => Err(KError::FileSystem {
+                    None => Err(KError::FileSystem {
                         source: FileSystemError::InvalidFile,
                     }),
                 }

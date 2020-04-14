@@ -186,6 +186,8 @@ pub enum FileOperation {
     GetInfo = 8,
     /// Delete the file
     Delete = 9,
+    /// Write to a file without going into NR.
+    WriteDirect = 10,
     Unknown,
 }
 
@@ -202,6 +204,7 @@ impl From<u64> for FileOperation {
             7 => FileOperation::Close,
             8 => FileOperation::GetInfo,
             9 => FileOperation::Delete,
+            10 => FileOperation::WriteDirect,
             _ => FileOperation::Unknown,
         }
     }
@@ -220,6 +223,7 @@ impl From<&str> for FileOperation {
             "Close" => FileOperation::Close,
             "GetInfo" => FileOperation::GetInfo,
             "Delete" => FileOperation::Delete,
+            "WriteDirect" => FileOperation::WriteDirect,
             _ => FileOperation::Unknown,
         }
     }
@@ -274,7 +278,7 @@ impl SystemCall {
             1 => SystemCall::System,
             2 => SystemCall::Process,
             3 => SystemCall::VSpace,
-            5 => SystemCall::FileIO,
+            4 => SystemCall::FileIO,
             _ => SystemCall::Unknown,
         }
     }

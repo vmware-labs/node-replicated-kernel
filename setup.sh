@@ -25,7 +25,7 @@ fi
 source $HOME/.cargo/env
 rustup default nightly-2020-04-06
 rustup component add rust-src
-rustup component add rustfmt-preview --toolchain nightly
+#rustup component add rustfmt-preview --toolchain nightly
 rustup update
 
 # Install xargo

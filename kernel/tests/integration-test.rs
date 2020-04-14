@@ -1131,3 +1131,57 @@ fn s06_redis_benchmark_e1000() {
         WaitStatus::Signaled(_, SIGTERM, _)
     );
 }
+
+#[test]
+fn s06_memfs_bench() {
+    for cores in 1..=7 {
+        let cmdline = RunnerArgs::new("test-userspace-smp")
+            .module("init")
+            .user_feature("fs-bench")
+            .memory(1024)
+            .timeout(100_000)
+            .cores(cores)
+            .release();
+        let mut output = String::new();
+
+        let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+            let mut p = spawn_bespin(&cmdline)?;
+
+            // Parse lines like
+            // `init::bench::fsbench: 0,1635650,read`
+            // write them to a CSV file
+            // TODO: Match for each core once the scheduler work is don.
+            for _i in 0..with_cores {
+                let (prev, matched) = p.exp_regex(r#"init::fsbench: (\d+),(\d+),(.*)"#)?;
+                output += prev.as_str();
+                output += matched.as_str();
+
+                // Append parsed results to a CSV file
+                let file_name = "memfs_benchmark.csv";
+                let write_headers = !Path::new(file_name).exists();
+                let mut csv_file = OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(file_name)
+                    .expect("Can't open file");
+                if write_headers {
+                    let row = "git_rev,cores,thread_id,operations,benchmark\n";
+                    let r = csv_file.write(row.as_bytes());
+                    assert!(r.is_ok());
+                }
+
+                let parts: Vec<&str> = matched.split("init::fsbench: ").collect();
+                let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write(parts[1].as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write("\n".as_bytes());
+                assert!(r.is_ok());
+            }
+
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+        check_for_successful_exit(&cmdline, qemu_run(cores), output);
+    }
+}

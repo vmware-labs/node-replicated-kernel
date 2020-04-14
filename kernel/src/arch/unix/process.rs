@@ -64,11 +64,16 @@ impl<T> DerefMut for UserValue<T> {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct UserSlice<'a> {
     pub buffer: &'a mut [u8],
 }
 
 impl<'a> UserSlice<'a> {
+    pub fn from_slice(buffer: &'a mut [u8]) -> Self {
+        UserSlice { buffer }
+    }
+
     pub fn new(base: u64, len: usize) -> UserSlice<'a> {
         let mut user_ptr = VAddr::from(base);
         let slice_ptr = UserPtr::new(&mut user_ptr);
@@ -178,8 +183,8 @@ impl Process for UnixProcess {
         0
     }
 
-    fn get_fd(&mut self, index: usize) -> &mut Fd {
-        &mut self.fd
+    fn get_fd(&self, index: usize) -> &Fd {
+        &self.fd
     }
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo {

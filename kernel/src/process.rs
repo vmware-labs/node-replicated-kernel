@@ -59,7 +59,7 @@ pub trait Process {
 
     fn deallocate_fd(&mut self, fd: usize) -> usize;
 
-    fn get_fd(&mut self, index: usize) -> &mut Fd;
+    fn get_fd(&self, index: usize) -> &Fd;
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo;
 }

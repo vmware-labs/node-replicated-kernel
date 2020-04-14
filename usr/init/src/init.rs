@@ -9,8 +9,11 @@
 extern crate alloc;
 extern crate spin;
 extern crate vibrio;
+extern crate x86;
 
 extern crate lineup;
+
+mod fsbench;
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
@@ -458,6 +461,10 @@ fn fs_test() {
         assert_eq!(slice[255], 0xb);
         assert_eq!(slice[256], 0);
 
+        // This call is to tests bespin memory deallocator for large allocations.
+        let ret = vibrio::syscalls::Fs::write_at(fd, slice.as_ptr() as u64, 256, 4096 * 255)
+            .expect("FileWriteAt syscall failed");
+
         // Close the file.
         let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
         assert_eq!(ret, 0);
@@ -469,6 +476,51 @@ fn fs_test() {
     }
 
     info!("fs_test OK");
+}
+
+fn fs_bench() {
+    use fsbench::bench;
+
+    // TODO: Take the input from the config file or as arguments.
+    let share_file = false;
+    let num_cores: usize = vibrio::syscalls::System::threads()
+        .expect("Can't get system topology")
+        .len();
+    let is_random = true;
+    let is_write = false;
+
+    bench(is_write, is_random, share_file, num_cores);
+}
+
+fn fs_write_test() {
+    use vibrio::syscalls::Fs;
+
+    let base: u64 = 0xff000;
+    let size: u64 = 0x1000;
+    unsafe {
+        // Allocate a buffer and write data into it, which is later written to the file.
+        vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");
+
+        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
+        for i in slice.iter_mut() {
+            *i = 0xb;
+        }
+        assert_eq!(slice[99], 0xb);
+
+        let mut iterations = 10;
+        let mut iops = 0;
+        while iterations > 0 {
+            let start = rawtime::Instant::now();
+            while start.elapsed().as_secs() < 1 {
+                Fs::write_direct(slice.as_ptr() as u64, 4096, 0).expect("Failed");
+                iops += 1;
+            }
+            info!("Direct writes per second {}", iops);
+            iterations -= 1;
+            iops = 0;
+        }
+    }
+    info!("fs_write Ok");
 }
 
 pub fn install_vcpu_area() {
@@ -525,6 +577,12 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-fs")]
     fs_test();
+
+    #[cfg(feature = "fs-bench")]
+    fs_bench();
+
+    #[cfg(feature = "fs-write")]
+    fs_write_test();
 
     debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::Process::exit(0);

@@ -368,32 +368,25 @@ pub fn xmain() {
         };
 
         let replica = kcb.arch.replica.as_ref().expect("Replica not set");
-        let mut o = vec![];
 
         // Create a new process
-        replica.execute(nr::Op::ProcCreate(&test_module), kcb.arch.replica_idx);
-        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-        debug_assert_eq!(o.len(), 1, "Should get reply");
-        let pid = match o[0] {
+        let response = replica.execute(nr::Op::ProcCreate(&test_module), kcb.arch.replica_idx);
+        let pid = match response {
             Ok(nr::NodeResult::ProcCreated(pid)) => pid,
             _ => unreachable!("Got unexpected response"),
         };
-        o.clear();
 
         // Create dispatchers
-        replica.execute(
+        let response = replica.execute(
             nr::Op::DispatcherAllocation(pid, frame),
             kcb.arch.replica_idx,
         );
-        while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-        debug_assert_eq!(o.len(), 1, "Should get reply");
-        let e = match o[0] {
+        let e = match response {
             Ok(nr::NodeResult::ExecutorsCreated(how_many)) => {
                 assert!(how_many > 0);
             }
             _ => unreachable!("Got unexpected response"),
         };
-        o.clear();
 
         pid
     };
@@ -407,13 +400,10 @@ pub fn xmain() {
 
     let kcb = kcb::get_kcb();
     let replica = kcb.arch.replica.as_ref().expect("Replica not set");
-    let mut o = vec![];
 
     // Get an executor
-    replica.execute_ro(nr::ReadOps::CurrentExecutor(thread.id), kcb.arch.replica_idx);
-    while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-    debug_assert_eq!(o.len(), 1, "Should get reply");
-    let executor = match &o[0] {
+    let response = replica.execute_ro(nr::ReadOps::CurrentExecutor(thread.id), kcb.arch.replica_idx);
+    let executor = match &response {
         Ok(nr::NodeResult::Executor(e)) => e,
         e => unreachable!("Got unexpected response {:?}", e),
     };

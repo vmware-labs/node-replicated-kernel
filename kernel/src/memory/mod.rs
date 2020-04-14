@@ -470,9 +470,19 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             kcb.node,
                         );
 
-                        fmanager
-                            .release_base_page(frame)
-                            .expect("Can't deallocate frame");
+                        match fmanager.release_base_page(frame) {
+                            Ok(_) => { /* Frame addition to tcache as successful.*/ }
+                            Err(_e) => match kcb.gmanager {
+                                // Try adding frame to ncache.
+                                Some(gmanager) => {
+                                    let mut ncache = gmanager.node_caches[kcb.node as usize].lock();
+                                    ncache
+                                        .release_base_page(frame)
+                                        .expect("Can't deallocate frame");
+                                }
+                                None => unreachable!("Unable to access global memory manager"),
+                            },
+                        }
                     } else if layout.size() <= LARGE_PAGE_SIZE {
                         assert!(layout.align() <= LARGE_PAGE_SIZE);
                         let frame = Frame::new(

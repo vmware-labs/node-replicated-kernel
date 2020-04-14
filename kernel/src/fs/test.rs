@@ -1,4 +1,4 @@
-//! Test the file-sytem implementation using proptest.
+//! Test the file-sytem implementation using unit-tests and proptest.
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -15,81 +15,490 @@ use kpi::io::*;
 use super::*;
 use crate::*;
 
-use crate::memory::tcache::TCache;
-
-/// Actions we can perform against the model and the implementation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TestAction {
-    Read,
-    Write,
-    Create,
-    Delete,
-    Query,
+/// What operations that the model needs to keep track of.
+///
+/// We don't need to log reads or lookups.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ModelOperation {
+    /// Stores a write to an mnode, at given offset, pattern, length.
+    Write(Mnode, i64, char, usize),
+    /// Stores info about created files.
+    Created(String, Modes, Mnode),
 }
 
 /// The FS model that we strive to implement.
-struct ModelFS {}
+struct ModelFS {
+    /// A log that stores all operations on the model FS.
+    oplog: Vec<ModelOperation>,
+    /// A counter to hand out mnode identifiers.
+    mnode_counter: u64,
+}
 
+impl Default for ModelFS {
+    fn default() -> Self {
+        let mut oplog = Vec::with_capacity(64);
+        oplog.push(ModelOperation::Created("/".to_string(), 0, 1));
+        ModelFS {
+            oplog,
+            mnode_counter: 1,
+        }
+    }
+}
+
+impl ModelFS {
+    /// Find mnode of a path.
+    fn path_to_mnode(&self, path: &String) -> Option<Mnode> {
+        for x in self.oplog.iter().rev() {
+            match x {
+                ModelOperation::Created(name, mode, mnode) => {
+                    if &name == &path {
+                        return Some(*mnode);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        None
+    }
+
+    /// Find index of a path in the oplog.
+    fn path_to_idx(&self, path: &String) -> Option<usize> {
+        for (idx, x) in self.oplog.iter().enumerate().rev() {
+            match x {
+                ModelOperation::Created(name, mode, mnode) => {
+                    if &name == &path {
+                        return Some(idx);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        None
+    }
+
+    /// Check if a given path exists.
+    fn file_exists(&self, path: &String) -> bool {
+        self.path_to_mnode(path).is_some()
+    }
+
+    /// Check if a mnode exists.
+    fn mnode_exists(&self, look_for: Mnode) -> bool {
+        for x in self.oplog.iter().rev() {
+            match x {
+                ModelOperation::Created(name, mode, mnode) => {
+                    if look_for == *mnode {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        false
+    }
+
+    /// Checks if there is overlap between two ranges
+    fn overlaps<T: PartialOrd>(a: &core::ops::Range<T>, b: &core::ops::Range<T>) -> bool {
+        a.start < b.end && b.start < a.end
+    }
+
+    /// A very silly O(n) method that caculates the intersection between two ranges
+    fn intersection(
+        a: core::ops::Range<usize>,
+        b: core::ops::Range<usize>,
+    ) -> Option<core::ops::Range<usize>> {
+        if ModelFS::overlaps(&a, &b) {
+            let mut min = usize::max_value();
+            let mut max = 0;
+
+            for element in a {
+                if b.contains(&element) {
+                    min = core::cmp::min(element, min);
+                    max = core::cmp::max(element, max);
+                }
+            }
+            Some(min..max + 1)
+        } else {
+            None
+        }
+    }
+}
+
+impl FileSystem for ModelFS {
+    // Create just puts the file in the oplop and increases mnode counter.
+    fn create(&mut self, pathname: &str, mode: Modes) -> Result<u64, FileSystemError> {
+        let path = String::from(pathname);
+        if self.file_exists(&path) {
+            Err(FileSystemError::AlreadyPresent)
+        } else {
+            self.mnode_counter += 1;
+            self.oplog
+                .push(ModelOperation::Created(path, mode, self.mnode_counter));
+            Ok(self.mnode_counter)
+        }
+    }
+
+    /// Write just logs the write to the oplog.
+    ///
+    /// Our model assumes that the buffer repeats the first byte for its entire length.
+    fn write(
+        &mut self,
+        mnode_num: Mnode,
+        buffer: &mut UserSlice,
+        offset: i64,
+    ) -> Result<usize, FileSystemError> {
+        if self.mnode_exists(mnode_num) {
+            for x in self.oplog.iter().rev() {
+                trace!("seen {:?}", x);
+                match x {
+                    // Check if the file is writable or not
+                    ModelOperation::Created(path, mode, mnode) => {
+                        if mnode_num == *mnode && !FileModes::from(*mode).is_writable() {
+                            return Err(FileSystemError::PermissionError);
+                        }
+                    }
+                    _ => { /* The operation is not relevant */ }
+                }
+            }
+
+            if buffer.len() > 0 {
+                // Model assumes that buffer is filled with the same pattern all the way
+                let pattern: char = buffer[0] as char;
+                self.oplog.push(ModelOperation::Write(
+                    mnode_num,
+                    offset,
+                    pattern,
+                    buffer.len(),
+                ));
+            }
+            Ok(buffer.len())
+        } else {
+            Err(FileSystemError::InvalidFile)
+        }
+    }
+
+    /// read loops through the oplog and tries to fill up the buffer by looking
+    /// at the logged `Write` ops.
+    ///
+    /// This is the hardest operation to represent in the model.
+    fn read(
+        &self,
+        mnode_num: Mnode,
+        buffer: &mut UserSlice,
+        offset: i64,
+    ) -> Result<usize, FileSystemError> {
+        let len = buffer.len();
+        if self.mnode_exists(mnode_num) {
+            // We store our 'retrieved' data in a buffer of Option<u8>
+            // to make sure in case we have consecutive writes to the same region
+            // we take the last one, and also to detect if we
+            // read more than what ever got written to the file...
+            let mut buffer_gatherer: Vec<Option<u8>> = Vec::with_capacity(buffer.len());
+            for i in 0..buffer.len() {
+                buffer_gatherer.push(None);
+            }
+
+            // Start with the latest writes first
+            for x in self.oplog.iter().rev() {
+                trace!("seen {:?}", x);
+                match x {
+                    ModelOperation::Write(fmnode, foffset, fpattern, flength) => {
+                        // Write is for the correct file and the offset starts somewhere
+                        // in that write
+                        let cur_segment_range = (*foffset as usize..(*foffset as usize + flength));
+                        let read_range = (offset as usize..(offset as usize + buffer.len()));
+                        trace!("*fmnode == mnode_num = {}", *fmnode == mnode_num);
+                        trace!(
+                            "ModelFS::overlaps(&cur_segment_range, &read_range) = {}",
+                            ModelFS::overlaps(&cur_segment_range, &read_range)
+                        );
+                        if *fmnode == mnode_num
+                            && ModelFS::overlaps(&cur_segment_range, &read_range)
+                        {
+                            let _r = ModelFS::intersection(read_range, cur_segment_range).map(
+                                |overlapping_range| {
+                                    trace!("overlapping_range = {:?}", overlapping_range);
+                                    for idx in overlapping_range {
+                                        if buffer_gatherer[idx - offset as usize].is_none() {
+                                            // No earlier write, we know that 'pattern' must be at idx
+                                            buffer_gatherer[idx - offset as usize] =
+                                                Some(*fpattern as u8);
+                                        }
+                                    }
+                                    trace!("buffer_gatherer = {:?}", buffer_gatherer);
+                                },
+                            );
+                        }
+                        // else: The write is not relevant
+                    }
+
+                    ModelOperation::Created(path, mode, mnode) => {
+                        if mnode_num == *mnode && !FileModes::from(*mode).is_readable() {
+                            return Err(FileSystemError::PermissionError);
+                        }
+                    }
+
+                    _ => { /* The operation is not relevant */ }
+                }
+            }
+            // We need to copy buffer gatherer back in buffer:
+            // Something like [1, 2, 3, None] -> Should lead to [1, 2, 3] with Ok(3)
+            // Something like [1, None, 3, 4, None] -> Should lead to [1, 0, 3] with Ok(4), I guess?
+            let iter = buffer_gatherer.iter().enumerate().rev();
+            let mut drop_top = true;
+            let mut bytes_read = 0;
+            for (idx, val) in buffer_gatherer.iter().enumerate().rev() {
+                if drop_top {
+                    if val.is_some() {
+                        bytes_read += 1;
+                        drop_top = false;
+                    } else {
+                        // All None's at the end (rev() above) don't count towards
+                        // total bytes read since the file wasn't that big
+                    }
+                } else {
+                    bytes_read += 1;
+                }
+                buffer[idx] = val.unwrap_or(0);
+                trace!("buffer = {:?}", buffer);
+            }
+
+            if bytes_read > 0 {
+                Ok(bytes_read)
+            } else {
+                Err(FileSystemError::InvalidOffset)
+            }
+        } else {
+            Err(FileSystemError::InvalidFile)
+        }
+    }
+
+    /// Lookup just returns the mnode.
+    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
+        self.path_to_mnode(&String::from(pathname)).map(Arc::from)
+    }
+
+    /// Delete finds and removes a path from the oplog again.
+    fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
+        if let Some(idx) = self.path_to_idx(&String::from(pathname)) {
+            self.oplog.remove(idx);
+            // We leave corresponding ModelOperation::Write entries
+            // in the log for now...
+            Ok(true)
+        } else {
+            Err(FileSystemError::InvalidFile)
+        }
+    }
+
+    /// Returns a `dummy` file-info.
+    fn file_info(&self, mnode: Mnode) -> FileInfo {
+        FileInfo { ftype: 0, fsize: 0 }
+    }
+}
+
+/// Two writes/reads at different offsets should return
+/// the correct result.
+#[test]
+fn model_read() {
+    let mut mfs: ModelFS = Default::default();
+    mfs.create("/bla", FileModes::S_IRWXU.into());
+    let mnode = mfs.lookup("/bla").unwrap();
+
+    let mut wdata1 = [1, 1];
+    let mut buffer = UserSlice::from_slice(&mut wdata1);
+    mfs.write(*mnode, &mut buffer, 0);
+
+    let mut wdata = [2, 2];
+    let mut wbuffer = UserSlice::from_slice(&mut wdata);
+    let r = mfs.write(*mnode, &mut wbuffer, 4);
+    assert_eq!(r, Ok(2));
+
+    let mut rdata = [0, 0];
+
+    let mut rbuffer = UserSlice::from_slice(&mut rdata);
+    let r = mfs.read(*mnode, &mut rbuffer, 0);
+    assert_eq!(rdata, [1, 1]);
+    assert_eq!(r, Ok(2));
+
+    let mut rbuffer = UserSlice::from_slice(&mut rdata);
+    let r = mfs.read(*mnode, &mut rbuffer, 4);
+    assert_eq!(rdata, [2, 2]);
+    assert_eq!(r, Ok(2));
+}
+
+/// Two writes that overlap with each other should return
+/// the last write.
+///
+/// Also providing a larger buffer returns 0 in those entries.
+#[test]
+fn model_overlapping_writes() {
+    let mut mfs: ModelFS = Default::default();
+    mfs.create("/bla", FileModes::S_IRWXU.into());
+    let mnode = mfs.lookup("/bla").unwrap();
+
+    let mut data = [1, 1, 1];
+    let mut buffer = UserSlice::from_slice(&mut data);
+    mfs.write(*mnode, &mut buffer, 0);
+
+    let mut wdata = [2, 2, 2];
+    let mut wbuffer = UserSlice::from_slice(&mut wdata);
+    mfs.write(*mnode, &mut wbuffer, 2);
+
+    let mut rdata = [0, 0, 0, 0, 0, 0];
+    let mut rbuffer = UserSlice::from_slice(&mut rdata);
+    let r = mfs.read(*mnode, &mut rbuffer, 0);
+    assert_eq!(r, Ok(5));
+    assert_eq!(rdata, [1, 1, 2, 2, 2, 0]);
+}
+
+/// Actions that we can perform against the model and the implementation.
+///
+/// One entry for each function in the FileSystem interface and
+/// necessary arguments to construct an operation for said function.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum TestAction {
+    Read(Mnode, i64, usize),
+    Write(Mnode, i64, char, usize),
+    Create(Vec<String>, Modes),
+    Delete(Vec<String>),
+    Lookup(Vec<String>),
+}
+
+/// Generates one `TestAction` entry randomly.
+fn action() -> impl Strategy<Value = TestAction> {
+    prop_oneof![
+        (mnode_gen(0x1000), offset_gen(0x1000), size_gen(128))
+            .prop_map(|(a, b, c)| TestAction::Read(a, b, c)),
+        (
+            mnode_gen(0x1000),
+            offset_gen(0x1000),
+            fill_pattern(),
+            size_gen(64)
+        )
+            .prop_map(|(a, b, c, d)| TestAction::Write(a, b, c, d)),
+        (path(), mode_gen(0xfff)).prop_map(|(a, b)| TestAction::Create(a, b)),
+        path().prop_map(TestAction::Delete),
+        path().prop_map(TestAction::Lookup),
+    ]
+}
+
+/// Generates a vector of TestAction entries (by repeatingly calling `action`).
 fn actions() -> impl Strategy<Value = Vec<TestAction>> {
     prop::collection::vec(action(), 0..512)
 }
 
-fn action() -> impl Strategy<Value = TestAction> {
+/// Generates one fill pattern (for writes).
+fn fill_pattern() -> impl Strategy<Value = char> {
     prop_oneof![
-        Just(TestAction::Read),
-        Just(TestAction::Write),
-        Just(TestAction::Create),
-        Just(TestAction::Delete),
-        Just(TestAction::Query),
+        Just('a'),
+        Just('b'),
+        Just('c'),
+        Just('d'),
+        Just('e'),
+        Just('f'),
+        Just('g'),
+        Just('.')
     ]
 }
-/*
+
+/// Generates an offset.
+prop_compose! {
+    fn offset_gen(max: i64)(offset in 0..max) -> i64 { offset }
+}
+
+/// Generates a random mnode.
+prop_compose! {
+    fn mnode_gen(max: u64)(mnode in 0..max) -> u64 { mnode }
+}
+
+/// Generates a random mode.
+prop_compose! {
+    fn mode_gen(max: u64)(mode in 0..max) -> u64 { mode }
+}
+
+/// Generates a random (read/write)-request size.
+prop_compose! {
+    fn size_gen(max: usize)(size in 0..max) -> usize { size }
+}
+
+/// Generates a random path entry.
+fn path_names() -> impl Strategy<Value = String> {
+    prop_oneof![
+        Just(String::from("/")),
+        Just(String::from("bespin")),
+        Just(String::from("hello")),
+        Just(String::from("world")),
+        Just(String::from("memory")),
+        Just(String::from("the")),
+        Just(String::from("fs")),
+        Just(String::from("rusty")),
+        Just(String::from("os"))
+    ]
+}
+
+/// Creates a path of depth a given depth (4), represented as a
+/// vector of Strings.
+fn path() -> impl Strategy<Value = Vec<String>> {
+    proptest::collection::vec(path_names(), 4)
+}
+
 proptest! {
-    // Verify that our implementation behaves according to the `ModelFileSystem`.
+    // Verify that our FS implementation behaves according to the `ModelFileSystem`.
     #[test]
     fn model_equivalence(ops in actions()) {
-        //let _r = env_logger::try_init();
+        let mut model: ModelFS = Default::default();
+        let mut totest: fs::MemFS = Default::default();
 
         use TestAction::*;
-        let mut mm = crate::arch::memory::MemoryMapper::new();
-        let f = mm.allocate_frame(16 * 1024 * 1024).unwrap();
-        let mut tcache = TCache::new_with_frame(0, 0, f);
-
-        let mut totest = fs::MemFS::new();
-        let mut model: ModelFS = Default::default();
-
         for action in ops {
             match action {
-                Read => {
-                    let rmodel = model.read();
-                    let rtotest = totest.read();
+                Read(mnode, offset, len) => {
+
+                    let mut buffer1: Vec<u8> = Vec::with_capacity(len);
+                    let mut buffer2: Vec<u8> = Vec::with_capacity(len);
+
+                    let rmodel = model.read(mnode, &mut UserSlice::from_slice(buffer1.as_mut_slice()), offset);
+                    let rtotest = totest.read(mnode, &mut UserSlice::from_slice(buffer2.as_mut_slice()), offset);
+                    assert_eq!(rmodel, rtotest);
+                    assert_eq!(buffer1, buffer2);
+                }
+                Write(mnode, offset, pattern, len) => {
+                    let mut buffer: Vec<u8> = Vec::with_capacity(len);
+                    for i in 0..len {
+                        buffer.push(pattern as u8);
+                    }
+
+                    let rmodel = model.write(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
+                    let rtotest = totest.write(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
                     assert_eq!(rmodel, rtotest);
                 }
-                Write => {
-                    let rmodel = model.write();
-                    let rtotest = totest.write();
+                Create(path, mode) => {
+                    let path_str = path.join("/");
+
+                    let rmodel = model.create(path_str.as_str(), mode);
+                    let rtotest = totest.create(path_str.as_str(), mode);
                     assert_eq!(rmodel, rtotest);
                 }
-                Create => {
-                    let rmodel = model.create();
-                    let rtotest = totest.create();
+                Delete(path) => {
+                    let path_str = path.join("/");
+
+                    let rmodel = model.delete(path_str.as_str());
+                    let rtotest = totest.delete(path_str.as_str());
                     assert_eq!(rmodel, rtotest);
                 }
-                Delete => {
-                    let rmodel = model.delete();
-                    let rtotest = totest.delete();
-                    assert_eq!(rmodel, rtotest);
-                }
-                Query => {
-                    let rmodel = model.query();
-                    let rtotest = totest.query();
+                Lookup(path) => {
+                    let path_str = path.join("/");
+
+                    let rmodel = model.lookup(path_str.as_str());
+                    let rtotest = totest.lookup(path_str.as_str());
                     assert_eq!(rmodel, rtotest);
                 }
             }
         }
     }
 }
-*/
 
 /// Initialize and update file descriptor mnode number and permission flags.
 #[test]
@@ -239,8 +648,7 @@ fn test_file_lookup() {
         memfs.files.get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
-    let (is_present, mnode) = memfs.lookup(filename);
-    assert_eq!(is_present, true);
+    let mnode = memfs.lookup(filename);
     assert_eq!(mnode, Some(Arc::new(2)));
 }
 
@@ -256,8 +664,7 @@ fn test_file_fake_lookup() {
         memfs.files.get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
-    let (is_present, mnode) = memfs.lookup("filename");
-    assert_eq!(is_present, false);
+    let mnode = memfs.lookup("filename");
     assert_eq!(mnode, None);
 }
 
@@ -305,7 +712,7 @@ fn test_file_delete() {
     assert_eq!(mnode, 2);
     assert_eq!(memfs.delete(filename), Ok(true));
     assert_eq!(memfs.delete(filename).is_err(), true);
-    assert_eq!(memfs.lookup(filename), (false, None));
+    assert_eq!(memfs.lookup(filename), None);
     assert_eq!(
         memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
         Err(FileSystemError::InvalidFile)

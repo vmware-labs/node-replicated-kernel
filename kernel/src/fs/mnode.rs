@@ -89,48 +89,67 @@ impl MemNode {
     /// Read from an in-memory file.
     pub fn read(&self, buffer: &mut UserSlice, offset: i64) -> Result<usize, FileSystemError> {
         // Return if the user doesn't have read permissions for the file.
-        if !self.file.as_ref().unwrap().get_mode().is_readable() {
+        if self.node_type != NodeType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
+        {
             return Err(FileSystemError::PermissionError);
         }
 
         let len: usize = buffer.len();
         let file_size = self.get_file_size();
 
-        // If offset is specified and its less than the file size,
-        // then update the current offset.
-        if offset != -1 {
-            if offset as usize <= file_size {
-                self.update_offset(offset as usize);
-            } else {
+        let mut old_offset;
+        let mut new_offset;
+        let mut file_offset;
+        loop {
+            old_offset = self.offset.load(Ordering::Acquire);
+            file_offset = old_offset;
+
+            // If offset is specified and its less than the file size,
+            // then update the current offset.
+            if offset != -1 {
+                if offset as usize <= file_size {
+                    file_offset = offset as usize;
+                } else {
+                    return Err(FileSystemError::InvalidOffset);
+                }
+            }
+            let bytes_to_read = core::cmp::min(file_size - file_offset, len);
+            new_offset = file_offset + bytes_to_read;
+
+            // Return error if start-offset is greater than or equal to new-offset OR
+            // new offset is greater than the file size.
+            if file_offset >= new_offset || new_offset > self.get_file_size() as usize {
                 return Err(FileSystemError::InvalidOffset);
             }
-        }
-        let file_offset = self.offset.load(Ordering::Relaxed);
-        let bytes_to_read = core::cmp::min(file_size - file_offset, len);
-        let new_offset = file_offset + bytes_to_read;
 
-        // Read from file only if its not at EOF.
-        if new_offset > file_offset {
-            match self
-                .file
-                .as_ref()
-                .unwrap()
-                .read_file(&mut *buffer, file_offset, new_offset)
-            {
-                Ok(len) => {
-                    self.update_offset(file_offset + len);
-                    return Ok(len);
-                }
-                Err(e) => return Err(e),
+            // Try updating the offset.
+            match self.update_offset(old_offset, new_offset) {
+                true => break,
+                false => continue,
             }
         }
-        return Err(FileSystemError::InvalidOffset);
+
+        // Read from file only if its not at EOF.
+        match self
+            .file
+            .as_ref()
+            .unwrap()
+            .read_file(&mut *buffer, file_offset, new_offset)
+        {
+            Ok(len) => return Ok(len),
+            Err(e) => return Err(e),
+        }
     }
 
     /// Update the offset after reading the file.
-    fn update_offset(&self, new_offset: usize) -> bool {
-        if new_offset <= self.get_file_size() as usize {
-            self.offset.store(new_offset, Ordering::Release);
+    ///
+    /// This is function is called after handling all the error conditions.
+    fn update_offset(&self, old_offset: usize, new_offset: usize) -> bool {
+        if self
+            .offset
+            .compare_and_swap(old_offset, new_offset, Ordering::Release)
+            == old_offset
+        {
             return true;
         }
         false
@@ -291,8 +310,8 @@ pub mod test {
     fn test_update_offset() {
         let filename = "file.txt";
         let memnode = MemNode::new(1, filename, FileModes::S_IWUSR.into(), NodeType::File).unwrap();
-        assert_eq!(false, memnode.update_offset(10));
-        assert_eq!(true, memnode.update_offset(0));
+        assert_eq!(false, memnode.update_offset(1, 10));
+        assert_eq!(true, memnode.update_offset(0, 0));
         assert_eq!(0, memnode.offset.load(Ordering::Relaxed));
     }
 
@@ -390,7 +409,7 @@ pub mod test {
             true
         );
         assert_eq!(buffer[0], 0);
-        assert_eq!(10, memnode.offset.load(Ordering::Relaxed));
+        assert_eq!(0, memnode.offset.load(Ordering::Relaxed));
     }
 
     #[test]

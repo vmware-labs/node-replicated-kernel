@@ -48,7 +48,7 @@ test:
     #- sudo ifconfig tap0 down || true
     #- sudo tunctl -d tap0 || true
     - cd kernel
-    - cargo +nightly fmt --package bespin -- --check
+    #- cargo +nightly fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test
   dependencies:
     - build

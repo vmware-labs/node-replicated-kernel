@@ -13,6 +13,7 @@ use kpi::{
 };
 
 use crate::error::KError;
+use crate::fs::FileSystem;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider};
 use crate::nr;
@@ -319,6 +320,20 @@ fn handle_fileio(
             let name = arg2;
             nr::KernelNode::<Ring3Process>::file_delete(p.pid, name)
         }),
+        FileOperation::WriteDirect => {
+            let kcb = super::kcb::get_kcb();
+            let len = arg3;
+            let mut offset = arg4 as i64;
+            if arg5 == 0 {
+                offset = -1;
+            }
+
+            let mut buffer = crate::arch::process::UserSlice::new(arg2, len as usize);
+            match kcb.memfs.as_mut().unwrap().write(2, &mut buffer, offset) {
+                Ok(len) => Ok((len as u64, 0)),
+                Err(e) => Err(KError::FileSystem { source: e }),
+            }
+        }
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

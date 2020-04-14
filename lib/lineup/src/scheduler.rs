@@ -92,6 +92,13 @@ impl<'a> SmpScheduler<'a> {
         }
     }
 
+    /// Returns true as long as we have 'active', unfinished thread.
+    ///
+    /// A thread that is currently blocked/waiting still counts as active.
+    pub fn has_active_threads(&self) -> bool {
+        self.threads.lock().len() > 0
+    }
+
     pub fn spawn_with_args<F>(
         &self,
         stack: LineupStack,

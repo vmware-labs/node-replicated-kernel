@@ -44,12 +44,16 @@ run-unix:
 test:
   stage: test
   script:
+    - cd lib/slabmalloc
+    - cargo test
+    - cd ../..
+    - cd kernel
     # Delete potentially old tap interface
     #- sudo ifconfig tap0 down || true
     #- sudo tunctl -d tap0 || true
-    - cd kernel
-    #- cargo +nightly fmt --package bespin -- --check
+    - cargo +nightly fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test
+    - cd ..
   dependencies:
     - build
   variables:

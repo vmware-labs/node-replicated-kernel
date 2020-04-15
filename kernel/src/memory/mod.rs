@@ -546,6 +546,38 @@ unsafe impl GlobalAlloc for KernelAllocator {
             },
         );
     }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        crate::kcb::try_get_kcb().map_or_else(
+            || {
+                unreachable!("Trying to reallocate {:p} {:?} without a KCB.", ptr, layout);
+            },
+            |kcb| {
+                if !kcb.in_panic_mode
+                    && layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE
+                    && layout.size() != BASE_PAGE_SIZE
+                    && new_size <= ZoneAllocator::get_max_size(layout.size()).unwrap_or(0x0)
+                {
+                    // Don't do a re-allocation if we're in a big enough size-class
+                    // in the ZoneAllocator
+                    ptr
+                } else {
+                    // Slow path, allocate a bigger region and de-allocate the old one
+                    let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
+                    let new_ptr = self.alloc(new_layout);
+                    if !new_ptr.is_null() {
+                        ptr::copy_nonoverlapping(
+                            ptr,
+                            new_ptr,
+                            core::cmp::min(layout.size(), new_size),
+                        );
+                        self.dealloc(ptr, layout);
+                    }
+                    new_ptr
+                }
+            },
+        )
+    }
 }
 
 /// Human-readable representation of a data-size.

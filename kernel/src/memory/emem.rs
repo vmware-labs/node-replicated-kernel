@@ -1,10 +1,10 @@
 //! A memory manager for use during emergencies.
 
-use core::alloc::{GlobalAlloc, Layout};
+use core::alloc::Layout;
 use core::ptr::NonNull;
 
 // We *might* want to implement AllocRef instead here
-use slabmalloc::{Allocator, LargeObjectPage, ObjectPage};
+use slabmalloc::{self, LargeObjectPage, ObjectPage};
 
 use crate::memory::{
     AllocationError, Frame, PAddr, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
@@ -93,15 +93,15 @@ unsafe impl<'a> slabmalloc::Allocator<'a> for EmergencyAllocator {
 
     fn deallocate(
         &mut self,
-        ptr: NonNull<u8>,
-        layout: Layout,
+        _ptr: NonNull<u8>,
+        _layout: Layout,
     ) -> Result<(), slabmalloc::AllocationError> {
         Ok(())
     }
 
     unsafe fn refill(
         &mut self,
-        layout: Layout,
+        _layout: Layout,
         new_page: &'a mut ObjectPage<'a>,
     ) -> Result<(), slabmalloc::AllocationError> {
         self.region = Frame::new(
@@ -116,7 +116,7 @@ unsafe impl<'a> slabmalloc::Allocator<'a> for EmergencyAllocator {
 
     unsafe fn refill_large(
         &mut self,
-        layout: Layout,
+        _layout: Layout,
         new_page: &'a mut LargeObjectPage<'a>,
     ) -> Result<(), slabmalloc::AllocationError> {
         self.region = Frame::new(

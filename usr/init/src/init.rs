@@ -78,7 +78,7 @@ fn scheduler_smp_test() {
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
 
-    for thread in threads {
+    for thread in threads.iter() {
         if thread.id != 0 {
             let r = vibrio::syscalls::Process::request_core(
                 thread.id,
@@ -94,7 +94,9 @@ fn scheduler_smp_test() {
                 }
             }
         }
+    }
 
+    for thread in threads {
         s.spawn(
             32 * 4096,
             move |_| {

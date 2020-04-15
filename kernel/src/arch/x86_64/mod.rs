@@ -372,7 +372,7 @@ fn boot_app_cores(
             );
 
             // Wait until core is up or we time out
-            let timeout = x86::time::rdtsc() + 90_000_000;
+            let timeout = x86::time::rdtsc() + 190_000_000;
             loop {
                 // Did the core signal us initialization completed?
                 if initialized.load(Ordering::SeqCst) {
@@ -516,7 +516,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // We walk the memory regions given to us by uefi, since this consumes
     // the UEFI iterator we copy the frames into a `ArrayVec`.
     //
-    // Ideally, if this works, we should end up with an EarlyPhysicalManager
+    // Ideally, if this works, we should end up with an early TCache
     // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
     // regions of memory.
     let mut emanager: Option<tcache::TCache> = None;

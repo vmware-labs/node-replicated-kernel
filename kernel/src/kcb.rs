@@ -8,7 +8,7 @@ use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
 use crate::fs::{FileSystem, MemFS};
-use crate::memory::{tcache::TCache, GlobalMemory};
+use crate::memory::{emem::EmergencyAllocator, tcache::TCache, GlobalMemory};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 
@@ -118,6 +118,12 @@ pub struct Kcb<A> {
     /// Architecture specific members of the KCB.
     pub arch: A,
 
+    /// Are we in panic mode? Hopfully not.
+    ///
+    /// # See also
+    /// - `panic.rs`
+    pub in_panic_mode: bool,
+
     pub cmdline: CommandLineArgs,
 
     /// A pointer to the memory location of the kernel (ELF binary).
@@ -126,8 +132,11 @@ pub struct Kcb<A> {
     /// A handle to the global memory manager.
     pub gmanager: Option<&'static GlobalMemory>,
 
-    /// A handle to the early memory manager.
+    /// A handle to the early page-allocator.
     pub emanager: RefCell<TCache>,
+
+    /// A handle to a bump-style emergency Allocator.
+    pub ezone_allocator: RefCell<EmergencyAllocator>,
 
     /// A handle to the per-core page-allocator.
     pub pmanager: Option<RefCell<TCache>>,
@@ -160,8 +169,10 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         Kcb {
             arch,
             cmdline,
+            in_panic_mode: false,
             kernel_binary,
             emanager: RefCell::new(emanager),
+            ezone_allocator: RefCell::new(EmergencyAllocator::default()),
             zone_allocator: RefCell::new(ZoneAllocator::new()),
             node,
             allocation_affinity: 0,
@@ -172,6 +183,10 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             memfs: None,
             print_buffer: None,
         }
+    }
+
+    pub fn set_panic_mode(&mut self) {
+        self.in_panic_mode = true;
     }
 
     /// Ties this KCB to the local CPU by setting the KCB's GDT and IDT.
@@ -204,15 +219,35 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.emanager.borrow_mut()
     }
 
+    pub fn ezone_allocator(
+        &self,
+    ) -> Result<RefMut<impl slabmalloc::Allocator<'static>>, core::cell::BorrowMutError> {
+        self.ezone_allocator.try_borrow_mut()
+    }
+
+    pub fn zone_allocator(
+        &self,
+    ) -> Result<RefMut<impl slabmalloc::Allocator<'static>>, core::cell::BorrowMutError> {
+        self.zone_allocator.try_borrow_mut()
+    }
+
     /// Returns a reference to the core-local physical memory manager if set,
     /// otherwise returns the early physical memory manager.
     pub fn mem_manager(&self) -> RefMut<TCache> {
+        if core::intrinsics::unlikely(self.in_panic_mode) {
+            return self.emanager();
+        }
+
         self.pmanager
             .as_ref()
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
 
     pub fn try_mem_manager(&self) -> Result<RefMut<TCache>, core::cell::BorrowMutError> {
+        if core::intrinsics::unlikely(self.in_panic_mode) {
+            return Ok(self.emanager());
+        }
+
         self.pmanager
             .as_ref()
             .map_or(self.emanager.try_borrow_mut(), |pmem| pmem.try_borrow_mut())

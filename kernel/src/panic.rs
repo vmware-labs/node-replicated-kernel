@@ -162,11 +162,26 @@ pub fn backtrace() {
     }
 }
 
+#[allow(unused)]
+#[inline(always)]
+pub fn backtrace_no_context() {
+    sprintln!("Backtrace:");
+    let relocation_offset =
+        kcb::try_get_kcb().map_or(0x0, |k| k.arch.kernel_args().kernel_elf_offset.as_u64());
+
+    let mut count = 0;
+    backtracer::trace(|frame| {
+        count += 1;
+        backtrace_format(None, relocation_offset, count, frame)
+    });
+}
+
 #[cfg(target_os = "none")]
 #[cfg_attr(target_os = "none", panic_handler)]
 #[no_mangle]
 pub fn panic_impl(info: &PanicInfo) -> ! {
     sprint!("System panic encountered");
+
     if let Some(message) = info.message() {
         sprint!(": '{}'", message);
     }
@@ -176,7 +191,19 @@ pub fn panic_impl(info: &PanicInfo) -> ! {
         sprintln!("");
     }
 
-    backtrace();
+    // We need memory allocation for a backtrace, can't do that without a KCB
+    kcb::try_get_kcb().map(|k| {
+        // If we're already panicking, it usually doesn't help to panic more
+        if !k.in_panic_mode {
+            // Make sure we use the e{early, emergency} memory allocator for backtracing
+            // (if we have a panic with the memory manager already borrowed
+            // we can't use it because it will just trigger another panic)
+            k.set_panic_mode();
+            backtrace();
+        } else {
+            sprintln!("Encountered a recursive panic, exit immediately!")
+        }
+    });
 
     arch::debug::shutdown(ExitReason::KernelPanic);
 }

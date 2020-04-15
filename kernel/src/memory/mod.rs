@@ -20,12 +20,11 @@ use core::sync::atomic::AtomicU64;
 
 use arrayvec::ArrayVec;
 use custom_error::custom_error;
-use slabmalloc::ZoneAllocator;
+use slabmalloc::{Allocator, ZoneAllocator};
 use spin::Mutex;
 use x86::bits64::paging;
 
-//pub mod buddy;
-//pub mod emem;
+pub mod emem;
 pub mod ncache;
 pub mod tcache;
 pub mod vspace;
@@ -80,7 +79,7 @@ static MEM_PROVIDER: KernelAllocator = KernelAllocator {
 
 /// Different types of allocator that the KernelAllocator can use.
 #[derive(Debug, PartialEq)]
-enum Allocator {
+enum AllocatorType {
     /// An instance of slabmalloc::ZoneAllocator
     Zone,
     /// A memory manager that implements trait XX.
@@ -120,31 +119,37 @@ impl KernelAllocator {
         let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
         match KernelAllocator::allocator_for(layout) {
             // TODO(check): This if in the matches should not be necessary...
-            Allocator::MemManager if layout.size() == BASE_PAGE_SIZE => {
+            AllocatorType::MemManager if layout.size() == BASE_PAGE_SIZE => {
                 let mut pmanager = kcb.try_mem_manager()?;
                 let f = pmanager.allocate_base_page()?;
                 unsafe { Ok(ptr::NonNull::new_unchecked(f.kernel_vaddr().as_mut_ptr())) }
             }
-            Allocator::Zone if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE => {
-                let mut zone_allocator = kcb.zone_allocator.try_borrow_mut()?;
-                zone_allocator.allocate(layout).map_err(|e| e.into())
+            AllocatorType::Zone if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE => {
+                // TODO(rust): Silly code duplication follows if/else
+                if core::intrinsics::unlikely(kcb.in_panic_mode) {
+                    let mut zone_allocator = kcb.ezone_allocator()?;
+                    zone_allocator.allocate(layout).map_err(|e| e.into())
+                } else {
+                    let mut zone_allocator = kcb.zone_allocator()?;
+                    zone_allocator.allocate(layout).map_err(|e| e.into())
+                }
             }
-            Allocator::MemManager if layout.size() <= LARGE_PAGE_SIZE => {
+            AllocatorType::MemManager if layout.size() <= LARGE_PAGE_SIZE => {
                 let mut pmanager = kcb.try_mem_manager()?;
                 let f = pmanager.allocate_large_page()?;
                 unsafe { Ok(ptr::NonNull::new_unchecked(f.kernel_vaddr().as_mut_ptr())) }
             }
-            Allocator::MapBig => {
+            AllocatorType::MapBig => {
                 // Big objects are mapped into the kernel address space
 
-                // TODO(rough): This needs some <3:
-                // * Assumptions are PML4 slot 129 (big_objects_sbrk) is always free for MapBig
-                // * it's also hard-coded in process creation
-                // * No bound checking
-                // * Needs a spin-lock for multi-core
-                // * we want this case to be rare so if we end up with more than ~20
-                //   big objects we should print a warning
-                // * We can't really allocate more than what fits in a TCache
+                // This needs some <3:
+                // * TODO(safety): Assumptions are PML4 slot 129 (big_objects_sbrk) is always free for MapBig
+                // * TODO(ugly): 129 is also hard-coded in process creation
+                // * TODO(safety): No bounds checking
+                // * TODO(smp): Needs a spin-lock for multi-core
+                // * TODO(checks): we want this case to be rare so if we end up with more than ~20
+                //   big objects we should print a warning (and start rethinking this)
+                // * TODO(limitation): We can't really allocate more than what fits in a TCache
 
                 // Figure out how much we need to map:
                 let (mut base, mut large) = KernelAllocator::layout_to_pages(layout);
@@ -224,12 +229,12 @@ impl KernelAllocator {
     }
 
     /// Determines which Allocator to use for a given Layout.
-    fn allocator_for(layout: Layout) -> Allocator {
+    fn allocator_for(layout: Layout) -> AllocatorType {
         match layout.size() {
-            BASE_PAGE_SIZE => Allocator::MemManager,
-            0..=ZoneAllocator::MAX_ALLOC_SIZE => Allocator::Zone,
-            ZoneAllocator::MAX_ALLOC_SIZE..=LARGE_PAGE_SIZE => Allocator::MemManager,
-            _ => Allocator::MapBig,
+            BASE_PAGE_SIZE => AllocatorType::MemManager,
+            0..=ZoneAllocator::MAX_ALLOC_SIZE => AllocatorType::Zone,
+            ZoneAllocator::MAX_ALLOC_SIZE..=LARGE_PAGE_SIZE => AllocatorType::MemManager,
+            _ => AllocatorType::MapBig,
         }
     }
 
@@ -238,23 +243,23 @@ impl KernelAllocator {
     /// We come here if a previous allocation failed.
     fn try_refill(&self, layout: Layout, e: AllocationError) -> Result<(), AllocationError> {
         match (KernelAllocator::allocator_for(layout), e) {
-            (Allocator::Zone, AllocationError::CacheExhausted) => {
+            (AllocatorType::Zone, AllocationError::CacheExhausted) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
                 self.maybe_refill_tcache(needed_base_pages, needed_large_pages)?;
                 self.try_refill_zone(layout)
             }
-            (Allocator::MapBig, _) => {
+            (AllocatorType::MapBig, _) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
                 KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages)
             }
-            (Allocator::MemManager, _) => {
+            (AllocatorType::MemManager, _) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
                 KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages)
             }
-            (Allocator::Zone, _) => unreachable!("Not sure how to handle"),
+            (AllocatorType::Zone, _) => unreachable!("Not sure how to handle"),
         }
     }
 
@@ -267,21 +272,21 @@ impl KernelAllocator {
     /// account the type of allocator that will end up handling the request.
     fn refill_amount(layout: Layout) -> (usize, usize) {
         match KernelAllocator::allocator_for(layout) {
-            Allocator::Zone => {
+            AllocatorType::Zone => {
                 if layout.size() <= slabmalloc::ZoneAllocator::MAX_BASE_ALLOC_SIZE {
                     (1, 0)
                 } else {
                     (0, 1)
                 }
             }
-            Allocator::MemManager => {
+            AllocatorType::MemManager => {
                 if layout.size() <= BASE_PAGE_SIZE {
                     (1, 0)
                 } else {
                     (0, 1)
                 }
             }
-            Allocator::MapBig => KernelAllocator::layout_to_pages(layout),
+            AllocatorType::MapBig => KernelAllocator::layout_to_pages(layout),
         }
     }
 
@@ -360,34 +365,57 @@ impl KernelAllocator {
     /// Try refill zone
     fn try_refill_zone(&self, layout: Layout) -> Result<(), AllocationError> {
         let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
-
         let needs_a_base_page = layout.size() <= slabmalloc::ZoneAllocator::MAX_BASE_ALLOC_SIZE;
 
         let mut mem_manager = kcb.try_mem_manager()?;
-        let mut zone = kcb.zone_allocator.try_borrow_mut()?;
-
-        if needs_a_base_page {
-            let mut frame = mem_manager.allocate_base_page()?;
-            unsafe {
-                frame.zero();
-                let base_page_ptr: *mut slabmalloc::ObjectPage =
-                    frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
-                zone.refill(layout, transmute(base_page_ptr))
-                    .expect("This should always succeed");
+        // TODO(rust): Silly code duplication follows if/else
+        if core::intrinsics::unlikely(kcb.in_panic_mode) {
+            let mut zone = kcb.ezone_allocator()?;
+            if needs_a_base_page {
+                let mut frame = mem_manager.allocate_base_page()?;
+                unsafe {
+                    frame.zero();
+                    let base_page_ptr: *mut slabmalloc::ObjectPage =
+                        frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
+                    zone.refill(layout, transmute(base_page_ptr))
+                        .expect("This should always succeed");
+                }
+            } else {
+                // Needs a large page
+                let mut frame = mem_manager.allocate_large_page()?;
+                unsafe {
+                    frame.zero();
+                    let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
+                        .uninitialized::<slabmalloc::LargeObjectPage>()
+                        .as_mut_ptr();
+                    zone.refill_large(layout, transmute(large_page_ptr))
+                        .expect("This should always succeed");
+                }
             }
         } else {
-            // Needs a large page
-            let mut frame = mem_manager.allocate_large_page()?;
-            unsafe {
-                frame.zero();
-                let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
-                    .uninitialized::<slabmalloc::LargeObjectPage>()
-                    .as_mut_ptr();
-                zone.refill_large(layout, transmute(large_page_ptr))
-                    .expect("This should always succeed");
+            let mut zone = kcb.zone_allocator()?;
+            if needs_a_base_page {
+                let mut frame = mem_manager.allocate_base_page()?;
+                unsafe {
+                    frame.zero();
+                    let base_page_ptr: *mut slabmalloc::ObjectPage =
+                        frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
+                    zone.refill(layout, transmute(base_page_ptr))
+                        .expect("This should always succeed");
+                }
+            } else {
+                // Needs a large page
+                let mut frame = mem_manager.allocate_large_page()?;
+                unsafe {
+                    frame.zero();
+                    let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
+                        .uninitialized::<slabmalloc::LargeObjectPage>()
+                        .as_mut_ptr();
+                    zone.refill_large(layout, transmute(large_page_ptr))
+                        .expect("This should always succeed");
+                }
             }
         }
-
         Ok(())
     }
 }
@@ -413,7 +441,9 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     );
                 }
                 Err(AllocationError::ManagerAlreadyBorrowed) => {
-                    unreachable!("Bug; trying to get mem manager 2x in allocation routine");
+                    unreachable!(
+                        "ManagerAlreadyBorrowed trying to get mem manager 2x in allocation routine"
+                    );
                 }
                 Err(e) => {
                     // Allocation didn't work, we try to refill
@@ -423,11 +453,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             continue;
                         }
                         Err(AllocationError::KcbUnavailable) => {
-                            error!("Bug; trying to get KCB 2x in allocation routine");
+                            error!("KcbUnavailable trying to get KCB 2x in allocation routine");
                             break;
                         }
                         Err(AllocationError::ManagerAlreadyBorrowed) => {
-                            error!("Bug; trying to get mem manager 2x in allocation routine");
+                            error!("ManagerAlreadyBorrowed trying to get mem manager 2x in allocation routine");
                             break;
                         }
                         Err(_e) => {
@@ -450,13 +480,28 @@ unsafe impl GlobalAlloc for KernelAllocator {
             |kcb| {
                 if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE && layout.size() != BASE_PAGE_SIZE
                 {
-                    let mut zone_allocator = kcb.zone_allocator.borrow_mut();
-                    if likely(!ptr.is_null()) {
-                        zone_allocator
-                            .deallocate(ptr::NonNull::new_unchecked(ptr), layout)
-                            .expect("Can't deallocate?");
+                    // TODO(rust): Silly code duplication follows if/else
+                    if core::intrinsics::unlikely(kcb.in_panic_mode) {
+                        let mut zone_allocator = kcb
+                            .ezone_allocator()
+                            .expect("Can't borrow ezone_allocator?");
+                        if likely(!ptr.is_null()) {
+                            zone_allocator
+                                .deallocate(ptr::NonNull::new_unchecked(ptr), layout)
+                                .expect("Can't deallocate?");
+                        } else {
+                            warn!("Ignore null pointer deallocation");
+                        }
                     } else {
-                        warn!("Ignore null pointer deallocation");
+                        let mut zone_allocator =
+                            kcb.zone_allocator().expect("Can't borrow zone_allocator?");
+                        if likely(!ptr.is_null()) {
+                            zone_allocator
+                                .deallocate(ptr::NonNull::new_unchecked(ptr), layout)
+                                .expect("Can't deallocate?");
+                        } else {
+                            warn!("Ignore null pointer deallocation");
+                        }
                     }
                 } else {
                     let kcb = kcb::get_kcb();
@@ -1278,24 +1323,24 @@ mod tests {
     #[test]
     fn allocator_selection() {
         let l = unsafe { Layout::from_size_align_unchecked(8, 8) };
-        assert_eq!(KernelAllocator::allocator_for(l), Allocator::Zone);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::Zone);
 
         let l = unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
-        assert_eq!(KernelAllocator::allocator_for(l), Allocator::MemManager);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::MemManager);
 
         let l = unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE + 1, BASE_PAGE_SIZE) };
-        assert_eq!(KernelAllocator::allocator_for(l), Allocator::Zone);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::Zone);
 
         let l = unsafe { Layout::from_size_align_unchecked(153424, 8) };
-        assert_eq!(KernelAllocator::allocator_for(l), Allocator::MemManager);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::MemManager);
 
         let l = unsafe { Layout::from_size_align_unchecked(LARGE_PAGE_SIZE - 1, LARGE_PAGE_SIZE) };
-        assert_eq!(KernelAllocator::allocator_for(l), Allocator::MemManager);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::MemManager);
 
         let l = unsafe { Layout::from_size_align_unchecked(LARGE_PAGE_SIZE, LARGE_PAGE_SIZE) };
-        assert_eq!(KernelAllocator::allocator_for(l), Allocator::MemManager);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::MemManager);
 
         let l = unsafe { Layout::from_size_align_unchecked(LARGE_PAGE_SIZE + 1, LARGE_PAGE_SIZE) };
-        assert_eq!(KernelAllocator::allocator_for(l), Allocator::MapBig);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::MapBig);
     }
 }

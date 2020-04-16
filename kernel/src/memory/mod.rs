@@ -436,13 +436,13 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 }
                 Err(AllocationError::KcbUnavailable) => {
                     unreachable!(
-                        "Bug; trying to get KCB 2x in allocation routine {:?}",
+                        "Bug; trying to get KCB 2x in during `try_alloc` {:?}",
                         layout
                     );
                 }
                 Err(AllocationError::ManagerAlreadyBorrowed) => {
                     unreachable!(
-                        "ManagerAlreadyBorrowed trying to get mem manager 2x in allocation routine"
+                        "ManagerAlreadyBorrowed trying to get mem manager 2x during `try_alloc`"
                     );
                 }
                 Err(e) => {
@@ -453,11 +453,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             continue;
                         }
                         Err(AllocationError::KcbUnavailable) => {
-                            error!("KcbUnavailable trying to get KCB 2x in allocation routine");
+                            error!("KcbUnavailable trying to get KCB during `try_refill`");
                             break;
                         }
                         Err(AllocationError::ManagerAlreadyBorrowed) => {
-                            error!("ManagerAlreadyBorrowed trying to get mem manager 2x in allocation routine");
+                            error!("ManagerAlreadyBorrowed trying to get mem manager 2x during `try_refill` {:?}", layout);
                             break;
                         }
                         Err(_e) => {

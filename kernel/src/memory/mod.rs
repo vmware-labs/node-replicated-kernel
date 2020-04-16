@@ -763,7 +763,6 @@ impl GlobalMemory {
 
 impl fmt::Debug for GlobalMemory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use alloc::format;
         let mut f = f.debug_struct("GlobalMemory");
 
         for idx in 0..self.node_caches.len() {

@@ -770,7 +770,7 @@ impl fmt::Debug for GlobalMemory {
             // (e.g., if we are trying to print GlobalMemory when in a panic),
             // the relevant fields for printing Debug should probably
             // just be atomics
-            let mut ncache = self.node_caches[idx].lock();
+            let ncache = self.node_caches[idx].lock();
             f.field("NCache", &ncache);
         }
 

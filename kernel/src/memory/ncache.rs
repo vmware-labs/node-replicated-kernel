@@ -131,8 +131,9 @@ impl fmt::Debug for NCache {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "NCache {{ free: {}, capacity: {}, affinity: {} }}",
+            "NCache {{ free_total: {} (free_4kib: {}), capacity: {}, affinity: {} }}",
             super::DataSize::from_bytes(self.free()),
+            super::DataSize::from_bytes(self.base_page_addresses.len() * BASE_PAGE_SIZE),
             super::DataSize::from_bytes(self.capacity()),
             self.node
         )

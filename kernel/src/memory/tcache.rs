@@ -149,6 +149,16 @@ impl AllocatorStatistics for TCache {
     }
 }
 
+impl fmt::Debug for TCache {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TCache")
+            .field("free", &self.free())
+            .field("capacity", &self.capacity())
+            .field("allocated", &self.allocated())
+            .finish()
+    }
+}
+
 impl PhysicalPageProvider for TCache {
     fn allocate_base_page(&mut self) -> Result<Frame, AllocationError> {
         let paddr = self

@@ -761,6 +761,24 @@ impl GlobalMemory {
     }
 }
 
+impl fmt::Debug for GlobalMemory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use alloc::format;
+        let mut f = f.debug_struct("GlobalMemory");
+
+        for idx in 0..self.node_caches.len() {
+            // TODO(correctness): rather than maybe run into a deadlock here
+            // (e.g., if we are trying to print GlobalMemory when in a panic),
+            // the relevant fields for printing Debug should probably
+            // just be atomics
+            let mut ncache = self.node_caches[idx].lock();
+            f.field("NCache", &ncache);
+        }
+
+        f.finish()
+    }
+}
+
 /// A trait to allocate and release physical pages from an allocator.
 pub trait PhysicalPageProvider {
     /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.

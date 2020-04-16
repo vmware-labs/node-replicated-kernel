@@ -165,17 +165,12 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-
-                replica.execute(
+                let response = replica.execute(
                     Op::MemMapFrameId(pid, base, frame_id, action),
                     kcb.arch.replica_idx,
                 );
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get reply");
-
-                match &o[0] {
-                    Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((*paddr, *size)),
+                match response {
+                    Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
                     Err(e) => unreachable!("MappedFrameId {:?}", e),
                     _ => unreachable!("unexpected response"),
                 }
@@ -373,14 +368,10 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut o = vec![];
-                replica.execute(Op::AllocateFrameToProcess(pid, frame), kcb.arch.replica_idx);
-
-                while replica.get_responses(kcb.arch.replica_idx, &mut o) == 0 {}
-                debug_assert_eq!(o.len(), 1, "Should get a reply?");
-
-                match &o[0] {
-                    Ok(NodeResult::FrameId(fid)) => Ok(*fid),
+                let response =
+                    replica.execute(Op::AllocateFrameToProcess(pid, frame), kcb.arch.replica_idx);
+                match response {
+                    Ok(NodeResult::FrameId(fid)) => Ok(fid),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }

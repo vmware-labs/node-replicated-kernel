@@ -190,12 +190,15 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             };
             crate::memory::KernelAllocator::try_refill_tcache(bp, lp)?;
 
-            // Allocate the page
-            let mut pmanager = kcb.mem_manager();
-            let frame = if page_size == BASE_PAGE_SIZE {
-                pmanager.allocate_base_page()?
-            } else {
-                pmanager.allocate_large_page()?
+            // Allocate the page (need to make sure we drop pamanager again
+            // before we go to NR):
+            let frame = {
+                let mut pmanager = kcb.mem_manager();
+                if page_size == BASE_PAGE_SIZE {
+                    pmanager.allocate_base_page()?
+                } else {
+                    pmanager.allocate_large_page()?
+                }
             };
 
             // Associate memory with the process

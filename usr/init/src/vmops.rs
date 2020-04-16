@@ -19,7 +19,7 @@ unsafe extern "C" fn maponly_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
 fn maponly_bencher(cores: usize) {
     use vibrio::io::*;
     use vibrio::syscalls::*;
-
+    info!("Trying to allocate a frame");
     let (frame_id, paddr) =
         PhysicalMemory::allocate_base_page().expect("Can't allocate a memory obj");
     info!("Got frame_id {:#?}", frame_id);

@@ -149,8 +149,8 @@ impl<'a> SmpScheduler<'a> {
         );
 
         if self.threads.lock().len() <= SmpScheduler::MAX_THREADS {
-            self.threads.lock().insert(tid, handle);
             self.generators.lock().insert(tid, generator);
+            self.threads.lock().insert(tid, handle);
             Some(tid)
         } else {
             error!("too many threads");

@@ -149,7 +149,7 @@ impl Process for UnixProcess {
     type E = UnixThread;
     type A = VSpace;
 
-    fn new(_module: &Module, pid: Pid) -> Result<Self, ProcessError> {
+    fn new(_module: &Module, _pid: Pid, _data_frame: Frame) -> Result<Self, ProcessError> {
         Ok(UnixProcess {
             vspace: VSpace::new(),
             fd: Default::default(),
@@ -159,13 +159,13 @@ impl Process for UnixProcess {
 
     fn try_reserve_executors(
         &self,
-        how_many: usize,
-        affinity: topology::NodeId,
+        _how_many: usize,
+        _affinity: topology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError> {
         Ok(())
     }
 
-    fn allocate_executors(&mut self, frame: Frame) -> Result<usize, ProcessError> {
+    fn allocate_executors(&mut self, _frame: Frame) -> Result<usize, ProcessError> {
         Ok(0)
     }
 
@@ -173,7 +173,10 @@ impl Process for UnixProcess {
         &mut self.vspace
     }
 
-    fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError> {
+    fn get_executor(
+        &mut self,
+        _for_region: topology::NodeId,
+    ) -> Result<Box<Self::E>, ProcessError> {
         Ok(Box::new(UnixThread::default()))
     }
 
@@ -181,11 +184,11 @@ impl Process for UnixProcess {
         Some((1, &mut self.fd))
     }
 
-    fn deallocate_fd(&mut self, fd: usize) -> usize {
+    fn deallocate_fd(&mut self, _fd: usize) -> usize {
         0
     }
 
-    fn get_fd(&self, index: usize) -> &Fd {
+    fn get_fd(&self, _index: usize) -> &Fd {
         &self.fd
     }
 
@@ -193,11 +196,11 @@ impl Process for UnixProcess {
         &self.pinfo
     }
 
-    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError> {
+    fn add_frame(&mut self, _frame: Frame) -> Result<FrameId, ProcessError> {
         Err(ProcessError::InvalidFrameId)
     }
 
-    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError> {
+    fn get_frame(&mut self, _frame_id: FrameId) -> Result<Frame, ProcessError> {
         Err(ProcessError::InvalidFrameId)
     }
 }

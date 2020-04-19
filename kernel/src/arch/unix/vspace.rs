@@ -36,31 +36,31 @@ impl VSpace {
 impl AddressSpace for VSpace {
     fn map_frame(
         &mut self,
-        base: VAddr,
-        frame: Frame,
-        action: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
+        _base: VAddr,
+        _frame: Frame,
+        _action: MapAction,
+        _pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
         unimplemented!("map_frame");
     }
 
-    fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize {
+    fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {
         unimplemented!("map_memory_requirements");
     }
 
     fn adjust(
         &mut self,
-        vaddr: VAddr,
-        rights: MapAction,
+        _vaddr: VAddr,
+        _rights: MapAction,
     ) -> Result<(VAddr, usize), AddressSpaceError> {
         unimplemented!("adjust");
     }
 
-    fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
+    fn resolve(&self, _vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
         unimplemented!("resolve");
     }
 
-    fn unmap(&mut self, vaddr: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+    fn unmap(&mut self, _vaddr: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
         unimplemented!("unmap");
     }
 }

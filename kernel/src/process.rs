@@ -50,7 +50,7 @@ pub trait Process {
     type E: Executor + Copy;
     type A: AddressSpace;
 
-    fn new(module: &Module, pid: Pid) -> Result<Self, ProcessError>
+    fn new(module: &Module, pid: Pid, data_frame: Frame) -> Result<Self, ProcessError>
     where
         Self: core::marker::Sized;
 

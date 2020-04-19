@@ -17,6 +17,8 @@ use crate::kcb::{CommandLineArgs, Kcb};
 
 pub use bootloader_shared::*;
 
+pub const MAX_NUMA_NODES: usize = 12;
+
 pub mod debug {
     use crate::ExitReason;
     pub fn shutdown(val: ExitReason) -> ! {

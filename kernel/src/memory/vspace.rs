@@ -93,7 +93,7 @@ custom_error! {
 #[derive(PartialEq, Clone)]
 pub AddressSpaceError
     InvalidFrame = "Supplied frame was invalid",
-    AlreadyMapped = "Address space operation covers existing mapping",
+    AlreadyMapped{base: VAddr} = "Address space operation covers existing mapping",
     BaseOverflow{base: u64} = "Provided virtual base was invalid (led to overflow on mappings).",
     NotMapped = "The requested mapping was not found",
     InvalidLength = "The supplied length was invalid",
@@ -104,7 +104,7 @@ impl Into<SystemCallError> for AddressSpaceError {
     fn into(self) -> SystemCallError {
         match self {
             AddressSpaceError::InvalidFrame => SystemCallError::InternalError,
-            AddressSpaceError::AlreadyMapped => SystemCallError::InternalError,
+            AddressSpaceError::AlreadyMapped { .. } => SystemCallError::InternalError,
             AddressSpaceError::BaseOverflow { .. } => SystemCallError::InternalError,
             AddressSpaceError::NotMapped => SystemCallError::InternalError,
             AddressSpaceError::InvalidLength => SystemCallError::InternalError,
@@ -397,6 +397,7 @@ pub(crate) mod model {
             }
 
             // Is there an existing mapping that conflicts with the new mapping?
+            let mut overlapping_mappings = Vec::with_capacity(1);
             for (cur_vaddr, cur_paddr, length, rights) in self.oplog.iter_mut().rev() {
                 let cur_range = cur_vaddr.as_usize()..cur_vaddr.as_usize() + *length;
                 let new_range = base.as_usize()..base.as_usize() + frame.size();
@@ -411,12 +412,26 @@ pub(crate) mod model {
                         *length = frame.size();
                         return Ok(());
                     } else {
-                        return Err(AddressSpaceError::AlreadyMapped);
+                        overlapping_mappings.push(
+                            ModelAddressSpace::intersection(cur_range, new_range)
+                                .unwrap()
+                                .start
+                                .into(),
+                        );
                     }
                 }
             }
 
-            // No? Then add the new mapping
+            // In case we have a mapping that conflicts return the first (lowest)
+            // VAddr where a conflict happened:
+            if !overlapping_mappings.is_empty() {
+                overlapping_mappings.sort();
+                return Err(AddressSpaceError::AlreadyMapped {
+                    base: *overlapping_mappings.get(0).unwrap(),
+                });
+            }
+
+            // No conflicts? Then add the new mapping
             self.oplog.push((base, frame.base, frame.size(), action));
             Ok(())
         }

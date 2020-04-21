@@ -163,7 +163,12 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     }
 
     /// Load a region of bytes into the virtual address space of the process.
-    fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
+    fn load(
+        &mut self,
+        _flags: elfloader::Flags,
+        destination: u64,
+        region: &[u8],
+    ) -> Result<(), &'static str> {
         let destination = self.offset + destination;
         debug!(
             "ELF Load at {:#x} -- {:#x}",

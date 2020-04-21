@@ -111,3 +111,9 @@ impl<T> From<T> for CachePadded<T> {
         CachePadded::new(t)
     }
 }
+
+/// Checks if there is an overlap between two ranges
+#[allow(unused)] // Currently only used in integration_main.rs
+pub fn overlaps<T: PartialOrd>(a: &core::ops::Range<T>, b: &core::ops::Range<T>) -> bool {
+    a.start < b.end && b.start < a.end
+}

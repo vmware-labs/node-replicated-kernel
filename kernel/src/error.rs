@@ -12,6 +12,7 @@ custom_error! {
     NoExecutorForCore = "The core we're looking up has no executor allocated to it.",
     NotSupported = "The requested operation is not supported/does not exist.",
     BadAddress = "User-space pointer is not valid.",
+    GlobalMemoryNotSet = "Global memory is not yet available.",
     CoreAlreadyAllocated = "The requested core is already allocated by another process.",
     InvalidSyscallArgument1{a: u64} = "Invalid 1st syscall argument supplied: {}",
     InvalidVSpaceOperation{a: u64} = "Invalid VSpace Operation (2nd syscall argument) supplied: {}",
@@ -21,6 +22,7 @@ custom_error! {
     PhysicalMemory{source: crate::memory::AllocationError} = "Memory allocation failed",
     FileSystem{source: crate::fs::FileSystemError} = "FileSystem operation does file based io",
     ProcessError{source: crate::process::ProcessError} = "Process Operation failed",
+    InvalidAffinityId = "Specified an invalid NUMA node ID for affinity.",
 }
 
 impl Into<SystemCallError> for KError {

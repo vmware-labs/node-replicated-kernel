@@ -21,7 +21,8 @@
     maybe_uninit_ref,
     drain_filter,
     alloc_prelude,
-    try_reserve
+    try_reserve,
+    const_in_array_repeat_expressions
 )]
 #![cfg_attr(
     all(not(test), not(feature = "integration-test"), target_os = "none"),

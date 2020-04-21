@@ -1,6 +1,7 @@
 //! Generic process traits
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use custom_error::custom_error;
 
@@ -50,7 +51,7 @@ pub trait Process {
     type E: Executor + Copy;
     type A: AddressSpace;
 
-    fn new(module: &Module, pid: Pid, data_frame: Frame) -> Result<Self, ProcessError>
+    fn new(module: &Module, pid: Pid, writable_sections: Vec<Frame>) -> Result<Self, ProcessError>
     where
         Self: core::marker::Sized;
 
@@ -61,7 +62,9 @@ pub trait Process {
     ) -> Result<(), alloc::collections::TryReserveError>;
     fn allocate_executors(&mut self, frame: Frame) -> Result<usize, ProcessError>;
 
-    fn vspace(&mut self) -> &mut Self::A;
+    fn vspace_mut(&mut self) -> &mut Self::A;
+
+    fn vspace(&self) -> &Self::A;
 
     fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError>;
 

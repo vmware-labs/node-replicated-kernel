@@ -28,11 +28,12 @@ pub enum ReadOps {
     CurrentExecutor(topology::GlobalThreadId),
     ProcessInfo(Pid),
     FileRead(Pid, FD, Buffer, Len, Offset),
+    MemResolve(Pid, VAddr),
 }
 
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum Op {
-    ProcCreate(&'static Module),
+    ProcCreate(&'static Module, Vec<Frame>),
     ProcDestroy(Pid),
     ProcInstallVCpuArea(Pid, u64),
     ProcAllocIrqVector,
@@ -55,7 +56,6 @@ pub enum Op {
     MemMapFrameId(Pid, VAddr, FrameId, MapAction),
     MemAdjust,
     MemUnmap,
-    MemResolve(Pid, VAddr),
     FileOpen(Pid, Filename, Flags, Modes),
     FileWrite(Pid, FD, Buffer, Len, Offset),
     FileClose(Pid, FD),
@@ -125,7 +125,8 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica.execute(Op::MemResolve(pid, base), kcb.arch.replica_idx);
+                let response =
+                    replica.execute_ro(ReadOps::MemResolve(pid, base), kcb.arch.replica_idx);
 
                 match response {
                     Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
@@ -197,7 +198,7 @@ impl<P: Process> KernelNode<P> {
 
                     match response {
                         Ok(NodeResult::Mapped) => {}
-                        _ => unreachable!("Got unexpected response"),
+                        e => unreachable!("Got unexpected response {:?}", e),
                     };
 
                     virtual_offset += frame.size();
@@ -423,6 +424,14 @@ where
                     .ok_or(KError::NoExecutorForCore)?;
                 Ok(NodeResult::Executor(Arc::downgrade(executor)))
             }
+            ReadOps::MemResolve(pid, base) => {
+                let process_lookup = self.process_map.get(&pid);
+                let kcb = crate::kcb::get_kcb();
+                let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
+
+                let (paddr, rights) = p.vspace().resolve(base)?;
+                Ok(NodeResult::Resolved(paddr, rights))
+            }
         }
     }
 
@@ -431,15 +440,17 @@ where
         op: Self::WriteOperation,
     ) -> Result<Self::Response, Self::ResponseError> {
         match op {
-            Op::ProcCreate(module) => P::new(module, self.current_pid)
-                .and_then(|process| {
-                    //self.process_map.try_reserve(1);
-                    let pid = self.current_pid;
-                    self.process_map.insert(pid, Box::new(process));
-                    self.current_pid += 1;
-                    Ok(NodeResult::ProcCreated(pid))
-                })
-                .map_err(|e| e.into()),
+            Op::ProcCreate(module, writeable_sections) => {
+                P::new(module, self.current_pid, writeable_sections)
+                    .and_then(|process| {
+                        //self.process_map.try_reserve(1);
+                        let pid = self.current_pid;
+                        self.process_map.insert(pid, Box::new(process));
+                        self.current_pid += 1;
+                        Ok(NodeResult::ProcCreated(pid))
+                    })
+                    .map_err(|e| e.into())
+            }
             Op::ProcDestroy(pid) => {
                 // TODO(correctness): This is just a trivial,
                 // wrong implementation at the moment
@@ -468,13 +479,14 @@ where
             Op::MemMapFrames(pid, base, frames, action) => unimplemented!("MemMapFrames"),
             Op::MemMapFrame(pid, base, frame, action) => {
                 let process_lookup = self.process_map.get_mut(&pid);
+                crate::memory::KernelAllocator::try_refill_tcache(7, 0)?;
+
                 let kcb = crate::kcb::get_kcb();
                 let mut pmanager = kcb.mem_manager();
 
                 let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
-                p.vspace()
-                    .map_frame(base, frame, action, &mut *pmanager)
-                    .expect("TODO: MemMapFrame map_frame failed");
+                p.vspace_mut()
+                    .map_frame(base, frame, action, &mut *pmanager)?;
                 Ok(NodeResult::Mapped)
             }
             Op::MemMapDevice(pid, frame, action) => {
@@ -485,7 +497,7 @@ where
                 let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
 
                 let base = VAddr::from(frame.base.as_u64());
-                p.vspace()
+                p.vspace_mut()
                     .map_frame(base, frame, action, &mut *pmanager)
                     .expect("TODO: MemMapFrame map_frame failed");
                 Ok(NodeResult::Mapped)
@@ -502,22 +514,12 @@ where
                 let kcb = crate::kcb::get_kcb();
                 let mut pmanager = kcb.mem_manager();
 
-                p.vspace().map_frame(base, frame, action, &mut *pmanager)?;
+                p.vspace_mut()
+                    .map_frame(base, frame, action, &mut *pmanager)?;
                 Ok(NodeResult::MappedFrameId(frame.base, frame.size))
             }
             Op::MemAdjust => unreachable!(),
             Op::MemUnmap => unreachable!(),
-            Op::MemResolve(pid, base) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let kcb = crate::kcb::get_kcb();
-                let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
-
-                let (paddr, rights) = p
-                    .vspace()
-                    .resolve(base)
-                    .expect("TODO: MemMapFrame map_frame failed");
-                Ok(NodeResult::Resolved(paddr, rights))
-            }
             Op::FileOpen(pid, pathname, flags, modes) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");

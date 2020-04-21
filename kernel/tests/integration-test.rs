@@ -20,7 +20,6 @@ extern crate matches;
 use std::fmt::{self, Display, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::io::prelude::*;
 use std::io::Write;
 use std::path::Path;
 use std::process;
@@ -779,7 +778,7 @@ fn s04_userspace_multicore() {
         .user_features(&["test-scheduler-smp"])
         .cores(NUM_CORES)
         .memory(2048)
-        .timeout(25_000);
+        .timeout(28_000);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -912,7 +911,7 @@ fn s02_vspace_debug() {
     plot_vspace(&graphviz_output).expect("Can't plot vspace");
 }
 
-fn multi_process() {
+fn _multi_process() {
     let cmdline = &RunnerArgs::new("test-userspace-multi").user_feature("test-loopy");
     let mut output = String::new();
 
@@ -955,6 +954,8 @@ fn s05_redis_smoke() {
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
         p.exp_string("# Server started, Redis version 3.0.6")?;
 
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
         let mut redis_client = spawn_nc(REDIS_PORT)?;
         // Test that redis commands work as expected:
         redis_client.send_line("ping")?;
@@ -982,19 +983,19 @@ fn s05_redis_smoke() {
     );
 }
 
-fn redis_benchmark(nic: &'static str) -> Result<rexpect::session::PtySession> {
-    fn spawn_bencher(port: u16) -> Result<rexpect::session::PtySession> {
+fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::session::PtySession> {
+    fn spawn_bencher(port: u16, requests: usize) -> Result<rexpect::session::PtySession> {
         spawn(
             format!(
-                "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set -n 4000000 -P 30 --csv",
-                port
+                "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set -n {} -P 30 --csv",
+                port, requests
             )
             .as_str(),
             Some(25000),
         )
     }
 
-    let mut redis_client = spawn_bencher(REDIS_PORT)?;
+    let mut redis_client = spawn_bencher(REDIS_PORT, requests)?;
     // redis reports the tputs as floating points
     redis_client.exp_string("\"PING_INLINE\",\"")?;
     let (_line, ping_tput) = redis_client.exp_regex("[-+]?[0-9]*\\.?[0-9]+")?;
@@ -1048,7 +1049,7 @@ fn redis_benchmark(nic: &'static str) -> Result<rexpect::session::PtySession> {
         get: get_tput,
     };
 
-    wtr.serialize(record).expect("Can't writ results");
+    wtr.serialize(record).expect("Can't write results");
 
     println!("git_rev,nic,ping,ping_bulk,set,get");
     println!(
@@ -1087,7 +1088,10 @@ fn s06_redis_benchmark_virtio() {
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
         p.exp_string("# Server started, Redis version 3.0.6")?;
 
-        let mut redis_client = redis_benchmark("virtio")?;
+        use std::{thread, time};
+        thread::sleep(time::Duration::from_secs(3));
+
+        let mut redis_client = redis_benchmark("virtio", 4000000)?;
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;
@@ -1122,7 +1126,7 @@ fn s06_redis_benchmark_e1000() {
         use std::{thread, time};
         thread::sleep(time::Duration::from_secs(3));
 
-        let mut redis_client = redis_benchmark("e1000")?;
+        let mut redis_client = redis_benchmark("e1000", 3000000)?;
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;
@@ -1137,14 +1141,17 @@ fn s06_redis_benchmark_e1000() {
 
 #[test]
 fn s06_vmops_benchmark() {
-    for cores in 1..=4 {
-        let cmdline = RunnerArgs::new("test-userspace-smp")
+    for &cores in [1, 4, 8, 10].iter() {
+        let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
             .memory(10_000)
             .timeout(18_000 + cores as u64 * 3000)
-            .cores(cores)
-            .release();
+            .cores(cores);
+        if cores > 4 {
+            cmdline = cmdline.nodes(2);
+        }
+        let cmdline = cmdline.release();
         let mut output = String::new();
 
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
@@ -1194,12 +1201,12 @@ fn s06_vmops_benchmark() {
 
 #[test]
 fn s06_memfs_bench() {
-    for cores in 1..=7 {
+    for cores in 1..=4 {
         let cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("fs-bench")
             .memory(1024)
-            .timeout(100_000)
+            .timeout(20_000)
             .cores(cores)
             .release();
         let mut output = String::new();

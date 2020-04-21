@@ -2,11 +2,13 @@
 
 use alloc::string::String;
 use core::cell::{RefCell, RefMut};
+use core::convert::TryInto;
 
 use logos::Logos;
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
+use crate::error::KError;
 use crate::fs::{FileSystem, MemFS};
 use crate::memory::{emem::EmergencyAllocator, tcache::TCache, GlobalMemory};
 
@@ -112,6 +114,44 @@ impl Default for CommandLineArgs {
     }
 }
 
+/// State which allows to do memory management for a particular
+/// NUMA node on a given core.
+pub struct PhysicalMemoryArena {
+    pub affinity: topology::NodeId,
+
+    /// A handle to the global memory manager.
+    pub gmanager: Option<&'static GlobalMemory>,
+
+    /// A handle to the per-core page-allocator.
+    pub pmanager: Option<RefCell<TCache>>,
+
+    /// A handle to the per-core ZoneAllocator.
+    pub zone_allocator: RefCell<ZoneAllocator<'static>>,
+}
+
+impl PhysicalMemoryArena {
+    fn new(node: topology::NodeId, global_memory: &'static GlobalMemory) -> Self {
+        PhysicalMemoryArena {
+            affinity: node,
+            gmanager: Some(global_memory),
+            pmanager: Some(RefCell::new(TCache::new(
+                topology::MACHINE_TOPOLOGY.current_thread().id,
+                node,
+            ))),
+            zone_allocator: RefCell::new(ZoneAllocator::new()),
+        }
+    }
+
+    fn uninit_with_node(node: topology::NodeId) -> Self {
+        PhysicalMemoryArena {
+            affinity: node,
+            gmanager: None,
+            pmanager: None,
+            zone_allocator: RefCell::new(ZoneAllocator::new()),
+        }
+    }
+}
+
 /// The Kernel Control Block for a given core.
 /// It contains all core-local state of the kernel.
 pub struct Kcb<A> {
@@ -129,33 +169,27 @@ pub struct Kcb<A> {
     /// A pointer to the memory location of the kernel (ELF binary).
     kernel_binary: &'static [u8],
 
-    /// A handle to the global memory manager.
-    pub gmanager: Option<&'static GlobalMemory>,
-
     /// A handle to the early page-allocator.
     pub emanager: RefCell<TCache>,
 
     /// A handle to a bump-style emergency Allocator.
     pub ezone_allocator: RefCell<EmergencyAllocator>,
 
-    /// A handle to the per-core page-allocator.
-    pub pmanager: Option<RefCell<TCache>>,
-
-    /// A handle to the per-core ZoneAllocator.
-    pub zone_allocator: RefCell<ZoneAllocator<'static>>,
+    /// Related meta-data to manage physical memory for a given NUMA node.
+    pub physical_memory: PhysicalMemoryArena,
 
     /// Which NUMA node this KCB / core belongs to
     pub node: topology::NodeId,
-
-    /// Allocation affinity (which node we allocate from,
-    /// this is a hack remove once custom allocators land).
-    allocation_affinity: topology::NodeId,
 
     /// A dummy in-memory file system to test the memory
     /// system and file system operations with NR.
     pub memfs: Option<MemFS>,
 
     pub print_buffer: Option<String>,
+
+    /// Contains a bunch of memory arenas, can be one for every NUMA node
+    /// but we intialize it lazily upon calling `set_allocation_affinity`.
+    pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -173,13 +207,11 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             kernel_binary,
             emanager: RefCell::new(emanager),
             ezone_allocator: RefCell::new(EmergencyAllocator::default()),
-            zone_allocator: RefCell::new(ZoneAllocator::new()),
             node,
-            allocation_affinity: 0,
-            // Can't initialize these yet, needs basic Kcb first for
-            // memory allocations:
-            gmanager: None,
-            pmanager: None,
+            memory_arenas: [None; crate::arch::MAX_NUMA_NODES],
+            // Can't initialize these yet, we need basic Kcb first for
+            // memory allocations (emanager):
+            physical_memory: PhysicalMemoryArena::uninit_with_node(node),
             memfs: None,
             print_buffer: None,
         }
@@ -199,15 +231,41 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     }
 
     pub fn set_global_memory(&mut self, gm: &'static GlobalMemory) {
-        self.gmanager = Some(gm);
+        self.physical_memory.gmanager = Some(gm);
     }
 
-    pub fn set_allocation_affinity(&mut self, node: topology::NodeId) {
-        self.allocation_affinity = node;
+    pub fn set_allocation_affinity(&mut self, node: topology::NodeId) -> Result<(), KError> {
+        let node_idx: usize = node.try_into().unwrap();
+        if node == self.physical_memory.affinity {
+            // Allocation affinity is already set to correct NUMA node
+            return Ok(());
+        }
+
+        if node_idx < self.memory_arenas.len() && node_idx < topology::MACHINE_TOPOLOGY.num_nodes()
+        {
+            let gmanager = self
+                .physical_memory
+                .gmanager
+                .ok_or(KError::GlobalMemoryNotSet)?;
+
+            if self.memory_arenas[node_idx].is_none() {
+                self.memory_arenas[node_idx] = Some(PhysicalMemoryArena::new(node, gmanager));
+            }
+            debug_assert!(self.memory_arenas[node_idx].is_some());
+            let mut arena = self.memory_arenas[node_idx].take().unwrap();
+            debug_assert_eq!(arena.affinity as usize, node_idx);
+
+            core::mem::swap(&mut arena, &mut self.physical_memory);
+            self.memory_arenas[arena.affinity as usize].replace(arena);
+
+            Ok(())
+        } else {
+            Err(KError::InvalidAffinityId)
+        }
     }
 
     pub fn set_physical_memory_manager(&mut self, pmanager: TCache) {
-        self.pmanager = Some(RefCell::new(pmanager));
+        self.physical_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
     pub fn enable_print_buffering(&mut self, buffer: String) {
@@ -228,7 +286,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     pub fn zone_allocator(
         &self,
     ) -> Result<RefMut<impl slabmalloc::Allocator<'static>>, core::cell::BorrowMutError> {
-        self.zone_allocator.try_borrow_mut()
+        self.physical_memory.zone_allocator.try_borrow_mut()
     }
 
     /// Returns a reference to the core-local physical memory manager if set,
@@ -238,7 +296,8 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             return self.emanager();
         }
 
-        self.pmanager
+        self.physical_memory
+            .pmanager
             .as_ref()
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
@@ -248,7 +307,8 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             return Ok(self.emanager());
         }
 
-        self.pmanager
+        self.physical_memory
+            .pmanager
             .as_ref()
             .map_or(self.emanager.try_borrow_mut(), |pmem| pmem.try_borrow_mut())
     }

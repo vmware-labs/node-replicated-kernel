@@ -319,17 +319,29 @@ fn boot_app_cores(
     let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
 
-    // Let's go with one replica per system node for now:
+    // Let's go with one replica per NUMA node for now:
     let numa_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
     let mut replicas: Vec<Arc<Replica<'static, KernelNode<Ring3Process>>>> =
         Vec::with_capacity(numa_nodes);
-    for node in 0..topology::MACHINE_TOPOLOGY.num_nodes() {
-        debug!("Allocate a replica for {}", node);
+
+    // Push the replica for node 0
+    debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
+    replicas.push(bsp_replica);
+    for node in 1..topology::MACHINE_TOPOLOGY.num_nodes() {
+        debug!(
+            "Allocate a replica for {} ({} bytes)",
+            node,
+            core::mem::size_of::<Replica<'static, KernelNode<Ring3Process>>>()
+        );
         kcb.set_allocation_affinity(node as topology::NodeId);
-        replicas.push(bsp_replica.clone());
+        replicas.push(Replica::new(&log));
         kcb.set_allocation_affinity(0);
     }
-    let global_memory = kcb.gmanager.expect("boot_app_cores requires kcb.gmanager");
+
+    let global_memory = kcb
+        .physical_memory
+        .gmanager
+        .expect("boot_app_cores requires kcb.gmanager");
 
     // For now just boot everything, except ourselves
     // Create a single log and one replica...
@@ -343,7 +355,7 @@ fn boot_app_cores(
         kcb.set_allocation_affinity(node);
 
         // A simple stack for the app core (non bootstrap core)
-        let coreboot_stack: OwnedStack = OwnedStack::new(4096 * 32);
+        let coreboot_stack: OwnedStack = OwnedStack::new(4096 * 512);
         let mem_region = global_memory.node_caches[node as usize]
             .lock()
             .allocate_large_page()
@@ -359,7 +371,7 @@ fn boot_app_cores(
             global_memory,
             thread: thread.id,
             _log: log.clone(),
-            replica: bsp_replica.clone(),
+            replica: replicas[node as usize].clone(),
         });
 
         unsafe {
@@ -391,6 +403,7 @@ fn boot_app_cores(
         debug!("Core {:?} has started", thread.apic_id());
         kcb.set_allocation_affinity(0);
     }
+    core::mem::forget(replicas);
 }
 
 /// Annotate all physical memory frames we got from UEFI with NUMA affinity by
@@ -649,7 +662,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Create the global operation log and first replica
     // and store it in the BSP kcb
     let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
-    let bsp_replica = Arc::new(Replica::<KernelNode<Ring3Process>>::new(&log));
+    let bsp_replica = Replica::<KernelNode<Ring3Process>>::new(&log);
     let local_ridx = bsp_replica
         .register()
         .expect("Failed to register with Replica.");
@@ -666,7 +679,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kernel_binary,
         kernel_args,
         log.clone(),
-        bsp_replica.clone(),
+        bsp_replica,
     );
 
     // Done with initialization, now we go in

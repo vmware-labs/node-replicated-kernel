@@ -46,6 +46,7 @@ use x86::Ring;
 use log::debug;
 
 use crate::memory::{vspace::MapAction, Frame};
+use crate::nr;
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::Executor;
 use crate::ExitReason;
@@ -54,7 +55,7 @@ use super::debug;
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
 use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
-use super::process::Ring3Resumer;
+use super::process::{Ring3Process, Ring3Resumer};
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -260,9 +261,12 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
 
     let kcb = get_kcb();
     sprintln!("Register State:\n{:?}", kcb.arch.save_area);
-    kcb.arch.save_area.as_ref().map(|sa| {
-        backtrace_from(sa.rbp, sa.rsp, sa.rip);
-    });
+
+    if !kcb.in_panic_mode {
+        kcb.arch.save_area.as_ref().map(|sa| {
+            backtrace_from(sa.rbp, sa.rsp, sa.rip);
+        });
+    }
 
     debug::shutdown(ExitReason::UnhandledInterrupt);
 }
@@ -272,8 +276,35 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
 /// TODO: Right now we terminate kernel.
 /// Should abort process and resume.
 unsafe fn pf_handler(a: &ExceptionArguments) {
-    sprintln!("[IRQ] Page Fault");
     let err = PageFaultError::from_bits_truncate(a.exception as u32);
+    let faulting_address = x86::controlregs::cr2();
+
+    // If this is a user-mode page-fault make sure it's not a spurious
+    // page-fault by not having a replica in-sync with others
+    if err.contains(PageFaultError::US) {
+        let kcb = get_kcb();
+
+        let faulting_address_va = VAddr::from(faulting_address);
+        let pid = kcb
+            .current_pid()
+            .expect("A pid must be set in this if branch (US bit set in page-fault error)");
+
+        match nr::KernelNode::<Ring3Process>::resolve(pid, faulting_address_va) {
+            Ok(_) => {
+                // Spurious page-fault, after resolve page-table is up to date
+                let r = kcb_iret_handle(kcb);
+                r.resume()
+            }
+            Err(_) => {
+                // unresolved page-fault, proceed with abort below
+            }
+        }
+    }
+
+    sprintln!(
+        "[IRQ] Page Fault on {}",
+        topology::MACHINE_TOPOLOGY.current_thread().id
+    );
     sprintln!("{}", err);
 
     // Enable user-space access
@@ -319,10 +350,11 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     sprintln!("{:?}", a);
     let kcb = get_kcb();
     sprintln!("Register State:\n{:?}", kcb.arch.save_area);
-
-    kcb.arch.save_area.as_ref().map(|sa| {
-        backtrace_from(sa.rbp, sa.rsp, sa.rip);
-    });
+    if !kcb.in_panic_mode {
+        kcb.arch.save_area.as_ref().map(|sa| {
+            backtrace_from(sa.rbp, sa.rsp, sa.rip);
+        });
+    }
 
     debug::shutdown(ExitReason::PageFault);
 }
@@ -380,15 +412,21 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
         sprintln!("stack[{}] = {:#x}", i, *ptr);
     }
 
-    kcb.arch.save_area.as_ref().map(|sa| {
-        backtrace_from(sa.rbp, sa.rsp, sa.rip);
-    });
+    if !kcb.in_panic_mode {
+        kcb.arch.save_area.as_ref().map(|sa| {
+            backtrace_from(sa.rbp, sa.rsp, sa.rip);
+        });
+    }
 
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
 
 fn kcb_resume_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
     Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr())
+}
+
+fn kcb_iret_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
+    Ring3Resumer::new_iret(kcb.arch.get_save_area_ptr())
 }
 
 /// Handler for all exceptions that happen early during the initialization

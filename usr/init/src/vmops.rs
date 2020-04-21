@@ -25,7 +25,7 @@ fn maponly_bencher(cores: usize) {
     info!("Got frame_id {:#?}", frame_id);
 
     let vspace_offset = lineup::tls2::Environment::tid().0 + 1;
-    let mut base: u64 = (0x0f10_0000_0000 + (0x6deef_f000 * vspace_offset) as u64);
+    let mut base: u64 = (0x0f10_0000_0000 + (0x66_0000_0000 * vspace_offset) as u64);
     let size: u64 = BASE_PAGE_SIZE as u64;
     info!("start mapping at {:#x}", base);
 

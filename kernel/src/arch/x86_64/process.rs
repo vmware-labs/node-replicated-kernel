@@ -2,11 +2,11 @@
 
 use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::fmt;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
-
-use alloc::vec::Vec;
 
 use kpi::process::FrameId;
 use x86::bits64::paging::*;
@@ -152,7 +152,7 @@ impl<'a> Drop for UserSlice<'a> {
 /// i.e., get the handle and immediatle resume but we can def. make this more safe
 /// to use...)
 pub struct Ring3Resumer {
-    is_upcall: bool,
+    typ: ResumeStrategy,
     pub save_area: *const kpi::arch::SaveArea,
 
     entry_point: VAddr,
@@ -168,10 +168,29 @@ impl ResumeHandle for Ring3Resumer {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
+enum ResumeStrategy {
+    SysRet,
+    IRet,
+    Upcall,
+}
+
 impl Ring3Resumer {
+    pub fn new_iret(save_area: *const kpi::arch::SaveArea) -> Ring3Resumer {
+        Ring3Resumer {
+            typ: ResumeStrategy::IRet,
+            save_area: save_area,
+            entry_point: VAddr::zero(),
+            stack_top: VAddr::zero(),
+            cpu_ctl: 0,
+            vector: 0,
+            exception: 0,
+        }
+    }
+
     pub fn new_restore(save_area: *const kpi::arch::SaveArea) -> Ring3Resumer {
         Ring3Resumer {
-            is_upcall: false,
+            typ: ResumeStrategy::SysRet,
             save_area: save_area,
             entry_point: VAddr::zero(),
             stack_top: VAddr::zero(),
@@ -189,7 +208,7 @@ impl Ring3Resumer {
         exception: u64,
     ) -> Ring3Resumer {
         Ring3Resumer {
-            is_upcall: true,
+            typ: ResumeStrategy::Upcall,
             save_area: ptr::null(),
             entry_point,
             stack_top,
@@ -200,11 +219,62 @@ impl Ring3Resumer {
     }
 
     pub unsafe fn resume(self) -> ! {
-        if self.is_upcall {
-            self.upcall()
-        } else {
-            self.restore()
+        match self.typ {
+            ResumeStrategy::Upcall => self.upcall(),
+            ResumeStrategy::SysRet => self.restore(),
+            ResumeStrategy::IRet => self.iret_restore(),
         }
+    }
+
+    unsafe fn iret_restore(self) -> ! {
+        //info!("resuming User-space with ctxt: {:?}", (*(self.save_area)),);
+
+        // Resumes a process using iretq
+        asm!("
+                // Restore fs and gs registers
+                swapgs
+                movq 19*8(%rdi), %rsi
+                wrfsbase %rsi
+
+                // Restore vector registers
+                fxrstor 24*8(%rdi)
+
+                // Restore CPU registers
+                movq  0*8(%rdi), %rax
+                movq  1*8(%rdi), %rbx
+                movq  2*8(%rdi), %rcx
+                movq  3*8(%rdi), %rdx
+                movq  4*8(%rdi), %rsi
+                // %rdi: Restore last (see below) to preserve `save_area`
+                movq  6*8(%rdi), %rbp
+                // %rsp: Restored through iretq stack set-up
+                movq  8*8(%rdi), %r8
+                movq  9*8(%rdi), %r9
+                movq 10*8(%rdi), %r10
+                movq 11*8(%rdi), %r11
+                movq 12*8(%rdi), %r12
+                movq 13*8(%rdi), %r13
+                movq 14*8(%rdi), %r14
+                movq 15*8(%rdi), %r15
+
+                // SS (TODO(style): hard-coded constant)
+                pushq $$35
+                // %rsp
+                pushq 7*8(%rdi)
+                // RFLAGS
+                pushq 17*8(%rdi)
+                // Code-segment (TODO(style): hard-coded constant)
+                pushq $$27
+                // %rip
+                pushq 16*8(%rdi)
+
+                // Restore rdi register last, since it was used to reach `state`
+                movq 5*8(%rdi), %rdi
+                iretq
+                " ::
+            "{rdi}" (self.save_area));
+
+        unreachable!("We should not come here!");
     }
 
     unsafe fn restore(self) -> ! {
@@ -522,10 +592,15 @@ pub struct Ring3Process {
     pub fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]>,
     /// Physical frame objects registered to the process.
     pub frames: Vec<Frame>,
+    /// Frames of the writeable ELF data section (shared across all replicated Process structs)
+    pub writeable_sections: Vec<Frame>,
+    /// Section in ELF where last read-only header is (TODO: assumes that all read-only segments
+    /// are before write).
+    pub read_only_offset: VAddr,
 }
 
 impl Ring3Process {
-    fn create(pid: Pid) -> Self {
+    fn create(pid: Pid, writeable_sections: Vec<Frame>) -> Self {
         let mut executor_cache: arrayvec::ArrayVec<
             [Option<Vec<Box<Ring3Executor>>>; super::MAX_NUMA_NODES],
         > = Default::default();
@@ -548,6 +623,8 @@ impl Ring3Process {
             fds,
             pinfo: Default::default(),
             frames: Vec::with_capacity(12),
+            writeable_sections,
+            read_only_offset: VAddr::zero(),
         }
     }
 }
@@ -583,14 +660,6 @@ impl elfloader::ElfLoader for Ring3Process {
             assert_eq!(size_page % LARGE_PAGE_SIZE, 0);
             assert_eq!(page_base % LARGE_PAGE_SIZE, 0);
 
-            info!(
-                "ELF Allocate: {:#x} -- {:#x} align to {:#x} with flags {:?}",
-                page_base,
-                page_base + size_page,
-                align_to,
-                flags,
-            );
-
             let map_action = match (flags.is_execute(), flags.is_write(), flags.is_read()) {
                 (false, false, false) => panic!("MapAction::None"),
                 (true, false, false) => panic!("MapAction::None"),
@@ -602,8 +671,16 @@ impl elfloader::ElfLoader for Ring3Process {
                 (true, true, true) => MapAction::ReadWriteExecuteUser,
             };
 
-            let large_pages = size_page / LARGE_PAGE_SIZE;
+            info!(
+                "ELF Allocate: {:#x} -- {:#x} align to {:#x} with flags {:?} ({:?})",
+                page_base,
+                page_base + size_page,
+                align_to,
+                flags,
+                map_action
+            );
 
+            let large_pages = size_page / LARGE_PAGE_SIZE;
             debug!("page_base {} lps: {}", page_base, large_pages);
 
             // TODO(correctness): add 20 as estimate of worst case pt requirements
@@ -614,13 +691,40 @@ impl elfloader::ElfLoader for Ring3Process {
 
             // TODO(correctness): Will this work (we round-up and map large-pages?)
             // TODO(efficiency): What about wasted memory
+            // TODO(hard-coded replication assumptions): We assume that we only have 1 data section
+            // that is read-write and that fits within data_frame (so replication works out)
+            // We should probably return an error and request more bigger data frames if what
+            // we provide initially doesn't work out...
+            let mut wsection_idx = 0;
             for i in 0..large_pages {
-                let frame = pmanager
-                    .allocate_large_page()
-                    .expect("We refilled so allocation should work.");
-                debug!(
+                let frame = if flags.is_write() {
+                    // Writeable program-headers we can't replicate:
+                    assert!(
+                        wsection_idx < self.writeable_sections.len(),
+                        "Didn't pass enough frames for writeable sections to process create."
+                    );
+                    assert_eq!(
+                        self.writeable_sections[wsection_idx].size(),
+                        LARGE_PAGE_SIZE,
+                        "We expect writeable sections frame to be a large-page."
+                    );
+                    let frame = self.writeable_sections[wsection_idx];
+                    wsection_idx += 1;
+                    frame
+                } else {
+                    // A read-only program header we can replicate:
+                    assert!(
+                        map_action == MapAction::ReadUser
+                            || map_action == MapAction::ReadExecuteUser
+                    );
+                    pmanager
+                        .allocate_large_page()
+                        .expect("We refilled so allocation should work.")
+                };
+
+                trace!(
                     "process load vspace from {:#x} with {:?}",
-                    self.offset + page_base,
+                    self.offset + page_base + i * LARGE_PAGE_SIZE,
                     frame
                 );
 
@@ -644,29 +748,54 @@ impl elfloader::ElfLoader for Ring3Process {
     }
 
     /// Load a region of bytes into the virtual address space of the process.
-    fn load(&mut self, destination: u64, region: &[u8]) -> Result<(), &'static str> {
+    fn load(
+        &mut self,
+        flags: elfloader::Flags,
+        destination: u64,
+        region: &[u8],
+    ) -> Result<(), &'static str> {
         let destination = self.offset + destination;
-        trace!(
-            "ELF Load at {:#x} -- {:#x}",
-            destination,
-            destination + region.len()
-        );
 
-        // Load the region at destination in the kernel space
-        for (idx, val) in region.iter().enumerate() {
-            let vaddr = VAddr::from(destination + idx);
-            let (paddr, _rights) = self
-                .vspace
-                .resolve(vaddr)
-                .map_err(|_e| "Can't write to the resolved address in the kernel vspace.")?;
+        // Only write read-only sections, writable frames already have the right content
+        if !flags.is_write() {
+            self.read_only_offset = destination + region.len();
+            info!(
+                "ELF Load of read-only region at {:#x} -- {:#x}",
+                destination,
+                destination + region.len()
+            );
 
-            // TODO(perf): Inefficient byte-wise copy
-            // also within a 4 KiB / 2 MiB page we don't have to resolve_addr
-            // every time
-            let ptr = paddr.as_u64() as *mut u8;
-            unsafe {
-                *ptr = *val;
+            // Load the region at destination in the kernel space
+            for (idx, val) in region.iter().enumerate() {
+                let vaddr = VAddr::from(destination + idx);
+                let (paddr, _rights) = self
+                    .vspace
+                    .resolve(vaddr)
+                    .map_err(|_e| "Can't write to the resolved address in the kernel vspace.")?;
+
+                // TODO(perf): Inefficient byte-wise copy
+                // also within a 4 KiB / 2 MiB page we don't have to resolve_addr
+                // every time
+                if idx == 0 {
+                    trace!(
+                        "write ptr = {:p} vaddr = {:#x} dest+idx={:#x}",
+                        paddr,
+                        vaddr,
+                        destination + idx
+                    );
+                }
+
+                let ptr = paddr.as_u64() as *mut u8;
+                unsafe {
+                    *ptr = *val;
+                }
             }
+        } else {
+            error!(
+                "Skip ELF Load of writeable region at {:#x} -- {:#x}",
+                destination,
+                destination + region.len()
+            );
         }
 
         Ok(())
@@ -684,6 +813,11 @@ impl elfloader::ElfLoader for Ring3Process {
         // The forumla for this is our offset where the kernel is starting,
         // plus the offset of the entry to jump to the code piece
         let addr = self.offset + entry.get_offset();
+
+        if addr >= self.read_only_offset {
+            // Don't relocate anything in write-able section, already done
+            return Ok(());
+        }
 
         // Translate `addr` into a kernel vaddr we can write to:
         let (paddr, _rights) = self.vspace.resolve(addr).expect("Can't resolve address");
@@ -747,8 +881,12 @@ impl Process for Ring3Process {
     type A = VSpace;
 
     /// Create a process from a module
-    fn new(module: &Module, pid: Pid) -> Result<Ring3Process, ProcessError> {
-        let mut p = Ring3Process::create(pid);
+    fn new(
+        module: &Module,
+        pid: Pid,
+        writeable_sections: Vec<Frame>,
+    ) -> Result<Ring3Process, ProcessError> {
+        let mut p = Ring3Process::create(pid, writeable_sections);
 
         // Load the Module into the process address-space
         // This needs mostly sanitation work on elfloader and
@@ -798,8 +936,12 @@ impl Process for Ring3Process {
         Ok(())
     }
 
-    fn vspace(&mut self) -> &mut VSpace {
+    fn vspace_mut(&mut self) -> &mut VSpace {
         &mut self.vspace
+    }
+
+    fn vspace(&self) -> &VSpace {
+        &self.vspace
     }
 
     fn get_executor(
@@ -811,7 +953,7 @@ impl Process for Ring3Process {
                 let ret = executor_list
                     .pop()
                     .ok_or(ProcessError::ExecutorCacheExhausted)?;
-                info!("get executor {} with affinity {}", ret.eid, for_region);
+                //info!("get executor {} with affinity {}", ret.eid, for_region);
                 Ok(ret)
             }
             None => Err(ProcessError::NoExecutorAllocated),

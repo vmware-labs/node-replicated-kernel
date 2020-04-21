@@ -343,7 +343,9 @@ impl VSpace {
                         // Return an error if a frame is present,
                         // and it's not exactly the frame+rights combo we're
                         // trying to map
-                        return Err(AddressSpaceError::AlreadyMapped);
+                        return Err(AddressSpaceError::AlreadyMapped {
+                            base: vbase + mapped,
+                        });
                     }
                 }
             } else {
@@ -428,7 +430,9 @@ impl VSpace {
                         // Return an error if a frame is present,
                         // and it's not exactly the frame+rights combo we're
                         // trying to map anyways
-                        return Err(AddressSpaceError::AlreadyMapped);
+                        return Err(AddressSpaceError::AlreadyMapped {
+                            base: vbase + mapped,
+                        });
                     }
                 }
             } else {
@@ -508,7 +512,9 @@ impl VSpace {
                         // Return an error if a frame is present,
                         // and it's not exactly the frame+rights combo we're
                         // trying to map anyways
-                        return Err(AddressSpaceError::AlreadyMapped);
+                        return Err(AddressSpaceError::AlreadyMapped {
+                            base: vbase + mapped,
+                        });
                     }
                 }
             } else {
@@ -627,7 +633,7 @@ impl VSpace {
         if pdpt[pdpt_idx].is_page() {
             if !insert_mapping {
                 // Check if we could map in theory (no overlap)
-                return Err(AddressSpaceError::AlreadyMapped);
+                return Err(AddressSpaceError::AlreadyMapped { base: vbase });
             } else {
                 panic!(
                     "An existing mapping already covers the 1 GiB range we're trying to map in?"
@@ -670,7 +676,7 @@ impl VSpace {
 
         if pd[pd_idx].is_page() {
             if !insert_mapping {
-                return Err(AddressSpaceError::AlreadyMapped);
+                return Err(AddressSpaceError::AlreadyMapped { base: vbase });
             } else {
                 panic!(
                     "An existing mapping already covers the 2 MiB range we're trying to map in?"

@@ -296,13 +296,13 @@ impl KernelAllocator {
         needed_large_pages: usize,
     ) -> Result<(), AllocationError> {
         let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
-        if kcb.gmanager.is_none() {
+        if kcb.physical_memory.gmanager.is_none() {
             // No gmanager, can't refill then, let's hope it works anyways...
             return Ok(());
         }
 
-        let gmanager = kcb.gmanager.unwrap(); // Ok because of check above.
-        let mut ncache = gmanager.node_caches[kcb.node as usize].lock();
+        let gmanager = kcb.physical_memory.gmanager.unwrap(); // Ok because of check above.
+        let mut ncache = gmanager.node_caches[kcb.physical_memory.affinity as usize].lock();
         let mut mem_manager = kcb.try_mem_manager()?;
 
         // Make sure we don't overflow the TCache
@@ -512,15 +512,20 @@ unsafe impl GlobalAlloc for KernelAllocator {
                         let frame = Frame::new(
                             kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
                             BASE_PAGE_SIZE,
-                            kcb.node,
+                            // TODO(numa-correctness): This is not necessarily correct as free can happen
+                            // while `physical_memory` changes to different affinities
+                            // we try to avoid this at the moment by being careful about freeing things
+                            // during changes to allocation affinity (the NCache or TCache would panic)
+                            kcb.physical_memory.affinity,
                         );
 
                         match fmanager.release_base_page(frame) {
                             Ok(_) => { /* Frame addition to tcache as successful.*/ }
-                            Err(_e) => match kcb.gmanager {
+                            Err(_e) => match kcb.physical_memory.gmanager {
                                 // Try adding frame to ncache.
                                 Some(gmanager) => {
-                                    let mut ncache = gmanager.node_caches[kcb.node as usize].lock();
+                                    let mut ncache =
+                                        gmanager.node_caches[frame.affinity as usize].lock();
                                     ncache
                                         .release_base_page(frame)
                                         .expect("Can't deallocate frame");
@@ -533,7 +538,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
                         let frame = Frame::new(
                             kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
                             LARGE_PAGE_SIZE,
-                            kcb.node,
+                            // TODO(numa-correctness): This is not necessarily correct as free can happen
+                            // while `physical_memory` changes to different affinities
+                            // we try to avoid this at the moment by being careful about freeing things
+                            // during changes to allocation affinity (the NCache or TCache would panic)
+                            kcb.physical_memory.affinity,
                         );
 
                         fmanager

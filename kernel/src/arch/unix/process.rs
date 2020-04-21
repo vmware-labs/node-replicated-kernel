@@ -1,5 +1,6 @@
 //! A dummy process implementation for the unix platform.
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 
 use kpi::process::FrameId;
@@ -149,7 +150,11 @@ impl Process for UnixProcess {
     type E = UnixThread;
     type A = VSpace;
 
-    fn new(_module: &Module, _pid: Pid, _data_frame: Frame) -> Result<Self, ProcessError> {
+    fn new(
+        _module: &Module,
+        _pid: Pid,
+        _writable_sections: Vec<Frame>,
+    ) -> Result<Self, ProcessError> {
         Ok(UnixProcess {
             vspace: VSpace::new(),
             fd: Default::default(),
@@ -169,8 +174,12 @@ impl Process for UnixProcess {
         Ok(0)
     }
 
-    fn vspace(&mut self) -> &mut Self::A {
+    fn vspace_mut(&mut self) -> &mut Self::A {
         &mut self.vspace
+    }
+
+    fn vspace(&self) -> &VSpace {
+        &self.vspace
     }
 
     fn get_executor(

@@ -333,9 +333,10 @@ fn boot_app_cores(
             node,
             core::mem::size_of::<Replica<'static, KernelNode<Ring3Process>>>()
         );
-        kcb.set_allocation_affinity(node as topology::NodeId);
+        kcb.set_allocation_affinity(node as topology::NodeId)
+            .expect("Can't set affinity");
         replicas.push(Replica::new(&log));
-        kcb.set_allocation_affinity(0);
+        kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }
 
     let global_memory = kcb
@@ -352,7 +353,8 @@ fn boot_app_cores(
     for thread in threads_to_boot {
         let node = thread.node_id.unwrap_or(0);
         trace!("Booting {:?} on node {}", thread, node);
-        kcb.set_allocation_affinity(node);
+        kcb.set_allocation_affinity(node)
+            .expect("Can't set affinity");
 
         // A simple stack for the app core (non bootstrap core)
         let coreboot_stack: OwnedStack = OwnedStack::new(4096 * 512);
@@ -401,7 +403,7 @@ fn boot_app_cores(
 
         assert!(initialized.load(Ordering::SeqCst));
         debug!("Core {:?} has started", thread.apic_id());
-        kcb.set_allocation_affinity(0);
+        kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }
     core::mem::forget(replicas);
 }

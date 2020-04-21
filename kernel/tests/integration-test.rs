@@ -1081,7 +1081,7 @@ fn s06_redis_benchmark_virtio() {
                 .cmd("testbinary=redis.bin")
                 .use_virtio()
                 .release()
-                .timeout(25_000),
+                .timeout(30_000),
         )?;
 
         // Test that DHCP works:
@@ -1089,7 +1089,7 @@ fn s06_redis_benchmark_virtio() {
         p.exp_string("# Server started, Redis version 3.0.6")?;
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(3));
+        thread::sleep(time::Duration::from_secs(4));
 
         let mut redis_client = redis_benchmark("virtio", 4000000)?;
 
@@ -1115,7 +1115,7 @@ fn s06_redis_benchmark_e1000() {
                 .user_feature("rkapps:redis")
                 .cmd("testbinary=redis.bin")
                 .release()
-                .timeout(25_000),
+                .timeout(30_000),
         )?;
 
         // Test that DHCP works:
@@ -1124,7 +1124,7 @@ fn s06_redis_benchmark_e1000() {
         p.exp_string("* The server is now ready to accept connections on port 6379")?;
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(3));
+        thread::sleep(time::Duration::from_secs(6));
 
         let mut redis_client = redis_benchmark("e1000", 3000000)?;
 

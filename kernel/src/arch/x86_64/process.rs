@@ -230,7 +230,7 @@ impl Ring3Resumer {
         //info!("resuming User-space with ctxt: {:?}", (*(self.save_area)),);
 
         // Resumes a process using iretq
-        asm!("
+       llvm_asm!("
                 // Restore fs and gs registers
                 swapgs
                 movq 19*8(%rdi), %rsi
@@ -288,7 +288,7 @@ impl Ring3Resumer {
         // This routine assumes the following set-up
         // %rdi points to SaveArea
         // r11 has rflags
-        asm!("  // Restore CPU registers
+       llvm_asm!("  // Restore CPU registers
                 movq  0*8(%rdi), %rax
                 movq  1*8(%rdi), %rbx
                 // %rcx: Don't restore it will contain user-space rip
@@ -347,7 +347,7 @@ impl Ring3Resumer {
         // %rcx Program entry point in Ring 3
         // %r11 RFlags
         trace!("Jumping to {:#x}", self.entry_point);
-        asm!("
+       llvm_asm!("
                 // rax: contains stack pointer
                 movq       $$0, %rbx
                 // rcx: has entry point

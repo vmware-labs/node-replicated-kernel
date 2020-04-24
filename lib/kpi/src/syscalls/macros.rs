@@ -91,7 +91,7 @@ macro_rules! syscall {
 #[inline(always)]
 pub(crate) unsafe fn syscall_1_1(arg0: u64) -> u64 {
     let ret1: u64;
-    asm!("syscall" : "={rax}" (ret1) : "{rdi}" (arg0) : "rcx", "r11", "memory" : "volatile");
+   llvm_asm!("syscall" : "={rax}" (ret1) : "{rdi}" (arg0) : "rcx", "r11", "memory" : "volatile");
     ret1
 }
 
@@ -99,14 +99,14 @@ pub(crate) unsafe fn syscall_1_1(arg0: u64) -> u64 {
 pub(crate) unsafe fn syscall_1_2(arg0: u64) -> (u64, u64) {
     let ret1: u64;
     let ret2: u64;
-    asm!("syscall" : "={rax}" (ret1), "={r}" (ret2) : "{rdi}" (arg0) : "rcx", "r11", "memory" : "volatile");
+   llvm_asm!("syscall" : "={rax}" (ret1), "={r}" (ret2) : "{rdi}" (arg0) : "rcx", "r11", "memory" : "volatile");
     (ret1, ret2)
 }
 
 #[inline(always)]
 pub(crate) unsafe fn syscall_2_1(arg1: u64, arg2: u64) -> u64 {
     let ret1: u64;
-    asm!("syscall" : "={rax}" (ret1) : "{rdi}" (arg1), "{rsi}" (arg2)
+   llvm_asm!("syscall" : "={rax}" (ret1) : "{rdi}" (arg1), "{rsi}" (arg2)
                    : "rcx", "r11", "memory" : "volatile");
     ret1
 }
@@ -115,7 +115,7 @@ pub(crate) unsafe fn syscall_2_1(arg1: u64, arg2: u64) -> u64 {
 pub(crate) unsafe fn syscall_2_2(arg1: u64, arg2: u64) -> (u64, u64) {
     let ret1: u64;
     let ret2: u64;
-    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) : "{rdi}" (arg1), "{rsi}" (arg2)
+   llvm_asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) : "{rdi}" (arg1), "{rsi}" (arg2)
                    : "rcx", "r11", "memory" : "volatile");
     (ret1, ret2)
 }
@@ -126,7 +126,7 @@ pub(crate) unsafe fn syscall_2_3(arg1: u64, arg2: u64) -> (u64, u64, u64) {
     let ret2: u64;
     let ret3: u64;
 
-    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) "={rsi}" (ret3)
+    llvm_asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) "={rsi}" (ret3)
                    : "{rdi}" (arg1), "{rsi}" (arg2)
                    : "rcx", "r11", "memory" : "volatile");
     (ret1, ret2, ret3)
@@ -135,7 +135,7 @@ pub(crate) unsafe fn syscall_2_3(arg1: u64, arg2: u64) -> (u64, u64, u64) {
 #[inline(always)]
 pub(crate) unsafe fn syscall_3_1(arg1: u64, arg2: u64, arg3: u64) -> u64 {
     let ret: u64;
-    asm!("syscall" : "={rax}" (ret) : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
+    llvm_asm!("syscall" : "={rax}" (ret) : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
                    : "rcx", "r11", "memory" : "volatile");
     ret
 }
@@ -144,7 +144,7 @@ pub(crate) unsafe fn syscall_3_1(arg1: u64, arg2: u64, arg3: u64) -> u64 {
 pub(crate) unsafe fn syscall_3_2(arg1: u64, arg2: u64, arg3: u64) -> (u64, u64) {
     let ret1: u64;
     let ret2: u64;
-    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2)
+    llvm_asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2)
                    : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
                    : "rcx", "r11", "memory" : "volatile");
     (ret1, ret2)
@@ -155,7 +155,7 @@ pub(crate) unsafe fn syscall_3_3(arg1: u64, arg2: u64, arg3: u64) -> (u64, u64, 
     let ret1: u64;
     let ret2: u64;
     let ret3: u64;
-    asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) "={rsi}" (ret3)
+    llvm_asm!("syscall" : "={rax}" (ret1) "={rdi}" (ret2) "={rsi}" (ret3)
                    : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3)
                    : "rcx", "r11", "memory" : "volatile");
     (ret1, ret2, ret3)
@@ -164,7 +164,7 @@ pub(crate) unsafe fn syscall_3_3(arg1: u64, arg2: u64, arg3: u64) -> (u64, u64, 
 #[inline(always)]
 pub(crate) unsafe fn syscall_4_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> u64 {
     let ret: u64;
-    asm!("syscall" : "={rax}" (ret)
+    llvm_asm!("syscall" : "={rax}" (ret)
                    : "{rdi}"  (arg1), "{rsi}"  (arg2), "{rdx}"  (arg3), "{r10}"  (arg4)
                    : "rcx", "r11", "memory" : "volatile");
     ret
@@ -174,7 +174,7 @@ pub(crate) unsafe fn syscall_4_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> 
 pub(crate) unsafe fn syscall_4_2(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> (u64, u64) {
     let ret: u64;
     let ret2: u64;
-    asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
+    llvm_asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
                    : "{rdi}"  (arg1), "{rsi}"  (arg2), "{rdx}"  (arg3), "{r10}"  (arg4)
                    : "rcx", "r11", "memory" : "volatile");
     (ret, ret2)
@@ -185,7 +185,7 @@ pub(crate) unsafe fn syscall_4_3(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> 
     let ret: u64;
     let ret2: u64;
     let ret3: u64;
-    asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2) "={rsi}" (ret3)
+    llvm_asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2) "={rsi}" (ret3)
                    : "{rdi}"  (arg1), "{rsi}"  (arg2), "{rdx}"  (arg3), "{r10}"  (arg4)
                    : "rcx", "r11", "memory" : "volatile");
     (ret, ret2, ret3)
@@ -194,7 +194,7 @@ pub(crate) unsafe fn syscall_4_3(arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> 
 #[inline(always)]
 pub(crate) unsafe fn syscall_5_1(arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> u64 {
     let ret: u64;
-    asm!("syscall" : "={rax}" (ret)
+    llvm_asm!("syscall" : "={rax}" (ret)
                    : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3), "{r10}" (arg4), "{r8}" (arg5)
                    : "rcx", "r11", "memory"
                    : "volatile");
@@ -211,7 +211,7 @@ pub(crate) unsafe fn syscall_5_2(
 ) -> (u64, u64) {
     let ret: u64;
     let ret2: u64;
-    asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
+    llvm_asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
                    : "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3), "{r10}" (arg4), "{r8}" (arg5)
                    : "rcx", "r11", "memory"
                    : "volatile");
@@ -229,7 +229,7 @@ pub(crate) unsafe fn syscall6_1(
     arg6: u64,
 ) -> u64 {
     let ret: u64;
-    asm!("syscall" : "={rax}" (ret)
+    llvm_asm!("syscall" : "={rax}" (ret)
                    : "{rax}" (arg0), "{rdi}" (arg1), "{rsi}" (arg2), "{rdx}" (arg3),
                      "{r10}" (arg4), "{r8}" (arg5), "{r9}" (arg6)
                    : "rcx", "r11", "memory"
@@ -248,7 +248,7 @@ pub(crate) unsafe fn syscall_6_2(
 ) -> (u64, u64) {
     let ret: u64;
     let ret2: u64;
-    asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
+    llvm_asm!("syscall" : "={rax}" (ret) "={rdi}" (ret2)
                    : "{rdi}" (arg0), "{rsi}" (arg1), "{rdx}" (arg2), "{r10}" (arg3),
                      "{r8}" (arg4), "{r9}" (arg5)
                    : "rcx", "r11", "memory"

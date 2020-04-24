@@ -38,7 +38,7 @@
 
 #![no_std]
 #![no_main]
-#![feature(asm, global_asm, slice_patterns)]
+#![feature(llvm_asm, global_asm, slice_patterns)]
 
 #[macro_use]
 extern crate log;

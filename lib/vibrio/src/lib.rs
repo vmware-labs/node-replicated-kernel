@@ -10,7 +10,7 @@
     c_variadic,
     ptr_internals,
     ptr_offset_from,
-    asm,
+    llvm_asm,
     lang_items,
     thread_local
 )]

@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(thread_local)]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(alloc_error_handler)]
 #![feature(const_fn)]
 #![feature(panic_info_message)]

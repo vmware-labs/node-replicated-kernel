@@ -7,7 +7,7 @@
 #![feature(
     intrinsics,
     core_intrinsics,
-    asm,
+    llvm_asm,
     lang_items,
     start,
     box_syntax,

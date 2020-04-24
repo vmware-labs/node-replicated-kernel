@@ -89,7 +89,7 @@ pub unsafe fn resume(control: &mut kpi::arch::VirtualCpu) -> ! {
     control.enable_upcalls();
     //debug!("resume enabled_state {:p}", &control.enabled_state);
 
-    asm! {"
+    llvm_asm! {"
             // Restore gs
             //movq 18*8(%rsi), %rdi
             //wrgsbase %rdi

@@ -7,5 +7,6 @@
 - [Network](./Communication.md)
 - [Tracing](./Tracing.md)
 - [Testing](./Testing.md)
+- [CI](./CI.md)
 - [Configuration](./Configuration.md)
 - [Glossary](./Glossary.md)

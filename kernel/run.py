@@ -6,9 +6,11 @@ import sys
 import pathlib
 import shutil
 import subprocess
+import prctl
+import signal
 
 from plumbum import colors, local
-from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami
+from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc
 from plumbum.commands import ProcessExecutionError
 
 
@@ -50,27 +52,33 @@ parser.add_argument("-n", "--norun", action="store_true",
                     help="Only build, don't run")
 parser.add_argument("-r", "--release", action="store_true",
                     help="Do a release build.")
-parser.add_argument("-f", "--kfeatures", type=str, nargs='+', default=[],
+parser.add_argument("--kfeatures", type=str, nargs='+', default=[],
                     help="Cargo features to enable (in the kernel).")
-parser.add_argument("-u", "--ufeatures", type=str, nargs='+', default=[],
+parser.add_argument("--ufeatures", type=str, nargs='+', default=[],
                     help="Cargo features to enable (in user-space, use module_name:feature_name syntax to specify module specific features, e.g. init:print-test).")
 parser.add_argument('-m', '--mods', nargs='+', default=['init'],
                     help='User-space modules to be included in build & deployment', required=False)
-parser.add_argument("-c", "--cmd", type=str,
+parser.add_argument("--cmd", type=str,
                     help="Command line arguments passed to the kernel.")
-parser.add_argument('-t', '--machine',
+parser.add_argument("--machine",
                     help='Which machine to run on (defaults to qemu)', required=False, default='qemu')
+
 # QEMU related arguments
-parser.add_argument("-q", "--qemu-settings", type=str,
-                    help="Pass generic QEMU arguments.")
-parser.add_argument("-a", "--qemu-nodes", type=int,
-                    help="How many NUMA nodes (for qemu).")
-parser.add_argument("-s", "--qemu-cores", type=int,
-                    help="How many cores nodes (evenly divided across NUMA nodes, for qemu).")
+parser.add_argument("--qemu-nodes", type=int,
+                    help="How many NUMA nodes and sockets (for qemu).", required=False, default=None)
+parser.add_argument("--qemu-cores", type=int,
+                    help="How many cores (will get evenly divided among nodes).", default=1)
+parser.add_argument("--qemu-memory", type=str,
+                    help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
+parser.add_argument("--qemu-affinity", action="store_true", default=False,
+                    help="Pin QEMU instance to dedicated host cores.")
+
+parser.add_argument("--qemu-settings", type=str,
+                    help="Pass additional generic QEMU arguments.")
+parser.add_argument("--qemu-monitor", action="store_true",
+                    help="Launch the QEMU monitor (for qemu)")
 parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
-parser.add_argument("-o", "--qemu-monitor", action="store_true",
-                    help="Launch the QEMU monitor (for qemu)")
 parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio"],
                     help='What NIC model to use for emulation', required=False)
 
@@ -260,15 +268,34 @@ def run(args):
                               'nic,model={},netdev=n0'.format(args.nic)]
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
 
+        if args.qemu_nodes > 0 and args.qemu_cores > 1:
+            for node in range(0, args.qemu_nodes):
+                mem_per_node = int(args.qemu_memory) / args.qemu_nodes
+                qemu_default_args += ['-numa',
+                                      "node,mem={}M,nodeid={}".format(int(mem_per_node), node)]
+                qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
+                    node, node)]
+
+        if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
+            qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
+                args.qemu_cores, args.qemu_nodes, args.qemu_cores)]
+        else:
+            qemu_default_args += ["-smp",
+                                  "{},sockets=1".format(args.qemu_cores)]
+
+        if args.qemu_memory:
+            qemu_default_args += ['-m', str(args.qemu_memory)]
+
         if args.qemu_debug_cpu:
             qemu_default_args += ['-d', 'int,cpu_reset']
         if args.qemu_monitor:
             qemu_default_args += ['-monitor',
                                   'telnet:127.0.0.1:55555,server,nowait']
-        if not args.qemu_settings:
-            qemu_default_args += ['-m', '1024']
 
-        qemu_args = qemu_default_args.copy()
+        # Name threads on host for `qemu_affinity.py` to find it
+        qemu_default_args += ['-name', 'bespin,debug-threads=on']
+
+        qemu_args = ['qemu-system-x86_64'] + qemu_default_args.copy()
         if args.qemu_settings:
             qemu_args += args.qemu_settings.split()
 
@@ -287,10 +314,28 @@ def run(args):
         # But it somehow buffers the qemu output, and I couldn't figure out why :/
 
         # Run a QEMU instance
-        cmd = ' '.join(['qemu-system-x86_64'] + qemu_args)
+        cmd = ['/usr/bin/env'] + qemu_args
         if args.verbose:
-            print(cmd)
-        execution = subprocess.run(cmd, shell=True, stderr=subprocess.PIPE)
+            print(' '.join(cmd))
+
+        # Spawn qemu first, then set the guest CPU affinities
+        # The `preexec_fn` ensures that qemu dies if run.py exits
+        execution = subprocess.Popen(
+            cmd, stderr=None, stdout=None, env=os.environ.copy(), preexec_fn=lambda: prctl.set_pdeathsig(signal.SIGKILL))
+        from plumbum.machines import LocalCommand
+        LocalCommand.QUOTE_LEVEL = 3
+
+        if args.qemu_cores and args.qemu_affinity:
+            affinity_list = str(corealloc['-c',
+                                          str(args.qemu_cores), '-t', 'sequential']()).strip()
+            if args.verbose:
+                log("QEMU affinity {}".format(affinity_list))
+            sudo[python3['./qemu_affinity.py',
+                         '-k', affinity_list.split(' '), '--', str(execution.pid)]]()
+
+        # Wait until qemu exits
+        execution.wait()
+
         bespin_exit_code = execution.returncode >> 1
         if BESPIN_EXIT_CODES.get(bespin_exit_code):
             print(BESPIN_EXIT_CODES[bespin_exit_code])

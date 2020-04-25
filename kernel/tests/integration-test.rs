@@ -135,6 +135,8 @@ struct RunnerArgs<'a> {
     timeout: u64,
     /// Default network interface for QEMU
     nic: &'static str,
+    /// Pin QEMU cpu threads
+    setaffinity: bool,
 }
 
 #[allow(unused)]
@@ -143,7 +145,7 @@ impl<'a> RunnerArgs<'a> {
         RunnerArgs {
             kernel_features: vec![kernel_test],
             user_features: Vec::new(),
-            nodes: 1,
+            nodes: 0,
             cores: 1,
             memory: 1024,
             cmd: None,
@@ -153,6 +155,7 @@ impl<'a> RunnerArgs<'a> {
             qemu_args: Vec::new(),
             timeout: 15_000,
             nic: "e1000",
+            setaffinity: false,
         }
     }
 
@@ -253,6 +256,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn setaffinity(mut self) -> RunnerArgs<'a> {
+        self.setaffinity = true;
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
@@ -296,30 +304,24 @@ impl<'a> RunnerArgs<'a> {
             cmd.push(String::from("--release"));
         }
 
+        cmd.push(String::from("--qemu-cores"));
+        cmd.push(format!("{}", self.cores));
+
+        cmd.push(String::from("--qemu-nodes"));
+        cmd.push(format!("{}", self.nodes));
+
+        cmd.push(String::from("--qemu-memory"));
+        cmd.push(format!("{}", self.memory));
+
+        if self.setaffinity {
+            cmd.push(String::from("--qemu-affinity"));
+        }
+
         // Form arguments for QEMU
         let mut qemu_args: Vec<String> = self.qemu_args.iter().map(|arg| arg.to_string()).collect();
-        qemu_args.push(format!("-m {}M", self.memory));
-
-        if self.nodes > 1 || self.cores > 1 {
-            if self.nodes > 1 {
-                for node in 0..self.nodes {
-                    // Divide memory equally across cores
-                    let mem_per_node = self.memory / self.nodes;
-                    qemu_args.push(format!("-numa node,mem={}M,nodeid={}", mem_per_node, node));
-                    // 1:1 mapping of sockets to cores
-                    qemu_args.push(format!("-numa cpu,node-id={},socket-id={}", node, node));
-                }
-            }
-
-            if self.cores > 1 {
-                let sockets = self.nodes;
-                qemu_args.push(format!(
-                    "-smp {},sockets={},maxcpus={}",
-                    self.cores, sockets, self.cores
-                ));
-            }
+        if !qemu_args.is_empty() {
+            cmd.push(format!("--qemu-settings={}", qemu_args.join(" ")));
         }
-        cmd.push(format!("--qemu-settings={}", qemu_args.join(" ")));
 
         // Don't run qemu, just build?
         match self.norun {
@@ -1141,17 +1143,19 @@ fn s06_redis_benchmark_e1000() {
 
 #[test]
 fn s06_vmops_benchmark() {
-    for &cores in [1, 4, 8, 10].iter() {
+    for &cores in [1, 8, 13, 14, 22, 27, 28, 29, 37, 41, 42, 43, 51, 55, 56].iter() {
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
             .memory(10_000)
             .timeout(18_000 + cores as u64 * 3000)
-            .cores(cores);
-        if cores > 4 {
+            .cores(cores)
+            .setaffinity();
+        if cores > 28 {
             cmdline = cmdline.nodes(2);
         }
         let cmdline = cmdline.release();
+
         let mut output = String::new();
 
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {

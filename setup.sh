@@ -7,7 +7,7 @@ if [ "$(uname)" == "Darwin" ]; then
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
     sudo apt-get update
     # bespin build dependencies
-    sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 zlib1g-dev make gcc build-essential python3 python3-plumbum
+    sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 zlib1g-dev make gcc build-essential python3 python3-plumbum python3-prctl
     # For building rump packages (rkapps)
     sudo apt-get install -y genisoimage
     # bespin integration-test dependencies
@@ -28,11 +28,17 @@ rustup component add rust-src
 #rustup component add rustfmt-preview --toolchain nightly
 rustup update
 
-# Install xargo
+# Install xargo (used by build)
 if [ ! -x "$(command -v xargo)" ]; then
     cargo install xargo
 fi
 
+# Install mdbook (used by docs/)
 if [ ! -x "$(command -v mdbook)" ]; then
     cargo install mdbook
+fi
+
+# Install corealloc (used by run.py)
+if [ ! -x "$(command -v corealloc)" ]; then
+    cargo install corealloc
 fi

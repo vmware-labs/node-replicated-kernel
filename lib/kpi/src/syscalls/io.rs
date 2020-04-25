@@ -186,7 +186,7 @@ impl Fs {
             return Err(SystemCallError::BadFileDescriptor);
         }
         let mut is_offset = true;
-        if offset == -1  {
+        if offset == -1 {
             is_offset = false;
         }
 

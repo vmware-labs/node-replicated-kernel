@@ -10,7 +10,6 @@ extern crate klogger;
 #[used]
 pub static mut __TEST_PANICKED: bool = false;
 
-
 /// Start the test harness.
 pub fn test_start(ntests: usize) {
     sprintln!("running {} tests (using KVM support)", ntests)
@@ -81,7 +80,6 @@ pub fn test_main_static(tests: &[&TestDescAndFn]) {
                 }
             }
         }
-
     }
 
     test_summary(passed, failed, ignored);

@@ -268,7 +268,7 @@ def run(args):
                               'nic,model={},netdev=n0'.format(args.nic)]
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
 
-        if args.qemu_nodes > 0 and args.qemu_cores > 1:
+        if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
                 qemu_default_args += ['-numa',

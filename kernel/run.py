@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import prctl
 import signal
+from time import sleep
 
 from plumbum import colors, local
 from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc

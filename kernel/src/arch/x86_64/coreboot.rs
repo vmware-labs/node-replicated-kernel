@@ -6,7 +6,8 @@
 use alloc::sync::Arc;
 use core::sync::atomic::AtomicBool;
 
-use x86::apic::{ApicControl, ApicId};
+use apic::ApicDriver;
+use x86::apic::ApicId;
 use x86::current::paging::PAddr;
 
 use crate::memory::vspace::MapAction;

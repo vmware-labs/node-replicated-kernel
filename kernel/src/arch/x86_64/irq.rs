@@ -34,7 +34,6 @@ use core::fmt;
 
 use alloc::boxed::Box;
 
-use x86::apic::ApicControl;
 use x86::bits64::segmentation::Descriptor64;
 use x86::dtables;
 use x86::irq::*;
@@ -43,6 +42,7 @@ use x86::segmentation::{
 };
 use x86::Ring;
 
+use apic::ApicDriver;
 use log::debug;
 
 use crate::memory::{vspace::MapAction, Frame};
@@ -164,6 +164,8 @@ impl Default for IdtTable {
         idt_set!(table.0, 46, isr_handler46, 0);
         idt_set!(table.0, 47, isr_handler47, 0);
 
+        idt_set!(table.0, 252, isr_handler252, 0);
+
         table
     }
 }
@@ -196,6 +198,8 @@ impl IdtTable {
         idt_set!(table.0, 19, isr_handler_early19, 0);
         idt_set!(table.0, 20, isr_handler_early20, 0);
         idt_set!(table.0, 30, isr_handler_early30, 0);
+
+        idt_set!(table.0, 252, isr_handler_early252, 0);
 
         table
     }
@@ -372,6 +376,26 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     r.resume()
 }
 
+/// Handler for the timer exception.
+///
+/// We currently use it to periodically make sure that a replica
+/// makes forward progress to avoid liveness issues.
+unsafe fn timer_handler(a: &ExceptionArguments) {
+    #[cfg(feature = "test-timer")]
+    {
+        // Don't change this print stmt. without changing
+        // `s01_timer` in integration-tests.rs:
+        sprintln!("Got a timer interrupt");
+        debug::shutdown(ExitReason::Ok);
+    }
+
+    // TODO: Advance replica state
+
+    let kcb = get_kcb();
+    let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
+    r.resume()
+}
+
 /// Handler for a general protection exception.
 ///
 /// TODO: Right now we terminate kernel.
@@ -498,7 +522,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // If we have an active process we should do scheduler
         // activations:
         // TODO: do proper masking based on some VCPU mask...
-        if a.vector > 30 || a.vector == 3 {
+        if a.vector > 30 && a.vector < 250 || a.vector == 3 {
             trace!("handle_generic_exception {:?}", a);
 
             let kcb = get_kcb();
@@ -541,6 +565,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             pf_handler(&a);
         } else if a.vector == 0x3 {
             dbg_handler(&a);
+        } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
+            timer_handler(&a);
         }
 
         unhandled_irq(&a);

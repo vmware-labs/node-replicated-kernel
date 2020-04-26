@@ -14,14 +14,48 @@ pub fn xmain() {
         sprintln!("Instant overhead: {:?} ns", done);
 
         if cfg!(debug_assertions) {
-            assert!(tsc2 - tsc <= 100, "rdtsc overhead big?");
+            assert!(tsc2 - tsc <= 150, "rdtsc overhead big?");
             // TODO: should be less:
-            assert!(done <= 100, "Instant overhead big?");
+            assert!(done <= 300, "Instant overhead big?");
         } else {
-            assert!(tsc2 - tsc <= 50);
+            assert!(tsc2 - tsc <= 100);
             // TODO: should be less:
-            assert!(done <= 100);
+            assert!(done <= 150);
         }
+    }
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+/// Test time facilities in the kernel.
+#[cfg(all(feature = "integration-test", feature = "test-timer", target_arch = "x86_64"))]
+pub fn xmain() {
+    use apic::ApicDriver;
+    use core::time::Duration;
+    use core::sync::atomic::spin_loop_hint;
+    use core::convert::TryInto;
+
+    unsafe {
+        let tsc = x86::time::rdtsc();
+        
+        {
+            let kcb = crate::kcb::get_kcb();
+            let mut apic = kcb.arch.apic();
+            apic.tsc_enable();
+            apic.tsc_set(tsc + 1_000_000_000);
+        }
+
+        // Don't change this line without changing
+        // `s01_timer` in integration-tests.rs:
+        info!("Setting the timer");
+
+        let start = rawtime::Instant::now();
+        crate::arch::irq::enable();
+        while start.elapsed() < Duration::from_secs(1) {
+            spin_loop_hint();
+        }
+        crate::arch::irq::disable();
+
+        let done = start.elapsed().as_nanos();
     }
     arch::debug::shutdown(ExitReason::Ok);
 }
@@ -191,7 +225,8 @@ pub fn xmain() {
     use arch::coreboot;
     use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
-    use x86::apic::{ApicControl, ApicId};
+    use apic::ApicDriver;
+    use x86::apic::ApicId;
 
     // Entry point for app. This function is called from start_ap.S:
     pub fn bespin_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
@@ -261,7 +296,8 @@ pub fn xmain() {
     use arch::coreboot;
     use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
-    use x86::apic::{ApicControl, ApicId};
+    use x86::apic::ApicId;
+    use apic::ApicDriver;
 
     use alloc::sync::Arc;
     use node_replication::log::Log;

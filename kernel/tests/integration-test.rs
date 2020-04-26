@@ -628,6 +628,36 @@ fn s01_sse() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+#[test]
+fn s01_time() {
+    let cmdline = RunnerArgs::new("test-time").release();
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+#[test]
+fn s01_timer() {
+    let cmdline = RunnerArgs::new("test-timer");
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        output += p.exp_string("Setting the timer")?.as_str();
+        output += p.exp_string("Got a timer interrupt")?.as_str();
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology.
 #[test]
 fn s02_acpi_topology() {

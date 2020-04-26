@@ -20,11 +20,11 @@ use core::mem::transmute;
 use core::slice;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use apic::ApicDriver;
 use driverkit::DriverControl;
 
 use arrayvec::ArrayVec;
 
-use x86::apic::ApicControl;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
 use x86::cpuid;

@@ -7,6 +7,7 @@ use x86::apic::{ApicControl, ApicId, Icr};
 /// An x2APIC driver
 #[derive(Debug)]
 pub struct X2APICDriver {
+    timer_vector: u8,
     state: DriverState,
     inner: X2APIC,
 }
@@ -15,13 +16,14 @@ impl X2APICDriver {
     /// Create a new x2APIC driver object.
     pub fn new() -> X2APICDriver {
         X2APICDriver {
+            timer_vector: crate::TSC_TIMER_VECTOR,
             state: DriverState::Uninitialized,
             inner: X2APIC::new(),
         }
     }
 }
 
-impl ApicControl for X2APICDriver {
+impl crate::ApicDriver for X2APICDriver {
     /// Is a bootstrap processor?
     fn bsp(&self) -> bool {
         self.inner.bsp()
@@ -44,7 +46,7 @@ impl ApicControl for X2APICDriver {
 
     /// Enable TSC deadline timer.
     fn tsc_enable(&mut self) {
-        self.inner.tsc_enable()
+        self.inner.tsc_enable(self.timer_vector)
     }
 
     /// Set TSC deadline value.

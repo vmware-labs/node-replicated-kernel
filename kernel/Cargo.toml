@@ -87,6 +87,8 @@ test-alloc = ["integration-test", "bsp-only"]
 test-sse = ["integration-test", "bsp-only"]
 # test time
 test-time = ["integration-test", "bsp-only"]
+# test apic timer
+test-timer = ["integration-test", "bsp-only"]
 # acpi: test ACPI can initialize
 test-acpi-smoke = [ "integration-test", "bsp-only" ]
 # acpi: test ACPI with complex topology

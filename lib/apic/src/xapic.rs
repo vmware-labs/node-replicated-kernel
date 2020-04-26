@@ -6,6 +6,7 @@ use driverkit::{DriverControl, DriverState};
 /// A device driver for an XAPIC.
 #[derive(Debug)]
 pub struct XAPICDriver {
+    timer_vector: u8,
     inner: XAPIC,
     state: DriverState,
 }
@@ -14,13 +15,14 @@ impl XAPICDriver {
     /// Create a new driver object.
     pub fn new(mmio_region: &'static mut [u32]) -> XAPICDriver {
         XAPICDriver {
+            timer_vector: crate::TSC_TIMER_VECTOR,
             inner: XAPIC::new(mmio_region),
             state: DriverState::Uninitialized,
         }
     }
 }
 
-impl ApicControl for XAPICDriver {
+impl crate::ApicDriver for XAPICDriver {
     /// Is a bootstrap processor?
     fn bsp(&self) -> bool {
         self.inner.bsp()
@@ -43,7 +45,7 @@ impl ApicControl for XAPICDriver {
 
     /// Enable TSC deadline timer.
     fn tsc_enable(&mut self) {
-        self.inner.tsc_enable()
+        self.inner.tsc_enable(self.timer_vector)
     }
 
     /// Set TSC deadline value.

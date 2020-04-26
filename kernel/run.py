@@ -328,6 +328,9 @@ def run(args):
         if args.qemu_cores and args.qemu_affinity:
             affinity_list = str(corealloc['-c',
                                           str(args.qemu_cores), '-t', 'sequential']()).strip()
+            # For big machines it can take a while to spawn all threads in qemu
+            # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
+            sleep(0.1)
             if args.verbose:
                 log("QEMU affinity {}".format(affinity_list))
             sudo[python3['./qemu_affinity.py',

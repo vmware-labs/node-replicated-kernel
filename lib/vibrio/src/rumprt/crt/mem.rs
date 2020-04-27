@@ -117,6 +117,38 @@ pub unsafe extern "C" fn _sys___msync13() {
     unreachable!("_sys___msync13");
 }
 
+/// posix_memalign(void **rv, size_t align, size_t nbytes)
+#[no_mangle]
+pub unsafe extern "C" fn posix_memalign(
+    ptr: *mut *mut u8,
+    align: c_size_t,
+    nbytes: c_size_t,
+) -> c_int {
+    log::debug!(
+        "posix memalign {:p} align={}, nbytes={}",
+        ptr,
+        align,
+        nbytes
+    );
+
+    let allocation_size: u64 = (nbytes + 8) as u64;
+    let alignment = core::cmp::max(align, 8);
+
+    let aptr = alloc::alloc::alloc(Layout::from_size_align_unchecked(
+        allocation_size as usize,
+        alignment as usize,
+    ));
+
+    if aptr != ptr::null_mut() {
+        *(aptr as *mut u64) = allocation_size;
+        *ptr = aptr.offset(8isize);
+        0
+    } else {
+        *ptr = ptr::null_mut();
+        1
+    }
+}
+
 /// Implementes malloc using the `alloc::alloc` interface.
 ///
 /// We need to add a header to store the size for the

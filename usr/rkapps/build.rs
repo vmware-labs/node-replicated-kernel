@@ -41,6 +41,14 @@ fn build_plan() -> Vec<(&'static str, &'static str, &'static str)> {
         plan.push(("redis", "../../../../redis.bin", "bin/redis-server"));
     }
 
+    if cfg!(feature = "memcached") {
+        plan.push(("memcached", "../../../../memcached.bin", "build/memcached"));
+    }
+
+    if cfg!(feature = "nginx") {
+        plan.push(("nginx", "../../../../nginx.bin", "bin/nginx"));
+    }
+
     plan
 }
 
@@ -75,7 +83,7 @@ fn main() {
             .unwrap();
 
         println!("CLONE {:?}", out_dir);
-        let url = "https://github.com/gz/rumprun-packages.git";
+        let url = "https://github.com/gz/librettos-packages.git";
         Command::new("git")
             .args(&["clone", "--depth=1", url, out_dir.as_str()])
             .status()

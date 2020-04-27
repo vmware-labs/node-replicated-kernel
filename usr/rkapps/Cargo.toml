@@ -15,5 +15,7 @@ num_cpus = "1.9"
 
 [features]
 redis = []
+memcached = []
+nginx = []
 default = ["redis"]
 

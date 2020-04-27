@@ -47,6 +47,12 @@ pub struct TimeSpec {
     pub tv_nsec: c_long,
 }
 
+extern "C" {
+    fn rump_pub_lwproc_curlwp() -> *const c_void;
+    fn rump_pub_lwproc_switch(lwp: *const c_void);
+    fn rump_pub_lwproc_newlwp(pid: c_int) -> c_int;
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rumprun_makelwp(
     start: LwpMain,
@@ -62,6 +68,14 @@ pub unsafe extern "C" fn rumprun_makelwp(
         "rumprun_makelwp {:p} {:p} {:p}--{} {} {:p}",
         arg, tls_private, stack_base, stack_size, flags, lid
     );
+
+    let curlwp = rump_pub_lwproc_curlwp();
+    let r = rump_pub_lwproc_newlwp(1); // 1 should be getpid()
+    assert_eq!(r, 0);
+    let newlwp = rump_pub_lwproc_curlwp();
+    log::error!("curlwp is {:p} newlwp is {:p}", curlwp, newlwp);
+    rump_pub_lwproc_switch(curlwp);
+    log::error!("rump_pub_lwproc_switch");
 
     let free_automatically = false;
     let stack =

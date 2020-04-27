@@ -1,7 +1,9 @@
 use core::mem::transmute;
 use core::pin::Pin;
+use core::ops::Range;
 
 use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 
 use x86::bits64::paging::*;
 
@@ -23,7 +25,8 @@ enum Modify {
 }
 
 pub struct VSpace {
-    pub pml4: Pin<Box<PML4>>,
+    pub mappings: BTreeMap<usize, MappingInfo>,
+    pub page_table: PageTable,
 }
 
 impl AddressSpace for VSpace {
@@ -51,6 +54,7 @@ impl AddressSpace for VSpace {
         // TODO(performance): This check can probably be done faster with
         // appropriate data-structures
         self.map_generic(base, (frame.base, frame.size()), action, false, pager)?;
+        self.mappings.insert(base.as_usize(), MappingInfo::new(frame));
         self.map_generic(base, (frame.base, frame.size()), action, true, pager)
     }
 
@@ -136,6 +140,7 @@ impl VSpace {
     /// Allocate an initial PML4 table for it.
     pub fn new() -> VSpace {
         VSpace {
+            mappings: BTreeMap::with_capacity(),
             pml4: Box::pin(
                 [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
             ),

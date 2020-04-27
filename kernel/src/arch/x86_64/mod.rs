@@ -57,6 +57,7 @@ use crate::kcb::{CommandLineArgs, Kcb};
 use crate::memory::{
     tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
+use crate::memory::vspace::MappingInfo;
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -155,6 +156,7 @@ unsafe fn find_current_vspace() -> VSpace {
     let pml4: PAddr = PAddr::from(cr_three);
     let pml4_table = transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
     VSpace {
+        mappings: alloc::collections::BTreeMap::new(),
         pml4: Box::into_pin(Box::from_raw(pml4_table)),
     }
 }

@@ -20,6 +20,18 @@ impl Default for TlbFlushHandle {
     }
 }
 
+pub struct MappingInfo {
+    frame: Frame,
+}
+
+impl MappingInfo {
+    pub fn new(frame: Frame) -> Self {
+        MappingInfo {
+            frame
+        }
+    }
+}
+
 /// Generic address space functionality.
 pub trait AddressSpace {
     /// Maps a list of `frames` at `base` in the address space

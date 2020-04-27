@@ -29,6 +29,7 @@ pub enum ReadOps {
     ProcessInfo(Pid),
     FileRead(Pid, FD, Buffer, Len, Offset),
     MemResolve(Pid, VAddr),
+    Synchronize,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -91,6 +92,7 @@ pub enum NodeResult<E: Executor> {
     Executor(Weak<E>),
     FrameId(usize),
     Invalid,
+    Synchronized,
 }
 
 impl<E: Executor> Default for NodeResult<E> {
@@ -130,6 +132,21 @@ impl<P: Process> KernelNode<P> {
 
                 match response {
                     Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
+                    _ => unreachable!("Got unexpected response"),
+                }
+            })
+    }
+
+    pub fn synchronize() -> Result<(), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let response = replica.execute_ro(ReadOps::Synchronize, kcb.arch.replica_idx);
+
+                match response {
+                    Ok(NodeResult::Synchronized) => Ok(()),
                     _ => unreachable!("Got unexpected response"),
                 }
             })
@@ -392,6 +409,10 @@ where
 
     fn dispatch(&self, op: Self::ReadOperation) -> Result<Self::Response, Self::ResponseError> {
         match op {
+            ReadOps::Synchronize => {
+                // A NOP that just makes sure we've advanced the replica
+                Ok(NodeResult::Synchronized)
+            }
             ReadOps::FileRead(pid, fd, buffer, len, offset) => {
                 let mut userslice = UserSlice::new(buffer, len as usize);
                 let process_lookup = self.process_map.get(&pid);

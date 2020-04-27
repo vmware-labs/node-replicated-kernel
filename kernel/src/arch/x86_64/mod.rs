@@ -252,17 +252,33 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
             .expect("Failed to register with Replica.");
         kcb.arch
             .setup_node_replication(args.replica.clone(), local_ridx);
-    }
 
-    // Don't modify this line without adjusting `coreboot` integration test:
-    info!("Core #{} initialized.", args.thread);
+        // Don't modify this line without adjusting `coreboot` integration test:
+        info!(
+            "Core #{} initialized (replica idx {}).",
+            args.thread, local_ridx
+        );
+    }
 
     // Signals to BSP core that we're done initializing.
     initialized.store(true, Ordering::SeqCst);
+    let thread = topology::MACHINE_TOPOLOGY.current_thread();
+
+    // Are we the master/first thread in that replica?
+    // Then we should set timer to periodically advance the state
+    {
+        let kcb = kcb::get_kcb();
+        let _r = thread.node().map(|n| {
+            if n.threads().next().unwrap().id == thread.id {
+                let mut apic = kcb.arch.apic();
+                apic.tsc_enable();
+                unsafe { apic.tsc_set(x86::time::rdtsc() + irq::TSC_TIMER_DEADLINE) };
+            }
+        });
+    }
 
     loop {
         use crate::nr;
-        let thread = topology::MACHINE_TOPOLOGY.current_thread();
         let kcb = kcb::get_kcb();
         let replica = kcb.arch.replica.as_ref().expect("Replica not set");
 

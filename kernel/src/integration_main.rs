@@ -635,6 +635,15 @@ pub fn xmain() {
         pid
     };
 
+    // Register a periodic timer to advance replica
+    {
+        use apic::ApicDriver;
+        let kcb = crate::kcb::get_kcb();
+        let mut apic = kcb.arch.apic();
+        apic.tsc_enable();
+        unsafe { apic.tsc_set(x86::time::rdtsc() + arch::irq::TSC_TIMER_DEADLINE) };
+    }
+
     // Create enough dispatchers to run on all cores:
     // (Also make sure they're all NUMA local)
     {

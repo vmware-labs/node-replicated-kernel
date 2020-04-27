@@ -57,6 +57,9 @@ use super::kcb::{get_kcb, Arch86Kcb};
 use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring3Process, Ring3Resumer};
 
+/// When to raise the next timer irq (in rdtsc ticks)
+pub const TSC_TIMER_DEADLINE: u64 = 2_000_000_000;
+
 /// A macro to initialize an entry in an IDT table.
 ///
 /// This maks sure we have an external C declaration to the symbol
@@ -164,7 +167,7 @@ impl Default for IdtTable {
         idt_set!(table.0, 46, isr_handler46, 0);
         idt_set!(table.0, 47, isr_handler47, 0);
 
-        idt_set!(table.0, 252, isr_handler252, 0);
+        idt_set!(table.0, apic::TSC_TIMER_VECTOR as usize, isr_handler252, 0);
 
         table
     }
@@ -199,7 +202,12 @@ impl IdtTable {
         idt_set!(table.0, 20, isr_handler_early20, 0);
         idt_set!(table.0, 30, isr_handler_early30, 0);
 
-        idt_set!(table.0, 252, isr_handler_early252, 0);
+        idt_set!(
+            table.0,
+            apic::TSC_TIMER_VECTOR as usize,
+            isr_handler_early252,
+            0
+        );
 
         table
     }
@@ -389,10 +397,23 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
         debug::shutdown(ExitReason::Ok);
     }
 
-    // TODO: Advance replica state
+    // sprintln!("GOT TIMER HANDLER");
+    // Periodically advance replica state, then resume immediately
+    let r = {
+        nr::KernelNode::<Ring3Process>::synchronize();
 
-    let kcb = get_kcb();
-    let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
+        let kcb = get_kcb();
+
+        // Reset timer
+        // TODO(api): Ideally this should come from Instant::now() +
+        // Duration::from_millis(10) and for that we need a way to reliably
+        // convert between TSC and Instant
+        let mut apic = kcb.arch.apic();
+        apic.tsc_set(x86::time::rdtsc() + TSC_TIMER_DEADLINE);
+        apic.tsc_enable();
+        kcb_iret_handle(kcb)
+    };
+
     r.resume()
 }
 

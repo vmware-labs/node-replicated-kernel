@@ -756,8 +756,8 @@ fn s03_coreboot() {
 
         for i in 1..32 {
             // Check that we see all 32 cores booting up
-            let exptected_output = format!("Core #{} initialized.", i);
-            p.exp_string(exptected_output.as_str())?;
+            let expected_output = format!("Core #{} initialized", i);
+            p.exp_string(expected_output.as_str())?;
         }
 
         output = p.exp_eof()?;

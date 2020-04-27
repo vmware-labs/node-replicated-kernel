@@ -288,7 +288,8 @@ impl Ring3Resumer {
         // This routine assumes the following set-up
         // %rdi points to SaveArea
         // r11 has rflags
-        llvm_asm!("  // Restore CPU registers
+        llvm_asm!("
+                // Restore CPU registers
                 movq  0*8(%rdi), %rax
                 movq  1*8(%rdi), %rbx
                 // %rcx: Don't restore it will contain user-space rip

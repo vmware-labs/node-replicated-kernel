@@ -16,7 +16,7 @@ impl VSpace {
         let mut nodes = Vec::with_capacity(128);
         let mut edges = Vec::with_capacity(128);
 
-        let pml4_table = self.pml4.as_ref();
+        let pml4_table = self.page_table.pml4.as_ref();
         nodes.push(Nd::PML4(pml4_table, None));
 
         unsafe {

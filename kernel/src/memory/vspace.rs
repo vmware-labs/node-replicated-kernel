@@ -26,9 +26,7 @@ pub struct MappingInfo {
 
 impl MappingInfo {
     pub fn new(frame: Frame) -> Self {
-        MappingInfo {
-            frame
-        }
+        MappingInfo { frame }
     }
 }
 

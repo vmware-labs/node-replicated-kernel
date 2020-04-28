@@ -1320,14 +1320,14 @@ mod tests {
     #[should_panic]
     /// Frames should be aligned to BASE_PAGE_SIZE.
     fn frame_bad_alignment() {
-        let f = Frame::new(PAddr::from(core::usize::MAX), BASE_PAGE_SIZE, 0);
+        let _f = Frame::new(PAddr::from(core::usize::MAX), BASE_PAGE_SIZE, 0);
     }
 
     #[test]
     #[should_panic]
     /// Frames size should be multiple of BASE_PAGE_SIZE.
     fn frame_bad_size() {
-        let f = Frame::new(PAddr::from(0x1000), 0x13, 0);
+        let _f = Frame::new(PAddr::from(0x1000), 0x13, 0);
     }
 
     #[test]

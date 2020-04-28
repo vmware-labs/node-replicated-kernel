@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use core::pin::Pin;
 
 use crate::memory::vspace::{AddressSpace, AddressSpaceError, MapAction, TlbFlushHandle};
-use crate::memory::{Frame, PhysicalPageProvider};
+use crate::memory::Frame;
 
 use x86::bits64::paging::*;
 

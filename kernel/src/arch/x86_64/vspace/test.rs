@@ -1,15 +1,15 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::{Eq, PartialEq};
-use core::ptr;
 
 use proptest::prelude::*;
 
 use super::*;
 use crate::*;
 
-use crate::memory::tcache::TCache;
-use crate::memory::vspace::model::ModelAddressSpace;
+use crate::memory::{
+    tcache::TCache, vspace::model::ModelAddressSpace, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestAction {
@@ -60,7 +60,7 @@ fn page_sizes() -> impl Strategy<Value = usize> {
 }
 
 prop_compose! {
-    fn frames(max_base: u64, max_size: usize)(base in base_aligned_addr(max_base), size in page_sizes()) -> Frame {
+    fn frames(max_base: u64, _max_size: usize)(base in base_aligned_addr(max_base), size in page_sizes()) -> Frame {
         let paddr = if base & 0x1 > 0 {
             PAddr::from(base).align_down_to_base_page()
         } else {
@@ -92,7 +92,7 @@ proptest! {
         use TestAction::*;
         let mut mm = crate::arch::memory::MemoryMapper::new();
         let f = mm.allocate_frame(16 * 1024 * 1024).unwrap();
-        let mut tcache = TCache::new_with_frame(0, 0, f);
+        let _tcache = TCache::new_with_frame(0, 0, f);
 
         let mut totest = VSpace::new();
         let mut model: ModelAddressSpace = Default::default();

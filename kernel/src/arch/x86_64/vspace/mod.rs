@@ -1,11 +1,4 @@
-use core::mem::transmute;
-use core::ops::Range;
-use core::pin::Pin;
-
-use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
-
-use x86::bits64::paging::*;
 
 mod debug;
 pub mod page_table; /* TODO(encapsulation): This should be a private module but we break encapsulation in a few places */
@@ -13,19 +6,9 @@ pub mod page_table; /* TODO(encapsulation): This should be a private module but 
 mod test;
 
 use crate::memory::vspace::*;
-use crate::memory::{
-    kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, PhysicalPageProvider, VAddr,
-};
+use crate::memory::{Frame, PAddr, PhysicalPageProvider, VAddr};
 
 use page_table::PageTable;
-
-/// A modification operation on the VSpace.
-enum Modify {
-    /// Change rights of mapping to new MapAction.
-    UpdateRights(MapAction),
-    /// Remove frame from page-table.
-    Unmap,
-}
 
 pub struct VSpace {
     pub mappings: BTreeMap<usize, MappingInfo>,
@@ -42,7 +25,7 @@ impl AddressSpace for VSpace {
         self.page_table.map_frame(base, frame, action)
     }
 
-    fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize {
+    fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {
         // Implementation specific, the model does not require additional
         // memory for page-tables
         0

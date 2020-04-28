@@ -54,7 +54,6 @@ pub use bootloader_shared::*;
 use klogger;
 
 use crate::kcb::{CommandLineArgs, Kcb};
-use crate::memory::vspace::MappingInfo;
 use crate::memory::{
     tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };

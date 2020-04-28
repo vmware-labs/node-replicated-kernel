@@ -9,7 +9,7 @@ use custom_error::custom_error;
 use kpi::SystemCallError;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 
-use super::{Frame, PAddr, PhysicalPageProvider, VAddr};
+use super::{Frame, PAddr, VAddr};
 
 #[derive(Debug, PartialEq)]
 pub struct TlbFlushHandle {}
@@ -27,6 +27,14 @@ pub struct MappingInfo {
 impl MappingInfo {
     pub fn new(frame: Frame) -> Self {
         MappingInfo { frame }
+    }
+}
+
+impl fmt::Debug for MappingInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MappingInfo")
+            .field("frame", &self.frame)
+            .finish()
     }
 }
 
@@ -331,11 +339,10 @@ impl fmt::Display for MapAction {
 #[cfg(test)]
 pub(crate) mod model {
     use super::*;
-    use crate::memory::tcache::TCache;
-    use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
-    use alloc::collections::BTreeMap;
+
+    use crate::memory::BASE_PAGE_SIZE;
+
     use core::iter::Iterator;
-    use core::ops::Range;
 
     /// A simple model address space
     ///
@@ -442,7 +449,7 @@ pub(crate) mod model {
             Ok(())
         }
 
-        fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize {
+        fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {
             // Implementation specific, the model does not require additional
             // memory for page-tables
             0
@@ -457,7 +464,7 @@ pub(crate) mod model {
                 return Err(AddressSpaceError::InvalidBase);
             }
 
-            for (cur_vaddr, cur_paddr, cur_length, cur_rights) in self.oplog.iter_mut().rev() {
+            for (cur_vaddr, _cur_paddr, cur_length, cur_rights) in self.oplog.iter_mut().rev() {
                 if base >= *cur_vaddr && base < (*cur_vaddr + *cur_length) {
                     *cur_rights = new_rights;
                     return Ok((*cur_vaddr, *cur_length));
@@ -489,13 +496,13 @@ pub(crate) mod model {
 
             let mut found =
                 self.oplog
-                    .drain_filter(|(cur_vaddr, cur_paddr, cur_length, cur_rights)| {
+                    .drain_filter(|(cur_vaddr, _cur_paddr, cur_length, _cur_rights)| {
                         base >= *cur_vaddr && base < (*cur_vaddr + *cur_length)
                     });
 
             let element = found.next();
             if element.is_some() {
-                let (cur_vaddr, cur_paddr, cur_length, cur_rights) = element.unwrap();
+                let (_cur_vaddr, cur_paddr, cur_length, _cur_rights) = element.unwrap();
                 assert!(found.next().is_none(), "Only found one relevant mapping");
                 Ok((TlbFlushHandle {}, Frame::new(cur_paddr, cur_length, 0)))
             } else {
@@ -513,7 +520,7 @@ pub(crate) mod model {
         let frame_base = PAddr::from(0xdeaf_0000u64);
         let frame = Frame::new(frame_base, BASE_PAGE_SIZE, 0);
 
-        let ret = a
+        let _ret = a
             .map_frame(va, frame, MapAction::ReadKernel)
             .expect("Can't map frame");
 
@@ -536,7 +543,7 @@ pub(crate) mod model {
         assert_eq!(ret_paddr, frame_base);
         assert_eq!(ret_rights, MapAction::ReadWriteUser);
 
-        let (handle, ret_frame) = a.unmap(va).expect("Can't unmap");
+        let (_handle, ret_frame) = a.unmap(va).expect("Can't unmap");
         assert_eq!(ret_frame, frame);
 
         let e = a
@@ -553,7 +560,7 @@ pub(crate) mod model {
         let frame_base = PAddr::from(0xdeaf_0000u64);
         let frame = Frame::new(frame_base, 4096, 0);
 
-        let ret = a
+        let _ret = a
             .map_frame(va, frame, MapAction::ReadKernel)
             .expect("Can't map frame");
 
@@ -561,7 +568,7 @@ pub(crate) mod model {
         let frame_base = PAddr::from(0xde_0000);
         let frame = Frame::new(frame_base, 0x3b6000, 0);
 
-        let ret = a
+        let _ret = a
             .map_frame(va, frame, MapAction::ReadKernel)
             .expect_err("Could map frame");
     }
@@ -575,7 +582,7 @@ pub(crate) mod model {
         let frame_base = PAddr::from(0x0);
         let frame = Frame::new(frame_base, 0x1000, 0);
 
-        let ret = a
+        let _ret = a
             .map_frame(va, frame, MapAction::ReadKernel)
             .expect("Failed to map frame?");
 
@@ -583,7 +590,7 @@ pub(crate) mod model {
         let frame_base = PAddr::from(0x0);
         let frame = Frame::new(frame_base, 0x1000, 0);
 
-        let ret = a
+        let _ret = a
             .map_frame(va, frame, MapAction::ReadExecuteUser)
             .expect_err("Could map frame?");
     }

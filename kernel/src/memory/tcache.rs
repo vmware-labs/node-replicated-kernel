@@ -272,12 +272,12 @@ mod test {
     /// TCache should be fit exactly within a base-page.
     #[test]
     fn tcache_populate() {
-        let mut tcache =
+        let tcache =
             TCache::new_with_frame(1, 2, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
         assert_eq!(tcache.base_page_addresses.len(), 10);
         assert_eq!(tcache.large_page_addresses.len(), 0);
 
-        let mut tcache = TCache::new_with_frame(
+        let tcache = TCache::new_with_frame(
             1,
             2,
             Frame::new(
@@ -405,7 +405,7 @@ mod test {
         assert_eq!(f.size, 0x1000);
         assert_eq!(f.affinity, 2);
 
-        let f = tcache
+        let _f = tcache
             .allocate_base_page()
             .expect_err("Can't allocate more than we gave it");
 
@@ -423,7 +423,7 @@ mod test {
 
         assert_eq!(tcache.free(), 0);
 
-        let f = tcache
+        let _f = tcache
             .allocate_base_page()
             .expect_err("Can't allocate more than we gave it");
     }

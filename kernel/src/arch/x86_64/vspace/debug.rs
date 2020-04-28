@@ -7,8 +7,8 @@ use core::pin::Pin;
 use x86::controlregs;
 use x86::current::paging::*;
 
+use super::*;
 use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
-use crate::arch::vspace::*;
 use crate::graphviz as dot;
 
 impl VSpace {

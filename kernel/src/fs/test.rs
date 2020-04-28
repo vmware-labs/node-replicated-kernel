@@ -1,6 +1,6 @@
 //! Test the file-sytem implementation using unit-tests and proptest.
 
-use alloc::vec;
+
 use alloc::vec::Vec;
 use core::cmp::{Eq, PartialEq};
 use core::sync::atomic::Ordering;
@@ -50,7 +50,7 @@ impl ModelFS {
     fn path_to_mnode(&self, path: &String) -> Option<Mnode> {
         for x in self.oplog.iter().rev() {
             match x {
-                ModelOperation::Created(name, mode, mnode) => {
+                ModelOperation::Created(name, _mode, mnode) => {
                     if &name == &path {
                         return Some(*mnode);
                     }
@@ -66,7 +66,7 @@ impl ModelFS {
     fn path_to_idx(&self, path: &String) -> Option<usize> {
         for (idx, x) in self.oplog.iter().enumerate().rev() {
             match x {
-                ModelOperation::Created(name, mode, mnode) => {
+                ModelOperation::Created(name, _mode, _mnode) => {
                     if &name == &path {
                         return Some(idx);
                     }
@@ -87,7 +87,7 @@ impl ModelFS {
     fn mnode_exists(&self, look_for: Mnode) -> bool {
         for x in self.oplog.iter().rev() {
             match x {
-                ModelOperation::Created(name, mode, mnode) => {
+                ModelOperation::Created(_name, _mode, mnode) => {
                     if look_for == *mnode {
                         return true;
                     }
@@ -154,7 +154,7 @@ impl FileSystem for ModelFS {
                 trace!("seen {:?}", x);
                 match x {
                     // Check if the file is writable or not
-                    ModelOperation::Created(path, mode, mnode) => {
+                    ModelOperation::Created(_path, mode, mnode) => {
                         if mnode_num == *mnode && !FileModes::from(*mode).is_writable() {
                             return Err(FileSystemError::PermissionError);
                         }
@@ -189,14 +189,14 @@ impl FileSystem for ModelFS {
         buffer: &mut UserSlice,
         offset: i64,
     ) -> Result<usize, FileSystemError> {
-        let len = buffer.len();
+        let _len = buffer.len();
         if self.mnode_exists(mnode_num) {
             // We store our 'retrieved' data in a buffer of Option<u8>
             // to make sure in case we have consecutive writes to the same region
             // we take the last one, and also to detect if we
             // read more than what ever got written to the file...
             let mut buffer_gatherer: Vec<Option<u8>> = Vec::with_capacity(buffer.len());
-            for i in 0..buffer.len() {
+            for _i in 0..buffer.len() {
                 buffer_gatherer.push(None);
             }
 
@@ -207,8 +207,8 @@ impl FileSystem for ModelFS {
                     ModelOperation::Write(fmnode, foffset, fpattern, flength) => {
                         // Write is for the correct file and the offset starts somewhere
                         // in that write
-                        let cur_segment_range = (*foffset as usize..(*foffset as usize + flength));
-                        let read_range = (offset as usize..(offset as usize + buffer.len()));
+                        let cur_segment_range = *foffset as usize..(*foffset as usize + flength);
+                        let read_range = offset as usize..(offset as usize + buffer.len());
                         trace!("*fmnode == mnode_num = {}", *fmnode == mnode_num);
                         trace!(
                             "ModelFS::overlaps(&cur_segment_range, &read_range) = {}",
@@ -234,7 +234,7 @@ impl FileSystem for ModelFS {
                         // else: The write is not relevant
                     }
 
-                    ModelOperation::Created(path, mode, mnode) => {
+                    ModelOperation::Created(_path, mode, mnode) => {
                         if mnode_num == *mnode && !FileModes::from(*mode).is_readable() {
                             return Err(FileSystemError::PermissionError);
                         }
@@ -246,7 +246,7 @@ impl FileSystem for ModelFS {
             // We need to copy buffer gatherer back in buffer:
             // Something like [1, 2, 3, None] -> Should lead to [1, 2, 3] with Ok(3)
             // Something like [1, None, 3, 4, None] -> Should lead to [1, 0, 3] with Ok(4), I guess?
-            let iter = buffer_gatherer.iter().enumerate().rev();
+            let _iter = buffer_gatherer.iter().enumerate().rev();
             let mut drop_top = true;
             let mut bytes_read = 0;
             for (idx, val) in buffer_gatherer.iter().enumerate().rev() {
@@ -293,7 +293,7 @@ impl FileSystem for ModelFS {
     }
 
     /// Returns a `dummy` file-info.
-    fn file_info(&self, mnode: Mnode) -> FileInfo {
+    fn file_info(&self, _mnode: Mnode) -> FileInfo {
         FileInfo { ftype: 0, fsize: 0 }
     }
 }
@@ -466,7 +466,7 @@ proptest! {
                 }
                 Write(mnode, offset, pattern, len) => {
                     let mut buffer: Vec<u8> = Vec::with_capacity(len);
-                    for i in 0..len {
+                    for _i in 0..len {
                         buffer.push(pattern as u8);
                     }
 

@@ -285,7 +285,7 @@ impl Kcb<Arch86Kcb> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use core::mem::{self, MaybeUninit};
+    use core::mem::{MaybeUninit};
 
     #[test]
     fn syscall_stack_top_offset() {

@@ -376,7 +376,7 @@ mod test {
         assert_eq!(f.size, 0x1000);
         assert_eq!(f.affinity, 2);
 
-        let f = ncache
+        let _f = ncache
             .allocate_base_page()
             .expect_err("Can't allocate more than we gave it");
 
@@ -394,7 +394,7 @@ mod test {
 
         assert_eq!(ncache.free(), 0);
 
-        let f = ncache
+        let _f = ncache
             .allocate_base_page()
             .expect_err("Can't allocate more than we gave it");
     }

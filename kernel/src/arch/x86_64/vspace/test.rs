@@ -100,8 +100,8 @@ proptest! {
         for action in ops {
             match action {
                 Map(base, frame, rights) => {
-                    let rmodel = model.map_frame(base, frame, rights, &mut tcache);
-                    let rtotest = totest.map_frame(base, frame, rights, &mut tcache);
+                    let rmodel = model.map_frame(base, frame, rights);
+                    let rtotest = totest.map_frame(base, frame, rights);
                     assert_eq!(rmodel, rtotest);
                 }
                 Adjust(vaddr, rights) => {

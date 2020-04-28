@@ -620,7 +620,6 @@ pub fn ioapic_initialize() {
         .expect("Refill didn't work");
 
     let kcb = get_kcb();
-    let mut pmanager = kcb.mem_manager();
 
     for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
         info!("Initialize IO APIC {:?}", io_apic);
@@ -635,7 +634,6 @@ pub fn ioapic_initialize() {
                 ioapic_frame.base,
                 ioapic_frame.size(),
                 MapAction::ReadWriteKernel,
-                &mut *pmanager,
             )
             .expect("Can't create APIC mapping?");
     }

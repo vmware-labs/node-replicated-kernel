@@ -1,7 +1,7 @@
 #![no_std]
 #![feature(core_intrinsics)]
 
-use x86::apic::{ApicControl, ApicId, Icr};
+use x86::apic::{ApicId, Icr};
 
 pub const TSC_TIMER_VECTOR: u8 = 252;
 

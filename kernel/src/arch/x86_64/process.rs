@@ -688,7 +688,6 @@ impl elfloader::ElfLoader for Ring3Process {
             KernelAllocator::try_refill_tcache(20, large_pages).expect("Refill didn't work");
 
             let kcb = crate::kcb::get_kcb();
-            let mut pmanager = kcb.mem_manager();
 
             // TODO(correctness): Will this work (we round-up and map large-pages?)
             // TODO(efficiency): What about wasted memory
@@ -718,6 +717,7 @@ impl elfloader::ElfLoader for Ring3Process {
                         map_action == MapAction::ReadUser
                             || map_action == MapAction::ReadExecuteUser
                     );
+                    let mut pmanager = kcb.mem_manager();
                     pmanager
                         .allocate_large_page()
                         .expect("We refilled so allocation should work.")
@@ -734,7 +734,6 @@ impl elfloader::ElfLoader for Ring3Process {
                         self.offset + page_base + i * LARGE_PAGE_SIZE,
                         frame,
                         map_action,
-                        &mut *pmanager,
                     )
                     .expect("Can't map ELF region");
             }
@@ -907,8 +906,6 @@ impl Process for Ring3Process {
         // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
         // TODO(ugly): Find a better way to express this mess
         super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
-            let mut pmanager = kcb.mem_manager();
-
             // TODO: make sure we have APIC base (these should be part of kernel
             // mappings and above KERNEL_BASE), should not be hardcoded
             p.vspace
@@ -916,7 +913,6 @@ impl Process for Ring3Process {
                     PAddr(0xfee00000u64),
                     BASE_PAGE_SIZE,
                     MapAction::ReadWriteExecuteKernel,
-                    &mut *pmanager,
                 )
                 .expect("Can't map APIC");
 
@@ -965,16 +961,8 @@ impl Process for Ring3Process {
     fn allocate_executors(&mut self, memory: Frame) -> Result<usize, ProcessError> {
         KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
         {
-            let kcb = crate::kcb::get_kcb();
-            let mut pmanager = kcb.mem_manager();
-
             self.vspace
-                .map_frame(
-                    self.executor_offset,
-                    memory,
-                    MapAction::ReadWriteUser,
-                    &mut *pmanager,
-                )
+                .map_frame(self.executor_offset, memory, MapAction::ReadWriteUser)
                 .expect("Can't map user-space executor memory.");
 
             debug!(

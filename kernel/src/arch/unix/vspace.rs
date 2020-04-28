@@ -39,7 +39,6 @@ impl AddressSpace for VSpace {
         _base: VAddr,
         _frame: Frame,
         _action: MapAction,
-        _pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
         unimplemented!("map_frame");
     }

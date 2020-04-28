@@ -27,16 +27,20 @@ pub fn xmain() {
 }
 
 /// Test time facilities in the kernel.
-#[cfg(all(feature = "integration-test", feature = "test-timer", target_arch = "x86_64"))]
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-timer",
+    target_arch = "x86_64"
+))]
 pub fn xmain() {
     use apic::ApicDriver;
-    use core::time::Duration;
-    use core::sync::atomic::spin_loop_hint;
     use core::convert::TryInto;
+    use core::sync::atomic::spin_loop_hint;
+    use core::time::Duration;
 
     unsafe {
         let tsc = x86::time::rdtsc();
-        
+
         {
             let kcb = crate::kcb::get_kcb();
             let mut apic = kcb.arch.apic();
@@ -222,10 +226,10 @@ pub fn xmain() {
 pub fn xmain() {
     use crate::stack::{OwnedStack, Stack};
     use alloc::sync::Arc;
+    use apic::ApicDriver;
     use arch::coreboot;
     use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
-    use apic::ApicDriver;
     use x86::apic::ApicId;
 
     // Entry point for app. This function is called from start_ap.S:
@@ -293,11 +297,11 @@ pub fn xmain() {
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
 pub fn xmain() {
     use crate::stack::{OwnedStack, Stack};
+    use apic::ApicDriver;
     use arch::coreboot;
     use core::sync::atomic::{AtomicBool, Ordering};
     use topology;
     use x86::apic::ApicId;
-    use apic::ApicDriver;
 
     use alloc::sync::Arc;
     use node_replication::log::Log;
@@ -646,6 +650,7 @@ pub fn xmain() {
 
     // Create enough dispatchers to run on all cores:
     // (Also make sure they're all NUMA local)
+    info!("Allocate dispatchers");
     {
         let mut create_per_region: Vec<(topology::NodeId, usize)> =
             Vec::with_capacity(topology::MACHINE_TOPOLOGY.num_nodes() + 1);
@@ -686,6 +691,7 @@ pub fn xmain() {
             }
         }
     }
+    info!("Allocated dispatchers");
 
     let thread = topology::MACHINE_TOPOLOGY.current_thread();
     // Set current thread to run executor from our process

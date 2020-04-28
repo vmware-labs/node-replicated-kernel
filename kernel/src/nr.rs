@@ -503,23 +503,18 @@ where
                 crate::memory::KernelAllocator::try_refill_tcache(7, 0)?;
 
                 let kcb = crate::kcb::get_kcb();
-                let mut pmanager = kcb.mem_manager();
-
                 let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
-                p.vspace_mut()
-                    .map_frame(base, frame, action, &mut *pmanager)?;
+                p.vspace_mut().map_frame(base, frame, action)?;
                 Ok(NodeResult::Mapped)
             }
             Op::MemMapDevice(pid, frame, action) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let kcb = crate::kcb::get_kcb();
-                let mut pmanager = kcb.mem_manager();
-
                 let p = process_lookup.expect("TODO: MemMapFrame process lookup failed");
 
                 let base = VAddr::from(frame.base.as_u64());
                 p.vspace_mut()
-                    .map_frame(base, frame, action, &mut *pmanager)
+                    .map_frame(base, frame, action)
                     .expect("TODO: MemMapFrame map_frame failed");
                 Ok(NodeResult::Mapped)
             }
@@ -533,10 +528,7 @@ where
                 crate::memory::KernelAllocator::try_refill_tcache(7, 0)?;
 
                 let kcb = crate::kcb::get_kcb();
-                let mut pmanager = kcb.mem_manager();
-
-                p.vspace_mut()
-                    .map_frame(base, frame, action, &mut *pmanager)?;
+                p.vspace_mut().map_frame(base, frame, action)?;
                 Ok(NodeResult::MappedFrameId(frame.base, frame.size))
             }
             Op::MemAdjust => unreachable!(),

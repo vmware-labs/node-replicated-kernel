@@ -29,7 +29,6 @@ impl AddressSpace for PageTable {
         base: VAddr,
         frame: Frame,
         action: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
         if frame.size() == 0 {
             return Err(AddressSpaceError::InvalidFrame);
@@ -43,12 +42,15 @@ impl AddressSpace for PageTable {
             return Err(AddressSpaceError::InvalidBase);
         }
 
+        let kcb = crate::kcb::get_kcb();
+        let mut pager = kcb.mem_manager();
+
         // The first call checks that the current region doesn't overlap
         // with an already mapped one (and return AddressSpaceError if so)
         // TODO(performance): This check can probably be done faster with
         // appropriate data-structures
-        self.map_generic(base, (frame.base, frame.size()), action, false, pager)?;
-        self.map_generic(base, (frame.base, frame.size()), action, true, pager)
+        self.map_generic(base, (frame.base, frame.size()), action, false, &mut *pager)?;
+        self.map_generic(base, (frame.base, frame.size()), action, true, &mut *pager)
     }
 
     fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {

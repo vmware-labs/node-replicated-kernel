@@ -37,13 +37,11 @@ pub trait AddressSpace {
     fn map_frames(
         &mut self,
         base: VAddr,
-        // s
         frames: &Vec<(Frame, MapAction)>,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
         let mut cur_base = base;
         for (frame, action) in frames.into_iter() {
-            self.map_frame(cur_base, *frame, *action, pager)?;
+            self.map_frame(cur_base, *frame, *action)?;
             cur_base = VAddr::from(cur_base.as_usize().checked_add(frame.size()).ok_or(
                 AddressSpaceError::BaseOverflow {
                     base: base.as_u64(),
@@ -64,7 +62,6 @@ pub trait AddressSpace {
         base: VAddr,
         frame: Frame,
         action: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError>;
 
     /// Estimates how many base-pages are needed (for page-tables)
@@ -391,7 +388,6 @@ pub(crate) mod model {
             base: VAddr,
             frame: Frame,
             action: MapAction,
-            pager: &mut dyn PhysicalPageProvider,
         ) -> Result<(), AddressSpaceError> {
             // Don't allow mapping of zero-sized frames
             if frame.size() == 0 {
@@ -512,14 +508,13 @@ pub(crate) mod model {
     #[test]
     fn model_sanity_check() {
         let mut a: ModelAddressSpace = Default::default();
-        let mut tcache = TCache::new(0, 0);
 
         let va = VAddr::from(0xffff_0000u64);
         let frame_base = PAddr::from(0xdeaf_0000u64);
         let frame = Frame::new(frame_base, BASE_PAGE_SIZE, 0);
 
         let ret = a
-            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .map_frame(va, frame, MapAction::ReadKernel)
             .expect("Can't map frame");
 
         let (ret_paddr, ret_rights) = a.resolve(va).expect("Can't resolve");
@@ -553,14 +548,13 @@ pub(crate) mod model {
     #[test]
     fn model_bug_already_mapped() {
         let mut a: ModelAddressSpace = Default::default();
-        let mut tcache = TCache::new(0, 0);
 
         let va = VAddr::from(0x489000);
         let frame_base = PAddr::from(0xdeaf_0000u64);
         let frame = Frame::new(frame_base, 4096, 0);
 
         let ret = a
-            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .map_frame(va, frame, MapAction::ReadKernel)
             .expect("Can't map frame");
 
         let va = VAddr::from(0xd4000);
@@ -568,7 +562,7 @@ pub(crate) mod model {
         let frame = Frame::new(frame_base, 0x3b6000, 0);
 
         let ret = a
-            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .map_frame(va, frame, MapAction::ReadKernel)
             .expect_err("Could map frame");
     }
 
@@ -576,14 +570,13 @@ pub(crate) mod model {
     fn model_bug_already_mapped2() {
         //let _r = env_logger::try_init();
         let mut a: ModelAddressSpace = Default::default();
-        let mut tcache = TCache::new(0, 0);
 
         let va = VAddr::from(0x1ad000);
         let frame_base = PAddr::from(0x0);
         let frame = Frame::new(frame_base, 0x1000, 0);
 
         let ret = a
-            .map_frame(va, frame, MapAction::ReadKernel, &mut tcache)
+            .map_frame(va, frame, MapAction::ReadKernel)
             .expect("Failed to map frame?");
 
         let va = VAddr::from(0x1ad000);
@@ -591,7 +584,7 @@ pub(crate) mod model {
         let frame = Frame::new(frame_base, 0x1000, 0);
 
         let ret = a
-            .map_frame(va, frame, MapAction::ReadExecuteUser, &mut tcache)
+            .map_frame(va, frame, MapAction::ReadExecuteUser)
             .expect_err("Could map frame?");
     }
 

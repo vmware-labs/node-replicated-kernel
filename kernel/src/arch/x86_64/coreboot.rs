@@ -79,14 +79,12 @@ unsafe fn copy_bootstrap_code() {
     let real_mode_destination: &'static mut [u8] = get_boostrap_code_region();
 
     let kcb = kcb::get_kcb();
-    let mut pmanager = kcb.mem_manager();
     kcb.arch
         .init_vspace()
         .map_identity(
             PAddr::from(REAL_MODE_BASE as u64),
             round_up!(boot_code_size, BASE_PAGE_SIZE),
             MapAction::ReadWriteExecuteKernel,
-            &mut *pmanager,
         )
         .expect("Can't map bootstrap code");
 

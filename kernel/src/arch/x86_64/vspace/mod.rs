@@ -38,9 +38,8 @@ impl AddressSpace for VSpace {
         base: VAddr,
         frame: Frame,
         action: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
-        self.page_table.map_frame(base, frame, action, pager)
+        self.page_table.map_frame(base, frame, action)
     }
 
     fn map_memory_requirements(base: VAddr, frames: &[Frame]) -> usize {
@@ -85,9 +84,11 @@ impl VSpace {
         base: PAddr,
         size: usize,
         rights: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
-        self.page_table.map_identity(base, size, rights, pager)
+        let kcb = crate::kcb::get_kcb();
+        let mut pager = kcb.mem_manager();
+        self.page_table
+            .map_identity(base, size, rights, &mut *pager)
     }
 
     pub(crate) fn map_identity_with_offset(
@@ -96,10 +97,12 @@ impl VSpace {
         pbase: PAddr,
         size: usize,
         rights: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
+        let kcb = crate::kcb::get_kcb();
+        let mut pager = kcb.mem_manager();
+
         self.page_table
-            .map_identity_with_offset(at_offset, pbase, size, rights, pager)
+            .map_identity_with_offset(at_offset, pbase, size, rights, &mut *pager)
     }
 
     pub(crate) fn map_generic(

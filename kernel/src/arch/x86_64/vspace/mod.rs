@@ -7,7 +7,7 @@ pub mod page_table; /* TODO(encapsulation): This should be a private module but 
 mod test;
 
 use crate::memory::vspace::*;
-use crate::memory::{Frame, KernelAllocator, PAddr, PhysicalPageProvider, VAddr};
+use crate::memory::{Frame, PAddr, VAddr};
 
 use page_table::PageTable;
 
@@ -130,29 +130,6 @@ impl VSpace {
         rights: MapAction,
     ) -> Result<(), AddressSpaceError> {
         self.page_table.map_identity(base, size, rights)
-    }
-
-    pub(crate) fn map_identity_with_offset(
-        &mut self,
-        at_offset: PAddr,
-        pbase: PAddr,
-        size: usize,
-        rights: MapAction,
-    ) -> Result<(), AddressSpaceError> {
-        self.page_table
-            .map_identity_with_offset(at_offset, pbase, size, rights)
-    }
-
-    pub(crate) fn map_generic(
-        &mut self,
-        vbase: VAddr,
-        pregion: (PAddr, usize),
-        rights: MapAction,
-        insert_mapping: bool,
-        pager: &mut dyn PhysicalPageProvider,
-    ) -> Result<(), AddressSpaceError> {
-        self.page_table
-            .map_generic(vbase, pregion, rights, insert_mapping, pager)
     }
 
     pub fn pml4_address(&self) -> PAddr {

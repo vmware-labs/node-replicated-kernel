@@ -37,7 +37,8 @@ fn maponly_bencher(cores: usize) {
 
     let mut vops = 0;
     let mut iteration = 0;
-    while iteration <= 10 {
+    let bench_duration_secs = if cfg!(feature = "smoke") { 1 } else { 10_000 };
+    while iteration <= bench_duration_secs {
         let start = rawtime::Instant::now();
         while start.elapsed().as_secs() < 1 {
             unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
@@ -49,7 +50,7 @@ fn maponly_bencher(cores: usize) {
             Environment::scheduler().core_id,
             cores,
             4096,
-            10000,
+            bench_duration_secs * 1000,
             iteration * 1000,
             vops
         );

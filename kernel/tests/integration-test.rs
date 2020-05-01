@@ -1118,7 +1118,7 @@ fn s06_redis_benchmark_virtio() {
 
         // Test that DHCP works:
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
-        p.exp_string("# Server started, Redis version 4.0.9")?;
+        p.exp_string("# Server started, Redis version 3.0.6")?;
 
         use std::{thread, time};
         thread::sleep(time::Duration::from_secs(4));
@@ -1171,9 +1171,43 @@ fn s06_redis_benchmark_e1000() {
     );
 }
 
+pub fn thread_defaults() -> Vec<usize> {
+    let mut threads = Vec::with_capacity(12);
+    let max_cores = num_cpus::get();
+
+    // On larger machines thread increments are bigger than on
+    // smaller machines:
+    let thread_incremements = if max_cores > 120 {
+        16
+    } else if max_cores > 24 {
+        8
+    } else if max_cores > 16 {
+        4
+    } else {
+        2
+    };
+
+    for t in (0..(max_cores + 1)).step_by(thread_incremements) {
+        if t == 0 {
+            // Can't run on 0 threads
+            threads.push(t + 1);
+        } else {
+            threads.push(t);
+        }
+    }
+
+    threads
+}
+
 #[test]
 fn s06_vmops_benchmark() {
-    for &cores in [1, 8, 13, 14, 22, 27, 28, 29, 37, 41, 42, 43, 51, 55, 56].iter() {
+    let threads = if cfg!(feature = "smoke") {
+        vec![1, 4]
+    } else {
+        thread_defaults()
+    };
+
+    for &cores in threads.iter() {
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
@@ -1181,20 +1215,30 @@ fn s06_vmops_benchmark() {
             .timeout(18_000 + cores as u64 * 3000)
             .cores(cores)
             .setaffinity();
-        if cores > 28 {
+        if cfg!(feature = "smoke") {
+            cmdline = cmdline.user_feature("smoke");
+        }
+
+        if cfg!(feature = "smoke") && cores > 2 {
+            cmdline = cmdline.nodes(2);
+        } else if cores > 28 {
             cmdline = cmdline.nodes(2);
         }
+
         let cmdline = cmdline.release();
-
         let mut output = String::new();
-
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
             let mut p = spawn_bespin(&cmdline)?;
 
             // Parse lines like
             // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
             // write them to a CSV file
-            let expected_lines = with_cores * 11;
+            let expected_lines = if cfg!(feature = "smoke") {
+                1
+            } else {
+                with_cores * 11
+            };
+
             for _i in 0..expected_lines {
                 let (prev, matched) =
                     p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;

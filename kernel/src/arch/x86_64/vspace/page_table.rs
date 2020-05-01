@@ -773,18 +773,21 @@ impl PageTable {
 
     fn new_pt(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDEntry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
+        debug_assert!(frame.base != PAddr::zero());
         unsafe { frame.zero() };
         return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
     }
 
     fn new_pd(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDPTEntry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
+        debug_assert!(frame.base != PAddr::zero());
         unsafe { frame.zero() };
         return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
     }
 
     fn new_pdpt(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PML4Entry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
+        debug_assert!(frame.base != PAddr::zero());
         unsafe { frame.zero() };
         return PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
     }

@@ -24,8 +24,7 @@ default = ["rumprt"]
 # Use virtio instead of e1000
 virtio = []
 
-# Some smoke tests we run with CI,
-# they test that the base features of
+# Tests we run with CI make sure that the base features of
 # the kernel are working:
 test-print = []
 test-map = []
@@ -41,3 +40,9 @@ test-fs = []
 bench-vmops = []
 fs-bench = []
 fs-write = []
+
+# smoke: A way to tell the micro-benchmarks
+# to only run for a short period, don't consume many
+# resources, just enough to make sure they work
+# but won't produce valid results
+smoke = []

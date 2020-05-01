@@ -64,7 +64,6 @@ use crate::{xmain, ExitReason};
 use memory::paddr_to_kernel_vaddr;
 use process::Ring3Process;
 use vspace::page_table::PageTable;
-use vspace::*;
 
 pub const MAX_NUMA_NODES: usize = 12;
 
@@ -210,6 +209,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     enable_fsgsbase();
     assert_required_cpu_features();
     syscall::enable_fast_syscalls();
+    irq::disable();
 
     unsafe {
         gdt::setup_early_gdt();
@@ -226,11 +226,11 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     kcb.set_global_memory(args.global_memory);
     kcb.set_physical_memory_manager(tcache::TCache::new(args.thread, args.node));
-    kcb::init_kcb(&mut kcb);
 
     let static_kcb = unsafe {
         core::mem::transmute::<&mut Kcb<kcb::Arch86Kcb>, &'static mut Kcb<kcb::Arch86Kcb>>(&mut kcb)
     };
+    kcb::init_kcb(static_kcb);
 
     static_kcb.arch.set_interrupt_stacks(
         OwnedStack::new(64 * BASE_PAGE_SIZE),
@@ -244,6 +244,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     static_kcb.enable_print_buffering(String::with_capacity(128));
     static_kcb.install();
+    info!("get_save_area_ptr {:p}", kcb.arch.get_save_area_ptr());
     core::mem::forget(kcb);
 
     {

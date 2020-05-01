@@ -30,26 +30,21 @@ impl AddressSpace for PageTable {
         frame: Frame,
         action: MapAction,
     ) -> Result<(), AddressSpaceError> {
-        if frame.size() == 0 {
-            return Err(AddressSpaceError::InvalidFrame);
-        }
-        if frame.base % frame.size() != 0 {
-            // phys addr should be aligned to page-size
-            return Err(AddressSpaceError::InvalidFrame);
-        }
-        if base % frame.size() != 0 {
-            // virtual addr should be aligned to page-size
-            return Err(AddressSpaceError::InvalidBase);
-        }
+        // These assertion are checked with error returns in `VSpace`
+        debug_assert!(frame.size() > 0);
+        debug_assert_eq!(
+            frame.base % frame.size(),
+            0,
+            "paddr should be aligned to page-size"
+        );
+        debug_assert_eq!(
+            base % frame.size(),
+            0,
+            "vaddr should be aligned to page-size"
+        );
 
         let kcb = crate::kcb::get_kcb();
         let mut pager = kcb.mem_manager();
-
-        // The first call checks that the current region doesn't overlap
-        // with an already mapped one (and return AddressSpaceError if so)
-        // TODO(performance): This check can probably be done faster with
-        // appropriate data-structures
-        self.map_generic(base, (frame.base, frame.size()), action, false, &mut *pager)?;
         self.map_generic(base, (frame.base, frame.size()), action, true, &mut *pager)
     }
 
@@ -112,14 +107,14 @@ impl AddressSpace for PageTable {
         Err(AddressSpaceError::NotMapped)
     }
 
-    fn unmap(&mut self, base: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+    fn unmap(&mut self, base: VAddr) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError> {
         if !base.is_base_page_aligned() {
             return Err(AddressSpaceError::InvalidBase);
         }
-        let (_vaddr, paddr, size, _rights) = self.modify_generic(base, Modify::Unmap)?;
+        let (vaddr, paddr, size, _rights) = self.modify_generic(base, Modify::Unmap)?;
 
         //warn!("TODO(correctness): we lose topology information here...");
-        Ok((Default::default(), Frame::new(paddr, size, 0)))
+        Ok((Default::default(), vaddr, Frame::new(paddr, size, 0)))
     }
 }
 
@@ -155,11 +150,12 @@ impl PageTable {
         pbase: PAddr,
         size: usize,
         rights: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
         assert!(at_offset.is_base_page_aligned());
         assert!(pbase.is_base_page_aligned());
         assert_eq!(size % BASE_PAGE_SIZE, 0, "Size not a multiple of page-size");
+        let kcb = crate::kcb::get_kcb();
+        let mut pager = kcb.mem_manager();
 
         let vbase = VAddr::from_u64((at_offset + pbase).as_u64());
         debug!(
@@ -170,7 +166,7 @@ impl PageTable {
             pbase + size
         );
 
-        self.map_generic(vbase, (pbase, size), rights, true, pager)
+        self.map_generic(vbase, (pbase, size), rights, true, &mut *pager)
     }
 
     /// Identity maps a given physical memory range [`base`, `base` + `size`]
@@ -180,9 +176,8 @@ impl PageTable {
         base: PAddr,
         size: usize,
         rights: MapAction,
-        pager: &mut dyn PhysicalPageProvider,
     ) -> Result<(), AddressSpaceError> {
-        self.map_identity_with_offset(PAddr::from(0x0), base, size, rights, pager)
+        self.map_identity_with_offset(PAddr::from(0x0), base, size, rights)
     }
 
     /// Retrieves the relevant PDPT table for a given virtual address `vbase`.

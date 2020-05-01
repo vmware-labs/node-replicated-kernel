@@ -271,7 +271,7 @@ pub unsafe fn initialize<A>(
         init_function as u64,
         args,
         initialized,
-        kcb.arch.init_vspace().page_table.pml4_address().into(),
+        kcb.arch.init_vspace().pml4_address().into(),
         stack.base() as u64,
     );
 

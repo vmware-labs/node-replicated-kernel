@@ -20,13 +20,32 @@ impl Default for TlbFlushHandle {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum MappingType {
+    ElfText,
+    ElfData,
+    Executor,
+    Heap,
+}
+
 pub struct MappingInfo {
-    frame: Frame,
+    pub frame: Frame,
+    pub rights: MapAction,
+    pub typ: MappingType,
 }
 
 impl MappingInfo {
-    pub fn new(frame: Frame) -> Self {
-        MappingInfo { frame }
+    pub fn new(frame: Frame, rights: MapAction) -> Self {
+        MappingInfo {
+            frame,
+            rights,
+            typ: MappingType::Heap,
+        }
+    }
+
+    /// Return range of the region if it would start at `base`
+    pub fn vrange(&self, base: VAddr) -> core::ops::Range<usize> {
+        base.as_usize()..base.as_usize() + self.frame.size
     }
 }
 
@@ -34,6 +53,8 @@ impl fmt::Debug for MappingInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MappingInfo")
             .field("frame", &self.frame)
+            .field("rights", &self.rights)
+            .field("typ", &self.typ)
             .finish()
     }
 }
@@ -98,7 +119,7 @@ pub trait AddressSpace {
     /// # Returns
     /// The frame to the caller along with a `TlbFlushHandle` that may have to be
     /// invoked to flush the TLB.
-    fn unmap(&mut self, vaddr: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError>;
+    fn unmap(&mut self, vaddr: VAddr) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError>;
 
     // Returns an iterator of all currently mapped memory regions.
     //fn mappings()
@@ -411,7 +432,7 @@ pub(crate) mod model {
 
             // Is there an existing mapping that conflicts with the new mapping?
             let mut overlapping_mappings = Vec::with_capacity(1);
-            for (cur_vaddr, cur_paddr, length, rights) in self.oplog.iter_mut().rev() {
+            for (cur_vaddr, cur_paddr, length, rights) in self.oplog.iter_mut() {
                 let cur_range = cur_vaddr.as_usize()..cur_vaddr.as_usize() + *length;
                 let new_range = base.as_usize()..base.as_usize() + frame.size();
                 if ModelAddressSpace::overlaps(&cur_range, &new_range) {
@@ -420,10 +441,10 @@ pub(crate) mod model {
                         && *cur_paddr == frame.base
                         && *rights == action
                     {
-                        // Promote frame size in the special case where we can just extend
-                        // an existing mapping
-                        *length = frame.size();
-                        return Ok(());
+                        // Not really a conflict yet since we might be able to get away with
+                        // just adjusting the mapping. We have to make sure we really
+                        // don't have any conflicts with mappings that come later in the list
+                        // (see also further down)
                     } else {
                         overlapping_mappings.push(
                             ModelAddressSpace::intersection(cur_range, new_range)
@@ -435,9 +456,28 @@ pub(crate) mod model {
                 }
             }
 
-            // In case we have a mapping that conflicts return the first (lowest)
-            // VAddr where a conflict happened:
-            if !overlapping_mappings.is_empty() {
+            // No conflicts
+            if overlapping_mappings.is_empty() {
+                for (cur_vaddr, cur_paddr, length, rights) in self.oplog.iter_mut() {
+                    let cur_range = cur_vaddr.as_usize()..cur_vaddr.as_usize() + *length;
+                    let new_range = base.as_usize()..base.as_usize() + frame.size();
+
+                    if ModelAddressSpace::overlaps(&cur_range, &new_range) {
+                        if cur_range.start == new_range.start
+                            && cur_range.end <= new_range.end
+                            && *cur_paddr == frame.base
+                            && *rights == action
+                        {
+                            // Promote frame size in the special case where we can just extend
+                            // an existing mapping
+                            *length = frame.size();
+                            return Ok(());
+                        }
+                    }
+                }
+            } else {
+                // In case we have a mapping that conflicts return the first (lowest)
+                // VAddr where a conflict happened:
                 overlapping_mappings.sort();
                 return Err(AddressSpaceError::AlreadyMapped {
                     base: *overlapping_mappings.get(0).unwrap(),
@@ -489,7 +529,10 @@ pub(crate) mod model {
             Err(AddressSpaceError::NotMapped)
         }
 
-        fn unmap(&mut self, base: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+        fn unmap(
+            &mut self,
+            base: VAddr,
+        ) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError> {
             if !base.is_base_page_aligned() {
                 return Err(AddressSpaceError::InvalidBase);
             }
@@ -502,9 +545,13 @@ pub(crate) mod model {
 
             let element = found.next();
             if element.is_some() {
-                let (_cur_vaddr, cur_paddr, cur_length, _cur_rights) = element.unwrap();
+                let (cur_vaddr, cur_paddr, cur_length, _cur_rights) = element.unwrap();
                 assert!(found.next().is_none(), "Only found one relevant mapping");
-                Ok((TlbFlushHandle {}, Frame::new(cur_paddr, cur_length, 0)))
+                Ok((
+                    TlbFlushHandle {},
+                    cur_vaddr,
+                    Frame::new(cur_paddr, cur_length, 0),
+                ))
             } else {
                 Err(AddressSpaceError::NotMapped)
             }
@@ -543,7 +590,7 @@ pub(crate) mod model {
         assert_eq!(ret_paddr, frame_base);
         assert_eq!(ret_rights, MapAction::ReadWriteUser);
 
-        let (_handle, ret_frame) = a.unmap(va).expect("Can't unmap");
+        let (_handle, _vaddr, ret_frame) = a.unmap(va).expect("Can't unmap");
         assert_eq!(ret_frame, frame);
 
         let e = a
@@ -592,6 +639,33 @@ pub(crate) mod model {
 
         let _ret = a
             .map_frame(va, frame, MapAction::ReadExecuteUser)
+            .expect_err("Could map frame?");
+    }
+
+    #[test]
+    fn model_bug_already_mapped3() {
+        let _r = env_logger::try_init();
+        let mut a: ModelAddressSpace = Default::default();
+
+        let va = VAddr::from(0x0);
+        let frame = Frame::new(PAddr::from(0x0), 0x1000, 0);
+
+        let _ret = a
+            .map_frame(va, frame, MapAction::ReadUser)
+            .expect("Failed to map frame?");
+
+        let va = VAddr::from(0x1000);
+        let frame = Frame::new(PAddr::from(0x0), 0x1000, 0);
+
+        let _ret = a
+            .map_frame(va, frame, MapAction::ReadUser)
+            .expect("Failed to map frame?");
+
+        let va = VAddr::from(0x0);
+        let frame = Frame::new(PAddr::from(0x0), 0x20_0000, 0);
+
+        let _ret = a
+            .map_frame(va, frame, MapAction::ReadUser)
             .expect_err("Could map frame?");
     }
 

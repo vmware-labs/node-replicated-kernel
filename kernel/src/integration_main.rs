@@ -215,6 +215,7 @@ pub fn xmain() {
         };
     }
 
+    info!("test-acpi-topology done.");
     arch::debug::shutdown(ExitReason::Ok);
 }
 

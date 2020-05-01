@@ -151,15 +151,12 @@ pub fn enable_fsgsbase() {
 /// # Safety
 /// This should only be called once during init to retrieve the
 /// initial VSpace.
-unsafe fn find_current_vspace() -> VSpace {
+unsafe fn find_current_ptables() -> PageTable {
     let cr_three: u64 = controlregs::cr3();
     let pml4: PAddr = PAddr::from(cr_three);
     let pml4_table = transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
-    VSpace {
-        mappings: alloc::collections::BTreeMap::new(),
-        page_table: PageTable {
-            pml4: Box::into_pin(Box::from_raw(pml4_table)),
-        },
+    PageTable {
+        pml4: Box::into_pin(Box::from_raw(pml4_table)),
     }
 }
 
@@ -218,11 +215,12 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         gdt::setup_early_gdt();
         irq::setup_early_idt();
     };
+    let start = rawtime::Instant::now();
 
     let emanager = tcache::TCache::new(args.thread, args.node);
-    let init_vspace = unsafe { find_current_vspace() }; // Safe, done once during init
+    let init_ptable = unsafe { find_current_ptables() }; // Safe, done once during init
 
-    let arch = kcb::Arch86Kcb::new(args.kernel_args, init_apic(), init_vspace);
+    let arch = kcb::Arch86Kcb::new(args.kernel_args, init_apic(), init_ptable);
     let mut kcb =
         Kcb::<kcb::Arch86Kcb>::new(args.kernel_binary, args.cmdline, emanager, arch, args.node);
 
@@ -259,8 +257,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
         // Don't modify this line without adjusting `coreboot` integration test:
         info!(
-            "Core #{} initialized (replica idx {}).",
-            args.thread, local_ridx
+            "Core #{} initialized (replica idx {}) in {:?}.",
+            args.thread,
+            local_ridx,
+            start.elapsed()
         );
     }
 
@@ -406,7 +406,7 @@ fn boot_app_cores(
             );
 
             // Wait until core is up or we time out
-            let timeout = x86::time::rdtsc() + 190_000_000;
+            let timeout = x86::time::rdtsc() + 1_000_000_000;
             loop {
                 // Did the core signal us initialization completed?
                 if initialized.load(Ordering::SeqCst) {
@@ -565,16 +565,16 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             let f = Frame::new(base, size, 0);
 
             const ONE_MIB: usize = 1 * 1024 * 1024;
-            const TEN_MIB: usize = 10 * 1024 * 1024;
+            const EARLY_MEMORY_CAPACITY: usize = 14 * 1024 * 1024;
             if base.as_usize() >= ONE_MIB {
-                if size > TEN_MIB && emanager.is_none() {
+                if size > EARLY_MEMORY_CAPACITY && emanager.is_none() {
                     // This seems like a good frame for the early allocator on the BSP core.
                     // We don't have NUMA information yet so we'd hope that on
                     // a NUMA machine this memory will be on node 0.
                     // Ideally `mem_iter` is ordered by physical address which would increase
                     // our chances, but the UEFI spec doesn't guarantee anything :S
-                    let (ten_mib, high) = f.split_at(TEN_MIB);
-                    emanager = Some(tcache::TCache::new_with_frame(0, 0, ten_mib));
+                    let (early_frame, high) = f.split_at(EARLY_MEMORY_CAPACITY);
+                    emanager = Some(tcache::TCache::new_with_frame(0, 0, early_frame));
 
                     if high != Frame::empty() {
                         assert!(!memory_regions.is_full());
@@ -596,10 +596,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let emanager = emanager
         .expect("Couldn't build an early physical memory manager, increase system main memory?");
 
-    let init_vspace = unsafe { find_current_vspace() }; // Safe, done once during init
+    let init_ptable = unsafe { find_current_ptables() }; // Safe, done once during init
     trace!("vspace found");
 
-    let arch = kcb::Arch86Kcb::new(kernel_args, init_apic(), init_vspace);
+    let arch = kcb::Arch86Kcb::new(kernel_args, init_apic(), init_ptable);
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = Kcb::new(kernel_binary, cmdline, emanager, arch, 0);

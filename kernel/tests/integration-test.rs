@@ -1118,7 +1118,7 @@ fn s06_redis_benchmark_virtio() {
 
         // Test that DHCP works:
         dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
-        p.exp_string("# Server started, Redis version 3.0.6")?;
+        p.exp_string("# Server started, Redis version 4.0.9")?;
 
         use std::{thread, time};
         thread::sleep(time::Duration::from_secs(4));

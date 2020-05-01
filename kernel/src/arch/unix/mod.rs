@@ -28,8 +28,18 @@ pub mod debug {
     }
 }
 
+static mut initialized: bool = false;
+
 #[start]
 pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
+    unsafe {
+        if initialized {
+            return 0;
+        } else {
+            initialized = true;
+        }
+    }
+
     // Note anything lower than Info is currently broken
     // because macros in mem management will do a recursive
     // allocation and this stuff is not reentrant...
@@ -57,13 +67,12 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     }
 
     let frame = mm
-        .allocate_frame(16 * 1024 * 1024)
+        .allocate_frame(512 * 1024 * 1024)
         .expect("We don't have vRAM available");
     let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
     annotated_regions.push(frame);
-    let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
-    let _global_memory_static =
-        unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
+    let global_memory = unsafe { Box::new(GlobalMemory::new(annotated_regions).unwrap()) };
+    let global_memory_static: &'static GlobalMemory = Box::leak(global_memory);
 
     // Construct the Kcb so we can access these things later on in the code
     let kernel_args: Box<KernelArgs> = Box::new(Default::default());
@@ -71,10 +80,11 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let arch_kcb: kcb::ArchKcb = kcb::ArchKcb::new(Box::leak(kernel_args));
     let cmdline: CommandLineArgs = Default::default();
 
-    let kcb = box Kcb::new(&kernel_binary, cmdline, tc, arch_kcb, 0 as topology::NodeId);
+    let mut kcb = box Kcb::new(&kernel_binary, cmdline, tc, arch_kcb, 0 as topology::NodeId);
+    kcb.set_global_memory(global_memory_static);
+    debug!("Memory allocation should work at this point...");
 
     kcb::init_kcb(Box::leak(kcb));
-    debug!("Memory allocation should work at this point...");
     kcb::get_kcb().init_memfs();
 
     info!(

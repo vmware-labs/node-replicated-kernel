@@ -272,8 +272,7 @@ mod test {
     /// TCache should be fit exactly within a base-page.
     #[test]
     fn tcache_populate() {
-        let tcache =
-            TCache::new_with_frame(1, 2, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
+        let tcache = TCache::new_with_frame(1, 2, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
         assert_eq!(tcache.base_page_addresses.len(), 10);
         assert_eq!(tcache.large_page_addresses.len(), 0);
 

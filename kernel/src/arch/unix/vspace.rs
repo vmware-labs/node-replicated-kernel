@@ -59,7 +59,10 @@ impl AddressSpace for VSpace {
         unimplemented!("resolve");
     }
 
-    fn unmap(&mut self, _vaddr: VAddr) -> Result<(TlbFlushHandle, Frame), AddressSpaceError> {
+    fn unmap(
+        &mut self,
+        _vaddr: VAddr,
+    ) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError> {
         unimplemented!("unmap");
     }
 }

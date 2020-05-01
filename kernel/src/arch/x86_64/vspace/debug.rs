@@ -7,16 +7,16 @@ use core::pin::Pin;
 use x86::controlregs;
 use x86::current::paging::*;
 
-use super::*;
+use super::page_table::PageTable;
 use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
 use crate::graphviz as dot;
 
-impl VSpace {
+impl PageTable {
     fn parse_nodes_edges<'a>(&'a self) -> (dot::Nodes<'a, Nd<'a>>, dot::Edges<'a, Ed<'a>>) {
         let mut nodes = Vec::with_capacity(128);
         let mut edges = Vec::with_capacity(128);
 
-        let pml4_table = self.page_table.pml4.as_ref();
+        let pml4_table = self.pml4.as_ref();
         nodes.push(Nd::PML4(pml4_table, None));
 
         unsafe {
@@ -180,7 +180,7 @@ pub enum Nd<'a> {
 /// Edge is connection of two nodes and slot within the page-table.
 type Ed<'a> = ((Nd<'a>, usize), (Nd<'a>, usize));
 
-impl<'a> dot::Labeller<'a> for VSpace {
+impl<'a> dot::Labeller<'a> for PageTable {
     type Node = Nd<'a>;
     type Edge = Ed<'a>;
 
@@ -351,7 +351,7 @@ impl<'a> dot::Labeller<'a> for VSpace {
     }
 }
 
-impl<'a> dot::GraphWalk<'a> for VSpace {
+impl<'a> dot::GraphWalk<'a> for PageTable {
     type Node = Nd<'a>;
     type Edge = Ed<'a>;
     fn nodes(&self) -> dot::Nodes<'a, Nd> {

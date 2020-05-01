@@ -916,7 +916,7 @@ impl Process for Ring3Process {
                 )
                 .expect("Can't map APIC");
 
-            let kernel_pml_entry = kcb.arch.init_vspace().page_table.pml4[128];
+            let kernel_pml_entry = kcb.arch.init_vspace().pml4[128];
             trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
             p.vspace.page_table.pml4[128] = kernel_pml_entry;
         });

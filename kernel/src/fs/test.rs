@@ -1,6 +1,5 @@
 //! Test the file-sytem implementation using unit-tests and proptest.
 
-
 use alloc::vec::Vec;
 use core::cmp::{Eq, PartialEq};
 use core::sync::atomic::Ordering;

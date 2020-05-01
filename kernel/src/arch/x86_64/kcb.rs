@@ -22,7 +22,7 @@ use crate::stack::{OwnedStack, Stack};
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
 use super::process::{Ring3Executor, Ring3Process};
-use super::vspace::VSpace;
+use super::vspace::page_table::PageTable;
 use super::KernelArgs;
 
 /// Try to retrieve the KCB by reading the gs register.
@@ -113,7 +113,7 @@ pub struct Arch86Kcb {
     /// It contains a 1:1 mapping of
     ///  * all physical memory (above `KERNEL_BASE`)
     ///  * IO APIC and local APIC memory (after initialization has completed)
-    init_vspace: RefCell<VSpace>,
+    init_vspace: RefCell<PageTable>,
 
     /// A handle to the node-local kernel replica.
     pub replica: Option<Arc<Replica<'static, KernelNode<Ring3Process>>>>,
@@ -147,7 +147,7 @@ impl Arch86Kcb {
     pub(crate) fn new(
         kernel_args: &'static KernelArgs,
         apic: XAPICDriver,
-        init_vspace: VSpace,
+        init_vspace: PageTable,
     ) -> Arch86Kcb {
         Arch86Kcb {
             kernel_args,
@@ -172,7 +172,7 @@ impl Arch86Kcb {
         self.apic.borrow_mut()
     }
 
-    pub fn init_vspace(&self) -> RefMut<VSpace> {
+    pub fn init_vspace(&self) -> RefMut<PageTable> {
         self.init_vspace.borrow_mut()
     }
 
@@ -285,7 +285,7 @@ impl Kcb<Arch86Kcb> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use core::mem::{MaybeUninit};
+    use core::mem::MaybeUninit;
 
     #[test]
     fn syscall_stack_top_offset() {

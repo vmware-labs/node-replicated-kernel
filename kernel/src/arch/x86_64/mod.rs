@@ -233,18 +233,17 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     kcb::init_kcb(static_kcb);
 
     static_kcb.arch.set_interrupt_stacks(
-        OwnedStack::new(64 * BASE_PAGE_SIZE),
-        OwnedStack::new(64 * BASE_PAGE_SIZE),
+        OwnedStack::new(16 * BASE_PAGE_SIZE),
+        OwnedStack::new(16 * BASE_PAGE_SIZE),
     );
     static_kcb
         .arch
-        .set_syscall_stack(OwnedStack::new(64 * BASE_PAGE_SIZE));
+        .set_syscall_stack(OwnedStack::new(16 * BASE_PAGE_SIZE));
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     static_kcb.enable_print_buffering(String::with_capacity(128));
     static_kcb.install();
-    info!("get_save_area_ptr {:p}", kcb.arch.get_save_area_ptr());
     core::mem::forget(kcb);
 
     {

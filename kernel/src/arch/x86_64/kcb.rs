@@ -204,8 +204,10 @@ impl Arch86Kcb {
     pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
         // Add the stack-top to the TSS so the CPU ends up switching
         // to this stack on an interrupt
+        debug_assert_eq!(ex_stack.base() as u64 % 16, 0, "Stack not 16-byte aligned");
         self.tss.set_rsp(x86::Ring::Ring0, ex_stack.base() as u64);
         // Prepare ist[0] in tss for the double-fault stack
+        debug_assert_eq!(fault_stack.base() as u64 % 16, 0, "Stack not 16-byte aligned");
         self.tss.set_ist(0, fault_stack.base() as u64);
 
         // Link TSS in Gdt

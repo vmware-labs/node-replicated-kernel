@@ -224,7 +224,7 @@ impl KernelAllocator {
 
                 Ok(base_ptr)
             }
-            _ => unimplemented!("Unable to handle this allocation request"),
+            _ => unimplemented!("Unable to handle this allocation request {:?}", layout),
         }
     }
 

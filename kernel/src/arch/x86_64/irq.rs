@@ -231,10 +231,14 @@ pub unsafe fn setup_early_idt() {
 
 /// Arguments as provided by the ISR generic call handler (see `isr.S`).
 ///
+/// Since we store this struct on the entry of an IRQ make sure it's a
+/// multiple of 16-bytes so the stack stays aligned.
+///
 /// # See also
 /// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
 #[repr(C, packed)]
 pub struct ExceptionArguments {
+    _reserved: u64,
     vector: u64,
     exception: u64,
     rip: u64,

@@ -72,6 +72,9 @@ isr_handler\ex:
     // Save vector registers
     fxsave 24*8(%rax)
 
+    // Ensure 16-byte stack pointer alignment
+    // `reserved` in `ExceptionArguments`
+    pushq $0x0
     callq handle_generic_exception
 
     // We should not return form handle_generic_exception.

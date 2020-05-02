@@ -6,6 +6,11 @@ stages:
   - document
 
 before_script:
+  # Add SSH key
+  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - echo "$SSH_PRIVATE_KEY_NR" | tr -d '\r' | ssh-add -
   - bash setup.sh
   - rustup --version
   - rustc --version
@@ -15,11 +20,6 @@ before_script:
   # Leave node-replication alone for the moment:
   - sed -i'' -e '/git@github.com:gz\/node-replication.git/!s/git@github.com:/https:\/\/github.com\//' .gitmodules
   - git submodule update --init --recursive
-  # Add SSH key
-  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
-  - eval $(ssh-agent -s)
-  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
-  - echo "$SSH_PRIVATE_KEY_NR" | tr -d '\r' | ssh-add -
 
 build:
   stage: build

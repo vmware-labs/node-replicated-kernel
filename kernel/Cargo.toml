@@ -68,7 +68,7 @@ cc = "1.0"
 [features]
 # Run an integration test instead of standard kernel main function
 integration-test = []
-# smoke: Shorten long running benchmarks to test functionality
+# smoke: Shorten long running benchmarks to test just functionality
 smoke = []
 # Don't boot entire system. only initialize bsp core
 bsp-only = []

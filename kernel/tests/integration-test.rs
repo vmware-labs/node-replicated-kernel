@@ -1207,25 +1207,37 @@ fn s06_vmops_benchmark() {
         thread_defaults()
     };
 
+    let file_name = "vmops_benchmark.csv";
+    std::fs::remove_file(file_name);
+
     for &cores in threads.iter() {
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
-            .memory(10_000)
-            .timeout(18_000 + cores as u64 * 3000)
+            .timeout(12_000 + cores as u64 * 3000)
             .cores(cores)
-            .setaffinity();
+            .setaffinity()
+            .release();
         if cfg!(feature = "smoke") {
-            cmdline = cmdline.user_feature("smoke");
+            cmdline = cmdline.user_feature("smoke").memory(8192);
+        } else {
+            cmdline = cmdline.memory(24 * 1024);
         }
 
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
-        } else if cores > 28 {
-            cmdline = cmdline.nodes(2);
+        } else {
+            let max_cores = num_cpus::get();
+            // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
+            match max_cores {
+                56 if cores > 28 => cmdline = cmdline.nodes(2),
+                192 if cores > 144 => cmdline = cmdline.nodes(4),
+                192 if cores > 96 => cmdline = cmdline.nodes(3),
+                192 if cores > 48 => cmdline = cmdline.nodes(2),
+                _ => {}
+            };
         }
 
-        let cmdline = cmdline.release();
         let mut output = String::new();
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
             let mut p = spawn_bespin(&cmdline)?;
@@ -1246,7 +1258,6 @@ fn s06_vmops_benchmark() {
                 output += matched.as_str();
 
                 // Append parsed results to a CSV file
-                let file_name = "vmops_benchmark.csv";
                 let write_headers = !Path::new(file_name).exists();
                 let mut csv_file = OpenOptions::new()
                     .append(true)

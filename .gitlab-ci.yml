@@ -2,6 +2,7 @@ stages:
   - build
   - run
   - test
+  - bench
   - document
 
 before_script:
@@ -46,16 +47,23 @@ test:
   script:
     - cd lib/slabmalloc
     - cargo test
-    - cd ../..
-    - cd kernel
-    # Delete potentially old tap interface
-    #- sudo ifconfig tap0 down || true
-    #- sudo tunctl -d tap0 || true
+    - cd ../../kernel
     - cargo +nightly fmt --package bespin -- --check
-    - RUST_TEST_THREADS=1 cargo test
+    - RUST_TEST_THREADS=1 cargo test --features smoke
     - cd ..
   dependencies:
     - build
+  variables:
+    GIT_STRATEGY: none
+
+bench:
+  stage: bench
+  script:
+    - cd kernel
+    - RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark
+    - cd ..
+  dependencies:
+    - test
   variables:
     GIT_STRATEGY: none
 
@@ -80,7 +88,4 @@ pages:
     - build
   variables:
     GIT_STRATEGY: none
-  artifacts:
-    paths:
-      - public
   only: ['master']

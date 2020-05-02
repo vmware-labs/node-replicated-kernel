@@ -37,7 +37,7 @@ fn maponly_bencher(cores: usize) {
 
     let mut vops = 0;
     let mut iteration = 0;
-    let bench_duration_secs = if cfg!(feature = "smoke") { 1 } else { 10_000 };
+    let bench_duration_secs = if cfg!(feature = "smoke") { 1 } else { 10 };
     while iteration <= bench_duration_secs {
         let start = rawtime::Instant::now();
         while start.elapsed().as_secs() < 1 {

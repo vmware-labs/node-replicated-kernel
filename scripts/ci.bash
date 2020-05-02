@@ -12,7 +12,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_
 
 # Clone repo
 rm -rf gh-pages
-git clone -b gh-pages git@github.com:gz/bespin.git gh-pages
+git clone -b gh-pages bespin-gh-pages:gz/bespin.git gh-pages
 
 # Create CSV entry
 export GIT_REV_CURRENT=`git rev-parse --short HEAD`

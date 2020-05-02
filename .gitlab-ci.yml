@@ -7,10 +7,6 @@ stages:
 
 before_script:
   # Add SSH key
-  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
-  - eval $(ssh-agent -s)
-  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
-  - echo "$SSH_PRIVATE_KEY_NR" | tr -d '\r' | ssh-add -
   - bash setup.sh
   - rustup --version
   - rustc --version

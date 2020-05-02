@@ -1196,6 +1196,19 @@ pub fn thread_defaults() -> Vec<usize> {
         }
     }
 
+    if max_cores == 56 {
+        threads.push(27);
+        threads.push(28);
+        threads.push(29);
+    }
+
+    if max_cores == 192 {
+        threads.push(2 * 47);
+        threads.push(2 * 48);
+        threads.push(2 * 49);
+    }
+
+    threads.sort();
     threads
 }
 
@@ -1230,7 +1243,7 @@ fn s06_vmops_benchmark() {
             let max_cores = num_cpus::get();
             // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
             match max_cores {
-                56 if cores > 28 => cmdline = cmdline.nodes(2),
+                56 if cores > 14 => cmdline = cmdline.nodes(2),
                 192 if cores > 144 => cmdline = cmdline.nodes(4),
                 192 if cores > 96 => cmdline = cmdline.nodes(3),
                 192 if cores > 48 => cmdline = cmdline.nodes(2),

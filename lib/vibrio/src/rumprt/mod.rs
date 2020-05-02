@@ -152,11 +152,19 @@ pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *mut RumpHyperU
 
 // int rumpuser_malloc(size_t len, int alignment, void **memp)
 #[no_mangle]
-pub unsafe extern "C" fn rumpuser_malloc(len: usize, alignment: usize, memp: *mut *mut u8) -> i64 {
+pub unsafe extern "C" fn rumpuser_malloc(
+    len: usize,
+    mut alignment: usize,
+    memp: *mut *mut u8,
+) -> i64 {
     assert!(
         len >= alignment,
         "If this doesn't hold we need a smarter deallocate method for buddy alloc"
     );
+
+    if alignment == 0 {
+        alignment = 8;
+    }
 
     let ptr = alloc::alloc(Layout::from_size_align_unchecked(len, alignment));
     *memp = ptr;

@@ -15,6 +15,10 @@ before_script:
   # Leave node-replication alone for the moment:
   - sed -i'' -e '/git@github.com:gz\/node-replication.git/!s/git@github.com:/https:\/\/github.com\//' .gitmodules
   - git submodule update --init --recursive
+  # Add SSH key
+  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
 
 build:
   stage: build
@@ -58,16 +62,27 @@ test:
   variables:
     GIT_STRATEGY: fetch
 
-bench:
+benchmark:skylake2x:
   stage: bench
   script:
-    - cd kernel
-    - RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark
-    - cd ..
+    - bash scripts/ci.bash
   dependencies:
     - test
   variables:
     GIT_STRATEGY: fetch
+  tags:
+    - skylake2x
+
+benchmark:skylake4x:
+  stage: bench
+  script:
+    - bash scripts/ci.bash
+  dependencies:
+    - test
+  variables:
+    GIT_STRATEGY: fetch
+  tags:
+    - skylake4x
 
 docs:
   stage: document
@@ -76,15 +91,13 @@ docs:
     - cd doc
     - mdbook build -d ../book
     - cd ..
-    - git clone bespin-gh-pages:gz/bespin gh-pages
+    - git clone -b gh-pages git@github.com:gz/bespin.git gh-pages
     - cd gh-pages
-    - git checkout gh-pages
     - rm -rf ./book
     - mv ../book ./
     - git add .
-    # May fail if we have no changes in docs:
     - git commit -a -m "Added documentation." || true
-    - git push origin gh-pages
+    - git push origin gh-pages || true
     - cd ..
     - rm -rf gh-pages/ book/
   dependencies:

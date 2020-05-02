@@ -102,6 +102,9 @@ isr_handler_early\ex:
 .endif
     // Push exception code on the stack
     pushq $\ex
+    // Ensure 16-byte stack pointer alignment
+    // `reserved` in `ExceptionArguments`
+    pushq $0x0
     callq handle_generic_exception_early
 
     // We should not return form handle_generic_exception.

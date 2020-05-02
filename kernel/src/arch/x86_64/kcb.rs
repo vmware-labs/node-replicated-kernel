@@ -207,7 +207,11 @@ impl Arch86Kcb {
         debug_assert_eq!(ex_stack.base() as u64 % 16, 0, "Stack not 16-byte aligned");
         self.tss.set_rsp(x86::Ring::Ring0, ex_stack.base() as u64);
         // Prepare ist[0] in tss for the double-fault stack
-        debug_assert_eq!(fault_stack.base() as u64 % 16, 0, "Stack not 16-byte aligned");
+        debug_assert_eq!(
+            fault_stack.base() as u64 % 16,
+            0,
+            "Stack not 16-byte aligned"
+        );
         self.tss.set_ist(0, fault_stack.base() as u64);
 
         // Link TSS in Gdt

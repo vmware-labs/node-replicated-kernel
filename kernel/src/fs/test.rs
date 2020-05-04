@@ -145,7 +145,7 @@ impl FileSystem for ModelFS {
     fn write(
         &mut self,
         mnode_num: Mnode,
-        buffer: &mut UserSlice,
+        buffer: &mut [u8],
         offset: i64,
     ) -> Result<usize, FileSystemError> {
         if self.mnode_exists(mnode_num) {

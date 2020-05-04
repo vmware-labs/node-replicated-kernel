@@ -12,7 +12,7 @@ use kpi::{io::*, FileOperation};
 
 use node_replication::Dispatch;
 
-use crate::arch::process::{UserPtr, UserSlice};
+use crate::arch::process::{KernSlice, UserPtr, UserSlice};
 use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::{
@@ -57,8 +57,8 @@ pub enum Op {
     MemMapFrameId(Pid, VAddr, FrameId, MapAction),
     MemAdjust,
     MemUnmap,
-    FileOpen(Pid, Filename, Flags, Modes),
-    FileWrite(Pid, FD, Buffer, Len, Offset),
+    FileOpen(Pid, String, Flags, Modes),
+    FileWrite(Pid, FD, Arc<[u8]>, Len, Offset),
     FileClose(Pid, FD),
     FileInfo(Pid, Filename, u64),
     FileDelete(Pid, Filename),
@@ -231,8 +231,24 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut user_ptr = VAddr::from(pathname);
+                let str_ptr = UserPtr::new(&mut user_ptr);
+
+                let filename;
+                unsafe {
+                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                        Ok(path) => {
+                            if !path.is_ascii() || path.is_empty() {
+                                return Err(KError::NotSupported);
+                            }
+                            filename = String::from(path);
+                        }
+                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
+                    }
+                }
+
                 let response = replica.execute(
-                    Op::FileOpen(pid, pathname, flags, modes),
+                    Op::FileOpen(pid, filename, flags, modes),
                     kcb.arch.replica_idx,
                 );
 
@@ -287,8 +303,10 @@ impl<P: Process> KernelNode<P> {
                 }
 
                 FileOperation::Write | FileOperation::WriteAt => {
+                    let mut kernslice = KernSlice::new(buffer, len as usize);
+
                     let response = replica.execute(
-                        Op::FileWrite(pid, fd, buffer, len, offset),
+                        Op::FileWrite(pid, fd, kernslice.buffer.clone(), len, offset),
                         kcb.arch.replica_idx,
                     );
 
@@ -533,28 +551,12 @@ where
             }
             Op::MemAdjust => unreachable!(),
             Op::MemUnmap => unreachable!(),
-            Op::FileOpen(pid, pathname, flags, modes) => {
+            Op::FileOpen(pid, filename, flags, modes) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
 
-                let mut user_ptr = VAddr::from(pathname);
-                let str_ptr = UserPtr::new(&mut user_ptr);
-
-                let filename;
-                unsafe {
-                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                        Ok(path) => {
-                            if !path.is_ascii() || path.is_empty() {
-                                return Err(KError::NotSupported);
-                            }
-                            filename = path;
-                        }
-                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
-                    }
-                }
-
                 let flags = FileFlags::from(flags);
-                let mnode = self.fs.lookup(filename);
+                let mnode = self.fs.lookup(&filename);
                 if mnode.is_none() && !flags.is_create() {
                     return Err(KError::FileSystem {
                         source: FileSystemError::PermissionError,
@@ -567,7 +569,7 @@ where
                     Some(mut fd) => {
                         let mnode_num;
                         if mnode.is_none() {
-                            match self.fs.create(filename, modes) {
+                            match self.fs.create(&filename, modes) {
                                 Ok(m_num) => mnode_num = m_num,
                                 Err(e) => {
                                     let fdesc = fd.0 as usize;
@@ -583,8 +585,7 @@ where
                     }
                 }
             }
-            Op::FileWrite(pid, fd, buffer, len, offset) => {
-                let mut userslice = UserSlice::new(buffer, len as usize);
+            Op::FileWrite(pid, fd, mut kernslice, len, offset) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);
@@ -598,7 +599,9 @@ where
                     });
                 }
 
-                match self.fs.write(mnode_num, &mut userslice, offset) {
+                // TODO: We don't modify the buffer internally, lookout if this can cause an error.
+                let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice) };
+                match self.fs.write(mnode_num, &mut buffer, offset) {
                     Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }

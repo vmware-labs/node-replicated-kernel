@@ -143,6 +143,33 @@ impl<'a> Drop for UserSlice<'a> {
     }
 }
 
+/// This struct is used to copy the user buffer into kernel space, so that the
+/// user-application doesn't have any reference to any log operation in kernel space.
+#[derive(PartialEq, Clone, Debug)]
+pub struct KernSlice {
+    pub buffer: Arc<[u8]>,
+}
+
+impl KernSlice {
+    pub fn new(base: u64, len: usize) -> KernSlice {
+        let mut buffer = Arc::<[u8]>::new_uninit_slice(len);
+
+        let mut user_ptr = VAddr::from(base);
+        let slice_ptr = UserPtr::new(&mut user_ptr);
+        let user_slice: &mut [u8] =
+            unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
+        let buffer = unsafe {
+            for i in 0..len {
+                Arc::get_mut_unchecked(&mut buffer)[i]
+                    .as_mut_ptr()
+                    .write(user_slice[i]);
+            }
+            buffer.assume_init()
+        };
+        KernSlice { buffer }
+    }
+}
+
 /// A Ring3Resumer that can either be an upcall or a context restore.
 ///
 /// # TODO

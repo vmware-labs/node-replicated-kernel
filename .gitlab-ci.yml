@@ -82,7 +82,8 @@ pages:
     - rm -rf ./book
     - mv ../book ./
     - git add .
-    - git commit -a -m "Added documentation."
+    # May fail if we have no changes in docs:
+    - git commit -a -m "Added documentation." || true
     - git push origin gh-pages
     - cd ..
     - rm -rf gh-pages/ book/

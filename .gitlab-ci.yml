@@ -69,7 +69,7 @@ bench:
   variables:
     GIT_STRATEGY: fetch
 
-pages:
+docs:
   stage: document
   script:
     - source ~/.cargo/env

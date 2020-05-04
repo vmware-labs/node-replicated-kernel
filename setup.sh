@@ -5,7 +5,7 @@ set -exu
 if [ "$(uname)" == "Darwin" ]; then
     brew install qemu
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
-    sudo apt-get update
+    sudo apt-get -o Acquire::Max-FutureTime=86400 update
     # bespin build dependencies
     sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 zlib1g-dev make gcc build-essential python3 python3-plumbum python3-prctl
     # For building rump packages (rkapps)

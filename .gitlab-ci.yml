@@ -21,6 +21,8 @@ build:
   script:
     - cd kernel
     - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin -Zfeatures=all
+  variables:
+    GIT_STRATEGY: fetch
 
 run-qemu:
   stage: run
@@ -30,7 +32,7 @@ run-qemu:
   dependencies:
     - build
   variables:
-    GIT_STRATEGY: none
+    GIT_STRATEGY: fetch
 
 run-unix:
   stage: run
@@ -40,7 +42,7 @@ run-unix:
   dependencies:
     - build
   variables:
-    GIT_STRATEGY: none
+    GIT_STRATEGY: fetch
 
 test:
   stage: test
@@ -54,7 +56,7 @@ test:
   dependencies:
     - build
   variables:
-    GIT_STRATEGY: none
+    GIT_STRATEGY: fetch
 
 bench:
   stage: bench
@@ -65,7 +67,7 @@ bench:
   dependencies:
     - test
   variables:
-    GIT_STRATEGY: none
+    GIT_STRATEGY: fetch
 
 pages:
   stage: document
@@ -87,5 +89,5 @@ pages:
   dependencies:
     - build
   variables:
-    GIT_STRATEGY: none
+    GIT_STRATEGY: fetch
   only: ['master']

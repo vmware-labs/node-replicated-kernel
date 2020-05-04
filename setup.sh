@@ -23,7 +23,7 @@ if [ ! -x "$(command -v rustup)" ] ; then
 fi
 
 source $HOME/.cargo/env
-rustup default nightly
+rustup default nightly-2020-05-01
 rustup component add rust-src
 #rustup component add rustfmt-preview --toolchain nightly
 rustup update

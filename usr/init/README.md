@@ -7,5 +7,5 @@ The simplest user-space test program.
 Invoke:
 
 ```
-cargo rustc -- -C link-arg=-nostartfiles
+cargo rustc -- -C link-arg=-nostartfiles -Clink-arg=-static -Clink-arg=-zmax-page-size=0x200000
 ```

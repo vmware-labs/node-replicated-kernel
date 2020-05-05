@@ -41,6 +41,7 @@ USR_PATH = (SCRIPT_PATH / '..').resolve() / 'usr'
 UEFI_TARGET = "{}-uefi".format(ARCH)
 KERNEL_TARGET = "{}-bespin".format(ARCH)
 USER_TARGET = "{}-bespin-none".format(ARCH)
+USER_RUSTFLAGS = "-Clink-arg=-static -Clink-arg=-zmax-page-size=0x200000"
 
 #
 # Command line argument parser
@@ -149,12 +150,13 @@ def build_user_libraries(args):
     # Make sure we build a static (.a) vibrio library
     # For linking with rumpkernel
     with local.cwd(LIBS_PATH / "vibrio"):
-        with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
-            if args.verbose:
-                print("cd {}".format(LIBS_PATH / "vibrio"))
-                print("RUST_TARGET_PATH={} xargo ".format(
-                    USR_PATH.absolute()) + " ".join(build_args))
-            xargo(*build_args)
+        with local.env(RUSTFLAGS=USER_RUSTFLAGS):
+            with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
+                if args.verbose:
+                    print("cd {}".format(LIBS_PATH / "vibrio"))
+                    print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS,
+                        USR_PATH.absolute()) + " ".join(build_args))
+                xargo(*build_args)
 
 
 def build_userspace(args):
@@ -167,21 +169,21 @@ def build_userspace(args):
             log("User module {} not found, skipping.".format(module))
             continue
         with local.cwd(USR_PATH / module):
-            with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
-                build_args = build_args_default.copy()
-                for feature in args.ufeatures:
-                    if ':' in feature:
-                        mod_part, feature_part = feature.split(':')
-                        if module == mod_part:
-                            build_args += ['--features', feature_part]
-                    else:
-                        build_args += ['--features', feature]
-                log("Build user-module {}".format(module))
-                if args.verbose:
-                    print("cd {}".format(USR_PATH / module))
-                    print("RUST_TARGET_PATH={} xargo ".format(
-                        USR_PATH.absolute()) + " ".join(build_args))
-                xargo(*build_args)
+            with local.env(RUSTFLAGS=USER_RUSTFLAGS):
+                with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
+                    build_args = build_args_default.copy()
+                    for feature in args.ufeatures:
+                        if ':' in feature:
+                            mod_part, feature_part = feature.split(':')
+                            if module == mod_part:
+                                build_args += ['--features', feature_part]
+                        else:
+                            build_args += ['--features', feature]
+                    log("Build user-module {}".format(module))
+                    if args.verbose:
+                        print("cd {}".format(USR_PATH / module))
+                        print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS, USR_PATH.absolute()) + " ".join(build_args))
+                    xargo(*build_args)
 
 
 def deploy(args):

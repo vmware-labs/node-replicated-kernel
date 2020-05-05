@@ -18,9 +18,9 @@ use kpi::{
 use crate::error::KError;
 use crate::fs::FileSystem;
 use crate::memory::vspace::MapAction;
-use crate::memory::{Frame, PhysicalPageProvider};
+use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::nr;
-use crate::process::ProcessError;
+use crate::process::{Pid, ProcessError};
 
 use super::gdt::GdtTable;
 use super::process::{Ring3Process, UserValue};
@@ -341,7 +341,10 @@ fn handle_fileio(
             let pathname = arg2;
             let flags = arg3;
             let modes = arg4;
-            nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, flags, modes)
+            match user_virt_addr_valid(p.pid, pathname, 0) {
+                Ok(_) => nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, flags, modes),
+                Err(e) => Err(e),
+            }
         }),
         FileOperation::Read | FileOperation::Write => {
             plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
@@ -349,7 +352,12 @@ fn handle_fileio(
                 let buffer = arg3;
                 let len = arg4;
 
-                nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, -1)
+                match user_virt_addr_valid(p.pid, buffer, len) {
+                    Ok(_) => {
+                        nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, -1)
+                    }
+                    Err(e) => Err(e),
+                }
             })
         }
         FileOperation::ReadAt | FileOperation::WriteAt => {
@@ -359,7 +367,12 @@ fn handle_fileio(
                 let len = arg4;
                 let offset = arg5 as i64;
 
-                nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, offset)
+                match user_virt_addr_valid(p.pid, buffer, len) {
+                    Ok(_) => {
+                        nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, offset)
+                    }
+                    Err(e) => Err(e),
+                }
             })
         }
         FileOperation::Close => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
@@ -369,12 +382,20 @@ fn handle_fileio(
         FileOperation::GetInfo => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let name = arg2;
             let info_ptr = arg3;
-            nr::KernelNode::<Ring3Process>::file_info(p.pid, name, info_ptr)
+
+            match user_virt_addr_valid(p.pid, name, 0) {
+                Ok(_) => nr::KernelNode::<Ring3Process>::file_info(p.pid, name, info_ptr),
+                Err(e) => Err(e),
+            }
         }),
         FileOperation::Delete => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let kcb = super::kcb::get_kcb();
             let name = arg2;
-            nr::KernelNode::<Ring3Process>::file_delete(p.pid, name)
+
+            match user_virt_addr_valid(p.pid, name, 0) {
+                Ok(_) => nr::KernelNode::<Ring3Process>::file_delete(p.pid, name),
+                Err(e) => Err(e),
+            }
         }),
         FileOperation::WriteDirect => {
             let kcb = super::kcb::get_kcb();
@@ -396,6 +417,13 @@ fn handle_fileio(
             Err(KError::NotSupported)
         }
     }
+}
+
+fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KError> {
+    if (base + size) < KERNEL_BASE {
+        return nr::KernelNode::<Ring3Process>::resolve(pid, VAddr::from(base));
+    }
+    Err(KError::BadAddress)
 }
 
 #[allow(unused)]

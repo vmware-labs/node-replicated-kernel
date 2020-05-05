@@ -415,6 +415,34 @@ pub fn test_rump_net() {
     }
 }
 
+fn test_fs_invalid_addresses() {
+    use vibrio::io::*;
+
+    let fd = vibrio::syscalls::Fs::open(
+        0x0,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        u64::from(FileModes::S_IRWXU),
+    )
+    .expect_err("Should not get Ok value");
+
+    // Open a file to read and write on invalid addresses.
+    let fd = vibrio::syscalls::Fs::open(
+        "file1.txt\0".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        u64::from(FileModes::S_IRWXU),
+    )
+    .expect("FileOpen syscall failed");
+    assert_eq!(fd, 0);
+
+    let ret = vibrio::syscalls::Fs::write(fd, 0x0, 256).expect_err("FileWrite syscall should fail");
+    let fileinfo = vibrio::syscalls::Fs::getinfo(0x0).expect_err("FileOpen syscall should fail");
+    let ret = vibrio::syscalls::Fs::read(fd, 0x0, 256).expect_err("FileWrite syscall failed");
+
+    // Close the opened file.
+    let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
+    assert_eq!(ret, 0);
+}
+
 fn fs_test() {
     use vibrio::io::*;
     let base: u64 = 0xff000;
@@ -471,6 +499,9 @@ fn fs_test() {
         let ret = vibrio::syscalls::Fs::delete("file.txt\0".as_ptr() as u64)
             .expect("FileDelete syscall failed");
         assert_eq!(ret, true);
+
+        // Test fs with invalid userspace pointers
+        test_fs_invalid_addresses();
     }
 
     info!("fs_test OK");

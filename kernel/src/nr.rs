@@ -132,6 +132,7 @@ impl<P: Process> KernelNode<P> {
 
                 match response {
                     Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
+                    Err(e) => Err(e.clone()),
                     _ => unreachable!("Got unexpected response"),
                 }
             })

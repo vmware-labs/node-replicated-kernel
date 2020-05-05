@@ -63,6 +63,7 @@ bench:
   script:
     - cd kernel
     - RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark
+    - RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memfs_bench
     - cd ..
   dependencies:
     - test

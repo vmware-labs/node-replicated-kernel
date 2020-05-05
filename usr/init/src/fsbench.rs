@@ -35,12 +35,14 @@ pub fn bench(is_write: bool, is_random: bool, share_file: bool, num_cores: usize
                         POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
                         if is_write {
                             write_bench(
+                                num_cores,
                                 lineup::tls2::Environment::scheduler().core_id,
                                 is_random,
                                 share_file,
                             );
                         } else {
                             read_bench(
+                                num_cores,
                                 lineup::tls2::Environment::scheduler().core_id,
                                 is_random,
                                 share_file,
@@ -63,12 +65,14 @@ pub fn bench(is_write: bool, is_random: bool, share_file: bool, num_cores: usize
             POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
             if is_write {
                 write_bench(
+                    num_cores,
                     lineup::tls2::Environment::scheduler().core_id,
                     is_random,
                     share_file,
                 );
             } else {
                 read_bench(
+                    num_cores,
                     lineup::tls2::Environment::scheduler().core_id,
                     is_random,
                     share_file,
@@ -85,13 +89,13 @@ pub fn bench(is_write: bool, is_random: bool, share_file: bool, num_cores: usize
     }
 }
 
-pub fn write_bench(core_id: usize, random: bool, shared: bool) {
+pub fn write_bench(cores: usize, core_id: usize, random: bool, shared: bool) {
     use alloc::format;
     use vibrio::io::*;
     use vibrio::syscalls::*;
 
     let size: u64 = 4096;
-    let num_pages = 2047;
+    let num_pages = 255;
     let file_size = num_pages * size;
     let base: u64 = 0xff000 + (core_id as u64 * file_size);
     let mut file_name = format!("file.txt");
@@ -123,9 +127,10 @@ pub fn write_bench(core_id: usize, random: bool, shared: bool) {
         }
 
         let mut iops = 0;
-        let mut iterations = 10;
+        let mut iterations = 0;
         let mut rand: u16 = 0;
-        while iterations > 0 {
+        let bench_duration_secs = if cfg!(feature = "smoke") { 1 } else { 10 };
+        while iterations <= bench_duration_secs {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
                 let offset;
@@ -140,22 +145,32 @@ pub fn write_bench(core_id: usize, random: bool, shared: bool) {
                     .expect("FileRead syscall failed");
                 iops += 1;
             }
-            iterations -= 1;
+            info!(
+                "{},readonly,{},{},{},{},{}",
+                core_id,
+                cores,
+                4096,
+                bench_duration_secs * 1000,
+                iterations * 1000,
+                iops
+            );
+            iops = 0;
+            iterations += 1;
         }
-        info!("{},{},write", core_id, iops / 10);
 
-        //TODO: Delete crashes due to memory deallocation bug.
+        POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
+
         let ret = Fs::delete(file_name.as_ptr() as u64).expect("FileDelete syscall failed");
     }
 }
 
-pub fn read_bench(core_id: usize, random: bool, shared: bool) {
+pub fn read_bench(cores: usize, core_id: usize, random: bool, shared: bool) {
     use alloc::format;
     use vibrio::io::*;
     use vibrio::syscalls::*;
 
     let size: u64 = 4096;
-    let num_pages = 2047;
+    let num_pages = 255;
     let file_size = num_pages * size;
     let base: u64 = 0xff000 + (core_id as u64 * file_size);
     let mut file_name = format!("file.txt");
@@ -190,9 +205,10 @@ pub fn read_bench(core_id: usize, random: bool, shared: bool) {
         }
 
         let mut iops = 0;
-        let mut iterations = 10;
+        let mut iterations = 0;
         let mut rand: u16 = 0;
-        while iterations > 0 {
+        let bench_duration_secs = if cfg!(feature = "smoke") { 1 } else { 10 };
+        while iterations <= bench_duration_secs {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
                 let offset;
@@ -207,11 +223,21 @@ pub fn read_bench(core_id: usize, random: bool, shared: bool) {
                     .expect("FileRead syscall failed");
                 iops += 1;
             }
-            iterations -= 1;
+            info!(
+                "{},readonly,{},{},{},{},{}",
+                core_id,
+                cores,
+                2048,
+                bench_duration_secs * 1000,
+                iterations * 1000,
+                iops
+            );
+            iops = 0;
+            iterations += 1;
         }
-        info!("{},{},read", core_id, iops / 10);
 
-        //TODO: Delete crashes due to memory deallocation bug.
+        POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
+
         let ret = Fs::delete(file_name.as_ptr() as u64).expect("FileDelete syscall failed");
     }
 }

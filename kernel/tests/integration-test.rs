@@ -1349,7 +1349,12 @@ fn s06_memfs_bench() {
             // Parse lines like
             // `init::fsbench: 1,readonly,2,2048,10000,4000,1863272`
             // write them to a CSV file
-            let expected_lines = with_cores * 11;
+            let expected_lines = if cfg!(feature = "smoke") {
+                1
+            } else {
+                with_cores * 11
+            };
+
             for _i in 0..expected_lines {
                 let (prev, matched) =
                     p.exp_regex(r#"init::fsbench: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;

@@ -12,7 +12,7 @@ use kpi::{io::*, FileOperation};
 
 use node_replication::Dispatch;
 
-use crate::arch::process::{KernSlice, UserPtr, UserSlice};
+use crate::arch::process::{UserPtr, UserSlice};
 use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::{
@@ -21,7 +21,7 @@ use crate::fs::{
 };
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
-use crate::process::{Eid, Executor, Pid, Process, ProcessError};
+use crate::process::{Eid, Executor, KernSlice, Pid, Process, ProcessError};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {

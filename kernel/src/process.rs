@@ -1,16 +1,44 @@
 //! Generic process traits
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use custom_error::custom_error;
 
 use kpi::process::FrameId;
 
+use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;
-use crate::memory::Frame;
+use crate::memory::{Frame, VAddr};
+
+/// This struct is used to copy the user buffer into kernel space, so that the
+/// user-application doesn't have any reference to any log operation in kernel space.
+#[derive(PartialEq, Clone, Debug)]
+pub struct KernSlice {
+    pub buffer: Arc<[u8]>,
+}
+
+impl KernSlice {
+    pub fn new(base: u64, len: usize) -> KernSlice {
+        let mut buffer = Arc::<[u8]>::new_uninit_slice(len);
+        let mut buffer = unsafe {
+            Arc::get_mut_unchecked(&mut buffer)
+                .as_mut_ptr()
+                .write(core::mem::MaybeUninit::zeroed());
+            buffer.assume_init()
+        };
+
+        let mut user_ptr = VAddr::from(base);
+        let slice_ptr = UserPtr::new(&mut user_ptr);
+        let user_slice: &mut [u8] =
+            unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
+        unsafe { Arc::get_mut_unchecked(&mut buffer).copy_from_slice(&user_slice[0..len]) };
+        KernSlice { buffer }
+    }
+}
 
 /// Process ID.
 pub type Pid = u64;

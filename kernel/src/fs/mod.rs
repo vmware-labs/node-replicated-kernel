@@ -86,6 +86,7 @@ pub trait FileSystem {
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
     fn file_info(&self, mnode: Mnode) -> FileInfo;
     fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
+    fn truncate(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
 }
 
 /// Abstract definition of a file descriptor.
@@ -274,5 +275,15 @@ impl FileSystem for MemFS {
             }
             None => return Err(FileSystemError::InvalidFile),
         };
+    }
+
+    fn truncate(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
+        match self.files.get(&pathname.to_string()) {
+            Some(mnode) => match self.mnodes.get_mut(mnode) {
+                Some(memnode) => memnode.file_truncate(),
+                None => return Err(FileSystemError::InvalidFile),
+            },
+            None => return Err(FileSystemError::InvalidFile),
+        }
     }
 }

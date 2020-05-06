@@ -593,6 +593,10 @@ where
                                 }
                             }
                         } else {
+                            // File exists and FileOpen is called with O_TRUNC flag.
+                            if flags.is_truncate() {
+                                self.fs.truncate(&filename);
+                            }
                             mnode_num = *mnode.unwrap();
                         }
                         fd.1.update_fd(mnode_num, flags);
@@ -616,7 +620,14 @@ where
 
                 let mut curr_offset: usize = offset as usize;
                 if offset == -1 {
-                    curr_offset = fd.get_offset();
+                    if flags.is_append() {
+                        // If offset value is not provided and file is opened with O_APPEND flag.
+                        let finfo = self.fs.file_info(mnode_num);
+                        curr_offset = finfo.fsize as usize;
+                    } else {
+                        // If offset value is not provided and file is doesn't have O_APPEND flag.
+                        curr_offset = fd.get_offset();
+                    }
                 }
 
                 // TODO: We don't modify the buffer internally, lookout if this can cause an error.
@@ -624,6 +635,7 @@ where
                 match self.fs.write(mnode_num, &mut buffer, curr_offset) {
                     Ok(len) => {
                         if offset == -1 {
+                            // Update offset when FileWrite doesn't give an explicit offset value.
                             fd.update_offset(curr_offset + len);
                         }
                         Ok(NodeResult::FileAccessed(len as u64))

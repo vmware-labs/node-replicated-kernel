@@ -509,7 +509,7 @@ fn fs_test() {
         assert_eq!(slice[99], 0xb);
 
         // Write the slice content to the created file.
-        let ret = vibrio::syscalls::Fs::write(fd, slice.as_ptr() as u64, 256)
+        let ret = vibrio::syscalls::Fs::write_at(fd, slice.as_ptr() as u64, 256, 0)
             .expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
 

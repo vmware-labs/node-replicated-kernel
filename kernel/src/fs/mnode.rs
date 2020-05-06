@@ -123,6 +123,18 @@ impl MemNode {
     pub fn get_mnode_type(&self) -> NodeType {
         self.node_type
     }
+
+    /// Truncate the file in reasponse of O_TRUNC flag.
+    pub fn file_truncate(&mut self) -> Result<bool, FileSystemError> {
+        if self.node_type != NodeType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
+        {
+            return Err(FileSystemError::PermissionError);
+        }
+
+        // The method doesn't fail after this point, so returning Ok().
+        self.file.as_mut().unwrap().file_truncate();
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -387,5 +399,38 @@ pub mod test {
         assert_eq!(rbuffer[10], 0xb);
         assert_eq!(rbuffer[19], 0xb);
         assert_eq!(30, memnode.get_file_size());
+    }
+
+    #[test]
+    /// Test file_truncate for writable file; should succeed.
+    fn test_file_truncate_for_writable_file() {
+        let filename = "file.txt";
+        let mut memnode =
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+        assert_eq!(memnode.file_truncate(), Ok(true));
+    }
+
+    #[test]
+    /// Test file_truncate for writable directory; should fail.
+    fn test_file_truncate_for_writable_directory() {
+        let filename = "file.txt";
+        let mut memnode =
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::Directory).unwrap();
+        assert_eq!(
+            memnode.file_truncate(),
+            Err(FileSystemError::PermissionError)
+        );
+    }
+
+    #[test]
+    /// Test file_truncate for readable file; should fail.
+    fn test_file_truncate_for_nonwritable_file() {
+        let filename = "file.txt";
+        let mut memnode =
+            MemNode::new(1, filename, FileModes::S_IRUSR.into(), NodeType::File).unwrap();
+        assert_eq!(
+            memnode.file_truncate(),
+            Err(FileSystemError::PermissionError)
+        );
     }
 }

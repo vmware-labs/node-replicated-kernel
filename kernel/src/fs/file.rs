@@ -277,6 +277,11 @@ impl File {
 
         Ok(len)
     }
+
+    /// Truncate the file in reasponse of O_TRUNC flag.
+    pub fn file_truncate(&mut self) {
+        self.mcache.clear();
+    }
 }
 
 /// This is used to determine, how many buffers to add dependeing on the number
@@ -406,5 +411,19 @@ pub mod test {
             file.read_file(&mut rbuffer[i..i + 1], i, i + 1).unwrap();
             assert_eq!(rbuffer[i], 0xb);
         }
+    }
+
+    #[test]
+    /// This test checks if the file truncation works as expected.
+    fn test_file_truncate() {
+        let mut file = File::new(FileModes::S_IRWXU.into()).unwrap();
+        let wbuffer: &mut [u8] = &mut [0xb; 10000];
+
+        assert_eq!(file.write_file(wbuffer, 10000, 0), Ok(10000));
+        assert_eq!(file.get_size(), 10000);
+
+        file.file_truncate();
+        assert_eq!(file.get_size(), 0);
+        assert_eq!(file.mcache.len(), 0);
     }
 }

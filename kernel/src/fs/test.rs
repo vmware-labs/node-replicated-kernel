@@ -295,6 +295,11 @@ impl FileSystem for ModelFS {
     fn file_info(&self, _mnode: Mnode) -> FileInfo {
         FileInfo { ftype: 0, fsize: 0 }
     }
+
+    /// Return a `dummy` response as this function is only used for open with O_TRUNC flag.
+    fn truncate(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
+        Ok(true)
+    }
 }
 
 /// Two writes/reads at different offsets should return

@@ -274,8 +274,10 @@ def run(args):
         if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
+                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,share=off,prealloc=off,size={}M,host-nodes={},policy=bind'.format(node, int(mem_per_node), node)]
+                
                 qemu_default_args += ['-numa',
-                                      "node,mem={}M,nodeid={}".format(int(mem_per_node), node)]
+                                      "node,memdev=nmem{},nodeid={}".format(node, node)]
                 qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                     node, node)]
 
@@ -328,7 +330,7 @@ def run(args):
                                           str(args.qemu_cores), '-t', 'interleave']()).strip()
             # For big machines it can take a while to spawn all threads in qemu
             # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
-            sleep(0.25)
+            sleep(2.00)
             if args.verbose:
                 log("QEMU affinity {}".format(affinity_list))
             sudo[python3['./qemu_affinity.py',

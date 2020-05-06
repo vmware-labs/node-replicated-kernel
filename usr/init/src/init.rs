@@ -438,6 +438,48 @@ fn test_fs_invalid_addresses() {
     let fileinfo = vibrio::syscalls::Fs::getinfo(0x0).expect_err("FileOpen syscall should fail");
     let ret = vibrio::syscalls::Fs::read(fd, 0x0, 256).expect_err("FileWrite syscall failed");
 
+    // Test address validity small pages.
+    let base_small: u64 = 0x10000;
+    let size_small: u64 = 0x1000;
+    unsafe {
+        vibrio::syscalls::VSpace::map(base_small, size_small).expect("Map syscall failed");
+    }
+    let slice: &mut [u8] =
+        unsafe { from_raw_parts_mut(base_small as *mut u8, size_small as usize) };
+    for i in slice.iter_mut() {
+        *i = 0xb;
+    }
+
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small + size_small + 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small + size_small - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small, size_small + 1)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+
+    // Test address validity large pages.
+    let base_large: u64 = 0x8000000;
+    let size_large: u64 = 0x200000;
+    unsafe {
+        vibrio::syscalls::VSpace::map(base_large, size_large).expect("Map syscall failed");
+    }
+    let slice: &mut [u8] =
+        unsafe { from_raw_parts_mut(base_large as *mut u8, size_large as usize) };
+    for i in slice.iter_mut() {
+        *i = 0xb;
+    }
+
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large + size_large + 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large + size_large - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large, size_large + 1)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+
     // Close the opened file.
     let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
     assert_eq!(ret, 0);

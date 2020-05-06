@@ -419,9 +419,36 @@ fn handle_fileio(
     }
 }
 
+/// TODO: This method makes file-operations slow, improve it to use large page sizes. Or maintain a list of
+/// (low, high) memory limits per process and check if (base, size) are within the process memory limits.
 fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KError> {
-    if (base + size) < KERNEL_BASE {
-        return nr::KernelNode::<Ring3Process>::resolve(pid, VAddr::from(base));
+    let mut base = base;
+    let upper_addr = base + size;
+
+    if upper_addr < KERNEL_BASE {
+        while base <= upper_addr {
+            // Validate addresses for the buffer end.
+            if upper_addr - base <= BASE_PAGE_SIZE as u64 {
+                match nr::KernelNode::<Ring3Process>::resolve(pid, VAddr::from(base)) {
+                    Ok(_) => {
+                        return nr::KernelNode::<Ring3Process>::resolve(
+                            pid,
+                            VAddr::from(upper_addr - 1),
+                        )
+                    }
+                    Err(e) => return Err(e.clone()),
+                }
+            }
+
+            match nr::KernelNode::<Ring3Process>::resolve(pid, VAddr::from(base)) {
+                Ok(_) => {
+                    base += BASE_PAGE_SIZE as u64;
+                    continue;
+                }
+                Err(e) => return Err(e.clone()),
+            }
+        }
+        return Ok((base, size));
     }
     Err(KError::BadAddress)
 }

@@ -545,11 +545,7 @@ pub extern "C" fn _start() -> ! {
     install_vcpu_area();
 
     let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
-    info!("pinfo = {:?}", pinfo);
-    let ncores = pinfo
-        .cmdline
-        .parse::<usize>()
-        .expect("Can't parse cores from cmdline");
+    let ncores: Option<usize> = pinfo.cmdline.parse().ok();
 
     #[cfg(feature = "bench-vmops")]
     vmops::bench(ncores);

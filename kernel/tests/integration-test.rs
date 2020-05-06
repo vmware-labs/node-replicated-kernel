@@ -1298,10 +1298,16 @@ fn s06_vmops_benchmark() {
 
 #[test]
 fn s06_memfs_bench() {
+    let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
+        num_cpus::get() / 2
+    } else {
+        num_cpus::get()
+    };
+
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
     } else {
-        thread_defaults()
+        thread_defaults(max_cores)
     };
 
     let file_name = "memfs_benchmark.csv";
@@ -1329,10 +1335,10 @@ fn s06_memfs_bench() {
             let max_cores = num_cpus::get();
             // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
             match max_cores {
-                56 if cores > 14 => cmdline = cmdline.nodes(2),
-                192 if cores > 144 => cmdline = cmdline.nodes(4),
-                192 if cores > 96 => cmdline = cmdline.nodes(3),
-                192 if cores > 48 => cmdline = cmdline.nodes(2),
+                28 => cmdline = cmdline.nodes(2),
+                56 => cmdline = cmdline.nodes(2),
+                96 => cmdline = cmdline.nodes(4),
+                192 => cmdline = cmdline.nodes(4),
                 _ => {}
             };
         }

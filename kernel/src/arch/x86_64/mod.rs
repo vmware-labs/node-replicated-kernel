@@ -281,6 +281,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         });
     }
 
+    let mut backoff = 1;
     loop {
         use crate::nr;
         let kcb = kcb::get_kcb();
@@ -309,7 +310,25 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
                     rh.unwrap().resume();
                 }
             }
-            Err(crate::error::KError::NoExecutorForCore) => { /* continue, but clear o */ }
+            Err(crate::error::KError::NoExecutorForCore) => {
+                // TODO(ugly-before-deadline): Hack to make core go to sleep if
+                // they wont be dispatching something.
+                if kcb.arch.replica_idx != 1 {
+                    backoff = backoff << 1;
+                    for _i in 0..backoff {
+                        core::sync::atomic::spin_loop_hint();
+                    }
+                    if !cfg!(debug_assertions)
+                        && start.elapsed() > core::time::Duration::from_secs(2)
+                    {
+                        unsafe { x86::halt() }
+                    }
+                } else {
+                    for _i in 0..25_000 {
+                        core::sync::atomic::spin_loop_hint();
+                    }
+                }
+            }
             _ => unsafe { x86::halt() },
         };
     }

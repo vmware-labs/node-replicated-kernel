@@ -429,7 +429,7 @@ fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:
     let _o = process::Command::new("sudo")
-        .args(&["service", "apparmor", "teardown"])
+        .args(&["service", "apparmor", "stop"])
         .output()
         .expect("failed to disable apparmor");
     let _o = process::Command::new("sudo")
@@ -1171,9 +1171,8 @@ fn s06_redis_benchmark_e1000() {
     );
 }
 
-pub fn thread_defaults() -> Vec<usize> {
+pub fn thread_defaults(max_cores: usize) -> Vec<usize> {
     let mut threads = Vec::with_capacity(12);
-    let max_cores = num_cpus::get();
 
     // On larger machines thread increments are bigger than on
     // smaller machines:
@@ -1196,45 +1195,41 @@ pub fn thread_defaults() -> Vec<usize> {
         }
     }
 
-    if max_cores == 56 {
-        threads.push(27);
-        threads.push(28);
-        threads.push(29);
-    }
-
-    if max_cores == 192 {
-        threads.push(2 * 47);
-        threads.push(2 * 48);
-        threads.push(2 * 49);
-    }
-
     threads.sort();
     threads
 }
 
 #[test]
 fn s06_vmops_benchmark() {
+    let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
+        num_cpus::get() / 2
+    } else {
+        num_cpus::get()
+    };
+
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
     } else {
-        thread_defaults()
+        thread_defaults(max_cores)
     };
 
     let file_name = "vmops_benchmark.csv";
     std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
+        let kernel_cmdline = format!("testcmd={}", cores);
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
             .timeout(12_000 + cores as u64 * 3000)
-            .cores(cores)
+            .cores(max_cores)
             .setaffinity()
-            .release();
+            .release()
+            .cmd(kernel_cmdline.as_str());
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
-            cmdline = cmdline.memory(24 * 1024);
+            cmdline = cmdline.memory(56 * 1024);
         }
 
         if cfg!(feature = "smoke") && cores > 2 {
@@ -1243,10 +1238,10 @@ fn s06_vmops_benchmark() {
             let max_cores = num_cpus::get();
             // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
             match max_cores {
-                56 if cores > 14 => cmdline = cmdline.nodes(2),
-                192 if cores > 144 => cmdline = cmdline.nodes(4),
-                192 if cores > 96 => cmdline = cmdline.nodes(3),
-                192 if cores > 48 => cmdline = cmdline.nodes(2),
+                28 => cmdline = cmdline.nodes(2),
+                56 => cmdline = cmdline.nodes(2),
+                96 => cmdline = cmdline.nodes(4),
+                192 => cmdline = cmdline.nodes(4),
                 _ => {}
             };
         }

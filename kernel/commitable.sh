@@ -14,4 +14,4 @@ python3 run.py
 cargo run
 
 # test
-RUST_TEST_THREADS=1 cargo test
+RUST_TEST_THREADS=1 cargo test  --features smoke

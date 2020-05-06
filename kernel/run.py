@@ -11,7 +11,7 @@ import signal
 from time import sleep
 
 from plumbum import colors, local
-from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc
+from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc, cat
 from plumbum.commands import ProcessExecutionError
 
 
@@ -41,7 +41,7 @@ USR_PATH = (SCRIPT_PATH / '..').resolve() / 'usr'
 UEFI_TARGET = "{}-uefi".format(ARCH)
 KERNEL_TARGET = "{}-bespin".format(ARCH)
 USER_TARGET = "{}-bespin-none".format(ARCH)
-USER_RUSTFLAGS = "-Clink-arg=-static -Clink-arg=-zmax-page-size=0x200000"
+USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
 
 #
 # Command line argument parser
@@ -271,10 +271,17 @@ def run(args):
                               'nic,model={},netdev=n0'.format(args.nic)]
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
 
+        def query_host_numa():
+            online = cat["/sys/devices/system/node/online"]()
+            nlow, nmax = online.split('-')
+            assert int(nlow) == 0
+            return int(nmax)
+        
+        host_numa_nodes = query_host_numa()
         if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
-                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,share=off,prealloc=off,size={}M,host-nodes={},policy=bind'.format(node, int(mem_per_node), node)]
+                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,share=off,prealloc=off,size={}M,host-nodes={},policy=bind'.format(node, int(mem_per_node), node % host_numa_nodes)]
                 
                 qemu_default_args += ['-numa',
                                       "node,memdev=nmem{},nodeid={}".format(node, node)]

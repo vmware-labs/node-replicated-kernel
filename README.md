@@ -52,7 +52,7 @@ To run the unit tests of the kernel:
 To run the integration tests of the kernel:
 
 1. `cd kernel`
-1. `RUST_TEST_THREADS=1 cargo test --test integration-test`
+1. `RUST_TEST_THREADS=1 cargo test --features smoke --test integration-test`
 
 If you would like to run a specific integration test you can pass it with `--`:
 

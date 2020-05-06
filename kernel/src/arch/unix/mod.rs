@@ -13,7 +13,7 @@ pub mod memory;
 pub mod process;
 pub mod vspace;
 
-use crate::kcb::{CommandLineArgs, Kcb};
+use crate::kcb::{BootloaderArguments, Kcb};
 
 pub use bootloader_shared::*;
 
@@ -78,7 +78,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let kernel_args: Box<KernelArgs> = Box::new(Default::default());
     let kernel_binary: &'static [u8] = &[0u8; 1];
     let arch_kcb: kcb::ArchKcb = kcb::ArchKcb::new(Box::leak(kernel_args));
-    let cmdline: CommandLineArgs = Default::default();
+    let cmdline: BootloaderArguments = Default::default();
 
     let mut kcb = box Kcb::new(&kernel_binary, cmdline, tc, arch_kcb, 0 as topology::NodeId);
     kcb.set_global_memory(global_memory_static);

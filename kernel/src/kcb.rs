@@ -3,14 +3,16 @@
 use alloc::string::String;
 use core::cell::{RefCell, RefMut};
 use core::convert::TryInto;
+use core::slice::from_raw_parts;
 
 use logos::Logos;
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
+use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
 use crate::fs::{FileSystem, MemFS};
-use crate::memory::{emem::EmergencyAllocator, tcache::TCache, GlobalMemory};
+use crate::memory::{emem::EmergencyAllocator, tcache::TCache, GlobalMemory, PAddr};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 
@@ -34,6 +36,10 @@ enum CmdToken {
     #[token = "testbinary="]
     TestBinary,
 
+    /// Test command line argument.
+    #[token = "testcmd="]
+    TestCmd,
+
     /// Log token.
     #[token = "log="]
     Log,
@@ -52,23 +58,39 @@ enum CmdToken {
     #[regex = "[a-zA-Z]+(\\.bin)?"]
     File,
 
+    /// A file that we want to execute
+    #[regex = "[0-9a-zA-Z]+"]
+    CmdLine,
+
     /// Anything not properly encoded
     #[error]
     Error,
 }
 
-#[derive(Copy, Clone)]
-pub struct CommandLineArgs {
+/// Arguments parsed from command line string passed
+/// from the bootloader to the kernel.
+#[derive(Copy, Clone, Debug)]
+pub struct BootloaderArguments {
     pub log_filter: &'static str,
     pub test_binary: &'static str,
+    pub test_cmdline: &'static str,
 }
 
-impl CommandLineArgs {
+impl BootloaderArguments {
     /// Parse command line argument and initialize the logging infrastructure.
     ///
     /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
-    pub fn from_str(args: &'static str) -> CommandLineArgs {
-        let mut parsed_args: CommandLineArgs = Default::default();
+    pub fn from_str(args: &'static str) -> BootloaderArguments {
+        // The args argument will be a physical address slice that
+        // goes away once we switch to a process address space
+        // make sure we translate it into a kernel virtual address:
+        let args_paddr = args.as_ptr();
+        let args_kaddr = paddr_to_kernel_vaddr(PAddr::from(args_paddr as u64));
+        // Safe: Depends on bootloader setting up identity mapping abobe `KERNEL_BASE`.
+        let args_kslice = unsafe { from_raw_parts(args_kaddr.as_ptr(), args.len()) };
+        let args = core::str::from_utf8(args_kslice).expect("Can't read args in kernel space?");
+
+        let mut parsed_args: BootloaderArguments = Default::default();
         let mut lexer = CmdToken::lexer(args);
 
         loop {
@@ -96,6 +118,16 @@ impl CommandLineArgs {
                         ),
                     };
                 }
+                (CmdToken::TestCmd, _) => {
+                    lexer.advance();
+                    parsed_args.test_cmdline = match (lexer.token, lexer.slice()) {
+                        (CmdToken::CmdLine, test_cmdline) => test_cmdline,
+                        (key, v) => unreachable!(
+                            "Malformed command-line parsing testbinary: {:?} -> {:?}",
+                            key, v
+                        ),
+                    };
+                }
                 (CmdToken::End, _) => break,
                 (_, _) => continue,
             };
@@ -105,11 +137,12 @@ impl CommandLineArgs {
     }
 }
 
-impl Default for CommandLineArgs {
-    fn default() -> CommandLineArgs {
-        CommandLineArgs {
+impl Default for BootloaderArguments {
+    fn default() -> BootloaderArguments {
+        BootloaderArguments {
             log_filter: "info",
             test_binary: "init",
+            test_cmdline: "init",
         }
     }
 }
@@ -164,7 +197,7 @@ pub struct Kcb<A> {
     /// - `panic.rs`
     pub in_panic_mode: bool,
 
-    pub cmdline: CommandLineArgs,
+    pub cmdline: BootloaderArguments,
 
     /// A pointer to the memory location of the kernel (ELF binary).
     kernel_binary: &'static [u8],
@@ -195,7 +228,7 @@ pub struct Kcb<A> {
 impl<A: ArchSpecificKcb> Kcb<A> {
     pub fn new(
         kernel_binary: &'static [u8],
-        cmdline: CommandLineArgs,
+        cmdline: BootloaderArguments,
         emanager: TCache,
         arch: A,
         node: topology::NodeId,

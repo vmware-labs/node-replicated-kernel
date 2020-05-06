@@ -6,6 +6,7 @@ stages:
   - document
 
 before_script:
+  # Add SSH key
   - bash setup.sh
   - rustup --version
   - rustc --version
@@ -58,17 +59,27 @@ test:
   variables:
     GIT_STRATEGY: fetch
 
-bench:
+benchmark:skylake2x:
   stage: bench
   script:
-    - cd kernel
-    - RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark
-    - RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memfs_bench
-    - cd ..
+    - bash scripts/ci.bash
   dependencies:
     - test
   variables:
     GIT_STRATEGY: fetch
+  tags:
+    - skylake2x
+
+benchmark:skylake4x:
+  stage: bench
+  script:
+    - bash scripts/ci.bash
+  dependencies:
+    - test
+  variables:
+    GIT_STRATEGY: fetch
+  tags:
+    - skylake4x
 
 docs:
   stage: document
@@ -77,15 +88,13 @@ docs:
     - cd doc
     - mdbook build -d ../book
     - cd ..
-    - git clone bespin-gh-pages:gz/bespin gh-pages
+    - git clone -b gh-pages bespin-gh-pages:gz/bespin.git gh-pages
     - cd gh-pages
-    - git checkout gh-pages
     - rm -rf ./book
     - mv ../book ./
     - git add .
-    # May fail if we have no changes in docs:
     - git commit -a -m "Added documentation." || true
-    - git push origin gh-pages
+    - git push origin gh-pages || true
     - cd ..
     - rm -rf gh-pages/ book/
   dependencies:

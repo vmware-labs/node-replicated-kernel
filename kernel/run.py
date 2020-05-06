@@ -11,7 +11,7 @@ import signal
 from time import sleep
 
 from plumbum import colors, local
-from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc
+from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc, cat
 from plumbum.commands import ProcessExecutionError
 
 
@@ -41,6 +41,7 @@ USR_PATH = (SCRIPT_PATH / '..').resolve() / 'usr'
 UEFI_TARGET = "{}-uefi".format(ARCH)
 KERNEL_TARGET = "{}-bespin".format(ARCH)
 USER_TARGET = "{}-bespin-none".format(ARCH)
+USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
 
 #
 # Command line argument parser
@@ -149,12 +150,13 @@ def build_user_libraries(args):
     # Make sure we build a static (.a) vibrio library
     # For linking with rumpkernel
     with local.cwd(LIBS_PATH / "vibrio"):
-        with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
-            if args.verbose:
-                print("cd {}".format(LIBS_PATH / "vibrio"))
-                print("RUST_TARGET_PATH={} xargo ".format(
-                    USR_PATH.absolute()) + " ".join(build_args))
-            xargo(*build_args)
+        with local.env(RUSTFLAGS=USER_RUSTFLAGS):
+            with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
+                if args.verbose:
+                    print("cd {}".format(LIBS_PATH / "vibrio"))
+                    print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS,
+                        USR_PATH.absolute()) + " ".join(build_args))
+                xargo(*build_args)
 
 
 def build_userspace(args):
@@ -167,21 +169,21 @@ def build_userspace(args):
             log("User module {} not found, skipping.".format(module))
             continue
         with local.cwd(USR_PATH / module):
-            with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
-                build_args = build_args_default.copy()
-                for feature in args.ufeatures:
-                    if ':' in feature:
-                        mod_part, feature_part = feature.split(':')
-                        if module == mod_part:
-                            build_args += ['--features', feature_part]
-                    else:
-                        build_args += ['--features', feature]
-                log("Build user-module {}".format(module))
-                if args.verbose:
-                    print("cd {}".format(USR_PATH / module))
-                    print("RUST_TARGET_PATH={} xargo ".format(
-                        USR_PATH.absolute()) + " ".join(build_args))
-                xargo(*build_args)
+            with local.env(RUSTFLAGS=USER_RUSTFLAGS):
+                with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
+                    build_args = build_args_default.copy()
+                    for feature in args.ufeatures:
+                        if ':' in feature:
+                            mod_part, feature_part = feature.split(':')
+                            if module == mod_part:
+                                build_args += ['--features', feature_part]
+                        else:
+                            build_args += ['--features', feature]
+                    log("Build user-module {}".format(module))
+                    if args.verbose:
+                        print("cd {}".format(USR_PATH / module))
+                        print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS, USR_PATH.absolute()) + " ".join(build_args))
+                    xargo(*build_args)
 
 
 def deploy(args):
@@ -269,11 +271,20 @@ def run(args):
                               'nic,model={},netdev=n0'.format(args.nic)]
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
 
+        def query_host_numa():
+            online = cat["/sys/devices/system/node/online"]()
+            nlow, nmax = online.split('-')
+            assert int(nlow) == 0
+            return int(nmax)
+        
+        host_numa_nodes = query_host_numa()
         if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
+                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,prealloc=off,size={}M,host-nodes={},policy=bind'.format(node, int(mem_per_node), node % host_numa_nodes)]
+                
                 qemu_default_args += ['-numa',
-                                      "node,mem={}M,nodeid={}".format(int(mem_per_node), node)]
+                                      "node,memdev=nmem{},nodeid={}".format(node, node)]
                 qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                     node, node)]
 
@@ -309,11 +320,6 @@ def run(args):
         sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
         sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
 
-        # TODO(cosmetics): Ideally we would do something like this:
-        #   qemu = local['qemu-system-x86_64']
-        #   (qemu)(*qemu_args, timeout=320) & FG(buffering=None)
-        # But it somehow buffers the qemu output, and I couldn't figure out why :/
-
         # Run a QEMU instance
         cmd = ['/usr/bin/env'] + qemu_args
         if args.verbose:
@@ -331,7 +337,7 @@ def run(args):
                                           str(args.qemu_cores), '-t', 'interleave']()).strip()
             # For big machines it can take a while to spawn all threads in qemu
             # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
-            sleep(0.1)
+            sleep(2.00)
             if args.verbose:
                 log("QEMU affinity {}".format(affinity_list))
             sudo[python3['./qemu_affinity.py',

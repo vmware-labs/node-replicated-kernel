@@ -76,7 +76,7 @@ impl Process {
 
     /// Query process specific information.
     pub fn process_info() -> Result<ProcessInfo, SystemCallError> {
-        let mut buf = alloc::vec![0; 128];
+        let mut buf = alloc::vec![0; 256];
         let (r, len) = unsafe {
             syscall!(
                 SystemCall::Process as u64,
@@ -91,7 +91,8 @@ impl Process {
             let len = len as usize;
             debug_assert!(len <= buf.len());
             buf.resize(len, 0);
-            let deserialized: ProcessInfo = serde_cbor::from_slice(&buf).unwrap();
+            let static_buf = alloc::vec::Vec::leak(buf);
+            let deserialized: ProcessInfo = serde_cbor::from_slice(static_buf).unwrap();
             Ok(deserialized)
         } else {
             Err(SystemCallError::from(r))

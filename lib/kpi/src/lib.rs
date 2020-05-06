@@ -1,7 +1,7 @@
 //! Defines the public kernel interface (i.e., system call interface)
 //! and associated data-types.
 #![no_std]
-#![feature(llvm_asm)]
+#![feature(llvm_asm, vec_leak)]
 
 #[allow(non_snake_case)]
 #[cfg(target_os = "bespin")]

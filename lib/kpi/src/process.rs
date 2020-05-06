@@ -24,6 +24,8 @@ pub struct ProcessInfo {
     pub tls_len_total: u64,
     /// Required alignment
     pub alignment: u64,
+    /// Command line argument buffer
+    pub cmdline: &'static str,
 }
 
 #[cfg(test)]

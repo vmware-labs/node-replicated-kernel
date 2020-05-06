@@ -549,14 +549,12 @@ fn fs_test() {
     info!("fs_test OK");
 }
 
-fn fs_bench() {
+fn fs_bench(ncores: Option<usize>) {
     use fsbench::bench;
 
     // TODO: Take the input from the config file or as arguments.
     let share_file = false;
-    let num_cores: usize = vibrio::syscalls::System::threads()
-        .expect("Can't get system topology")
-        .len();
+    let num_cores: usize = ncores.expect("Can't parse cores from cmdline");
     let is_random = true;
     let is_write = false;
 
@@ -617,8 +615,11 @@ pub extern "C" fn _start() -> ! {
     debug!("Initialized logging");
     install_vcpu_area();
 
+    let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
+    let ncores: Option<usize> = pinfo.cmdline.parse().ok();
+
     #[cfg(feature = "bench-vmops")]
-    vmops::bench();
+    vmops::bench(ncores);
 
     #[cfg(feature = "test-print")]
     print_test();
@@ -653,7 +654,7 @@ pub extern "C" fn _start() -> ! {
     fs_test();
 
     #[cfg(feature = "fs-bench")]
-    fs_bench();
+    fs_bench(ncores);
 
     #[cfg(feature = "fs-write")]
     fs_write_test();

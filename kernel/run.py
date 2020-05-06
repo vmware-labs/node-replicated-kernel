@@ -311,11 +311,6 @@ def run(args):
         sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
         sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
 
-        # TODO(cosmetics): Ideally we would do something like this:
-        #   qemu = local['qemu-system-x86_64']
-        #   (qemu)(*qemu_args, timeout=320) & FG(buffering=None)
-        # But it somehow buffers the qemu output, and I couldn't figure out why :/
-
         # Run a QEMU instance
         cmd = ['/usr/bin/env'] + qemu_args
         if args.verbose:
@@ -333,7 +328,7 @@ def run(args):
                                           str(args.qemu_cores), '-t', 'interleave']()).strip()
             # For big machines it can take a while to spawn all threads in qemu
             # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
-            sleep(0.1)
+            sleep(0.25)
             if args.verbose:
                 log("QEMU affinity {}".format(affinity_list))
             sudo[python3['./qemu_affinity.py',

@@ -314,14 +314,14 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
                 // TODO(ugly-before-deadline): Hack to make core go to sleep if
                 // they wont be dispatching something.
                 if kcb.arch.replica_idx != 1 {
+                    if !cfg!(debug_assertions)
+                        && start.elapsed() > core::time::Duration::from_secs(3)
+                    {
+                        unsafe { x86::halt() }
+                    }
                     backoff = backoff << 1;
                     for _i in 0..backoff {
                         core::sync::atomic::spin_loop_hint();
-                    }
-                    if !cfg!(debug_assertions)
-                        && start.elapsed() > core::time::Duration::from_secs(2)
-                    {
-                        unsafe { x86::halt() }
                     }
                 } else {
                     for _i in 0..25_000 {

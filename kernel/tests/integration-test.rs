@@ -1314,19 +1314,21 @@ fn s06_memfs_bench() {
     std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
+        let kernel_cmdline = format!("testcmd={}", cores);
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("fs-bench")
             .memory(1024)
-            .timeout(50_000 + cores as u64 * 3000)
-            .cores(cores)
+            .timeout(25_000 + cores as u64 * 1000)
+            .cores(max_cores)
             .setaffinity()
+            .cmd(kernel_cmdline.as_str())
             .release();
 
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
-            cmdline = cmdline.memory(cores * 2048);
+            cmdline = cmdline.memory(core::cmp::max(8192, cores * 512));
         }
 
         if cfg!(feature = "smoke") && cores > 2 {
@@ -1342,8 +1344,8 @@ fn s06_memfs_bench() {
                 _ => {}
             };
         }
-        let mut output = String::new();
 
+        let mut output = String::new();
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
             let mut p = spawn_bespin(&cmdline)?;
 

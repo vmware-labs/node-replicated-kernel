@@ -7,7 +7,10 @@ set -ex
 cd kernel
 rm -f redis_benchmark.csv
 rm -f vmops_benchmark.csv
+rm -f memfs_benchmark.csv
+
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memfs_bench
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_
 
 # Clone repo
@@ -30,6 +33,11 @@ DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 cp gh-pages/vmops/index.markdown ${DEPLOY_DIR}
 mv vmops_benchmark.csv ${DEPLOY_DIR}
+
+# Copy memfs results
+DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+mkdir -p ${DEPLOY_DIR}
+mv memfs_benchmark.csv ${DEPLOY_DIR}
 
 # Push gh-pages
 cd gh-pages

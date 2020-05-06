@@ -75,13 +75,13 @@ pub trait FileSystem {
         &mut self,
         mnode_num: Mnode,
         buffer: &mut [u8],
-        offset: i64,
+        offset: usize,
     ) -> Result<usize, FileSystemError>;
     fn read(
         &self,
         mnode_num: Mnode,
         buffer: &mut UserSlice,
-        offset: i64,
+        offset: usize,
     ) -> Result<usize, FileSystemError>;
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
     fn file_info(&self, mnode: Mnode) -> FileInfo;
@@ -94,6 +94,8 @@ pub trait FileDescriptor {
     fn update_fd(&mut self, mnode: Mnode, flags: FileFlags);
     fn get_mnode(&self) -> Mnode;
     fn get_flags(&self) -> FileFlags;
+    fn get_offset(&self) -> usize;
+    fn update_offset(&self, new_offset: usize);
 }
 
 /// A file descriptor representaion.
@@ -101,6 +103,7 @@ pub trait FileDescriptor {
 pub struct Fd {
     mnode: Mnode,
     flags: FileFlags,
+    offset: AtomicUsize,
 }
 
 impl FileDescriptor for Fd {
@@ -109,6 +112,7 @@ impl FileDescriptor for Fd {
             // Intial values are just the place-holders and shouldn't be used.
             mnode: core::u64::MAX,
             flags: Default::default(),
+            offset: AtomicUsize::new(0),
         }
     }
 
@@ -123,6 +127,14 @@ impl FileDescriptor for Fd {
 
     fn get_flags(&self) -> FileFlags {
         self.flags.clone()
+    }
+
+    fn get_offset(&self) -> usize {
+        self.offset.load(Ordering::Relaxed)
+    }
+
+    fn update_offset(&self, new_offset: usize) {
+        self.offset.store(new_offset, Ordering::Release);
     }
 }
 
@@ -199,7 +211,7 @@ impl FileSystem for MemFS {
         &mut self,
         mnode_num: Mnode,
         buffer: &mut [u8],
-        offset: i64,
+        offset: usize,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get_mut(&mnode_num) {
             Some(mnode) => mnode.write(buffer, offset),
@@ -212,7 +224,7 @@ impl FileSystem for MemFS {
         &self,
         mnode_num: Mnode,
         buffer: &mut UserSlice,
-        offset: i64,
+        offset: usize,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get(&mnode_num) {
             Some(mnode) => mnode.read(buffer, offset),

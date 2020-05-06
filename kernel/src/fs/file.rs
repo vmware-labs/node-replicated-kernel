@@ -223,12 +223,12 @@ impl File {
         &mut self,
         user_slice: &mut [u8],
         len: usize,
-        start_offset: i64,
+        start_offset: usize,
     ) -> Result<usize, FileSystemError> {
         // If offset is specified, then resize the file to the offset + len.
         // If offset is less than file size then truncate the file; otherwise
         // fill the file with zeros till the offset.
-        if start_offset != -1 && !self.resize_file(start_offset as usize) {
+        if !self.resize_file(start_offset) {
             return Err(FileSystemError::OutOfMemory);
         }
 
@@ -399,7 +399,7 @@ pub mod test {
         let wbuffer: &mut [u8] = &mut [0xb; 10000];
         let rbuffer: &mut [u8] = &mut [0; 10000];
 
-        assert_eq!(file.write_file(wbuffer, 10000, -1), Ok(10000));
+        assert_eq!(file.write_file(wbuffer, 10000, 0), Ok(10000));
         assert_eq!(file.get_size(), 10000);
 
         for i in 0..10000 {

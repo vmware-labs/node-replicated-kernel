@@ -447,8 +447,22 @@ where
                     });
                 }
 
-                match self.fs.read(mnode_num, &mut userslice, offset) {
-                    Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
+                // If the arguments doesn't provide an offset,
+                // then use the offset associated with the FD.
+                let mut curr_offset: usize = offset as usize;
+                if offset == -1 {
+                    curr_offset = fd.get_offset();
+                }
+
+                match self.fs.read(mnode_num, &mut userslice, curr_offset) {
+                    Ok(len) => {
+                        // Update the FD associated offset only when the
+                        // offset wasn't given in the arguments.
+                        if offset == -1 {
+                            fd.update_offset(curr_offset + len);
+                        }
+                        Ok(NodeResult::FileAccessed(len as u64))
+                    }
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }
@@ -600,10 +614,20 @@ where
                     });
                 }
 
+                let mut curr_offset: usize = offset as usize;
+                if offset == -1 {
+                    curr_offset = fd.get_offset();
+                }
+
                 // TODO: We don't modify the buffer internally, lookout if this can cause an error.
                 let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice) };
-                match self.fs.write(mnode_num, &mut buffer, offset) {
-                    Ok(len) => Ok(NodeResult::FileAccessed(len as u64)),
+                match self.fs.write(mnode_num, &mut buffer, curr_offset) {
+                    Ok(len) => {
+                        if offset == -1 {
+                            fd.update_offset(curr_offset + len);
+                        }
+                        Ok(NodeResult::FileAccessed(len as u64))
+                    }
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }

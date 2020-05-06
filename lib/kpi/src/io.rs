@@ -16,6 +16,7 @@ bitflags! {
         const O_RDWR = 0x0003; /* open for reading and writing */
         const O_CREAT = 0x0200; /* create if nonexistant */
         const O_TRUNC = 0x0400; /* truncate to zero length */
+        const O_APPEND = 0x02000; /* append at the EOF */
     }
 }
 
@@ -57,6 +58,10 @@ impl FileFlags {
 
     pub fn is_truncate(&self) -> bool {
         (*self & FileFlags::O_TRUNC) == FileFlags::O_TRUNC
+    }
+
+    pub fn is_append(&self) -> bool {
+        (*self & FileFlags::O_APPEND) == FileFlags::O_APPEND
     }
 }
 

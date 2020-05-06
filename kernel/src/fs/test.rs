@@ -20,7 +20,7 @@ use crate::*;
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ModelOperation {
     /// Stores a write to an mnode, at given offset, pattern, length.
-    Write(Mnode, i64, char, usize),
+    Write(Mnode, usize, char, usize),
     /// Stores info about created files.
     Created(String, Modes, Mnode),
 }
@@ -146,7 +146,7 @@ impl FileSystem for ModelFS {
         &mut self,
         mnode_num: Mnode,
         buffer: &mut [u8],
-        offset: i64,
+        offset: usize,
     ) -> Result<usize, FileSystemError> {
         if self.mnode_exists(mnode_num) {
             for x in self.oplog.iter().rev() {
@@ -186,7 +186,7 @@ impl FileSystem for ModelFS {
         &self,
         mnode_num: Mnode,
         buffer: &mut UserSlice,
-        offset: i64,
+        offset: usize,
     ) -> Result<usize, FileSystemError> {
         let _len = buffer.len();
         if self.mnode_exists(mnode_num) {
@@ -358,8 +358,8 @@ fn model_overlapping_writes() {
 /// necessary arguments to construct an operation for said function.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum TestAction {
-    Read(Mnode, i64, usize),
-    Write(Mnode, i64, char, usize),
+    Read(Mnode, usize, usize),
+    Write(Mnode, usize, char, usize),
     Create(Vec<String>, Modes),
     Delete(Vec<String>),
     Lookup(Vec<String>),
@@ -404,7 +404,7 @@ fn fill_pattern() -> impl Strategy<Value = char> {
 
 /// Generates an offset.
 prop_compose! {
-    fn offset_gen(max: i64)(offset in 0..max) -> i64 { offset }
+    fn offset_gen(max: usize)(offset in 0..max) -> usize { offset }
 }
 
 /// Generates a random mnode.
@@ -556,7 +556,7 @@ fn test_file_read_permission_error() {
     // On error read returns 0.
     assert_eq!(
         memfs
-            .read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+            .read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
             .is_err(),
         true
     );
@@ -577,7 +577,7 @@ fn test_file_write_permission_error() {
     );
     // On error read returns 0.
     assert_eq!(
-        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
+        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
         Err(FileSystemError::PermissionError)
     );
 }
@@ -597,7 +597,7 @@ fn test_file_write() {
     );
     assert_eq!(
         memfs
-            .write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1)
+            .write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
             .unwrap(),
         10
     );
@@ -621,13 +621,13 @@ fn test_file_read() {
     );
     assert_eq!(
         memfs
-            .write(2, &mut UserSlice::new(wbuffer.as_ptr() as u64, len), -1)
+            .write(2, &mut UserSlice::new(wbuffer.as_ptr() as u64, len), 0)
             .unwrap(),
         len
     );
     assert_eq!(
         memfs
-            .read(2, &mut UserSlice::new(rbuffer.as_ptr() as u64, len), -1)
+            .read(2, &mut UserSlice::new(rbuffer.as_ptr() as u64, len), 0)
             .unwrap(),
         len
     );
@@ -713,11 +713,11 @@ fn test_file_delete() {
     assert_eq!(memfs.delete(filename).is_err(), true);
     assert_eq!(memfs.lookup(filename), None);
     assert_eq!(
-        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
+        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
         Err(FileSystemError::InvalidFile)
     );
     assert_eq!(
-        memfs.read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), -1),
+        memfs.read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
         Err(FileSystemError::InvalidFile)
     );
 }

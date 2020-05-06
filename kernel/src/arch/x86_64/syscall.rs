@@ -401,9 +401,9 @@ fn handle_fileio(
         FileOperation::WriteDirect => {
             let kcb = super::kcb::get_kcb();
             let len = arg3;
-            let mut offset = arg4 as i64;
+            let mut offset = arg4 as usize;
             if arg5 == 0 {
-                offset = -1;
+                offset = 0;
             }
 
             let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);

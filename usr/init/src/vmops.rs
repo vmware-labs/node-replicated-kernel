@@ -61,14 +61,14 @@ fn maponly_bencher(cores: usize) {
     POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn bench() {
+pub fn bench(ncores: usize) {
     info!("thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations");
 
     let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
     let mut maximum = 1; // We already have core 0
-    for hwthread in hwthreads.iter() {
+    for hwthread in hwthreads.iter().take(ncores) {
         if hwthread.id != 0 {
             match vibrio::syscalls::Process::request_core(
                 hwthread.id,

@@ -605,7 +605,10 @@ pub fn xmain() {
         use alloc::format;
         let test_module = test_module
             .expect(format!("Couldn't find '{}' binary.", kcb.cmdline.test_binary).as_str());
-        info!("{} {:?}", kcb.cmdline.test_binary, test_module);
+        info!(
+            "binary={} cmdline={} module={:?}",
+            kcb.cmdline.test_binary, kcb.cmdline.test_cmdline, test_module
+        );
 
         let module = unsafe {
             elfloader::ElfBinary::new(test_module.name(), test_module.as_slice())

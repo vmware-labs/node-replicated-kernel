@@ -53,7 +53,7 @@ mod isr;
 pub use bootloader_shared::*;
 use klogger;
 
-use crate::kcb::{CommandLineArgs, Kcb};
+use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{
     tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
@@ -190,7 +190,7 @@ fn init_apic() -> xapic::XAPICDriver {
 
 struct AppCoreArgs {
     _mem_region: Frame,
-    cmdline: CommandLineArgs,
+    cmdline: BootloaderArguments,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
@@ -330,7 +330,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 ///  - Initialized topology
 ///  - Local APIC driver
 fn boot_app_cores(
-    cmdline: CommandLineArgs,
+    cmdline: BootloaderArguments,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     log: Arc<Log<'static, Op>>,
@@ -511,7 +511,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         unsafe { transmute::<u64, &'static mut KernelArgs>(argc as u64) };
 
     // Parse the command line arguments
-    let cmdline = CommandLineArgs::from_str(kernel_args.command_line);
+    let cmdline = BootloaderArguments::from_str(kernel_args.command_line);
     klogger::init(cmdline.log_filter).expect("Can't set-up logging");
 
     info!(

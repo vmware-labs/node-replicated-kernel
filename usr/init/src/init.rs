@@ -415,6 +415,76 @@ pub fn test_rump_net() {
     }
 }
 
+fn test_fs_invalid_addresses() {
+    use vibrio::io::*;
+
+    let fd = vibrio::syscalls::Fs::open(
+        0x0,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        u64::from(FileModes::S_IRWXU),
+    )
+    .expect_err("Should not get Ok value");
+
+    // Open a file to read and write on invalid addresses.
+    let fd = vibrio::syscalls::Fs::open(
+        "file1.txt\0".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        u64::from(FileModes::S_IRWXU),
+    )
+    .expect("FileOpen syscall failed");
+    assert_eq!(fd, 0);
+
+    let ret = vibrio::syscalls::Fs::write(fd, 0x0, 256).expect_err("FileWrite syscall should fail");
+    let fileinfo = vibrio::syscalls::Fs::getinfo(0x0).expect_err("FileOpen syscall should fail");
+    let ret = vibrio::syscalls::Fs::read(fd, 0x0, 256).expect_err("FileWrite syscall failed");
+
+    // Test address validity small pages.
+    let base_small: u64 = 0x10000;
+    let size_small: u64 = 0x1000;
+    unsafe {
+        vibrio::syscalls::VSpace::map(base_small, size_small).expect("Map syscall failed");
+    }
+    let slice: &mut [u8] =
+        unsafe { from_raw_parts_mut(base_small as *mut u8, size_small as usize) };
+    for i in slice.iter_mut() {
+        *i = 0xb;
+    }
+
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small + size_small + 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small + size_small - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small, size_small + 1)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_small - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+
+    // Test address validity large pages.
+    let base_large: u64 = 0x8000000;
+    let size_large: u64 = 0x200000;
+    unsafe {
+        vibrio::syscalls::VSpace::map(base_large, size_large).expect("Map syscall failed");
+    }
+    let slice: &mut [u8] =
+        unsafe { from_raw_parts_mut(base_large as *mut u8, size_large as usize) };
+    for i in slice.iter_mut() {
+        *i = 0xb;
+    }
+
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large + size_large + 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large + size_large - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large, size_large + 1)
+        .expect_err("FileWrite syscall should fail");
+    let _ret = vibrio::syscalls::Fs::write(fd, base_large - 1, 256)
+        .expect_err("FileWrite syscall should fail");
+
+    // Close the opened file.
+    let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
+    assert_eq!(ret, 0);
+}
+
 fn fs_test() {
     use vibrio::io::*;
     let base: u64 = 0xff000;
@@ -471,6 +541,9 @@ fn fs_test() {
         let ret = vibrio::syscalls::Fs::delete("file.txt\0".as_ptr() as u64)
             .expect("FileDelete syscall failed");
         assert_eq!(ret, true);
+
+        // Test fs with invalid userspace pointers
+        test_fs_invalid_addresses();
     }
 
     info!("fs_test OK");

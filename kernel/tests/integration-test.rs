@@ -1298,30 +1298,65 @@ fn s06_vmops_benchmark() {
 
 #[test]
 fn s06_memfs_bench() {
-    for cores in 1..=4 {
-        let cmdline = RunnerArgs::new("test-userspace-smp")
+    let threads = if cfg!(feature = "smoke") {
+        vec![1, 4]
+    } else {
+        thread_defaults()
+    };
+
+    let file_name = "memfs_benchmark.csv";
+    std::fs::remove_file(file_name);
+
+    for &cores in threads.iter() {
+        let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("fs-bench")
             .memory(1024)
-            .timeout(20_000)
+            .timeout(50_000 + cores as u64 * 3000)
             .cores(cores)
+            .setaffinity()
             .release();
+
+        if cfg!(feature = "smoke") {
+            cmdline = cmdline.user_feature("smoke").memory(8192);
+        } else {
+            cmdline = cmdline.memory(cores * 2048);
+        }
+
+        if cfg!(feature = "smoke") && cores > 2 {
+            cmdline = cmdline.nodes(2);
+        } else {
+            let max_cores = num_cpus::get();
+            // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
+            match max_cores {
+                56 if cores > 14 => cmdline = cmdline.nodes(2),
+                192 if cores > 144 => cmdline = cmdline.nodes(4),
+                192 if cores > 96 => cmdline = cmdline.nodes(3),
+                192 if cores > 48 => cmdline = cmdline.nodes(2),
+                _ => {}
+            };
+        }
         let mut output = String::new();
 
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
             let mut p = spawn_bespin(&cmdline)?;
 
             // Parse lines like
-            // `init::bench::fsbench: 0,1635650,read`
+            // `init::fsbench: 1,readonly,2,2048,10000,4000,1863272`
             // write them to a CSV file
-            // TODO: Match for each core once the scheduler work is don.
-            for _i in 0..with_cores {
-                let (prev, matched) = p.exp_regex(r#"init::fsbench: (\d+),(\d+),(.*)"#)?;
+            let expected_lines = if cfg!(feature = "smoke") {
+                1
+            } else {
+                with_cores * 11
+            };
+
+            for _i in 0..expected_lines {
+                let (prev, matched) =
+                    p.exp_regex(r#"init::fsbench: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
                 output += prev.as_str();
                 output += matched.as_str();
 
                 // Append parsed results to a CSV file
-                let file_name = "memfs_benchmark.csv";
                 let write_headers = !Path::new(file_name).exists();
                 let mut csv_file = OpenOptions::new()
                     .append(true)
@@ -1329,7 +1364,8 @@ fn s06_memfs_bench() {
                     .open(file_name)
                     .expect("Can't open file");
                 if write_headers {
-                    let row = "git_rev,cores,thread_id,operations,benchmark\n";
+                    let row =
+                        "git_rev,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
                     let r = csv_file.write(row.as_bytes());
                     assert!(r.is_ok());
                 }

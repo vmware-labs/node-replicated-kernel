@@ -19,7 +19,7 @@ mod mnode;
 mod test;
 
 /// The maximum number of open files for a process.
-pub const MAX_FILES_PER_PROCESS: usize = 8;
+pub const MAX_FILES_PER_PROCESS: usize = 1024;
 
 /// Mnode number.
 pub type Mnode = u64;
@@ -74,7 +74,7 @@ pub trait FileSystem {
     fn write(
         &mut self,
         mnode_num: Mnode,
-        buffer: &mut UserSlice,
+        buffer: &mut [u8],
         offset: i64,
     ) -> Result<usize, FileSystemError>;
     fn read(
@@ -198,7 +198,7 @@ impl FileSystem for MemFS {
     fn write(
         &mut self,
         mnode_num: Mnode,
-        buffer: &mut UserSlice,
+        buffer: &mut [u8],
         offset: i64,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get_mut(&mnode_num) {

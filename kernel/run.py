@@ -155,7 +155,7 @@ def build_user_libraries(args):
                 if args.verbose:
                     print("cd {}".format(LIBS_PATH / "vibrio"))
                     print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS,
-                        USR_PATH.absolute()) + " ".join(build_args))
+                                                                           USR_PATH.absolute()) + " ".join(build_args))
                 xargo(*build_args)
 
 
@@ -182,7 +182,8 @@ def build_userspace(args):
                     log("Build user-module {}".format(module))
                     if args.verbose:
                         print("cd {}".format(USR_PATH / module))
-                        print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS, USR_PATH.absolute()) + " ".join(build_args))
+                        print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(
+                            USER_RUSTFLAGS, USR_PATH.absolute()) + " ".join(build_args))
                     xargo(*build_args)
 
 
@@ -273,16 +274,20 @@ def run(args):
 
         def query_host_numa():
             online = cat["/sys/devices/system/node/online"]()
-            nlow, nmax = online.split('-')
-            assert int(nlow) == 0
-            return int(nmax)
-        
+            if "-" in online:
+                nlow, nmax = online.split('-')
+                assert int(nlow) == 0
+                return int(nmax)
+            else:
+                return int(online.strip())
+
         host_numa_nodes = query_host_numa()
         if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
-                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,prealloc=off,size={}M,host-nodes={},policy=bind'.format(node, int(mem_per_node), node % host_numa_nodes)]
-                
+                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,prealloc=off,size={}M,host-nodes={},policy=bind'.format(
+                    node, int(mem_per_node), node % host_numa_nodes)]
+
                 qemu_default_args += ['-numa',
                                       "node,memdev=nmem{},nodeid={}".format(node, node)]
                 qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(

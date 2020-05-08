@@ -9,13 +9,14 @@ Launch the server binary:
 ```bash
 cd kernel
 python3 run.py  \
-    --kfeatures test-userspace \
+    --kfeatures test-userspace-smp \
     --cmd 'log=info testbinary=memcached.bin' \
     --nic virtio \
     --mods rkapps \
     --qemu-settings='-m 1024M' \
     --ufeatures 'rkapps:memcached' \
     --release \
+    --qemu-cores 4 \
     --verbose
 ```
 

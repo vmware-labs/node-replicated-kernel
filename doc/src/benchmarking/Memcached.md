@@ -26,3 +26,20 @@ cd kernel
 sudo service apparmor teardown
 sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf
 ```
+
+## Load generator
+
+- `-B`: Binary protocol
+- `-S 1S`: Dump statistics every second
+
+```bash
+./clients/memaslap -s 172.31.0.10:11211 -B -S 1s
+```
+
+Defaults with this set-up are:
+
+- 8 client threads with concurrency of 128 sockets
+- 1000000 requests
+- set proportion: set_prop=0.10
+- get proportion: get_prop=0.90
+

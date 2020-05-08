@@ -191,6 +191,7 @@ fn test_rump_tmpfs() {
         curlwp: rumprt::rumpkern_curlwp,
         deschedule: rumprt::rumpkern_unsched,
         schedule: rumprt::rumpkern_sched,
+        context_switch: rumprt::prt::context_switch,
     };
 
     let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
@@ -305,6 +306,7 @@ pub fn test_rump_net() {
         curlwp: rumprt::rumpkern_curlwp,
         deschedule: rumprt::rumpkern_unsched,
         schedule: rumprt::rumpkern_sched,
+        context_switch: rumprt::prt::context_switch,
     };
 
     let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);

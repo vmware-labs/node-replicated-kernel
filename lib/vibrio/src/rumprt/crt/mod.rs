@@ -2,10 +2,11 @@
 
 use alloc::vec;
 use core::ptr;
+use core::sync::atomic::AtomicUsize;
 
 use log::{debug, info, Level};
 
-use super::prt::{lwpctl, rumprun_lwp};
+use super::prt::{lwpctl, rumprun_lwp, RL_MASK_PARK};
 use super::{c_char, c_int};
 
 pub mod error;
@@ -191,6 +192,7 @@ pub extern "C" fn main() {
         curlwp: super::rumpkern_curlwp,
         deschedule: super::rumpkern_unsched,
         schedule: super::rumpkern_sched,
+        context_switch: super::prt::context_switch,
     };
 
     let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
@@ -249,15 +251,7 @@ pub extern "C" fn main() {
             super::crt::environ = c_environ.as_mut_ptr();
 
             // Set up the lwp pointer stuff
-            let t = lineup::tls2::Environment::thread();
-            let mut mainthread = rumprun_lwp {
-                id: 1,
-                rl_lwpctl: lwpctl {
-                    lc_curcpu: 0,
-                    lc_pctr: 0,
-                },
-            };
-            t.rumprun_lwp = &mut mainthread as *mut _ as *mut u64;
+            super::prt::rumprun_lwp_init();
 
             // do the _netbsd_userlevel_init stuff:
             netbsd_userlevel_init();

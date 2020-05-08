@@ -14,6 +14,7 @@ pub struct Upcalls {
     pub curlwp: fn() -> u64,
     pub schedule: fn(&i32, Option<&mutex::Mutex>),
     pub deschedule: fn(&mut i32, Option<&mutex::Mutex>),
+    pub context_switch: fn(*mut u8, *mut u8),
 }
 
 impl Default for Upcalls {
@@ -22,6 +23,7 @@ impl Default for Upcalls {
             curlwp: noop_curlwp,
             schedule: noop_schedule,
             deschedule: noop_unschedule,
+            context_switch: noop_context_switch,
         }
     }
 }
@@ -31,6 +33,9 @@ impl fmt::Debug for Upcalls {
         write!(f, "Upcalls {{}}")
     }
 }
+
+/// Dummy implementation of noop_context_switch().
+fn noop_context_switch(a1: *mut u8, a2: *mut u8) {}
 
 /// Dummy implementation of noop_curlwp().
 fn noop_curlwp() -> u64 {

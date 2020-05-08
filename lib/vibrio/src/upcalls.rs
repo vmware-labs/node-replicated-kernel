@@ -20,6 +20,7 @@ lazy_static! {
                 curlwp: crate::rumprt::rumpkern_curlwp,
                 deschedule: crate::rumprt::rumpkern_unsched,
                 schedule: crate::rumprt::rumpkern_sched,
+                context_switch: crate::rumprt::prt::context_switch,
             })
         } else {
             lineup::scheduler::SmpScheduler::default()

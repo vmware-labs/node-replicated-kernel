@@ -1,12 +1,19 @@
 //! Runtime support to link with/use libpthread
 
+use alloc::boxed::Box;
 use core::ops::Add;
 use core::ptr;
+use core::ptr::NonNull;
+use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
-use log::info;
+use hashbrown::HashMap;
+use lazy_static::lazy_static;
+use log::{error, info};
 
+use lineup::threads::ThreadId;
 use lineup::tls2::Environment;
 use rawtime::{Duration, Instant};
+use spin::Mutex;
 
 use super::{c_int, c_long, c_size_t, c_ssize_t, c_void, clockid_t, lwpid_t, time_t};
 
@@ -15,24 +22,20 @@ pub const LWPCTL_CPU_EXITED: c_int = -2;
 pub const LWPCTL_FEATURE_CURCPU: c_int = 0x0000_0001;
 pub const LWPCTL_FEATURE_PCTR: c_int = 0x0000_0002;
 
+pub const RL_MASK_PARKED: usize = 0x1;
+pub const RL_MASK_UNPARK: usize = 0x1;
+pub const RL_MASK_PARK: usize = 0x2;
+
 type LwpMain = Option<unsafe extern "C" fn(arg: *mut u8) -> *mut u8>;
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct lwpctl {
-    pub lc_curcpu: c_int,
-    pub lc_pctr: c_int,
-}
+static CURLWPID: AtomicI32 = AtomicI32::new(1);
 
-/// I don't understand why this happens to be separated from `threads.rs` lwp at
-/// the moment
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct rumprun_lwp {
-    /// ID of LWP, should not be pub once threads.rs and stub_lwp.rs is merged
-    pub id: lwpid_t,
-    /// LWP control state
-    pub rl_lwpctl: lwpctl,
+struct LwpWrapper(NonNull<rumprun_lwp>);
+unsafe impl core::marker::Send for LwpWrapper {}
+unsafe impl core::marker::Sync for LwpWrapper {}
+
+lazy_static! {
+    static ref LWP_HT: spin::Mutex<HashMap<lwpid_t, LwpWrapper>> = Mutex::new(HashMap::new());
 }
 
 /// The `struct timespec` C representation for rust code.
@@ -47,10 +50,77 @@ pub struct TimeSpec {
     pub tv_nsec: c_long,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lwpctl {
+    pub lc_curcpu: c_int,
+    pub lc_pctr: c_int,
+}
+
+/// Meta-data for rumprun / NetBSD pthreads
+///
+/// I don't understand why this happens to be separated from `threads.rs` lwp at
+/// the moment
+#[repr(C)]
+#[derive(Debug)]
+pub struct rumprun_lwp {
+    /// ID of LWP, should not be pub once threads.rs and stub_lwp.rs is merged
+    pub id: lwpid_t,
+    /// LWP control state
+    pub rl_lwpctl: lwpctl,
+    /// The underlying lineup thread id
+    pub rl_thread: ThreadId,
+    /// Park status of the LWP
+    pub rl_pstatus: AtomicUsize,
+    /// Original provided start function of LWP
+    pub start: LwpMain,
+    /// Original provided argument for `start`
+    pub arg: *mut u8,
+}
+
+unsafe impl core::marker::Send for rumprun_lwp {}
+
+pub fn context_switch(prev_cookie: *mut u8, next_cookie: *mut u8) {
+    //trace!("got context switched {:p} {:p}", prev_cookie, next_cookie);
+
+    let prev: *mut rumprun_lwp = prev_cookie as *mut rumprun_lwp;
+    let next: *mut rumprun_lwp = next_cookie as *mut rumprun_lwp;
+    unsafe {
+        if !prev.is_null() && (*prev).rl_lwpctl.lc_curcpu != LWPCTL_CPU_EXITED {
+            (*prev).rl_lwpctl.lc_curcpu = LWPCTL_CPU_NONE;
+        }
+        if !next.is_null() {
+            (*next).rl_lwpctl.lc_curcpu = 0;
+            (*next).rl_lwpctl.lc_pctr += 1;
+        }
+    }
+}
+
 extern "C" {
     fn rump_pub_lwproc_curlwp() -> *const c_void;
     fn rump_pub_lwproc_switch(lwp: *const c_void);
     fn rump_pub_lwproc_newlwp(pid: c_int) -> c_int;
+    fn getpid() -> c_int;
+}
+
+unsafe extern "C" fn rumprun_makelwp_tramp(arg: *mut u8) -> *mut u8 {
+    rump_pub_lwproc_switch(arg as *const c_void);
+
+    let lwp = Environment::thread().rumprun_lwp as *const rumprun_lwp;
+    (((*lwp).start).unwrap())((*lwp).arg)
+}
+
+fn get_my_rumprun_lwp() -> *mut rumprun_lwp {
+    Environment::thread().rumprun_lwp as *mut rumprun_lwp
+}
+
+fn get_rumprun_lwp_context(lwpid: lwpid_t) -> *const rumprun_lwp {
+    LWP_HT
+        .lock()
+        .get(&lwpid)
+        .expect("Can't find state associated with lwpid")
+        .0
+        .as_ptr()
 }
 
 #[no_mangle]
@@ -63,31 +133,59 @@ pub unsafe extern "C" fn rumprun_makelwp(
     flags: usize,
     lid: *mut lwpid_t,
 ) -> c_int {
-    log::error!("TODO what happen to lid");
+    debug_assert!(!tls_private.is_null(), "TLS area shouldn't be null");
+    debug_assert!(!lid.is_null(), "lid shouldn't be null");
     info!(
         "rumprun_makelwp {:p} {:p} {:p}--{} {} {:p}",
         arg, tls_private, stack_base, stack_size, flags, lid
     );
 
     let curlwp = rump_pub_lwproc_curlwp();
-    let r = rump_pub_lwproc_newlwp(1); // 1 should be getpid()
-    assert_eq!(r, 0);
+    let errno = rump_pub_lwproc_newlwp(getpid());
+    if errno != 0 {
+        return errno;
+    }
+    assert_eq!(errno, 0);
+
     let newlwp = rump_pub_lwproc_curlwp();
-    log::error!("curlwp is {:p} newlwp is {:p}", curlwp, newlwp);
-    rump_pub_lwproc_switch(curlwp);
-    log::error!("rump_pub_lwproc_switch");
+
+    let rlid = CURLWPID.fetch_add(1, Ordering::Relaxed);
+    let rl: Box<rumprun_lwp> = Box::new(rumprun_lwp {
+        id: rlid,
+        rl_lwpctl: lwpctl {
+            lc_curcpu: 0,
+            lc_pctr: 0,
+        },
+        start,
+        arg: arg as *mut u8,
+        rl_thread: ThreadId(0),
+        rl_pstatus: AtomicUsize::new(RL_MASK_PARK),
+    });
+    let rl_ptr = Box::leak(rl);
+
+    // assignme:
+    let tls_private = tls_private as *mut lineup::tls2::ThreadControlBlock<'static>;
+    (*tls_private).rumprun_lwp = rl_ptr as *mut _ as *mut u64; // TODO: free it again somewhere
 
     let free_automatically = false;
     let stack =
         lineup::stack::LineupStack::from_ptr(stack_base as *mut u8, stack_size, free_automatically);
 
-    let s = Environment::thread();
-    s.spawn_with_args(
+    let tid = Environment::thread().spawn_with_args(
         stack,
-        start,
-        arg as *mut u8,
-        tls_private as *mut lineup::tls2::ThreadControlBlock<'static>,
+        Some(rumprun_makelwp_tramp),
+        newlwp as *mut u8,
+        tls_private,
     );
+
+    // TODO(smp-correctness): Are we having a race here between new thread accessing
+    // rl_thread and us assigning it?
+    (*rl_ptr).rl_thread = tid.expect("Didn't create a thread?");
+    rump_pub_lwproc_switch(curlwp);
+    *lid = rlid;
+
+    // TODO: insert rl_ptr in a list
+
     0
 }
 
@@ -189,14 +287,17 @@ pub unsafe extern "C" fn ___lwp_park60(
         _lwp_unpark(unpark, unpark_hint);
     }
 
-    /*
-    TODO:
-    if me->rl_no_parking {
-        me->rl_no_parking = 0;
-        return 0;
-    }*/
+    let me = get_my_rumprun_lwp();
+    if (*me).rl_pstatus.swap(RL_MASK_PARKED, Ordering::SeqCst) == RL_MASK_UNPARK {
+        // We tried to park but someone else already unparked us again in advance
+        // pstatus was set to unpark -- so all we have to do is return
+        // from parking immediately
+        (*me).rl_pstatus.swap(RL_MASK_PARK, Ordering::SeqCst);
+        super::errno::rumpuser_seterrno(super::errno::EALREADY);
+        return -1;
+    }
 
-    if !ts.is_null() {
+    let retval = if !ts.is_null() {
         unreachable!("___lwp_park60: executing with non-null ts for first time.");
         const TIMER_ABSTIME: c_int = 0x1;
 
@@ -224,9 +325,19 @@ pub unsafe extern "C" fn ___lwp_park60(
         }
     } else {
         let t = Environment::thread();
+        info!(
+            "_lwp_park60 about to block tid={:?} lwpid={}",
+            Environment::tid(),
+            (*get_my_rumprun_lwp()).id
+        );
         t.block();
         0
-    }
+    };
+
+    // Set pstatus to park again (means we will try to park on next ___lwp_park60 call)
+    (*me).rl_pstatus.store(RL_MASK_PARK, Ordering::SeqCst);
+
+    retval
 }
 
 #[no_mangle]
@@ -252,9 +363,37 @@ pub unsafe extern "C" fn _lwp_suspend() {
     unreachable!("_lwp_suspend");
 }
 
+/// _lwp_unpark() resumes execution of the light-weight process lwp.
+/// The target LWP is assumed to be waiting in the kernel as a result of a
+/// call to _lwp_park().  If the target LWP is not currently waiting, it will
+/// return immediately upon the next call to _lwp_park().
+///
+/// See _lwp_park(2) for a description of the hint argument.
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_unpark(lid: lwpid_t, hint: *const c_void) -> c_int {
-    unimplemented!("_lwp_unpark lid={} hint={:p}", lid, hint);
+    info!("_lwp_unpark lid {} hint {:p}", lid, hint);
+    let rl = get_rumprun_lwp_context(lid);
+    if rl.is_null() {
+        info!("_lwp_unpark rl.is_null");
+        return -1;
+    }
+
+    // If we set the unpark flag and pstatus was 0 (thread has blocked), we need
+    // to call scheduler to wake-up the tid
+    if (*rl).rl_pstatus.swap(RL_MASK_UNPARK, Ordering::AcqRel) == RL_MASK_PARKED {
+        // Unpark only if the callback is complete (scheduled out)
+        info!("_lwp_unpark -> make_runnable {:?}", (*rl).rl_thread);
+        Environment::thread().make_runnable((*rl).rl_thread);
+    } else {
+        // The thread has not yet blocked, we signalled to unpark immediately again
+        // by setting the unpark bit
+        info!(
+            "_lwp_unpark: set unpark bit for {:?}, dont make runnable",
+            (*rl).rl_thread
+        );
+    }
+
+    0
 }
 
 #[no_mangle]
@@ -290,4 +429,31 @@ pub unsafe extern "C" fn _lwp_unpark_all(
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_wakeup() {
     unreachable!("_lwp_wakeup");
+}
+
+/// Initialize the LWP sub-system.
+#[no_mangle]
+pub unsafe extern "C" fn rumprun_lwp_init() {
+    lazy_static::initialize(&LWP_HT);
+
+    let t = lineup::tls2::Environment::thread();
+    let mut mainthread = Box::new(rumprun_lwp {
+        id: CURLWPID.fetch_add(1, Ordering::Relaxed),
+        rl_lwpctl: lwpctl {
+            lc_curcpu: 0,
+            lc_pctr: 0,
+        },
+        rl_thread: lineup::tls2::Environment::tid(),
+        rl_pstatus: AtomicUsize::new(RL_MASK_PARK),
+        start: None,
+        arg: ptr::null_mut(),
+    });
+
+    let mut mainthread = Box::leak(mainthread);
+    let mainthread_ptr = mainthread as *mut rumprun_lwp;
+    LWP_HT.lock().insert(
+        mainthread.id,
+        LwpWrapper(ptr::NonNull::new(mainthread_ptr).expect("Can't be null")),
+    );
+    t.rumprun_lwp = mainthread_ptr as *mut u64;
 }

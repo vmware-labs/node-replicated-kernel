@@ -243,6 +243,11 @@ impl<'a> SmpScheduler<'a> {
                     .expect("Can't find thread")
                     .affinity;
                 self.waitlist_remove(rtid, rtid_affinity);
+                // TODO(race): We can race with the core running on core id rtid_affinity here,
+                // it will remove the rtid on it's own if the wait timeout has been reached
+                // so if we don't remove anything here from the waitlist we should probably not insert
+                // alternative is to lock both lists, need to have a lockint scheme then
+                // e.g. we could use order of rtid affinity
                 self.mark_runnable(rtid, rtid_affinity);
                 YieldResume::Completed
             }
@@ -396,6 +401,7 @@ impl<'a> SmpScheduler<'a> {
             tls2::arch::set_scb(scb as *const SchedulerControlBlock);
         }
 
+        let mut prev_rumprun_lwp: *mut u8 = ptr::null_mut();
         // Run until `runnable` is empty.
         loop {
             self.check_interrupt(scb);
@@ -415,6 +421,13 @@ impl<'a> SmpScheduler<'a> {
                         let thread_map = self.threads.lock();
                         let thread = thread_map.get(&tid).expect("Can't find thread state?");
                         trace!("Thread = {:?}", thread);
+
+                        // TODO(api-ergonomics): `context_switch` should be a generic (non-rump specific) interface
+                        unsafe {
+                            let next_rumprun_lwp = (*thread.state).rumprun_lwp as *mut u8;
+                            (self.upcalls.context_switch)(prev_rumprun_lwp, next_rumprun_lwp);
+                            prev_rumprun_lwp = next_rumprun_lwp;
+                        }
                         // Switch the TCB to the new thread:
                         unsafe {
                             tls2::arch::set_tcb(thread.state);

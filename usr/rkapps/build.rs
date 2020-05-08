@@ -107,21 +107,36 @@ fn main() {
         let mut app_dir = out_dir_path.clone();
         app_dir.push(app);
 
+        let path = format!("{}:{}", rump_env.clone(), path_env);
+        let toolchain = "x86_64-rumprun-netbsd";
+        let cmd = format!(
+            "PATH={} RUMPRUN_TOOLCHAIN_TUPLE={} make {}",
+            path,
+            toolchain,
+            build_args.join(" ")
+        );
+        println!("cd {:?}", app_dir.as_path());
+        println!("{}", cmd);
         let status = Command::new("make")
             .args(build_args)
-            .env("PATH", format!("{}:{}", rump_env.clone(), path_env))
-            .env("RUMPRUN_TOOLCHAIN_TUPLE", "x86_64-rumprun-netbsd")
+            .env("PATH", path.as_str())
+            .env("RUMPRUN_TOOLCHAIN_TUPLE", toolchain)
             .current_dir(app_dir.as_path())
             .status()
             .expect("Can't make app dir");
         assert!(status.success(), "Can't make app dir");
 
-        // TODO: maybe we meed to make baking app specific
         let bake_args = &["bespin_generic", bake_in, bake_out];
+        println!(
+            "PATH={} RUMPRUN_TOOLCHAIN_TUPLE={} rumprun-bake {}",
+            path.as_str(),
+            toolchain,
+            bake_args.join(" ")
+        );
         let status = Command::new("rumprun-bake")
             .args(bake_args)
-            .env("PATH", format!("{}:{}", rump_env.clone(), path_env))
-            .env("RUMPRUN_TOOLCHAIN_TUPLE", "x86_64-rumprun-netbsd")
+            .env("PATH", path.as_str())
+            .env("RUMPRUN_TOOLCHAIN_TUPLE", toolchain)
             .current_dir(app_dir.as_path())
             .status()
             .expect("Can't bake binary");

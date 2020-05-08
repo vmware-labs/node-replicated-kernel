@@ -286,7 +286,7 @@ def run(args):
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
                 qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,prealloc=off,size={}M,host-nodes={},policy=bind'.format(
-                    node, int(mem_per_node), node % host_numa_nodes)]
+                    node, int(mem_per_node), 0 if host_numa_nodes == 0 else node % host_numa_nodes)]
 
                 qemu_default_args += ['-numa',
                                       "node,memdev=nmem{},nodeid={}".format(node, node)]

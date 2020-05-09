@@ -31,7 +31,14 @@ use rexpect::session::spawn_command;
 use rexpect::{spawn, spawn_bash};
 use serde::Serialize;
 
+/// Port we use for the Redis instances.
 const REDIS_PORT: u16 = 6379;
+
+/// Line we use to tell if Redis has started.
+const REDIS_START_MATCH: &'static str = "# Server started, Redis version 4.0.9";
+
+/// Line we use in dhcpd to match for giving IP to qemu VM.
+const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0";
 
 /// Different ExitStatus codes as returned by Bespin.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
@@ -850,7 +857,7 @@ fn s04_userspace_rumprt_net() {
         )?;
 
         // Test that DHCP works:
-        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
+        dhcp_server.exp_string(DHCP_ACK_MATCH)?;
 
         // Test that sendto works:
         // Used to swallow just the first packet (see also: https://github.com/rumpkernel/rumprun/issues/131)
@@ -983,8 +990,8 @@ fn s05_redis_smoke() {
         )?;
 
         // Test that DHCP works:
-        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
-        p.exp_string("# Server started, Redis version 3.0.6")?;
+        dhcp_server.exp_string(DHCP_ACK_MATCH)?;
+        p.exp_string(REDIS_START_MATCH)?;
 
         std::thread::sleep(std::time::Duration::from_secs(6));
 
@@ -1117,8 +1124,8 @@ fn s06_redis_benchmark_virtio() {
         )?;
 
         // Test that DHCP works:
-        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
-        p.exp_string("# Server started, Redis version 3.0.6")?;
+        dhcp_server.exp_string(DHCP_ACK_MATCH)?;
+        p.exp_string(REDIS_START_MATCH)?;
 
         use std::{thread, time};
         thread::sleep(time::Duration::from_secs(4));
@@ -1151,8 +1158,8 @@ fn s06_redis_benchmark_e1000() {
         )?;
 
         // Test that DHCP works:
-        dhcp_server.exp_string("DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0")?;
-        p.exp_string("# Server started, Redis version 3.0.6")?;
+        dhcp_server.exp_string(DHCP_ACK_MATCH)?;
+        p.exp_string(REDIS_START_MATCH)?;
         p.exp_string("* The server is now ready to accept connections on port 6379")?;
 
         use std::{thread, time};

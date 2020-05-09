@@ -1,5 +1,6 @@
 //! rumpkernel "kernel" threads implementation.
 
+use core::convert::TryInto;
 use core::ops::Add;
 
 use cstr_core::CStr;
@@ -35,25 +36,28 @@ pub unsafe extern "C" fn rumpuser_thread_create(
     name: *const u8,
     mustjoin: i64,
     priority: i64,
-    cpuidx: i64,
+    cpuidx: i32,
     cookie: *mut *mut u8,
 ) -> i64 {
     let tname = CStr::from_ptr(name as *const i8)
         .to_str()
         .unwrap_or("[unknown]");
+
+    let core_id = if cpuidx == -1 { 1 } else { cpuidx };
+
+    let s = lineup::tls2::Environment::thread();
+    let tid = s.spawn_on_core(fun, arg, core_id.try_into().unwrap());
     trace!(
-        "rumpuser_thread_create {} {:?} {:p} join={} prio={} cpu={} cookie={:p}",
+        "rumpuser_thread_create {} {:?} {:p} join={} prio={} cpu={} cookie={:p} tid={:?}",
         tname,
         fun,
         arg,
         mustjoin,
         priority,
         cpuidx,
-        cookie
+        cookie,
+        tid
     );
-
-    let s = lineup::tls2::Environment::thread();
-    s.spawn(fun, arg);
 
     0
 }
@@ -101,18 +105,7 @@ pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i6
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_curlwp() -> *mut lwp {
-    //debug!("rumpuser_curlwp");
     let t = lineup::tls2::Environment::thread();
-    /*if t.rump_lwp == core::ptr::null() {
-        let fsbase = x86::current::segmentation::rdfsbase();
-        if fsbase > 0 {
-            *(fsbase as *mut u64) = fsbase;
-        }
-        /*log::info!("fsbase {:#x}", fsbase);
-        log::info!("fs = {:#x}", x86::segmentation::fs());
-        log::info!("gs = {:#x}", x86::segmentation::gs());
-        error!("rump lwp is null");*/
-    }*/
     t.rump_lwp as *mut lwp
 }
 

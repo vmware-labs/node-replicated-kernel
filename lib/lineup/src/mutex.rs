@@ -84,6 +84,12 @@ struct MutexInner {
     lwp_ptr: Cell<Option<*const u64>>,
 
     waitlist: SegQueue<ThreadId>,
+
+    /// Counting how many are interested currently in the mutex
+    /// and ensures mutual exclusion of resource:
+    /// A value of 0: The mutex is not locked.
+    /// A value of 1: The mutex is locked, no waiters.
+    /// A value of >1: The mutex is locked and has (or will have) waiters in waitlist.
     counter: CachePadded<AtomicUsize>,
 }
 
@@ -168,7 +174,7 @@ impl MutexInner {
     fn enter_nowrap(&self) {
         loop {
             // Wait till lock is free (counter is 0):
-            while self.counter.load(Ordering::Relaxed) != 0 {
+            while self.counter.load(Ordering::SeqCst) != 0 {
                 spin_loop_hint();
             }
 
@@ -188,12 +194,18 @@ impl MutexInner {
     }
 
     fn exit(&self) {
-        let _tid = Environment::tid();
         let yielder: &mut ThreadControlBlock = Environment::thread();
 
-        self.owner.replace(None);
-        self.lwp_ptr.replace(None);
-        if self.counter.fetch_sub(1, Ordering::SeqCst) != 1 {
+        let _prev = self.owner.replace(None);
+        let _prev_ptr = self.lwp_ptr.replace(None);
+
+        let v = self.counter.fetch_sub(1, Ordering::SeqCst);
+        if v < 1 {
+            let tid = Environment::tid();
+            panic!("{:?} Called exit on already released mtx={:p}", tid, self);
+        }
+
+        if v > 1 {
             // Need to resolve a race where we call `exit`
             // but another thread that called enter has incremented
             // counter but not put itself in the waitlist yet

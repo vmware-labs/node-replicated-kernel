@@ -94,14 +94,24 @@ impl CondVarInner {
         mtx.exit();
     }
 
-    fn cv_reschedule(&mut self, mtx: &Mutex, rid: &i32) {
+    fn cv_mutex_enter(&mut self, mtx: &Mutex) {
+        if mtx.is_spin() {
+            trace!("cv_mutex_enter is_spin path");
+            mtx.enter_nowrap();
+        } else {
+            assert!(mtx.is_kmutex());
+            mtx.enter_nowrap();
+        }
+    }
+
+    fn cv_schedule_enter(&mut self, mtx: &Mutex, rid: &i32) {
         let yielder: &mut ThreadControlBlock = Environment::thread();
 
         if mtx.is_spin() && mtx.is_kmutex() {
             (yielder.upcalls.schedule)(&rid, Some(mtx));
             mtx.enter_nowrap();
         } else {
-            mtx.enter_nowrap();
+            self.cv_mutex_enter(mtx);
             (yielder.upcalls.schedule)(&rid, Some(mtx));
         }
     }
@@ -116,11 +126,12 @@ impl CondVarInner {
         // (if we push -> run again on other core -> unschedule in here)
         // not problematic as long as dont support thread stealing...
         self.waiters.push(tid);
-        self.cv_unschedule(mtx, &mut rid);
+        trace!("cv.wait(): make unrunnable {:?} {:p}", tid, mtx.owner());
 
-        trace!("waiting for {:?}", tid);
+        self.cv_unschedule(mtx, &mut rid);
         yielder.make_unrunnable(tid);
-        self.cv_reschedule(mtx, &rid);
+        self.cv_schedule_enter(mtx, &rid);
+
         let r = self.waiters.remove_item(&tid);
         debug_assert!(r.is_none(), "signal/broadcast must remove");
     }
@@ -136,6 +147,7 @@ impl CondVarInner {
         mtx.exit();
         yielder.make_unrunnable(tid);
         mtx.enter_nowrap();
+
         let r = self.waiters.remove_item(&tid);
         debug_assert!(r.is_none(), "signal/broadcast must remove");
     }
@@ -153,11 +165,11 @@ impl CondVarInner {
         // the timeout is reached due to the Timeout YieldRequest
         let yielder: &mut ThreadControlBlock = Environment::thread();
         yielder.suspend(YieldRequest::Timeout(wakup_time));
-        self.cv_reschedule(mtx, &rid);
+        self.cv_schedule_enter(mtx, &rid);
         self.waiters.remove_item(&tid);
 
         trace!(
-            "cv_reschedule done Instant::now() < wakup_time = {}",
+            "timed_wait: cv_schedule_enter done Instant::now() < wakup_time = {}",
             Instant::now() < wakup_time
         );
         Instant::now() < wakup_time

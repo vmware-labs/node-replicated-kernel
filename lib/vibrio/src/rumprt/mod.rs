@@ -16,11 +16,14 @@
 //! Once the implementation grows we can think about having a safe wrapper/layer.
 
 use crate::alloc::alloc;
+use crate::alloc::boxed::Box;
+use crate::alloc::format;
 use core::alloc::Layout;
 use core::arch::x86_64::_rdrand16_step;
 use core::ffi::VaList;
 use core::ptr;
 use core::slice;
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 use cstr_core::CStr;
 
@@ -105,32 +108,31 @@ pub struct RumpHyperUpcalls {
     pub hyp_extra: [*mut c_void; 8usize],
 }
 
+static HYPERUPCALLS: AtomicPtr<RumpHyperUpcalls> = AtomicPtr::new(ptr::null_mut());
+
 #[allow(unused)]
 pub fn rumpkern_curlwp() -> u64 {
     unsafe { threads::rumpuser_curlwp() as *const _ as u64 }
 }
 
 pub fn rumpkern_unsched(nlocks: &mut i32, mtx: Option<&Mutex>) {
-    let s = lineup::tls2::Environment::scheduler();
-    let upcalls =
-        s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
+    let upcalls = HYPERUPCALLS.load(Ordering::Relaxed) as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     unsafe {
         trace!(
-            "rumpkern_unsched {} {:p} lwp={:p}",
-            *nlocks,
+            "rumpkern_unsched {} {:p} lwp={:p} upcalls = {:p}",
+            nlocks,
             mtx,
-            threads::rumpuser_curlwp()
+            threads::rumpuser_curlwp(),
+            upcalls
         );
         (*upcalls).hyp_backend_unschedule.unwrap()(0, nlocks as *mut c_int, mtx as *const u64);
     }
 }
 
 pub fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
-    let s = lineup::tls2::Environment::scheduler();
-    let upcalls =
-        s.rump_upcalls.load(core::sync::atomic::Ordering::Relaxed) as *const RumpHyperUpcalls;
+    let upcalls = HYPERUPCALLS.load(Ordering::Relaxed) as *const RumpHyperUpcalls;
 
     let mtx = mtx.map_or(ptr::null(), |mtx| mtx as *const Mutex);
     trace!("rumpkern_sched {} {:p}", *nlocks, mtx);
@@ -143,6 +145,9 @@ pub fn rumpkern_sched(nlocks: &i32, mtx: Option<&Mutex>) {
 #[no_mangle]
 pub(crate) unsafe extern "C" fn rumpuser_init(version: i64, hyp: *mut RumpHyperUpcalls) -> i64 {
     info!("rumpuser_init ver {} {:p}", version, hyp);
+
+    let r = HYPERUPCALLS.swap(hyp, Ordering::Relaxed);
+    assert_eq!(r, ptr::null_mut(), "Can only set hyperupcalls once");
 
     let s = lineup::tls2::Environment::scheduler();
     s.set_rump_context(version, hyp as *mut u64);
@@ -281,7 +286,13 @@ pub unsafe extern "C" fn rumpuser_getparam(
     trace!("rumpuser_getparam {}", param_name);
 
     let cstr = match param_name {
-        "_RUMPUSER_NCPU" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
+        "_RUMPUSER_NCPU" => {
+            let pinfo = crate::syscalls::Process::process_info().expect("Can't read process info");
+            let ncores: usize = pinfo.cmdline.parse().unwrap_or(1);
+            let core_string = format!("{}\0", ncores);
+
+            CStr::from_bytes_with_nul_unchecked(Box::leak(core_string.into_boxed_str()).as_bytes())
+        }
         "RUMP_VERBOSE" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "RUMP_THREADS" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "_RUMPUSER_HOSTNAME" => CStr::from_bytes_with_nul_unchecked(b"btest\0"),

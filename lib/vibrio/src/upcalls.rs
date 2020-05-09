@@ -15,7 +15,7 @@ use log::trace;
 
 lazy_static! {
     pub static ref PROCESS_SCHEDULER: lineup::scheduler::SmpScheduler<'static> = {
-        if cfg!(features = "rumprt") {
+        if cfg!(feature = "rumprt") {
             lineup::scheduler::SmpScheduler::with_upcalls(lineup::upcalls::Upcalls {
                 curlwp: crate::rumprt::rumpkern_curlwp,
                 deschedule: crate::rumprt::rumpkern_unsched,

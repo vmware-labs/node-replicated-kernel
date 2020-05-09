@@ -4,7 +4,8 @@ use alloc::vec;
 use core::ptr;
 use core::sync::atomic::AtomicUsize;
 
-use log::{debug, info, Level};
+use log::{debug, error, info, Level};
+use x86::current::paging::VAddr;
 
 use super::prt::{lwpctl, rumprun_lwp, RL_MASK_PARK};
 use super::{c_char, c_int};
@@ -150,7 +151,9 @@ pub unsafe extern "C" fn __libc_start_main() {
     unreachable!("return from main() in __libc_start_main?");
 }
 
-extern "C" fn ready() {}
+extern "C" fn ready() {
+    info!("rump_init ready callback");
+}
 
 #[no_mangle]
 pub extern "C" fn main() {
@@ -188,22 +191,39 @@ pub extern "C" fn main() {
     debug!("Initialized logging");
     install_vcpu_area();
 
-    let up = lineup::upcalls::Upcalls {
-        curlwp: super::rumpkern_curlwp,
-        deschedule: super::rumpkern_unsched,
-        schedule: super::rumpkern_sched,
-        context_switch: super::prt::context_switch,
-    };
+    let hwthreads = crate::syscalls::System::threads().expect("Can't get system topology");
+    let mut maximum = 1; // We already have core 0
 
-    let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
+    let pinfo = crate::syscalls::Process::process_info().expect("Can't read process info");
+    let ncores: Option<usize> = pinfo.cmdline.parse().ok();
+    for hwthread in hwthreads.iter().take(ncores.unwrap_or(hwthreads.len())) {
+        if hwthread.id != 0 {
+            info!("request core {:?}", hwthread);
+            match crate::syscalls::Process::request_core(
+                hwthread.id,
+                VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64),
+            ) {
+                Ok(_) => {
+                    maximum += 1;
+                    continue;
+                }
+                Err(e) => {
+                    error!("Can't spawn on {:?}: {:?}", hwthread.id, e);
+                    break;
+                }
+            }
+        }
+    }
+
+    let scheduler = &crate::upcalls::PROCESS_SCHEDULER;
     scheduler.spawn(
         32 * 4096,
         |_yielder| unsafe {
             let start = rawtime::Instant::now();
             rump_boot_setsigmodel(0);
             let ri = rump_init(ready);
+            error!("rump_init({}) done in {:?}", ri, start.elapsed());
             assert_eq!(ri, 0);
-            info!("rump_init({}) done in {:?}", ri, start.elapsed());
 
             const TMPFS_ARGS_VERSION: u64 = 1;
 

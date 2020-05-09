@@ -35,7 +35,7 @@ use serde::Serialize;
 const REDIS_PORT: u16 = 6379;
 
 /// Line we use to tell if Redis has started.
-const REDIS_START_MATCH: &'static str = "# Server started, Redis version 4.0.9";
+const REDIS_START_MATCH: &'static str = "# Server initialized";
 
 /// Line we use in dhcpd to match for giving IP to qemu VM.
 const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0";

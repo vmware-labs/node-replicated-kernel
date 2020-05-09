@@ -166,7 +166,12 @@ pub unsafe extern "C" fn rumpuser_cv_destroy(cv: *mut CondVar) {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_cv_wait(cv: *mut CondVar, mtx: *mut Mutex) {
-    trace!("rumpuser_cv_wait {:p} {:p}", cv, mtx);
+    trace!(
+        "{:?} rumpuser_cv_wait {:p} {:p}",
+        lineup::tls2::Environment::tid(),
+        cv,
+        mtx
+    );
 
     (*cv).wait(&*mtx);
 }

@@ -20,8 +20,8 @@ pub unsafe extern "C" fn _sched_getparam() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _sched_protect() {
-    unreachable!("_sched_protect");
+pub unsafe extern "C" fn _sched_protect() -> c_int {
+    return 0;
 }
 
 #[no_mangle]

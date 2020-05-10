@@ -217,7 +217,7 @@ pub extern "C" fn main() {
 
     let scheduler = &crate::upcalls::PROCESS_SCHEDULER;
     scheduler.spawn(
-        32 * 4096,
+        64 * 4096,
         |_yielder| unsafe {
             let start = rawtime::Instant::now();
             rump_boot_setsigmodel(0);
@@ -265,7 +265,7 @@ pub extern "C" fn main() {
 
             // Set up a garbage environment
             let mut c_environ = vec![
-                CStr::from_bytes_with_nul_unchecked(b"PTHREAD_STACKSIZE=32000\0").as_ptr(),
+                CStr::from_bytes_with_nul_unchecked(b"PTHREAD_STACKSIZE=64000\0").as_ptr(),
                 ptr::null_mut(),
             ];
             super::crt::environ = c_environ.as_mut_ptr();

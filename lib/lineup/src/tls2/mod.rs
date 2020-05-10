@@ -131,9 +131,10 @@ impl<'a> ThreadControlBlock<'a> {
         s: LineupStack,
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
+        core_id: CoreId,
         tcb: *mut ThreadControlBlock<'static>,
     ) -> Option<ThreadId> {
-        let request = YieldRequest::SpawnWithArgs(s, f, arg, self.current_core, tcb);
+        let request = YieldRequest::SpawnWithArgs(s, f, arg, core_id, tcb);
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,

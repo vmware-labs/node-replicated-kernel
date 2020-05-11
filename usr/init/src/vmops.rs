@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use core::time::Duration;
 
 use log::{error, info};
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
@@ -29,6 +30,11 @@ fn maponly_bencher(cores: usize) {
     let size: u64 = BASE_PAGE_SIZE as u64;
     info!("start mapping at {:#x}", base);
 
+    #[cfg(feature = "latency")]
+    pub const LATENCY_MEASUREMENTS: usize = 1_000;
+    #[cfg(feature = "latency")]
+    let mut latency: Vec<Duration> = Vec::with_capacity(LATENCY_MEASUREMENTS);
+
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
     while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
@@ -37,14 +43,35 @@ fn maponly_bencher(cores: usize) {
 
     let mut vops = 0;
     let mut iteration = 0;
-    let bench_duration_secs = if cfg!(feature = "smoke") { 1 } else { 10 };
-    while iteration <= bench_duration_secs {
+    let bench_duration_secs = if cfg!(feature = "latency") {
+        4
+    } else if cfg!(feature = "smoke") {
+        1
+    } else {
+        10
+    };
+
+    'outer: while iteration <= bench_duration_secs {
         let start = rawtime::Instant::now();
         while start.elapsed().as_secs() < 1 {
+            #[cfg(feature = "latency")]
+            let before = rawtime::Instant::now();
             unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
+            #[cfg(feature = "latency")]
+            {
+                // Skip 2s for warmup
+                if iteration > 2 {
+                    latency.push(before.elapsed());
+                    if latency.len() == LATENCY_MEASUREMENTS {
+                        break 'outer;
+                    }
+                }
+            }
+
             vops += 1;
             base += BASE_PAGE_SIZE as u64;
         }
+        #[cfg(not(feature = "latency"))]
         info!(
             "{},maponly,{},{},{},{},{}",
             Environment::scheduler().core_id,
@@ -56,6 +83,21 @@ fn maponly_bencher(cores: usize) {
         );
         vops = 0;
         iteration += 1;
+    }
+
+    #[cfg(feature = "latency")]
+    {
+        for (idx, duration) in latency.iter().enumerate() {
+            info!(
+                "{},maponly,{},{},{},{},{}",
+                Environment::scheduler().core_id,
+                cores,
+                4096,
+                LATENCY_MEASUREMENTS,
+                idx,
+                duration.as_nanos()
+            );
+        }
     }
 
     POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);

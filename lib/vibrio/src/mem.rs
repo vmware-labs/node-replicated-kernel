@@ -197,7 +197,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
                 PAGER.lock().dealloc_page(ptr, Pager::LARGE_PAGE_SIZE)
             }
-            _ => unimplemented!("Can't handle it, probably needs another allocator."),
+            _ => error!("TODO: Currently can't dealloc of {:?}.", layout),
         }
     }
 }

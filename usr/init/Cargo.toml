@@ -46,3 +46,5 @@ fs-write = []
 # resources, just enough to make sure they work
 # but won't produce valid results
 smoke = []
+# Do latency measurements in benchmarks
+latency = []

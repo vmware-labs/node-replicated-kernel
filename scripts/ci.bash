@@ -10,6 +10,7 @@ rm -f vmops_benchmark.csv
 rm -f memfs_benchmark.csv
 
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memfs_bench
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_
 

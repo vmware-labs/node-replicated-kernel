@@ -33,6 +33,7 @@ DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 cp gh-pages/vmops/index.markdown ${DEPLOY_DIR}
 mv vmops_benchmark.csv ${DEPLOY_DIR}
+mv vmops_benchmark_latency.csv ${DEPLOY_DIR}
 
 # Copy memfs results
 DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"

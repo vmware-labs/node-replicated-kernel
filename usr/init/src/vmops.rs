@@ -169,23 +169,25 @@ pub fn bench(ncores: Option<usize>) {
     while s.has_active_threads() {
         s.run(&scb);
     }
+    #[cfg(feature = "latency")]
+    {
+        let hlock = LATENCY_HISTOGRAM.lock();
+        let h = hlock.as_ref().unwrap();
 
-    let hlock = LATENCY_HISTOGRAM.lock();
-    let h = hlock.as_ref().unwrap();
-
-    info!("benchmark,ncores,memsize,p1,p25,p50,p75,p99,p99.9,p100");
-    // Don't adjust this line without changing `s06_vmops_latency_benchmark`
-    info!(
-        "Latency percentiles: {},{},{},{},{},{},{},{},{},{}",
-        "maponly",
-        cores,
-        4096,
-        h.percentile(1.0).unwrap(),
-        h.percentile(25.0).unwrap(),
-        h.percentile(50.0).unwrap(),
-        h.percentile(75.0).unwrap(),
-        h.percentile(99.0).unwrap(),
-        h.percentile(99.9).unwrap(),
-        h.percentile(100.0).unwrap(),
-    );
+        info!("benchmark,ncores,memsize,p1,p25,p50,p75,p99,p99.9,p100");
+        // Don't adjust this line without changing `s06_vmops_latency_benchmark`
+        info!(
+            "Latency percentiles: {},{},{},{},{},{},{},{},{},{}",
+            "maponly",
+            cores,
+            4096,
+            h.percentile(1.0).unwrap(),
+            h.percentile(25.0).unwrap(),
+            h.percentile(50.0).unwrap(),
+            h.percentile(75.0).unwrap(),
+            h.percentile(99.0).unwrap(),
+            h.percentile(99.9).unwrap(),
+            h.percentile(100.0).unwrap(),
+        );
+    }
 }

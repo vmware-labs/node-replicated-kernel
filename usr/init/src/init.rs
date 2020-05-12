@@ -5,6 +5,8 @@
 #![feature(alloc_error_handler)]
 #![feature(const_fn)]
 #![feature(panic_info_message)]
+#![feature(lang_items)]
+#![feature(core_intrinsics)]
 #![allow(unused_imports, dead_code)]
 extern crate alloc;
 extern crate spin;
@@ -33,6 +35,9 @@ use log::{Level, Metadata, Record, SetLoggerError};
 
 #[cfg(feature = "bench-vmops")]
 mod vmops;
+
+mod f64;
+mod histogram;
 
 #[thread_local]
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];

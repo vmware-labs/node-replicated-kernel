@@ -29,6 +29,7 @@ proptest-regressions
 memfs_benchmark.csv
 redis_benchmark.csv
 vmops_benchmark.csv
+vmops_benchmark_latency.csv
 vspace.dot
 vspace.dot.svg
 out.log

@@ -61,3 +61,27 @@ virtio:
 64 bytes from 172.31.0.10: icmp_seq=6 ttl=64 time=0.292 ms
 64 bytes from 172.31.0.10: icmp_seq=7 ttl=64 time=0.196 ms
 ```
+
+## Compare against sv6
+
+Clone & Build:
+
+```bash
+git clone https://github.com/aclements/sv6.git
+sudo apt-get install gcc-4.8 g++-4.8
+CXX=g++-4.8 CC=gcc-4.8 make
+```
+
+Update param.h:
+
+```bash
+QEMU       ?= qemu-system-x86_64 -enable-kvm
+QEMUSMP    ?= 56
+QEMUMEM    ?= 24000
+```
+
+Run:
+
+```bash
+CXX=g++-4.8 CC=gcc-4.8 make qemu`
+```

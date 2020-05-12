@@ -1,15 +1,21 @@
 use alloc::vec::Vec;
+use core::convert::TryInto;
 use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 
 use log::{error, info};
+use spin::Mutex;
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
 
 use lineup::threads::ThreadId;
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
+use crate::histogram;
+
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
+
+static LATENCY_HISTOGRAM: spin::Mutex<Option<histogram::Histogram>> = spin::Mutex::new(None);
 
 unsafe extern "C" fn maponly_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
     let cores = arg1 as usize;
@@ -31,7 +37,7 @@ fn maponly_bencher(cores: usize) {
     info!("start mapping at {:#x}", base);
 
     #[cfg(feature = "latency")]
-    pub const LATENCY_MEASUREMENTS: usize = 1_000;
+    pub const LATENCY_MEASUREMENTS: usize = 3_000;
     #[cfg(feature = "latency")]
     let mut latency: Vec<Duration> = Vec::with_capacity(LATENCY_MEASUREMENTS);
 
@@ -87,16 +93,10 @@ fn maponly_bencher(cores: usize) {
 
     #[cfg(feature = "latency")]
     {
+        let mut hlock = LATENCY_HISTOGRAM.lock();
         for (idx, duration) in latency.iter().enumerate() {
-            info!(
-                "{},maponly,{},{},{},{},{}",
-                Environment::scheduler().core_id,
-                cores,
-                4096,
-                LATENCY_MEASUREMENTS,
-                idx,
-                duration.as_nanos()
-            );
+            let mut h = hlock.as_mut().unwrap();
+            h.increment(duration.as_nanos().try_into().unwrap());
         }
     }
 
@@ -106,11 +106,16 @@ fn maponly_bencher(cores: usize) {
 pub fn bench(ncores: Option<usize>) {
     info!("thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations");
 
+    LATENCY_HISTOGRAM
+        .lock()
+        .replace(histogram::Histogram::new());
+
     let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
+    let cores = ncores.unwrap_or(hwthreads.len());
 
     let mut maximum = 1; // We already have core 0
-    for hwthread in hwthreads.iter().take(ncores.unwrap_or(hwthreads.len())) {
+    for hwthread in hwthreads.iter().take(cores) {
         if hwthread.id != 0 {
             match vibrio::syscalls::Process::request_core(
                 hwthread.id,
@@ -164,4 +169,23 @@ pub fn bench(ncores: Option<usize>) {
     while s.has_active_threads() {
         s.run(&scb);
     }
+
+    let hlock = LATENCY_HISTOGRAM.lock();
+    let h = hlock.as_ref().unwrap();
+
+    info!("benchmark,ncores,memsize,p1,p25,p50,p75,p99,p99.9,p100");
+    // Don't adjust this line without changing `s06_vmops_latency_benchmark`
+    info!(
+        "Latency percentiles: {},{},{},{},{},{},{},{},{},{}",
+        "maponly",
+        cores,
+        4096,
+        h.percentile(1.0).unwrap(),
+        h.percentile(25.0).unwrap(),
+        h.percentile(50.0).unwrap(),
+        h.percentile(75.0).unwrap(),
+        h.percentile(99.0).unwrap(),
+        h.percentile(99.9).unwrap(),
+        h.percentile(100.0).unwrap(),
+    );
 }

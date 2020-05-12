@@ -1354,43 +1354,38 @@ fn s06_vmops_latency_benchmark() {
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
             let mut p = spawn_bespin(&cmdline)?;
 
-            // Parse lines like
-            // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
-            // write them to a CSV file
-            let expected_lines = if cfg!(feature = "smoke") {
-                1
-            } else {
-                with_cores * 1_000
-            };
+            // Parse lines like:
+            // "Latency percentiles [ns]: maponly,2,4096,1092,1351,1939,3111,4711,9864,2089812"
+            // and writes them to a CSV file
+            let (prev, matched) =
+                    p.exp_regex(r#"init::vmops: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+            output += prev.as_str();
+            output += matched.as_str();
 
-            for _i in 0..expected_lines {
-                let (prev, matched) =
-                    p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
-                output += prev.as_str();
-                output += matched.as_str();
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
 
-                // Append parsed results to a CSV file
-                let write_headers = !Path::new(file_name).exists();
-                let mut csv_file = OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(file_name)
-                    .expect("Can't open file");
-                if write_headers {
-                    let row =
-                        "git_rev,thread_id,benchmark,ncores,memsize,samples_total,sample_id,latency\n";
-                    let r = csv_file.write(row.as_bytes());
-                    assert!(r.is_ok());
-                }
-
-                let parts: Vec<&str> = matched.split("init::vmops: ").collect();
-                let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
-                assert!(r.is_ok());
-                let r = csv_file.write(parts[1].as_bytes());
-                assert!(r.is_ok());
-                let r = csv_file.write("\n".as_bytes());
+            if write_headers {
+                let row = "git_rev,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n";
+                let r = csv_file.write(row.as_bytes());
                 assert!(r.is_ok());
             }
+
+            let parts: Vec<&str> = matched
+                .split("init::vmops: Latency percentiles: ")
+                .collect();
+            assert!(parts.len() >= 2);
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write(parts[1].as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
 
             output += p.exp_eof()?.as_str();
             p.process.exit()

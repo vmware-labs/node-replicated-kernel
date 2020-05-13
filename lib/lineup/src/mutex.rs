@@ -1,5 +1,6 @@
 use core::cell::Cell;
-use core::sync::atomic::{spin_loop_hint, AtomicUsize, Ordering};
+use core::ptr;
+use core::sync::atomic::{spin_loop_hint, AtomicPtr, AtomicUsize, Ordering};
 
 use crate::threads::ThreadId;
 use crate::tls2::{Environment, ThreadControlBlock};
@@ -37,7 +38,7 @@ impl Mutex {
         Mutex {
             inner: MutexInner {
                 owner: Cell::new(None),
-                lwp_ptr: Cell::new(None),
+                lwp_ptr: Cell::new(ptr::null()),
                 is_kmutex,
                 is_spin,
                 waitlist: SegQueue::new(),
@@ -81,7 +82,7 @@ struct MutexInner {
     is_spin: bool,
 
     owner: Cell<Option<ThreadId>>,
-    lwp_ptr: Cell<Option<*const u64>>,
+    lwp_ptr: Cell<*const u64>,
 
     waitlist: SegQueue<ThreadId>,
 
@@ -124,7 +125,8 @@ impl MutexInner {
 
         let thread_state = Environment::thread();
         self.owner.replace(Some(tid));
-        self.lwp_ptr.replace(Some(thread_state.rump_lwp));
+        self.lwp_ptr
+            .replace(thread_state.rump_lwp.load(Ordering::SeqCst));
         true
     }
 
@@ -168,7 +170,8 @@ impl MutexInner {
 
         // Acquired the lock
         self.owner.replace(Some(tid));
-        self.lwp_ptr.replace(Some(yielder.rump_lwp));
+        self.lwp_ptr
+            .replace(yielder.rump_lwp.load(Ordering::SeqCst));
     }
 
     fn enter_nowrap(&self) {
@@ -190,14 +193,15 @@ impl MutexInner {
         let thread_state = Environment::thread();
         // Acquired the lock
         self.owner.replace(Some(tid));
-        self.lwp_ptr.replace(Some(thread_state.rump_lwp));
+        self.lwp_ptr
+            .replace(thread_state.rump_lwp.load(Ordering::SeqCst));
     }
 
     fn exit(&self) {
         let yielder: &mut ThreadControlBlock = Environment::thread();
 
         let _prev = self.owner.replace(None);
-        let _prev_ptr = self.lwp_ptr.replace(None);
+        let _prev_ptr = self.lwp_ptr.replace(ptr::null());
 
         let v = self.counter.fetch_sub(1, Ordering::SeqCst);
         if v < 1 {
@@ -227,7 +231,7 @@ impl MutexInner {
     }
 
     fn owner(&self) -> *const u64 {
-        self.lwp_ptr.get().unwrap_or(core::ptr::null())
+        self.lwp_ptr.get()
     }
 }
 
@@ -235,7 +239,7 @@ impl Drop for MutexInner {
     fn drop(&mut self) {
         assert!(self.waitlist.is_empty());
         assert!(self.owner.get().is_none());
-        assert!(self.lwp_ptr.get().is_none());
+        assert!(self.lwp_ptr.get() == ptr::null());
     }
 }
 

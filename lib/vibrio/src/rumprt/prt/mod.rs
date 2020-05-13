@@ -30,6 +30,8 @@ type LwpMain = Option<unsafe extern "C" fn(arg: *mut u8) -> *mut u8>;
 
 static CURLWPID: AtomicI32 = AtomicI32::new(1);
 
+static CORE_ASSIGNMENT: AtomicUsize = AtomicUsize::new(0);
+
 struct LwpWrapper(NonNull<rumprun_lwp>);
 unsafe impl core::marker::Send for LwpWrapper {}
 unsafe impl core::marker::Sync for LwpWrapper {}
@@ -136,8 +138,14 @@ pub unsafe extern "C" fn rumprun_makelwp(
     debug_assert!(!tls_private.is_null(), "TLS area shouldn't be null");
     debug_assert!(!lid.is_null(), "lid shouldn't be null");
     info!(
-        "rumprun_makelwp {:p} {:p} {:p}--{} {} {:p}",
-        arg, tls_private, stack_base, stack_size, flags, lid
+        "rumprun_makelwp {:p} {:p} {:p} {:p}--{} {} {:p}",
+        start.unwrap(),
+        arg,
+        tls_private,
+        stack_base,
+        stack_size,
+        flags,
+        lid
     );
 
     let curlwp = rump_pub_lwproc_curlwp();
@@ -171,10 +179,12 @@ pub unsafe extern "C" fn rumprun_makelwp(
     let stack =
         lineup::stack::LineupStack::from_ptr(stack_base as *mut u8, stack_size, free_automatically);
 
+    let static_assignment = [0, 1];
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),
         newlwp as *mut u8,
+        static_assignment[CORE_ASSIGNMENT.fetch_add(1, Ordering::Relaxed) % 2],
         tls_private,
     );
 
@@ -197,14 +207,14 @@ pub unsafe extern "C" fn _lwp_continue() {
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_ctl(ctl: c_int, data: *mut *mut lwpctl) -> c_int {
     log::error!("_lwp_ctl ctl={} data={:p}", ctl, data);
-
     let t = Environment::thread();
     let lwp = t.rumprun_lwp as *mut rumprun_lwp;
-    //assert_ne!(lwp, ptr::null_mut());
+    assert_ne!(lwp, ptr::null_mut());
 
-    *data = &mut (*lwp).rl_lwpctl as *mut lwpctl;
+    *data = (&mut (*lwp).rl_lwpctl) as *mut lwpctl;
+    assert_ne!(*data, ptr::null_mut());
 
-    log::error!("_lwp_ctl is done");
+    log::error!("_lwp_ctl is done *data = {:p}", *data);
     0
 }
 

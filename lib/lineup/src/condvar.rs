@@ -2,6 +2,7 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::ops::Add;
 use core::ptr;
+use core::sync::atomic::Ordering;
 use core::time::Duration;
 
 use log::trace;
@@ -185,7 +186,8 @@ impl CondVarInner {
             debug_assert!(
                 self.dbg_mutex.is_null()
                     || ((*self.dbg_mutex).owner() == ptr::null()
-                        || (*self.dbg_mutex).owner() == Environment::thread().rump_lwp)
+                        || (*self.dbg_mutex).owner()
+                            == Environment::thread().rump_lwp.load(Ordering::SeqCst))
             );
         }
 
@@ -213,7 +215,8 @@ impl CondVarInner {
             debug_assert!(
                 self.dbg_mutex.is_null()
                     || ((*self.dbg_mutex).owner() == ptr::null()
-                        || (*self.dbg_mutex).owner() == Environment::thread().rump_lwp)
+                        || (*self.dbg_mutex).owner()
+                            == Environment::thread().rump_lwp.load(Ordering::SeqCst))
             );
         }
 

@@ -2,6 +2,7 @@
 
 use core::convert::TryInto;
 use core::ops::Add;
+use core::sync::atomic::Ordering;
 
 use cstr_core::CStr;
 use lineup::tls2::Environment;
@@ -93,11 +94,11 @@ pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i6
     let t = lineup::tls2::Environment::thread();
 
     if op == RUMPLWPOP_RUMPUSER_LWP_SET {
-        t.set_lwp(lwp as *const u64);
+        t.set_lwp(lwp as *mut u64);
     }
     if op == RUMPLWPOP_RUMPUSER_LWP_CLEAR {
-        assert!(t.rump_lwp == lwp as *const u64);
-        t.set_lwp(core::ptr::null());
+        assert!(t.rump_lwp.load(Ordering::SeqCst) == lwp as *mut u64);
+        t.set_lwp(core::ptr::null_mut());
     }
 
     0
@@ -106,7 +107,7 @@ pub unsafe extern "C" fn rumpuser_curlwpop(op: rumplwpop, lwp: *const lwp) -> i6
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_curlwp() -> *mut lwp {
     let t = lineup::tls2::Environment::thread();
-    t.rump_lwp as *mut lwp
+    t.rump_lwp.load(Ordering::SeqCst) as *mut lwp
 }
 
 /// int rumpuser_clock_sleep(int enum_rumpclock, int64_t sec, long nsec)

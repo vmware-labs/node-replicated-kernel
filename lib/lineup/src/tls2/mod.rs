@@ -80,7 +80,7 @@ pub struct ThreadControlBlock<'a> {
     pub upcalls: Upcalls,
 
     /// Stores pointer to lwp (TODO: figure this out can probably be thread local now)
-    pub rump_lwp: *const u64,
+    pub rump_lwp: AtomicPtr<u64>,
     /// Stores pointer to lwp (TODO: figure this out can probably be thread local now)
     pub rumprun_lwp: *const u64,
 }
@@ -95,7 +95,7 @@ impl<'a> ThreadControlBlock<'a> {
             tid: ThreadId(0),
             current_core: 0,
             upcalls: Default::default(),
-            rump_lwp: ptr::null_mut(),
+            rump_lwp: AtomicPtr::new(ptr::null_mut()),
             rumprun_lwp: ptr::null_mut(),
         };
 
@@ -122,8 +122,8 @@ impl<'a> ThreadControlBlock<'a> {
         self.yielder.unwrap()
     }
 
-    pub fn set_lwp(&mut self, lwp_ptr: *const u64) {
-        self.rump_lwp = lwp_ptr;
+    pub fn set_lwp(&mut self, lwp_ptr: *mut u64) {
+        self.rump_lwp.store(lwp_ptr, Ordering::SeqCst);
     }
 
     pub fn spawn_with_args(

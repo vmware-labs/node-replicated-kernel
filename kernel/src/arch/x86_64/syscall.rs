@@ -66,7 +66,6 @@ fn handle_system(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
 fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
     let mut kcb = super::kcb::get_kcb();
     let buffer: &str = *buf;
-    let r = klogger::SERIAL_LINE_MUTEX.lock();
 
     // A poor mans line buffer scheme:
     match &mut kcb.print_buffer {
@@ -74,6 +73,7 @@ fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
             Some(idx) => {
                 let (low, high) = buffer.split_at(idx + 2);
                 kbuf.push_str(low);
+                let r = klogger::SERIAL_LINE_MUTEX.lock();
                 sprint!("{}", kbuf);
                 kbuf.clear();
                 kbuf.push_str(high);
@@ -81,6 +81,7 @@ fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
             None => kbuf.push_str(buffer),
         },
         None => {
+            let r = klogger::SERIAL_LINE_MUTEX.lock();
             sprint!("{}", buffer);
         }
     }

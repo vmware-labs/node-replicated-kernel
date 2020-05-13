@@ -237,7 +237,11 @@ pub unsafe extern "C" fn _lwp_getprivate() -> *mut c_void {
 
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_kill() {
-    unreachable!("_lwp_kill");
+    unreachable!(
+        "_lwp_kill on {} core {}",
+        Environment::tid(),
+        Environment::scheduler().core_id
+    );
 }
 
 /// _lwp_park() can be used to synchronize access to resources

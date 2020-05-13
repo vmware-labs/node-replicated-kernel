@@ -1154,7 +1154,7 @@ fn s06_redis_benchmark_e1000() {
                 .user_feature("rkapps:redis")
                 .cmd("testbinary=redis.bin")
                 .release()
-                .timeout(30_000),
+                .timeout(40_000),
         )?;
 
         // Test that DHCP works:
@@ -1163,9 +1163,9 @@ fn s06_redis_benchmark_e1000() {
         p.exp_string("* The server is now ready to accept connections on port 6379")?;
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(6));
+        thread::sleep(time::Duration::from_secs(10));
 
-        let mut redis_client = redis_benchmark("e1000", 3000000)?;
+        let mut redis_client = redis_benchmark("e1000", 2000000)?;
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;

@@ -1,26 +1,59 @@
-use crate::fxmark::Bench;
-use alloc::vec::Vec;
+use crate::fxmark::{Bench, PAGE_SIZE};
+use alloc::{format, vec, vec::Vec};
+use core::cell::RefCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use log::info;
+use vibrio::io::*;
 
 #[derive(Clone)]
-pub struct DRBH {}
+pub struct DRBH {
+    page: Vec<u8>,
+    fd: RefCell<u64>,
+}
 
 impl Default for DRBH {
     fn default() -> DRBH {
-        DRBH {}
+        let page = vec![0xb; PAGE_SIZE as usize];
+        DRBH {
+            page,
+            fd: RefCell::new(u64::MAX),
+        }
     }
 }
 
 impl Bench for DRBH {
-    fn init(&self, cores: Vec<usize>) {
-        info!("{:?}", cores);
+    fn init(&self, _cores: Vec<usize>) {
+        unsafe {
+            // Open a shared file for each core.
+            let file_name = "file.txt\0";
+            let fd = vibrio::syscalls::Fs::open(
+                file_name.as_ptr() as u64,
+                u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+                u64::from(FileModes::S_IRWXU),
+            )
+            .expect("FileOpen syscall failed");
+
+            // Write a single page to the file at offset 0.
+            let ret = vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, PAGE_SIZE, 0)
+                .expect("FileWriteAt syscall failed");
+            assert_eq!(ret, PAGE_SIZE as u64);
+
+            // Store fd in a shared struct.
+            *self.fd.borrow_mut() = fd;
+        }
     }
 
     fn run(&self, POOR_MANS_BARRIER: &AtomicUsize, duration: u64, core: usize) -> Vec<usize> {
         use vibrio::io::*;
         use vibrio::syscalls::*;
         let mut iops_per_second = Vec::with_capacity(duration as usize);
+
+        // Load fd from a shared struct.
+        let fd = *self.fd.borrow();
+        if fd == u64::MAX {
+            panic!("Unable to open a file");
+        }
+        let page: &mut [i8; PAGE_SIZE as usize] = &mut [0; PAGE_SIZE as usize];
 
         // Synchronize with all cores
         POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
@@ -34,6 +67,13 @@ impl Bench for DRBH {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
                 for i in 0..64 {
+                    // Read a page from the shared file at offset 0.
+                    if vibrio::syscalls::Fs::read_at(fd, page.as_ptr() as u64, PAGE_SIZE, 0)
+                        .expect("FileReadAt syscall failed")
+                        != PAGE_SIZE
+                    {
+                        panic!("DRBH: read_at() failed");
+                    }
                     iops += 1;
                 }
             }
@@ -46,3 +86,5 @@ impl Bench for DRBH {
         iops_per_second.clone()
     }
 }
+
+unsafe impl Sync for DRBH {}

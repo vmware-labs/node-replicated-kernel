@@ -20,6 +20,8 @@ mod drbh;
 mod drbl;
 use crate::fxmark::{drbh::DRBH, drbl::DRBL};
 
+const PAGE_SIZE: u64 = 4096;
+
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
 /// This struct is used for passing the core and benchmark type from

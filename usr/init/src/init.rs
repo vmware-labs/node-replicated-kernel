@@ -21,6 +21,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;
+use core::str::FromStr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "rumprt")]
@@ -38,6 +39,8 @@ mod vmops;
 
 mod f64;
 mod histogram;
+#[cfg(feature = "fxmark")]
+mod fxmark;
 
 #[thread_local]
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
@@ -623,7 +626,15 @@ pub extern "C" fn _start() -> ! {
     install_vcpu_area();
 
     let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
+    #[cfg(not(feature = "fxmark"))]
     let ncores: Option<usize> = pinfo.cmdline.parse().ok();
+
+    #[cfg(feature = "fxmark")]
+    //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd testcmd=1xdrbl
+    let (ncores, benchmark) = match fxmark::ARGs::from_str(pinfo.cmdline) {
+        Ok(args) => (Some(args.cores), args.benchmark),
+        Err(_) => unreachable!(),
+    };
 
     #[cfg(feature = "bench-vmops")]
     vmops::bench(ncores);
@@ -665,6 +676,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "fs-write")]
     fs_write_test();
+
+    #[cfg(feature = "fxmark")]
+    fxmark::bench(ncores, benchmark);
 
     debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::Process::exit(0);

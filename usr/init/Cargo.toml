@@ -41,6 +41,7 @@ test-fs = []
 bench-vmops = []
 fs-bench = []
 fs-write = []
+fxmark = []
 
 # smoke: A way to tell the micro-benchmarks
 # to only run for a short period, don't consume many

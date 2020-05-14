@@ -1513,3 +1513,106 @@ fn s06_memfs_bench() {
         check_for_successful_exit(&cmdline, qemu_run(cores), output);
     }
 }
+
+#[test]
+fn s06_fxmark_benchmark() {
+    //TODO: Add the following microbenchmarks - "drbh", "dwol", "dwom", "mwrl", "mwrm", "dwal".
+    let benchmarks = vec!["drbl", "drbh"];
+    let num_microbenchs = benchmarks.len() as u64;
+    let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
+        num_cpus::get() / 2
+    } else {
+        num_cpus::get()
+    };
+
+    let threads = if cfg!(feature = "smoke") {
+        vec![1, 4]
+    } else {
+        thread_defaults(max_cores)
+    };
+
+    let file_name = "fxmark_benchmark.csv";
+    std::fs::remove_file(file_name);
+
+    for benchmark in benchmarks {
+        for &cores in threads.iter() {
+            let kernel_cmdline = format!("testcmd={}x{}", cores, benchmark);
+            let mut cmdline = RunnerArgs::new("test-userspace-smp")
+                .module("init")
+                .user_feature("fxmark")
+                .memory(1024)
+                .timeout(num_microbenchs * (25_000 + cores as u64 * 1000))
+                .cores(max_cores)
+                .setaffinity()
+                .cmd(kernel_cmdline.as_str())
+                .release();
+
+            if cfg!(feature = "smoke") {
+                cmdline = cmdline.user_feature("smoke").memory(8192);
+            } else {
+                cmdline = cmdline.memory(core::cmp::max(8192, cores * 512));
+            }
+
+            if cfg!(feature = "smoke") && cores > 2 {
+                cmdline = cmdline.nodes(2);
+            } else {
+                let max_cores = num_cpus::get();
+                // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
+                match max_cores {
+                    28 => cmdline = cmdline.nodes(2),
+                    56 => cmdline = cmdline.nodes(2),
+                    96 => cmdline = cmdline.nodes(4),
+                    192 => cmdline = cmdline.nodes(4),
+                    _ => {}
+                };
+            }
+
+            let mut output = String::new();
+            let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+                let mut p = spawn_bespin(&cmdline)?;
+
+                // Parse lines like
+                // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
+                // write them to a CSV file
+                let expected_lines = if cfg!(feature = "smoke") {
+                    1
+                } else {
+                    with_cores * 10
+                };
+
+                for _i in 0..expected_lines {
+                    let (prev, matched) =
+                        p.exp_regex(r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+                    output += prev.as_str();
+                    output += matched.as_str();
+
+                    // Append parsed results to a CSV file
+                    let write_headers = !Path::new(file_name).exists();
+                    let mut csv_file = OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(file_name)
+                        .expect("Can't open file");
+                    if write_headers {
+                        let row =
+                            "git_rev,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
+                        let r = csv_file.write(row.as_bytes());
+                        assert!(r.is_ok());
+                    }
+
+                    let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
+                    let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                    assert!(r.is_ok());
+                    let r = csv_file.write(parts[1].as_bytes());
+                    assert!(r.is_ok());
+                    let r = csv_file.write("\n".as_bytes());
+                    assert!(r.is_ok());
+                }
+
+                output += p.exp_eof()?.as_str();
+                p.process.exit()
+            };
+            check_for_successful_exit(&cmdline, qemu_run(cores), output);
+        }
+    }
+}

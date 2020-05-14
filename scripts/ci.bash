@@ -2,18 +2,20 @@
 #
 # Usage: $ CI_MACHINE_TYPE='skylake2x' bash scripts/ci.bash
 #
-set -ex 
+set -ex
 
 cd kernel
 rm -f redis_benchmark.csv
 rm -f vmops_benchmark.csv
 rm -f vmops_benchmark_latency.csv
 rm -f memfs_benchmark.csv
+rm -f fxmark_benchmark.csv
 
 RUST_TEST_THREADS=1 cargo test --test integration-test --features prealloc -- s06_vmops_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test --features prealloc -- s06_vmops_latency_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memfs_bench --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_ --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench
 
 # Clone repo
 rm -rf gh-pages
@@ -41,6 +43,7 @@ mv vmops_benchmark_latency.csv ${DEPLOY_DIR}
 DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 mv memfs_benchmark.csv ${DEPLOY_DIR}
+mv fxmark_benchmark.csv ${DEPLOY_DIR}
 
 # Push gh-pages
 cd gh-pages

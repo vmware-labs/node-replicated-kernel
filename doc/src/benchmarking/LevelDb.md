@@ -56,6 +56,28 @@ snappyuncomp :   20000.000 micros/op; (snappy failure)
 acquireload  :       0.000 micros/op; (each op is 1000 loads)
 ```
 
+### Build
+
+```bash
+add to rumprun-bake:
+-Wl,-allow-multiple-definition
+
+cp libunwind.a:
+
+cd /home/gz/workspace/bespin/target/x86_64-bespin-none/release/build/rumpkernel-934f79a93edbe559/out
+cp ./obj-amd64-bespin/lib/libunwind/libunwind.a /home/gz/workspace/bespin/target/x86_64-bespin-none/release/build/rumpkernel-934f79a93edbe559/out/./rumprun/rumprun-x86_64/lib/
+```
+
+```bash
+"python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:redis" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "1024" --qemu-monitor --verbose --qemu-debug  --norun
+cd /home/gz/workspace/bespin/target/x86_64-bespin-none/release/build/rkapps-8a4ead00329ed64e/out/leveldb
+RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make clean
+RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make -j 12
+RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd rumprun-bake bespin_generic ../../../../dbbench.bin bin/db_bench
+cd /home/gz/workspace/bespin/kernel
+"python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:redis" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "1024" --qemu-monitor --verbose --qemu-debug  | tee out.log
+```
+
 ## Linux
 
 Expected output (db_bench):

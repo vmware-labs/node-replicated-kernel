@@ -69,16 +69,28 @@ fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
 
     // A poor mans line buffer scheme:
     match &mut kcb.print_buffer {
-        Some(kbuf) => match buffer.find("\r\n") {
+        Some(kbuf) => match buffer.find("\n") {
             Some(idx) => {
-                let (low, high) = buffer.split_at(idx + 2);
+                let (low, high) = buffer.split_at(idx + 1);
                 kbuf.push_str(low);
-                let r = klogger::SERIAL_LINE_MUTEX.lock();
-                sprint!("{}", kbuf);
+                {
+                    let r = klogger::SERIAL_LINE_MUTEX.lock();
+                    sprint!("{}", kbuf);
+                }
                 kbuf.clear();
                 kbuf.push_str(high);
             }
-            None => kbuf.push_str(buffer),
+            None => {
+                kbuf.push_str(buffer);
+                if kbuf.len() > 2048 {
+                    // Don't let the buffer grow arbitrarily:
+                    {
+                        let r = klogger::SERIAL_LINE_MUTEX.lock();
+                        sprint!("{}", kbuf);
+                    }
+                    kbuf.clear();
+                }
+            }
         },
         None => {
             let r = klogger::SERIAL_LINE_MUTEX.lock();
@@ -220,7 +232,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     let op = VSpaceOperation::from(arg1);
     let base = VAddr::from(arg2);
     let region_size = arg3;
-    trace!("{:?} {:#x} {:#x}", op, base, region_size);
+    trace!("handle_vspace {:?} {:#x} {:#x}", op, base, region_size);
 
     let kcb = super::kcb::get_kcb();
     let mut plock = kcb.arch.current_process();

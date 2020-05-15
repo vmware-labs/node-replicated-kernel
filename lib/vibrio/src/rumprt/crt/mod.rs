@@ -237,7 +237,7 @@ pub extern "C" fn main() {
 
     unsafe {
         log::set_logger(&crate::writer::LOGGER)
-            .map(|()| log::set_max_level(Level::Debug.to_level_filter()))
+            .map(|()| log::set_max_level(Level::Error.to_level_filter()))
             .expect("Can't set-up logging");
     }
     debug!("Initialized logging");

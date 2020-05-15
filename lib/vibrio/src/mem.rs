@@ -49,7 +49,7 @@ impl Pager {
 
     /// Allocates a given `page_size`.
     fn dealloc_page(&mut self, ptr: *mut u8, page_size: usize) {
-        error!("NYI dealloc page {:p} {:#x}", ptr, page_size);
+        warn!("NYI dealloc page {:p} {:#x}", ptr, page_size);
     }
 
     pub(crate) fn allocate(&mut self, layout: Layout) -> Result<(VAddr, PAddr), SystemCallError> {

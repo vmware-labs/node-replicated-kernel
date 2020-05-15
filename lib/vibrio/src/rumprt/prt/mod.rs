@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
-use log::{error, info};
+use log::{debug, error, info, trace};
 
 use lineup::threads::ThreadId;
 use lineup::tls2::Environment;
@@ -234,7 +234,7 @@ pub unsafe extern "C" fn _lwp_ctl(ctl: c_int, data: *mut *mut lwpctl) -> c_int {
 pub unsafe extern "C" fn _lwp_exit() {
     let t = Environment::thread();
     loop {
-        info!("rumpuser_thread_exit {:?}", Environment::tid());
+        debug!("rumpuser_thread_exit {:?}", Environment::tid());
         t.block();
         unreachable!("_lwp_exit");
     }
@@ -243,7 +243,7 @@ pub unsafe extern "C" fn _lwp_exit() {
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_getprivate() -> *mut c_void {
     let fsbase = x86::current::segmentation::rdfsbase() as *mut c_void;
-    log::info!("_lwp_getprivate {:p}", fsbase);
+    trace!("_lwp_getprivate {:p}", fsbase);
     fsbase
 }
 
@@ -304,9 +304,14 @@ pub unsafe extern "C" fn ___lwp_park60(
     hint: *const c_void,
     unpark_hint: *const c_void,
 ) -> c_int {
-    info!(
+    trace!(
         "_lwp_park60 clock_id={}, flags={}, ts={:?}, unpark={}, hint={:p}, unpark_hint={:p}",
-        clock_id, flags, ts, unpark, hint, unpark_hint
+        clock_id,
+        flags,
+        ts,
+        unpark,
+        hint,
+        unpark_hint
     );
 
     if unpark > 0 {
@@ -351,7 +356,7 @@ pub unsafe extern "C" fn ___lwp_park60(
         }
     } else {
         let t = Environment::thread();
-        info!(
+        trace!(
             "_lwp_park60 about to block tid={:?} lwpid={}",
             Environment::tid(),
             (*get_my_rumprun_lwp()).id
@@ -394,10 +399,10 @@ pub unsafe extern "C" fn _lwp_suspend() {
 /// See _lwp_park(2) for a description of the hint argument.
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_unpark(lid: lwpid_t, hint: *const c_void) -> c_int {
-    info!("_lwp_unpark lid {} hint {:p}", lid, hint);
+    trace!("_lwp_unpark lid {} hint {:p}", lid, hint);
     let rl = get_rumprun_lwp_context(lid);
     if rl.is_null() {
-        info!("_lwp_unpark rl.is_null");
+        trace!("_lwp_unpark rl.is_null");
         return -1;
     }
 
@@ -405,12 +410,12 @@ pub unsafe extern "C" fn _lwp_unpark(lid: lwpid_t, hint: *const c_void) -> c_int
     // to call scheduler to wake-up the tid
     if (*rl).rl_pstatus.swap(RL_MASK_UNPARK, Ordering::AcqRel) == RL_MASK_PARKED {
         // Unpark only if the callback is complete (scheduled out)
-        info!("_lwp_unpark -> make_runnable {:?}", (*rl).rl_thread);
+        trace!("_lwp_unpark -> make_runnable {:?}", (*rl).rl_thread);
         Environment::thread().make_runnable((*rl).rl_thread);
     } else {
         // The thread has not yet blocked, we signalled to unpark immediately again
         // by setting the unpark bit
-        info!(
+        trace!(
             "_lwp_unpark: set unpark bit for {:?}, dont make runnable",
             (*rl).rl_thread
         );

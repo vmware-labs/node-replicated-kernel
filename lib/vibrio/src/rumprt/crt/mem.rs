@@ -5,7 +5,7 @@ use core::ptr;
 
 use crate::rumprt::{c_int, c_size_t, c_void};
 
-use log::{error, info, trace};
+use log::{debug, error, info, trace, warn};
 
 const SYS_MMAP: i32 = 197;
 const MAP_FAILED: u64 = u64::max_value();
@@ -35,7 +35,7 @@ pub unsafe extern "C" fn mmap(
     fd: c_int,
     pos: c_int,
 ) -> *mut c_void {
-    info!(
+    debug!(
         "mmap addr={:p} len={} prot={} flags={} fd={} pos={}",
         addr, len, prot, flags, fd, pos
     );
@@ -66,7 +66,7 @@ pub unsafe extern "C" fn mmap(
         core::mem::size_of::<sys_mmap_args>(),
         &mut retval as *mut _ as *mut u64,
     );
-    info!("mmap syscall returned {} {:?}", error, retval);
+    trace!("mmap syscall returned {} {:?}", error, retval);
 
     crate::rumprt::errno::rumpuser_seterrno(error);
     if error == 0 {
@@ -91,12 +91,12 @@ pub unsafe extern "C" fn _mmap(
 
 #[no_mangle]
 pub unsafe extern "C" fn mprotect() {
-    error!("mprotect");
+    warn!("NYI mprotect");
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn munmap() {
-    error!("munmap");
+    warn!("NYI munmap");
 }
 
 #[no_mangle]

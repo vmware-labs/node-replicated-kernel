@@ -168,7 +168,7 @@ pub unsafe extern "C" fn rumpuser_malloc(
     );
 
     if alignment == 0 {
-        alignment = 8;
+        alignment = 16;
     }
 
     let ptr = alloc::alloc(Layout::from_size_align_unchecked(len, alignment));
@@ -185,7 +185,7 @@ pub unsafe extern "C" fn rumpuser_free(ptr: *mut u8, len: usize) {
     // allocs with len >= alignment (see assertion there).
 
     trace!("rumpuser_free len={}", len);
-    alloc::dealloc(ptr, Layout::from_size_align_unchecked(len, 1));
+    alloc::dealloc(ptr, Layout::from_size_align_unchecked(len, 16));
 }
 
 /// int rumpuser_getrandom(void *buf, size_t buflen, int flags, size_t *retp)
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn rumpuser_getparam(
         "RUMP_VERBOSE" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "RUMP_THREADS" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "_RUMPUSER_HOSTNAME" => CStr::from_bytes_with_nul_unchecked(b"btest\0"),
-        "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"1073741824\0"), // 1 GiB
+        "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"4294967296\0"), // 4 GiB
         //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"2097152\0"), // 2 MiB
         //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"197152\0"), // very little MiB
         _ => return errno::ENOENT,

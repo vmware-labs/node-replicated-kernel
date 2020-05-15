@@ -103,6 +103,9 @@ impl RwLockInner {
     }
 
     pub fn enter(&self, opt: RwLockIntent) {
+        #[cfg(feature = "latency")]
+        let start = rawtime::Instant::now();
+
         self.wait.enter();
 
         match opt {
@@ -124,6 +127,10 @@ impl RwLockInner {
         }
 
         self.wait.exit();
+        #[cfg(feature = "latency")]
+        if start.elapsed() > core::time::Duration::from_nanos(450) {
+            log::warn!("rwlock enter {:?}", start.elapsed());
+        }
     }
 
     pub fn try_enter(&self, opt: RwLockIntent) -> bool {
@@ -191,6 +198,9 @@ impl RwLockInner {
     }
 
     pub fn exit(&self) {
+        #[cfg(feature = "latency")]
+        let start = rawtime::Instant::now();
+
         if self.lock_type.load(Ordering::SeqCst) == RwLockStatus::Writeable as usize
             || self.readers.fetch_sub(1, Ordering::SeqCst) == 1
         {
@@ -200,6 +210,10 @@ impl RwLockInner {
             self.access.exit();
         } else {
             // A reader is leaving but we still have more readers
+        }
+        #[cfg(feature = "latency")]
+        if start.elapsed() > core::time::Duration::from_nanos(250) {
+            log::warn!("rwlock exit {:?}", start.elapsed());
         }
     }
 

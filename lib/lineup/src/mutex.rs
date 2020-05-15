@@ -5,7 +5,7 @@ use core::sync::atomic::{spin_loop_hint, AtomicPtr, AtomicUsize, Ordering};
 use crate::threads::ThreadId;
 use crate::tls2::{Environment, ThreadControlBlock};
 
-use crossbeam_queue::SegQueue;
+use crossbeam_queue::ArrayQueue;
 use crossbeam_utils::CachePadded;
 use log::*;
 
@@ -41,7 +41,7 @@ impl Mutex {
                 lwp_ptr: Cell::new(ptr::null()),
                 is_kmutex,
                 is_spin,
-                waitlist: SegQueue::new(),
+                waitlist: ArrayQueue::new(64),
                 counter: CachePadded::new(AtomicUsize::new(0)),
             },
         }
@@ -84,7 +84,7 @@ struct MutexInner {
     owner: Cell<Option<ThreadId>>,
     lwp_ptr: Cell<*const u64>,
 
-    waitlist: SegQueue<ThreadId>,
+    waitlist: ArrayQueue<ThreadId>,
 
     /// Counting how many are interested currently in the mutex
     /// and ensures mutual exclusion of resource:
@@ -177,8 +177,14 @@ impl MutexInner {
     fn enter_nowrap(&self) {
         loop {
             // Wait till lock is free (counter is 0):
+            #[cfg(feature = "latency")]
+            let start = rawtime::Instant::now();
             while self.counter.load(Ordering::SeqCst) != 0 {
                 spin_loop_hint();
+            }
+            #[cfg(feature = "latency")]
+            if start.elapsed() > core::time::Duration::from_nanos(200) {
+                warn!("spun for {:?}", start.elapsed());
             }
 
             // Try to acquire it (set to 1):
@@ -208,21 +214,29 @@ impl MutexInner {
             let tid = Environment::tid();
             panic!("{:?} Called exit on already released mtx={:p}", tid, self);
         }
-
+        // if v == 1 { "No one there to wake up" }
         if v > 1 {
             // Need to resolve a race where we call `exit`
             // but another thread that called enter has incremented
             // counter but not put itself in the waitlist yet
             loop {
+                #[cfg(feature = "latency")]
+                let start = rawtime::Instant::now();
                 while self.waitlist.is_empty() {
                     core::sync::atomic::spin_loop_hint();
                 }
+                #[cfg(feature = "latency")]
+                if start.elapsed() > core::time::Duration::from_nanos(200) {
+                    warn!("waitlist waited for {:?}", start.elapsed());
+                }
+
                 match self.waitlist.pop() {
                     Ok(next) => {
                         yielder.make_runnable(next);
                         break;
                     }
                     _ => {
+                        core::sync::atomic::spin_loop_hint();
                         continue;
                     }
                 }

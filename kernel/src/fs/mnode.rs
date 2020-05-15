@@ -68,7 +68,7 @@ impl MemNode {
     }
 
     /// Write to an in-memory file.
-    pub fn write(&mut self, buffer: &mut [u8], offset: usize) -> Result<usize, FileSystemError> {
+    pub fn write(&mut self, buffer: &[u8], offset: usize) -> Result<usize, FileSystemError> {
         // Return if the user doesn't have write permissions for the file.
         if self.node_type != NodeType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {

@@ -186,7 +186,7 @@ impl File {
     /// arbitrary offset in the file to write the data.
     pub fn write_file(
         &mut self,
-        user_slice: &mut [u8],
+        user_slice: &[u8],
         len: usize,
         start_offset: usize,
     ) -> Result<usize, FileSystemError> {

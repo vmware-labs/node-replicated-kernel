@@ -304,7 +304,7 @@ impl<P: Process> KernelNode<P> {
                 }
 
                 FileOperation::Write | FileOperation::WriteAt => {
-                    let mut kernslice = KernSlice::new(buffer, len as usize);
+                    let kernslice = KernSlice::new(buffer, len as usize);
 
                     let response = replica.execute(
                         Op::FileWrite(pid, fd, kernslice.buffer.clone(), len, offset),
@@ -604,7 +604,7 @@ where
                     }
                 }
             }
-            Op::FileWrite(pid, fd, mut kernslice, len, offset) => {
+            Op::FileWrite(pid, fd, kernslice, len, offset) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
                 let fd = p.get_fd(fd as usize);
@@ -630,9 +630,7 @@ where
                     }
                 }
 
-                // TODO: We don't modify the buffer internally, lookout if this can cause an error.
-                let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice) };
-                match self.fs.write(mnode_num, &mut buffer, curr_offset) {
+                match self.fs.write(mnode_num, &kernslice.clone(), curr_offset) {
                     Ok(len) => {
                         if offset == -1 {
                             // Update offset when FileWrite doesn't give an explicit offset value.

@@ -74,7 +74,7 @@ pub trait FileSystem {
     fn write(
         &mut self,
         mnode_num: Mnode,
-        buffer: &mut [u8],
+        buffer: &[u8],
         offset: usize,
     ) -> Result<usize, FileSystemError>;
     fn read(
@@ -211,7 +211,7 @@ impl FileSystem for MemFS {
     fn write(
         &mut self,
         mnode_num: Mnode,
-        buffer: &mut [u8],
+        buffer: &[u8],
         offset: usize,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.get_mut(&mnode_num) {

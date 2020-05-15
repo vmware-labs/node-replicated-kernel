@@ -516,7 +516,10 @@ impl PageTable {
                     let address = pt[pt_idx].address();
                     let cur_rights: MapAction = pt[pt_idx].flags().into();
                     if address != pbase + mapped || cur_rights != rights {
-                        panic!("Trying to map 4 KiB page but it conflicts with existing mapping");
+                        panic!(
+                            "Trying to map 4 KiB page but it conflicts with existing mapping {:x}",
+                            address
+                        );
                     }
                 }
 

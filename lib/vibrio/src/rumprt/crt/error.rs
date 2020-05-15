@@ -1,10 +1,7 @@
 //! Runtime support for error handling (i.e., retrieve errno).
 
 use crate::rumprt::c_int;
-
-/// Space to store last encountered error number.
-#[no_mangle]
-pub static mut _errno: c_int = 0i32;
+use lineup::tls2::Environment;
 
 /// Retrieves a mutable pointer to set the current _errno.
 ///
@@ -12,6 +9,5 @@ pub static mut _errno: c_int = 0i32;
 /// This should probably be thread safe?
 #[no_mangle]
 pub unsafe extern "C" fn __errno() -> *mut c_int {
-    //unreachable!("__errno");
-    &mut _errno as *mut c_int
+    &mut Environment::thread().errno as *mut c_int
 }

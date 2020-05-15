@@ -368,8 +368,9 @@ pub const EMOVEFD: c_int = 6;
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_seterrno(code: c_int) {
+    use lineup::tls2::Environment;
     trace!("rumpuser_seterrno: {}", errno_to_str(code));
-    *super::crt::error::__errno() = code;
+    Environment::thread().errno = code;
 }
 
 /// Maps an error code to a human-readable description.

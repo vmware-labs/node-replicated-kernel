@@ -83,6 +83,9 @@ pub struct ThreadControlBlock<'a> {
     pub rump_lwp: AtomicPtr<u64>,
     /// Stores pointer to lwp (TODO: figure this out can probably be thread local now)
     pub rumprun_lwp: *const u64,
+
+    /// The current errno variable (for libc compatibility).
+    pub errno: i32,
 }
 
 impl<'a> ThreadControlBlock<'a> {
@@ -94,6 +97,7 @@ impl<'a> ThreadControlBlock<'a> {
             yielder: None,
             tid: ThreadId(0),
             current_core: 0,
+            errno: 0,
             upcalls: Default::default(),
             rump_lwp: AtomicPtr::new(ptr::null_mut()),
             rumprun_lwp: ptr::null_mut(),
@@ -111,6 +115,14 @@ impl<'a> ThreadControlBlock<'a> {
         *(tcb as *mut ThreadControlBlock) = ts_template;
         // Initialize TCB self
         (*(tcb as *mut ThreadControlBlock)).tcb_myself = tcb as *mut ThreadControlBlock;
+
+        log::trace!(
+            "new_tls_area: initial_tdata {:p} tls_layout {:?} tcb: {:p} myself: {:p}",
+            initial_tdata,
+            tls_layout,
+            tcb,
+            (*(tcb as *mut ThreadControlBlock)).tcb_myself
+        );
 
         // Copy data
         tls_base.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());

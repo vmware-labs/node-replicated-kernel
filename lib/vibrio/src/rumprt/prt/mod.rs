@@ -107,9 +107,9 @@ extern "C" {
 
 unsafe extern "C" fn rumprun_makelwp_tramp(arg: *mut u8) -> *mut u8 {
     rump_pub_lwproc_switch(arg as *const c_void);
-
     let lwp = Environment::thread().rumprun_lwp as *const rumprun_lwp;
-    (((*lwp).start).unwrap())((*lwp).arg)
+    (((*lwp).start).unwrap())((*lwp).arg);
+    unreachable!("does it exit or now -- hey it probably can?")
 }
 
 fn get_my_rumprun_lwp() -> *mut rumprun_lwp {
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
 ) -> c_int {
     debug_assert!(!tls_private.is_null(), "TLS area shouldn't be null");
     debug_assert!(!lid.is_null(), "lid shouldn't be null");
-    info!(
+    trace!(
         "rumprun_makelwp {:p} {:p} {:p} {:p}--{} {} {:p}",
         start.unwrap(),
         arg,
@@ -171,6 +171,11 @@ pub unsafe extern "C" fn rumprun_makelwp(
     });
     let rl_ptr = Box::leak(rl);
 
+    LWP_HT.lock().insert(
+        rlid,
+        LwpWrapper(ptr::NonNull::new(rl_ptr).expect("Can't be null")),
+    );
+
     // assignme:
     let tls_private = tls_private as *mut lineup::tls2::ThreadControlBlock<'static>;
     (*tls_private).rumprun_lwp = rl_ptr as *mut _ as *mut u64; // TODO: free it again somewhere
@@ -179,19 +184,22 @@ pub unsafe extern "C" fn rumprun_makelwp(
     let stack =
         lineup::stack::LineupStack::from_ptr(stack_base as *mut u8, stack_size, free_automatically);
 
+    // XXX: what time should we be doing this?
+    rump_pub_lwproc_switch(curlwp);
+
     let static_assignment = [0, 1];
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),
         newlwp as *mut u8,
-        static_assignment[CORE_ASSIGNMENT.fetch_add(1, Ordering::Relaxed) % 2],
+        0,
         tls_private,
     );
+    trace!("rumprun_makelwp spawned {:?}", tid);
 
     // TODO(smp-correctness): Are we having a race here between new thread accessing
     // rl_thread and us assigning it?
     (*rl_ptr).rl_thread = tid.expect("Didn't create a thread?");
-    rump_pub_lwproc_switch(curlwp);
     *lid = rlid;
 
     // TODO: insert rl_ptr in a list
@@ -206,7 +214,6 @@ pub unsafe extern "C" fn _lwp_continue() {
 
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_ctl(ctl: c_int, data: *mut *mut lwpctl) -> c_int {
-    log::error!("_lwp_ctl ctl={} data={:p}", ctl, data);
     let t = Environment::thread();
     let lwp = t.rumprun_lwp as *mut rumprun_lwp;
     assert_ne!(lwp, ptr::null_mut());
@@ -214,7 +221,12 @@ pub unsafe extern "C" fn _lwp_ctl(ctl: c_int, data: *mut *mut lwpctl) -> c_int {
     *data = (&mut (*lwp).rl_lwpctl) as *mut lwpctl;
     assert_ne!(*data, ptr::null_mut());
 
-    log::error!("_lwp_ctl is done *data = {:p}", *data);
+    log::trace!(
+        "_lwp_ctl ctl={} data={:p}  set *data to {:p}",
+        ctl,
+        data,
+        *data
+    );
     0
 }
 
@@ -356,14 +368,11 @@ pub unsafe extern "C" fn ___lwp_park60(
 
 #[no_mangle]
 pub unsafe extern "C" fn _lwp_self() -> lwpid_t {
-    log::info!("_lwp_self");
-
     let t = Environment::thread();
     let lwp = t.rumprun_lwp as *const rumprun_lwp;
     assert_ne!(lwp, ptr::null());
 
-    info!("lwp is {:p}", lwp);
-    info!("lwpid {}", (*lwp).id);
+    trace!("lwp is tcb = {:p} lwp = {:p} lwpid {}", t, lwp, (*lwp).id);
     (*lwp).id
 }
 
@@ -465,6 +474,11 @@ pub unsafe extern "C" fn rumprun_lwp_init() {
 
     let mut mainthread = Box::leak(mainthread);
     let mainthread_ptr = mainthread as *mut rumprun_lwp;
+    trace!(
+        "mainthread_ptr: {:p} rl_lwpctl {:p}",
+        mainthread_ptr,
+        &(*mainthread_ptr).rl_lwpctl
+    );
     LWP_HT.lock().insert(
         mainthread.id,
         LwpWrapper(ptr::NonNull::new(mainthread_ptr).expect("Can't be null")),

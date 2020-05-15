@@ -4,6 +4,7 @@ use alloc::vec;
 use core::ptr;
 use core::sync::atomic::AtomicUsize;
 
+use cstr_core::CStr;
 use log::{debug, error, info, Level};
 use x86::current::paging::VAddr;
 
@@ -18,6 +19,12 @@ pub mod scheduler;
 pub mod signals;
 pub mod tls;
 pub mod unsupported;
+
+pub const RUMP_RFFDG: c_int = 0x01;
+
+use crate::rumprt::c_ulong;
+use crate::rumprt::c_void;
+type pthread_t = c_ulong;
 
 /// A pointer to the environment variables.
 #[no_mangle]
@@ -155,10 +162,56 @@ extern "C" fn ready() {
     info!("rump_init ready callback");
 }
 
+extern "C" {
+    fn rump_pub_lwproc_curlwp() -> *mut c_void;
+    fn rump_pub_lwproc_switch(lwp: *const c_void);
+    fn rump_pub_lwproc_newlwp(pid: c_int) -> c_int;
+    fn rump_pub_lwproc_rfork(flags: c_int) -> c_int;
+    fn rumprun_main1(argc: c_int, argv: *const *const i8);
+    fn pthread_create(
+        native: *mut pthread_t,
+        attr: *const c_void,
+        f: extern "C" fn(*mut c_void) -> *mut c_void,
+        value: *mut c_void,
+    ) -> c_int;
+}
+
+extern "C" fn mainstarter(lwp: *mut c_void) -> *mut c_void {
+    unsafe {
+        rump_pub_lwproc_switch(lwp);
+        // Construct silly arguments
+        let c_args = vec![
+            CStr::from_bytes_with_nul_unchecked(b"redis-server.bin\0").as_ptr(),
+            CStr::from_bytes_with_nul_unchecked(b"redis-server.bin\0").as_ptr(),
+        ];
+
+        rumprun_main1(0, c_args.as_ptr());
+        ptr::null_mut()
+    }
+}
+
+unsafe fn setup_process() {
+    let pipein: c_int = -1;
+    let newpipein: c_int = -1;
+
+    if !rump_pub_lwproc_curlwp().is_null() {
+        panic!("setup_process needs support for non-implicit callers");
+    }
+
+    rump_pub_lwproc_rfork(RUMP_RFFDG);
+
+    let lwp = rump_pub_lwproc_curlwp();
+    error!("NYI: pipe stuff");
+    rump_pub_lwproc_switch(ptr::null_mut());
+
+    let mut ptid: pthread_t = 0;
+    if (pthread_create(&mut ptid as *mut pthread_t, ptr::null(), mainstarter, lwp) != 0) {
+        panic!("running main fn failed\n");
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn main() {
-    use cstr_core::CStr;
-
     #[repr(C)]
     struct tmpfs_args {
         ta_version: u64, // c_int
@@ -180,7 +233,6 @@ pub extern "C" fn main() {
         fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
         fn _libc_init();
         fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
-        fn rumprun_main1(argc: c_int, argv: *const *const i8);
     }
 
     unsafe {
@@ -230,7 +282,7 @@ pub extern "C" fn main() {
             let tfsa = tmpfs_args {
                 ta_version: TMPFS_ARGS_VERSION,
                 ta_nodes_max: 0,
-                ta_size_max: 1 * 1024 * 1024,
+                ta_size_max: 256 * 1024 * 1024,
                 ta_root_uid: 0,
                 ta_root_gid: 0,
                 ta_root_mode: 0o1777,
@@ -284,13 +336,14 @@ pub extern "C" fn main() {
                 }
             }
 
-            // Construct silly arguments
-            let c_args = vec![
-                CStr::from_bytes_with_nul_unchecked(b"redis-server.bin\0").as_ptr(),
-                CStr::from_bytes_with_nul_unchecked(b"redis-server.bin\0").as_ptr(),
-            ];
+            // Give all threads a chance to run, and ensure that the main
+            // thread has gone through a context switch
+            lineup::tls2::Environment::thread().relinquish();
+            setup_process();
 
-            rumprun_main1(0, c_args.as_ptr());
+            loop {
+                lineup::tls2::Environment::thread().block()
+            }
         },
         core::ptr::null_mut(),
         0,

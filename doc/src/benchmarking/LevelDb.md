@@ -1,5 +1,124 @@
 # LevelDB
 
+## Bespin
+
+```log
+threads=1
+LevelDB:    version 1.18
+Keys:       16 bytes each
+Values:     100 bytes each (50 bytes after compression)
+Entries:    1000000
+RawSize:    110.6 MB (estimated)
+FileSize:   62.9 MB (estimated)
+WARNING: Snappy compression is not enabled
+------------------------------------------------
+fillseq      :       1.810 micros/op;   61.1 MB/s
+fillsync     :       0.000 micros/op;    inf MB/s (1000 ops)
+fillrandom   :       1.350 micros/op;   81.9 MB/s
+overwrite    :       2.620 micros/op;   42.2 MB/s
+readrandom   :       0.000 micros/op; (1000000 of 1000000 found)
+readrandom   :      10.440 micros/op; (1000000 of 1000000 found)
+readseq      :       0.206 micros/op;  537.4 MB/s
+readreverse  :       0.364 micros/op;  303.7 MB/s
+compact      :   60000.000 micros/op;
+readrandom   :       2.100 micros/op; (1000000 of 1000000 found)
+readseq      :       0.190 micros/op;  582.1 MB/s
+readreverse  :       0.301 micros/op;  367.7 MB/s
+fill100K     :     390.000 micros/op;  244.6 MB/s (1000 ops)
+crc32c       :       5.234 micros/op;  746.3 MB/s (4K per op)
+snappycomp   :       0.000 micros/op; (snappy failure)
+snappyuncomp :       0.000 micros/op; (snappy failure)
+acquireload  :       0.000 micros/op; (each op is 1000 loads)
+
+threads=4
+LevelDB:    version 1.18
+Keys:       16 bytes each
+Values:     100 bytes each (50 bytes after compression)
+Entries:    500000
+RawSize:    55.3 MB (estimated)
+FileSize:   31.5 MB (estimated)
+WARNING: Snappy compression is not enabled
+------------------------------------------------
+fillseq      :      93.095 micros/op;    3.8 MB/s
+fillsync     :      40.000 micros/op;   11.1 MB/s (500 ops)
+fillrandom   :      70.430 micros/op;    4.9 MB/s
+overwrite    :      89.760 micros/op;    4.4 MB/s
+readrandom   :       6.935 micros/op; (500000 of 500000 found)
+readrandom   :       2.495 micros/op; (500000 of 500000 found)
+readseq      :       0.188 micros/op; 1670.8 MB/s
+readreverse  :       0.107 micros/op; 1034.3 MB/s
+compact      : 1320000.000 micros/op;
+readrandom   :       1.755 micros/op; (500000 of 500000 found)
+readseq      :       0.081 micros/op; 2715.0 MB/s
+readreverse  :       0.122 micros/op; 1448.0 MB/s
+```
+
+## Linux
+
+Expected output (db_bench):
+
+```bash
+./db_bench --threads=1
+LevelDB:    version 1.18
+Date:       Fri May 15 03:05:04 2020
+CPU:        12 * AMD Ryzen 5 3600X 6-Core Processor
+CPUCache:   512 KB
+Keys:       16 bytes each
+Values:     100 bytes each (50 bytes after compression)
+Entries:    1000000
+RawSize:    110.6 MB (estimated)
+FileSize:   62.9 MB (estimated)
+WARNING: Snappy compression is not enabled
+------------------------------------------------
+fillseq      :       1.675 micros/op;   66.1 MB/s
+fillsync     :    1139.001 micros/op;    0.1 MB/s (1000 ops)
+fillrandom   :       3.213 micros/op;   34.4 MB/s
+overwrite    :       4.747 micros/op;   23.3 MB/s
+readrandom   :       2.400 micros/op; (1000000 of 1000000 found)
+readrandom   :       1.797 micros/op; (1000000 of 1000000 found)
+readseq      :       0.154 micros/op;  719.6 MB/s
+readreverse  :       0.277 micros/op;  399.5 MB/s
+compact      :  639480.000 micros/op;
+readrandom   :       1.214 micros/op; (1000000 of 1000000 found)
+readseq      :       0.136 micros/op;  815.3 MB/s
+readreverse  :       0.237 micros/op;  467.5 MB/s
+fill100K     :     991.805 micros/op;   96.2 MB/s (1000 ops)
+crc32c       :       2.588 micros/op; 1509.3 MB/s (4K per op)
+snappycomp   :    4276.000 micros/op; (snappy failure)
+snappyuncomp :    4183.000 micros/op; (snappy failure)
+acquireload  :       0.323 micros/op; (each op is 1000 loads)
+
+./db_bench --threads=4
+LevelDB:    version 1.18
+Date:       Fri May 15 02:01:20 2020
+CPU:        12 * AMD Ryzen 5 3600X 6-Core Processor
+CPUCache:   512 KB
+Keys:       16 bytes each
+Values:     100 bytes each (50 bytes after compression)
+Entries:    1000000
+RawSize:    110.6 MB (estimated)
+FileSize:   62.9 MB (estimated)
+WARNING: Snappy compression is not enabled
+------------------------------------------------
+fillseq      :      16.771 micros/op;   26.3 MB/s
+fillsync     :    2113.892 micros/op;    0.2 MB/s (1000 ops)
+fillrandom   :      21.929 micros/op;   20.2 MB/s
+overwrite    :      23.718 micros/op;   18.6 MB/s
+readrandom   :       3.782 micros/op; (1000000 of 1000000 found)
+readrandom   :       2.936 micros/op; (1000000 of 1000000 found)
+readseq      :       0.180 micros/op; 2158.1 MB/s
+readreverse  :       0.342 micros/op; 1078.6 MB/s
+compact      : 7415773.000 micros/op;
+readrandom   :       2.441 micros/op; (1000000 of 1000000 found)
+readseq      :       0.161 micros/op; 2402.1 MB/s
+readreverse  :       0.263 micros/op; 1522.0 MB/s
+fill100K     :   11044.394 micros/op;   34.5 MB/s (1000 ops)
+crc32c       :       2.645 micros/op; 5862.9 MB/s (4K per op)
+snappycomp   :    2592.750 micros/op; (snappy failure)
+snappyuncomp :   15306.000 micros/op; (snappy failure)
+acquireload  :       0.338 micros/op; (each op is 1000 loads)
+```
+
 ## Rump
 
 Build unikernel:

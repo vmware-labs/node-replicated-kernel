@@ -164,7 +164,7 @@ pub unsafe extern "C" fn rumpuser_malloc(
 ) -> i64 {
     assert!(
         len >= alignment,
-        "If this doesn't hold we need a smarter deallocate method for buddy alloc"
+        "If this doesn't hold we need a smarter deallocate method"
     );
 
     if alignment == 0 {
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn rumpuser_getparam(
         "RUMP_VERBOSE" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "RUMP_THREADS" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "_RUMPUSER_HOSTNAME" => CStr::from_bytes_with_nul_unchecked(b"btest\0"),
-        "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"134217728\0"), // 128 MiB
+        "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"1073741824\0"), // 1 GiB
         //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"2097152\0"), // 2 MiB
         //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"197152\0"), // very little MiB
         _ => return errno::ENOENT,

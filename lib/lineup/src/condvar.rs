@@ -140,7 +140,12 @@ impl CondVarInner {
     pub fn wait_nowrap(&mut self, mtx: &Mutex) {
         let tid = Environment::tid();
         let yielder: &mut ThreadControlBlock = Environment::thread();
-        trace!("waiters are {:?}", self.waiters);
+        trace!(
+            "{:?} wait_nwrap: {:p} waiters are {:?}",
+            Environment::tid(),
+            self,
+            self.waiters
+        );
         self.dbg_mutex = mtx as *const Mutex;
 
         // TODO(smp): Same issue as in `wait` here:
@@ -223,8 +228,9 @@ impl CondVarInner {
         let waiters = self.waiters.clone();
         self.waiters.clear();
         trace!(
-            "{:?} CondVarInner.broadcast {:?}",
+            "{:?} CondVarInner.broadcast {:p} {:?}",
             Environment::tid(),
+            self,
             waiters
         );
 

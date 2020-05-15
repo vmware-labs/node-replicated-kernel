@@ -92,7 +92,7 @@ pub fn context_switch(prev_cookie: *mut u8, next_cookie: *mut u8) {
             (*prev).rl_lwpctl.lc_curcpu = LWPCTL_CPU_NONE;
         }
         if !next.is_null() {
-            (*next).rl_lwpctl.lc_curcpu = 0;
+            (*next).rl_lwpctl.lc_curcpu = Environment::scheduler().core_id as i32;
             (*next).rl_lwpctl.lc_pctr += 1;
         }
     }
@@ -109,7 +109,7 @@ unsafe extern "C" fn rumprun_makelwp_tramp(arg: *mut u8) -> *mut u8 {
     rump_pub_lwproc_switch(arg as *const c_void);
     let lwp = Environment::thread().rumprun_lwp as *const rumprun_lwp;
     (((*lwp).start).unwrap())((*lwp).arg);
-    unreachable!("does it exit or now -- hey it probably can?")
+    unreachable!("does it exit or not -- hey it probably can?")
 }
 
 fn get_my_rumprun_lwp() -> *mut rumprun_lwp {
@@ -187,15 +187,15 @@ pub unsafe extern "C" fn rumprun_makelwp(
     // XXX: what time should we be doing this?
     rump_pub_lwproc_switch(curlwp);
 
-    let static_assignment = [0, 1];
+    let coreid = (rlid as usize) % 1;
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),
         newlwp as *mut u8,
-        0,
+        coreid,
         tls_private,
     );
-    trace!("rumprun_makelwp spawned {:?}", tid);
+    debug!("rumprun_makelwp spawned {:?} on core {}", tid, coreid);
 
     // TODO(smp-correctness): Are we having a race here between new thread accessing
     // rl_thread and us assigning it?
@@ -234,7 +234,11 @@ pub unsafe extern "C" fn _lwp_ctl(ctl: c_int, data: *mut *mut lwpctl) -> c_int {
 pub unsafe extern "C" fn _lwp_exit() {
     let t = Environment::thread();
     loop {
-        debug!("rumpuser_thread_exit {:?}", Environment::tid());
+        error!(
+            "_lwp_exit tid={:?} oncore={}",
+            Environment::tid(),
+            Environment::scheduler().core_id
+        );
         t.block();
         unreachable!("_lwp_exit");
     }
@@ -430,7 +434,7 @@ pub unsafe extern "C" fn _lwp_unpark_all(
     count: c_size_t,
     hint: *const c_void,
 ) -> c_ssize_t {
-    log::error!(
+    log::trace!(
         "_lwp_unpark_all targets={:p} count={} hint={:p}",
         targets,
         count,

@@ -80,9 +80,13 @@ impl File {
         self.modes
     }
 
-    /// This method is internally used by resize_file() method. The additional length
+    /// This method is internally used by write_file() method. The additional length
     /// is initialzed to zero.
-    fn increase_file_size(&mut self, curr_file_len: usize, new_len: usize) -> bool {
+    pub fn increase_file_size(&mut self, curr_file_len: usize, new_len: usize) -> bool {
+        if new_len <= 0 {
+            return true;
+        }
+
         let free_in_last_buffer = match self.mcache.last() {
             Some(buffer) => BASE_PAGE_SIZE - buffer.data.len(),
             None => 0,
@@ -132,45 +136,6 @@ impl File {
                 self.mcache.append(&mut vec);
                 return true;
             }
-        }
-    }
-
-    /// This method is internally used by resize_file() method.
-    /// This method results in reducing the file-size.
-    fn decrease_file_size(&mut self, new_len: usize) -> bool {
-        let buffer_num = self.mcache.len();
-        let new_last_buffer = ceil(new_len, BASE_PAGE_SIZE);
-        for _i in (new_last_buffer..buffer_num).rev() {
-            self.mcache.pop();
-        }
-
-        // Resize the last page
-        if self.mcache.len() > 0 {
-            let extra = (new_last_buffer * BASE_PAGE_SIZE) - new_len;
-            let mut keep = BASE_PAGE_SIZE;
-            if extra != 0 {
-                keep = BASE_PAGE_SIZE - extra;
-            }
-            self.mcache.last_mut().unwrap().data.resize(keep, 0);
-        }
-        true
-    }
-
-    /// This method is used when the write() is called with an offset. If the offset is
-    /// less than the current file-size then the size of the file is reduced first and then
-    /// the new data is written to it. And if the file size is more than current file size
-    /// then the added buffers are filled with zeros.
-    pub fn resize_file(&mut self, new_len: usize) -> bool {
-        let curr_file_len = self.get_size();
-        if curr_file_len == new_len {
-            return true;
-        }
-
-        match new_len > curr_file_len {
-            // Increase the file size
-            true => return self.increase_file_size(curr_file_len, new_len),
-            // Decrease the file size
-            false => return self.decrease_file_size(new_len),
         }
     }
 
@@ -226,53 +191,42 @@ impl File {
         start_offset: usize,
     ) -> Result<usize, FileSystemError> {
         // If offset is specified, then resize the file to the offset + len.
-        // If offset is less than file size then truncate the file; otherwise
-        // fill the file with zeros till the offset.
-        if !self.resize_file(start_offset) {
-            return Err(FileSystemError::OutOfMemory);
-        }
-
-        let free_in_last_buffer = match self.mcache.last() {
-            Some(buffer) => BASE_PAGE_SIZE - buffer.data.len(),
-            None => 0,
-        };
-
-        // Add new buffers to the file if the data len is more than free space.
-        if len > free_in_last_buffer {
-            let add_empty_buffer = ceil(len - free_in_last_buffer, BASE_PAGE_SIZE);
-            let mut vec = Vec::with_capacity(add_empty_buffer);
-            for _ in 0..add_empty_buffer {
-                match Buffer::try_alloc_buffer() {
-                    Ok(buffer) => vec.push(buffer),
-                    Err(e) => return Err(e),
-                }
+        // If offset is more than file size then fill the file with zeros till the offset.
+        let curr_file_len = self.get_size();
+        let new_len = start_offset + len;
+        if new_len > curr_file_len {
+            if new_len > 0 && !self.increase_file_size(curr_file_len, new_len) {
+                return Err(FileSystemError::OutOfMemory);
             }
-            self.mcache.append(&mut vec);
         }
 
-        // Write to the allocated buffers
-        let mut start = 0;
-        let mut end;
+        let mut buffer_num = offset_to_buffernum(start_offset, BASE_PAGE_SIZE);
+        let mut offset_in_buffer = start_offset - (buffer_num * BASE_PAGE_SIZE);
         let mut copied = 0;
-        let offset = self.get_size();
-        let mut buffer_num = offset_to_buffernum(offset, BASE_PAGE_SIZE);
+        let mut dst_start = 0;
+        let mut dst_end;
 
         while copied < len {
-            let filled = self.mcache[buffer_num].data.len();
-            let free_in_buffer = BASE_PAGE_SIZE - filled;
+            let useful_data_curr_buffer = BASE_PAGE_SIZE - offset_in_buffer;
             let remaining = len - copied;
-            if free_in_buffer >= remaining {
-                end = start + remaining;
+
+            let src_start = offset_in_buffer;
+            let src_end;
+            if remaining >= useful_data_curr_buffer {
+                dst_end = dst_start + useful_data_curr_buffer;
+                src_end = src_start + useful_data_curr_buffer;
+                copied += useful_data_curr_buffer;
             } else {
-                end = start + free_in_buffer;
+                dst_end = dst_start + remaining;
+                src_end = src_start + remaining;
+                copied += remaining;
             }
-            // TODO: Use copy_from_slice and make userslice immutable.
-            self.mcache[buffer_num]
-                .data
-                .append(&mut user_slice[start..end].to_vec());
+
+            self.mcache[buffer_num].data[src_start..src_end]
+                .copy_from_slice(&user_slice[dst_start..dst_end]);
             buffer_num += 1;
-            copied += end - start;
-            start = end;
+            dst_start = dst_end;
+            offset_in_buffer = 0;
         }
 
         Ok(len)
@@ -359,16 +313,9 @@ pub mod test {
         assert_eq!(file.get_size(), 0);
 
         for i in 0..10000 {
-            let buffer_num = ceil(i, BASE_PAGE_SIZE);
-            assert_eq!(file.resize_file(i), true);
+            assert_eq!(file.increase_file_size(file.get_size(), i), true);
             assert_eq!(file.get_size(), i);
-            assert_eq!(file.mcache.len(), buffer_num);
-        }
-
-        for i in (0..10000).rev() {
             let buffer_num = ceil(i, BASE_PAGE_SIZE);
-            assert_eq!(file.resize_file(i), true);
-            assert_eq!(file.get_size(), i);
             assert_eq!(file.mcache.len(), buffer_num);
         }
     }
@@ -425,5 +372,35 @@ pub mod test {
         file.file_truncate();
         assert_eq!(file.get_size(), 0);
         assert_eq!(file.mcache.len(), 0);
+    }
+
+    #[test]
+    /// Tests the writing to a file and later check if the content was written properly or not.
+    fn test_overwrite_file() {
+        let mut file = File::new(FileModes::S_IRWXU.into()).unwrap();
+        assert_eq!(file.get_mode(), FileModes::S_IRWXU);
+        assert_eq!(file.mcache.len(), 0);
+        assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
+
+        let buffer: &mut [u8] = &mut [0xb; 10000];
+        for i in 0..10000 {
+            file.write_file(buffer, i, 0).unwrap();
+            assert_eq!(file.get_size(), i);
+        }
+
+        let buffer: &mut [u8] = &mut [0xa; 7000];
+        for i in 0..4096 {
+            file.write_file(buffer, i, 0).unwrap();
+            assert_eq!(file.get_size(), 9999);
+        }
+
+        // verify the content for first buffer
+        for i in 0..4095 {
+            assert_eq!(file.mcache[0].data[i], 0xa);
+        }
+        // verify the content for second buffer
+        for i in 0..4096 {
+            assert_eq!(file.mcache[1].data[i], 0xb);
+        }
     }
 }

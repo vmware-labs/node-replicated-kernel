@@ -31,7 +31,6 @@ snappyuncomp :       0.000 micros/op; (snappy failure)
 acquireload  :       0.000 micros/op; (each op is 1000 loads)
 
 threads=4
-LevelDB:    version 1.18
 Keys:       16 bytes each
 Values:     100 bytes each (50 bytes after compression)
 Entries:    500000
@@ -39,18 +38,22 @@ RawSize:    55.3 MB (estimated)
 FileSize:   31.5 MB (estimated)
 WARNING: Snappy compression is not enabled
 ------------------------------------------------
-fillseq      :      93.095 micros/op;    3.8 MB/s
+fillseq      :      64.285 micros/op;    6.0 MB/s
 fillsync     :      40.000 micros/op;   11.1 MB/s (500 ops)
-fillrandom   :      70.430 micros/op;    4.9 MB/s
-overwrite    :      89.760 micros/op;    4.4 MB/s
-readrandom   :       6.935 micros/op; (500000 of 500000 found)
-readrandom   :       2.495 micros/op; (500000 of 500000 found)
-readseq      :       0.188 micros/op; 1670.8 MB/s
-readreverse  :       0.107 micros/op; 1034.3 MB/s
-compact      : 1320000.000 micros/op;
-readrandom   :       1.755 micros/op; (500000 of 500000 found)
-readseq      :       0.081 micros/op; 2715.0 MB/s
-readreverse  :       0.122 micros/op; 1448.0 MB/s
+fillrandom   :      41.865 micros/op;    8.8 MB/s
+overwrite    :      46.465 micros/op;    7.8 MB/s
+readrandom   :       6.915 micros/op; (500000 of 500000 found)
+readrandom   :       2.690 micros/op; (500000 of 500000 found)
+readseq      :       0.127 micros/op; 1670.8 MB/s
+readreverse  :       0.112 micros/op;  987.3 MB/s
+compact      : 1360000.000 micros/op;
+readrandom   :       1.770 micros/op; (500000 of 500000 found)
+readseq      :       0.046 micros/op; 2413.4 MB/s
+readreverse  :       0.071 micros/op; 1551.5 MB/s
+crc32c       :       0.000 micros/op;    inf MB/s (4K per op)
+snappycomp   :    2500.000 micros/op; (snappy failure)
+snappyuncomp :   20000.000 micros/op; (snappy failure)
+acquireload  :       0.000 micros/op; (each op is 1000 loads)
 ```
 
 ## Linux

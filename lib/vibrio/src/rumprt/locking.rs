@@ -101,7 +101,7 @@ fn flag_to_intent(flag: i64) -> RwLockIntent {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_rw_enter(flag: i64, rw: *mut RwLock) {
-    trace!("rumpuser_rw_enter {:p}", rw);
+    trace!("{:?} rumpuser_rw_enter {:p}", Environment::tid(), rw);
     (*rw).enter(flag_to_intent(flag));
 }
 

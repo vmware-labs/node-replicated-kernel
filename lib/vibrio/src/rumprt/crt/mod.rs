@@ -212,6 +212,10 @@ unsafe fn setup_process() {
 
 #[no_mangle]
 pub extern "C" fn main() {
+    use lineup::tls2::SchedulerControlBlock;
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    unsafe { scb.preinstall() };
+
     #[repr(C)]
     struct tmpfs_args {
         ta_version: u64, // c_int
@@ -361,8 +365,6 @@ pub extern "C" fn main() {
         )
         .expect("Can't create IRQ thread?");
 
-    use lineup::tls2::SchedulerControlBlock;
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     loop {
         scheduler.run(&scb);
     }

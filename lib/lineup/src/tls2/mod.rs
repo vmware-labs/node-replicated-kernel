@@ -250,6 +250,9 @@ impl SchedulerControlBlock {
 }
 
 impl SchedulerControlBlock {
+    pub unsafe fn preinstall(&self) {
+        arch::set_scb(self as *const SchedulerControlBlock);
+    }
     /// Sets the upcall pointer for rumpkernel integration (we ignore the version)
     ///
     /// This is usually called at some point during `rump_init`.

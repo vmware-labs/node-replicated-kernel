@@ -159,6 +159,8 @@ Install the toolchain:
 
 ```bash
 # Rumprun install
+git submodule init
+git submodule update
 ./build-rr.sh hw -- -F CFLAGS='-w'
 . "/root/rumprun/./obj-amd64-hw/config-PATH.sh"
 ```

@@ -271,6 +271,7 @@ def run(args):
         qemu_default_args += ['-net',
                               'nic,model={},netdev=n0'.format(args.nic)]
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
+        #qemu_default_args += ['-net', 'none']
 
         def query_host_numa():
             online = cat["/sys/devices/system/node/online"]()

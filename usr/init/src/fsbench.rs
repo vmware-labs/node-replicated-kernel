@@ -238,6 +238,6 @@ pub fn read_bench(cores: usize, core_id: usize, random: bool, shared: bool) {
 
         POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
 
-        let ret = Fs::delete(file_name.as_ptr() as u64).expect("FileDelete syscall failed");
+        //let ret = Fs::delete(file_name.as_ptr() as u64).expect("FileDelete syscall failed");
     }
 }

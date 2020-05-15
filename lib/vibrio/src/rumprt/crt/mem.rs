@@ -68,7 +68,7 @@ pub unsafe extern "C" fn mmap(
     );
     info!("mmap syscall returned {} {:?}", error, retval);
 
-    crate::rumprt::crt::error::_errno = error;
+    crate::rumprt::errno::rumpuser_seterrno(error);
     if error == 0 {
         retval[0] as *mut c_void
     } else {
@@ -149,6 +149,8 @@ pub unsafe extern "C" fn posix_memalign(
     }
 }
 
+pub const HEADER_SIZE: usize = 16;
+
 /// Implementes malloc using the `alloc::alloc` interface.
 ///
 /// We need to add a header to store the size for the
@@ -157,7 +159,7 @@ pub unsafe extern "C" fn posix_memalign(
 pub unsafe extern "C" fn malloc(size: c_size_t) -> *mut u8 {
     trace!("malloc {}", size);
 
-    let allocation_size: u64 = (size + 8) as u64;
+    let allocation_size: u64 = (size + HEADER_SIZE) as u64;
     let alignment = 8;
 
     let ptr = alloc::alloc::alloc(Layout::from_size_align_unchecked(
@@ -166,7 +168,7 @@ pub unsafe extern "C" fn malloc(size: c_size_t) -> *mut u8 {
     ));
     if ptr != ptr::null_mut() {
         *(ptr as *mut u64) = allocation_size;
-        ptr.offset(8isize)
+        ptr.offset(HEADER_SIZE as isize)
     } else {
         ptr::null_mut()
     }
@@ -177,7 +179,7 @@ pub unsafe extern "C" fn malloc(size: c_size_t) -> *mut u8 {
 pub unsafe extern "C" fn calloc(nmem: c_size_t, size: c_size_t) -> *mut u8 {
     trace!("calloc {} {}", nmem, size);
 
-    let allocation_size: u64 = ((nmem * size) + 8) as u64;
+    let allocation_size: u64 = ((nmem * size) + HEADER_SIZE) as u64;
     let alignment = 8;
 
     let ptr = alloc::alloc::alloc_zeroed(Layout::from_size_align_unchecked(
@@ -186,7 +188,7 @@ pub unsafe extern "C" fn calloc(nmem: c_size_t, size: c_size_t) -> *mut u8 {
     ));
     if ptr != ptr::null_mut() {
         *(ptr as *mut u64) = allocation_size;
-        ptr.offset(8isize)
+        ptr.offset(HEADER_SIZE as isize)
     } else {
         ptr::null_mut()
     }
@@ -200,10 +202,10 @@ pub unsafe extern "C" fn free(ptr: *mut u8) {
     if ptr == ptr::null_mut() {
         return;
     }
-    let allocation_size: u64 = *(ptr.offset(-8) as *mut u64);
+    let allocation_size: u64 = *(ptr.offset(-(HEADER_SIZE as isize)) as *mut u64);
     trace!("free ptr {:p} size={}", ptr, allocation_size);
     alloc::alloc::dealloc(
-        ptr.offset(-8),
+        ptr.offset(-(HEADER_SIZE as isize)),
         Layout::from_size_align_unchecked(allocation_size as usize, 8),
     );
 }
@@ -217,7 +219,10 @@ pub unsafe extern "C" fn realloc(cur_ptr: *mut u8, new_size: c_size_t) -> *mut u
     let (orig_ptr, old_allocation_size) = if cur_ptr == ptr::null_mut() {
         (ptr::null_mut(), 0)
     } else {
-        (cur_ptr.offset(-8), *(cur_ptr.offset(-8) as *mut u64))
+        (
+            cur_ptr.offset(-(HEADER_SIZE as isize)),
+            *(cur_ptr.offset(-(HEADER_SIZE as isize)) as *mut u64),
+        )
     };
 
     trace!(
@@ -227,7 +232,7 @@ pub unsafe extern "C" fn realloc(cur_ptr: *mut u8, new_size: c_size_t) -> *mut u
         new_size
     );
 
-    let new_allocation_size = new_size + 8;
+    let new_allocation_size = new_size + HEADER_SIZE;
 
     let new_ptr = alloc::alloc::realloc(
         orig_ptr,
@@ -236,5 +241,5 @@ pub unsafe extern "C" fn realloc(cur_ptr: *mut u8, new_size: c_size_t) -> *mut u
     );
 
     *(new_ptr as *mut u64) = new_allocation_size as u64;
-    new_ptr.offset(8isize)
+    new_ptr.offset(HEADER_SIZE as isize)
 }

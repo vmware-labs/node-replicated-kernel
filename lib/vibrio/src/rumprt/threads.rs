@@ -44,7 +44,7 @@ pub unsafe extern "C" fn rumpuser_thread_create(
         .to_str()
         .unwrap_or("[unknown]");
 
-    let core_id = if cpuidx == -1 { 1 } else { cpuidx };
+    let core_id = if cpuidx == -1 { 0 } else { cpuidx };
 
     let s = lineup::tls2::Environment::thread();
     let tid = s.spawn_on_core(fun, arg, core_id.try_into().unwrap());

@@ -41,17 +41,11 @@ impl Bench for DWOL {
                     u64::from(FileModes::S_IRWXU),
                 )
                 .expect("FileOpen syscall failed");
-                info!("{}", fd);
 
-                // This call is to tests bespin memory deallocator for large allocations.
-                let ret = vibrio::syscalls::Fs::write_at(
-                    fd,
-                    self.page.as_ptr() as u64,
-                    PAGE_SIZE - 16,
-                    0,
-                )
-                .expect("FileWriteAt syscall failed");
-                assert_eq!(ret, PAGE_SIZE - 16 as u64);
+                let ret =
+                    vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, PAGE_SIZE, 0)
+                        .expect("FileWriteAt syscall failed");
+                assert_eq!(ret, PAGE_SIZE as u64);
                 self.fds.borrow_mut()[core as usize] = fd;
             }
         }

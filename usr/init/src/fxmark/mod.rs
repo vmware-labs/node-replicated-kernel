@@ -19,7 +19,8 @@ use lineup::tls2::{Environment, SchedulerControlBlock};
 mod drbh;
 mod drbl;
 mod dwol;
-use crate::fxmark::{drbh::DRBH, drbl::DRBL, dwol::DWOL};
+mod dwom;
+use crate::fxmark::{drbh::DRBH, drbl::DRBL, dwol::DWOL, dwom::DWOM};
 
 const PAGE_SIZE: u64 = 4096;
 
@@ -199,5 +200,11 @@ pub fn bench(ncores: Option<usize>, benchmark: String) {
         let microbench = Arc::new(MicroBench::<DWOL>::new(maximum, "dwol"));
         microbench.bench.init(cores.clone());
         start::<DWOL>(maximum, microbench);
+    }
+
+    if benchmark == "dwom" {
+        let microbench = Arc::new(MicroBench::<DWOM>::new(maximum, "dwom"));
+        microbench.bench.init(cores.clone());
+        start::<DWOM>(maximum, microbench);
     }
 }

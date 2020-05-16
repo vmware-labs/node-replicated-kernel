@@ -1517,7 +1517,7 @@ fn s06_memfs_bench() {
 #[test]
 fn s06_fxmark_benchmark() {
     //TODO: Add the following microbenchmarks - "drbl", "drbh", "dwol", "dwom", "mwrl", "mwrm", "dwal".
-    let benchmarks = vec!["drbl", "drbh", "dwol", "dwom"];
+    let benchmarks = vec!["drbl", "drbh", "dwol", "dwom", "mwrl"];
     let num_microbenchs = benchmarks.len() as u64;
     let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
         num_cpus::get() / 2

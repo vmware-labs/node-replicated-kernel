@@ -20,7 +20,8 @@ mod drbh;
 mod drbl;
 mod dwol;
 mod dwom;
-use crate::fxmark::{drbh::DRBH, drbl::DRBL, dwol::DWOL, dwom::DWOM};
+mod mwrl;
+use crate::fxmark::{drbh::DRBH, drbl::DRBL, dwol::DWOL, dwom::DWOM, mwrl::MWRL};
 
 const PAGE_SIZE: u64 = 4096;
 
@@ -206,5 +207,11 @@ pub fn bench(ncores: Option<usize>, benchmark: String) {
         let microbench = Arc::new(MicroBench::<DWOM>::new(maximum, "dwom"));
         microbench.bench.init(cores.clone());
         start::<DWOM>(maximum, microbench);
+    }
+
+    if benchmark == "mwrl" {
+        let microbench = Arc::new(MicroBench::<MWRL>::new(maximum, "mwrl"));
+        microbench.bench.init(cores.clone());
+        start::<MWRL>(maximum, microbench);
     }
 }

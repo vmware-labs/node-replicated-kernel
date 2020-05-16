@@ -1,2 +1,0 @@
--- C namespace leads to mega functions -> split it up into individual calls
--- structure -> typed returns, no parsing

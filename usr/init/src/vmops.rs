@@ -37,7 +37,7 @@ fn maponly_bencher(cores: usize) {
     info!("start mapping at {:#x}", base);
 
     #[cfg(feature = "latency")]
-    pub const LATENCY_MEASUREMENTS: usize = 3_000;
+    pub const LATENCY_MEASUREMENTS: usize = 100_000;
     #[cfg(feature = "latency")]
     let mut latency: Vec<Duration> = Vec::with_capacity(LATENCY_MEASUREMENTS);
 

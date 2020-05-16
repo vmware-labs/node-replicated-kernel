@@ -62,6 +62,7 @@ pub enum Op {
     FileClose(Pid, FD),
     FileInfo(Pid, Filename, u64),
     FileDelete(Pid, Filename),
+    FileRename(Pid, String, String),
     Invalid,
 }
 
@@ -89,6 +90,7 @@ pub enum NodeResult<E: Executor> {
     FileAccessed(Len),
     FileInfo(u64),
     FileDeleted(bool),
+    FileRenamed(bool),
     Executor(Weak<E>),
     FrameId(usize),
     Invalid,
@@ -348,6 +350,57 @@ impl<P: Process> KernelNode<P> {
 
                 match &response {
                     Ok(NodeResult::FileDeleted(_)) => Ok((0, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
+
+    pub fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |replica| {
+                let mut user_ptr = VAddr::from(oldname);
+                let str_ptr = UserPtr::new(&mut user_ptr);
+
+                let oldfilename;
+                unsafe {
+                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                        Ok(name) => {
+                            if !name.is_ascii() || name.is_empty() {
+                                return Err(KError::NotSupported);
+                            }
+                            oldfilename = String::from(name);
+                        }
+                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
+                    }
+                }
+
+                let mut user_ptr = VAddr::from(newname);
+                let str_ptr = UserPtr::new(&mut user_ptr);
+
+                let newfilename;
+                unsafe {
+                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+                        Ok(name) => {
+                            if !name.is_ascii() || name.is_empty() {
+                                return Err(KError::NotSupported);
+                            }
+                            newfilename = String::from(name);
+                        }
+                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
+                    }
+                }
+
+                // Execute NR operation
+                let response = replica.execute(
+                    Op::FileRename(pid, oldfilename, newfilename),
+                    kcb.arch.replica_idx,
+                );
+                match &response {
+                    Ok(NodeResult::FileRenamed(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -711,6 +764,14 @@ where
                 }
                 match self.fs.delete(filename) {
                     Ok(is_deleted) => Ok(NodeResult::FileDeleted(is_deleted)),
+                    Err(e) => Err(KError::FileSystem { source: e }),
+                }
+            }
+            Op::FileRename(pid, oldname, newname) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                match self.fs.rename(&oldname, &newname) {
+                    Ok(is_renamed) => Ok(NodeResult::FileRenamed(is_renamed)),
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }

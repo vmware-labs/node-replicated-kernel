@@ -547,8 +547,16 @@ fn fs_test() {
         let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
         assert_eq!(ret, 0);
 
+        // Rename the file
+        let ret = vibrio::syscalls::Fs::rename(
+            "file.txt\0".as_ptr() as u64,
+            "filenew.txt\0".as_ptr() as u64,
+        )
+        .expect("FileRename syscall failed");
+        assert_eq!(ret, 0);
+
         // Delete the file.
-        let ret = vibrio::syscalls::Fs::delete("file.txt\0".as_ptr() as u64)
+        let ret = vibrio::syscalls::Fs::delete("filenew.txt\0".as_ptr() as u64)
             .expect("FileDelete syscall failed");
         assert_eq!(ret, true);
 

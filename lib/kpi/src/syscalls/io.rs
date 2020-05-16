@@ -209,4 +209,22 @@ impl Fs {
             Err(SystemCallError::from(r))
         }
     }
+
+    pub fn rename(old_name: u64, new_name: u64) -> Result<u64, SystemCallError> {
+        let r = unsafe {
+            syscall!(
+                SystemCall::FileIO as u64,
+                FileOperation::FileRename,
+                old_name,
+                new_name,
+                1
+            )
+        };
+
+        if r == 0 {
+            Ok(0)
+        } else {
+            Err(SystemCallError::from(r))
+        }
+    }
 }

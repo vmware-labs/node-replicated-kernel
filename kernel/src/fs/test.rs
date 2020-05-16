@@ -300,6 +300,11 @@ impl FileSystem for ModelFS {
     fn truncate(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
         Ok(true)
     }
+
+    /// Return a `dummy` response for rename operation
+    fn rename(&mut self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
+        Ok(true)
+    }
 }
 
 /// Two writes/reads at different offsets should return
@@ -725,4 +730,87 @@ fn test_file_delete() {
         memfs.read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
         Err(FileSystemError::InvalidFile)
     );
+}
+
+#[test]
+fn test_file_rename() {
+    let mut memfs: MemFS = Default::default();
+    let filename = "file.txt";
+    let newname = "filenew.txt";
+    let oldmnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    memfs.rename(filename, newname);
+    let mnode = memfs.lookup(newname).unwrap();
+    assert_eq!(oldmnode, *mnode);
+}
+
+#[test]
+fn test_file_rename_and_read() {
+    let mut memfs: MemFS = Default::default();
+    let filename = "file.txt";
+    let newname = "filenew.txt";
+    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+
+    let buffer: &mut [u8; 10] = &mut [0xb; 10];
+    assert_eq!(
+        memfs.write(mnode, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
+        Ok(10)
+    );
+
+    let rbuffer: &mut [u8; 10] = &mut [0x0; 10];
+    memfs.rename(filename, newname);
+    let mnode = memfs.lookup(newname).unwrap();
+    assert_eq!(
+        memfs.read(*mnode, &mut UserSlice::new(rbuffer.as_ptr() as u64, 10), 0),
+        Ok(10)
+    );
+    assert_eq!(rbuffer[0], 0xb);
+    assert_eq!(rbuffer[9], 0xb);
+}
+
+#[test]
+fn test_file_rename_and_write() {
+    let mut memfs: MemFS = Default::default();
+    let filename = "file.txt";
+    let newname = "filenew.txt";
+    let oldmnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    memfs.rename(filename, newname);
+    let mnode = memfs.lookup(newname).unwrap();
+    assert_eq!(oldmnode, *mnode);
+
+    let finfo = memfs.file_info(*mnode);
+    assert_eq!(finfo.fsize, 0);
+    let buffer: &mut [u8; 10] = &mut [0xb; 10];
+    assert_eq!(
+        memfs.write(*mnode, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
+        Ok(10)
+    );
+    let finfo = memfs.file_info(*mnode);
+    assert_eq!(finfo.fsize, 10);
+}
+
+#[test]
+fn test_file_rename_nonexistent_file() {
+    let mut memfs: MemFS = Default::default();
+    let oldname = "file.txt";
+    let newname = "filenew.txt";
+    assert_eq!(
+        memfs.rename(oldname, newname),
+        Err(FileSystemError::InvalidFile)
+    );
+}
+
+#[test]
+fn test_file_rename_to_existent_file() {
+    let mut memfs: MemFS = Default::default();
+    let oldname = "file.txt";
+    let newname = "filenew.txt";
+    let oldmnode = memfs.create(oldname, FileModes::S_IRWXU.into()).unwrap();
+    let newmnode = memfs.create(newname, FileModes::S_IRWXU.into()).unwrap();
+    assert_ne!(oldmnode, newmnode);
+    assert_eq!(memfs.rename(oldname, newname), Ok(true));
+
+    // Old file is removed.
+    assert_eq!(memfs.lookup(oldname), None);
+    // New file points to old mnode.
+    assert_eq!(*memfs.lookup(newname).unwrap(), oldmnode);
 }

@@ -403,7 +403,6 @@ fn handle_fileio(
             }
         }),
         FileOperation::Delete => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-            let kcb = super::kcb::get_kcb();
             let name = arg2;
 
             match user_virt_addr_valid(p.pid, name, 0) {
@@ -430,6 +429,19 @@ fn handle_fileio(
                 Err(e) => Err(KError::FileSystem { source: e }),
             }
         }
+        FileOperation::FileRename => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+            let oldname = arg2;
+            let newname = arg3;
+            match (
+                user_virt_addr_valid(p.pid, oldname, 0),
+                user_virt_addr_valid(p.pid, newname, 0),
+            ) {
+                (Ok(_), Ok(_)) => {
+                    nr::KernelNode::<Ring3Process>::file_rename(p.pid, oldname, newname)
+                }
+                (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+            }
+        }),
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

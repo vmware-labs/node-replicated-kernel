@@ -196,6 +196,8 @@ pub enum FileOperation {
     Delete = 9,
     /// Write to a file without going into NR.
     WriteDirect = 10,
+    /// Rename a file.
+    FileRename = 11,
     Unknown,
 }
 
@@ -213,6 +215,7 @@ impl From<u64> for FileOperation {
             8 => FileOperation::GetInfo,
             9 => FileOperation::Delete,
             10 => FileOperation::WriteDirect,
+            11 => FileOperation::FileRename,
             _ => FileOperation::Unknown,
         }
     }
@@ -232,6 +235,7 @@ impl From<&str> for FileOperation {
             "GetInfo" => FileOperation::GetInfo,
             "Delete" => FileOperation::Delete,
             "WriteDirect" => FileOperation::WriteDirect,
+            "Rename" => FileOperation::FileRename,
             _ => FileOperation::Unknown,
         }
     }

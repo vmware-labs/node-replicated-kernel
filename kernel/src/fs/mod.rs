@@ -87,6 +87,7 @@ pub trait FileSystem {
     fn file_info(&self, mnode: Mnode) -> FileInfo;
     fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
     fn truncate(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
+    fn rename(&mut self, oldname: &str, newname: &str) -> Result<bool, FileSystemError>;
 }
 
 /// Abstract definition of a file descriptor.
@@ -284,6 +285,24 @@ impl FileSystem for MemFS {
                 None => return Err(FileSystemError::InvalidFile),
             },
             None => return Err(FileSystemError::InvalidFile),
+        }
+    }
+
+    /// Rename a file from oldname to newname.
+    fn rename(&mut self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
+        if self.files.get(oldname).is_none() {
+            return Err(FileSystemError::InvalidFile);
+        }
+
+        // If the newfile exists then overwrite it with the oldfile.
+        if self.files.get(newname).is_some() {
+            self.delete(newname).unwrap();
+        }
+
+        let (_key, value) = self.files.remove_entry(oldname).unwrap();
+        match self.files.insert(newname.to_string(), value) {
+            None => return Ok(true),
+            Some(_) => return Err(FileSystemError::PermissionError),
         }
     }
 }

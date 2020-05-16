@@ -3,12 +3,13 @@ use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use cstr_core::CStr;
 use custom_error::custom_error;
-
 use kpi::process::FrameId;
 
 use crate::arch::process::UserPtr;
 use crate::arch::Module;
+use crate::error::KError;
 use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, VAddr};
@@ -31,6 +32,22 @@ impl KernSlice {
             unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
         buffer.copy_from_slice(&user_slice[0..len]);
         KernSlice { buffer }
+    }
+}
+
+pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
+    let mut user_ptr = VAddr::from(useraddr);
+    let str_ptr = UserPtr::new(&mut user_ptr);
+    unsafe {
+        match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+            Ok(path) => {
+                if !path.is_ascii() || path.is_empty() {
+                    return Err(KError::NotSupported);
+                }
+                return Ok(String::from(path));
+            }
+            Err(_) => return Err(KError::NotSupported),
+        }
     }
 }
 

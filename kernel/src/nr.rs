@@ -5,7 +5,6 @@ use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
-use cstr_core::CStr;
 use hashbrown::HashMap;
 use kpi::process::{FrameId, ProcessInfo};
 use kpi::{io::*, FileOperation};
@@ -21,13 +20,14 @@ use crate::fs::{
 };
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{Frame, PAddr, VAddr};
-use crate::process::{Eid, Executor, KernSlice, Pid, Process, ProcessError};
+use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
     CurrentExecutor(topology::GlobalThreadId),
     ProcessInfo(Pid),
     FileRead(Pid, FD, Buffer, Len, Offset),
+    FileInfo(Pid, Filename, u64),
     MemResolve(Pid, VAddr),
     Synchronize,
 }
@@ -60,8 +60,7 @@ pub enum Op {
     FileOpen(Pid, String, Flags, Modes),
     FileWrite(Pid, FD, Box<[u8]>, Len, Offset),
     FileClose(Pid, FD),
-    FileInfo(Pid, Filename, u64),
-    FileDelete(Pid, Filename),
+    FileDelete(Pid, String),
     FileRename(Pid, String, String),
     Invalid,
 }
@@ -234,20 +233,10 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut user_ptr = VAddr::from(pathname);
-                let str_ptr = UserPtr::new(&mut user_ptr);
-
                 let filename;
-                unsafe {
-                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                        Ok(path) => {
-                            if !path.is_ascii() || path.is_empty() {
-                                return Err(KError::NotSupported);
-                            }
-                            filename = String::from(path);
-                        }
-                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
-                    }
+                match userptr_to_str(pathname) {
+                    Ok(user_str) => filename = user_str,
+                    Err(e) => return Err(e.clone()),
                 }
 
                 let response = replica.execute(
@@ -329,8 +318,8 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response =
-                    replica.execute(Op::FileInfo(pid, name, info_ptr), kcb.arch.replica_idx);
+                let response = replica
+                    .execute_ro(ReadOps::FileInfo(pid, name, info_ptr), kcb.arch.replica_idx);
 
                 match &response {
                     Ok(NodeResult::FileInfo(f_info)) => Ok((0, 0)),
@@ -346,7 +335,12 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica.execute(Op::FileDelete(pid, name), kcb.arch.replica_idx);
+                let filename;
+                match userptr_to_str(name) {
+                    Ok(user_str) => filename = user_str,
+                    Err(e) => return Err(e.clone()),
+                }
+                let response = replica.execute(Op::FileDelete(pid, filename), kcb.arch.replica_idx);
 
                 match &response {
                     Ok(NodeResult::FileDeleted(_)) => Ok((0, 0)),
@@ -362,36 +356,16 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let mut user_ptr = VAddr::from(oldname);
-                let str_ptr = UserPtr::new(&mut user_ptr);
-
                 let oldfilename;
-                unsafe {
-                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                        Ok(name) => {
-                            if !name.is_ascii() || name.is_empty() {
-                                return Err(KError::NotSupported);
-                            }
-                            oldfilename = String::from(name);
-                        }
-                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
-                    }
+                match userptr_to_str(oldname) {
+                    Ok(user_str) => oldfilename = user_str,
+                    Err(e) => return Err(e.clone()),
                 }
 
-                let mut user_ptr = VAddr::from(newname);
-                let str_ptr = UserPtr::new(&mut user_ptr);
-
                 let newfilename;
-                unsafe {
-                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                        Ok(name) => {
-                            if !name.is_ascii() || name.is_empty() {
-                                return Err(KError::NotSupported);
-                            }
-                            newfilename = String::from(name);
-                        }
-                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
-                    }
+                match userptr_to_str(newname) {
+                    Ok(user_str) => newfilename = user_str,
+                    Err(e) => return Err(e.clone()),
                 }
 
                 // Execute NR operation
@@ -517,6 +491,32 @@ where
                         Ok(NodeResult::FileAccessed(len as u64))
                     }
                     Err(e) => Err(KError::FileSystem { source: e }),
+                }
+            }
+            ReadOps::FileInfo(pid, name, info_ptr) => {
+                let process_lookup = self.process_map.get(&pid);
+                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+
+                let filename;
+                match userptr_to_str(name) {
+                    Ok(user_str) => filename = user_str,
+                    Err(e) => return Err(e.clone()),
+                }
+
+                match self.fs.lookup(&filename) {
+                    // match on (file_exists, mnode_number)
+                    Some(mnode) => {
+                        let f_info = self.fs.file_info(*mnode);
+
+                        let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
+                        unsafe {
+                            *user_ptr.as_mut_ptr::<FileInfo>() = f_info;
+                        }
+                        Ok(NodeResult::FileInfo(0))
+                    }
+                    None => Err(KError::FileSystem {
+                        source: FileSystemError::InvalidFile,
+                    }),
                 }
             }
             ReadOps::ProcessInfo(pid) => {
@@ -707,62 +707,10 @@ where
                     })
                 }
             }
-            Op::FileInfo(pid, name, info_ptr) => {
+            Op::FileDelete(pid, filename) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-
-                let mut user_ptr = VAddr::from(name);
-                let str_ptr = UserPtr::new(&mut user_ptr);
-
-                let filename;
-                unsafe {
-                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                        Ok(path) => {
-                            if !path.is_ascii() || path.is_empty() {
-                                return Err(KError::NotSupported);
-                            }
-                            filename = path;
-                        }
-                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
-                    }
-                }
-
-                match self.fs.lookup(filename) {
-                    // match on (file_exists, mnode_number)
-                    Some(mnode) => {
-                        let f_info = self.fs.file_info(*mnode);
-
-                        let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
-                        unsafe {
-                            *user_ptr.as_mut_ptr::<FileInfo>() = f_info;
-                        }
-                        Ok(NodeResult::FileInfo(0))
-                    }
-                    None => Err(KError::FileSystem {
-                        source: FileSystemError::InvalidFile,
-                    }),
-                }
-            }
-            Op::FileDelete(pid, pathname) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-
-                let mut user_ptr = VAddr::from(pathname);
-                let str_ptr = UserPtr::new(&mut user_ptr);
-
-                let filename;
-                unsafe {
-                    match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
-                        Ok(path) => {
-                            if !path.is_ascii() || path.is_empty() {
-                                return Err(KError::NotSupported);
-                            }
-                            filename = path;
-                        }
-                        Err(_) => unreachable!("FileOpen: Unable to convert u64 to str"),
-                    }
-                }
-                match self.fs.delete(filename) {
+                match self.fs.delete(&filename) {
                     Ok(is_deleted) => Ok(NodeResult::FileDeleted(is_deleted)),
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }

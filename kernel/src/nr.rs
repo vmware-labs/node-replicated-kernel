@@ -217,7 +217,13 @@ impl<P: Process> KernelNode<P> {
 
                     match response {
                         Ok(NodeResult::Mapped) => {}
-                        e => unreachable!("Got unexpected response {:?}", e),
+                        e => unreachable!(
+                            "Got unexpected response MemMapFrame {:?} {:?} {:?} {:?}",
+                            e,
+                            base + virtual_offset,
+                            frame,
+                            action
+                        ),
                     };
 
                     virtual_offset += frame.size();

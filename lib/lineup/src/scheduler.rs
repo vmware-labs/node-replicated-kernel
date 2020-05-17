@@ -63,7 +63,7 @@ pub struct SmpScheduler<'a> {
     ///
     /// This is slightly different from SchedulerControlBlock
     /// It's per core but only accessed within SmpScheduler
-    per_core: [SchedulerCoreState; 256], // MAX_THREADS
+    per_core: [SchedulerCoreState; 96], // MAX_THREADS
     /// Contains a global counter of thread IDs
     tid_counter: AtomicUsize,
 }
@@ -78,7 +78,7 @@ impl<'a> Default for SmpScheduler<'a> {
 }
 
 impl<'a> SmpScheduler<'a> {
-    pub const MAX_THREADS: usize = 256;
+    pub const MAX_THREADS: usize = 2048;
 
     pub fn with_upcalls(upcalls: Upcalls) -> Self {
         Self {
@@ -88,7 +88,7 @@ impl<'a> SmpScheduler<'a> {
             threads: spin::Mutex::new(hashbrown::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
             upcalls,
             tid_counter: AtomicUsize::new(0),
-            per_core: arr![SchedulerCoreState::new(); 256], // MAX_THREADS
+            per_core: arr![SchedulerCoreState::new(); 96], // MAX_THREADS
         }
     }
 

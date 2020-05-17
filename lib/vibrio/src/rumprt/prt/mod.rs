@@ -187,7 +187,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
     // XXX: what time should we be doing this?
     rump_pub_lwproc_switch(curlwp);
 
-    let coreid = (rlid as usize) % 1;
+    let coreid = (rlid as usize) % 96;
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),

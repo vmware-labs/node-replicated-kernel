@@ -30,7 +30,7 @@ bootloader_shared = { path = "../lib/bootloader_shared" }
 # External libraries we use:
 spin = "0.5.2"
 log = "0.4"
-arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
+arrayvec = { git = "https://github.com/gz/arrayvec.git", default-features = false, features = ["array-sizes-129-255"] }
 lazy_static = { version = "1.3", features = ["spin_no_std"] }
 logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }
 hashbrown = { version = "0.6.0", features = [ "nightly" ] }

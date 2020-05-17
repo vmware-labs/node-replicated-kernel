@@ -24,9 +24,9 @@ pub struct NCache {
     /// Which node the memory in this cache is from.
     node: topology::NodeId,
     /// A vector of free, cached base-page addresses
-    base_page_addresses: arrayvec::ArrayVec<[PAddr; 65536]>,
+    base_page_addresses: arrayvec::ArrayVec<[PAddr; 131071]>,
     /// A vector of free, cached large-page addresses
-    large_page_addresses: arrayvec::ArrayVec<[PAddr; 65536]>,
+    large_page_addresses: arrayvec::ArrayVec<[PAddr; 131072]>,
 }
 
 impl NCache {

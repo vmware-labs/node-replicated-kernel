@@ -322,6 +322,11 @@ pub extern "C" fn main() {
             // Set up a garbage environment
             let mut c_environ = vec![
                 CStr::from_bytes_with_nul_unchecked(b"PTHREAD_STACKSIZE=64000\0").as_ptr(),
+                CStr::from_bytes_with_nul_unchecked(b"OMP_NUM_THREADS=80\0").as_ptr(),
+                CStr::from_bytes_with_nul_unchecked(b"OMP_DYNAMIC=FALSE\0").as_ptr(),
+                CStr::from_bytes_with_nul_unchecked(b"GOMP_DEBUG=1\0").as_ptr(),
+                CStr::from_bytes_with_nul_unchecked(b"OMP_DISPLAY_ENV=TRUE\0").as_ptr(),
+                CStr::from_bytes_with_nul_unchecked(b"GOMP_SPINCOUNT=INFINITY\0").as_ptr(),
                 ptr::null_mut(),
             ];
             super::crt::environ = c_environ.as_mut_ptr();

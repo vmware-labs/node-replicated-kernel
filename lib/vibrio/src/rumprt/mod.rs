@@ -296,9 +296,7 @@ pub unsafe extern "C" fn rumpuser_getparam(
         "RUMP_VERBOSE" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "RUMP_THREADS" => CStr::from_bytes_with_nul_unchecked(b"1\0"),
         "_RUMPUSER_HOSTNAME" => CStr::from_bytes_with_nul_unchecked(b"btest\0"),
-        "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"4294967296\0"), // 4 GiB
-        //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"2097152\0"), // 2 MiB
-        //"RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"197152\0"), // very little MiB
+        "RUMP_MEMLIMIT" => CStr::from_bytes_with_nul_unchecked(b"549755813888\0"), // 512 GiB
         _ => return errno::ENOENT,
     };
 

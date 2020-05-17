@@ -6,6 +6,7 @@ use core::ptr;
 use crate::rumprt::{c_int, c_size_t, c_void};
 
 use log::{debug, error, info, trace, warn};
+const MAP_FAILED: u64 = u64::max_value();
 
 /// Implementes mmap by forwarding it to the rumpkernel and then to
 /// `rumpuser_malloc` (?) then bespin (not particularly efficient, also I think
@@ -14,7 +15,6 @@ mod rump {
     use super::*;
 
     const SYS_MMAP: i32 = 197;
-    const MAP_FAILED: u64 = u64::max_value();
 
     /// Simplified format (hard-coded little endian, 64-bit assumption)
     /// that rump/NetBSD expects for a mmap call
@@ -83,7 +83,59 @@ mod rump {
 }
 
 /// Make mmap calls go directly to the bespin kernel.
-mod bespin {}
+mod bespin {
+    use super::*;
+
+    /// Implementes mmap by mapping memory in vspace directly.
+    ///
+    /// `mmap(void *addr, size_t len, int prot, int flags, int fd, off_t pos)`
+    pub unsafe extern "C" fn mmap(
+        addr: *mut c_void,
+        len: c_size_t,
+        prot: c_int,
+        flags: c_int,
+        fd: c_int,
+        pos: c_int,
+    ) -> *mut c_void {
+        assert!(addr.is_null());
+        assert!(len > 4096);
+        //assert!(len % 4096 == 0);
+        info!("mmap len = {}", len);
+
+        let mut pager = crate::mem::PAGER.lock();
+
+        let len = len as usize;
+        let mut remaining = len;
+        let mut ptr = None;
+
+        const CHUNK_SIZE: usize = 64 * 1024 * 1024;
+        for current_offset in (0..len).step_by(CHUNK_SIZE) {
+            let size_to_map = core::cmp::min(CHUNK_SIZE, remaining);
+
+            let layout = core::alloc::Layout::from_size_align_unchecked(
+                core::cmp::min(CHUNK_SIZE, remaining),
+                0x200000,
+            );
+
+            let r = pager.allocate(layout);
+            match r {
+                Ok((va, pa)) => {
+                    remaining -= size_to_map;
+                    if ptr.is_none() {
+                        ptr = Some(va.as_usize() as *mut c_void);
+                    }
+                }
+                Err(e) => {
+                    panic!("{:?}", e);
+                    return MAP_FAILED as *mut c_void;
+                }
+            }
+        }
+
+        assert!(remaining == 0);
+        ptr.unwrap()
+    }
+}
 
 /// `mmap(void *addr, size_t len, int prot, int flags, int fd, off_t pos)`
 #[no_mangle]
@@ -108,7 +160,7 @@ pub unsafe extern "C" fn _mmap(
     fd: c_int,
     pos: c_int,
 ) -> *mut c_void {
-    rump::mmap(addr, len, prot, flags, fd, pos)
+    bespin::mmap(addr, len, prot, flags, fd, pos)
 }
 
 #[no_mangle]

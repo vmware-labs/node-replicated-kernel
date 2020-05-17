@@ -1,6 +1,7 @@
 //! Generic process traits
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use cstr_core::CStr;
@@ -18,19 +19,19 @@ use crate::memory::{Frame, VAddr};
 /// user-application doesn't have any reference to any log operation in kernel space.
 #[derive(PartialEq, Clone, Debug)]
 pub struct KernSlice {
-    pub buffer: Box<[u8]>,
+    pub buffer: Arc<[u8]>,
 }
 
 impl KernSlice {
     pub fn new(base: u64, len: usize) -> KernSlice {
-        let buffer = Box::<[u8]>::new_uninit_slice(len);
+        let buffer = Arc::<[u8]>::new_uninit_slice(len);
         let mut buffer = unsafe { buffer.assume_init() };
 
         let mut user_ptr = VAddr::from(base);
         let slice_ptr = UserPtr::new(&mut user_ptr);
         let user_slice: &mut [u8] =
             unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
-        buffer.copy_from_slice(&user_slice[0..len]);
+        unsafe { Arc::get_mut_unchecked(&mut buffer).copy_from_slice(&user_slice[0..len]) };
         KernSlice { buffer }
     }
 }

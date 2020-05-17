@@ -58,7 +58,7 @@ pub enum Op {
     MemAdjust,
     MemUnmap,
     FileOpen(Pid, String, Flags, Modes),
-    FileWrite(Pid, FD, Box<[u8]>, Len, Offset),
+    FileWrite(Pid, FD, Arc<[u8]>, Len, Offset),
     FileClose(Pid, FD),
     FileDelete(Pid, String),
     FileRename(Pid, String, String),
@@ -298,7 +298,7 @@ impl<P: Process> KernelNode<P> {
                     let kernslice = KernSlice::new(buffer, len as usize);
 
                     let response = replica.execute(
-                        Op::FileWrite(pid, fd, kernslice.buffer, len, offset),
+                        Op::FileWrite(pid, fd, kernslice.buffer.clone(), len, offset),
                         kcb.arch.replica_idx,
                     );
 
@@ -682,7 +682,7 @@ where
                     }
                 }
 
-                match self.fs.write(mnode_num, &kernslice, curr_offset) {
+                match self.fs.write(mnode_num, &kernslice.clone(), curr_offset) {
                     Ok(len) => {
                         if offset == -1 {
                             // Update offset when FileWrite doesn't give an explicit offset value.

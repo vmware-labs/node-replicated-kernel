@@ -419,12 +419,8 @@ fn handle_fileio(
             }
 
             let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
-            match kcb
-                .memfs
-                .as_mut()
-                .unwrap()
-                .write(2, &kernslice.buffer, offset)
-            {
+            let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
+            match kcb.memfs.as_mut().unwrap().write(2, &mut buffer, offset) {
                 Ok(len) => Ok((len as u64, 0)),
                 Err(e) => Err(KError::FileSystem { source: e }),
             }

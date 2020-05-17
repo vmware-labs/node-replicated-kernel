@@ -24,7 +24,7 @@ mod mwrl;
 mod mwrm;
 use crate::fxmark::{drbh::DRBH, drbl::DRBL, dwol::DWOL, dwom::DWOM, mwrl::MWRL, mwrm::MWRM};
 
-const PAGE_SIZE: u64 = 4096;
+const PAGE_SIZE: u64 = 4080;
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 

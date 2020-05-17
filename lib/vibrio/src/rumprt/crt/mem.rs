@@ -7,24 +7,84 @@ use crate::rumprt::{c_int, c_size_t, c_void};
 
 use log::{debug, error, info, trace, warn};
 
-const SYS_MMAP: i32 = 197;
-const MAP_FAILED: u64 = u64::max_value();
+/// Implementes mmap by forwarding it to the rumpkernel and then to
+/// `rumpuser_malloc` (?) then bespin (not particularly efficient, also I think
+/// the NetBSD kernel will allocate in 4 KiB chunks).
+mod rump {
+    use super::*;
 
-/// Simplified format (hard-coded little endian, 64-bit assumption)
-/// that rump/NetBSD expects for a mmap call
-#[repr(C)]
-pub struct sys_mmap_args {
-    pub addr: u64,
-    pub len: u64,
-    pub prot: u64,
-    pub flags: u64,
-    pub fd: u64,
-    pub padding: u64,
-    pub pos: u64,
+    const SYS_MMAP: i32 = 197;
+    const MAP_FAILED: u64 = u64::max_value();
+
+    /// Simplified format (hard-coded little endian, 64-bit assumption)
+    /// that rump/NetBSD expects for a mmap call
+    #[repr(C)]
+    pub struct sys_mmap_args {
+        pub addr: u64,
+        pub len: u64,
+        pub prot: u64,
+        pub flags: u64,
+        pub fd: u64,
+        pub padding: u64,
+        pub pos: u64,
+    }
+
+    /// Implementes mmap by forwarding it to the rumpkernel.
+    ///
+    /// `mmap(void *addr, size_t len, int prot, int flags, int fd, off_t pos)`
+    pub unsafe extern "C" fn mmap(
+        addr: *mut c_void,
+        len: c_size_t,
+        prot: c_int,
+        flags: c_int,
+        fd: c_int,
+        pos: c_int,
+    ) -> *mut c_void {
+        debug!(
+            "mmap addr={:p} len={} prot={} flags={} fd={} pos={}",
+            addr, len, prot, flags, fd, pos
+        );
+        let args = sys_mmap_args {
+            addr: addr as u64,
+            len: len as u64,
+            prot: prot as u64,
+            flags: flags as u64,
+            fd: fd as u64,
+            padding: 0u64,
+            pos: pos as u64,
+        };
+
+        extern "C" {
+            fn rump_syscall(
+                arg: c_int,
+                arg_ptr: *const c_void,
+                arg_len: usize,
+                retvals: *mut u64,
+            ) -> c_int;
+        }
+        //int	rump_syscall(int, void *, size_t, register_t *);
+
+        let mut retval: [u64; 2] = [0, 0];
+        let error = rump_syscall(
+            SYS_MMAP,
+            &args as *const _ as *const c_void,
+            core::mem::size_of::<sys_mmap_args>(),
+            &mut retval as *mut _ as *mut u64,
+        );
+        trace!("mmap syscall returned {} {:?}", error, retval);
+
+        crate::rumprt::errno::rumpuser_seterrno(error);
+        if error == 0 {
+            retval[0] as *mut c_void
+        } else {
+            MAP_FAILED as *mut c_void
+        }
+    }
 }
 
-/// Implementes mmap by forwarding it to the rumpkernel.
-///
+/// Make mmap calls go directly to the bespin kernel.
+mod bespin {}
+
 /// `mmap(void *addr, size_t len, int prot, int flags, int fd, off_t pos)`
 #[no_mangle]
 pub unsafe extern "C" fn mmap(
@@ -35,45 +95,7 @@ pub unsafe extern "C" fn mmap(
     fd: c_int,
     pos: c_int,
 ) -> *mut c_void {
-    debug!(
-        "mmap addr={:p} len={} prot={} flags={} fd={} pos={}",
-        addr, len, prot, flags, fd, pos
-    );
-    let args = sys_mmap_args {
-        addr: addr as u64,
-        len: len as u64,
-        prot: prot as u64,
-        flags: flags as u64,
-        fd: fd as u64,
-        padding: 0u64,
-        pos: pos as u64,
-    };
-
-    extern "C" {
-        fn rump_syscall(
-            arg: c_int,
-            arg_ptr: *const c_void,
-            arg_len: usize,
-            retvals: *mut u64,
-        ) -> c_int;
-    }
-    //int	rump_syscall(int, void *, size_t, register_t *);
-
-    let mut retval: [u64; 2] = [0, 0];
-    let error = rump_syscall(
-        SYS_MMAP,
-        &args as *const _ as *const c_void,
-        core::mem::size_of::<sys_mmap_args>(),
-        &mut retval as *mut _ as *mut u64,
-    );
-    trace!("mmap syscall returned {} {:?}", error, retval);
-
-    crate::rumprt::errno::rumpuser_seterrno(error);
-    if error == 0 {
-        retval[0] as *mut c_void
-    } else {
-        MAP_FAILED as *mut c_void
-    }
+    _mmap(addr, len, prot, flags, fd, pos)
 }
 
 /// A separate symbol that goes to `mmap`.
@@ -86,7 +108,7 @@ pub unsafe extern "C" fn _mmap(
     fd: c_int,
     pos: c_int,
 ) -> *mut c_void {
-    mmap(addr, len, prot, flags, fd, pos)
+    rump::mmap(addr, len, prot, flags, fd, pos)
 }
 
 #[no_mangle]

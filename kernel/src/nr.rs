@@ -61,7 +61,7 @@ pub enum Op {
     FileWrite(Pid, FD, Box<[u8]>, Len, Offset),
     FileClose(Pid, FD),
     FileDelete(Pid, String),
-    FileRename(Pid, u64, u64),
+    FileRename(Pid, String, String),
     Invalid,
 }
 
@@ -356,8 +356,22 @@ impl<P: Process> KernelNode<P> {
             .replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response =
-                    replica.execute(Op::FileRename(pid, oldname, newname), kcb.arch.replica_idx);
+                let oldfilename;
+                match userptr_to_str(oldname) {
+                    Ok(user_str) => oldfilename = user_str,
+                    Err(e) => return Err(e.clone()),
+                }
+
+                let newfilename;
+                match userptr_to_str(newname) {
+                    Ok(user_str) => newfilename = user_str,
+                    Err(e) => return Err(e.clone()),
+                }
+
+                let response = replica.execute(
+                    Op::FileRename(pid, oldfilename, newfilename),
+                    kcb.arch.replica_idx,
+                );
                 match &response {
                     Ok(NodeResult::FileRenamed(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
@@ -701,21 +715,9 @@ where
                 }
             }
             Op::FileRename(pid, oldname, newname) => {
-                let oldfilename;
-                match userptr_to_str(oldname) {
-                    Ok(user_str) => oldfilename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
-                let newfilename;
-                match userptr_to_str(newname) {
-                    Ok(user_str) => newfilename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-                match self.fs.rename(&oldfilename, &newfilename) {
+                match self.fs.rename(&oldname, &newname) {
                     Ok(is_renamed) => Ok(NodeResult::FileRenamed(is_renamed)),
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }

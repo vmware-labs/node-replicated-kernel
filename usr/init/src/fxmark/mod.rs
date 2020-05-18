@@ -103,8 +103,8 @@ where
                 benchmark,
                 cores,
                 4096,
-                bench_duration_secs * 1000,
-                iteration * 1000,
+                bench_duration_secs,
+                iteration,
                 iops[iteration as usize]
             );
         }

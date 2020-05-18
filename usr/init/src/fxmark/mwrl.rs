@@ -42,17 +42,21 @@ impl Bench for MWRL {
         let mut iops = 0;
         let mut iterations = 0;
         let mut iter = 0;
+        let filenames = vec![
+            format!("/{}/file-{}.txt\0", core, 0),
+            format!("/{}/file-{}.txt\0", core, 1),
+        ];
         while iterations <= duration {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
                 for i in 0..64 {
-                    let old_name = format!("/{}/file-{}.txt\0", core, iter);
+                    let old_name = iter % 2;
                     iter += 1;
-                    let new_name = format!("/{}/file-{}.txt\0", core, iter);
+                    let new_name = iter % 2;
                     // Rename the file
                     if vibrio::syscalls::Fs::rename(
-                        old_name.as_ptr() as u64,
-                        new_name.as_ptr() as u64,
+                        filenames[old_name].as_ptr() as u64,
+                        filenames[new_name].as_ptr() as u64,
                     )
                     .expect("FileRename syscall failed")
                         != 0

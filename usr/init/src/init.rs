@@ -38,9 +38,9 @@ use log::{Level, Metadata, Record, SetLoggerError};
 mod vmops;
 
 mod f64;
-mod histogram;
 #[cfg(feature = "fxmark")]
 mod fxmark;
+mod histogram;
 
 #[thread_local]
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];

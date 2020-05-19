@@ -38,13 +38,12 @@
 
 #![no_std]
 #![no_main]
-#![feature(llvm_asm, global_asm)]
+#![feature(llvm_asm, global_asm, slice_patterns)]
 
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate alloc;
-extern crate rlibc;
 
 extern crate elfloader;
 extern crate x86;

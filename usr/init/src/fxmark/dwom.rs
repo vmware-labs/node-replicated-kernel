@@ -9,7 +9,6 @@ use vibrio::io::*;
 #[derive(Clone)]
 pub struct DWOM {
     page: Vec<u8>,
-    fd: RefCell<u64>,
 }
 
 impl Default for DWOM {
@@ -23,10 +22,7 @@ impl Default for DWOM {
         }
         .to_vec();
 
-        DWOM {
-            page,
-            fd: RefCell::new(u64::MAX),
-        }
+        DWOM { page }
     }
 }
 
@@ -43,7 +39,9 @@ impl Bench for DWOM {
             let ret = vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, PAGE_SIZE, 0)
                 .expect("FileWriteAt syscall failed");
             assert_eq!(ret, PAGE_SIZE as u64);
-            *self.fd.borrow_mut() = fd;
+            if vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed") != 0 {
+                panic!("FileClose syscall failed");
+            };
         }
     }
 
@@ -57,7 +55,12 @@ impl Bench for DWOM {
         use vibrio::io::*;
         use vibrio::syscalls::*;
         let mut iops_per_second = Vec::with_capacity(duration as usize);
-        let fd = *self.fd.borrow();
+        let fd = vibrio::syscalls::Fs::open(
+            "file.txt\0".as_ptr() as u64,
+            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+            u64::from(FileModes::S_IRWXU),
+        )
+        .expect("FileOpen syscall failed");
         if fd == u64::MAX {
             panic!("Unable to open a file");
         }

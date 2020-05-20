@@ -639,8 +639,8 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "fxmark")]
     //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd testcmd=1xdrbl
-    let (ncores, benchmark) = match fxmark::ARGs::from_str(pinfo.cmdline) {
-        Ok(args) => (Some(args.cores), args.benchmark),
+    let (ncores, benchmark, write_ratio) = match fxmark::ARGs::from_str(pinfo.cmdline) {
+        Ok(args) => (Some(args.cores), args.benchmark, args.write_ratio),
         Err(_) => unreachable!(),
     };
 
@@ -686,7 +686,7 @@ pub extern "C" fn _start() -> ! {
     fs_write_test();
 
     #[cfg(feature = "fxmark")]
-    fxmark::bench(ncores, benchmark);
+    fxmark::bench(ncores, benchmark, write_ratio);
 
     debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::Process::exit(0);

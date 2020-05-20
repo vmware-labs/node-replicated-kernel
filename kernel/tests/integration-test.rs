@@ -1516,7 +1516,11 @@ fn s06_memfs_bench() {
 
 #[test]
 fn s06_fxmark_benchmark() {
-    let benchmarks = vec!["drbl", "drbh", "dwol", "dwom"];
+    // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
+    let benchmarks = vec![
+        "drblX0", "drbhX0", "dwolX0", "dwomX0", "mixX1", "mixX5", "mixX10", "mixX20", "mixX40",
+        "mixX60", "mixX80", "mixX100",
+    ];
     let num_microbenchs = benchmarks.len() as u64;
     let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
         num_cpus::get() / 2
@@ -1535,7 +1539,7 @@ fn s06_fxmark_benchmark() {
 
     for benchmark in benchmarks {
         for &cores in threads.iter() {
-            let kernel_cmdline = format!("testcmd={}x{}", cores, benchmark);
+            let kernel_cmdline = format!("testcmd={}X{}", cores, benchmark);
             let mut cmdline = RunnerArgs::new("test-userspace-smp")
                 .module("init")
                 .user_feature("fxmark")
@@ -1594,7 +1598,7 @@ fn s06_fxmark_benchmark() {
                         .expect("Can't open file");
                     if write_headers {
                         let row =
-                            "git_rev,thread_id,benchmark,ncores,memsize,duration_total,duration,operations\n";
+                            "git_rev,thread_id,benchmark,ncores,write_ratio,duration_total,duration,operations\n";
                         let r = csv_file.write(row.as_bytes());
                         assert!(r.is_ok());
                     }

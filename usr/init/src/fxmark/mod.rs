@@ -20,9 +20,12 @@ mod drbh;
 mod drbl;
 mod dwol;
 mod dwom;
+mod mix;
 mod mwrl;
 mod mwrm;
-use crate::fxmark::{drbh::DRBH, drbl::DRBL, dwol::DWOL, dwom::DWOM, mwrl::MWRL, mwrm::MWRM};
+use crate::fxmark::{
+    drbh::DRBH, drbl::DRBL, dwol::DWOL, dwom::DWOM, mix::MIX, mwrl::MWRL, mwrm::MWRM,
+};
 
 const PAGE_SIZE: u64 = 4080;
 
@@ -34,6 +37,7 @@ static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 pub struct ARGs {
     pub cores: usize,
     pub benchmark: String,
+    pub write_ratio: usize,
 }
 
 /// Both command line and integration tests pass CORExBENCH(ex: 10xdhrl). Convert
@@ -42,20 +46,28 @@ impl FromStr for ARGs {
     type Err = ParseIntError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let coords: Vec<&str> = s.split('x').collect();
+        let coords: Vec<&str> = s.split('X').collect();
 
         let x_fromstr = coords[0].parse::<usize>()?;
         let benchmark = coords[1].to_string();
+        let write_ratio = coords[2].parse::<usize>()?;
         Ok(ARGs {
             cores: x_fromstr,
             benchmark,
+            write_ratio,
         })
     }
 }
 
 pub trait Bench {
     fn init(&self, cores: Vec<usize>);
-    fn run(&self, barrier: &AtomicUsize, duration: u64, core: usize) -> Vec<usize>;
+    fn run(
+        &self,
+        barrier: &AtomicUsize,
+        duration: u64,
+        core: usize,
+        write_ratio: usize,
+    ) -> Vec<usize>;
 }
 
 unsafe extern "C" fn fxmark_bencher_trampoline<T>(arg: *mut u8) -> *mut u8
@@ -63,8 +75,7 @@ where
     T: Bench + Default + core::marker::Send + core::marker::Sync + 'static + core::clone::Clone,
 {
     let bench: Arc<MicroBench<T>> = Arc::from_raw(arg as *const MicroBench<_>);
-    //let args = unsafe { core::mem::transmute::<*mut u8, &ARGs>(arg1) };
-    bench.fxmark_bencher(bench.cores, bench.benchmark);
+    bench.fxmark_bencher(bench.cores, bench.benchmark, bench.write_ratio);
     ptr::null_mut()
 }
 
@@ -74,6 +85,7 @@ where
 {
     cores: usize,
     benchmark: &'a str,
+    write_ratio: usize,
     bench: T,
 }
 
@@ -81,20 +93,24 @@ impl<'a, T> MicroBench<'a, T>
 where
     T: Bench + Default + core::marker::Send + core::marker::Sync + 'static + core::clone::Clone,
 {
-    pub fn new(cores: usize, benchmark: &'static str) -> MicroBench<'a, T> {
+    pub fn new(cores: usize, benchmark: &'static str, write_ratio: usize) -> MicroBench<'a, T> {
         MicroBench {
             cores,
             benchmark,
+            write_ratio,
             bench: Default::default(),
         }
     }
 
-    fn fxmark_bencher(&self, cores: usize, benchmark: &str) {
+    fn fxmark_bencher(&self, cores: usize, benchmark: &str, write_ratio: usize) {
         let bench_duration_secs = if cfg!(feature = "smoke") { 1 } else { 10 };
         let core_id = Environment::scheduler().core_id;
-        let iops = self
-            .bench
-            .run(&POOR_MANS_BARRIER, bench_duration_secs, core_id);
+        let iops = self.bench.run(
+            &POOR_MANS_BARRIER,
+            bench_duration_secs,
+            core_id,
+            write_ratio,
+        );
 
         for iteration in 1..(bench_duration_secs + 1) {
             info!(
@@ -102,7 +118,7 @@ where
                 core_id,
                 benchmark,
                 cores,
-                4096,
+                write_ratio,
                 bench_duration_secs,
                 iteration,
                 iops[iteration as usize]
@@ -111,7 +127,7 @@ where
     }
 }
 
-pub fn bench(ncores: Option<usize>, benchmark: String) {
+pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
     info!("thread_id,benchmark,core,ncores,memsize,duration_total,duration,operations");
 
     let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
@@ -156,10 +172,6 @@ pub fn bench(ncores: Option<usize>, benchmark: String) {
                     POOR_MANS_BARRIER.store(idx, Ordering::SeqCst);
 
                     for core_id in 0..idx {
-                        let args = &mut ARGs {
-                            cores: idx,
-                            benchmark: String::from("dhrl"), //benchmark.clone(),
-                        };
                         thandles.push(
                             Environment::thread()
                                 .spawn_on_core(
@@ -187,38 +199,44 @@ pub fn bench(ncores: Option<usize>, benchmark: String) {
     }
 
     if benchmark == "drbl" {
-        let microbench = Arc::new(MicroBench::<DRBL>::new(maximum, "drbl"));
+        let microbench = Arc::new(MicroBench::<DRBL>::new(maximum, "drbl", write_ratio));
         microbench.bench.init(cores.clone());
         start::<DRBL>(maximum, microbench);
     }
 
     if benchmark == "drbh" {
-        let microbench = Arc::new(MicroBench::<DRBH>::new(maximum, "drbh"));
+        let microbench = Arc::new(MicroBench::<DRBH>::new(maximum, "drbh", write_ratio));
         microbench.bench.init(cores.clone());
         start::<DRBH>(maximum, microbench);
     }
 
     if benchmark == "dwol" {
-        let microbench = Arc::new(MicroBench::<DWOL>::new(maximum, "dwol"));
+        let microbench = Arc::new(MicroBench::<DWOL>::new(maximum, "dwol", write_ratio));
         microbench.bench.init(cores.clone());
         start::<DWOL>(maximum, microbench);
     }
 
     if benchmark == "dwom" {
-        let microbench = Arc::new(MicroBench::<DWOM>::new(maximum, "dwom"));
+        let microbench = Arc::new(MicroBench::<DWOM>::new(maximum, "dwom", write_ratio));
         microbench.bench.init(cores.clone());
         start::<DWOM>(maximum, microbench);
     }
 
     if benchmark == "mwrl" {
-        let microbench = Arc::new(MicroBench::<MWRL>::new(maximum, "mwrl"));
+        let microbench = Arc::new(MicroBench::<MWRL>::new(maximum, "mwrl", write_ratio));
         microbench.bench.init(cores.clone());
         start::<MWRL>(maximum, microbench);
     }
 
     if benchmark == "mwrm" {
-        let microbench = Arc::new(MicroBench::<MWRM>::new(maximum, "mwrm"));
+        let microbench = Arc::new(MicroBench::<MWRM>::new(maximum, "mwrm", write_ratio));
         microbench.bench.init(cores.clone());
         start::<MWRM>(maximum, microbench);
+    }
+
+    if benchmark == "mix" {
+        let microbench = Arc::new(MicroBench::<MIX>::new(maximum, "mix", write_ratio));
+        microbench.bench.init(cores.clone());
+        start::<MIX>(maximum, microbench);
     }
 }

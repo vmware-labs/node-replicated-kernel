@@ -44,7 +44,13 @@ impl Bench for DRBL {
         }
     }
 
-    fn run(&self, POOR_MANS_BARRIER: &AtomicUsize, duration: u64, core: usize) -> Vec<usize> {
+    fn run(
+        &self,
+        POOR_MANS_BARRIER: &AtomicUsize,
+        duration: u64,
+        core: usize,
+        _write_ratio: usize,
+    ) -> Vec<usize> {
         use vibrio::io::*;
         use vibrio::syscalls::*;
         let mut iops_per_second = Vec::with_capacity(duration as usize);

@@ -36,9 +36,15 @@ impl Bench for DWOM {
             )
             .expect("FileOpen syscall failed");
 
-            let ret = vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, PAGE_SIZE, 0)
-                .expect("FileWriteAt syscall failed");
-            assert_eq!(ret, PAGE_SIZE as u64);
+            let mut offset = 0;
+            for _core in cores.iter() {
+                if vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, 4096, offset)
+                    .expect("FileWriteAt syscall failed")
+                    != 4096
+                {
+                    panic!("FileWriteAt syscall failed");
+                }
+            }
             if vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed") != 0 {
                 panic!("FileClose syscall failed");
             };
@@ -84,8 +90,13 @@ impl Bench for DWOM {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
                 for i in 0..64 {
-                    if vibrio::syscalls::Fs::write_at(fd, page.as_ptr() as u64, PAGE_SIZE, 0)
-                        .expect("FileWriteAt syscall failed")
+                    if vibrio::syscalls::Fs::write_at(
+                        fd,
+                        page.as_ptr() as u64,
+                        PAGE_SIZE,
+                        core as i64 * 4096,
+                    )
+                    .expect("FileWriteAt syscall failed")
                         != PAGE_SIZE
                     {
                         panic!("DWOM: write_at() failed");

@@ -8,16 +8,12 @@ use vibrio::io::*;
 #[derive(Clone)]
 pub struct DRBH {
     page: Vec<u8>,
-    fd: RefCell<u64>,
 }
 
 impl Default for DRBH {
     fn default() -> DRBH {
         let page = vec![0xb; PAGE_SIZE as usize];
-        DRBH {
-            page,
-            fd: RefCell::new(u64::MAX),
-        }
+        DRBH { page }
     }
 }
 
@@ -25,9 +21,8 @@ impl Bench for DRBH {
     fn init(&self, _cores: Vec<usize>) {
         unsafe {
             // Open a shared file for each core.
-            let file_name = "file.txt\0";
             let fd = vibrio::syscalls::Fs::open(
-                file_name.as_ptr() as u64,
+                "file.txt\0".as_ptr() as u64,
                 u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
                 u64::from(FileModes::S_IRWXU),
             )
@@ -38,8 +33,8 @@ impl Bench for DRBH {
                 .expect("FileWriteAt syscall failed");
             assert_eq!(ret, PAGE_SIZE as u64);
 
-            // Store fd in a shared struct.
-            *self.fd.borrow_mut() = fd;
+            let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
+            assert_eq!(ret, 0);
         }
     }
 
@@ -55,10 +50,12 @@ impl Bench for DRBH {
         let mut iops_per_second = Vec::with_capacity(duration as usize);
 
         // Load fd from a shared struct.
-        let fd = *self.fd.borrow();
-        if fd == u64::MAX {
-            panic!("Unable to open a file");
-        }
+        let fd = vibrio::syscalls::Fs::open(
+            "file.txt\0".as_ptr() as u64,
+            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+            u64::from(FileModes::S_IRWXU),
+        )
+        .expect("FileOpen syscall failed");
         let page: &mut [i8; PAGE_SIZE as usize] = &mut [0; PAGE_SIZE as usize];
 
         // Synchronize with all cores

@@ -46,7 +46,7 @@ impl NCache {
         let base_count_before_populate = self.base_page_addresses.len();
         let large_count_before_populate = self.large_page_addresses.len();
 
-        let mut how_many_large_pages = (frame.size() / LARGE_PAGE_SIZE) * 92 / 100;
+        let mut how_many_large_pages = (frame.size() / LARGE_PAGE_SIZE) * 80 / 100;
         if how_many_large_pages == 0 {
             // Try to have at least one large-page if possible
             how_many_large_pages = 1;

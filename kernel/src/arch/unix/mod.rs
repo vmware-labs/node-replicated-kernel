@@ -52,7 +52,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let mut tc = TCache::new(0, 0);
     let mut mm = memory::MemoryMapper::new();
 
-    for _i in 0..254 {
+    for _i in 0..64 {
         let frame = mm
             .allocate_frame(4096)
             .expect("We don't have vRAM available");
@@ -67,7 +67,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     }
 
     let frame = mm
-        .allocate_frame(512 * 1024 * 1024)
+        .allocate_frame(2 * 1024 * 1024 * 1024)
         .expect("We don't have vRAM available");
     let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
     annotated_regions.push(frame);

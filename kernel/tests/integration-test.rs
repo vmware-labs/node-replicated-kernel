@@ -1517,7 +1517,9 @@ fn s06_memfs_bench() {
 #[test]
 fn s06_fxmark_benchmark() {
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
-    let benchmarks = vec!["mixX1", "mixX5", "mixX10", "mixX20", "mixX40", "mixX60", "mixX80", "mixX100"];
+    let benchmarks = vec![
+        "mixX1", "mixX5", "mixX10", "mixX20", "mixX40", "mixX60", "mixX80", "mixX100",
+    ];
     let num_microbenchs = benchmarks.len() as u64;
     let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
         num_cpus::get() / 2

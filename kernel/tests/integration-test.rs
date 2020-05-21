@@ -1552,7 +1552,7 @@ fn s06_fxmark_benchmark() {
             if cfg!(feature = "smoke") {
                 cmdline = cmdline.user_feature("smoke").memory(8192);
             } else {
-                cmdline = cmdline.memory(core::cmp::max(8192, cores * 512));
+                cmdline = cmdline.memory(core::cmp::max(18192, cores * 512));
             }
 
             if cfg!(feature = "smoke") && cores > 2 {

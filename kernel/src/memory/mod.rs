@@ -73,7 +73,7 @@ impl From<core::cell::BorrowMutError> for AllocationError {
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator {
     big_objects_sbrk: AtomicU64::new(
-        KERNEL_BASE + (1024 * x86::bits64::paging::HUGE_PAGE_SIZE) as u64,
+        KERNEL_BASE + (480 * x86::bits64::paging::HUGE_PAGE_SIZE) as u64,
     ),
 };
 
@@ -118,12 +118,6 @@ impl KernelAllocator {
     fn try_alloc(&self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocationError> {
         let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
         match KernelAllocator::allocator_for(layout) {
-            // TODO(check): This if in the matches should not be necessary...
-            AllocatorType::MemManager if layout.size() == BASE_PAGE_SIZE => {
-                let mut pmanager = kcb.try_mem_manager()?;
-                let f = pmanager.allocate_base_page()?;
-                unsafe { Ok(ptr::NonNull::new_unchecked(f.kernel_vaddr().as_mut_ptr())) }
-            }
             AllocatorType::Zone if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE => {
                 // TODO(rust): Silly code duplication follows if/else
                 if core::intrinsics::unlikely(kcb.in_panic_mode) {
@@ -153,10 +147,6 @@ impl KernelAllocator {
 
                 // Figure out how much we need to map:
                 let (mut base, mut large) = KernelAllocator::layout_to_pages(layout);
-                info!(
-                    "Got a large allocation {:?}, need bp {} lp {}",
-                    layout, base, large
-                );
 
                 // TODO(hack): Fetching more than 254 base pages would exhaust our TCache so might
                 // as well get a large-page instead:
@@ -183,6 +173,13 @@ impl KernelAllocator {
                 let mut start_at = self.big_objects_sbrk.fetch_add(
                     ((large + 1) * LARGE_PAGE_SIZE) as u64,
                     core::sync::atomic::Ordering::SeqCst,
+                );
+                trace!(
+                    "Got a large allocation {:?}, need bp {} lp {} {:#x}",
+                    layout,
+                    base,
+                    large,
+                    start_at
                 );
 
                 let base_ptr = unsafe { ptr::NonNull::new_unchecked(start_at as *mut u8) };
@@ -231,7 +228,6 @@ impl KernelAllocator {
     /// Determines which Allocator to use for a given Layout.
     fn allocator_for(layout: Layout) -> AllocatorType {
         match layout.size() {
-            BASE_PAGE_SIZE => AllocatorType::MemManager,
             0..=ZoneAllocator::MAX_ALLOC_SIZE => AllocatorType::Zone,
             ZoneAllocator::MAX_ALLOC_SIZE..=LARGE_PAGE_SIZE => AllocatorType::MemManager,
             _ => AllocatorType::MapBig,
@@ -474,8 +470,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 unreachable!("Trying to deallocate {:p} {:?} without a KCB.", ptr, layout);
             },
             |kcb| {
-                if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE && layout.size() != BASE_PAGE_SIZE
-                {
+                if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
                     // TODO(rust): Silly code duplication follows if/else
                     if core::intrinsics::unlikely(kcb.in_panic_mode) {
                         let mut zone_allocator = kcb

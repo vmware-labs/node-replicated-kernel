@@ -1375,7 +1375,7 @@ mod tests {
         assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::Zone);
 
         let l = unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
-        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::MemManager);
+        assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::Zone);
 
         let l = unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE + 1, BASE_PAGE_SIZE) };
         assert_eq!(KernelAllocator::allocator_for(l), AllocatorType::Zone);

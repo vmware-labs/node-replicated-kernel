@@ -26,7 +26,7 @@ impl Default for MIX {
 
         MIX {
             page,
-            size: 256 * 1024 * 1024,
+            size: 512 * 1024 * 1024,
         }
     }
 }

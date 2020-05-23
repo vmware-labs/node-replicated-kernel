@@ -584,7 +584,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             let f = Frame::new(base, size, 0);
 
             const ONE_MIB: usize = 1 * 1024 * 1024;
-            const EARLY_MEMORY_CAPACITY: usize = 14 * 1024 * 1024;
+            const EARLY_MEMORY_CAPACITY: usize = 32 * 1024 * 1024;
             if base.as_usize() >= ONE_MIB {
                 if size > EARLY_MEMORY_CAPACITY && emanager.is_none() {
                     // This seems like a good frame for the early allocator on the BSP core.

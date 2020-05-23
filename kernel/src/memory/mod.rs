@@ -372,9 +372,8 @@ impl KernelAllocator {
         if core::intrinsics::unlikely(kcb.in_panic_mode) {
             let mut zone = kcb.ezone_allocator()?;
             if needs_a_base_page {
-                let mut frame = mem_manager.allocate_base_page()?;
+                let frame = mem_manager.allocate_base_page()?;
                 unsafe {
-                    frame.zero();
                     let base_page_ptr: *mut slabmalloc::ObjectPage =
                         frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
                     zone.refill(layout, transmute(base_page_ptr))
@@ -382,9 +381,8 @@ impl KernelAllocator {
                 }
             } else {
                 // Needs a large page
-                let mut frame = mem_manager.allocate_large_page()?;
+                let frame = mem_manager.allocate_large_page()?;
                 unsafe {
-                    frame.zero();
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()
                         .as_mut_ptr();
@@ -395,9 +393,8 @@ impl KernelAllocator {
         } else {
             let mut zone = kcb.zone_allocator()?;
             if needs_a_base_page {
-                let mut frame = mem_manager.allocate_base_page()?;
+                let frame = mem_manager.allocate_base_page()?;
                 unsafe {
-                    frame.zero();
                     let base_page_ptr: *mut slabmalloc::ObjectPage =
                         frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
                     zone.refill(layout, transmute(base_page_ptr))
@@ -405,9 +402,8 @@ impl KernelAllocator {
                 }
             } else {
                 // Needs a large page
-                let mut frame = mem_manager.allocate_large_page()?;
+                let frame = mem_manager.allocate_large_page()?;
                 unsafe {
-                    frame.zero();
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()
                         .as_mut_ptr();

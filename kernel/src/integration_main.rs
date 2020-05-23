@@ -671,13 +671,17 @@ pub fn xmain() {
             let mut dispatchers_created = 0;
             while dispatchers_created < to_create {
                 KernelAllocator::try_refill_tcache(20, 1).expect("Refill didn't work");
-                let frame = {
+                let mut frame = {
                     let kcb = crate::kcb::get_kcb();
                     kcb.physical_memory.gmanager.unwrap().node_caches[affinity as usize]
                         .lock()
                         .allocate_large_page()
                         .expect("Can't allocate lp")
                 };
+
+                unsafe {
+                    frame.zero();
+                }
 
                 let kcb = crate::kcb::get_kcb();
                 let replica = kcb.arch.replica.as_ref().expect("Replica not set");

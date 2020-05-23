@@ -32,7 +32,7 @@ fn maponly_bencher(cores: usize) {
     info!("Got frame_id {:#?}", frame_id);
 
     let vspace_offset = lineup::tls2::Environment::tid().0 + 1;
-    let mut base: u64 = (0x0f10_0000_0000 + (0x66_0000_0000 * vspace_offset) as u64);
+    let mut base: u64 = (0x0510_0000_0000 + (0x10_0000_0000 * vspace_offset) as u64);
     let size: u64 = BASE_PAGE_SIZE as u64;
     info!("start mapping at {:#x}", base);
 
@@ -50,7 +50,7 @@ fn maponly_bencher(cores: usize) {
     let mut vops = 0;
     let mut iteration = 0;
     let bench_duration_secs = if cfg!(feature = "latency") {
-        4
+        10
     } else if cfg!(feature = "smoke") {
         1
     } else {
@@ -65,8 +65,8 @@ fn maponly_bencher(cores: usize) {
             unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
             #[cfg(feature = "latency")]
             {
-                // Skip 2s for warmup
-                if iteration > 2 {
+                // Skip 4s for warmup
+                if iteration > 4 {
                     latency.push(before.elapsed());
                     if latency.len() == LATENCY_MEASUREMENTS {
                         break 'outer;

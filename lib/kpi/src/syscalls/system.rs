@@ -13,7 +13,7 @@ pub struct System;
 impl System {
     /// Query information about available hardware threads.
     pub fn threads() -> Result<Vec<CpuThread>, SystemCallError> {
-        let mut buf = alloc::vec![0; 8192];
+        let mut buf = alloc::vec![0; 5*4096];
         let (r, len) = unsafe {
             syscall!(
                 SystemCall::System as u64,

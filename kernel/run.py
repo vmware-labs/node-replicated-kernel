@@ -74,7 +74,8 @@ parser.add_argument("--qemu-memory", type=str,
                     help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
 parser.add_argument("--qemu-affinity", action="store_true", default=False,
                     help="Pin QEMU instance to dedicated host cores.")
-
+parser.add_argument('--qemu-prealloc', action="store_true", default=False,
+                    help='Pre-alloc memory for the guest', required=False)
 parser.add_argument("--qemu-settings", type=str,
                     help="Pass additional generic QEMU arguments.")
 parser.add_argument("--qemu-monitor", action="store_true",
@@ -286,8 +287,9 @@ def run(args):
         if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
-                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,prealloc=off,size={}M,host-nodes={},policy=bind'.format(
-                    node, int(mem_per_node), 0 if host_numa_nodes == 0 else node % (host_numa_nodes+1))]
+                prealloc = "on" if args.qemu_prealloc else "off"
+                qemu_default_args += ['-object', 'memory-backend-ram,id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind'.format(
+                    node, prealloc, int(mem_per_node), 0 if host_numa_nodes == 0 else node % (host_numa_nodes+1))]
 
                 qemu_default_args += ['-numa',
                                       "node,memdev=nmem{},nodeid={}".format(node, node)]
@@ -346,8 +348,22 @@ def run(args):
             sleep(2.00)
             if args.verbose:
                 log("QEMU affinity {}".format(affinity_list))
-            sudo[python3['./qemu_affinity.py',
-                         '-k', affinity_list.split(' '), '--', str(execution.pid)]]()
+            
+            iteration = 0
+            while True:
+                try:
+                    sudo[python3['./qemu_affinity.py',
+                                '-k', affinity_list.split(' '), '--', str(execution.pid)]]()
+                except ProcessExecutionError as e: 
+                    if args.qemu_prealloc:
+                        iteration += 1
+                        sleep(2.00)
+                        if iteration > 20 and iteration % 10 == 0:
+                            log("Still waiting for Qemu to preallocate memory...")
+                        continue
+                    else:
+                        raise
+                break
 
         # Wait until qemu exits
         execution.wait()

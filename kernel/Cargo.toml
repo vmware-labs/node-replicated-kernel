@@ -1,6 +1,6 @@
 [package]
 name = "bespin"
-version = "0.0.1"
+version = "0.0.3"
 authors = [
   "Gerd Zellweger <mail@gerdzellweger.com>",
 ]
@@ -70,6 +70,8 @@ cc = "1.0"
 integration-test = []
 # smoke: Shorten long running benchmarks to test just functionality
 smoke = []
+# pre-alloc guest memory: For serious benchmarking where we want to avoid VM exits as much as possible
+prealloc = []
 # Don't boot entire system. only initialize bsp core
 bsp-only = []
 # exit: test qemu exit functionality (used heavily for CI)

@@ -7,12 +7,13 @@ set -ex
 cd kernel
 rm -f redis_benchmark.csv
 rm -f vmops_benchmark.csv
+rm -f vmops_benchmark_latency.csv
 rm -f memfs_benchmark.csv
 
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memfs_bench
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_
+RUST_TEST_THREADS=1 cargo test --test integration-test --features prealloc -- s06_vmops_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test --features prealloc -- s06_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memfs_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_ --nocapture
 
 # Clone repo
 rm -rf gh-pages

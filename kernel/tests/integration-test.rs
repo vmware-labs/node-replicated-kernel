@@ -139,11 +139,13 @@ struct RunnerArgs<'a> {
     /// Parameters to add to the QEMU command line
     qemu_args: Vec<&'a str>,
     /// Timeout in ms
-    timeout: u64,
+    timeout: Option<u64>,
     /// Default network interface for QEMU
     nic: &'static str,
     /// Pin QEMU cpu threads
     setaffinity: bool,
+    /// Pre-alloc host memory for guest
+    prealloc: bool,
 }
 
 #[allow(unused)]
@@ -160,9 +162,10 @@ impl<'a> RunnerArgs<'a> {
             release: false,
             norun: false,
             qemu_args: Vec::new(),
-            timeout: 15_000,
+            timeout: Some(15_000),
             nic: "e1000",
             setaffinity: false,
+            prealloc: false,
         }
     }
 
@@ -259,12 +262,22 @@ impl<'a> RunnerArgs<'a> {
     }
 
     fn timeout(mut self, timeout: u64) -> RunnerArgs<'a> {
-        self.timeout = timeout;
+        self.timeout = Some(timeout);
+        self
+    }
+
+    fn disable_timeout(mut self) -> RunnerArgs<'a> {
+        self.timeout = None;
         self
     }
 
     fn setaffinity(mut self) -> RunnerArgs<'a> {
         self.setaffinity = true;
+        self
+    }
+
+    fn prealloc(mut self) -> RunnerArgs<'a> {
+        self.prealloc = true;
         self
     }
 
@@ -322,6 +335,9 @@ impl<'a> RunnerArgs<'a> {
 
         if self.setaffinity {
             cmd.push(String::from("--qemu-affinity"));
+        }
+        if self.prealloc {
+            cmd.push(String::from("--qemu-prealloc"));
         }
 
         // Form arguments for QEMU
@@ -425,7 +441,7 @@ fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     o.args(args.as_cmd());
 
     eprintln!("Invoke QEMU: {:?}", o);
-    spawn_command(o, Some(args.timeout))
+    spawn_command(o, args.timeout)
 }
 
 /// Spawns a DHCP server on our host
@@ -1183,7 +1199,7 @@ pub fn thread_defaults(max_cores: usize) -> Vec<usize> {
     // On larger machines thread increments are bigger than on
     // smaller machines:
     let thread_incremements = if max_cores > 120 {
-        16
+        8
     } else if max_cores > 24 {
         8
     } else if max_cores > 16 {
@@ -1201,17 +1217,17 @@ pub fn thread_defaults(max_cores: usize) -> Vec<usize> {
         }
     }
 
+    if max_cores == 28 {
+        threads.push(28);
+    }
+
     threads.sort();
     threads
 }
 
 #[test]
 fn s06_vmops_benchmark() {
-    let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
-        num_cpus::get() / 2
-    } else {
-        num_cpus::get()
-    };
+    let max_cores = num_cpus::get() / 2;
 
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
@@ -1227,15 +1243,20 @@ fn s06_vmops_benchmark() {
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
-            .timeout(12_000 + cores as u64 * 3000)
             .cores(max_cores)
             .setaffinity()
+            .timeout(12_000 + cores as u64 * 3000)
             .release()
             .cmd(kernel_cmdline.as_str());
+
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
-            cmdline = cmdline.memory(56 * 1024);
+            cmdline = cmdline.memory(32 * 1024);
+        }
+
+        if cfg!(feature = "prealloc") {
+            cmdline = cmdline.prealloc().disable_timeout();
         }
 
         if cfg!(feature = "smoke") && cores > 2 {
@@ -1304,11 +1325,7 @@ fn s06_vmops_benchmark() {
 
 #[test]
 fn s06_vmops_latency_benchmark() {
-    let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
-        num_cpus::get() / 2
-    } else {
-        num_cpus::get()
-    };
+    let max_cores = num_cpus::get() / 2;
 
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
@@ -1325,15 +1342,19 @@ fn s06_vmops_latency_benchmark() {
             .module("init")
             .user_feature("bench-vmops")
             .user_feature("latency")
-            .timeout(25_000 + cores as u64 * 100_000)
             .cores(max_cores)
             .setaffinity()
+            .timeout(25_000 + cores as u64 * 100_000)
             .release()
             .cmd(kernel_cmdline.as_str());
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
-            cmdline = cmdline.memory(56 * 1024);
+            cmdline = cmdline.memory(32 * 1024);
+        }
+
+        if cfg!(feature = "prealloc") {
+            cmdline = cmdline.prealloc().disable_timeout();
         }
 
         if cfg!(feature = "smoke") && cores > 2 {

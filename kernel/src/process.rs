@@ -40,7 +40,7 @@ pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
     let mut user_ptr = VAddr::from(useraddr);
     let str_ptr = UserPtr::new(&mut user_ptr);
     unsafe {
-        match CStr::from_ptr(str_ptr.as_mut_ptr()).to_str() {
+        match CStr::from_ptr(str_ptr.as_ptr()).to_str() {
             Ok(path) => {
                 if !path.is_ascii() || path.is_empty() {
                     return Err(KError::NotSupported);

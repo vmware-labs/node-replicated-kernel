@@ -83,7 +83,7 @@ impl File {
     /// This method is internally used by write_file() method. The additional length
     /// is initialzed to zero.
     pub fn increase_file_size(&mut self, curr_file_len: usize, new_len: usize) -> bool {
-        if new_len <= 0 {
+        if new_len == 0 {
             return true;
         }
 

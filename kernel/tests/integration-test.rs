@@ -1252,7 +1252,7 @@ fn s06_vmops_benchmark() {
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
-            cmdline = cmdline.memory(32 * 1024);
+            cmdline = cmdline.memory(48 * 1024);
         }
 
         if cfg!(feature = "prealloc") {

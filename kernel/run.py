@@ -76,11 +76,8 @@ parser.add_argument("--qemu-affinity", action="store_true", default=False,
                     help="Pin QEMU instance to dedicated host cores.")
 parser.add_argument('--qemu-prealloc', action="store_true", default=False,
                     help='Pre-alloc memory for the guest', required=False)
-<< << << < HEAD
-== == == =
 parser.add_argument('--qemu-large-pages', action="store_true", default=False,
                     help='Use large-pages on the host for guest memory', required=False)
->>>>>> > 2648a40... Add support for large-pages in QEMU.
 parser.add_argument("--qemu-settings", type=str,
                     help="Pass additional generic QEMU arguments.")
 parser.add_argument("--qemu-monitor", action="store_true",

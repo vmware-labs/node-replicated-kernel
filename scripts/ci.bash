@@ -21,6 +21,8 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench
 rm -rf gh-pages
 git clone -b gh-pages bespin-gh-pages:gz/bespin.git gh-pages
 
+pip3 install -r gh-pages/requirements.txt
+
 # Create CSV entry
 export GIT_REV_CURRENT=`git rev-parse --short HEAD`
 export CSV_LINE="`date +%Y-%m-%d`",${GIT_REV_CURRENT},"${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/index.html","${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/index.html"
@@ -44,6 +46,9 @@ DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 mv memfs_benchmark.csv ${DEPLOY_DIR}
 mv fxmark_benchmark.csv ${DEPLOY_DIR}
+
+# Update CI history plots
+python3 gh-pages/_scripts/ci_history.py
 
 # Push gh-pages
 cd gh-pages

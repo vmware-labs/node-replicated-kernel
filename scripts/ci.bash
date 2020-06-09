@@ -43,7 +43,6 @@ mv vmops_benchmark_latency.csv ${DEPLOY_DIR}
 # Copy memfs results
 DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
-mv memfs_benchmark.csv ${DEPLOY_DIR}
 mv fxmark_benchmark.csv ${DEPLOY_DIR}
 
 # Update CI history plots

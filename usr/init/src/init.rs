@@ -15,8 +15,6 @@ extern crate x86;
 
 extern crate lineup;
 
-mod fsbench;
-
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;
@@ -567,18 +565,6 @@ fn fs_test() {
     info!("fs_test OK");
 }
 
-fn fs_bench(ncores: Option<usize>) {
-    use fsbench::bench;
-
-    // TODO: Take the input from the config file or as arguments.
-    let share_file = false;
-    let num_cores: usize = ncores.expect("Can't parse cores from cmdline");
-    let is_random = true;
-    let is_write = false;
-
-    bench(is_write, is_random, share_file, num_cores);
-}
-
 fn fs_write_test() {
     use vibrio::syscalls::Fs;
 
@@ -678,9 +664,6 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-fs")]
     fs_test();
-
-    #[cfg(feature = "fs-bench")]
-    fs_bench(ncores);
 
     #[cfg(feature = "fs-write")]
     fs_write_test();

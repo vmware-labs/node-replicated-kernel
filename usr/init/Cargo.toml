@@ -39,7 +39,6 @@ test-fs = []
 
 # Simple micro-benchmarks
 bench-vmops = []
-fs-bench = []
 fs-write = []
 fxmark = []
 

@@ -24,6 +24,9 @@ fi
 
 source $HOME/.cargo/env
 rustup default nightly-2020-06-01
+cd kernel
+rustup default nightly-2020-06-01
+cd ..
 rustup component add rust-src
 rustup update
 

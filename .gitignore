@@ -26,11 +26,7 @@ public
 
 # Build/test artefacts
 proptest-regressions
-memfs_benchmark.csv
-redis_benchmark.csv
-vmops_benchmark.csv
-vmops_benchmark_latency.csv
-fxmark_benchmark.csv
+**/*.csv
 vspace.dot
 vspace.dot.svg
 out.log

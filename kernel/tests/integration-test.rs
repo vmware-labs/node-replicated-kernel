@@ -1523,3 +1523,177 @@ fn s06_fxmark_benchmark() {
         }
     }
 }
+
+fn memcached_benchmark(
+    driver: &'static str,
+    cores: usize,
+    duration: usize,
+) -> Result<rexpect::session::PtySession> {
+    fn spawn_memaslap(duration: usize) -> Result<rexpect::session::PtySession> {
+        spawn(
+            format!("memaslap -s 172.31.0.10 -t {}s -S 10s", duration).as_str(),
+            Some(25000),
+        )
+    }
+    let mut memaslap = spawn_memaslap(duration)?;
+
+    // Parse this:
+    // ```
+    // Get Statistics (978827 events)
+    // Min:        55
+    // Max:      4776
+    // Avg:       146
+    // Geo:    145.18
+    // Std:     32.77
+    //
+    // Set Statistics (108766 events)
+    // Min:        57
+    // Max:      4649
+    // Avg:       147
+    // Geo:    145.91
+    // Std:     30.20
+    // ```
+
+    let _before = memaslap.exp_string(r#"Get Statistics ("#)?;
+    let (_before, get_total) = memaslap.exp_regex(r#"([0-9]+)"#)?;
+
+    let (_before, _line) = memaslap.exp_regex(r#"Min:\s+"#)?;
+    let (_before, get_min_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+    let (_before, _line) = memaslap.exp_regex(r#"Max:\s+"#)?;
+    let (_before, get_max_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+    let (_before, _line) = memaslap.exp_regex(r#"Avg:\s+"#)?;
+    let (_before, get_avg_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+    let (_before, _line) = memaslap.exp_regex(r#"Std:\s+"#)?;
+    let (_before, get_std_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+
+    let get_total: usize = get_total.parse().unwrap_or(404);
+    let get_min_us: usize = get_min_us.parse().unwrap_or(404);
+    let get_max_us: usize = get_max_us.parse().unwrap_or(404);
+    let get_avg_us: usize = get_avg_us.parse().unwrap_or(404);
+    let get_std_us: usize = get_std_us.parse().unwrap_or(404);
+
+    let _before = memaslap.exp_string(r#"Set Statistics ("#)?;
+    let (_before, set_total) = memaslap.exp_regex(r#"([0-9]+)"#)?;
+
+    let (_before, _line) = memaslap.exp_regex(r#"Min:\s+"#)?;
+    let (_before, set_min_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+    let (_before, _line) = memaslap.exp_regex(r#"Max:\s+"#)?;
+    let (_before, set_max_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+    let (_before, _line) = memaslap.exp_regex(r#"Avg:\s+"#)?;
+    let (_before, set_avg_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+    let (_before, _line) = memaslap.exp_regex(r#"Std:\s+"#)?;
+    let (_before, set_std_us) = memaslap.exp_regex(r#"(\d+)"#)?;
+
+    let set_total: usize = set_total.parse().unwrap_or(404);
+    let set_min_us: usize = set_min_us.parse().unwrap_or(404);
+    let set_max_us: usize = set_max_us.parse().unwrap_or(404);
+    let set_avg_us: usize = set_avg_us.parse().unwrap_or(404);
+    let set_std_us: usize = set_std_us.parse().unwrap_or(404);
+
+    // Append parsed results to a CSV file
+    let file_name = "memcached_benchmark.csv";
+    // write headers only to a new file
+    let write_headers = !Path::new(file_name).exists();
+    let csv_file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(file_name)
+        .expect("Can't open file");
+
+    let mut wtr = WriterBuilder::new()
+        .has_headers(write_headers)
+        .from_writer(csv_file);
+
+    #[derive(Serialize, Debug, Copy, Clone)]
+    struct Record {
+        git_rev: &'static str,
+        cores: usize,
+        duration: usize,
+        driver: &'static str,
+        get_total: usize,
+        get_min_us: usize,
+        get_max_us: usize,
+        get_avg_us: usize,
+        get_std_us: usize,
+        set_total: usize,
+        set_min_us: usize,
+        set_max_us: usize,
+        set_avg_us: usize,
+        set_std_us: usize,
+    };
+
+    let record = Record {
+        git_rev: env!("GIT_HASH"),
+        cores,
+        duration,
+        driver,
+        get_total,
+        get_min_us,
+        get_max_us,
+        get_avg_us,
+        get_std_us,
+        set_total,
+        set_min_us,
+        set_max_us,
+        set_avg_us,
+        set_std_us,
+    };
+
+    wtr.serialize(record).expect("Can't write results");
+
+    Ok(memaslap)
+}
+
+#[test]
+fn s06_memcached_benchmark() {
+    let max_cores = 1;
+    let threads = if cfg!(feature = "smoke") { 1 } else { 1 };
+
+    let file_name = "memcached_benchmark.csv";
+    let _r = std::fs::remove_file(file_name);
+
+    let kernel_cmdline = format!("testbinary=memcached.bin testcmd={}", threads);
+    let mut cmdline = RunnerArgs::new("test-userspace-smp")
+        .module("rkapps")
+        .user_feature("rkapps:memcached")
+        .memory(8192)
+        .timeout(15_000)
+        .cores(max_cores)
+        .setaffinity()
+        .cmd(kernel_cmdline.as_str())
+        .use_virtio()
+        .release();
+
+    if cfg!(feature = "smoke") {
+        cmdline = cmdline.cores(4).nodes(1);
+    } else {
+        let max_cores = num_cpus::get();
+        // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
+        match max_cores {
+            28 => cmdline = cmdline.nodes(2),
+            56 => cmdline = cmdline.nodes(2),
+            96 => cmdline = cmdline.nodes(4),
+            192 => cmdline = cmdline.nodes(4),
+            _ => {}
+        };
+    }
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+        let mut dhcp_server = spawn_dhcpd()?;
+        dhcp_server.exp_string(DHCP_ACK_MATCH)?;
+
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        let mut memaslap = memcached_benchmark("virtio", 1, 10)?;
+
+        dhcp_server.send_control('c')?;
+        memaslap.process.kill(SIGTERM)?;
+        p.process.exit()
+    };
+
+    assert_matches!(
+        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+        WaitStatus::Signaled(_, SIGTERM, _)
+    );
+}

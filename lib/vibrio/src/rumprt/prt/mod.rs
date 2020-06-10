@@ -30,7 +30,7 @@ type LwpMain = Option<unsafe extern "C" fn(arg: *mut u8) -> *mut u8>;
 
 static CURLWPID: AtomicI32 = AtomicI32::new(1);
 
-static CORE_ASSIGNMENT: AtomicUsize = AtomicUsize::new(0);
+static AVAILABLE_CORES: AtomicUsize = AtomicUsize::new(1);
 
 struct LwpWrapper(NonNull<rumprun_lwp>);
 unsafe impl core::marker::Send for LwpWrapper {}
@@ -187,7 +187,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
     // XXX: what time should we be doing this?
     rump_pub_lwproc_switch(curlwp);
 
-    let coreid = 0;
+    let coreid = (rlid as usize) % AVAILABLE_CORES.load(Ordering::Relaxed);
     let tid = Environment::thread().spawn_with_args(
         stack,
         Some(rumprun_makelwp_tramp),
@@ -465,8 +465,9 @@ pub unsafe extern "C" fn _lwp_wakeup() {
 
 /// Initialize the LWP sub-system.
 #[no_mangle]
-pub unsafe extern "C" fn rumprun_lwp_init() {
+pub unsafe extern "C" fn rumprun_lwp_init(available_cores: usize) {
     lazy_static::initialize(&LWP_HT);
+    AVAILABLE_CORES.store(available_cores, Ordering::Relaxed);
 
     let t = lineup::tls2::Environment::thread();
     let mut mainthread = Box::new(rumprun_lwp {

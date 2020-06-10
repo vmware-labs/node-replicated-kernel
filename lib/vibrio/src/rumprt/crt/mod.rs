@@ -274,7 +274,7 @@ pub extern "C" fn main() {
     let scheduler = &crate::upcalls::PROCESS_SCHEDULER;
     scheduler.spawn(
         64 * 4096,
-        |_yielder| unsafe {
+        move |_yielder| unsafe {
             let start = rawtime::Instant::now();
             rump_boot_setsigmodel(0);
             let ri = rump_init(ready);
@@ -332,7 +332,7 @@ pub extern "C" fn main() {
             super::crt::environ = c_environ.as_mut_ptr();
 
             // Set up the lwp pointer stuff
-            super::prt::rumprun_lwp_init();
+            super::prt::rumprun_lwp_init(ncores.unwrap_or(1));
 
             // do the _netbsd_userlevel_init stuff:
             netbsd_userlevel_init();

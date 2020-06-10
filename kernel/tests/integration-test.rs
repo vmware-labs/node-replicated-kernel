@@ -199,9 +199,15 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
-    /// How many NUMA nodes QEMU should simulate.
+    /// Use virtio NIC.
     fn use_virtio(mut self) -> RunnerArgs<'a> {
         self.nic = "virtio";
+        self
+    }
+
+    /// Use e1000 NIC.
+    fn use_e1000(mut self) -> RunnerArgs<'a> {
+        self.nic = "e1000";
         self
     }
 
@@ -1646,54 +1652,54 @@ fn memcached_benchmark(
 
 #[test]
 fn s06_memcached_benchmark() {
-    let max_cores = 1;
-    let threads = if cfg!(feature = "smoke") { 1 } else { 1 };
+    let max_cores = 4;
+    let threads = if cfg!(feature = "smoke") {
+        vec![1]
+    } else {
+        vec![1, 2, 4]
+    };
 
     let file_name = "memcached_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
 
-    let kernel_cmdline = format!("testbinary=memcached.bin testcmd={}", threads);
-    let mut cmdline = RunnerArgs::new("test-userspace-smp")
-        .module("rkapps")
-        .user_feature("rkapps:memcached")
-        .memory(8192)
-        .timeout(15_000)
-        .cores(max_cores)
-        .setaffinity()
-        .cmd(kernel_cmdline.as_str())
-        .use_virtio()
-        .release();
+    for nic in &["virtio", "e1000"] {
+        for thread in threads.iter() {
+            let kernel_cmdline = format!("testbinary=memcached.bin testcmd={}", *thread);
+            let mut cmdline = RunnerArgs::new("test-userspace-smp")
+                .module("rkapps")
+                .user_feature("rkapps:memcached")
+                .memory(8192)
+                .timeout(15_000)
+                .cores(max_cores)
+                .nodes(1)
+                .setaffinity()
+                .cmd(kernel_cmdline.as_str())
+                .release();
 
-    if cfg!(feature = "smoke") {
-        cmdline = cmdline.cores(4).nodes(1);
-    } else {
-        let max_cores = num_cpus::get();
-        // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
-        match max_cores {
-            28 => cmdline = cmdline.nodes(2),
-            56 => cmdline = cmdline.nodes(2),
-            96 => cmdline = cmdline.nodes(4),
-            192 => cmdline = cmdline.nodes(4),
-            _ => {}
-        };
+            let cmdline = match *nic {
+                "virtio" => cmdline.use_virtio(),
+                "e1000" => cmdline.use_e1000(),
+                _ => unimplemented!("NIC type unknown"),
+            };
+
+            let mut output = String::new();
+            let mut qemu_run = || -> Result<WaitStatus> {
+                let mut p = spawn_bespin(&cmdline)?;
+                let mut dhcp_server = spawn_dhcpd()?;
+                dhcp_server.exp_string(DHCP_ACK_MATCH)?;
+
+                std::thread::sleep(std::time::Duration::from_secs(6));
+                let mut memaslap = memcached_benchmark(nic, *thread, 10)?;
+
+                dhcp_server.send_control('c')?;
+                memaslap.process.kill(SIGTERM)?;
+                p.process.exit()
+            };
+
+            assert_matches!(
+                qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
+                WaitStatus::Signaled(_, SIGTERM, _)
+            );
+        }
     }
-
-    let mut output = String::new();
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
-        let mut dhcp_server = spawn_dhcpd()?;
-        dhcp_server.exp_string(DHCP_ACK_MATCH)?;
-
-        std::thread::sleep(std::time::Duration::from_secs(6));
-        let mut memaslap = memcached_benchmark("virtio", 1, 10)?;
-
-        dhcp_server.send_control('c')?;
-        memaslap.process.kill(SIGTERM)?;
-        p.process.exit()
-    };
-
-    assert_matches!(
-        qemu_run().unwrap_or_else(|e| panic!("Qemu testing failed: {}", e)),
-        WaitStatus::Signaled(_, SIGTERM, _)
-    );
 }

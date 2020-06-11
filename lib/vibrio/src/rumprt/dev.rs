@@ -5,11 +5,14 @@ use core::fmt;
 use core::ptr;
 
 use log::{error, info, trace, warn};
+use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
 use x86::io;
 
 static PCI_CONF_ADDR: u16 = 0xcf8;
 static PCI_CONF_DATA: u16 = 0xcfc;
+
+static CONFSPACE_LOCK: Mutex<()> = Mutex::new(());
 
 #[inline]
 fn pci_bus_address(bus: u32, dev: u32, fun: u32, reg: i32) -> u32 {
@@ -33,6 +36,7 @@ pub unsafe extern "C" fn rumpcomp_pci_confread(
 ) -> c_int {
     let addr = pci_bus_address(bus, dev, fun, reg);
 
+    let _l = CONFSPACE_LOCK.lock();
     io::outl(PCI_CONF_ADDR, addr);
     *value = io::inl(PCI_CONF_DATA);
     trace!(
@@ -65,6 +69,7 @@ pub unsafe extern "C" fn rumpcomp_pci_confwrite(
     );
 
     let addr = pci_bus_address(bus, dev, fun, reg);
+    let _l = CONFSPACE_LOCK.lock();
     io::outl(PCI_CONF_ADDR, addr);
     io::outl(PCI_CONF_DATA, value);
     0

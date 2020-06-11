@@ -4,6 +4,7 @@ use core::alloc::Layout;
 use core::fmt;
 use core::ptr;
 
+use hashbrown::HashMap;
 use log::{error, info, trace, warn};
 use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
@@ -13,6 +14,7 @@ static PCI_CONF_ADDR: u16 = 0xcf8;
 static PCI_CONF_DATA: u16 = 0xcfc;
 
 static CONFSPACE_LOCK: Mutex<()> = Mutex::new(());
+static PADDR_CACHE: Mutex<Option<HashMap<VAddr, PAddr>>> = Mutex::new(None);
 
 #[inline]
 fn pci_bus_address(bus: u32, dev: u32, fun: u32, reg: i32) -> u32 {
@@ -23,6 +25,7 @@ fn pci_bus_address(bus: u32, dev: u32, fun: u32, reg: i32) -> u32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpcomp_pci_iospace_init() -> c_int {
+    PADDR_CACHE.lock().replace(HashMap::new());
     0
 }
 
@@ -168,7 +171,7 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_establish(
 
 #[no_mangle]
 pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c_void {
-    trace!("rumpcomp_pci_map {:#x} {:#x}", addr, len);
+    error!("rumpcomp_pci_map {:#x} {:#x}", addr, len);
 
     let start = PAddr::from(addr);
 
@@ -185,17 +188,41 @@ pub unsafe extern "C" fn rumpcomp_pci_map(addr: c_ulong, len: c_ulong) -> *mut c
 pub unsafe extern "C" fn rumpcomp_pci_virt_to_mach(vaddr: *mut c_void) -> c_ulong {
     let vaddr = VAddr::from(vaddr as u64);
 
-    let (_, paddr) =
-        crate::syscalls::VSpace::identify(vaddr.align_down_to_base_page().into()).unwrap();
-    let paddr_aligned = paddr + vaddr.base_page_offset();
+    fn identify(vaddr: VAddr) -> PAddr {
+        let (_, paddr) = unsafe {
+            crate::syscalls::VSpace::identify(vaddr.align_down_to_base_page().into()).unwrap()
+        };
+        let paddr_aligned = paddr + vaddr.base_page_offset();
 
-    trace!(
-        "rumpcomp_pci_virt_to_mach va:{:#x} -> pa:{:#x}",
-        vaddr,
-        paddr_aligned
-    );
+        trace!(
+            "rumpcomp_pci_virt_to_mach va:{:#x} -> pa:{:#x}",
+            vaddr,
+            paddr_aligned
+        );
 
-    paddr_aligned.as_u64()
+        PAddr::from(paddr_aligned)
+    }
+
+    PADDR_CACHE
+        .lock()
+        .as_mut()
+        .map_or_else(
+            || identify(vaddr),
+            |ht| {
+                if let Some(paddr) = ht.get(&vaddr.align_down_to_base_page()) {
+                    let paddr_aligned = *paddr + vaddr.base_page_offset();
+                    PAddr::from(paddr_aligned)
+                } else {
+                    let paddr = identify(vaddr);
+                    ht.insert(
+                        vaddr.align_down_to_base_page(),
+                        paddr.align_down_to_base_page(),
+                    );
+                    paddr
+                }
+            },
+        )
+        .as_u64()
 }
 
 #[no_mangle]
@@ -210,7 +237,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
         "Can't handle anything above 2 MiB (needs to be consecutive physically)"
     );
     let size = if size > 4096 { 2 * 1024 * 1024 } else { 4096 };
-    error!("rumpcomp_pci_dmalloc adjusted size {} to", size);
+    trace!("rumpcomp_pci_dmalloc adjusted size {} to", size);
 
     let layout = Layout::from_size_align_unchecked(size, size);
 
@@ -220,12 +247,18 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
         Ok((vaddr, paddr)) => {
             *vptr = vaddr.as_u64();
             *pptr = paddr.as_u64();
-            trace!(
-                "rumpcomp_pci_dmalloc {:#x} {:#x} at va:{:#x} pa:{:#x}",
+            PADDR_CACHE.lock().as_mut().map(|ht| {
+                ht.insert(vaddr, paddr);
+            });
+
+            error!(
+                "rumpcomp_pci_dmalloc {:#x} {:#x} at va:{:#x} -- {:#x} pa:{:#x} -- {:#x}",
                 size,
                 alignment,
-                vaddr.as_u64(),
-                paddr.as_u64()
+                vaddr.as_usize(),
+                vaddr.as_usize() + size,
+                paddr.as_usize(),
+                paddr.as_usize() + size,
             );
 
             0
@@ -264,11 +297,11 @@ pub unsafe extern "C" fn rumpcomp_pci_dmamem_map(
     totlen: usize,
     vap: *mut *mut c_void,
 ) -> c_int {
-    trace!(
+    error!(
         "rumpcomp_pci_dmamem_map {:#x} {:#x} {:?}",
         nseg,
         totlen,
-        &mut (*dss)
+        &(*dss)
     );
 
     if nseg <= 1 {

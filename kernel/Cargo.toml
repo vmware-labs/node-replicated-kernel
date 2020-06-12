@@ -14,7 +14,6 @@ edition = "2018"
 [dependencies]
 # Our own dependencies:
 x86 = { path = "../lib/x86" }
-raw-cpuid = { path = "../lib/cpuid" }
 klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }

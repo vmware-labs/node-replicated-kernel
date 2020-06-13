@@ -241,8 +241,11 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
 
     let layout = Layout::from_size_align_unchecked(size, size);
 
-    let mut p = crate::mem::PAGER.lock();
-    let r = (*p).allocate(layout);
+    let r = {
+        let mut p = crate::mem::PAGER.lock();
+        (*p).allocate(layout)
+    };
+
     match r {
         Ok((vaddr, paddr)) => {
             *vptr = vaddr.as_u64();
@@ -251,7 +254,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
                 ht.insert(vaddr, paddr);
             });
 
-            error!(
+            trace!(
                 "rumpcomp_pci_dmalloc {:#x} {:#x} at va:{:#x} -- {:#x} pa:{:#x} -- {:#x}",
                 size,
                 alignment,

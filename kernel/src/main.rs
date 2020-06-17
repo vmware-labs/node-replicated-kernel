@@ -70,6 +70,9 @@ mod prelude;
 mod process;
 mod stack;
 
+#[cfg(all(target_arch = "x86_64", target_os = "none"))]
+mod scheduler;
+
 pub mod panic;
 
 /// A kernel exit status.

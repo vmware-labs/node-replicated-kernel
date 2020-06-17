@@ -1,10 +1,4 @@
-#![allow(warnings)]
-
-use alloc::boxed::Box;
-use crossbeam_queue;
-use topology::MACHINE_TOPOLOGY;
-
-pub mod process;
+pub mod spawn;
 
 /*
 use crate::arch::process::Ring3Process;
@@ -28,7 +22,6 @@ pub fn schedule_process(process: Box<Ring3Process>) {
 pub fn schedule() -> ! {
     unimplemented!()
 }
-*/
 
 /// Errors that the scheduler/process logic can return.
 #[derive(Debug)]
@@ -178,3 +171,4 @@ mod test {
         let _rp = rrs.queue.pop().expect_err("Can pop?");
     }
 }
+*/

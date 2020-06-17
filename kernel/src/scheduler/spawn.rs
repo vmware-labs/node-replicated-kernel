@@ -9,11 +9,12 @@ use crate::arch;
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::arch::memory::LARGE_PAGE_SIZE;
 use crate::arch::process::Ring3Process;
+use crate::error::KError;
 use crate::kcb;
 use crate::memory::KernelAllocator;
 use crate::memory::{Frame, PhysicalPageProvider, VAddr};
 use crate::prelude::overlaps;
-use crate::process::{Executor, Pid};
+use crate::process::{Executor, Pid, ProcessError};
 use crate::{nr, round_up};
 
 /// An elfloader implementation that only loads the writeable sections of the program.
@@ -200,8 +201,8 @@ impl elfloader::ElfLoader for DataSecAllocator {
 ///
 /// Parse & relocate ELF
 /// Create an initial VSpace
-fn make_process(binary: &'static str) -> Pid {
-    KernelAllocator::try_refill_tcache(7, 1).expect("Can't reserve memory for ELF data section");
+fn make_process(binary: &'static str) -> Result<Pid, KError> {
+    KernelAllocator::try_refill_tcache(7, 1)?;
     let kcb = kcb::get_kcb();
 
     // Lookup binary of the process
@@ -220,7 +221,7 @@ fn make_process(binary: &'static str) -> Pid {
 
     let elf_module = unsafe {
         elfloader::ElfBinary::new(mod_file.name(), mod_file.as_slice())
-            .expect("xModule is not a valid ELF binary")
+            .map_err(|_e| ProcessError::UnableToParseElf)?
     };
 
     // We don't have an offset for non-pie applications (i.e., rump apps)
@@ -235,7 +236,9 @@ fn make_process(binary: &'static str) -> Pid {
         frames: Vec::with_capacity(2),
         frame_copy_idx: 0,
     };
-    elf_module.load(&mut data_sec_loader);
+    elf_module
+        .load(&mut data_sec_loader)
+        .map_err(|_e| ProcessError::UnableToLoad)?;
     let data_frames: Vec<Frame> = data_sec_loader.finish();
 
     // Create a new process
@@ -243,22 +246,23 @@ fn make_process(binary: &'static str) -> Pid {
     let response = replica.execute(
         nr::Op::ProcCreate(&mod_file, data_frames),
         kcb.arch.replica_idx,
-    );
-    let pid = match response {
-        Ok(nr::NodeResult::ProcCreated(pid)) => pid,
-        _ => unreachable!("Got unexpected response"),
-    };
+    )?;
 
-    pid
+    match response {
+        nr::NodeResult::ProcCreated(pid) => Ok(pid),
+        _ => unreachable!("Got unexpected response"),
+    }
 }
 
 /// Create dispatchers for a given Pid to run on all cores.
 ///
 /// Also make sure they are all using NUMA local memory
-fn allocate_dispatchers(pid: Pid) {
+fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
     trace!("Allocate dispatchers");
+
     let mut create_per_region: Vec<(topology::NodeId, usize)> =
         Vec::with_capacity(topology::MACHINE_TOPOLOGY.num_nodes() + 1);
+
     if topology::MACHINE_TOPOLOGY.num_nodes() > 0 {
         for node in topology::MACHINE_TOPOLOGY.nodes() {
             let threads = node.threads().count();
@@ -271,13 +275,12 @@ fn allocate_dispatchers(pid: Pid) {
     for (affinity, to_create) in create_per_region {
         let mut dispatchers_created = 0;
         while dispatchers_created < to_create {
-            KernelAllocator::try_refill_tcache(20, 1).expect("Refill didn't work");
+            KernelAllocator::try_refill_tcache(20, 1)?;
             let mut frame = {
                 let kcb = crate::kcb::get_kcb();
                 kcb.physical_memory.gmanager.unwrap().node_caches[affinity as usize]
                     .lock()
-                    .allocate_large_page()
-                    .expect("Can't allocate lp")
+                    .allocate_large_page()?
             };
 
             unsafe {
@@ -289,9 +292,10 @@ fn allocate_dispatchers(pid: Pid) {
             let response = replica.execute(
                 nr::Op::DispatcherAllocation(pid, frame),
                 kcb.arch.replica_idx,
-            );
+            )?;
+
             match response {
-                Ok(nr::NodeResult::ExecutorsCreated(how_many)) => {
+                nr::NodeResult::ExecutorsCreated(how_many) => {
                     assert!(how_many > 0);
                     dispatchers_created += how_many;
                 }
@@ -301,6 +305,7 @@ fn allocate_dispatchers(pid: Pid) {
     }
 
     debug!("Allocated dispatchers");
+    Ok(())
 }
 
 /// Spawns a new process
@@ -314,25 +319,28 @@ fn allocate_dispatchers(pid: Pid) {
 /// - Then we allocate a bunch of memory on all NUMA nodes to create enough dispatchers
 ///   so we can run on all cores
 /// - Finally we allocate a dispatcher to the current core (0) and start running the process
-pub fn spawn(binary: &'static str) {
+pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
+    let kcb = kcb::get_kcb();
+
+    let pid = make_process(binary)?;
+    allocate_dispatchers(pid)?;
+
+    // Set current thread to run executor from our process (on the current core)
+    let thread = topology::MACHINE_TOPOLOGY.current_thread();
+    let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
+        pid,
+        VAddr::from(0xdeadbfffu64), // This VAddr is irrelevant as it is overriden later
+        thread.node_id.or(Some(0)),
+        Some(thread.id),
+    )?;
+
+    Ok(pid)
+}
+
+/// Runs the process allocated to the given core.
+pub fn schedule() -> ! {
     let kcb = kcb::get_kcb();
     let thread = topology::MACHINE_TOPOLOGY.current_thread();
-
-    let pid = make_process(binary);
-    allocate_dispatchers(pid);
-
-    // Set current thread to run executor from our process
-    let (_gtid, _eid) = {
-        nr::KernelNode::<Ring3Process>::allocate_core_to_process(
-            pid,
-            VAddr::from(0xdeadbfffu64), // This VAddr is irrelevant as it is overriden later
-            thread.node_id.or(Some(0)),
-            Some(thread.id),
-        )
-        .expect("Can't allocate core")
-    };
-
-    let kcb = kcb::get_kcb();
     let replica = kcb.arch.replica.as_ref().expect("Replica not set");
 
     // Get an executor

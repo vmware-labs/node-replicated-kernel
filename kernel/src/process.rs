@@ -65,6 +65,7 @@ pub ProcessError
     ProcessNotSet = "The core has no current process set.",
     NoProcessFoundForPid = "No process was associated with the given Pid.",
     UnableToLoad = "Couldn't load process, invalid ELF file?",
+    UnableToParseElf = "Couldn't parse ELF file, invalid?",
     NoExecutorAllocated = "We never allocated executors for this affinity region and process (need to fill cache).",
     ExecutorCacheExhausted = "The executor cache for given affinity is empty (need to refill)",
     InvalidGlobalThreadId = "Specified an invalid core",

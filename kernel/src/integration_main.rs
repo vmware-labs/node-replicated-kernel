@@ -392,6 +392,7 @@ pub fn xmain() {
 
     let kcb = kcb::get_kcb();
     crate::scheduler::spawn::spawn(kcb.cmdline.test_binary);
+    crate::scheduler::spawn::schedule()
 }
 
 /// Test SSE/floating point in the kernel.

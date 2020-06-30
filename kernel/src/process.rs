@@ -159,7 +159,6 @@ pub trait Executor {
 struct DataSecAllocator {
     offset: VAddr,
     frames: Vec<(usize, Frame)>,
-    frame_copy_idx: usize,
 }
 
 impl DataSecAllocator {
@@ -372,7 +371,6 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
     let mut data_sec_loader = DataSecAllocator {
         offset,
         frames: Vec::with_capacity(2),
-        frame_copy_idx: 0,
     };
     elf_module
         .load(&mut data_sec_loader)
@@ -444,9 +442,4 @@ pub fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
 
     debug!("Allocated dispatchers");
     Ok(())
-}
-
-pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
-    use crate::arch::process::spawn;
-    spawn(binary)
 }

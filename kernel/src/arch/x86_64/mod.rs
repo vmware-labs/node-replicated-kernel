@@ -276,7 +276,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     // Are we the master/first thread in that replica?
     // Then we should set timer to periodically advance the state
     {
-        let kcb = kcb::get_kcb();
         let _r = thread.node().map(|n| {
             if n.threads().next().unwrap().id == thread.id {
                 timer::set(timer::DEFAULT_TIMER_DEADLINE);

@@ -1,7 +1,6 @@
 //! Timer API
 
-use super::irq;
-use super::kcb::{get_kcb, Arch86Kcb};
+use super::kcb::get_kcb;
 use apic::ApicDriver;
 
 /// Default when to raise the next timer irq (in rdtsc ticks)

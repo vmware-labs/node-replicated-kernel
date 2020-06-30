@@ -2,7 +2,7 @@
 
 use crate::kcb::{self, ArchSpecificKcb};
 use crate::nr;
-use crate::process::{Executor, ResumeHandle};
+use crate::process::Executor;
 
 /// Runs the process allocated to the given core.
 pub fn schedule() -> ! {

@@ -13,13 +13,17 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
+use crate::error::KError;
 use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
-use crate::kcb::Kcb;
+use crate::kcb::{self, Kcb};
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{
     paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, PhysicalPageProvider, VAddr,
 };
-use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle};
+use crate::nr;
+use crate::process::{
+    allocate_dispatchers, make_process, Eid, Executor, Pid, Process, ProcessError, ResumeHandle,
+};
 use crate::round_up;
 
 use super::kcb::Arch86Kcb;
@@ -163,7 +167,7 @@ pub struct Ring3Resumer {
 }
 
 impl ResumeHandle for Ring3Resumer {
-    unsafe fn resume(self) {
+    unsafe fn resume(self) -> ! {
         unimplemented!()
     }
 }
@@ -791,7 +795,7 @@ impl elfloader::ElfLoader for Ring3Process {
                 }
             }
         } else {
-            error!(
+            debug!(
                 "Skip ELF Load of writeable region at {:#x} -- {:#x}",
                 destination,
                 destination + region.len()
@@ -1085,4 +1089,33 @@ impl Process for Ring3Process {
             .cloned()
             .ok_or(ProcessError::InvalidFrameId)
     }
+}
+
+/// Spawns a new process
+///
+/// This function is way too long because of several things that need to happen,
+/// and they are currently (TODO) not neatly encapsulated away in modules/functions
+/// We're loading a process from a module:
+/// - First we are constructing our own custom elfloader trait to load figure out
+///   which program headers in the module will be writable (these should not be replicated by NR)
+/// - Then we continue by creating a new Process through an nr call
+/// - Then we allocate a bunch of memory on all NUMA nodes to create enough dispatchers
+///   so we can run on all cores
+/// - Finally we allocate a dispatcher to the current core (0) and start running the process
+pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
+    let kcb = kcb::get_kcb();
+
+    let pid = make_process(binary)?;
+    allocate_dispatchers(pid)?;
+
+    // Set current thread to run executor from our process (on the current core)
+    let thread = topology::MACHINE_TOPOLOGY.current_thread();
+    let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
+        pid,
+        VAddr::from(0xdeadbfffu64), // This VAddr is irrelevant as it is overriden later
+        thread.node_id.or(Some(0)),
+        Some(thread.id),
+    )?;
+
+    Ok(pid)
 }

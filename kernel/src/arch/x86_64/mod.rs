@@ -45,6 +45,7 @@ pub mod kcb;
 pub mod memory;
 pub mod process;
 pub mod syscall;
+pub mod timer;
 pub mod vspace;
 
 use uefi::table::boot::MemoryType;
@@ -278,9 +279,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         let kcb = kcb::get_kcb();
         let _r = thread.node().map(|n| {
             if n.threads().next().unwrap().id == thread.id {
-                let mut apic = kcb.arch.apic();
-                apic.tsc_enable();
-                unsafe { apic.tsc_set(x86::time::rdtsc() + irq::TSC_TIMER_DEADLINE) };
+                timer::set(timer::DEFAULT_TIMER_DEADLINE);
             }
         });
     }

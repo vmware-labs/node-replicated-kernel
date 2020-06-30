@@ -10,7 +10,7 @@ use rawtime::Instant;
 use crate::stack::LineupStack;
 use crate::tls2::{self, ThreadControlBlock};
 use crate::upcalls::Upcalls;
-use crate::CoreId;
+use crate::{CoreId, IrqVector};
 
 /// Type alias for our generic generator.
 pub(crate) type Runnable<'a> = Generator<'a, YieldResume, YieldRequest, LineupStack>;
@@ -33,9 +33,17 @@ impl fmt::Display for ThreadId {
 }
 
 pub(crate) struct Thread {
+    /// Thread ID
     pub(crate) id: ThreadId,
+
+    /// Current core affinity of the thread.
     pub(crate) affinity: CoreId,
+
+    /// Storage area for resume result (is thread was put in waiting list).
     pub(crate) return_with: Option<YieldResume>,
+
+    /// If thread is registered to wake up for the specific interrupt vector.
+    pub(crate) interrupt_vector: Option<IrqVector>,
 
     /// Threads currently waiting (join, blocked) on us to exit.
     pub(crate) joinlist: Vec<(ThreadId, CoreId)>,
@@ -75,6 +83,7 @@ impl Thread {
         f: F,
         arg: *mut u8,
         upcalls: Upcalls,
+        interrupt_vector: Option<IrqVector>,
         tcb: *mut ThreadControlBlock<'static>,
     ) -> (
         Thread,
@@ -92,6 +101,7 @@ impl Thread {
             id: tid,
             affinity,
             return_with: None,
+            interrupt_vector,
             joinlist: Vec::with_capacity(crate::scheduler::SmpScheduler::MAX_THREADS),
             state: tcb,
         };
@@ -139,6 +149,7 @@ pub(crate) enum YieldRequest {
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
         CoreId,
+        Option<IrqVector>,
     ),
     /// Spawn a new thread that runs function/argument on the provided stack.
     SpawnWithArgs(
@@ -146,6 +157,7 @@ pub(crate) enum YieldRequest {
         Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         *mut u8,
         CoreId,
+        Option<IrqVector>,
         *mut ThreadControlBlock<'static>,
     ),
 }

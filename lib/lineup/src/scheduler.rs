@@ -21,7 +21,7 @@ use crate::stack::LineupStack;
 use crate::threads::{Runnable, Thread, ThreadId, YieldRequest, YieldResume};
 use crate::tls2::{self, SchedulerControlBlock, ThreadControlBlock};
 use crate::upcalls::Upcalls;
-use crate::CoreId;
+use crate::{CoreId, IrqVector};
 
 /// Scheduler per-core state.
 ///
@@ -66,6 +66,8 @@ pub struct SmpScheduler<'a> {
     per_core: [SchedulerCoreState; 96], // MAX_THREADS
     /// Contains a global counter of thread IDs
     tid_counter: AtomicUsize,
+    /// Maps interrupt vectors to ThreadId
+    irqvec_to_tid: spin::Mutex<hashbrown::HashMap<IrqVector, ThreadId>>,
 }
 
 unsafe impl Send for SmpScheduler<'static> {}
@@ -89,6 +91,7 @@ impl<'a> SmpScheduler<'a> {
             upcalls,
             tid_counter: AtomicUsize::new(0),
             per_core: arr![SchedulerCoreState::new(); 96], // MAX_THREADS
+            irqvec_to_tid: spin::Mutex::new(hashbrown::HashMap::with_capacity(8)),
         }
     }
 
@@ -105,6 +108,7 @@ impl<'a> SmpScheduler<'a> {
         f: F,
         arg: *mut u8,
         affinity: CoreId,
+        interrupt_vector: Option<IrqVector>,
         tls: *mut ThreadControlBlock<'static>,
     ) -> Option<ThreadId>
     where
@@ -112,11 +116,24 @@ impl<'a> SmpScheduler<'a> {
     {
         let t = self.tid_counter.fetch_add(1, Ordering::Relaxed);
         let tid = ThreadId(t);
-        let (handle, generator) =
-            unsafe { Thread::new(tid, affinity, stack, f, arg, self.upcalls, tls) };
+        let (handle, generator) = unsafe {
+            Thread::new(
+                tid,
+                affinity,
+                stack,
+                f,
+                arg,
+                self.upcalls,
+                interrupt_vector,
+                tls,
+            )
+        };
 
         self.add_thread(handle, generator).map(|tid| {
             self.mark_runnable(tid, affinity);
+            interrupt_vector.map(|vec| {
+                self.irqvec_to_tid.lock().insert(vec, tid);
+            });
             tid
         })
     }
@@ -127,13 +144,14 @@ impl<'a> SmpScheduler<'a> {
         f: F,
         arg: *mut u8,
         affinity: CoreId,
+        irq_vec: Option<IrqVector>,
     ) -> Option<ThreadId>
     where
         F: 'static + FnOnce(*mut u8) + Send,
     {
         let stack = LineupStack::from_size(stack_size);
         let tls = unsafe { tls2::ThreadControlBlock::new_tls_area() };
-        self.spawn_with_args(stack, f, arg, affinity, tls)
+        self.spawn_with_args(stack, f, arg, affinity, irq_vec, tls)
     }
 
     fn add_thread(
@@ -318,7 +336,7 @@ impl<'a> SmpScheduler<'a> {
                     None => YieldResume::Completed,
                 }
             }
-            Some(YieldRequest::Spawn(function, arg, affinity)) => {
+            Some(YieldRequest::Spawn(function, arg, affinity, irq_vector)) => {
                 trace!("self.spawn {:?} {:p}", function, arg);
                 let tid = self
                     .spawn(
@@ -328,11 +346,19 @@ impl<'a> SmpScheduler<'a> {
                         },
                         arg,
                         affinity,
+                        irq_vector,
                     )
                     .expect("Can't spawn the thread");
                 YieldResume::Spawned(tid)
             }
-            Some(YieldRequest::SpawnWithArgs(stack, function, arg, affinity, tls_private)) => {
+            Some(YieldRequest::SpawnWithArgs(
+                stack,
+                function,
+                arg,
+                affinity,
+                irq_vec,
+                tls_private,
+            )) => {
                 trace!("self.spawn {:?} {:p}", function, arg);
                 let tid = self
                     .spawn_with_args(
@@ -342,6 +368,7 @@ impl<'a> SmpScheduler<'a> {
                         },
                         arg,
                         affinity,
+                        irq_vec,
                         tls_private,
                     )
                     .expect("Can't spawn the thread");
@@ -366,17 +393,14 @@ impl<'a> SmpScheduler<'a> {
 
     /// Check for an incoming interrupt.
     fn check_interrupt(&self, state: &SchedulerControlBlock) {
-        let is_irq_pending = state
-            .signal_irq
-            .swap(false, core::sync::atomic::Ordering::AcqRel);
-
-        // TODO(correctness): Hard-coded assumption that threadId 1 is IRQ handler
-        if is_irq_pending {
-            log::trace!("Got interrupt");
-            self.per_core[state.core_id]
-                .runnable
-                .lock()
-                .push_back(ThreadId(1));
+        while !state.pending_irqs.is_empty() {
+            match state.pending_irqs.pop() {
+                Ok(vec) => match self.irqvec_to_tid.lock().get(&vec) {
+                    Some(tid) => self.mark_runnable(*tid, state.core_id),
+                    None => error!("Don't have a thread to handle IRQ vector {}", vec),
+                },
+                Err(_e) => unreachable!("Only one thread pops so this shouldn't happen"),
+            }
         }
     }
 

@@ -68,10 +68,8 @@ mod mlnrfs;
 mod nr;
 mod prelude;
 mod process;
-mod stack;
-
-#[cfg(all(target_arch = "x86_64", target_os = "none"))]
 mod scheduler;
+mod stack;
 
 pub mod panic;
 
@@ -108,22 +106,10 @@ pub enum ExitReason {
 #[no_mangle]
 #[cfg(not(feature = "integration-test"))]
 pub fn xmain() {
-    debug!("Reached architecture independent area");
-    error!("error");
-    warn!("warning");
-    info!("info");
-    debug!("debug");
-    trace!("trace");
+    let _r = arch::process::spawn("init").expect("Can't launch init");
+    arch::timer::set(arch::timer::DEFAULT_TIMER_DEADLINE);
 
-    debug!("allocating a region of mem");
-    unsafe {
-        let new_region: *mut u8 =
-            alloc::alloc::alloc(core::alloc::Layout::from_size_align_unchecked(8192, 4096));
-        let p: *mut u8 = new_region.offset(4096);
-        assert!(!p.is_null());
-    }
-
-    arch::debug::shutdown(ExitReason::Ok);
+    crate::scheduler::schedule()
 }
 
 // Including a series of other, custom `xmain` routines that get

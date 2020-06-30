@@ -47,26 +47,28 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
         arg
     );
 
+    let sched = &PROCESS_SCHEDULER;
+
     if cmd == kpi::upcall::NEW_CORE {
         use lineup::tls2::SchedulerControlBlock;
         let core_id = arg;
         log::info!("Got a new core ({}) assigned to us.", core_id);
 
         let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id as usize);
-        let sched = &PROCESS_SCHEDULER;
         loop {
             sched.run(&scb);
         }
     }
 
-    if cmd == 0x2a {
+    if cmd == 0x2a || cmd == 0x24 {
         // TODO(correctness): this will use `gs` to access the SchedulerControlBlock
         // that assumes that we have already called scheduler.run() and we preserve
         // the SchedulerControlBlock register even if we return from run()
         let scheduler = lineup::tls2::Environment::scheduler();
-        scheduler
-            .signal_irq
-            .store(true, core::sync::atomic::Ordering::SeqCst);
+        log::info!("got interrupt cmd={} arg={}", cmd, arg);
+        scheduler.pending_irqs.push(cmd).map_err(|_e| {
+            log::error!("Overflowed pending_irqs, missed cmd={} arg={}", cmd, arg);
+        });
     } else {
         log::error!("got unknown interrupt... {}", cmd);
     }

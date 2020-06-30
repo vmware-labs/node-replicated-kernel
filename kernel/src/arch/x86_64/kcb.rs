@@ -313,6 +313,10 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
             self.idt.install();
         }
     }
+
+    fn hwthread_id(&self) -> u64 {
+        topology::MACHINE_TOPOLOGY.current_thread().id
+    }
 }
 
 impl Kcb<Arch86Kcb> {

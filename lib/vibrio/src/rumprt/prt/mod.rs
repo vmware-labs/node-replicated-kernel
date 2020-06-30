@@ -193,6 +193,7 @@ pub unsafe extern "C" fn rumprun_makelwp(
         Some(rumprun_makelwp_tramp),
         newlwp as *mut u8,
         coreid,
+        None,
         tls_private,
     );
     debug!("rumprun_makelwp spawned {:?} on core {}", tid, coreid);

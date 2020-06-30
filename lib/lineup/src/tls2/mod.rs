@@ -21,12 +21,13 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use fringe::generator::Yielder;
 
+use crossbeam_queue::{ArrayQueue, PushError};
 use rawtime::{Duration, Instant};
 
 use crate::stack::LineupStack;
 use crate::threads::{ThreadId, YieldRequest, YieldResume};
 use crate::upcalls::Upcalls;
-use crate::CoreId;
+use crate::{CoreId, IrqVector};
 
 #[cfg(target_os = "bespin")]
 pub mod bespin;
@@ -144,9 +145,10 @@ impl<'a> ThreadControlBlock<'a> {
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
         core_id: CoreId,
+        irq_vector: Option<IrqVector>,
         tcb: *mut ThreadControlBlock<'static>,
     ) -> Option<ThreadId> {
-        let request = YieldRequest::SpawnWithArgs(s, f, arg, core_id, tcb);
+        let request = YieldRequest::SpawnWithArgs(s, f, arg, core_id, irq_vector, tcb);
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,
@@ -159,7 +161,21 @@ impl<'a> ThreadControlBlock<'a> {
         arg: *mut u8,
         core_id: CoreId,
     ) -> Option<ThreadId> {
-        let request = YieldRequest::Spawn(f, arg, core_id);
+        let request = YieldRequest::Spawn(f, arg, core_id, None);
+        match self.yielder().suspend(request) {
+            YieldResume::Spawned(tid) => Some(tid),
+            _ => None,
+        }
+    }
+
+    pub fn spawn_irq_thread(
+        &self,
+        f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
+        arg: *mut u8,
+        core_id: CoreId,
+        irq_vector: IrqVector,
+    ) -> Option<ThreadId> {
+        let request = YieldRequest::Spawn(f, arg, core_id, Some(irq_vector));
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,
@@ -171,7 +187,7 @@ impl<'a> ThreadControlBlock<'a> {
         f: Option<unsafe extern "C" fn(arg1: *mut u8) -> *mut u8>,
         arg: *mut u8,
     ) -> Option<ThreadId> {
-        let request = YieldRequest::Spawn(f, arg, self.current_core);
+        let request = YieldRequest::Spawn(f, arg, self.current_core, None);
         match self.yielder().suspend(request) {
             YieldResume::Spawned(tid) => Some(tid),
             _ => None,
@@ -230,9 +246,11 @@ pub struct SchedulerControlBlock {
     ///
     /// We can't just update the scheduler state directly because
     /// someone might hold a spinlock on the runlists while being interrupted.
-    pub signal_irq: AtomicBool,
+    pub pending_irqs: ArrayQueue<u64>,
+
     /// Specific to a pointer of of upcall handlers set by the rumpkernel
     pub rump_upcalls: AtomicPtr<u64>,
+
     /// Core identifier of this scheduler state
     pub core_id: usize,
 }
@@ -242,7 +260,7 @@ impl SchedulerControlBlock {
     /// and no upcall handler is set.
     pub fn new(core_id: CoreId) -> Self {
         SchedulerControlBlock {
-            signal_irq: AtomicBool::new(false),
+            pending_irqs: ArrayQueue::new(4),
             rump_upcalls: AtomicPtr::new(ptr::null_mut()),
             core_id,
         }

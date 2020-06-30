@@ -7,10 +7,12 @@ use core::ops::{Deref, DerefMut};
 use kpi::process::FrameId;
 
 use crate::arch::Module;
+use crate::error::KError;
 use crate::fs::Fd;
 use crate::memory::{Frame, VAddr};
 use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle};
 
+use super::debug;
 use super::vspace::VSpace;
 
 /// TODO: This code is same as x86_64 process. Can we remove it?
@@ -114,7 +116,9 @@ pub struct UnixThread {
 pub struct UnixResumeHandle {}
 
 impl ResumeHandle for UnixResumeHandle {
-    unsafe fn resume(self) {}
+    unsafe fn resume(self) -> ! {
+        debug::shutdown(super::ExitReason::Ok)
+    }
 }
 
 impl Executor for UnixThread {
@@ -213,4 +217,8 @@ impl Process for UnixProcess {
     fn get_frame(&mut self, _frame_id: FrameId) -> Result<Frame, ProcessError> {
         Err(ProcessError::InvalidFrameId)
     }
+}
+
+pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
+    Err(KError::NotSupported)
 }

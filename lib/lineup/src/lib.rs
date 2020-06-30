@@ -22,3 +22,6 @@ pub mod upcalls;
 
 /// Type to represent a core id for the scheduler.
 type CoreId = usize;
+
+/// Type to represent an IRQ vector.
+type IrqVector = u64;

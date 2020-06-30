@@ -381,18 +381,10 @@ pub fn xmain() {
     any(feature = "test-userspace", feature = "test-userspace-smp")
 ))]
 pub fn xmain() {
-    // Register a periodic timer to advance replica
-    {
-        use apic::ApicDriver;
-        let kcb = crate::kcb::get_kcb();
-        let mut apic = kcb.arch.apic();
-        apic.tsc_enable();
-        unsafe { apic.tsc_set(x86::time::rdtsc() + arch::irq::TSC_TIMER_DEADLINE) };
-    }
-
+    arch::timer::set(arch::timer::DEFAULT_TIMER_DEADLINE);
     let kcb = kcb::get_kcb();
-    crate::scheduler::spawn::spawn(kcb.cmdline.test_binary);
-    crate::scheduler::spawn::schedule()
+    crate::process::spawn(kcb.cmdline.test_binary);
+    crate::scheduler::schedule()
 }
 
 /// Test SSE/floating point in the kernel.

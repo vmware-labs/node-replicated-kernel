@@ -356,19 +356,8 @@ pub extern "C" fn main() {
         },
         core::ptr::null_mut(),
         0,
+        None,
     );
-
-    scheduler
-        .spawn(
-            32 * 1024,
-            |_yielder| unsafe {
-                crate::rumprt::dev::irq_handler(core::ptr::null_mut());
-                unreachable!("should not exit");
-            },
-            core::ptr::null_mut(),
-            0,
-        )
-        .expect("Can't create IRQ thread?");
 
     loop {
         scheduler.run(&scb);

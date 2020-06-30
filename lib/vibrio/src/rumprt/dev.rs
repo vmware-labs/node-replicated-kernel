@@ -116,12 +116,21 @@ pub unsafe extern "C" fn rumpcomp_pci_irq_map(
     IRQS[0].vector = vector;
     IRQS[0].cookie = cookie;
 
+    let cur_thread = lineup::tls2::Environment::thread();
+
+    cur_thread
+        .spawn_irq_thread(
+            Some(irq_handler),
+            core::ptr::null_mut(),
+            0,
+            vector as u64 + 31,
+        )
+        .expect("Can't create IRQ thread?");
+
     crate::syscalls::Irq::irqalloc(vector as u64, 0).ok();
 
     0
 }
-
-static mut counter: u64 = 0;
 
 #[allow(unused)]
 pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
@@ -139,11 +148,6 @@ pub unsafe extern "C" fn irq_handler(_arg1: *mut u8) -> *mut u8 {
 
     let mut nlock: i32 = 1;
     loop {
-        counter += 1;
-        if counter % 100 == 0 {
-            //info!("IRQ cnt is at: {}", counter);
-        }
-
         let start = rawtime::Instant::now();
         super::rumpkern_sched(&nlock, None);
         let r = (IRQS[0].handler.unwrap())(IRQS[0].arg as *mut u64);

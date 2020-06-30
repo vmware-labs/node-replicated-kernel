@@ -375,5 +375,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 }
 
 pub trait ArchSpecificKcb {
+    fn hwthread_id(&self) -> u64;
     fn install(&mut self);
 }

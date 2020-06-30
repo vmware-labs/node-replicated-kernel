@@ -7,10 +7,12 @@ use crate::ExitReason;
 
 use crate::memory::{tcache_sp::TCacheSp, Frame, GlobalMemory, GrowBackend};
 
+pub mod debug;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
 pub mod process;
+pub mod timer;
 pub mod vspace;
 
 use crate::kcb::{BootloaderArguments, Kcb};
@@ -18,15 +20,6 @@ use crate::kcb::{BootloaderArguments, Kcb};
 pub use bootloader_shared::*;
 
 pub const MAX_NUMA_NODES: usize = 12;
-
-pub mod debug {
-    use crate::ExitReason;
-    pub fn shutdown(val: ExitReason) -> ! {
-        unsafe {
-            libc::exit(val as i32);
-        }
-    }
-}
 
 static mut initialized: bool = false;
 

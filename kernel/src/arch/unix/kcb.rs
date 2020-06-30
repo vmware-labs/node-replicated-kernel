@@ -9,11 +9,13 @@ use mlnr::ReplicaToken as MlnrReplicaToken;
 use node_replication::Replica;
 use node_replication::ReplicaToken;
 
+use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
+use crate::process::{Executor, ProcessError, ResumeHandle};
 
-use super::process::UnixProcess;
+use super::process::{UnixProcess, UnixThread};
 use super::vspace::VSpace;
 use super::KernelArgs;
 
@@ -57,6 +59,7 @@ pub struct ArchKcb {
     kernel_args: &'static KernelArgs,
     pub replica: Option<(Arc<Replica<'static, KernelNode<UnixProcess>>>, ReplicaToken)>,
     pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
+    pub current_process: Option<Arc<UnixThread>>,
 }
 
 impl ArchKcb {
@@ -66,6 +69,7 @@ impl ArchKcb {
             init_vspace: RefCell::new(VSpace::new()),
             replica: None,
             mlnr_replica: None,
+            current_process: None,
         }
     }
 
@@ -84,8 +88,27 @@ impl ArchKcb {
     pub fn max_threads(&self) -> usize {
         0
     }
+
+    pub fn swap_current_process(
+        &mut self,
+        new_current_process: Arc<UnixThread>,
+    ) -> Option<Arc<UnixThread>> {
+        None
+    }
+
+    pub fn current_process(&self) -> Result<Arc<UnixThread>, ProcessError> {
+        let p = self
+            .current_process
+            .as_ref()
+            .ok_or(ProcessError::ProcessNotSet)?;
+        Ok(p.clone())
+    }
 }
 
 impl ArchSpecificKcb for ArchKcb {
     fn install(&mut self) {}
+
+    fn hwthread_id(&self) -> u64 {
+        0
+    }
 }

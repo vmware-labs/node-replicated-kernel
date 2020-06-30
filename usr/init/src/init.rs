@@ -113,6 +113,7 @@ fn scheduler_smp_test() {
             },
             ptr::null_mut(),
             thread.id,
+            None,
         );
     }
 
@@ -144,6 +145,7 @@ fn scheduler_test() {
         },
         ptr::null_mut(),
         2,
+        None,
     );
 
     s.spawn(
@@ -160,6 +162,7 @@ fn scheduler_test() {
         },
         ptr::null_mut(),
         2,
+        None,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(2);
@@ -252,6 +255,7 @@ fn test_rump_tmpfs() {
         },
         core::ptr::null_mut(),
         0,
+        None,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
@@ -403,19 +407,8 @@ pub fn test_rump_net() {
         },
         core::ptr::null_mut(),
         0,
+        None,
     );
-
-    scheduler
-        .spawn(
-            32 * 1024,
-            |_yielder| unsafe {
-                vibrio::rumprt::dev::irq_handler(core::ptr::null_mut());
-                unreachable!("should not exit");
-            },
-            core::ptr::null_mut(),
-            0,
-        )
-        .expect("Can't create IRQ thread?");
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
     loop {
@@ -616,6 +609,7 @@ pub extern "C" fn _start() -> ! {
             .map(|()| log::set_max_level(Level::Debug.to_level_filter()))
             .expect("Can't set-up logging");
     }
+
     debug!("Initialized logging");
     install_vcpu_area();
 
@@ -670,6 +664,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "fxmark")]
     fxmark::bench(ncores, benchmark, write_ratio);
+
+    vibrio::vconsole::init();
+    loop {}
 
     debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::Process::exit(0);

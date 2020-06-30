@@ -20,13 +20,12 @@ extern crate kpi;
 pub use kpi::io;
 pub use kpi::syscalls;
 
-#[cfg(feature = "rumprt")]
 extern crate lazy_static;
 
 pub mod mem;
 pub mod writer;
-
 pub mod upcalls;
+pub mod vconsole;
 
 #[cfg(feature = "rumprt")]
 pub mod rumprt;

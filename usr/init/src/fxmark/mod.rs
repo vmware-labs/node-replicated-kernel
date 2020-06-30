@@ -190,6 +190,7 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
             },
             ptr::null_mut(),
             0,
+            None,
         );
 
         let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);

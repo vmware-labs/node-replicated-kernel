@@ -666,7 +666,6 @@ pub extern "C" fn _start() -> ! {
     fxmark::bench(ncores, benchmark, write_ratio);
 
     vibrio::vconsole::init();
-    loop {}
 
     debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::Process::exit(0);

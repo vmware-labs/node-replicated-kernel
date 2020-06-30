@@ -98,6 +98,11 @@ impl<'a> SmpScheduler<'a> {
     /// Returns true as long as we have 'active', unfinished thread.
     ///
     /// A thread that is currently blocked/waiting still counts as active.
+    ///
+    /// TODO(correctness): Maybe we want to exclude interrupt threads:
+    /// e.g., self.threads.lock().len() - self.irqvec_to_tid.lock().len() > 0
+    /// TODO(api): Probably needs a better API, maybe schedule() should just return
+    /// the next time a thread becomes runnable if none are, or a set of IRQs to wait on...
     pub fn has_active_threads(&self) -> bool {
         self.threads.lock().len() > 0
     }

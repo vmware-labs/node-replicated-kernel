@@ -383,7 +383,7 @@ pub fn xmain() {
 pub fn xmain() {
     arch::timer::set(arch::timer::DEFAULT_TIMER_DEADLINE);
     let kcb = kcb::get_kcb();
-    crate::process::spawn(kcb.cmdline.test_binary);
+    crate::arch::process::spawn(kcb.cmdline.test_binary);
     crate::scheduler::schedule()
 }
 

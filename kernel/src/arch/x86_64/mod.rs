@@ -62,6 +62,7 @@ use crate::memory::{
 };
 use crate::mlnr::{MlnrKernelNode, Modify};
 use crate::nr::{KernelNode, Op};
+use crate::process::ResumeHandle;
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
 

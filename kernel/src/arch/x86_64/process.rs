@@ -168,7 +168,11 @@ pub struct Ring3Resumer {
 
 impl ResumeHandle for Ring3Resumer {
     unsafe fn resume(self) -> ! {
-        unimplemented!()
+        match self.typ {
+            ResumeStrategy::Upcall => self.upcall(),
+            ResumeStrategy::SysRet => self.restore(),
+            ResumeStrategy::IRet => self.iret_restore(),
+        }
     }
 }
 
@@ -219,14 +223,6 @@ impl Ring3Resumer {
             cpu_ctl,
             vector,
             exception,
-        }
-    }
-
-    pub unsafe fn resume(self) -> ! {
-        match self.typ {
-            ResumeStrategy::Upcall => self.upcall(),
-            ResumeStrategy::SysRet => self.restore(),
-            ResumeStrategy::IRet => self.iret_restore(),
         }
     }
 

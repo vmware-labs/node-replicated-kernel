@@ -48,7 +48,7 @@ use log::debug;
 use crate::memory::{vspace::MapAction, Frame};
 use crate::nr;
 use crate::panic::{backtrace, backtrace_from};
-use crate::process::Executor;
+use crate::process::{Executor, ResumeHandle};
 use crate::ExitReason;
 
 use super::debug;

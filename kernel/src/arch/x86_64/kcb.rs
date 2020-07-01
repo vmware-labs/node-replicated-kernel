@@ -10,16 +10,16 @@ use core::ptr;
 use apic::xapic::XAPICDriver;
 use mlnr::Replica as MlnrReplica;
 use mlnr::ReplicaToken as MlnrReplicaToken;
-use node_replication::Replica;
-use node_replication::ReplicaToken;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use crate::error::KError;
 use crate::kcb::Kcb;
+use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
+
 use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
 
@@ -66,7 +66,7 @@ pub fn get_kcb<'a>() -> &'a mut Kcb<Arch86Kcb> {
 /// when we call `swapgs` on a syscall entry, we restore the pointer
 /// to the KCB (user-space may change the `gs` register for
 /// TLS etc.).
-unsafe fn set_kcb<A>(kcb: ptr::NonNull<Kcb<A>>) {
+unsafe fn set_kcb<A: ArchSpecificKcb>(kcb: ptr::NonNull<Kcb<A>>) {
     // Set up the GS register to point to the KCB
     segmentation::wrgsbase(kcb.as_ptr() as u64);
     // Set up swapgs instruction to reset the gs register to the KCB on irq, trap or syscall
@@ -76,7 +76,7 @@ unsafe fn set_kcb<A>(kcb: ptr::NonNull<Kcb<A>>) {
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb<A>(kcb: &mut Kcb<A>) {
+pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut Kcb<A>) {
     let kptr: ptr::NonNull<Kcb<A>> = ptr::NonNull::from(kcb);
     unsafe { set_kcb(kptr) };
 }
@@ -118,12 +118,6 @@ pub struct Arch86Kcb {
     ///  * all physical memory (above `KERNEL_BASE`)
     ///  * IO APIC and local APIC memory (after initialization has completed)
     init_vspace: RefCell<PageTable>,
-
-    /// A handle to the node-local kernel replica.
-    pub replica: Option<(
-        Arc<Replica<'static, KernelNode<Ring3Process>>>,
-        ReplicaToken,
-    )>,
 
     ///
     pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
@@ -176,7 +170,6 @@ impl Arch86Kcb {
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
-            replica: None,
             mlnr_replica: None,
             id: 0,
             max_threads: 0,
@@ -189,14 +182,6 @@ impl Arch86Kcb {
 
     pub fn init_vspace(&self) -> RefMut<PageTable> {
         self.init_vspace.borrow_mut()
-    }
-
-    pub fn setup_node_replication(
-        &mut self,
-        replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
-        idx_token: ReplicaToken,
-    ) {
-        self.replica = Some((replica, idx_token));
     }
 
     pub fn setup_mlnr(
@@ -306,6 +291,8 @@ impl Arch86Kcb {
 }
 
 impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
+    type Process = Ring3Process;
+
     fn install(&mut self) {
         unsafe {
             // Switch to our new, core-local Gdt and Idt:

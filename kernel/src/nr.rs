@@ -125,8 +125,7 @@ impl<P: Process> Default for KernelNode<P> {
 impl<P: Process> KernelNode<P> {
     pub fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(ReadOps::MemResolve(pid, base), *token);
@@ -141,8 +140,7 @@ impl<P: Process> KernelNode<P> {
 
     pub fn synchronize() -> Result<(), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(ReadOps::Synchronize, *token);
@@ -160,8 +158,7 @@ impl<P: Process> KernelNode<P> {
         action: MapAction,
     ) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut(Op::MemMapDevice(pid, frame, action), *token);
@@ -180,8 +177,7 @@ impl<P: Process> KernelNode<P> {
         action: MapAction,
     ) -> Result<(PAddr, usize), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response =
@@ -201,8 +197,7 @@ impl<P: Process> KernelNode<P> {
         action: MapAction,
     ) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let mut virtual_offset = 0;
@@ -232,8 +227,7 @@ impl<P: Process> KernelNode<P> {
 
     pub fn map_fd(pid: Pid, pathname: u64, flags: u64, modes: u64) -> Result<(FD, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename;
@@ -255,8 +249,7 @@ impl<P: Process> KernelNode<P> {
 
     pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut(Op::FileClose(pid, fd), *token);
@@ -278,8 +271,7 @@ impl<P: Process> KernelNode<P> {
         offset: i64,
     ) -> Result<(Len, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| match op {
                 FileOperation::Read | FileOperation::ReadAt => {
@@ -313,8 +305,7 @@ impl<P: Process> KernelNode<P> {
 
     pub fn file_info(pid: Pid, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(ReadOps::FileInfo(pid, name, info_ptr), *token);
@@ -329,8 +320,7 @@ impl<P: Process> KernelNode<P> {
 
     pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename;
@@ -350,8 +340,7 @@ impl<P: Process> KernelNode<P> {
 
     pub fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let oldfilename;
@@ -378,8 +367,7 @@ impl<P: Process> KernelNode<P> {
 
     pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(ReadOps::ProcessInfo(pid), *token);
@@ -400,8 +388,7 @@ impl<P: Process> KernelNode<P> {
     ) -> Result<(topology::GlobalThreadId, Eid), KError> {
         let kcb = super::kcb::get_kcb();
 
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut(
@@ -423,8 +410,7 @@ impl<P: Process> KernelNode<P> {
     pub fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
         let kcb = super::kcb::get_kcb();
 
-        kcb.arch
-            .replica
+        kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut(Op::AllocateFrameToProcess(pid, frame), *token);

@@ -7,16 +7,22 @@ use crate::process::Executor;
 /// Runs the process allocated to the given core.
 pub fn schedule() -> ! {
     let kcb = kcb::get_kcb();
-    let replica = kcb.arch.replica.as_ref().expect("Replica not set");
+    let replica = kcb.replica.as_ref().expect("Replica not set");
 
     // Get an executor
     let response = replica.execute_ro(
         nr::ReadOps::CurrentExecutor(kcb.arch.hwthread_id()),
-        kcb.arch.replica_idx,
+        kcb.replica_idx,
     );
     let executor = match response {
         Ok(nr::NodeResult::Executor(e)) => e,
-        e => unreachable!("Got unexpected response {:?}", e),
+        e => {
+            warn!(
+                "Didn't find an executor for the core {:?}, shutting down.",
+                e
+            );
+            crate::arch::debug::shutdown(crate::ExitReason::Ok);
+        }
     };
 
     info!("Created the init process, about to go there...");

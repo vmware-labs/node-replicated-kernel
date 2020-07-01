@@ -1,11 +1,16 @@
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 
 use arrayvec::ArrayVec;
+use node_replication::log::Log;
+use node_replication::replica::Replica;
 
 use crate::xmain;
 use crate::ExitReason;
 
-use crate::memory::{tcache_sp::TCacheSp, Frame, GlobalMemory, GrowBackend};
+use crate::kcb::{BootloaderArguments, Kcb};
+use crate::memory::{tcache_sp::TCacheSp, Frame, GlobalMemory, GrowBackend, LARGE_PAGE_SIZE};
+use crate::nr::{KernelNode, Op};
 
 pub mod debug;
 pub mod irq;
@@ -15,7 +20,7 @@ pub mod process;
 pub mod timer;
 pub mod vspace;
 
-use crate::kcb::{BootloaderArguments, Kcb};
+use process::UnixProcess;
 
 pub use bootloader_shared::*;
 
@@ -79,6 +84,16 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
 
     kcb::init_kcb(Box::leak(kcb));
     kcb::get_kcb().init_memfs();
+
+    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
+    let bsp_replica = Replica::<KernelNode<UnixProcess>>::new(&log);
+    let local_ridx = bsp_replica
+        .register()
+        .expect("Failed to register with Replica.");
+    {
+        let kcb = kcb::get_kcb();
+        kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
+    }
 
     info!(
         "Started at {} with {:?} since CPU startup",

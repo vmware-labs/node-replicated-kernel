@@ -102,6 +102,7 @@ impl<'a> DerefMut for UserSlice<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct UnixProcess {
     vspace: VSpace,
     fd: Fd,
@@ -220,5 +221,5 @@ impl Process for UnixProcess {
 }
 
 pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
-    Err(KError::NotSupported)
+    Ok(0)
 }

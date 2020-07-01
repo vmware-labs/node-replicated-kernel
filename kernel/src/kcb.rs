@@ -1,22 +1,26 @@
 //! KCB is the local kernel control that stores all core local state.
 
 use alloc::string::String;
+use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::convert::TryInto;
 use core::slice::from_raw_parts;
 
 use logos::Logos;
+use node_replication::replica::Replica;
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
 use crate::fs::{FileSystem, MemFS};
-use crate::memory::tcache_sp::TCacheSp;
+
 use crate::memory::{
-    emem::EmergencyAllocator, tcache::TCache, AllocatorStatistics, GlobalMemory, GrowBackend,
+    emem::EmergencyAllocator, tcache::TCache, tcache_sp::TCacheSp, AllocatorStatistics, GlobalMemory, GrowBackend,
     PAddr, PhysicalPageProvider,
 };
+use crate::nr::KernelNode;
+use crate::process::Process;
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 
@@ -193,7 +197,7 @@ impl PhysicalMemoryArena {
 
 /// The Kernel Control Block for a given core.
 /// It contains all core-local state of the kernel.
-pub struct Kcb<A> {
+pub struct Kcb<A: ArchSpecificKcb> {
     /// Architecture specific members of the KCB.
     pub arch: A,
 
@@ -229,6 +233,12 @@ pub struct Kcb<A> {
     /// Contains a bunch of memory arenas, can be one for every NUMA node
     /// but we intialize it lazily upon calling `set_allocation_affinity`.
     pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
+
+    /// A handle to the node-local kernel replica.
+    pub replica: Option<Arc<Replica<'static, KernelNode<A::Process>>>>,
+
+    /// The registration ID of the current KCB for the `replica`.
+    pub replica_idx: usize,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -253,7 +263,18 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),
             memfs: None,
             print_buffer: None,
+            replica: None,
+            replica_idx: 0,
         }
+    }
+
+    pub fn setup_node_replication(
+        &mut self,
+        replica: Arc<Replica<'static, KernelNode<A::Process>>>,
+        idx: usize,
+    ) {
+        self.replica_idx = idx;
+        self.replica = Some(replica);
     }
 
     pub fn set_panic_mode(&mut self) {
@@ -375,6 +396,8 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 }
 
 pub trait ArchSpecificKcb {
+    type Process: Process + Sync;
+
     fn hwthread_id(&self) -> u64;
     fn install(&mut self);
 }

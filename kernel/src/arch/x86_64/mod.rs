@@ -715,8 +715,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let local_ridx = bsp_replica.register().unwrap();
     {
         let kcb = kcb::get_kcb();
-        kcb.arch
-            .setup_node_replication(bsp_replica.clone(), local_ridx);
+        kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
 
     let num_cores = topology::MACHINE_TOPOLOGY.num_cores();

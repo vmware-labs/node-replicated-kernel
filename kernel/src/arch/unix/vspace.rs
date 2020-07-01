@@ -1,6 +1,7 @@
 //! A dummy vspace implementation for the unix platform.
 
 use alloc::boxed::Box;
+use core::fmt;
 use core::pin::Pin;
 
 use crate::kcb::MemManager;
@@ -11,6 +12,12 @@ use x86::bits64::paging::*;
 
 pub struct VSpace {
     pub pml4: Pin<Box<PML4>>,
+}
+
+impl fmt::Debug for VSpace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VSpace").finish()
+    }
 }
 
 impl VSpace {

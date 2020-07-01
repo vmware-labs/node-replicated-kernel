@@ -97,7 +97,7 @@ impl From<alloc::collections::TryReserveError> for ProcessError {
 
 /// Abstract definition of a process.
 pub trait Process {
-    type E: Executor + Copy;
+    type E: Executor + Copy + Sync + Send;
     type A: AddressSpace;
 
     fn new(module: &Module, pid: Pid, writable_sections: Vec<Frame>) -> Result<Self, ProcessError>
@@ -378,11 +378,8 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
     let data_frames: Vec<Frame> = data_sec_loader.finish();
 
     // Create a new process
-    let replica = kcb.arch.replica.as_ref().expect("Replica not set");
-    let response = replica.execute(
-        nr::Op::ProcCreate(&mod_file, data_frames),
-        kcb.arch.replica_idx,
-    )?;
+    let replica = kcb.replica.as_ref().expect("Replica not set");
+    let response = replica.execute(nr::Op::ProcCreate(&mod_file, data_frames), kcb.replica_idx)?;
 
     match response {
         nr::NodeResult::ProcCreated(pid) => Ok(pid),
@@ -424,11 +421,9 @@ pub fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
             }
 
             let kcb = crate::kcb::get_kcb();
-            let replica = kcb.arch.replica.as_ref().expect("Replica not set");
-            let response = replica.execute(
-                nr::Op::DispatcherAllocation(pid, frame),
-                kcb.arch.replica_idx,
-            )?;
+            let replica = kcb.replica.as_ref().expect("Replica not set");
+            let response =
+                replica.execute(nr::Op::DispatcherAllocation(pid, frame), kcb.replica_idx)?;
 
             match response {
                 nr::NodeResult::ExecutorsCreated(how_many) => {

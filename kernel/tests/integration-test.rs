@@ -1669,7 +1669,7 @@ fn s06_memcached_benchmark() {
                 .module("rkapps")
                 .user_feature("rkapps:memcached")
                 .memory(8192)
-                .timeout(15_000)
+                .timeout(25_000)
                 .cores(max_cores)
                 .nodes(1)
                 .setaffinity()

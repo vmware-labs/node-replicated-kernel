@@ -29,8 +29,8 @@ use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
 use x86::cpuid;
 
-use node_replication::log::Log;
-use node_replication::replica::Replica;
+use node_replication::Log;
+use node_replication::Replica;
 
 //use apic::x2apic;
 use apic::xapic;
@@ -248,16 +248,13 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     {
         let kcb = kcb::get_kcb();
-        let local_ridx = args
-            .replica
-            .register()
-            .expect("Failed to register with Replica.");
+        let local_ridx = args.replica.register().unwrap();
         kcb.arch
             .setup_node_replication(args.replica.clone(), local_ridx);
 
         // Don't modify this line without adjusting `coreboot` integration test:
         info!(
-            "Core #{} initialized (replica idx {}) in {:?}.",
+            "Core #{} initialized (replica idx {:?}) in {:?}.",
             args.thread,
             local_ridx,
             start.elapsed()
@@ -285,13 +282,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     loop {
         use crate::nr;
         let kcb = kcb::get_kcb();
-        let replica = kcb.arch.replica.as_ref().expect("Replica not set");
+        let (replica, token) = kcb.arch.replica.as_ref().expect("Replica not set");
 
         // Get an executor
-        let response = replica.execute_ro(
-            nr::ReadOps::CurrentExecutor(thread.id),
-            kcb.arch.replica_idx,
-        );
+        let response = replica.execute(nr::ReadOps::CurrentExecutor(thread.id), *token);
 
         match &response {
             Ok(nr::NodeResult::Executor(executor)) => {
@@ -313,7 +307,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
             Err(crate::error::KError::NoExecutorForCore) => {
                 // TODO(ugly-before-deadline): Hack to make core go to sleep if
                 // they wont be dispatching something.
-                if kcb.arch.replica_idx != 1 {
+                if token.id() != 1 {
                     if !cfg!(debug_assertions)
                         && start.elapsed() > core::time::Duration::from_secs(3)
                     {
@@ -704,9 +698,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // and store it in the BSP kcb
     let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
     let bsp_replica = Replica::<KernelNode<Ring3Process>>::new(&log);
-    let local_ridx = bsp_replica
-        .register()
-        .expect("Failed to register with Replica.");
+    let local_ridx = bsp_replica.register().unwrap();
     {
         let kcb = kcb::get_kcb();
         kcb.arch

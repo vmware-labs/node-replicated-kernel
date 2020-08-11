@@ -305,7 +305,7 @@ pub fn xmain() {
     use x86::apic::ApicId;
 
     use alloc::sync::Arc;
-    use node_replication::log::Log;
+    use node_replication::Log;
 
     let mut log: Arc<Log<usize>> = Arc::new(Log::<usize>::new(1024 * 1024 * 1));
 
@@ -631,10 +631,10 @@ pub fn xmain() {
         let data_frames: Vec<Frame> = data_sec_loader.finish();
 
         // Create a new process
-        let replica = kcb.arch.replica.as_ref().expect("Replica not set");
-        let response = replica.execute(
+        let (replica, token) = kcb.arch.replica.as_ref().expect("Replica not set");
+        let response = replica.execute_mut(
             nr::Op::ProcCreate(&test_module, data_frames),
-            kcb.arch.replica_idx,
+            *token,
         );
         let pid = match response {
             Ok(nr::NodeResult::ProcCreated(pid)) => pid,
@@ -684,10 +684,10 @@ pub fn xmain() {
                 }
 
                 let kcb = crate::kcb::get_kcb();
-                let replica = kcb.arch.replica.as_ref().expect("Replica not set");
-                let response = replica.execute(
+                let (replica, token) = kcb.arch.replica.as_ref().expect("Replica not set");
+                let response = replica.execute_mut(
                     nr::Op::DispatcherAllocation(pid, frame),
-                    kcb.arch.replica_idx,
+                    *token,
                 );
                 match response {
                     Ok(nr::NodeResult::ExecutorsCreated(how_many)) => {
@@ -714,12 +714,12 @@ pub fn xmain() {
     };
 
     let kcb = kcb::get_kcb();
-    let replica = kcb.arch.replica.as_ref().expect("Replica not set");
+    let (replica, token) = kcb.arch.replica.as_ref().expect("Replica not set");
 
     // Get an executor
-    let response = replica.execute_ro(
+    let response = replica.execute(
         nr::ReadOps::CurrentExecutor(thread.id),
-        kcb.arch.replica_idx,
+        *token,
     );
     let executor = match response {
         Ok(nr::NodeResult::Executor(e)) => e,

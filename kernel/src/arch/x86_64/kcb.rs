@@ -8,7 +8,8 @@ use core::pin::Pin;
 use core::ptr;
 
 use apic::xapic::XAPICDriver;
-use node_replication::replica::Replica;
+use node_replication::Replica;
+use node_replication::ReplicaToken;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -116,10 +117,10 @@ pub struct Arch86Kcb {
     init_vspace: RefCell<PageTable>,
 
     /// A handle to the node-local kernel replica.
-    pub replica: Option<Arc<Replica<'static, KernelNode<Ring3Process>>>>,
-
-    /// The registration ID of the current KCB for the `replica`.
-    pub replica_idx: usize,
+    pub replica: Option<(
+        Arc<Replica<'static, KernelNode<Ring3Process>>>,
+        ReplicaToken,
+    )>,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -164,7 +165,6 @@ impl Arch86Kcb {
             syscall_stack: None,
             unrecoverable_fault_stack: None,
             replica: None,
-            replica_idx: 0,
         }
     }
 
@@ -179,10 +179,9 @@ impl Arch86Kcb {
     pub fn setup_node_replication(
         &mut self,
         replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
-        idx: usize,
+        idx_token: ReplicaToken,
     ) {
-        self.replica_idx = idx;
-        self.replica = Some(replica);
+        self.replica = Some((replica, idx_token));
     }
 
     /// Swaps out current process with a new process. Returns the old process.

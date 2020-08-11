@@ -10,6 +10,7 @@ use kpi::process::{FrameId, ProcessInfo};
 use kpi::{io::*, FileOperation};
 
 use node_replication::Dispatch;
+use node_replication::ReplicaToken;
 
 use crate::arch::process::{UserPtr, UserSlice};
 use crate::arch::Module;
@@ -127,9 +128,8 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response =
-                    replica.execute_ro(ReadOps::MemResolve(pid, base), kcb.arch.replica_idx);
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute(ReadOps::MemResolve(pid, base), *token);
 
                 match response {
                     Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
@@ -144,8 +144,8 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica.execute_ro(ReadOps::Synchronize, kcb.arch.replica_idx);
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute(ReadOps::Synchronize, *token);
 
                 match response {
                     Ok(NodeResult::Synchronized) => Ok(()),
@@ -163,9 +163,8 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response =
-                    replica.execute(Op::MemMapDevice(pid, frame, action), kcb.arch.replica_idx);
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute_mut(Op::MemMapDevice(pid, frame, action), *token);
 
                 match response {
                     Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
@@ -184,11 +183,9 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica.execute(
-                    Op::MemMapFrameId(pid, base, frame_id, action),
-                    kcb.arch.replica_idx,
-                );
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response =
+                    replica.execute_mut(Op::MemMapFrameId(pid, base, frame_id, action), *token);
                 match response {
                     Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
                     Err(e) => unreachable!("MappedFrameId {:?}", e),
@@ -207,12 +204,12 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let mut virtual_offset = 0;
                 for frame in frames {
-                    let response = replica.execute(
+                    let response = replica.execute_mut(
                         Op::MemMapFrame(pid, base + virtual_offset, frame, action),
-                        kcb.arch.replica_idx,
+                        *token,
                     );
 
                     match response {
@@ -238,17 +235,15 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename;
                 match userptr_to_str(pathname) {
                     Ok(user_str) => filename = user_str,
                     Err(e) => return Err(e.clone()),
                 }
 
-                let response = replica.execute(
-                    Op::FileOpen(pid, filename, flags, modes),
-                    kcb.arch.replica_idx,
-                );
+                let response =
+                    replica.execute_mut(Op::FileOpen(pid, filename, flags, modes), *token);
 
                 match &response {
                     Ok(NodeResult::FileOpened(fd)) => Ok((*fd, 0)),
@@ -263,8 +258,8 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica.execute(Op::FileClose(pid, fd), kcb.arch.replica_idx);
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute_mut(Op::FileClose(pid, fd), *token);
 
                 match &response {
                     Ok(NodeResult::FileClosed(0)) => Ok((0, 0)),
@@ -286,12 +281,10 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| match op {
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| match op {
                 FileOperation::Read | FileOperation::ReadAt => {
-                    let response = replica.execute_ro(
-                        ReadOps::FileRead(pid, fd, buffer, len, offset),
-                        kcb.arch.replica_idx,
-                    );
+                    let response =
+                        replica.execute(ReadOps::FileRead(pid, fd, buffer, len, offset), *token);
 
                     match &response {
                         Ok(NodeResult::FileAccessed(len)) => Ok((*len, 0)),
@@ -303,9 +296,9 @@ impl<P: Process> KernelNode<P> {
                 FileOperation::Write | FileOperation::WriteAt => {
                     let kernslice = KernSlice::new(buffer, len as usize);
 
-                    let response = replica.execute(
+                    let response = replica.execute_mut(
                         Op::FileWrite(pid, fd, kernslice.buffer.clone(), len, offset),
-                        kcb.arch.replica_idx,
+                        *token,
                     );
 
                     match &response {
@@ -323,9 +316,8 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica
-                    .execute_ro(ReadOps::FileInfo(pid, name, info_ptr), kcb.arch.replica_idx);
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute(ReadOps::FileInfo(pid, name, info_ptr), *token);
 
                 match &response {
                     Ok(NodeResult::FileInfo(f_info)) => Ok((0, 0)),
@@ -340,13 +332,13 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename;
                 match userptr_to_str(name) {
                     Ok(user_str) => filename = user_str,
                     Err(e) => return Err(e.clone()),
                 }
-                let response = replica.execute(Op::FileDelete(pid, filename), kcb.arch.replica_idx);
+                let response = replica.execute_mut(Op::FileDelete(pid, filename), *token);
 
                 match &response {
                     Ok(NodeResult::FileDeleted(_)) => Ok((0, 0)),
@@ -361,7 +353,7 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let oldfilename;
                 match userptr_to_str(oldname) {
                     Ok(user_str) => oldfilename = user_str,
@@ -374,10 +366,8 @@ impl<P: Process> KernelNode<P> {
                     Err(e) => return Err(e.clone()),
                 }
 
-                let response = replica.execute(
-                    Op::FileRename(pid, oldfilename, newfilename),
-                    kcb.arch.replica_idx,
-                );
+                let response =
+                    replica.execute_mut(Op::FileRename(pid, oldfilename, newfilename), *token);
                 match &response {
                     Ok(NodeResult::FileRenamed(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
@@ -391,8 +381,8 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica.execute_ro(ReadOps::ProcessInfo(pid), kcb.arch.replica_idx);
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute(ReadOps::ProcessInfo(pid), *token);
 
                 match &response {
                     Ok(NodeResult::ProcessInfo(pinfo)) => Ok(*pinfo),
@@ -413,10 +403,10 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response = replica.execute(
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute_mut(
                     Op::ProcAllocateCore(pid, gtid, affinity, entry_point),
-                    kcb.arch.replica_idx,
+                    *token,
                 );
 
                 match &response {
@@ -436,9 +426,8 @@ impl<P: Process> KernelNode<P> {
         kcb.arch
             .replica
             .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |replica| {
-                let response =
-                    replica.execute(Op::AllocateFrameToProcess(pid, frame), kcb.arch.replica_idx);
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute_mut(Op::AllocateFrameToProcess(pid, frame), *token);
                 match response {
                     Ok(NodeResult::FrameId(fid)) => Ok(fid),
                     Ok(_) => unreachable!("Got unexpected response"),
@@ -455,10 +444,9 @@ where
 {
     type ReadOperation = ReadOps;
     type WriteOperation = Op;
-    type Response = NodeResult<P::E>;
-    type ResponseError = KError;
+    type Response = Result<NodeResult<P::E>, KError>;
 
-    fn dispatch(&self, op: Self::ReadOperation) -> Result<Self::Response, Self::ResponseError> {
+    fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
             ReadOps::Synchronize => {
                 // A NOP that just makes sure we've advanced the replica
@@ -547,10 +535,7 @@ where
         }
     }
 
-    fn dispatch_mut(
-        &mut self,
-        op: Self::WriteOperation,
-    ) -> Result<Self::Response, Self::ResponseError> {
+    fn dispatch_mut(&mut self, op: Self::WriteOperation) -> Self::Response {
         match op {
             Op::ProcCreate(module, writeable_sections) => {
                 P::new(module, self.current_pid, writeable_sections)

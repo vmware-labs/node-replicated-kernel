@@ -276,16 +276,27 @@ def run(args):
         qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
         #qemu_default_args += ['-net', 'none']
 
-        def query_host_numa():
-            online = cat["/sys/devices/system/node/online"]()
-            if "-" in online:
-                nlow, nmax = online.split('-')
-                assert int(nlow) == 0
-                return int(nmax)
-            else:
-                return int(online.strip())
+        def numa_nodes_to_list(file):
+            nodes = []
+            good_nodes = cat[file]().split(',')
+            for node_range in good_nodes:
+                if "-" in node_range:
+                    nlow, nmax = node_range.split('-')
+                    for i in range(int(nlow), int(nmax)+1):
+                        nodes.append(i)
+                else:
+                    nodes.append(int(node_range.strip()))
+            return nodes
 
-        host_numa_nodes = query_host_numa()
+        def query_host_numa():
+            mem_nodes = numa_nodes_to_list("/sys/devices/system/node/has_memory")
+            cpu_nodes = numa_nodes_to_list("/sys/devices/system/node/has_cpu")
+
+            # Now return the intersection of the two
+            return list(sorted(set(mem_nodes).intersection(set(cpu_nodes))))
+
+        host_numa_nodes_list = query_host_numa()
+        num_host_numa_nodes = len(host_numa_nodes_list)
         if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
             for node in range(0, args.qemu_nodes):
                 mem_per_node = int(args.qemu_memory) / args.qemu_nodes
@@ -293,7 +304,7 @@ def run(args):
                 large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
                 backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
                 qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{}'.format(
-                    backend, node, prealloc, int(mem_per_node), 0 if host_numa_nodes == 0 else node % (host_numa_nodes+1), large_pages)]
+                    backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
 
                 qemu_default_args += ['-numa',
                                       "node,memdev=nmem{},nodeid={}".format(node, node)]

@@ -49,11 +49,12 @@ fn maponly_bencher(cores: usize) {
 
     let mut vops = 0;
     let mut iteration = 0;
-    let bench_duration_secs = if cfg!(feature = "latency") {
-        10
-    } else if cfg!(feature = "smoke") {
+    let bench_duration_secs = if cfg!(feature = "smoke") && !cfg!(feature = "latency") {
         1
+    } else if cfg!(feature = "smoke") && cfg!(feature = "latency") {
+        6
     } else {
+        // tput
         10
     };
 

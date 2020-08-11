@@ -131,7 +131,7 @@ fn dump_cr3() {
 ///
 /// Plan for some 32 more descriptors than originally estimated,
 /// due to UEFI API crazyness. Also round to page-size.
-fn estimate_memory_map_size(st: &SystemTable<Boot>) -> usize {
+fn estimate_memory_map_size(st: &SystemTable<Boot>) -> (usize, usize) {
     let mm_size_estimate = st.boot_services().memory_map_size();
     // Plan for some 32 more descriptors than originally estimated,
     // due to UEFI API crazyness, round to page-size
@@ -141,12 +141,12 @@ fn estimate_memory_map_size(st: &SystemTable<Boot>) -> usize {
     );
     assert_eq!(sz % BASE_PAGE_SIZE, 0, "Not multiple of page-size.");
 
-    sz
+    (sz, sz / mem::size_of::<MemoryDescriptor>())
 }
 
 /// Load the memory map into buffer (which is hopefully big enough).
 fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
-    let mm_size = estimate_memory_map_size(st);
+    let (mm_size, no_descs) = estimate_memory_map_size(st);
     let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UEFI_MEMORY_MAP));
     let mm_slice: &mut [u8] = unsafe {
         slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
@@ -156,7 +156,6 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         .boot_services()
         .memory_map(mm_slice)
         .expect_success("Failed to retrieve UEFI memory map");
-    assert!(desc_iter.len() > 0, "Memory map is empty");
 
     for entry in desc_iter {
         if entry.phys_start == 0x0 {
@@ -447,7 +446,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         // * Exit boot services
         // * Switch stack and do a jump to kernel ELF entry point
         // Get an estimate of the memory map size:
-        let mm_size = estimate_memory_map_size(&st);
+        let (mm_size, no_descs) = estimate_memory_map_size(&st);
         assert_eq!(mm_size % BASE_PAGE_SIZE, 0);
         let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UEFI_MEMORY_MAP));
         let mm_slice =
@@ -463,6 +462,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let mut kernel_args =
             transmute::<VAddr, &mut KernelArgs>(paddr_to_uefi_vaddr(kernel_args_paddr));
         trace!("Kernel args allocated.");
+        kernel_args.mm_iter = Vec::with_capacity(no_descs);
 
         // Initialize the KernelArgs
         kernel_args.command_line = core::str::from_utf8_unchecked(cmdline_blob);
@@ -516,7 +516,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         // FYI: Print no longer works here... so let's hope we make
         // it to the kernel serial init
 
-        kernel_args.mm_iter = mmiter;
+        kernel_args.mm_iter.extend(mmiter);
 
         // It's unclear from the spec if `exit_boot_services` already disables interrupts
         // so we we make sure they are disabled (otherwise we triple fault since

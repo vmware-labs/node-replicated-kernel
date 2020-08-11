@@ -16,7 +16,6 @@
     global_asm,
     linkage,
     c_variadic,
-    box_into_raw_non_null,
     box_into_pin,
     maybe_uninit_ref,
     drain_filter,

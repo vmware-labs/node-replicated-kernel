@@ -1356,7 +1356,7 @@ fn s06_vmops_latency_benchmark() {
             .release()
             .cmd(kernel_cmdline.as_str());
         if cfg!(feature = "smoke") {
-            cmdline = cmdline.user_feature("smoke").memory(8192);
+            cmdline = cmdline.user_feature("smoke").memory(18192);
         } else {
             cmdline = cmdline.memory(32 * 1024);
         }

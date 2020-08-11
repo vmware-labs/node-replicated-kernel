@@ -9,6 +9,9 @@
 //! just works :O these structs should really stay plain-old-data
 //! without implementations.
 #![no_std]
+extern crate alloc;
+
+use alloc::vec::Vec;
 
 /// Describes an ELF binary we loaded from the UEFI image into memory.
 #[derive(Eq, PartialEq, Clone)]
@@ -87,7 +90,7 @@ pub struct KernelArgs {
     pub mm: (x86::bits64::paging::PAddr, usize),
 
     /// Iterator over memory map
-    pub mm_iter: uefi::table::boot::MemoryMapIter<'static>,
+    pub mm_iter: Vec<uefi::table::boot::MemoryDescriptor>,
 
     /// String of the command line
     pub command_line: &'static str,

@@ -23,9 +23,9 @@ if [ ! -x "$(command -v rustup)" ] ; then
 fi
 
 source $HOME/.cargo/env
-rustup default nightly-2020-06-01
+rustup default nightly
 cd kernel
-rustup default nightly-2020-06-01
+rustup default nightly
 cd ..
 rustup component add rust-src
 rustup update

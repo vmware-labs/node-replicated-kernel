@@ -34,11 +34,13 @@ DEPLOY_DIR="gh-pages/redis/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 cp gh-pages/redis/index.markdown ${DEPLOY_DIR}
 mv redis_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/redis_benchmark.csv
 
 # Copy memcached results
 DEPLOY_DIR="gh-pages/memcached/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 mv memcached_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/memcached_benchmark.csv
 
 # Copy vmops results
 DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
@@ -46,11 +48,14 @@ mkdir -p ${DEPLOY_DIR}
 cp gh-pages/vmops/index.markdown ${DEPLOY_DIR}
 mv vmops_benchmark.csv ${DEPLOY_DIR}
 mv vmops_benchmark_latency.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/vmops_benchmark.csv
+gzip ${DEPLOY_DIR}/vmops_benchmark_latency.csv
 
 # Copy memfs results
 DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 mv fxmark_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/fxmark_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py

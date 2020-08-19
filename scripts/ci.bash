@@ -20,7 +20,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --noc
 
 # Clone repo
 rm -rf gh-pages
-git clone -b gh-pages bespin-gh-pages:gz/bespin.git gh-pages
+git clone -b master git@github.com:gz/bespin-benchmarks.git gh-pages
 
 pip3 install -r gh-pages/requirements.txt
 
@@ -59,7 +59,7 @@ python3 gh-pages/_scripts/ci_history.py
 cd gh-pages
 git add .
 git commit -a -m "Added benchmark results for $GIT_REV_CURRENT."
-git push origin gh-pages
+git push origin master
 cd ..
 rm -rf gh-pages
 git clean -f

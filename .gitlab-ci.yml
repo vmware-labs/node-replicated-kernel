@@ -88,13 +88,13 @@ docs:
     - cd doc
     - mdbook build -d ../book
     - cd ..
-    - git clone -b gh-pages bespin-gh-pages:gz/bespin.git gh-pages
+    - git clone -b master git@github.com:gz/bespin-benchmarks.git gh-pages
     - cd gh-pages
     - rm -rf ./book
     - mv ../book ./
     - git add .
     - git commit -a -m "Added documentation." || true
-    - git push origin gh-pages || true
+    - git push origin master || true
     - cd ..
     - rm -rf gh-pages/ book/
   dependencies:

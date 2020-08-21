@@ -15,7 +15,7 @@ rm -f fxmark_benchmark.csv
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_ --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memcached_benchmark --nocapture
+#RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memcached_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --nocapture
 
 # Clone repo
@@ -37,10 +37,10 @@ mv redis_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/redis_benchmark.csv
 
 # Copy memcached results
-DEPLOY_DIR="gh-pages/memcached/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
-mkdir -p ${DEPLOY_DIR}
-mv memcached_benchmark.csv ${DEPLOY_DIR}
-gzip ${DEPLOY_DIR}/memcached_benchmark.csv
+#DEPLOY_DIR="gh-pages/memcached/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+#mkdir -p ${DEPLOY_DIR}
+#mv memcached_benchmark.csv ${DEPLOY_DIR}
+#gzip ${DEPLOY_DIR}/memcached_benchmark.csv
 
 # Copy vmops results
 DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"

@@ -17,5 +17,6 @@ num_cpus = "1.9"
 redis = []
 memcached = []
 nginx = []
+leveldb-bench = []
 default = ["redis", "memcached"]
 

@@ -58,7 +58,22 @@ acquireload  :       0.000 micros/op; (each op is 1000 loads)
 
 ### Build
 
+Some special handling is currently necessary since it's a C++ program:
+We have our own unwind handling (do nothing) in virbio.a
+It should really be it's own unwind.a library.
+
+Implications:
+
+* We have a `-L${RUMPRUN_SYSROOT}/../../obj-amd64-bespin/lib/libunwind/` hack in the LevelDB Makefile (`$CXX` variable)
+* We pass `-Wl,-allow-multiple-definition` to rumprun-bake since unwind symbols are now defined twice (vibrio and NetBSD unwind lib)
+
+#### Manual build steps
+
+Most likely unneeded except for debugging build:
+
 ```bash
+export PATH=`realpath ../../../rumpkernel-b6392f675947fae3/out/rumprun/bin`:$PATH
+
 add to rumprun-bake:
 -Wl,-allow-multiple-definition
 
@@ -76,6 +91,12 @@ RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make -j 12
 RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd rumprun-bake bespin_generic ../../../../dbbench.bin bin/db_bench
 cd /home/gz/workspace/bespin/kernel
 "python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:redis" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "1024" --qemu-monitor --verbose --qemu-debug  | tee out.log
+```
+
+### Run
+
+```bash
+"python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:leveldb-bench" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "8192" --qemu-monitor --verbose --qemu-debug
 ```
 
 ## Linux

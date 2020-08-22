@@ -9,7 +9,7 @@ fn apps_built(path: &Path) -> bool {
     let apps = build_plan();
     let mut all_app_binaries_exist = true;
 
-    for (app, bake_out, bake_in) in apps {
+    for (app, bake_out, bake_in, _unwind) in apps {
         let mut bake_out_path: PathBuf = path.clone().into();
         bake_out_path.push(app);
         bake_out_path.push(bake_out);
@@ -35,18 +35,40 @@ fn apps_built(path: &Path) -> bool {
 /// in the same location where static C library builds are stored
 /// this goes slightly against convention that we shouldn't place
 /// things out of OUT_DIR, but since we're abusing build.rs already anyways ¯\_(ツ)_/¯
-fn build_plan() -> Vec<(&'static str, &'static str, &'static str)> {
-    let mut plan: Vec<(&'static str, &'static str, &'static str)> = Default::default();
+fn build_plan() -> Vec<(&'static str, &'static str, &'static str, bool)> {
+    let mut plan: Vec<(&'static str, &'static str, &'static str, bool)> = Default::default();
+
+    let unwind_hack = true; // Adds -Wl,-allow-multiple-definition to rumprun-bake
+
     if cfg!(feature = "redis") {
-        plan.push(("redis", "../../../../redis.bin", "bin/redis-server"));
+        plan.push((
+            "redis",
+            "../../../../redis.bin",
+            "bin/redis-server",
+            !unwind_hack,
+        ));
     }
 
     if cfg!(feature = "memcached") {
-        plan.push(("memcached", "../../../../memcached.bin", "build/memcached"));
+        plan.push((
+            "memcached",
+            "../../../../memcached.bin",
+            "build/memcached",
+            !unwind_hack,
+        ));
     }
 
     if cfg!(feature = "nginx") {
-        plan.push(("nginx", "../../../../nginx.bin", "bin/nginx"));
+        plan.push(("nginx", "../../../../nginx.bin", "bin/nginx", !unwind_hack));
+    }
+
+    if cfg!(feature = "leveldb-bench") {
+        plan.push((
+            "leveldb",
+            "../../../../dbbench.bin",
+            "bin/db_bench",
+            unwind_hack,
+        ));
     }
 
     plan
@@ -102,7 +124,7 @@ fn main() {
     let apps = build_plan();
     let cpus = format!("{}", num_cpus::get());
 
-    for (app, bake_in, bake_out) in apps {
+    for (app, bake_in, bake_out, unwind_hack) in apps {
         let build_args = &["-j", cpus.as_str()];
         let mut app_dir = out_dir_path.clone();
         app_dir.push(app);
@@ -133,13 +155,24 @@ fn main() {
             toolchain,
             bake_args.join(" ")
         );
-        let status = Command::new("rumprun-bake")
-            .args(bake_args)
-            .env("PATH", path.as_str())
-            .env("RUMPRUN_TOOLCHAIN_TUPLE", toolchain)
-            .current_dir(app_dir.as_path())
-            .status()
-            .expect("Can't bake binary");
+        let status = if unwind_hack {
+            Command::new("rumprun-bake")
+                .args(bake_args)
+                .env("PATH", path.as_str())
+                .env("RUMPRUN_TOOLCHAIN_TUPLE", toolchain)
+                .env("RUMPBAKE_ENV", "-Wl,-allow-multiple-definition")
+                .current_dir(app_dir.as_path())
+                .status()
+                .expect("Can't bake binary")
+        } else {
+            Command::new("rumprun-bake")
+                .args(bake_args)
+                .env("PATH", path.as_str())
+                .env("RUMPRUN_TOOLCHAIN_TUPLE", toolchain)
+                .current_dir(app_dir.as_path())
+                .status()
+                .expect("Can't bake binary")
+        };
         assert!(status.success(), "Can't bake binary");
     }
 

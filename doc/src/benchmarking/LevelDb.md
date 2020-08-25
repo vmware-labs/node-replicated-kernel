@@ -84,13 +84,13 @@ cp ./obj-amd64-bespin/lib/libunwind/libunwind.a /home/gz/workspace/bespin/target
 ```
 
 ```bash
-"python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:redis" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "1024" --qemu-monitor --verbose --qemu-debug  --norun
+"python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:leveldb-bench" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "1024" --qemu-monitor --verbose --qemu-debug  --norun
 cd /home/gz/workspace/bespin/target/x86_64-bespin-none/release/build/rkapps-8a4ead00329ed64e/out/leveldb
 RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make clean
 RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make -j 12
 RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd rumprun-bake bespin_generic ../../../../dbbench.bin bin/db_bench
 cd /home/gz/workspace/bespin/kernel
-"python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:redis" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "1024" --qemu-monitor --verbose --qemu-debug  | tee out.log
+"python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:leveldb-bench" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "1024" --qemu-monitor --verbose --qemu-debug  | tee out.log
 ```
 
 ### Run

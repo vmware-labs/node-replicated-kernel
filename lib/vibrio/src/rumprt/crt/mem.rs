@@ -100,7 +100,10 @@ mod bespin {
         assert!(addr.is_null());
         assert!(len > 4096);
         //assert!(len % 4096 == 0);
-        info!("mmap len = {}", len);
+        info!(
+            "mmap addr={:p} len={} prot={} flags={} fd={} pos={}",
+            addr, len, prot, flags, fd, pos
+        );
 
         let mut pager = crate::mem::PAGER.lock();
 
@@ -160,7 +163,17 @@ pub unsafe extern "C" fn _mmap(
     fd: c_int,
     pos: c_int,
 ) -> *mut c_void {
-    bespin::mmap(addr, len, prot, flags, fd, pos)
+    fn is_anon_mem_mapping(fd: c_int) -> bool {
+        fd == -1
+    }
+
+    if is_anon_mem_mapping(fd) {
+        // anon
+        bespin::mmap(addr, len, prot, flags, fd, pos)
+    }
+    else {
+        rump::mmap(addr, len, prot, flags, fd, pos)
+    }
 }
 
 #[no_mangle]

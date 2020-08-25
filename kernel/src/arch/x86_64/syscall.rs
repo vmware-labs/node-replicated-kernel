@@ -255,20 +255,22 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                     let mut pmanager = kcb.mem_manager();
 
                     for _i in 0..lp {
-                        let frame = pmanager
+                        let mut frame = pmanager
                             .allocate_large_page()
                             .expect("We refilled so allocation should work.");
                         total_len += frame.size;
+                        unsafe { frame.zero() };
                         frames.push(frame);
                         if paddr.is_none() {
                             paddr = Some(frame.base);
                         }
                     }
                     for _i in 0..bp {
-                        let frame = pmanager
+                        let mut frame = pmanager
                             .allocate_base_page()
                             .expect("We refilled so allocation should work.");
                         total_len += frame.size;
+                        unsafe { frame.zero() };
                         frames.push(frame);
                         if paddr.is_none() {
                             paddr = Some(frame.base);

@@ -99,6 +99,9 @@ macro_rules! idt_set {
     }};
 }
 
+/// The IDT entry for handling the TLB work-queue
+pub const TLB_WORK_PENDING: u8 = 251;
+
 /// The IDT table can hold a maximum of 256 entries.
 pub const IDT_SIZE: usize = 256;
 
@@ -165,6 +168,7 @@ impl Default for IdtTable {
         idt_set!(table.0, 46, isr_handler46, 0);
         idt_set!(table.0, 47, isr_handler47, 0);
 
+        idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler251, 0);
         idt_set!(table.0, apic::TSC_TIMER_VECTOR as usize, isr_handler252, 0);
 
         table
@@ -199,6 +203,8 @@ impl IdtTable {
         idt_set!(table.0, 19, isr_handler_early19, 0);
         idt_set!(table.0, 20, isr_handler_early20, 0);
         idt_set!(table.0, 30, isr_handler_early30, 0);
+
+        idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler_early251, 0);
 
         idt_set!(
             table.0,
@@ -580,6 +586,9 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             pf_handler(&a);
         } else if a.vector == 0x3 {
             dbg_handler(&a);
+        } else if a.vector == TLB_WORK_PENDING.into() {
+            super::tlb::dequeue();
+            unreachable!("TLB work queue vector")
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         }

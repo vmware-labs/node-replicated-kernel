@@ -118,3 +118,5 @@ test-userspace = ["integration-test", "bsp-only"]
 test-userspace-smp = ["integration-test"]
 # vspace_debug: print initial vspace in graphviz format
 test-vspace-debug = ["integration-test", "bsp-only"]
+# test-shootdown: Test simple TLB shootdown
+test-shootdown-simple = ["integration-test"]

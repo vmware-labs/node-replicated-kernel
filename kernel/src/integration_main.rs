@@ -418,3 +418,57 @@ pub fn xmain() {
 pub fn xmain() {
     arch::debug::shutdown(ExitReason::ReturnFromMain);
 }
+
+/// Test time facilities in the kernel.
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-shootdown-simple",
+    target_arch = "x86_64"
+))]
+pub fn xmain() {
+    use apic::ApicDriver;
+    use core::convert::TryInto;
+    use core::sync::atomic::spin_loop_hint;
+    use core::time::Duration;
+    use x86::apic::{
+        ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
+        TriggerMode,
+    };
+
+    unsafe {
+        let tsc = x86::time::rdtsc();
+
+        {
+            let kcb = crate::kcb::get_kcb();
+            let mut apic = kcb.arch.apic();
+
+            arch::tlb::enqueue();
+
+            let vector = 251;
+            let icr = Icr::new(
+                vector,
+                ApicId::XApic(0x1),
+                DestinationShorthand::NoShorthand,
+                DeliveryMode::Fixed,
+                DestinationMode::Physical,
+                DeliveryStatus::Idle,
+                Level::Assert,
+                TriggerMode::Edge,
+            );
+
+            apic.send_ipi(icr)
+        }
+
+        info!("Sent an IPI");
+
+        let start = rawtime::Instant::now();
+        crate::arch::irq::enable();
+        while start.elapsed() < Duration::from_secs(1) {
+            spin_loop_hint();
+        }
+        crate::arch::irq::disable();
+
+        let done = start.elapsed().as_nanos();
+    }
+    arch::debug::shutdown(ExitReason::Ok);
+}

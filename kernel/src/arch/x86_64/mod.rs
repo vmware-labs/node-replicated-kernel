@@ -46,6 +46,7 @@ pub mod memory;
 pub mod process;
 pub mod syscall;
 pub mod timer;
+pub mod tlb;
 pub mod vspace;
 
 use uefi::table::boot::MemoryType;
@@ -313,6 +314,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
                 // TODO(ugly-before-deadline): Hack to make core go to sleep if
                 // they wont be dispatching something.
                 if token.id() != 1 {
+                    irq::enable();
                     if !cfg!(debug_assertions)
                         && start.elapsed() > core::time::Duration::from_secs(3)
                     {
@@ -328,7 +330,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
                     }
                 }
             }
-            _ => unsafe { x86::halt() },
+            _ => unsafe {
+                irq::enable();
+                x86::halt()
+            },
         };
     }
 }

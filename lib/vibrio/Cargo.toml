@@ -11,6 +11,7 @@ name = "vibrio"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+bitflags = "1.2"
 log = "0.4"
 x86 = { path = "../x86" }
 kpi = { path = "../kpi" }

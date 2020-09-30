@@ -3,7 +3,11 @@ use core::convert::TryInto;
 use super::{c_int, c_size_t, c_void, rump_biodone_fn};
 use cstr_core::CStr;
 
+use kpi::io::*;
 use kpi::FileOperation;
+
+use bitflags::*;
+use log::*;
 
 use crate::syscalls::Fs;
 
@@ -14,10 +18,45 @@ pub struct rumpuser_iovec {
     iov_len: c_size_t,
 }
 
+bitflags! {
+    pub struct RumpFileFlags:u64 {
+        const RUMPUSER_OPEN_RDONLY = 0x0000;
+        const RUMPUSER_OPEN_WRONLY = 0x0001;
+        const RUMPUSER_OPEN_RDWR = 0x0002;
+        const RUMPUSER_OPEN_CREATE = 0x0004;
+        const RUMPUSER_OPEN_EXCL = 0x0008;
+    }
+}
+
 /// int rumpuser_open(const char *name, int mode, int *fdp)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c_int) -> c_int {
-    match Fs::open(name as u64, 0, mode as u64) {
+    // 'mode' passed by rump are actually the semantic equivalent of flags.
+    let mut flags = FileFlags::O_NONE;
+    let mode_mode = RumpFileFlags::from_bits_truncate(mode as u64);
+    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDONLY) == RumpFileFlags::RUMPUSER_OPEN_RDONLY) {
+        flags = flags | FileFlags::O_RDONLY;
+    }
+    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_WRONLY) == RumpFileFlags::RUMPUSER_OPEN_WRONLY) {
+        flags = flags | FileFlags::O_WRONLY;
+    }
+    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDWR) == RumpFileFlags::RUMPUSER_OPEN_RDWR) {
+        flags = flags | FileFlags::O_RDWR;
+    }
+    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_CREATE) == RumpFileFlags::RUMPUSER_OPEN_CREATE) {
+        flags = flags | FileFlags::O_CREAT;
+    }
+    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_EXCL) == RumpFileFlags::RUMPUSER_OPEN_EXCL) {
+        error!("Bespin does not support O_EXCL\n");
+    }
+
+    // Rump documentation says the 'hypervisor' sets the permissions of all opened files.
+    // As a default, we set all files to RW
+    match Fs::open(
+        name as u64,
+        u64::from(flags),
+        u64::from(FileModes::S_IRUSR | FileModes::S_IWUSR),
+    ) {
         Ok(fd) => {
             *fdp = fd as c_int;
             0
@@ -78,7 +117,7 @@ pub unsafe extern "C" fn rumpuser_iovread(
     match Fs::read_at(
         fd as u64,
         (*ruiov).iov_base as u64,
-        iovlen.try_into().unwrap(),
+        (*ruiov).iov_len as u64,
         off,
     ) {
         Ok(len) => {
@@ -101,7 +140,7 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
     match Fs::write_at(
         fd as u64,
         (*ruiov).iov_base as u64,
-        iovlen.try_into().unwrap(),
+        (*ruiov).iov_len as u64,
         off,
     ) {
         Ok(len) => {

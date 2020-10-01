@@ -61,6 +61,7 @@ mod fs;
 mod graphviz;
 mod kcb;
 mod memory;
+mod mlnr;
 mod nr;
 mod prelude;
 mod process;

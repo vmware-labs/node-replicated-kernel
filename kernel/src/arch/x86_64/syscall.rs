@@ -19,6 +19,7 @@ use crate::error::KError;
 use crate::fs::FileSystem;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
+use crate::mlnr;
 use crate::nr;
 use crate::process::{Pid, ProcessError};
 
@@ -413,7 +414,7 @@ fn handle_fileio(
             }
         }),
         FileOperation::WriteDirect => {
-            let kcb = super::kcb::get_kcb();
+            /*let kcb = super::kcb::get_kcb();
             let len = arg3;
             let mut offset = arg4 as usize;
             if arg5 == 0 {
@@ -425,7 +426,19 @@ fn handle_fileio(
             match kcb.memfs.as_mut().unwrap().write(2, &mut buffer, offset) {
                 Ok(len) => Ok((len as u64, 0)),
                 Err(e) => Err(KError::FileSystem { source: e }),
-            }
+            }*/
+
+            let kcb = super::kcb::get_kcb();
+            kcb.arch
+                .mlnr_replica
+                .as_ref()
+                .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                    let response = replica.execute_mut(mlnr::Modify::Increment(1), *token);
+                    match response {
+                        Some(val) => Ok((val, 0)),
+                        None => Err(KError::NotSupported),
+                    }
+                })
         }
         FileOperation::FileRename => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let oldname = arg2;

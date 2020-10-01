@@ -8,6 +8,8 @@ use core::pin::Pin;
 use core::ptr;
 
 use apic::xapic::XAPICDriver;
+use mlnr::Replica as MlnrReplica;
+use mlnr::ReplicaToken as MlnrReplicaToken;
 use node_replication::Replica;
 use node_replication::ReplicaToken;
 use x86::current::segmentation::{self};
@@ -16,6 +18,7 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use crate::error::KError;
 use crate::kcb::Kcb;
+use crate::mlnr::Temp;
 use crate::nr::KernelNode;
 use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
@@ -122,6 +125,9 @@ pub struct Arch86Kcb {
         ReplicaToken,
     )>,
 
+    ///
+    pub mlnr_replica: Option<(Arc<MlnrReplica<'static, Temp>>, MlnrReplicaToken)>,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this stack automatically for normal interrupts
@@ -165,6 +171,7 @@ impl Arch86Kcb {
             syscall_stack: None,
             unrecoverable_fault_stack: None,
             replica: None,
+            mlnr_replica: None,
         }
     }
 
@@ -182,6 +189,14 @@ impl Arch86Kcb {
         idx_token: ReplicaToken,
     ) {
         self.replica = Some((replica, idx_token));
+    }
+
+    pub fn setup_mlnr(
+        &mut self,
+        replica: Arc<MlnrReplica<'static, Temp>>,
+        idx_token: MlnrReplicaToken,
+    ) {
+        self.mlnr_replica = Some((replica, idx_token));
     }
 
     /// Swaps out current process with a new process. Returns the old process.

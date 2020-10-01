@@ -24,6 +24,7 @@ rawtime = { path = "../lib/rawtime" }
 custom_error = { path = "../lib/custom_error" }
 topology = { path = "../lib/topology" }
 node-replication = { path = "../lib/node-replication" }
+mlnr = { path = "../lib/mlnr" }
 kpi = { path = "../lib/kpi" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 # External libraries we use:

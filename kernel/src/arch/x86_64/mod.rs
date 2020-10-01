@@ -29,6 +29,8 @@ use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
 use x86::cpuid;
 
+use mlnr::Log as MlnrLog;
+use mlnr::Replica as MlnrReplica;
 use node_replication::Log;
 use node_replication::Replica;
 
@@ -57,6 +59,7 @@ use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{
     tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
+use crate::mlnr::{Modify, Temp};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -703,6 +706,15 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         let kcb = kcb::get_kcb();
         kcb.arch
             .setup_node_replication(bsp_replica.clone(), local_ridx);
+    }
+
+    let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(1);
+    mlnr_logs.push(Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, 1))); //TODO?
+    let mlnr_replica = MlnrReplica::<Temp>::new(mlnr_logs);
+    let local_ridx = mlnr_replica.register().unwrap();
+    {
+        let kcb = kcb::get_kcb();
+        kcb.arch.setup_mlnr(mlnr_replica.clone(), local_ridx);
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)

@@ -102,7 +102,7 @@ impl NCache {
     pub fn init<'a>(ncache: &'a mut MaybeUninit<NCache>, node: topology::NodeId) -> &'a mut NCache {
         unsafe {
             (*(ncache.as_mut_ptr())).node = node;
-            ncache.get_mut()
+            ncache.assume_init_mut()
         }
     }
 

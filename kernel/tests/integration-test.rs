@@ -998,7 +998,7 @@ fn _multi_process() {
 ///  * PCI/user-space drivers
 ///  * Interrupt registration and upcalls
 ///  * (kernel memfs eventually for DB persistence)
-#[test]
+//#[test]
 fn s05_redis_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;

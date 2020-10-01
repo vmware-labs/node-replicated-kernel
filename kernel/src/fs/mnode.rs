@@ -90,12 +90,15 @@ impl MemNode {
         let len: usize = buffer.len();
         let file_size = self.get_file_size();
         if offset > file_size {
-            return Err(FileSystemError::InvalidOffset);
+            return Ok(0);
         }
 
         let bytes_to_read = core::cmp::min(file_size - offset, len);
         let new_offset = offset + bytes_to_read;
 
+        if (bytes_to_read == 0) {
+            return Ok(0);
+        }
         // Return error if start-offset is greater than or equal to new-offset OR
         // new offset is greater than the file size.
         if offset >= new_offset || new_offset > self.get_file_size() as usize {
@@ -291,8 +294,8 @@ pub mod test {
         assert_eq!(
             memnode
                 .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), 10)
-                .is_err(),
-            true
+                .unwrap(),
+            0
         );
         assert_eq!(buffer[0], 0);
     }
@@ -319,8 +322,8 @@ pub mod test {
         assert_eq!(
             memnode
                 .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), 10)
-                .is_err(),
-            true
+                .unwrap(),
+            0
         );
         assert_eq!(buffer[0], 0);
     }
@@ -338,8 +341,8 @@ pub mod test {
         assert_eq!(
             memnode
                 .read(&mut UserSlice::new(buffer.as_ptr() as u64, 1), 10)
-                .is_err(),
-            true
+                .unwrap(),
+            0
         );
         assert_eq!(buffer[0], 0);
         //assert_eq!(0, memnode.offset.load(Ordering::Relaxed));

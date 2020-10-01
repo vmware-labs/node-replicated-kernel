@@ -264,7 +264,7 @@ impl FileSystem for ModelFS {
                 trace!("buffer = {:?}", buffer);
             }
 
-            if bytes_read > 0 {
+            if bytes_read >= 0 {
                 Ok(bytes_read)
             } else {
                 Err(FileSystemError::InvalidOffset)

@@ -262,7 +262,7 @@ impl<P: Process> KernelNode<P> {
                 let response = replica.execute_mut(Op::FileClose(pid, fd), *token);
 
                 match &response {
-                    Ok(NodeResult::FileClosed(0)) => Ok((0, 0)),
+                    Ok(NodeResult::FileClosed(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }

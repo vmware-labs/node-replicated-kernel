@@ -38,7 +38,7 @@ crossbeam-queue = { path = "../lib/crossbeam-queue", default-features = false }
 cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false } # Some weirdness in Cargo dependency resolution currently pulls in libc so we use a patched cstr_core
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" } # Need to upstream fixes
 addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
-uefi = "0.5.0"
+uefi = "0.6.0"
 
 [[bin]]
 name = "bespin"

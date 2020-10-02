@@ -414,7 +414,7 @@ fn handle_fileio(
             }
         }),
         FileOperation::WriteDirect => {
-            /*let kcb = super::kcb::get_kcb();
+            let kcb = super::kcb::get_kcb();
             let len = arg3;
             let mut offset = arg4 as usize;
             if arg5 == 0 {
@@ -426,19 +426,7 @@ fn handle_fileio(
             match kcb.memfs.as_mut().unwrap().write(2, &mut buffer, offset) {
                 Ok(len) => Ok((len as u64, 0)),
                 Err(e) => Err(KError::FileSystem { source: e }),
-            }*/
-
-            let kcb = super::kcb::get_kcb();
-            kcb.arch
-                .mlnr_replica
-                .as_ref()
-                .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                    let response = replica.execute_mut(mlnr::Modify::Increment(1), *token);
-                    match response {
-                        Some(val) => Ok((val, 0)),
-                        None => Err(KError::NotSupported),
-                    }
-                })
+            }
         }
         FileOperation::FileRename => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let oldname = arg2;
@@ -453,6 +441,19 @@ fn handle_fileio(
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }
         }),
+        FileOperation::MlnrDirect => {
+            let kcb = super::kcb::get_kcb();
+            kcb.arch
+                .mlnr_replica
+                .as_ref()
+                .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                    let response = replica.execute_mut(mlnr::Modify::Increment(1), *token);
+                    match response {
+                        Some(val) => Ok((val, 0)),
+                        None => Err(KError::NotSupported),
+                    }
+                })
+        }
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

@@ -201,6 +201,8 @@ pub enum FileOperation {
     WriteDirect = 10,
     /// Rename a file.
     FileRename = 11,
+    /// Temp for mlnr benchmarking
+    MlnrDirect = 12,
     Unknown,
 }
 
@@ -219,6 +221,7 @@ impl From<u64> for FileOperation {
             9 => FileOperation::Delete,
             10 => FileOperation::WriteDirect,
             11 => FileOperation::FileRename,
+            12 => FileOperation::MlnrDirect,
             _ => FileOperation::Unknown,
         }
     }
@@ -239,6 +242,7 @@ impl From<&str> for FileOperation {
             "Delete" => FileOperation::Delete,
             "WriteDirect" => FileOperation::WriteDirect,
             "Rename" => FileOperation::FileRename,
+            "MlnrDirect" => FileOperation::MlnrDirect,
             _ => FileOperation::Unknown,
         }
     }

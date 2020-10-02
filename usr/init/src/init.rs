@@ -596,6 +596,62 @@ fn fs_write_test() {
     info!("fs_write Ok");
 }
 
+fn mlnr_direct_test() {
+    use lineup::threads::ThreadId;
+    use lineup::tls2::Environment;
+    use vibrio::syscalls::Fs;
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
+
+    let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+
+    for thread in threads.iter() {
+        if thread.id != 0 {
+            let r = vibrio::syscalls::Process::request_core(
+                thread.id,
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+            );
+            match r {
+                Ok(ctoken) => {
+                    info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                }
+                Err(_e) => {
+                    panic!("Failed to spawn to core {}", thread.id);
+                    continue;
+                }
+            }
+        }
+    }
+
+    for thread in threads {
+        s.spawn(
+            32 * 4096,
+            move |_| {
+                let mut iterations = 5;
+                let mut iops = 0;
+                while iterations > 0 {
+                    let start = rawtime::Instant::now();
+                    while start.elapsed().as_secs() < 1 {
+                        Fs::mlnr_direct().expect("Failed");
+                        iops += 1;
+                    }
+                    info!("Direct mlnr ops per second {}", iops);
+                    iterations -= 1;
+                    iops = 0;
+                }
+            },
+            ptr::null_mut(),
+            thread.id,
+        );
+    }
+
+    // Run scheduler on core 0
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    while s.has_active_threads() {
+        s.run(&scb);
+    }
+    info!("mlnr-direct test Ok");
+}
+
 pub fn install_vcpu_area() {
     let ctl =
         vibrio::syscalls::Process::vcpu_control_area().expect("Can't read vcpu control area.");
@@ -667,6 +723,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "fs-write")]
     fs_write_test();
+
+    #[cfg(feature = "mlnr-direct")]
+    mlnr_direct_test();
 
     #[cfg(feature = "fxmark")]
     fxmark::bench(ncores, benchmark, write_ratio);

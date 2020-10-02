@@ -201,6 +201,7 @@ struct AppCoreArgs {
     node: topology::NodeId,
     _log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
+    mlnr_replica: Arc<MlnrReplica<'static, Temp>>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -254,6 +255,9 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         let local_ridx = args.replica.register().unwrap();
         kcb.arch
             .setup_node_replication(args.replica.clone(), local_ridx);
+
+        let mlnr_replica = args.mlnr_replica.register().unwrap();
+        kcb.arch.setup_mlnr(args.mlnr_replica.clone(), mlnr_replica);
 
         // Don't modify this line without adjusting `coreboot` integration test:
         info!(
@@ -351,6 +355,8 @@ fn boot_app_cores(
     kernel_args: &'static KernelArgs,
     log: Arc<Log<'static, Op>>,
     bsp_replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
+    mlnr_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
+    mlnr_replica: Arc<MlnrReplica<'static, Temp>>,
 ) {
     let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
@@ -359,10 +365,12 @@ fn boot_app_cores(
     let numa_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
     let mut replicas: Vec<Arc<Replica<'static, KernelNode<Ring3Process>>>> =
         Vec::with_capacity(numa_nodes);
+    let mut mlnr_replicas: Vec<Arc<MlnrReplica<'static, Temp>>> = Vec::with_capacity(numa_nodes);
 
     // Push the replica for node 0
     debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
     replicas.push(bsp_replica);
+    mlnr_replicas.push(mlnr_replica);
     for node in 1..topology::MACHINE_TOPOLOGY.num_nodes() {
         debug!(
             "Allocate a replica for {} ({} bytes)",
@@ -372,6 +380,7 @@ fn boot_app_cores(
         kcb.set_allocation_affinity(node as topology::NodeId)
             .expect("Can't set affinity");
         replicas.push(Replica::new(&log));
+        mlnr_replicas.push(MlnrReplica::new(mlnr_logs.clone()));
         kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }
 
@@ -410,6 +419,7 @@ fn boot_app_cores(
             thread: thread.id,
             _log: log.clone(),
             replica: replicas[node as usize].clone(),
+            mlnr_replica: mlnr_replicas[node as usize].clone(),
         });
 
         unsafe {
@@ -708,9 +718,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             .setup_node_replication(bsp_replica.clone(), local_ridx);
     }
 
-    let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(1);
-    mlnr_logs.push(Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, 1))); //TODO?
-    let mlnr_replica = MlnrReplica::<Temp>::new(mlnr_logs);
+    let num_cores = topology::MACHINE_TOPOLOGY.num_cores();
+    let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(num_cores);
+    for i in 1..(num_cores + 1) {
+        mlnr_logs.push(Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i)));
+    }
+    let mlnr_replica = MlnrReplica::<Temp>::new(mlnr_logs.clone());
     let local_ridx = mlnr_replica.register().unwrap();
     {
         let kcb = kcb::get_kcb();
@@ -725,6 +738,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kernel_args,
         log.clone(),
         bsp_replica,
+        mlnr_logs.clone(),
+        mlnr_replica,
     );
 
     // Done with initialization, now we go in

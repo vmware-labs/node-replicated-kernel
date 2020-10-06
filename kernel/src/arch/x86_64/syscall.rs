@@ -447,7 +447,7 @@ fn handle_fileio(
                 .mlnr_replica
                 .as_ref()
                 .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                    let response = replica.execute_mut(mlnr::Modify::Increment(1), *token);
+                    let response = replica.execute_mut(mlnr::Modify::Increment(token.id()), *token);
                     match response {
                         Some(val) => Ok((val, 0)),
                         None => Err(KError::NotSupported),

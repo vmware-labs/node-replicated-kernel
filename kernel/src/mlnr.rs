@@ -1,33 +1,37 @@
 #![allow(unused)]
 
+use crate::prelude::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use mlnr::{Dispatch, LogMapper, ReplicaToken};
 
 pub struct Temp {
-    counter: AtomicUsize,
+    counters: Vec<CachePadded<AtomicUsize>>,
 }
 
 impl Temp {
-    fn increment(&self) -> usize {
-        self.counter.fetch_add(1, Ordering::Relaxed)
+    fn increment(&self, index: usize) -> usize {
+        self.counters[index].fetch_add(1, Ordering::Relaxed)
     }
 
-    fn access(&self) -> usize {
-        self.counter.load(Ordering::Relaxed)
+    fn access(&self, index: usize) -> usize {
+        self.counters[index].load(Ordering::Relaxed)
     }
 }
 
 impl Default for Temp {
     fn default() -> Self {
-        Temp {
-            counter: AtomicUsize::new(0),
+        let num_cores = 192;
+        let mut counters = Vec::with_capacity(num_cores);
+        for i in 0..num_cores {
+            counters.push(Default::default());
         }
+        Temp { counters }
     }
 }
 
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub enum Modify {
-    Increment(u64),
+    Increment(usize),
 }
 
 impl LogMapper for Modify {
@@ -38,7 +42,7 @@ impl LogMapper for Modify {
 
 impl Default for Modify {
     fn default() -> Self {
-        Modify::Increment(1)
+        Modify::Increment(0)
     }
 }
 
@@ -59,10 +63,12 @@ impl Dispatch for Temp {
     type Response = Option<u64>;
 
     fn dispatch(&self, _op: Self::ReadOperation) -> Self::Response {
-        Some(self.access() as u64)
+        Some(self.access(0) as u64)
     }
 
-    fn dispatch_mut(&self, _op: Self::WriteOperation) -> Self::Response {
-        Some(self.increment() as u64)
+    fn dispatch_mut(&self, op: Self::WriteOperation) -> Self::Response {
+        match op {
+            Modify::Increment(tid) => Some(self.increment(tid as usize) as u64),
+        }
     }
 }

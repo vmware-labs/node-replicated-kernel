@@ -18,7 +18,7 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use crate::error::KError;
 use crate::kcb::Kcb;
-use crate::mlnr::Temp;
+use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
 use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
@@ -126,7 +126,7 @@ pub struct Arch86Kcb {
     )>,
 
     ///
-    pub mlnr_replica: Option<(Arc<MlnrReplica<'static, Temp>>, MlnrReplicaToken)>,
+    pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -193,7 +193,7 @@ impl Arch86Kcb {
 
     pub fn setup_mlnr(
         &mut self,
-        replica: Arc<MlnrReplica<'static, Temp>>,
+        replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
         idx_token: MlnrReplicaToken,
     ) {
         self.mlnr_replica = Some((replica, idx_token));

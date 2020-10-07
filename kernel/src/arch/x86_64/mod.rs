@@ -59,7 +59,7 @@ use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{
     tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
-use crate::mlnr::{Modify, Temp};
+use crate::mlnr::{MlnrKernelNode, Modify};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -201,7 +201,7 @@ struct AppCoreArgs {
     node: topology::NodeId,
     _log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
-    mlnr_replica: Arc<MlnrReplica<'static, Temp>>,
+    mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -356,7 +356,7 @@ fn boot_app_cores(
     log: Arc<Log<'static, Op>>,
     bsp_replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
     mlnr_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
-    mlnr_replica: Arc<MlnrReplica<'static, Temp>>,
+    mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 ) {
     let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
@@ -365,7 +365,8 @@ fn boot_app_cores(
     let numa_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
     let mut replicas: Vec<Arc<Replica<'static, KernelNode<Ring3Process>>>> =
         Vec::with_capacity(numa_nodes);
-    let mut mlnr_replicas: Vec<Arc<MlnrReplica<'static, Temp>>> = Vec::with_capacity(numa_nodes);
+    let mut mlnr_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
+        Vec::with_capacity(numa_nodes);
 
     // Push the replica for node 0
     debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
@@ -723,7 +724,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     for i in 1..(num_cores + 1) {
         mlnr_logs.push(Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i)));
     }
-    let mlnr_replica = MlnrReplica::<Temp>::new(mlnr_logs.clone());
+    let mlnr_replica = MlnrReplica::<MlnrKernelNode>::new(mlnr_logs.clone());
     let local_ridx = mlnr_replica.register().unwrap();
     {
         let kcb = kcb::get_kcb();

@@ -386,7 +386,13 @@ fn handle_fileio(
 
                 match user_virt_addr_valid(p.pid, buffer, len) {
                     Ok(_) => {
-                        nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, offset)
+                        if cfg!(feature = "mlnrfs") {
+                            mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, offset)
+                        } else {
+                            nr::KernelNode::<Ring3Process>::file_io(
+                                op, p.pid, fd, buffer, len, offset,
+                            )
+                        }
                     }
                     Err(e) => Err(e),
                 }
@@ -441,19 +447,7 @@ fn handle_fileio(
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }
         }),
-        FileOperation::MlnrDirect => {
-            let kcb = super::kcb::get_kcb();
-            kcb.arch
-                .mlnr_replica
-                .as_ref()
-                .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                    let response = replica.execute_mut(mlnr::Modify::Increment(token.id()), *token);
-                    match response {
-                        Some(val) => Ok((val, 0)),
-                        None => Err(KError::NotSupported),
-                    }
-                })
-        }
+        FileOperation::MlnrDirect => mlnr::MlnrKernelNode::mlnr_direct_bench(),
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

@@ -4,10 +4,13 @@ use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::ptr;
 
+use mlnr::Replica as MlnrReplica;
+use mlnr::ReplicaToken as MlnrReplicaToken;
 use node_replication::Replica;
 use node_replication::ReplicaToken;
 
 use crate::kcb::{ArchSpecificKcb, Kcb};
+use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
 
 use super::process::UnixProcess;
@@ -53,6 +56,7 @@ pub struct ArchKcb {
     /// Arguments passed to the kernel by the bootloader.
     kernel_args: &'static KernelArgs,
     pub replica: Option<(Arc<Replica<'static, KernelNode<UnixProcess>>>, ReplicaToken)>,
+    pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
 }
 
 impl ArchKcb {
@@ -61,6 +65,7 @@ impl ArchKcb {
             kernel_args,
             init_vspace: RefCell::new(VSpace::new()),
             replica: None,
+            mlnr_replica: None,
         }
     }
 

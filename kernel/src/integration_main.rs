@@ -637,7 +637,12 @@ pub fn xmain() {
             *token,
         );
         let pid = match response {
-            Ok(nr::NodeResult::ProcCreated(pid)) => pid,
+            Ok(nr::NodeResult::ProcCreated(pid)) => {
+                match mlnr::MlnrKernelNode::add_process(pid) {
+                    Ok(pid) => pid.0,
+                    Err(e) => unreachable!("{}", e),
+                }
+            },
             _ => unreachable!("Got unexpected response"),
         };
         pid

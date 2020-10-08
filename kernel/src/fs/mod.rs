@@ -11,7 +11,7 @@ use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::SystemCallError;
 
-use crate::fs::mnode::{MemNode, NodeType};
+pub use crate::fs::mnode::{MemNode, NodeType};
 
 mod file;
 mod mnode;

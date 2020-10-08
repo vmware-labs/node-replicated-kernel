@@ -359,7 +359,13 @@ fn handle_fileio(
             let flags = arg3;
             let modes = arg4;
             match user_virt_addr_valid(p.pid, pathname, 0) {
-                Ok(_) => nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, flags, modes),
+                Ok(_) => {
+                    if cfg!(feature = "mlnrfs") {
+                        mlnr::MlnrKernelNode::map_fd(p.pid, pathname, flags, modes)
+                    } else {
+                        nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, flags, modes)
+                    }
+                }
                 Err(e) => Err(e),
             }
         }),
@@ -371,7 +377,11 @@ fn handle_fileio(
 
                 match user_virt_addr_valid(p.pid, buffer, len) {
                     Ok(_) => {
-                        nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, -1)
+                        if cfg!(feature = "mlnrfs") {
+                            mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, -1)
+                        } else {
+                            nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, -1)
+                        }
                     }
                     Err(e) => Err(e),
                 }

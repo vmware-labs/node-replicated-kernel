@@ -83,6 +83,7 @@ pub enum MlnrNodeResult {
     ProcessAdded(Pid),
     FileOpened(FD),
     FileAccessed(Len),
+    FileClosed(u64),
 }
 
 impl MlnrKernelNode {
@@ -167,6 +168,22 @@ impl MlnrKernelNode {
                     }
                 }
                 _ => unreachable!(),
+            })
+    }
+
+    pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .mlnr_replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute_mut(Modify::FileClose(pid, fd), *token);
+
+                match &response {
+                    Ok(MlnrNodeResult::FileClosed(0)) => Ok((0, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
             })
     }
 }
@@ -273,7 +290,20 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Modify::FileClose(pid, fd) => unimplemented!("File Close"),
+            Modify::FileClose(pid, fd) => {
+                let mut process_map = self.process_map.write();
+                let ret = process_map
+                    .get_mut(&pid)
+                    .unwrap()
+                    .deallocate_fd(fd as usize);
+                if ret == fd as usize {
+                    Ok(MlnrNodeResult::FileClosed(fd))
+                } else {
+                    Err(KError::FileSystem {
+                        source: FileSystemError::InvalidFileDescriptor,
+                    })
+                }
+            }
 
             Modify::FileDelete(pid, filename) => unimplemented!("File Delete"),
 

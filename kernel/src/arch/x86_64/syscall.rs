@@ -410,7 +410,11 @@ fn handle_fileio(
         }
         FileOperation::Close => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let fd = arg2;
-            nr::KernelNode::<Ring3Process>::unmap_fd(p.pid, fd)
+            if cfg!(feature = "mlnrfs") {
+                mlnr::MlnrKernelNode::unmap_fd(p.pid, fd)
+            } else {
+                nr::KernelNode::<Ring3Process>::unmap_fd(p.pid, fd)
+            }
         }),
         FileOperation::GetInfo => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let name = arg2;

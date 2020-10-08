@@ -17,7 +17,11 @@ use spin::RwLock;
 
 pub struct MlnrKernelNode {
     counters: Vec<CachePadded<AtomicUsize>>,
+    /// TODO: RwLock should be okay for read-write operations as those ops
+    /// perform read() on lock. Make an array of hashmaps to distribute the
+    /// load evenly for file-open benchmarks.
     process_map: RwLock<HashMap<Pid, FileDesc>>,
+    /// MLNR kernel node primarily replicates the in-memory filesystem.
     fs: MlnrFS,
 }
 

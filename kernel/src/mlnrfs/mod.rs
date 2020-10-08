@@ -5,7 +5,7 @@ use crate::fs::{FileSystem, FileSystemError, MemNode, Mnode, Modes, NodeType};
 
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
-use core::cell::RefCell;
+
 use core::sync::atomic::{AtomicUsize, Ordering};
 use custom_error::custom_error;
 use hashbrown::HashMap;
@@ -18,7 +18,9 @@ pub mod fd;
 /// The in-memory file-system representation.
 #[derive(Debug)]
 pub struct MlnrFS {
-    mnodes: RwLock<HashMap<Mnode, RefCell<MemNode>>>,
+    /// Only create file will lock the hashmap in write mode,
+    /// every other operation is locked in read mode.
+    mnodes: RwLock<HashMap<Mnode, RwLock<MemNode>>>,
     files: RwLock<HashMap<String, Arc<Mnode>>>,
     root: (String, Mnode),
     nextmemnode: AtomicUsize,
@@ -35,7 +37,7 @@ impl Default for MlnrFS {
         let mut mnodes = RwLock::new(HashMap::new());
         mnodes.write().insert(
             rootmnode,
-            RefCell::new(
+            RwLock::new(
                 MemNode::new(
                     rootmnode,
                     rootdir,
@@ -81,7 +83,7 @@ impl MlnrFS {
         self.files
             .write()
             .insert(pathname.to_string(), Arc::new(mnode_num));
-        self.mnodes.write().insert(mnode_num, RefCell::new(memnode));
+        self.mnodes.write().insert(mnode_num, RwLock::new(memnode));
 
         Ok(mnode_num)
     }
@@ -93,7 +95,7 @@ impl MlnrFS {
         offset: usize,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.read().get(&mnode_num) {
-            Some(mnode) => mnode.borrow_mut().write(buffer, offset),
+            Some(mnode) => mnode.write().write(buffer, offset),
             None => Err(FileSystemError::InvalidFile),
         }
     }
@@ -105,7 +107,7 @@ impl MlnrFS {
         offset: usize,
     ) -> Result<usize, FileSystemError> {
         match self.mnodes.read().get(&mnode_num) {
-            Some(mnode) => mnode.borrow().read(buffer, offset),
+            Some(mnode) => mnode.read().read(buffer, offset),
             None => Err(FileSystemError::InvalidFile),
         }
     }
@@ -119,13 +121,13 @@ impl MlnrFS {
 
     pub fn file_info(&self, mnode: Mnode) -> FileInfo {
         match self.mnodes.read().get(&mnode) {
-            Some(mnode) => match mnode.borrow().get_mnode_type() {
+            Some(mnode) => match mnode.read().get_mnode_type() {
                 NodeType::Directory => FileInfo {
                     fsize: 0,
                     ftype: NodeType::Directory.into(),
                 },
                 NodeType::File => FileInfo {
-                    fsize: mnode.borrow().get_file_size() as u64,
+                    fsize: mnode.read().get_file_size() as u64,
                     ftype: NodeType::File.into(),
                 },
             },

@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use crate::arch::process::{UserPtr, UserSlice};
 use crate::error::KError;
 use crate::fs::{
     Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, Modes, Offset, FD,
@@ -167,6 +168,17 @@ impl MlnrKernelNode {
                         Err(r) => Err(r.clone()),
                     }
                 }
+
+                FileOperation::Read | FileOperation::ReadAt => {
+                    let response =
+                        replica.execute(Access::FileRead(pid, fd, buffer, len, offset), *token);
+
+                    match &response {
+                        Ok(MlnrNodeResult::FileAccessed(len)) => Ok((*len, 0)),
+                        Ok(_) => unreachable!("Got unexpected response"),
+                        Err(r) => Err(r.clone()),
+                    }
+                }
                 _ => unreachable!(),
             })
     }
@@ -193,10 +205,49 @@ impl Dispatch for MlnrKernelNode {
     type WriteOperation = Modify;
     type Response = Result<MlnrNodeResult, KError>;
 
-    fn dispatch(&self, _op: Self::ReadOperation) -> Self::Response {
-        Ok(MlnrNodeResult::Incremented(
-            self.counters[0].load(Ordering::Relaxed) as u64,
-        ))
+    fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
+        match op {
+            Access::Get => Ok(MlnrNodeResult::Incremented(
+                self.counters[0].load(Ordering::Relaxed) as u64,
+            )),
+
+            Access::FileRead(pid, fd, buffer, len, offset) => {
+                let mut userslice = UserSlice::new(buffer, len as usize);
+                let process_lookup = self.process_map.read();
+
+                let fd = process_lookup.get(&pid).unwrap().get_fd(fd as usize);
+                let mnode_num = fd.get_mnode();
+                let flags = fd.get_flags();
+
+                // Check if the file has read-only or read-write permissions before reading it.
+                if !flags.is_read() {
+                    return Err(KError::FileSystem {
+                        source: FileSystemError::PermissionError,
+                    });
+                }
+
+                // If the arguments doesn't provide an offset,
+                // then use the offset associated with the FD.
+                let mut curr_offset: usize = offset as usize;
+                if offset == -1 {
+                    curr_offset = fd.get_offset();
+                }
+
+                match self.fs.read(mnode_num, &mut userslice, curr_offset) {
+                    Ok(len) => {
+                        // Update the FD associated offset only when the
+                        // offset wasn't given in the arguments.
+                        if offset == -1 {
+                            fd.update_offset(curr_offset + len);
+                        }
+                        Ok(MlnrNodeResult::FileAccessed(len as u64))
+                    }
+                    Err(e) => Err(KError::FileSystem { source: e }),
+                }
+            }
+
+            Access::FileInfo(pid, name, info_ptr) => unimplemented!("File info"),
+        }
     }
 
     fn dispatch_mut(&self, op: Self::WriteOperation) -> Self::Response {

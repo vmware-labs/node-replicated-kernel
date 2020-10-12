@@ -426,8 +426,9 @@ pub fn xmain() {
     target_arch = "x86_64"
 ))]
 pub fn xmain() {
+    use alloc::sync::Arc;
+    use alloc::vec::Vec;
     use apic::ApicDriver;
-    use core::convert::TryInto;
     use core::sync::atomic::spin_loop_hint;
     use core::time::Duration;
     use x86::apic::{
@@ -435,20 +436,28 @@ pub fn xmain() {
         TriggerMode,
     };
 
+    let threads = topology::MACHINE_TOPOLOGY.num_threads();
+
     unsafe {
-        let tsc = x86::time::rdtsc();
+        let start = rawtime::Instant::now();
+
+        let mut shootdowns = Vec::with_capacity(threads);
+        for t in topology::MACHINE_TOPOLOGY.threads() {
+            trace!("{:?}", t.apic_id());
+            let shootdown = Arc::new(arch::tlb::Shootdown::new(0x1000..0x2000));
+            arch::tlb::enqueue(t.apic_id().into(), shootdown.clone());
+            shootdowns.push(shootdown);
+        }
 
         {
             let kcb = crate::kcb::get_kcb();
             let mut apic = kcb.arch.apic();
 
-            arch::tlb::enqueue();
-
             let vector = 251;
             let icr = Icr::new(
                 vector,
-                ApicId::XApic(0x1),
-                DestinationShorthand::NoShorthand,
+                ApicId::XApic(0x0),
+                DestinationShorthand::AllExcludingSelf,
                 DeliveryMode::Fixed,
                 DestinationMode::Physical,
                 DeliveryStatus::Idle,
@@ -459,16 +468,15 @@ pub fn xmain() {
             apic.send_ipi(icr)
         }
 
-        info!("Sent an IPI");
-
-        let start = rawtime::Instant::now();
-        crate::arch::irq::enable();
-        while start.elapsed() < Duration::from_secs(1) {
-            spin_loop_hint();
+        for shootdown in shootdowns {
+            if !shootdown.is_acknowledged() {
+                spin_loop_hint();
+            }
         }
-        crate::arch::irq::disable();
+        let duration = start.elapsed().as_nanos();
 
-        let done = start.elapsed().as_nanos();
+        info!("name,cores,shootdown_duration_ns");
+        info!("shootdown-simple,{},{}", threads, duration);
     }
     arch::debug::shutdown(ExitReason::Ok);
 }

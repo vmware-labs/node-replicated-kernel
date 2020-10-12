@@ -1425,6 +1425,91 @@ fn s06_vmops_benchmark() {
 }
 
 #[test]
+fn s06_shootdown_simple() {
+    let max_cores = num_cpus::get() / 2;
+
+    let threads = if cfg!(feature = "smoke") {
+        vec![1, 4]
+    } else {
+        thread_defaults(max_cores)
+    };
+
+    let file_name = "tlb_shootdown.csv";
+    std::fs::remove_file(file_name);
+
+    for &cores in threads.iter() {
+        let kernel_cmdline = format!("testcmd={}", cores);
+        let mut cmdline = RunnerArgs::new("test-shootdown-simple")
+            .module("init")
+            .cores(cores)
+            .setaffinity()
+            .timeout(12_000 + cores as u64 * 3000)
+            .release()
+            .cmd(kernel_cmdline.as_str());
+
+        if cfg!(feature = "smoke") {
+            cmdline = cmdline.user_feature("smoke").memory(8192);
+        } else {
+            cmdline = cmdline.memory(48 * 1024);
+        }
+
+        if cfg!(feature = "smoke") && cores > 2 {
+            cmdline = cmdline.nodes(2);
+        } else {
+            let max_cores = num_cpus::get();
+            // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
+            match max_cores {
+                28 => cmdline = cmdline.nodes(2),
+                56 => cmdline = cmdline.nodes(2),
+                96 => cmdline = cmdline.nodes(4),
+                192 => cmdline = cmdline.nodes(4),
+                _ => {}
+            };
+        }
+
+        let mut output = String::new();
+        let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+            let mut p = spawn_bespin(&cmdline)?;
+
+            // Parse lines like
+            // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
+            // write them to a CSV file
+            let expected_lines = 1;
+            for _i in 0..expected_lines {
+                let (prev, matched) = p.exp_regex(r#"shootdown-simple,(\d+),(\d+)"#)?;
+                output += prev.as_str();
+                output += matched.as_str();
+
+                // Append parsed results to a CSV file
+                let write_headers = !Path::new(file_name).exists();
+                let mut csv_file = OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(file_name)
+                    .expect("Can't open file");
+                if write_headers {
+                    let row = "git_rev,name,cores,shootdown_duration_ns\n";
+                    let r = csv_file.write(row.as_bytes());
+                    assert!(r.is_ok());
+                }
+
+                let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write(matched.as_bytes());
+                assert!(r.is_ok());
+                let r = csv_file.write("\n".as_bytes());
+                assert!(r.is_ok());
+            }
+
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline, qemu_run(cores), output);
+    }
+}
+
+#[test]
 fn s06_vmops_latency_benchmark() {
     let max_cores = num_cpus::get() / 2;
 

@@ -587,8 +587,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } else if a.vector == 0x3 {
             dbg_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
-            super::tlb::dequeue();
-            unreachable!("TLB work queue vector")
+            super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().apic_id().into());
+            loop {}
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         }

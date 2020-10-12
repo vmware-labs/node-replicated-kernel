@@ -66,6 +66,7 @@ mod memory;
 mod mlnr;
 mod mlnrfs;
 mod nr;
+#[macro_use]
 mod prelude;
 mod process;
 mod scheduler;

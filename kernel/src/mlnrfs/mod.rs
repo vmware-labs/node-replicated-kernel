@@ -11,16 +11,18 @@ use custom_error::custom_error;
 use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::SystemCallError;
+pub use rwlock::RwLock as NrLock;
 use spin::RwLock;
 
 pub mod fd;
+mod rwlock;
 
 /// The in-memory file-system representation.
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct MlnrFS {
     /// Only create file will lock the hashmap in write mode,
     /// every other operation is locked in read mode.
-    mnodes: RwLock<HashMap<Mnode, RwLock<MemNode>>>,
+    mnodes: NrLock<HashMap<Mnode, RwLock<MemNode>>>,
     files: RwLock<HashMap<String, Arc<Mnode>>>,
     root: (String, Mnode),
     nextmemnode: AtomicUsize,
@@ -34,7 +36,7 @@ impl Default for MlnrFS {
         let rootdir = "/";
         let rootmnode = 1;
 
-        let mut mnodes = RwLock::new(HashMap::new());
+        let mut mnodes = NrLock::<HashMap<Mnode, RwLock<MemNode>>>::default();
         mnodes.write().insert(
             rootmnode,
             RwLock::new(

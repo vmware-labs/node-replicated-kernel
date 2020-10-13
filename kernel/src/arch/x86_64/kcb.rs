@@ -128,6 +128,9 @@ pub struct Arch86Kcb {
     ///
     pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
 
+    /// Global id per hyperthread.
+    id: usize,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this stack automatically for normal interrupts
@@ -172,6 +175,7 @@ impl Arch86Kcb {
             unrecoverable_fault_stack: None,
             replica: None,
             mlnr_replica: None,
+            id: 0,
         }
     }
 
@@ -197,6 +201,11 @@ impl Arch86Kcb {
         idx_token: MlnrReplicaToken,
     ) {
         self.mlnr_replica = Some((replica, idx_token));
+        self.id = topology::MACHINE_TOPOLOGY.current_thread().id as usize;
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     /// Swaps out current process with a new process. Returns the old process.

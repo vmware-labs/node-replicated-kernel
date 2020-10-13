@@ -5,7 +5,7 @@ use crate::error::KError;
 use crate::fs::{
     Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, Modes, Offset, FD,
 };
-use crate::mlnrfs::{fd::FileDesc, MlnrFS};
+use crate::mlnrfs::{fd::FileDesc, MlnrFS, NrLock};
 use crate::prelude::*;
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
 
@@ -14,14 +14,13 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use hashbrown::HashMap;
 use kpi::{io::*, FileOperation};
 use mlnr::{Dispatch, LogMapper, ReplicaToken};
-use spin::RwLock;
 
 pub struct MlnrKernelNode {
     counters: Vec<CachePadded<AtomicUsize>>,
     /// TODO: RwLock should be okay for read-write operations as those ops
     /// perform read() on lock. Make an array of hashmaps to distribute the
     /// load evenly for file-open benchmarks.
-    process_map: RwLock<HashMap<Pid, FileDesc>>,
+    process_map: NrLock<HashMap<Pid, FileDesc>>,
     /// MLNR kernel node primarily replicates the in-memory filesystem.
     fs: MlnrFS,
 }
@@ -35,7 +34,7 @@ impl Default for MlnrKernelNode {
         }
         MlnrKernelNode {
             counters,
-            process_map: RwLock::new(HashMap::with_capacity(256)),
+            process_map: NrLock::<HashMap<Pid, FileDesc>>::default(),
             fs: MlnrFS::default(),
         }
     }

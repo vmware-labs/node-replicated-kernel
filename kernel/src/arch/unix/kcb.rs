@@ -57,6 +57,7 @@ pub struct ArchKcb {
     kernel_args: &'static KernelArgs,
     pub replica: Option<(Arc<Replica<'static, KernelNode<UnixProcess>>>, ReplicaToken)>,
     pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
+    id: usize,
 }
 
 impl ArchKcb {
@@ -66,6 +67,7 @@ impl ArchKcb {
             init_vspace: RefCell::new(VSpace::new()),
             replica: None,
             mlnr_replica: None,
+            id: 0,
         }
     }
 
@@ -75,6 +77,10 @@ impl ArchKcb {
 
     pub fn kernel_args(&self) -> &'static KernelArgs {
         self.kernel_args
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 }
 

@@ -39,6 +39,8 @@ extern crate log;
 #[macro_use]
 extern crate klogger;
 extern crate kpi;
+#[macro_use]
+extern crate static_assertions;
 
 /// The x86-64 platform specific code.
 #[cfg(all(target_arch = "x86_64", target_os = "none"))]

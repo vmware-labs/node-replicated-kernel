@@ -96,7 +96,7 @@ impl MemNode {
         let bytes_to_read = core::cmp::min(file_size - offset, len);
         let new_offset = offset + bytes_to_read;
 
-        if (bytes_to_read == 0) {
+        if bytes_to_read == 0 {
             return Ok(0);
         }
         // Return error if start-offset is greater than or equal to new-offset OR

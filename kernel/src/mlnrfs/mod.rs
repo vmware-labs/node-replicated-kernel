@@ -157,10 +157,33 @@ impl MlnrFS {
     }
 
     pub fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError> {
-        unimplemented!("truncate");
+        match self.files.read().get(&pathname.to_string()) {
+            Some(mnode) => match self.mnodes.read().get(mnode) {
+                Some(memnode) => memnode.write().file_truncate(),
+                None => return Err(FileSystemError::InvalidFile),
+            },
+            None => return Err(FileSystemError::InvalidFile),
+        }
     }
 
     pub fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
-        unimplemented!("rename");
+        if self.files.read().get(oldname).is_none() {
+            return Err(FileSystemError::InvalidFile);
+        }
+
+        // If the newfile exists then overwrite it with the oldfile.
+        if self.files.read().get(newname).is_some() {
+            self.delete(newname).unwrap();
+        }
+
+        // TODO: Can we optimize it somehow?
+        let mut lock_at_root = self.files.write();
+        match lock_at_root.remove_entry(oldname) {
+            Some((_key, oldnmode)) => match lock_at_root.insert(newname.to_string(), oldnmode) {
+                None => return Ok(true),
+                Some(_) => return Err(FileSystemError::PermissionError),
+            },
+            None => Err(FileSystemError::InvalidFile),
+        }
     }
 }

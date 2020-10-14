@@ -421,7 +421,13 @@ fn handle_fileio(
             let info_ptr = arg3;
 
             match user_virt_addr_valid(p.pid, name, 0) {
-                Ok(_) => nr::KernelNode::<Ring3Process>::file_info(p.pid, name, info_ptr),
+                Ok(_) => {
+                    if cfg!(feature = "mlnrfs") {
+                        mlnr::MlnrKernelNode::file_info(p.pid, name, info_ptr)
+                    } else {
+                        nr::KernelNode::<Ring3Process>::file_info(p.pid, name, info_ptr)
+                    }
+                }
                 Err(e) => Err(e),
             }
         }),
@@ -462,7 +468,11 @@ fn handle_fileio(
                 user_virt_addr_valid(p.pid, newname, 0),
             ) {
                 (Ok(_), Ok(_)) => {
-                    nr::KernelNode::<Ring3Process>::file_rename(p.pid, oldname, newname)
+                    if cfg!(feature = "mlnrfs") {
+                        mlnr::MlnrKernelNode::file_rename(p.pid, oldname, newname)
+                    } else {
+                        nr::KernelNode::<Ring3Process>::file_rename(p.pid, oldname, newname)
+                    }
                 }
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }

@@ -131,6 +131,9 @@ pub struct Arch86Kcb {
     /// Global id per hyperthread.
     id: usize,
 
+    /// Max number of hyperthreads on the current socket.
+    max_threads: usize,
+
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this stack automatically for normal interrupts
@@ -176,6 +179,7 @@ impl Arch86Kcb {
             replica: None,
             mlnr_replica: None,
             id: 0,
+            max_threads: 0,
         }
     }
 
@@ -200,12 +204,18 @@ impl Arch86Kcb {
         replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
         idx_token: MlnrReplicaToken,
     ) {
+        let thread = topology::MACHINE_TOPOLOGY.current_thread();
+        self.id = thread.id as usize;
+        self.max_threads = thread.package().threads().count();
         self.mlnr_replica = Some((replica, idx_token));
-        self.id = topology::MACHINE_TOPOLOGY.current_thread().id as usize;
     }
 
     pub fn id(&self) -> usize {
         self.id
+    }
+
+    pub fn max_threads(&self) -> usize {
+        self.max_threads
     }
 
     /// Swaps out current process with a new process. Returns the old process.

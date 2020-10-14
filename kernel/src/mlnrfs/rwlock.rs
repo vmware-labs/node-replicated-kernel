@@ -82,7 +82,7 @@ where
     /// Locks the underlying data-structure for writes. The caller can retrieve
     /// a mutable reference from the returned `WriteGuard`.
     pub fn write(&self) -> WriteGuard<T> {
-        let n: usize = 32;
+        let n: usize = crate::kcb::get_kcb().arch.max_threads();
         // First, wait until we can acquire the writer lock.
         while self.wlock.compare_and_swap(false, true, Ordering::Acquire) {
             spin_loop_hint();

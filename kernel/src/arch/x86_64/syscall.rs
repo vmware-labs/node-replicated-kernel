@@ -429,7 +429,13 @@ fn handle_fileio(
             let name = arg2;
 
             match user_virt_addr_valid(p.pid, name, 0) {
-                Ok(_) => nr::KernelNode::<Ring3Process>::file_delete(p.pid, name),
+                Ok(_) => {
+                    if cfg!(feature = "mlnrfs") {
+                        mlnr::MlnrKernelNode::file_delete(p.pid, name)
+                    } else {
+                        nr::KernelNode::<Ring3Process>::file_delete(p.pid, name)
+                    }
+                }
                 Err(e) => Err(e),
             }
         }),

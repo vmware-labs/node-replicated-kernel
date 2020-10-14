@@ -75,8 +75,11 @@ pub enum MlnrNodeResult {
     FileOpened(FD),
     FileAccessed(Len),
     FileClosed(u64),
+    FileDeleted(bool),
 }
 
+/// TODO: Most of the functions looks same as in nr.rs. Merge the
+/// two and maybe move all the functions to a separate file?
 impl MlnrKernelNode {
     pub fn add_process(pid: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
@@ -168,6 +171,27 @@ impl MlnrKernelNode {
 
                 match &response {
                     Ok(MlnrNodeResult::FileClosed(0)) => Ok((0, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
+
+    pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .mlnr_replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let filename;
+                match userptr_to_str(name) {
+                    Ok(user_str) => filename = user_str,
+                    Err(e) => return Err(e.clone()),
+                }
+                let response = replica.execute_mut(Modify::FileDelete(pid, filename), *token);
+
+                match &response {
+                    Ok(MlnrNodeResult::FileDeleted(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -323,7 +347,13 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Modify::FileDelete(pid, filename) => unimplemented!("File Delete"),
+            Modify::FileDelete(pid, filename) => match self.process_map.read().get(&pid) {
+                Some(_) => match self.fs.delete(&filename) {
+                    Ok(is_deleted) => Ok(MlnrNodeResult::FileDeleted(is_deleted)),
+                    Err(e) => Err(KError::FileSystem { source: e }),
+                },
+                None => Err(ProcessError::NoProcessFoundForPid.into()),
+            },
 
             Modify::FileRename(pid, oldname, newname) => unimplemented!("File Rename"),
 

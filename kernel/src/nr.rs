@@ -611,7 +611,7 @@ where
             Op::MemUnmap => unreachable!(),
             Op::FileOpen(pid, filename, flags, modes) => {
                 let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let mut p = process_lookup.expect("TODO: FileOpen process lookup failed");
 
                 let flags = FileFlags::from(flags);
                 let mnode = self.fs.lookup(&filename);
@@ -649,7 +649,7 @@ where
             }
             Op::FileWrite(pid, fd, kernslice, len, offset) => {
                 let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let mut p = process_lookup.expect("TODO: FileWrite process lookup failed");
                 let fd = p.get_fd(fd as usize);
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();
@@ -686,7 +686,7 @@ where
             }
             Op::FileClose(pid, fd) => {
                 let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let mut p = process_lookup.expect("TODO: FileClose process lookup failed");
                 let ret = p.deallocate_fd(fd as usize);
 
                 if ret == fd as usize {
@@ -699,7 +699,7 @@ where
             }
             Op::FileDelete(pid, filename) => {
                 let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let mut p = process_lookup.expect("TODO: FileDelete process lookup failed");
                 match self.fs.delete(&filename) {
                     Ok(is_deleted) => Ok(NodeResult::FileDeleted(is_deleted)),
                     Err(e) => Err(KError::FileSystem { source: e }),
@@ -707,7 +707,7 @@ where
             }
             Op::FileRename(pid, oldname, newname) => {
                 let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
+                let mut p = process_lookup.expect("TODO: FileRename process lookup failed");
                 match self.fs.rename(&oldname, &newname) {
                     Ok(is_renamed) => Ok(NodeResult::FileRenamed(is_renamed)),
                     Err(e) => Err(KError::FileSystem { source: e }),

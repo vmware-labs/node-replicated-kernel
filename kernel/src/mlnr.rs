@@ -16,7 +16,6 @@ use kpi::{io::*, FileOperation};
 use mlnr::{Dispatch, LogMapper, ReplicaToken};
 
 pub struct MlnrKernelNode {
-    counters: Vec<CachePadded<AtomicUsize>>,
     /// TODO: RwLock should be okay for read-write operations as those ops
     /// perform read() on lock. Make an array of hashmaps to distribute the
     /// load evenly for file-open benchmarks.
@@ -27,13 +26,7 @@ pub struct MlnrKernelNode {
 
 impl Default for MlnrKernelNode {
     fn default() -> Self {
-        let max_cores = 192;
-        let mut counters = Vec::with_capacity(max_cores);
-        for _i in 0..max_cores {
-            counters.push(Default::default());
-        }
         MlnrKernelNode {
-            counters,
             process_map: NrLock::<HashMap<Pid, FileDesc>>::default(),
             fs: MlnrFS::default(),
         }
@@ -42,7 +35,6 @@ impl Default for MlnrKernelNode {
 
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub enum Modify {
-    Increment(usize),
     ProcessAdd(Pid),
     ProcessRemove(Pid),
     FileOpen(Pid, String, Flags, Modes),
@@ -50,6 +42,7 @@ pub enum Modify {
     FileClose(Pid, FD),
     FileDelete(Pid, String),
     FileRename(Pid, String, String),
+    Invalid,
 }
 
 impl LogMapper for Modify {
@@ -60,13 +53,12 @@ impl LogMapper for Modify {
 
 impl Default for Modify {
     fn default() -> Self {
-        Modify::Increment(0)
+        Modify::Invalid
     }
 }
 
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub enum Access {
-    Get,
     FileRead(Pid, FD, Buffer, Len, Offset),
     FileInfo(Pid, Filename, u64),
 }
@@ -79,7 +71,6 @@ impl LogMapper for Access {
 
 #[derive(Clone, Debug)]
 pub enum MlnrNodeResult {
-    Incremented(u64),
     ProcessAdded(Pid),
     FileOpened(FD),
     FileAccessed(Len),
@@ -87,21 +78,6 @@ pub enum MlnrNodeResult {
 }
 
 impl MlnrKernelNode {
-    pub fn mlnr_direct_bench() -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .mlnr_replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(Modify::Increment(token.id()), *token);
-                match &response {
-                    Ok(MlnrNodeResult::Incremented(val)) => Ok((*val, 0)),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(e) => Err(e.clone()),
-                }
-            })
-    }
-
     pub fn add_process(pid: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
@@ -206,10 +182,6 @@ impl Dispatch for MlnrKernelNode {
 
     fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
-            Access::Get => Ok(MlnrNodeResult::Incremented(
-                self.counters[0].load(Ordering::Relaxed) as u64,
-            )),
-
             Access::FileRead(pid, fd, buffer, len, offset) => {
                 let mut userslice = UserSlice::new(buffer, len as usize);
                 let process_lookup = self.process_map.read();
@@ -251,10 +223,6 @@ impl Dispatch for MlnrKernelNode {
 
     fn dispatch_mut(&self, op: Self::WriteOperation) -> Self::Response {
         match op {
-            Modify::Increment(tid) => Ok(MlnrNodeResult::Incremented(
-                self.counters[tid].fetch_add(1, Ordering::Relaxed) as u64,
-            )),
-
             Modify::ProcessAdd(pid) => {
                 match self.process_map.write().insert(pid, FileDesc::default()) {
                     Some(_) => Err(KError::ProcessError {
@@ -358,6 +326,8 @@ impl Dispatch for MlnrKernelNode {
             Modify::FileDelete(pid, filename) => unimplemented!("File Delete"),
 
             Modify::FileRename(pid, oldname, newname) => unimplemented!("File Rename"),
+
+            Modify::Invalid => unreachable!("Got invalid OP"),
         }
     }
 }

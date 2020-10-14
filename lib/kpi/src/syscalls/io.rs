@@ -231,21 +231,4 @@ impl Fs {
             Err(SystemCallError::from(r))
         }
     }
-
-    pub fn mlnr_direct() -> Result<u64, SystemCallError> {
-        // If read or write is performed at the specific offset.
-        let (r, val) = unsafe {
-            syscall!(
-                SystemCall::FileIO as u64,
-                FileOperation::MlnrDirect as u64,
-                2
-            )
-        };
-
-        if r == 0 {
-            Ok(val)
-        } else {
-            Err(SystemCallError::from(r))
-        }
-    }
 }

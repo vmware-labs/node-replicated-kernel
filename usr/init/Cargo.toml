@@ -40,7 +40,6 @@ test-fs = []
 # Simple micro-benchmarks
 bench-vmops = []
 fs-write = []
-mlnr-direct = []
 fxmark = []
 
 # smoke: A way to tell the micro-benchmarks

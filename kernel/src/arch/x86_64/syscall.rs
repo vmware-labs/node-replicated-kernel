@@ -461,7 +461,6 @@ fn handle_fileio(
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }
         }),
-        FileOperation::MlnrDirect => mlnr::MlnrKernelNode::mlnr_direct_bench(),
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

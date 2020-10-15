@@ -177,11 +177,27 @@ impl Default for MemFS {
         files.insert(rootdir.to_string(), Arc::new(1));
         let root = (rootdir.to_string(), 1);
 
+        // Now do the same for /tmp
+        let tmpdir = "//dbbench";
+        let tmpmnode = 2;
+
+        mnodes.insert(
+            tmpmnode,
+            MemNode::new(
+                tmpmnode,
+                tmpdir,
+                FileModes::S_IRWXU.into(),
+                NodeType::Directory,
+            )
+            .unwrap(),
+        );
+        files.insert(tmpdir.to_string(), Arc::new(2));
+
         MemFS {
             mnodes,
             files,
             root,
-            nextmemnode: AtomicUsize::new(2),
+            nextmemnode: AtomicUsize::new(3),
         }
     }
 }

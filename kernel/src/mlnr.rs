@@ -46,9 +46,19 @@ pub enum Modify {
     Invalid,
 }
 
+// TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Modify {
     fn hash(&self) -> usize {
-        0
+        match self {
+            Modify::ProcessAdd(_pid) => 0,
+            Modify::ProcessRemove(_pid) => 0,
+            Modify::FileOpen(_pid, _filename, _flags, _modes) => 0,
+            Modify::FileWrite(_pid, fd, _kernslice, _len, _offset) => *fd as usize,
+            Modify::FileClose(_pid, fd) => *fd as usize,
+            Modify::FileDelete(_pid, _filename) => 0,
+            Modify::FileRename(_pid, _oldname, _newname) => 0,
+            Modify::Invalid => unreachable!("Invalid operation"),
+        }
     }
 }
 
@@ -64,9 +74,13 @@ pub enum Access {
     FileInfo(Pid, Filename, u64),
 }
 
+//TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Access {
     fn hash(&self) -> usize {
-        0
+        match self {
+            Access::FileRead(_pid, fd, _buffer, _len, _offser) => *fd as usize,
+            Access::FileInfo(_pid, _filename, _info_ptr) => 0,
+        }
     }
 }
 

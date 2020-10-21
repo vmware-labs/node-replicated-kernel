@@ -120,7 +120,11 @@ impl Fs {
         }
 
         if offset == -1 {
-            return Fs::fileio(op, fd, buffer, len);
+            match (op) {
+                FileOperation::ReadAt => return Err(SystemCallError::OffsetError),
+                FileOperation::WriteAt => return Fs::fileio(FileOperation::Write, fd, buffer, len),
+                _ => unreachable!("write_at received non *-At op"),
+            }
         }
 
         // If read or write is performed at the specific offset.

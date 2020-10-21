@@ -47,6 +47,8 @@ pub enum SystemCallError {
     BadFlags = 8,
     /// Operation is not permitted.
     PermissionError = 9,
+    /// Bad offset
+    OffsetError = 10,
     /// Placeholder for an invalid, unknown error code.
     Unknown,
 }
@@ -64,6 +66,7 @@ impl From<u64> for SystemCallError {
             7 => SystemCallError::BadFileDescriptor,
             8 => SystemCallError::BadFlags,
             9 => SystemCallError::PermissionError,
+            10 => SystemCallError::OffsetError,
             _ => SystemCallError::Unknown,
         }
     }

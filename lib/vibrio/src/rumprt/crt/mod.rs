@@ -1,10 +1,11 @@
 //! Necessary runtime support for apps that want to link with/use libc.
 
 use alloc::vec;
+use alloc::vec::Vec;
 use core::ptr;
 use core::sync::atomic::AtomicUsize;
 
-use cstr_core::CStr;
+use cstr_core::{CStr, CString};
 use log::{debug, error, info, Level};
 use x86::current::paging::VAddr;
 
@@ -29,6 +30,9 @@ type pthread_t = c_ulong;
 /// A pointer to the environment variables.
 #[no_mangle]
 pub static mut environ: *mut *const i8 = ptr::null_mut();
+
+static mut main_argc: i32 = 0;
+static mut main_argv: *const *const i8 = ptr::null();
 
 /// The following structure is found at the top of the user stack of each
 /// user process. The ps program uses it to locate argv and environment
@@ -179,13 +183,8 @@ extern "C" {
 extern "C" fn mainstarter(lwp: *mut c_void) -> *mut c_void {
     unsafe {
         rump_pub_lwproc_switch(lwp);
-        // Construct silly arguments
-        let c_args = vec![
-            CStr::from_bytes_with_nul_unchecked(b"redis-server.bin\0").as_ptr(),
-            CStr::from_bytes_with_nul_unchecked(b"redis-server.bin\0").as_ptr(),
-        ];
 
-        rumprun_main1(0, c_args.as_ptr());
+        rumprun_main1(main_argc, main_argv);
         ptr::null_mut()
     }
 }
@@ -251,6 +250,7 @@ pub extern "C" fn main() {
     let mut maximum = 1; // We already have core 0
 
     let pinfo = crate::syscalls::Process::process_info().expect("Can't read process info");
+
     let ncores: Option<usize> = pinfo.cmdline.parse().ok();
     for hwthread in hwthreads.iter().take(ncores.unwrap_or(hwthreads.len())) {
         if hwthread.id != 0 {
@@ -269,6 +269,32 @@ pub extern "C" fn main() {
                 }
             }
         }
+    }
+
+    // App args should always be within single quotes and space-separated
+    let parsed_args: Vec<&str> = pinfo
+        .app_cmdline
+        .strip_prefix('\'')
+        .unwrap_or("")
+        .strip_suffix('\'')
+        .unwrap_or("")
+        .rsplit(' ')
+        .collect();
+    // Necessary to maintain references to the arg CStrings
+    let mut ref_args: Vec<CString> = Vec::with_capacity(parsed_args.len() + 1);
+    ref_args.push(CString::new("some.bin").unwrap()); // First arg is always bin name
+
+    for i in 0..parsed_args.len() {
+        ref_args.push(CString::new(parsed_args[i]).unwrap());
+    }
+
+    let c_args: Vec<*const i8> = ref_args
+        .into_iter()
+        .map(|x| x.into_raw() as *const i8)
+        .collect();
+    unsafe {
+        main_argv = c_args.as_ptr();
+        main_argc = c_args.len() as i32;
     }
 
     let scheduler = &crate::upcalls::PROCESS_SCHEDULER;

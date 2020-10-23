@@ -51,6 +51,10 @@ enum CmdToken {
     #[token = "testcmd="]
     TestCmd,
 
+    /// Test command line arguments to pass to application. Space-separated
+    #[token = "appcmd="]
+    AppCmd,
+
     /// Log token.
     #[token = "log="]
     Log,
@@ -69,9 +73,13 @@ enum CmdToken {
     #[regex = "[a-zA-Z]+(\\.bin)?"]
     File,
 
-    /// A file that we want to execute
+    /// A CmdLine that we want to execute
     #[regex = "[0-9a-zA-Z]+"]
     CmdLine,
+
+    /// A Cmdline to pass to the application
+    #[regex = "'[0-9a-zA-Z =,-_]+'"]
+    AppCmdLine,
 
     /// Anything not properly encoded
     #[error]
@@ -85,6 +93,7 @@ pub struct BootloaderArguments {
     pub log_filter: &'static str,
     pub test_binary: &'static str,
     pub test_cmdline: &'static str,
+    pub app_cmdline: &'static str,
 }
 
 impl BootloaderArguments {
@@ -139,6 +148,16 @@ impl BootloaderArguments {
                         ),
                     };
                 }
+                (CmdToken::AppCmd, _) => {
+                    lexer.advance();
+                    parsed_args.app_cmdline = match (lexer.token, lexer.slice()) {
+                        (CmdToken::AppCmdLine, app_cmdline) => app_cmdline,
+                        (key, v) => unreachable!(
+                            "Malformed command-line parsing application cmdline: {:?} -> {:?}",
+                            key, v
+                        ),
+                    };
+                }
                 (CmdToken::End, _) => break,
                 (_, _) => continue,
             };
@@ -154,6 +173,7 @@ impl Default for BootloaderArguments {
             log_filter: "info",
             test_binary: "init",
             test_cmdline: "init",
+            app_cmdline: "",
         }
     }
 }

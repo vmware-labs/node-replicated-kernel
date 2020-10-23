@@ -26,6 +26,8 @@ pub struct ProcessInfo {
     pub alignment: u64,
     /// Command line argument buffer
     pub cmdline: &'static str,
+    /// App command line argument buffer
+    pub app_cmdline: &'static str,
 }
 
 #[cfg(test)]

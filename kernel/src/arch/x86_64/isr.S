@@ -146,6 +146,7 @@ isr_handler_early 20
 isr_handler_early 30,1
 /* 31: Reserved */
 isr_handler_early 251
+isr_handler_early 250
 isr_handler_early 252
 
 /* x86 Exceptions */
@@ -194,5 +195,8 @@ isr_handler 47
 
 /* TLB work-queue trigger IPI */
 isr_handler 251
+/* The MLNR gc interrupt */
+isr_handler 250
+
 /* The APIC timer interrupt */
 isr_handler 252

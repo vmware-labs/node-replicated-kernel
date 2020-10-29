@@ -1701,8 +1701,21 @@ fn s06_fxmark_benchmark() {
                 cmdline = cmdline.memory(core::cmp::max(18192, cores * 512));
             }
 
-            // TODO: mlnrfs runs only with one replica, change it later.
-            cmdline = cmdline.nodes(1);
+            if cfg!(feature = "smoke") && cores > 2 {
+                cmdline = cmdline.nodes(2);
+            } else {
+                let max_cores = num_cpus::get();
+                // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
+                match max_cores {
+                    28 => cmdline = cmdline.nodes(2),
+                    56 => cmdline = cmdline.nodes(2),
+                    32 => cmdline = cmdline.nodes(2),
+                    64 => cmdline = cmdline.nodes(2),
+                    96 => cmdline = cmdline.nodes(4),
+                    192 => cmdline = cmdline.nodes(4),
+                    _ => {}
+                };
+            }
 
             let mut output = String::new();
             let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {

@@ -81,6 +81,7 @@ pub enum Access {
     FileRead(Pid, FD, Buffer, Len, Offset),
     FileInfo(Pid, Filename, u64),
     FdToMnode(Pid, FD),
+    Synchronize(usize),
 }
 
 //TODO: Stateless op to log mapping. Maintain some state for correct redirection.
@@ -96,6 +97,7 @@ impl LogMapper for Access {
             Access::FileInfo(_pid, _filename, _info_ptr) => 0,
             // TODO: Assume that all metadata modifying operations go through log 0.
             Access::FdToMnode(_pid, _fd) => 0,
+            Access::Synchronize(log_id) => (*log_id - 1),
         }
     }
 }
@@ -110,6 +112,7 @@ pub enum MlnrNodeResult {
     FileInfo(u64),
     FileRenamed(bool),
     MappedFdToMnode(u64),
+    Synchronized,
 }
 
 /// TODO: Most of the functions looks same as in nr.rs. Merge the
@@ -292,6 +295,21 @@ impl MlnrKernelNode {
                 }
             })
     }
+
+    pub fn synchronize_log(log_id: usize) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .mlnr_replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute(Access::Synchronize(log_id), *token);
+                match &response {
+                    Ok(MlnrNodeResult::Synchronized) => Ok((0, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
 }
 
 impl Dispatch for MlnrKernelNode {
@@ -374,6 +392,11 @@ impl Dispatch for MlnrKernelNode {
                 }
                 None => Err(ProcessError::NoProcessFoundForPid.into()),
             },
+
+            Access::Synchronize(_log_id) => {
+                // A NOP that just makes sure we've advanced the replica
+                Ok(MlnrNodeResult::Synchronized)
+            }
         }
     }
 

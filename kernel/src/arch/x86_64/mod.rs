@@ -661,8 +661,33 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     let num_cores = topology::MACHINE_TOPOLOGY.num_cores();
     let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(num_cores);
+    let func = &|idx: usize, rid: usize| {
+        use x86::apic::{
+            ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr,
+            Level, TriggerMode,
+        };
+        error!("Replica {} needs to make progress on Log {}", rid, idx);
+
+        let vector = 250;
+        // TODO: Pick destination carefully.
+        let icr = Icr::for_x2apic(
+            vector,
+            ApicId::XApic(1),
+            DestinationShorthand::NoShorthand,
+            DeliveryMode::Fixed,
+            DestinationMode::Physical,
+            DeliveryStatus::Idle,
+            Level::Assert,
+            TriggerMode::Edge,
+        );
+
+        crate::arch::tlb::enqueue(1, crate::arch::tlb::WorkItem::AdvanceReplica(idx));
+        unsafe { crate::kcb::get_kcb().arch.apic().send_ipi(icr) }
+    };
     for i in 1..(num_cores + 1) {
-        mlnr_logs.push(Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i)));
+        let mut log = Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i));
+        unsafe { Arc::get_mut_unchecked(&mut log).update_closure(func) };
+        mlnr_logs.push(log);
     }
     let mlnr_replica = MlnrReplica::<MlnrKernelNode>::new(mlnr_logs.clone());
     let local_ridx = mlnr_replica.register().unwrap();

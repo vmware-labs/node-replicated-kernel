@@ -46,6 +46,7 @@ use apic::ApicDriver;
 use log::debug;
 
 use crate::memory::{vspace::MapAction, Frame};
+use crate::mlnr;
 use crate::nr;
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::{Executor, ResumeHandle};
@@ -101,6 +102,8 @@ macro_rules! idt_set {
 
 /// The IDT entry for handling the TLB work-queue
 pub const TLB_WORK_PENDING: u8 = 251;
+/// The IDT entry for handling GC in mlnr.
+pub const MLNR_GC_INIT: u8 = 250;
 
 /// The IDT table can hold a maximum of 256 entries.
 pub const IDT_SIZE: usize = 256;
@@ -169,6 +172,7 @@ impl Default for IdtTable {
         idt_set!(table.0, 47, isr_handler47, 0);
 
         idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler251, 0);
+        idt_set!(table.0, MLNR_GC_INIT as usize, isr_handler250, 0);
         idt_set!(table.0, apic::TSC_TIMER_VECTOR as usize, isr_handler252, 0);
 
         table
@@ -206,6 +210,7 @@ impl IdtTable {
 
         idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler_early251, 0);
 
+        idt_set!(table.0, MLNR_GC_INIT as usize, isr_handler_early250, 0);
         idt_set!(
             table.0,
             apic::TSC_TIMER_VECTOR as usize,
@@ -440,6 +445,19 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
     }
 }
 
+/// TODO: Transfer the log-id which needs to be GC.
+unsafe fn mlnr_gc_handler(a: &ExceptionArguments) {
+    let r = {
+        let idx = 1; // Extract stuck log-id from the IPI argument.
+        mlnr::MlnrKernelNode::synchronize_log(idx);
+
+        let kcb = get_kcb();
+        kcb_iret_handle(kcb)
+    };
+
+    r.resume()
+}
+
 /// Handler for a general protection exception.
 ///
 /// TODO: Right now we terminate kernel.
@@ -510,7 +528,7 @@ fn kcb_iret_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
 #[no_mangle]
 pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     sprintln!("[IRQ] Got an exception during kernel initialization:");
-    sprintln!("{:?}", a);
+    error!("{:?}", a);
 
     match a.vector as u8 {
         GENERAL_PROTECTION_FAULT_VECTOR => {
@@ -626,6 +644,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 // Go to scheduler instead
                 crate::scheduler::schedule()
             }
+        } else if a.vector == MLNR_GC_INIT.into() {
+            mlnr_gc_handler(&a);
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         }

@@ -53,8 +53,16 @@ impl LogMapper for Modify {
             Modify::ProcessAdd(_pid) => 0,
             Modify::ProcessRemove(_pid) => 0,
             Modify::FileOpen(_pid, _filename, _flags, _modes) => 0,
-            Modify::FileWrite(_pid, fd, _kernslice, _len, _offset) => *fd as usize,
-            Modify::FileClose(_pid, fd) => *fd as usize,
+            Modify::FileWrite(pid, fd, _kernslice, _len, _offset) => {
+                match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
+                    Ok((mnode, _)) => mnode as usize,
+                    Err(_) => 0,
+                }
+            }
+            Modify::FileClose(pid, fd) => match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
+                Ok((mnode, _)) => mnode as usize,
+                Err(_) => 0,
+            },
             Modify::FileDelete(_pid, _filename) => 0,
             Modify::FileRename(_pid, _oldname, _newname) => 0,
             Modify::Invalid => unreachable!("Invalid operation"),
@@ -72,14 +80,22 @@ impl Default for Modify {
 pub enum Access {
     FileRead(Pid, FD, Buffer, Len, Offset),
     FileInfo(Pid, Filename, u64),
+    FdToMnode(Pid, FD),
 }
 
 //TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Access {
     fn hash(&self) -> usize {
         match self {
-            Access::FileRead(_pid, fd, _buffer, _len, _offser) => *fd as usize,
+            Access::FileRead(pid, fd, _buffer, _len, _offser) => {
+                match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
+                    Ok((mnode, _)) => mnode as usize,
+                    Err(_) => 0,
+                }
+            }
             Access::FileInfo(_pid, _filename, _info_ptr) => 0,
+            // TODO: Assume that all metadata modifying operations go through log 0.
+            Access::FdToMnode(_pid, _fd) => 0,
         }
     }
 }
@@ -93,6 +109,7 @@ pub enum MlnrNodeResult {
     FileDeleted(bool),
     FileInfo(u64),
     FileRenamed(bool),
+    MappedFdToMnode(u64),
 }
 
 /// TODO: Most of the functions looks same as in nr.rs. Merge the
@@ -258,6 +275,23 @@ impl MlnrKernelNode {
                 }
             })
     }
+
+    #[inline(always)]
+    pub fn fd_to_mnode(pid: Pid, fd: FD) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .mlnr_replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute(Access::FdToMnode(pid, fd), *token);
+
+                match &response {
+                    Ok(MlnrNodeResult::MappedFdToMnode(mnode)) => Ok((*mnode, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
 }
 
 impl Dispatch for MlnrKernelNode {
@@ -328,6 +362,15 @@ impl Dispatch for MlnrKernelNode {
                             source: FileSystemError::InvalidFile,
                         }),
                     }
+                }
+                None => Err(ProcessError::NoProcessFoundForPid.into()),
+            },
+
+            Access::FdToMnode(pid, fd) => match self.process_map.read().get(&pid) {
+                Some(p) => {
+                    let fd = p.get_fd(fd as usize);
+                    let mnode_num = fd.get_mnode();
+                    Ok(MlnrNodeResult::MappedFdToMnode(mnode_num))
                 }
                 None => Err(ProcessError::NoProcessFoundForPid.into()),
             },

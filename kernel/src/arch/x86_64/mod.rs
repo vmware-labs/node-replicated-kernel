@@ -255,8 +255,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     {
         let kcb = kcb::get_kcb();
         let local_ridx = args.replica.register().unwrap();
-        kcb.arch
-            .setup_node_replication(args.replica.clone(), local_ridx);
+        kcb.setup_node_replication(args.replica.clone(), local_ridx);
 
         let mlnr_replica = args.mlnr_replica.register().unwrap();
         kcb.arch.setup_mlnr(args.mlnr_replica.clone(), mlnr_replica);
@@ -288,7 +287,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     loop {
         use crate::nr;
         let kcb = kcb::get_kcb();
-        let (replica, token) = kcb.arch.replica.as_ref().expect("Replica not set");
+        let (replica, token) = kcb.replica.as_ref().expect("Replica not set");
 
         // Get an executor
         let response = replica.execute(nr::ReadOps::CurrentExecutor(thread.id), *token);

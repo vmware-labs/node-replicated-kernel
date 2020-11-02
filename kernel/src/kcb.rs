@@ -7,7 +7,7 @@ use core::convert::TryInto;
 use core::slice::from_raw_parts;
 
 use logos::Logos;
-use node_replication::replica::Replica;
+use node_replication::{Replica, ReplicaToken};
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
@@ -235,10 +235,7 @@ pub struct Kcb<A: ArchSpecificKcb> {
     pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
 
     /// A handle to the node-local kernel replica.
-    pub replica: Option<Arc<Replica<'static, KernelNode<A::Process>>>>,
-
-    /// The registration ID of the current KCB for the `replica`.
-    pub replica_idx: usize,
+    pub replica: Option<(Arc<Replica<'static, KernelNode<A::Process>>>, ReplicaToken)>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -264,17 +261,15 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             memfs: None,
             print_buffer: None,
             replica: None,
-            replica_idx: 0,
         }
     }
 
     pub fn setup_node_replication(
         &mut self,
         replica: Arc<Replica<'static, KernelNode<A::Process>>>,
-        idx: usize,
+        idx_token: ReplicaToken,
     ) {
-        self.replica_idx = idx;
-        self.replica = Some(replica);
+        self.replica = Some((replica, idx_token));
     }
 
     pub fn set_panic_mode(&mut self) {

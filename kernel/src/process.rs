@@ -378,13 +378,15 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
     let data_frames: Vec<Frame> = data_sec_loader.finish();
 
     // Create a new process
-    let replica = kcb.replica.as_ref().expect("Replica not set");
-    let response = replica.execute(nr::Op::ProcCreate(&mod_file, data_frames), kcb.replica_idx)?;
-
-    match response {
-        nr::NodeResult::ProcCreated(pid) => Ok(pid),
-        _ => unreachable!("Got unexpected response"),
-    }
+    kcb.replica
+        .as_ref()
+        .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+            let response = replica.execute_mut(nr::Op::ProcCreate(&mod_file, data_frames), *token);
+            match response {
+                Ok(nr::NodeResult::ProcCreated(pid)) => Ok(pid),
+                _ => unreachable!("Got unexpected response"),
+            }
+        })
 }
 
 /// Create dispatchers for a given Pid to run on all cores.
@@ -421,17 +423,22 @@ pub fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
             }
 
             let kcb = crate::kcb::get_kcb();
-            let replica = kcb.replica.as_ref().expect("Replica not set");
-            let response =
-                replica.execute(nr::Op::DispatcherAllocation(pid, frame), kcb.replica_idx)?;
+            kcb.replica
+                .as_ref()
+                .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                    let response =
+                        replica.execute_mut(nr::Op::DispatcherAllocation(pid, frame), *token)?;
 
-            match response {
-                nr::NodeResult::ExecutorsCreated(how_many) => {
-                    assert!(how_many > 0);
-                    dispatchers_created += how_many;
-                }
-                _ => unreachable!("Got unexpected response"),
-            };
+                    match response {
+                        nr::NodeResult::ExecutorsCreated(how_many) => {
+                            assert!(how_many > 0);
+                            dispatchers_created += how_many;
+                            Ok(how_many)
+                        }
+                        _ => unreachable!("Got unexpected response"),
+                    }
+                })
+                .unwrap();
         }
     }
 

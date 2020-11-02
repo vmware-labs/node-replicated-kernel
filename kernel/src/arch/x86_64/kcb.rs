@@ -8,8 +8,11 @@ use core::pin::Pin;
 use core::ptr;
 
 use apic::xapic::XAPICDriver;
+<<<<<<< HEAD
 use mlnr::Replica as MlnrReplica;
 use mlnr::ReplicaToken as MlnrReplicaToken;
+=======
+>>>>>>> Merge fixes.
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};

@@ -1,6 +1,7 @@
 //! KCB is the local kernel control that stores all core local state.
 
 use alloc::sync::Arc;
+use core::any::Any;
 use core::cell::{RefCell, RefMut};
 use core::ptr;
 
@@ -9,11 +10,10 @@ use mlnr::ReplicaToken as MlnrReplicaToken;
 use node_replication::Replica;
 use node_replication::ReplicaToken;
 
-use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
-use crate::process::{Executor, ProcessError, ResumeHandle};
+use crate::process::ProcessError;
 
 use super::process::{UnixProcess, UnixThread};
 use super::vspace::VSpace;
@@ -38,11 +38,11 @@ pub fn get_kcb<'a>() -> &'a mut Kcb<ArchKcb> {
 unsafe fn set_kcb(kcb: ptr::NonNull<Kcb<ArchKcb>>) {
     KCB = kcb.as_ptr();
 }
-use core::any::Any;
+
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb<A: ArchSpecificKcb>(mut kcb: &'static mut Kcb<A>) {
+pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut kcb: &'static mut Kcb<A>) {
     let any_kcb = &mut kcb as &mut dyn Any;
     if let Some(ckcb) = any_kcb.downcast_mut::<&'static mut Kcb<ArchKcb>>() {
         let kptr: ptr::NonNull<Kcb<ArchKcb>> = (*ckcb).into();

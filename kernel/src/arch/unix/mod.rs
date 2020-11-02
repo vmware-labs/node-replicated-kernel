@@ -2,8 +2,8 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 
 use arrayvec::ArrayVec;
-use node_replication::log::Log;
-use node_replication::replica::Replica;
+use node_replication::Log;
+use node_replication::Replica;
 
 use crate::xmain;
 use crate::ExitReason;

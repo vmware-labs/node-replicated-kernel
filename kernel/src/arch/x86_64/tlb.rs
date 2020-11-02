@@ -3,10 +3,10 @@ use alloc::vec::Vec;
 use core::ops::Range;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crossbeam_queue::{ArrayQueue, PushError};
+use crossbeam_queue::ArrayQueue;
 use lazy_static::lazy_static;
 
-use super::memory::{VAddr, BASE_PAGE_SIZE};
+use super::memory::BASE_PAGE_SIZE;
 use crate::is_page_aligned;
 use crate::process::Pid;
 
@@ -26,7 +26,7 @@ lazy_static! {
     static ref TLB_WORKQUEUE: Vec<ArrayQueue<Arc<Shootdown>>> = {
         let cores = topology::MACHINE_TOPOLOGY.num_threads();
         let mut channels = Vec::with_capacity(cores);
-        for i in 0..cores {
+        for _i in 0..cores {
             channels.push(ArrayQueue::new(4));
         }
 
@@ -92,4 +92,4 @@ pub fn dequeue(apic_id: usize) {
     msg.process();
 }
 
-pub fn shootdown(pid: Pid, range: Range<u64>) {}
+pub fn shootdown(_pid: Pid, _range: Range<u64>) {}

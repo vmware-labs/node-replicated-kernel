@@ -906,16 +906,6 @@ impl Process for Ring3Process {
         // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
         // TODO(ugly): Find a better way to express this mess
         super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
-            // TODO: make sure we have APIC base (these should be part of kernel
-            // mappings and above KERNEL_BASE), should not be hardcoded
-            p.vspace
-                .map_identity(
-                    PAddr(0xfee00000u64),
-                    BASE_PAGE_SIZE,
-                    MapAction::ReadWriteExecuteKernel,
-                )
-                .expect("Can't map APIC");
-
             let kernel_pml_entry = kcb.arch.init_vspace().pml4[128];
             trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
             p.vspace.page_table.pml4[128] = kernel_pml_entry;

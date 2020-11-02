@@ -231,13 +231,6 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
             }
         }
     }
-
-    // TODO: ReMap the APIC at a different address...
-    kernel.vspace.map_identity(
-        PAddr(0xfee00000u64),
-        PAddr(0xfee00000u64 + BASE_PAGE_SIZE as u64),
-        MapAction::ReadWriteKernel,
-    );
 }
 
 /// Initialize the screen to the highest possible resolution.

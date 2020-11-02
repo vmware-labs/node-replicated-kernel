@@ -123,7 +123,7 @@ impl VSpace {
         }
     }
 
-    pub(crate) fn map_identity(
+    pub fn map_identity(
         &mut self,
         base: PAddr,
         size: usize,

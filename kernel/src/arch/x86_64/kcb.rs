@@ -7,12 +7,11 @@ use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
-use apic::xapic::XAPICDriver;
-<<<<<<< HEAD
+use apic::x2apic::X2APICDriver;
 use mlnr::Replica as MlnrReplica;
 use mlnr::ReplicaToken as MlnrReplicaToken;
-=======
->>>>>>> Merge fixes.
+use node_replication::Replica;
+use node_replication::ReplicaToken;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -99,7 +98,7 @@ pub struct Arch86Kcb {
     pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
 
     /// A handle to the core-local interrupt driver.
-    pub(crate) apic: RefCell<XAPICDriver>,
+    pub(crate) apic: RefCell<X2APICDriver>,
 
     /// A per-core GdtTable
     pub(crate) gdt: GdtTable,
@@ -156,7 +155,7 @@ pub struct Arch86Kcb {
 impl Arch86Kcb {
     pub(crate) fn new(
         kernel_args: &'static KernelArgs,
-        apic: XAPICDriver,
+        apic: X2APICDriver,
         init_vspace: PageTable,
     ) -> Arch86Kcb {
         Arch86Kcb {
@@ -179,7 +178,7 @@ impl Arch86Kcb {
         }
     }
 
-    pub fn apic(&self) -> RefMut<XAPICDriver> {
+    pub fn apic(&self) -> RefMut<X2APICDriver> {
         self.apic.borrow_mut()
     }
 

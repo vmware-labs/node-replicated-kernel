@@ -8,6 +8,19 @@ use lazy_static::lazy_static;
 
 use super::memory::{VAddr, BASE_PAGE_SIZE};
 use crate::is_page_aligned;
+use crate::process::Pid;
+
+// In the xAPIC mode, the Destination Format Register (DFR) through the MMIO interface determines the choice of a
+// flat logical mode or a clustered logical mode. Flat logical mode is not supported in the x2APIC mode. Hence the
+// Destination Format Register (DFR) is eliminated in x2APIC mode.
+// The 32-bit logical x2APIC ID field of LDR is partitioned into two sub-fields:
+//
+// • Cluster ID (LDR[31:16]): is the address of the destination cluster
+// • Logical ID (LDR[15:0]): defines a logical ID of the individual local x2APIC within the cluster specified by
+//   LDR[31:16].
+//
+// In x2APIC mode, the 32-bit logical x2APIC ID, which can be read from LDR, is derived from the 32-bit local x2APIC ID:
+// Logical x2APIC ID = [(x2APIC ID[19:4] « 16) | (1 « x2APIC ID[3:0])]
 
 lazy_static! {
     static ref TLB_WORKQUEUE: Vec<ArrayQueue<Arc<Shootdown>>> = {
@@ -78,3 +91,5 @@ pub fn dequeue(apic_id: usize) {
     trace!("TLB channel got msg {:?}", msg);
     msg.process();
 }
+
+pub fn shootdown(pid: Pid, range: Range<u64>) {}

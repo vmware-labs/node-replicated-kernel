@@ -34,8 +34,7 @@ use mlnr::Replica as MlnrReplica;
 use node_replication::Log;
 use node_replication::Replica;
 
-//use apic::x2apic;
-use apic::xapic;
+use apic::x2apic;
 
 pub mod coreboot;
 pub mod debug;
@@ -165,28 +164,16 @@ unsafe fn find_current_ptables() -> PageTable {
     }
 }
 
-/// Return the base address of the xAPIC (x86 Interrupt controller)
-fn find_apic_base() -> u64 {
-    use x86::msr::{rdmsr, IA32_APIC_BASE};
-    unsafe {
-        let base = rdmsr(IA32_APIC_BASE);
-        base & !0xfff
-    }
-}
-
 /// Construct the driver object to manipulate the interrupt controller (XAPIC)
-fn init_apic() -> xapic::XAPICDriver {
-    let base = find_apic_base();
-    trace!("find_apic_base {:#x}", base);
-    let regs: &'static mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut _, 256) };
-    let mut apic = xapic::XAPICDriver::new(regs);
-
+fn init_apic() -> x2apic::X2APICDriver {
+    let mut apic = x2apic::X2APICDriver::new();
     // Attach the driver to take control of the APIC:
     apic.attach();
 
-    trace!(
-        "xAPIC id: {}, version: {:#x}, is bsp: {}",
+    info!(
+        "x2APIC id: {}, logical_id: {}, version: {:#x}, is bsp: {}",
         apic.id(),
+        apic.logical_id(),
         apic.version(),
         apic.bsp()
     );

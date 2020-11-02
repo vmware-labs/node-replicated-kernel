@@ -16,6 +16,9 @@ pub trait ApicDriver {
     /// Return APIC ID.
     fn id(&self) -> u32;
 
+    /// Return the logical APIC ID.
+    fn logical_id(&self) -> u32;
+
     /// Read APIC version
     fn version(&self) -> u32;
 

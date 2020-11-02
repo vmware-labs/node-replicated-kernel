@@ -443,7 +443,14 @@ pub fn xmain() {
 
         let mut shootdowns = Vec::with_capacity(threads);
         for t in topology::MACHINE_TOPOLOGY.threads() {
-            trace!("{:?}", t.apic_id());
+            let id = t.apic_id();
+            info!(
+                "{:?} logical {:?} cluster {:?} cluster rel. logical {:?}",
+                id,
+                id.x2apic_logical_id(),
+                id.x2apic_logical_cluster_id(),
+                id.x2apic_logical_cluster_address(),
+            );
             let shootdown = Arc::new(arch::tlb::Shootdown::new(0x1000..0x2000));
             arch::tlb::enqueue(t.apic_id().into(), shootdown.clone());
             shootdowns.push(shootdown);
@@ -454,12 +461,12 @@ pub fn xmain() {
             let mut apic = kcb.arch.apic();
 
             let vector = 251;
-            let icr = Icr::new(
+            let icr = Icr::for_x2apic(
                 vector,
-                ApicId::XApic(0x0),
-                DestinationShorthand::AllExcludingSelf,
+                ApicId::X2Apic(0b1_1111_1111_1111_1111),
+                DestinationShorthand::NoShorthand,
                 DeliveryMode::Fixed,
-                DestinationMode::Physical,
+                DestinationMode::Logical,
                 DeliveryStatus::Idle,
                 Level::Assert,
                 TriggerMode::Edge,

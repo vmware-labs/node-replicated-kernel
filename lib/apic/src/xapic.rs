@@ -33,6 +33,11 @@ impl crate::ApicDriver for XAPICDriver {
         self.inner.id()
     }
 
+    /// Return the logical APIC ID.
+    fn logical_id(&self) -> u32 {
+        self.inner.logical_id()
+    }
+
     /// Read APIC version
     fn version(&self) -> u32 {
         self.inner.version()

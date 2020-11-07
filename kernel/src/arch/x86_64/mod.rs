@@ -144,6 +144,18 @@ pub fn enable_fsgsbase() {
     };
 }
 
+/// Goes to sleep / halts the core.
+///
+/// Interrupts are enabled before going to sleep.
+pub fn halt() -> ! {
+    unsafe {
+        irq::enable();
+        loop {
+            x86::halt()
+        }
+    }
+}
+
 /// Return a struct to the currently installed page-tables so we
 /// can manipulate them (for example to map the APIC registers).
 ///
@@ -317,10 +329,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
                     }
                 }
             }
-            _ => unsafe {
-                irq::enable();
-                x86::halt()
-            },
+            _ => halt(),
         };
     }
 }

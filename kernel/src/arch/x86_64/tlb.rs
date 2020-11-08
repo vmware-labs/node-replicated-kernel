@@ -3,8 +3,13 @@ use alloc::vec::Vec;
 use core::ops::Range;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use apic::ApicDriver;
 use crossbeam_queue::ArrayQueue;
 use lazy_static::lazy_static;
+use x86::apic::{
+    ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
+    TriggerMode,
+};
 
 use super::memory::BASE_PAGE_SIZE;
 use crate::is_page_aligned;
@@ -23,7 +28,7 @@ use crate::process::Pid;
 // Logical x2APIC ID = [(x2APIC ID[19:4] « 16) | (1 « x2APIC ID[3:0])]
 
 lazy_static! {
-    static ref TLB_WORKQUEUE: Vec<ArrayQueue<Arc<Shootdown>>> = {
+    static ref IPI_WORKQUEUE: Vec<ArrayQueue<Arc<WorkItem>>> = {
         let cores = topology::MACHINE_TOPOLOGY.num_threads();
         let mut channels = Vec::with_capacity(cores);
         for _i in 0..cores {
@@ -32,6 +37,12 @@ lazy_static! {
 
         channels
     };
+}
+
+#[derive(Debug)]
+pub enum WorkItem {
+    Shootdown(Shootdown),
+    AdvanceReplica(usize),
 }
 
 #[derive(Debug)]
@@ -81,15 +92,46 @@ impl Shootdown {
     }
 }
 
-pub fn enqueue(apic_id: usize, s: Arc<Shootdown>) {
+pub fn enqueue(apic_id: usize, s: Arc<WorkItem>) {
     trace!("TLB enqueue shootdown msg {:?}", s);
-    assert!(TLB_WORKQUEUE[apic_id].push(s).is_ok());
+    assert!(IPI_WORKQUEUE[apic_id].push(s).is_ok());
 }
 
 pub fn dequeue(apic_id: usize) {
-    let msg = TLB_WORKQUEUE[apic_id].pop().unwrap();
-    trace!("TLB channel got msg {:?}", msg);
-    msg.process();
+    let msg = IPI_WORKQUEUE[apic_id].pop().unwrap();
+    match &*msg {
+        WorkItem::Shootdown(s) => {
+            trace!("TLB channel got msg {:?}", s);
+            s.process();
+        }
+        WorkItem::AdvanceReplica(log_id) => error!("NYI: Try to advance replica here...?"),
+        _ => error!("Got unknown work item"),
+    }
+}
+
+pub fn send_ipi_to_apic(apic_id: ApicId) {
+    let kcb = crate::kcb::get_kcb();
+    let mut apic = kcb.arch.apic();
+
+    let icr = Icr::for_x2apic(
+        super::irq::TLB_WORK_PENDING,
+        apic_id,
+        DestinationShorthand::NoShorthand,
+        DeliveryMode::Fixed,
+        DestinationMode::Physical,
+        DeliveryStatus::Idle,
+        Level::Assert,
+        TriggerMode::Edge,
+    );
+
+    unsafe { apic.send_ipi(icr) }
 }
 
 pub fn shootdown(_pid: Pid, _range: Range<u64>) {}
+
+pub fn advance_replica(apic_id: usize, log_id: usize) {
+    trace!("Send AdvanceReplica IPI for {} to {}", log_id, apic_id);
+
+    enqueue(apic_id, Arc::new(WorkItem::AdvanceReplica(log_id)));
+    send_ipi_to_apic(ApicId::X2Apic(apic_id as u32));
+}

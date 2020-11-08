@@ -120,3 +120,5 @@ test-userspace-smp = ["integration-test"]
 test-vspace-debug = ["integration-test", "bsp-only"]
 # test-shootdown: Test simple TLB shootdown
 test-shootdown-simple = ["integration-test"]
+# test-replica-advance: Test advancing replica
+test-replica-advance = ["integration-test"]

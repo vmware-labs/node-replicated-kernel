@@ -419,7 +419,29 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::ReturnFromMain);
 }
 
-/// Test time facilities in the kernel.
+/// Test shootdown facilities in the kernel.
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-replica-advance",
+    target_arch = "x86_64"
+))]
+pub fn xmain() {
+    use alloc::sync::Arc;
+    use arch::tlb::advance_replica;
+    let threads = topology::MACHINE_TOPOLOGY.num_threads();
+
+    unsafe {
+        let start = rawtime::Instant::now();
+        advance_replica(0x1, 0x0);
+        let duration = start.elapsed().as_nanos();
+
+        info!("advance-replica done?");
+        loop {}
+    }
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+/// Test shootdown facilities in the kernel.
 #[cfg(all(
     feature = "integration-test",
     feature = "test-shootdown-simple",
@@ -451,7 +473,9 @@ pub fn xmain() {
                 id.x2apic_logical_cluster_id(),
                 id.x2apic_logical_cluster_address(),
             );
-            let shootdown = Arc::new(arch::tlb::Shootdown::new(0x1000..0x2000));
+            let shootdown = Arc::new(arch::tlb::WorkItem::Shootdown(arch::tlb::Shootdown::new(
+                0x1000..0x2000,
+            )));
             arch::tlb::enqueue(t.apic_id().into(), shootdown.clone());
             shootdowns.push(shootdown);
         }
@@ -476,8 +500,10 @@ pub fn xmain() {
         }
 
         for shootdown in shootdowns {
-            if !shootdown.is_acknowledged() {
-                spin_loop_hint();
+            if let arch::tlb::WorkItem::Shootdown(shootdown) = &*shootdown {
+                if !shootdown.is_acknowledged() {
+                    spin_loop_hint();
+                }
             }
         }
         let duration = start.elapsed().as_nanos();

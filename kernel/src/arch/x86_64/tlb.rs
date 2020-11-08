@@ -104,13 +104,12 @@ pub fn dequeue(apic_id: usize) {
             trace!("TLB channel got msg {:?}", s);
             s.process();
         }
-        WorkItem::AdvanceReplica(log_id) => error!("NYI: Try to advance replica here...?"),
-        _ => error!("Got unknown work item"),
+        WorkItem::AdvanceReplica(_log_id) => error!("NYI: Try to advance replica here...?"),
     }
 }
 
 pub fn send_ipi_to_apic(apic_id: ApicId) {
-    let kcb = crate::kcb::get_kcb();
+    let kcb = super::kcb::get_kcb();
     let mut apic = kcb.arch.apic();
 
     let icr = Icr::for_x2apic(

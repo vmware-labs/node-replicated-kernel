@@ -10,8 +10,6 @@ use core::ptr;
 use apic::x2apic::X2APICDriver;
 use mlnr::Replica as MlnrReplica;
 use mlnr::ReplicaToken as MlnrReplicaToken;
-use node_replication::Replica;
-use node_replication::ReplicaToken;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -19,7 +17,6 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
-use crate::nr::KernelNode;
 
 use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};

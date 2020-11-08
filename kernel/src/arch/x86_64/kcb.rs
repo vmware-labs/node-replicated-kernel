@@ -17,7 +17,6 @@ use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use crate::error::KError;
-use crate::kcb::Kcb;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;

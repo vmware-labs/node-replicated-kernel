@@ -147,6 +147,7 @@ pub trait ResumeHandle {
 pub trait Executor {
     type Resumer: ResumeHandle;
     fn id(&self) -> Eid;
+    fn pid(&self) -> Pid;
     fn start(&self) -> Self::Resumer;
     fn resume(&self) -> Self::Resumer;
     fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer;

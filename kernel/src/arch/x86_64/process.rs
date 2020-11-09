@@ -512,6 +512,10 @@ impl Executor for Ring3Executor {
         self.eid
     }
 
+    fn pid(&self) -> Pid {
+        self.pid
+    }
+
     fn vcpu_kernel(&self) -> *mut kpi::arch::VirtualCpu {
         self.vcpu_ctl_kernel.as_mut_ptr()
     }

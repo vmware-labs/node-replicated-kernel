@@ -77,7 +77,7 @@ impl AddressSpace for VSpace {
         self.page_table.resolve(addr)
     }
 
-    fn unmap(&mut self, base: VAddr) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError> {
+    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, AddressSpaceError> {
         for (&existing_base, existing_mapping) in
             self.mappings.range((Unbounded, Included(base))).rev()
         {
@@ -90,7 +90,7 @@ impl AddressSpace for VSpace {
         }
 
         let r = self.page_table.unmap(base)?;
-        self.mappings.remove(&r.1);
+        self.mappings.remove(&r.vaddr);
         Ok(r)
     }
 

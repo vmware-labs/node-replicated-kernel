@@ -112,6 +112,7 @@ pub struct UnixProcess {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct UnixThread {
     eid: Eid,
+    pid: Pid,
 }
 
 pub struct UnixResumeHandle {}
@@ -127,6 +128,10 @@ impl Executor for UnixThread {
 
     fn id(&self) -> Eid {
         self.eid
+    }
+
+    fn pid(&self) -> Pid {
+        self.pid
     }
 
     fn start(&self) -> Self::Resumer {

@@ -106,14 +106,13 @@ impl AddressSpace for PageTable {
         Err(AddressSpaceError::NotMapped)
     }
 
-    fn unmap(&mut self, base: VAddr) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError> {
+    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, AddressSpaceError> {
         if !base.is_base_page_aligned() {
             return Err(AddressSpaceError::InvalidBase);
         }
         let (vaddr, paddr, size, _rights) = self.modify_generic(base, Modify::Unmap)?;
-
-        //warn!("TODO(correctness): we lose topology information here...");
-        Ok((Default::default(), vaddr, Frame::new(paddr, size, 0)))
+        // TODO(correctness+memory): we lose topology information here...
+        Ok(TlbFlushHandle::new(vaddr, Frame::new(paddr, size, 0)))
     }
 }
 

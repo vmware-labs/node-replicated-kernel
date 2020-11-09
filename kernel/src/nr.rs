@@ -19,7 +19,7 @@ use crate::fs::{
     Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MemFS, Modes,
     Offset, FD, MAX_FILES_PER_PROCESS,
 };
-use crate::memory::vspace::{AddressSpace, MapAction};
+use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
 
@@ -57,7 +57,7 @@ pub enum Op {
     MemMapDevice(Pid, Frame, MapAction),
     MemMapFrameId(Pid, VAddr, FrameId, MapAction),
     MemAdjust,
-    MemUnmap,
+    MemUnmap(Pid, VAddr),
     FileOpen(Pid, String, Flags, Modes),
     FileWrite(Pid, FD, Arc<[u8]>, Len, Offset),
     FileClose(Pid, FD),
@@ -83,7 +83,7 @@ pub enum NodeResult<E: Executor> {
     Mapped,
     MappedFrameId(PAddr, usize),
     Adjusted,
-    Unmapped,
+    Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FileOpened(FD),
     FileClosed(u64),
@@ -594,7 +594,24 @@ where
                 Ok(NodeResult::MappedFrameId(frame.base, frame.size))
             }
             Op::MemAdjust => unreachable!(),
-            Op::MemUnmap => unreachable!(),
+            Op::MemUnmap(pid, vaddr) => {
+                let p = self
+                    .process_map
+                    .get_mut(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+
+                let kcb = crate::kcb::get_kcb();
+                let mut shootdown_handle = p.vspace_mut().unmap(vaddr)?;
+                // Figure out which cores are running our current process
+                // (this is where we send IPIs later)
+                for (gtid, e) in self.scheduler_map.iter() {
+                    if pid == e.pid() {
+                        shootdown_handle.add_core(*gtid);
+                    }
+                }
+
+                Ok(NodeResult::Unmapped(shootdown_handle))
+            }
             Op::FileOpen(pid, filename, flags, modes) => {
                 let process_lookup = self.process_map.get_mut(&pid);
                 let mut p = process_lookup.expect("TODO: FileOpen process lookup failed");

@@ -3,20 +3,35 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::cmp::PartialEq;
+use core::convert::TryInto;
 use core::fmt;
 
+use bit_vec::BitVec;
 use custom_error::custom_error;
 use kpi::SystemCallError;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 
 use super::{Frame, PAddr, VAddr};
 
-#[derive(Debug, PartialEq)]
-pub struct TlbFlushHandle {}
+#[derive(Debug, PartialEq, Clone)]
+pub struct TlbFlushHandle {
+    pub vaddr: VAddr,
+    pub frame: Frame,
+    core_map: BitVec<u32>,
+}
 
-impl Default for TlbFlushHandle {
-    fn default() -> TlbFlushHandle {
-        TlbFlushHandle {}
+impl TlbFlushHandle {
+    pub fn new(vaddr: VAddr, frame: Frame) -> TlbFlushHandle {
+        TlbFlushHandle {
+            vaddr,
+            frame,
+            // TODO(constant): 256 should be max_cores
+            core_map: BitVec::from_elem(256, false),
+        }
+    }
+
+    pub fn add_core(&mut self, gtid: topology::GlobalThreadId) {
+        self.core_map.set(gtid.try_into().unwrap(), true);
     }
 }
 
@@ -119,7 +134,7 @@ pub trait AddressSpace {
     /// # Returns
     /// The frame to the caller along with a `TlbFlushHandle` that may have to be
     /// invoked to flush the TLB.
-    fn unmap(&mut self, vaddr: VAddr) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError>;
+    fn unmap(&mut self, vaddr: VAddr) -> Result<TlbFlushHandle, AddressSpaceError>;
 
     // Returns an iterator of all currently mapped memory regions.
     //fn mappings()
@@ -529,10 +544,7 @@ pub(crate) mod model {
             Err(AddressSpaceError::NotMapped)
         }
 
-        fn unmap(
-            &mut self,
-            base: VAddr,
-        ) -> Result<(TlbFlushHandle, VAddr, Frame), AddressSpaceError> {
+        fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, AddressSpaceError> {
             if !base.is_base_page_aligned() {
                 return Err(AddressSpaceError::InvalidBase);
             }
@@ -547,8 +559,7 @@ pub(crate) mod model {
             if element.is_some() {
                 let (cur_vaddr, cur_paddr, cur_length, _cur_rights) = element.unwrap();
                 assert!(found.next().is_none(), "Only found one relevant mapping");
-                Ok((
-                    TlbFlushHandle {},
+                Ok(TlbFlushHandle::new(
                     cur_vaddr,
                     Frame::new(cur_paddr, cur_length, 0),
                 ))
@@ -590,8 +601,8 @@ pub(crate) mod model {
         assert_eq!(ret_paddr, frame_base);
         assert_eq!(ret_rights, MapAction::ReadWriteUser);
 
-        let (_handle, _vaddr, ret_frame) = a.unmap(va).expect("Can't unmap");
-        assert_eq!(ret_frame, frame);
+        let (handle) = a.unmap(va).expect("Can't unmap");
+        assert_eq!(handle.frame, frame);
 
         let e = a
             .unmap(va)

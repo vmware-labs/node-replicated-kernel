@@ -21,7 +21,7 @@ use crate::memory::vspace::AddressSpace;
 use crate::memory::KernelAllocator;
 use crate::memory::{Frame, PhysicalPageProvider, VAddr};
 use crate::prelude::overlaps;
-use crate::{nr, round_up};
+use crate::{mlnr, nr, round_up};
 
 /// This struct is used to copy the user buffer into kernel space, so that the
 /// user-application doesn't have any reference to any log operation in kernel space.
@@ -384,7 +384,12 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
             let response = replica.execute_mut(nr::Op::ProcCreate(&mod_file, data_frames), *token);
             match response {
-                Ok(nr::NodeResult::ProcCreated(pid)) => Ok(pid),
+                Ok(nr::NodeResult::ProcCreated(pid)) => {
+                    match mlnr::MlnrKernelNode::add_process(pid) {
+                        Ok(pid) => Ok(pid.0),
+                        Err(e) => unreachable!("{}", e),
+                    }
+                }
                 _ => unreachable!("Got unexpected response"),
             }
         })

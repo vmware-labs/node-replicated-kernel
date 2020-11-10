@@ -659,30 +659,25 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
 
-    let num_cores = topology::MACHINE_TOPOLOGY.num_cores();
+    let num_cores = match topology::MACHINE_TOPOLOGY.nodes().nth(0) {
+        Some(node) => node.cores().fold(0, |len, _element| len + 1), /* Avoid hyper-threads for now. */
+        None => 1,
+    };
     let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(num_cores);
     let func = &|idx: usize, rid: usize| {
-        use x86::apic::{
-            ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr,
-            Level, TriggerMode,
-        };
-        error!("Replica {} needs to make progress on Log {}", rid, idx);
-
-        let vector = 250;
-        // TODO: Pick destination carefully.
-        let icr = Icr::for_x2apic(
-            vector,
-            ApicId::XApic(1),
-            DestinationShorthand::NoShorthand,
-            DeliveryMode::Fixed,
-            DestinationMode::Physical,
-            DeliveryStatus::Idle,
-            Level::Assert,
-            TriggerMode::Edge,
+        let mut cores = topology::MACHINE_TOPOLOGY
+            .nodes()
+            .nth(rid - 1)
+            .unwrap()
+            .threads();
+        let core_id = cores.nth(idx - 1).unwrap().id;
+        trace!(
+            "Replica {} needs to make progress on Log {}; use core_id {:?}",
+            rid,
+            idx,
+            core_id
         );
-
-        crate::arch::tlb::enqueue(1, crate::arch::tlb::WorkItem::AdvanceReplica(idx));
-        unsafe { crate::kcb::get_kcb().arch.apic().send_ipi(icr) }
+        crate::arch::tlb::advance_replica(core_id, idx);
     };
     for i in 1..(num_cores + 1) {
         let mut log = Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i));

@@ -445,19 +445,6 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
     }
 }
 
-/// TODO: Transfer the log-id which needs to be GC.
-unsafe fn mlnr_gc_handler(a: &ExceptionArguments) {
-    let r = {
-        let idx = 1; // Extract stuck log-id from the IPI argument.
-        mlnr::MlnrKernelNode::synchronize_log(idx);
-
-        let kcb = get_kcb();
-        kcb_iret_handle(kcb)
-    };
-
-    r.resume()
-}
-
 /// Handler for a general protection exception.
 ///
 /// TODO: Right now we terminate kernel.
@@ -645,7 +632,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 crate::scheduler::schedule()
             }
         } else if a.vector == MLNR_GC_INIT.into() {
-            mlnr_gc_handler(&a);
+            super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().id);
+        // TODO: Assume that this core was idle before this IPI, What to do after handling the req?
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         }

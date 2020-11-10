@@ -16,6 +16,7 @@ use x86::apic::{
 use super::memory::BASE_PAGE_SIZE;
 use crate::is_page_aligned;
 use crate::memory::vspace::TlbFlushHandle;
+use crate::mlnr;
 
 // In the xAPIC mode, the Destination Format Register (DFR) through the MMIO interface determines the choice of a
 // flat logical mode or a clustered logical mode. Flat logical mode is not supported in the x2APIC mode. Hence the
@@ -106,7 +107,15 @@ pub fn dequeue(gtid: topology::GlobalThreadId) {
             trace!("TLB channel got msg {:?}", s);
             s.process();
         }
-        WorkItem::AdvanceReplica(_log_id) => error!("NYI: Try to advance replica here...?"),
+        WorkItem::AdvanceReplica(log_id) => {
+            // All metadata operations are done on using log 1. So, make sure that the
+            // replica has applied all those operation before any other log sync.
+            let _result = mlnr::MlnrKernelNode::synchronize_log(1);
+            match mlnr::MlnrKernelNode::synchronize_log(log_id) {
+                Ok(_) => {}
+                Err(e) => unreachable!("Error {:?} while advancing the log {}", e, log_id),
+            }
+        }
     }
 }
 
@@ -115,7 +124,7 @@ pub fn send_ipi_to_apic(apic_id: ApicId) {
     let mut apic = kcb.arch.apic();
 
     let icr = Icr::for_x2apic(
-        super::irq::TLB_WORK_PENDING,
+        super::irq::MLNR_GC_INIT,
         apic_id,
         DestinationShorthand::NoShorthand,
         DeliveryMode::Fixed,

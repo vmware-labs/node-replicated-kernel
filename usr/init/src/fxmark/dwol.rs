@@ -10,6 +10,7 @@ use vibrio::io::*;
 pub struct DWOL {
     page: Vec<u8>,
     fds: RefCell<Vec<u64>>,
+    cores: RefCell<usize>,
 }
 
 impl Default for DWOL {
@@ -26,6 +27,7 @@ impl Default for DWOL {
         DWOL {
             page,
             fds: RefCell::new(fd),
+            cores: RefCell::new(0),
         }
     }
 }
@@ -33,6 +35,7 @@ impl Default for DWOL {
 impl Bench for DWOL {
     fn init(&self, cores: Vec<usize>) {
         unsafe {
+            *self.cores.borrow_mut() = cores.len();
             for core in cores {
                 let file_name = format!("file{}.txt\0", core);
                 let fd = vibrio::syscalls::Fs::open(
@@ -99,7 +102,13 @@ impl Bench for DWOL {
             iops = 0;
         }
 
-        POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
+        POOR_MANS_BARRIER.fetch_add(1, Ordering::Release);
+        let num_cores = *self.cores.borrow();
+        // To avoid explicit GC in mlnr.
+        while POOR_MANS_BARRIER.load(Ordering::Acquire) != num_cores {
+            vibrio::syscalls::Fs::read_at(fd, page.as_ptr() as u64, 1, 0);
+        }
+
         iops_per_second.clone()
     }
 }

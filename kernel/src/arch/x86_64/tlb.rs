@@ -108,11 +108,16 @@ pub fn dequeue(gtid: topology::GlobalThreadId) {
             s.process();
         }
         WorkItem::AdvanceReplica(log_id) => {
-            // All metadata operations are done on using log 1. So, make sure that the
+            // All metadata operations are done using log 1. So, make sure that the
             // replica has applied all those operation before any other log sync.
-            let _result = mlnr::MlnrKernelNode::synchronize_log(1);
+            if log_id != 1 {
+                match mlnr::MlnrKernelNode::synchronize_log(1) {
+                    Ok(_) => { /* Simply return */ }
+                    Err(e) => unreachable!("Error {:?} while advancing the log 1", e),
+                }
+            }
             match mlnr::MlnrKernelNode::synchronize_log(log_id) {
-                Ok(_) => {}
+                Ok(_) => { /* Simply return */ }
                 Err(e) => unreachable!("Error {:?} while advancing the log {}", e, log_id),
             }
         }

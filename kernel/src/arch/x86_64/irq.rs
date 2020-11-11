@@ -632,8 +632,19 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 crate::scheduler::schedule()
             }
         } else if a.vector == MLNR_GC_INIT.into() {
+            // nr::KernelNode::<Ring3Process>::synchronize(); /* TODO: Do we need this?
             super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().id);
-        // TODO: Assume that this core was idle before this IPI, What to do after handling the req?
+
+            let kcb = get_kcb();
+            match kcb.current_pid() {
+                Ok(_) => kcb_iret_handle(kcb).resume(),
+                Err(_) => {
+                    x86::irq::enable();
+                    loop {
+                        x86::halt()
+                    }
+                }
+            }
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         }

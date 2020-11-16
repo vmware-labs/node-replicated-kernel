@@ -388,6 +388,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     warn!("Got debug interrupt {}", desc.source);
 
     let kcb = get_kcb();
+    assert!(kcb.arch.has_current_process(), "Not from user-space?");
     let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
     r.resume()
 }
@@ -405,16 +406,19 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
         debug::shutdown(ExitReason::Ok);
     }
 
-    // sprintln!("GOT TIMER HANDLER");
     // Periodically advance replica state, then resume immediately
-    let r = {
-        nr::KernelNode::<Ring3Process>::synchronize();
-        timer::set(timer::DEFAULT_TIMER_DEADLINE);
-        let kcb = get_kcb();
-        kcb_iret_handle(kcb)
-    };
+    nr::KernelNode::<Ring3Process>::synchronize();
 
-    r.resume()
+    let kcb = get_kcb();
+    if kcb.arch.has_current_process() {
+        // Return immediately, re-arm the timer
+        timer::set(timer::DEFAULT_TIMER_DEADLINE);
+        let r = kcb_iret_handle(kcb);
+        r.resume()
+    } else {
+        // Go to scheduler instead
+        crate::scheduler::schedule()
+    }
 }
 
 /// Handler for a general protection exception.
@@ -537,12 +541,12 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
 pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unsafe {
         assert!(a.vector < 256);
-        trace!("handle_generic_exception {:?}", a);
+        error!("handle_generic_exception {:?}", a);
         acknowledge();
 
-        // If we have an active process we should do scheduler
-        // activations:
-        // TODO: do proper masking based on some VCPU mask...
+        // If we have an active process we should do scheduler activations:
+        // TODO(scheduling): do proper masking based on some VCPU mask
+        // TODO(scheduling): Currently don't deliver interrupts to process not currently running
         if a.vector > 30 && a.vector < 250 || a.vector == 3 {
             trace!("handle_generic_exception {:?}", a);
 
@@ -592,7 +596,15 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 topology::MACHINE_TOPOLOGY.current_thread().apic_id()
             );
             super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().apic_id().into());
-            loop {}
+
+            let kcb = get_kcb();
+            if kcb.arch.has_current_process() {
+                // Return immediately, re-arm the timer
+                kcb_iret_handle(kcb).resume()
+            } else {
+                // Go to scheduler instead
+                crate::scheduler::schedule()
+            }
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         }

@@ -209,6 +209,10 @@ impl Arch86Kcb {
         self.current_process.replace(new_current_process)
     }
 
+    pub fn has_current_process(&self) -> bool {
+        self.current_process.is_some()
+    }
+
     pub fn current_process(&self) -> Result<Arc<Ring3Executor>, ProcessError> {
         let p = self
             .current_process

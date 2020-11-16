@@ -96,6 +96,10 @@ impl ArchKcb {
         None
     }
 
+    pub fn has_current_process(&self) -> bool {
+        self.current_process.is_some()
+    }
+
     pub fn current_process(&self) -> Result<Arc<UnixThread>, ProcessError> {
         let p = self
             .current_process

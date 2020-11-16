@@ -28,6 +28,10 @@ pub const MAX_NUMA_NODES: usize = 12;
 
 static mut initialized: bool = false;
 
+pub fn halt() -> ! {
+    unsafe { libc::exit(0) };
+}
+
 #[start]
 pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     unsafe {

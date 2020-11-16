@@ -38,9 +38,9 @@ const REAL_MODE_BASE: usize = REAL_MODE_LINEAR_OFFSET as usize;
 /// where a 16-bit mode CPU can execute.
 fn ap_code_address_range() -> (PAddr, PAddr) {
     extern "C" {
-        // The first symbol in `start_ap.S`
+        /// The first symbol in `start_ap.S`
         static x86_64_start_ap: *const u8;
-        // The very last symbol in `start_ap.S`
+        /// The very last symbol in `start_ap.S`
         static x86_64_start_ap_end: *const u8;
     }
 

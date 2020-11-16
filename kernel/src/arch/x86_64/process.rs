@@ -521,12 +521,12 @@ impl Executor for Ring3Executor {
     }
 
     /// Start the process (run it for the first time).
-    fn start(&self) -> Ring3Resumer {
+    fn start(&self) -> Self::Resumer {
         self.maybe_switch_vspace();
         Ring3Resumer::new_upcall(self.entry_point, self.stack_top(), 0, 0, 0)
     }
 
-    fn resume(&self) -> Ring3Resumer {
+    fn resume(&self) -> Self::Resumer {
         self.maybe_switch_vspace();
         Ring3Resumer::new_restore(&self.save_area as *const kpi::arch::SaveArea)
     }
@@ -534,7 +534,7 @@ impl Executor for Ring3Executor {
     /// This is similar to `upcall` as it starts executing the defined upcall
     /// handler, but on the regular stack (for that dispatcher) and not
     /// the upcall stack. It's used to add a new core to a process.
-    fn new_core_upcall(&self) -> Ring3Resumer {
+    fn new_core_upcall(&self) -> Self::Resumer {
         self.maybe_switch_vspace();
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
         trace!("Added core entry point is at {:#x}", entry_point);
@@ -549,7 +549,7 @@ impl Executor for Ring3Executor {
         )
     }
 
-    fn upcall(&self, vector: u64, exception: u64) -> Ring3Resumer {
+    fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer {
         self.maybe_switch_vspace();
         let entry_point = self.vcpu().resume_with_upcall;
         let cpu_ctl = self.vcpu().vaddr().as_u64();

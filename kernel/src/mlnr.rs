@@ -55,14 +55,11 @@ impl LogMapper for Modify {
             Modify::FileOpen(_pid, _filename, _flags, _modes) => 0,
             Modify::FileWrite(pid, fd, _kernslice, _len, _offset) => {
                 match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
-                    Ok((mnode, _)) => mnode as usize,
+                    Ok((mnode, _)) => mnode as usize - 2,
                     Err(_) => 0,
                 }
             }
-            Modify::FileClose(pid, fd) => match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
-                Ok((mnode, _)) => mnode as usize,
-                Err(_) => 0,
-            },
+            Modify::FileClose(pid, fd) => 0,
             Modify::FileDelete(_pid, _filename) => 0,
             Modify::FileRename(_pid, _oldname, _newname) => 0,
             Modify::Invalid => unreachable!("Invalid operation"),
@@ -90,7 +87,7 @@ impl LogMapper for Access {
         match self {
             Access::FileRead(pid, fd, _buffer, _len, _offser) => {
                 match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
-                    Ok((mnode, _)) => mnode as usize,
+                    Ok((mnode, _)) => mnode as usize - 2,
                     Err(_) => 0,
                 }
             }

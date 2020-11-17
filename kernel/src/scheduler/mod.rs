@@ -28,7 +28,6 @@ pub fn schedule() -> ! {
                         .arch
                         .swap_current_process(Weak::upgrade(&e).unwrap());
                     assert!(no.is_none(), "Handle the case where we replace a process.");
-                    //reason = Reason::NewExecutor;
                 }
                 Err(KError::NoExecutorForCore) => {
                     // There is no process, set a timer and go to sleep

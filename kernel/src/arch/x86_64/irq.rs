@@ -411,8 +411,15 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
 
     let kcb = get_kcb();
     if kcb.arch.has_current_process() {
-        // Return immediately, re-arm the timer
+        // Re-arm the timer:
+        // TODO(process-mgmt): Ensures that we still periodically
+        // check and advance replicas even on cores that have a core.
+        // Only a single idle core per replica should probably do that,
+        // so if cores go properly back to idling when finished execution,
+        // this is no longer necessary...
         timer::set(timer::DEFAULT_TIMER_DEADLINE);
+
+        // Return immediately
         let r = kcb_iret_handle(kcb);
         r.resume()
     } else {
@@ -599,7 +606,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             let kcb = get_kcb();
             if kcb.arch.has_current_process() {
-                // Return immediately, re-arm the timer
+                // Return immediately
                 kcb_iret_handle(kcb).resume()
             } else {
                 // Go to scheduler instead

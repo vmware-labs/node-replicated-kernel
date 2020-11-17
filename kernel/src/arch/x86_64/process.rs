@@ -30,6 +30,8 @@ use super::kcb::Arch86Kcb;
 use super::vspace::*;
 use super::Module;
 
+const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
+
 pub struct UserPtr<T> {
     value: *mut T,
 }
@@ -523,30 +525,32 @@ impl Executor for Ring3Executor {
     /// Start the process (run it for the first time).
     fn start(&self) -> Self::Resumer {
         self.maybe_switch_vspace();
-        Ring3Resumer::new_upcall(self.entry_point, self.stack_top(), 0, 0, 0)
+        let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
+
+        if entry_point == INVALID_EXECUTOR_START {
+            Ring3Resumer::new_upcall(self.entry_point, self.stack_top(), 0, 0, 0)
+        } else {
+            // This is similar to `upcall` as it starts executing the defined upcall
+            // handler, but on the regular stack (for that dispatcher) and not
+            // the upcall stack. It's used to add a new core to a process.
+
+            let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
+            trace!("Added core entry point is at {:#x}", entry_point);
+            let cpu_ctl = self.vcpu().vaddr().as_u64();
+
+            Ring3Resumer::new_upcall(
+                entry_point,
+                self.stack_top(),
+                cpu_ctl,
+                kpi::upcall::NEW_CORE,
+                topology::MACHINE_TOPOLOGY.current_thread().id,
+            )
+        }
     }
 
     fn resume(&self) -> Self::Resumer {
         self.maybe_switch_vspace();
         Ring3Resumer::new_restore(&self.save_area as *const kpi::arch::SaveArea)
-    }
-
-    /// This is similar to `upcall` as it starts executing the defined upcall
-    /// handler, but on the regular stack (for that dispatcher) and not
-    /// the upcall stack. It's used to add a new core to a process.
-    fn new_core_upcall(&self) -> Self::Resumer {
-        self.maybe_switch_vspace();
-        let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
-        trace!("Added core entry point is at {:#x}", entry_point);
-        let cpu_ctl = self.vcpu().vaddr().as_u64();
-
-        Ring3Resumer::new_upcall(
-            entry_point,
-            self.stack_top(),
-            cpu_ctl,
-            kpi::upcall::NEW_CORE,
-            topology::MACHINE_TOPOLOGY.current_thread().id,
-        )
     }
 
     fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer {
@@ -1102,7 +1106,7 @@ pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     let thread = topology::MACHINE_TOPOLOGY.current_thread();
     let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
         pid,
-        VAddr::from(0xdeadbfffu64), // This VAddr is irrelevant as it is overriden later
+        INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
         thread.node_id.or(Some(0)),
         Some(thread.id),
     )?;

@@ -15,8 +15,8 @@ use crate::arch::timer;
 pub fn schedule() -> ! {
     let kcb = kcb::get_kcb();
 
+    // No process assigned to core? Figure out if there is one now:
     if unlikely(kcb.arch.current_process().is_err()) {
-        // No process assigned to core? Figure out if there is one now:
         kcb.replica.as_ref().map(|(replica, token)| {
             let response =
                 replica.execute(nr::ReadOps::CurrentExecutor(kcb.arch.hwthread_id()), *token);
@@ -28,6 +28,7 @@ pub fn schedule() -> ! {
                         .arch
                         .swap_current_process(Weak::upgrade(&e).unwrap());
                     assert!(no.is_none(), "Handle the case where we replace a process.");
+                    //reason = Reason::NewExecutor;
                 }
                 Err(KError::NoExecutorForCore) => {
                     // There is no process, set a timer and go to sleep

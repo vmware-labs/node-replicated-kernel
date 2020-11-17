@@ -62,7 +62,6 @@ use crate::memory::{
 };
 use crate::mlnr::{MlnrKernelNode, Modify};
 use crate::nr::{KernelNode, Op};
-use crate::process::ResumeHandle;
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
 
@@ -271,67 +270,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     // Signals to BSP core that we're done initializing.
     initialized.store(true, Ordering::SeqCst);
-    let thread = topology::MACHINE_TOPOLOGY.current_thread();
 
-    // Are we the master/first thread in that replica?
-    // Then we should set timer to periodically advance the state
-    {
-        let _r = thread.node().map(|n| {
-            if n.threads().next().unwrap().id == thread.id {
-                timer::set(timer::DEFAULT_TIMER_DEADLINE);
-            }
-        });
-    }
-
-    let mut backoff = 1;
-    loop {
-        use crate::nr;
-        let kcb = kcb::get_kcb();
-        let (replica, token) = kcb.replica.as_ref().expect("Replica not set");
-
-        // Get an executor
-        let response = replica.execute(nr::ReadOps::CurrentExecutor(thread.id), *token);
-
-        match &response {
-            Ok(nr::NodeResult::Executor(executor)) => {
-                use alloc::sync::Weak;
-                let no = kcb
-                    .arch
-                    .swap_current_process(Weak::upgrade(&executor).unwrap());
-                assert!(no.is_none());
-                use crate::process::Executor;
-
-                unsafe {
-                    let rh = kcb::get_kcb()
-                        .arch
-                        .current_process()
-                        .map(|p| p.new_core_upcall());
-                    rh.unwrap().resume();
-                }
-            }
-            Err(crate::error::KError::NoExecutorForCore) => {
-                // TODO(ugly-before-deadline): Hack to make core go to sleep if
-                // they wont be dispatching something.
-                if token.id() != 1 {
-                    irq::enable();
-                    if !cfg!(debug_assertions)
-                        && start.elapsed() > core::time::Duration::from_secs(3)
-                    {
-                        unsafe { x86::halt() }
-                    }
-                    backoff = backoff << 1;
-                    for _i in 0..backoff {
-                        core::sync::atomic::spin_loop_hint();
-                    }
-                } else {
-                    for _i in 0..25_000 {
-                        core::sync::atomic::spin_loop_hint();
-                    }
-                }
-            }
-            _ => halt(),
-        };
-    }
+    crate::scheduler::schedule()
 }
 
 /// Initialize the rest of the cores in the system.

@@ -146,10 +146,6 @@ impl Executor for UnixThread {
         UnixResumeHandle {}
     }
 
-    fn new_core_upcall(&self) -> Self::Resumer {
-        UnixResumeHandle {}
-    }
-
     fn maybe_switch_vspace(&self) {}
 
     fn vcpu_kernel(&self) -> *mut kpi::arch::VirtualCpu {

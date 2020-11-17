@@ -151,7 +151,6 @@ pub trait Executor {
     fn start(&self) -> Self::Resumer;
     fn resume(&self) -> Self::Resumer;
     fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer;
-    fn new_core_upcall(&self) -> Self::Resumer;
     fn maybe_switch_vspace(&self);
     fn vcpu_kernel(&self) -> *mut kpi::arch::VirtualCpu;
 }

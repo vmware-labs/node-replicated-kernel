@@ -381,7 +381,6 @@ pub fn xmain() {
     any(feature = "test-userspace", feature = "test-userspace-smp")
 ))]
 pub fn xmain() {
-    arch::timer::set(arch::timer::DEFAULT_TIMER_DEADLINE);
     let kcb = kcb::get_kcb();
     crate::arch::process::spawn(kcb.cmdline.test_binary);
     crate::scheduler::schedule()

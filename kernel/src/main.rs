@@ -108,8 +108,6 @@ pub enum ExitReason {
 #[cfg(not(feature = "integration-test"))]
 pub fn xmain() {
     let _r = arch::process::spawn("init").expect("Can't launch init");
-    arch::timer::set(arch::timer::DEFAULT_TIMER_DEADLINE);
-
     crate::scheduler::schedule()
 }
 

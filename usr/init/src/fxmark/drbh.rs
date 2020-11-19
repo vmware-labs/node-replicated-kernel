@@ -18,7 +18,7 @@ impl Default for DRBH {
 }
 
 impl Bench for DRBH {
-    fn init(&self, _cores: Vec<usize>) {
+    fn init(&self, _cores: Vec<usize>, _open_files: usize) {
         unsafe {
             // Open a shared file for each core.
             let fd = vibrio::syscalls::Fs::open(

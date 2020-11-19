@@ -27,7 +27,7 @@ impl Default for DWOM {
 }
 
 impl Bench for DWOM {
-    fn init(&self, cores: Vec<usize>) {
+    fn init(&self, cores: Vec<usize>, _open_files: usize) {
         unsafe {
             let fd = vibrio::syscalls::Fs::open(
                 "file.txt\0".as_ptr() as u64,

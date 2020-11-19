@@ -33,7 +33,7 @@ impl Default for DWOL {
 }
 
 impl Bench for DWOL {
-    fn init(&self, cores: Vec<usize>) {
+    fn init(&self, cores: Vec<usize>, _open_files: usize) {
         unsafe {
             *self.cores.borrow_mut() = cores.len();
             for core in cores {

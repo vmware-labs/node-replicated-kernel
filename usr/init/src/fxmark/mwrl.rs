@@ -10,7 +10,7 @@ use vibrio::io::*;
 pub struct MWRL {}
 
 impl Bench for MWRL {
-    fn init(&self, cores: Vec<usize>) {
+    fn init(&self, cores: Vec<usize>, _open_files: usize) {
         unsafe {
             for core in cores {
                 let file_name = format!("/{}/file-0.txt\0", core);

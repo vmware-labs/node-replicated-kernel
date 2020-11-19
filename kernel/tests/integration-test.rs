@@ -1727,7 +1727,13 @@ fn s06_fxmark_benchmark() {
                 let expected_lines = if cfg!(feature = "smoke") {
                     1
                 } else {
-                    with_cores * 10
+                    if benchmark.contains("mix") {
+                        // Run mix workload for different number of files.
+                        let open_files = 5;
+                        with_cores * 10 * open_files
+                    } else {
+                        with_cores * 10
+                    }
                 };
 
                 for _i in 0..expected_lines {

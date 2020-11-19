@@ -417,7 +417,7 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
         // Only a single idle core per replica should probably do that,
         // so if cores go properly back to idling when finished execution,
         // this is no longer necessary...
-        timer::set(timer::DEFAULT_TIMER_DEADLINE);
+        //timer::set(timer::DEFAULT_TIMER_DEADLINE);
 
         // Return immediately
         let r = kcb_iret_handle(kcb);
@@ -548,7 +548,7 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
 pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unsafe {
         assert!(a.vector < 256);
-        error!("handle_generic_exception {:?}", a);
+        trace!("handle_generic_exception {:?}", a);
         acknowledge();
 
         // If we have an active process we should do scheduler activations:

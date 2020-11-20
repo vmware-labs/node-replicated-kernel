@@ -1767,6 +1767,33 @@ fn s06_fxmark_benchmark() {
     }
 }
 
+/// Tests that basic file-system support is functional.
+///
+/// This tests various file-system systemcalls such as:
+///  * File open, close
+///  * File read, write
+///  * File getinfo
+///  * All the above operations with invalid userspace pointers
+#[test]
+fn s06_test_fs() {
+    let cmdline = RunnerArgs::new("test-userspace-smp")
+        .module("init")
+        .user_feature("test-fs")
+        .release()
+        .timeout(20_000);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_bespin(&cmdline)?;
+
+        p.exp_string("fs_test OK")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 fn memcached_benchmark(
     driver: &'static str,
     cores: usize,

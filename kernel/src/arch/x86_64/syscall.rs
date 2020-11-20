@@ -432,7 +432,11 @@ fn handle_fileio(
             match user_virt_addr_valid(p.pid, name, 0) {
                 Ok(_) => {
                     if cfg!(feature = "mlnrfs") {
-                        mlnr::MlnrKernelNode::file_info(p.pid, name, info_ptr)
+                        use kpi::io::FileInfo;
+                        let ret = mlnr::MlnrKernelNode::file_info(p.pid, name, info_ptr);
+                        // TODO: Without the below line, the `test-fs` crashes. Not sure, why?
+                        trace!("{:?}", VAddr::from(info_ptr).as_ptr::<FileInfo>());
+                        ret
                     } else {
                         nr::KernelNode::<Ring3Process>::file_info(p.pid, name, info_ptr)
                     }

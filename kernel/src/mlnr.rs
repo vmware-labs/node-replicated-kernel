@@ -78,6 +78,7 @@ pub enum Access {
     FileRead(Pid, FD, Buffer, Len, Offset),
     FileInfo(Pid, Filename, u64),
     FdToMnode(Pid, FD),
+    FileNameToMnode(Pid, Filename),
     Synchronize(usize),
 }
 
@@ -91,9 +92,15 @@ impl LogMapper for Access {
                     Err(_) => 0,
                 }
             }
-            Access::FileInfo(_pid, _filename, _info_ptr) => 0,
+            Access::FileInfo(pid, filename, _info_ptr) => {
+                match MlnrKernelNode::filename_to_mnode(*pid, *filename) {
+                    Ok((mnode, _)) => mnode as usize - 2,
+                    Err(_) => 0,
+                }
+            }
             // TODO: Assume that all metadata modifying operations go through log 0.
             Access::FdToMnode(_pid, _fd) => 0,
+            Access::FileNameToMnode(_pid, _filename) => 0,
             Access::Synchronize(log_id) => (*log_id - 1),
         }
     }
@@ -108,7 +115,7 @@ pub enum MlnrNodeResult {
     FileDeleted(bool),
     FileInfo(u64),
     FileRenamed(bool),
-    MappedFdToMnode(u64),
+    MappedFileToMnode(u64),
     Synchronized,
 }
 
@@ -204,7 +211,7 @@ impl MlnrKernelNode {
                 let response = replica.execute_mut(Modify::FileClose(pid, fd), *token);
 
                 match &response {
-                    Ok(MlnrNodeResult::FileClosed(0)) => Ok((0, 0)),
+                    Ok(MlnrNodeResult::FileClosed(fd)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -241,7 +248,7 @@ impl MlnrKernelNode {
                 let response = replica.execute(Access::FileInfo(pid, name, info_ptr), *token);
 
                 match &response {
-                    Ok(MlnrNodeResult::FileInfo(f_info)) => Ok((0, 0)),
+                    Ok(MlnrNodeResult::FileInfo(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -286,7 +293,24 @@ impl MlnrKernelNode {
                 let response = replica.execute(Access::FdToMnode(pid, fd), *token);
 
                 match &response {
-                    Ok(MlnrNodeResult::MappedFdToMnode(mnode)) => Ok((*mnode, 0)),
+                    Ok(MlnrNodeResult::MappedFileToMnode(mnode)) => Ok((*mnode, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
+
+    #[inline(always)]
+    pub fn filename_to_mnode(pid: Pid, filename: Filename) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .mlnr_replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute(Access::FileNameToMnode(pid, filename), *token);
+
+                match &response {
+                    Ok(MlnrNodeResult::MappedFileToMnode(mnode)) => Ok((*mnode, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -385,7 +409,26 @@ impl Dispatch for MlnrKernelNode {
                 Some(p) => {
                     let fd = p.get_fd(fd as usize);
                     let mnode_num = fd.get_mnode();
-                    Ok(MlnrNodeResult::MappedFdToMnode(mnode_num))
+                    Ok(MlnrNodeResult::MappedFileToMnode(mnode_num))
+                }
+                None => Err(ProcessError::NoProcessFoundForPid.into()),
+            },
+
+            Access::FileNameToMnode(pid, name) => match self.process_map.read().get(&pid) {
+                Some(_) => {
+                    let filename;
+                    match userptr_to_str(name) {
+                        Ok(user_str) => filename = user_str,
+                        Err(e) => return Err(e.clone()),
+                    }
+
+                    match self.fs.lookup(&filename) {
+                        // match on (file_exists, mnode_number)
+                        Some(mnode) => Ok(MlnrNodeResult::MappedFileToMnode(*mnode)),
+                        None => Err(KError::FileSystem {
+                            source: FileSystemError::InvalidFile,
+                        }),
+                    }
                 }
                 None => Err(ProcessError::NoProcessFoundForPid.into()),
             },

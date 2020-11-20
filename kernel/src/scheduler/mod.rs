@@ -15,6 +15,20 @@ use crate::arch::timer;
 pub fn schedule() -> ! {
     let kcb = kcb::get_kcb();
 
+    // Are we the master/first thread in that replica?
+    // Then we should set timer to periodically advance the state
+    #[cfg(target_os = "none")]
+    {
+        let thread = topology::MACHINE_TOPOLOGY.current_thread();
+        {
+            let _r = thread.node().map(|n| {
+                if n.threads().next().unwrap().id == thread.id {
+                    timer::set(timer::DEFAULT_TIMER_DEADLINE);
+                }
+            });
+        }
+    }
+
     // No process assigned to core? Figure out if there is one now:
     if unlikely(kcb.arch.current_process().is_err()) {
         kcb.replica.as_ref().map(|(replica, token)| {

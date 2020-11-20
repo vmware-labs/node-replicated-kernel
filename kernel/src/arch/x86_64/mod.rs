@@ -271,17 +271,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     // Signals to BSP core that we're done initializing.
     initialized.store(true, Ordering::SeqCst);
 
-    // Are we the master/first thread in that replica?
-    // Then we should set timer to periodically advance the state
-    let thread = topology::MACHINE_TOPOLOGY.current_thread();
-    {
-        let _r = thread.node().map(|n| {
-            if n.threads().next().unwrap().id == thread.id {
-                timer::set(timer::DEFAULT_TIMER_DEADLINE);
-            }
-        });
-    }
-
     crate::scheduler::schedule()
 }
 

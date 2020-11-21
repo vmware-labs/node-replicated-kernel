@@ -14,15 +14,19 @@ use kpi::SystemCallError;
 
 use slabmalloc::*;
 
+use lineup::tls2::Environment;
+
 macro_rules! round_up {
     ($num:expr, $s:expr) => {
         (($num + $s - 1) / $s) * $s
     };
 }
 
+static MEM_PROVIDER: crate::mem::SafeZoneAllocator = crate::mem::SafeZoneAllocator::new();
+
 #[cfg(target_os = "bespin")]
 #[global_allocator]
-static MEM_PROVIDER: crate::mem::SafeZoneAllocator = crate::mem::SafeZoneAllocator::new();
+static PER_CORE_MEM_PROVIDER: crate::mem::PerCoreAllocator = crate::mem::PerCoreAllocator::new();
 
 /// To use a ZoneAlloactor we require a lower-level allocator
 /// (not provided by this crate) that can supply the allocator
@@ -216,5 +220,45 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             }
             _ => error!("TODO: Currently can't dealloc of {:?}.", layout),
         }
+    }
+}
+
+pub struct PerCoreAllocator {
+    allocators : [SafeZoneAllocator; 12],
+}
+
+impl PerCoreAllocator {
+    pub const fn new() -> PerCoreAllocator {
+        let alloc_array = [ SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
+                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new()))];
+        PerCoreAllocator{allocators: alloc_array}
+    }
+}
+
+unsafe impl GlobalAlloc for PerCoreAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // Get the core_id we are currently running on. Then return alloc of that SafeZoneAllocator.
+        let sza = &self.allocators[Environment::scheduler().core_id];
+        sza.alloc(layout)
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let sza = &self.allocators[Environment::scheduler().core_id];
+        sza.realloc(ptr, layout, new_size)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let sza = &self.allocators[Environment::scheduler().core_id];
+        sza.dealloc(ptr, layout)
     }
 }

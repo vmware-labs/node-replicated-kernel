@@ -70,6 +70,21 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Test wrgsbase performance.
+#[cfg(all(feature = "integration-test", feature = "test-wrgsbase"))]
+pub fn xmain() {
+    unsafe {
+        let iterations = 100_000;
+        let start = x86::time::rdtsc();
+        for i in 0..iterations {
+            x86::current::segmentation::wrgsbase(0x1);
+        }
+        let end = x86::time::rdtsc();
+        info!("wrgsbase cycles: {}", (end - start) / iterations)
+    }
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 /// Test the debug facility for page-faults.
 #[cfg(all(feature = "integration-test", feature = "test-pfault"))]
 #[inline(never)]

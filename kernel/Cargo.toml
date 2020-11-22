@@ -87,6 +87,8 @@ prealloc = []
 bsp-only = []
 # exit: test qemu exit functionality (used heavily for CI)
 test-exit = ["integration-test", "bsp-only"]
+# wrgsbase: Test wrgsbase performance
+test-wrgsbase = ["integration-test", "bsp-only"]
 # pfault-early: test page-fault handler early on during init
 test-pfault-early = ["integration-test", "bsp-only"]
 # gpfault-early: test general protection fault handler early on during init

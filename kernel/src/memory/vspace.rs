@@ -17,7 +17,7 @@ use super::{Frame, PAddr, VAddr};
 pub struct TlbFlushHandle {
     pub vaddr: VAddr,
     pub frame: Frame,
-    core_map: BitVec<u32>,
+    pub core_map: BitVec<u32>,
 }
 
 impl TlbFlushHandle {

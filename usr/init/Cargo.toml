@@ -18,6 +18,7 @@ rawtime = { path = "../../lib/rawtime" }
 x86 = { path = "../../lib/x86" }
 vibrio = { path = "../../lib/vibrio" }
 libm = "0.2.1"
+lazy_static =  { version = "1.4", default_features = false }
 
 [features]
 rumprt = ["vibrio/rumprt"]
@@ -39,6 +40,7 @@ test-fs = []
 
 # Simple micro-benchmarks
 bench-vmops = []
+bench-vmops-unmap = []
 fs-write = []
 fxmark = []
 

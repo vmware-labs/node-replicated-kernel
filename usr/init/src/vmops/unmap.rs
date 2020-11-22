@@ -1,3 +1,4 @@
+use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::ptr;
@@ -8,68 +9,150 @@ use log::{error, info};
 use spin::Mutex;
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
 
+use lineup::rwlock::{RwLock, RwLockIntent};
 use lineup::threads::ThreadId;
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
-use crate::histogram;
+use super::queue::{Queue, QueueReceiver, QueueSender};
 
-pub mod queue;
-pub mod unmap;
+use crate::histogram;
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 static LATENCY_HISTOGRAM: spin::Mutex<Option<histogram::Histogram>> = spin::Mutex::new(None);
 
-unsafe extern "C" fn maponly_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
+#[derive(Debug)]
+enum Cmd {
+    Access,
+    Accessed,
+}
+
+lazy_static! {
+    static ref TX_CHANNELS: spin::Mutex<Vec<Option<QueueSender<Cmd>>>> = {
+        let cpus = vibrio::syscalls::System::threads().map(|t| t.len()).unwrap_or(28);
+        spin::Mutex::new(vec![None; cpus+1]) // +1 because thread id starts at 1
+    };
+}
+
+unsafe extern "C" fn unmap_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
     let cores = arg1 as usize;
-    maponly_bencher(cores);
+    unmap_bencher(cores);
     ptr::null_mut()
 }
 
-fn maponly_bencher(cores: usize) {
+fn unmap_bencher(cores: usize) {
     use vibrio::io::*;
     use vibrio::syscalls::*;
-    info!("Trying to allocate a frame");
+
     let (frame_id, paddr) =
         PhysicalMemory::allocate_base_page().expect("Can't allocate a memory obj");
-    info!("Got frame_id {:#?}", frame_id);
-
-    let vspace_offset = lineup::tls2::Environment::tid().0 + 1;
-    let mut base: u64 = (0x0510_0000_0000 + (0x10_0000_0000 * vspace_offset) as u64);
+    let thread_id = lineup::tls2::Environment::tid().0;
+    let base: u64 = 0x0510_0000_0000;
     let size: u64 = BASE_PAGE_SIZE as u64;
-    info!("start mapping at {:#x}", base);
+    info!("Mapping frame#{} {:#x} -> {:#x}", frame_id, base, paddr);
 
     #[cfg(feature = "latency")]
     pub const LATENCY_MEASUREMENTS: usize = 100_000;
+
     #[cfg(feature = "latency")]
     let mut latency: Vec<Duration> = Vec::with_capacity(LATENCY_MEASUREMENTS);
 
-    // Synchronize with all cores
-    POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
-    while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
-        core::sync::atomic::spin_loop_hint();
-    }
+    let mut rx_cmd = {
+        let (tx, mut rx) = Queue::unbounded();
+        TX_CHANNELS.lock()[thread_id].replace(tx);
+        rx
+    };
 
     let mut vops = 0;
     let mut iteration = 0;
     let bench_duration_secs = if cfg!(feature = "smoke") && !cfg!(feature = "latency") {
         1
     } else if cfg!(feature = "smoke") && cfg!(feature = "latency") {
+        // dont measure that long for latency
         6
     } else {
-        // tput
+        // tput measurements
         10
     };
 
+    // Synchronize with all cores
+    POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
+    while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
+        core::sync::atomic::spin_loop_hint();
+    }
+    let mut tx_master = TX_CHANNELS.lock()[1].as_ref().unwrap().clone();
+
     'outer: while iteration <= bench_duration_secs {
         let start = rawtime::Instant::now();
+
         while start.elapsed().as_secs() < 1 {
             #[cfg(feature = "latency")]
             let before = rawtime::Instant::now();
-            unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
+
+            if thread_id == 1 {
+                info!("before map");
+                unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
+
+                // Signal threads
+                let tx_channels = TX_CHANNELS.lock();
+                for xtid in 2..=cores {
+                    info!("Send Cmd::Access from master to {}", xtid);
+                    tx_channels[xtid].as_ref().unwrap().push(Cmd::Access);
+                }
+
+                // Access
+                let base_va: VAddr = VAddr::from(base);
+                unsafe {
+                    assert_eq!(*base_va.as_ptr::<u64>(), 0x0);
+                }
+            } else {
+                loop {
+                    match rx_cmd.pop() {
+                        None => {
+                            core::sync::atomic::spin_loop_hint();
+                            continue;
+                        }
+                        Some(cmd) => {
+                            let base_va: VAddr = VAddr::from(base);
+                            unsafe {
+                                assert_eq!(*base_va.as_ptr::<u64>(), 0x0);
+                            }
+                            info!("Process Cmd::Access on {:?}", thread_id);
+                            tx_master.push(Cmd::Accessed);
+                        }
+                    }
+                }
+            }
+
+            if thread_id == 1 {
+                let mut count = cores - 1;
+                while count > 0 {
+                    match rx_cmd.pop() {
+                        None => {
+                            core::sync::atomic::spin_loop_hint();
+                            continue;
+                        }
+                        Some(Cmd::Accessed) => {
+                            info!("Got Cmd::Accessed on {}", thread_id);
+                            count -= 1;
+                        }
+                        Some(x) => {
+                            unreachable!("{:?}", x)
+                        }
+                    }
+                }
+
+                info!("before unmap");
+                unsafe {
+                    VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed")
+                };
+            } else {
+                // repeat...
+            }
+
             #[cfg(feature = "latency")]
             {
-                // Skip 4s for warmup
-                if iteration > 4 {
+                // Skip 4s for warmup, only log from thread 1
+                if thread_id == 1 && iteration > 4 {
                     latency.push(before.elapsed());
                     if latency.len() == LATENCY_MEASUREMENTS {
                         break 'outer;
@@ -78,11 +161,14 @@ fn maponly_bencher(cores: usize) {
             }
 
             vops += 1;
-            base += BASE_PAGE_SIZE as u64;
+            if vops == 1 {
+                loop {}
+            }
         }
+
         #[cfg(not(feature = "latency"))]
         info!(
-            "{},maponly,{},{},{},{},{}",
+            "{},unmap,{},{},{},{},{}",
             Environment::scheduler().core_id,
             cores,
             4096,
@@ -150,11 +236,7 @@ pub fn bench(ncores: Option<usize>) {
                 for core_id in 0..idx {
                     thandles.push(
                         Environment::thread()
-                            .spawn_on_core(
-                                Some(maponly_bencher_trampoline),
-                                idx as *mut u8,
-                                core_id,
-                            )
+                            .spawn_on_core(Some(unmap_bencher_trampoline), idx as *mut u8, core_id)
                             .expect("Can't spawn bench thread?"),
                     );
                 }
@@ -173,6 +255,7 @@ pub fn bench(ncores: Option<usize>) {
     while s.has_active_threads() {
         s.run(&scb);
     }
+
     #[cfg(feature = "latency")]
     {
         let hlock = LATENCY_HISTOGRAM.lock();
@@ -182,7 +265,7 @@ pub fn bench(ncores: Option<usize>) {
         // Don't adjust this line without changing `s06_vmops_latency_benchmark`
         info!(
             "Latency percentiles: {},{},{},{},{},{},{},{},{},{}",
-            "maponly",
+            "unmap",
             cores,
             4096,
             h.percentile(1.0).unwrap(),

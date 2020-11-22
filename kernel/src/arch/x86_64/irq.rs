@@ -602,7 +602,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 "got an interrupt {:?}",
                 topology::MACHINE_TOPOLOGY.current_thread().apic_id()
             );
-            super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().apic_id().into());
+            super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().id);
 
             let kcb = get_kcb();
             if kcb.arch.has_current_process() {

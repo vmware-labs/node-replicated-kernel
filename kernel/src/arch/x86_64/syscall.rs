@@ -320,10 +320,14 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                 Ok((paddr.as_u64(), size as u64))
             })
         },
-        VSpaceOperation::Unmap => {
-            error!("Can't do VSpaceOperation unmap yet.");
-            Err(KError::NotSupported)
-        }
+        VSpaceOperation::Unmap => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+            let handle = nr::KernelNode::<Ring3Process>::unmap(p.pid, base)?;
+            let va: u64 = handle.vaddr.as_u64();
+            let sz: u64 = handle.frame.size as u64;
+            super::tlb::shootdown(handle);
+
+            Ok((va, sz))
+        }),
         VSpaceOperation::Identify => unsafe {
             trace!("Identify base {:#x}.", base);
             plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {

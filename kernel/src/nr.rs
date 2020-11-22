@@ -170,6 +170,20 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
+    pub fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let response = replica.execute_mut(Op::MemUnmap(pid, base), *token);
+
+                match response {
+                    Ok(NodeResult::Unmapped(handle)) => Ok(handle),
+                    _ => unreachable!("Got unexpected response"),
+                }
+            })
+    }
+
     pub fn map_frame_id(
         pid: Pid,
         frame_id: FrameId,

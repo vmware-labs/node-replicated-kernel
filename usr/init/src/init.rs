@@ -12,6 +12,8 @@ extern crate alloc;
 extern crate spin;
 extern crate vibrio;
 extern crate x86;
+#[macro_use]
+extern crate lazy_static;
 
 extern crate lineup;
 
@@ -32,7 +34,7 @@ use x86::bits64::paging::VAddr;
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
-#[cfg(feature = "bench-vmops")]
+#[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmap"))]
 mod vmops;
 
 mod f64;
@@ -626,6 +628,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "bench-vmops")]
     vmops::bench(ncores);
+
+    #[cfg(feature = "bench-vmops-unmap")]
+    vmops::unmap::bench(ncores);
 
     #[cfg(feature = "test-print")]
     print_test();

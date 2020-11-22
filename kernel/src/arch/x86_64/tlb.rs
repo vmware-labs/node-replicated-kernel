@@ -16,7 +16,6 @@ use x86::apic::{
 use super::memory::BASE_PAGE_SIZE;
 use crate::is_page_aligned;
 use crate::memory::vspace::TlbFlushHandle;
-use crate::process::Pid;
 
 // In the xAPIC mode, the Destination Format Register (DFR) through the MMIO interface determines the choice of a
 // flat logical mode or a clustered logical mode. Flat logical mode is not supported in the x2APIC mode. Hence the

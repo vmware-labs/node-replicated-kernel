@@ -487,10 +487,8 @@ pub fn xmain() {
                 id.x2apic_logical_cluster_id(),
                 id.x2apic_logical_cluster_address(),
             );
-            let shootdown = Arc::new(arch::tlb::WorkItem::Shootdown(arch::tlb::Shootdown::new(
-                0x1000..0x2000,
-            )));
-            arch::tlb::enqueue(t.apic_id().into(), shootdown.clone());
+            let shootdown = Arc::new(arch::tlb::Shootdown::new(0x1000..0x2000));
+            arch::tlb::enqueue(t.id, arch::tlb::WorkItem::Shootdown(shootdown.clone()));
             shootdowns.push(shootdown);
         }
 
@@ -514,10 +512,8 @@ pub fn xmain() {
         }
 
         for shootdown in shootdowns {
-            if let arch::tlb::WorkItem::Shootdown(shootdown) = &*shootdown {
-                if !shootdown.is_acknowledged() {
-                    spin_loop_hint();
-                }
+            if !shootdown.is_acknowledged() {
+                spin_loop_hint();
             }
         }
         let duration = start.elapsed().as_nanos();

@@ -192,9 +192,11 @@ pub fn shootdown(handle: TlbFlushHandle) {
             let cluster_addr = apic_id.x2apic_logical_cluster_address();
             let cluster = apic_id.x2apic_logical_cluster_id();
 
-            info!(
+            trace!(
                 "Send shootdown to gtid:{} in cluster:{} cluster_addr:{}",
-                gtid, cluster, cluster_addr
+                gtid,
+                cluster,
+                cluster_addr
             );
             cluster_destination[cluster as usize].set_bit(cluster_addr as usize, true);
 
@@ -208,7 +210,7 @@ pub fn shootdown(handle: TlbFlushHandle) {
     for cluster_ldr in cluster_destination {
         // Do we need to send to anyone inside this cluster?
         if cluster_ldr.get_bits(0..=3) != 0 {
-            info!("send ipi multicast to {}", cluster_ldr);
+            trace!("send ipi multicast to {}", cluster_ldr);
             send_ipi_multicast(cluster_ldr);
         }
     }
@@ -223,7 +225,7 @@ pub fn shootdown(handle: TlbFlushHandle) {
         core::sync::atomic::spin_loop_hint();
     }
 
-    info!("done with all shootdowns");
+    trace!("done with all shootdowns");
 }
 
 pub fn advance_replica(gtid: topology::GlobalThreadId, log_id: usize) {

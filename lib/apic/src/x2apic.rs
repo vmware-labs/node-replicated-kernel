@@ -1,4 +1,4 @@
-use log::info;
+use log::trace;
 
 use driverkit::{DriverControl, DriverState};
 use x86::apic::x2apic::X2APIC;
@@ -76,8 +76,7 @@ impl crate::ApicDriver for X2APICDriver {
 
     /// Send a generic IPI.
     unsafe fn send_ipi(&mut self, icr: Icr) {
-        info!("sending icr {:?}", icr);
-
+        trace!("sending icr {:?}", icr);
         self.inner.send_ipi(icr)
     }
 }

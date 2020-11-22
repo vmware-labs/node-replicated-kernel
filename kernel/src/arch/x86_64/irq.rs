@@ -598,7 +598,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } else if a.vector == 0x3 {
             dbg_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
-            info!(
+            trace!(
                 "got an interrupt {:?}",
                 topology::MACHINE_TOPOLOGY.current_thread().apic_id()
             );

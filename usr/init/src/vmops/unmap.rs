@@ -5,7 +5,7 @@ use core::ptr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 
-use log::{error, info};
+use log::{error, info, trace};
 use spin::Mutex;
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
 
@@ -43,12 +43,18 @@ fn unmap_bencher(cores: usize) {
     use vibrio::io::*;
     use vibrio::syscalls::*;
 
-    let (frame_id, paddr) =
-        PhysicalMemory::allocate_base_page().expect("Can't allocate a memory obj");
     let thread_id = lineup::tls2::Environment::tid().0;
     let base: u64 = 0x0510_0000_0000;
     let size: u64 = BASE_PAGE_SIZE as u64;
-    info!("Mapping frame#{} {:#x} -> {:#x}", frame_id, base, paddr);
+
+    let frame_id = if thread_id == 1 {
+        let (frame_id, paddr) =
+            PhysicalMemory::allocate_base_page().expect("Can't allocate a memory obj");
+        info!("Mapping frame#{} {:#x} -> {:#x}", frame_id, base, paddr);
+        frame_id
+    } else {
+        404
+    };
 
     #[cfg(feature = "latency")]
     pub const LATENCY_MEASUREMENTS: usize = 100_000;
@@ -89,13 +95,13 @@ fn unmap_bencher(cores: usize) {
             let before = rawtime::Instant::now();
 
             if thread_id == 1 {
-                info!("before map");
+                trace!("before map");
                 unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
 
                 // Signal threads
                 let tx_channels = TX_CHANNELS.lock();
                 for xtid in 2..=cores {
-                    info!("Send Cmd::Access from master to {}", xtid);
+                    trace!("Send Cmd::Access from master to {}", xtid);
                     tx_channels[xtid].as_ref().unwrap().push(Cmd::Access);
                 }
 
@@ -116,7 +122,7 @@ fn unmap_bencher(cores: usize) {
                             unsafe {
                                 assert_eq!(*base_va.as_ptr::<u64>(), 0x0);
                             }
-                            info!("Process Cmd::Access on {:?}", thread_id);
+                            trace!("Process Cmd::Access on {:?}", thread_id);
                             tx_master.push(Cmd::Accessed);
                         }
                     }
@@ -132,7 +138,7 @@ fn unmap_bencher(cores: usize) {
                             continue;
                         }
                         Some(Cmd::Accessed) => {
-                            info!("Got Cmd::Accessed on {}", thread_id);
+                            trace!("Got Cmd::Accessed on {}", thread_id);
                             count -= 1;
                         }
                         Some(x) => {
@@ -141,7 +147,7 @@ fn unmap_bencher(cores: usize) {
                     }
                 }
 
-                info!("before unmap");
+                trace!("before unmap");
                 unsafe {
                     VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed")
                 };
@@ -161,9 +167,6 @@ fn unmap_bencher(cores: usize) {
             }
 
             vops += 1;
-            if vops == 1 {
-                loop {}
-            }
         }
 
         #[cfg(not(feature = "latency"))]

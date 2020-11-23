@@ -663,21 +663,27 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         Some(node) => node.cores().fold(0, |len, _element| len + 1), /* Avoid hyper-threads for now. */
         None => 1,
     };
+    let num_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
     let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(num_cores);
-    let func = &|idx: usize, rid: usize| {
-        let mut cores = topology::MACHINE_TOPOLOGY
-            .nodes()
-            .nth(rid - 1)
-            .unwrap()
-            .threads();
-        let core_id = cores.nth(idx - 1).unwrap().id;
-        trace!(
-            "Replica {} needs to make progress on Log {}; use core_id {:?}",
-            rid,
-            idx,
-            core_id
-        );
-        crate::arch::tlb::advance_replica(core_id, idx);
+    let func = &|rid: &[AtomicBool], idx: usize| {
+        for replica in 0..num_nodes {
+            if rid[replica].load(Ordering::Relaxed) == true {
+                let mut cores = topology::MACHINE_TOPOLOGY
+                    .nodes()
+                    .nth(replica)
+                    .unwrap()
+                    .threads();
+                let core_id = cores.nth(idx - 1).unwrap().id;
+                trace!(
+                    "Replica {} needs to make progress on Log {}; use core_id {:?}",
+                    replica,
+                    idx,
+                    core_id
+                );
+                crate::arch::tlb::advance_replica(core_id, idx);
+                rid[replica].store(false, Ordering::Relaxed);
+            }
+        }
     };
     for i in 1..(num_cores + 1) {
         let mut log = Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i));

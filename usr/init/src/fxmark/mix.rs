@@ -1,4 +1,4 @@
-use crate::fxmark::{Bench, PAGE_SIZE};
+use crate::fxmark::{Bench, MAX_OPEN_FILES, PAGE_SIZE};
 use alloc::{format, vec, vec::Vec};
 use core::cell::RefCell;
 use core::slice::from_raw_parts_mut;
@@ -12,6 +12,7 @@ pub struct MIX {
     page: Vec<u8>,
     size: i64,
     cores: RefCell<usize>,
+    max_open_files: usize,
     open_files: RefCell<usize>,
     fds: RefCell<Vec<u64>>,
 }
@@ -28,6 +29,7 @@ impl Default for MIX {
             page,
             size: 256 * 1024 * 1024,
             cores: RefCell::new(0),
+            max_open_files: MAX_OPEN_FILES.load(Ordering::Acquire),
             open_files: RefCell::new(0),
             fds: RefCell::new(fd),
         }
@@ -72,7 +74,7 @@ impl Bench for MIX {
         use vibrio::syscalls::*;
         let mut iops_per_second = Vec::with_capacity(duration as usize);
 
-        let file_num = core % *self.open_files.borrow();
+        let file_num = (core % self.max_open_files) % *self.open_files.borrow();
         let fd = self.fds.borrow()[file_num];
         if fd == u64::MAX {
             panic!("Unable to open a file");

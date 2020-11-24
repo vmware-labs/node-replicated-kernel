@@ -676,7 +676,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                 let core_id = cores.nth(idx - 1).unwrap().id;
                 trace!(
                     "Replica {} needs to make progress on Log {}; use core_id {:?}",
-                    replica,
+                    replica + 1,
                     idx,
                     core_id
                 );

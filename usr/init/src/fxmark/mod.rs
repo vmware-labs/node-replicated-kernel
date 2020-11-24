@@ -31,6 +31,10 @@ const PAGE_SIZE: u64 = 4080;
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
+lazy_static! {
+    pub static ref MAX_OPEN_FILES: AtomicUsize = { AtomicUsize::new(max_open_files()) };
+}
+
 /// This struct is used for passing the core and benchmark type from
 /// the command-line/integration tests.
 #[derive(Debug, PartialEq)]
@@ -138,6 +142,43 @@ where
             );
         }
     }
+}
+
+pub fn max_open_files() -> usize {
+    let max_cores = vibrio::syscalls::System::threads()
+        .expect("Can't get system topology")
+        .len();
+    let max_files = match max_cores {
+        28 => 14,
+        56 => 28,
+        32 => 16,
+        64 => 32,
+        96 => 24,
+        192 => 48,
+        _ => unreachable!(
+            "Unable to decide max #open files for mix-workload(max-cores {})",
+            max_cores
+        ),
+    };
+    max_files
+}
+
+pub fn open_file_default() -> Vec<usize> {
+    let mut open_files = Vec::new();
+    let max_files = max_open_files();
+    let step_size = if max_files <= 24 { 4 } else { 8 };
+    for f in (0..(max_files + 1)).step_by(step_size) {
+        if f == 0 {
+            open_files.push(f + 1);
+        } else {
+            open_files.push(f);
+        }
+    }
+    if *open_files.last().unwrap() != max_files {
+        open_files.push(max_files);
+    }
+    open_files.sort();
+    open_files
 }
 
 pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
@@ -280,7 +321,7 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
     }
 
     if benchmark == "mix" {
-        let open_files = alloc::vec![1, 4, 8, 12, 16];
+        let open_files = open_file_default();
         for open_file in open_files.iter() {
             let microbench = Arc::new(MicroBench::<MIX>::new(
                 maximum,

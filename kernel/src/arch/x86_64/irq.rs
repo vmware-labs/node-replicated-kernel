@@ -636,12 +636,17 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().id);
 
             let kcb = get_kcb();
-            match kcb.current_pid() {
-                Ok(_) => kcb_iret_handle(kcb).resume(),
-                Err(_) => {
-                    x86::irq::enable();
-                    loop {
-                        x86::halt()
+            if kcb.arch.has_current_process() {
+                kcb_iret_handle(kcb).resume()
+            } else {
+                loop {
+                    super::tlb::eager_advance_mlnr_replica();
+
+                    // Reset a timer and sleep for some time
+                    timer::set(timer::DEFAULT_TIMER_DEADLINE);
+                    enable();
+                    for _i in 0..1200 {
+                        core::sync::atomic::spin_loop_hint();
                     }
                 }
             }

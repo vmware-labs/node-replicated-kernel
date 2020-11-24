@@ -101,25 +101,54 @@ pub fn enqueue(gtid: topology::GlobalThreadId, s: WorkItem) {
 }
 
 pub fn dequeue(gtid: topology::GlobalThreadId) {
-    let msg = IPI_WORKQUEUE[gtid as usize].pop().unwrap();
-    match msg {
-        WorkItem::Shootdown(s) => {
-            trace!("TLB channel got msg {:?}", s);
-            s.process();
+    match IPI_WORKQUEUE[gtid as usize].pop() {
+        Ok(msg) => match msg {
+            WorkItem::Shootdown(s) => {
+                trace!("TLB channel got msg {:?}", s);
+                s.process();
+            }
+            WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
+        },
+        Err(_) => { /*IPI request was handled by eager_advance_mlnr_replica()*/ }
+    }
+}
+
+fn advance_log(log_id: usize) {
+    // All metadata operations are done using log 1. So, make sure that the
+    // replica has applied all those operation before any other log sync.
+    if log_id != 1 {
+        match mlnr::MlnrKernelNode::synchronize_log(1) {
+            Ok(_) => { /* Simply return */ }
+            Err(e) => unreachable!("Error {:?} while advancing the log 1", e),
         }
-        WorkItem::AdvanceReplica(log_id) => {
-            // All metadata operations are done using log 1. So, make sure that the
-            // replica has applied all those operation before any other log sync.
-            if log_id != 1 {
-                match mlnr::MlnrKernelNode::synchronize_log(1) {
-                    Ok(_) => { /* Simply return */ }
-                    Err(e) => unreachable!("Error {:?} while advancing the log 1", e),
+    }
+    match mlnr::MlnrKernelNode::synchronize_log(log_id) {
+        Ok(_) => { /* Simply return */ }
+        Err(e) => unreachable!("Error {:?} while advancing the log {}", e, log_id),
+    }
+}
+
+pub fn eager_advance_mlnr_replica() {
+    let core_id = topology::MACHINE_TOPOLOGY.current_thread().id;
+    match IPI_WORKQUEUE[core_id as usize].pop() {
+        Ok(msg) => {
+            match &msg {
+                WorkItem::Shootdown(_s) => {
+                    // If its for TLB shootdown, insert it back into the queue.
+                    enqueue(core_id, msg)
                 }
+                WorkItem::AdvanceReplica(log_id) => advance_log(*log_id),
             }
-            match mlnr::MlnrKernelNode::synchronize_log(log_id) {
-                Ok(_) => { /* Simply return */ }
-                Err(e) => unreachable!("Error {:?} while advancing the log {}", e, log_id),
-            }
+        }
+        Err(_) => {
+            let kcb = super::kcb::get_kcb();
+            match kcb.arch.mlnr_replica.as_ref() {
+                Some(replica) => {
+                    let log_id = replica.1.id();
+                    advance_log(log_id);
+                }
+                None => unreachable!("eager_advance_mlnr_replica: KCB does not have mlnr_replica!"),
+            };
         }
     }
 }

@@ -40,6 +40,7 @@ lazy_static! {
 #[derive(Debug, PartialEq)]
 pub struct ARGs {
     pub cores: usize,
+    pub open_files: usize,
     pub benchmark: String,
     pub write_ratio: usize,
 }
@@ -53,10 +54,12 @@ impl FromStr for ARGs {
         let coords: Vec<&str> = s.split('X').collect();
 
         let x_fromstr = coords[0].parse::<usize>()?;
-        let benchmark = coords[1].to_string();
-        let write_ratio = coords[2].parse::<usize>()?;
+        let open_files = coords[1].parse::<usize>()?;
+        let benchmark = coords[2].to_string();
+        let write_ratio = coords[3].parse::<usize>()?;
         Ok(ARGs {
             cores: x_fromstr,
+            open_files,
             benchmark,
             write_ratio,
         })
@@ -163,25 +166,7 @@ pub fn max_open_files() -> usize {
     max_files
 }
 
-pub fn open_file_default() -> Vec<usize> {
-    let mut open_files = Vec::new();
-    let max_files = max_open_files();
-    let step_size = if max_files <= 24 { 4 } else { 8 };
-    for f in (0..(max_files + 1)).step_by(step_size) {
-        if f == 0 {
-            open_files.push(f + 1);
-        } else {
-            open_files.push(f);
-        }
-    }
-    if *open_files.last().unwrap() != max_files {
-        open_files.push(max_files);
-    }
-    open_files.sort();
-    open_files
-}
-
-pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
+pub fn bench(ncores: Option<usize>, open_files: usize, benchmark: String, write_ratio: usize) {
     info!("thread_id,benchmark,core,write_ratio,open_files,duration_total,duration,operations");
 
     let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
@@ -253,15 +238,14 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
         }
     }
 
-    let default_open_files = 0;
     if benchmark == "drbl" {
         let microbench = Arc::new(MicroBench::<DRBL>::new(
             maximum,
             "drbl",
             write_ratio,
-            default_open_files,
+            open_files,
         ));
-        microbench.bench.init(cores.clone(), default_open_files);
+        microbench.bench.init(cores.clone(), open_files);
         start::<DRBL>(maximum, microbench);
     }
 
@@ -270,9 +254,9 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
             maximum,
             "drbh",
             write_ratio,
-            default_open_files,
+            open_files,
         ));
-        microbench.bench.init(cores.clone(), default_open_files);
+        microbench.bench.init(cores.clone(), open_files);
         start::<DRBH>(maximum, microbench);
     }
 
@@ -281,9 +265,9 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
             maximum,
             "dwol",
             write_ratio,
-            default_open_files,
+            open_files,
         ));
-        microbench.bench.init(cores.clone(), default_open_files);
+        microbench.bench.init(cores.clone(), open_files);
         start::<DWOL>(maximum, microbench);
     }
 
@@ -292,9 +276,9 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
             maximum,
             "dwom",
             write_ratio,
-            default_open_files,
+            open_files,
         ));
-        microbench.bench.init(cores.clone(), default_open_files);
+        microbench.bench.init(cores.clone(), open_files);
         start::<DWOM>(maximum, microbench);
     }
 
@@ -303,9 +287,9 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
             maximum,
             "mwrl",
             write_ratio,
-            default_open_files,
+            open_files,
         ));
-        microbench.bench.init(cores.clone(), default_open_files);
+        microbench.bench.init(cores.clone(), open_files);
         start::<MWRL>(maximum, microbench);
     }
 
@@ -314,27 +298,20 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
             maximum,
             "mwrm",
             write_ratio,
-            default_open_files,
+            open_files,
         ));
-        microbench.bench.init(cores.clone(), default_open_files);
+        microbench.bench.init(cores.clone(), open_files);
         start::<MWRM>(maximum, microbench);
     }
 
     if benchmark == "mix" {
-        let open_files = open_file_default();
-        for open_file in open_files.iter() {
-            if *open_file <= maximum {
-                let microbench = Arc::new(MicroBench::<MIX>::new(
-                    maximum,
-                    "mix",
-                    write_ratio,
-                    *open_file,
-                ));
-                microbench.bench.init(cores.clone(), *open_file);
-                start::<MIX>(maximum, microbench);
-            } else {
-                break;
-            }
-        }
+        let microbench = Arc::new(MicroBench::<MIX>::new(
+            maximum,
+            "mix",
+            write_ratio,
+            open_files,
+        ));
+        microbench.bench.init(cores.clone(), open_files);
+        start::<MIX>(maximum, microbench);
     }
 }

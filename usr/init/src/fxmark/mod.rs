@@ -323,14 +323,18 @@ pub fn bench(ncores: Option<usize>, benchmark: String, write_ratio: usize) {
     if benchmark == "mix" {
         let open_files = open_file_default();
         for open_file in open_files.iter() {
-            let microbench = Arc::new(MicroBench::<MIX>::new(
-                maximum,
-                "mix",
-                write_ratio,
-                *open_file,
-            ));
-            microbench.bench.init(cores.clone(), *open_file);
-            start::<MIX>(maximum, microbench);
+            if *open_file <= maximum {
+                let microbench = Arc::new(MicroBench::<MIX>::new(
+                    maximum,
+                    "mix",
+                    write_ratio,
+                    *open_file,
+                ));
+                microbench.bench.init(cores.clone(), *open_file);
+                start::<MIX>(maximum, microbench);
+            } else {
+                break;
+            }
         }
     }
 }

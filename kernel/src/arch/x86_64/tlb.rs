@@ -14,9 +14,10 @@ use x86::apic::{
 };
 
 use super::memory::BASE_PAGE_SIZE;
+use super::process::Ring3Process;
 use crate::is_page_aligned;
 use crate::memory::vspace::TlbFlushHandle;
-use crate::mlnr;
+use crate::{mlnr, nr};
 
 // In the xAPIC mode, the Destination Format Register (DFR) through the MMIO interface determines the choice of a
 // flat logical mode or a clustered logical mode. Flat logical mode is not supported in the x2APIC mode. Hence the
@@ -145,6 +146,9 @@ pub fn eager_advance_mlnr_replica() {
             match kcb.arch.mlnr_replica.as_ref() {
                 Some(replica) => {
                     let log_id = replica.1.id();
+                    // Synchronize NR-replica.
+                    let _ignore = nr::KernelNode::<Ring3Process>::synchronize();
+                    // Synchronize Mlnr-replica.
                     advance_log(log_id);
                 }
                 None => unreachable!("eager_advance_mlnr_replica: KCB does not have mlnr_replica!"),

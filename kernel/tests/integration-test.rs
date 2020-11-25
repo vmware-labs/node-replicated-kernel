@@ -1683,8 +1683,19 @@ fn s06_fxmark_benchmark() {
     let file_name = "fxmark_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
 
+    let max_files: usize = match max_cores {
+        28 => 14,
+        56 => 28,
+        32 => 16,
+        64 => 32,
+        96 => 24,
+        192 => 48,
+        _ => unreachable!(),
+    };
+
     for benchmark in benchmarks {
         for &cores in threads.iter() {
+            let threads_clone = threads.clone();
             let kernel_cmdline = format!("testcmd={}X{}", cores, benchmark);
             let mut cmdline = RunnerArgs::new("test-userspace-smp")
                 .module("init")
@@ -1729,7 +1740,11 @@ fn s06_fxmark_benchmark() {
                 } else {
                     if benchmark.contains("mix") {
                         // Run mix workload for different number of files.
-                        let open_files = 5;
+                        let open_files: usize = threads_clone
+                            .into_iter()
+                            .filter(|a| *a <= cores && *a <= max_files)
+                            .collect::<Vec<usize>>()
+                            .len();
                         with_cores * 10 * open_files
                     } else {
                         with_cores * 10

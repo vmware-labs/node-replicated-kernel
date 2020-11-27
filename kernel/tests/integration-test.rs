@@ -1667,10 +1667,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
 #[test]
 fn s06_fxmark_benchmark() {
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
-    let benchmarks = vec![
-        "drblX0", "drbhX0", "dwolX0", "dwomX0", "mixX0", "mixX10", "mixX60", "mixX100", "mwrlX0",
-        "mwrmX0",
-    ];
+    let benchmarks = vec!["mixX0", "mixX10", "mixX60", "mixX100"];
     let num_microbenchs = benchmarks.len() as u64;
 
     let machine = get_machine_from_env();
@@ -1702,9 +1699,6 @@ fn s06_fxmark_benchmark() {
         let open_files: Vec<usize> = open_files(benchmark, max_cores);
         for &cores in threads.iter() {
             for &of in open_files.iter() {
-                if of > cores {
-                    continue;
-                }
                 let kernel_cmdline = format!("testcmd={}X{}X{}", cores, of, benchmark);
                 let mut cmdline = RunnerArgs::new("test-userspace-smp")
                     .module("init")
@@ -1722,7 +1716,7 @@ fn s06_fxmark_benchmark() {
                 if cfg!(feature = "smoke") {
                     cmdline = cmdline.user_feature("smoke").memory(8192);
                 } else {
-                    cmdline = cmdline.memory(core::cmp::max(18192, cores * 512));
+                    cmdline = cmdline.memory(core::cmp::max(49152, cores * 512));
                 }
 
                 if cfg!(feature = "smoke") && cores > 2 {

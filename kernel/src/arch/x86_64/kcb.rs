@@ -189,7 +189,10 @@ impl Arch86Kcb {
     ) {
         let thread = topology::MACHINE_TOPOLOGY.current_thread();
         self.id = thread.id as usize;
-        self.max_threads = thread.package().threads().count();
+        self.max_threads = match topology::MACHINE_TOPOLOGY.nodes().nth(0) {
+            Some(node) => node.cores().fold(0, |len, _element| len + 1), /* Avoid hyper-threads for now. */
+            None => 1,
+        };
         self.mlnr_replica = Some((replica, idx_token));
     }
 

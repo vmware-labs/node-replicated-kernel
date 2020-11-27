@@ -43,6 +43,18 @@ impl PartialEq for MemNode {
     }
 }
 
+/// Required for the rwlock; not actually used.
+impl Default for MemNode {
+    fn default() -> MemNode {
+        MemNode {
+            mnode_num: u64::MAX,
+            name: String::from(""),
+            node_type: NodeType::File,
+            file: None,
+        }
+    }
+}
+
 impl MemNode {
     /// Initialize a memory-node for a directory or a file.
     pub fn new(

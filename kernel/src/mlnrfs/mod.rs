@@ -18,11 +18,11 @@ pub mod fd;
 mod rwlock;
 
 /// The in-memory file-system representation.
-//#[derive(Debug)]
+#[derive(Debug)]
 pub struct MlnrFS {
     /// Only create file will lock the hashmap in write mode,
     /// every other operation is locked in read mode.
-    mnodes: NrLock<HashMap<Mnode, RwLock<MemNode>>>,
+    mnodes: NrLock<HashMap<Mnode, NrLock<MemNode>>>,
     files: RwLock<HashMap<String, Arc<Mnode>>>,
     root: (String, Mnode),
     nextmemnode: AtomicUsize,
@@ -36,10 +36,10 @@ impl Default for MlnrFS {
         let rootdir = "/";
         let rootmnode = 1;
 
-        let mut mnodes = NrLock::<HashMap<Mnode, RwLock<MemNode>>>::default();
+        let mut mnodes = NrLock::<HashMap<Mnode, NrLock<MemNode>>>::default();
         mnodes.write().insert(
             rootmnode,
-            RwLock::new(
+            NrLock::new(
                 MemNode::new(
                     rootmnode,
                     rootdir,
@@ -85,7 +85,7 @@ impl MlnrFS {
         self.files
             .write()
             .insert(pathname.to_string(), Arc::new(mnode_num));
-        self.mnodes.write().insert(mnode_num, RwLock::new(memnode));
+        self.mnodes.write().insert(mnode_num, NrLock::new(memnode));
 
         Ok(mnode_num)
     }

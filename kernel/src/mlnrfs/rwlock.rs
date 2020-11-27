@@ -10,6 +10,7 @@
 use core::cell::UnsafeCell;
 use core::default::Default;
 use core::hint::spin_loop;
+use core::fmt::{Debug, Error, Formatter};
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -29,7 +30,7 @@ const_assert!(MAX_READER_THREADS > 0);
 /// Calling `write()` returns a write-guard that can be used to safely mutate `T`.
 pub struct RwLock<T>
 where
-    T: Sized + Default + Sync,
+    T: Sized + Sync,
 {
     /// The writer lock. There can be at most one writer at any given point of time.
     wlock: CachePadded<AtomicBool>,
@@ -72,6 +73,28 @@ where
             wlock: CachePadded::new(AtomicBool::new(false)),
             rlock: arr![Default::default(); 192],
             data: UnsafeCell::new(T::default()),
+        }
+    }
+}
+
+/// This is to debug MlnrFS.
+impl<T: ?Sized + Default + Sync + Debug> Debug for RwLock<T> {
+    fn fmt(&self, _: &mut Formatter<'_>) -> Result<(), Error> {
+        todo!()
+    }
+}
+
+impl<T> RwLock<T>
+where
+    T: Sized + Sync,
+{
+    /// Creates a new instance of an `RwLock<T>` which is unlocked.
+    pub fn new(t: T) -> RwLock<T> {
+        use arr_macro::arr;
+        RwLock {
+            wlock: CachePadded::new(AtomicBool::new(false)),
+            rlock: arr![Default::default(); 192],
+            data: UnsafeCell::new(t),
         }
     }
 }

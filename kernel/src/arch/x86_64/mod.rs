@@ -57,7 +57,7 @@ use klogger;
 
 use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{
-    tcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
+    tcache, tcache_sp, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
 use crate::mlnr::{MlnrKernelNode, Modify};
 use crate::nr::{KernelNode, Op};
@@ -221,7 +221,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     };
     let start = rawtime::Instant::now();
 
-    let emanager = tcache::TCache::new(args.thread, args.node);
+    let emanager = tcache_sp::TCacheSp::new(args.thread, args.node);
     let init_ptable = unsafe { find_current_ptables() }; // Safe, done once during init
 
     let arch = kcb::Arch86Kcb::new(args.kernel_args, init_apic(), init_ptable);
@@ -444,6 +444,8 @@ fn boot_app_cores(
                 if x86::time::rdtsc() > timeout {
                     panic!("Core {:?} didn't boot properly...", thread.apic_id());
                 }
+
+                core::sync::atomic::spin_loop_hint();
             }
         }
         core::mem::forget(coreboot_stack);
@@ -581,7 +583,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Ideally, if this works, we should end up with an early TCache
     // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
     // regions of memory.
-    let mut emanager: Option<tcache::TCache> = None;
+    let mut emanager: Option<tcache_sp::TCacheSp> = None;
     let mut memory_regions = ArrayVec::<[Frame; 64]>::new();
     for region in &mut kernel_args.mm_iter {
         if region.ty == MemoryType::CONVENTIONAL {
@@ -601,7 +603,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                     // Ideally `mem_iter` is ordered by physical address which would increase
                     // our chances, but the UEFI spec doesn't guarantee anything :S
                     let (early_frame, high) = f.split_at(EARLY_MEMORY_CAPACITY);
-                    emanager = Some(tcache::TCache::new_with_frame(0, 0, early_frame));
+                    emanager = Some(tcache_sp::TCacheSp::new_with_frame(0, 0, early_frame));
 
                     if high != Frame::empty() {
                         assert!(!memory_regions.is_full());

@@ -8,9 +8,12 @@ import shutil
 import subprocess
 import prctl
 import signal
+import toml
+import pexpect
+import plumbum
 from time import sleep
 
-from plumbum import colors, local
+from plumbum import colors, local, SshMachine
 from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc, cat
 from plumbum.commands import ProcessExecutionError
 
@@ -86,6 +89,12 @@ parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
 parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio"],
                     help='What NIC model to use for emulation', required=False)
+
+# Baremetal argument
+parser.add_argument('--configure-ipxe', action="store_true", default=False,
+                    help='Execute pre-boot setup for bare-metal booting.', required=False)
+parser.add_argument('--no-reboot', action="store_true", default=False,
+                    help='Do not initiate a machine reboot.', required=False)
 
 BESPIN_EXIT_CODES = {
     0: "[SUCCESS]",
@@ -222,6 +231,17 @@ def deploy(args):
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
         cmdfile.write('./kernel {}'.format(args.cmd))
 
+    # Write kernel cmd-line file in ESP dir
+    with open(esp_path / 'boot.php', 'w') as boot_file:
+        ipxe_script = """#!ipxe
+imgfetch EFI/Boot/BootX64.efi
+imgfetch kernel
+imgfetch init
+imgfetch cmdline.in
+boot EFI/Boot/BootX64.efi
+"""
+        boot_file.write(ipxe_script)
+
     # Deploy user-modules
     for module in args.mods:
         if not (user_build_path / module).is_file():
@@ -237,171 +257,265 @@ def deploy(args):
                 shutil.copy2(app, esp_path)
 
 
+def run_qemu(args):
+    """
+    Run the kernel on a QEMU instance.
+    """
+
+    log("Starting QEMU")
+    debug_release = 'release' if args.release else 'debug'
+    esp_path = TARGET_PATH / UEFI_TARGET / debug_release / 'esp'
+
+    qemu_default_args = ['-no-reboot']
+    # Setup KVM and required guest hardware features
+    qemu_default_args += ['-enable-kvm']
+    qemu_default_args += ['-cpu',
+                          'host,migratable=no,+invtsc,+tsc,+x2apic,+fsgsbase']
+    # Use serial communication
+    # '-nographic',
+    qemu_default_args += ['-display', 'none', '-serial', 'stdio']
+
+    # Add UEFI bootloader support
+    qemu_default_args += ['-drive',
+                          'if=pflash,format=raw,file={}/OVMF_CODE.fd,readonly=on'.format(BOOTLOADER_PATH)]
+    qemu_default_args += ['-drive',
+                          'if=pflash,format=raw,file={}/OVMF_VARS.fd,readonly=on'.format(BOOTLOADER_PATH)]
+    qemu_default_args += ['-device', 'ahci,id=ahci,multifunction=on']
+    qemu_default_args += ['-drive',
+                          'if=none,format=raw,file=fat:rw:{},id=esp'.format(esp_path)]
+    qemu_default_args += ['-device', 'ide-drive,bus=ahci.0,drive=esp']
+
+    # Debug port to exit qemu and communicate back exit-code for tests
+    qemu_default_args += ['-device',
+                          'isa-debug-exit,iobase=0xf4,iosize=0x04']
+
+    # Enable networking with outside world
+    qemu_default_args += ['-net',
+                          'nic,model={},netdev=n0'.format(args.nic)]
+    qemu_default_args += ['-netdev',
+                          'tap,id=n0,script=no,ifname={}'.format(QEMU_TAP_NAME)]
+    # qemu_default_args += ['-net', 'none']
+
+    def numa_nodes_to_list(file):
+        nodes = []
+        good_nodes = cat[file]().split(',')
+        for node_range in good_nodes:
+            if "-" in node_range:
+                nlow, nmax = node_range.split('-')
+                for i in range(int(nlow), int(nmax)+1):
+                    nodes.append(i)
+            else:
+                nodes.append(int(node_range.strip()))
+        return nodes
+
+    def query_host_numa():
+        mem_nodes = numa_nodes_to_list(
+            "/sys/devices/system/node/has_memory")
+        cpu_nodes = numa_nodes_to_list("/sys/devices/system/node/has_cpu")
+
+        # Now return the intersection of the two
+        return list(sorted(set(mem_nodes).intersection(set(cpu_nodes))))
+
+    host_numa_nodes_list = query_host_numa()
+    num_host_numa_nodes = len(host_numa_nodes_list)
+    if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
+        for node in range(0, args.qemu_nodes):
+            mem_per_node = int(args.qemu_memory) / args.qemu_nodes
+            prealloc = "on" if args.qemu_prealloc else "off"
+            large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
+            backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
+            qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{}'.format(
+                backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
+
+            qemu_default_args += ['-numa',
+                                  "node,memdev=nmem{},nodeid={}".format(node, node)]
+            qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
+                node, node)]
+
+    if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
+        qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
+            args.qemu_cores, args.qemu_nodes, args.qemu_cores)]
+    else:
+        qemu_default_args += ["-smp",
+                              "{},sockets=1".format(args.qemu_cores)]
+
+    if args.qemu_memory:
+        qemu_default_args += ['-m', str(args.qemu_memory)]
+
+    if args.qemu_debug_cpu:
+        qemu_default_args += ['-d', 'int,cpu_reset']
+    if args.qemu_monitor:
+        qemu_default_args += ['-monitor',
+                              'telnet:127.0.0.1:55555,server,nowait']
+
+    # Name threads on host for `qemu_affinity.py` to find it
+    qemu_default_args += ['-name', 'bespin,debug-threads=on']
+
+    qemu_args = ['qemu-system-x86_64'] + qemu_default_args.copy()
+    if args.qemu_settings:
+        qemu_args += args.qemu_settings.split()
+
+    # Create a tap interface to communicate with guest and give it an IP
+    user = (whoami)().strip()
+    group = (local['id']['-gn'])().strip()
+    # TODO: Could probably avoid 'sudo' here by doing
+    # sudo setcap cap_net_admin .../run.py
+    # in the setup.sh script
+    sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
+    sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
+
+    # Run a QEMU instance
+    cmd = ['/usr/bin/env'] + qemu_args
+    if args.verbose:
+        print(' '.join(cmd))
+
+    # Spawn qemu first, then set the guest CPU affinities
+    # The `preexec_fn` ensures that qemu dies if run.py exits
+    execution = subprocess.Popen(
+        cmd, stderr=None, stdout=None, env=os.environ.copy(), preexec_fn=lambda: prctl.set_pdeathsig(signal.SIGKILL))
+    from plumbum.machines import LocalCommand
+    LocalCommand.QUOTE_LEVEL = 3
+
+    if args.qemu_cores and args.qemu_affinity:
+        affinity_list = str(corealloc['-c',
+                                      str(args.qemu_cores), '-t', 'interleave']()).strip()
+        # For big machines it can take a while to spawn all threads in qemu
+        # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
+        sleep(2.00)
+        if args.verbose:
+            log("QEMU affinity {}".format(affinity_list))
+
+        iteration = 0
+        while True:
+            try:
+                sudo[python3['./qemu_affinity.py',
+                             '-k', affinity_list.split(' '), '--', str(execution.pid)]]()
+            except ProcessExecutionError as e:
+                if args.qemu_prealloc or args.qemu_large_pages:
+                    iteration += 1
+                    sleep(2.00)
+                    if iteration > 20 and iteration % 10 == 0:
+                        log("Still waiting for Qemu to preallocate memory...")
+                    continue
+                else:
+                    raise
+            break
+
+    # Wait until qemu exits
+    execution.wait()
+
+    bespin_exit_code = execution.returncode >> 1
+    if BESPIN_EXIT_CODES.get(bespin_exit_code):
+        print(BESPIN_EXIT_CODES[bespin_exit_code])
+    else:
+        print(
+            "[FAIL] Kernel exited with unknown error status {}... Update the script!".format(bespin_exit_code))
+
+    if bespin_exit_code != 0:
+        log("Invocation was: {}".format(cmd))
+        if execution.stderr:
+            print("STDERR: {}".format(execution.stderr.decode('utf-8')))
+
+    return bespin_exit_code
+
+
+def run_baremetal(args):
+    # Need to find a config file ${args.machine}.toml
+    cfg_file = SCRIPT_PATH / "{}.toml".format(args.machine)
+    if not cfg_file.exists():
+        log("Machine {} not supported, '{}' not found.".format(
+            args.machine, cfg_file))
+        return 99
+    else:
+        cfg = toml.load(cfg_file.open())
+        log("Booting on bare-metal server {}".format(
+            cfg['server']['name']))
+
+        if args.configure_ipxe:
+            log("Execute pre-boot: {}".format(
+                cfg['server']['pre-boot-cmd']))
+            subprocess.run(cfg['server']['pre-boot-cmd'],
+                           shell=True, check=True, timeout=10)
+
+        log("Deploying binaries to ipxe location")
+        debug_release = 'release' if args.release else 'debug'
+        uefi_build_path = TARGET_PATH / UEFI_TARGET / debug_release
+
+        esp_path = uefi_build_path / 'esp'
+        to_copy = [plumbum.local.path(entry) for entry in esp_path.glob("*")]
+        deploy = SshMachine(cfg['deploy']['hostname'],
+                            user=cfg['deploy']['username'], keyfile=cfg['deploy']['ssh-pubkey'])
+        dest = deploy.path(cfg['deploy']['ipxe-deploy'])
+        plumbum.path.utils.copy(to_copy, dest)
+
+        ssh_cmd = "sshpass -p'{}' ssh {}@{}".format(
+            cfg['idrac']['password'], cfg['idrac']['username'], cfg['idrac']['hostname'])
+        idrac = pexpect.spawn(ssh_cmd)
+
+        # Go to system1:
+        idrac.expect('/admin1-> ')
+        idrac.sendline('cd system1')
+        idrac.expect('/admin1/system1')
+
+        # power-cycle it:
+        if not args.no_reboot:
+            log("Rebooting machine...")
+            idrac.sendline('racadm serveraction powercycle')
+            idrac.expect('Server power operation initiated successfully')
+
+        # Connect to system console, and read it out:
+        log("Connection to console...")
+        idrac.sendline('console {}'.format(cfg['idrac']['console']))
+        timeout = 1
+        linebuffer = ""
+        while True:
+            try:
+                read = idrac.read_nonblocking(
+                    size=1024, timeout=timeout)
+                timeout = 1
+
+                # We want to use non-blocking read so we can abort
+                # in case we're stuck, unfortunately there is no
+                # non-blocking readline, so we have to do a simple
+                # line buffer:
+                if b'\r\n' in read:
+                    splitted_read = list(read.decode('utf-8').split('\r\n'))
+                    # Print current line, add stuff previously read
+                    print("{}".format(linebuffer + splitted_read[0]))
+                    # In case we some more complete lines, print:
+                    for line in splitted_read[1:-1]:
+                        print("{}".format(line))
+                    # The last element will be the beginning of the next line or an empty string
+                    linebuffer = splitted_read[-1]
+                else:
+                    linebuffer += read.decode('utf-8')
+            except pexpect.exceptions.TIMEOUT as e:
+                print(linebuffer, end='')
+                linebuffer = ''
+
+                if timeout == 1:
+                    timeout = cfg['idrac']['boot-timeout']
+                    # Now, wait till boot timeout and see if we really don't get anything
+                    continue
+                else:
+                    print('')
+                    raise e
+            except KeyboardInterrupt:
+                print(linebuffer)
+                sys.exit()
+        idrac.close()
+
+
 def run(args):
     """
     Run the system on a hardware/emulation platform
     Returns: A bespin exit error code.
     """
-    def run_qemu(args):
-        log("Starting QEMU")
-        debug_release = 'release' if args.release else 'debug'
-        esp_path = TARGET_PATH / UEFI_TARGET / debug_release / 'esp'
-
-        qemu_default_args = ['-no-reboot']
-        # Setup KVM and required guest hardware features
-        qemu_default_args += ['-enable-kvm']
-        qemu_default_args += ['-cpu',
-                              'host,migratable=no,+invtsc,+tsc,+x2apic,+fsgsbase']
-        # Use serial communication
-        # '-nographic',
-        qemu_default_args += ['-display', 'none', '-serial', 'stdio']
-
-        # Add UEFI bootloader support
-        qemu_default_args += ['-drive',
-                              'if=pflash,format=raw,file={}/OVMF_CODE.fd,readonly=on'.format(BOOTLOADER_PATH)]
-        qemu_default_args += ['-drive',
-                              'if=pflash,format=raw,file={}/OVMF_VARS.fd,readonly=on'.format(BOOTLOADER_PATH)]
-        qemu_default_args += ['-device', 'ahci,id=ahci,multifunction=on']
-        qemu_default_args += ['-drive',
-                              'if=none,format=raw,file=fat:rw:{},id=esp'.format(esp_path)]
-        qemu_default_args += ['-device', 'ide-drive,bus=ahci.0,drive=esp']
-
-        # Debug port to exit qemu and communicate back exit-code for tests
-        qemu_default_args += ['-device',
-                              'isa-debug-exit,iobase=0xf4,iosize=0x04']
-
-        # Enable networking with outside world
-        qemu_default_args += ['-net',
-                              'nic,model={},netdev=n0'.format(args.nic)]
-        qemu_default_args += ['-netdev', 'tap,id=n0,script=no,ifname=tap0']
-        #qemu_default_args += ['-net', 'none']
-
-        def numa_nodes_to_list(file):
-            nodes = []
-            good_nodes = cat[file]().split(',')
-            for node_range in good_nodes:
-                if "-" in node_range:
-                    nlow, nmax = node_range.split('-')
-                    for i in range(int(nlow), int(nmax)+1):
-                        nodes.append(i)
-                else:
-                    nodes.append(int(node_range.strip()))
-            return nodes
-
-        def query_host_numa():
-            mem_nodes = numa_nodes_to_list("/sys/devices/system/node/has_memory")
-            cpu_nodes = numa_nodes_to_list("/sys/devices/system/node/has_cpu")
-
-            # Now return the intersection of the two
-            return list(sorted(set(mem_nodes).intersection(set(cpu_nodes))))
-
-        host_numa_nodes_list = query_host_numa()
-        num_host_numa_nodes = len(host_numa_nodes_list)
-        if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
-            for node in range(0, args.qemu_nodes):
-                mem_per_node = int(args.qemu_memory) / args.qemu_nodes
-                prealloc = "on" if args.qemu_prealloc else "off"
-                large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
-                backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
-                qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{}'.format(
-                    backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
-
-                qemu_default_args += ['-numa',
-                                      "node,memdev=nmem{},nodeid={}".format(node, node)]
-                qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
-                    node, node)]
-
-        if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
-            qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
-                args.qemu_cores, args.qemu_nodes, args.qemu_cores)]
-        else:
-            qemu_default_args += ["-smp",
-                                  "{},sockets=1".format(args.qemu_cores)]
-
-        if args.qemu_memory:
-            qemu_default_args += ['-m', str(args.qemu_memory)]
-
-        if args.qemu_debug_cpu:
-            qemu_default_args += ['-d', 'int,cpu_reset']
-        if args.qemu_monitor:
-            qemu_default_args += ['-monitor',
-                                  'telnet:127.0.0.1:55555,server,nowait']
-
-        # Name threads on host for `qemu_affinity.py` to find it
-        qemu_default_args += ['-name', 'bespin,debug-threads=on']
-
-        qemu_args = ['qemu-system-x86_64'] + qemu_default_args.copy()
-        if args.qemu_settings:
-            qemu_args += args.qemu_settings.split()
-
-        # Create a tap interface to communicate with guest and give it an IP
-        user = (whoami)().strip()
-        group = (local['id']['-gn'])().strip()
-        # TODO: Could probably avoid 'sudo' here by doing
-        # sudo setcap cap_net_admin .../run.py
-        # in the setup.sh script
-        sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
-        sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
-
-        # Run a QEMU instance
-        cmd = ['/usr/bin/env'] + qemu_args
-        if args.verbose:
-            print(' '.join(cmd))
-
-        # Spawn qemu first, then set the guest CPU affinities
-        # The `preexec_fn` ensures that qemu dies if run.py exits
-        execution = subprocess.Popen(
-            cmd, stderr=None, stdout=None, env=os.environ.copy(), preexec_fn=lambda: prctl.set_pdeathsig(signal.SIGKILL))
-        from plumbum.machines import LocalCommand
-        LocalCommand.QUOTE_LEVEL = 3
-
-        if args.qemu_cores and args.qemu_affinity:
-            affinity_list = str(corealloc['-c',
-                                          str(args.qemu_cores), '-t', 'interleave']()).strip()
-            # For big machines it can take a while to spawn all threads in qemu
-            # if but if the threads are not spawned qemu_affinity.py fails, so we sleep
-            sleep(2.00)
-            if args.verbose:
-                log("QEMU affinity {}".format(affinity_list))
-
-            iteration = 0
-            while True:
-                try:
-                    sudo[python3['./qemu_affinity.py',
-                                 '-k', affinity_list.split(' '), '--', str(execution.pid)]]()
-                except ProcessExecutionError as e:
-                    if args.qemu_prealloc or args.qemu_large_pages:
-                        iteration += 1
-                        sleep(2.00)
-                        if iteration > 20 and iteration % 10 == 0:
-                            log("Still waiting for Qemu to preallocate memory...")
-                        continue
-                    else:
-                        raise
-                break
-
-        # Wait until qemu exits
-        execution.wait()
-
-        bespin_exit_code = execution.returncode >> 1
-        if BESPIN_EXIT_CODES.get(bespin_exit_code):
-            print(BESPIN_EXIT_CODES[bespin_exit_code])
-        else:
-            print(
-                "[FAIL] Kernel exited with unknown error status {}... Update the script!".format(bespin_exit_code))
-
-        if bespin_exit_code != 0:
-            log("Invocation was: {}".format(cmd))
-            if execution.stderr:
-                print("STDERR: {}".format(execution.stderr.decode('utf-8')))
-
-        return bespin_exit_code
 
     if args.machine == 'qemu':
         return run_qemu(args)
     else:
-        log("Machine {} not supported".format(args.machine))
-        return 99
+        return run_baremetal(args)
 
 
 #
@@ -411,10 +525,6 @@ if __name__ == '__main__':
     "Execution pipeline for building and launching bespin"
     args = parser.parse_args()
 
-    if args.machine != 'qemu' and (args.qemu_debug_cpu or args.qemu_settings or args.qemu_monitor or args.qemu_cores or args.qemu_nodes):
-        log("Can't specify QEMU specific arguments for non-qemu hardware")
-        sys.exit(99)
-
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")
     if args.verbose:
@@ -423,7 +533,7 @@ if __name__ == '__main__':
         # Minimize python exception backtraces
         sys.excepthook = exception_handler
 
-    # Build
+        # Build
     build_bootloader(args)
     build_kernel(args)
     build_user_libraries(args)

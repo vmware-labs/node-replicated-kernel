@@ -20,25 +20,18 @@ use crate::round_up;
 use crate::{KernelArgs, Module};
 
 /// Trying to get the file handle for the kernel binary.
-fn locate_binary(st: &SystemTable<Boot>, name: &str) -> RegularFile {
-    let fhandle = st
-        .boot_services()
-        .locate_protocol::<SimpleFileSystem>()
-        .expect_success("Don't have SimpleFileSystem support");
-    let fhandle = unsafe { &mut *fhandle.get() };
-    let mut root_file = fhandle.open_volume().expect_success("Can't open volume");
-
+fn locate_binary(st: &SystemTable<Boot>, directory: &mut Directory, name: &str) -> RegularFile {
     // Look for the given binary name in the root folder of our EFI partition
     // in our case this is `target/x86_64-uefi/debug/esp/`
     // whereas the esp dir gets mounted with qemu using
     // `-drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp`
-    let binary_file = root_file
+    let binary_file = directory
         .open(
-            format!("\\{}", name).as_str(),
+            format!("{}", name).as_str(),
             FileMode::Read,
             FileAttribute::READ_ONLY,
         )
-        .expect_success("Unable to locate binary")
+        .expect_success(format!("Unable to locate binary '{}'", name).as_str())
         .into_type()
         .expect_success("Can't cast it to a file common type??");
 
@@ -70,10 +63,15 @@ fn determine_file_size(file: &mut RegularFile) -> usize {
 /// Load a binary from the UEFI FAT partition, and return
 /// a slice to the data in memory along with a Module struct
 /// that can be passed to the kernel.
-pub fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &'static mut [u8]) {
+pub fn load_binary_into_memory(
+    st: &SystemTable<Boot>,
+    dir: &mut Directory,
+    file: &mut uefi::proto::media::file::FileInfo,
+    name: &str,
+) -> Module {
     // Get the binary, this should be a plain old
     // ELF executable.
-    let mut module_file = locate_binary(&st, name);
+    let mut module_file = locate_binary(&st, dir, name);
     let module_size = determine_file_size(&mut module_file);
     debug!("Found {} binary with {} bytes", name, module_size);
     let module_base_paddr = allocate_pages(
@@ -92,43 +90,50 @@ pub fn load_binary_into_memory(st: &SystemTable<Boot>, name: &str) -> (Module, &
         .read(module_blob)
         .expect_success("Can't read the module file");
 
-    (
-        Module::new(
-            name,
-            (paddr_to_kernel_vaddr(module_base_paddr), module_size),
-        ),
-        module_blob,
+    Module::new(
+        name,
+        paddr_to_kernel_vaddr(module_base_paddr),
+        module_base_paddr,
+        module_size,
     )
 }
 
-/// Walk through the given directory of the UEFI partition
+/// Look for all files in the root folder all SimpleFileSystems that are registered.
+///
+/// When running on qemu this is likely the esp partition in `target/x86_64-uefi/debug/esp/`
+/// the esp dir gets mounted with qemu using `-drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp`
+///
+/// When running on bare-metal, ipxe registers its own virtual file system where modules are stored.
+pub fn load_modules_on_all_sfs(st: &SystemTable<Boot>, dir_name: &str) -> Vec<(String, Module)> {
+    let all_handles = st
+        .boot_services()
+        .find_handles::<SimpleFileSystem>()
+        .expect_success("Can't find any SimpleFileSystems?");
+    let mut modules: Vec<(String, Module)> = Vec::with_capacity(KernelArgs::MAX_MODULES);
+    for handle in all_handles {
+        let fhandle = st
+            .boot_services()
+            .handle_protocol::<SimpleFileSystem>(handle)
+            .expect_success("Don't have SimpleFileSystem support");
+        let fhandle = unsafe { &mut *fhandle.get() };
+        info!("load modules for fhandle {:p}", fhandle);
+
+        modules.extend(load_modules(st, fhandle));
+    }
+
+    modules
+}
+
+/// Walk through the root directory of the UEFI SimpleFileSystem
 /// and return all files we find in that directory as
 /// a list tuples (filename, module).
 ///
 /// Does not recurse into subdirectories.
-pub fn load_modules(st: &SystemTable<Boot>, dir_name: &str) -> Vec<(String, Module)> {
-    let fhandle = st
-        .boot_services()
-        .locate_protocol::<SimpleFileSystem>()
-        .expect_success("Don't have SimpleFileSystem support");
-    let fhandle = unsafe { &mut *fhandle.get() };
-    let mut root_file = fhandle.open_volume().expect_success("Can't open volume");
-
-    // Look for the given binary name in the root folder of our EFI partition
-    // in our case this is `target/x86_64-uefi/debug/esp/`
-    // whereas the esp dir gets mounted with qemu using
-    // `-drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp`
-    let directory = root_file
-        .open(dir_name, FileMode::Read, FileAttribute::READ_ONLY)
-        .expect_success("Unable to locate binary")
-        .into_type()
-        .expect_success("Can't cast it to a file common type??");
-    debug!("Opened the directory {}", dir_name);
-
-    let mut dir_handle: Directory = match directory {
-        FileType::Regular(_) => panic!("Root directory was a regular file?"),
-        FileType::Dir(directory) => directory,
-    };
+pub fn load_modules(
+    st: &SystemTable<Boot>,
+    fhandle: &mut SimpleFileSystem,
+) -> Vec<(String, Module)> {
+    let mut dir_handle = fhandle.open_volume().expect_success("Can't open volume");
 
     // We have capacity for 32 modules if you want to increase this
     // also change `modules` in KernelArgs.
@@ -144,18 +149,25 @@ pub fn load_modules(st: &SystemTable<Boot>, dir_name: &str) -> Vec<(String, Modu
                     let file_name_16 = DCStr16(file_info.file_name().as_ptr());
                     if !file_info.attribute().contains(FileAttribute::DIRECTORY) {
                         let name_string: String = file_name_16.into();
-                        if name_string != "kernel" && name_string.len() < Module::MAX_NAME_LEN {
-                            let (module, _) = load_binary_into_memory(st, name_string.as_str());
+                        debug!("about to load {}", name_string);
+                        if name_string != "BootX64.efi" && name_string.len() < Module::MAX_NAME_LEN
+                        {
+                            let module = load_binary_into_memory(
+                                st,
+                                &mut dir_handle,
+                                file_info,
+                                name_string.as_str(),
+                            );
                             modules.push((name_string, module));
-                        } else if name_string != "kernel" {
-                            // Ignore the kernel binary, it's loaded separately because it needs
-                            // to be relocated too
                         } else if name_string.len() >= Module::MAX_NAME_LEN {
                             // Ignore modules with long name (since they would be truncated in Module)
                             // if you want to change this increase `Module::MAX_NAME_LEN`
+                            error!("File {} exceeds Module::MAX_NAME_LEN", name_string);
                         }
                     } else {
                         // Ignore directory entries
+                        let name_string: String = file_name_16.into();
+                        trace!("Found directory {}", name_string);
                     }
                 }
             }

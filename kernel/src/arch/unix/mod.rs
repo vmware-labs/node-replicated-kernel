@@ -5,7 +5,7 @@ use arrayvec::ArrayVec;
 use crate::xmain;
 use crate::ExitReason;
 
-use crate::memory::{tcache::TCache, Frame, GlobalMemory, GrowBackend};
+use crate::memory::{tcache_sp::TCacheSp, Frame, GlobalMemory, GrowBackend};
 
 pub mod irq;
 pub mod kcb;
@@ -49,7 +49,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
     // Allocate 32 MiB and add it to our heap
-    let mut tc = TCache::new(0, 0);
+    let mut tc = TCacheSp::new(0, 0);
     let mut mm = memory::MemoryMapper::new();
 
     for _i in 0..64 {

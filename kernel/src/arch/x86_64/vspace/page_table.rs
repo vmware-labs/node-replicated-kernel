@@ -6,10 +6,9 @@ use alloc::boxed::Box;
 
 use x86::bits64::paging::*;
 
+use crate::kcb::MemManager;
 use crate::memory::vspace::*;
-use crate::memory::{
-    kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, PhysicalPageProvider, VAddr,
-};
+use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
 /// A modification operation on the PageTable.
 enum Modify {
@@ -183,11 +182,7 @@ impl PageTable {
     /// Retrieves the relevant PDPT table for a given virtual address `vbase`.
     ///
     /// Allocates the PDPT page if it doesn't exist yet.
-    fn get_or_alloc_pdpt(
-        &mut self,
-        vbase: VAddr,
-        pager: &mut dyn PhysicalPageProvider,
-    ) -> &mut PDPT {
+    fn get_or_alloc_pdpt(&mut self, vbase: VAddr, pager: &mut dyn MemManager) -> &mut PDPT {
         let pml4_idx = pml4_index(vbase);
         if !self.pml4[pml4_idx].is_present() {
             trace!("Need new PDPDT for {:?} @ PML4[{}]", vbase, pml4_idx);
@@ -209,7 +204,7 @@ impl PageTable {
         psize: usize,
         vbase: VAddr,
         _rights: MapAction,
-        _pager: &mut dyn PhysicalPageProvider,
+        _pager: &mut dyn MemManager,
     ) -> bool {
         let pml4_idx = pml4_index(vbase);
         let pdpt_idx = pdpt_index(vbase);
@@ -263,7 +258,7 @@ impl PageTable {
         psize: usize,
         vbase: VAddr,
         _rights: MapAction,
-        _pager: &mut dyn PhysicalPageProvider,
+        _pager: &mut dyn MemManager,
     ) -> bool {
         let pml4_idx = pml4_index(vbase);
         let pdpt_idx = pdpt_index(vbase);
@@ -318,7 +313,7 @@ impl PageTable {
         psize: usize,
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn PhysicalPageProvider,
+        pager: &mut dyn MemManager,
     ) -> Result<(), AddressSpaceError> {
         let pdpt = self.get_or_alloc_pdpt(vbase, pager);
 
@@ -404,7 +399,7 @@ impl PageTable {
         psize: usize,
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn PhysicalPageProvider,
+        pager: &mut dyn MemManager,
     ) -> Result<(), AddressSpaceError> {
         let mut pd_idx = pd_index(vbase);
         let pd = self.get_pd_mut(pdpt_entry);
@@ -489,7 +484,7 @@ impl PageTable {
         psize: usize,
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn PhysicalPageProvider,
+        pager: &mut dyn MemManager,
     ) -> Result<(), AddressSpaceError> {
         let pt = self.get_pt_mut(pd_entry);
         let mut pt_idx = pt_index(vbase);
@@ -574,7 +569,7 @@ impl PageTable {
         pregion: (PAddr, usize),
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn PhysicalPageProvider,
+        pager: &mut dyn MemManager,
     ) -> Result<(), AddressSpaceError> {
         let (pbase, psize) = pregion;
         assert!(pbase.is_base_page_aligned());
@@ -774,21 +769,21 @@ impl PageTable {
         Err(AddressSpaceError::NotMapped)
     }
 
-    fn new_pt(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDEntry {
+    fn new_pt(pager: &mut dyn MemManager) -> PDEntry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
         debug_assert!(frame.base != PAddr::zero());
         unsafe { frame.zero() };
         return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
     }
 
-    fn new_pd(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PDPTEntry {
+    fn new_pd(pager: &mut dyn MemManager) -> PDPTEntry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
         debug_assert!(frame.base != PAddr::zero());
         unsafe { frame.zero() };
         return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
     }
 
-    fn new_pdpt(pager: &mut dyn crate::memory::PhysicalPageProvider) -> PML4Entry {
+    fn new_pdpt(pager: &mut dyn MemManager) -> PML4Entry {
         let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
         debug_assert!(frame.base != PAddr::zero());
         unsafe { frame.zero() };

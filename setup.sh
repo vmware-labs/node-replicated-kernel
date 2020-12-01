@@ -7,7 +7,8 @@ if [ "$(uname)" == "Darwin" ]; then
 elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
     sudo apt-get -o Acquire::Max-FutureTime=86400 update
     # bespin build dependencies
-    sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 zlib1g-dev make gcc build-essential python3 python3-plumbum python3-prctl \
+    sudo apt-get install -y qemu qemu-kvm uml-utilities mtools qemu-system-x86 zlib1g-dev make gcc build-essential \
+        python3 python3-plumbum python3-prctl python3-toml python3-pexpect sshpass \
         hwloc libhwloc-dev
     # For building rump packages (rkapps)
     sudo apt-get install -y genisoimage

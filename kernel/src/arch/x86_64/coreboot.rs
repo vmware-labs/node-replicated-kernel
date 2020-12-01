@@ -246,6 +246,10 @@ unsafe fn wakeup_core(core_id: ApicId) {
     // x86 core boot protocol, without sleeping:
     kcb.arch.apic().ipi_init(core_id);
     kcb.arch.apic().ipi_init_deassert();
+
+    let start = rawtime::Instant::now();
+    while start.elapsed().as_millis() > 10 {}
+
     kcb.arch.apic().ipi_startup(core_id, REAL_MODE_PAGE);
 }
 

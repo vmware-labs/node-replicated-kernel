@@ -211,8 +211,15 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 .map_identity(phys_range_start, phys_range_end, rights);
 
             if entry.ty == MemoryType::CONVENTIONAL
+                // TODO(strange): Apparently on skylake2x the PDPT that contains the 
+                // 0x6000-0x7000 mapping to boot a core of this type!?
+                // IMO Shouldn't happen because we allocate page-table memory as KERNEL_PT...
+                || entry.ty == MemoryType::BOOT_SERVICES_DATA
                 || entry.ty == MemoryType(KERNEL_PT)
                 || entry.ty == MemoryType(MODULE)
+                // TODO(decide): Not clear we want this, we might also just say we only access 
+                // kernel-args the beginning and copy it in the kernel?
+                || entry.ty == MemoryType(KERNEL_ARGS)
             {
                 kernel.vspace.map_identity_with_offset(
                     PAddr::from(KERNEL_OFFSET as u64),
@@ -273,15 +280,6 @@ fn _serial_init(st: &SystemTable<Boot>) {
             .expect_success("Failed to write to serial port");
     } else {
         warn!("No serial device found.");
-    }
-}
-
-fn find_apic_base() -> u64 {
-    use x86::msr::{rdmsr, IA32_APIC_BASE};
-    unsafe {
-        let base = rdmsr(IA32_APIC_BASE);
-        info!("xAPIC MMIO base is at {:x}", base & !0xfff);
-        base & !0xfff
     }
 }
 
@@ -352,11 +350,29 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     info!("UEFI Bootloader starting...");
     check_revision(st.uefi_revision());
 
-    let _base = find_apic_base();
+    let modules = load_modules_on_all_sfs(&st, "\\");
 
-    let (kernel_module, kernel_blob) = load_binary_into_memory(&st, "kernel");
-    let (cmdline_module, cmdline_blob) = load_binary_into_memory(&st, "cmdline.in");
-    let modules = load_modules(&st, "\\");
+    let (kernel_blob, cmdline_blob) = {
+        let mut kernel_blob = None;
+        let mut cmdline_blob = None;
+        for (name, m) in modules.iter() {
+            info!("name is {}", name);
+            if name == "kernel" {
+                // This needs to be in physical space, because we relocate it in the bootloader
+                kernel_blob = unsafe { Some(m.as_pslice()) };
+            }
+            if name == "cmdline.in" {
+                // This needs to be in kernel-space because we ultimately access it in the kernel
+                cmdline_blob = unsafe { Some(m.as_pslice()) };
+                info!("cmdline.in blob is at {:#x}", m.binary_paddr);
+            }
+        }
+
+        (
+            kernel_blob.expect("Didn't find kernel binary."),
+            cmdline_blob.expect("Didn't find cmdline.in"),
+        )
+    };
 
     // Next create an address space for our kernel
     trace!("Allocate a PML4 (page-table root)");
@@ -404,6 +420,8 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         stack_protector,
         stack_protector + BASE_PAGE_SIZE,
     );
+    assert!(mem::size_of::<KernelArgs>() < BASE_PAGE_SIZE);
+    let kernel_args_paddr = allocate_pages(&st, 1, MemoryType(KERNEL_ARGS));
 
     // Make sure we still have access to the UEFI mappings:
     // Get the current memory map and 1:1 map all physical memory
@@ -457,11 +475,9 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         // This could theoretically be pushed on the stack too
         // but for now we just allocate a separate page (and don't care about
         // wasted memory)
-        assert!(mem::size_of::<KernelArgs>() < BASE_PAGE_SIZE);
-        let kernel_args_paddr = allocate_pages(&st, 1, MemoryType(KERNEL_ARGS));
         let mut kernel_args =
             transmute::<VAddr, &mut KernelArgs>(paddr_to_uefi_vaddr(kernel_args_paddr));
-        trace!("Kernel args allocated.");
+        trace!("Kernel args allocated at {:#x}.", kernel_args_paddr);
         kernel_args.mm_iter = Vec::with_capacity(no_descs);
 
         // Initialize the KernelArgs
@@ -471,7 +487,12 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
         kernel_args.kernel_elf_offset = kernel.offset;
         kernel_args.modules = arrayvec::ArrayVec::new();
-        kernel_args.modules.push(kernel_module);
+        // Add modules to kernel args, ensure 'kernel' is first:
+        for (name, module) in modules.iter() {
+            if name == "kernel" {
+                kernel_args.modules.push(module.clone());
+            }
+        }
         for (name, module) in modules {
             if name != "kernel" {
                 kernel_args.modules.push(module);
@@ -525,7 +546,6 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
 
         // Switch to the kernel address space
         controlregs::cr3_write((kernel.vspace.pml4) as *const _ as u64);
-        x86::tlb::flush_all();
 
         // Finally switch to the kernel stack and entry function
         jump_to_kernel(

@@ -12,9 +12,15 @@ use crate::arch::kcb::init_kcb;
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
 use crate::fs::{FileSystem, MemFS};
-use crate::memory::{emem::EmergencyAllocator, tcache::TCache, GlobalMemory, PAddr};
+use crate::memory::tcache_sp::TCacheSp;
+use crate::memory::{
+    emem::EmergencyAllocator, tcache::TCache, AllocatorStatistics, GlobalMemory, GrowBackend,
+    PAddr, PhysicalPageProvider,
+};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
+
+pub trait MemManager: PhysicalPageProvider + AllocatorStatistics + GrowBackend {}
 
 /// Definition to parse the kernel command-line arguments.
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
@@ -203,7 +209,7 @@ pub struct Kcb<A> {
     kernel_binary: &'static [u8],
 
     /// A handle to the early page-allocator.
-    pub emanager: RefCell<TCache>,
+    pub emanager: RefCell<TCacheSp>,
 
     /// A handle to a bump-style emergency Allocator.
     pub ezone_allocator: RefCell<EmergencyAllocator>,
@@ -229,7 +235,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     pub fn new(
         kernel_binary: &'static [u8],
         cmdline: BootloaderArguments,
-        emanager: TCache,
+        emanager: TCacheSp,
         arch: A,
         node: topology::NodeId,
     ) -> Kcb<A> {
@@ -306,8 +312,15 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     }
 
     /// Get a reference to the early memory manager.
-    pub fn emanager(&self) -> RefMut<TCache> {
+    pub fn emanager(&self) -> RefMut<TCacheSp> {
         self.emanager.borrow_mut()
+    }
+
+    /// Get a reference to the early memory manager.
+    fn try_borrow_emanager(&self) -> Result<RefMut<dyn MemManager>, core::cell::BorrowMutError> {
+        self.emanager
+            .try_borrow_mut()
+            .map(|rmt| RefMut::map(rmt, |t| t as &mut dyn MemManager))
     }
 
     pub fn ezone_allocator(
@@ -324,7 +337,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     /// Returns a reference to the core-local physical memory manager if set,
     /// otherwise returns the early physical memory manager.
-    pub fn mem_manager(&self) -> RefMut<TCache> {
+    pub fn mem_manager(&self) -> RefMut<dyn MemManager> {
         if core::intrinsics::unlikely(self.in_panic_mode) {
             return self.emanager();
         }
@@ -335,7 +348,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
 
-    pub fn try_mem_manager(&self) -> Result<RefMut<TCache>, core::cell::BorrowMutError> {
+    pub fn try_mem_manager(&self) -> Result<RefMut<dyn MemManager>, core::cell::BorrowMutError> {
         if core::intrinsics::unlikely(self.in_panic_mode) {
             return Ok(self.emanager());
         }
@@ -343,7 +356,10 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.physical_memory
             .pmanager
             .as_ref()
-            .map_or(self.emanager.try_borrow_mut(), |pmem| pmem.try_borrow_mut())
+            .map_or(self.try_borrow_emanager(), |pmem| {
+                pmem.try_borrow_mut()
+                    .map(|rmt| RefMut::map(rmt, |t| t as &mut dyn MemManager))
+            })
     }
 
     pub fn kernel_binary(&self) -> &'static [u8] {

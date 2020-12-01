@@ -27,6 +27,7 @@ use x86::bits64::paging;
 pub mod emem;
 pub mod ncache;
 pub mod tcache;
+pub mod tcache_sp;
 pub mod vspace;
 
 /// Re-export arch specific memory definitions
@@ -850,6 +851,14 @@ pub trait AllocatorStatistics {
     ///
     /// In some cases an allocator may not be able to calculate it.
     fn internal_fragmentation(&self) -> usize;
+
+    fn free_base_pages(&self) -> usize {
+        0
+    }
+
+    fn free_large_pages(&self) -> usize {
+        0
+    }
 }
 
 pub trait PhysicalAllocator {

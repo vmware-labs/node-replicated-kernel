@@ -42,6 +42,7 @@ pub extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
         (Some(args.acpi1_rsdp), Some(args.acpi2_rsdp))
     });
 
+    trace!("rsdp1 {:?} rsdp2: {:?}", rsdp1_root, rsdp2_root);
     let ptr = match (rsdp2_root, rsdp1_root) {
         (Some(ptr), _) => ptr,
         (None, Some(ptr)) => ptr,
@@ -59,7 +60,8 @@ pub extern "C" fn AcpiOsPredefinedOverride(
 ) -> ACPI_STATUS {
     let name = unsafe { CStr::from_ptr((*init).Name).to_str().unwrap_or("") };
     trace!("AcpiOsPredefinedOverride {}", name);
-    if new.is_null() {
+
+    if new.is_null() || init.is_null() {
         AE_BAD_PARAMETER
     } else {
         unsafe {
@@ -75,10 +77,16 @@ pub extern "C" fn AcpiOsTableOverride(
     existing_table: *mut ACPI_TABLE_HEADER,
     new_table: *mut *mut ACPI_TABLE_HEADER,
 ) -> ACPI_STATUS {
-    trace!("AcpiOsTableOverride");
-    assert!(!new_table.is_null(), "ACPI invalid parameter supplied");
-    unsafe { *new_table = ptr::null_mut() };
-    AE_OK
+    trace!("AcpiOsTableOverride {:p} {:p}", existing_table, new_table);
+    if new_table.is_null() || existing_table.is_null() {
+        return AE_BAD_PARAMETER;
+    }
+
+    unsafe {
+        *new_table = ptr::null_mut();
+    }
+
+    AE_NO_ACPI_TABLES
 }
 
 #[no_mangle]
@@ -89,12 +97,7 @@ pub extern "C" fn AcpiOsPhysicalTableOverride(
     new_table_len: *mut UINT32,
 ) -> ACPI_STATUS {
     trace!("AcpiOsPhysicalTableOverride");
-    assert!(!new_address.is_null());
-    assert!(!new_table_len.is_null());
-    unsafe {
-        *new_address = 0x0;
-    }
-    AE_OK
+    AE_SUPPORT
 }
 
 #[no_mangle]
@@ -113,14 +116,14 @@ pub extern "C" fn AcpiOsDeleteLock(Handle: *mut c_void) {
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsAcquireLock(Handle: *mut c_void) -> ACPI_STATUS {
-    trace!("AcpiOsAcquireLock");
+    //trace!("AcpiOsAcquireLock");
     AE_OK
 }
 
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsReleaseLock(Handle: *mut c_void, Flags: ACPI_SIZE) {
-    trace!("AcpiOsReleaseLock");
+    //trace!("AcpiOsReleaseLock");
 }
 
 #[no_mangle]
@@ -155,16 +158,47 @@ pub extern "C" fn AcpiOsSignalSemaphore(Handle: *mut c_void, Units: UINT32) -> A
     AE_OK
 }
 
+pub const HEADER_SIZE: usize = 16;
+
+/// Implementes malloc using the `alloc::alloc` interface.
+///
+/// We need to add a header to store the size for the
+/// `free` implementation.
 #[no_mangle]
 #[linkage = "external"]
-pub unsafe extern "C" fn AcpiOsAllocate(len: ACPI_SIZE) -> *mut u8 {
-    alloc::alloc(Layout::from_size_align_unchecked(len as usize, 1))
+pub unsafe extern "C" fn AcpiOsAllocate(size: ACPI_SIZE) -> *mut u8 {
+    let size: usize = size as usize;
+    trace!("AcpiOsAllocate {}", size);
+
+    let allocation_size: u64 = (size + HEADER_SIZE) as u64;
+    let alignment = 8;
+
+    let ptr = alloc::alloc(Layout::from_size_align_unchecked(
+        allocation_size as usize,
+        alignment,
+    ));
+    if ptr != ptr::null_mut() {
+        *(ptr as *mut u64) = allocation_size;
+        ptr.offset(HEADER_SIZE as isize)
+    } else {
+        error!("Could not allocate {} bytes.", size);
+        core::ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 #[linkage = "external"]
-pub extern "C" fn AcpiOsFree(ptr: *mut u8) {
-    //alloc::dealloc(ptr, Layout::from_size_align_unchecked(len, 1));
+pub unsafe extern "C" fn AcpiOsFree(ptr: *mut u8) {
+    if ptr == core::ptr::null_mut() {
+        return;
+    }
+
+    let allocation_size: u64 = *(ptr.offset(-(HEADER_SIZE as isize)) as *mut u64);
+    trace!("AcpiOsFree ptr {:p} size={}", ptr, allocation_size);
+    alloc::dealloc(
+        ptr.offset(-(HEADER_SIZE as isize)),
+        Layout::from_size_align_unchecked(allocation_size as usize, 8),
+    );
 }
 
 #[no_mangle]
@@ -172,7 +206,8 @@ pub extern "C" fn AcpiOsFree(ptr: *mut u8) {
 pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZE) -> *mut c_void {
     trace!("AcpiOsMapMemory(loc = {:#x}, len = {})", location, len);
 
-    let p = PAddr::from((location & !0xfff) as u64);
+    let p = PAddr::from(location);
+    let adjusted_len = (p - p.align_down_to_base_page().as_usize()) + len;
 
     use crate::round_up;
     super::kcb::try_get_kcb().map(|k: &mut Kcb<Arch86Kcb>| {
@@ -180,8 +215,8 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
         vspace
             .map_identity_with_offset(
                 PAddr::from(super::memory::KERNEL_BASE),
-                p,
-                round_up!(len as usize, x86::bits64::paging::BASE_PAGE_SIZE),
+                p.align_down_to_base_page(),
+                round_up!(adjusted_len.as_usize(), x86::bits64::paging::BASE_PAGE_SIZE),
                 MapAction::ReadWriteKernel,
             )
             .expect("Can't map ACPI memory");
@@ -194,7 +229,7 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsUnmapMemory(vptr: *mut c_void, len: ACPI_SIZE) {
-    trace!("AcpiOsUnmapMemory(loc = {:p}, len = {})", vptr, len);
+    debug!("AcpiOsUnmapMemory(loc = {:p}, len = {})", vptr, len);
 }
 
 #[no_mangle]
@@ -203,7 +238,7 @@ pub extern "C" fn AcpiOsGetPhysicalAddress(
     LogicalAddress: *mut c_void,
     PhysicalAddress: *mut ACPI_PHYSICAL_ADDRESS,
 ) -> ACPI_STATUS {
-    unreachable!()
+    unreachable!("AcpiOsGetPhysicalAddress")
 }
 
 // These shouldn't be needed, ACPICA is compiled with its internal caching mechanism
@@ -215,16 +250,13 @@ pub extern "C" fn AcpiOsInstallInterruptHandler(
     handler: ACPI_OSD_HANDLER,
     ctxt: *mut c_void,
 ) -> ACPI_STATUS {
-    //unreachable!()
     if handler.is_none() {
         return AE_BAD_PARAMETER;
     }
 
-    trace!(
+    debug!(
         "AcpiOsInstallInterruptHandler {} {:?} {:p}",
-        num,
-        handler,
-        ctxt
+        num, handler, ctxt
     );
     AE_OK
 }
@@ -235,7 +267,7 @@ pub extern "C" fn AcpiOsRemoveInterruptHandler(
     InterruptNumber: UINT32,
     ServiceRoutine: ACPI_OSD_HANDLER,
 ) -> ACPI_STATUS {
-    unreachable!()
+    unreachable!("AcpiOsRemoveInterruptHandler")
 }
 
 #[no_mangle]
@@ -251,25 +283,25 @@ pub extern "C" fn AcpiOsExecute(
     Function: ACPI_OSD_EXEC_CALLBACK,
     Context: *mut c_void,
 ) -> ACPI_STATUS {
-    unreachable!()
+    unreachable!("AcpiOsExecute")
 }
 
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsWaitEventsComplete() {
-    unreachable!()
+    unreachable!("AcpiOsWaitEventsComplete")
 }
 
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsSleep(Milliseconds: UINT64) {
-    unreachable!()
+    unreachable!("AcpiOsSleep")
 }
 
 #[no_mangle]
 #[linkage = "external"]
 pub extern "C" fn AcpiOsStall(Microseconds: UINT32) {
-    unreachable!()
+    unreachable!("AcpiOsStall")
 }
 
 #[no_mangle]
@@ -344,13 +376,55 @@ pub extern "C" fn AcpiOsWriteMemory(
 
 #[no_mangle]
 #[linkage = "external"]
-pub extern "C" fn AcpiOsReadPciConfiguration(
-    PciId: *mut ACPI_PCI_ID,
-    Reg: UINT32,
-    Value: *mut UINT64,
-    Width: UINT32,
+pub unsafe extern "C" fn AcpiOsReadPciConfiguration(
+    pci_id: *mut ACPI_PCI_ID,
+    reg: UINT32,
+    value: *mut UINT64,
+    width: UINT32,
 ) -> ACPI_STATUS {
-    unreachable!()
+    static PCI_CONF_ADDR: u16 = 0xcf8;
+    static PCI_CONF_DATA: u16 = 0xcfc;
+
+    let (bus, dev, fun) = (
+        (*pci_id).Bus.into(),
+        (*pci_id).Device.into(),
+        (*pci_id).Function.into(),
+    );
+    trace!(
+        "AcpiOsReadPciConfiguration {}:{}:{} {} {:p} {}",
+        bus,
+        dev,
+        fun,
+        reg,
+        value,
+        width
+    );
+
+    fn pci_bus_address(bus: u32, dev: u32, fun: u32, reg: i32) -> u32 {
+        assert!(reg <= 0xfc);
+        (1 << 31) | (bus << 16) | (dev << 11) | (fun << 8) | (reg as u32 & 0xfc)
+    }
+
+    let addr = pci_bus_address(bus, dev, fun, reg as i32);
+
+    match width {
+        8 => {
+            io::outl(PCI_CONF_ADDR, addr);
+            *value = io::inb(PCI_CONF_DATA).into();
+            AE_OK
+        }
+        16 => {
+            io::outl(PCI_CONF_ADDR, addr);
+            *value = io::inw(PCI_CONF_DATA).into();
+            AE_OK
+        }
+        32 => {
+            io::outl(PCI_CONF_ADDR, addr);
+            *value = io::inl(PCI_CONF_DATA).into();
+            AE_OK
+        }
+        _ => AE_BAD_PARAMETER,
+    }
 }
 
 #[no_mangle]
@@ -388,27 +462,39 @@ pub extern "C" fn AcpiOsSignal(Function: UINT32, Info: *mut c_void) -> ACPI_STAT
     unreachable!()
 }
 
+// Define the printf function in `acpi_printf.c`
+// The alternative to using this approach is to write our own
+// C printf function in rust if we want to make sense of ACPI
+// debug messages (I don't want to do that...)
+extern "C" {
+    #[no_mangle]
+    fn vprintf_(format: *const i8, args: VaList);
+
+    #[no_mangle]
+    fn printf_(fmt: *const i8, ...) -> i32;
+}
+
+/// Needed for the C-based printf implementations.
+#[no_mangle]
+pub extern "C" fn _putchar(c: u8) {
+    sprint!("{}", c as char);
+}
+
 #[no_mangle]
 #[linkage = "external"]
-pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, Args: VaList) {
-    let fmt = CStr::from_ptr(format).to_str().unwrap_or("");
-    debug!("AcpiOsVprintf {}", fmt);
+pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, args: VaList) {
+    if false {
+        vprintf_(format, args);
+    }
 }
 
 #[no_mangle]
 #[linkage = "external"]
 pub unsafe extern "C" fn AcpiOsPrintf(format: *const i8, args: ...) {
-    trace!("AcpiOsPrintf");
-    let fmt = CStr::from_ptr(format).to_str().unwrap_or("");
-    debug!("AcpiOsPrintf {}", fmt);
-    //let arg1 = args.arg::<*const i8>();
-    //let arg1_str = CStr::from_ptr(arg1).to_str().unwrap_or("unknown");
-    //error!(" AcpiOsPrintf {}", arg1_str);
-    /*let mut sum = 0;
-    for _ in 0..n {
-        sum += args.arg::<usize>();
-    }
-    sum*/
+    // Unfortunately the printf() implementation can crash the
+    // ACPI initialization on bare-metal sometimes, so currently
+    // printf_ is disabled...
+    //printf_(format, args);
 }
 
 #[no_mangle]
@@ -540,6 +626,20 @@ pub extern "C" fn AcpiOsTracePoint(
 
 pub(crate) fn init() -> Result<(), ACPI_STATUS> {
     unsafe {
+        /*
+        // For more debug info from ACPI:
+
+        #[linkage = "external"]
+        extern "C" {
+            #[no_mangle]
+            static mut AcpiDbgLevel: u32;
+            #[no_mangle]
+            static mut AcpiDbgLayer: u32;
+        }
+        AcpiDbgLayer = 0x00000400;
+        AcpiDbgLevel = 0x000FFF40;
+        */
+
         let ret = AcpiInitializeSubsystem();
         assert_eq!(ret, AE_OK);
         trace!("AcpiInitializeSubsystem {:?}", ret);

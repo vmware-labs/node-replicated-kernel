@@ -21,6 +21,8 @@ pub struct TCache {
     large_page_addresses: arrayvec::ArrayVec<[PAddr; 128]>,
 }
 
+impl crate::kcb::MemManager for TCache {}
+
 impl TCache {
     pub fn new(_thread: topology::ThreadId, node: topology::NodeId) -> TCache {
         TCache {
@@ -97,7 +99,7 @@ impl TCache {
             );
         }
 
-        trace!(
+        error!(
             "TCache populated with {} base-pages and {} large-pages",
             self.base_page_addresses.len(),
             self.large_page_addresses.len()
@@ -110,16 +112,6 @@ impl TCache {
 
     fn paddr_to_large_page(&self, pa: PAddr) -> Frame {
         Frame::new(pa, LARGE_PAGE_SIZE, self.node)
-    }
-
-    /// How many basepages we can allocate from the cache.
-    pub(crate) fn free_base_pages(&self) -> usize {
-        self.base_page_addresses.len()
-    }
-
-    /// How many large-pages we can allocate from the cache.
-    pub(crate) fn free_large_pages(&self) -> usize {
-        self.large_page_addresses.len()
     }
 }
 
@@ -146,6 +138,16 @@ impl AllocatorStatistics for TCache {
 
     fn internal_fragmentation(&self) -> usize {
         0
+    }
+
+    /// How many basepages we can allocate from the cache.
+    fn free_base_pages(&self) -> usize {
+        self.base_page_addresses.len()
+    }
+
+    /// How many large-pages we can allocate from the cache.
+    fn free_large_pages(&self) -> usize {
+        self.large_page_addresses.len()
     }
 }
 

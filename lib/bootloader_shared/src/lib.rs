@@ -20,8 +20,12 @@ pub struct Module {
     pub name: [u8; Module::MAX_NAME_LEN],
     /// Length of name
     pub name_len: usize,
-    /// Where in memory the binary is and how big it is (in bytes).
-    pub binary: (x86::bits64::paging::VAddr, usize),
+    /// Where in memory the binary is (kernel virtual address).
+    pub binary_vaddr: x86::bits64::paging::VAddr,
+    /// Where in memory the binary is (physical address)
+    pub binary_paddr: x86::bits64::paging::PAddr,
+    /// How big the binary is (in bytes)
+    pub binary_size: usize,
 }
 
 impl Module {
@@ -30,7 +34,7 @@ impl Module {
 
     /// Create a new module to pass to the kernel.
     /// The name will be truncated to 32 bytes.
-    pub fn new(name: &str, binary: (x86::bits64::paging::VAddr, usize)) -> Module {
+    pub fn new(name: &str, binary_vaddr: x86::bits64::paging::VAddr, binary_paddr: x86::bits64::paging::PAddr, binary_size: usize) -> Module {
         let mut name_slice: [u8; Module::MAX_NAME_LEN] = [0; Module::MAX_NAME_LEN];
         let len = core::cmp::min(name.len(), Module::MAX_NAME_LEN);
         name_slice[0..len].copy_from_slice(&name.as_bytes()[0..len]);
@@ -38,7 +42,9 @@ impl Module {
         Module {
             name: name_slice,
             name_len: len,
-            binary,
+            binary_vaddr,
+            binary_paddr,
+            binary_size
         }
     }
 
@@ -47,16 +53,16 @@ impl Module {
         core::str::from_utf8(&self.name[0..self.name_len]).unwrap_or("unknown")
     }
 
-    /// Base physical address of the binary blob.
+    /// Base address of the binary blob (in kernel space).
     #[allow(unused)]
     pub fn base(&self) -> x86::bits64::paging::VAddr {
-        self.binary.0
+        self.binary_vaddr
     }
 
     /// Size of the binary blob.
     #[allow(unused)]
     pub fn size(&self) -> usize {
-        self.binary.1
+        self.binary_size
     }
 
     /// Return a slice to the binary loaded in the (kernel) address space.
@@ -68,6 +74,16 @@ impl Module {
     pub unsafe fn as_slice(&self) -> &'static [u8] {
         core::slice::from_raw_parts(self.base().as_ptr::<u8>(), self.size())
     }
+
+    /// Return a slice to the binary loaded in the physical address space.
+    ///
+    /// # Unsafe
+    /// May not be mapped at all (for example in kernel space).
+    /// May be unmapped/changed arbitrarily later by the kernel.
+    #[allow(unused)]
+    pub unsafe fn as_pslice(&self) -> &'static [u8] {
+        core::slice::from_raw_parts(self.binary_paddr.0 as *const u8, self.size())
+    }
 }
 
 impl core::fmt::Debug for Module {
@@ -76,7 +92,7 @@ impl core::fmt::Debug for Module {
         w.field("name", &self.name());
         w.field(
             "binary",
-            &format_args!("({:#x}, {:#x})", self.binary.0, self.binary.1),
+            &format_args!("({:#x}, {:#x})", self.binary_vaddr, self.binary_size),
         );
         w.finish()
     }

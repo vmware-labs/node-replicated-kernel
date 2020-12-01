@@ -74,6 +74,8 @@ pub fn shutdown(val: ExitReason) -> ! {
     unsafe {
         io::outb(0xf4, val as u8);
     }
+
+    error!("Shutdown requested: {:?}", val);
     // In case this doesn't work we hang.
     loop {}
 }

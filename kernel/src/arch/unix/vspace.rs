@@ -3,6 +3,7 @@
 use alloc::boxed::Box;
 use core::pin::Pin;
 
+use crate::kcb::MemManager;
 use crate::memory::vspace::{AddressSpace, AddressSpaceError, MapAction, TlbFlushHandle};
 use crate::memory::Frame;
 
@@ -27,7 +28,7 @@ impl VSpace {
         _pregion: (PAddr, usize),
         _rights: MapAction,
         _create_mappings: bool,
-        _pager: &mut crate::memory::tcache::TCache,
+        _pager: &mut dyn MemManager,
     ) -> Result<(), AddressSpaceError> {
         Ok(())
     }

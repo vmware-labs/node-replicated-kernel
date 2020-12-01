@@ -13,5 +13,5 @@ x86 = { path = "../lib/x86" }
 ## External dependencies
 log = { version = "0.4", default-features = false }
 arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
-uefi = "0.6.0"
+uefi = { version = "0.6.0", features = ["exts"]}
 uefi-services = "0.3.0"

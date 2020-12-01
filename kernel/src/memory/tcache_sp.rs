@@ -1,10 +1,11 @@
-//! TCacheSp is a physical memory manager used to maintain a smallish page-cache.
+//! TCacheSp is identical to the TCache except that it has
+//! a lot more 4K pages available.
 //!
-//! It has the following properties:
+//! This is useful for the early memory manager on core 0
+//! and needs to allocate a lot of small objects )thanks to ACPI).
 //!
-//! - Fits in a 4 KiB page
-//! - Can allocate and free 2 MiB and 4 KiB Frames very quickly using page-inlined stacks.
-//! - Is not thread-safe (intended to be used on a single CPU)
+//! TODO(code-duplication): Ideally we should instantiate with some macros
+//! or wait till ArrayVec allows us to dynamically define array sizes?
 
 use super::*;
 
@@ -265,39 +266,13 @@ impl GrowBackend for TCacheSp {
 #[cfg(test)]
 mod test {
     use super::*;
-    /// TCacheSp should be fit exactly within a base-page.
-    #[test]
-    fn TCacheSp_is_page_sized() {
-        assert_eq!(core::mem::size_of::<TCacheSp>(), super::BASE_PAGE_SIZE);
-    }
-
-    /// TCacheSp should be fit exactly within a base-page.
-    #[test]
-    fn TCacheSp_populate() {
-        let TCacheSp =
-            TCacheSp::new_with_frame(1, 2, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
-        assert_eq!(TCacheSp.base_page_addresses.len(), 10);
-        assert_eq!(TCacheSp.large_page_addresses.len(), 0);
-
-        let TCacheSp = TCacheSp::new_with_frame(
-            1,
-            2,
-            Frame::new(
-                PAddr::from((2 * 1024 * 1024) - 5 * 4096),
-                (1024 * 1024 * 2) + 11 * 0x1000,
-                4,
-            ),
-        );
-        assert_eq!(TCacheSp.base_page_addresses.len(), 11);
-        assert_eq!(TCacheSp.large_page_addresses.len(), 1);
-    }
 
     /// Can't add wrong size.
     #[test]
     #[should_panic]
-    fn TCacheSp_invalid_base_frame_size() {
-        let mut TCacheSp = TCacheSp::new(1, 4);
-        TCacheSp
+    fn tcache_sp_invalid_base_frame_size() {
+        let mut tcache = TCacheSp::new(1, 4);
+        tcache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4))
             .expect("release");
     }
@@ -305,9 +280,9 @@ mod test {
     /// Can't add wrong size.
     #[test]
     #[should_panic]
-    fn TCacheSp_invalid_base_frame_align() {
-        let mut TCacheSp = TCacheSp::new(1, 4);
-        TCacheSp
+    fn tcache_sp_invalid_base_frame_align() {
+        let mut tcache = TCacheSp::new(1, 4);
+        tcache
             .release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4))
             .expect("release");
     }
@@ -315,30 +290,30 @@ mod test {
     /// Can't add wrong affinity.
     #[test]
     #[should_panic]
-    fn TCacheSp_invalid_affinity() {
-        let mut TCacheSp = TCacheSp::new(1, 1);
-        TCacheSp
+    fn tcache_sp_invalid_affinity() {
+        let mut tcache = TCacheSp::new(1, 1);
+        tcache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
             .expect("release");
     }
 
-    /// Test that reap interface of the TCacheSp.
+    /// Test that reap interface of the tcache.
     #[test]
-    fn TCacheSp_reap() {
-        let mut TCacheSp = TCacheSp::new(1, 4);
+    fn tcache_sp_reap() {
+        let mut tcache = TCacheSp::new(1, 4);
 
         // Insert some pages
-        TCacheSp
+        tcache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
             .expect("release");
-        TCacheSp
+        tcache
             .release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 4))
             .expect("release");
 
-        TCacheSp
+        tcache
             .release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 4))
             .expect("release");
-        TCacheSp
+        tcache
             .release_large_page(Frame::new(
                 PAddr::from(LARGE_PAGE_SIZE * 4),
                 LARGE_PAGE_SIZE,
@@ -347,13 +322,13 @@ mod test {
             .expect("release");
 
         let mut free_list = [None];
-        TCacheSp.reap_base_pages(&mut free_list);
+        tcache.reap_base_pages(&mut free_list);
         assert_eq!(free_list[0].unwrap().base.as_u64(), 0x3000);
         assert_eq!(free_list[0].unwrap().size, 0x1000);
         assert_eq!(free_list[0].unwrap().affinity, 4);
 
         let mut free_list = [None, None, None];
-        TCacheSp.reap_base_pages(&mut free_list);
+        tcache.reap_base_pages(&mut free_list);
         assert_eq!(free_list[0].unwrap().base.as_u64(), 0x2000);
         assert_eq!(free_list[0].unwrap().size, 0x1000);
         assert_eq!(free_list[0].unwrap().affinity, 4);
@@ -361,7 +336,7 @@ mod test {
         assert!(free_list[2].is_none());
 
         let mut free_list = [None, None];
-        TCacheSp.reap_large_pages(&mut free_list);
+        tcache.reap_large_pages(&mut free_list);
         assert_eq!(free_list[0].unwrap().base.as_usize(), LARGE_PAGE_SIZE * 4);
         assert_eq!(free_list[0].unwrap().size, LARGE_PAGE_SIZE);
         assert_eq!(free_list[0].unwrap().affinity, 4);
@@ -373,59 +348,59 @@ mod test {
     /// Test that release and allocate works as expected.
     /// Also verify free memory reporting along the way.
     #[test]
-    fn TCacheSp_release_allocate() {
-        let mut TCacheSp = TCacheSp::new(1, 2);
+    fn tcache_sp_release_allocate() {
+        let mut tcache = TCacheSp::new(1, 2);
 
         // Insert some pages
-        TCacheSp
+        tcache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2))
             .expect("release");
-        TCacheSp
+        tcache
             .release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 2))
             .expect("release");
 
-        TCacheSp
+        tcache
             .release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 2))
             .expect("release");
-        TCacheSp
+        tcache
             .release_large_page(Frame::new(
                 PAddr::from(LARGE_PAGE_SIZE * 2),
                 LARGE_PAGE_SIZE,
                 2,
             ))
             .expect("release");
-        assert_eq!(TCacheSp.free(), 2 * BASE_PAGE_SIZE + 2 * LARGE_PAGE_SIZE);
+        assert_eq!(tcache.free(), 2 * BASE_PAGE_SIZE + 2 * LARGE_PAGE_SIZE);
 
         // Can we allocate
-        let f = TCacheSp.allocate_base_page().expect("Can allocate");
+        let f = tcache.allocate_base_page().expect("Can allocate");
         assert_eq!(f.base.as_u64(), 0x3000);
         assert_eq!(f.size, 0x1000);
         assert_eq!(f.affinity, 2);
 
-        let f = TCacheSp.allocate_base_page().expect("Can allocate");
+        let f = tcache.allocate_base_page().expect("Can allocate");
         assert_eq!(f.base.as_u64(), 0x2000);
         assert_eq!(f.size, 0x1000);
         assert_eq!(f.affinity, 2);
 
-        let _f = TCacheSp
+        let _f = tcache
             .allocate_base_page()
             .expect_err("Can't allocate more than we gave it");
 
-        assert_eq!(TCacheSp.free(), 2 * LARGE_PAGE_SIZE);
+        assert_eq!(tcache.free(), 2 * LARGE_PAGE_SIZE);
 
-        let f = TCacheSp.allocate_large_page().expect("Can allocate");
+        let f = tcache.allocate_large_page().expect("Can allocate");
         assert_eq!(f.base.as_u64(), (LARGE_PAGE_SIZE * 2) as u64);
         assert_eq!(f.size, LARGE_PAGE_SIZE);
         assert_eq!(f.affinity, 2);
 
-        let f = TCacheSp.allocate_large_page().expect("Can allocate");
+        let f = tcache.allocate_large_page().expect("Can allocate");
         assert_eq!(f.base.as_u64(), LARGE_PAGE_SIZE as u64);
         assert_eq!(f.size, LARGE_PAGE_SIZE);
         assert_eq!(f.affinity, 2);
 
-        assert_eq!(TCacheSp.free(), 0);
+        assert_eq!(tcache.free(), 0);
 
-        let _f = TCacheSp
+        let _f = tcache
             .allocate_base_page()
             .expect_err("Can't allocate more than we gave it");
     }

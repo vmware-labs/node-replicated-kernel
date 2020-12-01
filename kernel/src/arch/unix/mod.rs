@@ -59,7 +59,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
         tc.grow_base_pages(&[frame]).expect("Can't add base-page");
     }
 
-    for _i in 0..32 {
+    for _i in 0..5 {
         let frame = mm
             .allocate_frame(2 * 1024 * 1024)
             .expect("We don't have vRAM available");

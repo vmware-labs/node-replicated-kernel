@@ -116,8 +116,6 @@ pub fn load_modules_on_all_sfs(st: &SystemTable<Boot>, dir_name: &str) -> Vec<(S
             .handle_protocol::<SimpleFileSystem>(handle)
             .expect_success("Don't have SimpleFileSystem support");
         let fhandle = unsafe { &mut *fhandle.get() };
-        info!("load modules for fhandle {:p}", fhandle);
-
         modules.extend(load_modules(st, fhandle));
     }
 

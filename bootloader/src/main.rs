@@ -356,7 +356,6 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
         let mut kernel_blob = None;
         let mut cmdline_blob = None;
         for (name, m) in modules.iter() {
-            info!("name is {}", name);
             if name == "kernel" {
                 // This needs to be in physical space, because we relocate it in the bootloader
                 kernel_blob = unsafe { Some(m.as_pslice()) };
@@ -364,7 +363,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
             if name == "cmdline.in" {
                 // This needs to be in kernel-space because we ultimately access it in the kernel
                 cmdline_blob = unsafe { Some(m.as_pslice()) };
-                info!("cmdline.in blob is at {:#x}", m.binary_paddr);
+                trace!("cmdline.in blob is at {:#x}", m.binary_paddr);
             }
         }
 

@@ -99,7 +99,7 @@ impl TCache {
             );
         }
 
-        error!(
+        debug!(
             "TCache populated with {} base-pages and {} large-pages",
             self.base_page_addresses.len(),
             self.large_page_addresses.len()

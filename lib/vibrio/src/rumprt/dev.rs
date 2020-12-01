@@ -9,6 +9,7 @@ use log::{error, info, trace, warn};
 use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
 use x86::io;
+use lineup::tls2::Environment;
 
 static PCI_CONF_ADDR: u16 = 0xcf8;
 static PCI_CONF_DATA: u16 = 0xcfc;
@@ -246,7 +247,7 @@ pub unsafe extern "C" fn rumpcomp_pci_dmalloc(
     let layout = Layout::from_size_align_unchecked(size, size);
 
     let r = {
-        let mut p = crate::mem::PAGER.lock();
+        let mut p = crate::mem::PAGER[Environment::scheduler().core_id].lock();
         (*p).allocate(layout)
     };
 

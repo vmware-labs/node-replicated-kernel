@@ -5,6 +5,8 @@ use core::ptr;
 
 use crate::rumprt::{c_int, c_size_t, c_void};
 
+use lineup::tls2::Environment;
+
 use log::{debug, error, info, trace, warn};
 const MAP_FAILED: u64 = u64::max_value();
 
@@ -105,7 +107,7 @@ mod bespin {
             addr, len, prot, flags, fd, pos
         );
 
-        let mut pager = crate::mem::PAGER.lock();
+        let mut pager = crate::mem::PAGER[Environment::scheduler().core_id].lock();
 
         let len = len as usize;
         let mut remaining = len;

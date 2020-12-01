@@ -16,6 +16,8 @@ use slabmalloc::*;
 
 use lineup::tls2::Environment;
 
+use crossbeam_utils::CachePadded;
+
 macro_rules! round_up {
     ($num:expr, $s:expr) => {
         (($num + $s - 1) / $s) * $s
@@ -94,20 +96,115 @@ impl Pager {
 
 /// A pager for GlobalAlloc.
 
-pub static mut PAGER: Mutex<Pager> = Mutex::new(Pager {
-    sbrk: 0x52_0000_0000,
-});
+pub static mut PAGER: [CachePadded<Mutex<Pager>>; 32] = [
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x52_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x62_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x72_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x82_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x92_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xa2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xb2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xc2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xd2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xe2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xf2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x102_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x112_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x122_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x132_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x142_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x152_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x162_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x172_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x182_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x192_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1a2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1b2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1c2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1d2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1e2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1f2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x202_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x212_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x222_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x232_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x242_0000_0000,
+    })),
+];
 
 /// A SafeZoneAllocator that wraps the ZoneAllocator in a Mutex.
 ///
 /// Note: This is not very scalable since we use a single big lock
 /// around the allocator. There are better ways make the ZoneAllocator
 /// thread-safe directly, but they are not implemented yet.
-pub struct SafeZoneAllocator(Mutex<ZoneAllocator<'static>>);
+pub struct SafeZoneAllocator(CachePadded<Mutex<ZoneAllocator<'static>>>);
 
 impl SafeZoneAllocator {
     pub const fn new() -> SafeZoneAllocator {
-        SafeZoneAllocator(Mutex::new(ZoneAllocator::new()))
+        SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new())))
     }
 }
 
@@ -120,7 +217,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     Ok(nptr) => nptr.as_ptr(),
                     Err(AllocationError::OutOfMemory) => {
                         if layout.size() <= ZoneAllocator::MAX_BASE_ALLOC_SIZE {
-                            PAGER
+                            PAGER[Environment::scheduler().core_id]
                                 .lock()
                                 .allocate_page()
                                 .map_or(ptr::null_mut(), |page| {
@@ -134,9 +231,10 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                                 })
                         } else {
                             // layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE
-                            PAGER.lock().allocate_large_page().map_or(
-                                ptr::null_mut(),
-                                |large_page| {
+                            PAGER[Environment::scheduler().core_id]
+                                .lock()
+                                .allocate_large_page()
+                                .map_or(ptr::null_mut(), |large_page| {
                                     zone_allocator
                                         .refill_large(layout, large_page)
                                         .expect("Could not refill?");
@@ -144,8 +242,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                                         .allocate(layout)
                                         .expect("Should succeed after refill")
                                         .as_ptr()
-                                },
-                            )
+                                })
                         }
                     }
                     Err(AllocationError::InvalidLayout) => panic!("Can't allocate this size"),
@@ -154,7 +251,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
                 // Best to use the underlying backend directly to allocate large
                 // to avoid fragmentation
-                PAGER
+                PAGER[Environment::scheduler().core_id]
                     .lock()
                     .allocate_large_page()
                     .expect("Can't allocate page?") as *mut _ as *mut u8
@@ -165,7 +262,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     (big_size + Pager::LARGE_PAGE_SIZE - 1) / Pager::LARGE_PAGE_SIZE;
                 let mut first: *mut u8 = ptr::null_mut();
                 for _page_idx in 0..required_pages {
-                    let ptr = PAGER
+                    let ptr = PAGER[Environment::scheduler().core_id]
                         .lock()
                         .allocate_large_page()
                         .expect("Can't allocate page for big allocation?")
@@ -215,33 +312,58 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                 // An proper reclamation strategy could be implemented here
                 // to release empty pages back from the ZoneAllocator to the PAGER
             }
-            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
-                PAGER.lock().dealloc_page(ptr, Pager::LARGE_PAGE_SIZE)
-            }
+            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => PAGER
+                [Environment::scheduler().core_id]
+                .lock()
+                .dealloc_page(ptr, Pager::LARGE_PAGE_SIZE),
             _ => error!("TODO: Currently can't dealloc of {:?}.", layout),
         }
     }
 }
 
 pub struct PerCoreAllocator {
-    allocators : [SafeZoneAllocator; 12],
+    allocators: [SafeZoneAllocator; 32],
 }
 
 impl PerCoreAllocator {
     pub const fn new() -> PerCoreAllocator {
-        let alloc_array = [ SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new())),
-                                SafeZoneAllocator(Mutex::new(ZoneAllocator::new()))];
-        PerCoreAllocator{allocators: alloc_array}
+        let alloc_array = [
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+        ];
+        PerCoreAllocator {
+            allocators: alloc_array,
+        }
     }
 }
 

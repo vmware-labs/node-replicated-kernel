@@ -1982,3 +1982,95 @@ fn s06_memcached_benchmark() {
         }
     }
 }
+
+#[test]
+fn s06_leveldb_benchmark() {
+    let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
+        num_cpus::get() / 2
+    } else {
+        num_cpus::get()
+    };
+
+    let threads = if cfg!(feature = "smoke") {
+        vec![1, 4]
+    } else {
+        thread_defaults(max_cores)
+    };
+
+    // level-DB arguments
+    let reads = 100_000;
+    let num = 50_000;
+    let val_size = 65535;
+
+    let file_name = "leveldb_benchmark.csv";
+    let _r = std::fs::remove_file(file_name);
+
+    for thread in threads.iter() {
+        let kernel_cmdline = format!(
+            r#"testbinary=dbbench.bin testcmd={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
+            *thread, *thread, reads, num, val_size
+        );
+        let cmdline = RunnerArgs::new("test-userspace-smp")
+            .module("rkapps")
+            .user_feature("rkapps:leveldb-bench")
+            .memory(81920)
+            .timeout(300_000)
+            .cores(max_cores)
+            .nodes(2)
+            .use_virtio()
+            .setaffinity()
+            .prealloc()
+            .cmd(kernel_cmdline.as_str())
+            .release();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dhcp_server = spawn_dhcpd()?;
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let mut p = spawn_bespin(&cmdline)?;
+
+            let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;
+            println!("{}", matched);
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+            if write_headers {
+                let row = "git_rev,benchmark,ncores,reads,num,val_size,operations\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let parts: Vec<&str> = matched.split("ops/sec").collect();
+            let mut parts: Vec<&str> = parts[0].split(" ").collect();
+            parts.pop();
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+            let out = format!(
+                "readrandom,{},{},{},{},{}",
+                *thread,
+                reads,
+                num,
+                val_size,
+                parts.last().unwrap()
+            );
+            let r = csv_file.write(out.as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+
+            // cleanup
+            dhcp_server.send_control('c')?;
+            p.process.kill(SIGTERM)?;
+            p.process.exit()
+        };
+
+        qemu_run().is_ok();
+    }
+}

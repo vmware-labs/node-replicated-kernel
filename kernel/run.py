@@ -231,30 +231,35 @@ def deploy(args):
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
         cmdfile.write('./kernel {}'.format(args.cmd))
 
-    # Write kernel cmd-line file in ESP dir
-    with open(esp_path / 'boot.php', 'w') as boot_file:
-        ipxe_script = """#!ipxe
-imgfetch EFI/Boot/BootX64.efi
-imgfetch kernel
-imgfetch init
-imgfetch cmdline.in
-boot EFI/Boot/BootX64.efi
-"""
-        boot_file.write(ipxe_script)
-
+    deployed = []
     # Deploy user-modules
     for module in args.mods:
         if not (user_build_path / module).is_file():
+            log("[WARN] Module not found: {}".format(module))
             continue
         if module != "rkapps":
             shutil.copy2(user_build_path / module, esp_path)
+            deployed.append(module)
         else:
             # TODO(ugly): Special handling of the rkapps module
             # (they end up being built as multiple .bin binaries)
             to_copy = [app for app in user_build_path.glob(
                 "*.bin") if app.is_file()]
+            deployed.extend([f.name for f in to_copy])
             for app in to_copy:
                 shutil.copy2(app, esp_path)
+
+    # Write kernel cmd-line file in ESP dir
+    with open(esp_path / 'boot.php', 'w') as boot_file:
+        ipxe_script = """#!ipxe
+imgfetch EFI/Boot/BootX64.efi
+imgfetch kernel
+imgfetch cmdline.in
+{}
+boot EFI/Boot/BootX64.efi
+""".format('\n'.join(['imgfetch {}'.format(m) for m in deployed]))
+
+        boot_file.write(ipxe_script)
 
 
 def run_qemu(args):
@@ -419,6 +424,18 @@ def run_qemu(args):
     return bespin_exit_code
 
 
+def detect_baremetal_shutdown(lb):
+    if "[shutdown-request]" in lb:
+        parts = lb.split(' ')
+        if len(parts) != 2:
+            return None
+        else:
+            exit_value = int(parts[1])
+            return BESPIN_EXIT_CODES[exit_value]
+    else:
+        return None
+
+
 def run_baremetal(args):
     # Need to find a config file ${args.machine}.toml
     cfg_file = SCRIPT_PATH / "{}.toml".format(args.machine)
@@ -481,18 +498,30 @@ def run_baremetal(args):
                 if b'\r\n' in read:
                     splitted_read = list(read.decode('utf-8').split('\r\n'))
                     # Print current line, add stuff previously read
-                    print("{}".format(linebuffer + splitted_read[0]))
-                    # In case we some more complete lines, print:
+                    linebuffer = linebuffer + splitted_read[0]
+                    print("{}".format(linebuffer))
+                    ret = detect_baremetal_shutdown(linebuffer)
+                    if ret is not None:
+                        sys.exit(ret)
+
+                    # In case we have some more complete lines, print:
                     for line in splitted_read[1:-1]:
                         print("{}".format(line))
+                        ret = detect_baremetal_shutdown(line)
+                        if ret is not None:
+                            sys.exit(ret)
+
                     # The last element will be the beginning of the next line or an empty string
                     linebuffer = splitted_read[-1]
                 else:
                     linebuffer += read.decode('utf-8')
             except pexpect.exceptions.TIMEOUT as e:
                 print(linebuffer, end='')
-                linebuffer = ''
+                ret = detect_baremetal_shutdown(linebuffer)
+                if ret is not None:
+                    sys.exit(ret)
 
+                linebuffer = ''
                 if timeout == 1:
                     timeout = cfg['idrac']['boot-timeout']
                     # Now, wait till boot timeout and see if we really don't get anything

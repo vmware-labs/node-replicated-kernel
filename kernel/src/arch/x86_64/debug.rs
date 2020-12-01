@@ -69,15 +69,22 @@ pub unsafe fn putb(b: u8) {
 /// Currently we only support the debug exit method from qemu, which conveniently
 /// allows us to supply an exit code for testing purposes.
 pub fn shutdown(val: ExitReason) -> ! {
-    // Ok for QEMU with debug-exit,iobase=0xf4,iosize=0x04
-    // qemu will call: exit((val << 1) | 1);
     unsafe {
+        // For QEMU with debug-exit,iobase=0xf4,iosize=0x04
+        // qemu will call: exit((val << 1) | 1);
         io::outb(0xf4, val as u8);
     }
 
-    error!("Shutdown requested: {:?}", val);
+    // For CI run.py bare-metal execution, parses exit code
+    // (Do not change this line without adjusting run.py)
+    sprintln!("[shutdown-request] {}", val as u8);
+
+    // TODO(bare-metal): Do some ACPI magic to shutdown things
+
     // In case this doesn't work we hang.
-    loop {}
+    loop {
+        unsafe { x86::halt() };
+    }
 }
 
 #[cfg(any(

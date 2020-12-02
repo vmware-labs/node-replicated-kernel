@@ -431,7 +431,9 @@ def detect_baremetal_shutdown(lb):
             return None
         else:
             exit_value = int(parts[1])
-            return BESPIN_EXIT_CODES[exit_value]
+            if exit_value in BESPIN_EXIT_CODES:
+                print(BESPIN_EXIT_CODES[exit_value])
+            return exit_value
     else:
         return None
 

@@ -115,9 +115,23 @@ impl Display for ExitStatus {
     }
 }
 
+/// Different machine types we can run on.
+#[derive(Eq, PartialEq, Debug, Clone)]
+enum Machine {
+    /// A bare-metal machine identified by a string.
+    /// The name is given by the corresponding TOML file
+    /// for run.py (e.g., Machine::BareMetal("b1542".into()) should
+    /// have a corresponding b1542.toml file).
+    Baremetal(String),
+    /// Run on a virtual machine with QEMU
+    Qemu,
+}
+
 /// Arguments passed to the run.py script to configure a test.
 #[derive(Clone)]
 struct RunnerArgs<'a> {
+    /// Which machine we should execute on
+    machine: Machine,
     /// Test name of kernel integration test.
     kernel_features: Vec<&'a str>,
     /// Features passed to compiled user-space modules.
@@ -152,6 +166,7 @@ struct RunnerArgs<'a> {
 impl<'a> RunnerArgs<'a> {
     fn new(kernel_test: &'a str) -> RunnerArgs {
         RunnerArgs {
+            machine: Machine::Qemu,
             kernel_features: vec![kernel_test],
             user_features: Vec::new(),
             nodes: 0,
@@ -167,6 +182,12 @@ impl<'a> RunnerArgs<'a> {
             setaffinity: false,
             prealloc: false,
         }
+    }
+
+    /// What machine we should run on.
+    fn machine(mut self, machine: Machine) -> RunnerArgs<'a> {
+        self.machine = machine;
+        self
     }
 
     /// What cargo features should be passed to the kernel build.
@@ -330,26 +351,34 @@ impl<'a> RunnerArgs<'a> {
             cmd.push(String::from("--release"));
         }
 
-        cmd.push(String::from("--qemu-cores"));
-        cmd.push(format!("{}", self.cores));
+        match &self.machine {
+            Machine::Qemu => {
+                cmd.push(String::from("--qemu-cores"));
+                cmd.push(format!("{}", self.cores));
 
-        cmd.push(String::from("--qemu-nodes"));
-        cmd.push(format!("{}", self.nodes));
+                cmd.push(String::from("--qemu-nodes"));
+                cmd.push(format!("{}", self.nodes));
 
-        cmd.push(String::from("--qemu-memory"));
-        cmd.push(format!("{}", self.memory));
+                cmd.push(String::from("--qemu-memory"));
+                cmd.push(format!("{}", self.memory));
 
-        if self.setaffinity {
-            cmd.push(String::from("--qemu-affinity"));
-        }
-        if self.prealloc {
-            cmd.push(String::from("--qemu-prealloc"));
-        }
+                if self.setaffinity {
+                    cmd.push(String::from("--qemu-affinity"));
+                }
+                if self.prealloc {
+                    cmd.push(String::from("--qemu-prealloc"));
+                }
 
-        // Form arguments for QEMU
-        let mut qemu_args: Vec<String> = self.qemu_args.iter().map(|arg| arg.to_string()).collect();
-        if !qemu_args.is_empty() {
-            cmd.push(format!("--qemu-settings={}", qemu_args.join(" ")));
+                // Form arguments for QEMU
+                let mut qemu_args: Vec<String> =
+                    self.qemu_args.iter().map(|arg| arg.to_string()).collect();
+                if !qemu_args.is_empty() {
+                    cmd.push(format!("--qemu-settings={}", qemu_args.join(" ")));
+                }
+            }
+            Machine::Baremetal(mname) => {
+                cmd.push(format!("--machine={}", mname));
+            }
         }
 
         // Don't run qemu, just build?
@@ -447,7 +476,14 @@ fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     o.args(args.as_cmd());
 
     eprintln!("Invoke QEMU: {:?}", o);
-    spawn_command(o, args.timeout)
+    let timeout = if cfg!(feature = "baremetal") {
+        // Machine might take very long to boot, so currently
+        // we don't use timeouts for baremetal
+        Some(8 * 60 * 1000) // 8 Minutes
+    } else {
+        args.timeout
+    };
+    spawn_command(o, timeout)
 }
 
 /// Spawns a DHCP server on our host
@@ -483,8 +519,16 @@ fn spawn_ping() -> Result<rexpect::session::PtySession> {
     spawn("ping 172.31.0.10", Some(20000))
 }
 
+#[allow(unused)]
 fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
     spawn(format!("nc 172.31.0.10 {}", port).as_str(), Some(20000))
+}
+
+fn get_env_machine_name() -> String {
+    match std::env::var("BAREMETAL_MACHINE") {
+        Ok(name) => name,
+        _ => panic!("baremetal features needs env variable BAREMETAL_MACHINE."),
+    }
 }
 
 /// Make sure exiting the kernel works.
@@ -494,7 +538,10 @@ fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
 /// and communicate if our tests passed or failed.
 #[test]
 fn s00_exit() {
-    let cmdline = RunnerArgs::new("test-exit");
+    let mut cmdline = RunnerArgs::new("test-exit");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -513,7 +560,10 @@ fn s00_exit() {
 /// since we don't have memory allocation.
 #[test]
 fn s00_pfault_early() {
-    let cmdline = RunnerArgs::new("test-pfault-early").qemu_arg("-d int,cpu_reset");
+    let mut cmdline = RunnerArgs::new("test-pfault-early").qemu_arg("-d int,cpu_reset");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -536,7 +586,10 @@ fn s00_pfault_early() {
 /// In essence a trap should be raised and we should get a backtrace.
 #[test]
 fn s01_pfault() {
-    let cmdline = RunnerArgs::new("test-pfault");
+    let mut cmdline = RunnerArgs::new("test-pfault");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -556,7 +609,10 @@ fn s01_pfault() {
 /// since we don't have memory allocation.
 #[test]
 fn s00_gpfault_early() {
-    let cmdline = RunnerArgs::new("test-gpfault-early").qemu_arg("-d int,cpu_reset");
+    let mut cmdline = RunnerArgs::new("test-gpfault-early").qemu_arg("-d int,cpu_reset");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -579,7 +635,10 @@ fn s00_gpfault_early() {
 /// Again we'd expect a trap and a backtrace.
 #[test]
 fn s01_gpfault() {
-    let cmdline = RunnerArgs::new("test-gpfault");
+    let mut cmdline = RunnerArgs::new("test-gpfault");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -604,7 +663,10 @@ fn s01_gpfault() {
 /// faults that can always happen unexpected.
 #[test]
 fn s01_double_fault() {
-    let cmdline = RunnerArgs::new("test-double-fault").qemu_arg("-d int,cpu_reset");
+    let mut cmdline = RunnerArgs::new("test-double-fault").qemu_arg("-d int,cpu_reset");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -623,7 +685,10 @@ fn s01_double_fault() {
 /// and the global allocator integration.
 #[test]
 fn s01_alloc() {
-    let cmdline = RunnerArgs::new("test-alloc");
+    let mut cmdline = RunnerArgs::new("test-alloc");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -643,7 +708,10 @@ fn s01_alloc() {
 /// point.
 #[test]
 fn s01_sse() {
-    let cmdline = RunnerArgs::new("test-sse");
+    let mut cmdline = RunnerArgs::new("test-sse");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -659,7 +727,10 @@ fn s01_sse() {
 
 #[test]
 fn s01_time() {
-    let cmdline = RunnerArgs::new("test-time").release();
+    let mut cmdline = RunnerArgs::new("test-time").release();
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -673,7 +744,10 @@ fn s01_time() {
 
 #[test]
 fn s01_timer() {
-    let cmdline = RunnerArgs::new("test-timer");
+    let mut cmdline = RunnerArgs::new("test-timer");
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -688,6 +762,7 @@ fn s01_timer() {
 }
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology.
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_topology() {
     let cmdline = &RunnerArgs::new("test-acpi-topology")
@@ -709,6 +784,7 @@ fn s02_acpi_topology() {
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology
 /// (a different one than acpi_smoke).
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_smoke() {
     let cmdline = &RunnerArgs::new("test-acpi-smoke").cores(2).memory(1024);
@@ -729,6 +805,7 @@ fn s02_acpi_smoke() {
 ///
 /// Utilizes the app core initializtion logic
 /// as well as the APIC driver (sending IPIs).
+#[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_coreboot_smoke() {
     let cmdline = RunnerArgs::new("test-coreboot-smoke")
@@ -751,6 +828,7 @@ fn s02_coreboot_smoke() {
 }
 
 /// Test that we can multiple cores and use the node-replication log to communicate.
+#[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_coreboot_nrlog() {
     let cmdline = RunnerArgs::new("test-coreboot-nrlog")
@@ -773,6 +851,7 @@ fn s02_coreboot_nrlog() {
 }
 
 /// Test that we boot up all cores in the system.
+#[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s03_coreboot() {
     let cmdline = &RunnerArgs::new("test-coreboot")
@@ -805,13 +884,16 @@ fn s03_coreboot() {
 ///  * BSD libOS in user-space
 #[test]
 fn s03_userspace_smoke() {
-    let cmdline = RunnerArgs::new("test-userspace").user_features(&[
+    let mut cmdline = RunnerArgs::new("test-userspace").user_features(&[
         "test-print",
         "test-map",
         "test-alloc",
         "test-upcall",
         "test-scheduler",
     ]);
+    if cfg!(feature = "baremetal") {
+        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -832,6 +914,7 @@ fn s03_userspace_smoke() {
 /// Tests the lineup scheduler multi-core ability.
 ///
 /// Makes sure we can request cores and spawn threads on said cores.
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_multicore() {
     const NUM_CORES: usize = 56;
@@ -866,6 +949,7 @@ fn s04_userspace_multicore() {
 ///  * BSD libOS network stack
 ///  * PCI/user-space drivers
 ///  * Interrupt registration and upcalls
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_rumprt_net() {
     let qemu_run = || -> Result<WaitStatus> {
@@ -911,6 +995,7 @@ fn s04_userspace_rumprt_net() {
 /// Checks that we can initialize a BSD libOS and run FS operations.
 /// This implicitly tests many components such as the scheduler, memory
 /// management, IO and device interrupts.
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_rumprt_fs() {
     let cmdline = &RunnerArgs::new("test-userspace")
@@ -945,7 +1030,7 @@ fn s02_vspace_debug() {
         if !o.status.success() {
             io::stdout().write_all(&o.stdout).unwrap();
             io::stderr().write_all(&o.stderr).unwrap();
-            panic!("Graphviz invocation failed: {:?}");
+            panic!("Graphviz invocation failed");
         }
 
         Ok(())
@@ -998,7 +1083,9 @@ fn _multi_process() {
 ///  * PCI/user-space drivers
 ///  * Interrupt registration and upcalls
 ///  * (kernel memfs eventually for DB persistence)
+//#[cfg(not(feature = "baremetal"))]
 //#[test]
+#[allow(unused)]
 fn s05_redis_smoke() {
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
@@ -1132,8 +1219,13 @@ fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::sessio
     Ok(redis_client)
 }
 
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_redis_benchmark_virtio() {
+    if cfg!(baremetal) {
+        return;
+    }
+
     let qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -1167,6 +1259,7 @@ fn s06_redis_benchmark_virtio() {
     );
 }
 
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_redis_benchmark_e1000() {
     let qemu_run = || -> Result<WaitStatus> {
@@ -1244,7 +1337,7 @@ fn s06_vmops_benchmark() {
     };
 
     let file_name = "vmops_benchmark.csv";
-    std::fs::remove_file(file_name);
+    let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("testcmd={}", cores);
@@ -1342,7 +1435,7 @@ fn s06_vmops_latency_benchmark() {
     };
 
     let file_name = "vmops_benchmark_latency.csv";
-    std::fs::remove_file(file_name);
+    let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("testcmd={}", cores);
@@ -1380,7 +1473,7 @@ fn s06_vmops_latency_benchmark() {
         }
 
         let mut output = String::new();
-        let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+        let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
             let mut p = spawn_bespin(&cmdline)?;
 
             // Parse lines like:
@@ -1445,7 +1538,7 @@ fn s06_fxmark_benchmark() {
     };
 
     let file_name = "fxmark_benchmark.csv";
-    std::fs::remove_file(file_name);
+    let _r = std::fs::remove_file(file_name);
 
     for benchmark in benchmarks {
         for &cores in threads.iter() {
@@ -1653,6 +1746,7 @@ fn memcached_benchmark(
     Ok(memaslap)
 }
 
+#[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_memcached_benchmark() {
     let max_cores = 4;
@@ -1668,7 +1762,7 @@ fn s06_memcached_benchmark() {
     for nic in &["virtio", "e1000"] {
         for thread in threads.iter() {
             let kernel_cmdline = format!("testbinary=memcached.bin testcmd={}", *thread);
-            let mut cmdline = RunnerArgs::new("test-userspace-smp")
+            let cmdline = RunnerArgs::new("test-userspace-smp")
                 .module("rkapps")
                 .user_feature("rkapps:memcached")
                 .memory(8192)
@@ -1685,8 +1779,7 @@ fn s06_memcached_benchmark() {
                 _ => unimplemented!("NIC type unknown"),
             };
 
-            let mut output = String::new();
-            let mut qemu_run = || -> Result<WaitStatus> {
+            let qemu_run = || -> Result<WaitStatus> {
                 let mut p = spawn_bespin(&cmdline)?;
                 let mut dhcp_server = spawn_dhcpd()?;
                 dhcp_server.exp_string(DHCP_ACK_MATCH)?;

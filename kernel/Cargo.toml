@@ -76,6 +76,8 @@ mlnrfs = []
 integration-test = []
 # smoke: Shorten long running benchmarks to test just functionality
 smoke = []
+# baremetal: Compile benchmarks for running on bare-metal
+baremetal = []
 # pre-alloc guest memory: For serious benchmarking where we want to avoid VM exits as much as possible
 prealloc = []
 # Don't boot entire system. only initialize bsp core

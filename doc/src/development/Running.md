@@ -23,3 +23,56 @@ will
 Sometimes it's helpful to know what commands are actually execute by `run.py`.
 For example to figure out what the exact qemu command line arguments were. In
 that case `--verbose` can be supplied.
+
+## Baremetal execution
+
+The `kernel/run.py` script supports execution on baremetal machines with
+the `--machine` argument:
+
+```bash
+python3 run.py --machine b1542 --verbose --cmd "log=info"
+```
+
+This invocation will try to run bespin on the machine identified by a
+`b1542.toml` config file.
+
+A TOML file for a machine has the following format:
+
+```toml
+[server]
+# A name for the server we're trying to boot
+name = "b1542"
+# The hostname, where to reach the server
+hostname = "b1542.test.com"
+# The type of the machine
+type = "skylake2x"
+# An arbitrary command to set-up the PXE boot enviroment for the machine
+# This often involves creating a hardlink of a file with a MAC address
+# of the machine and pointing it to some pxe boot directory
+pre-boot-cmd = "./pxeboot-configure.sh -m E4-43-4B-1B-C5-DC -d /home/gz/pxe"
+
+# run.py support only booting machines that have an idrac management console:
+[idrac]
+# How to reach the ilo/iDRAC interface of the machine
+hostname = "b1542-ilo.test.com"
+# Login information for iDRAC
+username = "user"
+password = "pass"
+# Serial console which we'll read from
+console = "com2"
+# Which iDRAC version we're dealing with (currently unused)
+idrac-version = "3"
+# Typical time until machine is booted
+boot-timeout = 320
+
+[deploy]
+# Server where binaries are deployed for booting with iPXE
+hostname = "ipxe-server.test.com"
+username = "user"
+ssh-pubkey = "~/.ssh/id_rsa"
+# Where to deploy kernel and user binaries
+ipxe-deploy = "/home/gz/public_html/"
+```
+
+An iPXE enviornment that the machine can boot from needs to be setup. The iPXE
+bootloader should be compiled with UEFI and ELF support for running with bespin.

@@ -211,14 +211,15 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 .map_identity(phys_range_start, phys_range_end, rights);
 
             if entry.ty == MemoryType::CONVENTIONAL
-                // TODO(strange): Apparently on skylake2x the PDPT that contains the 
-                // 0x6000-0x7000 mapping to boot a core of this type!?
-                // IMO Shouldn't happen because we allocate page-table memory as KERNEL_PT...
+                // We're allowed to use these regions according to the spec  after we call ExitBootServices.
+                // Also it can sometimes happens that the regions here switch from this type back
+                // to conventional if we're not careful with memory allocations between the call
+                // to `map_physical_memory` until getting the final memory mapped before booting..
                 || entry.ty == MemoryType::BOOT_SERVICES_DATA
+                || entry.ty == MemoryType::LOADER_DATA
+                // These are regions we need to access in kernel space:
                 || entry.ty == MemoryType(KERNEL_PT)
                 || entry.ty == MemoryType(MODULE)
-                // TODO(decide): Not clear we want this, we might also just say we only access 
-                // kernel-args the beginning and copy it in the kernel?
                 || entry.ty == MemoryType(KERNEL_ARGS)
             {
                 kernel.vspace.map_identity_with_offset(

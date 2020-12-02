@@ -23,8 +23,12 @@ isr_handler\ex:
 
     // Puts address of the KCB in %gs and temporarily store user
     // %gs in MSR IA32_KERNEL_GSBASE
+    movq 0x20(%rsp),%rax
+    cmpq $0x8,%rax
+    je in_kernel\ex
     swapgs
 
+in_kernel\ex:
     // Get the pointer to the kcb.save_area
     rdgsbase %rax
     movq 0x8(%rax), %rax

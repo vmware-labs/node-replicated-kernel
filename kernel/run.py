@@ -426,11 +426,15 @@ def run_qemu(args):
 
 def detect_baremetal_shutdown(lb):
     if "[shutdown-request]" in lb:
-        parts = lb.split(' ')
-        if len(parts) != 2:
+        parts = [p.strip() for p in lb.split(' ')]
+        if len(parts) < 2:
             return None
         else:
-            exit_value = int(parts[1])
+            idx = parts.index("[shutdown-request]")
+            if len(parts) > idx + 1:
+                exit_value = int(parts[idx+1])
+            else:
+                raise Exception("Didn't read enough for exit code XD")
             if exit_value in BESPIN_EXIT_CODES:
                 print(BESPIN_EXIT_CODES[exit_value])
             return exit_value

@@ -1349,7 +1349,9 @@ fn s06_vmops_benchmark() {
             .timeout(12_000 + cores as u64 * 3000)
             .release()
             .cmd(kernel_cmdline.as_str());
-
+        if cfg!(feature = "baremetal") {
+            cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+        }
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
@@ -1631,6 +1633,9 @@ fn s06_vmops_latency_benchmark() {
             .timeout(25_000 + cores as u64 * 100_000)
             .release()
             .cmd(kernel_cmdline.as_str());
+        if cfg!(feature = "baremetal") {
+            cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+        }
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(18192);
         } else {
@@ -1735,7 +1740,9 @@ fn s06_fxmark_benchmark() {
                 .setaffinity()
                 .cmd(kernel_cmdline.as_str())
                 .release();
-
+            if cfg!(feature = "baremetal") {
+                cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+            }
             if cfg!(feature = "smoke") {
                 cmdline = cmdline.user_feature("smoke").memory(8192);
             } else {

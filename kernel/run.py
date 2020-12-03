@@ -11,6 +11,7 @@ import signal
 import toml
 import pexpect
 import plumbum
+import re
 from time import sleep
 
 from plumbum import colors, local, SshMachine
@@ -426,7 +427,7 @@ def run_qemu(args):
 
 def detect_baremetal_shutdown(lb):
     if "[shutdown-request]" in lb:
-        parts = [p.strip() for p in lb.split(' ')]
+        parts = [p.strip() for p in re.split(' |\r\n', lb)]
         if len(parts) < 2:
             return None
         else:

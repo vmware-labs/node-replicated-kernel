@@ -683,10 +683,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         mlnr_replica,
     );
 
-    // We are the master thread in that replica
-    // so set timer to periodically advance the state:
-    timer::set(timer::DEFAULT_TIMER_DEADLINE);
-
     // Done with initialization, now we go in
     // the arch-independent part:
     xmain();

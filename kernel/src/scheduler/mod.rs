@@ -46,17 +46,25 @@ pub fn schedule() -> ! {
                             .arch
                             .swap_current_process(Weak::upgrade(&e).unwrap());
                         assert!(no.is_none(), "Handle the case where we replace a process.");
+                        if is_replica_main_thread {
+                            // Make sure we periodically try and advance the replica on main-thread
+                            // even if we're running something (e.g., if everything polls in
+                            // user-space we can livelock)
+                            timer::set(timer::DEFAULT_TIMER_DEADLINE);
+                        }
                         break;
                     }
                     Err(KError::NoExecutorForCore) => {
-                        // There is no process, set a timer and go to sleep
                         if is_replica_main_thread {
+                            // There is no process but we're main, aggressively
+                            // try and advance the replica
                             for _i in 0..25_000 {
                                 core::sync::atomic::spin_loop_hint();
                             }
                             continue;
                         } else {
-                            timer::set(timer::DEFAULT_TIMER_DEADLINE + 1_000_000_000);
+                            // There is no process, set a timer and go to sleep
+                            timer::set(timer::DEFAULT_TIMER_DEADLINE);
                         }
                         crate::arch::halt();
                     }

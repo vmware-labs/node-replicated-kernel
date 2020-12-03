@@ -16,8 +16,8 @@ use crate::error::KError;
 use crate::fs::{FileSystem, MemFS};
 
 use crate::memory::{
-    emem::EmergencyAllocator, tcache::TCache, tcache_sp::TCacheSp, AllocatorStatistics, GlobalMemory, GrowBackend,
-    PAddr, PhysicalPageProvider,
+    emem::EmergencyAllocator, tcache::TCache, tcache_sp::TCacheSp, AllocatorStatistics,
+    GlobalMemory, GrowBackend, PAddr, PhysicalPageProvider,
 };
 use crate::nr::KernelNode;
 use crate::process::Process;

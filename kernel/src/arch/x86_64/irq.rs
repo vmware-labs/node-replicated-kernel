@@ -410,13 +410,25 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
     nr::KernelNode::<Ring3Process>::synchronize();
     let kcb = get_kcb();
     if kcb.arch.has_current_process() {
-        // Re-arm the timer:
         // TODO(process-mgmt): Ensures that we still periodically
         // check and advance replicas even on cores that have a core.
         // Only a single idle core per replica should probably do that,
         // so if cores go properly back to idling when finished execution,
         // this is no longer necessary...
-        //timer::set(timer::DEFAULT_TIMER_DEADLINE);
+        let is_replica_main_thread = {
+            let thread = topology::MACHINE_TOPOLOGY.current_thread();
+            thread.node().is_none()
+                || thread
+                    .node()
+                    .unwrap()
+                    .threads()
+                    .next()
+                    .map(|t| t.id == thread.id)
+                    .unwrap_or(false)
+        };
+        if is_replica_main_thread {
+            timer::set(timer::DEFAULT_TIMER_DEADLINE);
+        }
 
         // Return immediately
         let r = kcb_iret_handle(kcb);

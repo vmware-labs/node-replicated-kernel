@@ -408,7 +408,6 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
 
     // Periodically advance replica state, then resume immediately
     nr::KernelNode::<Ring3Process>::synchronize();
-
     let kcb = get_kcb();
     if kcb.arch.has_current_process() {
         // Re-arm the timer:
@@ -424,6 +423,7 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
         r.resume()
     } else {
         // Go to scheduler instead
+        //warn!("got a timer on core {}", kcb.arch.id());
         crate::scheduler::schedule()
     }
 }

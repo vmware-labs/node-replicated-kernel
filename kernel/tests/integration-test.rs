@@ -1446,7 +1446,7 @@ fn s06_vmops_unmap_benchmark() {
             .user_feature("bench-vmops-unmap")
             .cores(max_cores)
             .setaffinity()
-            .timeout(12_000 + cores as u64 * 3000)
+            .timeout(22_000 + cores as u64 * 3000)
             .release()
             .cmd(kernel_cmdline.as_str());
 
@@ -1479,17 +1479,13 @@ fn s06_vmops_unmap_benchmark() {
             let mut p = spawn_bespin(&cmdline)?;
 
             // Parse lines like
-            // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
+            // `init::vmops::unmap: 1,maponly,1,4096,10000,1000,634948`
             // write them to a CSV file
-            let expected_lines = if cfg!(feature = "smoke") {
-                1
-            } else {
-                with_cores * 11
-            };
+            let expected_lines = if cfg!(feature = "smoke") { 1 } else { 10 };
 
             for _i in 0..expected_lines {
                 let (prev, matched) =
-                    p.exp_regex(r#"init::vmops: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+                    p.exp_regex(r#"init::vmops::unmap: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
                 output += prev.as_str();
                 output += matched.as_str();
 
@@ -1507,7 +1503,7 @@ fn s06_vmops_unmap_benchmark() {
                     assert!(r.is_ok());
                 }
 
-                let parts: Vec<&str> = matched.split("init::vmops: ").collect();
+                let parts: Vec<&str> = matched.split("init::vmops::unmap: ").collect();
                 let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
                 assert!(r.is_ok());
                 let r = csv_file.write(parts[1].as_bytes());

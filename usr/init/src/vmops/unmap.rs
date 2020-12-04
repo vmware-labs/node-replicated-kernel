@@ -24,6 +24,7 @@ static LATENCY_HISTOGRAM: spin::Mutex<Option<histogram::Histogram>> = spin::Mute
 enum Cmd {
     Access,
     Accessed,
+    Exit,
 }
 
 lazy_static! {
@@ -117,13 +118,20 @@ fn unmap_bencher(cores: usize) {
                             core::sync::atomic::spin_loop_hint();
                             continue;
                         }
-                        Some(cmd) => {
+                        Some(Cmd::Exit) => {
+                            iteration += 1;
+                            continue 'outer;
+                        }
+                        Some(Cmd::Access) => {
                             let base_va: VAddr = VAddr::from(base);
                             unsafe {
                                 assert_eq!(*base_va.as_ptr::<u64>(), 0x0);
                             }
-                            trace!("Process Cmd::Access on {:?}", thread_id);
+                            trace!("{} Process Cmd::Access", thread_id);
                             tx_master.push(Cmd::Accessed);
+                        }
+                        Some(Cmd::Accessed) => {
+                            unreachable!()
                         }
                     }
                 }
@@ -138,7 +146,6 @@ fn unmap_bencher(cores: usize) {
                             continue;
                         }
                         Some(Cmd::Accessed) => {
-                            trace!("Got Cmd::Accessed on {}", thread_id);
                             count -= 1;
                         }
                         Some(x) => {
@@ -179,6 +186,14 @@ fn unmap_bencher(cores: usize) {
             iteration * 1000,
             vops
         );
+
+        // Signal threads
+        let tx_channels = TX_CHANNELS.lock();
+        for xtid in 2..=cores {
+            trace!("Send Cmd::Exit from master to {}", xtid);
+            tx_channels[xtid].as_ref().unwrap().push(Cmd::Exit);
+        }
+
         vops = 0;
         iteration += 1;
     }

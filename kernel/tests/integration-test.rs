@@ -127,6 +127,45 @@ enum Machine {
     Qemu,
 }
 
+impl Machine {
+    fn name(&self) -> &str {
+        match self {
+            Machine::Qemu => "qemu",
+            Machine::Baremetal(s) => s.as_str(),
+        }
+    }
+
+    fn max_cores(&self) -> usize {
+        if let Machine::Qemu = self {
+            num_cpus::get() / 2
+        } else {
+            match self.name() {
+                "l0318" => 96,
+                "b1542" => 28,
+                _ => unreachable!("unknown machine"),
+            }
+        }
+    }
+
+    fn max_sockets(&self) -> usize {
+        if let Machine::Qemu = self {
+            match self.max_cores() {
+                28 => 2,
+                56 => 2,
+                96 => 4,
+                192 => 4,
+                _ => unreachable!("unknown core cnt"),
+            }
+        } else {
+            match self.name() {
+                "l0318" => 4,
+                "b1542" => 2,
+                _ => unreachable!("unknown machine"),
+            }
+        }
+    }
+}
+
 /// Arguments passed to the run.py script to configure a test.
 #[derive(Clone)]
 struct RunnerArgs<'a> {
@@ -1328,12 +1367,16 @@ pub fn thread_defaults(max_cores: usize) -> Vec<usize> {
 
 #[test]
 fn s06_vmops_benchmark() {
-    let max_cores = num_cpus::get() / 2;
+    let machine = if cfg!(feature = "baremetal") {
+        Machine::Baremetal(get_env_machine_name())
+    } else {
+        Machine::Qemu
+    };
 
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
     } else {
-        thread_defaults(max_cores)
+        thread_defaults(machine.max_cores())
     };
 
     let file_name = "vmops_benchmark.csv";
@@ -1344,14 +1387,13 @@ fn s06_vmops_benchmark() {
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
-            .cores(max_cores)
+            .cores(machine.max_cores())
             .setaffinity()
             .timeout(12_000 + cores as u64 * 3000)
             .release()
-            .cmd(kernel_cmdline.as_str());
-        if cfg!(feature = "baremetal") {
-            cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-        }
+            .cmd(kernel_cmdline.as_str())
+            .machine(machine.clone());
+
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
@@ -1365,15 +1407,7 @@ fn s06_vmops_benchmark() {
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
         } else {
-            let max_cores = num_cpus::get();
-            // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
-            match max_cores {
-                28 => cmdline = cmdline.nodes(2),
-                56 => cmdline = cmdline.nodes(2),
-                96 => cmdline = cmdline.nodes(4),
-                192 => cmdline = cmdline.nodes(4),
-                _ => {}
-            };
+            cmdline = cmdline.nodes(machine.max_sockets());
         }
 
         let mut output = String::new();
@@ -1428,30 +1462,32 @@ fn s06_vmops_benchmark() {
 
 #[test]
 fn s06_vmops_unmap_benchmark() {
-    let max_cores = num_cpus::get() / 2;
+    let machine = if cfg!(feature = "baremetal") {
+        Machine::Baremetal(get_env_machine_name())
+    } else {
+        Machine::Qemu
+    };
 
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
     } else {
-        thread_defaults(max_cores)
+        thread_defaults(machine.max_cores())
     };
 
     let file_name = "vmops_unmap_benchmark.csv";
-    std::fs::remove_file(file_name);
+    let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("testcmd={}", cores);
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops-unmap")
-            .cores(max_cores)
+            .cores(machine.max_cores())
             .setaffinity()
             .timeout(22_000 + cores as u64 * 3000)
             .release()
+            .machine(machine.clone())
             .cmd(kernel_cmdline.as_str());
-        if cfg!(feature = "baremetal") {
-            cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-        }
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
@@ -1465,15 +1501,7 @@ fn s06_vmops_unmap_benchmark() {
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
         } else {
-            let max_cores = num_cpus::get();
-            // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
-            match max_cores {
-                28 => cmdline = cmdline.nodes(2),
-                56 => cmdline = cmdline.nodes(2),
-                96 => cmdline = cmdline.nodes(4),
-                192 => cmdline = cmdline.nodes(4),
-                _ => {}
-            };
+            cmdline = cmdline.nodes(machine.max_sockets());
         }
 
         let mut output = String::new();
@@ -1533,7 +1561,7 @@ fn s06_shootdown_simple() {
     };
 
     let file_name = "tlb_shootdown.csv";
-    std::fs::remove_file(file_name);
+    let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("testcmd={}", cores);
@@ -1609,12 +1637,16 @@ fn s06_shootdown_simple() {
 
 #[test]
 fn s06_vmops_latency_benchmark() {
-    let max_cores = num_cpus::get() / 2;
+    let machine = if cfg!(feature = "baremetal") {
+        Machine::Baremetal(get_env_machine_name())
+    } else {
+        Machine::Qemu
+    };
 
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
     } else {
-        thread_defaults(max_cores)
+        thread_defaults(machine.max_cores())
     };
 
     let file_name = "vmops_benchmark_latency.csv";
@@ -1626,14 +1658,13 @@ fn s06_vmops_latency_benchmark() {
             .module("init")
             .user_feature("bench-vmops")
             .user_feature("latency")
-            .cores(max_cores)
+            .cores(machine.max_cores())
             .setaffinity()
             .timeout(25_000 + cores as u64 * 100_000)
             .release()
-            .cmd(kernel_cmdline.as_str());
-        if cfg!(feature = "baremetal") {
-            cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-        }
+            .cmd(kernel_cmdline.as_str())
+            .machine(machine.clone());
+
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(18192);
         } else {
@@ -1647,15 +1678,7 @@ fn s06_vmops_latency_benchmark() {
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
         } else {
-            let max_cores = num_cpus::get();
-            // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
-            match max_cores {
-                28 => cmdline = cmdline.nodes(2),
-                56 => cmdline = cmdline.nodes(2),
-                96 => cmdline = cmdline.nodes(4),
-                192 => cmdline = cmdline.nodes(4),
-                _ => {}
-            };
+            cmdline = cmdline.nodes(machine.max_sockets());
         }
 
         let mut output = String::new();

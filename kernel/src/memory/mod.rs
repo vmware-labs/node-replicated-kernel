@@ -76,7 +76,7 @@ impl From<core::cell::BorrowMutError> for AllocationError {
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator {
     big_objects_sbrk: AtomicU64::new(
-        KERNEL_BASE + (480 * x86::bits64::paging::HUGE_PAGE_SIZE) as u64,
+        KERNEL_BASE + (2048 * x86::bits64::paging::HUGE_PAGE_SIZE) as u64,
     ),
 };
 

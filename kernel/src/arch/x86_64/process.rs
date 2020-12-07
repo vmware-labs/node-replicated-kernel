@@ -914,9 +914,11 @@ impl Process for Ring3Process {
         // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
         // TODO(ugly): Find a better way to express this mess
         super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
-            let kernel_pml_entry = kcb.arch.init_vspace().pml4[128];
-            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
-            p.vspace.page_table.pml4[128] = kernel_pml_entry;
+            for i in 128..=135 {
+                let kernel_pml_entry = kcb.arch.init_vspace().pml4[i];
+                trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+                p.vspace.page_table.pml4[i] = kernel_pml_entry;
+            }
         });
 
         Ok(p)

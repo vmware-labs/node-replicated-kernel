@@ -476,10 +476,15 @@ def run_baremetal(args):
             cfg['idrac']['password'], cfg['idrac']['username'], cfg['idrac']['hostname'])
         idrac = pexpect.spawn(ssh_cmd)
 
-        # Go to system1:
-        idrac.expect('/admin1-> ')
-        idrac.sendline('cd system1')
-        idrac.expect('/admin1/system1')
+        idx = idrac.expect(['/admin1-> ', 'racadm>>'])
+        if idx == 0:
+            # Go to system1, so we can reboot it
+            idrac.sendline('cd system1')
+            idrac.expect('/admin1/system1')
+        else:
+            # We are in some racadm shell (on some machines), thanks for the
+            # inconsistency, iDRAC
+            pass
 
         # power-cycle it:
         if not args.no_reboot:

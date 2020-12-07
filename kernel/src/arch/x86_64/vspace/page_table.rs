@@ -627,7 +627,7 @@ impl PageTable {
                 return Err(AddressSpaceError::AlreadyMapped { base: vbase });
             } else {
                 panic!(
-                    "An existing mapping already covers the 1 GiB range we're trying to map in?"
+                    "An existing mapping already covers the 1 GiB range we're trying to map in (vbase:{:#x} -> pbase:{:#x})", vbase, pbase
                 );
             }
         }

@@ -1449,7 +1449,9 @@ fn s06_vmops_unmap_benchmark() {
             .timeout(22_000 + cores as u64 * 3000)
             .release()
             .cmd(kernel_cmdline.as_str());
-
+        if cfg!(feature = "baremetal") {
+            cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
+        }
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
         } else {
@@ -1481,7 +1483,7 @@ fn s06_vmops_unmap_benchmark() {
             // Parse lines like
             // `init::vmops::unmap: 1,maponly,1,4096,10000,1000,634948`
             // write them to a CSV file
-            let expected_lines = if cfg!(feature = "smoke") { 1 } else { 10 };
+            let expected_lines = if cfg!(feature = "smoke") { 1 } else { 11 };
 
             for _i in 0..expected_lines {
                 let (prev, matched) =

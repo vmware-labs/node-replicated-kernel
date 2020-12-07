@@ -94,10 +94,12 @@ fn unmap_bencher(cores: usize) {
         while start.elapsed().as_secs() < 1 {
             #[cfg(feature = "latency")]
             let before = rawtime::Instant::now();
+            let _start_cycles = unsafe { x86::time::rdtsc() };
 
             if thread_id == 1 {
-                trace!("before map");
-                unsafe { VSpace::map_frame(frame_id, base).expect("Map syscall failed") };
+                unsafe {
+                    VSpace::map_frame(frame_id, base).expect("Map syscall failed");
+                };
 
                 // Signal threads
                 let tx_channels = TX_CHANNELS.lock();
@@ -154,9 +156,8 @@ fn unmap_bencher(cores: usize) {
                     }
                 }
 
-                trace!("before unmap");
                 unsafe {
-                    VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed")
+                    VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed");
                 };
             } else {
                 // repeat...
@@ -166,7 +167,11 @@ fn unmap_bencher(cores: usize) {
             {
                 // Skip 4s for warmup, only log from thread 1
                 if thread_id == 1 && iteration > 4 {
-                    latency.push(before.elapsed());
+                    let _end_cycles = unsafe { x86::time::rdtsc() };
+                    //info!("{:?}", end_cycles - start_cycles);
+
+                    let elapsed = before.elapsed();
+                    latency.push(elapsed);
                     if latency.len() == LATENCY_MEASUREMENTS {
                         break 'outer;
                     }

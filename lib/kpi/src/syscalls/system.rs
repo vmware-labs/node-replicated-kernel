@@ -34,4 +34,22 @@ impl System {
             Err(SystemCallError::from(r))
         }
     }
+
+    /// Prints some stats for the core.
+    pub fn stats() -> Result<(), SystemCallError> {
+        let r = unsafe {
+            syscall!(
+                SystemCall::System as u64,
+                SystemOperation::Stats as u64,
+                1
+            )
+        };
+
+        if r == 0 {
+            Ok(())
+        }
+        else {
+            Err(SystemCallError::from(r))
+        }
+    }
 }

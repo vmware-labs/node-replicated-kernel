@@ -41,6 +41,7 @@ test-fs = []
 # Simple micro-benchmarks
 bench-vmops = []
 bench-vmops-unmap = []
+bench-vmops-unmaplat = []
 fs-write = []
 fxmark = []
 

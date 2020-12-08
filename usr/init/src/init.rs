@@ -34,7 +34,7 @@ use x86::bits64::paging::VAddr;
 use log::{debug, error, info};
 use log::{Level, Metadata, Record, SetLoggerError};
 
-#[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmap"))]
+#[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmap", feature = "bench-vmops-unmaplat"))]
 mod vmops;
 
 mod f64;
@@ -631,6 +631,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "bench-vmops-unmap")]
     vmops::unmap::bench(ncores);
+
+    #[cfg(feature = "bench-vmops-unmaplat")]
+    vmops::unmaplat::bench(ncores);
 
     #[cfg(feature = "test-print")]
     print_test();

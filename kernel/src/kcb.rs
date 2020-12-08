@@ -236,6 +236,9 @@ pub struct Kcb<A: ArchSpecificKcb> {
 
     /// A handle to the node-local kernel replica.
     pub replica: Option<(Arc<Replica<'static, KernelNode<A::Process>>>, ReplicaToken)>,
+
+    /// Measures cycles spent in TLB shootdown handler for responder.
+    pub tlb_time: u64,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -261,6 +264,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             memfs: None,
             print_buffer: None,
             replica: None,
+            tlb_time: 0,
         }
     }
 

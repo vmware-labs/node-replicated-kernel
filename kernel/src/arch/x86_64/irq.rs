@@ -559,6 +559,7 @@ pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
 #[no_mangle]
 pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unsafe {
+        let start = x86::time::rdtsc();
         assert!(a.vector < 256);
         trace!("handle_generic_exception {:?}", a);
         acknowledge();
@@ -619,6 +620,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             let kcb = get_kcb();
             if kcb.arch.has_current_process() {
                 // Return immediately
+                kcb.tlb_time += x86::time::rdtsc() - start;
                 kcb_iret_handle(kcb).resume()
             } else {
                 // Go to scheduler instead

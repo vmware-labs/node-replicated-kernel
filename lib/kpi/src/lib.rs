@@ -250,6 +250,8 @@ impl From<&str> for FileOperation {
 pub enum SystemOperation {
     /// Query information about available hardware threads in the system
     GetHardwareThreads = 1,
+    /// Print system/per-core info.
+    Stats = 2,
     Unknown,
 }
 
@@ -258,6 +260,7 @@ impl From<u64> for SystemOperation {
     fn from(op: u64) -> SystemOperation {
         match op {
             1 => SystemOperation::GetHardwareThreads,
+            2 => SystemOperation::Stats,
             _ => SystemOperation::Unknown,
         }
     }

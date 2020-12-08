@@ -59,6 +59,11 @@ fn handle_system(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
 
             Ok((serialized.len() as u64, 0))
         }
+        SystemOperation::Stats => {
+            let kcb = super::kcb::get_kcb();
+            info!("IRQ handler time: {} cycles", kcb.tlb_time);
+            Ok((0, 0))
+        }
         SystemOperation::Unknown => Err(KError::InvalidSystemOperation { a: arg1 }),
     }
 }

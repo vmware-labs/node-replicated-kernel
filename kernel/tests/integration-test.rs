@@ -1727,6 +1727,98 @@ fn s06_vmops_latency_benchmark() {
 }
 
 #[test]
+fn s06_vmops_unmap_latency_benchmark() {
+    let machine = if cfg!(feature = "baremetal") {
+        Machine::Baremetal(get_env_machine_name())
+    } else {
+        Machine::Qemu
+    };
+
+    let threads = if cfg!(feature = "smoke") {
+        vec![1, 4]
+    } else {
+        thread_defaults(machine.max_cores())
+    };
+
+    let file_name = "vmops_unmap_benchmark_latency.csv";
+    let _r = std::fs::remove_file(file_name);
+
+    for &cores in threads.iter() {
+        let kernel_cmdline = format!("testcmd={}", cores);
+        let mut cmdline = RunnerArgs::new("test-userspace-smp")
+            .module("init")
+            .user_feature("bench-vmops-unmap")
+            .user_feature("latency")
+            .cores(machine.max_cores())
+            .setaffinity()
+            .timeout(35_000 + cores as u64 * 100_000)
+            .release()
+            .cmd(kernel_cmdline.as_str())
+            .machine(machine.clone());
+
+        if cfg!(feature = "smoke") {
+            cmdline = cmdline.user_feature("smoke").memory(18192);
+        } else {
+            cmdline = cmdline.memory(32 * 1024);
+        }
+
+        if cfg!(feature = "prealloc") {
+            cmdline = cmdline.prealloc().disable_timeout();
+        }
+
+        if cfg!(feature = "smoke") && cores > 2 {
+            cmdline = cmdline.nodes(2);
+        } else {
+            cmdline = cmdline.nodes(machine.max_sockets());
+        }
+
+        let mut output = String::new();
+        let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
+            let mut p = spawn_bespin(&cmdline)?;
+
+            // Parse lines like:
+            // "Latency percentiles [ns]: maponly,2,4096,1092,1351,1939,3111,4711,9864,2089812"
+            // and writes them to a CSV file
+            let (prev, matched) =
+                    p.exp_regex(r#"init::vmops::unmap: Latency percentiles: (.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#)?;
+            output += prev.as_str();
+            output += matched.as_str();
+
+            // Append parsed results to a CSV file
+            let write_headers = !Path::new(file_name).exists();
+            let mut csv_file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(file_name)
+                .expect("Can't open file");
+
+            if write_headers {
+                let row = "git_rev,benchmark,ncores,memsize,p1,p25,p50,p75,p99,p999,p100\n";
+                let r = csv_file.write(row.as_bytes());
+                assert!(r.is_ok());
+            }
+
+            let parts: Vec<&str> = matched
+                .split("init::vmops::unmap: Latency percentiles: ")
+                .collect();
+            assert!(parts.len() >= 2);
+            let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write(parts[1].as_bytes());
+            assert!(r.is_ok());
+            let r = csv_file.write("\n".as_bytes());
+            assert!(r.is_ok());
+
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline, qemu_run(cores), output);
+    }
+}
+
+
+#[test]
 fn s06_fxmark_benchmark() {
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
     let benchmarks = vec![

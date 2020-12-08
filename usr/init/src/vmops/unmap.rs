@@ -75,7 +75,7 @@ fn unmap_bencher(cores: usize) {
         1
     } else if cfg!(feature = "smoke") && cfg!(feature = "latency") {
         // dont measure that long for latency
-        6
+        25
     } else {
         // tput measurements
         10
@@ -94,7 +94,7 @@ fn unmap_bencher(cores: usize) {
         while start.elapsed().as_secs() < 1 {
             #[cfg(feature = "latency")]
             let before = rawtime::Instant::now();
-            let _start_cycles = unsafe { x86::time::rdtsc() };
+            //let start_cycles = unsafe { x86::time::rdtsc() };
 
             if thread_id == 1 {
                 unsafe {
@@ -167,13 +167,13 @@ fn unmap_bencher(cores: usize) {
             {
                 // Skip 4s for warmup, only log from thread 1
                 if thread_id == 1 && iteration > 4 {
-                    let _end_cycles = unsafe { x86::time::rdtsc() };
+                    //let end_cycles = unsafe { x86::time::rdtsc() };
                     //info!("{:?}", end_cycles - start_cycles);
 
-                    let elapsed = before.elapsed();
-                    latency.push(elapsed);
-                    if latency.len() == LATENCY_MEASUREMENTS {
-                        break 'outer;
+                    if latency.len() < LATENCY_MEASUREMENTS {
+                        let elapsed = before.elapsed();
+                        //let elapsed = end_cycles - start_cycles;
+                        latency.push(elapsed);
                     }
                 }
             }
@@ -209,6 +209,7 @@ fn unmap_bencher(cores: usize) {
         for (idx, duration) in latency.iter().enumerate() {
             let mut h = hlock.as_mut().unwrap();
             h.increment(duration.as_nanos().try_into().unwrap());
+            //h.increment(*duration);
         }
     }
 

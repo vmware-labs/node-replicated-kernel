@@ -219,7 +219,7 @@ pub unsafe extern "C" fn posix_memalign(
         nbytes
     );
 
-    let allocation_size: u64 = (nbytes + 8) as u64;
+    let allocation_size: u64 = (nbytes + HEADER_SIZE) as u64;
     let alignment = core::cmp::max(align, 8);
 
     let aptr = alloc::alloc::alloc(Layout::from_size_align_unchecked(
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn posix_memalign(
 
     if aptr != ptr::null_mut() {
         *(aptr as *mut u64) = allocation_size;
-        *ptr = aptr.offset(8isize);
+        *ptr = aptr.offset(HEADER_SIZE as isize);
         0
     } else {
         *ptr = ptr::null_mut();

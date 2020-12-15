@@ -30,6 +30,8 @@ pub mod tcache;
 pub mod tcache_sp;
 pub mod vspace;
 
+const MAX_PLUS_ONE: usize = ZoneAllocator::MAX_ALLOC_SIZE + 1;
+
 /// Re-export arch specific memory definitions
 pub use crate::arch::memory::{
     kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE,
@@ -230,7 +232,7 @@ impl KernelAllocator {
     fn allocator_for(layout: Layout) -> AllocatorType {
         match layout.size() {
             0..=ZoneAllocator::MAX_ALLOC_SIZE => AllocatorType::Zone,
-            ZoneAllocator::MAX_ALLOC_SIZE..=LARGE_PAGE_SIZE => AllocatorType::MemManager,
+            MAX_PLUS_ONE..=LARGE_PAGE_SIZE => AllocatorType::MemManager,
             _ => AllocatorType::MapBig,
         }
     }

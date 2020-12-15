@@ -8,4 +8,4 @@ edition = "2018"
 x86 = { path = "../x86" }
 
 arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
-uefi = "0.6.0"
+uefi = "0.7.0"

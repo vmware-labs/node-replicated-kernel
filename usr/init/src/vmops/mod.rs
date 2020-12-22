@@ -14,7 +14,6 @@ use lineup::tls2::{Environment, SchedulerControlBlock};
 use crate::histogram;
 
 pub mod queue;
-pub mod unmap;
 pub mod unmaplat;
 
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);

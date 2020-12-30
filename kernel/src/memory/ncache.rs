@@ -64,11 +64,15 @@ impl NCache {
         }
 
         // Add large-pages
+        let mut lost_large_pages = 0;
         while how_many_large_pages > 0 && large_page_aligned_frame.size() >= LARGE_PAGE_SIZE {
             let (large_page, rest) = large_page_aligned_frame.split_at(LARGE_PAGE_SIZE);
-            self.large_page_addresses
-                .try_push(large_page.base)
-                .expect("Can't push large page in NCache");
+            match self.large_page_addresses.try_push(large_page.base) {
+                Ok(()) => { /* NOP */ }
+                Err(_) => {
+                    lost_large_pages += 1;
+                }
+            }
 
             large_page_aligned_frame = rest;
             how_many_large_pages -= 1;
@@ -86,12 +90,15 @@ impl NCache {
             }
         }
 
-        if lost_pages > 0 {
-            warn!(
-                "NCache population lost {} of memory",
-                super::DataSize::from_bytes(lost_pages * BASE_PAGE_SIZE)
+        if lost_pages > 0 || lost_large_pages > 0 {
+            error!(
+                "NCache population lost {} of memory.",
+                super::DataSize::from_bytes(
+                    lost_pages * BASE_PAGE_SIZE + lost_large_pages * LARGE_PAGE_SIZE
+                )
             );
         }
+
         debug!(
             "NCache#{} added {} base-pages and {} large-pages.",
             self.node,

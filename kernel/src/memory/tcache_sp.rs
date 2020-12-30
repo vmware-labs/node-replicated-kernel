@@ -100,7 +100,7 @@ impl TCacheSp {
             );
         }
 
-        error!(
+        debug!(
             "TCacheSp populated with {} base-pages and {} large-pages",
             self.base_page_addresses.len(),
             self.large_page_addresses.len()

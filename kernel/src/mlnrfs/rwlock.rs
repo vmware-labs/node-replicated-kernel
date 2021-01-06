@@ -84,8 +84,17 @@ where
     pub fn write(&self) -> WriteGuard<T> {
         let n: usize = crate::kcb::get_kcb().arch.max_threads();
         // First, wait until we can acquire the writer lock.
-        while self.wlock.compare_and_swap(false, true, Ordering::Acquire) {
-            spin_loop_hint();
+        //while self.wlock.compare_and_swap(false, true, Ordering::Acquire) {
+        loop {
+            match self.wlock.compare_exchange_weak(
+                false,
+                true,
+                Ordering::Acquire,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(x) => continue,
+            }
         }
 
         // Next, wait until all readers have released their locks. This condition
@@ -140,8 +149,12 @@ where
 
     /// Unlocks the write lock; invoked by the drop() method.
     pub(in crate::mlnrfs::rwlock) unsafe fn write_unlock(&self) {
-        if !self.wlock.compare_and_swap(true, false, Ordering::Acquire) {
-            panic!("write_unlock() called without acquiring the write lock");
+        match self
+            .wlock
+            .compare_exchange_weak(true, false, Ordering::Acquire, Ordering::Acquire)
+        {
+            Ok(_) => (),
+            Err(x) => panic!("write_unlock() called without acquiring the write lock"),
         }
     }
 

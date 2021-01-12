@@ -40,6 +40,9 @@ const REDIS_START_MATCH: &'static str = "# Server initialized";
 /// Line we use in dhcpd to match for giving IP to qemu VM.
 const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 52:54:00:12:34:56 (btest) via tap0";
 
+/// Environment variable that points to machine config (for baremetal booting)
+const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";
+
 /// Different ExitStatus codes as returned by Bespin.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 enum ExitStatus {
@@ -119,11 +122,11 @@ impl Display for ExitStatus {
 #[derive(Eq, PartialEq, Debug, Clone)]
 enum Machine {
     /// A bare-metal machine identified by a string.
-    /// The name is given by the corresponding TOML file
-    /// for run.py (e.g., Machine::BareMetal("b1542".into()) should
-    /// have a corresponding b1542.toml file).
+    /// The name is described in the corresponding TOML file.
+    ///
+    /// (e.g., Machine::BareMetal("b1542".into()) should have a corresponding b1542.toml file).
     Baremetal(String),
-    /// Run on a virtual machine with QEMU
+    /// Run on a virtual machine with QEMU (machine parameters determined by current host)
     Qemu,
 }
 
@@ -205,7 +208,7 @@ struct RunnerArgs<'a> {
 impl<'a> RunnerArgs<'a> {
     fn new(kernel_test: &'a str) -> RunnerArgs {
         RunnerArgs {
-            machine: Machine::Qemu,
+            machine: get_machine_from_env(),
             kernel_features: vec![kernel_test],
             user_features: Vec::new(),
             nodes: 0,
@@ -432,6 +435,24 @@ impl<'a> RunnerArgs<'a> {
     }
 }
 
+fn get_machine_from_env() -> Machine {
+    match std::env::var(BAREMETAL_MACHINE) {
+        Ok(name) => {
+            if name.is_empty() {
+                panic!(format!("{} enviroment variable empty.", BAREMETAL_MACHINE));
+            }
+            if !Path::new(&name).exists() {
+                panic!(format!(
+                    "'{}.toml' file not found. Check {} enviroment variable.",
+                    name, BAREMETAL_MACHINE
+                ));
+            }
+            Machine::Baremetal(name)
+        }
+        _ => Machine::Qemu,
+    }
+}
+
 fn check_for_successful_exit(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
     check_for_exit(ExitStatus::Success, args, r, output);
 }
@@ -563,13 +584,6 @@ fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
     spawn(format!("nc 172.31.0.10 {}", port).as_str(), Some(20000))
 }
 
-fn get_env_machine_name() -> String {
-    match std::env::var("BAREMETAL_MACHINE") {
-        Ok(name) => name,
-        _ => panic!("baremetal features needs env variable BAREMETAL_MACHINE."),
-    }
-}
-
 /// Make sure exiting the kernel works.
 ///
 /// We have a special ioport that we use to signal the exit to
@@ -578,9 +592,6 @@ fn get_env_machine_name() -> String {
 #[test]
 fn s00_exit() {
     let mut cmdline = RunnerArgs::new("test-exit");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -600,9 +611,6 @@ fn s00_exit() {
 #[test]
 fn s00_pfault_early() {
     let mut cmdline = RunnerArgs::new("test-pfault-early").qemu_arg("-d int,cpu_reset");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -626,9 +634,6 @@ fn s00_pfault_early() {
 #[test]
 fn s01_pfault() {
     let mut cmdline = RunnerArgs::new("test-pfault");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -649,9 +654,6 @@ fn s01_pfault() {
 #[test]
 fn s00_gpfault_early() {
     let mut cmdline = RunnerArgs::new("test-gpfault-early").qemu_arg("-d int,cpu_reset");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -675,9 +677,6 @@ fn s00_gpfault_early() {
 #[test]
 fn s01_gpfault() {
     let mut cmdline = RunnerArgs::new("test-gpfault");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -703,9 +702,6 @@ fn s01_gpfault() {
 #[test]
 fn s01_double_fault() {
     let mut cmdline = RunnerArgs::new("test-double-fault").qemu_arg("-d int,cpu_reset");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -725,9 +721,6 @@ fn s01_double_fault() {
 #[test]
 fn s01_alloc() {
     let mut cmdline = RunnerArgs::new("test-alloc");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -748,9 +741,6 @@ fn s01_alloc() {
 #[test]
 fn s01_sse() {
     let mut cmdline = RunnerArgs::new("test-sse");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -767,9 +757,6 @@ fn s01_sse() {
 #[test]
 fn s01_time() {
     let mut cmdline = RunnerArgs::new("test-time").release();
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -784,9 +771,6 @@ fn s01_time() {
 #[test]
 fn s01_timer() {
     let mut cmdline = RunnerArgs::new("test-timer");
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -930,9 +914,6 @@ fn s03_userspace_smoke() {
         "test-upcall",
         "test-scheduler",
     ]);
-    if cfg!(feature = "baremetal") {
-        cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-    }
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -1367,11 +1348,7 @@ pub fn thread_defaults(max_cores: usize) -> Vec<usize> {
 
 #[test]
 fn s06_vmops_benchmark() {
-    let machine = if cfg!(feature = "baremetal") {
-        Machine::Baremetal(get_env_machine_name())
-    } else {
-        Machine::Qemu
-    };
+    let machine = get_machine_from_env();
 
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
@@ -1391,8 +1368,7 @@ fn s06_vmops_benchmark() {
             .setaffinity()
             .timeout(12_000 + cores as u64 * 3000)
             .release()
-            .cmd(kernel_cmdline.as_str())
-            .machine(machine.clone());
+            .cmd(kernel_cmdline.as_str());
 
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(8192);
@@ -1547,12 +1523,7 @@ fn s06_shootdown_simple() {
 
 #[test]
 fn s06_vmops_latency_benchmark() {
-    let machine = if cfg!(feature = "baremetal") {
-        Machine::Baremetal(get_env_machine_name())
-    } else {
-        Machine::Qemu
-    };
-
+    let machine = get_machine_from_env();
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
     } else {
@@ -1572,8 +1543,7 @@ fn s06_vmops_latency_benchmark() {
             .setaffinity()
             .timeout(25_000 + cores as u64 * 100_000)
             .release()
-            .cmd(kernel_cmdline.as_str())
-            .machine(machine.clone());
+            .cmd(kernel_cmdline.as_str());
 
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(18192);
@@ -1638,11 +1608,7 @@ fn s06_vmops_latency_benchmark() {
 
 #[test]
 fn s06_vmops_unmaplat_latency_benchmark() {
-    let machine = if cfg!(feature = "baremetal") {
-        Machine::Baremetal(get_env_machine_name())
-    } else {
-        Machine::Qemu
-    };
+    let machine = get_machine_from_env();
 
     let threads = if cfg!(feature = "smoke") {
         vec![1, 4]
@@ -1663,8 +1629,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
             .setaffinity()
             .timeout(35_000 + cores as u64 * 100_000)
             .release()
-            .cmd(kernel_cmdline.as_str())
-            .machine(machine.clone());
+            .cmd(kernel_cmdline.as_str());
 
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(18192);
@@ -1762,9 +1727,6 @@ fn s06_fxmark_benchmark() {
                 .setaffinity()
                 .cmd(kernel_cmdline.as_str())
                 .release();
-            if cfg!(feature = "baremetal") {
-                cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-            }
             if cfg!(feature = "smoke") {
                 cmdline = cmdline.user_feature("smoke").memory(8192);
             } else {

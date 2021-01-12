@@ -1208,7 +1208,7 @@ fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::sessio
         set: f64,
         get: f64,
         driver: &'static str,
-    };
+    }
 
     let record = Record {
         git_rev: env!("GIT_HASH"),
@@ -1850,7 +1850,7 @@ fn memcached_benchmark(
         set_max_us: usize,
         set_avg_us: usize,
         set_std_us: usize,
-    };
+    }
 
     let record = Record {
         git_rev: env!("GIT_HASH"),

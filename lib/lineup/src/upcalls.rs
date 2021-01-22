@@ -35,7 +35,7 @@ impl fmt::Debug for Upcalls {
 }
 
 /// Dummy implementation of noop_context_switch().
-fn noop_context_switch(a1: *mut u8, a2: *mut u8) {}
+fn noop_context_switch(_a1: *mut u8, _a2: *mut u8) {}
 
 /// Dummy implementation of noop_curlwp().
 fn noop_curlwp() -> u64 {

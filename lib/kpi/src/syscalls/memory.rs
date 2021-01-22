@@ -2,7 +2,6 @@
 
 use core::convert::TryInto;
 
-use crate::io::*;
 use crate::process::FrameId;
 use crate::*;
 
@@ -31,7 +30,7 @@ impl VSpace {
         base: u64,
     ) -> Result<(VAddr, PAddr), SystemCallError> {
         let frame_id: u64 = frame_id.try_into().unwrap();
-        let (err, paddr, size) = syscall!(
+        let (err, paddr, _size) = syscall!(
             SystemCall::VSpace as u64,
             VSpaceOperation::MapFrame as u64,
             base,
@@ -105,11 +104,11 @@ impl PhysicalMemory {
         unimplemented!()
     }
 
-    pub fn release_base_page(id: FrameId) -> Result<(), SystemCallError> {
+    pub fn release_base_page(_id: FrameId) -> Result<(), SystemCallError> {
         unimplemented!()
     }
 
-    pub fn release_large_page(id: FrameId) -> Result<(), SystemCallError> {
+    pub fn release_large_page(_id: FrameId) -> Result<(), SystemCallError> {
         unimplemented!()
     }
 }

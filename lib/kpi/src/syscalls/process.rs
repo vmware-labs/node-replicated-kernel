@@ -1,20 +1,19 @@
 //! Abstraction for system calls to do control the current process.
 
-use crate::io::*;
 use crate::*;
 
 use crate::process::{CoreToken, ProcessInfo};
 use crate::syscall;
 use crate::x86_64::VirtualCpu;
 
-use x86::bits64::paging::{PAddr, VAddr};
+use x86::bits64::paging::VAddr;
 
 pub struct Process;
 
 impl Process {
     /// Request to run on `core_id` starting at `entry_point`.
     pub fn request_core(core_id: usize, entry_point: VAddr) -> Result<CoreToken, SystemCallError> {
-        let (r, gtid, eid) = unsafe {
+        let (r, gtid, _eid) = unsafe {
             syscall!(
                 SystemCall::Process as u64,
                 ProcessOperation::RequestCore as u64,

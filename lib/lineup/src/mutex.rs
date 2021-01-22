@@ -1,6 +1,7 @@
 use core::cell::Cell;
+use core::hint::spin_loop;
 use core::ptr;
-use core::sync::atomic::{spin_loop_hint, AtomicPtr, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::threads::ThreadId;
 use crate::tls2::{Environment, ThreadControlBlock};
@@ -180,7 +181,7 @@ impl MutexInner {
             #[cfg(feature = "latency")]
             let start = rawtime::Instant::now();
             while self.counter.load(Ordering::SeqCst) != 0 {
-                spin_loop_hint();
+                spin_loop();
             }
             #[cfg(feature = "latency")]
             if start.elapsed() > core::time::Duration::from_nanos(200) {
@@ -223,7 +224,7 @@ impl MutexInner {
                 #[cfg(feature = "latency")]
                 let start = rawtime::Instant::now();
                 while self.waitlist.is_empty() {
-                    core::sync::atomic::spin_loop_hint();
+                    spin_loop();
                 }
                 #[cfg(feature = "latency")]
                 if start.elapsed() > core::time::Duration::from_nanos(200) {
@@ -236,7 +237,7 @@ impl MutexInner {
                         break;
                     }
                     _ => {
-                        core::sync::atomic::spin_loop_hint();
+                        spin_loop();
                         continue;
                     }
                 }

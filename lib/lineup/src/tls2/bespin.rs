@@ -1,7 +1,5 @@
 use core::alloc::Layout;
-use core::{mem, ptr};
 
-use log::info;
 use x86::bits64::segmentation;
 
 use super::{SchedulerControlBlock, ThreadControlBlock};
@@ -31,7 +29,7 @@ pub fn get_tls_info() -> (&'static [u8], Layout) {
     let pinfo: kpi::process::ProcessInfo =
         kpi::syscalls::Process::process_info().expect("Can't get pinfo?");
     if pinfo.has_tls {
-        let bss_size = pinfo.tls_len_total - pinfo.tls_data_len;
+        let _bss_size = pinfo.tls_len_total - pinfo.tls_data_len;
         unsafe {
             // Safe: We know this exists because our ELF loader put TLS there (hopefully)
             (

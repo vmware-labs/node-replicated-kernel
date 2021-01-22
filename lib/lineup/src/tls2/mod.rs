@@ -21,7 +21,7 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use fringe::generator::Yielder;
 
-use crossbeam_queue::{ArrayQueue, PushError};
+use crossbeam_queue::ArrayQueue;
 use rawtime::{Duration, Instant};
 
 use crate::stack::LineupStack;

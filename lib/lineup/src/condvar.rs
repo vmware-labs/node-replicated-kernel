@@ -12,6 +12,14 @@ use crate::mutex::Mutex;
 use crate::threads::{ThreadId, YieldRequest};
 use crate::tls2::{Environment, ThreadControlBlock};
 
+fn remove_item<V>(vec: &mut Vec<V>, item: &V) -> Option<V>
+where
+    V: PartialEq,
+{
+    let pos = vec.iter().position(|x| *x == *item)?;
+    Some(vec.remove(pos))
+}
+
 #[derive(Debug)]
 pub struct CondVar {
     inner: UnsafeCell<CondVarInner>,
@@ -133,7 +141,7 @@ impl CondVarInner {
         yielder.make_unrunnable(tid);
         self.cv_schedule_enter(mtx, &rid);
 
-        let r = self.waiters.remove_item(&tid);
+        let r = remove_item(&mut self.waiters, &tid);
         debug_assert!(r.is_none(), "signal/broadcast must remove");
     }
 
@@ -154,7 +162,7 @@ impl CondVarInner {
         yielder.make_unrunnable(tid);
         mtx.enter_nowrap();
 
-        let r = self.waiters.remove_item(&tid);
+        let r = remove_item(&mut self.waiters, &tid);
         debug_assert!(r.is_none(), "signal/broadcast must remove");
     }
 
@@ -172,7 +180,7 @@ impl CondVarInner {
         let yielder: &mut ThreadControlBlock = Environment::thread();
         yielder.suspend(YieldRequest::Timeout(wakup_time));
         self.cv_schedule_enter(mtx, &rid);
-        self.waiters.remove_item(&tid);
+        remove_item(&mut self.waiters, &tid);
 
         trace!(
             "timed_wait: cv_schedule_enter done Instant::now() < wakup_time = {}",

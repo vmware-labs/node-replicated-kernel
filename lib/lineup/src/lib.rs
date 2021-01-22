@@ -1,9 +1,7 @@
 //!  A user-space thread scheduler with support for synchronization primitives.
 
-#![feature(vec_remove_item)]
 #![feature(drain_filter)]
 #![feature(linkage)]
-#![feature(ptr_offset_from)]
 #![feature(thread_local)]
 #![feature(test)]
 #![cfg_attr(not(test), no_std)]

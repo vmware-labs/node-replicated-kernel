@@ -120,7 +120,7 @@ impl Fs {
         }
 
         if offset == -1 {
-            match (op) {
+            match op {
                 FileOperation::ReadAt => return Err(SystemCallError::OffsetError),
                 FileOperation::WriteAt => return Fs::fileio(FileOperation::Write, fd, buffer, len),
                 _ => unreachable!("write_at received non *-At op"),

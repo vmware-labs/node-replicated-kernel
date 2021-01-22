@@ -222,7 +222,7 @@ pub fn shootdown(handle: TlbFlushHandle) {
     // Wait synchronously on cores to complete
     while !shootdowns.is_empty() {
         shootdowns.drain_filter(|s| s.is_acknowledged());
-        core::sync::atomic::spin_loop_hint();
+        core::hint::spin_loop();
     }
 
     trace!("done with all shootdowns");

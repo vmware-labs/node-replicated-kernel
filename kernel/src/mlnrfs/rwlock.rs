@@ -9,8 +9,9 @@
 
 use core::cell::UnsafeCell;
 use core::default::Default;
+use core::hint::spin_loop;
 use core::ops::{Deref, DerefMut};
-use core::sync::atomic::{spin_loop_hint, AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crossbeam_utils::CachePadded;
 
@@ -105,7 +106,7 @@ where
             .take(n)
             .all(|item| item.load(Ordering::Relaxed) == 0)
         {
-            spin_loop_hint();
+            spin_loop();
         }
 
         unsafe { WriteGuard::new(self) }
@@ -128,7 +129,7 @@ where
             // optimization spoken of earlier.
             unsafe {
                 while core::ptr::read_volatile(ptr) {
-                    spin_loop_hint();
+                    spin_loop();
                 }
             }
 

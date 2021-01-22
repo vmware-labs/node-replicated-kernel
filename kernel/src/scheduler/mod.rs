@@ -59,7 +59,7 @@ pub fn schedule() -> ! {
                             // There is no process but we're main, aggressively
                             // try and advance the replica
                             for _i in 0..25_000 {
-                                core::sync::atomic::spin_loop_hint();
+                                core::hint::spin_loop();
                             }
                             continue;
                         } else {

@@ -384,7 +384,7 @@ fn boot_app_cores(
                     panic!("Core {:?} didn't boot properly...", thread.apic_id());
                 }
 
-                core::sync::atomic::spin_loop_hint();
+                core::hint::spin_loop();
             }
         }
         core::mem::forget(coreboot_stack);

@@ -21,7 +21,6 @@
     drain_filter,
     alloc_prelude,
     try_reserve,
-    const_in_array_repeat_expressions,
     new_uninit,
     get_mut_unchecked
 )]

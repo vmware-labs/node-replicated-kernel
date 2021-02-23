@@ -86,6 +86,8 @@ parser.add_argument("--qemu-settings", type=str,
                     help="Pass additional generic QEMU arguments.")
 parser.add_argument("--qemu-monitor", action="store_true",
                     help="Launch the QEMU monitor (for qemu)")
+parser.add_argument("--pvrdma", action="store_true",
+                    help="Add para-virtual RDMA device (for qemu)", default=False)
 parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
 parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio"],
@@ -332,7 +334,9 @@ def run_qemu(args):
             prealloc = "on" if args.qemu_prealloc else "off"
             large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
             backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
-            qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{}'.format(
+            # This is untested, not sure it works
+            #assert args.pvrdma and not args.qemu_default_args
+            qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{},share=on'.format(
                 backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
 
             qemu_default_args += ['-numa',
@@ -349,7 +353,12 @@ def run_qemu(args):
 
     if args.qemu_memory:
         qemu_default_args += ['-m', str(args.qemu_memory)]
-
+    if args.pvrdma:
+        # ip link add bridge1 type bridge ; ifconfig bridge1 up
+        qemu_default_args += ['-netdev', 'bridge,id=bridge1',
+                              '-device', 'vmxnet3,netdev=bridge1,mac=56:b4:44:e9:62:dc,addr=10.0,multifunction=on']
+        qemu_default_args += ['-chardev', 'socket,path=/var/run/rdmacm-mux-mlx5_0-0,id=mads',
+                              '-device', 'pvrdma,ibdev=mlx5_0,ibport=0,netdev=enp216s0f0,mad-chardev=mads,addr=10.1']
     if args.qemu_debug_cpu:
         qemu_default_args += ['-d', 'int,cpu_reset']
     if args.qemu_monitor:

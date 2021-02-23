@@ -1,4 +1,5 @@
 use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
+use arr_macro::arr;
 
 pub struct FileDesc {
     fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]>,
@@ -7,7 +8,7 @@ pub struct FileDesc {
 impl Default for FileDesc {
     fn default() -> Self {
         FileDesc {
-            fds: arrayvec::ArrayVec::from([None; MAX_FILES_PER_PROCESS]),
+            fds: arrayvec::ArrayVec::from(arr![None; 1024]), // MAX_FILES_PER_PROCESS
         }
     }
 }

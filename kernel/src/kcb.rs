@@ -6,6 +6,7 @@ use core::cell::{RefCell, RefMut};
 use core::convert::TryInto;
 use core::slice::from_raw_parts;
 
+use arr_macro::arr;
 use logos::Logos;
 use node_replication::{Replica, ReplicaToken};
 use slabmalloc::ZoneAllocator;
@@ -185,7 +186,7 @@ impl PhysicalMemoryArena {
         }
     }
 
-    fn uninit_with_node(node: topology::NodeId) -> Self {
+    const fn uninit_with_node(node: topology::NodeId) -> Self {
         PhysicalMemoryArena {
             affinity: node,
             gmanager: None,
@@ -257,7 +258,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             emanager: RefCell::new(emanager),
             ezone_allocator: RefCell::new(EmergencyAllocator::default()),
             node,
-            memory_arenas: [None; crate::arch::MAX_NUMA_NODES],
+            memory_arenas: arr![None; 12], // crate::arch::MAX_NUMA_NODES
             // Can't initialize these yet, we need basic Kcb first for
             // memory allocations (emanager):
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),

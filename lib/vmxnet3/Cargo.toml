@@ -1,0 +1,13 @@
+[package]
+name = "vmxnet3"
+version = "0.1.0"
+authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
+edition = "2018"
+resolver = "2"
+
+[dependencies]
+log = "0.4"
+static_assertions = "1.1.0"
+x86 = { path = "../x86" }
+arrayvec = { git = "https://github.com/gz/arrayvec.git", default-features = false, features = ["array-sizes-129-255"] }
+custom_error = { path = "../custom_error" }

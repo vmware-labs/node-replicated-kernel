@@ -458,6 +458,44 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Test vmxnet3 in the kernel.
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-vmxnet",
+    target_arch = "x86_64"
+))]
+pub fn xmain() {
+    use alloc::prelude::v1::*;
+
+    use crate::memory::vspace::MapAction;
+    use crate::memory::PAddr;
+
+    let kcb = crate::kcb::get_kcb();
+    // TODO(hack): Map vmxnet3 bars
+    // BAR0: 0x81828000
+    kcb.arch.init_vspace().map_identity(
+        PAddr::from(0x81828000u64),
+        0x1000,
+        MapAction::ReadWriteKernel,
+    );
+    // BAR1: 0x81827000
+    kcb.arch.init_vspace().map_identity(
+        PAddr::from(0x81827000u64),
+        0x1000,
+        MapAction::ReadWriteKernel,
+    );
+
+    info!(
+        "vmxnet3 size {}",
+        core::mem::size_of::<vmxnet3::vmx::VMXNet3>()
+    );
+    arch::irq::enable();
+    let mut vmx = vmxnet3::vmx::VMXNet3::new(2, 2, 128, 128).unwrap();
+    vmx.init();
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 /// Test shootdown facilities in the kernel.
 #[cfg(all(
     feature = "integration-test",

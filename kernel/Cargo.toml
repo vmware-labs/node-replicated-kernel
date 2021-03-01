@@ -10,6 +10,8 @@ readme = "README.md"
 license = "MIT OR Apache-2.0"
 build = "build.rs"
 edition = "2018"
+resolver = "2"
+
 
 [dependencies]
 # Our own dependencies:
@@ -17,6 +19,7 @@ apic = { path = "../lib/apic/" }
 node-replication = { path = "../lib/node-replication/nr" }
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
+vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 x86 = "0.39"
 klogger = "0.0.7"
@@ -124,3 +127,5 @@ test-vspace-debug = ["integration-test", "bsp-only"]
 test-shootdown-simple = ["integration-test"]
 # test-replica-advance: Test advancing replica
 test-replica-advance = ["integration-test"]
+# test-replica-advance: Test advancing replica
+test-vmxnet = ["integration-test"]

@@ -11,9 +11,11 @@ members = [
     "lib/node-replication/cnr",
     "lib/node-replication/nr",
     "lib/vibrio",
+    "lib/vmxnet3",
     "usr/init",
     "usr/rkapps",
 ]
+resolver = "2"
 
 # disable stack unwinding on panic for now
 [profile.dev]

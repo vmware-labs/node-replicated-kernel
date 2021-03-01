@@ -491,6 +491,7 @@ pub fn xmain() {
     );
     arch::irq::enable();
     let mut vmx = vmxnet3::vmx::VMXNet3::new(2, 2, 128, 128).unwrap();
+    vmx.attach_pre();
     vmx.init();
 
     arch::debug::shutdown(ExitReason::Ok);

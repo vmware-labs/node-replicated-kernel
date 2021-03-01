@@ -35,8 +35,8 @@ pub const VMXNET3_MIN_RX_NDESC: usize = 32;
 pub const VMXNET3_MASK_RX_NDESC: usize = 31;
 pub const VMXNET3_MAX_TX_NCOMPDESC: usize = 4096;
 pub const VMXNET3_MAX_RX_NCOMPDESC: usize = 4096;
-pub const VMXNET3_FLAG_RSS: usize = 2;
-pub const VMXNET3_FLAG_SOFT_RSS: usize = 4;
+pub const VMXNET3_FLAG_RSS: u32 = 2;
+pub const VMXNET3_FLAG_SOFT_RSS: u32 = 4;
 pub const VMXNET3_DRIVER_VERSION: u32 = 65536;
 pub const VMXNET3_TX_MAXSEGS: usize = 32;
 pub const VMXNET3_TX_MAXSEGSIZE: usize = 16383;
@@ -132,7 +132,7 @@ impl vmxnet3_txring {
         })
     }
 
-    fn vxtxr_ndesc(&self) -> usize {
+    pub(crate) fn vxtxr_ndesc(&self) -> usize {
         self.vxtxr_txd.len()
     }
 }
@@ -175,7 +175,7 @@ impl vmxnet3_rxring {
         })
     }
 
-    fn vxrxr_ndesc(&self) -> usize {
+    pub fn vxrxr_ndesc(&self) -> usize {
         self.vxrxr_rxd.len()
     }
 }
@@ -241,7 +241,7 @@ impl vmxnet3_comp_ring {
         })
     }
 
-    pub fn vxcr_ndesc(&self) -> usize {
+    pub(crate) fn vxcr_ndesc(&self) -> usize {
         match &self.vxcr {
             CompRingBuf::RxCd(buf) => buf.len(),
             CompRingBuf::TxCd(buf) => buf.len(),

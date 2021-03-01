@@ -11,3 +11,4 @@ static_assertions = "1.1.0"
 x86 = { path = "../x86" }
 arrayvec = { git = "https://github.com/gz/arrayvec.git", default-features = false, features = ["array-sizes-129-255"] }
 custom_error = { path = "../custom_error" }
+driverkit = { path = "../driverkit" }

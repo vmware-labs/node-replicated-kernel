@@ -9,6 +9,7 @@ use core::pin::Pin;
 
 use arrayvec::ArrayVec;
 use custom_error::custom_error;
+use driverkit::net::{PktInfo, RxError, RxdInfo, TxError, TxRx};
 use log::{debug, error, info};
 use x86::current::paging::{PAddr, VAddr};
 
@@ -179,8 +180,9 @@ mod tests {
     }
 }
 
-// Note the use of braces rather than parentheses.
 custom_error! {pub VMXNet3Error
+    DeviceNotSupported = "Unknown vmxnet3 device/version",
+    InterruptModeNotSupported = "Device requested an interrupt mode that is not supported by driver",
     OutOfMemory  = "Unable to allocate raw memory.",
     OutOfMemory1{ source: TryReserveError }  = "Unable to allocate memory for data-structure",
     OutOfMemory2{ source: AllocError }       = "Unable to allocate object"
@@ -189,12 +191,13 @@ custom_error! {pub VMXNet3Error
 pub struct VMXNet3 {
     bar0: u64,
     bar1: u64,
-    bar_msix: u64,
-
+    //bar_msix: u64,
     /// Number of transmit queues.
     ntxqsets: BoundedUSize<1, { VMXNET3_MAX_TX_QUEUES }>,
     /// Number of receive queues.
     nrxqsets: BoundedUSize<1, { VMXNET3_MAX_RX_QUEUES }>,
+
+    vmx_flags: u32,
 
     /// Is link active?
     link_active: bool,
@@ -230,11 +233,11 @@ impl VMXNet3 {
 
             let bar0 = pci::confread(BUS, DEV, FUN, 0x10);
             let bar1 = pci::confread(BUS, DEV, FUN, 0x14);
-            let bar_msix = pci::confread(BUS, DEV, FUN, 0x7);
+            //let bar_msix = pci::confread(BUS, DEV, FUN, 0x7);
 
             debug!("BAR0 at: {:#x}", bar0);
             debug!("BAR1 at: {:#x}", bar1);
-            debug!("MSI-X at: {:#x}", bar_msi);
+            //debug!("MSI-X at: {:#x}", bar_msi);
 
             (bar0.into(), bar1.into())
         };
@@ -251,6 +254,7 @@ impl VMXNet3 {
         let mut vmx = Pin::new(Box::try_new(VMXNet3 {
             bar0,
             bar1,
+            vmx_flags: 0,
             ntxqsets,
             nrxqsets,
             link_active: false,
@@ -270,16 +274,41 @@ impl VMXNet3 {
         let pa = vmx.paddr();
         vmx.ds.set_driver_data(pa);
 
-        vmx.tx_queues_alloc();
-        vmx.rx_queues_alloc();
-
         Ok(vmx)
     }
 
+    /*
+
+        /* Rx queues */
+        for (i = 0; i < scctx->isc_nrxqsets; i++) {
+            rxq = &sc->vmx_rxq[i];
+            rxs = rxq->vxrxq_rs;
+
+            rxs->cmd_ring[0] = rxq->vxrxq_cmd_ring[0].vxrxr_paddr;
+            rxs->cmd_ring_len[0] = rxq->vxrxq_cmd_ring[0].vxrxr_ndesc;
+            rxs->cmd_ring[1] = rxq->vxrxq_cmd_ring[1].vxrxr_paddr;
+            rxs->cmd_ring_len[1] = rxq->vxrxq_cmd_ring[1].vxrxr_ndesc;
+            rxs->comp_ring = rxq->vxrxq_comp_ring.vxcr_paddr;
+            rxs->comp_ring_len = rxq->vxrxq_comp_ring.vxcr_ndesc;
+            rxs->driver_data = vtophys(rxq);
+            rxs->driver_data_len = sizeof(struct vmxnet3_rxqueue);
+        }
+    */
+
     fn tx_queues_alloc(&mut self) -> Result<(), VMXNet3Error> {
         for i in 0..*self.ntxqsets {
-            self.txq
-                .push(TxQueue::new(QueueId::Tx(i), VMXNET3_DEF_TX_NDESC)?);
+            let txq = TxQueue::new(QueueId::Tx(i), VMXNET3_DEF_TX_NDESC)?;
+
+            // Mirror info in shared queue region:
+            let txs = self.qs.txqs_ref_mut(i);
+            txs.cmd_ring = txq.vxtxq_cmd_ring.paddr().into();
+            txs.cmd_ring_len = txq.vxtxq_cmd_ring.vxtxr_ndesc().try_into().unwrap();
+            txs.comp_ring = txq.vxtxq_comp_ring.paddr().into();
+            txs.comp_ring_len = txq.vxtxq_comp_ring.vxcr_ndesc().try_into().unwrap();
+            txs.driver_data = txq.paddr().into();
+            txs.driver_data_len = mem::size_of::<TxQueue>().try_into().unwrap();
+
+            self.txq.push(txq);
         }
 
         Ok(())
@@ -287,18 +316,73 @@ impl VMXNet3 {
 
     fn rx_queues_alloc(&mut self) -> Result<(), VMXNet3Error> {
         for i in 0..*self.nrxqsets {
-            self.rxq
-                .push(RxQueue::new(QueueId::Rx(i), VMXNET3_DEF_RX_NDESC)?);
+            let rxq = RxQueue::new(QueueId::Rx(i), VMXNET3_DEF_RX_NDESC)?;
+
+            // Mirror info in shared queue region:
+            let rxs = self.qs.rxqs_ref_mut(i);
+            rxs.cmd_ring[0] = rxq.vxrxq_cmd_ring[0].paddr().into();
+            rxs.cmd_ring_len[0] = rxq.vxrxq_cmd_ring[0].vxrxr_ndesc().try_into().unwrap();
+            rxs.cmd_ring[1] = rxq.vxrxq_cmd_ring[1].paddr().into();
+            rxs.cmd_ring_len[1] = rxq.vxrxq_cmd_ring[1].vxrxr_ndesc().try_into().unwrap();
+            rxs.comp_ring = rxq.vxrxq_comp_ring.paddr().into();
+            rxs.comp_ring_len = rxq.vxrxq_comp_ring.vxcr_ndesc().try_into().unwrap();
+            rxs.driver_data = rxq.paddr().into();
+            rxs.driver_data_len = mem::size_of::<RxQueue>().try_into().unwrap();
+
+            self.rxq.push(rxq);
         }
 
         Ok(())
     }
 
+    pub fn attach_pre(&mut self) -> Result<(), VMXNet3Error> {
+        self.tx_queues_alloc()?;
+        self.rx_queues_alloc()?;
+        let intr_config = self.read_cmd(VMXNET3_CMD_GET_INTRCFG);
+        info!("intr_config is set to {:?}", intr_config);
+        if intr_config != VMXNET3_IT_AUTO && intr_config != VMXNET3_IT_MSIX {
+            return Err(VMXNet3Error::InterruptModeNotSupported);
+        }
+
+        self.check_version()?;
+        Ok(())
+    }
+
+    fn alloc_data(&mut self) {
+        // In new(): self.alloc_shared_data()
+        // NYI: self.alloc_mcast_table()
+        self.init_shared_data();
+    }
+
+    fn attach_post(&mut self) {
+        if self.rxq.len() > 0 {
+            self.vmx_flags |= VMXNET3_FLAG_RSS;
+        }
+
+        self.alloc_data();
+        //self.set_interrupt_idx();
+    }
+
+    fn check_version(&self) -> Result<(), VMXNet3Error> {
+        let version = self.read_bar1(VMXNET3_BAR1_VRRS);
+        if version & 0x1 == 0 {
+            return Err(VMXNet3Error::DeviceNotSupported);
+        }
+        self.write_bar1(VMXNET3_BAR1_VRRS, 1);
+
+        let version = self.read_bar1(VMXNET3_BAR1_UVRS);
+        if version & 0x1 == 0 {
+            return Err(VMXNet3Error::DeviceNotSupported);
+        }
+        self.write_bar1(VMXNET3_BAR1_UVRS, 1);
+
+        Ok(())
+    }
+
     pub fn register(&self) {}
-    pub fn attach_pre(&self) {}
+
     pub fn msix_intr_assign(&self) {}
     pub fn free_irqs(&self) {}
-    pub fn attach_post(&self) {}
     pub fn detach(&self) {}
     pub fn shutdown(&self) {}
     pub fn suspend(&self) {}
@@ -337,6 +421,8 @@ impl VMXNet3 {
         self.write_cmd(VMXNET3_CMD_RESET);
     }
 
+    fn init_shared_data(&mut self) {}
+
     fn reinit_shared_data(&mut self) {
         self.ds.mtu = *BoundedU32::<1, VMXNET3_MAX_MTU>::new(1500);
         self.ds.ntxqueue = *self.nrxqsets as u8;
@@ -351,12 +437,12 @@ impl VMXNet3 {
     fn retrieve_lladdr(&mut self) {
         let low = self.read_cmd(VMXNET3_CMD_GET_MACL);
         let high = self.read_cmd(VMXNET3_CMD_GET_MACH);
-        self.lladdr[0] = ((low >> 0) & 0xff) as u8;
-        self.lladdr[1] = ((low >> 8) & 0xff) as u8;
-        self.lladdr[2] = ((low >> 16) & 0xff) as u8;
-        self.lladdr[3] = ((low >> 24) & 0xff) as u8;
-        self.lladdr[4] = ((high >> 0) & 0xff) as u8;
-        self.lladdr[5] = ((high >> 8) & 0xff) as u8;
+        self.lladdr[0] = (low >> 0) as u8;
+        self.lladdr[1] = (low >> 8) as u8;
+        self.lladdr[2] = (low >> 16) as u8;
+        self.lladdr[3] = (low >> 24) as u8;
+        self.lladdr[4] = (high >> 0) as u8;
+        self.lladdr[5] = (high >> 8) as u8;
 
         // For testing only:
         // 56:b4:44:e9:62:dc
@@ -416,6 +502,10 @@ impl VMXNet3 {
         error!("rxfilters currently ignored");
     }
 
+    fn refresh_host_stats(&mut self) {
+        self.write_cmd(VMXNET3_CMD_GET_STATS);
+    }
+
     fn link_is_up(&self) -> bool {
         error!(
             "self.read_cmd(VMXNET3_CMD_GET_LINK) = {:#x}",
@@ -449,5 +539,39 @@ impl VMXNet3 {
         info!("enabled device {}", r);
         self.reinit_rxfilters();
         self.link_status();
+    }
+}
+
+impl TxRx for VMXNet3 {
+    fn txd_encap(&mut self, pi: PktInfo) -> Result<(), TxError> {
+        assert!(
+            pi.segments() <= VMXNET3_TX_MAXSEGS,
+            "vmxnet3: Packet with too many segments"
+        );
+
+        let txq: Option<&TxQueue> = self.txq.get(pi.qsidx);
+        txq.map(|txq| {
+            //txq.vxtxq_cmd_ring.
+        });
+
+        Ok(())
+    }
+
+    fn txd_flush(&mut self, qid: u16) {}
+
+    fn txd_credits_update(&mut self, qid: u16, clear: bool) -> Result<(), TxError> {
+        Ok(())
+    }
+
+    fn isc_rxd_available(&mut self, qsid: u16, cidx: u32) -> Result<(), RxError> {
+        Ok(())
+    }
+
+    fn rxd_refill(&mut self, qsid: u16, flid: u8, pidx: u32, paddrs: &[u64], vaddrs: &[u64]) {}
+
+    fn rxd_flush(&mut self, qsid: u16, flid: u8, pidx: u32) {}
+
+    fn rxd_pkt_get(&mut self, ri: RxdInfo) -> Result<(), RxError> {
+        Ok(())
     }
 }

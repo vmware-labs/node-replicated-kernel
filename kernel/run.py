@@ -15,7 +15,7 @@ import re
 from time import sleep
 
 from plumbum import colors, local, SshMachine
-from plumbum.cmd import xargo, sudo, tunctl, ifconfig, whoami, python3, corealloc, cat
+from plumbum.cmd import xargo, whoami, python3, cat
 from plumbum.commands import ProcessExecutionError
 
 
@@ -268,6 +268,8 @@ def run_qemu(args):
     Run the kernel on a QEMU instance.
     """
 
+    from plumbum.cmd import sudo, tunctl, ifconfig
+
     log("Starting QEMU")
     debug_release = 'release' if args.release else 'debug'
     esp_path = TARGET_PATH / UEFI_TARGET / debug_release / 'esp'
@@ -379,7 +381,7 @@ def run_qemu(args):
     # The `preexec_fn` ensures that qemu dies if run.py exits
     execution = subprocess.Popen(
         cmd, stderr=None, stdout=None, env=os.environ.copy(), preexec_fn=lambda: prctl.set_pdeathsig(signal.SIGKILL))
-    from plumbum.machines import LocalCommand
+    from plumbum.machines import LocalCommand, corealloc
     LocalCommand.QUOTE_LEVEL = 3
 
     if args.qemu_cores and args.qemu_affinity:
@@ -444,6 +446,8 @@ def detect_baremetal_shutdown(lb):
 
 
 def run_baremetal(args):
+    from plumbum.cmd import sudo, tunctl, ifconfig
+
     # Need to find a config file ${args.machine}.toml
     cfg_file = SCRIPT_PATH / "{}.toml".format(args.machine)
     if not cfg_file.exists():

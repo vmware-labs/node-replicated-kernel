@@ -7,15 +7,13 @@
 
 set -exu
 
+source /generic-setup.sh
+
+export RUST_VERSION=nightly-2021-03-16
+echo "export RUST_VERSION=${RUST_VERSION}" > /rustversion.sh
+
 echo "installing dependencies..."
-apt-get update
-
-apt-get install -y make gcc build-essential curl git zlib1g-dev
-apt-get install -y python3 python3-plumbum python3-prctl python3-toml python3-pexpect
-apt-get install -y uml-utilities mtools
-
-# For building rump packages (rkapps)
-apt-get install -y genisoimage
+install_build_dependencies
 
 # create the user and the directory
 groupadd -g ${ENV_UID}  ${ENV_USER}
@@ -27,28 +25,10 @@ export HOME=/home/${ENV_USER}
 
 su - ${ENV_USER}
 cd $HOME
-whoami
 
-# Make sure rust is up-to-date
-curl https://sh.rustup.rs -sSf | sh -s -- -y
-
-# source the home directory
-source $HOME/.cargo/env
-
-# set the default toolchain to nightly
-rustup default nightly
-
-# adding the rust-src component
-rustup component add rust-src
-
-# perform update
-rustup update
-
-# Install xargo (used by build)
-cargo install xargo
-
-# Install mdbook for documents
-cargo install mdbook
+# bootstrap rust
+bootstrap_rust
+install_rust_build_dependencies
 
 # now make sure everything is owned by the user
 chown -R ${ENV_USER}:${ENV_USER} /home/${ENV_USER}

@@ -8,6 +8,8 @@ echo "================================================"
 echo "Build docker container"
 echo "================================================"
 
+source /rustversion.sh
+
 # source the cargo environment
 source $HOME/.cargo/env
 
@@ -15,13 +17,14 @@ source $HOME/.cargo/env
 cd /source
 
 
-echo "setting nightly build chain performing rustup update "
+echo "setting rust versions to ${RUST_VERSION}"
 cd kernel
-rustup default nightly
+rustup default ${RUST_VERSION}
 cd ..
-rustup default nightly
+rustup default ${RUST_VERSION}
 
-# ensure rustup is up to date
+# ensure rustup is up to date and we got the sources
+rustup component add rust-src
 rustup update
 
 if [ "$1" == "" ]; then

@@ -15,6 +15,7 @@ ENV ENV_UID=$arg_uid
 
 # copy the enntrypoint and setup files into the image
 COPY docker-setup.sh /docker-setup.sh
+COPY generic-setup.sh /generic-setup.sh
 COPY docker-entrypoint.sh /entrypoint.sh
 
 # run the setup scripts

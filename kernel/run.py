@@ -270,7 +270,8 @@ def run_qemu(args):
     Run the kernel on a QEMU instance.
     """
 
-    from plumbum.cmd import sudo, tunctl, ifconfig
+    from plumbum.cmd import sudo, tunctl, ifconfig, corealloc
+    from plumbum.machines import LocalCommand
 
     log("Starting QEMU")
     debug_release = 'release' if args.release else 'debug'
@@ -390,7 +391,7 @@ def run_qemu(args):
     # The `preexec_fn` ensures that qemu dies if run.py exits
     execution = subprocess.Popen(
         cmd, stderr=None, stdout=None, env=os.environ.copy(), preexec_fn=lambda: prctl.set_pdeathsig(signal.SIGKILL))
-    from plumbum.machines import LocalCommand, corealloc
+
     LocalCommand.QUOTE_LEVEL = 3
 
     if args.qemu_cores and args.qemu_affinity:

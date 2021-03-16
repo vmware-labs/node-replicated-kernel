@@ -24,9 +24,11 @@ rustup default nightly
 # ensure rustup is up to date
 rustup update
 
-echo "starting shell"
 if [ "$1" == "" ]; then
+    echo "starting shell..."
     exec "/bin/bash"
+    exit 0
 else
+    echo "executing '$@'"
     exec "$@"
 fi

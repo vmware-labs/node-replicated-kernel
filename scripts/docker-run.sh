@@ -34,4 +34,4 @@ if ! docker image ls | grep ${IMAGE} > /dev/null; then
 fi
 
 # run the image interactively. we automatically mount the source directory in /source
-docker run -i -t --name ${IMAGE} --mount type=bind,source=${ROOT},target=/source ${IMAGE}
+docker run -i -t --rm --name ${IMAGE} --mount type=bind,source=${ROOT},target=/source ${IMAGE}

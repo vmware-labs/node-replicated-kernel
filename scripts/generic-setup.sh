@@ -3,7 +3,7 @@
 #
 
 # the rust version we want
-RUST_VERSION=nightly
+RUST_VERSION=nightly-2020-12-07
 
 # do we need sudo, or are we already running as root?
 if [ ${EUID} != 0 ]; then

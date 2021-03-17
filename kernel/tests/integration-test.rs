@@ -150,7 +150,9 @@ impl Machine {
         if let Machine::Qemu = self {
             match self.max_cores() {
                 28 => 2,
+                32 => 2,
                 56 => 2,
+                64 => 2,
                 96 => 4,
                 192 => 4,
                 _ => unreachable!("unknown core cnt"),

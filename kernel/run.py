@@ -27,7 +27,7 @@ def exception_handler(exception_type, exception, traceback):
 # run.py script settings
 #
 SCRIPT_PATH = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
-CARGO_DEFAULT_ARGS = ["--color", "always", "-Zfeatures=all"]
+CARGO_DEFAULT_ARGS = ["--color", "always"]
 ARCH = "x86_64"
 # TODO: should be generated for enabling parallel builds
 QEMU_TAP_NAME = 'tap0'

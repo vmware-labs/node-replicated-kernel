@@ -150,7 +150,9 @@ impl Machine {
         if let Machine::Qemu = self {
             match self.max_cores() {
                 28 => 2,
+                32 => 2,
                 56 => 2,
+                64 => 2,
                 96 => 4,
                 192 => 4,
                 _ => unreachable!("unknown core cnt"),
@@ -1682,15 +1684,21 @@ fn s06_fxmark_benchmark() {
 
     fn open_files(benchmark: &str, max_cores: usize) -> Vec<usize> {
         match benchmark.contains("mix") {
-            true => match max_cores {
-                28 => vec![1, 4, 8, 12, 14],
-                56 => vec![1, 8, 16, 24, 28],
-                32 => vec![1, 4, 8, 12, 16],
-                64 => vec![1, 8, 16, 24, 32],
-                96 => vec![1, 4, 8, 12, 16, 20, 24],
-                192 => vec![1, 8, 16, 24, 32, 40, 48],
-                _ => unreachable!(),
-            },
+            true => {
+                if cfg!(feature = "smoke") {
+                    vec![1]
+                } else {
+                    match max_cores {
+                        28 => vec![1, 4, 8, 12, 14],
+                        56 => vec![1, 8, 16, 24, 28],
+                        32 => vec![1, 4, 8, 12, 16],
+                        64 => vec![1, 8, 16, 24, 32],
+                        96 => vec![1, 4, 8, 12, 16, 20, 24],
+                        192 => vec![1, 8, 16, 24, 32, 40, 48],
+                        _ => unreachable!(),
+                    }
+                }
+            }
             false => vec![0],
         }
     }
@@ -1719,17 +1727,7 @@ fn s06_fxmark_benchmark() {
                 if cfg!(feature = "smoke") && cores > 2 {
                     cmdline = cmdline.nodes(2);
                 } else {
-                    let max_cores = num_cpus::get();
-                    // TODO(ergnomics): Hard-coded skylake2x and skylake4x topology:
-                    match max_cores {
-                        28 => cmdline = cmdline.nodes(2),
-                        56 => cmdline = cmdline.nodes(2),
-                        32 => cmdline = cmdline.nodes(2),
-                        64 => cmdline = cmdline.nodes(2),
-                        96 => cmdline = cmdline.nodes(4),
-                        192 => cmdline = cmdline.nodes(4),
-                        _ => {}
-                    };
+                    cmdline = cmdline.nodes(machine.max_sockets());
                 }
 
                 let mut output = String::new();

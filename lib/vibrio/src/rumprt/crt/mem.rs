@@ -170,8 +170,7 @@ pub unsafe extern "C" fn _mmap(
     if is_anon_mem_mapping(fd) {
         // anon
         bespin::mmap(addr, len, prot, flags, fd, pos)
-    }
-    else {
+    } else {
         rump::mmap(addr, len, prot, flags, fd, pos)
     }
 }

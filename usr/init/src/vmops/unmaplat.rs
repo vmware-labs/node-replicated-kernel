@@ -2,7 +2,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::ptr;
-use core::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::time::Duration;
 
 use log::{error, info, trace};
@@ -117,8 +117,7 @@ fn unmap_bencher(cores: usize) {
             let mut h = hlock.as_mut().unwrap();
             h.increment(*duration);
         }
-    }
-    else {
+    } else {
         vibrio::syscalls::System::stats();
     }
 

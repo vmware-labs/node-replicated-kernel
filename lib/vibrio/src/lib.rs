@@ -23,9 +23,9 @@ pub use kpi::syscalls;
 extern crate lazy_static;
 
 pub mod mem;
-pub mod writer;
 pub mod upcalls;
 pub mod vconsole;
+pub mod writer;
 
 #[cfg(feature = "rumprt")]
 pub mod rumprt;

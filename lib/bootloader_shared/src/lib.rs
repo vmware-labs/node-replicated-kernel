@@ -34,7 +34,12 @@ impl Module {
 
     /// Create a new module to pass to the kernel.
     /// The name will be truncated to 32 bytes.
-    pub fn new(name: &str, binary_vaddr: x86::bits64::paging::VAddr, binary_paddr: x86::bits64::paging::PAddr, binary_size: usize) -> Module {
+    pub fn new(
+        name: &str,
+        binary_vaddr: x86::bits64::paging::VAddr,
+        binary_paddr: x86::bits64::paging::PAddr,
+        binary_size: usize,
+    ) -> Module {
         let mut name_slice: [u8; Module::MAX_NAME_LEN] = [0; Module::MAX_NAME_LEN];
         let len = core::cmp::min(name.len(), Module::MAX_NAME_LEN);
         name_slice[0..len].copy_from_slice(&name.as_bytes()[0..len]);
@@ -44,7 +49,7 @@ impl Module {
             name_len: len,
             binary_vaddr,
             binary_paddr,
-            binary_size
+            binary_size,
         }
     }
 

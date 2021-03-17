@@ -17,9 +17,6 @@ extern crate lazy_static;
 
 extern crate lineup;
 
-#[macro_use]
-extern crate lazy_static;
-
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;

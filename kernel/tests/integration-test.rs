@@ -1696,7 +1696,7 @@ fn s06_fxmark_benchmark() {
     }
 
     for benchmark in benchmarks {
-        let open_files: Vec<usize> = open_files(benchmark, max_cores);
+        let open_files: Vec<usize> = open_files(benchmark, machine.max_cores());
         for &cores in threads.iter() {
             for &of in open_files.iter() {
                 let kernel_cmdline = format!("testcmd={}X{}X{}", cores, of, benchmark);
@@ -1705,14 +1705,11 @@ fn s06_fxmark_benchmark() {
                     .user_feature("fxmark")
                     .memory(1024)
                     .timeout(num_microbenchs * (25_000 + cores as u64 * 1000))
-                    .cores(max_cores)
+                    .cores(machine.max_cores())
                     .setaffinity()
                     .cmd(kernel_cmdline.as_str())
                     .release();
 
-                if cfg!(feature = "baremetal") {
-                    cmdline = cmdline.machine(Machine::Baremetal(get_env_machine_name()));
-                }
                 if cfg!(feature = "smoke") {
                     cmdline = cmdline.user_feature("smoke").memory(8192);
                 } else {

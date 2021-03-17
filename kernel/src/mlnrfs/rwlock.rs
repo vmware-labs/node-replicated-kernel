@@ -9,8 +9,8 @@
 
 use core::cell::UnsafeCell;
 use core::default::Default;
-use core::hint::spin_loop;
 use core::fmt::{Debug, Error, Formatter};
+use core::hint::spin_loop;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 

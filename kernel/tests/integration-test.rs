@@ -963,10 +963,11 @@ fn s03_userspace_smoke() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_multicore() {
-    const NUM_CORES: usize = 56;
+    let machine = get_machine_from_env();
+    let num_cores: usize = machine.max_cores();
     let cmdline = RunnerArgs::new("test-userspace-smp")
         .user_features(&["test-scheduler-smp"])
-        .cores(NUM_CORES)
+        .cores(num_cores)
         .memory(2048)
         .timeout(28_000);
 
@@ -974,7 +975,7 @@ fn s04_userspace_multicore() {
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_bespin(&cmdline)?;
 
-        for _i in 0..NUM_CORES {
+        for _i in 0..num_cores {
             let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
             output += r.0.as_str();
             output += r.1.as_str();

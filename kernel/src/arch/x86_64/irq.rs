@@ -515,7 +515,7 @@ fn kcb_iret_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
 #[no_mangle]
 pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     sprintln!("[IRQ] Got an exception during kernel initialization:");
-    error!("{:?}", a);
+    sprintln!("{:?}", a);
 
     match a.vector as u8 {
         GENERAL_PROTECTION_FAULT_VECTOR => {
@@ -645,7 +645,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                     // Reset a timer and sleep for some time
                     timer::set(timer::DEFAULT_TIMER_DEADLINE);
                     // TODO: For some reason it hangs if I enable interrupts - Ankit
-                    //enable();
+                    enable();
                     for _i in 0..1200 {
                         core::sync::atomic::spin_loop_hint();
                     }

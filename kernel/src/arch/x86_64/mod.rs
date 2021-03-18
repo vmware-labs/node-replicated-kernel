@@ -660,7 +660,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     let num_cores = match topology::MACHINE_TOPOLOGY.nodes().nth(0) {
-        Some(node) => node.cores().fold(0, |len, _element| len + 1), /* Avoid hyper-threads for now. */
+        Some(node) => node.threads().fold(0, |len, _element| len + 1),
         None => 1,
     };
     let num_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
@@ -715,4 +715,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     error!("Returned from main, shutting down...");
     debug::shutdown(ExitReason::ReturnFromMain);
+}
+
+/// For cores that advances the replica eagerly. This avoids additional IPI costs.
+pub fn advance_mlnr_replica() {
+    tlb::eager_advance_mlnr_replica();
 }

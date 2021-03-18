@@ -61,9 +61,10 @@ pub fn schedule() -> ! {
                             for _i in 0..25_000 {
                                 core::hint::spin_loop();
                             }
-                            unsafe {
-                                x86::irq::enable();
-                            }
+
+                            // Advance mlnr replica
+                            crate::arch::advance_mlnr_replica();
+
                             continue;
                         } else {
                             // There is no process, set a timer and go to sleep

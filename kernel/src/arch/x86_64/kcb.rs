@@ -8,8 +8,8 @@ use core::pin::Pin;
 use core::ptr;
 
 use apic::x2apic::X2APICDriver;
-use mlnr::Replica as MlnrReplica;
-use mlnr::ReplicaToken as MlnrReplicaToken;
+use cnr::Replica as MlnrReplica;
+use cnr::ReplicaToken as MlnrReplicaToken;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};

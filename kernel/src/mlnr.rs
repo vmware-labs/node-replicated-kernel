@@ -11,10 +11,10 @@ use crate::prelude::*;
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
 
 use alloc::sync::Arc;
+use cnr::{Dispatch, LogMapper, ReplicaToken};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use hashbrown::HashMap;
 use kpi::{io::*, FileOperation};
-use mlnr::{Dispatch, LogMapper, ReplicaToken};
 
 pub struct MlnrKernelNode {
     /// TODO: RwLock should be okay for read-write operations as those ops

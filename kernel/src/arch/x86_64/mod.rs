@@ -29,8 +29,8 @@ use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::controlregs;
 use x86::cpuid;
 
-use mlnr::Log as MlnrLog;
-use mlnr::Replica as MlnrReplica;
+use cnr::Log as MlnrLog;
+use cnr::Replica as MlnrReplica;
 use node_replication::Log;
 use node_replication::Replica;
 

@@ -23,8 +23,8 @@ driverkit = { path = "../lib/driverkit/" }
 rawtime = { path = "../lib/rawtime" }
 custom_error = { path = "../lib/custom_error" }
 topology = { path = "../lib/topology" }
-node-replication = { path = "../lib/node-replication" }
-mlnr = { path = "../lib/mlnr" }
+node-replication = { path = "../lib/node-replication/nr" }
+cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 # External libraries we use:

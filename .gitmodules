@@ -46,7 +46,4 @@
 [submodule "lib/node-replication"]
 	path = lib/node-replication
 	url = git@github.com:gz/node-replication.git
-[submodule "lib/mlnr"]
-	path = lib/mlnr
-	url = git@github.com:gz/node-replication.git
-	branch = mlnr
+	branch = mlnr_gc

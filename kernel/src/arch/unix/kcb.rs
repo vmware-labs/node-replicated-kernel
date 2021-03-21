@@ -5,8 +5,8 @@ use core::any::Any;
 use core::cell::{RefCell, RefMut};
 use core::ptr;
 
-use mlnr::Replica as MlnrReplica;
-use mlnr::ReplicaToken as MlnrReplicaToken;
+use cnr::Replica as MlnrReplica;
+use cnr::ReplicaToken as MlnrReplicaToken;
 use node_replication::Replica;
 use node_replication::ReplicaToken;
 

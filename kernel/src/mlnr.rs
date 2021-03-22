@@ -6,7 +6,7 @@ use crate::fs::{
     Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, Modes, Offset, FD,
 };
 use crate::memory::VAddr;
-use crate::mlnrfs::{fd::FileDesc, MlnrFS, NrLock};
+use crate::mlnrfs::{fd::FileDesc, MlnrFS, NrLock, MNODE_OFFSET};
 use crate::prelude::*;
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
 
@@ -55,7 +55,7 @@ impl LogMapper for Modify {
             Modify::FileOpen(_pid, _filename, _flags, _modes) => 0,
             Modify::FileWrite(pid, fd, _kernslice, _len, _offset) => {
                 match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
-                    Ok((mnode, _)) => mnode as usize - 2,
+                    Ok((mnode, _)) => mnode as usize - MNODE_OFFSET,
                     Err(_) => 0,
                 }
             }
@@ -88,19 +88,21 @@ impl LogMapper for Access {
         match self {
             Access::FileRead(pid, fd, _buffer, _len, _offser) => {
                 match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
-                    Ok((mnode, _)) => mnode as usize - 2,
+                    Ok((mnode, _)) => mnode as usize - MNODE_OFFSET,
                     Err(_) => 0,
                 }
             }
             Access::FileInfo(pid, filename, _info_ptr) => {
                 match MlnrKernelNode::filename_to_mnode(*pid, *filename) {
-                    Ok((mnode, _)) => mnode as usize - 2,
+                    Ok((mnode, _)) => mnode as usize - MNODE_OFFSET,
                     Err(_) => 0,
                 }
             }
             // TODO: Assume that all metadata modifying operations go through log 0.
             Access::FdToMnode(_pid, _fd) => 0,
             Access::FileNameToMnode(_pid, _filename) => 0,
+            // Log number start with 1 in CNR, however, replica uses mod
+            // operation which starts with 0; hence `log_id - 1`.
             Access::Synchronize(log_id) => (*log_id - 1),
         }
     }

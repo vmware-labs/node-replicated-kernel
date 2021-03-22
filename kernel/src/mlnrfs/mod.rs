@@ -17,6 +17,9 @@ use spin::RwLock;
 pub mod fd;
 mod rwlock;
 
+/// The mnode number assigned to the first file.
+pub const MNODE_OFFSET: usize = 2;
+
 /// The in-memory file-system representation.
 #[derive(Debug)]
 pub struct MlnrFS {
@@ -57,7 +60,7 @@ impl Default for MlnrFS {
             mnodes,
             files,
             root,
-            nextmemnode: AtomicUsize::new(2),
+            nextmemnode: AtomicUsize::new(MNODE_OFFSET),
         }
     }
 }

@@ -660,7 +660,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     let num_cores = match topology::MACHINE_TOPOLOGY.nodes().nth(0) {
-        Some(node) => node.threads().fold(0, |len, _element| len + 1),
+        Some(node) => node.threads().count(),
         None => 1,
     };
     let num_nodes = topology::MACHINE_TOPOLOGY.num_nodes();

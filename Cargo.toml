@@ -15,7 +15,7 @@ members = [
     "usr/init",
     "usr/rkapps",
 ]
-resolver = "2"
+
 
 # disable stack unwinding on panic for now
 [profile.dev]

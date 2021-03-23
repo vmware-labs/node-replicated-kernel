@@ -1,6 +1,3 @@
 # Tracing
 
-TBD
-
-* Deterministic
-* Always-on, minimal overhead
+Use Intel PT (processor-trace). TBD.

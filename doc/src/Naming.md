@@ -1,3 +1,0 @@
-# Naming
-
-* Describe Cap system

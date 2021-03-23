@@ -1,20 +1,21 @@
 # Testing
 
-Now that you've found and hopfully fixed a bug, we better write a test for it.
-bespin uses several test-frameworks and methodologies to ensure everything works
-as expected:
+If you've found and fixed a bug, we better write a test for it. bespin uses
+several test-frameworks and methodologies to ensure everything works as
+expected:
 
 - Regular unit tests: Those can be executed running `cargo test` in the project
   folder. Sometimes adding `RUST_TEST_THREADS=1` is necessary due to the
   structure of the runner/frameworks used. This should be indicated in the
   individual READMEs.
-- A slight variant of unit tests are property based testing. We use
-  [proptest](https://github.com/altsysrq/proptest) to make sure that the
-  implementation of a sub-system corresponds to a model implementation.
+- A slightly more exhaustive variant of unit tests is property based testing. We
+  use [proptest](https://github.com/altsysrq/proptest) to make sure that the
+  implementation of kernel sub-systems corresponds to a reference model
+  implementation.
 - Integration tests are found in the kernel, they typically launch a qemu
   instance and use [rexpect](https://github.com/philippkeller/rexpect) to
   interact with the guest.
-- Fuzz testing: Not yet implemented.
+- Fuzz testing: TBD.
 
 ## Running tests
 

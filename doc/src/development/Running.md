@@ -21,8 +21,8 @@ will
   cores allocated to the VM
 
 Sometimes it's helpful to know what commands are actually execute by `run.py`.
-For example to figure out what the exact qemu command line arguments were. In
-that case `--verbose` can be supplied.
+For example to figure out what the exact qemu command line invocation was. In
+that case, `--verbose` can be supplied.
 
 ## Baremetal execution
 
@@ -33,7 +33,7 @@ the `--machine` argument:
 python3 run.py --machine b1542 --verbose --cmd "log=info"
 ```
 
-This invocation will try to run bespin on the machine identified by a
+This invocation will try to run bespin on the machine described by a
 `b1542.toml` config file.
 
 A TOML file for a machine has the following format:
@@ -74,5 +74,13 @@ ssh-pubkey = "~/.ssh/id_rsa"
 ipxe-deploy = "/home/gz/public_html/"
 ```
 
-An iPXE enviornment that the machine can boot from needs to be setup. The iPXE
+An iPXE enviornment that the machine will boot from needs to be set-up. The iPXE
 bootloader should be compiled with UEFI and ELF support for running with bespin.
+
+> Note that the current support for bare-metal execution is currently limited to
+> DELL machines with an iDRAC management console (needed to reboot the server).
+> Ideally, redfish or SNMP support will be added in the future.
+
+### Compiling the iPXE bootloader
+
+TBD.

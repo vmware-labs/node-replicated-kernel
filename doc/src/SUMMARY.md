@@ -1,11 +1,18 @@
 # Summary
 
 - [Overview](./Overview.md)
-- [Architecture](./Architecture.md)
-- [Naming](./Naming.md)
-- [Memory](./Memory.md)
-- [Communication](./Communication.md)
+- [Kernel Architecture](./architecture/KernelArchitecture.md)
+  - [Concurrency](./architecture/NodeReplication.md)
+    - [Node Replication](./architecture/NodeReplication.md)
+    - [Concurrent Node Replication](./architecture/ConcurrentNodeReplication.md)
+  - [Memory](./architecture/Memory.md)
+  - [Process](./architecture/Process.md)
+  - [Scheduler](./architecture/Scheduler.md)
+  - [File system](./architecture/FileSystem.md)
+- [User Space](./UserSpace.md)
 - [Development](./Development.md)
+  - [Environment](./development/Environment.md)
+  - [Building](./development/Building.md)
   - [Running](./development/Running.md)
   - [Debugging](./development/Debugging.md)
   - [Testing](./development/Testing.md)
@@ -14,6 +21,9 @@
   - [Redis](./benchmarking/Redis.md)
   - [Memcached](./benchmarking/Memcached.md)
   - [LevelDB](./benchmarking/LevelDb.md)
-- [Setup & Configuration](./Configuration.md)
-  - [CI](./configuration/CI.md)
-- [Glossary](./Glossary.md)
+- [Continuous Integration](./configuration/CI.md)
+- [Related Work](./RelatedWork.md)
+
+-----------
+
+- [Contributors](./Contributors.md)

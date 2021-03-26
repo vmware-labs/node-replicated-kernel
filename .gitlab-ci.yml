@@ -70,7 +70,7 @@ benchmark:skylake2x:
   tags:
     - skylake2x
 
-benchmark:cloudlab-2x:
+benchmark:skylake4x:
   stage: bench
   script:
     - bash scripts/ci.bash
@@ -79,7 +79,7 @@ benchmark:cloudlab-2x:
   variables:
     GIT_STRATEGY: fetch
   tags:
-    - cloudlab-2x
+    - skylake4x
 
 docs:
   stage: document

@@ -644,8 +644,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
                     // Reset a timer and sleep for some time
                     timer::set(timer::DEFAULT_TIMER_DEADLINE);
-                    // TODO: For some reason it hangs if I enable interrupts - Ankit
-                    enable();
                     for _i in 0..1200 {
                         core::sync::atomic::spin_loop_hint();
                     }

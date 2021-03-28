@@ -1,0 +1,5 @@
+[toolchain]
+channel = "nightly-2021-03-24"
+components = [ "rustfmt", "rustc-dev", "rust-src" ]
+profile = "default"
+targets = [ "x86_64-bespin",  "x86_64-bespin-none",  "x86_64-uefi" ]

@@ -2,9 +2,6 @@
 # functions to install the build and run dependencies
 #
 
-# the rust version we want
-RUST_VERSION=nightly
-
 # do we need sudo, or are we already running as root?
 if [ ${EUID} != 0 ]; then
     echo "not running as root, using sudo"
@@ -52,31 +49,16 @@ function bootstrap_rust()
 {
     echo "bootstrapping rust..."
 
-    # nightly-2021-03-16
     if [ -f $HOME/.cargo/env ]; then
         source $HOME/.cargo/env
     fi
 
     # Make sure rust is up-to-date
     if [ ! -x "$(command -v rustup)" ] ; then
-        curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain ${RUST_VERSION} -y
+        curl https://sh.rustup.rs -sSf | sh -s -- -y
     fi
 
     source $HOME/.cargo/env
-
-    # install the desired toolchain
-    rustup toolchain install ${RUST_VERSION}
-    rustup default ${RUST_VERSION}
-
-    # if running natively, we can just set the version on the kernel directory too
-    if [ -d kernel ]; then
-        cd kernel
-        rustup default ${RUST_VERSION}
-        cd ..
-    fi
-
-    # add the rust-src
-    rustup component add rust-src
     rustup update
 }
 

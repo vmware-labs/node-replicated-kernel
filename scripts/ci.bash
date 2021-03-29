@@ -16,7 +16,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_ --nocapture
 #RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memcached_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --nocapture
+#RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --nocapture
 
 # Clone repo
 rm -rf gh-pages
@@ -52,10 +52,10 @@ gzip ${DEPLOY_DIR}/vmops_benchmark.csv
 gzip ${DEPLOY_DIR}/vmops_benchmark_latency.csv
 
 # Copy memfs results
-DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
-mkdir -p ${DEPLOY_DIR}
-mv fxmark_benchmark.csv ${DEPLOY_DIR}
-gzip ${DEPLOY_DIR}/fxmark_benchmark.csv
+#DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+#mkdir -p ${DEPLOY_DIR}
+#mv fxmark_benchmark.csv ${DEPLOY_DIR}
+#gzip ${DEPLOY_DIR}/fxmark_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py

@@ -384,9 +384,13 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
             let response = replica.execute_mut(nr::Op::ProcCreate(&mod_file, data_frames), *token);
             match response {
                 Ok(nr::NodeResult::ProcCreated(pid)) => {
-                    match mlnr::MlnrKernelNode::add_process(pid) {
-                        Ok(pid) => Ok(pid.0),
-                        Err(e) => unreachable!("{}", e),
+                    if cfg!(feature = "mlnrfs") {
+                        match mlnr::MlnrKernelNode::add_process(pid) {
+                            Ok(pid) => Ok(pid.0),
+                            Err(e) => unreachable!("{}", e),
+                        }
+                    } else {
+                        Ok(pid)
                     }
                 }
                 _ => unreachable!("Got unexpected response"),

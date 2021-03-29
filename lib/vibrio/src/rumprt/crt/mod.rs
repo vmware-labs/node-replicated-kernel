@@ -12,8 +12,8 @@ use x86::current::paging::VAddr;
 use super::prt::{lwpctl, rumprun_lwp, RL_MASK_PARK};
 use super::{c_char, c_int};
 
-use kpi::io::*;
 use crate::syscalls::Fs;
+use kpi::io::*;
 
 pub mod error;
 pub mod mem;
@@ -236,7 +236,7 @@ pub extern "C" fn main() {
 
         fn rump_boot_setsigmodel(sig: usize);
         fn rump_init(fnptr: extern "C" fn()) -> u64;
-        fn rump_pub_etfs_register(key : *const i8, hostpath : *const i8, ftype : i32) -> i32;
+        fn rump_pub_etfs_register(key: *const i8, hostpath: *const i8, ftype: i32) -> i32;
         fn rump_pub_netconfig_dhcp_ipv4_oneshot(iface: *const i8) -> i64;
         fn _libc_init();
         fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
@@ -311,33 +311,38 @@ pub extern "C" fn main() {
             error!("rump_init({}) done in {:?}", ri, start.elapsed());
             assert_eq!(ri, 0);
 
-            let key2 = CStr::from_bytes_with_nul(b"/tmp/leveldbtest-0\0");
-            let hostpath = CStr::from_bytes_with_nul(b"/\0");
-            let etfs_ret = rump_pub_etfs_register(key2.unwrap().as_ptr(), hostpath.unwrap().as_ptr(), 4);
-            error!("result of pub_etfs_register? {}\n", etfs_ret);
+            // This is used by leveldb only.
+            if parsed_args.len() > 0 {
+                let key2 = CStr::from_bytes_with_nul(b"/tmp/leveldbtest-0\0");
+                let hostpath = CStr::from_bytes_with_nul(b"/\0");
+                let etfs_ret =
+                    rump_pub_etfs_register(key2.unwrap().as_ptr(), hostpath.unwrap().as_ptr(), 4);
+                error!("result of pub_etfs_register? {}\n", etfs_ret);
+                assert_eq!(etfs_ret, 0);
+            } else {
+                const TMPFS_ARGS_VERSION: u64 = 1;
 
-            /*const TMPFS_ARGS_VERSION: u64 = 1;
+                let tfsa = tmpfs_args {
+                    ta_version: TMPFS_ARGS_VERSION,
+                    ta_nodes_max: 0,
+                    ta_size_max: 256 * 1024 * 1024,
+                    ta_root_uid: 0,
+                    ta_root_gid: 0,
+                    ta_root_mode: 0o1777,
+                };
 
-            let tfsa = tmpfs_args {
-                ta_version: TMPFS_ARGS_VERSION,
-                ta_nodes_max: 0,
-                ta_size_max: 256 * 1024 * 1024,
-                ta_root_uid: 0,
-                ta_root_gid: 0,
-                ta_root_mode: 0o1777,
-            };
+                let path = CStr::from_bytes_with_nul(b"/tmp\0");
+                let tmpfs_ident = CStr::from_bytes_with_nul(b"tmpfs\0");
+                info!("mounting tmpfs");
 
-            let path = CStr::from_bytes_with_nul(b"/tmp\0");
-            let tmpfs_ident = CStr::from_bytes_with_nul(b"tmpfs\0");
-            info!("mounting tmpfs");
-
-            let _r = mount(
-                tmpfs_ident.unwrap().as_ptr(),
-                path.unwrap().as_ptr(),
-                0,
-                &tfsa,
-                core::mem::size_of::<tmpfs_args>(),
-            );*/
+                let _r = mount(
+                    tmpfs_ident.unwrap().as_ptr(),
+                    path.unwrap().as_ptr(),
+                    0,
+                    &tfsa,
+                    core::mem::size_of::<tmpfs_args>(),
+                );
+            }
 
             #[cfg(feature = "virtio")]
             let nic_model = b"vioif0\0";

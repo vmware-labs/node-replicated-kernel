@@ -8,7 +8,7 @@ pub struct FileDesc {
 impl Default for FileDesc {
     fn default() -> Self {
         FileDesc {
-            fds: arrayvec::ArrayVec::from(arr![None; 1024]), // MAX_FILES_PER_PROCESS
+            fds: arrayvec::ArrayVec::from(arr![None; 4096]), // MAX_FILES_PER_PROCESS
         }
     }
 }

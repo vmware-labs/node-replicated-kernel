@@ -171,6 +171,7 @@ pub struct Ring3Resumer {
 impl ResumeHandle for Ring3Resumer {
     unsafe fn resume(self) -> ! {
         match self.typ {
+            ResumeStrategy::Start => self.start(),
             ResumeStrategy::Upcall => self.upcall(),
             ResumeStrategy::SysRet => self.restore(),
             ResumeStrategy::IRet => self.iret_restore(),
@@ -180,6 +181,7 @@ impl ResumeHandle for Ring3Resumer {
 
 #[derive(Eq, PartialEq, Debug)]
 enum ResumeStrategy {
+    Start,
     SysRet,
     IRet,
     Upcall,
@@ -225,6 +227,18 @@ impl Ring3Resumer {
             cpu_ctl,
             vector,
             exception,
+        }
+    }
+
+    pub fn new_start(entry_point: VAddr, stack_top: VAddr) -> Ring3Resumer {
+        Ring3Resumer {
+            typ: ResumeStrategy::Start,
+            save_area: ptr::null(),
+            entry_point,
+            stack_top,
+            cpu_ctl: 0,
+            vector: 0,
+            exception: 0,
         }
     }
 
@@ -388,6 +402,62 @@ impl Ring3Resumer {
 
         unreachable!("We should not come here!");
     }
+
+    unsafe fn start(self) -> ! {
+        trace!("About to go to user-space: {:#x}", self.entry_point);
+        warn!("Make sure IA32_KERNEL_GSBASE still points to KCB!");
+        // TODO: For now we allow unconditional IO access from user-space
+        let user_flags =
+            rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
+
+        // Switch to user-space with initial zeroed registers.
+        //
+        // Stack is set to the initial stack for the process that
+        // was allocated by the kernel.
+        //
+        // `sysretq` expectations are:
+        // %rcx Program entry point in Ring 3
+        // %r11 RFlags
+        trace!("Jumping to {:#x}", self.entry_point);
+        llvm_asm!("
+                // rax: contains stack pointer
+                movq       $$0, %rbx
+                // rcx: has entry point
+                // rdi: 1st argument
+                // rsi: 2nd argument
+                // rdx: 3rd argument
+                // rsp and rbp are set to provided `stack_top`
+                movq       $$0, %r8
+                movq       $$0, %r9
+                movq       $$0, %r10
+                // r11 register is used for RFlags
+                movq       $$0, %r12
+                movq       $$0, %r13
+                movq       $$0, %r14
+                movq       $$0, %r15
+
+                // Reset vector registers
+                fninit
+
+                // Set gs and fs to 0
+                wrgsbase %r15
+                wrfsbase %r15
+
+                movq %rax, %rbp
+                movq %rax, %rsp
+
+                sysretq
+            " ::
+            "{rcx}" (self.entry_point.as_u64())
+            "{rdi}" (self.cpu_ctl)
+            "{rsi}" (self.vector)
+            "{rdx}" (self.exception)
+            "{rax}" (self.stack_top.as_u64())
+            "{r11}" (user_flags.bits())
+        );
+
+        unreachable!("We should not come here!");
+    }
 }
 
 /// An executor is a thread running in a ring 3 in the context
@@ -528,7 +598,7 @@ impl Executor for Ring3Executor {
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
 
         if entry_point == INVALID_EXECUTOR_START {
-            Ring3Resumer::new_upcall(self.entry_point, self.stack_top(), 0, 0, 0)
+            Ring3Resumer::new_start(self.entry_point, self.stack_top())
         } else {
             // This is similar to `upcall` as it starts executing the defined upcall
             // handler, but on the regular stack (for that dispatcher) and not

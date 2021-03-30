@@ -47,8 +47,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
 
     unsafe {
-        let rsp = x86::bits64::registers::rsp();
-        for i in 0..32 {
+        let rsp = x86::bits64::registers::rbp();
+        for i in 0..128 {
             let ptr = (rsp as *const u64).offset(i);
             sys_println!("stack[{}] = {:#x}", i, *ptr);
         }

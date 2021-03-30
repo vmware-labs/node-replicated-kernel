@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 use core::mem;
 use core::ops::Add;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 use fringe::generator::Yielder;
 
@@ -38,6 +38,9 @@ pub use crate::tls2::bespin as arch;
 pub mod unix;
 #[cfg(target_family = "unix")]
 pub use crate::tls2::unix as arch;
+
+/// Start of the kernel address space.
+pub const KERNEL_BASE: u64 = 0x400000000000;
 
 /// Per thread state of the scheduler.
 ///
@@ -330,7 +333,21 @@ impl Environment {
         unsafe {
             let scb = arch::get_scb() as *mut SchedulerControlBlock;
             assert!(!scb.is_null(), "Don't have SCB state available?");
+            assert!((scb as u64) < KERNEL_BASE, "Something wrong with the scb, points to kernel address");
             &*scb
+        }
+    }
+
+    // This method returns the core-id for the current thread. It is needed because
+    // SchedulerControlBlock allocates an ArrayQueue and that leads to recursive fault.
+    pub fn core_id() -> CoreId {
+        unsafe {
+            let scb = arch::get_scb() as *const SchedulerControlBlock;
+            if !scb.is_null() && (scb as u64) < KERNEL_BASE {
+                (*scb).core_id
+            } else {
+                kpi::syscalls::System::core_id().expect("Can't get core-id?")
+            }
         }
     }
 }

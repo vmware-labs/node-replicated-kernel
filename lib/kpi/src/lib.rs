@@ -252,6 +252,8 @@ pub enum SystemOperation {
     GetHardwareThreads = 1,
     /// Print system/per-core info.
     Stats = 2,
+    /// Get the core id for the current thread.
+    GetCoreID = 3,
     Unknown,
 }
 
@@ -261,6 +263,7 @@ impl From<u64> for SystemOperation {
         match op {
             1 => SystemOperation::GetHardwareThreads,
             2 => SystemOperation::Stats,
+            3 => SystemOperation::GetCoreID,
             _ => SystemOperation::Unknown,
         }
     }
@@ -271,6 +274,8 @@ impl From<&str> for SystemOperation {
     fn from(op: &str) -> SystemOperation {
         match op {
             "GetHardwareThreads" => SystemOperation::GetHardwareThreads,
+            "Stats" => SystemOperation::Stats,
+            "GetCoreID" => SystemOperation::GetCoreID,
             _ => SystemOperation::Unknown,
         }
     }

@@ -217,10 +217,9 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     Ok(nptr) => nptr.as_ptr(),
                     Err(AllocationError::OutOfMemory) => {
                         if layout.size() <= ZoneAllocator::MAX_BASE_ALLOC_SIZE {
-                            PAGER[Environment::scheduler().core_id]
-                                .lock()
-                                .allocate_page()
-                                .map_or(ptr::null_mut(), |page| {
+                            PAGER[Environment::core_id()].lock().allocate_page().map_or(
+                                ptr::null_mut(),
+                                |page| {
                                     zone_allocator
                                         .refill(layout, page)
                                         .expect("Could not refill?");
@@ -228,10 +227,11 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                                         .allocate(layout)
                                         .expect("Should succeed after refill")
                                         .as_ptr()
-                                })
+                                },
+                            )
                         } else {
                             // layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE
-                            PAGER[Environment::scheduler().core_id]
+                            PAGER[Environment::core_id()]
                                 .lock()
                                 .allocate_large_page()
                                 .map_or(ptr::null_mut(), |large_page| {
@@ -251,7 +251,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
                 // Best to use the underlying backend directly to allocate large
                 // to avoid fragmentation
-                PAGER[Environment::scheduler().core_id]
+                PAGER[Environment::core_id()]
                     .lock()
                     .allocate_large_page()
                     .expect("Can't allocate page?") as *mut _ as *mut u8
@@ -262,7 +262,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     (big_size + Pager::LARGE_PAGE_SIZE - 1) / Pager::LARGE_PAGE_SIZE;
                 let mut first: *mut u8 = ptr::null_mut();
                 for _page_idx in 0..required_pages {
-                    let ptr = PAGER[Environment::scheduler().core_id]
+                    let ptr = PAGER[Environment::core_id()]
                         .lock()
                         .allocate_large_page()
                         .expect("Can't allocate page for big allocation?")
@@ -312,8 +312,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                 // An proper reclamation strategy could be implemented here
                 // to release empty pages back from the ZoneAllocator to the PAGER
             }
-            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => PAGER
-                [Environment::scheduler().core_id]
+            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => PAGER[Environment::core_id()]
                 .lock()
                 .dealloc_page(ptr, Pager::LARGE_PAGE_SIZE),
             _ => error!("TODO: Currently can't dealloc of {:?}.", layout),
@@ -370,17 +369,17 @@ impl PerCoreAllocator {
 unsafe impl GlobalAlloc for PerCoreAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Get the core_id we are currently running on. Then return alloc of that SafeZoneAllocator.
-        let sza = &self.allocators[Environment::scheduler().core_id];
+        let sza = &self.allocators[Environment::core_id()];
         sza.alloc(layout)
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let sza = &self.allocators[Environment::scheduler().core_id];
+        let sza = &self.allocators[Environment::core_id()];
         sza.realloc(ptr, layout, new_size)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let sza = &self.allocators[Environment::scheduler().core_id];
+        let sza = &self.allocators[Environment::core_id()];
         sza.dealloc(ptr, layout)
     }
 }

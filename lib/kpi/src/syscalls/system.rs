@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use crate::syscall;
 use crate::*;
 
-use crate::system::CpuThread;
+use crate::system::{CoreId, CpuThread};
 
 pub struct System;
 
@@ -41,6 +41,23 @@ impl System {
 
         if r == 0 {
             Ok(())
+        } else {
+            Err(SystemCallError::from(r))
+        }
+    }
+
+    /// Get the core id for the current running thread.
+    pub fn core_id() -> Result<CoreId, SystemCallError> {
+        let (r, id) = unsafe {
+            syscall!(
+                SystemCall::System as u64,
+                SystemOperation::GetCoreID as u64,
+                2
+            )
+        };
+
+        if r == 0 {
+            Ok(id as usize)
         } else {
             Err(SystemCallError::from(r))
         }

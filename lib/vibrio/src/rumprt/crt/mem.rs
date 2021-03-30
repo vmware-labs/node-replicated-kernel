@@ -107,7 +107,7 @@ mod bespin {
             addr, len, prot, flags, fd, pos
         );
 
-        let mut pager = crate::mem::PAGER[Environment::scheduler().core_id].lock();
+        let mut pager = crate::mem::PAGER[Environment::core_id()].lock();
 
         let len = len as usize;
         let mut remaining = len;

@@ -6,6 +6,8 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::mem::transmute;
 use core::ptr::{self, NonNull};
 
+use arrayvec::ArrayVec;
+use lazy_static::lazy_static;
 use log::{error, warn};
 use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
@@ -95,105 +97,17 @@ impl Pager {
 }
 
 /// A pager for GlobalAlloc.
-
-pub static mut PAGER: [CachePadded<Mutex<Pager>>; 32] = [
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x52_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x62_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x72_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x82_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x92_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0xa2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0xb2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0xc2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0xd2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0xe2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0xf2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x102_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x112_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x122_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x132_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x142_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x152_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x162_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x172_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x182_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x192_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x1a2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x1b2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x1c2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x1d2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x1e2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x1f2_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x202_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x212_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x222_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x232_0000_0000,
-    })),
-    CachePadded::new(Mutex::new(Pager {
-        sbrk: 0x242_0000_0000,
-    })),
-];
+lazy_static! {
+    pub static ref PAGER: ArrayVec::<CachePadded<Mutex<Pager>>, 96> = {
+        let mut pagers = ArrayVec::<CachePadded<Mutex<Pager>>, 96>::new();
+        for i in 0..96 {
+            pagers.push(CachePadded::new(Mutex::new(Pager {
+                sbrk: 0x52_0000_0000 + (i as u64 * 0x10_0000_0000),
+            })));
+        }
+        pagers
+    };
+}
 
 /// A SafeZoneAllocator that wraps the ZoneAllocator in a Mutex.
 ///
@@ -321,12 +235,76 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
 }
 
 pub struct PerCoreAllocator {
-    allocators: [SafeZoneAllocator; 32],
+    allocators: [SafeZoneAllocator; 96],
 }
 
 impl PerCoreAllocator {
     pub const fn new() -> PerCoreAllocator {
         let alloc_array = [
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
+            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
             SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
             SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
             SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),

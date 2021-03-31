@@ -515,7 +515,7 @@ fn kcb_iret_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
 #[no_mangle]
 pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     sprintln!("[IRQ] Got an exception during kernel initialization:");
-    sprintln!("{:?}", a);
+    //sprintln!("{:?}", a);
 
     match a.vector as u8 {
         GENERAL_PROTECTION_FAULT_VECTOR => {

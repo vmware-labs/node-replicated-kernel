@@ -28,7 +28,7 @@
     all(not(test), not(feature = "integration-test"), target_os = "none"),
     deny(warnings)
 )]
-#![allow(safe_packed_borrows)] // TODO(warnings)
+#![allow(unaligned_references)] // TODO(warnings)
 #![allow(unused_attributes)] // TODO(warnings): getting unused attribute #[inline(always)] with rustc > 1.43.0 / abc3073c9 (and it's not clear why)
 
 // TODO(cosmetics): Get rid of these three `extern crate` as we're in edition 2018:

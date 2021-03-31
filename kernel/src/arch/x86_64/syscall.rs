@@ -491,6 +491,20 @@ fn handle_fileio(
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }
         }),
+        FileOperation::MkDir => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+            let pathname = arg2;
+            let modes = arg3;
+            match user_virt_addr_valid(p.pid, pathname, 0) {
+                Ok(_) => {
+                    if cfg!(feature = "mlnrfs") {
+                        unreachable!("Mkdir is not implemented for mlnrfs");
+                    } else {
+                        nr::KernelNode::<Ring3Process>::mkdir(p.pid, pathname, modes)
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        }),
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

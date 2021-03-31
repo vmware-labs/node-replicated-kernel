@@ -231,4 +231,22 @@ impl Fs {
             Err(SystemCallError::from(r))
         }
     }
+
+    pub fn mkdir_simple(pathname: u64, modes: u64) -> Result<u64, SystemCallError> {
+        let r = unsafe {
+            syscall!(
+                SystemCall::FileIO as u64,
+                FileOperation::MkDir,
+                pathname,
+                modes,
+                1
+            )
+        };
+
+        if r == 0 {
+            Ok(0)
+        } else {
+            Err(SystemCallError::from(r))
+        }
+    }
 }

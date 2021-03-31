@@ -16,7 +16,8 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_ --nocapture
 #RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memcached_benchmark --nocapture
-#RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_leveldb_benchmark --nocapture
+#RUST_TEST_THREADS=1 cargo test --features mlnrfs --test integration-test -- s06_fxmark_bench --nocapture
 
 # Clone repo
 rm -rf gh-pages

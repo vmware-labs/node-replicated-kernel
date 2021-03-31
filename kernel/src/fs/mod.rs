@@ -88,6 +88,7 @@ pub trait FileSystem {
     fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
     fn truncate(&mut self, pathname: &str) -> Result<bool, FileSystemError>;
     fn rename(&mut self, oldname: &str, newname: &str) -> Result<bool, FileSystemError>;
+    fn mkdir(&mut self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError>;
 }
 
 /// Abstract definition of a file descriptor.
@@ -176,22 +177,6 @@ impl Default for MemFS {
         let mut files = HashMap::new();
         files.insert(rootdir.to_string(), Arc::new(1));
         let root = (rootdir.to_string(), 1);
-
-        // Now do the same for /tmp
-        let tmpdir = "//dbbench";
-        let tmpmnode = 2;
-
-        mnodes.insert(
-            tmpmnode,
-            MemNode::new(
-                tmpmnode,
-                tmpdir,
-                FileModes::S_IRWXU.into(),
-                NodeType::Directory,
-            )
-            .unwrap(),
-        );
-        files.insert(tmpdir.to_string(), Arc::new(2));
 
         MemFS {
             mnodes,
@@ -320,5 +305,25 @@ impl FileSystem for MemFS {
             None => return Ok(true),
             Some(_) => return Err(FileSystemError::PermissionError),
         }
+    }
+
+    /// Create a directory. The implementation is quite simplistic for now, and only used
+    /// by leveldb benchmark.
+    fn mkdir(&mut self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError> {
+        // Check if the file with the same name already exists.
+        match self.files.get(&pathname.to_string()) {
+            Some(_) => return Err(FileSystemError::AlreadyPresent),
+            None => {}
+        }
+
+        let mnode_num = self.get_next_mno() as u64;
+        let memnode = match MemNode::new(mnode_num, pathname, modes, NodeType::Directory) {
+            Ok(memnode) => memnode,
+            Err(e) => return Err(e),
+        };
+        self.files.insert(pathname.to_string(), Arc::new(mnode_num));
+        self.mnodes.insert(mnode_num, memnode);
+
+        Ok(true)
     }
 }

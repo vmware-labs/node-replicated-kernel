@@ -63,6 +63,7 @@ pub enum Op {
     FileClose(Pid, FD),
     FileDelete(Pid, String),
     FileRename(Pid, String, String),
+    MkDir(Pid, String, Modes),
     Invalid,
 }
 
@@ -91,6 +92,7 @@ pub enum NodeResult<E: Executor> {
     FileInfo(u64),
     FileDeleted(bool),
     FileRenamed(bool),
+    DirCreated(bool),
     Executor(Weak<E>),
     FrameId(usize),
     Invalid,
@@ -373,6 +375,27 @@ impl<P: Process> KernelNode<P> {
                     replica.execute_mut(Op::FileRename(pid, oldfilename, newfilename), *token);
                 match &response {
                     Ok(NodeResult::FileRenamed(_)) => Ok((0, 0)),
+                    Ok(_) => unreachable!("Got unexpected response"),
+                    Err(r) => Err(r.clone()),
+                }
+            })
+    }
+
+    pub fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        kcb.replica
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+                let filename;
+                match userptr_to_str(pathname) {
+                    Ok(user_str) => filename = user_str,
+                    Err(e) => return Err(e.clone()),
+                }
+
+                let response = replica.execute_mut(Op::MkDir(pid, filename, modes), *token);
+
+                match &response {
+                    Ok(NodeResult::DirCreated(true)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -727,6 +750,14 @@ where
                 let mut p = process_lookup.expect("TODO: FileRename process lookup failed");
                 match self.fs.rename(&oldname, &newname) {
                     Ok(is_renamed) => Ok(NodeResult::FileRenamed(is_renamed)),
+                    Err(e) => Err(KError::FileSystem { source: e }),
+                }
+            }
+            Op::MkDir(pid, filename, modes) => {
+                let process_lookup = self.process_map.get_mut(&pid);
+                let mut p = process_lookup.expect("TODO: MkDir process lookup failed");
+                match self.fs.mkdir(&filename, modes) {
+                    Ok(is_created) => Ok(NodeResult::DirCreated(is_created)),
                     Err(e) => Err(KError::FileSystem { source: e }),
                 }
             }

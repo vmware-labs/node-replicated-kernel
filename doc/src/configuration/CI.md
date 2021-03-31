@@ -22,6 +22,7 @@ necessary to set-up a new runner machine (and connect a github repo to it).
   1. [Give access to the benchmark repository](#give-access-to-the-benchmark-repository)
   1. [Configure software for the `gitlab-runner` account](#configure-software-for-the-gitlab-runner-account)
   1. [Disable AppArmor](#disable-apparmor)
+  1. [Install a recent QEMU](#install-a-recent-qemu)
   1. [Do a test-run](#do-a-test-run)
 
 ## Install gitlab-runner software on a new test machine
@@ -95,6 +96,7 @@ Generate a key for accessing the repository or use an existing key on the
 gitlab-runner account:
 
 ```bash
+su gitlab-runner
 ssh-keygen
 ```
 
@@ -105,12 +107,26 @@ Then, add the key to the `bespin-ci` account.
 Install necessary software for use by the runner:
 
 ```bash
-su gitlab-runner
 git clone git@github.com:gz/bespin.git
 cd bespin/
 bash setup.sh
 source $HOME/.cargo/env
 sudo adduser gitlab-runner kvm
+```
+
+You might also need memaslap for the memcached tests which is not provided by default
+through ubuntu packages:
+
+```bash
+sudo apt-get build-dep libmemcached-tools
+wget https://launchpad.net/libmemcached/1.0/1.0.18/+download/libmemcached-1.0.18.tar.gz
+tar zxvf libmemcached-1.0.18.tar.gz
+cd libmemcached-1.0.18/
+LDFLAGS='-lpthread' CXXFLAGS='-fpermissive' CFLAGS='-Wno-errors -fpermissive' ./configure --enable-memaslap --with-pthread=yes
+make -j12
+sudo make install
+sudo ldconfig
+which memaslap
 ```
 
 ## Disable AppArmor
@@ -127,10 +143,37 @@ sudo apt remove --assume-yes --purge apparmor
 sudo reboot
 ```
 
-## Do a test-run
+## Install a recent qemu
 
-Verify that the bespin CI script runs without errors (this will take a while):
+Make sure the QEMU version for the runner account is is >= 5:
 
 ```bash
-CI_MACHINE_TYPE=skylake4x bash scripts/ci.bash
+sudo apt update
+sudo apt install build-essential
+sudo apt build-dep qemu
+
+wget https://download.qemu.org/qemu-5.0.0.tar.xz
+tar xvJf qemu-5.0.0.tar.xz
+
+cd qemu-5.0.0
+./configure --enable-rdma --enable-debug
+make -j 28
+sudo make -j28 install
+
+# Check version (should be 5.0.0)
+qemu-system-x86 --version
+```
+
+## Do a test-run
+
+Verify that the bespin tests run (this will take a while, but if it works CI
+likely will succeed too):
+
+```bash
+# Init submodules if not done so already:
+git submodule init
+git submodule update
+
+cd kernel
+RUST_TEST_THREADS=1 cargo test --features smoke -- --nocapture
 ```

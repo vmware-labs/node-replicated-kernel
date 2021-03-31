@@ -10,6 +10,7 @@ rm -f memcached_benchmark.csv
 rm -f vmops_benchmark.csv
 rm -f vmops_benchmark_latency.csv
 rm -f fxmark_benchmark.csv
+rm -f leveldb_benchmark.csv
 
 # For vmops: --features prealloc can improve performance further (at the expense of test duration)
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --nocapture
@@ -57,6 +58,12 @@ gzip ${DEPLOY_DIR}/vmops_benchmark_latency.csv
 #mkdir -p ${DEPLOY_DIR}
 #mv fxmark_benchmark.csv ${DEPLOY_DIR}
 #gzip ${DEPLOY_DIR}/fxmark_benchmark.csv
+
+#Copy leveldb results
+DEPLOY_DIR="gh-pages/leveldb/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+mkdir -p ${DEPLOY_DIR}
+mv leveldb_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/leveldb_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py

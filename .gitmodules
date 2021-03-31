@@ -31,7 +31,6 @@
 [submodule "lib/rumpkernel"]
 	path = lib/rumpkernel
 	url = git@github.com:gz/rust-rumpkernel.git
-	branch = "leveldb-osdi"
 [submodule "lib/rawtime"]
 	path = lib/rawtime
 	url = https://github.com/gz/rawtime.git

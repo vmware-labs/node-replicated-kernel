@@ -59,9 +59,6 @@ use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring3Process, Ring3Resumer};
 use super::timer;
 
-/// When to raise the next timer irq (in rdtsc ticks)
-pub const TSC_TIMER_DEADLINE: u64 = 2_000_000;
-
 /// A macro to initialize an entry in an IDT table.
 ///
 /// This maks sure we have an external C declaration to the symbol

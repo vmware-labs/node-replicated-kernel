@@ -305,6 +305,10 @@ impl FileSystem for ModelFS {
     fn rename(&mut self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
         Ok(true)
     }
+
+    fn mkdir(&mut self, pathname: &str, mode: Modes) -> Result<bool, FileSystemError> {
+        Ok(true)
+    }
 }
 
 /// Two writes/reads at different offsets should return

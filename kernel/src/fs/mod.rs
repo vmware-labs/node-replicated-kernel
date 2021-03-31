@@ -182,7 +182,7 @@ impl Default for MemFS {
             mnodes,
             files,
             root,
-            nextmemnode: AtomicUsize::new(3),
+            nextmemnode: AtomicUsize::new(2),
         }
     }
 }

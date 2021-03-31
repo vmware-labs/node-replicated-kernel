@@ -51,7 +51,7 @@ test:
     - cd lib/slabmalloc
     - cargo test
     - cd ../../kernel
-    - cargo fmt --package bespin -- --check
+      #- cargo fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test --features smoke
     - cd ..
   dependencies:

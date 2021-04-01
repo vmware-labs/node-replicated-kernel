@@ -6,7 +6,6 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::mem::transmute;
 use core::ptr::{self, NonNull};
 
-use arrayvec::ArrayVec;
 use lazy_static::lazy_static;
 use log::{error, warn};
 use spin::Mutex;
@@ -97,17 +96,297 @@ impl Pager {
 }
 
 /// A pager for GlobalAlloc.
-lazy_static! {
-    pub static ref PAGER: ArrayVec::<CachePadded<Mutex<Pager>>, 96> = {
-        let mut pagers = ArrayVec::<CachePadded<Mutex<Pager>>, 96>::new();
-        for i in 0..96 {
-            pagers.push(CachePadded::new(Mutex::new(Pager {
-                sbrk: 0x52_0000_0000 + (i as u64 * 0x10_0000_0000),
-            })));
-        }
-        pagers
-    };
-}
+
+pub static mut PAGER: [CachePadded<Mutex<Pager>>; 96] = [
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x52_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x62_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x72_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x82_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x92_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xa2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xb2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xc2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xd2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xe2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0xf2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x102_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x112_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x122_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x132_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x142_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x152_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x162_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x172_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x182_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x192_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1a2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1b2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1c2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1d2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1e2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x1f2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x202_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x212_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x222_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x232_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x242_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x252_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x262_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x272_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x282_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x292_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x2a2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x2b2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x2c2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x2d2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x2e2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x2f2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x302_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x312_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x322_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x332_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x342_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x352_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x362_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x372_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x382_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x392_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x3a2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x3b2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x3c2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x3d2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x3e2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x3f2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x402_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x412_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x422_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x432_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x442_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x452_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x462_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x472_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x482_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x492_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x4a2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x4b2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x4c2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x4d2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x4e2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x4f2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x502_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x512_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x522_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x532_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x542_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x552_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x562_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x572_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x582_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x592_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x5a2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x5b2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x5c2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x5d2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x5e2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x5f2_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x602_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x612_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x622_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x632_0000_0000,
+    })),
+    CachePadded::new(Mutex::new(Pager {
+        sbrk: 0x642_0000_0000,
+    })),
+];
 
 /// A SafeZoneAllocator that wraps the ZoneAllocator in a Mutex.
 ///

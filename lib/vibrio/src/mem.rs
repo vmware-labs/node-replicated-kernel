@@ -2,7 +2,7 @@
 //! API from user-space and implements a [`core::alloc::GlobalAlloc`]
 //! type for doing memory allocation in user-space.
 
-use core::alloc::{GlobalAlloc, Layout};
+use core::{alloc::{GlobalAlloc, Layout}, iter::Map};
 use core::mem::transmute;
 use core::ptr::{self, NonNull};
 
@@ -26,6 +26,9 @@ macro_rules! round_up {
     };
 }
 
+// Max number of cores supported by the allocator.
+const MAX_CORES: usize = 96;
+
 static MEM_PROVIDER: crate::mem::SafeZoneAllocator = crate::mem::SafeZoneAllocator::new();
 
 #[cfg(target_os = "bespin")]
@@ -39,6 +42,7 @@ static PER_CORE_MEM_PROVIDER: crate::mem::PerCoreAllocator = crate::mem::PerCore
 /// In our dummy implementation we just rely on the OS system allocator `alloc::System`.
 pub struct Pager {
     sbrk: u64,
+    limit: u64,
 }
 
 impl Pager {
@@ -47,9 +51,11 @@ impl Pager {
 
     /// Allocates a given `page_size`.
     fn alloc_page(&mut self, page_size: usize) -> Option<*mut u8> {
-        let (vaddr, _paddr) = self
-            .allocate(Layout::from_size_align(page_size, page_size).unwrap())
-            .expect("Can't allocate");
+        let (vaddr, _paddr) =
+            match self.allocate(Layout::from_size_align(page_size, page_size).unwrap()) {
+                Ok((vaddr, paddr)) => (vaddr, paddr),
+                Err(_) => return None,
+            };
         assert_ne!(vaddr.as_mut_ptr::<u8>(), ptr::null_mut());
 
         Some(vaddr.as_mut_ptr())
@@ -63,6 +69,11 @@ impl Pager {
     pub(crate) fn allocate(&mut self, layout: Layout) -> Result<(VAddr, PAddr), SystemCallError> {
         let size = round_up!(layout.size(), 4096) as u64;
         self.sbrk = round_up!(self.sbrk as usize, core::cmp::max(layout.align(), 4096)) as u64;
+
+        // Return out-of-memory error if the vaddr goes beyond the permissible limit.
+        if self.sbrk >= self.limit {
+            return Err(SystemCallError::OutOfMemory);
+        }
 
         unsafe {
             let r = crate::syscalls::VSpace::map(self.sbrk, size)?;
@@ -98,11 +109,12 @@ impl Pager {
 
 /// A pager for GlobalAlloc.
 lazy_static! {
-    pub static ref PAGER: ArrayVec::<CachePadded<Mutex<Pager>>, 96> = {
+    pub static ref PAGER: ArrayVec::<CachePadded<Mutex<Pager>>, MAX_CORES> = {
         let mut pagers = ArrayVec::<CachePadded<Mutex<Pager>>, 96>::new();
-        for i in 0..96 {
+        for i in 0..MAX_CORES {
             pagers.push(CachePadded::new(Mutex::new(Pager {
                 sbrk: 0x52_0000_0000 + (i as u64 * 0x10_0000_0000),
+                limit: 0x52_0000_0000 + ((i + 1) as u64 * 0x10_0000_0000),
             })));
         }
         pagers
@@ -124,6 +136,48 @@ impl SafeZoneAllocator {
 
 unsafe impl GlobalAlloc for SafeZoneAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        #[inline(always)]
+        unsafe fn try_alloc_page() -> Option<&'static mut ObjectPage<'static>> {
+            let mut core_id = Environment::core_id();
+            let my_core_id = core_id;
+
+            loop {
+                match PAGER[core_id].lock().allocate_page() {
+                    Some(ret) => return Some(ret),
+                    None => {
+                        core_id = (core_id + 1) % MAX_CORES;
+                        if core_id == (my_core_id - 1) % MAX_CORES {
+                            break;
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+            None
+        }
+
+        #[inline(always)]
+        unsafe fn try_alloc_largepage() -> Option<&'static mut LargeObjectPage<'static>> {
+            let mut core_id = Environment::core_id();
+            let my_core_id = core_id;
+
+            loop {
+                match PAGER[core_id].lock().allocate_large_page() {
+                    Some(ret) => return Some(ret),
+                    None => {
+                        core_id = (core_id + 1) % MAX_CORES;
+                        if core_id == (my_core_id - 1) % MAX_CORES {
+                            break;
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }
+            None
+        }
+
         match layout.size() {
             0..=ZoneAllocator::MAX_ALLOC_SIZE => {
                 let mut zone_allocator = self.0.lock();
@@ -131,32 +185,26 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     Ok(nptr) => nptr.as_ptr(),
                     Err(AllocationError::OutOfMemory) => {
                         if layout.size() <= ZoneAllocator::MAX_BASE_ALLOC_SIZE {
-                            PAGER[Environment::core_id()].lock().allocate_page().map_or(
-                                ptr::null_mut(),
-                                |page| {
-                                    zone_allocator
-                                        .refill(layout, page)
-                                        .expect("Could not refill?");
-                                    zone_allocator
-                                        .allocate(layout)
-                                        .expect("Should succeed after refill")
-                                        .as_ptr()
-                                },
-                            )
+                            try_alloc_page().map_or(ptr::null_mut(), |page| {
+                                zone_allocator
+                                    .refill(layout, page)
+                                    .expect("Could not refill?");
+                                zone_allocator
+                                    .allocate(layout)
+                                    .expect("Should succeed after refill")
+                                    .as_ptr()
+                            })
                         } else {
                             // layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE
-                            PAGER[Environment::core_id()]
-                                .lock()
-                                .allocate_large_page()
-                                .map_or(ptr::null_mut(), |large_page| {
-                                    zone_allocator
-                                        .refill_large(layout, large_page)
-                                        .expect("Could not refill?");
-                                    zone_allocator
-                                        .allocate(layout)
-                                        .expect("Should succeed after refill")
-                                        .as_ptr()
-                                })
+                            try_alloc_largepage().map_or(ptr::null_mut(), |large_page| {
+                                zone_allocator
+                                    .refill_large(layout, large_page)
+                                    .expect("Could not refill?");
+                                zone_allocator
+                                    .allocate(layout)
+                                    .expect("Should succeed after refill")
+                                    .as_ptr()
+                            })
                         }
                     }
                     Err(AllocationError::InvalidLayout) => panic!("Can't allocate this size"),
@@ -165,10 +213,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
             ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
                 // Best to use the underlying backend directly to allocate large
                 // to avoid fragmentation
-                PAGER[Environment::core_id()]
-                    .lock()
-                    .allocate_large_page()
-                    .expect("Can't allocate page?") as *mut _ as *mut u8
+                try_alloc_largepage().expect("Can't allocate page?") as *mut _ as *mut u8
             }
             big_size => {
                 // int a = (59 + (4 - 1)) / 4;
@@ -176,9 +221,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     (big_size + Pager::LARGE_PAGE_SIZE - 1) / Pager::LARGE_PAGE_SIZE;
                 let mut first: *mut u8 = ptr::null_mut();
                 for _page_idx in 0..required_pages {
-                    let ptr = PAGER[Environment::core_id()]
-                        .lock()
-                        .allocate_large_page()
+                    let ptr = try_alloc_largepage()
                         .expect("Can't allocate page for big allocation?")
                         as *mut _ as *mut u8;
                     if first.is_null() {
@@ -235,7 +278,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
 }
 
 pub struct PerCoreAllocator {
-    allocators: [SafeZoneAllocator; 96],
+    allocators: [SafeZoneAllocator; MAX_CORES],
 }
 
 impl PerCoreAllocator {

@@ -2064,7 +2064,6 @@ fn s06_leveldb_benchmark() {
             assert!(r.is_ok());
             let r = csv_file.write("\n".as_bytes());
             assert!(r.is_ok());
-            println!("{:?}", out);
 
             // cleanup
             dhcp_server.send_control('c')?;

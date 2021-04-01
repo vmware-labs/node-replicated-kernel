@@ -20,6 +20,7 @@ extern crate kpi;
 pub use kpi::io;
 pub use kpi::syscalls;
 
+extern crate arrayvec;
 extern crate lazy_static;
 
 pub mod mem;

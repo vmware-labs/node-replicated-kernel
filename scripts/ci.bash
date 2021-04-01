@@ -63,6 +63,7 @@ gzip ${DEPLOY_DIR}/vmops_benchmark_latency.csv
 DEPLOY_DIR="gh-pages/leveldb/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
 mkdir -p ${DEPLOY_DIR}
 mv leveldb_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/leveldb_benchmark.csv
 
 # Update CI history plots
 python3 gh-pages/_scripts/ci_history.py

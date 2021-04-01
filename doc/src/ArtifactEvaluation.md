@@ -83,6 +83,7 @@ The script downloads needed crates, compiles the OS and runs a basic test (the
 If everything worked, you should see the following last lines in your output:
 
 ```log
+[...]
 [DEBUG] - init: Initialized logging
 [DEBUG] - init: Done with init tests, if we came here probably everything is good.
 [SUCCESS]
@@ -92,7 +93,7 @@ If everything worked, you should see the following last lines in your output:
 
 Please follow the given steps to reproduce Figure 3 in the paper.
 
-### Nr-FS results
+### NrFS results
 
 To execute the benchmark, run:
 
@@ -101,7 +102,19 @@ RUST_TEST_THREADS=1 cargo test --features mlnrfs --test integration-test -- s06_
 ```
 
 The command runs all NR-FS microbenchmarks and stores the results in a CSV file
-`fxmark_benchmark.csv`.
+`fxmark_benchmark.csv`. This step can take a while (~30-60 min).
+
+If everything worked, you should see an output like this one at the end:
+
+```log
+[...]
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32X8XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32X12XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32X16XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 2769.78s
+```
 
 ### Linux tmpfs results
 
@@ -111,13 +124,16 @@ If desired you can also re-generate the `tmpfs` result on Linux:
 cd $HOME
 git clone https://github.com/gz/vmops-bench.git -b fs-bench
 cd vmops-bench
-bash scripts/ci.bash
+GIT_HASH=d1b38ae bash scripts/ci.bash
 ```
+
+> TODO: make repo public, fix run issue, git checkout a specific revision
+> instead of branch, adjust GIT_HASH to that revision
 
 The above command runs the benchmark and generates the results in a csv-file
 `fsops_benchmark.csv`.
 
-### Plot the figure
+### Plot Figure 3
 
 TODO - To generate the final graph use the plot script...
 
@@ -126,22 +142,35 @@ TODO - To generate the final graph use the plot script...
 Figure 4 in the paper compares LevelDB workload performance for NR-FS and
 Linux-tmpfs.
 
-### NrOS
+### LevelDB on NrOS
 
-To run the LevelDB benchmark on NrOS run:
+To run the LevelDB benchmark on NrOS execute:
 
 ```bash
 cd $HOME/bespin_ae/kernel
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_leveldb_benchmark --nocapture
 ```
 
-The command runs the benchmark and generates the results in a csv-file
+This step will take ~15-20min. If everything worked, you should see an output like this one at the end:
+
+```log
+[...]
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testbinary=dbbench.bin testcmd=32 appcmd=\'--threads=32 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535\'" "--nic" "virtio" "--mods" "rkapps" "--ufeatures" "rkapps:leveldb-bench" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "81920" "--qemu-affinity" "--qemu-prealloc"
+readrandom   : done: 3200000,  949492.348 ops/sec; (100000 of 50000 found)
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 738.67s
+```
+
+The command runs benchmarks and stores the results in a CSV file:
 `leveldb_benchmark.csv`.
 
-### Linux
+### LevelDB on Linux
 
 To run the LevelDB benchmark on Linux follow the steps below. Please clone the
 leveldb repository in a different path than NrOS.
+
+> TODO: change this to check-out a particular commit ID instead of a branch:
 
 ```bash
 cd $HOME
@@ -153,10 +182,89 @@ bash run.sh
 The above commands run the benchmarks and generate the results in a csv-file
 `linux_leveldb.csv`.
 
-### Plot the figure
+### Plot the LevelDB figure
 
 TODO - To generate the final graph use the plot script...
 
-## NR-VMem Benchmarks
+## Figure 5 / 6a
 
-Paper figure 5 and 6.
+Figure 5 in the paper compares address-space insertion throughput and latency
+for NR-VMem with Linux.
+
+### NR-VMem Map
+
+To run the throughput benchmark (Figure 5) on NrOS execute:
+
+```bash
+cd $HOME/bespin_ae/kernel
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --nocapture
+```
+
+This step will take ~3min. If everything worked, you should see an output like this one at the end:
+
+```log
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 118.94s
+```
+
+The results will be stored in `vmops_benchmark.csv`.
+
+To run the latency benchmark (Figure 6a) on NrOS execute:
+
+```bash
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark --nocapture
+```
+
+This step will take ~2min. If everything worked, you should see an output like this one at the end:
+
+```log
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops,latency" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "32768" "--qemu-affinity"
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 106.67s
+```
+
+The results will be stored in `vmops_benchmark_latency.csv`.
+
+### Linux map
+
+TODO -- vmops repo
+
+### Plot Figure 5 and 6a
+
+TODO - To generate the final graph use the plot script...
+
+## Figure 6c
+
+Figure 6 in the paper compares unmap latency and TLB shootdowns for Linux and NrOS.
+
+> Be aware these benchmark numbers might be impacted by the virtual execution of
+> NrOS.
+
+### NR-VMem unmap Latency
+
+To run the unmap latency benchmark (Figure 6c) on NrOS execute:
+
+```bash
+cd $HOME/bespin_ae/kernel
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_unmaplat_latency_benchmark --nocapture
+```
+
+This step will take ~2min. If everything worked, you should see an output like this one at the end:
+
+```log
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops-unmaplat,latency" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "32768" "--qemu-affinity"
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 97.38s
+```
+
+### Linux
+
+TODO -- vmops repo
+
+### Plot Figure 6c
+
+TODO - To generate the final graph use the plot script...

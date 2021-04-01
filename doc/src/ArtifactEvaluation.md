@@ -186,12 +186,12 @@ The above commands run the benchmarks and generate the results in a csv-file
 
 TODO - To generate the final graph use the plot script...
 
-## Figure 5 / 6a
+## Figure 5 / 6a / 6c
 
 Figure 5 in the paper compares address-space insertion throughput and latency
 for NR-VMem with Linux.
 
-### NR-VMem Map
+### NR-VMem
 
 To run the throughput benchmark (Figure 5) on NrOS execute:
 
@@ -228,23 +228,6 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; fin
 
 The results will be stored in `vmops_benchmark_latency.csv`.
 
-### Linux map
-
-TODO -- vmops repo
-
-### Plot Figure 5 and 6a
-
-TODO - To generate the final graph use the plot script...
-
-## Figure 6c
-
-Figure 6 in the paper compares unmap latency and TLB shootdowns for Linux and NrOS.
-
-> Be aware these benchmark numbers might be impacted by the virtual execution of
-> NrOS.
-
-### NR-VMem unmap Latency
-
 To run the unmap latency benchmark (Figure 6c) on NrOS execute:
 
 ```bash
@@ -254,6 +237,9 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_unmaplat_lat
 
 This step will take ~2min. If everything worked, you should see an output like this one at the end:
 
+> Be aware unmap latency numbers might be impacted by the virtual execution of
+> NrOS.
+
 ```log
 Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops-unmaplat,latency" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "32768" "--qemu-affinity"
 ok
@@ -261,10 +247,19 @@ ok
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 97.38s
 ```
 
-### Linux
+The results will be stored in `vmops_unmaplat_benchmark_latency.csv`.
 
-TODO -- vmops repo
+### Linux VMem
 
-### Plot Figure 6c
+To run the benchmark on Linux follow the steps below.
+
+```bash
+cd $HOME/vmops-bench
+bash scripts/run.sh
+```
+
+The results will be stored in `$HOSTNAME_results_mapunmap.csv`.
+
+### Plot Figure 5 and 6a and 6c
 
 TODO - To generate the final graph use the plot script...

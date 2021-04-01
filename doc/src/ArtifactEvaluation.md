@@ -34,27 +34,48 @@ the session timeout to avoid unwanted session closing.
 Please follow the given steps to reproduce Figure 3 in the paper that compares NR-FS and tmpfs for
 various read and write filesystem based workloads.
 
+#### Nr-FS
 To run the NR-FS benchmarks, go to the kernel directory(`.../bespin/kernel`) and run:
 ```bash
 RUST_TEST_THREADS=1 cargo test --features mlnrfs --test integration-test -- s06_fxmark_bench --nocapture
 ```
 The command runs all the NR-FS microbenchmarks and generates the results in a csv-file `fxmark_benchmark.csv`.
 
-TODO - To run the Linux-tempfs benchmarks...
+#### Linux-tmpfs
 
+```bash
+git clone https://github.com/gz/vmops-bench.git -b fs-bench
+cd vmops-bench
+bash scripts/ci.bash
+```
+
+The above command runs the benchmark and generates the results in a csv-file `fsops_benchmark.csv`.
+
+#### Plot the figure
 TODO - To generate the final graph use the plot script...
 
 ## LevelDB Benchmark
 Figure 4 in the paper compares leveldb read-intensive workload performance for NR-FS and Linux-tmpfs.
 
+#### NrOS
 To run the LevelDB benchmark on NrOS, go to the kernel directory(`.../bespin/kernel`) and run:
 ```bash
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_leveldb_benchmark --nocapture
 ```
-The command runs a read-intensive LevelDB benchmark and generates the results in a csv-file `leveldb_benchmark.csv`.
+The command runs the benchmark and generates the results in a csv-file `leveldb_benchmark.csv`.
 
-TODO - To run the LevelDB benchmark on Linux...
+#### Linux
+To run the LevelDB benchmark on Linux follow the steps below. Please clone the leveldb repository
+in a different path than NrOS.
 
+```bash
+https://github.com/amytai/leveldb.git -b bespin-linux-lock
+cd leveldb
+bash run.sh
+```
+The above commands run the benchmarks and generate the results in a csv-file `linux_leveldb.csv`.
+
+#### Plot the figure
 TODO - To generate the final graph use the plot script...
 
 ## NR-VMem Benchmarks

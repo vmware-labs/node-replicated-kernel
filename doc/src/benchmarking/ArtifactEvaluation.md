@@ -209,11 +209,11 @@ The above commands run the benchmarks and generate the results in a csv-file
 Make sure that steps to download the plot scripts and install required dependencies have already
 been performed as explained in [Plot Figure 3](#plot-figure-3) before plotting Figure 4.
 
-Run the following command to plot the Figure 4.
+Run the following commands to plot the Figure 4.
 
 ```bash
 cd $HOME/plot-scripts
-python3 leveldb_plot.py <linux leveldb csv> <bespin leveldb csv>
+python3 leveldb_plot.py <Linux leveldb csv> <NrOS leveldb csv>
 ```
 ## Figure 5 / 6a / 6c
 

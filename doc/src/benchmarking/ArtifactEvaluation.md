@@ -121,7 +121,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; fin
 
 ### Linux tmpfs results
 
-If desired you can also re-generate the `tmpfs` result on Linux:
+You can also generate the `tmpfs` result on Linux:
 
 ```bash
 cd $HOME
@@ -131,7 +131,7 @@ git checkout c011854
 bash scripts/run.sh
 ```
 
-The above command runs the benchmark and generates the results in a csv-file
+The above command runs the benchmark and writes the results in a csv-file
 `fsops_benchmark.csv`.
 
 ### Plot Figure 3
@@ -202,7 +202,7 @@ git checkout 8af5ca6
 bash run.sh
 ```
 
-The above commands run the benchmarks and generate the results in a csv-file
+The above commands run the benchmarks and writes the results in a csv-file
 `linux_leveldb.csv`.
 
 ### Plot the LevelDB figure
@@ -294,29 +294,35 @@ bash scripts/linux-tlb.bash latency
 ```
 
 The results for Figure 5, 6a, and 6c will be store in:
+
 - Figure 5 in `vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv`
 - Figure 6a in `vmops_linux_maponly-isolated-shared_threads_all_latency_results.csv`
 - Figure 6c in `tlb_linux_tlbshoot_threads_all_latency_results.csv`
 
 ### Plot Figure 5 and 6a and 6c
-Go to the plot-scripts repository
+
+Go to the plot-scripts repository:
+
 ```bash
 cd $HOME/plot-scripts
 ```
 
-Plot Figure 5 using
+Plot Figure 5:
+
 ```bash
-# python3 vmops_thoughput_plot.py <linux vmops csv> <bespin vmops csv>
-python3 vmops_thoughput_plot.py $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv $HOME/bespin_ae/kernel/vmops_benchmark.csv
+# python3 vmops_throughput_plot.py  <linux vmops csv> <bespin vmops csv>
+python3  vmops_throughput_plot.py  $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv $HOME/bespin_ae/kernel/vmops_benchmark.csv
 ```
 
-Plot Figure 6a using
+Plot Figure 6a:
+
 ```bash
 # python3 map_latency_plot.py <linux map-latency csv> <bespin map-latency csv>
 python3 map_latency_plot.py $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_latency_results.csv $HOME/bespin_ae/kernel/vmops_benchmark_latency.csv
 ```
 
-Plot Figure 6c using
+Plot Figure 6c:
+
 ```bash
 # python3 mapunmap_latency_plot.py <linux unmap-latency csv> <bespin unmap-latency csv>
 python3 mapunmap_latency_plot.py $HOME/vmopsbench/tlb_linux_tlbshoot_threads_all_latency_results.csv $HOME/bespin_ae/kernel/vmops_unmaplat_benchmark_latency.csv

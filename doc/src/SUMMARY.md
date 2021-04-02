@@ -18,12 +18,12 @@
   - [Testing](./development/Testing.md)
   - [Tracing](./development/Tracing.md)
 - [Benchmarking](./Benchmarking.md)
+  - [Artifact Evaluation (OSDI'21)](./benchmarking/ArtifactEvaluation.md)
   - [Redis](./benchmarking/Redis.md)
   - [Memcached](./benchmarking/Memcached.md)
   - [LevelDB](./benchmarking/LevelDb.md)
 - [Continuous Integration](./configuration/CI.md)
 - [Related Work](./RelatedWork.md)
-- [Artifact Evaluation](./ArtifactEvaluation.md)
 
 -----------
 

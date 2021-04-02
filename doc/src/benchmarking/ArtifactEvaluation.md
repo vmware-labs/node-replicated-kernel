@@ -16,12 +16,12 @@ Please follow the given steps to reserve a machine to run the experiments.
   1. Setup an account on [CloudLab](https://www.cloudlab.us), if not already present.
   2. Log in to [CloudLab](https://www.cloudlab.us/login.php) and setup a [password-less](https://docs.cloudlab.us/users.html#%28part._ssh-access) ssh key.
   3. Start an experiment by clicking on `Experiments` on top left of the webpage.
-  4. Use the node type [c6420](https://docs.cloudlab.us/hardware.html), and setup the node with the Ubuntu 20.04 disk image.
+  4. Use the node type [c6420](https://docs.cloudlab.us/hardware.html) (by entrying `Optional physical node type` - c6420), and setup the node with the Ubuntu 20.04 disk image.
 
 ## Download the code and setup the environment
 
 Download the source code `.tar.gz` file using [this
-link](https://drive.google.com/file/d/1Yy4DPG_jUOqspS1fCNMpZOXI4bdnzRSf/view?usp=sharing).
+link](https://www.cs.utah.edu/~stutsman/bespin-24ce69c.tar.gz).
 
 ```bash
 cd $HOME
@@ -51,6 +51,7 @@ starting during testing. You can also set-up a rule to allowing this but it's
 easiest to just get rid of it on the test machine:
 
 ```bash
+sudo apt install apparmor
 sudo systemctl stop apparmor
 sudo systemctl disable apparmor
 sudo apt remove --assume-yes --purge apparmor
@@ -122,8 +123,9 @@ If desired you can also re-generate the `tmpfs` result on Linux:
 
 ```bash
 cd $HOME
-git clone https://github.com/gz/vmops-bench.git -b fs-bench
-cd vmops-bench
+git clone https://github.com/gz/vmopsbench
+cd vmopsbench
+git checkout c011854
 bash scripts/run.sh
 ```
 
@@ -156,7 +158,7 @@ Plot the Figure 3 by running:
 python3 fsops_plot.py <Linux fsops csv> <NrOS fsops csv>
 ```
 
-> If not moved already, then the path to Linux csv file should be `$HOME/vmops-bench/fsops_benchmark.csv`
+> If not moved already, then the path to Linux csv file should be `$HOME/vmopsbench/fsops_benchmark.csv`
 and NrOS csv file `$HOME/bespin/kernel/fxmark_benchmark.csv`
 
 ## Figure 4: LevelDB
@@ -192,12 +194,11 @@ The command runs benchmarks and stores the results in a CSV file:
 To run the LevelDB benchmark on Linux follow the steps below. Please clone the
 leveldb repository in a different path than NrOS.
 
-> TODO: change this to check-out a particular commit ID instead of a branch:
-
 ```bash
 cd $HOME
-git clone https://github.com/amytai/leveldb.git -b bespin-linux-lock
+git clone https://github.com/amytai/leveldb.git
 cd leveldb
+git checkout 8af5ca6
 bash run.sh
 ```
 
@@ -283,12 +284,35 @@ The results will be stored in `vmops_unmaplat_benchmark_latency.csv`.
 To run the benchmark on Linux follow the steps below.
 
 ```bash
-cd $HOME/vmops-bench
-bash scripts/run.sh
+cd $HOME/vmopsbench
+git checkout 57b3263
+bash scripts/linux.bash throughput
+bash scripts/linux.bash latency
+bash scripts/linux-tlb.bash latency
 ```
 
-The results will be stored in `$HOSTNAME_results_mapunmap.csv`.
+The results for Figure 5, 6a, and 6c will be store in:
+- Figure 5 in `vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv`
+- Figure 6a in `vmops_linux_maponly-isolated-shared_threads_all_latency_results.csv`
+- Figure 6c in `tlb_linux_tlbshoot_threads_all_latency_results.csv`
 
 ### Plot Figure 5 and 6a and 6c
+Go to the plot-scripts repository
+```bash
+cd $HOME/plot-scripts
+```
 
-TODO - To generate the final graph use the plot script...
+Plot Figure 5 using
+```bash
+python3 vmops_thoughput_plot.py <linux vmops csv> <bespin vmops csv>
+```
+
+Plot Figure 6a using
+```bash
+python3 map_latency_plot.py <linux map-latency csv> <bespin map-latency csv>
+```
+
+Plot Figure 6c using
+```bash
+python3 mapunmap_latency_plot.py <linux unmap-latency csv> <bespin unmap-latency csv>
+```

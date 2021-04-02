@@ -287,7 +287,7 @@ To run the benchmark on Linux follow the steps below.
 
 ```bash
 cd $HOME/vmopsbench
-git checkout 57b3263
+git checkout master
 bash scripts/linux.bash throughput
 bash scripts/linux.bash latency
 bash scripts/linux-tlb.bash latency

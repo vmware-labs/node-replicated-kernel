@@ -50,8 +50,10 @@ Disable apparmor, an annoying security feature that blocks the DHCP server from
 starting during testing. You can also set-up a rule to allowing this but it's
 easiest to just get rid of it on the test machine:
 
+> Most likely apparmor is not installed if you're using cloud-lab,
+in this case the commands will fail and you can ignore that.
+
 ```bash
-sudo apt install apparmor
 sudo systemctl stop apparmor
 sudo systemctl disable apparmor
 sudo apt remove --assume-yes --purge apparmor
@@ -129,9 +131,6 @@ git checkout c011854
 bash scripts/run.sh
 ```
 
-> TODO: make repo public, fix run issue, git checkout a specific revision
-> instead of branch, adjust GIT_HASH to that revision
-
 The above command runs the benchmark and generates the results in a csv-file
 `fsops_benchmark.csv`.
 
@@ -155,11 +154,12 @@ pip3 install -r requirements.txt
 Plot the Figure 3 by running:
 
 ```bash
-python3 fsops_plot.py <Linux fsops csv> <NrOS fsops csv>
+# python3 fsops_plot.py <Linux fsops csv> <NrOS fsops csv>
+python3 fsops_plot.py $HOME/vmopsbench/fsops_benchmark.csv $HOME/bespin_ae/kernel/fxmark_benchmark.csv
 ```
 
-> If not moved already, then the path to Linux csv file should be `$HOME/vmopsbench/fsops_benchmark.csv`
-and NrOS csv file `$HOME/bespin/kernel/fxmark_benchmark.csv`
+> Arguments given in the plot scripts assume that the result files were not moved after the run.
+Please use the argument order given in the comment, if csv files were moved for some reason.
 
 ## Figure 4: LevelDB
 
@@ -214,8 +214,10 @@ Run the following commands to plot the Figure 4.
 
 ```bash
 cd $HOME/plot-scripts
-python3 leveldb_plot.py <Linux leveldb csv> <NrOS leveldb csv>
+# python3 leveldb_plot.py <Linux leveldb csv> <NrOS leveldb csv>
+python3 leveldb_plot.py $HOME/leveldb/linux_leveldb.csv $HOME/bespin_ae/kernel/leveldb_benchmark.csv
 ```
+
 ## Figure 5 / 6a / 6c
 
 Figure 5 in the paper compares address-space insertion throughput and latency
@@ -304,15 +306,18 @@ cd $HOME/plot-scripts
 
 Plot Figure 5 using
 ```bash
-python3 vmops_thoughput_plot.py <linux vmops csv> <bespin vmops csv>
+# python3 vmops_thoughput_plot.py <linux vmops csv> <bespin vmops csv>
+python3 vmops_thoughput_plot.py $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv $HOME/bespin_ae/kernel/vmops_benchmark.csv
 ```
 
 Plot Figure 6a using
 ```bash
-python3 map_latency_plot.py <linux map-latency csv> <bespin map-latency csv>
+# python3 map_latency_plot.py <linux map-latency csv> <bespin map-latency csv>
+python3 map_latency_plot.py $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_latency_results.csv $HOME/bespin_ae/kernel/vmops_benchmark_latency.csv
 ```
 
 Plot Figure 6c using
 ```bash
-python3 mapunmap_latency_plot.py <linux unmap-latency csv> <bespin unmap-latency csv>
+# python3 mapunmap_latency_plot.py <linux unmap-latency csv> <bespin unmap-latency csv>
+python3 mapunmap_latency_plot.py $HOME/vmopsbench/tlb_linux_tlbshoot_threads_all_latency_results.csv $HOME/bespin_ae/kernel/vmops_unmaplat_benchmark_latency.csv
 ```

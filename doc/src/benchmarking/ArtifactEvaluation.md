@@ -296,8 +296,8 @@ bash scripts/linux-tlb.bash latency
 The results for Figure 5, 6a, and 6c will be store in:
 
 - Figure 5 in `vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv`
-- Figure 6a in `vmops_linux_maponly-isolated-shared_threads_all_latency_results.csv`
-- Figure 6c in `tlb_linux_tlbshoot_threads_all_latency_results.csv`
+- Figure 6a in `Linux-Map_latency_percentiles.csv`
+- Figure 6c in `Linux-Unmap_latency_percentiles.csv`
 
 ### Plot Figure 5 and 6a and 6c
 
@@ -318,12 +318,12 @@ Plot Figure 6a:
 
 ```bash
 # python3 map_latency_plot.py <linux map-latency csv> <bespin map-latency csv>
-python3 map_latency_plot.py $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_latency_results.csv $HOME/bespin_ae/kernel/vmops_benchmark_latency.csv
+python3 map_latency_plot.py $HOME/vmopsbench/Linux-Map_latency_percentiles.csv $HOME/bespin_ae/kernel/vmops_benchmark_latency.csv
 ```
 
 Plot Figure 6c:
 
 ```bash
 # python3 mapunmap_latency_plot.py <linux unmap-latency csv> <bespin unmap-latency csv>
-python3 mapunmap_latency_plot.py $HOME/vmopsbench/tlb_linux_tlbshoot_threads_all_latency_results.csv $HOME/bespin_ae/kernel/vmops_unmaplat_benchmark_latency.csv
+python3 mapunmap_latency_plot.py $HOME/vmopsbench/Linux-Unmap_latency_percentiles.csv $HOME/bespin_ae/kernel/vmops_unmaplat_benchmark_latency.csv
 ```

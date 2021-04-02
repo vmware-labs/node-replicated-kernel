@@ -124,7 +124,7 @@ If desired you can also re-generate the `tmpfs` result on Linux:
 cd $HOME
 git clone https://github.com/gz/vmops-bench.git -b fs-bench
 cd vmops-bench
-GIT_HASH=d1b38ae bash scripts/ci.bash
+bash scripts/run.sh
 ```
 
 > TODO: make repo public, fix run issue, git checkout a specific revision
@@ -135,7 +135,29 @@ The above command runs the benchmark and generates the results in a csv-file
 
 ### Plot Figure 3
 
-TODO - To generate the final graph use the plot script...
+All the plot scripts are in a github repository, execute the following to clone it.
+
+```bash
+cd $HOME
+git clone https://github.com/ankit-iitb/plot-scripts.git
+```
+
+To install the required dependencies, run:
+
+```bash
+cd $HOME/plot-scripts
+sudo apt install python3-pip
+pip3 install -r requirements.txt
+```
+
+Plot the Figure 3 by running:
+
+```bash
+python3 fsops_plot.py <Linux fsops csv> <NrOS fsops csv>
+```
+
+> If not moved already, then the path to Linux csv file should be `$HOME/vmops-bench/fsops_benchmark.csv`
+and NrOS csv file `$HOME/bespin/kernel/fxmark_benchmark.csv`
 
 ## Figure 4: LevelDB
 
@@ -184,8 +206,15 @@ The above commands run the benchmarks and generate the results in a csv-file
 
 ### Plot the LevelDB figure
 
-TODO - To generate the final graph use the plot script...
+Make sure that steps to download the plot scripts and install required dependencies have already
+been performed as explained in [Plot Figure 3](#plot-figure-3) before plotting Figure 4.
 
+Run the following command to plot the Figure 4.
+
+```bash
+cd $HOME/plot-scripts
+python3 leveldb_plot.py <linux leveldb csv> <bespin leveldb csv>
+```
 ## Figure 5 / 6a / 6c
 
 Figure 5 in the paper compares address-space insertion throughput and latency

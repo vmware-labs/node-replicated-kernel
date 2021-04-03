@@ -101,7 +101,7 @@ Please follow the given steps to reproduce Figure 3 in the paper.
 To execute the benchmark, run:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --features mlnrfs --test integration-test -- s06_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --nocapture
 ```
 
 The command runs all NR-FS microbenchmarks and stores the results in a CSV file

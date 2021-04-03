@@ -52,7 +52,7 @@ impl FileDesc {
         MAX_FILES_PER_PROCESS + 1
     }
 
-    pub fn get_fd(&self, index: usize) -> &Fd {
-        self.fds[index].as_ref().unwrap()
+    pub fn get_fd(&self, index: usize) -> Option<&Fd> {
+        self.fds[index].as_ref()
     }
 }

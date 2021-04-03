@@ -374,7 +374,14 @@ impl Dispatch for MlnrKernelNode {
                     .get(&pid)
                     .expect("TODO: FileRead process lookup failed");
 
-                let fd = p.get_fd(fd as usize);
+                let fd = match p.get_fd(fd as usize) {
+                    Some(fd) => fd,
+                    None => {
+                        return Err(KError::FileSystem {
+                            source: FileSystemError::PermissionError,
+                        })
+                    }
+                };
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();
 
@@ -434,7 +441,14 @@ impl Dispatch for MlnrKernelNode {
 
             Access::FdToMnode(pid, fd) => match self.process_map.read().get(&pid) {
                 Some(p) => {
-                    let fd = p.get_fd(fd as usize);
+                    let fd = match p.get_fd(fd as usize) {
+                        Some(fd) => fd,
+                        None => {
+                            return Err(KError::FileSystem {
+                                source: FileSystemError::PermissionError,
+                            })
+                        }
+                    };
                     let mnode_num = fd.get_mnode();
                     Ok(MlnrNodeResult::MappedFileToMnode(mnode_num))
                 }
@@ -525,7 +539,14 @@ impl Dispatch for MlnrKernelNode {
                 let p = process_lookup
                     .get(&pid)
                     .expect("TODO: FileWrite process lookup failed");
-                let fd = p.get_fd(fd as usize);
+                let fd = match p.get_fd(fd as usize) {
+                    Some(fd) => fd,
+                    None => {
+                        return Err(KError::FileSystem {
+                            source: FileSystemError::PermissionError,
+                        })
+                    }
+                };
 
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();

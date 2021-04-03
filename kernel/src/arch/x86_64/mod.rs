@@ -238,12 +238,12 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     kcb::init_kcb(static_kcb);
 
     static_kcb.arch.set_interrupt_stacks(
-        OwnedStack::new(16 * BASE_PAGE_SIZE),
-        OwnedStack::new(16 * BASE_PAGE_SIZE),
+        OwnedStack::new(128 * BASE_PAGE_SIZE),
+        OwnedStack::new(128 * BASE_PAGE_SIZE),
     );
     static_kcb
         .arch
-        .set_syscall_stack(OwnedStack::new(16 * BASE_PAGE_SIZE));
+        .set_syscall_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
@@ -579,12 +579,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Let's finish KCB initialization (easier as we have alloc now):
     static_kcb.arch.set_interrupt_stacks(
-        OwnedStack::new(16 * BASE_PAGE_SIZE),
-        OwnedStack::new(16 * BASE_PAGE_SIZE),
+        OwnedStack::new(128 * BASE_PAGE_SIZE),
+        OwnedStack::new(128 * BASE_PAGE_SIZE),
     );
     static_kcb
         .arch
-        .set_syscall_stack(OwnedStack::new(16 * BASE_PAGE_SIZE));
+        .set_syscall_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));

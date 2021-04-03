@@ -189,4 +189,26 @@ impl MlnrFS {
             None => Err(FileSystemError::InvalidFile),
         }
     }
+
+    /// Create a directory. The implementation is quite simplistic for now, and only used
+    /// by leveldb benchmark.
+    pub fn mkdir(&self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError> {
+        // Check if the file with the same name already exists.
+        match self.files.read().get(&pathname.to_string()) {
+            Some(_) => return Err(FileSystemError::AlreadyPresent),
+            None => {}
+        }
+
+        let mnode_num = self.get_next_mno() as u64;
+        let memnode = match MemNode::new(mnode_num, pathname, modes, NodeType::Directory) {
+            Ok(memnode) => memnode,
+            Err(e) => return Err(e),
+        };
+        self.files
+            .write()
+            .insert(pathname.to_string(), Arc::new(mnode_num));
+        self.mnodes.write().insert(mnode_num, NrLock::new(memnode));
+
+        Ok(true)
+    }
 }

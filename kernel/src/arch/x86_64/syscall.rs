@@ -497,7 +497,7 @@ fn handle_fileio(
             match user_virt_addr_valid(p.pid, pathname, 0) {
                 Ok(_) => {
                     if cfg!(feature = "mlnrfs") {
-                        unreachable!("Mkdir is not implemented for mlnrfs");
+                        mlnr::MlnrKernelNode::mkdir(p.pid, pathname, modes)
                     } else {
                         nr::KernelNode::<Ring3Process>::mkdir(p.pid, pathname, modes)
                     }

@@ -13,7 +13,6 @@ gcc-8.2.0.tar.gz
 
 # Builds
 target/
-Cargo.lock
 
 # Editor configs
 .vscode

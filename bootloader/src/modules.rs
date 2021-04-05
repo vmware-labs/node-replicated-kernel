@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Code to handle the loading of OS ELF modules from the UEFI file system.
 
 use alloc::string::String;

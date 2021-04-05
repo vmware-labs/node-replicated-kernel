@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Implements the necessary functionality to load the ELF image in machine memory.
 use crate::alloc::vec::Vec;
 

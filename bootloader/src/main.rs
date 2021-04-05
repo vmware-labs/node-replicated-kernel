@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A UEFI based bootloader for an x86-64 kernel.
 //!
 //! This code roughly does the following: looks for a kernel binary

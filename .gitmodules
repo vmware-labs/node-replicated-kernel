@@ -4,9 +4,6 @@
 [submodule "lib/x86"]
 	path = lib/x86
 	url = git@github.com:gz/rust-x86.git
-[submodule "lib/rlib"]
-	path = lib/rlib
-	url = git@github.com:rust-lang/rlibc.git
 [submodule "lib/klogger"]
 	path = lib/klogger
 	url = git@github.com:gz/rust-klogger.git
@@ -22,9 +19,6 @@
 [submodule "lib/termcodes"]
 	path = lib/termcodes
 	url = git@github.com:gz/termcodes.git
-[submodule "lib/processortrace"]
-	path = lib/processortrace
-	url = git@github.com:gz/rust-processortrace.git
 [submodule "lib/driverkit"]
 	path = lib/driverkit
 	url = git@github.com:gz/rust-driverkit.git

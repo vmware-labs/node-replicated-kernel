@@ -1,5 +1,8 @@
 #!/bin/env python
 
+# Copyright © Adam Zegelin (https://github.com/zegelin/qemu-affinity).
+# SPDX-License-Identifier: MIT
+
 import argparse
 from pathlib import Path
 import re

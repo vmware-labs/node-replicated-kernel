@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A set of integration tests to ensure OS functionality is as expected.
 //! These tests spawn a QEMU instance and run the OS on it.
 //! The output from serial/QEMU is parsed and verified for expected output.

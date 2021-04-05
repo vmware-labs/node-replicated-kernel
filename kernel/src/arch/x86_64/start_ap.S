@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #define PROT_MODE_ENABLE 1
 #define PROT_CS 0x0018
 #define PROT_DS 0x0030

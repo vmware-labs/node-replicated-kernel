@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! KCB is the local kernel control that stores all core local state.
 
 use alloc::sync::Arc;

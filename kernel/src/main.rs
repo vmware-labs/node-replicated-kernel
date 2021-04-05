@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! The bespin kernel.
 //!
 //! Here we define the core modules and the main function that the kernel runs after

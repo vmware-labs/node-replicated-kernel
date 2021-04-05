@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 /// Test time facilities in the kernel.
 #[cfg(all(feature = "integration-test", feature = "test-time"))]
 pub fn xmain() {

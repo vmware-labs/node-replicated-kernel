@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! TCache is a physical memory manager used to maintain a smallish page-cache.
 //!
 //! It has the following properties:

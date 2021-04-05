@@ -1,5 +1,8 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// Copyright © edef <edef@edef.eu>
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 // Initial inspiration taken from https://github.com/edef1c/libfringe/blob/master/src/stack/mod.rs
-// (Copyright (c) edef <edef@edef.eu>, APACHE or MIT)
 
 //! A series of different stacks that implement the `Stack` trait
 

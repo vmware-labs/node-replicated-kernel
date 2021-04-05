@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Functionality to boot application cores on x86.
 //!
 //! This code is closely intertwingled with the assembly code in `start_ap.S`,

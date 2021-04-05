@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! TCacheSp is identical to the TCache except that it has
 //! a lot more 4K pages available.
 //!

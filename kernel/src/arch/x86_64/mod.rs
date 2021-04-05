@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Contains initialization code for x86-64 cores.
 //!
 //! The purpose of the arch specific part is to initialize the machine to

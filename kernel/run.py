@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+# Copyright © 2021 VMware, Inc. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0 OR MIT
+
 import argparse
 import os
 import sys

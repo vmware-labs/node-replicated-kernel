@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! NCache is a physical memory manager used to maintain a per-NUMA node memory.
 //!
 //! It can be a cache but should be big enough to contain all memory on a node.

@@ -1,6 +1,3 @@
-[submodule "lib/cpuid"]
-	path = lib/cpuid
-	url = git@github.com:gz/rust-cpuid.git
 [submodule "lib/x86"]
 	path = lib/x86
 	url = git@github.com:gz/rust-x86.git

@@ -41,8 +41,8 @@ arr_macro = "0.1.3"
 static_assertions = "1.1.0"
 bit-vec = { version = "0.6", default-features = false }
 bit_field = "0.10"
+crossbeam-queue = { version = "0.2", default-features = false, features = ["alloc"] }
 # Finally some external crates we forked due to issues with the current upstream version:
-crossbeam-queue = { path = "../lib/crossbeam-queue", default-features = false }
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" } # Need to upstream fixes
 addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
 arrayvec = { git = "https://github.com/gz/arrayvec.git", default-features = false, features = ["array-sizes-129-255"] }

@@ -33,9 +33,3 @@ fn main() {
     let git_hash = String::from_utf8(output.stdout).expect("Could not parse the git hash");
     println!("cargo:rustc-env=GIT_HASH={}", git_hash);
 }
-
-#[allow(unused)]
-fn lkl_includes() {
-    // Linux Kernel:
-    println!("cargo:rustc-link-lib=static=linux");
-}

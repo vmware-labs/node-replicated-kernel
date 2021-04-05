@@ -1,9 +1,6 @@
 fn main() {
     #[cfg(feature = "rumprt")]
     rumprt_includes();
-
-    #[cfg(feature = "lklrt")]
-    lkl_includes();
 }
 
 #[allow(unused)]
@@ -49,10 +46,4 @@ fn rumprt_includes() {
 
     // mmap integration layer
     println!("cargo:rustc-link-lib=static=rumpkern_mman");
-}
-
-#[allow(unused)]
-fn lkl_includes() {
-    // Linux Kernel
-    println!("cargo:rustc-link-lib=static=linux");
 }

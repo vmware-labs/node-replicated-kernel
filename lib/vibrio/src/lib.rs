@@ -31,9 +31,6 @@ pub mod writer;
 #[cfg(feature = "rumprt")]
 pub mod rumprt;
 
-#[cfg(feature = "lklrt")]
-pub mod lklrt;
-
 #[cfg(target_os = "bespin")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

@@ -8,7 +8,6 @@ members = [
     "lib/backtracer",
     "lib/bootloader_shared",
     "lib/crossbeam-queue",
-    "lib/ctest",
     "lib/custom_error",
     "lib/driverkit",
     "lib/elfloader",

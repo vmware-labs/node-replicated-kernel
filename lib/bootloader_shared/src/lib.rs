@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A set of data-structures that are shared between the booatloader
 //! and the kernel (i.e., they are passed by the bootloader
 //! to the kernel).
@@ -5,9 +8,9 @@
 //! # Warnings
 //! This is a bit shady since we pass these structs as in-memory blobs
 //! between the kernel and bootloader (both of which have different
-//! architectural targets). In a best-case scenario where this
-//! just works :O these structs should really stay plain-old-data
-//! without implementations.
+//! architectural targets). In a best-case scenario this
+//! just works, but it's best if these structs stay plain-old-data
+//! without any implementations etc.
 #![no_std]
 extern crate alloc;
 

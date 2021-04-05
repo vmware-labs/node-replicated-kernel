@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use x86::apic::xapic::XAPIC;
 use x86::apic::{ApicControl, ApicId, Icr};
 

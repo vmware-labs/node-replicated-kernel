@@ -7,7 +7,7 @@ authors = [
 
 description = "Experimental OS kernel"
 readme = "README.md"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 build = "build.rs"
 edition = "2018"
 

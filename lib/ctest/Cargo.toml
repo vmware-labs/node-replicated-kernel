@@ -3,6 +3,7 @@ name = "test"
 version = "0.0.1"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 klogger = { path = "../klogger" }

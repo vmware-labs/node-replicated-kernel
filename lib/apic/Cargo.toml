@@ -4,7 +4,7 @@ version = "0.0.1"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 description = "ACPI drivers."
 readme = "README.md"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 keywords = ["os", "acpi", "irq", "driver", "x86"]
 edition = "2018"
 

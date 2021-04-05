@@ -5,6 +5,7 @@ authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 edition = "2018"
 description = "A small user-space runtime that interacts with the bespin kernel."
 build = "build.rs"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "vibrio"

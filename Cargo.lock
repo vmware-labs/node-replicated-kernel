@@ -9,24 +9,12 @@ source = "git+https://github.com/gz/acpica-sys.git#f5d61f4738b82f957e6257d22c8c3
 
 [[package]]
 name = "addr2line"
-version = "0.9.0"
-source = "git+https://github.com/gz/addr2line.git?branch=patch-1#e4bdb737f2ec8b57e92e0c6a9ab93ae38ad4745c"
-dependencies = [
- "fallible-iterator",
- "gimli 0.18.0",
- "intervaltree",
- "lazycell",
- "rustc-demangle",
- "smallvec 0.6.14",
-]
-
-[[package]]
-name = "addr2line"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a55f82cfe485775d02112886f4169bde0c5894d75e79ead7eafe7e40a25e45f7"
 dependencies = [
- "gimli 0.23.0",
+ "gimli",
+ "rustc-demangle",
 ]
 
 [[package]]
@@ -103,15 +91,6 @@ dependencies = [
 
 [[package]]
 name = "arrayvec"
-version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd9fd44efafa8690358b7408d253adf110036b88f55672a933f01d616ad9b1b9"
-dependencies = [
- "nodrop",
-]
-
-[[package]]
-name = "arrayvec"
 version = "0.5.1"
 source = "git+https://github.com/gz/arrayvec.git#5279cfff8a03f038919ac00b101f04c74f6dba12"
 
@@ -168,7 +147,7 @@ version = "0.3.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d117600f438b1707d4e4ae15d3595657288f8235a0eb593e80ecc98ab34e1bc"
 dependencies = [
- "addr2line 0.14.1",
+ "addr2line",
  "cfg-if 1.0.0",
  "libc 0.2.92",
  "miniz_oxide",
@@ -180,9 +159,11 @@ dependencies = [
 name = "backtracer"
 version = "0.0.2"
 dependencies = [
- "addr2line 0.9.0",
+ "addr2line",
  "cfg-if 0.1.10",
+ "gimli",
  "log",
+ "stable_deref_trait",
  "x86",
 ]
 
@@ -191,7 +172,7 @@ name = "bespin"
 version = "0.0.3"
 dependencies = [
  "acpica-sys",
- "addr2line 0.9.0",
+ "addr2line",
  "apic",
  "arr_macro",
  "arrayvec 0.5.1",
@@ -209,6 +190,7 @@ dependencies = [
  "driverkit",
  "elfloader",
  "env_logger 0.8.3",
+ "gimli",
  "hashbrown 0.9.1",
  "klogger",
  "kpi",
@@ -585,12 +567,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fallible-iterator"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -662,21 +638,12 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93787807811884ae7fd9cb4d8e949037c8d0fe1f569eaa553e24633ac5fb4155"
-dependencies = [
- "arrayvec 0.4.12",
- "byteorder 1.4.3",
- "fallible-iterator",
- "stable_deref_trait",
-]
-
-[[package]]
-name = "gimli"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6503fe142514ca4799d4c26297c4248239fe8838d827db6bd6065c6ed29a6ce"
+dependencies = [
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "half"
@@ -764,15 +731,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "intervaltree"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "566d5aa3b5cc5c5809cc1a9c9588d917a634248bfc58f7ea14e354e71595a32c"
-dependencies = [
- "smallvec 1.6.1",
-]
-
-[[package]]
 name = "itoa"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -821,12 +779,6 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 dependencies = [
  "spin",
 ]
-
-[[package]]
-name = "lazycell"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
@@ -957,12 +909,6 @@ dependencies = [
  "rand 0.7.3",
  "static_assertions",
 ]
-
-[[package]]
-name = "nodrop"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 
 [[package]]
 name = "num-traits"

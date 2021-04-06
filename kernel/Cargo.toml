@@ -21,13 +21,13 @@ node-replication = { path = "../lib/node-replication/nr" }
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-# External libraries we use:
 x86 = "0.37"
 klogger = "0.0.7"
 driverkit = "0.4"
 spin = "0.5.2"
 elfloader = "0.12"
 slabmalloc = "0.8"
+# External libraries we use:
 log = "0.4"
 custom_error_core = "1.8"
 smallvec = { version = "1.5.0", default-features = false }
@@ -42,9 +42,10 @@ static_assertions = "1.1.0"
 bit-vec = { version = "0.6", default-features = false }
 bit_field = "0.10"
 crossbeam-queue = { version = "0.2", default-features = false, features = ["alloc"] }
+gimli = { version = "0.23", default-features = false, features = ["read", "endian-reader", "stable_deref_trait"] }
+addr2line = { version = "0.14.1", default-features = false, features = ["rustc-demangle"] }
 # Finally some external crates we forked due to issues with the current upstream version:
 acpica-sys = { git = "https://github.com/gz/acpica-sys.git" } # Need to upstream fixes
-addr2line = { git = "https://github.com/gz/addr2line.git", branch = "patch-1", default-features = false, features = ["alloc", "rustc-demangle"] }
 arrayvec = { git = "https://github.com/gz/arrayvec.git", default-features = false, features = ["array-sizes-129-255"] }
 
 [[bin]]

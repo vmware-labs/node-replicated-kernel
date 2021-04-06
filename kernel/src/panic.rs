@@ -19,7 +19,9 @@ use addr2line;
 use addr2line::gimli;
 use addr2line::Context;
 
-fn new_ctxt(file: &elfloader::ElfBinary) -> Option<Context> {
+fn new_ctxt(
+    file: &elfloader::ElfBinary,
+) -> Option<Context<gimli::EndianRcSlice<gimli::RunTimeEndian>>> {
     let endian = gimli::RunTimeEndian::Little;
 
     fn load_section<S, Endian>(elf: &elfloader::ElfBinary, endian: Endian) -> S
@@ -62,7 +64,7 @@ fn new_ctxt(file: &elfloader::ElfBinary) -> Option<Context> {
 }
 
 fn backtrace_format(
-    context: Option<&Context>,
+    context: Option<&Context<gimli::EndianRcSlice<gimli::RunTimeEndian>>>,
     relocated_offset: u64,
     count: usize,
     frame: &backtracer::Frame,

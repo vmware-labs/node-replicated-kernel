@@ -21,7 +21,6 @@ members = [
     "lib/termcodes",
     "lib/topology",
     "lib/vibrio",
-    "lib/x86",
     "usr/init",
     "usr/rkapps",
 ]

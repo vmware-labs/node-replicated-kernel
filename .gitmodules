@@ -1,6 +1,3 @@
-[submodule "lib/topology"]
-	path = lib/topology
-	url = git@github.com:gz/rust-topology.git
 [submodule "lib/node-replication"]
 	path = lib/node-replication
 	url = git@github.com:gz/node-replication.git

@@ -14,7 +14,6 @@ edition = "2018"
 [dependencies]
 # Our own dependencies:
 apic = { path = "../lib/apic/" }
-atopology = { path = "../lib/topology" }
 node-replication = { path = "../lib/node-replication/nr" }
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
@@ -28,6 +27,7 @@ slabmalloc = "0.8"
 backtracer_core = "0.0.2"
 rawtime = "0.0.3"
 libacpica = "0.0.5"
+atopology = "0.0.3"
 # External libraries we use:
 log = "0.4"
 custom_error_core = "1.8"

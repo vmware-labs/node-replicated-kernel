@@ -74,7 +74,7 @@ version = "0.0.1"
 dependencies = [
  "bit_field 0.10.1",
  "bitflags 1.2.1",
- "driverkit",
+ "driverkit 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.5.13",
  "log",
  "x86",
@@ -205,8 +205,8 @@ dependencies = [
  "crossbeam-utils 0.8.3",
  "cstr_core 0.2.3",
  "csv",
- "custom_error",
- "driverkit",
+ "custom_error_core 1.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "driverkit 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "elfloader",
  "env_logger 0.8.3",
  "hashbrown 0.9.1",
@@ -498,16 +498,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7313c0d620d0cb4dbd9d019e461a4beb501071ff46ec0ab933efb4daa76d73e3"
 
 [[package]]
-name = "custom_error"
-version = "1.6.0"
+name = "custom_error_core"
+version = "1.8.1"
+
+[[package]]
+name = "custom_error_core"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "effdb7344defc15d98b673dcc05ae03a15ae440c832920ed5495ff91c3f84ce0"
 
 [[package]]
 name = "driverkit"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bit_field 0.9.0",
  "byteorder 0.5.3",
- "custom_error",
+ "custom_error_core 1.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.2.92",
+ "log",
+ "matches",
+ "mmap",
+ "x86",
+]
+
+[[package]]
+name = "driverkit"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "429b5a581dc7bd9cddcdb0f180d3c7231f56feaec0959648fa0ab4a30ba4b29b"
+dependencies = [
+ "bit_field 0.9.0",
+ "byteorder 0.5.3",
+ "custom_error_core 1.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.92",
  "log",
  "matches",
@@ -799,6 +821,8 @@ dependencies = [
 [[package]]
 name = "klogger"
 version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb30d50c5011314e85d5ec9ebcc9602da97986cb46259b63d470dac8a2c9faf6"
 dependencies = [
  "heapless",
  "log",

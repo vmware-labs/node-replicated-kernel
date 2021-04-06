@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 
 use cstr_core::CStr;
-use custom_error::custom_error;
+use custom_error_core::custom_error;
 use kpi::process::FrameId;
 
 use crate::arch::memory::paddr_to_kernel_vaddr;

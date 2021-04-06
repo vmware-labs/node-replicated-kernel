@@ -10,7 +10,6 @@ members = [
     "lib/custom_error",
     "lib/driverkit",
     "lib/elfloader",
-    "lib/klogger",
     "lib/kpi",
     "lib/lineup",
     "lib/node-replication/cnr",

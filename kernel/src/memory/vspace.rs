@@ -10,7 +10,7 @@ use core::convert::TryInto;
 use core::fmt;
 
 use bit_vec::BitVec;
-use custom_error::custom_error;
+use custom_error_core::custom_error;
 use kpi::SystemCallError;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 

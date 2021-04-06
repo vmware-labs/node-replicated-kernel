@@ -17,9 +17,7 @@ slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }
 backtracer = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
-driverkit = { path = "../lib/driverkit/" }
 rawtime = { path = "../lib/rawtime" }
-custom_error = { path = "../lib/custom_error" }
 topology = { path = "../lib/topology" }
 node-replication = { path = "../lib/node-replication/nr" }
 cnr = { path = "../lib/node-replication/cnr" }
@@ -28,8 +26,10 @@ bootloader_shared = { path = "../lib/bootloader_shared" }
 # External libraries we use:
 x86 = "0.37"
 klogger = "0.0.7"
+driverkit = "0.4"
 spin = "0.5.2"
 log = "0.4"
+custom_error_core = "1.8"
 smallvec = { version = "1.5.0", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 logos = { version = "0.9.7", default-features = false, features = ["export_derive"] }

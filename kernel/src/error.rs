@@ -3,7 +3,7 @@
 
 use alloc::string::ToString;
 
-use custom_error::custom_error;
+use custom_error_core::custom_error;
 
 use kpi::SystemCallError;
 

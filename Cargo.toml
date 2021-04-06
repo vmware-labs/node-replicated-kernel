@@ -10,7 +10,6 @@ members = [
     "lib/lineup",
     "lib/node-replication/cnr",
     "lib/node-replication/nr",
-    "lib/rawtime",
     "lib/rumpkernel",
     "lib/topology",
     "lib/vibrio",

@@ -12,13 +12,13 @@ name = "vibrio"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+kpi = { path = "../kpi" }
+lineup = { path = "../lineup" }
 bitflags = "1.2"
 log = "0.4"
 x86 = "0.37"
 slabmalloc = "0.8"
-kpi = { path = "../kpi" }
-rawtime = { path = "../rawtime" }
-lineup = { path = "../lineup" }
+rawtime = "0.0.3"
 rumpkernel = { path = "../rumpkernel", optional = true }
 spin = "0.5.2"
 cstr_core = { version = "0.2.3", default-features = false , features = ["alloc"] }

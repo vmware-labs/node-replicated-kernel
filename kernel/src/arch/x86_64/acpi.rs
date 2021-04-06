@@ -7,8 +7,8 @@ use core::alloc::Layout;
 use core::ffi::VaList;
 use core::ptr;
 
-use acpica_sys::*;
 use cstr_core::CStr;
+use libacpica::*;
 use log::trace;
 
 use crate::alloc::alloc;

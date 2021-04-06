@@ -3,11 +3,6 @@
 version = 3
 
 [[package]]
-name = "acpica-sys"
-version = "0.0.4"
-source = "git+https://github.com/gz/acpica-sys.git#f5d61f4738b82f957e6257d22c8c3202e33f0a08"
-
-[[package]]
 name = "addr2line"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -173,7 +168,6 @@ dependencies = [
 name = "bespin"
 version = "0.0.3"
 dependencies = [
- "acpica-sys",
  "addr2line",
  "apic",
  "arr_macro",
@@ -186,7 +180,7 @@ dependencies = [
  "cnr",
  "crossbeam-queue 0.2.3",
  "crossbeam-utils 0.8.3",
- "cstr_core 0.2.3",
+ "cstr_core",
  "csv",
  "custom_error_core",
  "driverkit",
@@ -197,6 +191,7 @@ dependencies = [
  "klogger",
  "kpi",
  "lazy_static",
+ "libacpica",
  "libc 0.2.92",
  "log",
  "logos",
@@ -431,19 +426,11 @@ checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 
 [[package]]
 name = "cstr_core"
-version = "0.1.2"
-source = "git+https://github.com/gz/cstr_core.git#9a1f8d789e938e2cdff9e592d578a59e9c052222"
-dependencies = [
- "cty 0.1.5",
-]
-
-[[package]]
-name = "cstr_core"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2807c5e92588b6bf1c8c0354af2a4f079d0586c683df322aea719d5dc9b8d5bb"
 dependencies = [
- "cty 0.2.1",
+ "cty",
  "memchr",
 ]
 
@@ -468,12 +455,6 @@ checksum = "2b2466559f260f48ad25fe6317b3c8dac77b5bdb5763ac7d9d6103530663bc90"
 dependencies = [
  "memchr",
 ]
-
-[[package]]
-name = "cty"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4e1d41c471573612df00397113557693b5bf5909666a8acb253930612b93312"
 
 [[package]]
 name = "cty"
@@ -708,7 +689,7 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 name = "init"
 version = "0.1.0"
 dependencies = [
- "cstr_core 0.2.3",
+ "cstr_core",
  "lazy_static",
  "libm",
  "lineup",
@@ -768,6 +749,12 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 dependencies = [
  "spin",
 ]
+
+[[package]]
+name = "libacpica"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8dd3dc6d0b6a0f182009726758232952246a6f78f834ce1291526bf92ab98a7"
 
 [[package]]
 name = "libc"
@@ -1571,11 +1558,11 @@ dependencies = [
 
 [[package]]
 name = "topology"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
- "acpica-sys",
- "cstr_core 0.1.2",
+ "cstr_core",
  "lazy_static",
+ "libacpica",
  "log",
  "x86",
 ]
@@ -1667,7 +1654,7 @@ dependencies = [
  "arrayvec 0.7.0",
  "bitflags 1.2.1",
  "crossbeam-utils 0.8.3",
- "cstr_core 0.2.3",
+ "cstr_core",
  "hashbrown 0.6.3",
  "kpi",
  "lazy_static",

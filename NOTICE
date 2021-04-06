@@ -9,7 +9,7 @@ notices and license terms. Your use of these subcomponents is subject to the
 terms and conditions of the subcomponent's license.
 
 * The binary files `bootloader/OVMF_CODE.fd` and `bootloader/OVMF_VARS.fd` are
-  used when executing the project in QEMU. They are pre-compiled binaries from
+  used when executing the project in a VM. These are pre-compiled binaries from
   the Tianocore sources (https://github.com/tianocore/edk2) and licensed under
   the BSD-2-Clause-Patent.
 

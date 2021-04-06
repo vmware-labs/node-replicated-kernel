@@ -13,7 +13,6 @@ edition = "2018"
 
 [dependencies]
 # Our own dependencies:
-slabmalloc = { path = "../lib/slabmalloc" }
 backtracer = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
 rawtime = { path = "../lib/rawtime" }
@@ -28,6 +27,7 @@ klogger = "0.0.7"
 driverkit = "0.4"
 spin = "0.5.2"
 elfloader = "0.12"
+slabmalloc = "0.8"
 log = "0.4"
 custom_error_core = "1.8"
 smallvec = { version = "1.5.0", default-features = false }

@@ -1,6 +1,3 @@
-[submodule "lib/slabmalloc"]
-	path = lib/slabmalloc
-	url = git@github.com:gz/rust-slabmalloc.git
 [submodule "lib/backtracer"]
 	path = lib/backtracer
 	url = git@github.com:gz/backtracer

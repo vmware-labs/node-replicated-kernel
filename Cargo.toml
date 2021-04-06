@@ -13,7 +13,6 @@ members = [
     "lib/node-replication/nr",
     "lib/rawtime",
     "lib/rumpkernel",
-    "lib/slabmalloc",
     "lib/termcodes",
     "lib/topology",
     "lib/vibrio",

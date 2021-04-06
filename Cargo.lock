@@ -564,19 +564,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44533bbbb3bb3c1fa17d9f2e4e38bbbaf8396ba82193c4cb1b6445d711445d36"
-dependencies = [
- "atty",
- "humantime 1.3.0",
- "log",
- "regex 1.4.5",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17392a012ea30ef05a610aa97dfb49496e71c9f676b27879922ea5bdf60d9d3f"
@@ -1512,12 +1499,11 @@ dependencies = [
 
 [[package]]
 name = "slabmalloc"
-version = "0.7.0"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62cdd896cba1a540db10f710417bfca10e6afb96d01b32622da43feb67a5c924"
 dependencies = [
- "env_logger 0.7.1",
  "log",
- "rand 0.7.3",
- "spin",
 ]
 
 [[package]]

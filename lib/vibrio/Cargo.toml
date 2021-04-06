@@ -15,8 +15,8 @@ crate-type = ["staticlib", "rlib"]
 bitflags = "1.2"
 log = "0.4"
 x86 = "0.37"
+slabmalloc = "0.8"
 kpi = { path = "../kpi" }
-slabmalloc = { path = "../slabmalloc" }
 rawtime = { path = "../rawtime" }
 lineup = { path = "../lineup" }
 rumpkernel = { path = "../rumpkernel", optional = true }

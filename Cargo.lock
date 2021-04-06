@@ -156,7 +156,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "backtracer"
+name = "backtracer_core"
 version = "0.0.2"
 dependencies = [
  "addr2line",
@@ -176,7 +176,7 @@ dependencies = [
  "apic",
  "arr_macro",
  "arrayvec 0.5.1",
- "backtracer",
+ "backtracer_core",
  "bit-vec",
  "bit_field 0.10.1",
  "bootloader_shared",
@@ -803,7 +803,7 @@ name = "lineup"
 version = "0.0.1"
 dependencies = [
  "arr_macro",
- "backtracer",
+ "backtracer_core",
  "crossbeam-queue 0.2.3",
  "crossbeam-utils 0.6.6",
  "either",

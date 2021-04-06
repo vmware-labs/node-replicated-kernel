@@ -11,7 +11,7 @@ use crate::arch;
 use crate::kcb;
 #[cfg(target_os = "none")]
 use crate::ExitReason;
-use backtracer;
+use backtracer_core;
 
 use alloc::rc::Rc;
 
@@ -67,13 +67,13 @@ fn backtrace_format(
     context: Option<&Context<gimli::EndianRcSlice<gimli::RunTimeEndian>>>,
     relocated_offset: u64,
     count: usize,
-    frame: &backtracer::Frame,
+    frame: &backtracer_core::Frame,
 ) -> bool {
     let ip = frame.ip();
     sprint!("frame #{:<2} - {:#02$x}", count, ip as usize, 20);
     let mut resolved = false;
 
-    let _r = backtracer::resolve(context, relocated_offset, ip, |symbol| {
+    let _r = backtracer_core::resolve(context, relocated_offset, ip, |symbol| {
         if !resolved {
             resolved = true;
         } else {
@@ -122,10 +122,13 @@ pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
                 let context = new_ctxt(&elf_binary);
 
                 let mut count = 0;
-                backtracer::trace_from(backtracer::EntryPoint::new(rbp, rsp, rip), |frame| {
-                    count += 1;
-                    backtrace_format(context.as_ref(), relocated_offset, count, frame)
-                });
+                backtracer_core::trace_from(
+                    backtracer_core::EntryPoint::new(rbp, rsp, rip),
+                    |frame| {
+                        count += 1;
+                        backtrace_format(context.as_ref(), relocated_offset, count, frame)
+                    },
+                );
             }
             Err(e) => {
                 sprintln!("Backtrace unavailable (can't parse kernel binary: '{}')", e);
@@ -153,7 +156,7 @@ pub fn backtrace() {
             Ok(elf_binary) => {
                 let context = new_ctxt(&elf_binary);
                 let mut count = 0;
-                backtracer::trace(|frame| {
+                backtracer_core::trace(|frame| {
                     count += 1;
                     backtrace_format(context.as_ref(), relocated_offset, count, frame)
                 });
@@ -175,7 +178,7 @@ pub fn backtrace_no_context() {
         kcb::try_get_kcb().map_or(0x0, |k| k.arch.kernel_args().kernel_elf_offset.as_u64());
 
     let mut count = 0;
-    backtracer::trace(|frame| {
+    backtracer_core::trace(|frame| {
         count += 1;
         backtrace_format(None, relocation_offset, count, frame)
     });

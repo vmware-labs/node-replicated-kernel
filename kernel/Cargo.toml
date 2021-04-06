@@ -13,7 +13,7 @@ edition = "2018"
 
 [dependencies]
 # Our own dependencies:
-backtracer = { path = "../lib/backtracer/" }
+backtracer_core = { path = "../lib/backtracer/" }
 apic = { path = "../lib/apic/" }
 rawtime = { path = "../lib/rawtime" }
 topology = { path = "../lib/topology" }

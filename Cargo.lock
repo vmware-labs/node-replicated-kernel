@@ -757,7 +757,7 @@ dependencies = [
  "heapless",
  "log",
  "spin",
- "termcodes 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "termcodes",
  "x86",
 ]
 
@@ -1545,10 +1545,6 @@ dependencies = [
  "remove_dir_all",
  "winapi 0.3.9",
 ]
-
-[[package]]
-name = "termcodes"
-version = "0.0.1"
 
 [[package]]
 name = "termcodes"

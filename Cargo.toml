@@ -12,7 +12,6 @@ members = [
     "lib/node-replication/nr",
     "lib/rawtime",
     "lib/rumpkernel",
-    "lib/termcodes",
     "lib/topology",
     "lib/vibrio",
     "usr/init",

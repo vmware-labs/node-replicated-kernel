@@ -1,6 +1,3 @@
-[submodule "lib/klogger"]
-	path = lib/klogger
-	url = git@github.com:gz/rust-klogger.git
 [submodule "lib/elfloader"]
 	path = lib/elfloader
 	url = git@github.com:gz/rust-elfloader.git

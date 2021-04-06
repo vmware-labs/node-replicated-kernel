@@ -7,7 +7,7 @@ build = "build.rs"
 links = "rumpkernel"
 
 [dependencies]
-rumpkernel = { path = "../../lib/rumpkernel" }
+rumpkernel = "0.0.2"
 vibrio = { path = "../../lib/vibrio", features = ["rumprt"] }
 
 [build-dependencies]

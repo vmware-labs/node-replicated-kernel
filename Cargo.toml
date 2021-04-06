@@ -7,7 +7,6 @@ members = [
     "lib/apic",
     "lib/backtracer",
     "lib/bootloader_shared",
-    "lib/elfloader",
     "lib/kpi",
     "lib/lineup",
     "lib/node-replication/cnr",

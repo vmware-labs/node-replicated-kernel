@@ -7,8 +7,6 @@ members = [
     "lib/apic",
     "lib/backtracer",
     "lib/bootloader_shared",
-    "lib/custom_error",
-    "lib/driverkit",
     "lib/elfloader",
     "lib/kpi",
     "lib/lineup",

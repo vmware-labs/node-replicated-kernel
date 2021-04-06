@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Defines the public kernel interface that is specific to x86-64.
 
 #![allow(safe_packed_borrows)]

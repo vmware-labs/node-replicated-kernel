@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! The system call interface to the bespin kernel.
 //!
 //! The function naming convention syscall_$x_$y where

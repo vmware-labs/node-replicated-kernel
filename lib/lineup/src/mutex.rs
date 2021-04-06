@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use core::cell::Cell;
 use core::hint::spin_loop;
 use core::ptr;

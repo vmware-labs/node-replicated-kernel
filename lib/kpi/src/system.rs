@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Data structures to exchange system-wide information between kernel and user-space.
 
 use serde::{Deserialize, Serialize};

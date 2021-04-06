@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Defines the public kernel interface (i.e., system call interface)
 //! and associated data-types.
 #![no_std]

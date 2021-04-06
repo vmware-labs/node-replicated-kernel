@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! An implementation of TLS variant 2 (but we currently support only static linking)
 //!
 //! This is a pretty simple case:

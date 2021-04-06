@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A mechanism for upcalls that the scheduler uses to notify
 //! an application about events: a thread is blocking etc.
 //!

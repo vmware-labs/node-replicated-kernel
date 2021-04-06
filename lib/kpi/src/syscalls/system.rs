@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! System calls to query for generic system-wide information.
 //! (topology, memory, device hardware etc.)
 

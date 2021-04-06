@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A silly implementation of get/set tcb/scb on unix
 //!
 //! Super meta since we use posix/thread_local to

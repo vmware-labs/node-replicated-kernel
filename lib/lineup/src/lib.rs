@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //!  A user-space thread scheduler with support for synchronization primitives.
 
 #![feature(drain_filter)]

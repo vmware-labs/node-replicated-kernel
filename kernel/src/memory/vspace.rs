@@ -33,7 +33,7 @@ impl TlbFlushHandle {
         }
     }
 
-    pub fn add_core(&mut self, gtid: topology::GlobalThreadId) {
+    pub fn add_core(&mut self, gtid: atopology::GlobalThreadId) {
         self.core_map.set(gtid.try_into().unwrap(), true);
     }
 }

@@ -25,7 +25,7 @@ use super::*;
 /// Implements the `GrowBackend` to hand pages out.
 pub struct NCache {
     /// Which node the memory in this cache is from.
-    node: topology::NodeId,
+    node: atopology::NodeId,
     /// A vector of free, cached base-page addresses
     base_page_addresses: arrayvec::ArrayVec<[PAddr; 131070]>,
     /// A vector of free, cached large-page addresses
@@ -35,7 +35,7 @@ pub struct NCache {
 impl crate::kcb::MemManager for NCache {}
 
 impl NCache {
-    pub fn _new(node: topology::NodeId) -> NCache {
+    pub fn _new(node: atopology::NodeId) -> NCache {
         NCache {
             node,
             base_page_addresses: arrayvec::ArrayVec::new(),
@@ -111,7 +111,10 @@ impl NCache {
     }
 
     /// Initialize an uninitialized NCache and return it.
-    pub fn init<'a>(ncache: &'a mut MaybeUninit<NCache>, node: topology::NodeId) -> &'a mut NCache {
+    pub fn init<'a>(
+        ncache: &'a mut MaybeUninit<NCache>,
+        node: atopology::NodeId,
+    ) -> &'a mut NCache {
         unsafe {
             (*(ncache.as_mut_ptr())).node = node;
             ncache.assume_init_mut()

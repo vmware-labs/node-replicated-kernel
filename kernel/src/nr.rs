@@ -28,7 +28,7 @@ use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, Pro
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
-    CurrentExecutor(topology::GlobalThreadId),
+    CurrentExecutor(atopology::GlobalThreadId),
     ProcessInfo(Pid),
     FileRead(Pid, FD, Buffer, Len, Offset),
     FileInfo(Pid, Filename, u64),
@@ -46,8 +46,8 @@ pub enum Op {
     /// Assign a core to a process.
     ProcAllocateCore(
         Pid,
-        Option<topology::NodeId>,
-        Option<topology::GlobalThreadId>,
+        Option<atopology::NodeId>,
+        Option<atopology::GlobalThreadId>,
         VAddr,
     ),
     /// Assign a physical frame to a process (returns a FrameId).
@@ -81,7 +81,7 @@ pub enum NodeResult<E: Executor> {
     ProcCreated(Pid),
     ProcDestroyed,
     ProcessInfo(ProcessInfo),
-    CoreAllocated(topology::GlobalThreadId, Eid),
+    CoreAllocated(atopology::GlobalThreadId, Eid),
     VectorAllocated(u64),
     ExecutorsCreated(usize),
     Mapped,
@@ -111,7 +111,7 @@ impl<E: Executor> Default for NodeResult<E> {
 pub struct KernelNode<P: Process> {
     current_pid: Pid,
     process_map: HashMap<Pid, Box<P>>,
-    scheduler_map: HashMap<topology::GlobalThreadId, Arc<P::E>>,
+    scheduler_map: HashMap<atopology::GlobalThreadId, Arc<P::E>>,
     fs: MemFS,
 }
 
@@ -423,9 +423,9 @@ impl<P: Process> KernelNode<P> {
     pub fn allocate_core_to_process(
         pid: Pid,
         entry_point: VAddr,
-        affinity: Option<topology::NodeId>,
-        gtid: Option<topology::GlobalThreadId>,
-    ) -> Result<(topology::GlobalThreadId, Eid), KError> {
+        affinity: Option<atopology::NodeId>,
+        gtid: Option<atopology::GlobalThreadId>,
+    ) -> Result<(atopology::GlobalThreadId, Eid), KError> {
         let kcb = super::kcb::get_kcb();
 
         kcb.replica

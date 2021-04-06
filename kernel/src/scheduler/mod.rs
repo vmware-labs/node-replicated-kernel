@@ -22,7 +22,7 @@ pub fn schedule() -> ! {
     // Then we should set timer to periodically advance the state
     #[cfg(target_os = "none")]
     let is_replica_main_thread = {
-        let thread = topology::MACHINE_TOPOLOGY.current_thread();
+        let thread = atopology::MACHINE_TOPOLOGY.current_thread();
         thread.node().is_none()
             || thread
                 .node()

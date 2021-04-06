@@ -110,7 +110,7 @@ pub trait Process {
     fn try_reserve_executors(
         &self,
         how_many: usize,
-        affinity: topology::NodeId,
+        affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
     fn allocate_executors(&mut self, frame: Frame) -> Result<usize, ProcessError>;
 
@@ -118,7 +118,8 @@ pub trait Process {
 
     fn vspace(&self) -> &Self::A;
 
-    fn get_executor(&mut self, for_region: topology::NodeId) -> Result<Box<Self::E>, ProcessError>;
+    fn get_executor(&mut self, for_region: atopology::NodeId)
+        -> Result<Box<Self::E>, ProcessError>;
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)>;
 
@@ -407,16 +408,16 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
 pub fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
     trace!("Allocate dispatchers");
 
-    let mut create_per_region: Vec<(topology::NodeId, usize)> =
-        Vec::with_capacity(topology::MACHINE_TOPOLOGY.num_nodes() + 1);
+    let mut create_per_region: Vec<(atopology::NodeId, usize)> =
+        Vec::with_capacity(atopology::MACHINE_TOPOLOGY.num_nodes() + 1);
 
-    if topology::MACHINE_TOPOLOGY.num_nodes() > 0 {
-        for node in topology::MACHINE_TOPOLOGY.nodes() {
+    if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
+        for node in atopology::MACHINE_TOPOLOGY.nodes() {
             let threads = node.threads().count();
             create_per_region.push((node.id, threads));
         }
     } else {
-        create_per_region.push((0, topology::MACHINE_TOPOLOGY.num_threads()));
+        create_per_region.push((0, atopology::MACHINE_TOPOLOGY.num_threads()));
     }
 
     for (affinity, to_create) in create_per_region {

@@ -67,7 +67,7 @@ enum CmdToken {
 
     /// Regular expressions for parsing log-filter or file-path names.
     ///
-    /// Example: 'bespin::memory=debug,topology::acpi=debug'
+    /// Example: 'bespin::memory=debug,atopology::acpi=debug'
     /// TODO(improve): the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
     #[regex = "[a-zA-Z:,=]+"]
     LogComplex,
@@ -184,7 +184,7 @@ impl Default for BootloaderArguments {
 /// State which allows to do memory management for a particular
 /// NUMA node on a given core.
 pub struct PhysicalMemoryArena {
-    pub affinity: topology::NodeId,
+    pub affinity: atopology::NodeId,
 
     /// A handle to the global memory manager.
     pub gmanager: Option<&'static GlobalMemory>,
@@ -197,19 +197,19 @@ pub struct PhysicalMemoryArena {
 }
 
 impl PhysicalMemoryArena {
-    fn new(node: topology::NodeId, global_memory: &'static GlobalMemory) -> Self {
+    fn new(node: atopology::NodeId, global_memory: &'static GlobalMemory) -> Self {
         PhysicalMemoryArena {
             affinity: node,
             gmanager: Some(global_memory),
             pmanager: Some(RefCell::new(TCache::new(
-                topology::MACHINE_TOPOLOGY.current_thread().id,
+                atopology::MACHINE_TOPOLOGY.current_thread().id,
                 node,
             ))),
             zone_allocator: RefCell::new(ZoneAllocator::new()),
         }
     }
 
-    const fn uninit_with_node(node: topology::NodeId) -> Self {
+    const fn uninit_with_node(node: atopology::NodeId) -> Self {
         PhysicalMemoryArena {
             affinity: node,
             gmanager: None,
@@ -246,7 +246,7 @@ pub struct Kcb<A: ArchSpecificKcb> {
     pub physical_memory: PhysicalMemoryArena,
 
     /// Which NUMA node this KCB / core belongs to
-    pub node: topology::NodeId,
+    pub node: atopology::NodeId,
 
     /// A dummy in-memory file system to test the memory
     /// system and file system operations with NR.
@@ -271,7 +271,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         cmdline: BootloaderArguments,
         emanager: TCacheSp,
         arch: A,
-        node: topology::NodeId,
+        node: atopology::NodeId,
     ) -> Kcb<A> {
         Kcb {
             arch,
@@ -317,14 +317,14 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.physical_memory.gmanager = Some(gm);
     }
 
-    pub fn set_allocation_affinity(&mut self, node: topology::NodeId) -> Result<(), KError> {
+    pub fn set_allocation_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
         let node_idx: usize = node.try_into().unwrap();
         if node == self.physical_memory.affinity {
             // Allocation affinity is already set to correct NUMA node
             return Ok(());
         }
 
-        if node_idx < self.memory_arenas.len() && node_idx < topology::MACHINE_TOPOLOGY.num_nodes()
+        if node_idx < self.memory_arenas.len() && node_idx < atopology::MACHINE_TOPOLOGY.num_nodes()
         {
             let gmanager = self
                 .physical_memory

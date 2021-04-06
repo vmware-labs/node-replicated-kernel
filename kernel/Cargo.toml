@@ -14,7 +14,7 @@ edition = "2018"
 [dependencies]
 # Our own dependencies:
 apic = { path = "../lib/apic/" }
-topology = { path = "../lib/topology" }
+atopology = { path = "../lib/topology" }
 node-replication = { path = "../lib/node-replication/nr" }
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }

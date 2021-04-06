@@ -488,7 +488,7 @@ pub struct Ring3Executor {
     pub eid: Eid,
 
     /// Memory affinity of the Executor
-    pub affinity: topology::NodeId,
+    pub affinity: atopology::NodeId,
 
     /// Virtual CPU control used by the user-space upcall mechanism.
     pub vcpu_ctl: VAddr,
@@ -523,7 +523,7 @@ impl Ring3Executor {
         eid: Eid,
         vcpu_ctl_kernel: VAddr,
         region: (VAddr, VAddr),
-        affinity: topology::NodeId,
+        affinity: atopology::NodeId,
     ) -> Self {
         let (from, to) = region;
         assert!(to > from, "Malformed region");
@@ -616,7 +616,7 @@ impl Executor for Ring3Executor {
                 self.stack_top(),
                 cpu_ctl,
                 kpi::upcall::NEW_CORE,
-                topology::MACHINE_TOPOLOGY.current_thread().id,
+                atopology::MACHINE_TOPOLOGY.current_thread().id,
             )
         }
     }
@@ -1000,7 +1000,7 @@ impl Process for Ring3Process {
     fn try_reserve_executors(
         &self,
         how_many: usize,
-        affinity: topology::NodeId,
+        affinity: atopology::NodeId,
     ) -> Result<(), TryReserveError> {
         // TODO(correctness): Lacking impl
         Ok(())
@@ -1016,7 +1016,7 @@ impl Process for Ring3Process {
 
     fn get_executor(
         &mut self,
-        for_region: topology::NodeId,
+        for_region: atopology::NodeId,
     ) -> Result<Box<Ring3Executor>, ProcessError> {
         match &mut self.executor_cache[for_region as usize] {
             Some(ref mut executor_list) => {
@@ -1178,7 +1178,7 @@ pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     allocate_dispatchers(pid)?;
 
     // Set current thread to run executor from our process (on the current core)
-    let thread = topology::MACHINE_TOPOLOGY.current_thread();
+    let thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later

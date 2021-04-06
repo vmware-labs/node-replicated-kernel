@@ -735,7 +735,7 @@ impl GlobalMemory {
             let ncache_ptr = ncache_memory.uninitialized::<ncache::NCache>();
 
             let ncache: &'static mut ncache::NCache =
-                ncache::NCache::init(ncache_ptr, affinity as topology::NodeId);
+                ncache::NCache::init(ncache_ptr, affinity as atopology::NodeId);
             debug_assert_eq!(
                 &*ncache as *const _ as u64,
                 paddr_to_kernel_vaddr(ncache_memory_addr).as_u64()
@@ -906,12 +906,12 @@ pub trait PhysicalAllocator {
 pub struct Frame {
     pub base: PAddr,
     pub size: usize,
-    pub affinity: topology::NodeId,
+    pub affinity: atopology::NodeId,
 }
 
 impl Frame {
     /// Make a new Frame at `base` with `size`
-    pub const fn const_new(base: PAddr, size: usize, node: topology::NodeId) -> Frame {
+    pub const fn const_new(base: PAddr, size: usize, node: atopology::NodeId) -> Frame {
         //assert_ne!(base, PAddr::zero());
         //assert_eq!(base % BASE_PAGE_SIZE, 0);
         //assert!(node < MAX_TOPOLOGIES);
@@ -924,7 +924,7 @@ impl Frame {
     }
 
     /// Create a new Frame given a PAddr range (from, to)
-    pub fn from_range(range: (PAddr, PAddr), node: topology::NodeId) -> Frame {
+    pub fn from_range(range: (PAddr, PAddr), node: atopology::NodeId) -> Frame {
         assert_eq!(range.0 % BASE_PAGE_SIZE, 0);
         assert_eq!(range.1 % BASE_PAGE_SIZE, 0);
         assert!(range.0 < range.1);
@@ -937,7 +937,7 @@ impl Frame {
     }
 
     /// Make a new Frame at `base` with `size` with affinity `node`.
-    pub fn new(base: PAddr, size: usize, node: topology::NodeId) -> Frame {
+    pub fn new(base: PAddr, size: usize, node: atopology::NodeId) -> Frame {
         assert_eq!(base % BASE_PAGE_SIZE, 0);
         assert_eq!(size % BASE_PAGE_SIZE, 0);
 

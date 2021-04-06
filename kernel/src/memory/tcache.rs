@@ -17,7 +17,7 @@ use super::*;
 /// Implements the `ReapBackend` to give pages back.
 pub struct TCache {
     /// Which node the memory in this cache is from.
-    node: topology::NodeId,
+    node: atopology::NodeId,
     /// A vector of free, cached base-page addresses.
     base_page_addresses: arrayvec::ArrayVec<[PAddr; 381]>,
     /// A vector of free, cached large-page addresses.
@@ -27,7 +27,7 @@ pub struct TCache {
 impl crate::kcb::MemManager for TCache {}
 
 impl TCache {
-    pub fn new(_thread: topology::ThreadId, node: topology::NodeId) -> TCache {
+    pub fn new(_thread: atopology::ThreadId, node: atopology::NodeId) -> TCache {
         TCache {
             node,
             base_page_addresses: arrayvec::ArrayVec::new(),
@@ -36,8 +36,8 @@ impl TCache {
     }
 
     pub fn new_with_frame(
-        thread: topology::ThreadId,
-        node: topology::NodeId,
+        thread: atopology::ThreadId,
+        node: atopology::NodeId,
         mem: Frame,
     ) -> TCache {
         let mut tcache = TCache::new(thread, node);

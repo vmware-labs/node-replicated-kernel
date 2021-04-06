@@ -190,9 +190,9 @@ impl Arch86Kcb {
         replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
         idx_token: MlnrReplicaToken,
     ) {
-        let thread = topology::MACHINE_TOPOLOGY.current_thread();
+        let thread = atopology::MACHINE_TOPOLOGY.current_thread();
         self.id = thread.id as usize;
-        self.max_threads = match topology::MACHINE_TOPOLOGY.nodes().nth(0) {
+        self.max_threads = match atopology::MACHINE_TOPOLOGY.nodes().nth(0) {
             Some(node) => node.threads().count(),
             None => 1,
         };
@@ -310,7 +310,7 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
     }
 
     fn hwthread_id(&self) -> u64 {
-        topology::MACHINE_TOPOLOGY.current_thread().id
+        atopology::MACHINE_TOPOLOGY.current_thread().id
     }
 }
 

@@ -175,7 +175,7 @@ impl Process for UnixProcess {
     fn try_reserve_executors(
         &self,
         _how_many: usize,
-        _affinity: topology::NodeId,
+        _affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError> {
         Ok(())
     }
@@ -194,7 +194,7 @@ impl Process for UnixProcess {
 
     fn get_executor(
         &mut self,
-        _for_region: topology::NodeId,
+        _for_region: atopology::NodeId,
     ) -> Result<Box<Self::E>, ProcessError> {
         Ok(Box::new(UnixThread::default()))
     }

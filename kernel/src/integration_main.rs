@@ -139,7 +139,7 @@ pub fn xmain() {
 /// have no numa nodes.
 #[cfg(all(feature = "integration-test", feature = "test-acpi-smoke"))]
 pub fn xmain() {
-    use topology::MACHINE_TOPOLOGY;
+    use atopology::MACHINE_TOPOLOGY;
 
     // We have 2 cores ...
     assert_eq!(MACHINE_TOPOLOGY.num_threads(), 2);
@@ -169,7 +169,7 @@ pub fn xmain() {
 /// and correctly parse a large NUMA topology (8 sockets, 80 cores).
 #[cfg(all(feature = "integration-test", feature = "test-acpi-topology"))]
 pub fn xmain() {
-    use topology::MACHINE_TOPOLOGY;
+    use atopology::MACHINE_TOPOLOGY;
 
     // We have 80 cores ...
     assert_eq!(MACHINE_TOPOLOGY.num_threads(), 80);
@@ -247,8 +247,8 @@ pub fn xmain() {
     use alloc::sync::Arc;
     use apic::ApicDriver;
     use arch::coreboot;
+    use atopology;
     use core::sync::atomic::{AtomicBool, Ordering};
-    use topology;
     use x86::apic::ApicId;
 
     // Entry point for app. This function is called from start_ap.S:
@@ -268,10 +268,10 @@ pub fn xmain() {
         loop {}
     }
 
-    assert_eq!(topology::MACHINE_TOPOLOGY.num_threads(), 2, "No 2nd core?");
+    assert_eq!(atopology::MACHINE_TOPOLOGY.num_threads(), 2, "No 2nd core?");
 
-    let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
-    let thread_to_boot = topology::MACHINE_TOPOLOGY
+    let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
+    let thread_to_boot = atopology::MACHINE_TOPOLOGY
         .threads()
         .find(|t| t != &bsp_thread)
         .expect("Didn't find an application core to boot...");
@@ -318,8 +318,8 @@ pub fn xmain() {
     use crate::stack::{OwnedStack, Stack};
     use apic::ApicDriver;
     use arch::coreboot;
+    use atopology;
     use core::sync::atomic::{AtomicBool, Ordering};
-    use topology;
     use x86::apic::ApicId;
 
     use alloc::sync::Arc;
@@ -342,10 +342,10 @@ pub fn xmain() {
         loop {}
     }
 
-    assert_eq!(topology::MACHINE_TOPOLOGY.num_threads(), 4, "Need 4 cores");
+    assert_eq!(atopology::MACHINE_TOPOLOGY.num_threads(), 4, "Need 4 cores");
 
-    let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
-    let thread = topology::MACHINE_TOPOLOGY
+    let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
+    let thread = atopology::MACHINE_TOPOLOGY
         .threads()
         .find(|t| t != &bsp_thread)
         .unwrap();
@@ -445,7 +445,7 @@ pub fn xmain() {
 pub fn xmain() {
     use alloc::sync::Arc;
     use arch::tlb::advance_replica;
-    let threads = topology::MACHINE_TOPOLOGY.num_threads();
+    let threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
     unsafe {
         let start = rawtime::Instant::now();
@@ -475,13 +475,13 @@ pub fn xmain() {
         TriggerMode,
     };
 
-    let threads = topology::MACHINE_TOPOLOGY.num_threads();
+    let threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
     unsafe {
         let start = rawtime::Instant::now();
 
         let mut shootdowns = Vec::with_capacity(threads);
-        for t in topology::MACHINE_TOPOLOGY.threads() {
+        for t in atopology::MACHINE_TOPOLOGY.threads() {
             let id = t.apic_id();
             info!(
                 "{:?} logical {:?} cluster {:?} cluster rel. logical {:?}",

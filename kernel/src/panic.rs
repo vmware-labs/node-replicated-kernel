@@ -190,7 +190,7 @@ pub fn backtrace_no_context() {
 pub fn panic_impl(info: &PanicInfo) -> ! {
     sprint!(
         "System panic encountered (On H/W thread {})",
-        topology::MACHINE_TOPOLOGY.current_thread().id
+        atopology::MACHINE_TOPOLOGY.current_thread().id
     );
 
     if let Some(message) = info.message() {

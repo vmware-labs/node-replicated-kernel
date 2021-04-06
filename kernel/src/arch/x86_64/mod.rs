@@ -201,8 +201,8 @@ struct AppCoreArgs {
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
-    thread: topology::ThreadId,
-    node: topology::NodeId,
+    thread: atopology::ThreadId,
+    node: atopology::NodeId,
     _log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
     mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
@@ -300,11 +300,11 @@ fn boot_app_cores(
     mlnr_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 ) {
-    let bsp_thread = topology::MACHINE_TOPOLOGY.current_thread();
+    let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
 
     // Let's go with one replica per NUMA node for now:
-    let numa_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
+    let numa_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
     let mut replicas: Vec<Arc<Replica<'static, KernelNode<Ring3Process>>>> =
         Vec::with_capacity(numa_nodes);
     let mut mlnr_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
@@ -314,13 +314,13 @@ fn boot_app_cores(
     debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
     replicas.push(bsp_replica);
     mlnr_replicas.push(mlnr_replica);
-    for node in 1..topology::MACHINE_TOPOLOGY.num_nodes() {
+    for node in 1..atopology::MACHINE_TOPOLOGY.num_nodes() {
         debug!(
             "Allocate a replica for {} ({} bytes)",
             node,
             core::mem::size_of::<Replica<'static, KernelNode<Ring3Process>>>()
         );
-        kcb.set_allocation_affinity(node as topology::NodeId)
+        kcb.set_allocation_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
         replicas.push(Replica::new(&log));
         mlnr_replicas.push(MlnrReplica::new(mlnr_logs.clone()));
@@ -334,7 +334,7 @@ fn boot_app_cores(
 
     // For now just boot everything, except ourselves
     // Create a single log and one replica...
-    let threads_to_boot = topology::MACHINE_TOPOLOGY
+    let threads_to_boot = atopology::MACHINE_TOPOLOGY
         .threads()
         .filter(|t| t != &bsp_thread);
 
@@ -417,9 +417,9 @@ fn identify_numa_affinity(
     memory_regions: &ArrayVec<[Frame; 64]>,
     annotated_regions: &mut ArrayVec<[Frame; 64]>,
 ) {
-    if topology::MACHINE_TOPOLOGY.num_nodes() > 0 {
+    if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
         for orig_frame in memory_regions.iter() {
-            for node in topology::MACHINE_TOPOLOGY.nodes() {
+            for node in atopology::MACHINE_TOPOLOGY.nodes() {
                 // trying to find a NUMA memory affinity that contains the given `orig_frame`
                 for affinity_region in node.memory() {
                     match affinity_region.contains(orig_frame.base.into(), orig_frame.end().into())
@@ -611,9 +611,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Initialize the machine topology (needs ACPI and alloc):
     {
-        lazy_static::initialize(&topology::MACHINE_TOPOLOGY);
+        lazy_static::initialize(&atopology::MACHINE_TOPOLOGY);
         info!("Topology parsed");
-        trace!("{:#?}", *topology::MACHINE_TOPOLOGY);
+        trace!("{:#?}", *atopology::MACHINE_TOPOLOGY);
     }
 
     // Identify NUMA region for physical memory (needs topology)
@@ -662,16 +662,16 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
 
-    let num_cores = match topology::MACHINE_TOPOLOGY.nodes().nth(0) {
+    let num_cores = match atopology::MACHINE_TOPOLOGY.nodes().nth(0) {
         Some(node) => node.threads().count(),
         None => 1,
     };
-    let num_nodes = topology::MACHINE_TOPOLOGY.num_nodes();
+    let num_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
     let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(num_cores);
     let func = &|rid: &[AtomicBool], idx: usize| {
         for replica in 0..num_nodes {
             if rid[replica].load(Ordering::Relaxed) == true {
-                let mut cores = topology::MACHINE_TOPOLOGY
+                let mut cores = atopology::MACHINE_TOPOLOGY
                     .nodes()
                     .nth(replica)
                     .unwrap()

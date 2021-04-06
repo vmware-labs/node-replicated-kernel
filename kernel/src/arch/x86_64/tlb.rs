@@ -36,7 +36,7 @@ use crate::{mlnr, nr};
 
 lazy_static! {
     static ref IPI_WORKQUEUE: Vec<ArrayQueue<WorkItem>> = {
-        let cores = topology::MACHINE_TOPOLOGY.num_threads();
+        let cores = atopology::MACHINE_TOPOLOGY.num_threads();
         let mut channels = Vec::with_capacity(cores);
         for _i in 0..cores {
             channels.push(ArrayQueue::new(4));
@@ -99,12 +99,12 @@ impl Shootdown {
     }
 }
 
-pub fn enqueue(gtid: topology::GlobalThreadId, s: WorkItem) {
+pub fn enqueue(gtid: atopology::GlobalThreadId, s: WorkItem) {
     trace!("TLB enqueue shootdown msg {:?}", s);
     assert!(IPI_WORKQUEUE[gtid as usize].push(s).is_ok());
 }
 
-pub fn dequeue(gtid: topology::GlobalThreadId) {
+pub fn dequeue(gtid: atopology::GlobalThreadId) {
     match IPI_WORKQUEUE[gtid as usize].pop() {
         Ok(msg) => match msg {
             WorkItem::Shootdown(s) => {
@@ -133,7 +133,7 @@ fn advance_log(log_id: usize) {
 }
 
 pub fn eager_advance_mlnr_replica() {
-    let core_id = topology::MACHINE_TOPOLOGY.current_thread().id;
+    let core_id = atopology::MACHINE_TOPOLOGY.current_thread().id;
     match IPI_WORKQUEUE[core_id as usize].pop() {
         Ok(msg) => {
             match &msg {
@@ -232,13 +232,13 @@ pub fn shootdown(handle: TlbFlushHandle) {
     ];
 
     let mut shootdowns: Vec<Arc<Shootdown>> =
-        Vec::with_capacity(topology::MACHINE_TOPOLOGY.num_threads());
+        Vec::with_capacity(atopology::MACHINE_TOPOLOGY.num_threads());
     let range = handle.vaddr.as_u64()..(handle.vaddr + handle.frame.size).as_u64();
 
     for (gtid, include) in handle.core_map.into_iter().enumerate() {
         // TODO: enumerates over all 256 potential entries...
         if include && gtid != my_gtid {
-            let apic_id = topology::MACHINE_TOPOLOGY.threads[gtid].apic_id();
+            let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid].apic_id();
             let cluster_addr = apic_id.x2apic_logical_cluster_address();
             let cluster = apic_id.x2apic_logical_cluster_id();
 
@@ -278,9 +278,9 @@ pub fn shootdown(handle: TlbFlushHandle) {
     trace!("done with all shootdowns");
 }
 
-pub fn advance_replica(gtid: topology::GlobalThreadId, log_id: usize) {
+pub fn advance_replica(gtid: atopology::GlobalThreadId, log_id: usize) {
     trace!("Send AdvanceReplica IPI for {} to {}", log_id, gtid);
-    let apic_id = topology::MACHINE_TOPOLOGY.threads[gtid as usize].apic_id();
+    let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid as usize].apic_id();
 
     enqueue(gtid, WorkItem::AdvanceReplica(log_id));
     send_ipi_to_apic(apic_id);

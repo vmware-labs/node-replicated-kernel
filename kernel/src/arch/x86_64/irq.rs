@@ -331,7 +331,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 
     sprintln!(
         "[IRQ] Page Fault on {}",
-        topology::MACHINE_TOPOLOGY.current_thread().id
+        atopology::MACHINE_TOPOLOGY.current_thread().id
     );
     sprintln!("{}", err);
 
@@ -424,7 +424,7 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
         // so if cores go properly back to idling when finished execution,
         // this is no longer necessary...
         let is_replica_main_thread = {
-            let thread = topology::MACHINE_TOPOLOGY.current_thread();
+            let thread = atopology::MACHINE_TOPOLOGY.current_thread();
             thread.node().is_none()
                 || thread
                     .node()
@@ -621,9 +621,9 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } else if a.vector == TLB_WORK_PENDING.into() {
             trace!(
                 "got an interrupt {:?}",
-                topology::MACHINE_TOPOLOGY.current_thread().apic_id()
+                atopology::MACHINE_TOPOLOGY.current_thread().apic_id()
             );
-            super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().id);
+            super::tlb::dequeue(atopology::MACHINE_TOPOLOGY.current_thread().id);
 
             let kcb = get_kcb();
             if kcb.arch.has_current_process() {
@@ -636,7 +636,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             }
         } else if a.vector == MLNR_GC_INIT.into() {
             // nr::KernelNode::<Ring3Process>::synchronize(); /* TODO: Do we need this?
-            super::tlb::dequeue(topology::MACHINE_TOPOLOGY.current_thread().id);
+            super::tlb::dequeue(atopology::MACHINE_TOPOLOGY.current_thread().id);
 
             let kcb = get_kcb();
             if kcb.arch.has_current_process() {
@@ -681,13 +681,13 @@ pub unsafe fn register_handler(
 /// and making sure the device registers are mapped
 /// in the kernel-space.
 pub fn ioapic_initialize() {
-    let ioapic_len = topology::MACHINE_TOPOLOGY.io_apics().count();
+    let ioapic_len = atopology::MACHINE_TOPOLOGY.io_apics().count();
     crate::memory::KernelAllocator::try_refill_tcache(4 * ioapic_len, 0)
         .expect("Refill didn't work");
 
     let kcb = get_kcb();
 
-    for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
+    for io_apic in atopology::MACHINE_TOPOLOGY.io_apics() {
         info!("Initialize IO APIC {:?}", io_apic);
 
         let paddr = PAddr::from(io_apic.address as u64);
@@ -714,7 +714,7 @@ pub fn ioapic_initialize() {
 pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
     use crate::memory::{paddr_to_kernel_vaddr, vspace::MapAction, PAddr};
 
-    for io_apic in topology::MACHINE_TOPOLOGY.io_apics() {
+    for io_apic in atopology::MACHINE_TOPOLOGY.io_apics() {
         let addr = PAddr::from(io_apic.address as u64);
 
         let mut inst =

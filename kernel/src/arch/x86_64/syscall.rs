@@ -42,8 +42,8 @@ fn handle_system(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             let vaddr_buf = arg2; // buf.as_mut_ptr() as u64
             let vaddr_buf_len = arg3; // buf.len() as u64
 
-            let hwthreads = topology::MACHINE_TOPOLOGY.threads();
-            let mut return_threads = Vec::with_capacity(topology::MACHINE_TOPOLOGY.num_threads());
+            let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
+            let mut return_threads = Vec::with_capacity(atopology::MACHINE_TOPOLOGY.num_threads());
             for hwthread in hwthreads {
                 return_threads.push(kpi::system::CpuThread {
                     id: hwthread.id as usize,
@@ -184,7 +184,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let kcb = super::kcb::get_kcb();
 
             let mut affinity = None;
-            for thread in topology::MACHINE_TOPOLOGY.threads() {
+            for thread in atopology::MACHINE_TOPOLOGY.threads() {
                 if thread.id == gtid {
                     affinity = Some(thread.node_id.unwrap_or(0));
                 }

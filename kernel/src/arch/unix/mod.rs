@@ -89,7 +89,13 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let arch_kcb: kcb::ArchKcb = kcb::ArchKcb::new(Box::leak(kernel_args));
     let cmdline: BootloaderArguments = Default::default();
 
-    let mut kcb = box Kcb::new(&kernel_binary, cmdline, tc, arch_kcb, 0 as topology::NodeId);
+    let mut kcb = box Kcb::new(
+        &kernel_binary,
+        cmdline,
+        tc,
+        arch_kcb,
+        0 as atopology::NodeId,
+    );
     kcb.set_global_memory(global_memory_static);
     debug!("Memory allocation should work at this point...");
 

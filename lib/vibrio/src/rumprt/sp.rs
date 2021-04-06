@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! The sp interface implementation, just stubs at the moment.
 
 use super::{c_int, c_size_t, c_void};

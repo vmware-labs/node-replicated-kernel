@@ -1,4 +1,10 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// Copyright © 2014-2021 The Rust Project, All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A temporary port of f64 math functions to make histograms works
+//!
+//! Will become unnecessary with https://github.com/rust-lang/rfcs/issues/2505
 
 use core::intrinsics;
 use libm;

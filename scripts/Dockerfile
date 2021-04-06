@@ -2,7 +2,7 @@
 # Dockerfile for the build container
 #
 FROM ubuntu:20.04
-MAINTAINER Reto Achermann <achreto@gmail.com>
+LABEL maintainer="Reto Achermann <achreto@gmail.com>"
 
 # arguments for this docker container
 # the user name and id of the container

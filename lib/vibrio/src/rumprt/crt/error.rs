@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Runtime support for error handling (i.e., retrieve errno).
 
 use crate::rumprt::c_int;

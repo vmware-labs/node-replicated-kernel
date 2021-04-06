@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! This implementes the user-space side of [scheduler activations][1]
 //! to handle the forwarding of traps and interrupts to user-space.
 //!

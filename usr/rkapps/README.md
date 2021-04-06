@@ -1,11 +1,13 @@
 # rkapps
 
 A wrapper to easily build applications already ported to run on top of rumpkernel for bespin
-(i.e., the following repo <https://github.com/rumpkernel/rumprun-packages>)
+(uses the following repo <https://github.com/rumpkernel/rumprun-packages>).
 
-If we want to invoke a build manually:
+Check `build.rs` for steps.
 
 ## redis
+
+If we want to invoke a build manually:
 
 ```bash
 cd redis

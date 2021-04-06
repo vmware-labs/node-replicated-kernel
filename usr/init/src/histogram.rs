@@ -1,7 +1,11 @@
-//! Code taken from: https://github.com/brayniac/histogram and made to work with nostd/core
-//! MIT + Apache License
-//! (c) https://github.com/brayniac
-//! TODO: Remove this and include histogram = "*" as cargo dependency once we have std support
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// Copyright © 2017-2020 Brian Martin
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+//! A histogram implementation
+//!
+//! Original sources from https://github.com/brayniac/histogram -- modified to work with no_std.
+//! TODO: Remove this and include histogram = "*" as dependency once there is a std.
 
 #![cfg_attr(feature = "cargo-clippy", deny(missing_docs))]
 #![cfg_attr(feature = "cargo-clippy", deny(warnings))]

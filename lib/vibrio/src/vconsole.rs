@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A simple virtual console for user-space programs (getchar et. al.).
 //!
 //! Needs to be a proper serial driver.

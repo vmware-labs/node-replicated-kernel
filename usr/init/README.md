@@ -2,7 +2,7 @@
 
 The simplest user-space test program.
 
-## Build
+## Manual build
 
 Invoke:
 

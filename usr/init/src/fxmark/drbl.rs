@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use crate::fxmark::{Bench, PAGE_SIZE};
 use alloc::{format, vec, vec::Vec};
 use core::cell::RefCell;

@@ -1,4 +1,7 @@
-// Fxmark implementation for bespin.
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+//! fxmark implementation for bespin.
 
 use alloc::string::String;
 use alloc::string::ToString;

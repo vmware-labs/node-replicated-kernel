@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! vibrio is the user-space library that interacts with the kernel.
 //!
 //! It also incorporates and exports the [kpi] crate which defines the interface between

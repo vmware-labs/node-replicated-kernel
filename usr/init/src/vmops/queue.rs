@@ -1,3 +1,7 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// Copyright © 2019-2020 Jason Longshore
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 // Original Source: https://github.com/longshorej/conqueue (MIT License)
 // Adjusted to work with no-std, removed tests
 

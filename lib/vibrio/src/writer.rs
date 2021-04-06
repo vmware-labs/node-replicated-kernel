@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! A simple printing infrastructure for user-space programs.
 //! We provide [`core::fmt::Write`] and [`log::Log`].
 

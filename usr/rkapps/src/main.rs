@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #![feature(lang_items, core_intrinsics)]
 #![feature(start)]
 #![no_std]

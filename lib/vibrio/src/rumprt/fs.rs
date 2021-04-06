@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use core::convert::TryInto;
 
 use super::{c_int, c_size_t, c_void, rump_biodone_fn};

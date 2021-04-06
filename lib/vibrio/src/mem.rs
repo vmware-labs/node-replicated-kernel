@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! This module provides a very basic address-space management
 //! API from user-space and implements a [`core::alloc::GlobalAlloc`]
 //! type for doing memory allocation in user-space.

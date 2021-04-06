@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use super::{c_int, c_uint, c_ulong, c_void};
 
 use core::alloc::Layout;

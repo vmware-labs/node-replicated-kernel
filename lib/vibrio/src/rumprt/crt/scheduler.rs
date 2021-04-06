@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 //! Implements the interactions with the scheduler.
 //!
 //! Just stubs that don't to anything for now.

@@ -9,9 +9,9 @@ license = "MIT OR Apache-2.0"
 ## Internal dependencies
 bootloader_shared = { path = "../lib/bootloader_shared" }
 elfloader = { path = "../lib/elfloader" }
-x86 = { path = "../lib/x86" }
 
 ## External dependencies
+x86 = "0.37"
 log = { version = "0.4", default-features = false }
 arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
 uefi = { version = "0.8.0", features = ["exts"] }

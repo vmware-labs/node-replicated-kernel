@@ -7,7 +7,6 @@ members = [
     "lib/apic",
     "lib/backtracer",
     "lib/bootloader_shared",
-    "lib/crossbeam-queue",
     "lib/custom_error",
     "lib/driverkit",
     "lib/elfloader",

@@ -13,7 +13,6 @@ edition = "2018"
 
 [dependencies]
 # Our own dependencies:
-x86 = { path = "../lib/x86" }
 klogger = { path = "../lib/klogger" }
 slabmalloc = { path = "../lib/slabmalloc" }
 elfloader = { path = "../lib/elfloader" }
@@ -28,6 +27,7 @@ cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 # External libraries we use:
+x86 = "0.37"
 spin = "0.5.2"
 log = "0.4"
 smallvec = { version = "1.5.0", default-features = false }

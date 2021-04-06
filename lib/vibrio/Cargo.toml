@@ -14,7 +14,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 bitflags = "1.2"
 log = "0.4"
-x86 = { path = "../x86" }
+x86 = "0.37"
 kpi = { path = "../kpi" }
 slabmalloc = { path = "../slabmalloc" }
 rawtime = { path = "../rawtime" }

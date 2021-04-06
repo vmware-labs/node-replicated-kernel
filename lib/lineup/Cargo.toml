@@ -13,7 +13,7 @@ fringe = { git = "https://github.com/gz/libfringe.git", default-features = false
 hashbrown = { version = "0.9.1", features = [ "nightly" ] }
 rawtime = { path = "../rawtime" }
 backtracer = { path = "../backtracer" }
-x86 = { path = "../x86" }
+x86 = "0.37"
 log = "0.4.6"
 spin = "0.5"
 arr_macro = "0.1"

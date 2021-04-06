@@ -77,7 +77,7 @@ dependencies = [
  "driverkit",
  "env_logger 0.5.13",
  "log 0.4.14",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -183,7 +183,7 @@ dependencies = [
  "addr2line 0.9.0",
  "cfg-if 0.1.10",
  "log 0.4.14",
- "x86 0.32.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -201,7 +201,7 @@ dependencies = [
  "bootloader_shared",
  "cc",
  "cnr",
- "crossbeam-queue 0.2.0",
+ "crossbeam-queue 0.2.3",
  "crossbeam-utils 0.8.3",
  "cstr_core 0.2.3",
  "csv",
@@ -229,7 +229,7 @@ dependencies = [
  "static_assertions",
  "topology",
  "uefi",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -281,7 +281,7 @@ dependencies = [
  "log 0.4.14",
  "uefi",
  "uefi-services",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -290,7 +290,7 @@ version = "0.0.1"
 dependencies = [
  "arrayvec 0.5.2",
  "uefi",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -386,14 +386,6 @@ dependencies = [
  "lazy_static",
  "proc-macro-hack",
  "tiny-keccak",
-]
-
-[[package]]
-name = "crossbeam-queue"
-version = "0.2.0"
-dependencies = [
- "crossbeam-utils 0.7.2",
- "rand 0.6.5",
 ]
 
 [[package]]
@@ -519,7 +511,7 @@ dependencies = [
  "log 0.4.14",
  "matches",
  "mmap",
- "x86 0.32.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -795,7 +787,7 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 name = "init"
 version = "0.1.0"
 dependencies = [
- "cstr_core 0.1.2",
+ "cstr_core 0.2.3",
  "lazy_static",
  "libm",
  "lineup",
@@ -803,7 +795,7 @@ dependencies = [
  "rawtime",
  "spin",
  "vibrio",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -833,19 +825,20 @@ dependencies = [
 
 [[package]]
 name = "klogger"
-version = "0.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a02bdb06658a0599293d86c5a8a5a551cabd123ec527dcf47978c0c4eae8a14"
+version = "0.0.6"
 dependencies = [
+ "heapless",
  "log 0.4.14",
  "spin",
  "termcodes 0.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "x86 0.21.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "klogger"
 version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8db4b493503ebe3b9fc469817aa53da9a6f108246dd0704f5bbb3a3ac8811d4e"
 dependencies = [
  "heapless",
  "log 0.4.14",
@@ -863,7 +856,7 @@ dependencies = [
  "log 0.4.14",
  "serde",
  "serde_cbor",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -928,7 +921,7 @@ dependencies = [
  "log 0.4.14",
  "rawtime",
  "spin",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1109,18 +1102,18 @@ dependencies = [
 
 [[package]]
 name = "phf"
-version = "0.7.24"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3da44b85f8e8dfaec21adae67f95d93244b2ecf6ad2a692320598dcc8e6dd18"
+checksum = "3dfb61232e34fcb633f43d12c58f83c1df82962dcdfa565a4e866ffc17dafe12"
 dependencies = [
  "phf_shared",
 ]
 
 [[package]]
 name = "phf_codegen"
-version = "0.7.24"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b03e85129e324ad4166b06b2c7491ae27fe3ec353af72e72cd1654c7225d517e"
+checksum = "cbffee61585b0411840d3ece935cce9cb6321f01c45477d30066498cd5e1a815"
 dependencies = [
  "phf_generator",
  "phf_shared",
@@ -1128,19 +1121,19 @@ dependencies = [
 
 [[package]]
 name = "phf_generator"
-version = "0.7.24"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09364cc93c159b8b06b1f4dd8a4398984503483891b0c26b867cf431fb132662"
+checksum = "17367f0cc86f2d25802b2c26ee58a7b23faeccf78a396094c13dced0d0182526"
 dependencies = [
  "phf_shared",
- "rand 0.6.5",
+ "rand 0.7.3",
 ]
 
 [[package]]
 name = "phf_shared"
-version = "0.7.24"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234f71a15de2288bcb7e3b6515828d22af7ec8598ee6d24c3b526fa0a80b67a0"
+checksum = "c00cf8b9eafe68dde5e9eaa2cef8ee84a9336a47d566ec55ca16589633b65af7"
 dependencies = [
  "siphasher",
 ]
@@ -1441,17 +1434,6 @@ dependencies = [
 
 [[package]]
 name = "raw-cpuid"
-version = "6.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30a9d219c32c9132f7be513c18be77c9881c7107d2ab5569d205a6a0f0e6dc7d"
-dependencies = [
- "bitflags 1.2.1",
- "cc",
- "rustc_version",
-]
-
-[[package]]
-name = "raw-cpuid"
 version = "7.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "beb71f708fe39b2c5e98076204c3cc094ee5a4c12c4cdb119a2b72dc34164f41"
@@ -1463,13 +1445,11 @@ dependencies = [
 
 [[package]]
 name = "raw-cpuid"
-version = "8.1.2"
+version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fdf7d9dbd43f3d81d94a49c1c3df73cc2b3827995147e6cf7f89d4ec5483e73"
+checksum = "c27cb5785b85bd05d4eb171556c9a1a514552e26123aeae6bb7d811353148026"
 dependencies = [
  "bitflags 1.2.1",
- "cc",
- "rustc_version",
 ]
 
 [[package]]
@@ -1480,7 +1460,7 @@ dependencies = [
  "lazy_static",
  "libc 0.2.92",
  "log 0.4.14",
- "x86 0.34.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1683,9 +1663,9 @@ dependencies = [
 
 [[package]]
 name = "siphasher"
-version = "0.2.3"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b8de496cf83d4ed58b6be86c3a275b8602f6ffe98d3024a869e124147a9a3ac"
+checksum = "cbce6d4507c7e4a3962091436e56e95290cb71fa302d0d270e32130b75fbff27"
 
 [[package]]
 name = "slabmalloc"
@@ -1809,13 +1789,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test"
-version = "0.0.1"
-dependencies = [
- "klogger 0.0.6",
-]
-
-[[package]]
 name = "thread_local"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1841,7 +1814,7 @@ dependencies = [
  "cstr_core 0.1.2",
  "lazy_static",
  "log 0.4.14",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1942,7 +1915,7 @@ dependencies = [
  "serde_cbor",
  "slabmalloc",
  "spin",
- "x86 0.34.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2017,36 +1990,6 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "x86"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec9bc8f75b84d8940cbb2aa6af8423db6231e6ad11daef0d7d0aeef0617fc19d"
-dependencies = [
- "bitflags 1.2.1",
- "raw-cpuid 6.1.0",
-]
-
-[[package]]
-name = "x86"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77bb94ed2e1058b03f94dec982953ecfb52248df0b9bcdb16da232c7e7f67d79"
-dependencies = [
- "bitflags 1.2.1",
- "raw-cpuid 6.1.0",
-]
-
-[[package]]
-name = "x86"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "669b9fe35c9051134dd85622c24cfd93231cadac9572fbe81863949ec463fd26"
-dependencies = [
- "bitflags 1.2.1",
- "raw-cpuid 7.0.4",
-]
-
-[[package]]
-name = "x86"
 version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8cc872a9a776500ccc6f49799729858738c946b8865fa7e3d6b47cc5dc3a8a7"
@@ -2058,29 +2001,29 @@ dependencies = [
 
 [[package]]
 name = "x86"
-version = "0.34.0"
+version = "0.37.0"
 dependencies = [
  "bit_field 0.10.1",
  "bitflags 1.2.1",
  "csv",
- "klogger 0.0.4",
+ "klogger 0.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.92",
  "phf",
  "phf_codegen",
- "raw-cpuid 8.1.2",
+ "raw-cpuid 9.0.0",
  "serde_json",
  "x86test",
 ]
 
 [[package]]
 name = "x86"
-version = "0.34.0"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c146cbc47471e076987378c159a7aa8fa434680c6fbddca59fe6f40f1591c819"
+checksum = "b4fd9298cd1b1f88546fc0a5e8faa3354013cd010589299c624fde436aad76cc"
 dependencies = [
  "bit_field 0.10.1",
  "bitflags 1.2.1",
- "raw-cpuid 8.1.2",
+ "raw-cpuid 9.0.0",
 ]
 
 [[package]]
@@ -2095,24 +2038,20 @@ dependencies = [
 
 [[package]]
 name = "x86test"
-version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7dba36f11dc906633837c57f8602f89137513535d201099f656462e2905d777"
+version = "0.0.3"
 dependencies = [
- "klogger 0.0.4",
+ "klogger 0.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "kvm-sys",
  "log 0.4.14",
  "mmap",
- "x86 0.19.0",
+ "x86 0.37.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "x86test-macro",
  "x86test-types",
 ]
 
 [[package]]
 name = "x86test-macro"
-version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ee70800f19c7d8f95d2e20a01477c61c0e41e56e7052397d3ad5798c9f863a7"
+version = "0.0.3"
 dependencies = [
  "proc-macro2 0.4.30",
  "quote 0.6.13",
@@ -2122,11 +2061,9 @@ dependencies = [
 
 [[package]]
 name = "x86test-types"
-version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56f3ebb2bd8821abe2b6180e1373b1e3da40dd812751994bbb154a2aea74c55a"
+version = "0.0.3"
 dependencies = [
- "x86 0.20.0",
+ "x86 0.37.0",
 ]
 
 [[package]]

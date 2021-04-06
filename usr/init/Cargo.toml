@@ -11,15 +11,15 @@ name = "init"
 path = "src/init.rs"
 
 [dependencies]
-spin = { version = "0.5.2", default_features = false }
-cstr_core = { git = "https://github.com/gz/cstr_core.git", default-features = false }
-log = "0.4"
 lineup = { path = "../../lib/lineup" }
 rawtime = { path = "../../lib/rawtime" }
-x86 = { path = "../../lib/x86" }
 vibrio = { path = "../../lib/vibrio" }
+log = "0.4"
+x86 = "0.37"
 libm = "0.2.1"
 lazy_static =  { version = "1.4", default_features = false }
+cstr_core = { version = "0.2.3", default-features = false }
+spin = { version = "0.5.2", default_features = false }
 
 [features]
 rumprt = ["vibrio/rumprt"]

@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 driverkit = { path = "../driverkit" }
-x86 = { path = "../x86" }
+x86 = "0.37"
 log = "*"
 bitflags = "1.0"
 bit_field = "0.10.0"

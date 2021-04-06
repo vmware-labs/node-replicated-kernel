@@ -158,6 +158,8 @@ dependencies = [
 [[package]]
 name = "backtracer_core"
 version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "134e2886f3e1b0b1bc5ce47c12ea02d5d341b6b61fac7c3afe79feac0f949315"
 dependencies = [
  "addr2line",
  "cfg-if 0.1.10",

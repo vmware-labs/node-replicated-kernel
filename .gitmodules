@@ -1,4 +1,4 @@
 [submodule "lib/node-replication"]
 	path = lib/node-replication
-	url = git@github.com:gz/node-replication.git
+	url = git@github.com:vmware/node-replication.git
 	branch = mlnr_gc

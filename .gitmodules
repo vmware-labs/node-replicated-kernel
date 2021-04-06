@@ -1,9 +1,6 @@
 [submodule "lib/rumpkernel"]
 	path = lib/rumpkernel
 	url = git@github.com:gz/rust-rumpkernel.git
-[submodule "lib/rawtime"]
-	path = lib/rawtime
-	url = https://github.com/gz/rawtime.git
 [submodule "lib/topology"]
 	path = lib/topology
 	url = git@github.com:gz/rust-topology.git

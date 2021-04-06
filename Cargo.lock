@@ -116,17 +116,6 @@ dependencies = [
 [[package]]
 name = "atopology"
 version = "0.0.3"
-dependencies = [
- "cstr_core",
- "lazy_static",
- "libacpica",
- "log",
- "x86",
-]
-
-[[package]]
-name = "atopology"
-version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f95b27ee6cbc10ea2c7c4e09aafadf3e37210c15511b14da12c9feb8045de4"
 dependencies = [
@@ -196,7 +185,7 @@ dependencies = [
  "apic",
  "arr_macro",
  "arrayvec 0.5.1",
- "atopology 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "atopology",
  "backtracer_core",
  "bit-vec",
  "bit_field 0.10.1",

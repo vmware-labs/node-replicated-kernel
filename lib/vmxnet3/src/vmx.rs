@@ -8,7 +8,7 @@ use core::mem;
 use core::pin::Pin;
 
 use arrayvec::ArrayVec;
-use custom_error::custom_error;
+use custom_error_core::custom_error;
 use driverkit::net::{PktInfo, RxError, RxdInfo, TxError, TxRx};
 use log::{debug, error, info};
 use x86::current::paging::{PAddr, VAddr};
@@ -179,6 +179,7 @@ mod tests {
         }
     }
 }
+
 
 custom_error! {pub VMXNet3Error
     DeviceNotSupported = "Unknown vmxnet3 device/version",

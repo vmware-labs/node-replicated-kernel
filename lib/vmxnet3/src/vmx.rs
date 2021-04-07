@@ -543,7 +543,19 @@ impl VMXNet3 {
     }
 }
 
+
+/// Device Dependent Transmit and Receive Functions
 impl TxRx for VMXNet3 {
+
+    /// Transimt functions
+
+    /**
+     * sends a packet on an interface by enqueueing it on the TX ring. The packet may consists of
+     * multiple segments forming a single packet. Note, this function purely writes the descriptor
+     * ring, and does not advance the thx register.
+     *
+     *  - pi: contains information describing the packet to be sent.
+     */
     fn txd_encap(&mut self, pi: PktInfo) -> Result<(), TxError> {
         assert!(
             pi.segments() <= VMXNET3_TX_MAXSEGS,
@@ -558,20 +570,77 @@ impl TxRx for VMXNet3 {
         Ok(())
     }
 
-    fn txd_flush(&mut self, qid: u16) {}
+    /**
+     * called to update the hardware register (thx) triggering the sending of the packet.
+     *
+     *  - qid: the queue id to be updated
+     */
+    fn txd_flush(&mut self, qid: u16) {
 
+        /*
+           - get the idx of the last flush
+           - get the idx of the most recent written head
+           - if equal return
+           - else update vbar0_thx register for the queue, with value of most recent head
+                  and update last flush
+        */
+    }
+
+    /**
+     * calculates how many tx ring descriptors have been processed.
+     *
+     *  - qid: the queue id to be updated
+     *  - clear: flag indicating whether to report the actual number of processed elements (true)
+     *           or just if there has been at least one processed (false)
+     */
     fn txd_credits_update(&mut self, qid: u16, clear: bool) -> Result<(), TxError> {
         Ok(())
     }
 
-    fn isc_rxd_available(&mut self, qsid: u16, cidx: u32) -> Result<(), RxError> {
+
+    /// Receive Functions
+
+    /**
+     * calculates the number of available descriptors in the rx queue identified by the queue id
+     * starting from the index.
+     *
+     *  - qid: the rx queue to consider
+     *  - cidx: the starting queue index to consider.
+     */
+    fn isc_rxd_available(&mut self, qid: u16, cidx: u32) -> Result<(), RxError> {
         Ok(())
     }
 
-    fn rxd_refill(&mut self, qsid: u16, flid: u8, pidx: u32, paddrs: &[u64], vaddrs: &[u64]) {}
+    /**
+     * enqueues new receive buffers on the RX queue
+     *
+     *  - qid: the rx queue to add the buffers to
+     *  - flid: identifies the free list to be used for the rx queue identified by ixd
+     *  - pidx: ??? not sure why this is needed.
+     *  - paddrs: addresses of the buffers
+     *  - vaddrs: virtual addresses of buffers in case header updates are needed
+     *
+     * Note: the VMXNet3 has two freelists:
+     *   - 0: HEAD descriptors
+     *   - 1: BODY descriptors
+     */
+    fn rxd_refill(&mut self, qid: u16, flid: u8, pidx: u32, paddrs: &[u64], vaddrs: &[u64]) {}
 
+    /**
+     * update the hardware pointers, transfers ownership of the buffers to the VMXNet3
+     *
+     * Note: the VMXNet3 has two freelists:
+     *   - 0: HEAD descriptors
+     *   - 1: BODY descriptors
+     */
     fn rxd_flush(&mut self, qsid: u16, flid: u8, pidx: u32) {}
 
+    // Process a single software descriptor.  rxr->rx_base[i] contains a descriptor that describes
+    // a received packet.  Hardware specific information about the buffer referred to by ri is
+    // returned in the data structure if_rxd_info
+    /**
+     * processes a single packet
+     */
     fn rxd_pkt_get(&mut self, ri: RxdInfo) -> Result<(), RxError> {
         Ok(())
     }

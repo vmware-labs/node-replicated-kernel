@@ -191,7 +191,55 @@ dependencies = [
  "gimli 0.23.0",
  "log",
  "stable_deref_trait",
- "x86 0.37.0",
+ "x86",
+]
+
+[[package]]
+name = "bespin"
+version = "0.0.3"
+dependencies = [
+ "addr2line",
+ "apic",
+ "arr_macro",
+ "arrayvec 0.5.1",
+ "atopology",
+ "backtracer_core",
+ "bit-vec",
+ "bit_field 0.10.1",
+ "bootloader_shared",
+ "cc",
+ "cnr",
+ "crossbeam-queue 0.2.3",
+ "crossbeam-utils 0.8.3",
+ "cstr_core",
+ "csv",
+ "custom_error_core 1.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "driverkit",
+ "elfloader",
+ "env_logger 0.8.3",
+ "gimli",
+ "hashbrown 0.9.1",
+ "klogger",
+ "kpi",
+ "lazy_static",
+ "libacpica",
+ "libc 0.2.93",
+ "log",
+ "logos",
+ "node-replication",
+ "num_cpus",
+ "proptest",
+ "rawtime",
+ "rexpect",
+ "serde",
+ "serde_cbor",
+ "slabmalloc",
+ "smallvec 1.6.1",
+ "spin",
+ "static_assertions",
+ "uefi",
+ "vmxnet3",
+ "x86",
 ]
 
 [[package]]
@@ -1855,7 +1903,7 @@ name = "vmxnet3"
 version = "0.1.0"
 dependencies = [
  "arrayvec 0.5.1",
- "custom_error_core",
+ "custom_error_core 1.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "driverkit",
  "log",
  "static_assertions",

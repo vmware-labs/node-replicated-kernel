@@ -12,6 +12,7 @@ members = [
     "lib/node-replication/nr",
     "lib/vibrio",
     "lib/vmxnet3",
+    "lib/custom_error",
     "usr/init",
     "usr/rkapps",
 ]

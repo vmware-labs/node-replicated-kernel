@@ -4,7 +4,6 @@
 #![allow(unused)]
 
 use crate::arch::process::UserSlice;
-use crate::fs::{FileSystem, FileSystemError, MemNode, Mnode, Modes, NodeType};
 
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
@@ -18,7 +17,136 @@ pub use rwlock::RwLock as NrLock;
 use spin::RwLock;
 
 pub mod fd;
+mod file;
+mod mnode;
 mod rwlock;
+#[cfg(test)]
+mod test;
+
+use mnode::{MemNode, NodeType};
+
+/// The maximum number of open files for a process.
+pub const MAX_FILES_PER_PROCESS: usize = 4096;
+
+/// Mnode number.
+pub type Mnode = u64;
+/// Flags for fs calls.
+pub type Flags = u64;
+/// Modes for fs calls
+pub type Modes = u64;
+/// File descriptor.
+pub type FD = u64;
+/// Userspace buffer pointer to read or write a file.
+pub type Buffer = u64;
+/// Number of bytes to read or write a file.
+pub type Len = u64;
+/// Userspace-pointer to filename.
+pub type Filename = u64;
+/// File offset
+pub type Offset = i64;
+
+custom_error! {
+    #[derive(PartialEq, Clone)]
+    pub FileSystemError
+    InvalidFileDescriptor = "Supplied file descriptor was invalid",
+    InvalidFile = "Supplied file was invalid",
+    InvalidFlags = "Supplied flags were invalid",
+    InvalidOffset = "Supplied offset was invalid",
+    PermissionError = "File/directory can't be read or written",
+    AlreadyPresent = "Fd/File already exists",
+    DirectoryError = "Can't read or write to a directory",
+    OpenFileLimit = "Maximum files are opened for a process",
+    OutOfMemory = "Unable to allocate memory for file",
+}
+
+impl Into<SystemCallError> for FileSystemError {
+    fn into(self) -> SystemCallError {
+        match self {
+            FileSystemError::InvalidFileDescriptor => SystemCallError::BadFileDescriptor,
+            FileSystemError::InvalidFile => SystemCallError::BadFileDescriptor,
+            FileSystemError::InvalidFlags => SystemCallError::BadFlags,
+            FileSystemError::InvalidOffset => SystemCallError::PermissionError,
+            FileSystemError::PermissionError => SystemCallError::PermissionError,
+            FileSystemError::AlreadyPresent => SystemCallError::PermissionError,
+            FileSystemError::DirectoryError => SystemCallError::PermissionError,
+            FileSystemError::OpenFileLimit => SystemCallError::OutOfMemory,
+            FileSystemError::OutOfMemory => SystemCallError::OutOfMemory,
+        }
+    }
+}
+
+/// Abstract definition of file-system interface operations.
+pub trait FileSystem {
+    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError>;
+    fn write(
+        &self,
+        mnode_num: Mnode,
+        buffer: &[u8],
+        offset: usize,
+    ) -> Result<usize, FileSystemError>;
+    fn read(
+        &self,
+        mnode_num: Mnode,
+        buffer: &mut UserSlice,
+        offset: usize,
+    ) -> Result<usize, FileSystemError>;
+    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
+    fn file_info(&self, mnode: Mnode) -> FileInfo;
+    fn delete(&self, pathname: &str) -> Result<bool, FileSystemError>;
+    fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError>;
+    fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError>;
+    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError>;
+}
+
+/// Abstract definition of a file descriptor.
+pub trait FileDescriptor {
+    fn init_fd() -> Fd;
+    fn update_fd(&mut self, mnode: Mnode, flags: FileFlags);
+    fn get_mnode(&self) -> Mnode;
+    fn get_flags(&self) -> FileFlags;
+    fn get_offset(&self) -> usize;
+    fn update_offset(&self, new_offset: usize);
+}
+
+/// A file descriptor representaion.
+#[derive(Debug, Default)]
+pub struct Fd {
+    mnode: Mnode,
+    flags: FileFlags,
+    offset: AtomicUsize,
+}
+
+impl FileDescriptor for Fd {
+    fn init_fd() -> Fd {
+        Fd {
+            // Intial values are just the place-holders and shouldn't be used.
+            mnode: core::u64::MAX,
+            flags: Default::default(),
+            offset: AtomicUsize::new(0),
+        }
+    }
+
+    fn update_fd(&mut self, mnode: Mnode, flags: FileFlags) {
+        self.mnode = mnode;
+        self.flags = flags;
+    }
+
+    fn get_mnode(&self) -> Mnode {
+        self.mnode.clone()
+    }
+
+    fn get_flags(&self) -> FileFlags {
+        self.flags.clone()
+    }
+
+    fn get_offset(&self) -> usize {
+        self.offset.load(Ordering::Relaxed)
+    }
+
+    fn update_offset(&self, new_offset: usize) {
+        self.offset.store(new_offset, Ordering::Release);
+    }
+}
 
 /// The mnode number assigned to the first file.
 pub const MNODE_OFFSET: usize = 2;
@@ -73,8 +201,10 @@ impl MlnrFS {
     fn get_next_mno(&self) -> usize {
         self.nextmemnode.fetch_add(1, Ordering::Relaxed)
     }
+}
 
-    pub fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError> {
+impl FileSystem for MlnrFS {
+    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError> {
         // Check if the file with the same name already exists.
         match self.files.read().get(&pathname.to_string()) {
             Some(_) => return Err(FileSystemError::AlreadyPresent),
@@ -96,7 +226,7 @@ impl MlnrFS {
         Ok(mnode_num)
     }
 
-    pub fn write(
+    fn write(
         &self,
         mnode_num: Mnode,
         buffer: &[u8],
@@ -108,7 +238,7 @@ impl MlnrFS {
         }
     }
 
-    pub fn read(
+    fn read(
         &self,
         mnode_num: Mnode,
         buffer: &mut UserSlice,
@@ -120,14 +250,14 @@ impl MlnrFS {
         }
     }
 
-    pub fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
+    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
         self.files
             .read()
             .get(&pathname.to_string())
             .map(|mnode| Arc::clone(mnode))
     }
 
-    pub fn file_info(&self, mnode: Mnode) -> FileInfo {
+    fn file_info(&self, mnode: Mnode) -> FileInfo {
         match self.mnodes.read().get(&mnode) {
             Some(mnode) => match mnode.read().get_mnode_type() {
                 NodeType::Directory => FileInfo {
@@ -143,7 +273,7 @@ impl MlnrFS {
         }
     }
 
-    pub fn delete(&self, pathname: &str) -> Result<bool, FileSystemError> {
+    fn delete(&self, pathname: &str) -> Result<bool, FileSystemError> {
         match self.files.write().remove(&pathname.to_string()) {
             Some(mnode) => {
                 // If the pathname is the only link to the memnode, then remove it.
@@ -162,7 +292,7 @@ impl MlnrFS {
         };
     }
 
-    pub fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError> {
+    fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError> {
         match self.files.read().get(&pathname.to_string()) {
             Some(mnode) => match self.mnodes.read().get(mnode) {
                 Some(memnode) => memnode.write().file_truncate(),
@@ -172,7 +302,7 @@ impl MlnrFS {
         }
     }
 
-    pub fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
+    fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
         if self.files.read().get(oldname).is_none() {
             return Err(FileSystemError::InvalidFile);
         }
@@ -195,7 +325,7 @@ impl MlnrFS {
 
     /// Create a directory. The implementation is quite simplistic for now, and only used
     /// by leveldb benchmark.
-    pub fn mkdir(&self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError> {
+    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError> {
         // Check if the file with the same name already exists.
         match self.files.read().get(&pathname.to_string()) {
             Some(_) => return Err(FileSystemError::AlreadyPresent),

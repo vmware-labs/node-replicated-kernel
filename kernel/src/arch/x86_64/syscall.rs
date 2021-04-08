@@ -19,10 +19,10 @@ use kpi::{
 };
 
 use crate::error::KError;
-use crate::fs::FileSystem;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::mlnr;
+use crate::mlnrfs::FileSystem;
 use crate::nr;
 use crate::process::{Pid, ProcessError, ResumeHandle};
 
@@ -376,13 +376,7 @@ fn handle_fileio(
             let flags = arg3;
             let modes = arg4;
             match user_virt_addr_valid(p.pid, pathname, 0) {
-                Ok(_) => {
-                    if cfg!(feature = "mlnrfs") {
-                        mlnr::MlnrKernelNode::map_fd(p.pid, pathname, flags, modes)
-                    } else {
-                        nr::KernelNode::<Ring3Process>::map_fd(p.pid, pathname, flags, modes)
-                    }
-                }
+                Ok(_) => mlnr::MlnrKernelNode::map_fd(p.pid, pathname, flags, modes),
                 Err(e) => Err(e),
             }
         }),
@@ -393,13 +387,7 @@ fn handle_fileio(
                 let len = arg4;
 
                 match user_virt_addr_valid(p.pid, buffer, len) {
-                    Ok(_) => {
-                        if cfg!(feature = "mlnrfs") {
-                            mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, -1)
-                        } else {
-                            nr::KernelNode::<Ring3Process>::file_io(op, p.pid, fd, buffer, len, -1)
-                        }
-                    }
+                    Ok(_) => mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, -1),
                     Err(e) => Err(e),
                 }
             })
@@ -412,39 +400,21 @@ fn handle_fileio(
                 let offset = arg5 as i64;
 
                 match user_virt_addr_valid(p.pid, buffer, len) {
-                    Ok(_) => {
-                        if cfg!(feature = "mlnrfs") {
-                            mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, offset)
-                        } else {
-                            nr::KernelNode::<Ring3Process>::file_io(
-                                op, p.pid, fd, buffer, len, offset,
-                            )
-                        }
-                    }
+                    Ok(_) => mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, offset),
                     Err(e) => Err(e),
                 }
             })
         }
         FileOperation::Close => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let fd = arg2;
-            if cfg!(feature = "mlnrfs") {
-                mlnr::MlnrKernelNode::unmap_fd(p.pid, fd)
-            } else {
-                nr::KernelNode::<Ring3Process>::unmap_fd(p.pid, fd)
-            }
+            mlnr::MlnrKernelNode::unmap_fd(p.pid, fd)
         }),
         FileOperation::GetInfo => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let name = arg2;
             let info_ptr = arg3;
 
             match user_virt_addr_valid(p.pid, name, 0) {
-                Ok(_) => {
-                    if cfg!(feature = "mlnrfs") {
-                        mlnr::MlnrKernelNode::file_info(p.pid, name, info_ptr)
-                    } else {
-                        nr::KernelNode::<Ring3Process>::file_info(p.pid, name, info_ptr)
-                    }
-                }
+                Ok(_) => mlnr::MlnrKernelNode::file_info(p.pid, name, info_ptr),
                 Err(e) => Err(e),
             }
         }),
@@ -452,13 +422,7 @@ fn handle_fileio(
             let name = arg2;
 
             match user_virt_addr_valid(p.pid, name, 0) {
-                Ok(_) => {
-                    if cfg!(feature = "mlnrfs") {
-                        mlnr::MlnrKernelNode::file_delete(p.pid, name)
-                    } else {
-                        nr::KernelNode::<Ring3Process>::file_delete(p.pid, name)
-                    }
-                }
+                Ok(_) => mlnr::MlnrKernelNode::file_delete(p.pid, name),
                 Err(e) => Err(e),
             }
         }),
@@ -484,13 +448,7 @@ fn handle_fileio(
                 user_virt_addr_valid(p.pid, oldname, 0),
                 user_virt_addr_valid(p.pid, newname, 0),
             ) {
-                (Ok(_), Ok(_)) => {
-                    if cfg!(feature = "mlnrfs") {
-                        mlnr::MlnrKernelNode::file_rename(p.pid, oldname, newname)
-                    } else {
-                        nr::KernelNode::<Ring3Process>::file_rename(p.pid, oldname, newname)
-                    }
-                }
+                (Ok(_), Ok(_)) => mlnr::MlnrKernelNode::file_rename(p.pid, oldname, newname),
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }
         }),
@@ -498,13 +456,7 @@ fn handle_fileio(
             let pathname = arg2;
             let modes = arg3;
             match user_virt_addr_valid(p.pid, pathname, 0) {
-                Ok(_) => {
-                    if cfg!(feature = "mlnrfs") {
-                        mlnr::MlnrKernelNode::mkdir(p.pid, pathname, modes)
-                    } else {
-                        nr::KernelNode::<Ring3Process>::mkdir(p.pid, pathname, modes)
-                    }
-                }
+                Ok(_) => mlnr::MlnrKernelNode::mkdir(p.pid, pathname, modes),
                 Err(e) => Err(e),
             }
         }),

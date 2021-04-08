@@ -72,9 +72,7 @@ num_cpus = "1.12"
 cc = "1.0"
 
 [features]
-default = ["mlnrfs"]
-# Use concurrent in-memory filesystem with mlnr.
-mlnrfs = []
+default = []
 # Run an integration test instead of standard kernel main function
 integration-test = []
 # smoke: Shorten long running benchmarks to test just functionality

@@ -11,8 +11,8 @@ use kpi::process::FrameId;
 
 use crate::arch::Module;
 use crate::error::KError;
-use crate::fs::Fd;
 use crate::memory::{Frame, VAddr};
+use crate::mlnrfs::Fd;
 use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle};
 
 use super::debug;

@@ -1,7 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
+use super::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
 use arr_macro::arr;
 
 pub struct FileDesc {

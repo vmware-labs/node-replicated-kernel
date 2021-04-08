@@ -23,7 +23,7 @@ custom_error! {
     InvalidSystemOperation{a: u64} = "Invalid System Operation (2nd syscall argument) supplied: {}",
     VSpace{source: crate::memory::vspace::AddressSpaceError} = "VSpace operation covers existing mapping",
     PhysicalMemory{source: crate::memory::AllocationError} = "Memory allocation failed",
-    FileSystem{source: crate::fs::FileSystemError} = "FileSystem operation does file based io",
+    FileSystem{source: crate::mlnrfs::FileSystemError} = "FileSystem operation does file based io",
     ProcessError{source: crate::process::ProcessError} = "Process Operation failed",
     InvalidAffinityId = "Specified an invalid NUMA node ID for affinity.",
 }

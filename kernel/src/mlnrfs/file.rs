@@ -1,7 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::fs::{FileSystemError, Modes};
+use crate::mlnrfs::{FileSystemError, Modes};
 use alloc::vec::Vec;
 use core::mem::size_of;
 use kpi::io::*;

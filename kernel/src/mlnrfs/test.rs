@@ -4,6 +4,7 @@
 //! Test the file-sytem implementation using unit-tests and proptest.
 
 use alloc::vec::Vec;
+use core::cell::RefCell;
 use core::cmp::{Eq, PartialEq};
 use core::sync::atomic::Ordering;
 use core::u64::MAX;
@@ -31,18 +32,20 @@ enum ModelOperation {
 /// The FS model that we strive to implement.
 struct ModelFS {
     /// A log that stores all operations on the model FS.
-    oplog: Vec<ModelOperation>,
+    oplog: RefCell<Vec<ModelOperation>>,
     /// A counter to hand out mnode identifiers.
-    mnode_counter: u64,
+    mnode_counter: RefCell<u64>,
 }
 
 impl Default for ModelFS {
     fn default() -> Self {
-        let mut oplog = Vec::with_capacity(64);
-        oplog.push(ModelOperation::Created("/".to_string(), 0, 1));
+        let mut oplog = RefCell::new(Vec::with_capacity(64));
+        oplog
+            .borrow_mut()
+            .push(ModelOperation::Created("/".to_string(), 0, 1));
         ModelFS {
             oplog,
-            mnode_counter: 1,
+            mnode_counter: RefCell::new(1),
         }
     }
 }
@@ -50,7 +53,7 @@ impl Default for ModelFS {
 impl ModelFS {
     /// Find mnode of a path.
     fn path_to_mnode(&self, path: &String) -> Option<Mnode> {
-        for x in self.oplog.iter().rev() {
+        for x in self.oplog.borrow().iter().rev() {
             match x {
                 ModelOperation::Created(name, _mode, mnode) => {
                     if &name == &path {
@@ -66,7 +69,7 @@ impl ModelFS {
 
     /// Find index of a path in the oplog.
     fn path_to_idx(&self, path: &String) -> Option<usize> {
-        for (idx, x) in self.oplog.iter().enumerate().rev() {
+        for (idx, x) in self.oplog.borrow().iter().enumerate().rev() {
             match x {
                 ModelOperation::Created(name, _mode, _mnode) => {
                     if &name == &path {
@@ -87,7 +90,7 @@ impl ModelFS {
 
     /// Check if a mnode exists.
     fn mnode_exists(&self, look_for: Mnode) -> bool {
-        for x in self.oplog.iter().rev() {
+        for x in self.oplog.borrow().iter().rev() {
             match x {
                 ModelOperation::Created(_name, _mode, mnode) => {
                     if look_for == *mnode {
@@ -130,15 +133,18 @@ impl ModelFS {
 
 impl FileSystem for ModelFS {
     // Create just puts the file in the oplop and increases mnode counter.
-    fn create(&mut self, pathname: &str, mode: Modes) -> Result<u64, FileSystemError> {
+    fn create(&self, pathname: &str, mode: Modes) -> Result<u64, FileSystemError> {
         let path = String::from(pathname);
         if self.file_exists(&path) {
             Err(FileSystemError::AlreadyPresent)
         } else {
-            self.mnode_counter += 1;
-            self.oplog
-                .push(ModelOperation::Created(path, mode, self.mnode_counter));
-            Ok(self.mnode_counter)
+            *self.mnode_counter.borrow_mut() += 1;
+            self.oplog.borrow_mut().push(ModelOperation::Created(
+                path,
+                mode,
+                *self.mnode_counter.borrow(),
+            ));
+            Ok(*self.mnode_counter.borrow())
         }
     }
 
@@ -146,13 +152,13 @@ impl FileSystem for ModelFS {
     ///
     /// Our model assumes that the buffer repeats the first byte for its entire length.
     fn write(
-        &mut self,
+        &self,
         mnode_num: Mnode,
         buffer: &[u8],
         offset: usize,
     ) -> Result<usize, FileSystemError> {
         if self.mnode_exists(mnode_num) {
-            for x in self.oplog.iter().rev() {
+            for x in self.oplog.borrow().iter().rev() {
                 trace!("seen {:?}", x);
                 match x {
                     // Check if the file is writable or not
@@ -168,7 +174,7 @@ impl FileSystem for ModelFS {
             if buffer.len() > 0 {
                 // Model assumes that buffer is filled with the same pattern all the way
                 let pattern: char = buffer[0] as char;
-                self.oplog.push(ModelOperation::Write(
+                self.oplog.borrow_mut().push(ModelOperation::Write(
                     mnode_num,
                     offset,
                     pattern,
@@ -203,7 +209,7 @@ impl FileSystem for ModelFS {
             }
 
             // Start with the latest writes first
-            for x in self.oplog.iter().rev() {
+            for x in self.oplog.borrow().iter().rev() {
                 trace!("seen {:?}", x);
                 match x {
                     ModelOperation::Write(fmnode, foffset, fpattern, flength) => {
@@ -283,9 +289,9 @@ impl FileSystem for ModelFS {
     }
 
     /// Delete finds and removes a path from the oplog again.
-    fn delete(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
+    fn delete(&self, pathname: &str) -> Result<bool, FileSystemError> {
         if let Some(idx) = self.path_to_idx(&String::from(pathname)) {
-            self.oplog.remove(idx);
+            self.oplog.borrow_mut().remove(idx);
             // We leave corresponding ModelOperation::Write entries
             // in the log for now...
             Ok(true)
@@ -300,16 +306,16 @@ impl FileSystem for ModelFS {
     }
 
     /// Return a `dummy` response as this function is only used for open with O_TRUNC flag.
-    fn truncate(&mut self, pathname: &str) -> Result<bool, FileSystemError> {
+    fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError> {
         Ok(true)
     }
 
     /// Return a `dummy` response for rename operation
-    fn rename(&mut self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
+    fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
         Ok(true)
     }
 
-    fn mkdir(&mut self, pathname: &str, mode: Modes) -> Result<bool, FileSystemError> {
+    fn mkdir(&self, pathname: &str, mode: Modes) -> Result<bool, FileSystemError> {
         Ok(true)
     }
 }
@@ -465,7 +471,7 @@ proptest! {
     #[test]
     fn model_equivalence(ops in actions()) {
         let mut model: ModelFS = Default::default();
-        let mut totest: fs::MemFS = Default::default();
+        let mut totest: MlnrFS = Default::default();
 
         use TestAction::*;
         for action in ops {
@@ -519,6 +525,7 @@ proptest! {
 /// Initialize and update file descriptor mnode number and permission flags.
 #[test]
 fn test_file_descriptor() {
+    use crate::mlnrfs::{Fd, FileDescriptor};
     let mut fd = Fd::init_fd();
     assert_eq!(fd.get_mnode(), MAX);
     assert_eq!(fd.get_flags(), FileFlags::O_NONE);
@@ -531,27 +538,27 @@ fn test_file_descriptor() {
 /// Initialize memfs for root and verify the values.
 #[test]
 fn test_memfs_init() {
-    let memfs: MemFS = Default::default();
+    let memfs: MlnrFS = Default::default();
     let root = String::from("/");
     assert_eq!(memfs.root, (root.to_owned(), 1));
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 2);
-    assert_eq!(memfs.files.get(&root), Some(&Arc::new(1)));
+    assert_eq!(memfs.files.read().get(&root), Some(&Arc::new(1)));
     assert_eq!(
-        memfs.mnodes.get(&1),
-        Some(&MemNode::new(1, "/", FileModes::S_IRWXU.into(), NodeType::Directory).unwrap())
+        *memfs.mnodes.read().get(&1).unwrap().read(),
+        MemNode::new(1, "/", FileModes::S_IRWXU.into(), NodeType::Directory).unwrap()
     );
 }
 
 #[test]
 /// Create a file on in-memory fs and verify all the values.
 fn test_file_create() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
 }
@@ -561,13 +568,13 @@ fn test_file_create() {
 
 fn test_file_read_permission_error() {
     let buffer = &[0; 10];
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IWUSR.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     // On error read returns 0.
@@ -583,13 +590,13 @@ fn test_file_read_permission_error() {
 #[test]
 fn test_file_write_permission_error() {
     let buffer = &[0; 10];
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     // On error read returns 0.
@@ -603,13 +610,13 @@ fn test_file_write_permission_error() {
 #[test]
 fn test_file_write() {
     let buffer = &[0; 10];
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     assert_eq!(
@@ -627,13 +634,13 @@ fn test_file_read() {
     let wbuffer: &[u8; 10] = &[0xb; 10];
     let rbuffer: &mut [u8; 10] = &mut [0; 10];
 
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     assert_eq!(
@@ -655,13 +662,13 @@ fn test_file_read() {
 /// Create a file and lookup for it.
 #[test]
 fn test_file_lookup() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     let mnode = memfs.lookup(filename);
@@ -671,13 +678,13 @@ fn test_file_lookup() {
 /// Lookup for a fake file.
 #[test]
 fn test_file_fake_lookup() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     let mnode = memfs.lookup("filename");
@@ -687,13 +694,13 @@ fn test_file_fake_lookup() {
 /// Try to create a file with same name.
 #[test]
 fn test_file_duplicate_create() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     assert_eq!(
@@ -705,13 +712,13 @@ fn test_file_duplicate_create() {
 /// Test file_info.
 #[test]
 fn test_file_info() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
-        memfs.files.get(&String::from("file.txt")),
+        memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
     assert_eq!(memfs.file_info(2), FileInfo { ftype: 2, fsize: 0 });
@@ -720,7 +727,7 @@ fn test_file_info() {
 /// Test file deletion.
 #[test]
 fn test_file_delete() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let buffer: &mut [u8; 10] = &mut [0xb; 10];
 
@@ -741,7 +748,7 @@ fn test_file_delete() {
 
 #[test]
 fn test_file_rename() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let newname = "filenew.txt";
     let oldmnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
@@ -752,7 +759,7 @@ fn test_file_rename() {
 
 #[test]
 fn test_file_rename_and_read() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let newname = "filenew.txt";
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
@@ -776,7 +783,7 @@ fn test_file_rename_and_read() {
 
 #[test]
 fn test_file_rename_and_write() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let newname = "filenew.txt";
     let oldmnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
@@ -797,7 +804,7 @@ fn test_file_rename_and_write() {
 
 #[test]
 fn test_file_rename_nonexistent_file() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let oldname = "file.txt";
     let newname = "filenew.txt";
     assert_eq!(
@@ -808,7 +815,7 @@ fn test_file_rename_nonexistent_file() {
 
 #[test]
 fn test_file_rename_to_existent_file() {
-    let mut memfs: MemFS = Default::default();
+    let mut memfs: MlnrFS = Default::default();
     let oldname = "file.txt";
     let newname = "filenew.txt";
     let oldmnode = memfs.create(oldname, FileModes::S_IRWXU.into()).unwrap();

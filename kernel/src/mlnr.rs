@@ -5,11 +5,11 @@
 
 use crate::arch::process::{UserPtr, UserSlice};
 use crate::error::KError;
-use crate::fs::{
-    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, Modes, Offset, FD,
-};
 use crate::memory::VAddr;
 use crate::mlnrfs::{fd::FileDesc, MlnrFS, NrLock, MNODE_OFFSET};
+use crate::mlnrfs::{
+    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, Modes, Offset, FD,
+};
 use crate::prelude::*;
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
 

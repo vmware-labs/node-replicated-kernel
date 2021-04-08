@@ -18,11 +18,11 @@ use crate::arch::memory::LARGE_PAGE_SIZE;
 use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::error::KError;
-use crate::fs::Fd;
 use crate::kcb;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::KernelAllocator;
 use crate::memory::{Frame, PhysicalPageProvider, VAddr};
+use crate::mlnrfs::Fd;
 use crate::prelude::overlaps;
 use crate::{mlnr, nr, round_up};
 
@@ -388,13 +388,9 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
             let response = replica.execute_mut(nr::Op::ProcCreate(&mod_file, data_frames), *token);
             match response {
                 Ok(nr::NodeResult::ProcCreated(pid)) => {
-                    if cfg!(feature = "mlnrfs") {
-                        match mlnr::MlnrKernelNode::add_process(pid) {
-                            Ok(pid) => Ok(pid.0),
-                            Err(e) => unreachable!("{}", e),
-                        }
-                    } else {
-                        Ok(pid)
+                    match mlnr::MlnrKernelNode::add_process(pid) {
+                        Ok(pid) => Ok(pid.0),
+                        Err(e) => unreachable!("{}", e),
                     }
                 }
                 _ => unreachable!("Got unexpected response"),

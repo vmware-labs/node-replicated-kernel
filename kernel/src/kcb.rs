@@ -17,7 +17,7 @@ use slabmalloc::ZoneAllocator;
 use crate::arch::kcb::init_kcb;
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
-use crate::fs::{FileSystem, MemFS};
+use crate::mlnrfs::{FileSystem, MlnrFS};
 
 use crate::memory::{
     emem::EmergencyAllocator, tcache::TCache, tcache_sp::TCacheSp, AllocatorStatistics,
@@ -250,7 +250,7 @@ pub struct Kcb<A: ArchSpecificKcb> {
 
     /// A dummy in-memory file system to test the memory
     /// system and file system operations with NR.
-    pub memfs: Option<MemFS>,
+    pub memfs: Option<MlnrFS>,
 
     pub print_buffer: Option<String>,
 

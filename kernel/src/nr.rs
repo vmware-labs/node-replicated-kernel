@@ -18,10 +18,6 @@ use node_replication::ReplicaToken;
 use crate::arch::process::{UserPtr, UserSlice};
 use crate::arch::Module;
 use crate::error::KError;
-use crate::fs::{
-    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MemFS, Modes,
-    Offset, FD, MAX_FILES_PER_PROCESS,
-};
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
@@ -30,8 +26,6 @@ use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, Pro
 pub enum ReadOps {
     CurrentExecutor(atopology::GlobalThreadId),
     ProcessInfo(Pid),
-    FileRead(Pid, FD, Buffer, Len, Offset),
-    FileInfo(Pid, Filename, u64),
     MemResolve(Pid, VAddr),
     Synchronize,
 }
@@ -61,12 +55,6 @@ pub enum Op {
     MemMapFrameId(Pid, VAddr, FrameId, MapAction),
     MemAdjust,
     MemUnmap(Pid, VAddr),
-    FileOpen(Pid, String, Flags, Modes),
-    FileWrite(Pid, FD, Arc<[u8]>, Len, Offset),
-    FileClose(Pid, FD),
-    FileDelete(Pid, String),
-    FileRename(Pid, String, String),
-    MkDir(Pid, String, Modes),
     Invalid,
 }
 
@@ -89,13 +77,6 @@ pub enum NodeResult<E: Executor> {
     Adjusted,
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
-    FileOpened(FD),
-    FileClosed(u64),
-    FileAccessed(Len),
-    FileInfo(u64),
-    FileDeleted(bool),
-    FileRenamed(bool),
-    DirCreated(bool),
     Executor(Weak<E>),
     FrameId(usize),
     Invalid,
@@ -112,7 +93,6 @@ pub struct KernelNode<P: Process> {
     current_pid: Pid,
     process_map: HashMap<Pid, Box<P>>,
     scheduler_map: HashMap<atopology::GlobalThreadId, Arc<P::E>>,
-    fs: MemFS,
 }
 
 impl<P: Process> Default for KernelNode<P> {
@@ -121,7 +101,6 @@ impl<P: Process> Default for KernelNode<P> {
             current_pid: 1,
             process_map: HashMap::with_capacity(256),
             scheduler_map: HashMap::with_capacity(256),
-            fs: Default::default(),
         }
     }
 }
@@ -244,167 +223,6 @@ impl<P: Process> KernelNode<P> {
             })
     }
 
-    pub fn map_fd(pid: Pid, pathname: u64, flags: u64, modes: u64) -> Result<(FD, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename;
-                match userptr_to_str(pathname) {
-                    Ok(user_str) => filename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
-                let response =
-                    replica.execute_mut(Op::FileOpen(pid, filename, flags, modes), *token);
-
-                match &response {
-                    Ok(NodeResult::FileOpened(fd)) => Ok((*fd, 0)),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-    }
-
-    pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(Op::FileClose(pid, fd), *token);
-
-                match &response {
-                    Ok(NodeResult::FileClosed(_)) => Ok((0, 0)),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-    }
-
-    pub fn file_io(
-        op: FileOperation,
-        pid: Pid,
-        fd: u64,
-        buffer: u64,
-        len: u64,
-        offset: i64,
-    ) -> Result<(Len, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| match op {
-                FileOperation::Read | FileOperation::ReadAt => {
-                    let response =
-                        replica.execute(ReadOps::FileRead(pid, fd, buffer, len, offset), *token);
-
-                    match &response {
-                        Ok(NodeResult::FileAccessed(len)) => Ok((*len, 0)),
-                        Ok(_) => unreachable!("Got unexpected response"),
-                        Err(r) => Err(r.clone()),
-                    }
-                }
-
-                FileOperation::Write | FileOperation::WriteAt => {
-                    let kernslice = KernSlice::new(buffer, len as usize);
-
-                    let response = replica.execute_mut(
-                        Op::FileWrite(pid, fd, kernslice.buffer.clone(), len, offset),
-                        *token,
-                    );
-
-                    match &response {
-                        Ok(NodeResult::FileAccessed(len)) => Ok((*len, 0)),
-                        Ok(_) => unreachable!("Got unexpected response"),
-                        Err(r) => Err(r.clone()),
-                    }
-                }
-                _ => unreachable!(),
-            })
-    }
-
-    pub fn file_info(pid: Pid, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute(ReadOps::FileInfo(pid, name, info_ptr), *token);
-
-                match &response {
-                    Ok(NodeResult::FileInfo(f_info)) => Ok((0, 0)),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-    }
-
-    pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename;
-                match userptr_to_str(name) {
-                    Ok(user_str) => filename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-                let response = replica.execute_mut(Op::FileDelete(pid, filename), *token);
-
-                match &response {
-                    Ok(NodeResult::FileDeleted(_)) => Ok((0, 0)),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-    }
-
-    pub fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let oldfilename;
-                match userptr_to_str(oldname) {
-                    Ok(user_str) => oldfilename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
-                let newfilename;
-                match userptr_to_str(newname) {
-                    Ok(user_str) => newfilename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
-                let response =
-                    replica.execute_mut(Op::FileRename(pid, oldfilename, newfilename), *token);
-                match &response {
-                    Ok(NodeResult::FileRenamed(_)) => Ok((0, 0)),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-    }
-
-    pub fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename;
-                match userptr_to_str(pathname) {
-                    Ok(user_str) => filename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
-                let response = replica.execute_mut(Op::MkDir(pid, filename, modes), *token);
-
-                match &response {
-                    Ok(NodeResult::DirCreated(true)) => Ok((0, 0)),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-    }
-
     pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         let kcb = super::kcb::get_kcb();
         kcb.replica
@@ -477,66 +295,6 @@ where
             ReadOps::Synchronize => {
                 // A NOP that just makes sure we've advanced the replica
                 Ok(NodeResult::Synchronized)
-            }
-            ReadOps::FileRead(pid, fd, buffer, len, offset) => {
-                let mut userslice = UserSlice::new(buffer, len as usize);
-                let process_lookup = self.process_map.get(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-                let fd = p.get_fd(fd as usize);
-                let mnode_num = fd.get_mnode();
-                let flags = fd.get_flags();
-
-                // Check if the file has read-only or read-write permissions before reading it.
-                if !flags.is_read() {
-                    return Err(KError::FileSystem {
-                        source: FileSystemError::PermissionError,
-                    });
-                }
-
-                // If the arguments doesn't provide an offset,
-                // then use the offset associated with the FD.
-                let mut curr_offset: usize = offset as usize;
-                if offset == -1 {
-                    curr_offset = fd.get_offset();
-                }
-
-                match self.fs.read(mnode_num, &mut userslice, curr_offset) {
-                    Ok(len) => {
-                        // Update the FD associated offset only when the
-                        // offset wasn't given in the arguments.
-                        if offset == -1 {
-                            fd.update_offset(curr_offset + len);
-                        }
-                        Ok(NodeResult::FileAccessed(len as u64))
-                    }
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                }
-            }
-            ReadOps::FileInfo(pid, name, info_ptr) => {
-                let process_lookup = self.process_map.get(&pid);
-                let mut p = process_lookup.expect("TODO: FileCreate process lookup failed");
-
-                let filename;
-                match userptr_to_str(name) {
-                    Ok(user_str) => filename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
-                match self.fs.lookup(&filename) {
-                    // match on (file_exists, mnode_number)
-                    Some(mnode) => {
-                        let f_info = self.fs.file_info(*mnode);
-
-                        let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
-                        unsafe {
-                            *user_ptr.as_mut_ptr::<FileInfo>() = f_info;
-                        }
-                        Ok(NodeResult::FileInfo(0))
-                    }
-                    None => Err(KError::FileSystem {
-                        source: FileSystemError::InvalidFile,
-                    }),
-                }
             }
             ReadOps::ProcessInfo(pid) => {
                 let process_lookup = self.process_map.get(&pid);
@@ -651,118 +409,6 @@ where
                 }
 
                 Ok(NodeResult::Unmapped(shootdown_handle))
-            }
-            Op::FileOpen(pid, filename, flags, modes) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileOpen process lookup failed");
-
-                let flags = FileFlags::from(flags);
-                let mnode = self.fs.lookup(&filename);
-                if mnode.is_none() && !flags.is_create() {
-                    return Err(KError::FileSystem {
-                        source: FileSystemError::PermissionError,
-                    });
-                }
-
-                let fd = p.allocate_fd();
-                match fd {
-                    None => Err(KError::NotSupported),
-                    Some(mut fd) => {
-                        let mnode_num;
-                        if mnode.is_none() {
-                            match self.fs.create(&filename, modes) {
-                                Ok(m_num) => mnode_num = m_num,
-                                Err(e) => {
-                                    let fdesc = fd.0 as usize;
-                                    p.deallocate_fd(fdesc);
-                                    return Err(KError::FileSystem { source: e });
-                                }
-                            }
-                        } else {
-                            // File exists and FileOpen is called with O_TRUNC flag.
-                            if flags.is_truncate() {
-                                self.fs.truncate(&filename);
-                            }
-                            mnode_num = *mnode.unwrap();
-                        }
-                        fd.1.update_fd(mnode_num, flags);
-                        Ok(NodeResult::FileOpened(fd.0))
-                    }
-                }
-            }
-            Op::FileWrite(pid, fd, kernslice, len, offset) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileWrite process lookup failed");
-                let fd = p.get_fd(fd as usize);
-                let mnode_num = fd.get_mnode();
-                let flags = fd.get_flags();
-
-                // Check if the file has write-only or read-write permissions before reading it.
-                if !flags.is_write() {
-                    return Err(KError::FileSystem {
-                        source: FileSystemError::PermissionError,
-                    });
-                }
-
-                let mut curr_offset: usize = offset as usize;
-                if offset == -1 {
-                    if flags.is_append() {
-                        // If offset value is not provided and file is opened with O_APPEND flag.
-                        let finfo = self.fs.file_info(mnode_num);
-                        curr_offset = finfo.fsize as usize;
-                    } else {
-                        // If offset value is not provided and file is doesn't have O_APPEND flag.
-                        curr_offset = fd.get_offset();
-                    }
-                }
-
-                match self.fs.write(mnode_num, &kernslice.clone(), curr_offset) {
-                    Ok(len) => {
-                        if offset == -1 {
-                            // Update offset when FileWrite doesn't give an explicit offset value.
-                            fd.update_offset(curr_offset + len);
-                        }
-                        Ok(NodeResult::FileAccessed(len as u64))
-                    }
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                }
-            }
-            Op::FileClose(pid, fd) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileClose process lookup failed");
-                let ret = p.deallocate_fd(fd as usize);
-
-                if ret == fd as usize {
-                    Ok(NodeResult::FileClosed(fd))
-                } else {
-                    Err(KError::FileSystem {
-                        source: FileSystemError::InvalidFileDescriptor,
-                    })
-                }
-            }
-            Op::FileDelete(pid, filename) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileDelete process lookup failed");
-                match self.fs.delete(&filename) {
-                    Ok(is_deleted) => Ok(NodeResult::FileDeleted(is_deleted)),
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                }
-            }
-            Op::FileRename(pid, oldname, newname) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: FileRename process lookup failed");
-                match self.fs.rename(&oldname, &newname) {
-                    Ok(is_renamed) => Ok(NodeResult::FileRenamed(is_renamed)),
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                }
-            }
-            Op::MkDir(pid, filename, modes) => {
-                let process_lookup = self.process_map.get_mut(&pid);
-                let mut p = process_lookup.expect("TODO: MkDir process lookup failed");
-                match self.fs.mkdir(&filename, modes) {
-                    Ok(is_created) => Ok(NodeResult::DirCreated(is_created)),
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                }
             }
             Op::ProcAllocateCore(pid, Some(gtid), Some(region), entry_point) => {
                 match self.scheduler_map.get(&gtid) {

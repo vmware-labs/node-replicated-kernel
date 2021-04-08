@@ -5,8 +5,8 @@ use alloc::string::String;
 use alloc::string::ToString;
 
 use crate::arch::process::UserSlice;
-use crate::fs::file::*;
-use crate::fs::{FileSystemError, Mnode, Modes};
+use crate::mlnrfs::file::*;
+use crate::mlnrfs::{FileSystemError, Mnode, Modes};
 
 /// Each memory-node can be of two types: directory or a file.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

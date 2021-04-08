@@ -306,7 +306,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
 
         // Only relocate stuff in write-only frames that don't get replicated:
         for (pheader_offset, frame) in self.frames.iter() {
-            let elf_vbase = self.offset + *pheader_offset & !(LARGE_PAGE_SIZE - 1);
+            let elf_vbase = (self.offset + *pheader_offset) & !(LARGE_PAGE_SIZE - 1);
             if addr >= elf_vbase && addr <= elf_vbase + frame.size() {
                 // Relocation is within this frame
                 let kernel_vaddr = paddr_to_kernel_vaddr(frame.base);

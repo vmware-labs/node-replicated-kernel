@@ -43,10 +43,7 @@ impl File {
             Err(_) => return Err(FileSystemError::OutOfMemory),
             Ok(_) => {}
         }
-        Ok(File {
-            mcache: mcache,
-            modes,
-        })
+        Ok(File { mcache, modes })
     }
 
     /// This method returns the current-size of the file. This method follows
@@ -197,10 +194,11 @@ impl File {
         // If offset is more than file size then fill the file with zeros till the offset.
         let curr_file_len = self.get_size();
         let new_len = start_offset + len;
-        if new_len > curr_file_len {
-            if new_len > 0 && !self.increase_file_size(curr_file_len, new_len) {
-                return Err(FileSystemError::OutOfMemory);
-            }
+        if new_len > 0
+            && new_len > curr_file_len
+            && !self.increase_file_size(curr_file_len, new_len)
+        {
+            return Err(FileSystemError::OutOfMemory);
         }
 
         let mut buffer_num = offset_to_buffernum(start_offset, BASE_PAGE_SIZE);

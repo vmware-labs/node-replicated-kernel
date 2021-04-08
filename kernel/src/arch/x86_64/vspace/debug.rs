@@ -171,6 +171,7 @@ pub unsafe fn dump_table(pml4_table: &PML4, log_level: usize) {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone)]
 pub enum Nd<'a> {
     HugePage(PAddr),

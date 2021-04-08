@@ -49,10 +49,7 @@ impl EmergencyAllocator {
         assert!(region.base.as_u64() > 0);
         assert!(region.size % BASE_PAGE_SIZE == 0);
 
-        EmergencyAllocator {
-            index: 0,
-            region: region,
-        }
+        EmergencyAllocator { index: 0, region }
     }
 
     unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, AllocationError> {

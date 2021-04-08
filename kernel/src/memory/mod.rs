@@ -917,8 +917,8 @@ impl Frame {
         //assert!(node < MAX_TOPOLOGIES);
 
         Frame {
-            base: base,
-            size: size,
+            base,
+            size,
             affinity: node,
         }
     }
@@ -942,8 +942,8 @@ impl Frame {
         assert_eq!(size % BASE_PAGE_SIZE, 0);
 
         Frame {
-            base: base,
-            size: size,
+            base,
+            size,
             affinity: node,
         }
     }

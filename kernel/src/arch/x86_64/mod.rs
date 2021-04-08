@@ -57,7 +57,6 @@ pub mod acpi;
 mod isr;
 
 pub use bootloader_shared::*;
-use klogger;
 
 use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{

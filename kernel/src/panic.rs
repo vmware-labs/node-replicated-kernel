@@ -11,11 +11,9 @@ use crate::arch;
 use crate::kcb;
 #[cfg(target_os = "none")]
 use crate::ExitReason;
-use backtracer_core;
 
 use alloc::rc::Rc;
 
-use addr2line;
 use addr2line::gimli;
 use addr2line::Context;
 

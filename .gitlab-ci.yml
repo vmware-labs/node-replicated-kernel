@@ -48,9 +48,7 @@ run-unix:
 test:
   stage: test
   script:
-    - cd lib/slabmalloc
-    - cargo test
-    - cd ../../kernel
+    - cd kernel
     - cargo fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test --features smoke
     - cd ..

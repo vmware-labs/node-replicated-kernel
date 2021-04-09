@@ -643,11 +643,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_physical_memory_manager(tcache);
     }
 
-    {
-        let kcb = kcb::get_kcb();
-        kcb.init_memfs();
-    }
-
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
@@ -697,6 +692,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let kcb = kcb::get_kcb();
         kcb.arch.setup_mlnr(mlnr_replica.clone(), local_ridx);
+        kcb.arch.init_mlnrfs();
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)

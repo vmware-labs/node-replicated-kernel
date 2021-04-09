@@ -20,6 +20,7 @@ use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
+use crate::mlnrfs::{FileSystem, MlnrFS};
 
 use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
@@ -120,8 +121,12 @@ pub struct Arch86Kcb {
     ///  * IO APIC and local APIC memory (after initialization has completed)
     init_vspace: RefCell<PageTable>,
 
-    ///
+    /// A handle to the node-local CNR based kernel replica.
     pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
+
+    /// A dummy in-memory file system to test the memory
+    /// system and file system operations with MLNR.
+    pub mlnrfs: Option<MlnrFS>,
 
     /// Global id per hyperthread.
     id: usize,
@@ -172,6 +177,7 @@ impl Arch86Kcb {
             syscall_stack: None,
             unrecoverable_fault_stack: None,
             mlnr_replica: None,
+            mlnrfs: None,
             id: 0,
             max_threads: 0,
         }
@@ -197,6 +203,12 @@ impl Arch86Kcb {
             None => 1,
         };
         self.mlnr_replica = Some((replica, idx_token));
+    }
+
+    /// Initialized the dummy file-system to measure the write() system call overhead.
+    pub fn init_mlnrfs(&mut self) {
+        self.mlnrfs = Some(Default::default());
+        let _result = self.mlnrfs.as_ref().unwrap().create("bespin", 0x007);
     }
 
     pub fn id(&self) -> usize {

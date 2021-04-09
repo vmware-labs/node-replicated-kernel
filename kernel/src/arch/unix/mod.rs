@@ -100,7 +100,6 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     debug!("Memory allocation should work at this point...");
 
     kcb::init_kcb(Box::leak(kcb));
-    kcb::get_kcb().init_memfs();
 
     let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
     let bsp_replica = Replica::<KernelNode<UnixProcess>>::new(&log);

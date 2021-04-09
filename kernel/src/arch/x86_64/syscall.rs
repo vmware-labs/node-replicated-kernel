@@ -427,7 +427,6 @@ fn handle_fileio(
             }
         }),
         FileOperation::WriteDirect => {
-            let kcb = super::kcb::get_kcb();
             let len = arg3;
             let mut offset = arg4 as usize;
             if arg5 == 0 {
@@ -436,7 +435,8 @@ fn handle_fileio(
 
             let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
             let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
-            match kcb.memfs.as_mut().unwrap().write(2, &mut buffer, offset) {
+            let mlnrfs = super::kcb::get_kcb().arch.mlnrfs.as_ref().unwrap();
+            match mlnrfs.write(2, &mut buffer, offset) {
                 Ok(len) => Ok((len as u64, 0)),
                 Err(e) => Err(KError::FileSystem { source: e }),
             }

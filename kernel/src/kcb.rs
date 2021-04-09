@@ -17,7 +17,6 @@ use slabmalloc::ZoneAllocator;
 use crate::arch::kcb::init_kcb;
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
-use crate::mlnrfs::{FileSystem, MlnrFS};
 
 use crate::memory::{
     emem::EmergencyAllocator, tcache::TCache, tcache_sp::TCacheSp, AllocatorStatistics,
@@ -248,10 +247,6 @@ pub struct Kcb<A: ArchSpecificKcb> {
     /// Which NUMA node this KCB / core belongs to
     pub node: atopology::NodeId,
 
-    /// A dummy in-memory file system to test the memory
-    /// system and file system operations with NR.
-    pub memfs: Option<MlnrFS>,
-
     pub print_buffer: Option<String>,
 
     /// Contains a bunch of memory arenas, can be one for every NUMA node
@@ -285,7 +280,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             // Can't initialize these yet, we need basic Kcb first for
             // memory allocations (emanager):
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),
-            memfs: None,
             print_buffer: None,
             replica: None,
             tlb_time: 0,
@@ -408,13 +402,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn kernel_binary(&self) -> &'static [u8] {
         self.kernel_binary
-    }
-
-    /// Initialized the dummy file-system to measure the write() system call
-    /// overhead. Accessing the memfs in multiple threads is unsafe.
-    pub fn init_memfs(&mut self) {
-        self.memfs = Some(Default::default());
-        let _result = self.memfs.as_mut().unwrap().create("bespin", 0x007);
     }
 }
 

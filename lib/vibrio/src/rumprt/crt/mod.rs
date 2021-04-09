@@ -315,7 +315,7 @@ pub extern "C" fn main() {
             assert_eq!(ri, 0);
 
             // This is used by leveldb only.
-            if parsed_args.len() > 2 {
+            if parsed_args.contains(&"--benchmarks=fillseq,readrandom") {
                 let key2 = CStr::from_bytes_with_nul(b"/tmp/leveldbtest-0\0");
                 let hostpath = CStr::from_bytes_with_nul(b"/\0");
                 let etfs_ret =

@@ -42,8 +42,7 @@ pub mod unix;
 #[cfg(target_family = "unix")]
 pub use crate::tls2::unix as arch;
 
-/// Start of the kernel address space.
-pub const KERNEL_BASE: u64 = 0x400000000000;
+use kpi::KERNEL_BASE;
 
 /// Per thread state of the scheduler.
 ///

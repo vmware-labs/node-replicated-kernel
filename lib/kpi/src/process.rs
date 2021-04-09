@@ -27,9 +27,10 @@ pub struct ProcessInfo {
     pub tls_len_total: u64,
     /// Required alignment
     pub alignment: u64,
-    /// Command line argument buffer
+    /// Generic command line argument buffer, example: testbinary, testcmd, etc.
     pub cmdline: &'static str,
-    /// App command line argument buffer
+    /// App specific command line argument buffer, for example:
+    /// benchmarks, reads, value_size for leveldb benchmark.
     pub app_cmdline: &'static str,
 }
 

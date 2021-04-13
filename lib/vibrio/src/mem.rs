@@ -35,8 +35,6 @@ macro_rules! round_up {
 // Max number of cores supported by the allocator.
 const MAX_CORES: usize = 96;
 
-//static MEM_PROVIDER: crate::mem::SafeZoneAllocator = crate::mem::SafeZoneAllocator::new();
-
 #[cfg(target_os = "bespin")]
 #[global_allocator]
 static PER_CORE_MEM_PROVIDER: crate::mem::PerCoreAllocator = crate::mem::PerCoreAllocator::new();
@@ -287,7 +285,7 @@ pub struct PerCoreAllocator;
 
 lazy_static! {
     pub static ref PER_CORE_MEM_ALLOCATOR: [SafeZoneAllocator; MAX_CORES] = {
-        let mut allocators = ArrayVec::<SafeZoneAllocator, 96>::new();
+        let mut allocators = ArrayVec::<SafeZoneAllocator, MAX_CORES>::new();
         for i in 0..MAX_CORES {
             allocators.push(SafeZoneAllocator(CachePadded::new(Mutex::new(
                 ZoneAllocator::new(),

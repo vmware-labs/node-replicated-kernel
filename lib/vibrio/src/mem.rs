@@ -5,9 +5,12 @@
 //! API from user-space and implements a [`core::alloc::GlobalAlloc`]
 //! type for doing memory allocation in user-space.
 
-use core::{alloc::{GlobalAlloc, Layout}, iter::Map};
 use core::mem::transmute;
 use core::ptr::{self, NonNull};
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    iter::Map,
+};
 
 use arrayvec::ArrayVec;
 use lazy_static::lazy_static;
@@ -32,7 +35,7 @@ macro_rules! round_up {
 // Max number of cores supported by the allocator.
 const MAX_CORES: usize = 96;
 
-static MEM_PROVIDER: crate::mem::SafeZoneAllocator = crate::mem::SafeZoneAllocator::new();
+//static MEM_PROVIDER: crate::mem::SafeZoneAllocator = crate::mem::SafeZoneAllocator::new();
 
 #[cfg(target_os = "bespin")]
 #[global_allocator]
@@ -280,130 +283,43 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
     }
 }
 
-pub struct PerCoreAllocator {
-    allocators: [SafeZoneAllocator; MAX_CORES],
+pub struct PerCoreAllocator;
+
+lazy_static! {
+    pub static ref PER_CORE_MEM_ALLOCATOR: [SafeZoneAllocator; MAX_CORES] = {
+        let mut allocators = ArrayVec::<SafeZoneAllocator, 96>::new();
+        for i in 0..MAX_CORES {
+            allocators.push(SafeZoneAllocator(CachePadded::new(Mutex::new(
+                ZoneAllocator::new(),
+            ))));
+        }
+        match allocators.into_inner() {
+            Ok(allocators) => allocators,
+            Err(_) => unreachable!("Unable to convert ArrayVec to array"),
+        }
+    };
 }
 
 impl PerCoreAllocator {
     pub const fn new() -> PerCoreAllocator {
-        let alloc_array = [
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-            SafeZoneAllocator(CachePadded::new(Mutex::new(ZoneAllocator::new()))),
-        ];
-        PerCoreAllocator {
-            allocators: alloc_array,
-        }
+        PerCoreAllocator {}
     }
 }
 
 unsafe impl GlobalAlloc for PerCoreAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // Get the core_id we are currently running on. Then return alloc of that SafeZoneAllocator.
-        let sza = &self.allocators[Environment::core_id()];
+        let sza = &PER_CORE_MEM_ALLOCATOR[Environment::core_id()];
         sza.alloc(layout)
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let sza = &self.allocators[Environment::core_id()];
+        let sza = &PER_CORE_MEM_ALLOCATOR[Environment::core_id()];
         sza.realloc(ptr, layout, new_size)
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let sza = &self.allocators[Environment::core_id()];
+        let sza = &PER_CORE_MEM_ALLOCATOR[Environment::core_id()];
         sza.dealloc(ptr, layout)
     }
 }

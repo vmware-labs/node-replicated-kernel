@@ -120,7 +120,7 @@ pub enum MlnrNodeResult {
     FileAccessed(Len),
     FileClosed(u64),
     FileDeleted(bool),
-    FileInfo(u64),
+    FileInfo(Arc<FileInfo>),
     FileRenamed(bool),
     DirCreated(bool),
     MappedFileToMnode(u64),
@@ -256,7 +256,14 @@ impl MlnrKernelNode {
                 let response = replica.execute(Access::FileInfo(pid, name, info_ptr), *token);
 
                 match &response {
-                    Ok(MlnrNodeResult::FileInfo(_)) => Ok((0, 0)),
+                    Ok(MlnrNodeResult::FileInfo(f_info)) => {
+                        let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
+                        unsafe {
+                            (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = f_info.ftype;
+                            (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = f_info.fsize;
+                        }
+                        Ok((0, 0))
+                    }
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -426,13 +433,9 @@ impl Dispatch for MlnrKernelNode {
                     match self.fs.lookup(&filename) {
                         // match on (file_exists, mnode_number)
                         Some(mnode) => {
-                            let f_info = self.fs.file_info(*mnode);
+                            let f_info = Arc::new(self.fs.file_info(*mnode));
 
-                            let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
-                            unsafe {
-                                *user_ptr.as_mut_ptr::<FileInfo>() = f_info;
-                            }
-                            Ok(MlnrNodeResult::FileInfo(0))
+                            Ok(MlnrNodeResult::FileInfo(f_info.clone()))
                         }
                         None => Err(KError::FileSystem {
                             source: FileSystemError::InvalidFile,

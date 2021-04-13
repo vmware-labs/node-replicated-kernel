@@ -1795,7 +1795,7 @@ fn s06_fxmark_benchmark() {
 ///  * All the above operations with invalid userspace pointers
 #[test]
 fn s06_test_fs() {
-    let cmdline = RunnerArgs::new("test-userspace")
+    let cmdline = RunnerArgs::new("test-userspace-smp")
         .module("init")
         .user_feature("test-fs")
         .release()

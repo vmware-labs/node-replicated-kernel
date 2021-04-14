@@ -127,6 +127,9 @@ pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
                         backtrace_format(context.as_ref(), relocated_offset, count, frame)
                     },
                 );
+                // TODO(bug): Investigate why freeing context tries to dealloc an invalid
+                // (not alloc'd) pointer... Not critical since we're panicking already.
+                core::mem::forget(context);
             }
             Err(e) => {
                 sprintln!("Backtrace unavailable (can't parse kernel binary: '{}')", e);

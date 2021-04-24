@@ -9,7 +9,7 @@ keywords = ["os", "acpi", "irq", "driver", "x86"]
 edition = "2018"
 
 [dependencies]
-driverkit = "0.5"
+driverkit = { git = "https://github.com/gz/rust-driverkit", branch = "iomem" }
 x86 = "0.39"
 log = "0.4"
 bitflags = "1.0"

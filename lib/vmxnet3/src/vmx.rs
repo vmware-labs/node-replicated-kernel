@@ -8,7 +8,7 @@ use core::mem;
 use core::pin::Pin;
 
 use arrayvec::ArrayVec;
-use custom_error_core::custom_error;
+use custom_error::custom_error;
 use driverkit::net::{PktInfo, RxError, RxdInfo, TxError, TxRx};
 use log::{debug, error, info};
 use x86::current::paging::{PAddr, VAddr};
@@ -22,6 +22,12 @@ use crate::{BoundedU32, BoundedUSize};
 pub enum QueueId {
     Rx(usize),
     Tx(usize),
+}
+
+enum Barrier {
+    Read,
+    Write,
+    ReadWrite,
 }
 
 /// The txq and rxq shared data areas must be allocated contiguously
@@ -179,7 +185,6 @@ mod tests {
         }
     }
 }
-
 
 custom_error! {pub VMXNet3Error
     DeviceNotSupported = "Unknown vmxnet3 device/version",
@@ -541,31 +546,79 @@ impl VMXNet3 {
         self.reinit_rxfilters();
         self.link_status();
     }
-}
 
+    /// Since this is a purely paravirtualized device, we do not have
+    /// to worry about DMA coherency. But at times, we must make sure
+    /// both the compiler and CPU do not reorder memory operations.
+    fn barrier(&self, typ: Barrier) {
+        match typ {
+            Barrier::Read => x86::fence::lfence(),
+            Barrier::Write => x86::fence::sfence(),
+            Barrier::ReadWrite => x86::fence::mfence(),
+        }
+    }
+}
 
 /// Device Dependent Transmit and Receive Functions
 impl TxRx for VMXNet3 {
+    // Transmit functions
 
-    /// Transimt functions
-
-    /**
-     * sends a packet on an interface by enqueueing it on the TX ring. The packet may consists of
-     * multiple segments forming a single packet. Note, this function purely writes the descriptor
-     * ring, and does not advance the thx register.
-     *
-     *  - pi: contains information describing the packet to be sent.
-     */
+    /// Sends a packet on an interface by enqueueing it on the TX ring. The packet may consists of
+    /// multiple segments forming a single packet. Note, this function purely writes the descriptor
+    /// ring, and does not advance the thx register.
+    ///
+    /// # Arguments
+    ///  - pi: contains information describing the packet to be sent.
     fn txd_encap(&mut self, pi: PktInfo) -> Result<(), TxError> {
         assert!(
-            pi.segments() <= VMXNET3_TX_MAXSEGS,
+            pi.nsegs() <= VMXNET3_TX_MAXSEGS,
             "vmxnet3: Packet with too many segments"
         );
 
-        let txq: Option<&TxQueue> = self.txq.get(pi.qsidx);
-        txq.map(|txq| {
-            //txq.vxtxq_cmd_ring.
-        });
+        let txq: &mut TxQueue = &mut self.txq[pi.qsidx];
+        let txr = &mut txq.vxtxq_cmd_ring;
+        let mut pidx = pi.pidx();
+        let mut gen = txr.vxtxr_gen ^ 1; /* Owned by cpu (yet) */
+
+        for (seg_addr, segs_len) in pi.segments {
+            let txd = &mut txr.vxtxr_txd[pidx];
+            txd.addr = seg_addr;
+            txd.set_len(segs_len);
+            txd.set_gen(gen as u32);
+            txd.set_dtype(0);
+            txd.set_offload_mode(VMXNET3_OM_NONE);
+            txd.set_offload_pos(0);
+            txd.set_hlen(0);
+            txd.set_eop(0);
+            txd.set_compreq(0);
+            txd.set_vtag_mode(0);
+            txd.set_vtag(0);
+
+            pidx += 1;
+            if pidx == txr.vxtxr_ndesc() {
+                pidx = 0;
+                txr.vxtxr_gen ^= 1;
+            }
+
+            gen = txr.vxtxr_gen;
+        }
+
+        let txd = &mut txr.vxtxr_txd[pidx];
+        txd.set_eop(1);
+        // send an interrupt when this packet is sent
+        const IPI_TX_INTR: u32 = 0x1;
+        txd.set_compreq(!!(pi.flags & IPI_TX_INTR));
+
+        // Ignore VLAN
+        // Ignore TSO and checksum offload
+
+        self.barrier(Barrier::Write);
+
+        // Finally, change the ownership.
+        let txq: &mut TxQueue = &mut self.txq[pi.qsidx];
+        let txr = &mut txq.vxtxq_cmd_ring;
+        let sop = &mut txr.vxtxr_txd[pidx];
+        sop.set_gen(sop.gen() ^ 1);
 
         Ok(())
     }
@@ -596,7 +649,6 @@ impl TxRx for VMXNet3 {
     fn txd_credits_update(&mut self, qid: u16, clear: bool) -> Result<(), TxError> {
         Ok(())
     }
-
 
     /// Receive Functions
 

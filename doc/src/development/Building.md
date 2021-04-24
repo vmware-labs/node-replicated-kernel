@@ -150,8 +150,8 @@ modules aren't loaded, otherwise the rdmacm-mux service will fail to start:
 
 ```bash
 sudo rmmod ib_ipoib
+sudo rmmod rdma_cm
 sudo rmmod ib_cm
-sudo rmmod rdma_c
 ```
 
 Start the QEMU `racadm-mux` utility (before launching a qemu VM that uses

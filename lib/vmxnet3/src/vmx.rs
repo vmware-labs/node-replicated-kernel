@@ -1,5 +1,6 @@
 use alloc::alloc::{AllocError, Layout};
 use alloc::boxed::Box;
+use alloc::collections::vec_deque::VecDeque;
 use alloc::collections::TryReserveError;
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -9,7 +10,11 @@ use core::pin::Pin;
 
 use arrayvec::ArrayVec;
 use custom_error::custom_error;
-use driverkit::net::{PktInfo, RxError, RxdInfo, TxError, TxRx};
+
+use driverkit::devq::{DevQueue, DevQueueError};
+use driverkit::iomem::{IOBuf, IOBufChain, IOMemError};
+use driverkit::net::RxdInfo;
+
 use log::{debug, error, info};
 use x86::current::paging::{PAddr, VAddr};
 
@@ -550,7 +555,7 @@ impl VMXNet3 {
     /// Since this is a purely paravirtualized device, we do not have
     /// to worry about DMA coherency. But at times, we must make sure
     /// both the compiler and CPU do not reorder memory operations.
-    fn barrier(&self, typ: Barrier) {
+    fn barrier(typ: Barrier) {
         match typ {
             Barrier::Read => x86::fence::lfence(),
             Barrier::Write => x86::fence::sfence(),
@@ -559,6 +564,88 @@ impl VMXNet3 {
     }
 }
 
+impl DevQueue for VMXNet3 {
+    fn enqueue(
+        &mut self,
+        mut chains: VecDeque<IOBufChain>,
+    ) -> Result<VecDeque<IOBufChain>, DevQueueError> {
+        debug_assert_eq!(
+            chains.len(),
+            1,
+            "Original VMXnet3 only passed 1 'chain', so this is untested
+            but might just work if we test for capacity error in the code below"
+        );
+
+        while let Some(chain) = chains.pop_front() {
+            assert!(
+                chain.segments.len() <= VMXNET3_TX_MAXSEGS,
+                "vmxnet3: Packet with too many segments"
+            );
+
+            let txq: &mut TxQueue = &mut self.txq[chain.qsidx];
+            let txr = &mut txq.vxtxq_cmd_ring;
+            let mut pidx = chain.pidx;
+            let mut gen = txr.vxtxr_gen ^ 1; /* Owned by cpu (yet) */
+
+            for seg in chain.segments {
+                let txd = &mut txr.vxtxr_txd[pidx];
+                txd.addr = seg.paddr().as_u64();
+                txd.set_len(seg.len().try_into().unwrap());
+                txd.set_gen(gen as u32);
+                txd.set_dtype(0);
+                txd.set_offload_mode(VMXNET3_OM_NONE);
+                txd.set_offload_pos(0);
+                txd.set_hlen(0);
+                txd.set_eop(0);
+                txd.set_compreq(0);
+                txd.set_vtag_mode(0);
+                txd.set_vtag(0);
+
+                pidx += 1;
+                if pidx == txr.vxtxr_ndesc() {
+                    pidx = 0;
+                    txr.vxtxr_gen ^= 1;
+                }
+
+                gen = txr.vxtxr_gen;
+            }
+
+            let txd = &mut txr.vxtxr_txd[pidx];
+            txd.set_eop(1);
+            // send an interrupt when this packet is sent
+            const IPI_TX_INTR: u32 = 0x1;
+            txd.set_compreq(!!(chain.flags & IPI_TX_INTR));
+
+            // Ignore VLAN
+            // Ignore TSO and checksum offload
+
+            VMXNet3::barrier(Barrier::Write);
+
+            let sop = &mut txr.vxtxr_txd[pidx];
+            sop.set_gen(sop.gen() ^ 1);
+        }
+
+        Ok(chains)
+    }
+
+    fn flush(&mut self) -> Result<usize, DevQueueError> {
+        Ok(0)
+    }
+
+    fn can_enqueue(&self, exact: bool) -> Result<usize, DevQueueError> {
+        Ok(0)
+    }
+
+    fn dequeue(&mut self, cnt: usize) -> Result<VecDeque<IOBufChain>, DevQueueError> {
+        Ok(VecDeque::default())
+    }
+
+    fn can_dequeue(&mut self, exact: bool) -> Result<usize, DevQueueError> {
+        Ok(0)
+    }
+}
+
+/*
 /// Device Dependent Transmit and Receive Functions
 impl TxRx for VMXNet3 {
     // Transmit functions
@@ -697,3 +784,4 @@ impl TxRx for VMXNet3 {
         Ok(())
     }
 }
+*/

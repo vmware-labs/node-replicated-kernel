@@ -1,19 +1,10 @@
 use log::error;
-
-use x86::bits64::paging::{PAddr, VAddr};
 use x86::io;
 
+pub use driverkit::iomem::DmaObject;
+
+///  TODO: get rid of this:
 pub const KERNEL_BASE: u64 = 0x400000000000;
-
-pub trait DmaObject {
-    fn paddr(&self) -> PAddr {
-        PAddr::from(&*self as *const Self as *const () as u64) - PAddr::from(KERNEL_BASE)
-    }
-
-    fn vaddr(&self) -> VAddr {
-        VAddr::from(&*self as *const Self as *const () as usize)
-    }
-}
 
 static PCI_CONF_ADDR: u16 = 0xcf8;
 static PCI_CONF_DATA: u16 = 0xcfc;

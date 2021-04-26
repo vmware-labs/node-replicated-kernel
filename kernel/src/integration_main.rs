@@ -465,10 +465,15 @@ pub fn xmain() {
     target_arch = "x86_64"
 ))]
 pub fn xmain() {
+    use alloc::alloc::Layout;
     use alloc::prelude::v1::*;
+    use alloc::vec;
 
     use crate::memory::vspace::MapAction;
     use crate::memory::PAddr;
+
+    use driverkit::devq::*;
+    use driverkit::iomem::*;
 
     let kcb = crate::kcb::get_kcb();
     // TODO(hack): Map vmxnet3 bars
@@ -493,6 +498,32 @@ pub fn xmain() {
     let mut vmx = vmxnet3::vmx::VMXNet3::new(2, 2, 128, 128).unwrap();
     vmx.attach_pre();
     vmx.init();
+
+    let mut bufchain = IOBufChain::new(0, 0, 0, 1).expect("Can't make IoBufChain?");
+    let mut packet = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
+        .expect("Can't malke packet?");
+    /*
+    000000: 00 A0 CC 63 08 1B 00 40 : 95 49 03 5F 08 00 45 00 ...c...@.I._..E.
+    000010: 00 3C 82 47 00 00 20 01 : 94 C9 C0 A8 01 20 C0 A8 .<.G.. ...... ..
+    000020: 01 40 08 00 48 5C 01 00 : 04 00 61 62 63 64 65 66 .@..H\....abcdef
+    000030: 67 68 69 6A 6B 6C 6D 6E : 6F 70 71 72 73 74 75 76 ghijklmnopqrstuv
+    000040: 77 61 62 63 64 65 66 67 : 68 69                   wabcdefghi......
+    */
+    let raw_data = vec![
+        //56:b4:44:e9:62:dc
+        0x00, 0xA0, 0xCC, 0x63, 0x08, 0x1B, 0x56, 0xb4, 044, 0xe9, 0x62, 0xdc, 0x08, 0x00, 0x45,
+        0x00, 0x00, 0x3C, 0x82, 0x47, 0x00, 0x00, 0x20, 0x01, 0x94, 0xC9, 0xC0, 0xA8, 0x01, 0x20,
+        0xC0, 0xA8, 0x01, 0x40, 0x08, 0x00, 0x48, 0x5C, 0x01, 0x00, 0x04, 0x00, 0x61, 0x62, 0x63,
+        0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72,
+        0x73, 0x74, 0x75, 0x76, 0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+    ];
+    packet.copy_in(raw_data.as_slice());
+    bufchain.segments.push_back(packet);
+    vmx.enqueue(bufchain).expect("Enq failed");
+    vmx.flush(0, 1).expect("Flush failed?");
+    loop {
+        unsafe { x86::halt() };
+    }
 
     arch::debug::shutdown(ExitReason::Ok);
 }

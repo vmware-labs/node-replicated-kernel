@@ -565,70 +565,80 @@ impl VMXNet3 {
 }
 
 impl DevQueue for VMXNet3 {
-    fn enqueue(
-        &mut self,
-        mut chains: VecDeque<IOBufChain>,
-    ) -> Result<VecDeque<IOBufChain>, DevQueueError> {
-        debug_assert_eq!(
-            chains.len(),
-            1,
-            "Original VMXnet3 only passed 1 'chain', so this is untested
-            but might just work if we test for capacity error in the code below"
+    fn enqueue(&mut self, mut chain: IOBufChain) -> Result<IOBufChain, DevQueueError> {
+        assert!(
+            chain.segments.len() <= VMXNET3_TX_MAXSEGS,
+            "vmxnet3: Packet with too many segments"
         );
 
-        while let Some(chain) = chains.pop_front() {
-            assert!(
-                chain.segments.len() <= VMXNET3_TX_MAXSEGS,
-                "vmxnet3: Packet with too many segments"
-            );
+        let txq: &mut TxQueue = &mut self.txq[chain.qsidx];
+        let txr = &mut txq.vxtxq_cmd_ring;
+        let mut pidx = chain.pidx;
+        let mut gen = txr.vxtxr_gen ^ 1; /* Owned by cpu (yet) */
 
-            let txq: &mut TxQueue = &mut self.txq[chain.qsidx];
-            let txr = &mut txq.vxtxq_cmd_ring;
-            let mut pidx = chain.pidx;
-            let mut gen = txr.vxtxr_gen ^ 1; /* Owned by cpu (yet) */
+        while let Some(seg) = chain.segments.pop_front() {
+            let txd = &mut txr.vxtxr_txd[pidx];
+            txd.addr = seg.paddr().as_u64();
+            txd.set_len(seg.len().try_into().unwrap());
+            txd.set_gen(gen as u32);
+            txd.set_dtype(0);
+            txd.set_offload_mode(VMXNET3_OM_NONE);
+            txd.set_offload_pos(0);
+            txd.set_hlen(0);
+            txd.set_eop(0);
+            txd.set_compreq(0);
+            txd.set_vtag_mode(0);
+            txd.set_vtag(0);
 
-            for seg in chain.segments {
-                let txd = &mut txr.vxtxr_txd[pidx];
-                txd.addr = seg.paddr().as_u64();
-                txd.set_len(seg.len().try_into().unwrap());
-                txd.set_gen(gen as u32);
-                txd.set_dtype(0);
-                txd.set_offload_mode(VMXNET3_OM_NONE);
-                txd.set_offload_pos(0);
-                txd.set_hlen(0);
-                txd.set_eop(0);
-                txd.set_compreq(0);
-                txd.set_vtag_mode(0);
-                txd.set_vtag(0);
-
-                pidx += 1;
-                if pidx == txr.vxtxr_ndesc() {
-                    pidx = 0;
-                    txr.vxtxr_gen ^= 1;
-                }
-
-                gen = txr.vxtxr_gen;
+            pidx += 1;
+            if pidx == txr.vxtxr_ndesc() {
+                pidx = 0;
+                txr.vxtxr_gen ^= 1;
             }
 
-            let txd = &mut txr.vxtxr_txd[pidx];
-            txd.set_eop(1);
-            // send an interrupt when this packet is sent
-            const IPI_TX_INTR: u32 = 0x1;
-            txd.set_compreq(!!(chain.flags & IPI_TX_INTR));
-
-            // Ignore VLAN
-            // Ignore TSO and checksum offload
-
-            VMXNet3::barrier(Barrier::Write);
-
-            let sop = &mut txr.vxtxr_txd[pidx];
-            sop.set_gen(sop.gen() ^ 1);
+            gen = txr.vxtxr_gen;
         }
 
-        Ok(chains)
+        let txd = &mut txr.vxtxr_txd[pidx];
+        txd.set_eop(1);
+        // send an interrupt when this packet is sent
+        const IPI_TX_INTR: u32 = 0x1;
+        txd.set_compreq(!!(chain.flags & IPI_TX_INTR));
+        chain.ipi_new_pidx = pidx;
+
+        // Ignore VLAN
+        // Ignore TSO and checksum offload
+
+        VMXNet3::barrier(Barrier::Write);
+
+        let sop = &mut txr.vxtxr_txd[pidx];
+        sop.set_gen(sop.gen() ^ 1);
+        Ok(chain)
     }
 
-    fn flush(&mut self) -> Result<usize, DevQueueError> {
+    /// Flushes packet to device.
+    ///
+    /// # Arguments
+    /// - `pidx` is what we last set ipi_new_pidx to in enqueue()
+    fn flush(&mut self, txqid: usize, pidx: usize) -> Result<usize, DevQueueError> {
+        let id = {
+            let txq = &mut self.txq[txqid];
+
+            // Avoid expensive register updates if the flush request is
+            // redundant
+            if txq.vxtxq_last_flush == (pidx as i32) {
+                return Ok(0);
+            }
+            txq.vxtxq_last_flush = pidx as i32;
+            txq.vxtxq_id
+        };
+
+        let bar0_txh_offset = |id: QueueId| match id {
+            QueueId::Tx(idx) => 0x600 + idx as u64 * 8,
+            QueueId::Rx(_) => unreachable!("invalid queue ID, specified Rx but needs Tx."),
+        };
+        self.write_bar0(bar0_txh_offset(id), pidx as u32);
+
         Ok(0)
     }
 

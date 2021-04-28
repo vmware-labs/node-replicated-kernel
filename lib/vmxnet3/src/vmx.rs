@@ -1,9 +1,7 @@
 use alloc::alloc::{AllocError, Layout};
 use alloc::boxed::Box;
-use alloc::collections::vec_deque::VecDeque;
 use alloc::collections::TryReserveError;
 use alloc::string::ToString;
-use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::mem;
 use core::pin::Pin;
@@ -11,25 +9,18 @@ use core::pin::Pin;
 use arrayvec::ArrayVec;
 use custom_error::custom_error;
 
-use driverkit::devq::{DevQueue, DevQueueError};
-use driverkit::iomem::{IOBuf, IOBufChain, IOMemError};
-use driverkit::net::RxdInfo;
-
 use log::{debug, error, info};
 use x86::current::paging::{PAddr, VAddr};
 
-use crate::pci::{self, DmaObject};
+use crate::pci::{self, BarAccess, BarIO, DmaObject};
 use crate::reg::*;
 use crate::var::*;
 use crate::{BoundedU32, BoundedUSize};
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-pub enum QueueId {
-    Rx(usize),
-    Tx(usize),
-}
+pub type RxQueueId = usize;
+pub type TxQueueId = usize;
 
-enum Barrier {
+pub(crate) enum Barrier {
     Read,
     Write,
     ReadWrite,
@@ -200,9 +191,8 @@ custom_error! {pub VMXNet3Error
 }
 
 pub struct VMXNet3 {
-    bar0: u64,
-    bar1: u64,
-    //bar_msix: u64,
+    pci: BarAccess,
+
     /// Number of transmit queues.
     ntxqsets: BoundedUSize<1, { VMXNET3_MAX_TX_QUEUES }>,
     /// Number of receive queues.
@@ -222,6 +212,8 @@ pub struct VMXNet3 {
 
     /// Bytes of MAC Address for device
     lladdr: [u8; 6],
+    /* vec<&phyimpl>
+     * phyimpl.shutdown() -> (Rx, Tx) */
 }
 
 impl DmaObject for VMXNet3 {}
@@ -238,20 +230,7 @@ impl VMXNet3 {
         const DEV: u32 = 0x10;
         const FUN: u32 = 0x0;
 
-        let (bar0, bar1) = unsafe {
-            let devline = pci::confread(BUS, DEV, FUN, 0x0);
-            assert_eq!(devline, 0x7b015ad, "Sanity check for vmxnet3");
-
-            let bar0 = pci::confread(BUS, DEV, FUN, 0x10);
-            let bar1 = pci::confread(BUS, DEV, FUN, 0x14);
-            //let bar_msix = pci::confread(BUS, DEV, FUN, 0x7);
-
-            debug!("BAR0 at: {:#x}", bar0);
-            debug!("BAR1 at: {:#x}", bar1);
-            //debug!("MSI-X at: {:#x}", bar_msi);
-
-            (bar0.into(), bar1.into())
-        };
+        let pci = BarAccess::new(BUS, DEV, FUN);
 
         let ntxqsets = BoundedUSize::<1, VMXNET3_MAX_TX_QUEUES>::new(trx);
         let nrxqsets = BoundedUSize::<1, VMXNET3_MAX_RX_QUEUES>::new(nrx);
@@ -263,8 +242,7 @@ impl VMXNet3 {
         let evintr = *nrxqsets as u8; // The event interrupt is the last vector
 
         let mut vmx = Pin::new(Box::try_new(VMXNet3 {
-            bar0,
-            bar1,
+            pci,
             vmx_flags: 0,
             ntxqsets,
             nrxqsets,
@@ -288,27 +266,9 @@ impl VMXNet3 {
         Ok(vmx)
     }
 
-    /*
-
-        /* Rx queues */
-        for (i = 0; i < scctx->isc_nrxqsets; i++) {
-            rxq = &sc->vmx_rxq[i];
-            rxs = rxq->vxrxq_rs;
-
-            rxs->cmd_ring[0] = rxq->vxrxq_cmd_ring[0].vxrxr_paddr;
-            rxs->cmd_ring_len[0] = rxq->vxrxq_cmd_ring[0].vxrxr_ndesc;
-            rxs->cmd_ring[1] = rxq->vxrxq_cmd_ring[1].vxrxr_paddr;
-            rxs->cmd_ring_len[1] = rxq->vxrxq_cmd_ring[1].vxrxr_ndesc;
-            rxs->comp_ring = rxq->vxrxq_comp_ring.vxcr_paddr;
-            rxs->comp_ring_len = rxq->vxrxq_comp_ring.vxcr_ndesc;
-            rxs->driver_data = vtophys(rxq);
-            rxs->driver_data_len = sizeof(struct vmxnet3_rxqueue);
-        }
-    */
-
     fn tx_queues_alloc(&mut self) -> Result<(), VMXNet3Error> {
         for i in 0..*self.ntxqsets {
-            let txq = TxQueue::new(QueueId::Tx(i), VMXNET3_DEF_TX_NDESC)?;
+            let txq = TxQueue::new(i, VMXNET3_DEF_TX_NDESC, self.pci)?;
 
             // Mirror info in shared queue region:
             let txs = self.qs.txqs_ref_mut(i);
@@ -327,7 +287,7 @@ impl VMXNet3 {
 
     fn rx_queues_alloc(&mut self) -> Result<(), VMXNet3Error> {
         for i in 0..*self.nrxqsets {
-            let rxq = RxQueue::new(QueueId::Rx(i), VMXNET3_DEF_RX_NDESC)?;
+            let rxq = RxQueue::new(i, VMXNET3_DEF_RX_NDESC)?;
 
             // Mirror info in shared queue region:
             let rxs = self.qs.rxqs_ref_mut(i);
@@ -375,17 +335,17 @@ impl VMXNet3 {
     }
 
     fn check_version(&self) -> Result<(), VMXNet3Error> {
-        let version = self.read_bar1(VMXNET3_BAR1_VRRS);
+        let version = self.pci.read_bar1(VMXNET3_BAR1_VRRS);
         if version & 0x1 == 0 {
             return Err(VMXNet3Error::DeviceNotSupported);
         }
-        self.write_bar1(VMXNET3_BAR1_VRRS, 1);
+        self.pci.write_bar1(VMXNET3_BAR1_VRRS, 1);
 
-        let version = self.read_bar1(VMXNET3_BAR1_UVRS);
+        let version = self.pci.read_bar1(VMXNET3_BAR1_UVRS);
         if version & 0x1 == 0 {
             return Err(VMXNet3Error::DeviceNotSupported);
         }
-        self.write_bar1(VMXNET3_BAR1_UVRS, 1);
+        self.pci.write_bar1(VMXNET3_BAR1_UVRS, 1);
 
         Ok(())
     }
@@ -399,31 +359,14 @@ impl VMXNet3 {
     pub fn suspend(&self) {}
     pub fn resume(&self) {}
 
-    #[allow(unused)]
-    fn read_bar0(&self, offset: u64) -> u32 {
-        unsafe { pci::busread(self.bar0, offset) }
-    }
-
-    fn write_bar0(&self, offset: u64, data: u32) {
-        unsafe { pci::buswrite(self.bar0, offset, data) };
-    }
-
-    fn read_bar1(&self, offset: u64) -> u32 {
-        unsafe { pci::busread(self.bar1, offset) }
-    }
-
-    fn write_bar1(&self, offset: u64, data: u32) {
-        unsafe { pci::buswrite(self.bar1, offset, data) };
-    }
-
     fn read_cmd(&self, cmd: u32) -> u32 {
         self.write_cmd(cmd);
         core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
-        self.read_bar1(VMXNET3_BAR1_CMD)
+        self.pci.read_bar1(VMXNET3_BAR1_CMD)
     }
 
     fn write_cmd(&self, cmd: u32) {
-        self.write_bar1(VMXNET3_BAR1_CMD, cmd);
+        self.pci.write_bar1(VMXNET3_BAR1_CMD, cmd);
     }
 
     pub fn stop(&mut self) {
@@ -441,8 +384,8 @@ impl VMXNet3 {
         self.ds.upt_features = 0; // TODO: Various
 
         let (low, high) = self.ds.paddr().split();
-        self.write_bar1(VMXNET3_BAR1_DSL, low);
-        self.write_bar1(VMXNET3_BAR1_DSH, high);
+        self.pci.write_bar1(VMXNET3_BAR1_DSL, low);
+        self.pci.write_bar1(VMXNET3_BAR1_DSH, high);
     }
 
     fn retrieve_lladdr(&mut self) {
@@ -472,10 +415,10 @@ impl VMXNet3 {
             | (self.lladdr[1] as u32) << 8
             | (self.lladdr[2] as u32) << 16
             | (self.lladdr[3] as u32) << 24;
-        self.write_bar1(VMXNET3_BAR1_MACL, ml as u32);
+        self.pci.write_bar1(VMXNET3_BAR1_MACL, ml as u32);
 
         let mh: u32 = (self.lladdr[4] as u32) | (self.lladdr[5] as u32) << 8;
-        self.write_bar1(VMXNET3_BAR1_MACH, mh as u32);
+        self.pci.write_bar1(VMXNET3_BAR1_MACH, mh as u32);
     }
 
     fn reinit_queues(&mut self) {
@@ -502,8 +445,8 @@ impl VMXNet3 {
                 (0x800 + q * 8, 0xA00 + q * 8)
             }
 
-            self.write_bar0(bar0_rxh(idx).0, 0);
-            self.write_bar0(bar0_rxh(idx).1, 0);
+            self.pci.write_bar0(bar0_rxh(idx).0, 0);
+            self.pci.write_bar0(bar0_rxh(idx).1, 0);
         }
 
         true
@@ -555,103 +498,19 @@ impl VMXNet3 {
     /// Since this is a purely paravirtualized device, we do not have
     /// to worry about DMA coherency. But at times, we must make sure
     /// both the compiler and CPU do not reorder memory operations.
-    fn barrier(typ: Barrier) {
+    pub(crate) fn barrier(typ: Barrier) {
         match typ {
             Barrier::Read => x86::fence::lfence(),
             Barrier::Write => x86::fence::sfence(),
             Barrier::ReadWrite => x86::fence::mfence(),
         }
     }
-}
 
-impl DevQueue for VMXNet3 {
-    fn enqueue(&mut self, mut chain: IOBufChain) -> Result<IOBufChain, DevQueueError> {
-        assert!(
-            chain.segments.len() <= VMXNET3_TX_MAXSEGS,
-            "vmxnet3: Packet with too many segments"
-        );
-
-        let txq: &mut TxQueue = &mut self.txq[chain.qsidx];
-        let txr = &mut txq.vxtxq_cmd_ring;
-        let mut pidx = chain.pidx;
-        let mut gen = txr.vxtxr_gen ^ 1; /* Owned by cpu (yet) */
-
-        while let Some(seg) = chain.segments.pop_front() {
-            let txd = &mut txr.vxtxr_txd[pidx];
-            txd.addr = seg.paddr().as_u64();
-            txd.set_len(seg.len().try_into().unwrap());
-            txd.set_gen(gen as u32);
-            txd.set_dtype(0);
-            txd.set_offload_mode(VMXNET3_OM_NONE);
-            txd.set_offload_pos(0);
-            txd.set_hlen(0);
-            txd.set_eop(0);
-            txd.set_compreq(0);
-            txd.set_vtag_mode(0);
-            txd.set_vtag(0);
-
-            pidx += 1;
-            if pidx == txr.vxtxr_ndesc() {
-                pidx = 0;
-                txr.vxtxr_gen ^= 1;
-            }
-
-            gen = txr.vxtxr_gen;
+    pub fn print_txc(&self) {
+        if let CompRingBuf::TxCd(ref ring) = self.txq[0].vxtxq_comp_ring.vxcr {
+            info!("{:?}", ring[0]);
+            info!("{:?}", ring[1]);
         }
-
-        let txd = &mut txr.vxtxr_txd[pidx];
-        txd.set_eop(1);
-        // send an interrupt when this packet is sent
-        const IPI_TX_INTR: u32 = 0x1;
-        txd.set_compreq(!!(chain.flags & IPI_TX_INTR));
-        chain.ipi_new_pidx = pidx;
-
-        // Ignore VLAN
-        // Ignore TSO and checksum offload
-
-        VMXNet3::barrier(Barrier::Write);
-
-        let sop = &mut txr.vxtxr_txd[pidx];
-        sop.set_gen(sop.gen() ^ 1);
-        Ok(chain)
-    }
-
-    /// Flushes packet to device.
-    ///
-    /// # Arguments
-    /// - `pidx` is what we last set ipi_new_pidx to in enqueue()
-    fn flush(&mut self, txqid: usize, pidx: usize) -> Result<usize, DevQueueError> {
-        let id = {
-            let txq = &mut self.txq[txqid];
-
-            // Avoid expensive register updates if the flush request is
-            // redundant
-            if txq.vxtxq_last_flush == (pidx as i32) {
-                return Ok(0);
-            }
-            txq.vxtxq_last_flush = pidx as i32;
-            txq.vxtxq_id
-        };
-
-        let bar0_txh_offset = |id: QueueId| match id {
-            QueueId::Tx(idx) => 0x600 + idx as u64 * 8,
-            QueueId::Rx(_) => unreachable!("invalid queue ID, specified Rx but needs Tx."),
-        };
-        self.write_bar0(bar0_txh_offset(id), pidx as u32);
-
-        Ok(0)
-    }
-
-    fn can_enqueue(&self, exact: bool) -> Result<usize, DevQueueError> {
-        Ok(0)
-    }
-
-    fn dequeue(&mut self, cnt: usize) -> Result<VecDeque<IOBufChain>, DevQueueError> {
-        Ok(VecDeque::default())
-    }
-
-    fn can_dequeue(&mut self, exact: bool) -> Result<usize, DevQueueError> {
-        Ok(0)
     }
 }
 

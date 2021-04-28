@@ -1,4 +1,4 @@
-use log::error;
+use log::{debug, error};
 use x86::io;
 
 pub use driverkit::iomem::DmaObject;
@@ -53,4 +53,90 @@ pub(crate) unsafe fn buswrite(bar_base: u64, offset: u64, value: u32) {
         bar_base, offset, value
     );
     *((bar_base + offset) as *mut u32) = value;
+}
+
+pub(crate) trait BarIO {
+    fn read_bar0(&self, offset: u64) -> u32;
+    fn write_bar0(&self, offset: u64, data: u32);
+    fn read_bar1(&self, offset: u64) -> u32;
+    fn write_bar1(&self, offset: u64, data: u32);
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub struct BarAccess {
+    /// Bus, device, function triplet of PCI device
+    pci_addr: (u32, u32, u32),
+    /// IO memory address of BAR0
+    bar0: u64,
+    /// IO memory address of BAR1
+    bar1: u64,
+}
+
+#[cfg(not(test))]
+impl BarAccess {
+    pub(crate) fn new(bus: u32, dev: u32, fun: u32) -> Self {
+        unsafe {
+            let devline = confread(bus, dev, fun, 0x0);
+            assert_eq!(devline, 0x7b015ad, "Sanity check for vmxnet3");
+
+            let bar0 = confread(bus, dev, fun, 0x10);
+            let bar1 = confread(bus, dev, fun, 0x14);
+            //let bar_msix = pci::confread(BUS, DEV, FUN, 0x7);
+
+            debug!("BAR0 at: {:#x}", bar0);
+            debug!("BAR1 at: {:#x}", bar1);
+            //debug!("MSI-X at: {:#x}", bar_msi);
+
+            BarAccess {
+                pci_addr: (bus, dev, fun),
+                bar0: bar0.into(),
+                bar1: bar1.into(),
+            }
+        }
+    }
+}
+
+#[cfg(not(test))]
+impl BarIO for BarAccess {
+    fn read_bar0(&self, offset: u64) -> u32 {
+        unsafe { busread(self.bar0, offset) }
+    }
+
+    fn write_bar0(&self, offset: u64, data: u32) {
+        unsafe { buswrite(self.bar0, offset, data) };
+    }
+
+    fn read_bar1(&self, offset: u64) -> u32 {
+        unsafe { busread(self.bar1, offset) }
+    }
+
+    fn write_bar1(&self, offset: u64, data: u32) {
+        unsafe { buswrite(self.bar1, offset, data) };
+    }
+}
+
+#[cfg(test)]
+impl BarAccess {
+    pub(crate) fn new(bus: u32, dev: u32, fun: u32) -> Self {
+        BarAccess {
+            pci_addr: (bus, dev, fun),
+            bar0: 0x0,
+            bar1: 0x0,
+        }
+    }
+}
+
+#[cfg(test)]
+impl BarIO for BarAccess {
+    fn read_bar0(&self, offset: u64) -> u32 {
+        0xdead
+    }
+
+    fn write_bar0(&self, offset: u64, data: u32) {}
+
+    fn read_bar1(&self, offset: u64) -> u32 {
+        0xbeef
+    }
+
+    fn write_bar1(&self, offset: u64, data: u32) {}
 }

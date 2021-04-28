@@ -106,7 +106,7 @@ parser.add_argument("--pvrdma", action="store_true",
                     help="Add para-virtual RDMA device (for qemu)", default=False)
 parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
-parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio"],
+parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio", "vmxnet3"],
                     help='What NIC model to use for emulation', required=False)
 
 # Baremetal argument
@@ -322,10 +322,17 @@ def run_qemu(args):
                           'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
     # Enable networking with outside world
-    qemu_default_args += ['-net',
-                          'nic,model={},netdev=n0'.format(args.nic)]
-    qemu_default_args += ['-netdev',
-                          'tap,id=n0,script=no,ifname={}'.format(QEMU_TAP_NAME)]
+    if args.nic != "vmxnet3":
+        qemu_default_args += ['-net',
+                              'nic,model={},netdev=n0'.format(args.nic)]
+        qemu_default_args += ['-netdev',
+                              'tap,id=n0,script=no,ifname={}'.format(QEMU_TAP_NAME)]
+    else:
+        qemu_default_args += ['-device',
+                              'vmxnet3,netdev=n1,mac=56:b4:44:e9:62:dc,addr=10.0']
+        qemu_default_args += ['-netdev',
+                              'tap,id=n1,script=no,ifname={}'.format(QEMU_TAP_NAME)]
+
     # qemu_default_args += ['-net', 'none']
 
     def numa_nodes_to_list(file):

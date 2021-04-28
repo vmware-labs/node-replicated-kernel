@@ -109,7 +109,7 @@ pub const VMXNET3_CMD_GET_MACH: u32 = 4027383812;
 pub const VMXNET3_CMD_GET_INTRCFG: u32 = 4027383816;
 
 pub const VMXNET3_DMADESC_ALIGN: u32 = 128;
-pub const VMXNET3_INIT_GEN: i32 = 1;
+pub const VMXNET3_INIT_GEN: u32 = 1;
 
 pub const VMXNET3_OM_NONE: u32 = 0;
 pub const VMXNET3_OM_CSUM: u32 = 2;
@@ -437,10 +437,20 @@ impl vmxnet3_txdesc {
     }
 }
 #[repr(C, packed)]
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct vmxnet3_txcompdesc {
     pub _bitfield_align_1: [u8; 0],
     pub _bitfield_1: __BindgenBitfieldUnit<[u8; 16usize]>,
+}
+
+impl core::fmt::Debug for vmxnet3_txcompdesc {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        f.debug_struct("vmxnet3_txcompdesc")
+            .field("eop_idx", &self.eop_idx())
+            .field("type", &self.type_())
+            .field("gen", &self.gen())
+            .finish()
+    }
 }
 
 impl vmxnet3_txcompdesc {

@@ -13,12 +13,15 @@ use log::info;
 
 use x86::current::paging::{PAddr, VAddr};
 
-use crate::vmx::{RxQueueId, TxQueueId, VMXNet3Error};
-use crate::BoundedUSize;
 use crate::{
     pci::{BarAccess, BarIO, DmaObject, KERNEL_BASE},
     reg::VMXNET3_OM_NONE,
     vmx::VMXNet3,
+};
+use crate::{reg::VMXNET3_BTYPE_BODY, BoundedUSize};
+use crate::{
+    reg::VMXNET3_BTYPE_HEAD,
+    vmx::{RxQueueId, TxQueueId, VMXNet3Error},
 };
 use crate::{
     reg::{
@@ -162,17 +165,14 @@ pub struct vmxnet3_rxring {
     pub vxrxr_rxd: Vec<vmxnet3_rxdesc>,
     pub vxrxr_gen: u32,
     pub vxrxr_desc_skips: u64,
-    pub vxrxr_refill_start: u16,
+    pub vxrxr_refill_start: usize,
 }
 
 impl vmxnet3_rxring {
     fn new(vxrxr_ndesc: usize) -> Result<Self, VMXNet3Error> {
-        let vxrxr_ndesc =
-            BoundedUSize::<VMXNET3_MIN_RX_NDESC, VMXNET3_MAX_RX_NDESC>::new(vxrxr_ndesc);
-
         let mut vxrxr_rxd: Vec<vmxnet3_rxdesc> = Vec::new();
-        vxrxr_rxd.try_reserve_exact(*vxrxr_ndesc)?;
-        for i in 0..*vxrxr_ndesc {
+        vxrxr_rxd.try_reserve_exact(vxrxr_ndesc)?;
+        for i in 0..vxrxr_ndesc {
             vxrxr_rxd.push(vmxnet3_rxdesc::default());
         }
 
@@ -191,6 +191,9 @@ impl vmxnet3_rxring {
 
 impl DmaObject for vmxnet3_rxring {
     fn paddr(&self) -> PAddr {
+        if self.vxrxr_ndesc() == 0 {
+            return PAddr::zero();
+        }
         PAddr::from(self.vxrxr_rxd.as_ptr() as u64 - KERNEL_BASE)
     }
 
@@ -210,7 +213,7 @@ pub enum CompRingBuf {
 #[repr(C)]
 pub struct vmxnet3_comp_ring {
     pub vxcr: CompRingBuf,
-    pub vxcr_next: u_int,
+    pub vxcr_next: usize,
     pub vxcr_gen: u32,
     pub vxcr_zero_length: u64,
     pub vxcr_pkt_errors: u64,
@@ -292,10 +295,12 @@ pub struct TxQueue {
     pidx_tail: usize,
     /// Current index into descriptors
     pidx_head: usize,
+    /// Holding area for chains waiting to be sent by NIC.
+    ///
+    /// Format is (pidx_of_last_segment, IOBufChain)
+    inflight_chains: VecDeque<(usize, IOBufChain)>,
     /// Holding area for IOBufChain that are waiting to be dequeued again
-    /// format is (pidx_of_last_segment, IOBufChain)
-    chain_holder: VecDeque<(usize, IOBufChain)>,
-    //processed_holder: VecDeque<IOBufChain>,
+    processed_chains: VecDeque<IOBufChain>,
 }
 
 impl TxQueue {
@@ -306,8 +311,11 @@ impl TxQueue {
     ) -> Result<Self, VMXNet3Error> {
         let vxtxr_ndesc = BoundedUSize::<VMXNET3_MIN_TX_NDESC, VMXNET3_MAX_TX_NDESC>::new(ndesc);
 
-        let mut chain_holder = VecDeque::new();
-        chain_holder.try_reserve_exact(*vxtxr_ndesc)?;
+        let mut inflight_chains = VecDeque::new();
+        inflight_chains.try_reserve_exact(*vxtxr_ndesc)?;
+
+        let mut processed_chains = VecDeque::new();
+        processed_chains.try_reserve_exact(*vxtxr_ndesc)?;
 
         // Enforce that the transmit completion queue descriptor count is
         // the same as the transmit command queue descriptor count.
@@ -320,7 +328,8 @@ impl TxQueue {
             pci,
             pidx_tail: 0,
             pidx_head: 0,
-            chain_holder,
+            inflight_chains,
+            processed_chains,
         })
     }
 
@@ -347,9 +356,10 @@ impl TxQueue {
         format!("tx-{}", self.vxtxq_id)
     }
 
+    /*
     pub fn vxtxq_ts(&self) -> *mut vmxnet3_txq_shared {
         unimplemented!("get this through vmxnet3 struct?")
-    }
+    } */
 }
 
 impl DmaObject for TxQueue {}
@@ -406,6 +416,7 @@ impl DevQueue for TxQueue {
                 // send an interrupt when this packet is sent
                 const IPI_TX_INTR: u32 = 0x1;
                 txd.set_compreq(!!(chain.flags & IPI_TX_INTR));
+                info!("txt.compreq {:#x}", txd.compreq());
             }
         }
 
@@ -417,8 +428,8 @@ impl DevQueue for TxQueue {
         let sop = &mut txr.vxtxr_txd[old_head];
         sop.set_gen(sop.gen() ^ 1);
 
-        // Add IOBufChain to the back of the holding area
-        self.chain_holder.push_back((self.pidx_head - 1, chain));
+        // Add IOBufChain to the back of the holding area:
+        self.inflight_chains.push_back((self.pidx_head - 1, chain));
 
         Ok(())
     }
@@ -439,28 +450,31 @@ impl DevQueue for TxQueue {
         Ok(0)
     }
 
-    /// TODO: usize can only return descriptors here?
     fn can_enqueue(&self, how_many_seg: usize) -> bool {
         self.capacity() - self.len() > how_many_seg
     }
 
-    /*fn process()
-    {}*/
-
     fn dequeue(&mut self) -> Result<IOBufChain, DevQueueError> {
-        //if self.can_dequeue();
-        Err(DevQueueError::QueueEmpty)
+        if !self.processed_chains.is_empty() || self.can_dequeue(false) >= 1 {
+            debug_assert!(!self.processed_chains.is_empty());
+            self.processed_chains
+                .pop_front()
+                .ok_or(DevQueueError::QueueEmpty)
+        } else {
+            Err(DevQueueError::QueueEmpty)
+        }
     }
 
-    /// TODO: does usize return no. of BufChains?
-    /// or number of descriptors (that's what it does currently)?
-    // TODO: do we need someone to call can_dequeue for dequeue
-    /// or should dequeue also advance?
-    /// usize = #IOBufChain?
-    fn can_dequeue(&mut self, exact: bool) -> Result<usize, DevQueueError> {
-        //process()
-        //self.
-
+    /// Processes the completion queue of the NIC
+    /// updates tail pointer accordingly.
+    ///
+    /// # Arguments
+    /// - exact: If true, advances completion queue as much as possible,
+    ///  if false, only checks if at least one IOBufChain can be returned.
+    ///
+    /// # Returns
+    /// How many packets have been sent.
+    fn can_dequeue(&mut self, exact: bool) -> usize {
         let txc = &mut self.vxtxq_comp_ring;
         let txr = &mut self.vxtxq_cmd_ring;
 
@@ -475,28 +489,35 @@ impl DevQueue for TxQueue {
                 let txcd = txcd_arr[txc.vxcr_next as usize];
                 if txcd.gen() != txc.vxcr_gen {
                     break;
-                } else if !exact {
-                    return Ok(1);
                 }
 
                 VMXNet3::barrier(Barrier::Read);
 
                 txc.vxcr_next += 1;
-                if txc.vxcr_next == txc.vxcr_ndesc() as u32 {
+                if txc.vxcr_next == txc.vxcr_ndesc() {
                     txc.vxcr_next = 0;
                     txc.vxcr_gen ^= 1;
                 }
+                // TODO: Update chain-holder element here
+                let (chain_eop_idx, buf_chain) =
+                    self.inflight_chains.pop_front().expect("Expected an entry");
+                assert_eq!(chain_eop_idx, txcd.eop_idx() as usize);
 
-                if txcd.eop_idx() < txr.vxtxr_next {
-                    processed +=
-                        txr.vxtxr_ndesc() - (txr.vxtxr_next as usize - txcd.eop_idx() as usize) + 1;
-                } else {
-                    processed += txcd.eop_idx() as usize - txr.vxtxr_next as usize + 1;
+                self.processed_chains.push_back(buf_chain);
+                processed += 1;
+
+                // replaced with pidx_tail:
+                // txr.vxtxr_next = (txcd.eop_idx() + 1) % txr.vxtxr_ndesc() as u32;
+                self.pidx_tail = (txcd.eop_idx() as usize + 1) % txr.vxtxr_ndesc();
+
+                if !exact {
+                    // Stop after one packet
+                    break;
                 }
-                txr.vxtxr_next = (txcd.eop_idx() + 1) % txr.vxtxr_ndesc() as u32;
             }
         }
-        Ok(processed)
+
+        processed
     }
 }
 
@@ -507,21 +528,73 @@ pub struct RxQueue {
     pub vxrxq_irq: if_irq,
     pub vxrxq_cmd_ring: [vmxnet3_rxring; 2usize],
     pub vxrxq_comp_ring: vmxnet3_comp_ring,
+    // tail and head are pointers into the buffer. Tail always points
+    // to the first element that could be read, Head always points
+    // to where data should be written.
+    // If tail == head the buffer is empty. The length of the ringbuffer
+    // is defined as the distance between the two.
+    /// Stores advanced pidx between enqueue() and flush() for vxrxq_cmd_ring[0]
+    pidx_tail0: usize,
+    /// Current index into descriptors for vxrxq_cmd_ring[0]
+    pidx_head0: usize,
+    /// Let's us access device' PCI registers
+    pci: BarAccess,
+    /// Holding area for chains waiting to filled with packet by NIC.
+    ///
+    /// Format is (pidx_of_last_segment, IOBufChain)
+    inflight_chains: VecDeque<(usize, IOBufChain)>,
+    /// Holding area for IOBufChain that are waiting to be dequeued
+    processed_chains: VecDeque<IOBufChain>,
 }
 
 impl RxQueue {
-    pub(crate) fn new(vxrxq_id: RxQueueId, ndesc: usize) -> Result<Self, VMXNet3Error> {
-        // Enforce that the receive completion queue descriptor count is the
-        // sum of the receive command queue descriptor counts, and that the
-        // second receive command queue descriptor count is the same as the
-        // first one.
+    pub(crate) fn new(
+        vxrxq_id: RxQueueId,
+        ndesc: usize,
+        pci: BarAccess,
+    ) -> Result<Self, VMXNet3Error> {
+        let vxtxr_ndesc = BoundedUSize::<VMXNET3_MIN_RX_NDESC, VMXNET3_MAX_RX_NDESC>::new(ndesc);
+
+        let mut inflight_chains = VecDeque::new();
+        inflight_chains.try_reserve_exact(*vxtxr_ndesc)?;
+
+        let mut processed_chains = VecDeque::new();
+        processed_chains.try_reserve_exact(*vxtxr_ndesc)?;
+
+        // Currently only support single receive queue descriptor ring per queue
+        // TODO: If we support for both, make sure to change vxrxq_comp_ring to
+        // 2*ndesc
         Ok(RxQueue {
             vxrxq_id,
             vxrxq_intr_idx: 0,
             vxrxq_irq: Default::default(),
-            vxrxq_cmd_ring: [vmxnet3_rxring::new(ndesc)?, vmxnet3_rxring::new(ndesc)?],
-            vxrxq_comp_ring: vmxnet3_comp_ring::new_rx(2 * ndesc)?,
+            vxrxq_cmd_ring: [vmxnet3_rxring::new(ndesc)?, vmxnet3_rxring::new(0)?],
+            vxrxq_comp_ring: vmxnet3_comp_ring::new_rx(1 * ndesc)?,
+            pidx_tail0: 0,
+            pidx_head0: 0,
+            pci,
+            inflight_chains,
+            processed_chains,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        let size = self.vxrxq_cmd_ring[0].vxrxr_ndesc();
+        debug_assert!(size.is_power_of_two());
+
+        (self.pidx_head0.wrapping_sub(self.pidx_tail0)) & (size - 1)
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.vxrxq_cmd_ring[0].vxrxr_ndesc()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.capacity() - self.len() == 1
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pidx_tail0 == self.pidx_head0
     }
 
     pub fn vxrxq_name(&self) -> String {
@@ -536,39 +609,101 @@ impl RxQueue {
 impl DmaObject for RxQueue {}
 
 impl DevQueue for RxQueue {
-    fn enqueue(&mut self, mut chain: IOBufChain) -> Result<(), IOBufChain> {
+    fn enqueue(&mut self, chain: IOBufChain) -> Result<(), IOBufChain> {
+        assert_eq!(
+            chain.segments.len(),
+            2,
+            "Only support receive packet with header and content."
+        );
+
+        // TODO: Usually we use both rings (to support LRO), then
+        // command ring 0 is filled with BTYPE_HEAD descriptors, and
+        // command ring 1 is filled with BTYPE_BODY descriptors
+        // but currently we don't support LRO so we will only need
+        // a single ring.
+        let flid = 0;
+
+        let rxr = &mut self.vxrxq_cmd_ring[flid];
+        let ndesc = rxr.vxrxr_ndesc();
+        let rxd = &mut rxr.vxrxr_rxd;
+
+        let mut idx = rxr.vxrxr_refill_start;
+        let mut i = 0;
+        for chain in chain.segments.iter() {
+            rxd[idx].addr = chain.paddr().as_u64();
+            rxd[idx].set_len(chain.len().try_into().unwrap());
+            rxd[idx].set_btype(if i % 2 == 0 {
+                VMXNET3_BTYPE_HEAD
+            } else {
+                VMXNET3_BTYPE_BODY
+            });
+            rxd[idx].set_gen(rxr.vxrxr_gen);
+
+            i += 1;
+            idx += 1;
+            if idx == ndesc {
+                idx = 0;
+                rxr.vxrxr_gen ^= 1;
+            }
+        }
+
+        rxr.vxrxr_refill_start = idx;
+        self.pidx_head0 = idx; // TODO: this can probably be vxrxr_refill_start
+
+        self.inflight_chains
+            .push_back((idx - chain.segments.len(), chain));
+
         Ok(())
     }
 
     fn flush(&mut self) -> Result<usize, DevQueueError> {
-        Ok(0)
+        let flid = 0;
+        let rxr = &mut self.vxrxq_cmd_ring[flid];
+
+        let r = if flid == 0 {
+            0x800 + (self.vxrxq_id * 8) as u64
+        } else {
+            0xA00 + (self.vxrxq_id * 8) as u64
+        };
+
+        self.pci.write_bar0(r, self.pidx_head0 as u32);
+        Ok(1)
     }
 
     fn can_enqueue(&self, how_many_seg: usize) -> bool {
-        false
+        self.capacity() - self.len() > how_many_seg
     }
 
     fn dequeue(&mut self) -> Result<IOBufChain, DevQueueError> {
-        Err(DevQueueError::QueueEmpty)
+        // Get a single packet starting at the given index in the completion
+        // queue. That we have been called indicates that
+        // vmxnet3_isc_rxd_available() has already verified that either
+        // there is a complete packet available starting at the given index,
+        // or there are one or more zero length packets starting at the
+        // given index followed by a complete packet, so no verification of
+        // ownership of the descriptors (and no associated read barrier) is
+        // required here.
+        if !self.processed_chains.is_empty() || self.can_dequeue(false) >= 1 {
+            debug_assert!(!self.processed_chains.is_empty());
+            self.processed_chains
+                .pop_front()
+                .ok_or(DevQueueError::QueueEmpty)
+        } else {
+            Err(DevQueueError::QueueEmpty)
+        }
     }
 
-    /// TODO: does usize return no. of BufChains?
-    /// or number of descriptors (that's what it does currently)?
-    fn can_dequeue(&mut self, exact: bool) -> Result<usize, DevQueueError> {
-        let rxqid = 0; // argument 1, hard-coded to 0
-        let mut idx = 0; // argument 2
-        let budget = VMXNET3_MAX_RX_NDESC; // argument 3
+    fn can_dequeue(&mut self, exact: bool) -> usize {
+        let budget = if exact { VMXNET3_MAX_RX_NDESC } else { 1 };
 
         let rxc = &mut self.vxrxq_comp_ring;
-
         let mut available = 0; // Completed descriptors
-        let mut completed_gen = rxc.vxcr_gen;
         let mut expect_sop = 1;
 
         loop {
             if let CompRingBuf::RxCd(ref descs) = rxc.vxcr {
-                let rxcd = descs[idx];
-                if rxcd.gen() != completed_gen {
+                let rxcd = descs[rxc.vxcr_next];
+                if rxcd.gen() != rxc.vxcr_gen {
                     break;
                 }
                 VMXNet3::barrier(Barrier::Read);
@@ -585,22 +720,28 @@ impl DevQueue for RxQueue {
                 }
 
                 if rxcd.eop() > 0 && rxcd.len() != 0 {
+                    // Move corresponding IOBuf to processed chain
+                    let (chain_idx, chain) = self.inflight_chains.pop_front().unwrap();
+                    self.processed_chains.push_back(chain);
+                    // Advance tail on descriptor ring
+                    self.pidx_tail0 = chain_idx;
+
                     available += 1;
                 }
                 if available > budget {
                     break;
                 }
-                idx += 1;
-                if idx == rxc.vxcr_ndesc() {
-                    idx = 0;
-                    completed_gen ^= 1;
+                rxc.vxcr_next += 1;
+                if rxc.vxcr_next == rxc.vxcr_ndesc() {
+                    rxc.vxcr_next = 0;
+                    rxc.vxcr_gen ^= 1;
                 }
             } else {
                 panic!("Invalid Queue type");
             }
         }
 
-        Ok(available)
+        available
     }
 }
 

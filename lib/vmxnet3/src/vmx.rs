@@ -287,7 +287,7 @@ impl VMXNet3 {
 
     fn rx_queues_alloc(&mut self) -> Result<(), VMXNet3Error> {
         for i in 0..*self.nrxqsets {
-            let rxq = RxQueue::new(i, VMXNET3_DEF_RX_NDESC)?;
+            let rxq = RxQueue::new(i, VMXNET3_DEF_RX_NDESC, self.pci)?;
 
             // Mirror info in shared queue region:
             let rxs = self.qs.rxqs_ref_mut(i);

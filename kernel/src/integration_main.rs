@@ -476,24 +476,17 @@ pub fn xmain() {
     use driverkit::iomem::*;
 
     let kcb = crate::kcb::get_kcb();
-    // TODO(hack): Map vmxnet3 bars
-    // BAR0: 0x81828000
-    kcb.arch.init_vspace().map_identity(
-        PAddr::from(0x81828000u64),
-        0x1000,
-        MapAction::ReadWriteKernel,
-    );
-    // BAR1: 0x81827000
-    kcb.arch.init_vspace().map_identity(
-        PAddr::from(0x81827000u64),
-        0x1000,
-        MapAction::ReadWriteKernel,
-    );
-
-    // --nic vmxnet3 has different bar addresses:
+    // TODO(hack): Map vmxnet3 different bar addresses
     // 1990501226 [DEBUG] - vmxnet3::vmx: BAR0 at: 0x81005000
     // 1995612918 [DEBUG] - vmxnet3::vmx: BAR1 at: 0x81004000
-    for &bar in &[0x81005000u64, 0x81004000u64, 0x81003000u64, 0x81002000u64] {
+    for &bar in &[
+        0x81828000u64,
+        0x81827000u64,
+        0x81005000u64,
+        0x81004000u64,
+        0x81003000u64,
+        0x81002000u64,
+    ] {
         kcb.arch
             .init_vspace()
             .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel);
@@ -508,40 +501,71 @@ pub fn xmain() {
     vmx.attach_pre();
     vmx.init();
 
-    let mut bufchain = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
-    let mut packet = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
-        .expect("Can't malke packet?");
-    /*
-    000000: 00 A0 CC 63 08 1B 00 40 : 95 49 03 5F 08 00 45 00 ...c...@.I._..E.
-    000010: 00 3C 82 47 00 00 20 01 : 94 C9 C0 A8 01 20 C0 A8 .<.G.. ...... ..
-    000020: 01 40 08 00 48 5C 01 00 : 04 00 61 62 63 64 65 66 .@..H\....abcdef
-    000030: 67 68 69 6A 6B 6C 6D 6E : 6F 70 71 72 73 74 75 76 ghijklmnopqrstuv
-    000040: 77 61 62 63 64 65 66 67 : 68 69                   wabcdefghi......
-    */
-    let raw_data = vec![
-        //56:b4:44:e9:62:dc
-        0x55, 0xb4, 044, 0xe9, 0x62, 0xdc, 0x56, 0xb4, 044, 0xe9, 0x62, 0xdc, 0x08, 0x00, 0x45,
-        0x00, 0x00, 0x3C, 0x82, 0x47, 0x00, 0x00, 0x20, 0x01, 0x94, 0xC9, 0xC0, 0xA8, 0x01, 0x20,
-        0xC0, 0xA8, 0x01, 0x40, 0x08, 0x00, 0x48, 0x5C, 0x01, 0x00, 0x04, 0x00, 0x61, 0x62, 0x63,
-        0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72,
-        0x73, 0x74, 0x75, 0x76, 0x77, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
-    ];
+    // Front-load some rx descriptors
+    for i in 0..10 {
+        let mut chain = IOBufChain::new(0, 2).expect("Can't make IoBufChain?");
+        let layout = Layout::from_size_align(256, 128).expect("Correct Layout");
 
-    /*
-    0000   00 00 00 00 00 00 BA BA  BA BA BA BA 08 00 45 00   ..............E.
-    0010   00 1F 00 01 00 00 40 11  7C CB 7F 00 00 01 7F 00   ......@.|.......
-    0020   00 01 00 35 00 7B 00 0B  3C C3 61 62 63            ...5.{..<.abc
-    */
-    let raw_data = vec![
-        0x0, 0x00, 0x00, 0x00, 0x00, 0x00, 0xBA, 0xBA, 0xBA, 0xBA, 0xBA, 0xBA, 0x08, 0x00, 0x45,
-        0x00, 0x0, 0x1F, 0x00, 0x01, 0x00, 0x00, 0x40, 0x11, 0x7C, 0xCB, 0x7F, 0x00, 0x00, 0x01,
-        0x7F, 0x00, 0x0, 0x01, 0x00, 0x35, 0x00, 0x7B, 0x00, 0x0B, 0x3C, 0xC3, 0x61, 0x62, 0x63,
-    ];
+        let mut seg0 = IOBuf::new(layout).expect("Can't make packet?");
+        let mut seg1 = IOBuf::new(layout).expect("Can't make packet?");
 
-    packet.copy_in(raw_data.as_slice());
-    bufchain.segments.push_back(packet);
-    vmx.txq[0].enqueue(bufchain).expect("Enq failed");
+        chain.segments.push_back(seg0);
+        chain.segments.push_back(seg1);
+        vmx.rxq[0].enqueue(chain).expect("Can enqueue RX desc");
+    }
+    vmx.rxq[0].flush();
+
+    let mut bufchain1 = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
+    let mut packet1 = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
+        .expect("Can't make packet?");
+
+    let mut bufchain2 = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
+    let mut packet2 = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
+        .expect("Can't make packet?");
+
+    // >>> from scapy.all import *
+    // >>> p = Ether(src="56:b4:44:e9:62:dc", dst="6e:6d:5f:ab:62:3a")/IP(src="172.31.0.10", dst="172.31.0.20")/UDP(dport=5553,sport=9999)/Raw(load="oooooooooooooooooooooo")
+    // >>> hexdump(p)
+    // 0000   6E 6D 5F AB 62 3A 56 B4  44 E9 62 DC 08 00 45 00   nm_.b:V.D.b...E.
+    // 0010   00 32 00 01 00 00 40 11  22 5E AC 1F 00 0A AC 1F   .2....@."^......
+    // 0020   00 14 27 0F 15 B1 00 1E  A0 CB 6F 6F 6F 6F 6F 6F   ..'.......oooooo
+    // 0030   6F 6F 6F 6F 6F 6F 6F 6F  6F 6F 6F 6F 6F 6F 6F 6F   oooooooooooooooo
+    let raw_data = [
+        0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, 0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, 0x08, 0x00, 0x45,
+        0x00, 0x00, 0x32, 0x00, 0x01, 0x00, 0x00, 0x40, 0x11, 0x22, 0x5E, 0xAC, 0x1F, 0x00, 0x0A,
+        0xAC, 0x1F, 0x00, 0x14, 0x27, 0x0F, 0x15, 0xB1, 0x00, 0x1E, 0xA0, 0xCB, 0x6F, 0x6F, 0x6F,
+        0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F,
+        0x6F, 0x6F, 0x6F, 0x6F,
+    ];
+    packet1.copy_in(&raw_data);
+    bufchain1.segments.push_back(packet1);
+    vmx.txq[0].enqueue(bufchain1).expect("Enq failed");
     vmx.txq[0].flush().expect("Flush failed?");
+
+    // >>> arp = Ether(src="56:b4:44:e9:62:dc", dst="ff:ff:ff:ff:ff:ff")/ARP(op=ARP.is_at, hwsrc="56:b4:44:e9:62:dc", psrc="172.31.0.10", hwdst="6e:6d:5f:ab:62:3a", pdst="172.31.0.20")
+    // >>> hexdump(arp)
+    // 0000   FF FF FF FF FF FF 56 B4  44 E9 62 DC 08 06 00 01   ......V.D.b.....
+    // 0010   08 00 06 04 00 02 56 B4  44 E9 62 DC AC 1F 00 0A   ......V.D.b.....
+    // 0020   6E 6D 5F AB 62 3A AC 1F  00 14                     nm_.b:....
+    let raw_data = [
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, 0x08, 0x06, 0x00,
+        0x01, 0x08, 00, 0x06, 0x04, 0x00, 0x02, 0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, 0xAC, 0x1F,
+        0x00, 0x0A, 0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, 0xAC, 0x1F, 0x00, 0x14,
+    ];
+    packet2.copy_in(&raw_data);
+    bufchain2.segments.push_back(packet2);
+    vmx.txq[0].enqueue(bufchain2).expect("Enq failed");
+    vmx.txq[0].flush().expect("Flush failed?");
+
+    // Polling on RX:
+    while true {
+        let ret = vmx.rxq[0].dequeue();
+        match ret {
+            Ok(chain) => info!("chain seg0: {:?}", chain.segments[0]),
+            _ => continue,
+        }
+    }
+
     vmx.print_txc();
     loop {
         unsafe { x86::halt() };

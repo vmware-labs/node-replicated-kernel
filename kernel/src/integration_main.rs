@@ -458,10 +458,11 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Test vmxnet3 in the kernel.
+/// Smoke test for vmxnet3 in the kernel, make sure we can send and receive some
+/// (hand-crafted) packets.
 #[cfg(all(
     feature = "integration-test",
-    feature = "test-vmxnet",
+    feature = "test-vmxnet-smoke",
     target_arch = "x86_64"
 ))]
 pub fn xmain() {
@@ -476,7 +477,7 @@ pub fn xmain() {
     use driverkit::iomem::*;
 
     let kcb = crate::kcb::get_kcb();
-    // TODO(hack): Map vmxnet3 different bar addresses
+    // TODO(hack): Map potential vmxnet3 bar addresses XD
     // 1990501226 [DEBUG] - vmxnet3::vmx: BAR0 at: 0x81005000
     // 1995612918 [DEBUG] - vmxnet3::vmx: BAR1 at: 0x81004000
     for &bar in &[
@@ -507,7 +508,9 @@ pub fn xmain() {
         let layout = Layout::from_size_align(256, 128).expect("Correct Layout");
 
         let mut seg0 = IOBuf::new(layout).expect("Can't make packet?");
+        seg0.expand();
         let mut seg1 = IOBuf::new(layout).expect("Can't make packet?");
+        seg1.expand();
 
         chain.segments.push_back(seg0);
         chain.segments.push_back(seg1);
@@ -542,6 +545,7 @@ pub fn xmain() {
     vmx.txq[0].enqueue(bufchain1).expect("Enq failed");
     vmx.txq[0].flush().expect("Flush failed?");
 
+    // >>> from scapy.all import *
     // >>> arp = Ether(src="56:b4:44:e9:62:dc", dst="ff:ff:ff:ff:ff:ff")/ARP(op=ARP.is_at, hwsrc="56:b4:44:e9:62:dc", psrc="172.31.0.10", hwdst="6e:6d:5f:ab:62:3a", pdst="172.31.0.20")
     // >>> hexdump(arp)
     // 0000   FF FF FF FF FF FF 56 B4  44 E9 62 DC 08 06 00 01   ......V.D.b.....
@@ -561,7 +565,7 @@ pub fn xmain() {
     while true {
         let ret = vmx.rxq[0].dequeue();
         match ret {
-            Ok(chain) => info!("chain seg0: {:?}", chain.segments[0]),
+            Ok(chain) => info!("chain seg0: {:X?}", chain.segments[0]),
             _ => continue,
         }
     }

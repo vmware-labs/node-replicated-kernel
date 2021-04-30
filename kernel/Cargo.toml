@@ -129,5 +129,5 @@ test-vspace-debug = ["integration-test", "bsp-only"]
 test-shootdown-simple = ["integration-test"]
 # test-replica-advance: Test advancing replica
 test-replica-advance = ["integration-test"]
-# test-replica-advance: Test advancing replica
-test-vmxnet = ["integration-test"]
+# test-vmxnet-smoke: Test vmxnet NIC driver
+test-vmxnet-smoke = ["integration-test"]

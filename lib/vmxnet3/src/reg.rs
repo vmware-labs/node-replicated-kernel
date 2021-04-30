@@ -574,11 +574,23 @@ impl vmxnet3_txcompdesc {
     }
 }
 #[repr(C, packed)]
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct vmxnet3_rxdesc {
     pub addr: u64,
     pub _bitfield_align_1: [u8; 0],
     pub _bitfield_1: __BindgenBitfieldUnit<[u8; 8usize]>,
+}
+
+impl core::fmt::Debug for vmxnet3_rxdesc {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        let addr = self.addr;
+        f.debug_struct("vmxnet3_rxdesc")
+            .field("addr", &addr)
+            .field("len", &self.len())
+            .field("btype", &self.btype())
+            .field("gen", &self.gen())
+            .finish()
+    }
 }
 
 impl vmxnet3_rxdesc {
@@ -686,10 +698,39 @@ impl vmxnet3_rxdesc {
     }
 }
 #[repr(C, packed)]
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct vmxnet3_rxcompdesc {
     pub _bitfield_align_1: [u8; 0],
     pub _bitfield_1: __BindgenBitfieldUnit<[u8; 16usize]>,
+}
+
+impl core::fmt::Debug for vmxnet3_rxcompdesc {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        f.debug_struct("vmxnet3_rxcompdesc")
+            .field("rxd_idx", &self.rxd_idx())
+            .field("eop", &self.eop())
+            .field("sop", &self.sop())
+            .field("qid", &self.qid())
+            .field("rss_type", &self.rss_type())
+            .field("no_csum", &self.no_csum())
+            .field("rss_hash", &self.rss_hash())
+            .field("len", &self.len())
+            .field("error", &self.error())
+            .field("vlan", &self.vlan())
+            .field("vtag", &self.vtag())
+            .field("csum", &self.csum())
+            .field("csum_ok", &self.csum_ok())
+            .field("udp", &self.udp())
+            .field("tcp", &self.tcp())
+            .field("ipcsum_ok", &self.ipcsum_ok())
+            .field("ipv6", &self.ipv6())
+            .field("ipv4", &self.ipv4())
+            .field("fragment", &self.fragment())
+            .field("fcs", &self.fcs())
+            .field("type", &self.type_())
+            .field("gen", &self.gen())
+            .finish()
+    }
 }
 
 impl vmxnet3_rxcompdesc {

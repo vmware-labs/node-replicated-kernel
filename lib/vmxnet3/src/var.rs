@@ -9,7 +9,7 @@ use driverkit::{
     devq::{DevQueue, DevQueueError},
     iomem::{IOBuf, IOBufChain},
 };
-use log::info;
+use log::{debug, info};
 
 use x86::current::paging::{PAddr, VAddr};
 
@@ -707,6 +707,7 @@ impl DevQueue for RxQueue {
                     break;
                 }
                 VMXNet3::barrier(Barrier::Read);
+                debug!("rxcd is {:?}", rxcd);
 
                 #[cfg(debug_assertions)]
                 {

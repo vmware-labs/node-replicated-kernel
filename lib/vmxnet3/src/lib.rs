@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(try_reserve, allocator_api)]
+#![feature(core_intrinsics, try_reserve, allocator_api)]
 
 extern crate alloc;
 

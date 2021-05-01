@@ -371,6 +371,12 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    /// Use virtio NIC.
+    fn use_vmxnet3(mut self) -> RunnerArgs<'a> {
+        self.nic = "vmxnet3";
+        self
+    }
+
     /// Use e1000 NIC.
     fn use_e1000(mut self) -> RunnerArgs<'a> {
         self.nic = "e1000";
@@ -697,6 +703,11 @@ fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
 /// Helper function that spawns a UDP receiver socket on the host.
 fn spawn_receiver() -> Result<rexpect::session::PtySession> {
     spawn("socat UDP-LISTEN:8889,fork stdout", Some(20_000))
+}
+
+/// Helper function that spawns a UDP echo server on the host
+fn spawn_echoserver() -> Result<rexpect::session::PtySession> {
+    spawn("socat -v PIPE udp-recvfrom:5553,fork", Some(20000))
 }
 
 /// Helper function that tries to ping the QEMU guest.
@@ -1049,6 +1060,29 @@ fn s03_userspace_smoke() {
         output += p.exp_string("map_test OK")?.as_str();
         output += p.exp_string("alloc_test OK")?.as_str();
         output += p.exp_string("scheduler_test OK")?.as_str();
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Tests that the basic vmxnet3 driver in the kernel is functional.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_vmxnet3_smoke() {
+    let cmdline = RunnerArgs::new("test-vmxnet-smoke")
+        .timeout(20_000)
+        .use_vmxnet3();
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut echoserver = spawn_echoserver()?;
+        let mut p = spawn_bespin(&cmdline)?;
+
+        output += echoserver.exp_string("oooooooooooooooooooooo")?.as_str();
+        output += echoserver.exp_string("oooooooooooooooooooooo")?.as_str();
+
         output += p.exp_eof()?.as_str();
         p.process.exit()
     };

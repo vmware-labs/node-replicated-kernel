@@ -4,32 +4,23 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{collections::VecDeque, format};
+use core::intrinsics::unlikely;
 use core::{convert::TryInto, ptr};
+
 use driverkit::{
     devq::{DevQueue, DevQueueError},
     iomem::{IOBuf, IOBufChain},
+    net::csum::*,
+    net::rss::*,
 };
 use log::{debug, info};
 
 use x86::current::paging::{PAddr, VAddr};
 
-use crate::{
-    pci::{BarAccess, BarIO, DmaObject, KERNEL_BASE},
-    reg::VMXNET3_OM_NONE,
-    vmx::VMXNet3,
-};
-use crate::{reg::VMXNET3_BTYPE_BODY, BoundedUSize};
-use crate::{
-    reg::VMXNET3_BTYPE_HEAD,
-    vmx::{RxQueueId, TxQueueId, VMXNet3Error},
-};
-use crate::{
-    reg::{
-        vmxnet3_rxcompdesc, vmxnet3_rxdesc, vmxnet3_rxq_shared, vmxnet3_txcompdesc, vmxnet3_txdesc,
-        vmxnet3_txq_shared, VMXNET3_INIT_GEN,
-    },
-    vmx::Barrier,
-};
+use crate::pci::{BarAccess, BarIO, DmaObject, KERNEL_BASE};
+use crate::reg::*;
+use crate::vmx::{Barrier, RxQueueId, TxQueueId, VMXNet3, VMXNet3Error};
+use crate::BoundedUSize;
 
 pub type c_uint = u32;
 pub type c_int = i32;
@@ -528,6 +519,8 @@ pub struct RxQueue {
     pub vxrxq_irq: if_irq,
     pub vxrxq_cmd_ring: [vmxnet3_rxring; 2usize],
     pub vxrxq_comp_ring: vmxnet3_comp_ring,
+    /// Flags from VMX device (for RSS decisions)
+    vmx_flags: u32,
     // tail and head are pointers into the buffer. Tail always points
     // to the first element that could be read, Head always points
     // to where data should be written.
@@ -545,11 +538,14 @@ pub struct RxQueue {
     inflight_chains: VecDeque<(usize, IOBufChain)>,
     /// Holding area for IOBufChain that are waiting to be dequeued
     processed_chains: VecDeque<IOBufChain>,
+    /// Current index into completion queue (of vxrxq_comp_ring)
+    cqidx: usize,
 }
 
 impl RxQueue {
     pub(crate) fn new(
         vxrxq_id: RxQueueId,
+        vmx_flags: u32,
         ndesc: usize,
         pci: BarAccess,
     ) -> Result<Self, VMXNet3Error> {
@@ -561,20 +557,22 @@ impl RxQueue {
         let mut processed_chains = VecDeque::new();
         processed_chains.try_reserve_exact(*vxtxr_ndesc)?;
 
-        // Currently only support single receive queue descriptor ring per queue
-        // TODO: If we support for both, make sure to change vxrxq_comp_ring to
-        // 2*ndesc
+        // Currently only support single receive queue descriptor ring (TODO: If
+        // we support for both, make sure to change vxrxq_comp_ring to 2*ndesc)
+
         Ok(RxQueue {
             vxrxq_id,
             vxrxq_intr_idx: 0,
             vxrxq_irq: Default::default(),
             vxrxq_cmd_ring: [vmxnet3_rxring::new(ndesc)?, vmxnet3_rxring::new(0)?],
             vxrxq_comp_ring: vmxnet3_comp_ring::new_rx(1 * ndesc)?,
+            vmx_flags,
             pidx_tail0: 0,
             pidx_head0: 0,
             pci,
             inflight_chains,
             processed_chains,
+            cqidx: 0,
         })
     }
 
@@ -610,17 +608,21 @@ impl DmaObject for RxQueue {}
 
 impl DevQueue for RxQueue {
     fn enqueue(&mut self, chain: IOBufChain) -> Result<(), IOBufChain> {
+        if self.capacity() - self.len() < chain.segments.len() {
+            // We don't bother trying to enqueue a partial packet
+            return Err(chain);
+        }
+
         assert_eq!(
             chain.segments.len(),
             2,
-            "Only support receive packet with header and content."
+            "Only support receive packet with one header and one content segment."
         );
 
-        // TODO: Usually we use both rings (to support LRO), then
-        // command ring 0 is filled with BTYPE_HEAD descriptors, and
-        // command ring 1 is filled with BTYPE_BODY descriptors
-        // but currently we don't support LRO so we will only need
-        // a single ring.
+        // TODO: Usually we use both rings (to support LRO), then command ring 0
+        // is filled with BTYPE_HEAD descriptors, and command ring 1 is filled
+        // with BTYPE_BODY descriptors but currently we don't support LRO so we
+        // only need a single ring.
         let flid = 0;
 
         let rxr = &mut self.vxrxq_cmd_ring[flid];
@@ -638,6 +640,7 @@ impl DevQueue for RxQueue {
                 VMXNET3_BTYPE_BODY
             });
             rxd[idx].set_gen(rxr.vxrxr_gen);
+            debug!("RxRing enqueued {:?}", rxd[idx]);
 
             i += 1;
             idx += 1;
@@ -648,7 +651,8 @@ impl DevQueue for RxQueue {
         }
 
         rxr.vxrxr_refill_start = idx;
-        self.pidx_head0 = idx; // TODO: this can probably be vxrxr_refill_start
+        // TODO: Maybe we just use `vxrxr_refill_start` instead of `pidx_head0`?
+        self.pidx_head0 = idx;
 
         self.inflight_chains
             .push_back((idx - chain.segments.len(), chain));
@@ -657,8 +661,7 @@ impl DevQueue for RxQueue {
     }
 
     fn flush(&mut self) -> Result<usize, DevQueueError> {
-        let flid = 0;
-        let rxr = &mut self.vxrxq_cmd_ring[flid];
+        let flid = 0; // TODO(unsupported): No support to flush the 2nd ring (RXH2)
 
         let r = if flid == 0 {
             0x800 + (self.vxrxq_id * 8) as u64
@@ -675,34 +678,191 @@ impl DevQueue for RxQueue {
     }
 
     fn dequeue(&mut self) -> Result<IOBufChain, DevQueueError> {
+        if self.can_dequeue(false) == 0 {
+            return Err(DevQueueError::QueueEmpty);
+        }
+
         // Get a single packet starting at the given index in the completion
         // queue. That we have been called indicates that
-        // vmxnet3_isc_rxd_available() has already verified that either
-        // there is a complete packet available starting at the given index,
-        // or there are one or more zero length packets starting at the
-        // given index followed by a complete packet, so no verification of
-        // ownership of the descriptors (and no associated read barrier) is
-        // required here.
-        if !self.processed_chains.is_empty() || self.can_dequeue(false) >= 1 {
-            debug_assert!(!self.processed_chains.is_empty());
-            self.processed_chains
+        // vmxnet3_isc_rxd_available() has already verified that either there is
+        // a complete packet available starting at the given index, or there are
+        // one or more zero length packets starting at the given index followed
+        // by a complete packet, so no verification of ownership of the
+        // descriptors (and no associated read barrier) is required here.
+
+        let rxc = &mut self.vxrxq_comp_ring;
+        if let CompRingBuf::RxCd(ref descs) = rxc.vxcr {
+            let rxcd = descs[self.cqidx];
+            // Skip zero-length entries
+            while rxcd.len() == 0 {
+                assert!(
+                    rxcd.eop() && rxcd.sop(),
+                    "Zero length packet without sop and eop set"
+                );
+                rxc.vxcr_zero_length += 1;
+
+                self.cqidx += 1;
+                if self.cqidx == rxc.vxcr_ndesc() {
+                    self.cqidx = 0;
+                    rxc.vxcr_gen ^= 1;
+                }
+            }
+            assert!(rxcd.sop(), "expected sop");
+
+            // RSS and flow ID.
+            //
+            // Types other than M_HASHTYPE_NONE and M_HASHTYPE_OPAQUE_HASH
+            // should be used only if the software RSS is enabled and it uses
+            // the same algorithm and the hash key as the "hardware".  If the
+            // software RSS is not enabled, then it's simply pointless to use
+            // those types. If it's enabled but with different parameters, then
+            // hash values will not match.
+
+            // TODO(unused): We currently don't care about RSS, but if we
+            // eventually do, we need to convey this info to the buf-chain
+            let mut flowid = None;
+            let mut rsstype = 0;
+            #[cfg(feature = "rss")]
+            let rss_flag = self.vmx_flags & VMXNET3_FLAG_SOFT_RSS != 0;
+            match rxcd.rss_type() {
+                #[cfg(feature = "rss")]
+                VMXNET3_RCD_RSS_TYPE_NONE if rss_flag => {
+                    flowid = Some(self.vxrxq_id);
+                    rsstype = M_HASHTYPE_NONE;
+                }
+                #[cfg(feature = "rss")]
+                VMXNET3_RCD_RSS_TYPE_IPV4 if rss_flag => {
+                    rsstype = M_HASHTYPE_RSS_IPV4;
+                }
+                #[cfg(feature = "rss")]
+                VMXNET3_RCD_RSS_TYPE_TCPIPV4 if rss_flag => {
+                    rsstype = M_HASHTYPE_RSS_TCP_IPV4;
+                }
+                #[cfg(feature = "rss")]
+                VMXNET3_RCD_RSS_TYPE_IPV6 if rss_flag => {
+                    rsstype = M_HASHTYPE_RSS_IPV6;
+                }
+                #[cfg(feature = "rss")]
+                VMXNET3_RCD_RSS_TYPE_TCPIPV6 if rss_flag => {
+                    rsstype = M_HASHTYPE_RSS_TCP_IPV6;
+                }
+                VMXNET3_RCD_RSS_TYPE_NONE => {
+                    flowid = Some(self.vxrxq_id);
+                    rsstype = M_HASHTYPE_NONE;
+                }
+                _ => {
+                    rsstype = M_HASHTYPE_OPAQUE_HASH;
+                }
+            }
+
+            // The queue numbering scheme used for rxcd->qid is as follows:
+            //  - All of the command ring 0s are numbered [0, nrxqsets - 1]
+            //  - All of the command ring 1s are numbered [nrxqsets, 2*nrxqsets
+            //    - 1]
+            //
+            // Thus, rxcd->qid less than nrxqsets indicates command ring (and
+            // flid) 0, and rxcd->qid greater than or equal to nrxqsets
+            // indicates command ring (and flid) 1.
+
+            let (_chain_idx, mut chain) = self
+                .inflight_chains
                 .pop_front()
-                .ok_or(DevQueueError::QueueEmpty)
+                .expect("IOBufChain not available?");
+            let mut nfrags: usize = 0;
+            let mut total_len = 0;
+            let mut rxcd;
+            loop {
+                rxcd = &descs[self.cqidx];
+                assert_eq!(rxcd.gen(), rxc.vxcr_gen, "generation mismatch");
+
+                // TODO: if we were to use use both rxrings:
+                // let flid = if rxcd.qid() >= isc_nrxqsets { 1 } else { 0 };
+                let flid = 0;
+                let rxr = &self.vxrxq_cmd_ring[flid];
+
+                let rxd_idx = rxcd.rxd_idx() as usize;
+                info!("rxcd {:?}", rxcd);
+                let _rxd = &rxr.vxrxr_rxd[rxd_idx];
+
+                assert!(
+                    nfrags < chain.segments.len(),
+                    "Don't support unexpected segments (LRO, 2 queue)"
+                );
+                //chain.segments[nfrags].flid = flid;
+                //chain.segments[nfrags].rxd_idx = rxd_idx;
+
+                let rxcd_len = rxcd.len() as usize;
+                debug_assert!(rxcd_len <= chain.segments[nfrags].len());
+                chain.segments[nfrags].truncate(rxcd_len);
+                total_len += rxcd_len;
+
+                nfrags += 1;
+                self.cqidx += 1;
+                if self.cqidx == rxc.vxcr_ndesc() {
+                    self.cqidx = 0;
+                    rxc.vxcr_gen ^= 1;
+                }
+
+                if rxcd.eop() {
+                    break;
+                }
+            }
+
+            chain.set_meta_data(total_len, nfrags, self.cqidx, flowid, rsstype);
+
+            // If there's an error, the last descriptor in the packet will have
+            // the error indicator set.  In this case, set all fragment lengths
+            // to zero. This should cause higher-levels to discard the packet,
+            // but process all associated descriptors through the refill
+            // mechanism.
+            debug_assert!(rxcd.eop());
+            if unlikely(rxcd.error()) {
+                rxc.vxcr_pkt_errors += 1;
+                for segment in chain.segments.iter_mut() {
+                    segment.truncate(0);
+                }
+            } else {
+                if !rxcd.no_csum() {
+                    let mut csum_flags: u32 = 0;
+                    if rxcd.ipv4() {
+                        csum_flags |= CSUM_IP_CHECKED;
+                        if rxcd.ipcsum_ok() {
+                            csum_flags = CSUM_IP_VALID;
+                        }
+                    }
+                    if !rxcd.fragment() && (rxcd.tcp() || rxcd.udp()) {
+                        csum_flags |= CSUM_L4_CALC;
+                        if rxcd.csum_ok() {
+                            csum_flags |= CSUM_L4_VALID;
+                            chain.csum_data = 0xffff;
+                        }
+                    }
+                    chain.csum_flags = csum_flags;
+                }
+
+                if rxcd.vlan() {
+                    chain.vtag = Some(rxcd.vtag());
+                }
+            }
+
+            Ok(chain)
         } else {
-            Err(DevQueueError::QueueEmpty)
+            unreachable!("type error for desc");
         }
     }
 
     fn can_dequeue(&mut self, exact: bool) -> usize {
+        // Start from current self.cqidx
+        let mut idx = self.cqidx;
         let budget = if exact { VMXNET3_MAX_RX_NDESC } else { 1 };
 
         let rxc = &mut self.vxrxq_comp_ring;
         let mut available = 0; // Completed descriptors
-        let mut expect_sop = 1;
+        let mut expect_sop = true;
 
         loop {
             if let CompRingBuf::RxCd(ref descs) = rxc.vxcr {
-                let rxcd = descs[rxc.vxcr_next];
+                let rxcd = descs[idx];
                 if rxcd.gen() != rxc.vxcr_gen {
                     break;
                 }
@@ -712,29 +872,23 @@ impl DevQueue for RxQueue {
                 #[cfg(debug_assertions)]
                 {
                     // Invariants:
-                    if expect_sop > 0 {
-                        debug_assert_eq!(rxcd.sop(), 1, "expected sop");
+                    if expect_sop {
+                        debug_assert!(rxcd.sop(), "expected sop");
                     } else {
-                        debug_assert_eq!(rxcd.sop(), 0, "unexpected sop");
+                        debug_assert!(!rxcd.sop(), "unexpected sop");
                     }
                     expect_sop = rxcd.eop();
                 }
 
-                if rxcd.eop() > 0 && rxcd.len() != 0 {
-                    // Move corresponding IOBuf to processed chain
-                    let (chain_idx, chain) = self.inflight_chains.pop_front().unwrap();
-                    self.processed_chains.push_back(chain);
-                    // Advance tail on descriptor ring
-                    self.pidx_tail0 = chain_idx;
-
+                if rxcd.eop() && rxcd.len() != 0 {
                     available += 1;
                 }
                 if available > budget {
                     break;
                 }
-                rxc.vxcr_next += 1;
-                if rxc.vxcr_next == rxc.vxcr_ndesc() {
-                    rxc.vxcr_next = 0;
+                idx += 1;
+                if idx == rxc.vxcr_ndesc() {
+                    idx = 0;
                     rxc.vxcr_gen ^= 1;
                 }
             } else {

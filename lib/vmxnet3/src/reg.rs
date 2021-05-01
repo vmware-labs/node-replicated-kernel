@@ -585,7 +585,7 @@ impl core::fmt::Debug for vmxnet3_rxdesc {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
         let addr = self.addr;
         f.debug_struct("vmxnet3_rxdesc")
-            .field("addr", &addr)
+            .field("addr", &format_args!("{:#x}", addr))
             .field("len", &self.len())
             .field("btype", &self.btype())
             .field("gen", &self.gen())
@@ -757,26 +757,20 @@ impl vmxnet3_rxcompdesc {
         }
     }
     #[inline]
-    pub fn eop(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(14usize, 1u8) as u32) }
+    pub fn eop(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(14usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_eop(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(14usize, 1u8, val as u64)
-        }
+    pub fn set_eop(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(14usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn sop(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(15usize, 1u8) as u32) }
+    pub fn sop(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(15usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_sop(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(15usize, 1u8, val as u64)
-        }
+    pub fn set_sop(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(15usize, 1u8, val as u64) }
     }
     #[inline]
     pub fn qid(&self) -> u32 {
@@ -801,26 +795,20 @@ impl vmxnet3_rxcompdesc {
         }
     }
     #[inline]
-    pub fn no_csum(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(30usize, 1u8) as u32) }
+    pub fn no_csum(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(30usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_no_csum(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(30usize, 1u8, val as u64)
-        }
+    pub fn set_no_csum(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(30usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn pad2(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(31usize, 1u8) as u32) }
+    pub fn pad2(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(31usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_pad2(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(31usize, 1u8, val as u64)
-        }
+    pub fn set_pad2(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(31usize, 1u8, val as u64) }
     }
     #[inline]
     pub fn rss_hash(&self) -> u32 {
@@ -845,26 +833,20 @@ impl vmxnet3_rxcompdesc {
         }
     }
     #[inline]
-    pub fn error(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(78usize, 1u8) as u32) }
+    pub fn error(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(78usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_error(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(78usize, 1u8, val as u64)
-        }
+    pub fn set_error(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(78usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn vlan(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(79usize, 1u8) as u32) }
+    pub fn vlan(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(79usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_vlan(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(79usize, 1u8, val as u64)
-        }
+    pub fn set_vlan(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(79usize, 1u8, val as u64) }
     }
     #[inline]
     pub fn vtag(&self) -> u32 {
@@ -889,92 +871,68 @@ impl vmxnet3_rxcompdesc {
         }
     }
     #[inline]
-    pub fn csum_ok(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(112usize, 1u8) as u32) }
+    pub fn csum_ok(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(112usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_csum_ok(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(112usize, 1u8, val as u64)
-        }
+    pub fn set_csum_ok(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(112usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn udp(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(113usize, 1u8) as u32) }
+    pub fn udp(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(113usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_udp(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(113usize, 1u8, val as u64)
-        }
+    pub fn set_udp(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(113usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn tcp(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(114usize, 1u8) as u32) }
+    pub fn tcp(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(114usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_tcp(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(114usize, 1u8, val as u64)
-        }
+    pub fn set_tcp(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(114usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn ipcsum_ok(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(115usize, 1u8) as u32) }
+    pub fn ipcsum_ok(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(115usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_ipcsum_ok(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(115usize, 1u8, val as u64)
-        }
+    pub fn set_ipcsum_ok(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(115usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn ipv6(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(116usize, 1u8) as u32) }
+    pub fn ipv6(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(116usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_ipv6(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(116usize, 1u8, val as u64)
-        }
+    pub fn set_ipv6(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(116usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn ipv4(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(117usize, 1u8) as u32) }
+    pub fn ipv4(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(117usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_ipv4(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(117usize, 1u8, val as u64)
-        }
+    pub fn set_ipv4(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(117usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn fragment(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(118usize, 1u8) as u32) }
+    pub fn fragment(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(118usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_fragment(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(118usize, 1u8, val as u64)
-        }
+    pub fn set_fragment(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(118usize, 1u8, val as u64) }
     }
     #[inline]
-    pub fn fcs(&self) -> u32 {
-        unsafe { ::core::mem::transmute(self._bitfield_1.get(119usize, 1u8) as u32) }
+    pub fn fcs(&self) -> bool {
+        unsafe { ::core::mem::transmute(self._bitfield_1.get(119usize, 1u8) != 0) }
     }
     #[inline]
-    pub fn set_fcs(&mut self, val: u32) {
-        unsafe {
-            let val: u32 = ::core::mem::transmute(val);
-            self._bitfield_1.set(119usize, 1u8, val as u64)
-        }
+    pub fn set_fcs(&mut self, val: bool) {
+        unsafe { self._bitfield_1.set(119usize, 1u8, val as u64) }
     }
     #[inline]
     pub fn type_(&self) -> u32 {

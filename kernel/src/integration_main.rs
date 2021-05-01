@@ -478,8 +478,6 @@ pub fn xmain() {
 
     let kcb = crate::kcb::get_kcb();
     // TODO(hack): Map potential vmxnet3 bar addresses XD
-    // 1990501226 [DEBUG] - vmxnet3::vmx: BAR0 at: 0x81005000
-    // 1995612918 [DEBUG] - vmxnet3::vmx: BAR1 at: 0x81004000
     for &bar in &[
         0x81828000u64,
         0x81827000u64,
@@ -561,18 +559,50 @@ pub fn xmain() {
     vmx.txq[0].enqueue(bufchain2).expect("Enq failed");
     vmx.txq[0].flush().expect("Flush failed?");
 
-    // Polling on RX:
-    while true {
+    // Receive first 4 packets:
+    let mut rx_counter = 0;
+    while rx_counter < 4 {
         let ret = vmx.rxq[0].dequeue();
+
+        let arp_request = &[
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* mac src */
+            0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, /* mac dest */
+            0x8, 0x6, /* ether type */
+            0x0, 0x1, 0x8, 0x0, 0x6, 0x4, 0x0, 0x1, 0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, 0xAC, 0x1F,
+            0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xAC, 0x1F, 0x0, 0xA, /* arp req */
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, /* padding */
+        ];
+
+        let udp_echo = &[
+            0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, /* mac src */
+            0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, /* mac dest */
+            0x8, 0x0, /* eth hdr */
+            0x45, 0x0, 0x0, 0x32, /* IP hdr begin */
+            0xFF, 0xFF, /* ip identification field */
+            0x40, 0x00, 0x40, 0x11, /* ip hdr cont. */
+            0xFF, 0xFF, /* ip hdr chksum */
+            0xAC, 0x1F, 0x0, 0x14, 0xAC, 0x1F, 0x0, 0xA, 0x15, 0xB1, 0x27, 0xF, 0x0, 0x1E, 0xA0,
+            0xCB, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F,
+            0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F,
+        ];
+
         match ret {
-            Ok(chain) => info!("chain seg0: {:X?}", chain.segments[0]),
+            Ok(chain) => {
+                if rx_counter == 0 {
+                    assert_eq!(chain.segments[0].as_slice(), arp_request);
+                    rx_counter += 1;
+                } else if rx_counter == 1 {
+                    assert_eq!(chain.segments[0].as_slice()[0..17], udp_echo[0..17]);
+                    // Skip IP identification field
+                    assert_eq!(chain.segments[0].as_slice()[20..24], udp_echo[20..24]);
+                    // Skip IP header checksum
+                    assert_eq!(chain.segments[0].as_slice()[26..], udp_echo[26..]);
+                    break;
+                }
+            }
             _ => continue,
         }
-    }
-
-    vmx.print_txc();
-    loop {
-        unsafe { x86::halt() };
     }
 
     arch::debug::shutdown(ExitReason::Ok);

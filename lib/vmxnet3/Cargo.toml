@@ -12,6 +12,9 @@ arrayvec = { git = "https://github.com/gz/arrayvec.git", default-features = fals
 custom_error = { version = "1.9", default-features = false, features = ["unstable"] }
 driverkit = { path = "../driverkit" }
 
+[target.'cfg(target_family = "unix")'.dev-dependencies]
+env_logger = "0.8"
+
 [features]
 # Enable receive-side-scaling (RSS)
 rss = []

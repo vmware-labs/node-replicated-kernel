@@ -83,6 +83,7 @@ impl vmxnet3_trxq_shared {
             &*rxq_entry
         }
     }
+
     fn rxqs_ref_mut(&mut self, idx: usize) -> &mut vmxnet3_rxq_shared {
         if idx >= self.nrxq {
             panic!("Invalid idx parameter.");
@@ -135,50 +136,6 @@ impl DmaObject for vmxnet3_trxq_shared {
 impl Drop for vmxnet3_trxq_shared {
     fn drop(&mut self) {
         unsafe { alloc::alloc::dealloc(self.buffer, self.layout) }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::vmxnet3_trxq_shared;
-    use crate::pci::DmaObject;
-    use crate::reg::{vmxnet3_rxq_shared, vmxnet3_txq_shared};
-
-    #[test]
-    fn test_trxq_shared() {
-        let mut x = vmxnet3_trxq_shared::new(2, 3).unwrap();
-        for i in 0..2 {
-            {
-                let r = x.txqs_ref_mut(i);
-                assert_eq!(
-                    r as *mut vmxnet3_txq_shared as usize,
-                    x.vaddr().as_usize() + i * 256
-                );
-            }
-            {
-                let r = x.txqs_ref(i);
-                assert_eq!(
-                    r as *const vmxnet3_txq_shared as usize,
-                    x.vaddr().as_usize() + i * 256
-                );
-            }
-        }
-        for i in 0..3 {
-            {
-                let r = x.rxqs_ref_mut(i);
-                assert_eq!(
-                    r as *mut vmxnet3_rxq_shared as usize,
-                    x.vaddr().as_usize() + 2 * 256 + i * 256
-                );
-            }
-            {
-                let r = x.rxqs_ref(i);
-                assert_eq!(
-                    r as *const vmxnet3_rxq_shared as usize,
-                    x.vaddr().as_usize() + 2 * 256 + i * 256
-                );
-            }
-        }
     }
 }
 
@@ -512,143 +469,46 @@ impl VMXNet3 {
     }
 }
 
-/*
-/// Device Dependent Transmit and Receive Functions
-impl TxRx for VMXNet3 {
-    // Transmit functions
+#[cfg(test)]
+mod tests {
+    use super::vmxnet3_trxq_shared;
+    use crate::pci::DmaObject;
+    use crate::reg::{vmxnet3_rxq_shared, vmxnet3_txq_shared};
 
-    /// Sends a packet on an interface by enqueueing it on the TX ring. The packet may consists of
-    /// multiple segments forming a single packet. Note, this function purely writes the descriptor
-    /// ring, and does not advance the thx register.
-    ///
-    /// # Arguments
-    ///  - pi: contains information describing the packet to be sent.
-    fn txd_encap(&mut self, pi: PktInfo) -> Result<(), TxError> {
-        assert!(
-            pi.nsegs() <= VMXNET3_TX_MAXSEGS,
-            "vmxnet3: Packet with too many segments"
-        );
-
-        let txq: &mut TxQueue = &mut self.txq[pi.qsidx];
-        let txr = &mut txq.vxtxq_cmd_ring;
-        let mut pidx = pi.pidx();
-        let mut gen = txr.vxtxr_gen ^ 1; /* Owned by cpu (yet) */
-
-        for (seg_addr, segs_len) in pi.segments {
-            let txd = &mut txr.vxtxr_txd[pidx];
-            txd.addr = seg_addr;
-            txd.set_len(segs_len);
-            txd.set_gen(gen as u32);
-            txd.set_dtype(0);
-            txd.set_offload_mode(VMXNET3_OM_NONE);
-            txd.set_offload_pos(0);
-            txd.set_hlen(0);
-            txd.set_eop(0);
-            txd.set_compreq(0);
-            txd.set_vtag_mode(0);
-            txd.set_vtag(0);
-
-            pidx += 1;
-            if pidx == txr.vxtxr_ndesc() {
-                pidx = 0;
-                txr.vxtxr_gen ^= 1;
+    #[test]
+    fn test_trxq_shared() {
+        let mut x = vmxnet3_trxq_shared::new(2, 3).unwrap();
+        for i in 0..2 {
+            {
+                let r = x.txqs_ref_mut(i);
+                assert_eq!(
+                    r as *mut vmxnet3_txq_shared as usize,
+                    x.vaddr().as_usize() + i * 256
+                );
             }
-
-            gen = txr.vxtxr_gen;
+            {
+                let r = x.txqs_ref(i);
+                assert_eq!(
+                    r as *const vmxnet3_txq_shared as usize,
+                    x.vaddr().as_usize() + i * 256
+                );
+            }
         }
-
-        let txd = &mut txr.vxtxr_txd[pidx];
-        txd.set_eop(1);
-        // send an interrupt when this packet is sent
-        const IPI_TX_INTR: u32 = 0x1;
-        txd.set_compreq(!!(pi.flags & IPI_TX_INTR));
-
-        // Ignore VLAN
-        // Ignore TSO and checksum offload
-
-        self.barrier(Barrier::Write);
-
-        // Finally, change the ownership.
-        let txq: &mut TxQueue = &mut self.txq[pi.qsidx];
-        let txr = &mut txq.vxtxq_cmd_ring;
-        let sop = &mut txr.vxtxr_txd[pidx];
-        sop.set_gen(sop.gen() ^ 1);
-
-        Ok(())
-    }
-
-    /**
-     * called to update the hardware register (thx) triggering the sending of the packet.
-     *
-     *  - qid: the queue id to be updated
-     */
-    fn txd_flush(&mut self, qid: u16) {
-
-        /*
-           - get the idx of the last flush
-           - get the idx of the most recent written head
-           - if equal return
-           - else update vbar0_thx register for the queue, with value of most recent head
-                  and update last flush
-        */
-    }
-
-    /**
-     * calculates how many tx ring descriptors have been processed.
-     *
-     *  - qid: the queue id to be updated
-     *  - clear: flag indicating whether to report the actual number of processed elements (true)
-     *           or just if there has been at least one processed (false)
-     */
-    fn txd_credits_update(&mut self, qid: u16, clear: bool) -> Result<(), TxError> {
-        Ok(())
-    }
-
-    /// Receive Functions
-
-    /**
-     * calculates the number of available descriptors in the rx queue identified by the queue id
-     * starting from the index.
-     *
-     *  - qid: the rx queue to consider
-     *  - cidx: the starting queue index to consider.
-     */
-    fn isc_rxd_available(&mut self, qid: u16, cidx: u32) -> Result<(), RxError> {
-        Ok(())
-    }
-
-    /**
-     * enqueues new receive buffers on the RX queue
-     *
-     *  - qid: the rx queue to add the buffers to
-     *  - flid: identifies the free list to be used for the rx queue identified by ixd
-     *  - pidx: ??? not sure why this is needed.
-     *  - paddrs: addresses of the buffers
-     *  - vaddrs: virtual addresses of buffers in case header updates are needed
-     *
-     * Note: the VMXNet3 has two freelists:
-     *   - 0: HEAD descriptors
-     *   - 1: BODY descriptors
-     */
-    fn rxd_refill(&mut self, qid: u16, flid: u8, pidx: u32, paddrs: &[u64], vaddrs: &[u64]) {}
-
-    /**
-     * update the hardware pointers, transfers ownership of the buffers to the VMXNet3
-     *
-     * Note: the VMXNet3 has two freelists:
-     *   - 0: HEAD descriptors
-     *   - 1: BODY descriptors
-     */
-    fn rxd_flush(&mut self, qsid: u16, flid: u8, pidx: u32) {}
-
-    // Process a single software descriptor.  rxr->rx_base[i] contains a descriptor that describes
-    // a received packet.  Hardware specific information about the buffer referred to by ri is
-    // returned in the data structure if_rxd_info
-    /**
-     * processes a single packet
-     */
-    fn rxd_pkt_get(&mut self, ri: RxdInfo) -> Result<(), RxError> {
-        Ok(())
+        for i in 0..3 {
+            {
+                let r = x.rxqs_ref_mut(i);
+                assert_eq!(
+                    r as *mut vmxnet3_rxq_shared as usize,
+                    x.vaddr().as_usize() + 2 * 256 + i * 256
+                );
+            }
+            {
+                let r = x.rxqs_ref(i);
+                assert_eq!(
+                    r as *const vmxnet3_rxq_shared as usize,
+                    x.vaddr().as_usize() + 2 * 256 + i * 256
+                );
+            }
+        }
     }
 }
-*/

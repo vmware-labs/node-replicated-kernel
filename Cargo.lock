@@ -1905,6 +1905,7 @@ dependencies = [
  "arrayvec 0.5.1",
  "custom_error_core 1.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "driverkit",
+ "env_logger 0.8.3",
  "log",
  "static_assertions",
  "x86 0.37.0",

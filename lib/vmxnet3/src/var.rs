@@ -360,6 +360,13 @@ impl TxQueue {
     }
 }
 
+/// Calculate the number of elements left to be read in the buffer
+#[inline]
+fn count(tail: usize, head: usize, size: usize) -> usize {
+    // size is always a power of 2
+    (head.wrapping_sub(tail)) & (size - 1)
+}
+
 impl DmaObject for TxQueue {}
 
 impl DevQueue for TxQueue {
@@ -369,7 +376,7 @@ impl DevQueue for TxQueue {
             "vmxnet3: Packet with too many segments"
         );
 
-        if self.capacity() - self.len() < chain.segments.len() {
+        if (self.capacity() - 1) - self.len() < chain.segments.len() {
             // We don't bother trying to enqueue a partial packet
             return Err(chain);
         }
@@ -382,13 +389,11 @@ impl DevQueue for TxQueue {
         let mut segments = chain.segments.iter().peekable();
         while let Some(seg) = segments.next() {
             // is_full() (inlined for borrow checking)
-            if ndesc - ((self.pidx_head.wrapping_sub(self.pidx_tail)) & (ndesc - 1)) == 1 {
+            if ndesc - count(self.pidx_tail, self.pidx_head, ndesc) == 1 {
                 panic!("ring is full, but we checked this...?");
             }
 
             let txd = &mut txr.vxtxr_txd[self.pidx_head];
-            info!("enq packet at {:#x} len:{}", seg.paddr(), seg.len());
-
             txd.addr = seg.paddr().as_u64();
             txd.set_len(seg.len().try_into().unwrap());
             txd.set_gen(gen as u32);
@@ -414,7 +419,6 @@ impl DevQueue for TxQueue {
                 // send an interrupt when this packet is sent
                 const IPI_TX_INTR: u32 = 0x1;
                 txd.set_compreq(!!(chain.flags & IPI_TX_INTR));
-                info!("txt.compreq {:#x}", txd.compreq());
             }
         }
 
@@ -427,7 +431,8 @@ impl DevQueue for TxQueue {
         sop.set_gen(sop.gen() ^ 1);
 
         // Add IOBufChain to the back of the holding area:
-        self.inflight_chains.push_back((self.pidx_head - 1, chain));
+        self.inflight_chains
+            .push_back((self.pidx_head.wrapping_sub(1) % ndesc, chain));
 
         Ok(())
     }
@@ -1003,6 +1008,9 @@ pub struct ifmedia {
 
 #[cfg(test)]
 mod test {
+    use core::alloc::Layout;
+    const IOBUF_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(128, 128) };
+
     use super::*;
     #[test]
     fn txq_init() -> Result<(), VMXNet3Error> {
@@ -1011,6 +1019,135 @@ mod test {
         assert!(!txq.is_full());
         assert_eq!(txq.capacity(), 32);
         assert_eq!(txq.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn txq_enqueue() -> Result<(), VMXNet3Error> {
+        let ndesc = 32;
+        let mut txq = TxQueue::new(0, ndesc, crate::pci::BarAccess::new(0, 10, 0))?;
+
+        for i in 0..ndesc - 1 {
+            let seg = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+            let mut bufs = IOBufChain::new(0, 1).expect("Should work");
+            bufs.append(seg);
+            assert!(txq.enqueue(bufs).is_ok());
+            for j in 1..ndesc {
+                if i + j < ndesc - 1 {
+                    assert!(txq.can_enqueue(j), "can_enqueue is wrong?");
+                } else {
+                    assert!(!txq.can_enqueue(j), "can_enqueue is wrong?");
+                }
+            }
+        }
+
+        assert!(!txq.is_empty());
+        assert!(txq.is_full());
+        assert_eq!(txq.capacity(), 32);
+        assert_eq!(txq.len(), 31);
+
+        let seg = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+        let seg_addr = seg.vaddr();
+        let mut bufs = IOBufChain::new(0, 1).expect("Should work");
+        bufs.append(seg);
+        let r = txq.enqueue(bufs);
+        assert!(r.is_err());
+        if let Err(chain) = r {
+            assert_eq!(chain.segments.len(), 1, "Chain still has a segment");
+            assert_eq!(chain.segments[0].vaddr(), seg_addr, "Got same buffer back");
+        }
+        assert!(!txq.can_enqueue(1), "can_enqueue is wrong?");
+
+        Ok(())
+    }
+
+    #[test]
+    fn txq_dequeue() -> Result<(), VMXNet3Error> {
+        let _r = env_logger::try_init();
+        let ndesc = 32;
+        let mut txq = TxQueue::new(0, ndesc, crate::pci::BarAccess::new(0, 10, 0))?;
+
+        let mut addr_order = VecDeque::with_capacity(ndesc);
+        for _i in 0..ndesc - 1 {
+            let seg = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+            let mut bufs = IOBufChain::new(0, 1).expect("Should work");
+            addr_order.push_back(seg.vaddr());
+            bufs.append(seg);
+            assert!(txq.enqueue(bufs).is_ok());
+            assert_eq!(txq.can_dequeue(true), 0);
+            assert_eq!(txq.can_dequeue(false), 0);
+        }
+
+        let mut idx = 0;
+        for &sent in &[1, 2, 3, 4, 5, 6, 7] {
+            // Simulate sending by device:
+            for _i in 0..sent {
+                let vxcd = &mut txq.vxtxq_comp_ring.vxcr[idx];
+                vxcd.set_gen(txq.vxtxq_comp_ring.vxcr_gen);
+                vxcd.set_eop_idx(idx as u32);
+                idx += 1;
+            }
+            assert_eq!(txq.can_dequeue(true), sent);
+            assert_eq!(txq.can_dequeue(true), 0); // TODO: Not sure if this is what we want?
+
+            // Check that we can retrieve chains:
+            for _i in 0..sent {
+                let chain = txq.dequeue().expect("Can't dequeue?");
+                assert_eq!(chain.segments.len(), 1, "Didn't loose segments");
+                assert_eq!(
+                    chain.segments[0].vaddr(),
+                    addr_order.pop_front().expect("Have entry"),
+                    "Dequeue has FIFO semantics"
+                );
+            }
+        }
+
+        assert!(!txq.is_empty());
+        assert!(!txq.is_full());
+        assert_eq!(txq.len(), 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn rxq_enqueue() -> Result<(), VMXNet3Error> {
+        /*let ndesc = 32;
+        let mut rxq = RxQueue::new(0, 0, ndesc, crate::pci::BarAccess::new(0, 10, 0))?;
+
+        for i in 0..ndesc - 1 {
+            let seg1 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+            let seg2 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+            let mut bufs = IOBufChain::new(0, 1).expect("Should work");
+            bufs.append(seg1);
+            bufs.append(seg2);
+            assert!(rxq.enqueue(bufs).is_ok());
+            for j in 1..ndesc {
+                if (i * 2) + j < ndesc - 1 {
+                    assert!(rxq.can_enqueue(j), "can_enqueue is wrong?");
+                } else {
+                    assert!(!rxq.can_enqueue(j), "can_enqueue is wrong?");
+                }
+            }
+        }
+
+        assert!(!rxq.is_empty());
+        assert!(rxq.is_full());
+        assert_eq!(rxq.capacity(), 32);
+        assert_eq!(rxq.len(), 31);*/
+
+        /*
+        let seg = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+        let seg_addr = seg.vaddr();
+        let mut bufs = IOBufChain::new(0, 1).expect("Should work");
+        bufs.append(seg);
+        let r = rxq.enqueue(bufs);
+        assert!(r.is_err());
+        if let Err(chain) = r {
+            assert_eq!(chain.segments.len(), 1, "Chain still has a segment");
+            assert_eq!(chain.segments[0].vaddr(), seg_addr, "Got same buffer back");
+        }
+        assert!(!rxq.can_enqueue(1), "can_enqueue is wrong?");*/
 
         Ok(())
     }

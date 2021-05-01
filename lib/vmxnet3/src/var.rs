@@ -193,50 +193,27 @@ impl DmaObject for vmxnet3_rxring {
     }
 }
 
-/// A vector of either Rx or Tx completion descriptors.
-pub enum CompRingBuf {
-    TxCd(Vec<vmxnet3_txcompdesc>),
-    RxCd(Vec<vmxnet3_rxcompdesc>),
-}
-
 /// A completion ring that maintains some statistics about paket errors
 /// and zero length packets encountered.
 #[repr(C)]
-pub struct vmxnet3_comp_ring {
-    pub vxcr: CompRingBuf,
+pub struct vmxnet3_txcomp_ring {
+    pub vxcr: Vec<vmxnet3_txcompdesc>,
     pub vxcr_next: usize,
     pub vxcr_gen: u32,
     pub vxcr_zero_length: u64,
     pub vxcr_pkt_errors: u64,
 }
 
-impl vmxnet3_comp_ring {
-    pub(crate) fn new_rx(ndesc: usize) -> Result<Self, VMXNet3Error> {
-        let mut vxcr = Vec::new();
-        vxcr.try_reserve_exact(ndesc)?;
-
-        for i in 0..ndesc {
-            vxcr.push(vmxnet3_rxcompdesc::default());
-        }
-
-        Ok(vmxnet3_comp_ring {
-            vxcr: CompRingBuf::RxCd(vxcr),
-            vxcr_next: 0,
-            vxcr_gen: VMXNET3_INIT_GEN,
-            vxcr_zero_length: 0,
-            vxcr_pkt_errors: 0,
-        })
-    }
-
-    pub(crate) fn new_tx(ndesc: usize) -> Result<Self, VMXNet3Error> {
+impl vmxnet3_txcomp_ring {
+    pub(crate) fn new(ndesc: usize) -> Result<Self, VMXNet3Error> {
         let mut vxcr = Vec::new();
         vxcr.try_reserve_exact(ndesc)?;
         for i in 0..ndesc {
             vxcr.push(vmxnet3_txcompdesc::default());
         }
 
-        Ok(vmxnet3_comp_ring {
-            vxcr: CompRingBuf::TxCd(vxcr),
+        Ok(vmxnet3_txcomp_ring {
+            vxcr: vxcr,
             vxcr_next: 0,
             vxcr_gen: VMXNET3_INIT_GEN,
             vxcr_zero_length: 0,
@@ -245,26 +222,61 @@ impl vmxnet3_comp_ring {
     }
 
     pub(crate) fn vxcr_ndesc(&self) -> usize {
-        match &self.vxcr {
-            CompRingBuf::RxCd(buf) => buf.len(),
-            CompRingBuf::TxCd(buf) => buf.len(),
-        }
+        self.vxcr.len()
     }
 }
 
-impl DmaObject for vmxnet3_comp_ring {
+impl DmaObject for vmxnet3_txcomp_ring {
     fn paddr(&self) -> PAddr {
-        match &self.vxcr {
-            CompRingBuf::RxCd(buf) => PAddr::from(buf.as_ptr() as u64 - KERNEL_BASE),
-            CompRingBuf::TxCd(buf) => PAddr::from(buf.as_ptr() as u64 - KERNEL_BASE),
-        }
+        PAddr::from(self.vxcr.as_ptr() as u64 - KERNEL_BASE)
     }
 
     fn vaddr(&self) -> VAddr {
-        match &self.vxcr {
-            CompRingBuf::RxCd(buf) => VAddr::from(buf.as_ptr() as u64),
-            CompRingBuf::TxCd(buf) => VAddr::from(buf.as_ptr() as u64),
+        VAddr::from(self.vxcr.as_ptr() as u64)
+    }
+}
+
+/// A completion ring that maintains some statistics about paket errors
+/// and zero length packets encountered.
+#[repr(C)]
+pub struct vmxnet3_rxcomp_ring {
+    pub vxcr: Vec<vmxnet3_rxcompdesc>,
+    pub vxcr_next: usize,
+    pub vxcr_gen: u32,
+    pub vxcr_zero_length: u64,
+    pub vxcr_pkt_errors: u64,
+}
+
+impl vmxnet3_rxcomp_ring {
+    pub(crate) fn new(ndesc: usize) -> Result<Self, VMXNet3Error> {
+        let mut vxcr = Vec::new();
+        vxcr.try_reserve_exact(ndesc)?;
+
+        for _i in 0..ndesc {
+            vxcr.push(vmxnet3_rxcompdesc::default());
         }
+
+        Ok(vmxnet3_rxcomp_ring {
+            vxcr: vxcr,
+            vxcr_next: 0,
+            vxcr_gen: VMXNET3_INIT_GEN,
+            vxcr_zero_length: 0,
+            vxcr_pkt_errors: 0,
+        })
+    }
+
+    pub(crate) fn vxcr_ndesc(&self) -> usize {
+        self.vxcr.len()
+    }
+}
+
+impl DmaObject for vmxnet3_rxcomp_ring {
+    fn paddr(&self) -> PAddr {
+        PAddr::from(self.vxcr.as_ptr() as u64 - KERNEL_BASE)
+    }
+
+    fn vaddr(&self) -> VAddr {
+        VAddr::from(self.vxcr.as_ptr() as u64)
     }
 }
 
@@ -274,7 +286,7 @@ pub struct TxQueue {
     pub(crate) vxtxq_last_flush: c_int,
     pub(crate) vxtxq_intr_idx: c_int,
     pub(crate) vxtxq_cmd_ring: vmxnet3_txring,
-    pub(crate) vxtxq_comp_ring: vmxnet3_comp_ring,
+    pub(crate) vxtxq_comp_ring: vmxnet3_txcomp_ring,
     /// Let's us access device' PCI registers
     pci: BarAccess,
     // tail and head are pointers into the buffer. Tail always points
@@ -315,7 +327,7 @@ impl TxQueue {
             vxtxq_last_flush: -1,
             vxtxq_intr_idx: 0,
             vxtxq_cmd_ring: vmxnet3_txring::new(*vxtxr_ndesc)?,
-            vxtxq_comp_ring: vmxnet3_comp_ring::new_tx(*vxtxr_ndesc)?,
+            vxtxq_comp_ring: vmxnet3_txcomp_ring::new(*vxtxr_ndesc)?,
             pci,
             pidx_tail: 0,
             pidx_head: 0,
@@ -346,11 +358,6 @@ impl TxQueue {
     pub fn vxtxq_name(&self) -> String {
         format!("tx-{}", self.vxtxq_id)
     }
-
-    /*
-    pub fn vxtxq_ts(&self) -> *mut vmxnet3_txq_shared {
-        unimplemented!("get this through vmxnet3 struct?")
-    } */
 }
 
 impl DmaObject for TxQueue {}
@@ -476,35 +483,33 @@ impl DevQueue for TxQueue {
 
         let mut processed = 0;
         loop {
-            if let CompRingBuf::TxCd(txcd_arr) = &mut txc.vxcr {
-                let txcd = txcd_arr[txc.vxcr_next as usize];
-                if txcd.gen() != txc.vxcr_gen {
-                    break;
-                }
+            let txcd = txc.vxcr[txc.vxcr_next as usize];
+            if txcd.gen() != txc.vxcr_gen {
+                break;
+            }
 
-                VMXNet3::barrier(Barrier::Read);
+            VMXNet3::barrier(Barrier::Read);
 
-                txc.vxcr_next += 1;
-                if txc.vxcr_next == txc.vxcr_ndesc() {
-                    txc.vxcr_next = 0;
-                    txc.vxcr_gen ^= 1;
-                }
-                // TODO: Update chain-holder element here
-                let (chain_eop_idx, buf_chain) =
-                    self.inflight_chains.pop_front().expect("Expected an entry");
-                assert_eq!(chain_eop_idx, txcd.eop_idx() as usize);
+            txc.vxcr_next += 1;
+            if txc.vxcr_next == txc.vxcr_ndesc() {
+                txc.vxcr_next = 0;
+                txc.vxcr_gen ^= 1;
+            }
+            // TODO: Update chain-holder element here
+            let (chain_eop_idx, buf_chain) =
+                self.inflight_chains.pop_front().expect("Expected an entry");
+            assert_eq!(chain_eop_idx, txcd.eop_idx() as usize);
 
-                self.processed_chains.push_back(buf_chain);
-                processed += 1;
+            self.processed_chains.push_back(buf_chain);
+            processed += 1;
 
-                // replaced with pidx_tail:
-                // txr.vxtxr_next = (txcd.eop_idx() + 1) % txr.vxtxr_ndesc() as u32;
-                self.pidx_tail = (txcd.eop_idx() as usize + 1) % txr.vxtxr_ndesc();
+            // replaced with pidx_tail:
+            // txr.vxtxr_next = (txcd.eop_idx() + 1) % txr.vxtxr_ndesc() as u32;
+            self.pidx_tail = (txcd.eop_idx() as usize + 1) % txr.vxtxr_ndesc();
 
-                if !exact {
-                    // Stop after one packet
-                    break;
-                }
+            if !exact {
+                // Stop after one packet
+                break;
             }
         }
 
@@ -518,7 +523,7 @@ pub struct RxQueue {
     pub vxrxq_intr_idx: c_int,
     pub vxrxq_irq: if_irq,
     pub vxrxq_cmd_ring: [vmxnet3_rxring; 2usize],
-    pub vxrxq_comp_ring: vmxnet3_comp_ring,
+    pub vxrxq_comp_ring: vmxnet3_rxcomp_ring,
     /// Flags from VMX device (for RSS decisions)
     vmx_flags: u32,
     // tail and head are pointers into the buffer. Tail always points
@@ -565,7 +570,7 @@ impl RxQueue {
             vxrxq_intr_idx: 0,
             vxrxq_irq: Default::default(),
             vxrxq_cmd_ring: [vmxnet3_rxring::new(ndesc)?, vmxnet3_rxring::new(0)?],
-            vxrxq_comp_ring: vmxnet3_comp_ring::new_rx(1 * ndesc)?,
+            vxrxq_comp_ring: vmxnet3_rxcomp_ring::new(1 * ndesc)?,
             vmx_flags,
             pidx_tail0: 0,
             pidx_head0: 0,
@@ -691,164 +696,160 @@ impl DevQueue for RxQueue {
         // descriptors (and no associated read barrier) is required here.
 
         let rxc = &mut self.vxrxq_comp_ring;
-        if let CompRingBuf::RxCd(ref descs) = rxc.vxcr {
-            let rxcd = descs[self.cqidx];
-            // Skip zero-length entries
-            while rxcd.len() == 0 {
-                assert!(
-                    rxcd.eop() && rxcd.sop(),
-                    "Zero length packet without sop and eop set"
-                );
-                rxc.vxcr_zero_length += 1;
+        let rxcd = rxc.vxcr[self.cqidx];
+        // Skip zero-length entries
+        while rxcd.len() == 0 {
+            assert!(
+                rxcd.eop() && rxcd.sop(),
+                "Zero length packet without sop and eop set"
+            );
+            rxc.vxcr_zero_length += 1;
 
-                self.cqidx += 1;
-                if self.cqidx == rxc.vxcr_ndesc() {
-                    self.cqidx = 0;
-                    rxc.vxcr_gen ^= 1;
-                }
+            self.cqidx += 1;
+            if self.cqidx == rxc.vxcr_ndesc() {
+                self.cqidx = 0;
+                rxc.vxcr_gen ^= 1;
             }
-            assert!(rxcd.sop(), "expected sop");
-
-            // RSS and flow ID.
-            //
-            // Types other than M_HASHTYPE_NONE and M_HASHTYPE_OPAQUE_HASH
-            // should be used only if the software RSS is enabled and it uses
-            // the same algorithm and the hash key as the "hardware".  If the
-            // software RSS is not enabled, then it's simply pointless to use
-            // those types. If it's enabled but with different parameters, then
-            // hash values will not match.
-
-            // TODO(unused): We currently don't care about RSS, but if we
-            // eventually do, we need to convey this info to the buf-chain
-            let mut flowid = None;
-            let mut rsstype = 0;
-            #[cfg(feature = "rss")]
-            let rss_flag = self.vmx_flags & VMXNET3_FLAG_SOFT_RSS != 0;
-            match rxcd.rss_type() {
-                #[cfg(feature = "rss")]
-                VMXNET3_RCD_RSS_TYPE_NONE if rss_flag => {
-                    flowid = Some(self.vxrxq_id);
-                    rsstype = M_HASHTYPE_NONE;
-                }
-                #[cfg(feature = "rss")]
-                VMXNET3_RCD_RSS_TYPE_IPV4 if rss_flag => {
-                    rsstype = M_HASHTYPE_RSS_IPV4;
-                }
-                #[cfg(feature = "rss")]
-                VMXNET3_RCD_RSS_TYPE_TCPIPV4 if rss_flag => {
-                    rsstype = M_HASHTYPE_RSS_TCP_IPV4;
-                }
-                #[cfg(feature = "rss")]
-                VMXNET3_RCD_RSS_TYPE_IPV6 if rss_flag => {
-                    rsstype = M_HASHTYPE_RSS_IPV6;
-                }
-                #[cfg(feature = "rss")]
-                VMXNET3_RCD_RSS_TYPE_TCPIPV6 if rss_flag => {
-                    rsstype = M_HASHTYPE_RSS_TCP_IPV6;
-                }
-                VMXNET3_RCD_RSS_TYPE_NONE => {
-                    flowid = Some(self.vxrxq_id);
-                    rsstype = M_HASHTYPE_NONE;
-                }
-                _ => {
-                    rsstype = M_HASHTYPE_OPAQUE_HASH;
-                }
-            }
-
-            // The queue numbering scheme used for rxcd->qid is as follows:
-            //  - All of the command ring 0s are numbered [0, nrxqsets - 1]
-            //  - All of the command ring 1s are numbered [nrxqsets, 2*nrxqsets
-            //    - 1]
-            //
-            // Thus, rxcd->qid less than nrxqsets indicates command ring (and
-            // flid) 0, and rxcd->qid greater than or equal to nrxqsets
-            // indicates command ring (and flid) 1.
-
-            let (_chain_idx, mut chain) = self
-                .inflight_chains
-                .pop_front()
-                .expect("IOBufChain not available?");
-            let mut nfrags: usize = 0;
-            let mut total_len = 0;
-            let mut rxcd;
-            loop {
-                rxcd = &descs[self.cqidx];
-                assert_eq!(rxcd.gen(), rxc.vxcr_gen, "generation mismatch");
-
-                // TODO: if we were to use use both rxrings:
-                // let flid = if rxcd.qid() >= isc_nrxqsets { 1 } else { 0 };
-                let flid = 0;
-                let rxr = &self.vxrxq_cmd_ring[flid];
-
-                let rxd_idx = rxcd.rxd_idx() as usize;
-                info!("rxcd {:?}", rxcd);
-                let _rxd = &rxr.vxrxr_rxd[rxd_idx];
-
-                assert!(
-                    nfrags < chain.segments.len(),
-                    "Don't support unexpected segments (LRO, 2 queue)"
-                );
-                //chain.segments[nfrags].flid = flid;
-                //chain.segments[nfrags].rxd_idx = rxd_idx;
-
-                let rxcd_len = rxcd.len() as usize;
-                debug_assert!(rxcd_len <= chain.segments[nfrags].len());
-                chain.segments[nfrags].truncate(rxcd_len);
-                total_len += rxcd_len;
-
-                nfrags += 1;
-                self.cqidx += 1;
-                if self.cqidx == rxc.vxcr_ndesc() {
-                    self.cqidx = 0;
-                    rxc.vxcr_gen ^= 1;
-                }
-
-                if rxcd.eop() {
-                    break;
-                }
-            }
-
-            chain.set_meta_data(total_len, nfrags, self.cqidx, flowid, rsstype);
-
-            // If there's an error, the last descriptor in the packet will have
-            // the error indicator set.  In this case, set all fragment lengths
-            // to zero. This should cause higher-levels to discard the packet,
-            // but process all associated descriptors through the refill
-            // mechanism.
-            debug_assert!(rxcd.eop());
-            if unlikely(rxcd.error()) {
-                rxc.vxcr_pkt_errors += 1;
-                for segment in chain.segments.iter_mut() {
-                    segment.truncate(0);
-                }
-            } else {
-                if !rxcd.no_csum() {
-                    let mut csum_flags: u32 = 0;
-                    if rxcd.ipv4() {
-                        csum_flags |= CSUM_IP_CHECKED;
-                        if rxcd.ipcsum_ok() {
-                            csum_flags = CSUM_IP_VALID;
-                        }
-                    }
-                    if !rxcd.fragment() && (rxcd.tcp() || rxcd.udp()) {
-                        csum_flags |= CSUM_L4_CALC;
-                        if rxcd.csum_ok() {
-                            csum_flags |= CSUM_L4_VALID;
-                            chain.csum_data = 0xffff;
-                        }
-                    }
-                    chain.csum_flags = csum_flags;
-                }
-
-                if rxcd.vlan() {
-                    chain.vtag = Some(rxcd.vtag());
-                }
-            }
-
-            Ok(chain)
-        } else {
-            unreachable!("type error for desc");
         }
+        assert!(rxcd.sop(), "expected sop");
+
+        // RSS and flow ID.
+        //
+        // Types other than M_HASHTYPE_NONE and M_HASHTYPE_OPAQUE_HASH
+        // should be used only if the software RSS is enabled and it uses
+        // the same algorithm and the hash key as the "hardware".  If the
+        // software RSS is not enabled, then it's simply pointless to use
+        // those types. If it's enabled but with different parameters, then
+        // hash values will not match.
+
+        // TODO(unused): We currently don't care about RSS, but if we
+        // eventually do, we need to convey this info to the buf-chain
+        let mut flowid = None;
+        let mut rsstype = 0;
+        #[cfg(feature = "rss")]
+        let rss_flag = self.vmx_flags & VMXNET3_FLAG_SOFT_RSS != 0;
+        match rxcd.rss_type() {
+            #[cfg(feature = "rss")]
+            VMXNET3_RCD_RSS_TYPE_NONE if rss_flag => {
+                flowid = Some(self.vxrxq_id);
+                rsstype = M_HASHTYPE_NONE;
+            }
+            #[cfg(feature = "rss")]
+            VMXNET3_RCD_RSS_TYPE_IPV4 if rss_flag => {
+                rsstype = M_HASHTYPE_RSS_IPV4;
+            }
+            #[cfg(feature = "rss")]
+            VMXNET3_RCD_RSS_TYPE_TCPIPV4 if rss_flag => {
+                rsstype = M_HASHTYPE_RSS_TCP_IPV4;
+            }
+            #[cfg(feature = "rss")]
+            VMXNET3_RCD_RSS_TYPE_IPV6 if rss_flag => {
+                rsstype = M_HASHTYPE_RSS_IPV6;
+            }
+            #[cfg(feature = "rss")]
+            VMXNET3_RCD_RSS_TYPE_TCPIPV6 if rss_flag => {
+                rsstype = M_HASHTYPE_RSS_TCP_IPV6;
+            }
+            VMXNET3_RCD_RSS_TYPE_NONE => {
+                flowid = Some(self.vxrxq_id);
+                rsstype = M_HASHTYPE_NONE;
+            }
+            _ => {
+                rsstype = M_HASHTYPE_OPAQUE_HASH;
+            }
+        }
+
+        // The queue numbering scheme used for rxcd->qid is as follows:
+        //  - All of the command ring 0s are numbered [0, nrxqsets - 1]
+        //  - All of the command ring 1s are numbered [nrxqsets, 2*nrxqsets
+        //    - 1]
+        //
+        // Thus, rxcd->qid less than nrxqsets indicates command ring (and
+        // flid) 0, and rxcd->qid greater than or equal to nrxqsets
+        // indicates command ring (and flid) 1.
+
+        let (_chain_idx, mut chain) = self
+            .inflight_chains
+            .pop_front()
+            .expect("IOBufChain not available?");
+        let mut nfrags: usize = 0;
+        let mut total_len = 0;
+        let mut rxcd;
+        loop {
+            rxcd = &rxc.vxcr[self.cqidx];
+            assert_eq!(rxcd.gen(), rxc.vxcr_gen, "generation mismatch");
+
+            // TODO: if we were to use use both rxrings:
+            // let flid = if rxcd.qid() >= isc_nrxqsets { 1 } else { 0 };
+            let flid = 0;
+            let rxr = &self.vxrxq_cmd_ring[flid];
+
+            let rxd_idx = rxcd.rxd_idx() as usize;
+            info!("rxcd {:?}", rxcd);
+            let _rxd = &rxr.vxrxr_rxd[rxd_idx];
+
+            assert!(
+                nfrags < chain.segments.len(),
+                "Don't support unexpected segments (LRO, 2 queue)"
+            );
+            //chain.segments[nfrags].flid = flid;
+            //chain.segments[nfrags].rxd_idx = rxd_idx;
+
+            let rxcd_len = rxcd.len() as usize;
+            debug_assert!(rxcd_len <= chain.segments[nfrags].len());
+            chain.segments[nfrags].truncate(rxcd_len);
+            total_len += rxcd_len;
+
+            nfrags += 1;
+            self.cqidx += 1;
+            if self.cqidx == rxc.vxcr_ndesc() {
+                self.cqidx = 0;
+                rxc.vxcr_gen ^= 1;
+            }
+
+            if rxcd.eop() {
+                break;
+            }
+        }
+
+        chain.set_meta_data(total_len, nfrags, self.cqidx, flowid, rsstype);
+
+        // If there's an error, the last descriptor in the packet will have
+        // the error indicator set.  In this case, set all fragment lengths
+        // to zero. This should cause higher-levels to discard the packet,
+        // but process all associated descriptors through the refill
+        // mechanism.
+        debug_assert!(rxcd.eop());
+        if unlikely(rxcd.error()) {
+            rxc.vxcr_pkt_errors += 1;
+            for segment in chain.segments.iter_mut() {
+                segment.truncate(0);
+            }
+        } else {
+            if !rxcd.no_csum() {
+                let mut csum_flags: u32 = 0;
+                if rxcd.ipv4() {
+                    csum_flags |= CSUM_IP_CHECKED;
+                    if rxcd.ipcsum_ok() {
+                        csum_flags = CSUM_IP_VALID;
+                    }
+                }
+                if !rxcd.fragment() && (rxcd.tcp() || rxcd.udp()) {
+                    csum_flags |= CSUM_L4_CALC;
+                    if rxcd.csum_ok() {
+                        csum_flags |= CSUM_L4_VALID;
+                        chain.csum_data = 0xffff;
+                    }
+                }
+                chain.csum_flags = csum_flags;
+            }
+
+            if rxcd.vlan() {
+                chain.vtag = Some(rxcd.vtag());
+            }
+        }
+
+        Ok(chain)
     }
 
     fn can_dequeue(&mut self, exact: bool) -> usize {
@@ -861,38 +862,34 @@ impl DevQueue for RxQueue {
         let mut expect_sop = true;
 
         loop {
-            if let CompRingBuf::RxCd(ref descs) = rxc.vxcr {
-                let rxcd = descs[idx];
-                if rxcd.gen() != rxc.vxcr_gen {
-                    break;
-                }
-                VMXNet3::barrier(Barrier::Read);
-                debug!("rxcd is {:?}", rxcd);
+            let rxcd = rxc.vxcr[idx];
+            if rxcd.gen() != rxc.vxcr_gen {
+                break;
+            }
+            VMXNet3::barrier(Barrier::Read);
+            debug!("rxcd is {:?}", rxcd);
 
-                #[cfg(debug_assertions)]
-                {
-                    // Invariants:
-                    if expect_sop {
-                        debug_assert!(rxcd.sop(), "expected sop");
-                    } else {
-                        debug_assert!(!rxcd.sop(), "unexpected sop");
-                    }
-                    expect_sop = rxcd.eop();
+            #[cfg(debug_assertions)]
+            {
+                // Invariants:
+                if expect_sop {
+                    debug_assert!(rxcd.sop(), "expected sop");
+                } else {
+                    debug_assert!(!rxcd.sop(), "unexpected sop");
                 }
+                expect_sop = rxcd.eop();
+            }
 
-                if rxcd.eop() && rxcd.len() != 0 {
-                    available += 1;
-                }
-                if available > budget {
-                    break;
-                }
-                idx += 1;
-                if idx == rxc.vxcr_ndesc() {
-                    idx = 0;
-                    rxc.vxcr_gen ^= 1;
-                }
-            } else {
-                panic!("Invalid Queue type");
+            if rxcd.eop() && rxcd.len() != 0 {
+                available += 1;
+            }
+            if available > budget {
+                break;
+            }
+            idx += 1;
+            if idx == rxc.vxcr_ndesc() {
+                idx = 0;
+                rxc.vxcr_gen ^= 1;
             }
         }
 

@@ -88,8 +88,8 @@ impl vmxnet3_trxq_shared {
             panic!("Invalid idx parameter.");
         }
 
-        // Safety: Correct allocation, alignment of buffer & alloc_zeroed is initializing this properly
-        // indexing as described in comments
+        // Safety: Correct allocation, alignment of buffer & alloc_zeroed is
+        // initializing this properly indexing as described in comments
         unsafe {
             let txq_end = (self.buffer as *mut vmxnet3_txq_shared).add(self.ntxq);
             let rxq_entry = (txq_end as *mut vmxnet3_rxq_shared).add(idx);
@@ -507,10 +507,8 @@ impl VMXNet3 {
     }
 
     pub fn print_txc(&self) {
-        if let CompRingBuf::TxCd(ref ring) = self.txq[0].vxtxq_comp_ring.vxcr {
-            info!("{:?}", ring[0]);
-            info!("{:?}", ring[1]);
-        }
+        info!("{:?}", self.txq[0].vxtxq_comp_ring.vxcr[0]);
+        info!("{:?}", self.txq[0].vxtxq_comp_ring.vxcr[1]);
     }
 }
 

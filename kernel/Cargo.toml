@@ -49,6 +49,7 @@ crossbeam-queue = { version = "0.2", default-features = false, features = ["allo
 addr2line = { version = "0.14.1", default-features = false, features = ["rustc-demangle"], optional = true }
 arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
+smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
 
 [[bin]]
 name = "nrk"
@@ -131,3 +132,5 @@ test-shootdown-simple = ["integration-test"]
 test-replica-advance = ["integration-test"]
 # test-vmxnet-smoke: Test vmxnet NIC driver
 test-vmxnet-smoke = ["integration-test"]
+# test-vmxnet-smoltcp: Test vmxnet NIC driver with a network stack
+test-vmxnet-smoltcp = ["integration-test", "smoltcp"]

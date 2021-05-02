@@ -1,3 +1,6 @@
+use alloc::boxed::Box;
+use core::pin::Pin;
+
 use log::info;
 
 use driverkit::iomem::{IOBufChain, IOBufPool};
@@ -14,12 +17,12 @@ const MAX_PACKET_SZ: usize = 2048;
 
 /// a smoltcp phy implementation wrapping a DevQueue
 pub struct DevQueuePhy {
-    device: VMXNet3,
+    device: Pin<Box<VMXNet3>>,
     pool: IOBufPool,
 }
 
 impl DevQueuePhy {
-    pub fn new(device: VMXNet3) -> core::result::Result<DevQueuePhy, IOMemError> {
+    pub fn new(device: Pin<Box<VMXNet3>>) -> core::result::Result<DevQueuePhy, IOMemError> {
         let pool = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
         Ok(Self { device, pool })
     }
@@ -40,8 +43,10 @@ impl<'a> Device<'a> for DevQueuePhy {
 
             // Enqueue another buffer for future receives
             // TODO: maybe we need to enqueue more than one?
-            let mut bufs = IOBufChain::new(0, 1).expect("Can't make chain?");
+            let mut bufs = IOBufChain::new(0, 2).expect("Can't make chain?");
             bufs.append(self.pool.get_buf().expect("Can't get buffer?"));
+            bufs.append(self.pool.get_buf().expect("Can't get buffer?"));
+
             let buf2 = self.pool.get_buf().expect("Can't get buffer?");
 
             assert!(self.device.rxq[0].enqueue(bufs).is_ok());

@@ -762,7 +762,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_eop(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(14usize, 1u8, val as u64) }
+        self._bitfield_1.set(14usize, 1u8, val as u64)
     }
     #[inline]
     pub fn sop(&self) -> bool {
@@ -770,7 +770,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_sop(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(15usize, 1u8, val as u64) }
+        self._bitfield_1.set(15usize, 1u8, val as u64)
     }
     #[inline]
     pub fn qid(&self) -> u32 {
@@ -800,7 +800,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_no_csum(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(30usize, 1u8, val as u64) }
+        self._bitfield_1.set(30usize, 1u8, val as u64)
     }
     #[inline]
     pub fn pad2(&self) -> bool {
@@ -808,7 +808,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_pad2(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(31usize, 1u8, val as u64) }
+        self._bitfield_1.set(31usize, 1u8, val as u64)
     }
     #[inline]
     pub fn rss_hash(&self) -> u32 {
@@ -838,7 +838,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_error(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(78usize, 1u8, val as u64) }
+        self._bitfield_1.set(78usize, 1u8, val as u64)
     }
     #[inline]
     pub fn vlan(&self) -> bool {
@@ -846,7 +846,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_vlan(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(79usize, 1u8, val as u64) }
+        self._bitfield_1.set(79usize, 1u8, val as u64)
     }
     #[inline]
     pub fn vtag(&self) -> u32 {
@@ -876,7 +876,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_csum_ok(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(112usize, 1u8, val as u64) }
+        self._bitfield_1.set(112usize, 1u8, val as u64)
     }
     #[inline]
     pub fn udp(&self) -> bool {
@@ -884,7 +884,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_udp(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(113usize, 1u8, val as u64) }
+        self._bitfield_1.set(113usize, 1u8, val as u64)
     }
     #[inline]
     pub fn tcp(&self) -> bool {
@@ -892,7 +892,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_tcp(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(114usize, 1u8, val as u64) }
+        self._bitfield_1.set(114usize, 1u8, val as u64)
     }
     #[inline]
     pub fn ipcsum_ok(&self) -> bool {
@@ -900,7 +900,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_ipcsum_ok(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(115usize, 1u8, val as u64) }
+        self._bitfield_1.set(115usize, 1u8, val as u64)
     }
     #[inline]
     pub fn ipv6(&self) -> bool {
@@ -908,7 +908,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_ipv6(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(116usize, 1u8, val as u64) }
+        self._bitfield_1.set(116usize, 1u8, val as u64)
     }
     #[inline]
     pub fn ipv4(&self) -> bool {
@@ -916,7 +916,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_ipv4(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(117usize, 1u8, val as u64) }
+        self._bitfield_1.set(117usize, 1u8, val as u64)
     }
     #[inline]
     pub fn fragment(&self) -> bool {
@@ -924,7 +924,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_fragment(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(118usize, 1u8, val as u64) }
+        self._bitfield_1.set(118usize, 1u8, val as u64)
     }
     #[inline]
     pub fn fcs(&self) -> bool {
@@ -932,7 +932,7 @@ impl vmxnet3_rxcompdesc {
     }
     #[inline]
     pub fn set_fcs(&mut self, val: bool) {
-        unsafe { self._bitfield_1.set(119usize, 1u8, val as u64) }
+        self._bitfield_1.set(119usize, 1u8, val as u64)
     }
     #[inline]
     pub fn type_(&self) -> u32 {

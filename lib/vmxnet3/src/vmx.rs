@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use alloc::alloc::{AllocError, Layout};
 use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
@@ -9,7 +11,7 @@ use core::pin::Pin;
 use arrayvec::ArrayVec;
 use custom_error::custom_error;
 
-use log::{debug, error, info};
+use log::{error, info};
 use x86::current::paging::{PAddr, VAddr};
 
 use crate::pci::{self, BarAccess, BarIO, DmaObject};
@@ -34,15 +36,15 @@ pub(crate) enum Barrier {
 /// by an array of vmxnet3_rxq_shared
 ///
 /// This is a mess for rust types so we allocate raw memory and cast it.
-struct vmxnet3_trxq_shared {
+struct TRXQueueShared {
     nrxq: usize,
     ntxq: usize,
     layout: Layout,
     buffer: *mut u8,
 }
 
-impl vmxnet3_trxq_shared {
-    fn new(txqsets: usize, rxqsets: usize) -> Result<vmxnet3_trxq_shared, VMXNet3Error> {
+impl TRXQueueShared {
+    fn new(txqsets: usize, rxqsets: usize) -> Result<TRXQueueShared, VMXNet3Error> {
         // Safety: Needs to allocate slice that can hold txqsets and rxqsets structs
         // 128 byte alignment requirement by driver
         static_assertions::const_assert_eq!(mem::size_of::<vmxnet3_txq_shared>(), 256);
@@ -61,7 +63,7 @@ impl vmxnet3_trxq_shared {
                 return Err(VMXNet3Error::OutOfMemory);
             }
 
-            Ok(vmxnet3_trxq_shared {
+            Ok(TRXQueueShared {
                 nrxq: rxqsets,
                 ntxq: txqsets,
                 layout: layout,
@@ -123,7 +125,7 @@ impl vmxnet3_trxq_shared {
     }
 }
 
-impl DmaObject for vmxnet3_trxq_shared {
+impl DmaObject for TRXQueueShared {
     fn paddr(&self) -> PAddr {
         PAddr::from(self.buffer as u64 - pci::KERNEL_BASE)
     }
@@ -133,7 +135,7 @@ impl DmaObject for vmxnet3_trxq_shared {
     }
 }
 
-impl Drop for vmxnet3_trxq_shared {
+impl Drop for TRXQueueShared {
     fn drop(&mut self) {
         unsafe { alloc::alloc::dealloc(self.buffer, self.layout) }
     }
@@ -162,7 +164,7 @@ pub struct VMXNet3 {
     /// Shared region between driver and host
     ds: Box<DriverShared>,
     /// Queue state that is shared with the device
-    qs: vmxnet3_trxq_shared,
+    qs: TRXQueueShared,
 
     pub rxq: arrayvec::ArrayVec<[RxQueue; VMXNET3_MAX_RX_QUEUES]>,
     pub txq: arrayvec::ArrayVec<[TxQueue; VMXNET3_MAX_TX_QUEUES]>,
@@ -176,12 +178,7 @@ pub struct VMXNet3 {
 impl DmaObject for VMXNet3 {}
 
 impl VMXNet3 {
-    pub fn new(
-        nrx: usize,
-        nrxd: usize,
-        trx: usize,
-        ntxd: usize,
-    ) -> Result<Pin<Box<VMXNet3>>, VMXNet3Error> {
+    pub fn new(nrx: usize, trx: usize) -> Result<Pin<Box<VMXNet3>>, VMXNet3Error> {
         // TODO: supply as arguments/type
         const BUS: u32 = 0x0;
         const DEV: u32 = 0x10;
@@ -193,7 +190,7 @@ impl VMXNet3 {
         let nrxqsets = BoundedUSize::<1, VMXNET3_MAX_RX_QUEUES>::new(nrx);
 
         // Allocate queue state that is shared with the device
-        let qs = vmxnet3_trxq_shared::new(*ntxqsets, *nrxqsets)?;
+        let qs = TRXQueueShared::new(*ntxqsets, *nrxqsets)?;
 
         let nintr = (*nrxqsets + *ntxqsets + 1).try_into().unwrap();
         let evintr = *nrxqsets as u8; // The event interrupt is the last vector
@@ -379,12 +376,12 @@ impl VMXNet3 {
     }
 
     fn reinit_queues(&mut self) {
-        for txq in self.txq.iter_mut() {
+        for _txq in self.txq.iter_mut() {
             unimplemented!();
             //txq.init();
         }
 
-        for rxq in self.rxq.iter_mut() {
+        for _rxq in self.rxq.iter_mut() {
             unimplemented!();
             //rxq.init();
         }
@@ -471,13 +468,13 @@ impl VMXNet3 {
 
 #[cfg(test)]
 mod tests {
-    use super::vmxnet3_trxq_shared;
+    use super::TRXQueueShared;
     use crate::pci::DmaObject;
     use crate::reg::{vmxnet3_rxq_shared, vmxnet3_txq_shared};
 
     #[test]
     fn test_trxq_shared() {
-        let mut x = vmxnet3_trxq_shared::new(2, 3).unwrap();
+        let mut x = TRXQueueShared::new(2, 3).unwrap();
         for i in 0..2 {
             {
                 let r = x.txqs_ref_mut(i);

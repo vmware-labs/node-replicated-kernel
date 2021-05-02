@@ -978,6 +978,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "managed"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c75de51135344a4f8ed3cfe2720dc27736f7711989703a0b43aadf3753c55577"
+
+[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1686,12 +1692,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "smallvec"
-version = "0.6.14"
+name = "smoltcp"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b97fcaeba89edba30f044a10c6a3cc39df9c3f17d7cd829dd1446cab35f890e0"
+checksum = "97173c1ef35b0a09304cb3882eba594761243005847cbbf6124f966e8da6519a"
 dependencies = [
- "maybe-uninit",
+ "bitflags 1.2.1",
+ "byteorder 1.4.3",
+ "log",
+ "managed",
 ]
 
 [[package]]
@@ -1907,6 +1916,7 @@ dependencies = [
  "driverkit",
  "env_logger 0.8.3",
  "log",
+ "smoltcp",
  "static_assertions",
  "x86 0.37.0",
 ]

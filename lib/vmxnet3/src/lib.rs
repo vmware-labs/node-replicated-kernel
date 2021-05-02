@@ -5,6 +5,7 @@ extern crate alloc;
 
 mod pci;
 pub mod reg;
+pub mod smoltcp;
 pub mod var;
 pub mod vmx;
 

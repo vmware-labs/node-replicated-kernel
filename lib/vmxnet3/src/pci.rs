@@ -1,4 +1,5 @@
-use log::{debug, error};
+#![allow(unused)]
+use log::error;
 use x86::io;
 
 pub use driverkit::iomem::DmaObject;
@@ -29,7 +30,6 @@ pub(crate) unsafe fn confread(bus: u32, dev: u32, fun: u32, reg: u32) -> u32 {
     v
 }
 
-#[allow(unused)]
 pub(crate) unsafe fn confwrite(bus: u32, dev: u32, fun: u32, reg: u32, value: u32) {
     error!(
         "confwrite ({:#x} {:#x} {:#x}) reg({:#x}) = value({:#x})",
@@ -83,8 +83,8 @@ impl BarAccess {
             let bar1 = confread(bus, dev, fun, 0x14);
             //let bar_msix = pci::confread(BUS, DEV, FUN, 0x7);
 
-            debug!("BAR0 at: {:#x}", bar0);
-            debug!("BAR1 at: {:#x}", bar1);
+            log::debug!("BAR0 at: {:#x}", bar0);
+            log::debug!("BAR1 at: {:#x}", bar1);
             //debug!("MSI-X at: {:#x}", bar_msi);
 
             BarAccess {
@@ -128,15 +128,15 @@ impl BarAccess {
 
 #[cfg(test)]
 impl BarIO for BarAccess {
-    fn read_bar0(&self, offset: u64) -> u32 {
+    fn read_bar0(&self, _offset: u64) -> u32 {
         0xdead
     }
 
-    fn write_bar0(&self, offset: u64, data: u32) {}
+    fn write_bar0(&self, _offset: u64, _data: u32) {}
 
-    fn read_bar1(&self, offset: u64) -> u32 {
+    fn read_bar1(&self, _offset: u64) -> u32 {
         0xbeef
     }
 
-    fn write_bar1(&self, offset: u64, data: u32) {}
+    fn write_bar1(&self, _offset: u64, _data: u32) {}
 }

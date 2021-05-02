@@ -9,11 +9,10 @@ use core::{convert::TryInto, ptr};
 
 use driverkit::{
     devq::{DevQueue, DevQueueError},
-    iomem::{IOBuf, IOBufChain},
+    iomem::IOBufChain,
     net::csum::*,
     net::rss::*,
 };
-use log::{debug, info};
 
 use x86::current::paging::{PAddr, VAddr};
 
@@ -163,7 +162,7 @@ impl vmxnet3_rxring {
     fn new(vxrxr_ndesc: usize) -> Result<Self, VMXNet3Error> {
         let mut vxrxr_rxd: Vec<vmxnet3_rxdesc> = Vec::new();
         vxrxr_rxd.try_reserve_exact(vxrxr_ndesc)?;
-        for i in 0..vxrxr_ndesc {
+        for _i in 0..vxrxr_ndesc {
             vxrxr_rxd.push(vmxnet3_rxdesc::default());
         }
 
@@ -208,7 +207,7 @@ impl vmxnet3_txcomp_ring {
     pub(crate) fn new(ndesc: usize) -> Result<Self, VMXNet3Error> {
         let mut vxcr = Vec::new();
         vxcr.try_reserve_exact(ndesc)?;
-        for i in 0..ndesc {
+        for _i in 0..ndesc {
             vxcr.push(vmxnet3_txcompdesc::default());
         }
 
@@ -726,7 +725,7 @@ impl DevQueue for RxQueue {
         // TODO(unused): We currently don't care about RSS, but if we
         // eventually do, we need to convey this info to the buf-chain
         let mut flowid = None;
-        let mut rsstype = 0;
+        let rsstype;
         #[cfg(feature = "rss")]
         let rss_flag = self.vmx_flags & VMXNET3_FLAG_SOFT_RSS != 0;
         match rxcd.rss_type() {
@@ -1007,6 +1006,7 @@ pub struct ifmedia {
 #[cfg(test)]
 mod test {
     use core::alloc::Layout;
+    use driverkit::iomem::IOBuf;
     const IOBUF_LAYOUT: Layout = unsafe { Layout::from_size_align_unchecked(128, 128) };
 
     use super::*;

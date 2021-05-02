@@ -548,8 +548,6 @@ pub struct RxQueue {
     inflight_chains: VecDeque<(usize, IOBufChain)>,
     /// Holding area for IOBufChain that are waiting to be dequeued
     processed_chains: VecDeque<IOBufChain>,
-    /// Current index into completion queue (of vxrxq_comp_ring)
-    cqidx: usize,
 }
 
 impl RxQueue {
@@ -582,7 +580,6 @@ impl RxQueue {
             pci,
             inflight_chains,
             processed_chains,
-            cqidx: 0,
         })
     }
 
@@ -618,7 +615,7 @@ impl DmaObject for RxQueue {}
 
 impl DevQueue for RxQueue {
     fn enqueue(&mut self, chain: IOBufChain) -> Result<(), IOBufChain> {
-        if self.capacity() - self.len() < chain.segments.len() {
+        if (self.capacity() - 1) - self.len() < chain.segments.len() {
             // We don't bother trying to enqueue a partial packet
             return Err(chain);
         }
@@ -650,7 +647,6 @@ impl DevQueue for RxQueue {
                 VMXNET3_BTYPE_BODY
             });
             rxd[idx].set_gen(rxr.vxrxr_gen);
-            debug!("RxRing enqueued {:?}", rxd[idx]);
 
             i += 1;
             idx += 1;
@@ -665,7 +661,7 @@ impl DevQueue for RxQueue {
         self.pidx_head0 = idx;
 
         self.inflight_chains
-            .push_back((idx - chain.segments.len(), chain));
+            .push_back((idx.wrapping_sub(chain.segments.len()) % ndesc, chain));
 
         Ok(())
     }
@@ -684,7 +680,7 @@ impl DevQueue for RxQueue {
     }
 
     fn can_enqueue(&self, how_many_seg: usize) -> bool {
-        self.capacity() - self.len() > how_many_seg
+        (self.capacity() - 1) - self.len() > how_many_seg
     }
 
     fn dequeue(&mut self) -> Result<IOBufChain, DevQueueError> {
@@ -701,7 +697,7 @@ impl DevQueue for RxQueue {
         // descriptors (and no associated read barrier) is required here.
 
         let rxc = &mut self.vxrxq_comp_ring;
-        let rxcd = rxc.vxcr[self.cqidx];
+        let rxcd = rxc.vxcr[self.pidx_tail0];
         // Skip zero-length entries
         while rxcd.len() == 0 {
             assert!(
@@ -710,9 +706,9 @@ impl DevQueue for RxQueue {
             );
             rxc.vxcr_zero_length += 1;
 
-            self.cqidx += 1;
-            if self.cqidx == rxc.vxcr_ndesc() {
-                self.cqidx = 0;
+            self.pidx_tail0 += 1;
+            if self.pidx_tail0 == rxc.vxcr_ndesc() {
+                self.pidx_tail0 = 0;
                 rxc.vxcr_gen ^= 1;
             }
         }
@@ -781,7 +777,7 @@ impl DevQueue for RxQueue {
         let mut total_len = 0;
         let mut rxcd;
         loop {
-            rxcd = &rxc.vxcr[self.cqidx];
+            rxcd = &rxc.vxcr[self.pidx_tail0];
             assert_eq!(rxcd.gen(), rxc.vxcr_gen, "generation mismatch");
 
             // TODO: if we were to use use both rxrings:
@@ -790,7 +786,6 @@ impl DevQueue for RxQueue {
             let rxr = &self.vxrxq_cmd_ring[flid];
 
             let rxd_idx = rxcd.rxd_idx() as usize;
-            info!("rxcd {:?}", rxcd);
             let _rxd = &rxr.vxrxr_rxd[rxd_idx];
 
             assert!(
@@ -801,14 +796,17 @@ impl DevQueue for RxQueue {
             //chain.segments[nfrags].rxd_idx = rxd_idx;
 
             let rxcd_len = rxcd.len() as usize;
-            debug_assert!(rxcd_len <= chain.segments[nfrags].len());
+            debug_assert!(
+                rxcd_len <= chain.segments[nfrags].len(),
+                "Don't truncate packets"
+            );
             chain.segments[nfrags].truncate(rxcd_len);
             total_len += rxcd_len;
 
             nfrags += 1;
-            self.cqidx += 1;
-            if self.cqidx == rxc.vxcr_ndesc() {
-                self.cqidx = 0;
+            self.pidx_tail0 += 1;
+            if self.pidx_tail0 == rxc.vxcr_ndesc() {
+                self.pidx_tail0 = 0;
                 rxc.vxcr_gen ^= 1;
             }
 
@@ -817,7 +815,7 @@ impl DevQueue for RxQueue {
             }
         }
 
-        chain.set_meta_data(total_len, nfrags, self.cqidx, flowid, rsstype);
+        chain.set_meta_data(total_len, nfrags, self.pidx_tail0, flowid, rsstype);
 
         // If there's an error, the last descriptor in the packet will have
         // the error indicator set.  In this case, set all fragment lengths
@@ -858,21 +856,21 @@ impl DevQueue for RxQueue {
     }
 
     fn can_dequeue(&mut self, exact: bool) -> usize {
-        // Start from current self.cqidx
-        let mut idx = self.cqidx;
+        // Start from current self.pidx_tail0
         let budget = if exact { VMXNET3_MAX_RX_NDESC } else { 1 };
 
         let rxc = &mut self.vxrxq_comp_ring;
+
+        let mut idx = self.pidx_tail0;
         let mut available = 0; // Completed descriptors
         let mut expect_sop = true;
-
+        let mut completed_gen = rxc.vxcr_gen;
         loop {
             let rxcd = rxc.vxcr[idx];
-            if rxcd.gen() != rxc.vxcr_gen {
+            if rxcd.gen() != completed_gen {
                 break;
             }
             VMXNet3::barrier(Barrier::Read);
-            debug!("rxcd is {:?}", rxcd);
 
             #[cfg(debug_assertions)]
             {
@@ -888,13 +886,13 @@ impl DevQueue for RxQueue {
             if rxcd.eop() && rxcd.len() != 0 {
                 available += 1;
             }
-            if available > budget {
+            if available >= budget {
                 break;
             }
             idx += 1;
             if idx == rxc.vxcr_ndesc() {
                 idx = 0;
-                rxc.vxcr_gen ^= 1;
+                completed_gen ^= 1;
             }
         }
 
@@ -1112,42 +1110,121 @@ mod test {
 
     #[test]
     fn rxq_enqueue() -> Result<(), VMXNet3Error> {
-        /*let ndesc = 32;
+        let ndesc = 32;
+        let mut fifo_assert = VecDeque::with_capacity(ndesc * 2);
+
         let mut rxq = RxQueue::new(0, 0, ndesc, crate::pci::BarAccess::new(0, 10, 0))?;
 
-        for i in 0..ndesc - 1 {
-            let seg1 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
-            let seg2 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+        // We enqueue 2 desc per IOBuf (hence 15)
+        for i in 0..15 {
+            let mut seg1 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+            seg1.expand();
+            let mut seg2 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+            seg2.expand();
             let mut bufs = IOBufChain::new(0, 1).expect("Should work");
+            fifo_assert.push_back(seg1.vaddr());
+            fifo_assert.push_back(seg2.vaddr());
+
             bufs.append(seg1);
             bufs.append(seg2);
             assert!(rxq.enqueue(bufs).is_ok());
+
             for j in 1..ndesc {
-                if (i * 2) + j < ndesc - 1 {
-                    assert!(rxq.can_enqueue(j), "can_enqueue is wrong?");
+                if ((i + 1) * 2) + j < ndesc - 1 {
+                    assert!(rxq.can_enqueue(j), "can_enqueue should be true?");
                 } else {
-                    assert!(!rxq.can_enqueue(j), "can_enqueue is wrong?");
+                    assert!(!rxq.can_enqueue(j), "can_enqueue should be false?");
                 }
             }
         }
 
         assert!(!rxq.is_empty());
-        assert!(rxq.is_full());
+        assert!(!rxq.is_full());
         assert_eq!(rxq.capacity(), 32);
-        assert_eq!(rxq.len(), 31);*/
+        assert_eq!(rxq.len(), 30);
+        assert_eq!(rxq.len() / 2, rxq.inflight_chains.len());
 
-        /*
-        let seg = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
-        let seg_addr = seg.vaddr();
-        let mut bufs = IOBufChain::new(0, 1).expect("Should work");
-        bufs.append(seg);
-        let r = rxq.enqueue(bufs);
-        assert!(r.is_err());
-        if let Err(chain) = r {
-            assert_eq!(chain.segments.len(), 1, "Chain still has a segment");
-            assert_eq!(chain.segments[0].vaddr(), seg_addr, "Got same buffer back");
+        // Simulate receive by device:
+        for i in 0..15 {
+            let vxcd0 = &mut rxq.vxrxq_comp_ring.vxcr[i * 2];
+            vxcd0.set_gen(rxq.vxrxq_comp_ring.vxcr_gen);
+            vxcd0.set_sop(true);
+            vxcd0.set_len(21);
+
+            let vxcd1 = &mut rxq.vxrxq_comp_ring.vxcr[i * 2 + 1];
+            vxcd1.set_gen(rxq.vxrxq_comp_ring.vxcr_gen);
+            vxcd1.set_eop(true);
+            vxcd1.set_len(22);
         }
-        assert!(!rxq.can_enqueue(1), "can_enqueue is wrong?");*/
+
+        // Dequeue
+        let mut i = 0;
+        while rxq.can_dequeue(false) > 0 {
+            assert_eq!(rxq.inflight_chains.len(), ((ndesc - 1) / 2) - i);
+            let chain = rxq.dequeue().expect("can_dequeue was true");
+            assert_eq!(chain.segments.len(), 2);
+
+            assert_eq!(
+                chain.segments[0].vaddr(),
+                fifo_assert.pop_front().expect("Have entry"),
+                "Dequeue has FIFO semantics"
+            );
+            assert_eq!(
+                chain.segments[1].vaddr(),
+                fifo_assert.pop_front().expect("Have entry"),
+                "Dequeue has FIFO semantics"
+            );
+            assert_eq!(chain.segments[0].len(), 21, "Length seg0 adjusted");
+            assert_eq!(chain.segments[1].len(), 22, "Length seg1 adjusted");
+
+            i += 1;
+        }
+
+        assert!(fifo_assert.is_empty(), "Got everything back");
+        Ok(())
+    }
+
+    fn enq(rxq: &mut RxQueue) -> Result<(), IOBufChain> {
+        // We enqueue 2 desc per IOBuf (hence 15)
+        let mut seg1 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+        seg1.expand();
+        let mut seg2 = IOBuf::new(IOBUF_LAYOUT).expect("Should work");
+        seg2.expand();
+        let mut bufs = IOBufChain::new(0, 1).expect("Should work");
+
+        bufs.append(seg1);
+        bufs.append(seg2);
+        rxq.enqueue(bufs)
+    }
+
+    #[test]
+    fn rxq_error() -> Result<(), VMXNet3Error> {
+        let ndesc = 32;
+        let mut rxq = RxQueue::new(0, 0, ndesc, crate::pci::BarAccess::new(0, 10, 0))?;
+        assert!(enq(&mut rxq).is_ok());
+
+        // Simulate receive by device:
+        let vxcd0 = &mut rxq.vxrxq_comp_ring.vxcr[0];
+        vxcd0.set_gen(rxq.vxrxq_comp_ring.vxcr_gen);
+        vxcd0.set_sop(true);
+        vxcd0.set_len(21);
+
+        let vxcd1 = &mut rxq.vxrxq_comp_ring.vxcr[1];
+        vxcd1.set_gen(rxq.vxrxq_comp_ring.vxcr_gen);
+        vxcd1.set_eop(true);
+        vxcd1.set_error(true); // Set error on last segment
+        vxcd1.set_len(22);
+
+        // Dequeue
+        while rxq.can_dequeue(false) > 0 {
+            assert_eq!(rxq.inflight_chains.len(), 1);
+            let chain = rxq.dequeue().expect("can_dequeue was true");
+            assert_eq!(chain.segments.len(), 2);
+
+            assert_eq!(chain.segments[0].len(), 0, "Length is 0 (error)");
+            assert_eq!(chain.segments[1].len(), 0, "Length is 0 (error)");
+            assert_eq!(rxq.vxrxq_comp_ring.vxcr_pkt_errors, 1);
+        }
 
         Ok(())
     }

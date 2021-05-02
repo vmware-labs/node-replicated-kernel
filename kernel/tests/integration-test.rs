@@ -593,7 +593,7 @@ fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
 
     // Spawn a bash session for dhcpd, otherwise it seems we
     // can't kill the process since we do not run as root
-    let mut b = spawn_bash(Some(40000))?;
+    let mut b = spawn_bash(Some(20000))?;
     b.send_line("sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf")?;
     Ok(b)
 }

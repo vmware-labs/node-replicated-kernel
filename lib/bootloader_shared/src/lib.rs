@@ -144,7 +144,7 @@ pub struct KernelArgs {
 
     /// Modules (ELF binaries found in the UEFI partition) passed to the kernel
     /// modules[0] is the kernel binary
-    pub modules: arrayvec::ArrayVec<[Module; KernelArgs::MAX_MODULES]>,
+    pub modules: arrayvec::ArrayVec<Module, { KernelArgs::MAX_MODULES }>,
 }
 
 impl Default for KernelArgs {

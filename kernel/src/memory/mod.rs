@@ -15,11 +15,10 @@
 //!  * The KernelAllocator: Which implements GlobalAlloc.
 use crate::alloc::string::ToString;
 use core::alloc::{GlobalAlloc, Layout};
-use core::fmt;
 use core::intrinsics::likely;
 use core::mem::transmute;
-use core::ptr;
 use core::sync::atomic::AtomicU64;
+use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
 use custom_error_core::custom_error;
@@ -39,9 +38,8 @@ pub use crate::arch::memory::{
     LARGE_PAGE_SIZE,
 };
 
-use crate::kcb;
 use crate::prelude::*;
-use crate::round_up;
+use crate::{kcb, round_up};
 use vspace::MapAction;
 
 custom_error! {
@@ -651,11 +649,11 @@ pub struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<[Mutex<tcache::TCache>; AFFINITY_REGIONS]>,
+    pub(crate) emem: ArrayVec<Mutex<tcache::TCache>, { AFFINITY_REGIONS }>,
 
     /// All node-caches in the system (one for every NUMA node).
     pub(crate) node_caches:
-        ArrayVec<[CachePadded<Mutex<&'static mut ncache::NCache>>; AFFINITY_REGIONS]>,
+        ArrayVec<CachePadded<Mutex<&'static mut ncache::NCache>>, { AFFINITY_REGIONS }>,
 }
 
 impl GlobalMemory {
@@ -677,7 +675,7 @@ impl GlobalMemory {
     /// being used anywhere yet.
     /// The good news is that we only invoke this once during bootstrap.
     pub unsafe fn new(
-        mut memory: ArrayVec<[Frame; MAX_PHYSICAL_REGIONS]>,
+        mut memory: ArrayVec<Frame, { MAX_PHYSICAL_REGIONS }>,
     ) -> Result<GlobalMemory, AllocationError> {
         debug_assert!(!memory.is_empty());
         let mut gm = GlobalMemory::default();
@@ -693,7 +691,7 @@ impl GlobalMemory {
         // Construct the `emem`'s for all NUMA nodes:
         let mut cur_affinity = 0;
         // Top of the frames that we didn't end up using for the `emem` construction
-        let mut leftovers: ArrayVec<[Frame; MAX_PHYSICAL_REGIONS]> = ArrayVec::new();
+        let mut leftovers: ArrayVec<Frame, { MAX_PHYSICAL_REGIONS }> = ArrayVec::new();
         for frame in memory.iter_mut() {
             const EMEM_SIZE: usize = 2 * LARGE_PAGE_SIZE + 64 * BASE_PAGE_SIZE;
             if frame.affinity == cur_affinity && frame.size() > EMEM_SIZE {
@@ -1139,16 +1137,16 @@ pub trait PageTableProvider<'a> {
 }
 
 #[allow(dead_code)]
-pub struct BespinPageTableProvider;
+pub struct NRKPageTableProvider;
 
-impl BespinPageTableProvider {
+impl NRKPageTableProvider {
     #[allow(dead_code)]
-    pub const fn new() -> BespinPageTableProvider {
-        BespinPageTableProvider
+    pub const fn new() -> NRKPageTableProvider {
+        NRKPageTableProvider
     }
 }
 
-impl<'a> PageTableProvider<'a> for BespinPageTableProvider {
+impl<'a> PageTableProvider<'a> for NRKPageTableProvider {
     /// Allocate a PML4 table.
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4> {
         let kcb = kcb::get_kcb();

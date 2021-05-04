@@ -9,11 +9,10 @@
 use core::intrinsics;
 use libm;
 
-pub use core::f64::consts;
-pub use core::f64::{DIGITS, EPSILON, MANTISSA_DIGITS, RADIX};
-pub use core::f64::{INFINITY, MAX_10_EXP, NAN, NEG_INFINITY};
-pub use core::f64::{MAX, MIN, MIN_POSITIVE};
-pub use core::f64::{MAX_EXP, MIN_10_EXP, MIN_EXP};
+pub use core::f64::{
+    consts, DIGITS, EPSILON, INFINITY, MANTISSA_DIGITS, MAX, MAX_10_EXP, MAX_EXP, MIN, MIN_10_EXP,
+    MIN_EXP, MIN_POSITIVE, NAN, NEG_INFINITY, RADIX,
+};
 
 #[lang = "f64_runtime"]
 impl f64 {

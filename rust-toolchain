@@ -2,4 +2,4 @@
 channel = "nightly-2021-03-25"
 components = [ "rustfmt", "rustc-dev", "rust-src", "cargo" ]
 profile = "default"
-targets = [ "x86_64-bespin",  "x86_64-bespin-none",  "x86_64-uefi", "nightly-x86_64-unknown-linux-gnu" ]
+targets = [ "x86_64-nrk",  "x86_64-nrk-none",  "x86_64-uefi", "nightly-x86_64-unknown-linux-gnu" ]

@@ -11,8 +11,7 @@ use core::pin::Pin;
 use core::ptr;
 
 use apic::x2apic::X2APICDriver;
-use cnr::Replica as MlnrReplica;
-use cnr::ReplicaToken as MlnrReplicaToken;
+use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -208,7 +207,7 @@ impl Arch86Kcb {
     /// Initialized the dummy file-system to measure the write() system call overhead.
     pub fn init_mlnrfs(&mut self) {
         self.mlnrfs = Some(Default::default());
-        let _result = self.mlnrfs.as_ref().unwrap().create("bespin", 0x007);
+        let _result = self.mlnrfs.as_ref().unwrap().create("nrk", 0x007);
     }
 
     pub fn id(&self) -> usize {

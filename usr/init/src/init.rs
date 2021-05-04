@@ -34,8 +34,7 @@ use vibrio::{sys_print, sys_println};
 use lineup::tls2::SchedulerControlBlock;
 use x86::bits64::paging::VAddr;
 
-use log::{debug, error, info};
-use log::{Level, Metadata, Record, SetLoggerError};
+use log::{debug, error, info, Level, Metadata, Record, SetLoggerError};
 
 #[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
 mod vmops;
@@ -535,7 +534,7 @@ fn fs_test() {
         assert_eq!(slice[255], 0xb);
         assert_eq!(slice[256], 0);
 
-        // This call is to tests bespin memory deallocator for large allocations.
+        // This call is to tests nrk memory deallocator for large allocations.
         let ret = vibrio::syscalls::Fs::write_at(fd, slice.as_ptr() as u64, 256, 4096 * 255)
             .expect("FileWriteAt syscall failed");
 

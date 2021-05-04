@@ -20,8 +20,7 @@
 extern crate alloc;
 extern crate kpi;
 
-pub use kpi::io;
-pub use kpi::syscalls;
+pub use kpi::{io, syscalls};
 
 extern crate arrayvec;
 extern crate lazy_static;
@@ -34,7 +33,7 @@ pub mod writer;
 #[cfg(feature = "rumprt")]
 pub mod rumprt;
 
-#[cfg(target_os = "bespin")]
+#[cfg(target_os = "nrk")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     sys_println!("System panic encountered");
@@ -58,17 +57,17 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     crate::syscalls::Process::exit(99)
 }
 
-#[cfg(target_os = "bespin")]
+#[cfg(target_os = "nrk")]
 #[no_mangle]
 pub unsafe extern "C" fn _Unwind_Resume() {
     unreachable!("_Unwind_Resume");
 }
 
-#[cfg(target_os = "bespin")]
+#[cfg(target_os = "nrk")]
 #[lang = "eh_personality"]
 pub extern "C" fn eh_personality() {}
 
-#[cfg(target_os = "bespin")]
+#[cfg(target_os = "nrk")]
 #[alloc_error_handler]
 fn oom(layout: core::alloc::Layout) -> ! {
     panic!("oom {:?}", layout)

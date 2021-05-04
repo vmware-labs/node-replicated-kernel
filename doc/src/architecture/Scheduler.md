@@ -1,14 +1,14 @@
 # Scheduler
 
-In Bespin, the kernel-level scheduleris a coarse-grained scheduler that
-allocates CPUs to processes. Processes make system calls to request for more
-cores and to give them up. The kernel notifies processes core allocations and
-deallocations via upcalls. To run on a core, a process allocates executor
-objects (*i.e.,* the equivalent of a ``kernel'' thread) that are used to
-dispatch a given process on a CPU. An executor mainly consists of two userspace
-stacks (one for the upcall handler and one for the initial stack) and a region
-to save CPU registers and other metadata. Executors are allocated lazily but a
-process keeps a per-NUMA node cache to reuse them over time.
+In NRK, the kernel-level scheduler  s a coarse-grained scheduler that allocates
+CPUs to processes. Processes make system calls to request for more cores and to
+give them up. The kernel notifies processes core allocations and deallocations
+via upcalls. To run on a core, a process allocates executor objects (*i.e.,* the
+equivalent of a ``kernel'' thread) that are used to dispatch a given process on
+a CPU. An executor mainly consists of two userspace stacks (one for the upcall
+handler and one for the initial stack) and a region to save CPU registers and
+other metadata. Executors are allocated lazily but a process keeps a per-NUMA
+node cache to reuse them over time.
 
 In the process, a userspace scheduler reacts to upcalls indicating the addition
 or removal of a core, and it makes fine-grained scheduling decisions by

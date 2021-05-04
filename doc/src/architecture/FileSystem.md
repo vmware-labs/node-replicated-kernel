@@ -1,6 +1,6 @@
 # File System
 
-The NrFS is a simple, in-memory file system in bespin that supports POSIX file
+The NrFS is a simple, in-memory file system in nrk that supports POSIX file
 operations (`open`, `read`, `write`, `pread`, `pwrite`, `close`, *etc.*).
 
 NrFS tracks files and directories by mapping each path to an inode number and

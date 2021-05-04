@@ -15,7 +15,7 @@ USER_ID=$(id -u)
 USER_NAME=$(whoami)
 
 # the image name to be built
-IMAGE=bespinbuild
+IMAGE=nrkbuild
 
 if [[ "$1" = "force-build" ]]; then
     echo "trigger force build (removing any existing image)"

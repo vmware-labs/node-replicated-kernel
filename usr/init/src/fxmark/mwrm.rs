@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::fxmark::{Bench, PAGE_SIZE};
-use alloc::{format, vec, vec::Vec};
+use alloc::vec::Vec;
+use alloc::{format, vec};
 use core::cell::RefCell;
 use core::convert::TryInto;
 use core::slice::from_raw_parts_mut;
@@ -21,7 +22,7 @@ pub struct MWRM {
 impl Default for MWRM {
     fn default() -> MWRM {
         MWRM {
-            // TODO: If we increase the total file > 10_000, bespin throws the error like:
+            // TODO: If we increase the total file > 10_000, nrk throws the error like:
             // Got a large allocation Layout { size_: 3211496, align_: 8 }, need bp 273 lp 1
             total_files: 10_000,
             total_cores: RefCell::new(0),

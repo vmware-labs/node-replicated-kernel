@@ -1,6 +1,6 @@
 # Contributors
 
-Here is a list of the contributors who helped to build Bespin. Big shout-out to them!
+Here is a list of the contributors who helped to build NRK. Big shout-out to them!
 
 - [Amy Tai](https://amytai.github.io/)
 - [Ankit Bhardwaj](https://ankitbhrdwj.github.io/)

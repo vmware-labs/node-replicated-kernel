@@ -21,7 +21,7 @@ build:
   stage: build
   script:
     - cd kernel
-    - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-bespin -Zfeatures=all
+    - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-nrk -Zfeatures=all
   variables:
     GIT_STRATEGY: fetch
 
@@ -48,8 +48,8 @@ run-unix:
 test:
   stage: test
   script:
+    - cargo fmt -- --check
     - cd kernel
-    - cargo fmt --package bespin -- --check
     - RUST_TEST_THREADS=1 cargo test --features smoke
     - cd ..
   dependencies:

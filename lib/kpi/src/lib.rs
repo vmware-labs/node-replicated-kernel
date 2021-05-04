@@ -7,7 +7,7 @@
 #![feature(llvm_asm)]
 
 #[allow(non_snake_case)]
-#[cfg(target_os = "bespin")]
+#[cfg(target_os = "nrk")]
 extern crate alloc;
 
 pub mod io;
@@ -16,8 +16,8 @@ pub mod system;
 pub mod upcall;
 pub mod x86_64;
 
-/// The syscall layer (only relevant for Ring3 code -> target_os = bespin)
-#[cfg(target_os = "bespin")]
+/// The syscall layer (only relevant for Ring3 code -> target_os = nrk)
+#[cfg(target_os = "nrk")]
 pub mod syscalls;
 
 /// A short-cut to the architecture specific part that this crate was compiled for.

@@ -14,8 +14,7 @@ use crate::ExitReason;
 
 use alloc::rc::Rc;
 
-use addr2line::gimli;
-use addr2line::Context;
+use addr2line::{gimli, Context};
 
 fn new_ctxt(
     file: &elfloader::ElfBinary,

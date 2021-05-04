@@ -18,10 +18,10 @@ use crate::arch::kcb::init_kcb;
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
 
-use crate::memory::{
-    emem::EmergencyAllocator, tcache::TCache, tcache_sp::TCacheSp, AllocatorStatistics,
-    GlobalMemory, GrowBackend, PAddr, PhysicalPageProvider,
-};
+use crate::memory::emem::EmergencyAllocator;
+use crate::memory::tcache::TCache;
+use crate::memory::tcache_sp::TCacheSp;
+use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PAddr, PhysicalPageProvider};
 use crate::nr::KernelNode;
 use crate::process::Process;
 
@@ -66,7 +66,7 @@ enum CmdToken {
 
     /// Regular expressions for parsing log-filter or file-path names.
     ///
-    /// Example: 'bespin::memory=debug,atopology::acpi=debug'
+    /// Example: 'nrk::memory=debug,atopology::acpi=debug'
     /// TODO(improve): the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
     #[regex = "[a-zA-Z:,=]+"]
     LogComplex,

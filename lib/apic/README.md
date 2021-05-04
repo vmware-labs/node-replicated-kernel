@@ -1,3 +1,3 @@
 # APIC driver
 
-APIC driver for bespin.
+APIC driver for nrk.

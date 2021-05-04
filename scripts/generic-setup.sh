@@ -21,7 +21,7 @@ function install_build_dependencies()
         # installing pytyhon build dependencie
         $APT install -y python3 python3-pip python3-plumbum python3-prctl python3-toml python3-pexpect > /dev/null
 
-        # bespin build dependencies
+        # nrk build dependencies
         $APT install -y uml-utilities mtools zlib1g-dev make gcc build-essential git curl > /dev/null
 
         # For building rump packages (rkapps)
@@ -39,7 +39,7 @@ function install_run_dependencies()
         # native build dependencies
         $APT install -y qemu qemu-kvm qemu-system-x86 sshpass hwloc libhwloc-dev numactl libevent-dev > /dev/null
 
-        # bespin integration-test dependencies
+        # nrk integration-test dependencies
         $APT install -y isc-dhcp-server socat netcat-openbsd redis-tools net-tools graphviz > /dev/null
     fi
 }

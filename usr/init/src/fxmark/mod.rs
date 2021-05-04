@@ -1,10 +1,9 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! fxmark implementation for bespin.
+//! fxmark implementation for nrk.
 
-use alloc::string::String;
-use alloc::string::ToString;
+use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::num::ParseIntError;
@@ -26,9 +25,13 @@ mod dwom;
 mod mix;
 mod mwrl;
 mod mwrm;
-use crate::fxmark::{
-    drbh::DRBH, drbl::DRBL, dwol::DWOL, dwom::DWOM, mix::MIX, mwrl::MWRL, mwrm::MWRM,
-};
+use crate::fxmark::drbh::DRBH;
+use crate::fxmark::drbl::DRBL;
+use crate::fxmark::dwol::DWOL;
+use crate::fxmark::dwom::DWOM;
+use crate::fxmark::mix::MIX;
+use crate::fxmark::mwrl::MWRL;
+use crate::fxmark::mwrm::MWRM;
 
 const PAGE_SIZE: u64 = 1008;
 

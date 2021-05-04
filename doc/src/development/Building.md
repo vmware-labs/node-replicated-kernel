@@ -2,18 +2,18 @@
 
 There are two sets of dependencies required for the development process: build
 and run dependencies. We typically build, develop and test using the latest
-Ubuntu LTS version and run bespin in QEMU. Other Linux systems will probably
+Ubuntu LTS version and run nrk in QEMU. Other Linux systems will probably
 work but might require a manual installation of all dependencies. Other
 operating systems likely won't work out of the box without some adjustments for
 code and the build-process.
 
 ### Check-out the source tree
 
-Check out the bespin sources first:
+Check out the nrk sources first:
 
 ```bash
 git clone <repo-url>
-cd bespin
+cd nrk
 ```
 
 The repository is structured using [git

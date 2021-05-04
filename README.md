@@ -1,14 +1,15 @@
-# Bespin
+# Node Replicated Kernel
 
-Bespin is an (experimental) research OS kernel for x86-64 (amd64) machines written in
-rust. You can read more about it [here](https://gz.github.io/bespin-benchmarks/book/).
+The Node Replicated Kernel is an (experimental) research OS kernel for x86-64
+(amd64) machines written in rust. You can read more about it
+[here](https://gz.github.io/bespin-benchmarks/book/).
 
 ## Installation
 
 ### Check-out the source tree
 
-1. `git clone <repo-url>`
-1. `cd bespin`
+1. `git clone <repo-url> nrk`
+1. `cd nrk`
 1. Note: In case you don't have the SSH key of your machine registered with a github account,
 you need to convert the submodule URLs to the https protocol, to do so run:
 `sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules`
@@ -17,7 +18,7 @@ you need to convert the submodule URLs to the https protocol, to do so run:
 
 ### Install dependencies
 
-Run `bash setup.sh`, this will install required dependencies on Linux to build and run bespin.
+Run `bash setup.sh`, this will install required dependencies on Linux to build and run nrk.
 
 ### Build and run
 
@@ -26,7 +27,7 @@ Run `bash setup.sh`, this will install required dependencies on Linux to build a
 
 If you just want to compile the code you can also execute:
 
-1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=bespin```
+1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=nrk```
 
 in the kernel directory (run.py will do that on your behalf).
 
@@ -37,7 +38,7 @@ in the kernel directory (run.py will do that on your behalf).
 To run the unit tests of the kernel:
 
 1. `cd kernel`
-1. `RUST_BACKTRACE=1 RUST_TEST_THREADS=1 cargo test --bin bespin`
+1. `RUST_BACKTRACE=1 RUST_TEST_THREADS=1 cargo test --bin nrk`
 
 To run the integration tests of the kernel:
 

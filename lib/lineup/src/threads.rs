@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::vec::Vec;
-use core::fmt;
 use core::hash::{Hash, Hasher};
-use core::mem;
-use core::ptr;
+use core::{fmt, mem, ptr};
 
 use fringe::generator::{Generator, Yielder};
 use rawtime::Instant;

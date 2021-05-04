@@ -7,9 +7,8 @@
 
 use alloc::prelude::v1::Box;
 use alloc::sync::Arc;
-use core::mem;
-use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use core::{mem, ptr};
 
 struct QueueHead<T> {
     element: Option<T>,

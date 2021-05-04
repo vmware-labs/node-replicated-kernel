@@ -18,14 +18,14 @@ extern crate rexpect;
 
 use std::fmt::{self, Display, Formatter};
 use std::fs::{File, OpenOptions};
-use std::io;
 use std::io::Write;
 use std::path::Path;
-use std::process;
+use std::{io, process};
 
 use csv::WriterBuilder;
 use rexpect::errors::*;
-use rexpect::process::{signal::SIGTERM, wait::WaitStatus};
+use rexpect::process::signal::SIGTERM;
+use rexpect::process::wait::WaitStatus;
 use rexpect::session::spawn_command;
 use rexpect::{spawn, spawn_bash};
 use serde::Serialize;
@@ -42,7 +42,7 @@ const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 52:54:00:12:34:5
 /// Environment variable that points to machine config (for baremetal booting)
 const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";
 
-/// Different ExitStatus codes as returned by Bespin.
+/// Different ExitStatus codes as returned by NRK.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 enum ExitStatus {
     /// Successful exit.
@@ -152,6 +152,8 @@ impl Machine {
     fn max_sockets(&self) -> usize {
         if let Machine::Qemu = self {
             match self.max_cores() {
+                6 => 1,
+                12 => 1,
                 28 => 2,
                 32 => 2,
                 56 => 2,
@@ -543,7 +545,7 @@ fn wait_for_sigterm(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
 /// It will make sure the code is compiled and ready to launch.
 /// Otherwise the 15s timeout we set on the PtySession may not be enough
 /// to build from scratch and run the test.
-fn spawn_bespin(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
+fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     // Compile the code with correct settings first:
     let cloned_args = args.clone();
     let compile_args = cloned_args.norun();
@@ -624,7 +626,7 @@ fn s00_exit() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("Started")?;
         output = p.exp_eof()?;
         p.process.exit()
@@ -643,7 +645,7 @@ fn s00_pfault_early() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("[IRQ] Early Page Fault")?;
         p.exp_string("Faulting address: 0x4000deadbeef")?;
         output = p.exp_eof()?;
@@ -666,7 +668,7 @@ fn s01_pfault() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("[IRQ] Page Fault")?;
         p.exp_regex("Backtrace:")?;
         output = p.exp_eof()?;
@@ -686,7 +688,7 @@ fn s00_gpfault_early() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("[IRQ] Early General Protection Fault")?;
         output = p.exp_eof()?;
         p.process.exit()
@@ -709,9 +711,9 @@ fn s01_gpfault() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("[IRQ] GENERAL PROTECTION FAULT")?;
-        p.exp_regex("frame #3  - 0x[0-9a-fA-F]+ - bespin::xmain")?;
+        p.exp_regex("frame #3  - 0x[0-9a-fA-F]+ - nrk::xmain")?;
         output = p.exp_eof()?;
         p.process.exit()
     };
@@ -734,7 +736,7 @@ fn s01_double_fault() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("[IRQ] Double Fault")?;
         output = p.exp_eof()?;
         p.process.exit()
@@ -753,7 +755,7 @@ fn s01_alloc() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         output += p.exp_string("small allocations work.")?.as_str();
         output += p.exp_string("large allocations work.")?.as_str();
         output += p.exp_eof()?.as_str();
@@ -773,7 +775,7 @@ fn s01_sse() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("division = 4.566210045662101")?;
         p.exp_string("division by zero = inf")?;
         output = p.exp_eof()?;
@@ -789,7 +791,7 @@ fn s01_time() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         output = p.exp_eof()?;
         p.process.exit()
     };
@@ -803,7 +805,7 @@ fn s01_timer() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         output += p.exp_string("Setting the timer")?.as_str();
         output += p.exp_string("Got a timer interrupt")?.as_str();
         output += p.exp_eof()?.as_str();
@@ -824,7 +826,7 @@ fn s02_acpi_topology() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline).expect("Can't spawn QEMU instance");
+        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
 
         output += p.exp_string("ACPI Initialized")?.as_str();
         output += p.exp_eof()?.as_str();
@@ -843,7 +845,7 @@ fn s02_acpi_smoke() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline).expect("Can't spawn QEMU instance");
+        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
 
         output += p.exp_string("ACPI Initialized")?.as_str();
         output += p.exp_eof()?.as_str();
@@ -868,7 +870,7 @@ fn s02_coreboot_smoke() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         output += p.exp_string("ACPI Initialized")?.as_str();
         output += p.exp_string("Hello from the other side")?.as_str();
         output += p.exp_string("Core has started")?.as_str();
@@ -891,7 +893,7 @@ fn s02_coreboot_nrlog() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         output += p.exp_string("ACPI Initialized")?.as_str();
         output += p.exp_string("Hello from the other side")?.as_str();
         output += p.exp_string("Core has started")?.as_str();
@@ -912,7 +914,7 @@ fn s03_coreboot() {
         .memory(4096);
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline).expect("Can't spawn QEMU instance");
+        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
 
         for i in 1..32 {
             // Check that we see all 32 cores booting up
@@ -946,7 +948,7 @@ fn s03_userspace_smoke() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         output += p.exp_string("print_test OK")?.as_str();
         output += p.exp_string("upcall_test OK")?.as_str();
@@ -976,7 +978,7 @@ fn s04_userspace_multicore() {
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         for _i in 0..num_cores {
             let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
@@ -1008,7 +1010,7 @@ fn s04_userspace_rumprt_net() {
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
 
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         // Test that DHCP works:
         output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
@@ -1049,7 +1051,7 @@ fn s04_userspace_rumprt_fs() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("bytes_written: 12")?;
         p.exp_string("bytes_read: 12")?;
         output = p.exp_eof()?;
@@ -1091,7 +1093,7 @@ fn s02_vspace_debug() {
     const GRAPHVIZ_END: &'static str = "===== end graphviz =====";
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
         output += p.exp_string(GRAPHVIZ_START)?.as_str();
         graphviz_output = p.exp_string(GRAPHVIZ_END)?;
         output += p.exp_eof()?.as_str();
@@ -1125,7 +1127,7 @@ fn s05_redis_smoke() {
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut dhcp_server = spawn_dhcpd()?;
 
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         // Test that DHCP works:
         dhcp_server.exp_string(DHCP_ACK_MATCH)?;
@@ -1254,19 +1256,19 @@ fn s06_redis_benchmark_virtio() {
         .cmd("testbinary=redis.bin")
         .use_virtio()
         .release()
-        .timeout(30_000);
+        .timeout(45_000);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
         let mut dhcp_server = spawn_dhcpd()?;
-        let mut p = spawn_bespin(&cmdline)?;
 
         // Test that DHCP works:
-        dhcp_server.exp_string(DHCP_ACK_MATCH)?;
+        output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(4));
+        thread::sleep(time::Duration::from_secs(9));
 
         let mut redis_client = redis_benchmark("virtio", 4000000)?;
 
@@ -1290,16 +1292,15 @@ fn s06_redis_benchmark_e1000() {
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
         let mut dhcp_server = spawn_dhcpd()?;
-
-        let mut p = spawn_bespin(&cmdline)?;
 
         // Test that DHCP works:
         dhcp_server.exp_string(DHCP_ACK_MATCH)?;
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(15));
+        thread::sleep(time::Duration::from_secs(9));
 
         let mut redis_client = redis_benchmark("e1000", 2000000)?;
 
@@ -1381,7 +1382,7 @@ fn s06_vmops_benchmark() {
 
         let mut output = String::new();
         let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
-            let mut p = spawn_bespin(&cmdline)?;
+            let mut p = spawn_nrk(&cmdline)?;
 
             // Parse lines like
             // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
@@ -1467,7 +1468,7 @@ fn s06_shootdown_simple() {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut p = spawn_bespin(&cmdline)?;
+            let mut p = spawn_nrk(&cmdline)?;
 
             // Parse lines like
             // `init::vmops: 1,maponly,1,4096,10000,1000,634948`
@@ -1545,7 +1546,7 @@ fn s06_vmops_latency_benchmark() {
 
         let mut output = String::new();
         let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
-            let mut p = spawn_bespin(&cmdline)?;
+            let mut p = spawn_nrk(&cmdline)?;
 
             // Parse lines like:
             // "Latency percentiles [ns]: maponly,2,4096,1092,1351,1939,3111,4711,9864,2089812"
@@ -1627,7 +1628,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
 
         let mut output = String::new();
         let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
-            let mut p = spawn_bespin(&cmdline)?;
+            let mut p = spawn_nrk(&cmdline)?;
 
             // Parse lines like:
             // "Latency percentiles [ns]: maponly,2,4096,1092,1351,1939,3111,4711,9864,2089812"
@@ -1736,7 +1737,7 @@ fn s06_fxmark_benchmark() {
 
                 let mut output = String::new();
                 let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
-                    let mut p = spawn_bespin(&cmdline)?;
+                    let mut p = spawn_nrk(&cmdline)?;
 
                     // Parse lines like
                     // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
@@ -1803,7 +1804,7 @@ fn s06_test_fs() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         p.exp_string("fs_test OK")?;
         output = p.exp_eof()?;
@@ -1968,7 +1969,7 @@ fn s06_memcached_benchmark() {
 
             let output = String::new();
             let qemu_run = || -> Result<WaitStatus> {
-                let mut p = spawn_bespin(&cmdline)?;
+                let mut p = spawn_nrk(&cmdline)?;
                 let mut dhcp_server = spawn_dhcpd()?;
                 dhcp_server.exp_string(DHCP_ACK_MATCH)?;
 
@@ -2001,9 +2002,11 @@ fn s06_leveldb_benchmark() {
     };
 
     // level-DB arguments
-    let reads = 100_000;
-    let num = 50_000;
-    let val_size = 65535;
+    let (reads, num, val_size) = if cfg!(feature = "smoke") {
+        (10_000, 5_000, 4096)
+    } else {
+        (100_000, 50_000, 65535)
+    };
 
     let file_name = "leveldb_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
@@ -2013,10 +2016,9 @@ fn s06_leveldb_benchmark() {
             r#"testbinary=dbbench.bin testcmd={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
             *thread, *thread, reads, num, val_size
         );
-        let cmdline = RunnerArgs::new("test-userspace-smp")
+        let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
-            .memory(81920)
             .timeout(300_000)
             .cores(max_cores)
             .nodes(2)
@@ -2026,11 +2028,17 @@ fn s06_leveldb_benchmark() {
             .cmd(kernel_cmdline.as_str())
             .release();
 
+        if cfg!(feature = "smoke") {
+            cmdline = cmdline.memory(8192);
+        } else {
+            cmdline = cmdline.memory(81920);
+        }
+
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut dhcp_server = spawn_dhcpd()?;
             std::thread::sleep(std::time::Duration::from_secs(1));
-            let mut p = spawn_bespin(&cmdline)?;
+            let mut p = spawn_nrk(&cmdline)?;
 
             let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;
             println!("{}", matched);

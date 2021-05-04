@@ -2,8 +2,8 @@
 authors = ["Gerd Zellweger"]
 multilingual = false
 src = "src"
-title = "bespin Documentation"
-description = "Bespin Developer Handbook"
+title = "nrk Documentation"
+description = "NRK Developer Handbook"
 language = "en"
 
 [rust]

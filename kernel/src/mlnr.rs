@@ -6,9 +6,10 @@
 use crate::arch::process::{UserPtr, UserSlice};
 use crate::error::KError;
 use crate::memory::VAddr;
-use crate::mlnrfs::{fd::FileDesc, MlnrFS, NrLock, MNODE_OFFSET};
+use crate::mlnrfs::fd::FileDesc;
 use crate::mlnrfs::{
-    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, Modes, Offset, FD,
+    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MlnrFS, Modes,
+    NrLock, Offset, FD, MNODE_OFFSET,
 };
 use crate::prelude::*;
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
@@ -17,7 +18,8 @@ use alloc::sync::Arc;
 use cnr::{Dispatch, LogMapper, ReplicaToken};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use hashbrown::HashMap;
-use kpi::{io::*, FileOperation};
+use kpi::io::*;
+use kpi::FileOperation;
 
 pub struct MlnrKernelNode {
     /// TODO: RwLock should be okay for read-write operations as those ops

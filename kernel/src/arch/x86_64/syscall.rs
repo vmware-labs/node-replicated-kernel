@@ -21,10 +21,9 @@ use kpi::{
 use crate::error::KError;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
-use crate::mlnr;
 use crate::mlnrfs::FileSystem;
-use crate::nr;
 use crate::process::{Pid, ProcessError, ResumeHandle};
+use crate::{mlnr, nr};
 
 use super::gdt::GdtTable;
 use super::process::{Ring3Process, UserValue};

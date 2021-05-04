@@ -19,9 +19,9 @@ pub struct TCache {
     /// Which node the memory in this cache is from.
     node: atopology::NodeId,
     /// A vector of free, cached base-page addresses.
-    base_page_addresses: arrayvec::ArrayVec<[PAddr; 381]>,
+    base_page_addresses: arrayvec::ArrayVec<PAddr, 381>,
     /// A vector of free, cached large-page addresses.
-    large_page_addresses: arrayvec::ArrayVec<[PAddr; 128]>,
+    large_page_addresses: arrayvec::ArrayVec<PAddr, 128>,
 }
 
 impl crate::kcb::MemManager for TCache {}

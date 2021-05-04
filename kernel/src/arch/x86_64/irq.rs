@@ -38,29 +38,26 @@ use core::fmt;
 use alloc::boxed::Box;
 
 use x86::bits64::segmentation::Descriptor64;
-use x86::dtables;
 use x86::irq::*;
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
-use x86::Ring;
+use x86::{dtables, Ring};
 
 use apic::ApicDriver;
 use log::debug;
 
-use crate::memory::{vspace::MapAction, Frame};
-use crate::mlnr;
-use crate::nr;
+use crate::memory::vspace::MapAction;
+use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::{Executor, ResumeHandle};
-use crate::ExitReason;
+use crate::{mlnr, nr, ExitReason};
 
-use super::debug;
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
 use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring3Process, Ring3Resumer};
-use super::timer;
+use super::{debug, timer};
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -712,7 +709,8 @@ pub fn ioapic_initialize() {
 /// core 0. This is because, we should probably just support MSI(X)
 /// and don't invest a lot in legacy interrupts...
 pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
-    use crate::memory::{paddr_to_kernel_vaddr, vspace::MapAction, PAddr};
+    use crate::memory::vspace::MapAction;
+    use crate::memory::{paddr_to_kernel_vaddr, PAddr};
 
     for io_apic in atopology::MACHINE_TOPOLOGY.io_apics() {
         let addr = PAddr::from(io_apic.address as u64);

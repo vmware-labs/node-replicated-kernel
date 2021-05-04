@@ -14,7 +14,7 @@ use log::{debug, error, info, trace, warn};
 const MAP_FAILED: u64 = u64::max_value();
 
 /// Implementes mmap by forwarding it to the rumpkernel and then to
-/// `rumpuser_malloc` (?) then bespin (not particularly efficient, also I think
+/// `rumpuser_malloc` (?) then nrk (not particularly efficient, also I think
 /// the NetBSD kernel will allocate in 4 KiB chunks).
 mod rump {
     use super::*;
@@ -87,8 +87,8 @@ mod rump {
     }
 }
 
-/// Make mmap calls go directly to the bespin kernel.
-mod bespin {
+/// Make mmap calls go directly to the nrk kernel.
+mod nrk {
     use super::*;
 
     /// Implementes mmap by mapping memory in vspace directly.
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn _mmap(
 
     if is_anon_mem_mapping(fd) {
         // anon
-        bespin::mmap(addr, len, prot, flags, fd, pos)
+        nrk::mmap(addr, len, prot, flags, fd, pos)
     } else {
         rump::mmap(addr, len, prot, flags, fd, pos)
     }

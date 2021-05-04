@@ -2,7 +2,7 @@
 
 ## VSCode
 
-VSCode generally works well for developing bespin. The `rust-analyzer` plugin is
+VSCode generally works well for developing nrk. The `rust-analyzer` plugin is
 preferred over `rls` which often has build issues due to the project not having
 a std runtime (`no-std`).
 

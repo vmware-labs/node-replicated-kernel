@@ -12,9 +12,7 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use core::f64;
-use core::fmt;
-use core::mem;
+use core::{f64, fmt, mem};
 
 use crate::f64 as std_f64;
 

@@ -8,10 +8,8 @@ use core::any::Any;
 use core::cell::{RefCell, RefMut};
 use core::ptr;
 
-use cnr::Replica as MlnrReplica;
-use cnr::ReplicaToken as MlnrReplicaToken;
-use node_replication::Replica;
-use node_replication::ReplicaToken;
+use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
+use node_replication::{Replica, ReplicaToken};
 
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;

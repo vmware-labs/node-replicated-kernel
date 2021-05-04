@@ -50,7 +50,7 @@ pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c
         flags = flags | FileFlags::O_CREAT;
     }
     if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_EXCL) == RumpFileFlags::RUMPUSER_OPEN_EXCL) {
-        error!("Bespin does not support O_EXCL\n");
+        error!("NRK does not support O_EXCL\n");
     }
 
     // Rump documentation says the 'hypervisor' sets the permissions of all opened files.

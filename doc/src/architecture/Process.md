@@ -2,10 +2,10 @@
 
 ## Virtual memory
 
-Bespin relies on the MMU for isolation. Like most conventional virtual memory
-implementations, Bespin uses a per-process mapping database (as a B-Tree) to
+NRK relies on the MMU for isolation. Like most conventional virtual memory
+implementations, NRK uses a per-process mapping database (as a B-Tree) to
 store frame mappings which is used to construct the process's hardware page
-tables. Bespin currently does not support demand paging. Both the B-Tree and the
+tables. NRK currently does not support demand paging. Both the B-Tree and the
 hardware page tables are simple, sequential data structures that are wrapped
 behind the NR interface for concurrency and replication.
 
@@ -18,9 +18,9 @@ non-mutating `Resolve` operation (that advances the local replica and queries
 the address space state).
 
 <figure>
-  <img src="../diagrams/Process.png" alt="A node-replicated Process in Bespin"/>
+  <img src="../diagrams/Process.png" alt="A node-replicated Process in NRK"/>
   <figcaption>
-   Schematic diagram of a node-replicated process in Bespin.
+   Schematic diagram of a node-replicated process in NRK.
   </figcaption>
 </figure>
 

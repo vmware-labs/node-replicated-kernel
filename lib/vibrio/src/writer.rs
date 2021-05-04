@@ -4,8 +4,7 @@
 //! A simple printing infrastructure for user-space programs.
 //! We provide [`core::fmt::Write`] and [`log::Log`].
 
-use core::fmt;
-use core::ops;
+use core::{fmt, ops};
 
 use log::{Level, Metadata, Record};
 

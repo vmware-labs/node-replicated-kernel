@@ -5,14 +5,13 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 
 use arrayvec::ArrayVec;
-use node_replication::Log;
-use node_replication::Replica;
+use node_replication::{Log, Replica};
 
-use crate::xmain;
-use crate::ExitReason;
+use crate::{xmain, ExitReason};
 
 use crate::kcb::{BootloaderArguments, Kcb};
-use crate::memory::{tcache_sp::TCacheSp, Frame, GlobalMemory, GrowBackend, LARGE_PAGE_SIZE};
+use crate::memory::tcache_sp::TCacheSp;
+use crate::memory::{Frame, GlobalMemory, GrowBackend, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 
 pub mod debug;
@@ -78,7 +77,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let frame = mm
         .allocate_frame(2 * 1024 * 1024 * 1024)
         .expect("We don't have vRAM available");
-    let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
+    let mut annotated_regions = ArrayVec::new();
     annotated_regions.push(frame);
     let global_memory = unsafe { Box::new(GlobalMemory::new(annotated_regions).unwrap()) };
     let global_memory_static: &'static GlobalMemory = Box::leak(global_memory);

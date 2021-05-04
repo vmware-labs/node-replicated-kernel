@@ -1,6 +1,6 @@
 # LevelDB
 
-## Bespin
+## NRK
 
 ```log
 threads=1
@@ -64,7 +64,7 @@ It should really be it's own unwind.a library.
 
 Implications:
 
-* We have a `-L${RUMPRUN_SYSROOT}/../../obj-amd64-bespin/lib/libunwind/` hack in the LevelDB Makefile (`$CXX` variable)
+* We have a `-L${RUMPRUN_SYSROOT}/../../obj-amd64-nrk/lib/libunwind/` hack in the LevelDB Makefile (`$CXX` variable)
 * We pass `-Wl,-allow-multiple-definition` to rumprun-bake since unwind symbols are now defined twice (vibrio and NetBSD unwind lib)
 
 #### Manual build steps
@@ -72,17 +72,17 @@ Implications:
 Most likely unneeded except for debugging build:
 
 ```bash
-cd /home/gz/workspace/bespin/target/x86_64-bespin-none/release/build/rkapps-3b5fae9f3a9314d8/out/leveldb
+cd /home/gz/workspace/nrk/target/x86_64-nrk-none/release/build/rkapps-3b5fae9f3a9314d8/out/leveldb
 export PATH=`realpath ../../../rumpkernel-b6392f675947fae3/out/rumprun/bin`:$PATH
 RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make clean
 RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make -j 12
-RUMPBAKE_ENV="-Wl,-allow-multiple-definition"  RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd rumprun-bake bespin_generic ../../../../dbbench.bin bin/db_bench
+RUMPBAKE_ENV="-Wl,-allow-multiple-definition"  RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd rumprun-bake nrk_generic ../../../../dbbench.bin bin/db_bench
 ```
 
 ### Run
 
 ```bash
-cd bespin/kernel
+cd nrk/kernel
 "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testbinary=dbbench.bin testcmd=1" "--mods" "rkapps" "--nic" "virtio" "--ufeatures" "rkapps:leveldb-bench" "--release" "--qemu-cores" "1" "--qemu-nodes" "1" "--qemu-memory" "8192" --qemu-monitor --verbose --qemu-debug
 ```
 

@@ -29,13 +29,10 @@ use driverkit::DriverControl;
 use arrayvec::ArrayVec;
 
 use x86::bits64::paging::{PAddr, VAddr, PML4};
-use x86::controlregs;
-use x86::cpuid;
+use x86::{controlregs, cpuid};
 
-use cnr::Log as MlnrLog;
-use cnr::Replica as MlnrReplica;
-use node_replication::Log;
-use node_replication::Replica;
+use cnr::{Log as MlnrLog, Replica as MlnrReplica};
+use node_replication::{Log, Replica};
 
 use apic::x2apic;
 
@@ -413,8 +410,8 @@ fn boot_app_cores(
 /// There are some implicit assumptions here that a memory region always has
 /// just one affinity -- which is also what `topology` assumes.
 fn identify_numa_affinity(
-    memory_regions: &ArrayVec<[Frame; 64]>,
-    annotated_regions: &mut ArrayVec<[Frame; 64]>,
+    memory_regions: &ArrayVec<Frame, 64>,
+    annotated_regions: &mut ArrayVec<Frame, 64>,
 ) {
     if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
         for orig_frame in memory_regions.iter() {
@@ -525,7 +522,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
     // regions of memory.
     let mut emanager: Option<tcache_sp::TCacheSp> = None;
-    let mut memory_regions = ArrayVec::<[Frame; 64]>::new();
+    let mut memory_regions = ArrayVec::new();
     for region in &mut kernel_args.mm_iter {
         if region.ty == MemoryType::CONVENTIONAL {
             debug!("Found physical memory region {:?}", region);
@@ -616,7 +613,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     // Identify NUMA region for physical memory (needs topology)
-    let mut annotated_regions = ArrayVec::<[Frame; 64]>::new();
+    let mut annotated_regions = ArrayVec::new();
     identify_numa_affinity(&memory_regions, &mut annotated_regions);
     // Make sure we don't accidentially use the memory_regions but rather,
     // use the correctly `annotated_regions` now!

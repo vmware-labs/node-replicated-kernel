@@ -10,9 +10,9 @@ license = "MIT OR Apache-2.0"
 bootloader_shared = { path = "../lib/bootloader_shared" }
 
 ## External dependencies
-x86 = "0.37"
+x86 = "0.39"
 elfloader = "0.12"
 log = { version = "0.4", default-features = false }
-arrayvec = { version = "0.5.1", default-features = false, features = ["array-sizes-129-255"] }
+arrayvec = { version = "0.7.0", default-features = false }
 uefi = { version = "0.8.0", features = ["exts"] }
 uefi-services = "0.5"

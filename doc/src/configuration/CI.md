@@ -100,7 +100,7 @@ su gitlab-runner
 ssh-keygen
 ```
 
-Then, add the key to the `bespin-ci` account.
+Then, add the key to the `nrk-ci` account.
 
 ## Configure software for the gitlab runner account
 
@@ -108,7 +108,7 @@ Install necessary software for use by the runner:
 
 ```bash
 git clone git@github.com:gz/bespin.git
-cd bespin/
+cd nrk/
 bash setup.sh
 source $HOME/.cargo/env
 sudo adduser gitlab-runner kvm
@@ -166,7 +166,7 @@ qemu-system-x86 --version
 
 ## Do a test-run
 
-Verify that the bespin tests run (this will take a while, but if it works CI
+Verify that the nrk tests run (this will take a while, but if it works CI
 likely will succeed too):
 
 ```bash

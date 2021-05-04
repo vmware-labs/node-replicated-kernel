@@ -18,15 +18,13 @@
 //! with the NetBSD C code, and we pass a lot of pointers etc.
 //! Once the implementation grows we can think about having a safe wrapper/layer.
 
-use crate::alloc::alloc;
 use crate::alloc::boxed::Box;
-use crate::alloc::format;
+use crate::alloc::{alloc, format};
 use core::alloc::Layout;
 use core::arch::x86_64::_rdrand16_step;
 use core::ffi::VaList;
-use core::ptr;
-use core::slice;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use core::{ptr, slice};
 
 use cstr_core::CStr;
 
@@ -42,7 +40,7 @@ pub mod sp;
 pub mod threads;
 
 // The crt clashes with the normal libc
-#[cfg(target_os = "bespin")]
+#[cfg(target_os = "nrk")]
 pub mod crt;
 pub mod prt;
 

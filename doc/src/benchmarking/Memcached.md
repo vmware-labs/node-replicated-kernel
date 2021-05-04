@@ -2,7 +2,7 @@
 
 Yet another key--value store written in C, but this one is multi-threaded.
 
-## memcached server on bespin
+## memcached server on nrk
 
 Launch the server binary:
 

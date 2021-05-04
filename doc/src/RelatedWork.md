@@ -1,6 +1,6 @@
 # Related Work
 
-Bespin takes inspiration from decades of academic research. The following list
+NRK takes inspiration from decades of academic research. The following list
 is not exhaustive:
 
 ## Operating Systems

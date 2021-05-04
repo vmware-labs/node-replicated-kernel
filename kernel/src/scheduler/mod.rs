@@ -9,8 +9,7 @@ use core::intrinsics::unlikely;
 use crate::error::KError;
 use crate::kcb::{self, ArchSpecificKcb};
 use crate::nr;
-use crate::process::Executor;
-use crate::process::ResumeHandle;
+use crate::process::{Executor, ResumeHandle};
 
 use crate::arch::timer;
 

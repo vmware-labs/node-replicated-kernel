@@ -33,7 +33,7 @@ fn apps_built(path: &Path) -> bool {
 ///
 /// Format is: (folder_name, baking_output_binary, baking_input_binary)
 ///
-/// The baking output binary should be placed in 'target/x86_64-bespin-none/debug|release/build'
+/// The baking output binary should be placed in 'target/x86_64-nrk-none/debug|release/build'
 /// (If you change this also don't forget to adapt the `run.py` script)
 /// in the same location where static C library builds are stored
 /// this goes slightly against convention that we shouldn't place
@@ -151,7 +151,7 @@ fn main() {
             .expect("Can't make app dir");
         assert!(status.success(), "Can't make app dir");
 
-        let bake_args = &["bespin_generic", bake_in, bake_out];
+        let bake_args = &["nrk_generic", bake_in, bake_out];
         println!(
             "PATH={} RUMPRUN_TOOLCHAIN_TUPLE={} rumprun-bake {}",
             path.as_str(),

@@ -13,18 +13,15 @@ use cstr_core::CStr;
 use custom_error_core::custom_error;
 use kpi::process::FrameId;
 
-use crate::arch::memory::paddr_to_kernel_vaddr;
-use crate::arch::memory::LARGE_PAGE_SIZE;
+use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
 use crate::arch::Module;
 use crate::error::KError;
-use crate::kcb;
 use crate::memory::vspace::AddressSpace;
-use crate::memory::KernelAllocator;
-use crate::memory::{Frame, PhysicalPageProvider, VAddr};
+use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
 use crate::mlnrfs::Fd;
 use crate::prelude::overlaps;
-use crate::{mlnr, nr, round_up};
+use crate::{kcb, mlnr, nr, round_up};
 
 /// This struct is used to copy the user buffer into kernel space, so that the
 /// user-application doesn't have any reference to any log operation in kernel space.

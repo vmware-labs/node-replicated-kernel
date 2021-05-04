@@ -11,9 +11,9 @@ use super::*;
 use crate::memory::KernelAllocator;
 use crate::*;
 
-use crate::memory::{
-    tcache::TCache, vspace::model::ModelAddressSpace, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
-};
+use crate::memory::tcache::TCache;
+use crate::memory::vspace::model::ModelAddressSpace;
+use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestAction {

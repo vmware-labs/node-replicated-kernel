@@ -29,8 +29,7 @@ pub mod unsupported;
 
 pub const RUMP_RFFDG: c_int = 0x01;
 
-use crate::rumprt::c_ulong;
-use crate::rumprt::c_void;
+use crate::rumprt::{c_ulong, c_void};
 type pthread_t = c_ulong;
 
 /// A pointer to the environment variables.

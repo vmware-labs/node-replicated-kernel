@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::fxmark::{Bench, PAGE_SIZE};
-use alloc::{format, vec, vec::Vec};
+use alloc::vec::Vec;
+use alloc::{format, vec};
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use log::info;
@@ -37,7 +38,7 @@ impl Bench for DRBL {
                 )
                 .expect("FileOpen syscall failed");
 
-                // This call is to tests bespin memory deallocator for large allocations.
+                // This call is to tests nrk memory deallocator for large allocations.
                 let ret =
                     vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, PAGE_SIZE, 0)
                         .expect("FileWriteAt syscall failed");

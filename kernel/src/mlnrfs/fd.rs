@@ -5,7 +5,7 @@ use super::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
 use arr_macro::arr;
 
 pub struct FileDesc {
-    fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]>,
+    fds: arrayvec::ArrayVec<Option<Fd>, { MAX_FILES_PER_PROCESS }>,
 }
 
 impl Default for FileDesc {

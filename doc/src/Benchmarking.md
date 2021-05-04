@@ -6,7 +6,7 @@ for benchmarking.
 
 ## Creating an Ubuntu VM (for comparison)
 
-To get a first idea if bespin is competitive with Linux performance we can typically create
+To get a first idea if nrk is competitive with Linux performance we can typically create
 a Linux VM first by creating an image.
 This is how we create a `ubuntu-testing.img` disk-image by using the ubuntu-minimal installer:
 

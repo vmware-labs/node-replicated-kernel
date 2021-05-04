@@ -27,9 +27,9 @@ pub struct NCache {
     /// Which node the memory in this cache is from.
     node: atopology::NodeId,
     /// A vector of free, cached base-page addresses
-    base_page_addresses: arrayvec::ArrayVec<[PAddr; 131070]>,
+    base_page_addresses: arrayvec::ArrayVec<PAddr, 131070>,
     /// A vector of free, cached large-page addresses
-    large_page_addresses: arrayvec::ArrayVec<[PAddr; 131070]>,
+    large_page_addresses: arrayvec::ArrayVec<PAddr, 131070>,
 }
 
 impl crate::kcb::MemManager for NCache {}

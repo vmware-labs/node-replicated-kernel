@@ -4,8 +4,7 @@
 use super::{c_int, c_uint, c_ulong, c_void};
 
 use core::alloc::Layout;
-use core::fmt;
-use core::ptr;
+use core::{fmt, ptr};
 
 use hashbrown::HashMap;
 use lineup::tls2::Environment;

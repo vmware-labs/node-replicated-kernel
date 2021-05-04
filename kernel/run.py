@@ -46,8 +46,8 @@ LIBS_PATH = (SCRIPT_PATH / '..').resolve() / 'lib'
 USR_PATH = (SCRIPT_PATH / '..').resolve() / 'usr'
 
 UEFI_TARGET = "{}-uefi".format(ARCH)
-KERNEL_TARGET = "{}-bespin".format(ARCH)
-USER_TARGET = "{}-bespin-none".format(ARCH)
+KERNEL_TARGET = "{}-nrk".format(ARCH)
+USER_TARGET = "{}-nrk-none".format(ARCH)
 USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
 
 #
@@ -102,7 +102,7 @@ parser.add_argument('--configure-ipxe', action="store_true", default=False,
 parser.add_argument('--no-reboot', action="store_true", default=False,
                     help='Do not initiate a machine reboot.', required=False)
 
-BESPIN_EXIT_CODES = {
+NRK_EXIT_CODES = {
     0: "[SUCCESS]",
     1: "[FAIL] ReturnFromMain: main() function returned to arch_indepdendent part.",
     2: "[FAIL] Encountered kernel panic.",
@@ -143,7 +143,7 @@ def build_kernel(args):
     with local.cwd(KERNEL_PATH):
         with local.env(RUST_TARGET_PATH=(KERNEL_PATH / 'src' / 'arch' / ARCH).absolute()):
             # TODO(cross-compilation): in case we use a cross compiler/linker
-            # also set: CARGO_TARGET_X86_64_BESPIN_LINKER=x86_64-elf-ld
+            # also set: CARGO_TARGET_X86_64_NRK_LINKER=x86_64-elf-ld
             build_args = ['build', '--target', KERNEL_TARGET]
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
@@ -156,7 +156,7 @@ def build_kernel(args):
 
 
 def build_user_libraries(args):
-    "Builds bespin vibrio lib to provide runtime support for other rump based apps"
+    "Builds nrk vibrio lib to provide runtime support for other rump based apps"
     log("Build user-space lib vibrio")
     build_args = ['build', '--target', USER_TARGET]
     build_args += ["--features", "rumprt"]
@@ -226,8 +226,8 @@ def deploy(args):
     esp_boot_path.mkdir(parents=True, exist_ok=True)
 
     # Deploy bootloader
-    shutil.copy2(kernel_build_path / 'bespin', os.getcwd())
-    shutil.copy2(kernel_build_path / 'bespin', esp_path / 'kernel')
+    shutil.copy2(kernel_build_path / 'nrk', os.getcwd())
+    shutil.copy2(kernel_build_path / 'nrk', esp_path / 'kernel')
 
     # Deploy kernel
     shutil.copy2(uefi_build_path / 'bootloader.efi',
@@ -370,7 +370,7 @@ def run_qemu(args):
                               'telnet:127.0.0.1:55555,server,nowait']
 
     # Name threads on host for `qemu_affinity.py` to find it
-    qemu_default_args += ['-name', 'bespin,debug-threads=on']
+    qemu_default_args += ['-name', 'nrk,debug-threads=on']
 
     qemu_args = ['qemu-system-x86_64'] + qemu_default_args.copy()
     if args.qemu_settings:
@@ -425,19 +425,19 @@ def run_qemu(args):
     # Wait until qemu exits
     execution.wait()
 
-    bespin_exit_code = execution.returncode >> 1
-    if BESPIN_EXIT_CODES.get(bespin_exit_code):
-        print(BESPIN_EXIT_CODES[bespin_exit_code])
+    nrk_exit_code = execution.returncode >> 1
+    if NRK_EXIT_CODES.get(nrk_exit_code):
+        print(NRK_EXIT_CODES[nrk_exit_code])
     else:
         print(
-            "[FAIL] Kernel exited with unknown error status {}... Update the script!".format(bespin_exit_code))
+            "[FAIL] Kernel exited with unknown error status {}... Update the script!".format(nrk_exit_code))
 
-    if bespin_exit_code != 0:
+    if nrk_exit_code != 0:
         log("Invocation was: {}".format(cmd))
         if execution.stderr:
             print("STDERR: {}".format(execution.stderr.decode('utf-8')))
 
-    return bespin_exit_code
+    return nrk_exit_code
 
 
 def detect_baremetal_shutdown(lb):
@@ -451,8 +451,8 @@ def detect_baremetal_shutdown(lb):
                 exit_value = int(parts[idx+1])
             else:
                 raise Exception("Didn't read enough for exit code XD")
-            if exit_value in BESPIN_EXIT_CODES:
-                print(BESPIN_EXIT_CODES[exit_value])
+            if exit_value in NRK_EXIT_CODES:
+                print(NRK_EXIT_CODES[exit_value])
             return exit_value
     else:
         return None
@@ -567,7 +567,7 @@ def run_baremetal(args):
 def run(args):
     """
     Run the system on a hardware/emulation platform
-    Returns: A bespin exit error code.
+    Returns: A nrk exit error code.
     """
 
     if args.machine == 'qemu':
@@ -580,7 +580,7 @@ def run(args):
 # Main routine of run.py
 #
 if __name__ == '__main__':
-    "Execution pipeline for building and launching bespin"
+    "Execution pipeline for building and launching nrk"
     args = parser.parse_args()
 
     if args.release:

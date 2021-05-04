@@ -2,7 +2,7 @@
 kernel.bin*
 *.o
 *.rlib
-kernel/bespin
+kernel/nrk
 kernel/kernel
 kernel/uefi.img
 

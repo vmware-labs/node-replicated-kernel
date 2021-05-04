@@ -4,7 +4,7 @@
 
 //! Prints complex data-structures for visualization with [Graphviz](http://www.graphviz.org/)
 //!
-//! This code was ported from the rust compiler to work with the bespin kernel.
+//! This code was ported from the rust compiler to work with the nrk kernel.
 //!
 //! # References
 //! * [Original Source](https://github.com/rust-lang/rust/blob/4560cb830fce63fcffdc4558f4281aaac6a3a1ba/src/libgraphviz/lib.rs)
@@ -15,10 +15,9 @@
 
 use crate::alloc::string::ToString;
 use alloc::borrow::Cow;
-use alloc::format;
 use alloc::string::String;
-use alloc::vec;
 use alloc::vec::Vec;
+use alloc::{format, vec};
 use core::fmt::Write;
 use LabelText::*;
 

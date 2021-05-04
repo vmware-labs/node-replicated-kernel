@@ -17,10 +17,9 @@
 
 use alloc::vec::Vec;
 
-use core::mem;
 use core::ops::Add;
-use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
+use core::{mem, ptr};
 
 use fringe::generator::Yielder;
 
@@ -32,10 +31,10 @@ use crate::threads::{ThreadId, YieldRequest, YieldResume};
 use crate::upcalls::Upcalls;
 use crate::{CoreId, IrqVector};
 
-#[cfg(target_os = "bespin")]
-pub mod bespin;
-#[cfg(target_os = "bespin")]
-pub use crate::tls2::bespin as arch;
+#[cfg(target_os = "nrk")]
+pub mod nrk;
+#[cfg(target_os = "nrk")]
+pub use crate::tls2::nrk as arch;
 
 #[cfg(target_family = "unix")]
 pub mod unix;
@@ -293,7 +292,7 @@ impl SchedulerControlBlock {
 pub struct Environment {}
 
 impl Environment {
-    #[cfg(target_os = "bespin")]
+    #[cfg(target_os = "nrk")]
     pub fn tid() -> ThreadId {
         unsafe {
             let tcb = x86::current::segmentation::fs_deref() as *const ThreadControlBlock;
@@ -312,7 +311,7 @@ impl Environment {
     }
 
     // TODO(correctness): this needs some hardending to avoid aliasing of ThreadState!
-    #[cfg(target_os = "bespin")]
+    #[cfg(target_os = "nrk")]
     pub fn thread<'a>() -> &'a mut ThreadControlBlock<'static> {
         unsafe {
             let tcb = x86::current::segmentation::fs_deref() as *mut ThreadControlBlock;
@@ -335,7 +334,10 @@ impl Environment {
         unsafe {
             let scb = arch::get_scb() as *mut SchedulerControlBlock;
             assert!(!scb.is_null(), "Don't have SCB state available?");
-            assert!((scb as u64) < KERNEL_BASE, "Something wrong with the scb, points to kernel address");
+            assert!(
+                (scb as u64) < KERNEL_BASE,
+                "Something wrong with the scb, points to kernel address"
+            );
             &*scb
         }
     }

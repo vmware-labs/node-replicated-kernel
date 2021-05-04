@@ -60,7 +60,7 @@ dependencies = [
  "driverkit",
  "env_logger 0.5.13",
  "log",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -86,17 +86,6 @@ dependencies = [
 
 [[package]]
 name = "arrayvec"
-version = "0.5.1"
-source = "git+https://github.com/gz/arrayvec.git#5279cfff8a03f038919ac00b101f04c74f6dba12"
-
-[[package]]
-name = "arrayvec"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
-
-[[package]]
-name = "arrayvec"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a2f58b0bb10c380af2b26e57212856b8c9a59e0925b4c20f4a174a49734eaf7"
@@ -115,15 +104,15 @@ dependencies = [
 
 [[package]]
 name = "atopology"
-version = "0.0.3"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49f95b27ee6cbc10ea2c7c4e09aafadf3e37210c15511b14da12c9feb8045de4"
+checksum = "040c5edaf92037d17fb39bc650a601d29b26e21a80be0e49c0b75ed6a42f9b89"
 dependencies = [
  "cstr_core",
  "lazy_static",
  "libacpica",
  "log",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -174,54 +163,7 @@ dependencies = [
  "gimli",
  "log",
  "stable_deref_trait",
- "x86",
-]
-
-[[package]]
-name = "bespin"
-version = "0.0.3"
-dependencies = [
- "addr2line",
- "apic",
- "arr_macro",
- "arrayvec 0.5.1",
- "atopology",
- "backtracer_core",
- "bit-vec",
- "bit_field 0.10.1",
- "bootloader_shared",
- "cc",
- "cnr",
- "crossbeam-queue 0.2.3",
- "crossbeam-utils 0.8.3",
- "cstr_core",
- "csv",
- "custom_error_core",
- "driverkit",
- "elfloader",
- "env_logger 0.8.3",
- "gimli",
- "hashbrown 0.9.1",
- "klogger",
- "kpi",
- "lazy_static",
- "libacpica",
- "libc 0.2.92",
- "log",
- "logos",
- "node-replication",
- "num_cpus",
- "proptest",
- "rawtime",
- "rexpect",
- "serde",
- "serde_cbor",
- "slabmalloc",
- "smallvec 1.6.1",
- "spin",
- "static_assertions",
- "uefi",
- "x86",
+ "x86 0.37.0",
 ]
 
 [[package]]
@@ -267,22 +209,22 @@ checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 name = "bootloader"
 version = "0.0.1"
 dependencies = [
- "arrayvec 0.5.2",
+ "arrayvec",
  "bootloader_shared",
  "elfloader",
  "log",
  "uefi",
  "uefi-services",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
 name = "bootloader_shared"
 version = "0.0.1"
 dependencies = [
- "arrayvec 0.5.2",
+ "arrayvec",
  "uefi",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -494,7 +436,7 @@ dependencies = [
  "log",
  "matches",
  "mmap",
- "x86",
+ "x86 0.37.0",
 ]
 
 [[package]]
@@ -710,7 +652,7 @@ dependencies = [
  "rawtime",
  "spin",
  "vibrio",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -739,7 +681,7 @@ dependencies = [
  "log",
  "spin",
  "termcodes",
- "x86",
+ "x86 0.37.0",
 ]
 
 [[package]]
@@ -751,7 +693,7 @@ dependencies = [
  "log",
  "serde",
  "serde_cbor",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -765,9 +707,9 @@ dependencies = [
 
 [[package]]
 name = "libacpica"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8dd3dc6d0b6a0f182009726758232952246a6f78f834ce1291526bf92ab98a7"
+checksum = "acb9076ee2e41473790e81242432ea5d816043a5f2f70f3c5201053d66686c1e"
 
 [[package]]
 name = "libc"
@@ -803,7 +745,7 @@ dependencies = [
  "log",
  "rawtime",
  "spin",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -897,6 +839,53 @@ dependencies = [
  "log",
  "rand 0.7.3",
  "static_assertions",
+]
+
+[[package]]
+name = "nrk"
+version = "0.0.3"
+dependencies = [
+ "addr2line",
+ "apic",
+ "arr_macro",
+ "arrayvec",
+ "atopology",
+ "backtracer_core",
+ "bit-vec",
+ "bit_field 0.10.1",
+ "bootloader_shared",
+ "cc",
+ "cnr",
+ "crossbeam-queue 0.2.3",
+ "crossbeam-utils 0.8.3",
+ "cstr_core",
+ "csv",
+ "custom_error_core",
+ "driverkit",
+ "elfloader",
+ "env_logger 0.8.3",
+ "gimli",
+ "hashbrown 0.9.1",
+ "klogger",
+ "kpi",
+ "lazy_static",
+ "libacpica",
+ "libc 0.2.92",
+ "log",
+ "logos",
+ "node-replication",
+ "num_cpus",
+ "proptest",
+ "rawtime",
+ "rexpect",
+ "serde",
+ "serde_cbor",
+ "slabmalloc",
+ "smallvec 1.6.1",
+ "spin",
+ "static_assertions",
+ "uefi",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -1260,14 +1249,14 @@ dependencies = [
 
 [[package]]
 name = "rawtime"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee51e8dbbb47263df73d6520771f294251f1ebccc59421e807f38714031e0a05"
+checksum = "e5c8f50b0764aab2f46aa33b9aa94161343342a6b73be386878177406badc4e6"
 dependencies = [
  "lazy_static",
  "libc 0.2.92",
  "log",
- "x86",
+ "x86 0.37.0",
 ]
 
 [[package]]
@@ -1374,9 +1363,9 @@ dependencies = [
 
 [[package]]
 name = "rumpkernel"
-version = "0.0.2"
+version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9735baa5714dbd08b7e3bf25ab3ef1622613fc8a204ae6adaf3f954ab9d9ad2f"
+checksum = "5b9c03afc78b7f625117530efaec8c5ea88056d21a2e784fd950d3502e701925"
 dependencies = [
  "num_cpus",
 ]
@@ -1653,7 +1642,7 @@ checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 name = "vibrio"
 version = "0.1.0"
 dependencies = [
- "arrayvec 0.7.0",
+ "arrayvec",
  "bitflags 1.2.1",
  "crossbeam-utils 0.8.3",
  "cstr_core",
@@ -1667,7 +1656,7 @@ dependencies = [
  "serde_cbor",
  "slabmalloc",
  "spin",
- "x86",
+ "x86 0.39.0",
 ]
 
 [[package]]
@@ -1745,6 +1734,17 @@ name = "x86"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4fd9298cd1b1f88546fc0a5e8faa3354013cd010589299c624fde436aad76cc"
+dependencies = [
+ "bit_field 0.10.1",
+ "bitflags 1.2.1",
+ "raw-cpuid",
+]
+
+[[package]]
+name = "x86"
+version = "0.39.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7726a0732fa834954e0cceacadb224b7a0deb55d6ea498e2fc1b591397bca57f"
 dependencies = [
  "bit_field 0.10.1",
  "bitflags 1.2.1",

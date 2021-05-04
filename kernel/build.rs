@@ -26,7 +26,7 @@ fn main() {
             .file("src/arch/x86_64/acpi_printf.c")
             .pic(true)
             .warnings(true)
-            .compile("bespin_asm");
+            .compile("nrk_asm");
     }
 
     let output = Command::new("git")

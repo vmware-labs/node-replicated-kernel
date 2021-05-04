@@ -449,7 +449,7 @@ prop_compose! {
 fn path_names() -> impl Strategy<Value = String> {
     prop_oneof![
         Just(String::from("/")),
-        Just(String::from("bespin")),
+        Just(String::from("nrk")),
         Just(String::from("hello")),
         Just(String::from("world")),
         Just(String::from("memory")),

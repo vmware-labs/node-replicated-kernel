@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 driverkit = "0.4"
-x86 = "0.37"
+x86 = "0.39"
 log = "0.4"
 bitflags = "1.0"
 bit_field = "0.10.0"

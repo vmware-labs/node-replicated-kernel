@@ -7,9 +7,8 @@ use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::fmt;
 use core::ops::{Deref, DerefMut};
-use core::ptr;
+use core::{fmt, ptr};
 
 use kpi::process::FrameId;
 use x86::bits64::paging::*;
@@ -23,11 +22,10 @@ use crate::memory::{
     paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, PhysicalPageProvider, VAddr,
 };
 use crate::mlnrfs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
-use crate::nr;
 use crate::process::{
     allocate_dispatchers, make_process, Eid, Executor, Pid, Process, ProcessError, ResumeHandle,
 };
-use crate::round_up;
+use crate::{nr, round_up};
 
 use super::kcb::Arch86Kcb;
 use super::vspace::*;
@@ -667,11 +665,11 @@ pub struct Ring3Process {
     pub entry_point: VAddr,
     /// Executor cache (holds a per-region cache of executors)
     pub executor_cache:
-        arrayvec::ArrayVec<[Option<Vec<Box<Ring3Executor>>>; super::MAX_NUMA_NODES]>,
+        arrayvec::ArrayVec<Option<Vec<Box<Ring3Executor>>>, { super::MAX_NUMA_NODES }>,
     /// Offset where executor memory is located in user-space.
     pub executor_offset: VAddr,
     /// File descriptors for the opened file.
-    pub fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]>,
+    pub fds: arrayvec::ArrayVec<Option<Fd>, { MAX_FILES_PER_PROCESS }>,
     /// Physical frame objects registered to the process.
     pub frames: Vec<Frame>,
     /// Frames of the writeable ELF data section (shared across all replicated Process structs)
@@ -684,12 +682,13 @@ pub struct Ring3Process {
 impl Ring3Process {
     fn create(pid: Pid, writeable_sections: Vec<Frame>) -> Self {
         let mut executor_cache: arrayvec::ArrayVec<
-            [Option<Vec<Box<Ring3Executor>>>; super::MAX_NUMA_NODES],
+            Option<Vec<Box<Ring3Executor>>>,
+            { super::MAX_NUMA_NODES },
         > = Default::default();
         for _i in 0..super::MAX_NUMA_NODES {
             executor_cache.push(None);
         }
-        let mut fds: arrayvec::ArrayVec<[Option<Fd>; MAX_FILES_PER_PROCESS]> = Default::default();
+        let mut fds: arrayvec::ArrayVec<Option<Fd>, { MAX_FILES_PER_PROCESS }> = Default::default();
         for _i in 0..MAX_FILES_PER_PROCESS {
             fds.push(None);
         }

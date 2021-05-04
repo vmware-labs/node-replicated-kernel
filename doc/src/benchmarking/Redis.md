@@ -36,9 +36,9 @@ virtio, `-P 29`:
 * SET 1.8M req/s
 * GET 2.0M req/s
 
-## Redis server on bespin
+## Redis server on nrk
 
-To run test the redis performance on bespin, you can either invoke the
+To run test the redis performance on nrk, you can either invoke the
 redis_benchmark integration test directly:
 
 ```bash
@@ -46,7 +46,7 @@ cd kernel
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark
 ```
 
-The test will automatically launch qemu with bespin/redis and `redis-benchmark`
+The test will automatically launch qemu with nrk/redis and `redis-benchmark`
 on the hosts. Results are written into `redis_benchmark.csv`.
 
 You can also do the steps that the integration-test does manually.
@@ -60,7 +60,7 @@ sudo service apparmor teardown
 sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf
 ```
 
-Next run the redis server in bespin:
+Next run the redis server in nrk:
 
 ```bash
 "python3" "run.py" "--kfeatures" "test-userspace" "--cmd" "log=info testbinary=redis.bin" "--nic" "e1000" "--mods" "rkapps" "--ufeatures" "rkapps:redis" "--qemu-settings=-m 1024M"
@@ -122,16 +122,16 @@ git checkout 3.0.6
 make
 ```
 
-Before starting the VM we can re-use the DHCP config in `bespin/kernel/tests` to
+Before starting the VM we can re-use the DHCP config in `nrk/kernel/tests` to
 start a DHCP server on the host that configures the network of the guest VM:
 
 ```bash
-# Launch a DHCP server (can reuse bespin config)
-cd bespin/kernel
+# Launch a DHCP server (can reuse nrk config)
+cd nrk/kernel
 sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf
 ```
 
-To have the same benchmarks conditions as bespin (e.g., use a tap device) launch the VM like this
+To have the same benchmarks conditions as nrk (e.g., use a tap device) launch the VM like this
 (select either e1000 or virtio, generally virtio will perform better than emulated e1000):
 
 e1000 NIC:

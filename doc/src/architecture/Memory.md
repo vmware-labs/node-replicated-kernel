@@ -15,7 +15,7 @@ virtual address (`KERNEL_BASE` + physical address).
 <figure>
   <img src="../diagrams/AddressSpaceLayout.png" alt="Overview of address space layout in the OS"/>
   <figcaption>
-    A view of different address spaces in bespin (physical, kernel, user).
+    A view of different address spaces in nrk (physical, kernel, user).
   </figcaption>
 </figure>
 
@@ -35,7 +35,7 @@ divided into per-NUMA node caches (NCache). The NCache statically partitions
 memory further into two classes of 4 KiB and 2 MiB frames. Every core has a
 local TCache of 4 KiB and 2 MiB frames for fast, no-contention allocation when
 it contains the requested frame size. If it is empty, it refills from its local
-NCache. Similar to slab allocators, Bespin' TCache and NCache implement a cache
+NCache. Similar to slab allocators, NRK' TCache and NCache implement a cache
 frontend and backend that controls the flow between TCaches and NCaches.
 
 <figure>
@@ -50,14 +50,14 @@ frontend and backend that controls the flow between TCaches and NCaches.
 
 ## Dynamic memory
 
-Since Bespin is implemented in Rust, memory management is greatly simplified by
+Since NRK is implemented in Rust, memory management is greatly simplified by
 relying on the compiler to track the lifetime of allocated objects. This
 eliminates a large class of bugs (use-after-free, uninitialized memory *etc.*),
-but the kernel still has to explicitly deal with running out of memory. Bespin
+but the kernel still has to explicitly deal with running out of memory. NRK
 uses fallible allocations and intrusive data structures to handle out-of-memory
 errors gracefully.
 
-The dynamic memory allocator in bespin provides an implementation for the [Rust
+The dynamic memory allocator in nrk provides an implementation for the [Rust
 global allocator
 interface](https://doc.rust-lang.org/std/alloc/trait.GlobalAlloc.html). It uses
 size classes and different allocators per class (*e.g.,* it's a
@@ -70,7 +70,7 @@ at the end of every frame tracks the meta-data for objects within the frame
 <figure>
   <img src="../diagrams/Slabmalloc.png" alt="Schematic overview of the dynamic memory allocator"/>
   <figcaption>
-    The dynamic memory allocator for kernel objects in bespin. It shows an allocator
+    The dynamic memory allocator for kernel objects in nrk. It shows an allocator
     containing two frames for less than 16 byte objects. Each frame contains
     a few allocated slots along with per-frame meta-data (prev, next pointer) and
     metadata to indicate allocated blocks. Typically, one dynamic memory allocator

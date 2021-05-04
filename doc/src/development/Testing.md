@@ -1,6 +1,6 @@
 # Testing
 
-If you've found and fixed a bug, we better write a test for it. bespin uses
+If you've found and fixed a bug, we better write a test for it. nrk uses
 several test-frameworks and methodologies to ensure everything works as
 expected:
 
@@ -22,7 +22,7 @@ expected:
 To run the unit tests of the kernel:
 
 1. `cd kernel`
-1. `RUST_BACKTRACE=1 RUST_TEST_THREADS=1 cargo test --bin bespin`
+1. `RUST_BACKTRACE=1 RUST_TEST_THREADS=1 cargo test --bin nrk`
 
 To run the integration tests of the kernel:
 

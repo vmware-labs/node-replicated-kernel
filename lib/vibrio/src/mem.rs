@@ -5,12 +5,10 @@
 //! API from user-space and implements a [`core::alloc::GlobalAlloc`]
 //! type for doing memory allocation in user-space.
 
+use core::alloc::{GlobalAlloc, Layout};
+use core::iter::Map;
 use core::mem::transmute;
 use core::ptr::{self, NonNull};
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    iter::Map,
-};
 
 use arrayvec::ArrayVec;
 use lazy_static::lazy_static;
@@ -35,7 +33,7 @@ macro_rules! round_up {
 // Max number of cores supported by the allocator.
 const MAX_CORES: usize = 96;
 
-#[cfg(target_os = "bespin")]
+#[cfg(target_os = "nrk")]
 #[global_allocator]
 static PER_CORE_MEM_PROVIDER: crate::mem::PerCoreAllocator = crate::mem::PerCoreAllocator::new();
 

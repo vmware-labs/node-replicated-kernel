@@ -252,7 +252,7 @@ pub fn xmain() {
     use x86::apic::ApicId;
 
     // Entry point for app. This function is called from start_ap.S:
-    pub fn bespin_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
+    pub fn nrk_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
@@ -283,7 +283,7 @@ pub fn xmain() {
         let arg: Arc<u64> = Arc::new(0xfefe);
         coreboot::initialize(
             thread_to_boot.apic_id(),
-            bespin_init_ap,
+            nrk_init_ap,
             Arc::clone(&arg),
             &initialized,
             &app_stack,
@@ -328,7 +328,7 @@ pub fn xmain() {
     let mut log: Arc<Log<usize>> = Arc::new(Log::<usize>::new(1024 * 1024 * 1));
 
     // Entry point for app. This function is called from start_ap.S:
-    pub fn bespin_init_ap(mylog: Arc<Log<usize>>, initialized: &AtomicBool) {
+    pub fn nrk_init_ap(mylog: Arc<Log<usize>>, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
@@ -357,7 +357,7 @@ pub fn xmain() {
 
         coreboot::initialize(
             thread.apic_id(),
-            bespin_init_ap,
+            nrk_init_ap,
             log.clone(),
             &initialized,
             &app_stack,

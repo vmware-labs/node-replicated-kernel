@@ -51,9 +51,8 @@ extern crate alloc;
 extern crate elfloader;
 extern crate x86;
 
-use core::mem;
 use core::mem::transmute;
-use core::slice;
+use core::{mem, slice};
 
 use uefi::prelude::*;
 use uefi::proto::console::gop::GraphicsOutput;

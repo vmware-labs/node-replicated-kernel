@@ -6,8 +6,7 @@
 
 use alloc::vec::Vec;
 
-use crate::syscall;
-use crate::*;
+use crate::{syscall, *};
 
 use crate::system::{CoreId, CpuThread};
 

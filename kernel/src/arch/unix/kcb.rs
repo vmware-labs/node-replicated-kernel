@@ -15,7 +15,7 @@ use crate::nr::KernelNode;
 use crate::process::ProcessError;
 use crate::{
     kcb::{ArchSpecificKcb, BootloaderArguments, Kcb},
-    memory::tcache_sp::TCacheSp,
+    memory::mcache::TCacheSp,
 };
 
 use super::process::{UnixProcess, UnixThread};
@@ -29,7 +29,7 @@ static mut KCB: Kcb<ArchKcb> = {
     Kcb::new(
         &[],
         BootloaderArguments::new("info", "init", "init", "init"),
-        TCacheSp::new(0, 0),
+        TCacheSp::new(0),
         ArchKcb::new(&KERNEL_ARGS),
         0,
     )

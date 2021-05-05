@@ -11,7 +11,6 @@ use super::*;
 use crate::memory::KernelAllocator;
 use crate::*;
 
-use crate::memory::tcache::TCache;
 use crate::memory::vspace::model::ModelAddressSpace;
 use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 

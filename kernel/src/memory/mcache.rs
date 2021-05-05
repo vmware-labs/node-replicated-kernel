@@ -1,7 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! NCache is a physical memory manager used to maintain a per-NUMA node memory.
+//! MCache is a physical memory manager used to maintain a per-NUMA node memory.
 //!
 //! It can be a cache but should be big enough to contain all memory on a node.
 //!
@@ -13,45 +13,80 @@
 //!   interior Mutex for base-page and large-page arrays but that's problematic
 //!   because our traits are currently using &mut self).
 //! - TODO: Should have a directory-style index to put a list of 2 MiB, 4KiB
-//!   pages stack into an entry within the NCache list.
+//!   pages stack into an entry within the MCache list.
 use core::fmt;
 use core::mem::MaybeUninit;
 
 use super::*;
 
+pub type NCache = MCache<131070, 131070>;
+pub type TCache = MCache<381, 128>;
+pub type TCacheSp = MCache<2048, 12>;
+
 /// A simple page-cache for a NUMA node.
 ///
 /// Holds two stacks of pages for O(1) allocation/deallocation.
 /// Implements the `GrowBackend` to hand pages out.
-pub struct NCache {
+pub struct MCache<const BP: usize, const LP: usize> {
     /// Which node the memory in this cache is from.
     node: atopology::NodeId,
     /// A vector of free, cached base-page addresses
-    base_page_addresses: arrayvec::ArrayVec<PAddr, 131070>,
+    base_page_addresses: arrayvec::ArrayVec<PAddr, BP>,
     /// A vector of free, cached large-page addresses
-    large_page_addresses: arrayvec::ArrayVec<PAddr, 131070>,
+    large_page_addresses: arrayvec::ArrayVec<PAddr, LP>,
 }
 
-impl crate::kcb::MemManager for NCache {}
+impl<const BP: usize, const LP: usize> crate::kcb::MemManager for MCache<BP, LP> {}
 
-impl NCache {
-    pub fn _new(node: atopology::NodeId) -> NCache {
-        NCache {
+impl<const BP: usize, const LP: usize> MCache<BP, LP> {
+    pub const fn new(node: atopology::NodeId) -> MCache<BP, LP> {
+        MCache {
             node,
-            base_page_addresses: arrayvec::ArrayVec::new(),
-            large_page_addresses: arrayvec::ArrayVec::new(),
+            base_page_addresses: arrayvec::ArrayVec::new_const(),
+            large_page_addresses: arrayvec::ArrayVec::new_const(),
         }
     }
 
-    /// Populate the NCache with the given `frame`.
+    pub fn new_with_frame<const B: usize, const L: usize>(
+        node: atopology::NodeId,
+        mem: Frame,
+    ) -> MCache<B, L> {
+        let mut cache = MCache::<B, L>::new(node);
+        cache.populate_4k_first(mem);
+        cache
+    }
+
+    /// Populates a TCache with the memory from `frame`
+    ///
+    /// This works by repeatedly splitting the `frame`
+    /// into smaller pages.
+    pub fn populate_4k_first(&mut self, frame: Frame) {
+        let how_many_large_pages = if frame.base_pages() > self.base_page_addresses.capacity() {
+            let bytes_left_after_base_full =
+                (frame.base_pages() - self.base_page_addresses.capacity()) * BASE_PAGE_SIZE;
+            bytes_left_after_base_full / LARGE_PAGE_SIZE
+        } else {
+            // If this assert fails, we have to rethink what to return here
+            debug_assert!(self.base_page_addresses.capacity() * BASE_PAGE_SIZE <= LARGE_PAGE_SIZE);
+            1
+        };
+
+        self.populate(frame, how_many_large_pages);
+    }
+
+    /// Populate the MCache with the given `frame`.
     ///
     /// The Frame can be a multiple of page-size, the policy is
-    /// to divide it into ~8% base-pages and 92% large-pages.
-    pub fn populate(&mut self, frame: Frame) {
+    /// to divide it into ~13% base-pages and 87% large-pages.
+    pub fn populate_2m_first(&mut self, frame: Frame) {
+        let how_many_large_pages = (frame.size() / LARGE_PAGE_SIZE) * 87 / 100;
+        self.populate(frame, how_many_large_pages)
+    }
+
+    fn populate(&mut self, frame: Frame, mut how_many_large_pages: usize) {
         let base_count_before_populate = self.base_page_addresses.len();
         let large_count_before_populate = self.large_page_addresses.len();
 
-        let mut how_many_large_pages = (frame.size() / LARGE_PAGE_SIZE) * 87 / 100;
         if how_many_large_pages == 0 {
             // Try to have at least one large-page if possible
             how_many_large_pages = 1;
@@ -95,7 +130,7 @@ impl NCache {
 
         if lost_pages > 0 || lost_large_pages > 0 {
             error!(
-                "NCache population lost {} of memory.",
+                "MCache population lost {} of memory.",
                 super::DataSize::from_bytes(
                     lost_pages * BASE_PAGE_SIZE + lost_large_pages * LARGE_PAGE_SIZE
                 )
@@ -103,20 +138,22 @@ impl NCache {
         }
 
         debug!(
-            "NCache#{} added {} base-pages and {} large-pages.",
+            "MCache#{} added {} base-pages and {} large-pages.",
             self.node,
             self.base_page_addresses.len() - base_count_before_populate,
             self.large_page_addresses.len() - large_count_before_populate
         );
     }
 
-    /// Initialize an uninitialized NCache and return it.
+    /// Initialize an uninitialized MCache and return it.
     pub fn init<'a>(
-        ncache: &'a mut MaybeUninit<NCache>,
+        ncache: &'a mut MaybeUninit<MCache<BP, LP>>,
         node: atopology::NodeId,
-    ) -> &'a mut NCache {
+    ) -> &'a mut MCache<BP, LP> {
         unsafe {
             (*(ncache.as_mut_ptr())).node = node;
+            (*(ncache.as_mut_ptr())).base_page_addresses = arrayvec::ArrayVec::new_const();
+            (*(ncache.as_mut_ptr())).large_page_addresses = arrayvec::ArrayVec::new_const();
             ncache.assume_init_mut()
         }
     }
@@ -142,11 +179,11 @@ impl NCache {
     }
 }
 
-impl fmt::Debug for NCache {
+impl<const BP: usize, const LP: usize> fmt::Debug for MCache<BP, LP> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "NCache {{ free_total: {} (free_4kib: {}), capacity: {}, affinity: {} }}",
+            "MCache {{ free_total: {} (free_4kib: {}), capacity: {}, affinity: {} }}",
             super::DataSize::from_bytes(self.free()),
             super::DataSize::from_bytes(self.base_page_addresses.len() * BASE_PAGE_SIZE),
             super::DataSize::from_bytes(self.capacity()),
@@ -155,7 +192,7 @@ impl fmt::Debug for NCache {
     }
 }
 
-impl AllocatorStatistics for NCache {
+impl<const BP: usize, const LP: usize> AllocatorStatistics for MCache<BP, LP> {
     /// How much free memory (bytes) we have left.
     fn free(&self) -> usize {
         self.base_page_addresses.len() * BASE_PAGE_SIZE
@@ -191,7 +228,7 @@ impl AllocatorStatistics for NCache {
     }
 }
 
-impl PhysicalPageProvider for NCache {
+impl<const BP: usize, const LP: usize> PhysicalPageProvider for MCache<BP, LP> {
     fn allocate_base_page(&mut self) -> Result<Frame, AllocationError> {
         let paddr = self
             .base_page_addresses
@@ -229,37 +266,43 @@ impl PhysicalPageProvider for NCache {
     }
 }
 
-impl GrowBackend for NCache {
+impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
     fn base_page_capcacity(&self) -> usize {
-        self.base_page_addresses.capacity()
+        self.base_page_addresses.capacity() - self.base_page_addresses.len()
     }
 
     fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError> {
-        for (idx, insert) in free_list.iter().enumerate() {
-            match self.release_base_page(*insert) {
-                Err(_) => return Err(AllocationError::CantGrowFurther { count: idx }),
-                _ => {}
-            }
+        for frame in free_list {
+            assert_eq!(frame.size(), BASE_PAGE_SIZE);
+            assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
+            assert_eq!(frame.affinity, self.node);
+
+            self.base_page_addresses
+                .try_push(frame.base)
+                .map_err(|_e| AllocationError::CacheFull)?;
         }
         Ok(())
     }
 
     fn large_page_capcacity(&self) -> usize {
-        self.large_page_addresses.capacity()
+        self.large_page_addresses.capacity() - self.large_page_addresses.len()
     }
 
     fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError> {
-        for (idx, insert) in free_list.iter().enumerate() {
-            match self.release_large_page(*insert) {
-                Err(_) => return Err(AllocationError::CantGrowFurther { count: idx }),
-                _ => {}
-            }
+        for frame in free_list {
+            assert_eq!(frame.size(), LARGE_PAGE_SIZE);
+            assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
+            assert_eq!(frame.affinity, self.node);
+
+            self.large_page_addresses
+                .try_push(frame.base)
+                .map_err(|_e| AllocationError::CacheFull)?;
         }
         Ok(())
     }
 }
 
-impl ReapBackend for NCache {
+impl<const BP: usize, const LP: usize> ReapBackend for MCache<BP, LP> {
     /// Give base-pages back.
     fn reap_base_pages(&mut self, free_list: &mut [Option<Frame>]) {
         for insert in free_list.iter_mut() {
@@ -290,34 +333,32 @@ mod test {
     use super::*;
     extern crate std;
 
-    /// A hack to get an NCache without overflowing our stack in the tests :/
+    /// A hack to get an MCache without overflowing our stack in the tests :/
     ///
     /// A stack overflow results when trying allocate this the normal way
     /// (even when using Box / box): https://github.com/rust-lang/rust/issues/53827
-    fn get_an_ncache() -> &'static mut NCache {
+    fn get_an_ncache<const BP: usize, const LP: usize>() -> &'static mut MCache<BP, LP> {
         unsafe {
-            use core::alloc::Layout;
-            let layout = Layout::new::<NCache>();
+            let layout = Layout::new::<MCache<BP, LP>>();
             let global_alloc = std::alloc::System;
             let ptr = global_alloc.alloc_zeroed(layout);
-            core::mem::transmute(ptr as *mut NCache)
+            core::mem::transmute(ptr as *mut MCache<BP, LP>)
         }
     }
 
-    /// NCache should be fit in a large-page.
-    /// TODO: Ideally this would be an exact fit and the caches would be bigger,
-    /// so we need to send a pull request to NCache to allow the sizes we need
-    /// once this is more stable.
+    /// MCache should fit in a large-page.
     #[test]
-    fn ncache_is_page_sized() {
-        assert!(core::mem::size_of::<NCache>() <= super::LARGE_PAGE_SIZE);
+    fn mcache_sizes() {
+        assert_eq!(core::mem::size_of::<NCache>(), super::LARGE_PAGE_SIZE);
+        assert_eq!(core::mem::size_of::<TCache>(), super::BASE_PAGE_SIZE);
+        assert_eq!(core::mem::size_of::<TCacheSp>(), super::LARGE_PAGE_SIZE);
     }
 
     /// Can't add wrong size.
     #[test]
     #[should_panic]
     fn ncache_invalid_base_frame_size() {
-        let mut ncache = get_an_ncache();
+        let mut ncache = get_an_ncache::<131070, 131070>();
         ncache.node = 4;
         ncache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4))
@@ -328,7 +369,7 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_base_frame_align() {
-        let mut ncache = get_an_ncache();
+        let mut ncache = get_an_ncache::<131070, 131070>();
         ncache.node = 4;
         ncache
             .release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4))
@@ -339,17 +380,17 @@ mod test {
     #[test]
     #[should_panic]
     fn ncache_invalid_affinity() {
-        let mut ncache = get_an_ncache();
+        let mut ncache = get_an_ncache::<131070, 131070>();
         ncache.node = 1;
         ncache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
             .expect("release");
     }
 
-    /// Test the grow interface of the NCache.
+    /// Test the grow interface of the MCache.
     #[test]
     fn ncache_grow_reap() {
-        let mut ncache = get_an_ncache();
+        let mut ncache = get_an_ncache::<131070, 131070>();
         ncache.node = 4;
 
         // Insert some pages
@@ -393,7 +434,7 @@ mod test {
     /// Also verify free memory reporting along the way.
     #[test]
     fn ncache_release_allocate() {
-        let mut ncache = get_an_ncache();
+        let mut ncache = get_an_ncache::<131070, 131070>();
         ncache.node = 2;
 
         // Insert some pages
@@ -446,6 +487,163 @@ mod test {
         assert_eq!(ncache.free(), 0);
 
         let _f = ncache
+            .allocate_base_page()
+            .expect_err("Can't allocate more than we gave it");
+    }
+
+    /// TCache should be fit exactly within a base-page.
+    #[test]
+    fn tcache_populate() {
+        let tcache = TCache::new_with_frame(4, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
+        assert_eq!(tcache.base_page_addresses.len(), 10);
+        assert_eq!(tcache.large_page_addresses.len(), 0);
+
+        let tcache = TCache::new_with_frame(
+            2,
+            Frame::new(
+                PAddr::from((2 * 1024 * 1024) - 5 * 4096),
+                (1024 * 1024 * 2) + 11 * 0x1000,
+                4,
+            ),
+        );
+        assert_eq!(tcache.base_page_addresses.len(), 11);
+        assert_eq!(tcache.large_page_addresses.len(), 1);
+    }
+
+    /// Can't add wrong size.
+    #[test]
+    #[should_panic]
+    fn tcache_invalid_base_frame_size() {
+        let mut tcache = TCache::new(4);
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4))
+            .expect("release");
+    }
+
+    /// Can't add wrong size.
+    #[test]
+    #[should_panic]
+    fn tcache_invalid_base_frame_align() {
+        let mut tcache = TCache::new(4);
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4))
+            .expect("release");
+    }
+
+    /// Can't add wrong affinity.
+    #[test]
+    #[should_panic]
+    fn tcache_invalid_affinity() {
+        let mut tcache = TCache::new(1);
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
+            .expect("release");
+    }
+
+    /// Test that reap interface of the TCache.
+    #[test]
+    fn tcache_reap() {
+        let mut tcache = TCache::new(4);
+
+        // Insert some pages
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
+            .expect("release");
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 4))
+            .expect("release");
+
+        tcache
+            .release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 4))
+            .expect("release");
+        tcache
+            .release_large_page(Frame::new(
+                PAddr::from(LARGE_PAGE_SIZE * 4),
+                LARGE_PAGE_SIZE,
+                4,
+            ))
+            .expect("release");
+
+        let mut free_list = [None];
+        tcache.reap_base_pages(&mut free_list);
+        assert_eq!(free_list[0].unwrap().base.as_u64(), 0x3000);
+        assert_eq!(free_list[0].unwrap().size, 0x1000);
+        assert_eq!(free_list[0].unwrap().affinity, 4);
+
+        let mut free_list = [None, None, None];
+        tcache.reap_base_pages(&mut free_list);
+        assert_eq!(free_list[0].unwrap().base.as_u64(), 0x2000);
+        assert_eq!(free_list[0].unwrap().size, 0x1000);
+        assert_eq!(free_list[0].unwrap().affinity, 4);
+        assert!(free_list[1].is_none());
+        assert!(free_list[2].is_none());
+
+        let mut free_list = [None, None];
+        tcache.reap_large_pages(&mut free_list);
+        assert_eq!(free_list[0].unwrap().base.as_usize(), LARGE_PAGE_SIZE * 4);
+        assert_eq!(free_list[0].unwrap().size, LARGE_PAGE_SIZE);
+        assert_eq!(free_list[0].unwrap().affinity, 4);
+        assert_eq!(free_list[1].unwrap().base.as_usize(), LARGE_PAGE_SIZE);
+        assert_eq!(free_list[1].unwrap().size, LARGE_PAGE_SIZE);
+        assert_eq!(free_list[1].unwrap().affinity, 4);
+    }
+
+    /// Test that release and allocate works as expected.
+    /// Also verify free memory reporting along the way.
+    #[test]
+    fn tcache_release_allocate() {
+        let mut tcache = TCache::new(2);
+
+        // Insert some pages
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 2))
+            .expect("release");
+        tcache
+            .release_base_page(Frame::new(PAddr::from(0x3000), 0x1000, 2))
+            .expect("release");
+
+        tcache
+            .release_large_page(Frame::new(PAddr::from(LARGE_PAGE_SIZE), LARGE_PAGE_SIZE, 2))
+            .expect("release");
+        tcache
+            .release_large_page(Frame::new(
+                PAddr::from(LARGE_PAGE_SIZE * 2),
+                LARGE_PAGE_SIZE,
+                2,
+            ))
+            .expect("release");
+        assert_eq!(tcache.free(), 2 * BASE_PAGE_SIZE + 2 * LARGE_PAGE_SIZE);
+
+        // Can we allocate
+        let f = tcache.allocate_base_page().expect("Can allocate");
+        assert_eq!(f.base.as_u64(), 0x3000);
+        assert_eq!(f.size, 0x1000);
+        assert_eq!(f.affinity, 2);
+
+        let f = tcache.allocate_base_page().expect("Can allocate");
+        assert_eq!(f.base.as_u64(), 0x2000);
+        assert_eq!(f.size, 0x1000);
+        assert_eq!(f.affinity, 2);
+
+        let _f = tcache
+            .allocate_base_page()
+            .expect_err("Can't allocate more than we gave it");
+
+        assert_eq!(tcache.free(), 2 * LARGE_PAGE_SIZE);
+
+        let f = tcache.allocate_large_page().expect("Can allocate");
+        assert_eq!(f.base.as_u64(), (LARGE_PAGE_SIZE * 2) as u64);
+        assert_eq!(f.size, LARGE_PAGE_SIZE);
+        assert_eq!(f.affinity, 2);
+
+        let f = tcache.allocate_large_page().expect("Can allocate");
+        assert_eq!(f.base.as_u64(), LARGE_PAGE_SIZE as u64);
+        assert_eq!(f.size, LARGE_PAGE_SIZE);
+        assert_eq!(f.affinity, 2);
+
+        assert_eq!(tcache.free(), 0);
+
+        let _f = tcache
             .allocate_base_page()
             .expect_err("Can't allocate more than we gave it");
     }

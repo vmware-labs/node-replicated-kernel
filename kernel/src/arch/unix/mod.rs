@@ -9,7 +9,7 @@ use arrayvec::ArrayVec;
 use ctor::ctor;
 use node_replication::{Log, Replica};
 
-use crate::memory::tcache_sp::TCacheSp;
+use crate::memory::mcache::TCacheSp;
 use crate::memory::{GlobalMemory, GrowBackend, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 use crate::{xmain, ExitReason};
@@ -55,7 +55,7 @@ fn init_setup() {
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
     // Allocate 32 MiB and add it to our heap
-    let mut tc = TCacheSp::new(0, 0);
+    let mut tc = TCacheSp::new(0);
     let mut mm = memory::MemoryMapper::new();
 
     for _i in 0..64 {

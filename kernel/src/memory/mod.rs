@@ -28,9 +28,7 @@ use x86::bits64::paging;
 
 pub mod detmem;
 pub mod emem;
-pub mod ncache;
-pub mod tcache;
-pub mod tcache_sp;
+pub mod mcache;
 pub mod vspace;
 
 /// Re-export arch specific memory definitions
@@ -304,7 +302,6 @@ impl KernelAllocator {
         let gmanager = kcb.physical_memory.gmanager.unwrap(); // Ok because of check above.
         let mut ncache = gmanager.node_caches[kcb.physical_memory.affinity as usize].lock();
         let mut mem_manager = kcb.try_mem_manager()?;
-
         // Make sure we don't overflow the TCache
         let needed_base_pages =
             core::cmp::min(mem_manager.base_page_capcacity(), needed_base_pages);
@@ -650,11 +647,11 @@ pub struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<Mutex<tcache::TCache>, { AFFINITY_REGIONS }>,
+    pub(crate) emem: ArrayVec<Mutex<mcache::TCache>, { AFFINITY_REGIONS }>,
 
     /// All node-caches in the system (one for every NUMA node).
     pub(crate) node_caches:
-        ArrayVec<CachePadded<Mutex<&'static mut ncache::NCache>>, { AFFINITY_REGIONS }>,
+        ArrayVec<CachePadded<Mutex<&'static mut mcache::NCache>>, { AFFINITY_REGIONS }>,
 }
 
 impl GlobalMemory {
@@ -708,8 +705,7 @@ impl GlobalMemory {
                     leftovers.push(leftover_mem);
                 }
 
-                gm.emem.push(Mutex::new(tcache::TCache::new_with_frame(
-                    0x0,
+                gm.emem.push(Mutex::new(mcache::TCache::new_with_frame(
                     cur_affinity,
                     emem,
                 )));
@@ -731,10 +727,10 @@ impl GlobalMemory {
             assert!(ncache_memory_addr != PAddr::zero());
             ncache_memory.zero(); // TODO(perf) this happens twice atm?
 
-            let ncache_ptr = ncache_memory.uninitialized::<ncache::NCache>();
+            let ncache_ptr = ncache_memory.uninitialized::<mcache::NCache>();
 
-            let ncache: &'static mut ncache::NCache =
-                ncache::NCache::init(ncache_ptr, affinity as atopology::NodeId);
+            let ncache: &'static mut mcache::NCache =
+                mcache::NCache::init(ncache_ptr, affinity as atopology::NodeId);
             debug_assert_eq!(
                 &*ncache as *const _ as u64,
                 paddr_to_kernel_vaddr(ncache_memory_addr).as_u64()
@@ -750,13 +746,13 @@ impl GlobalMemory {
             for frame in memory.iter() {
                 if frame.affinity == ncache_affinity as u64 {
                     trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
-                    ncache_locked.populate(*frame);
+                    ncache_locked.populate_2m_first(*frame);
                 }
             }
             for frame in leftovers.iter() {
                 if frame.affinity == ncache_affinity as u64 {
                     trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
-                    ncache_locked.populate(*frame);
+                    ncache_locked.populate_2m_first(*frame);
                 }
             }
         }

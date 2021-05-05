@@ -19,8 +19,8 @@ use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
 
 use crate::memory::emem::EmergencyAllocator;
-use crate::memory::tcache::TCache;
-use crate::memory::tcache_sp::TCacheSp;
+use crate::memory::mcache::TCache;
+use crate::memory::mcache::TCacheSp;
 use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PAddr, PhysicalPageProvider};
 use crate::nr::KernelNode;
 use crate::process::Process;
@@ -214,10 +214,7 @@ impl PhysicalMemoryArena {
         PhysicalMemoryArena {
             affinity: node,
             gmanager: Some(global_memory),
-            pmanager: Some(RefCell::new(TCache::new(
-                atopology::MACHINE_TOPOLOGY.current_thread().id,
-                node,
-            ))),
+            pmanager: Some(RefCell::new(TCache::new(node))),
             zone_allocator: RefCell::new(ZoneAllocator::new()),
         }
     }

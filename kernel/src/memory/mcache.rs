@@ -16,12 +16,24 @@
 //!   pages stack into an entry within the MCache list.
 use core::fmt;
 use core::mem::MaybeUninit;
+use static_assertions as sa;
 
 use super::*;
 
-pub type NCache = MCache<131070, 131070>;
+/// A big cache of base and large pages, fits on a 2 MiB page.
+pub type NCache = MCache<131071, 131070>;
+sa::assert_eq_size!(NCache, [u8; LARGE_PAGE_SIZE]);
+sa::const_assert!(core::mem::align_of::<NCache>() <= super::BASE_PAGE_SIZE);
+
+/// A small cache of 4 KiB and 2 MiB pages, fits on a 4K page.
 pub type TCache = MCache<381, 128>;
+sa::assert_eq_size!(TCache, [u8; BASE_PAGE_SIZE]);
+sa::const_assert!(core::mem::align_of::<TCache>() <= super::BASE_PAGE_SIZE);
+
+/// A slightly bigger cache of 4KiB and 2MiB pages, fits on a 2 MiB page.
 pub type TCacheSp = MCache<2048, 12>;
+sa::const_assert!(core::mem::size_of::<TCacheSp>() <= super::LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<TCacheSp>() <= super::LARGE_PAGE_SIZE);
 
 /// A simple page-cache for a NUMA node.
 ///
@@ -346,14 +358,6 @@ mod test {
         }
     }
 
-    /// MCache should fit in a large-page.
-    #[test]
-    fn mcache_sizes() {
-        assert_eq!(core::mem::size_of::<NCache>(), super::LARGE_PAGE_SIZE);
-        assert_eq!(core::mem::size_of::<TCache>(), super::BASE_PAGE_SIZE);
-        assert_eq!(core::mem::size_of::<TCacheSp>(), super::LARGE_PAGE_SIZE);
-    }
-
     /// Can't add wrong size.
     #[test]
     #[should_panic]
@@ -494,11 +498,12 @@ mod test {
     /// TCache should be fit exactly within a base-page.
     #[test]
     fn tcache_populate() {
-        let tcache = TCache::new_with_frame(4, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
+        let tcache: TCache =
+            TCache::new_with_frame(4, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
         assert_eq!(tcache.base_page_addresses.len(), 10);
         assert_eq!(tcache.large_page_addresses.len(), 0);
 
-        let tcache = TCache::new_with_frame(
+        let tcache: TCache = TCache::new_with_frame(
             2,
             Frame::new(
                 PAddr::from((2 * 1024 * 1024) - 5 * 4096),

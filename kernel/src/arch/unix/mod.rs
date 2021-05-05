@@ -3,16 +3,16 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use arrayvec::ArrayVec;
+use ctor::ctor;
 use node_replication::{Log, Replica};
 
-use crate::{xmain, ExitReason};
-
-use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::tcache_sp::TCacheSp;
-use crate::memory::{Frame, GlobalMemory, GrowBackend, LARGE_PAGE_SIZE};
+use crate::memory::{GlobalMemory, GrowBackend, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
+use crate::{xmain, ExitReason};
 
 pub mod debug;
 pub mod irq;
@@ -28,8 +28,6 @@ pub use bootloader_shared::*;
 
 pub const MAX_NUMA_NODES: usize = 12;
 
-static mut initialized: bool = false;
-
 pub fn halt() -> ! {
     unsafe { libc::exit(0) };
 }
@@ -38,14 +36,14 @@ pub fn advance_mlnr_replica() {
     unreachable!("eager_advance_mlnr_replica not implemented for unix");
 }
 
-#[start]
-pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
-    unsafe {
-        if initialized {
-            return 0;
-        } else {
-            initialized = true;
-        }
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+#[ctor]
+fn init_setup() {
+    if INITIALIZED.load(Ordering::SeqCst) {
+        return;
+    } else {
+        INITIALIZED.store(true, Ordering::SeqCst);
     }
 
     // Note anything lower than Info is currently broken
@@ -83,22 +81,8 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
     let global_memory_static: &'static GlobalMemory = Box::leak(global_memory);
 
     // Construct the Kcb so we can access these things later on in the code
-    let kernel_args: Box<KernelArgs> = Box::new(Default::default());
-    let kernel_binary: &'static [u8] = &[0u8; 1];
-    let arch_kcb: kcb::ArchKcb = kcb::ArchKcb::new(Box::leak(kernel_args));
-    let cmdline: BootloaderArguments = Default::default();
-
-    let mut kcb = box Kcb::new(
-        &kernel_binary,
-        cmdline,
-        tc,
-        arch_kcb,
-        0 as atopology::NodeId,
-    );
-    kcb.set_global_memory(global_memory_static);
+    kcb::get_kcb().set_global_memory(global_memory_static);
     debug!("Memory allocation should work at this point...");
-
-    kcb::init_kcb(Box::leak(kcb));
 
     let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
     let bsp_replica = Replica::<KernelNode<UnixProcess>>::new(&log);
@@ -109,6 +93,11 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
         let kcb = kcb::get_kcb();
         kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
+}
+
+#[start]
+pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
+    init_setup();
 
     info!(
         "Started at {} with {:?} since CPU startup",
@@ -116,7 +105,6 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::BOOT_TIME_ANCHOR
     );
 
-    #[cfg(not(test))]
     xmain();
 
     ExitReason::ReturnFromMain as isize

@@ -12,6 +12,7 @@
 //! just works, but it's best if these structs stay plain-old-data
 //! without any implementations etc.
 #![no_std]
+#![feature(const_mut_refs)]
 extern crate alloc;
 
 use alloc::vec::Vec;
@@ -147,10 +148,27 @@ pub struct KernelArgs {
     pub modules: arrayvec::ArrayVec<Module, { KernelArgs::MAX_MODULES }>,
 }
 
+impl KernelArgs {
+    pub const fn new() -> Self {
+        Self {
+            mm: (x86::bits64::paging::PAddr(0), 0),
+            mm_iter: Vec::new(),
+            command_line: "<< unset >>",
+            frame_buffer: None,
+            mode_info: None,
+            pml4: x86::bits64::paging::PAddr(0),
+            stack: (x86::bits64::paging::PAddr(0), 0),
+            kernel_elf_offset: x86::bits64::paging::VAddr(0),
+            acpi1_rsdp: x86::bits64::paging::PAddr(0),
+            acpi2_rsdp: x86::bits64::paging::PAddr(0),
+            modules: arrayvec::ArrayVec::new_const(),
+        }
+    }
+}
+
 impl Default for KernelArgs {
-    fn default() -> KernelArgs {
-        use core::mem::MaybeUninit;
-        unsafe { MaybeUninit::zeroed().assume_init() }
+    fn default() -> Self {
+        KernelArgs::new()
     }
 }
 

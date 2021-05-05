@@ -6,56 +6,53 @@
 use alloc::sync::Arc;
 use core::any::Any;
 use core::cell::{RefCell, RefMut};
-use core::ptr;
 
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::{Replica, ReplicaToken};
 
-use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
 use crate::process::ProcessError;
+use crate::{
+    kcb::{ArchSpecificKcb, BootloaderArguments, Kcb},
+    memory::tcache_sp::TCacheSp,
+};
 
 use super::process::{UnixProcess, UnixThread};
 use super::vspace::VSpace;
 use super::KernelArgs;
 
-static mut KCB: *mut Kcb<ArchKcb> = ptr::null_mut();
+static KERNEL_ARGS: KernelArgs = KernelArgs::new();
+
+#[thread_local]
+static mut KCB: Kcb<ArchKcb> = {
+    Kcb::new(
+        &[],
+        BootloaderArguments::new("info", "init", "init", "init"),
+        TCacheSp::new(0, 0),
+        ArchKcb::new(&KERNEL_ARGS),
+        0,
+    )
+};
 
 pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<ArchKcb>> {
-    unsafe {
-        if !KCB.is_null() {
-            Some(&mut *KCB as &mut Kcb<ArchKcb>)
-        } else {
-            None
-        }
-    }
+    unsafe { Some(&mut KCB) }
 }
 
 pub fn get_kcb<'a>() -> &'a mut Kcb<ArchKcb> {
-    unsafe { &mut *KCB as &mut Kcb<ArchKcb> }
-}
-
-unsafe fn set_kcb(kcb: ptr::NonNull<Kcb<ArchKcb>>) {
-    KCB = kcb.as_ptr();
+    unsafe { &mut KCB }
 }
 
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut kcb: &'static mut Kcb<A>) {
-    let any_kcb = &mut kcb as &mut dyn Any;
-    if let Some(ckcb) = any_kcb.downcast_mut::<&'static mut Kcb<ArchKcb>>() {
-        let kptr: ptr::NonNull<Kcb<ArchKcb>> = (*ckcb).into();
-        unsafe { set_kcb(kptr) };
-    } else {
-        panic!("Tried to install incompatible KCB.");
-    }
+pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut _kcb: &'static mut Kcb<A>) {
+    //unreachable!("init_kcb.");
 }
 
 #[repr(C)]
 pub struct ArchKcb {
-    init_vspace: RefCell<VSpace>,
+    init_vspace: Option<RefCell<VSpace>>,
     /// Arguments passed to the kernel by the bootloader.
     kernel_args: &'static KernelArgs,
     pub replica: Option<(Arc<Replica<'static, KernelNode<UnixProcess>>>, ReplicaToken)>,
@@ -64,10 +61,10 @@ pub struct ArchKcb {
 }
 
 impl ArchKcb {
-    pub fn new(kernel_args: &'static KernelArgs) -> ArchKcb {
+    pub const fn new(kernel_args: &'static KernelArgs) -> ArchKcb {
         ArchKcb {
             kernel_args,
-            init_vspace: RefCell::new(VSpace::new()),
+            init_vspace: None,
             replica: None,
             mlnr_replica: None,
             current_process: None,
@@ -75,7 +72,8 @@ impl ArchKcb {
     }
 
     pub fn init_vspace(&self) -> RefMut<VSpace> {
-        self.init_vspace.borrow_mut()
+        let ivp = self.init_vspace.as_ref().unwrap();
+        ivp.borrow_mut()
     }
 
     pub fn kernel_args(&self) -> &'static KernelArgs {

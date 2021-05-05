@@ -3,7 +3,6 @@
 
 //! A dummy process implementation for the unix platform.
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 

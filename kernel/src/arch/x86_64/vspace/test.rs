@@ -91,8 +91,6 @@ proptest! {
     // Verify that our implementation behaves according to the `ModelAddressSpace`.
     #[test]
     fn model_equivalence(ops in actions()) {
-        crate::arch::start(0, core::ptr::null_mut());
-        //let _r = env_logger::try_init();
         use TestAction::*;
 
         let mut totest = VSpace::new();

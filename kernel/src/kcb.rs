@@ -99,6 +99,20 @@ pub struct BootloaderArguments {
 }
 
 impl BootloaderArguments {
+    pub const fn new(
+        log_filter: &'static str,
+        test_binary: &'static str,
+        test_cmdline: &'static str,
+        app_cmdline: &'static str,
+    ) -> Self {
+        BootloaderArguments {
+            log_filter,
+            test_binary,
+            test_cmdline,
+            app_cmdline,
+        }
+    }
+
     /// Parse command line argument and initialize the logging infrastructure.
     ///
     /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
@@ -261,7 +275,7 @@ pub struct Kcb<A: ArchSpecificKcb> {
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
-    pub fn new(
+    pub const fn new(
         kernel_binary: &'static [u8],
         cmdline: BootloaderArguments,
         emanager: TCacheSp,
@@ -274,7 +288,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             in_panic_mode: false,
             kernel_binary,
             emanager: RefCell::new(emanager),
-            ezone_allocator: RefCell::new(EmergencyAllocator::default()),
+            ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
             node,
             memory_arenas: arr![None; 12], // crate::arch::MAX_NUMA_NODES
             // Can't initialize these yet, we need basic Kcb first for

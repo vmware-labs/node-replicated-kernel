@@ -6,7 +6,7 @@
 //! Here we define the core modules and the main function that the kernel runs after
 //! the arch-specific initialization is done (see `arch/x86_64/mod.rs` for an example).
 
-#![no_std]
+#![cfg_attr(target_os = "none", no_std)]
 #![feature(
     intrinsics,
     core_intrinsics,
@@ -25,8 +25,10 @@
     alloc_prelude,
     try_reserve,
     new_uninit,
-    get_mut_unchecked
+    get_mut_unchecked,
+    const_fn
 )]
+#![cfg_attr(not(target_os = "none"), feature(thread_local))]
 #![cfg_attr(
     all(not(test), not(feature = "integration-test"), target_os = "none"),
     deny(warnings)
@@ -69,6 +71,7 @@ mod mlnrfs;
 mod nr;
 #[macro_use]
 mod prelude;
+mod mpmc;
 mod process;
 mod scheduler;
 mod stack;

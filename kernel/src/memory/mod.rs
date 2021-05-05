@@ -26,6 +26,7 @@ use slabmalloc::{Allocator, ZoneAllocator};
 use spin::Mutex;
 use x86::bits64::paging;
 
+pub mod detmem;
 pub mod emem;
 pub mod ncache;
 pub mod tcache;

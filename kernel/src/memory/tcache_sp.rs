@@ -28,11 +28,11 @@ pub struct TCacheSp {
 impl crate::kcb::MemManager for TCacheSp {}
 
 impl TCacheSp {
-    pub fn new(_thread: atopology::ThreadId, node: atopology::NodeId) -> TCacheSp {
+    pub const fn new(_thread: atopology::ThreadId, node: atopology::NodeId) -> TCacheSp {
         TCacheSp {
             node,
-            base_page_addresses: arrayvec::ArrayVec::new(),
-            large_page_addresses: arrayvec::ArrayVec::new(),
+            base_page_addresses: arrayvec::ArrayVec::new_const(),
+            large_page_addresses: arrayvec::ArrayVec::new_const(),
         }
     }
 

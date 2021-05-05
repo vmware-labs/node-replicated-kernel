@@ -34,12 +34,18 @@ pub struct EmergencyAllocator {
     region: Frame,
 }
 
-impl Default for EmergencyAllocator {
-    fn default() -> Self {
-        EmergencyAllocator {
+impl EmergencyAllocator {
+    pub const fn empty() -> Self {
+        Self {
             index: 0,
             region: Frame::empty(),
         }
+    }
+}
+
+impl Default for EmergencyAllocator {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 

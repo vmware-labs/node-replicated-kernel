@@ -412,6 +412,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e98e2ad1a782e33928b96fc3948e7c355e5af34ba4de7670fe8bac2a3b2006d"
+dependencies = [
+ "quote 1.0.9",
+ "syn 1.0.68",
+]
+
+[[package]]
 name = "cty"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -860,6 +870,7 @@ dependencies = [
  "crossbeam-utils 0.8.3",
  "cstr_core",
  "csv",
+ "ctor",
  "custom_error_core",
  "driverkit",
  "elfloader",
@@ -876,6 +887,7 @@ dependencies = [
  "node-replication",
  "num_cpus",
  "proptest",
+ "rand 0.8.3",
  "rawtime",
  "rexpect",
  "serde",

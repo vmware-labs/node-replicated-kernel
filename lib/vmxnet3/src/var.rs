@@ -14,6 +14,9 @@ use driverkit::{
     net::rss::*,
 };
 
+use log::info;
+
+
 use x86::current::paging::{PAddr, VAddr};
 
 use crate::pci::{BarAccess, BarIO, DmaObject, KERNEL_BASE};
@@ -375,6 +378,8 @@ impl DevQueue for TxQueue {
             "vmxnet3: Packet with too many segments"
         );
 
+        //log::error!("txq::enqueue!");
+
         if (self.capacity() - 1) - self.len() < chain.segments.len() {
             // We don't bother trying to enqueue a partial packet
             return Err(chain);
@@ -457,6 +462,7 @@ impl DevQueue for TxQueue {
     }
 
     fn dequeue(&mut self) -> Result<IOBufChain, DevQueueError> {
+        // log::error!("TX:dequeue!");
         if !self.processed_chains.is_empty() || self.can_dequeue(false) >= 1 {
             debug_assert!(!self.processed_chains.is_empty());
             self.processed_chains
@@ -619,6 +625,8 @@ impl DevQueue for RxQueue {
             return Err(chain);
         }
 
+        //log::error!("RX:enqueue!");
+
         assert_eq!(
             chain.segments.len(),
             2,
@@ -638,6 +646,8 @@ impl DevQueue for RxQueue {
         let mut idx = rxr.vxrxr_refill_start;
         let mut i = 0;
         for chain in chain.segments.iter() {
+            //info!("rx.enqueue {:x}..{:x} ({})", chain.paddr().as_u64(),
+            //       chain.paddr().as_u64() + chain.len() as u64,  chain.len());
             rxd[idx].addr = chain.paddr().as_u64();
             rxd[idx].set_len(chain.len().try_into().unwrap());
             rxd[idx].set_btype(if i % 2 == 0 {
@@ -683,6 +693,7 @@ impl DevQueue for RxQueue {
     }
 
     fn dequeue(&mut self) -> Result<IOBufChain, DevQueueError> {
+        //info!("rxq:dequeue!");
         if self.can_dequeue(false) == 0 {
             return Err(DevQueueError::QueueEmpty);
         }
@@ -696,7 +707,7 @@ impl DevQueue for RxQueue {
         // descriptors (and no associated read barrier) is required here.
 
         let rxc = &mut self.vxrxq_comp_ring;
-        let rxcd = rxc.vxcr[self.pidx_tail0];
+        let mut rxcd = rxc.vxcr[self.pidx_tail0];
         // Skip zero-length entries
         while rxcd.len() == 0 {
             assert!(
@@ -710,6 +721,7 @@ impl DevQueue for RxQueue {
                 self.pidx_tail0 = 0;
                 rxc.vxcr_gen ^= 1;
             }
+            rxcd = rxc.vxcr[self.pidx_tail0];
         }
         assert!(rxcd.sop(), "expected sop");
 
@@ -894,7 +906,6 @@ impl DevQueue for RxQueue {
                 completed_gen ^= 1;
             }
         }
-
         available
     }
 }

@@ -18,19 +18,25 @@ const MAX_PACKET_SZ: usize = 2048;
 /// a smoltcp phy implementation wrapping a DevQueue
 pub struct DevQueuePhy {
     device: Pin<Box<VMXNet3>>,
-    pool: IOBufPool,
+    pool_tx: IOBufPool,
+    pool_rx: IOBufPool
 }
 
 impl DevQueuePhy {
     pub fn new(device: Pin<Box<VMXNet3>>) -> core::result::Result<DevQueuePhy, IOMemError> {
-        let pool = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
-        Ok(Self { device, pool })
+        let pool_tx = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
+        let pool_rx = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
+        Ok(Self { device, pool_tx, pool_rx })
     }
+
+
 }
 
 impl<'a> Device<'a> for DevQueuePhy {
     type RxToken = RxPacket<'a>;
     type TxToken = TxPacket<'a>;
+
+
 
     /// Obtains a receive buffer along a side a send buffer for replies (e.g., ping...)
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
@@ -43,25 +49,42 @@ impl<'a> Device<'a> for DevQueuePhy {
 
             // Enqueue another buffer for future receives
             // TODO: maybe we need to enqueue more than one?
-            let mut bufs = IOBufChain::new(0, 2).expect("Can't make chain?");
-            bufs.append(self.pool.get_buf().expect("Can't get buffer?"));
-            bufs.append(self.pool.get_buf().expect("Can't get buffer?"));
 
-            let buf2 = self.pool.get_buf().expect("Can't get buffer?");
+            // info!("RX: new rx buffer chain");
+            let mut bufs = IOBufChain::new(0, 2).expect("Can't make chain?");
+            bufs.append(self.pool_rx.get_buf().expect("Can't get buffer?"));
+            bufs.append(self.pool_rx.get_buf().expect("Can't get buffer?"));
 
             assert!(self.device.rxq[0].enqueue(bufs).is_ok());
 
             // construct the RX token
-            let rx_token = RxPacket::new(packet, &mut self.pool);
+            let rx_token = RxPacket::new(packet, &mut self.pool_rx);
 
             // get an empty TX token from the pool...
             // TODO: make sure we can actually send something!
-            let mut iobuf = IOBufChain::new(0, 1).expect("Can't make chain?");
-            iobuf.append(buf2);
-            let tx_token = TxPacket::new(iobuf, &mut self.device.txq[0]);
+
+            let numdeq = self.device.txq[0].can_dequeue(false);
+
+            let iobuf = if numdeq > 0 {
+                // info!("TX: reusing buffer chain");
+                self.device.txq[0].dequeue().expect("Couldn't dequeue?")
+            } else {
+                // info!("TX: new buffer chain");
+                let mut iobuf = IOBufChain::new(0, 1).expect("Can't create chain?");
+                iobuf.append(self.pool_tx.get_buf().expect("Can't get buffer from pool"));
+                iobuf
+            };
+
+
+            // let iobuf = self.get_tx_iobuf_chain();
+            // let mut iobuf = IOBufChain::new(0, 1).expect("Can't make chain?");
+            // let buf2 = self.pool_tx.get_buf().expect("Can't get buffer?");
+            // iobuf.append(buf2);
+            let tx_token = TxPacket::new(iobuf, &mut self.device.txq[0], &mut self.pool_tx);
 
             Some((rx_token, tx_token))
         } else {
+           // info!("Nothing to receive!");
             None
         }
     }
@@ -71,16 +94,18 @@ impl<'a> Device<'a> for DevQueuePhy {
         // see if there is something to dequeue
         let numdeq = self.device.txq[0].can_dequeue(false);
 
-        let packet = if numdeq > 0 {
+        let packet =  if numdeq > 0 {
+            // info!("TX: reusing buffer chain");
             self.device.txq[0].dequeue().expect("Couldn't dequeue?")
         } else {
+            // info!("TX: new buffer chain");
             let mut iobuf = IOBufChain::new(0, 1).expect("Can't create chain?");
-            iobuf.append(self.pool.get_buf().expect("Can't get buffer from pool"));
+            iobuf.append(self.pool_tx.get_buf().expect("Can't get buffer from pool"));
             iobuf
         };
 
         // get an empty TX token from the pool
-        Some(TxPacket::new(packet, &mut self.device.txq[0]))
+        Some(TxPacket::new(packet, &mut self.device.txq[0], &mut self.pool_tx))
     }
 
     /**
@@ -115,11 +140,13 @@ impl<'a> phy::RxToken for RxPacket<'a> {
     {
         // XXX: not sure here if the buffer actually needs to be copied here...
         let result = f(&mut self.iobuf.segments[0].as_mut_slice());
-        info!("rx called");
+        // info!("RxToken::consume n segments:{}", self.iobuf.segments.len());
 
         // we can drop the IOBufChain here.
-        self.pool
-            .put_buf(self.iobuf.segments.pop_front().expect("Needs a seg"));
+        for s in self.iobuf.segments {
+            self.pool.put_buf(s);
+        }
+
         result
     }
 }
@@ -128,13 +155,15 @@ impl<'a> phy::RxToken for RxPacket<'a> {
 pub struct TxPacket<'a> {
     iobuf: Option<IOBufChain>,
     txq: &'a mut dyn DevQueue,
+    pool: &'a mut IOBufPool,
 }
 
 impl<'a> TxPacket<'a> {
-    fn new(iobuf: IOBufChain, txq: &'a mut dyn DevQueue) -> TxPacket<'a> {
+    fn new(iobuf: IOBufChain, txq: &'a mut dyn DevQueue,  pool: &'a mut IOBufPool) -> TxPacket<'a> {
         TxPacket {
             iobuf: Some(iobuf),
             txq,
+            pool
         }
     }
 }
@@ -145,7 +174,7 @@ impl<'a> phy::TxToken for TxPacket<'a> {
     where
         F: FnOnce(&mut [u8]) -> Result<R>,
     {
-        info!("tx called {}", len);
+        // info!("TxToken::consume");
         let mut iobuf = self.iobuf.take().unwrap();
 
         // let the network stack write into the packet
@@ -167,7 +196,15 @@ impl<'a> phy::TxToken for TxPacket<'a> {
 impl<'a> Drop for TxPacket<'a> {
     /// gets called when the TxPacket gets dropped in the stack
     fn drop(&mut self) {
+        // info!("drop the TxPacket reference has buf: {}", !self.iobuf.is_none());
         // TODO: return the buffer back to the pool.
-        // self.pool.put_buf(self.iobuf);
+        if !self.iobuf.is_none() {
+            let iobuf = self.iobuf.take().unwrap();
+            // info!("TxToken::consume n segments:{}", iobuf.segments.len());
+            // we can drop the IOBufChain here.
+            for s in  iobuf.segments {
+                self.pool.put_buf(s);
+            }
+        }
     }
 }

@@ -279,7 +279,7 @@ impl<const BP: usize, const LP: usize> PhysicalPageProvider for MCache<BP, LP> {
 }
 
 impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
-    fn base_page_capcacity(&self) -> usize {
+    fn spare_base_page_capacity(&self) -> usize {
         self.base_page_addresses.capacity() - self.base_page_addresses.len()
     }
 
@@ -296,7 +296,7 @@ impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
         Ok(())
     }
 
-    fn large_page_capcacity(&self) -> usize {
+    fn spare_large_page_capacity(&self) -> usize {
         self.large_page_addresses.capacity() - self.large_page_addresses.len()
     }
 

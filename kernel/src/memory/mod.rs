@@ -304,9 +304,9 @@ impl KernelAllocator {
         let mut mem_manager = kcb.try_mem_manager()?;
         // Make sure we don't overflow the TCache
         let needed_base_pages =
-            core::cmp::min(mem_manager.base_page_capcacity(), needed_base_pages);
+            core::cmp::min(mem_manager.spare_base_page_capacity(), needed_base_pages);
         let needed_large_pages =
-            core::cmp::min(mem_manager.large_page_capcacity(), needed_large_pages);
+            core::cmp::min(mem_manager.spare_large_page_capacity(), needed_large_pages);
 
         for _i in 0..needed_base_pages {
             let frame = ncache.allocate_base_page()?;
@@ -794,14 +794,14 @@ pub trait PhysicalPageProvider {
 /// The backend implementation necessary to implement if we want a client to be
 /// able to grow our allocator by providing a list of frames.
 pub trait GrowBackend {
-    /// How much capacity we have to add base pages.
-    fn base_page_capcacity(&self) -> usize;
+    /// How much capacity we have left to add base pages.
+    fn spare_base_page_capacity(&self) -> usize;
 
     /// Add a slice of base-pages to `self`.
     fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
 
-    /// How much capacity we have to add large pages.
-    fn large_page_capcacity(&self) -> usize;
+    /// How much capacity we have left to add large pages.
+    fn spare_large_page_capacity(&self) -> usize;
 
     /// Add a slice of large-pages to `self`.
     fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;

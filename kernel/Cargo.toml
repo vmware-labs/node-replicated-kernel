@@ -46,7 +46,8 @@ addr2line = { version = "0.14.1", default-features = false, features = ["rustc-d
 arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
-fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "unstable-fix", features = ["unstable"] }
+#fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "unstable-fix", features = ["unstable"] }
+fallible_collections = { path = "../lib/fallible_collections", features = ["unstable"] }
 
 [[bin]]
 name = "nrk"

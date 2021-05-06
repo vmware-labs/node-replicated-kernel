@@ -5,7 +5,7 @@ use alloc::collections::TryReserveError;
 use alloc::vec::Vec;
 use core::mem::size_of;
 
-use fallible_collections::FallibleVec;
+use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use kpi::io::*;
 
 use crate::error::KError;

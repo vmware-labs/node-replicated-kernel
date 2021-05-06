@@ -30,7 +30,8 @@
     const_ptr_offset_from,
     const_raw_ptr_deref,
     const_maybe_uninit_as_ptr,
-    const_refs_to_cell
+    const_refs_to_cell,
+    nonnull_slice_from_raw_parts
 )]
 #![cfg_attr(not(target_os = "none"), feature(thread_local))]
 #![cfg_attr(

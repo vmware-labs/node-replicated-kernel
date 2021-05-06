@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use core::mem::transmute;
 use core::pin::Pin;
 
-use fallible_collections::FallibleVec;
+use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use x86::controlregs;
 use x86::current::paging::*;
 

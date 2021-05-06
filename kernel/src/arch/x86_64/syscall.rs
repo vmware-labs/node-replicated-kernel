@@ -8,7 +8,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto;
 
-use fallible_collections::FallibleVec;
+use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};

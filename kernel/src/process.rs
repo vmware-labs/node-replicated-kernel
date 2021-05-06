@@ -11,7 +11,7 @@ use core::fmt::Debug;
 
 use arrayvec::ArrayVec;
 use cstr_core::CStr;
-use fallible_collections::vec::FallibleVec;
+use fallible_collections::vec::FallibleVecGlobal;
 use fallible_collections::vec::TryCollect;
 use fallible_collections::TryReserveError;
 use kpi::process::{FrameId, ELF_OFFSET};

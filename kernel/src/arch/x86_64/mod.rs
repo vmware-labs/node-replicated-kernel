@@ -41,7 +41,7 @@ use apic::ApicDriver;
 use arrayvec::ArrayVec;
 use cnr::{Log as MlnrLog, Replica as MlnrReplica};
 use driverkit::DriverControl;
-use fallible_collections::{FallibleVec, TryClone};
+use fallible_collections::{FallibleVecGlobal, TryClone};
 use node_replication::{Log, Replica};
 use uefi::table::boot::MemoryType;
 use x86::bits64::paging::{PAddr, VAddr, PML4};

@@ -3,15 +3,17 @@
 //!
 //! The general idea is to maintain a set of queues (one for each replica), if
 //! the higher level memory allocator for an NR data-structure runs out of
-//! memory it will call `DeterministicMemoryProvider.alloc` which ensures the
+//! memory it will call `DeterministicAlloc.alloc` which ensures the
 //! allocation either succeeds for all replicas or none (e.g., makes allocations
 //! deterministic).
 
 #![allow(warnings)] // For now...
 
 use alloc::alloc::{alloc, dealloc};
+use alloc::sync::Arc;
 use core::alloc::Layout;
-use core::ptr;
+use core::alloc::{AllocError, Allocator};
+use core::ptr::{self, NonNull};
 
 use arrayvec::ArrayVec;
 use atopology::MACHINE_TOPOLOGY;
@@ -24,7 +26,7 @@ use crate::mpmc::Queue;
 
 /// Makes allocation failures are deterministic (across all replicas) when used
 /// within a replica.
-pub struct DeterministicMemoryProvider {
+pub struct DeterministicAlloc {
     /// Queues that store allocations results (allocated by the leading replica
     /// -- the replica that's most ahead in processing the log) until the
     /// replicas that are behind pick them up.
@@ -38,12 +40,19 @@ pub struct DeterministicMemoryProvider {
     fill: Mutex<()>,
 }
 
-impl DeterministicMemoryProvider {
-    pub fn new(nodes: usize) -> Result<Self, KError> {
+impl DeterministicAlloc {
+    pub fn new() -> Result<Self, KError> {
+        DeterministicAlloc::new_with_nodes(atopology::MACHINE_TOPOLOGY.num_nodes())
+    }
+
+    pub fn new_with_nodes(nodes: usize) -> Result<Self, KError> {
         assert!(
             nodes < MAX_NUMA_NODES,
             "Can't have more nodes than MAX_NUMA_NODES"
         );
+
+        // Make sure we have at least 1 node
+        let nodes = core::cmp::max(1, nodes);
 
         // Need to figure out this capacity; it is hard to determine,
         // something like: (#allocations of write op in NR with most
@@ -124,99 +133,136 @@ impl DeterministicMemoryProvider {
     }
 }
 
-#[test]
-fn det_mem_provider() {
-    use std::sync::Arc;
+#[derive(Clone)]
+pub struct DA(Arc<DeterministicAlloc>);
+
+impl DA {
+    pub fn new() -> Result<Self, KError> {
+        Ok(DA(Arc::try_new(DeterministicAlloc::new()?)?))
+    }
+}
+
+unsafe impl Allocator for DA {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        let ptr = self.0.alloc(layout);
+        if !ptr.is_null() {
+            Ok(unsafe {
+                let nptr = NonNull::new_unchecked(ptr);
+                NonNull::slice_from_raw_parts(nptr, layout.size())
+            })
+        } else {
+            Err(AllocError)
+        }
+    }
+
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        DeterministicAlloc::dealloc(ptr.as_ptr(), layout);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use alloc::sync::Arc;
+    use core::alloc::Allocator;
+    use core::alloc::Layout;
+
     use std::thread;
 
     use rand::rngs::SmallRng;
     use rand::Rng;
     use rand::SeedableRng;
 
-    const ITERATIONS: usize = 500;
-    const SEED: [u8; 32] = [1; 32];
-    const MAX_REPLICAS: usize = 4;
+    use super::*;
 
-    let mut threads = Vec::with_capacity(MAX_REPLICAS);
-    let memalloc = Arc::new(DeterministicMemoryProvider::new(MAX_REPLICAS).unwrap());
+    #[test]
+    fn det_mem_provider() -> Result<(), KError> {
+        const ITERATIONS: usize = 500;
+        const SEED: [u8; 32] = [1; 32];
+        const MAX_REPLICAS: usize = 4;
 
-    for i in 0..MAX_REPLICAS {
-        let memalloc = memalloc.clone();
-        threads.push(thread::spawn(move || {
-            crate::arch::kcb::get_kcb().node = (i % MAX_REPLICAS) as u64;
+        let mut threads = Vec::with_capacity(MAX_REPLICAS);
+        let memalloc = Arc::new(DeterministicAlloc::new_with_nodes(MAX_REPLICAS)?);
 
-            let mut order: Vec<(Layout, u64)> = Vec::with_capacity(ITERATIONS);
+        for i in 0..MAX_REPLICAS {
+            let memalloc = memalloc.clone();
+            threads.push(thread::spawn(move || {
+                crate::arch::kcb::get_kcb().node = (i % MAX_REPLICAS) as u64;
 
-            // Use same RNG on all thread for deterministic allocation (as would
-            // be the case with NR):
-            let mut rng = SmallRng::from_seed(SEED);
+                let mut order: Vec<(Layout, u64)> = Vec::with_capacity(ITERATIONS);
 
-            for _i in 0..ITERATIONS {
-                let l = Layout::from_size_align(rng.gen_range(16..128), 8).unwrap();
-                order.push((l, memalloc.alloc(l) as u64));
-            }
+                // Use same RNG on all thread for deterministic allocation (as would
+                // be the case with NR):
+                let mut rng = SmallRng::from_seed(SEED);
 
-            order
-        }));
-    }
-    // Wait for all the threads to finish
-    let mut layouts = Vec::with_capacity(MAX_REPLICAS);
-    let mut pointers = Vec::with_capacity(MAX_REPLICAS);
-
-    // Check that all layouts are handed out in the same order again
-    fn is_all_same<T: PartialEq>(arr: &[T]) -> bool {
-        arr.windows(2).all(|w| w[0] == w[1])
-    }
-
-    // Check that all pointers handed out are unique (we don't mess up regular
-    // allocation)
-    fn is_all_disjoint_or_zero(pointers: &Vec<Vec<u64>>) -> bool {
-        use std::collections::HashSet;
-        let mut set = HashSet::with_capacity(MAX_REPLICAS * ITERATIONS);
-        for plist in pointers {
-            for ptr in plist {
-                if *ptr == 0x0 {
-                    // Skip null ptr
-                    continue;
+                for _i in 0..ITERATIONS {
+                    let l = Layout::from_size_align(rng.gen_range(16..128), 8).unwrap();
+                    order.push((l, memalloc.alloc(l) as u64));
                 }
 
-                if !set.contains(&ptr) {
-                    set.insert(ptr);
-                } else {
-                    return false;
-                }
-            }
+                order
+            }));
+        }
+        // Wait for all the threads to finish
+        let mut layouts = Vec::with_capacity(MAX_REPLICAS);
+        let mut pointers = Vec::with_capacity(MAX_REPLICAS);
+
+        // Check that all layouts are handed out in the same order again
+        fn is_all_same<T: PartialEq>(arr: &[T]) -> bool {
+            arr.windows(2).all(|w| w[0] == w[1])
         }
 
-        true
-    }
+        // Check that all pointers handed out are unique (we don't mess up regular
+        // allocation)
+        fn is_all_disjoint_or_zero(pointers: &Vec<Vec<u64>>) -> bool {
+            use std::collections::HashSet;
+            let mut set = HashSet::with_capacity(MAX_REPLICAS * ITERATIONS);
+            for plist in pointers {
+                for ptr in plist {
+                    if *ptr == 0x0 {
+                        // Skip null ptr
+                        continue;
+                    }
 
-    // If one allocation fails (is null), the allocation on other replicas
-    // should fail too
-    fn is_deterministic(pointers: &Vec<Vec<u64>>) -> bool {
-        if pointers.len() == 1 {
-            true
-        } else {
-            for (idx, ptr) in pointers[0].iter().enumerate() {
-                if *ptr == 0x0 {
-                    for other in pointers[1..pointers.len()].iter() {
-                        assert_eq!(other[idx], 0x0, "Must also be null");
+                    if !set.contains(&ptr) {
+                        set.insert(ptr);
+                    } else {
+                        return false;
                     }
                 }
             }
+
             true
         }
+
+        // If one allocation fails (is null), the allocation on other replicas
+        // should fail too
+        fn is_deterministic(pointers: &Vec<Vec<u64>>) -> bool {
+            if pointers.len() == 1 {
+                true
+            } else {
+                for (idx, ptr) in pointers[0].iter().enumerate() {
+                    if *ptr == 0x0 {
+                        for other in pointers[1..pointers.len()].iter() {
+                            assert_eq!(other[idx], 0x0, "Must also be null");
+                        }
+                    }
+                }
+                true
+            }
+        }
+
+        for thread in threads {
+            let result = thread.join().unwrap();
+            let (layout, pointer): (Vec<_>, Vec<_>) = result.iter().cloned().unzip();
+
+            layouts.push(layout);
+            pointers.push(pointer);
+        }
+
+        assert!(is_all_same(&layouts));
+        assert!(is_all_disjoint_or_zero(&pointers));
+        assert!(is_deterministic(&pointers));
+
+        Ok(())
     }
-
-    for thread in threads {
-        let result = thread.join().unwrap();
-        let (layout, pointer): (Vec<_>, Vec<_>) = result.iter().cloned().unzip();
-
-        layouts.push(layout);
-        pointers.push(pointer);
-    }
-
-    assert!(is_all_same(&layouts));
-    assert!(is_all_disjoint_or_zero(&pointers));
-    assert!(is_deterministic(&pointers));
 }

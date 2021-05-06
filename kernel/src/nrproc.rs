@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::prelude::*;
+
 use alloc::vec::Vec;
-use kpi::process::{FrameId, ProcessInfo};
+use core::alloc::Allocator;
 
 use fallible_collections::vec::FallibleVec;
+use kpi::process::{FrameId, ProcessInfo};
 use node_replication::Dispatch;
 
 use crate::arch::process::PROCESS_TABLE;
 use crate::arch::Module;
 use crate::error::KError;
+use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
@@ -68,17 +71,18 @@ impl<E: Executor> Default for NodeResult<E> {
     }
 }
 
-pub struct NrProcess<P: Process> {
+pub struct NrProcess<P: Process, M: Allocator + Clone = DA> {
     _pid: Pid,
-    active_cores: Vec<(atopology::GlobalThreadId, Eid)>,
+    active_cores: Vec<(atopology::GlobalThreadId, Eid), M>,
     process: Box<P>,
 }
 
 impl<P: Process + Default> Default for NrProcess<P> {
     fn default() -> NrProcess<P> {
+        let da = DA::new().expect("Not enough memory to initialize system");
         NrProcess {
             _pid: 0,
-            active_cores: Vec::new(),
+            active_cores: Vec::new_in(da.clone()),
             process: Box::try_new(P::default())
                 .expect("TODO: handle OOM; needs try_default support in NR"),
         }
@@ -86,10 +90,7 @@ impl<P: Process + Default> Default for NrProcess<P> {
 }
 
 // TODO(api-ergonomics): Fix ugly execute API
-impl<P> NrProcess<P>
-where
-    P: Process,
-{
+impl<P: Process> NrProcess<P> {
     pub fn load(
         pid: Pid,
         module: &'static Module,
@@ -293,10 +294,11 @@ where
     }
 }
 
-impl<P> Dispatch for NrProcess<P>
+impl<P, M> Dispatch for NrProcess<P, M>
 where
     P: Process,
     P::E: Copy,
+    M: Allocator + Clone,
 {
     type WriteOperation = Op;
     type ReadOperation = ReadOps;

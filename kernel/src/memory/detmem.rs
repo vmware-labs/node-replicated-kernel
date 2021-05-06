@@ -15,10 +15,12 @@ use core::ptr;
 
 use spin::Mutex;
 
+use crate::arch::MAX_NUMA_NODES;
+use atopology::MACHINE_TOPOLOGY;
+use smallvec::SmallVec;
+
 use crate::kcb;
 use crate::mpmc::Queue;
-
-const MAX_REPLICAS: usize = 4;
 
 /// Makes allocation failures are deterministic (across all replicas) when used
 /// within a replica.
@@ -30,25 +32,32 @@ pub struct DeterministicMemoryProvider {
     /// We store the Layout and address (as u64 but it's really a *mut u8) for
     /// every allocation. Layout is technically not necessary (but used to
     /// sanity check the code).
-    qs: [Queue<(Layout, u64)>; MAX_REPLICAS],
+    qs: SmallVec<[Queue<(Layout, u64)>; MAX_NUMA_NODES]>,
     /// Mutex that needs to be acquired when a leading replica needs to allocate
     /// for all replicas.
     fill: Mutex<()>,
 }
 
 impl DeterministicMemoryProvider {
-    pub fn new() -> Self {
+    pub fn new(nodes: usize) -> Self {
+        assert!(
+            nodes < MAX_NUMA_NODES,
+            "Can't have more nodes than MAX_NUMA_NODES"
+        );
+
+        // Need to figure out this capacity; it is hard to determine,
+        // something like: (#allocations of write op in NR with most
+        // allocations)*(max log entries till GC)
+        const ALLOC_CAP: usize = 4096;
+
+        let mut qs = SmallVec::new();
+        for _i in 0..nodes {
+            qs.push(Queue::with_capacity(ALLOC_CAP));
+        }
+
         Self {
             fill: Mutex::new(()),
-            qs: [
-                // Need to figure out this capacity; it is hard to determine,
-                // something like: (#allocations of write op in NR with most
-                // allocations)*(max log entries till GC)
-                Queue::with_capacity(9999),
-                Queue::with_capacity(9999),
-                Queue::with_capacity(9999),
-                Queue::with_capacity(9999),
-            ],
+            qs,
         }
     }
 
@@ -74,16 +83,17 @@ impl DeterministicMemoryProvider {
             } else {
                 // Now that we locked `fill`, perform allocation for all
                 // replicas
-                let mut allocs = [ptr::null_mut(); MAX_REPLICAS];
-                for i in 0..MAX_REPLICAS {
-                    allocs[i] = unsafe { alloc(l) };
+
+                let mut allocs = SmallVec::<[*mut u8; MAX_NUMA_NODES]>::new();
+                for i in 0..self.qs.len() {
+                    allocs.push(unsafe { alloc(l) });
                 }
                 // Check if any of the allocation failed:
                 let succeeded = allocs.iter().filter(|e| e.is_null()).count() == 0;
                 if succeeded {
                     // If we could allocate on every node, push all results to
                     // the queues
-                    for i in 0..MAX_REPLICAS {
+                    for i in 0..self.qs.len() {
                         if i != nid {
                             self.qs[i]
                                 .push((l, allocs[i] as u64))
@@ -92,7 +102,7 @@ impl DeterministicMemoryProvider {
                     }
                 } else {
                     // If we didn't succeed to allocate on all nodes
-                    for i in 0..MAX_REPLICAS {
+                    for i in 0..self.qs.len() {
                         // Free any allocations that may have succeeded
                         if !allocs[i].is_null() {
                             unsafe { dealloc(allocs[i], l) };
@@ -125,9 +135,10 @@ fn det_mem_provider() {
 
     const ITERATIONS: usize = 500;
     const SEED: [u8; 32] = [1; 32];
+    const MAX_REPLICAS: usize = 4;
 
     let mut threads = Vec::with_capacity(MAX_REPLICAS);
-    let memalloc = Arc::new(DeterministicMemoryProvider::new());
+    let memalloc = Arc::new(DeterministicMemoryProvider::new(MAX_REPLICAS));
 
     for _i in 0..MAX_REPLICAS {
         let memalloc = memalloc.clone();

@@ -140,9 +140,11 @@ fn det_mem_provider() {
     let mut threads = Vec::with_capacity(MAX_REPLICAS);
     let memalloc = Arc::new(DeterministicMemoryProvider::new(MAX_REPLICAS));
 
-    for _i in 0..MAX_REPLICAS {
+    for i in 0..MAX_REPLICAS {
         let memalloc = memalloc.clone();
         threads.push(thread::spawn(move || {
+            crate::arch::kcb::get_kcb().node = (i % MAX_REPLICAS) as u64;
+
             let mut order: Vec<(Layout, u64)> = Vec::with_capacity(ITERATIONS);
 
             // Use same RNG on all thread for deterministic allocation (as would

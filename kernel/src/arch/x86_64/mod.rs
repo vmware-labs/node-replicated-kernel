@@ -318,7 +318,7 @@ fn boot_app_cores(
         );
         kcb.set_allocation_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
-        replicas.push(Replica::new(&log));
+        replicas.push(Replica::<'static, KernelNode<Ring3Process>>::new(&log));
         mlnr_replicas.push(MlnrReplica::new(mlnr_logs.clone()));
         kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }

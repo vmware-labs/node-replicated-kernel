@@ -452,7 +452,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 }
 
 pub trait ArchSpecificKcb {
-    type Process: Process + Sync + Default;
+    type Process: Process + Sync;
 
     fn node(&self) -> usize;
     fn hwthread_id(&self) -> u64;

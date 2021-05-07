@@ -36,6 +36,7 @@ pub enum KError {
     KcbUnavailable,
     ManagerAlreadyBorrowed,
     InvalidAffinityId,
+    CapacityOverflow,
 
     // Process Errors
     ProcessLoadingFailed,
@@ -194,6 +195,8 @@ impl fmt::Display for KError {
             KError::InvalidAffinityId => {
                 write!(f, "Specified an invalid NUMA node ID for affinity.")
             }
+            KError::CapacityOverflow => write!(f, "Internal data-structure grew too big"),
+
             KError::OutOfPids => write!(f, "Can't spawn more processes (out of Pids)"),
             KError::ProcessLoadingFailed => write!(f, "Can't spawn more processes (out of Pids)"),
             KError::OutOfMemory => write!(f, "Ran out of memory while performing an allocation"),

@@ -21,7 +21,7 @@ build:
   stage: build
   script:
     - cd kernel
-    - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-nrk -Zfeatures=all
+    - RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-nrk
   variables:
     GIT_STRATEGY: fetch
 

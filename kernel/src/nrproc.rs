@@ -72,24 +72,19 @@ impl<E: Executor> Default for NodeResult<E> {
 }
 
 pub struct NrProcess<P: Process, M: Allocator + Clone = DA> {
-    _pid: Pid,
     active_cores: Vec<(atopology::GlobalThreadId, Eid), M>,
     process: Box<P>,
 }
 
-impl<P: Process + Default> Default for NrProcess<P> {
-    fn default() -> NrProcess<P> {
-        let da = DA::new().expect("Not enough memory to initialize system");
+impl<P: Process> NrProcess<P> {
+    pub fn new(process: Box<P>, da: DA) -> NrProcess<P> {
         NrProcess {
-            _pid: 0,
             active_cores: Vec::new_in(da.clone()),
-            process: Box::try_new(P::default())
-                .expect("TODO: handle OOM; needs try_default support in NR"),
+            process,
         }
     }
 }
 
-// TODO(api-ergonomics): Fix ugly execute API
 impl<P: Process> NrProcess<P> {
     pub fn load(
         pid: Pid,

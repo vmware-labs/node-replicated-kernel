@@ -9,7 +9,6 @@ use core::pin::Pin;
 use hashbrown::HashMap;
 
 use crate::error::KError;
-use crate::kcb::MemManager;
 use crate::memory::vspace::{AddressSpace, MapAction, MappingInfo, TlbFlushHandle};
 use crate::memory::Frame;
 
@@ -48,7 +47,6 @@ impl VSpace {
         _pregion: (PAddr, usize),
         _rights: MapAction,
         _create_mappings: bool,
-        _pager: &mut dyn MemManager,
     ) -> Result<(), KError> {
         Ok(())
     }

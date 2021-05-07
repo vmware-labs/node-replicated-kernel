@@ -23,6 +23,7 @@ use crate::error::KError;
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
 use crate::kcb::ArchSpecificKcb;
 use crate::kcb::{self, Kcb};
+use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, VAddr};
 use crate::nrproc::NrProcess;
@@ -51,17 +52,21 @@ lazy_static! {
             numa_cache.push(process_replicas)
         }
 
-        for _pid in 0..MAX_PROCESSES {
+        for pid in 0..MAX_PROCESSES {
                 let log = Arc::try_new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
                     LARGE_PAGE_SIZE,
                 )).expect("Can't initialize processes, out of memory.");
 
+            let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
                 let kcb = kcb::get_kcb();
                 kcb.set_allocation_affinity(node as atopology::NodeId).expect("Can't change affinity");
-
                 debug_assert!(!numa_cache[node].is_full());
-                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::new(&log));
+
+                let p = Box::try_new(Ring3Process::new(pid, da.clone()).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
+                let nrp = NrProcess::new(p, da.clone());
+
+                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&log, nrp));
 
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
                 kcb.set_allocation_affinity(0 as atopology::NodeId).expect("Can't change affinity");
@@ -728,8 +733,8 @@ pub struct Ring3Process {
     pub read_only_offset: VAddr,
 }
 
-impl Default for Ring3Process {
-    fn default() -> Self {
+impl Ring3Process {
+    fn new(pid: Pid, da: DA) -> Result<Self, KError> {
         const NONE_EXECUTOR: Option<Vec<Box<Ring3Executor>>> = None;
         let executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES> =
             ArrayVec::from([NONE_EXECUTOR; MAX_NUMA_NODES]);
@@ -741,11 +746,11 @@ impl Default for Ring3Process {
         let frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS> =
             ArrayVec::from([None; MAX_FRAMES_PER_PROCESS]);
 
-        Ring3Process {
-            pid: 0,
+        Ok(Ring3Process {
+            pid: pid,
             current_eid: 0,
             offset: VAddr::from(ELF_OFFSET),
-            vspace: VSpace::new().expect("TODO(error-handling)"),
+            vspace: VSpace::new(da)?,
             entry_point: VAddr::from(0usize),
             executor_cache,
             executor_offset: VAddr::from(EXECUTOR_OFFSET),
@@ -754,7 +759,7 @@ impl Default for Ring3Process {
             frames,
             writeable_sections: ArrayVec::new(),
             read_only_offset: VAddr::zero(),
-        }
+        })
     }
 }
 

@@ -173,6 +173,7 @@ unsafe fn find_current_ptables() -> PageTable {
     let pml4_table = transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
     PageTable {
         pml4: Box::into_pin(Box::from_raw(pml4_table)),
+        da: None,
     }
 }
 

@@ -131,7 +131,7 @@ dependencies = [
  "cstr_core",
  "env_logger 0.8.3",
  "lazy_static",
- "libacpica 0.0.6",
+ "libacpica",
  "log",
  "procfs",
  "x86 0.39.0",
@@ -838,12 +838,6 @@ dependencies = [
 
 [[package]]
 name = "libacpica"
-version = "0.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8dd3dc6d0b6a0f182009726758232952246a6f78f834ce1291526bf92ab98a7"
-
-[[package]]
-name = "libacpica"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acb9076ee2e41473790e81242432ea5d816043a5f2f70f3c5201053d66686c1e"
@@ -1022,7 +1016,7 @@ dependencies = [
  "klogger",
  "kpi",
  "lazy_static",
- "libacpica 0.0.5",
+ "libacpica",
  "libc 0.2.95",
  "log",
  "logos",

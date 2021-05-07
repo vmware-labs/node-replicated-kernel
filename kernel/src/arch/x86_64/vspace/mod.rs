@@ -11,7 +11,7 @@ pub mod page_table; /* TODO(encapsulation): This should be a private module but 
 mod test;
 
 use crate::error::KError;
-use crate::memory::vspace::*;
+use crate::memory::{detmem::DA, vspace::*};
 use crate::memory::{Frame, PAddr, VAddr};
 
 use page_table::PageTable;
@@ -111,10 +111,10 @@ impl Drop for VSpace {
 }
 
 impl VSpace {
-    pub(crate) fn new() -> Result<Self, KError> {
+    pub(crate) fn new(da: DA) -> Result<Self, KError> {
         Ok(VSpace {
             mappings: BTreeMap::new(),
-            page_table: PageTable::new()?,
+            page_table: PageTable::new(da)?,
         })
     }
 

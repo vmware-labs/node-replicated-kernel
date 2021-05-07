@@ -5,6 +5,7 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use bootloader_shared::Module;
 use core::ops::{Deref, DerefMut};
 use x86::current::paging::PAddr;
 
@@ -14,10 +15,10 @@ use lazy_static::lazy_static;
 
 use node_replication::{Dispatch, Log, Replica};
 
-use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::Fd;
 use crate::kcb::{self, ArchSpecificKcb};
+use crate::memory::detmem::DA;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
@@ -42,19 +43,25 @@ lazy_static! {
             numa_cache.push(process_replicas)
         }
 
-        for _pid in 0..MAX_PROCESSES {
+        for pid in 0..MAX_PROCESSES {
                 let log = Arc::try_new(Log::<<NrProcess<UnixProcess> as Dispatch>::WriteOperation>::new(
                     LARGE_PAGE_SIZE,
                 )).expect("Can't initialize processes, out of memory.");
 
+            let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
                 let kcb = kcb::get_kcb();
                 assert!(kcb.set_allocation_affinity(node as atopology::NodeId).is_ok());
 
                 debug_assert!(!numa_cache[node].is_full(), "Ensured by loop range");
-                numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::new(&log));
-                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
 
+
+                let p = Box::try_new(UnixProcess::new(pid, da.clone()).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
+                let nrp = NrProcess::new(p, da.clone());
+
+                numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
+
+                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
                 assert!(kcb.set_allocation_affinity(0u64).is_ok());
             }
         }
@@ -157,6 +164,15 @@ pub struct UnixProcess {
     pinfo: kpi::process::ProcessInfo,
     /// Physical frame objects registered to the process.
     pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
+}
+
+impl UnixProcess {
+    fn new(_pid: Pid, _da: DA) -> Result<Self, KError> {
+        Ok(UnixProcess {
+            vspace: VSpace::new(),
+            ..Default::default()
+        })
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default)]

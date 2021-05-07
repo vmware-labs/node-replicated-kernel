@@ -1,27 +1,26 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! An implementation of the x86-64 page-tables data-structure (radix tree).
-//!
-//! The code tries to use largest page sizes by default if possible. It
-//! currently won't clean-up empty page-tables during the lifetime of the struct
-//! (e.g. removing the last mapping in a leave table won't free the parent
-//! page-table). Everything is reclaimed on drop though.
-
 use alloc::boxed::Box;
 use core::alloc::Layout;
 use core::mem::transmute;
 use core::pin::Pin;
+use core::ptr::NonNull;
 
 use kpi::KERNEL_BASE;
 use x86::bits64::paging::*;
 
 use crate::error::KError;
-use crate::kcb::MemManager;
+use crate::memory::detmem::DA;
 use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
 /// Describes a potential modification operation on existing page tables.
+
+const PT_LAYOUT: Layout =
+    unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
+
+/// A modification operation on the PageTable.
 enum Modify {
     /// Change rights of mapping to new MapAction.
     UpdateRights(MapAction),
@@ -32,6 +31,7 @@ enum Modify {
 /// The actual page-table. We allocate the PML4 upfront.
 pub struct PageTable {
     pub pml4: Pin<Box<PML4>>,
+    pub da: Option<DA>,
 }
 
 impl Drop for PageTable {
@@ -104,9 +104,7 @@ impl AddressSpace for PageTable {
             "vaddr should be aligned to page-size"
         );
 
-        let kcb = crate::kcb::get_kcb();
-        let mut pager = kcb.mem_manager();
-        self.map_generic(base, (frame.base, frame.size()), action, true, &mut *pager)
+        self.map_generic(base, (frame.base, frame.size()), action, true)
     }
 
     fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {
@@ -178,13 +176,14 @@ impl PageTable {
     /// Create a new address-space.
     ///
     /// Allocate an initial PML4 table for it.
-    pub fn new() -> Result<PageTable, KError> {
+    pub fn new(da: DA) -> Result<PageTable, KError> {
         let pml4 = Box::try_new(
             [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
         )?;
 
         Ok(PageTable {
             pml4: Box::into_pin(pml4),
+            da: Some(da),
         })
     }
 
@@ -206,8 +205,6 @@ impl PageTable {
         assert!(at_offset.is_base_page_aligned());
         assert!(pbase.is_base_page_aligned());
         assert_eq!(size % BASE_PAGE_SIZE, 0, "Size not a multiple of page-size");
-        let kcb = crate::kcb::get_kcb();
-        let mut pager = kcb.mem_manager();
 
         let vbase = VAddr::from_u64((at_offset + pbase).as_u64());
         debug!(
@@ -218,7 +215,7 @@ impl PageTable {
             pbase + size
         );
 
-        self.map_generic(vbase, (pbase, size), rights, true, &mut *pager)
+        self.map_generic(vbase, (pbase, size), rights, true)
     }
 
     /// Identity maps a given physical memory range [`base`, `base` + `size`]
@@ -235,11 +232,11 @@ impl PageTable {
     /// Retrieves the relevant PDPT table for a given virtual address `vbase`.
     ///
     /// Allocates the PDPT page if it doesn't exist yet.
-    fn get_or_alloc_pdpt(&mut self, vbase: VAddr, pager: &mut dyn MemManager) -> &mut PDPT {
+    fn get_or_alloc_pdpt(&mut self, vbase: VAddr) -> &mut PDPT {
         let pml4_idx = pml4_index(vbase);
         if !self.pml4[pml4_idx].is_present() {
             trace!("Need new PDPDT for {:?} @ PML4[{}]", vbase, pml4_idx);
-            self.pml4[pml4_idx] = PageTable::new_pdpt(pager);
+            self.pml4[pml4_idx] = self.new_pdpt();
         }
         assert!(
             self.pml4[pml4_idx].is_present(),
@@ -257,7 +254,6 @@ impl PageTable {
         psize: usize,
         vbase: VAddr,
         _rights: MapAction,
-        _pager: &mut dyn MemManager,
     ) -> bool {
         let pml4_idx = pml4_index(vbase);
         let pdpt_idx = pdpt_index(vbase);
@@ -311,7 +307,6 @@ impl PageTable {
         psize: usize,
         vbase: VAddr,
         _rights: MapAction,
-        _pager: &mut dyn MemManager,
     ) -> bool {
         let pml4_idx = pml4_index(vbase);
         let pdpt_idx = pdpt_index(vbase);
@@ -366,9 +361,8 @@ impl PageTable {
         psize: usize,
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn MemManager,
     ) -> Result<(), KError> {
-        let pdpt = self.get_or_alloc_pdpt(vbase, pager);
+        let pdpt = self.get_or_alloc_pdpt(vbase);
 
         // To track how much space we've mapped so far
         let mut mapped = 0;
@@ -438,7 +432,6 @@ impl PageTable {
                 ((pbase + mapped), psize - mapped),
                 rights,
                 insert_mapping,
-                pager,
             );
         }
     }
@@ -452,7 +445,6 @@ impl PageTable {
         psize: usize,
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn MemManager,
     ) -> Result<(), KError> {
         let mut pd_idx = pd_index(vbase);
         let pd = self.get_pd_mut(pdpt_entry);
@@ -523,7 +515,6 @@ impl PageTable {
                 ((pbase + mapped), psize - mapped),
                 rights,
                 insert_mapping,
-                pager,
             );
         }
     }
@@ -537,7 +528,6 @@ impl PageTable {
         psize: usize,
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn MemManager,
     ) -> Result<(), KError> {
         let pt = self.get_pt_mut(pd_entry);
         let mut pt_idx = pt_index(vbase);
@@ -599,7 +589,6 @@ impl PageTable {
                 ((pbase + mapped), psize - mapped),
                 rights,
                 insert_mapping,
-                pager,
             );
         }
     }
@@ -622,7 +611,6 @@ impl PageTable {
         pregion: (PAddr, usize),
         rights: MapAction,
         insert_mapping: bool,
-        pager: &mut dyn MemManager,
     ) -> Result<(), KError> {
         let (pbase, psize) = pregion;
         assert!(pbase.is_base_page_aligned());
@@ -639,13 +627,13 @@ impl PageTable {
         );
 
         let pml4_idx = pml4_index(vbase);
-        let pdpt = self.get_or_alloc_pdpt(vbase, pager);
+        let pdpt = self.get_or_alloc_pdpt(vbase);
         let pdpt_idx = pdpt_index(vbase);
         let pdpt_entry = pdpt[pdpt_idx];
         drop(pdpt);
 
         let pml4_entry = self.pml4[pml4_idx];
-        if self.can_map_as_huge_page(pml4_entry, pbase, psize, vbase, rights, pager) {
+        if self.can_map_as_huge_page(pml4_entry, pbase, psize, vbase, rights) {
             // Start inserting mappings here in case we can map something as 1 GiB pages
             return self.insert_huge_mappings(
                 pdpt_idx,
@@ -654,7 +642,6 @@ impl PageTable {
                 psize,
                 rights,
                 insert_mapping,
-                pager,
             );
         } else if !pdpt_entry.is_present() {
             trace!(
@@ -662,8 +649,9 @@ impl PageTable {
                 vbase,
                 vbase + psize
             );
+            let pd = self.new_pd();
             let pdpt = self.get_pdpt_mut(pml4_entry);
-            pdpt[pdpt_idx] = PageTable::new_pd(pager);
+            pdpt[pdpt_idx] = pd;
         }
 
         let pdpt = self.get_pdpt(pml4_entry);
@@ -693,7 +681,7 @@ impl PageTable {
 
         // In case we can map something at a 2 MiB granularity and
         // we still have at least 2 MiB to map create large-page mappings
-        if self.can_map_as_large_page(pdpt_entry, pbase, psize, vbase, rights, pager) {
+        if self.can_map_as_large_page(pdpt_entry, pbase, psize, vbase, rights) {
             return self.insert_large_mappings(
                 pdpt_entry,
                 vbase,
@@ -701,7 +689,6 @@ impl PageTable {
                 psize,
                 rights,
                 insert_mapping,
-                pager,
             );
         } else if !pd_entry.is_present() {
             trace!(
@@ -709,8 +696,9 @@ impl PageTable {
                 vbase,
                 vbase + psize
             );
+            let pt = self.new_pt();
             let pd = self.get_pd_mut(pdpt_entry);
-            pd[pd_idx] = PageTable::new_pt(pager);
+            pd[pd_idx] = pt;
         }
 
         let pd = self.get_pd_mut(pdpt_entry);
@@ -731,7 +719,7 @@ impl PageTable {
         let pd_entry = pd[pd_idx];
         drop(pd);
 
-        self.insert_base_mappings(pd_entry, vbase, pbase, psize, rights, insert_mapping, pager)
+        self.insert_base_mappings(pd_entry, vbase, pbase, psize, rights, insert_mapping)
     }
 
     /// Changes a mapping in the PageTable
@@ -822,24 +810,38 @@ impl PageTable {
         Err(KError::NotMapped)
     }
 
-    fn new_pt(pager: &mut dyn MemManager) -> PDEntry {
-        let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
-        debug_assert!(frame.base != PAddr::zero());
+    fn alloc_frame(&self) -> Frame {
+        use core::alloc::Allocator;
+        let frame_ptr = self.da.as_ref().map_or_else(
+            || unsafe {
+                let ptr = alloc::alloc::alloc(PT_LAYOUT);
+                debug_assert!(!ptr.is_null());
+
+                let nptr = NonNull::new_unchecked(ptr);
+                NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
+            },
+            |da| da.allocate(PT_LAYOUT).unwrap(),
+        );
+        let vaddr = VAddr::from(frame_ptr.as_ptr() as *const u8 as u64);
+        let paddr = crate::arch::memory::kernel_vaddr_to_paddr(vaddr);
+        let mut frame = Frame::new(paddr, PT_LAYOUT.size(), 0);
         unsafe { frame.zero() };
+        frame
+    }
+
+    fn new_pt(&self) -> PDEntry {
+        let frame = self.alloc_frame();
+
         return PDEntry::new(frame.base, PDFlags::P | PDFlags::RW | PDFlags::US);
     }
 
-    fn new_pd(pager: &mut dyn MemManager) -> PDPTEntry {
-        let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
-        debug_assert!(frame.base != PAddr::zero());
-        unsafe { frame.zero() };
+    fn new_pd(&self) -> PDPTEntry {
+        let frame = self.alloc_frame();
         return PDPTEntry::new(frame.base, PDPTFlags::P | PDPTFlags::RW | PDPTFlags::US);
     }
 
-    fn new_pdpt(pager: &mut dyn MemManager) -> PML4Entry {
-        let mut frame: Frame = pager.allocate_base_page().expect("Allocation must work");
-        debug_assert!(frame.base != PAddr::zero());
-        unsafe { frame.zero() };
+    fn new_pdpt(&self) -> PML4Entry {
+        let frame = self.alloc_frame();
         return PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW | PML4Flags::US);
     }
 

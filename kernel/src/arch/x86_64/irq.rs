@@ -694,8 +694,8 @@ pub unsafe fn register_handler(
 /// in the kernel-space.
 pub fn ioapic_initialize() {
     let ioapic_len = atopology::MACHINE_TOPOLOGY.io_apics().count();
-    crate::memory::KernelAllocator::try_refill_tcache(4 * ioapic_len, 0)
-        .expect("Refill didn't work");
+    /*crate::memory::KernelAllocator::try_refill_tcache(4 * ioapic_len, 0)
+    .expect("Refill didn't work");*/
 
     let kcb = get_kcb();
 

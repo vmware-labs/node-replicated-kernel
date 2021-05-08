@@ -121,7 +121,7 @@ impl KernelAllocator {
                 // * TODO(safety): No bounds checking
                 // * TODO(smp): Needs a spin-lock for multi-core
                 // * TODO(checks): we want this case to be rare so if we end up with more than ~20
-                //   big objects we should print a warning (and start rethinking this)
+                //   big objects we should print ag warning (and start rethinking this)
                 // * TODO(limitation): We can't really allocate more than what fits in a TCache
 
                 // Figure out how much we need to map:
@@ -143,8 +143,6 @@ impl KernelAllocator {
                 // so vspace ops don't fail us :/
                 self.maybe_refill_tcache(base + 20, large)?;
 
-                let mut pmanager = kcb.try_mem_manager()?;
-
                 // We allocate (large+1) * large-page-size
                 // the +1 is to account for space for all the base-pages
                 // and to make sure next time we're still aligned to a 2 MiB
@@ -165,9 +163,11 @@ impl KernelAllocator {
 
                 let mut kvspace = kcb.arch.init_vspace();
                 for _ in 0..large {
+                    let mut pmanager = kcb.try_mem_manager()?;
                     let f = pmanager
                         .allocate_large_page()
                         .expect("Can't run out of memory");
+                    drop(pmanager); // `map_generic` might try to re-acquire mem_manager
 
                     kvspace
                         .map_generic(
@@ -182,9 +182,12 @@ impl KernelAllocator {
                 }
 
                 for _ in 0..base {
+                    let mut pmanager = kcb.try_mem_manager()?;
                     let f = pmanager
                         .allocate_base_page()
                         .expect("Can't run out of memory");
+                    drop(pmanager); // `map_generic` might try to re-acquire mem_manager
+
                     kvspace
                         .map_generic(
                             VAddr::from(start_at),

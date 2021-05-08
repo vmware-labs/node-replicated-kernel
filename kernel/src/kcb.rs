@@ -433,13 +433,13 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             return Ok(self.emanager());
         }
 
-        self.physical_memory
-            .pmanager
-            .as_ref()
-            .map_or(self.try_borrow_emanager(), |pmem| {
+        self.physical_memory.pmanager.as_ref().map_or_else(
+            || self.try_borrow_emanager(),
+            |pmem| {
                 pmem.try_borrow_mut()
                     .map(|rmt| RefMut::map(rmt, |t| t as &mut dyn MemManager))
-            })
+            },
+        )
     }
 
     pub fn kernel_binary(&self) -> &'static [u8] {

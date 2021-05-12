@@ -297,7 +297,7 @@ def run_qemu(args):
     qemu_default_args += ['-device', 'ahci,id=ahci,multifunction=on']
     qemu_default_args += ['-drive',
                           'if=none,format=raw,file=fat:rw:{},id=esp'.format(esp_path)]
-    qemu_default_args += ['-device', 'ide-drive,bus=ahci.0,drive=esp']
+    qemu_default_args += ['-device', 'ide-hd,bus=ahci.0,drive=esp']
 
     # Debug port to exit qemu and communicate back exit-code for tests
     qemu_default_args += ['-device',

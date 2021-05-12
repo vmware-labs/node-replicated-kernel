@@ -120,7 +120,7 @@ impl FileDescriptor for Fd {
     fn init_fd() -> Fd {
         Fd {
             // Intial values are just the place-holders and shouldn't be used.
-            mnode: core::u64::MAX,
+            mnode: u64::MAX,
             flags: Default::default(),
             offset: AtomicUsize::new(0),
         }

@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::cmp::{Eq, PartialEq};
 use core::sync::atomic::Ordering;
-use core::u64::MAX;
+use u64::MAX;
 
 use crate::alloc::borrow::ToOwned;
 
@@ -115,7 +115,7 @@ impl ModelFS {
         b: core::ops::Range<usize>,
     ) -> Option<core::ops::Range<usize>> {
         if ModelFS::overlaps(&a, &b) {
-            let mut min = usize::max_value();
+            let mut min = usize::MAX;
             let mut max = 0;
 
             for element in a {
@@ -273,11 +273,7 @@ impl FileSystem for ModelFS {
                 trace!("buffer = {:?}", buffer);
             }
 
-            if bytes_read >= 0 {
-                Ok(bytes_read)
-            } else {
-                Err(FileSystemError::InvalidOffset)
-            }
+            Ok(bytes_read)
         } else {
             Err(FileSystemError::InvalidFile)
         }

@@ -11,7 +11,7 @@ use crate::rumprt::{c_int, c_size_t, c_void};
 use lineup::tls2::Environment;
 
 use log::{debug, error, info, trace, warn};
-const MAP_FAILED: u64 = u64::max_value();
+const MAP_FAILED: u64 = u64::MAX;
 
 /// Implementes mmap by forwarding it to the rumpkernel and then to
 /// `rumpuser_malloc` (?) then nrk (not particularly efficient, also I think

@@ -120,11 +120,10 @@ impl MutexInner {
             }
 
             // Try to acquire it (set to 1):
-            if self.counter.compare_and_swap(0, 1, Ordering::Relaxed) == 0 {
-                // we hold the lock now
-                break;
+            match self.counter.compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break,     // we hold the lock now
+                Err(_) => continue  // failed to acquire, retry
             }
-            // else: failed to acquire, retry
         }
 
         let thread_state = Environment::thread();
@@ -192,11 +191,10 @@ impl MutexInner {
             }
 
             // Try to acquire it (set to 1):
-            if self.counter.compare_and_swap(0, 1, Ordering::Relaxed) == 0 {
-                // continue, we hold the lock now
-                break;
+            match self.counter.compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break,     // we hold the lock now
+                Err(_) => continue  // failed to acquire, retry
             }
-            // else: failed to acquire, retry
         }
 
         let tid = Environment::tid();

@@ -86,7 +86,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
         // Should contain what memory range we need to cover to contain
         // loadable regions:
-        let mut min_base: VAddr = VAddr::from(usize::max_value());
+        let mut min_base: VAddr = VAddr::from(usize::MAX);
         let mut max_end: VAddr = VAddr::from(0usize);
         let mut max_alignment: u64 = 0;
 

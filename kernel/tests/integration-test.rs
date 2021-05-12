@@ -448,13 +448,13 @@ fn get_machine_from_env() -> Machine {
     match std::env::var(BAREMETAL_MACHINE) {
         Ok(name) => {
             if name.is_empty() {
-                panic!(format!("{} enviroment variable empty.", BAREMETAL_MACHINE));
+                panic!("{} enviroment variable empty.", BAREMETAL_MACHINE);
             }
             if !Path::new(&name).exists() {
-                panic!(format!(
+                panic!(
                     "'{}.toml' file not found. Check {} enviroment variable.",
                     name, BAREMETAL_MACHINE
-                ));
+                );
             }
             Machine::Baremetal(name)
         }

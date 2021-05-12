@@ -404,7 +404,7 @@ pub(crate) mod model {
             b: core::ops::Range<usize>,
         ) -> Option<core::ops::Range<usize>> {
             if ModelAddressSpace::overlaps(&a, &b) {
-                let mut min = usize::max_value();
+                let mut min = usize::MAX;
                 let mut max = 0;
 
                 for element in a {
@@ -604,7 +604,7 @@ pub(crate) mod model {
         assert_eq!(ret_paddr, frame_base);
         assert_eq!(ret_rights, MapAction::ReadWriteUser);
 
-        let (handle) = a.unmap(va).expect("Can't unmap");
+        let handle = a.unmap(va).expect("Can't unmap");
         assert_eq!(handle.frame, frame);
 
         let e = a

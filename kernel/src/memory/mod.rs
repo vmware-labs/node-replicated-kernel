@@ -1319,7 +1319,7 @@ mod tests {
     #[should_panic]
     /// Frames should be aligned to BASE_PAGE_SIZE.
     fn frame_bad_alignment() {
-        let _f = Frame::new(PAddr::from(core::usize::MAX), BASE_PAGE_SIZE, 0);
+        let _f = Frame::new(PAddr::from(usize::MAX), BASE_PAGE_SIZE, 0);
     }
 
     #[test]
@@ -1340,7 +1340,7 @@ mod tests {
         let ds = DataSize::from_bytes(1024 * LARGE_PAGE_SIZE);
         assert_eq!(ds, DataSize::GiB(2.0));
 
-        let ds = DataSize::from_bytes(core::usize::MIN);
+        let ds = DataSize::from_bytes(usize::MIN);
         assert_eq!(ds, DataSize::Bytes(0.0));
     }
 

@@ -120,9 +120,12 @@ impl MutexInner {
             }
 
             // Try to acquire it (set to 1):
-            match self.counter.compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed) {
+            match self
+                .counter
+                .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => break,     // we hold the lock now
-                Err(_) => continue  // failed to acquire, retry
+                Err(_) => continue, // failed to acquire, retry
             }
         }
 
@@ -191,9 +194,12 @@ impl MutexInner {
             }
 
             // Try to acquire it (set to 1):
-            match self.counter.compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed) {
+            match self
+                .counter
+                .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+            {
                 Ok(_) => break,     // we hold the lock now
-                Err(_) => continue  // failed to acquire, retry
+                Err(_) => continue, // failed to acquire, retry
             }
         }
 

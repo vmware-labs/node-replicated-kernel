@@ -171,8 +171,7 @@ likely will succeed too):
 
 ```bash
 # Init submodules if not done so already:
-git submodule init
-git submodule update
+git submodule update --init
 
 cd kernel
 RUST_TEST_THREADS=1 cargo test --features smoke -- --nocapture

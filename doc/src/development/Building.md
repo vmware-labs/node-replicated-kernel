@@ -27,8 +27,7 @@ initialize and check-out the submodules separately:
 > `sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules`
 
 ```bash
-git submodule init
-git submodule update
+git submodule update --init
 ```
 
 ## Dependencies

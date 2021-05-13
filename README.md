@@ -13,8 +13,7 @@ The Node Replicated Kernel is an (experimental) research OS kernel for x86-64
 1. Note: In case you don't have the SSH key of your machine registered with a github account,
 you need to convert the submodule URLs to the https protocol, to do so run:
 `sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules`
-1. `git submodule init`
-1. `git submodule update`
+1. `git submodule update --init`
 
 ### Install dependencies
 

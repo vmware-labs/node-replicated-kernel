@@ -11,17 +11,17 @@ echo "================================================"
 source /rustversion.sh
 
 # source the cargo environment
-source $HOME/.cargo/env
+source "$HOME/.cargo/env"
 
 # this is the docker entrypoint
-cd /source
+cd /source || exit
 
 
 echo "setting rust versions to ${RUST_VERSION}"
-cd kernel
-rustup default ${RUST_VERSION}
+cd kernel || exit
+rustup default "${RUST_VERSION}"
 cd ..
-rustup default ${RUST_VERSION}
+rustup default "${RUST_VERSION}"
 
 # ensure rustup is up to date and we got the sources
 rustup component add rust-src
@@ -32,6 +32,6 @@ if [ "$1" == "" ]; then
     exec "/bin/bash"
     exit 0
 else
-    echo "executing '$@'"
-    exec "$@"
+    echo "executing '$*'"
+    exec "$*"
 fi

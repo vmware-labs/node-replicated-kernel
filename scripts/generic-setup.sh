@@ -49,8 +49,8 @@ function bootstrap_rust()
 {
     echo "bootstrapping rust..."
 
-    if [ -f $HOME/.cargo/env ]; then
-        source $HOME/.cargo/env
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
     fi
 
     # Make sure rust is up-to-date
@@ -58,7 +58,7 @@ function bootstrap_rust()
         curl https://sh.rustup.rs -sSf | sh -s -- -y
     fi
 
-    source $HOME/.cargo/env
+    source "$HOME/.cargo/env"
     rustup update
 }
 

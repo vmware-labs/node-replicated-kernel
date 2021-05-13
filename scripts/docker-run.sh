@@ -29,9 +29,9 @@ fi
 # check if there is such an image or
 if ! docker image ls | grep ${IMAGE} > /dev/null; then
     echo "docker image ${IMAGE} does not exist. building it."
-    docker build --build-arg arg_uid=${USER_ID} --build-arg arg_user=${USER_NAME} \
-                 -t ${IMAGE} ${ROOT}/scripts
+    docker build --build-arg arg_uid="${USER_ID}" --build-arg arg_user="${USER_NAME}" \
+                 -t ${IMAGE} "${ROOT}/scripts"
 fi
 
 # run the image interactively. we automatically mount the source directory in /source
-docker run -i -t --rm --name ${IMAGE} --mount type=bind,source=${ROOT},target=/source ${IMAGE}
+docker run -i -t --rm --name ${IMAGE} --mount type=bind,source="${ROOT}",target=/source ${IMAGE}

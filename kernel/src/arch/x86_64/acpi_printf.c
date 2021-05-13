@@ -976,9 +976,9 @@ static int _vsnprintf(out_fct_type out, char *buffer, const size_t maxlen, const
 #if defined(PRINTF_SUPPORT_LONG_LONG)
         }
 #endif
-        format++;
-        break;
       }
+      format++;
+      break;
     }
 
     case '%':

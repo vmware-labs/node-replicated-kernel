@@ -7,7 +7,6 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::cmp::{Eq, PartialEq};
 use core::sync::atomic::Ordering;
-use u64::MAX;
 
 use crate::alloc::borrow::ToOwned;
 
@@ -523,7 +522,7 @@ proptest! {
 fn test_file_descriptor() {
     use crate::mlnrfs::{Fd, FileDescriptor};
     let mut fd = Fd::init_fd();
-    assert_eq!(fd.get_mnode(), MAX);
+    assert_eq!(fd.get_mnode(), u64::MAX);
     assert_eq!(fd.get_flags(), FileFlags::O_NONE);
 
     fd.update_fd(1, FileFlags::O_RDWR);

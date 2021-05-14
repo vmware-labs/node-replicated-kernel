@@ -94,7 +94,7 @@ proptest! {
         use TestAction::*;
         use crate::memory::detmem::DA;
 
-        let mut totest = VSpace::new(DA::new()).expect("Unable to create vspace");;
+        let mut totest = VSpace::new(DA::new().expect("Unable to create DA")).expect("Unable to create vspace");;
         let mut model: ModelAddressSpace = Default::default();
 
         for action in ops {
@@ -106,7 +106,7 @@ proptest! {
                     match (&rtotest, &rmodel) {
                         // For now we let the model and impl report different conflict addresses
                         // ideally they should still be valid conflicts (not checked) just different ones
-                        (Err(KError::AlreadyMapped { base: a }), Err(KError::AlreadyMapped { base: b })) => {},
+                        (Err(KError::AlreadyMapped { base: _a }), Err(KError::AlreadyMapped { base: _b })) => {},
                         _ => assert_eq!(rmodel, rtotest),
                     }
                 }

@@ -57,7 +57,7 @@ impl DeterministicAlloc {
         // Need to figure out this capacity; it is hard to determine,
         // something like: (#allocations of write op in NR with most
         // allocations)*(max log entries till GC)
-        const ALLOC_CAP: usize = 4096;
+        const ALLOC_CAP: usize = 32_000;
 
         let mut qs = ArrayVec::new();
         for _i in 0..nodes {
@@ -77,7 +77,10 @@ impl DeterministicAlloc {
         if let Some((rl, ptr)) = self.qs[nid].pop() {
             // Queue wasn't empty; the leading replica already allocated on our
             // behalf
-            assert_eq!(rl, l, "Layouts don't match");
+            if rl != l {
+                info!("nid = {}", nid);
+                assert_eq!(rl, l, "Layouts don't match");
+            }
             ptr as *mut u8
         } else {
             // Need to request more in a deterministic way, so we acquire the

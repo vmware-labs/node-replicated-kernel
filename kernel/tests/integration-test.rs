@@ -887,6 +887,7 @@ fn s01_sse() {
 
 #[test]
 fn s01_time() {
+    eprintln!("Doing a release build, this might take a while...");
     let cmdline = RunnerArgs::new("test-time").release();
     let mut output = String::new();
 

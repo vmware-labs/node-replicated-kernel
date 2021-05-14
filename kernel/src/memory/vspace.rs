@@ -85,6 +85,7 @@ impl Iterator for CoreBitMapIter {
     }
 }
 
+#[cfg_attr(not(target_os = "none"), allow(dead_code))]
 #[derive(Debug, PartialEq)]
 pub enum MappingType {
     _ElfText,

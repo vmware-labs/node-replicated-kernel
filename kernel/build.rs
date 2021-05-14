@@ -12,6 +12,8 @@ fn main() {
         env::set_var("CC", "gcc");
         println!("cargo:rerun-if-changed=src/arch/x86_64/start_ap.S");
         println!("cargo:rerun-if-changed=src/arch/x86_64/exec.S");
+        println!("cargo:rerun-if-changed=src/arch/x86_64/acpi_printf.c");
+        println!("cargo:rerun-if-changed=src/arch/x86_64/acpi_printf.h");
 
         cc::Build::new()
             .flag("-m64")

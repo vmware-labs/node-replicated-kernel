@@ -18,13 +18,13 @@
 //! - Set-up system services like ACPI and physical memory management,
 //!   parse the machine topology.
 //! - Boot the rest of the system (see `start_app_core`).
+#![cfg_attr(not(target_os = "none"), allow(unused))]
 
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::mem::transmute;
-use core::slice;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cnrfs::{MlnrKernelNode, Modify};
@@ -304,6 +304,7 @@ fn boot_app_cores(
 ) {
     let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
+    debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
 
     // Let's go with one replica per NUMA node for now:
     let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
@@ -315,7 +316,6 @@ fn boot_app_cores(
 
     // Push the replica for node 0
     debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
-
     debug_assert!(replicas.capacity() >= 1, "No re-allocation.");
     replicas.push(bsp_replica);
     debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
@@ -481,6 +481,10 @@ fn identify_numa_affinity(
 #[no_mangle]
 #[start]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
+    use crate::memory::LARGE_PAGE_SIZE;
+    use core::slice;
+    use uefi::table::boot::MemoryType;
+
     sprint!("\r\n");
     enable_sse();
     enable_fsgsbase();

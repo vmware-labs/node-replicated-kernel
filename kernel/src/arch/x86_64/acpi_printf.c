@@ -980,7 +980,7 @@ static int _vsnprintf(out_fct_type out, char *buffer, const size_t maxlen, const
       format++;
       break;
     }
-
+    __attribute__ ((fallthrough));
     case '%':
       out('%', buffer, idx++, maxlen);
       format++;

@@ -77,3 +77,41 @@ at the end of every frame tracks the meta-data for objects within the frame
     per core is instantiated.
   </figcaption>
 </figure>
+
+## Deterministic memory
+
+The kernel has to explicitly handle running out of memory. nrk uses fallible
+allocations to handle out-of-memory errors gracefully by returning an error to
+applications. This is not quite done in all cases yet and still needs work.
+
+Another issue is that handling out-of-memory errors in presence of replicated
+data-structures becomes a little more challenging: Allocations which happen to
+store replicated state must be deterministic (e.g. they should either succeed on
+all replicas or none). Otherwise, the replicas would end up in an inconsistent
+state if after executing an operation, some replicas had successful and some had
+unsuccesful allocations. Making sure that all replicas always have equal amounts
+of memory available is infeasible because every replica replicates at different
+times and meanwhile allocations can happen on other cores for unrelated reasons.
+We solve this problem in nrk by requiring that all memory allocations for state
+within NR or CNR must go through a deterministic allocator. In the deterministic
+allocator, the first replica that reaches an allocation request allocates memory
+on behalf of all other replicas too. The deterministic allocator remembers the
+results temporarily, until they are picked up by the other replicas which are
+running behind. If an allocation for any of the replica fails, the leading
+replica will enqueue the error for all replicas, to ensure that all replicas
+always see the same result. Allocators in nrk are chainable and it is sufficient
+for the deterministic allocator to be anywhere in the chain so it doesn't
+necessarily have to be invoked for every fine-grained allocation request. Our
+implementation leverages custom allocators in Rust, which lets us override which
+heap allocator is used for individual data-structures.
+
+<figure>
+  <img src="../diagrams/DetMemAllocator.png" alt="Schematic overview of the deterministic memory allocator"/>
+  <figcaption>
+    The deterministic memory allocator generally forwards allocation requests to the underlying
+    memory allocator. However, the first request on any replica will allocate on behalf
+    of all other replicas and store the results temporarily in a set of queues (one per replica).
+    The deterministic allocator ensures that either (a) all replicas will have a successful allocations
+    for a given request or (b) none and they all get "null" as a result back.
+  </figcaption>
+</figure>

@@ -6,7 +6,7 @@ Unfortunately currently the debugging facilities are quite limited. Use
 Here are a few tips:
 
 - Change the log-level of the kernel to info, debug, or even trace: `python3 run.py --cmd='log=info'`
-- Change the log-level of the user-space libOS in virbio (search for `Level::`)
+- Change the log-level of the user-space libOS in vibrio (search for `Level::`)
 - Make sure the [Tests](./Testing.md) run (to see if something broke).
 
 ## Figuring out why things failed
@@ -62,6 +62,6 @@ The typical workflow to figure out what's going on is:
 7. If all this fails, something went wrong in a bad way, maybe best to go back
    to printf debugging.
 
-> Always find the first occurence of a failure in the log. Because our
+> Always find the first occurrence of a failure in the log. Because our
 > backtracing code is not very robust, it still quite often triggers cascading
 > failures which are not necessarily relevant.

@@ -57,17 +57,23 @@ impl LogMapper for Modify {
     fn hash(&self, nlogs: usize, logs: &mut Vec<usize>) {
         logs.clear();
         match self {
-            Modify::ProcessAdd(_pid) => logs.push(0),
-            Modify::ProcessRemove(_pid) => logs.push(0),
-            Modify::FileOpen(_pid, _filename, _flags, _modes) => logs.push(0),
+            Modify::ProcessAdd(_pid) => push_to_all(nlogs, logs),
+            Modify::ProcessRemove(_pid) => push_to_all(nlogs, logs),
+            Modify::FileOpen(_pid, _filename, _flags, _modes) => push_to_all(nlogs, logs),
             Modify::FileWrite(pid, _fd, mnode, _kernslice, _len, _offset) => {
-                logs.push(*mnode as usize - MNODE_OFFSET)
+                logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
-            Modify::FileClose(pid, fd) => logs.push(0),
-            Modify::FileDelete(_pid, _filename) => logs.push(0),
-            Modify::FileRename(_pid, _oldname, _newname) => logs.push(0),
-            Modify::MkDir(_pid, _name, _modes) => logs.push(0),
+            Modify::FileClose(pid, fd) => push_to_all(nlogs, logs),
+            Modify::FileDelete(_pid, _filename) => push_to_all(nlogs, logs),
+            Modify::FileRename(_pid, _oldname, _newname) => push_to_all(nlogs, logs),
+            Modify::MkDir(_pid, _name, _modes) => push_to_all(nlogs, logs),
             Modify::Invalid => unreachable!("Invalid operation"),
+        }
+
+        fn push_to_all(nlogs: usize, logs: &mut Vec<usize>) {
+            for i in 0..nlogs {
+                logs.push(i);
+            }
         }
     }
 }
@@ -131,7 +137,7 @@ impl MlnrKernelNode {
             .mlnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(Modify::ProcessAdd(pid), *token);
+                let response = replica.execute_mut_scan(Modify::ProcessAdd(pid), *token);
                 match &response {
                     Ok(MlnrNodeResult::ProcessAdded(pid)) => Ok((*pid, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
@@ -153,7 +159,7 @@ impl MlnrKernelNode {
                 }
 
                 let response =
-                    replica.execute_mut(Modify::FileOpen(pid, filename, flags, modes), *token);
+                    replica.execute_mut_scan(Modify::FileOpen(pid, filename, flags, modes), *token);
 
                 match &response {
                     Ok(MlnrNodeResult::FileOpened(fd)) => Ok((*fd, 0)),
@@ -221,7 +227,7 @@ impl MlnrKernelNode {
             .mlnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(Modify::FileClose(pid, fd), *token);
+                let response = replica.execute_mut_scan(Modify::FileClose(pid, fd), *token);
 
                 match &response {
                     Ok(MlnrNodeResult::FileClosed(fd)) => Ok((0, 0)),
@@ -242,7 +248,7 @@ impl MlnrKernelNode {
                     Ok(user_str) => filename = user_str,
                     Err(e) => return Err(e.clone()),
                 }
-                let response = replica.execute_mut(Modify::FileDelete(pid, filename), *token);
+                let response = replica.execute_mut_scan(Modify::FileDelete(pid, filename), *token);
 
                 match &response {
                     Ok(MlnrNodeResult::FileDeleted(_)) => Ok((0, 0)),
@@ -302,8 +308,8 @@ impl MlnrKernelNode {
                     Err(e) => return Err(e.clone()),
                 }
 
-                let response =
-                    replica.execute_mut(Modify::FileRename(pid, oldfilename, newfilename), *token);
+                let response = replica
+                    .execute_mut_scan(Modify::FileRename(pid, oldfilename, newfilename), *token);
                 match &response {
                     Ok(MlnrNodeResult::FileRenamed(_)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
@@ -324,7 +330,8 @@ impl MlnrKernelNode {
                     Err(e) => return Err(e.clone()),
                 }
 
-                let response = replica.execute_mut(Modify::MkDir(pid, filename, modes), *token);
+                let response =
+                    replica.execute_mut_scan(Modify::MkDir(pid, filename, modes), *token);
 
                 match &response {
                     Ok(MlnrNodeResult::DirCreated(true)) => Ok((0, 0)),

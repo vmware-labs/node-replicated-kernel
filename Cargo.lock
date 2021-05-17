@@ -307,6 +307,7 @@ dependencies = [
  "chashmap",
  "crossbeam-queue 0.3.1",
  "crossbeam-utils 0.6.6",
+ "env_logger 0.8.3",
  "log",
  "static_assertions",
 ]

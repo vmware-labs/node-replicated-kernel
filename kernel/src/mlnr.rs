@@ -54,18 +54,19 @@ pub enum Modify {
 
 // TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Modify {
-    fn hash(&self) -> usize {
+    fn hash(&self, nlogs: usize, logs: &mut Vec<usize>) {
+        logs.clear();
         match self {
-            Modify::ProcessAdd(_pid) => 0,
-            Modify::ProcessRemove(_pid) => 0,
-            Modify::FileOpen(_pid, _filename, _flags, _modes) => 0,
+            Modify::ProcessAdd(_pid) => logs.push(0),
+            Modify::ProcessRemove(_pid) => logs.push(0),
+            Modify::FileOpen(_pid, _filename, _flags, _modes) => logs.push(0),
             Modify::FileWrite(pid, _fd, mnode, _kernslice, _len, _offset) => {
-                *mnode as usize - MNODE_OFFSET
+                logs.push(*mnode as usize - MNODE_OFFSET)
             }
-            Modify::FileClose(pid, fd) => 0,
-            Modify::FileDelete(_pid, _filename) => 0,
-            Modify::FileRename(_pid, _oldname, _newname) => 0,
-            Modify::MkDir(_pid, _name, _modes) => 0,
+            Modify::FileClose(pid, fd) => logs.push(0),
+            Modify::FileDelete(_pid, _filename) => logs.push(0),
+            Modify::FileRename(_pid, _oldname, _newname) => logs.push(0),
+            Modify::MkDir(_pid, _name, _modes) => logs.push(0),
             Modify::Invalid => unreachable!("Invalid operation"),
         }
     }
@@ -88,18 +89,21 @@ pub enum Access {
 
 //TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Access {
-    fn hash(&self) -> usize {
+    fn hash(&self, _nlogs: usize, logs: &mut Vec<usize>) {
+        logs.clear();
         match self {
             Access::FileRead(_pid, _fd, mnode, _buffer, _len, _offser) => {
-                *mnode as usize - MNODE_OFFSET
+                logs.push(*mnode as usize - MNODE_OFFSET)
             }
-            Access::FileInfo(_pid, _filename, mnode, _info_ptr) => (*mnode as usize - MNODE_OFFSET),
+            Access::FileInfo(_pid, _filename, mnode, _info_ptr) => {
+                logs.push(*mnode as usize - MNODE_OFFSET)
+            }
             // TODO: Assume that all metadata modifying operations go through log 0.
-            Access::FdToMnode(_pid, _fd) => 0,
-            Access::FileNameToMnode(_pid, _filename) => 0,
+            Access::FdToMnode(_pid, _fd) => logs.push(0),
+            Access::FileNameToMnode(_pid, _filename) => logs.push(0),
             // Log number start with 1 in CNR, however, replica uses mod
             // operation which starts with 0; hence `log_id - 1`.
-            Access::Synchronize(log_id) => (*log_id - 1),
+            Access::Synchronize(log_id) => logs.push(*log_id - 1),
         }
     }
 }

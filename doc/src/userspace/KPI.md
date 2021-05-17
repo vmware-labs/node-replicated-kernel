@@ -12,4 +12,4 @@ rather enforce compatibility at the KPI boundary.
 
 Typically, the KPI functionality will rarely be accessed directly by an
 application. Instead, many parts of it are re-exported or wrapped by the
-[vibrio](./Vibrio.html) library OS.
+[vibrio](./Vibrio.html) library OS. The `kpi` code is found in `lib/kpi`.

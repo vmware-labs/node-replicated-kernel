@@ -5,7 +5,7 @@ Lineup is a user-space, cooperative thread scheduler that runs green-threads
 rwlock, conditional variables, barriers etc.), thread-local storage, and has
 some basic support for multi-threading. It uses
 [fringe](https://crates.io/crates/fringe) for compiler-assisted
-context-switching.
+context-switching. The scheduler code is found in `lib/lineup`.
 
 ## Upcalls
 

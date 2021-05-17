@@ -8,8 +8,8 @@ use crate::error::KError;
 use crate::memory::VAddr;
 use crate::mlnrfs::fd::FileDesc;
 use crate::mlnrfs::{
-    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MlnrFS, Modes,
-    NrLock, Offset, FD, MNODE_OFFSET,
+    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MlnrFS, Mnode,
+    Modes, NrLock, Offset, FD, MNODE_OFFSET,
 };
 use crate::prelude::*;
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
@@ -44,7 +44,7 @@ pub enum Modify {
     ProcessAdd(Pid),
     ProcessRemove(Pid),
     FileOpen(Pid, String, Flags, Modes),
-    FileWrite(Pid, FD, Arc<[u8]>, Len, Offset),
+    FileWrite(Pid, FD, Mnode, Arc<[u8]>, Len, Offset),
     FileClose(Pid, FD),
     FileDelete(Pid, String),
     FileRename(Pid, String, String),
@@ -59,11 +59,8 @@ impl LogMapper for Modify {
             Modify::ProcessAdd(_pid) => 0,
             Modify::ProcessRemove(_pid) => 0,
             Modify::FileOpen(_pid, _filename, _flags, _modes) => 0,
-            Modify::FileWrite(pid, fd, _kernslice, _len, _offset) => {
-                match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
-                    Ok((mnode, _)) => mnode as usize - MNODE_OFFSET,
-                    Err(_) => 0,
-                }
+            Modify::FileWrite(pid, _fd, mnode, _kernslice, _len, _offset) => {
+                *mnode as usize - MNODE_OFFSET
             }
             Modify::FileClose(pid, fd) => 0,
             Modify::FileDelete(_pid, _filename) => 0,
@@ -82,8 +79,8 @@ impl Default for Modify {
 
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub enum Access {
-    FileRead(Pid, FD, Buffer, Len, Offset),
-    FileInfo(Pid, Filename, u64),
+    FileRead(Pid, FD, Mnode, Buffer, Len, Offset),
+    FileInfo(Pid, Filename, Mnode, u64),
     FdToMnode(Pid, FD),
     FileNameToMnode(Pid, Filename),
     Synchronize(usize),
@@ -93,18 +90,10 @@ pub enum Access {
 impl LogMapper for Access {
     fn hash(&self) -> usize {
         match self {
-            Access::FileRead(pid, fd, _buffer, _len, _offser) => {
-                match MlnrKernelNode::fd_to_mnode(*pid, *fd) {
-                    Ok((mnode, _)) => mnode as usize - MNODE_OFFSET,
-                    Err(_) => 0,
-                }
+            Access::FileRead(_pid, _fd, mnode, _buffer, _len, _offser) => {
+                *mnode as usize - MNODE_OFFSET
             }
-            Access::FileInfo(pid, filename, _info_ptr) => {
-                match MlnrKernelNode::filename_to_mnode(*pid, *filename) {
-                    Ok((mnode, _)) => mnode as usize - MNODE_OFFSET,
-                    Err(_) => 0,
-                }
-            }
+            Access::FileInfo(_pid, _filename, mnode, _info_ptr) => (*mnode as usize - MNODE_OFFSET),
             // TODO: Assume that all metadata modifying operations go through log 0.
             Access::FdToMnode(_pid, _fd) => 0,
             Access::FileNameToMnode(_pid, _filename) => 0,
@@ -178,6 +167,14 @@ impl MlnrKernelNode {
         len: u64,
         offset: i64,
     ) -> Result<(Len, u64), KError> {
+        let mnode = match MlnrKernelNode::fd_to_mnode(pid, fd) {
+            Ok((mnode, _)) => mnode,
+            Err(_) => {
+                return Err(KError::FileSystem {
+                    source: FileSystemError::InvalidFileDescriptor,
+                })
+            }
+        };
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .mlnr_replica
@@ -187,7 +184,7 @@ impl MlnrKernelNode {
                     let kernslice = KernSlice::new(buffer, len as usize);
 
                     let response = replica.execute_mut(
-                        Modify::FileWrite(pid, fd, kernslice.buffer.clone(), len, offset),
+                        Modify::FileWrite(pid, fd, mnode, kernslice.buffer.clone(), len, offset),
                         *token,
                     );
 
@@ -199,8 +196,10 @@ impl MlnrKernelNode {
                 }
 
                 FileOperation::Read | FileOperation::ReadAt => {
-                    let response =
-                        replica.execute(Access::FileRead(pid, fd, buffer, len, offset), *token);
+                    let response = replica.execute(
+                        Access::FileRead(pid, fd, mnode, buffer, len, offset),
+                        *token,
+                    );
 
                     match &response {
                         Ok(MlnrNodeResult::FileAccessed(len)) => Ok((*len, 0)),
@@ -250,12 +249,21 @@ impl MlnrKernelNode {
     }
 
     pub fn file_info(pid: Pid, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
+        let mnode = match MlnrKernelNode::filename_to_mnode(pid, name) {
+            Ok((mnode, _)) => mnode,
+            Err(_) => {
+                return Err(KError::FileSystem {
+                    source: FileSystemError::PermissionError,
+                })
+            }
+        };
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .mlnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute(Access::FileInfo(pid, name, info_ptr), *token);
+                let response =
+                    replica.execute(Access::FileInfo(pid, name, mnode, info_ptr), *token);
 
                 match &response {
                     Ok(MlnrNodeResult::FileInfo(f_info)) => {
@@ -379,7 +387,7 @@ impl Dispatch for MlnrKernelNode {
 
     fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
-            Access::FileRead(pid, fd, buffer, len, offset) => {
+            Access::FileRead(pid, fd, _mnode, buffer, len, offset) => {
                 let mut userslice = UserSlice::new(buffer, len as usize);
                 let process_lookup = self.process_map.read();
                 let p = process_lookup
@@ -424,28 +432,30 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Access::FileInfo(pid, name, info_ptr) => match self.process_map.read().get(&pid) {
-                Some(_) => {
-                    let filename;
-                    match userptr_to_str(name) {
-                        Ok(user_str) => filename = user_str,
-                        Err(e) => return Err(e.clone()),
-                    }
-
-                    match self.fs.lookup(&filename) {
-                        // match on (file_exists, mnode_number)
-                        Some(mnode) => {
-                            let f_info = Arc::new(self.fs.file_info(*mnode));
-
-                            Ok(MlnrNodeResult::FileInfo(f_info.clone()))
+            Access::FileInfo(pid, name, _mnode, info_ptr) => {
+                match self.process_map.read().get(&pid) {
+                    Some(_) => {
+                        let filename;
+                        match userptr_to_str(name) {
+                            Ok(user_str) => filename = user_str,
+                            Err(e) => return Err(e.clone()),
                         }
-                        None => Err(KError::FileSystem {
-                            source: FileSystemError::InvalidFile,
-                        }),
+
+                        match self.fs.lookup(&filename) {
+                            // match on (file_exists, mnode_number)
+                            Some(mnode) => {
+                                let f_info = Arc::new(self.fs.file_info(*mnode));
+
+                                Ok(MlnrNodeResult::FileInfo(f_info.clone()))
+                            }
+                            None => Err(KError::FileSystem {
+                                source: FileSystemError::InvalidFile,
+                            }),
+                        }
                     }
+                    None => Err(ProcessError::NoProcessFoundForPid.into()),
                 }
-                None => Err(ProcessError::NoProcessFoundForPid.into()),
-            },
+            }
 
             Access::FdToMnode(pid, fd) => match self.process_map.read().get(&pid) {
                 Some(p) => {
@@ -542,7 +552,7 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Modify::FileWrite(pid, fd, kernslice, len, offset) => {
+            Modify::FileWrite(pid, fd, _mnode, kernslice, len, offset) => {
                 let mut process_lookup = self.process_map.read();
                 let p = process_lookup
                     .get(&pid)

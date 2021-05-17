@@ -95,21 +95,21 @@ pub enum Access {
 
 //TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Access {
-    fn hash(&self, _nlogs: usize, logs: &mut Vec<usize>) {
+    fn hash(&self, nlogs: usize, logs: &mut Vec<usize>) {
         logs.clear();
         match self {
             Access::FileRead(_pid, _fd, mnode, _buffer, _len, _offser) => {
-                logs.push(*mnode as usize - MNODE_OFFSET)
+                logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
             Access::FileInfo(_pid, _filename, mnode, _info_ptr) => {
-                logs.push(*mnode as usize - MNODE_OFFSET)
+                logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
             // TODO: Assume that all metadata modifying operations go through log 0.
             Access::FdToMnode(_pid, _fd) => logs.push(0),
             Access::FileNameToMnode(_pid, _filename) => logs.push(0),
             // Log number start with 1 in CNR, however, replica uses mod
             // operation which starts with 0; hence `log_id - 1`.
-            Access::Synchronize(log_id) => logs.push(*log_id - 1),
+            Access::Synchronize(log_id) => logs.push((*log_id - 1) % nlogs),
         }
     }
 }

@@ -85,7 +85,7 @@ impl Bench for MIX {
         }
         let total_pages: usize = self.size as usize / 4096;
         let page: &mut [i8; PAGE_SIZE as usize] = &mut [0; PAGE_SIZE as usize];
-        vibrio::syscalls::Fs::write_at(fd, page.as_ptr() as u64, PAGE_SIZE, 0);
+        vibrio::syscalls::Fs::write_at(fd, page.as_ptr() as u64, PAGE_SIZE, self.size);
 
         // Synchronize with all cores
         POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);

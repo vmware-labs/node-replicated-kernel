@@ -19,24 +19,24 @@ const MAX_PACKET_SZ: usize = 2048;
 pub struct DevQueuePhy {
     device: Pin<Box<VMXNet3>>,
     pool_tx: IOBufPool,
-    pool_rx: IOBufPool
+    pool_rx: IOBufPool,
 }
 
 impl DevQueuePhy {
     pub fn new(device: Pin<Box<VMXNet3>>) -> core::result::Result<DevQueuePhy, IOMemError> {
         let pool_tx = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
         let pool_rx = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
-        Ok(Self { device, pool_tx, pool_rx })
+        Ok(Self {
+            device,
+            pool_tx,
+            pool_rx,
+        })
     }
-
-
 }
 
 impl<'a> Device<'a> for DevQueuePhy {
     type RxToken = RxPacket<'a>;
     type TxToken = TxPacket<'a>;
-
-
 
     /// Obtains a receive buffer along a side a send buffer for replies (e.g., ping...)
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
@@ -75,7 +75,6 @@ impl<'a> Device<'a> for DevQueuePhy {
                 iobuf
             };
 
-
             // let iobuf = self.get_tx_iobuf_chain();
             // let mut iobuf = IOBufChain::new(0, 1).expect("Can't make chain?");
             // let buf2 = self.pool_tx.get_buf().expect("Can't get buffer?");
@@ -84,7 +83,7 @@ impl<'a> Device<'a> for DevQueuePhy {
 
             Some((rx_token, tx_token))
         } else {
-           // info!("Nothing to receive!");
+            // info!("Nothing to receive!");
             None
         }
     }
@@ -94,7 +93,7 @@ impl<'a> Device<'a> for DevQueuePhy {
         // see if there is something to dequeue
         let numdeq = self.device.txq[0].can_dequeue(false);
 
-        let packet =  if numdeq > 0 {
+        let packet = if numdeq > 0 {
             // info!("TX: reusing buffer chain");
             self.device.txq[0].dequeue().expect("Couldn't dequeue?")
         } else {
@@ -105,7 +104,11 @@ impl<'a> Device<'a> for DevQueuePhy {
         };
 
         // get an empty TX token from the pool
-        Some(TxPacket::new(packet, &mut self.device.txq[0], &mut self.pool_tx))
+        Some(TxPacket::new(
+            packet,
+            &mut self.device.txq[0],
+            &mut self.pool_tx,
+        ))
     }
 
     /**
@@ -159,11 +162,11 @@ pub struct TxPacket<'a> {
 }
 
 impl<'a> TxPacket<'a> {
-    fn new(iobuf: IOBufChain, txq: &'a mut dyn DevQueue,  pool: &'a mut IOBufPool) -> TxPacket<'a> {
+    fn new(iobuf: IOBufChain, txq: &'a mut dyn DevQueue, pool: &'a mut IOBufPool) -> TxPacket<'a> {
         TxPacket {
             iobuf: Some(iobuf),
             txq,
-            pool
+            pool,
         }
     }
 }
@@ -202,7 +205,7 @@ impl<'a> Drop for TxPacket<'a> {
             let iobuf = self.iobuf.take().unwrap();
             // info!("TxToken::consume n segments:{}", iobuf.segments.len());
             // we can drop the IOBufChain here.
-            for s in  iobuf.segments {
+            for s in iobuf.segments {
                 self.pool.put_buf(s);
             }
         }

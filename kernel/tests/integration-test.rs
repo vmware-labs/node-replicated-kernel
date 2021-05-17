@@ -705,11 +705,6 @@ fn spawn_receiver() -> Result<rexpect::session::PtySession> {
     spawn("socat UDP-LISTEN:8889,fork stdout", Some(20_000))
 }
 
-/// Helper function that spawns a UDP echo server on the host
-fn spawn_echoserver() -> Result<rexpect::session::PtySession> {
-    spawn("socat -v PIPE udp-recvfrom:5553,fork", Some(20000))
-}
-
 /// Helper function that tries to ping the QEMU guest.
 fn spawn_ping() -> Result<rexpect::session::PtySession> {
     spawn("ping 172.31.0.10", Some(20_000))
@@ -1071,19 +1066,91 @@ fn s03_userspace_smoke() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_vmxnet3_smoke() {
+    /// Helper function that spawns a UDP echo server on the host
+    fn spawn_tcpdump() -> Result<rexpect::session::PtySession> {
+        spawn("tcpdump -i tap0 -vvv", Some(25000))
+    }
+
     let cmdline = RunnerArgs::new("test-vmxnet-smoke")
-        .timeout(20_000)
+        .timeout(25_000)
         .use_vmxnet3();
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut echoserver = spawn_echoserver()?;
-        let mut p = spawn_bespin(&cmdline)?;
+        let mut tcpdump = spawn_tcpdump()?;
+        let mut p = spawn_nrk(&cmdline)?;
 
-        output += echoserver.exp_string("oooooooooooooooooooooo")?.as_str();
-        output += echoserver.exp_string("oooooooooooooooooooooo")?.as_str();
+        output += tcpdump
+            .exp_string("172.31.0.10.9999 > 172.31.0.20.5553: [udp sum ok] UDP, length 22")?
+            .as_str();
 
         output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Tests that the vmxnet3 driver is functional together with the smoltcp
+/// network stack.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_vmxnet3_smoltcp() {
+    fn spawn_socat(port: u16) -> Result<rexpect::session::PtySession> {
+        spawn(
+            format!("socat - TCP:172.31.0.10:{}", port).as_str(),
+            Some(30_000),
+        )
+    }
+
+    const RANDOM_PAYLOAD: &'static str = std::concat!(
+        "wpztnynnlbpcileyvhokhihlbjtbvqlsntqoykjynunjhvjzfgtlukphzgj",
+        "arcrclwthsijhtqmutxtnzxxlsvmgnueuaqyvbpsnqsmrhaxcfqlqvzaihv",
+        "lkrnfasemjbbcfiwuokjzhhmmraaqilcndvgwqluyxrieudytmrkahhcreb",
+        "gwzngglsjsgeyrkywecqgizoklabiifiwjithcdcjvoptaufmiwixnqtmiw",
+        "gxqmrtbyugzdmtseqhoijelahbgxaszccughowltxqdnjmgymmvprbgrwlk",
+        "swzvirynhhinlausdwcjakofikgqucmhhdkmywxsfarslewqfnrjerumecn",
+        "riyliktztgtfouqcznjkwnzbivwqsflhoatumzlylgzvoxxtygkkrkbdusj",
+        "ckclfjgxjuaduhdhivhfctabrfqlsgorxueylsmanilqatqagdfjuukhdrm",
+        "cfeegpjiylcslveptgmefcpewdxgepgczzzobjiwwncsnambylfavwyabhc",
+        "rtdxmiudcdoplgogsczgszmjrvgztxpmrtphwmtezcnpcbzdwknipneyfjy",
+        "oessmgegwyohcsyjztgeukfqlvylhpbdoxhoqfbgnuxlyofvizveqtcfvwv",
+        "mwowrgxvdhzkhwnbdtgwosmlonepecpmctfqkbhmgzejzwkxizfybtekmkp",
+        "mnqworreythicapveoflicgwrlotxquslmwmjckldhoztqlapvtnwdexucs",
+        "ytcxngqijnusozjpbkpbemhsjzsvsoyaeghhyhpeykdurcccqqogbuzerdp",
+        "xzqihxzfeteoajcccvnxjweqkmdtnrwhbwoxiwhslzzzkochjbzzuwlwajo",
+        "cvmgmlliqlegzjtjogdxxzibkxxmycgrqbfvfpojprcrdyqhrejshsilrwb",
+        "ptoqenjyuyetcexfmbcajokkaltrhutakohielaupybbycmrjncytbqchgr",
+        "ioajegrgemttbadockfiukinstblpsvttltjzecxyahfqybxfabwglxhfvh",
+        "qlsxnotbzwtwvcneboxnvzfwxpwasroziyllaecgejabxptlqlwoyuvnhcc",
+        "ghrfkrizvpczcwbpcxopepjzfaqdchruyiufzpijjkynbfoaymwntxrrmef",
+        "kcgsujicncmmbdibuzwxwfeoyvvoiskrznegkcmauvlcnwtusqyreyteqey",
+        "ijzczjmflhvxsasitlppxsbbwwqkbudvbdqbxfltgmusnctctuzgsvwcehm",
+        "ypxvqdowwvaozrlexefmmklmhqmonvxwwfwolbrpfvcwrwmpswjaaihzfvh",
+        "avhojmnmnvblakpiplsbsouhyrdnmxnluqtqsrzqirgwpnizhrrarpqlaoo",
+        "jeabltkqwxfashocdieiomhmhxwcofdlizkrdktkkzaeplthvfvshfwzvhm",
+        "vsyzhowinicutacsoqlvnbwukivmrmtkwtxedjehhpbxegwfxtneiprwnns",
+        "euzwvaicwxgzbfsaygfublcsugoljmipgawnvwzdficcqmrbtqnbiyfmdwq",
+    );
+
+    let cmdline = RunnerArgs::new("test-vmxnet-smoltcp")
+        .timeout(30_000)
+        .use_vmxnet3();
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_string("About to serve sockets!")?.as_str();
+
+        let mut client = spawn_socat(6970)?;
+        for i in 0..12 {
+            println!("sending pkt = {}", i);
+            client.send_line(RANDOM_PAYLOAD)?;
+            output += client.exp_string(RANDOM_PAYLOAD)?.as_str();
+        }
+        client.process.exit()?;
+        output += p.exp_eof()?.as_str();
+
         p.process.exit()
     };
 

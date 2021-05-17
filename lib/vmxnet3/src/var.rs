@@ -16,7 +16,6 @@ use driverkit::{
 
 use log::info;
 
-
 use x86::current::paging::{PAddr, VAddr};
 
 use crate::pci::{BarAccess, BarIO, DmaObject, KERNEL_BASE};

@@ -540,70 +540,9 @@ pub fn xmain() {
     ];
     packet1.copy_in(&raw_data);
     bufchain1.segments.push_back(packet1);
-    vmx.txq[0].enqueue(bufchain1).expect("Enq failed");
+    vmx.txq[0].enqueue(bufchain1).expect("Enq. failed");
     vmx.txq[0].flush().expect("Flush failed?");
-
-    // >>> from scapy.all import *
-    // >>> arp = Ether(src="56:b4:44:e9:62:dc", dst="ff:ff:ff:ff:ff:ff")/ARP(op=ARP.is_at, hwsrc="56:b4:44:e9:62:dc", psrc="172.31.0.10", hwdst="6e:6d:5f:ab:62:3a", pdst="172.31.0.20")
-    // >>> hexdump(arp)
-    // 0000   FF FF FF FF FF FF 56 B4  44 E9 62 DC 08 06 00 01   ......V.D.b.....
-    // 0010   08 00 06 04 00 02 56 B4  44 E9 62 DC AC 1F 00 0A   ......V.D.b.....
-    // 0020   6E 6D 5F AB 62 3A AC 1F  00 14                     nm_.b:....
-    let raw_data = [
-        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, 0x08, 0x06, 0x00,
-        0x01, 0x08, 00, 0x06, 0x04, 0x00, 0x02, 0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, 0xAC, 0x1F,
-        0x00, 0x0A, 0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, 0xAC, 0x1F, 0x00, 0x14,
-    ];
-    packet2.copy_in(&raw_data);
-    bufchain2.segments.push_back(packet2);
-    vmx.txq[0].enqueue(bufchain2).expect("Enq failed");
-    vmx.txq[0].flush().expect("Flush failed?");
-
-    // Receive first 4 packets:
-    let mut rx_counter = 0;
-    while rx_counter < 4 {
-        let ret = vmx.rxq[0].dequeue();
-
-        let arp_request = &[
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, /* mac src */
-            0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, /* mac dest */
-            0x8, 0x6, /* ether type */
-            0x0, 0x1, 0x8, 0x0, 0x6, 0x4, 0x0, 0x1, 0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, 0xAC, 0x1F,
-            0x0, 0x14, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xAC, 0x1F, 0x0, 0xA, /* arp req */
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, /* padding */
-        ];
-
-        let udp_echo = &[
-            0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, /* mac src */
-            0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, /* mac dest */
-            0x8, 0x0, /* eth hdr */
-            0x45, 0x0, 0x0, 0x32, /* IP hdr begin */
-            0xFF, 0xFF, /* ip identification field */
-            0x40, 0x00, 0x40, 0x11, /* ip hdr cont. */
-            0xFF, 0xFF, /* ip hdr chksum */
-            0xAC, 0x1F, 0x0, 0x14, 0xAC, 0x1F, 0x0, 0xA, 0x15, 0xB1, 0x27, 0xF, 0x0, 0x1E, 0xA0,
-            0xCB, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F,
-            0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F,
-        ];
-
-        match ret {
-            Ok(chain) => {
-                if rx_counter == 0 {
-                    assert_eq!(chain.segments[0].as_slice(), arp_request);
-                    rx_counter += 1;
-                } else if rx_counter == 1 {
-                    assert_eq!(chain.segments[0].as_slice()[0..17], udp_echo[0..17]);
-                    // Skip IP identification field
-                    assert_eq!(chain.segments[0].as_slice()[20..24], udp_echo[20..24]);
-                    // Skip IP header checksum
-                    assert_eq!(chain.segments[0].as_slice()[26..], udp_echo[26..]);
-                    break;
-                }
-            }
-            _ => continue,
-        }
-    }
+    info!("Sent Payload");
 
     arch::debug::shutdown(ExitReason::Ok);
 }
@@ -704,25 +643,9 @@ fn xmain() {
 
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
-    let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 64]);
-    let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 128]);
-    let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
-
-    let tcp1_rx_buffer = TcpSocketBuffer::new(vec![0; 64]);
-    let tcp1_tx_buffer = TcpSocketBuffer::new(vec![0; 128]);
-    let tcp1_socket = TcpSocket::new(tcp1_rx_buffer, tcp1_tx_buffer);
-
-    let tcp2_rx_buffer = TcpSocketBuffer::new(vec![0; 64]);
-    let tcp2_tx_buffer = TcpSocketBuffer::new(vec![0; 128]);
-    let tcp2_socket = TcpSocket::new(tcp2_rx_buffer, tcp2_tx_buffer);
-
-    let tcp3_rx_buffer = TcpSocketBuffer::new(vec![0; 65535]);
-    let tcp3_tx_buffer = TcpSocketBuffer::new(vec![0; 65535]);
-    let tcp3_socket = TcpSocket::new(tcp3_rx_buffer, tcp3_tx_buffer);
-
-    let tcp4_rx_buffer = TcpSocketBuffer::new(vec![0; 65535]);
-    let tcp4_tx_buffer = TcpSocketBuffer::new(vec![0; 65535]);
-    let tcp4_socket = TcpSocket::new(tcp4_rx_buffer, tcp4_tx_buffer);
+    let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 64]);
+    let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 128]);
+    let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 
     let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
     let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 10), 24)];
@@ -734,16 +657,14 @@ fn xmain() {
     let mut iface = builder.finalize();
 
     let mut sockets = SocketSet::new(vec![]);
-    let udp_handle = sockets.add(udp_socket);
-    let tcp1_handle = sockets.add(tcp1_socket);
-    let tcp2_handle = sockets.add(tcp2_socket);
-    let tcp3_handle = sockets.add(tcp3_socket);
-    let tcp4_handle = sockets.add(tcp4_socket);
+    let tcp1_handle = sockets.add(tcp_socket);
 
     let mut tcp_6970_active = false;
     let mut done = false;
     let clock = Clock::new();
-    info!("about to serve sockets");
+    // Don't change the next line without changing `integration-test.rs`
+    info!("About to serve sockets!");
+
     while !done && clock.elapsed() < Instant::from_millis(10_000) {
         match iface.poll(&mut sockets, clock.elapsed()) {
             Ok(_) => {}
@@ -752,138 +673,37 @@ fn xmain() {
             }
         }
 
-        // udp:6969: respond "hello"
-        {
-            let mut socket = sockets.get::<UdpSocket>(udp_handle);
-            if !socket.is_open() {
-                socket.bind(6969).unwrap()
-            }
-
-            let client = match socket.recv() {
-                Ok((data, endpoint)) => {
-                    debug!(
-                        "udp:6969 recv data: {:?} from {}",
-                        str::from_utf8(data).unwrap(),
-                        endpoint
-                    );
-                    Some(endpoint)
-                }
-                Err(_) => None,
-            };
-            if let Some(endpoint) = client {
-                let data = b"hello\n";
-                debug!(
-                    "udp:6969 send data: {:?}",
-                    str::from_utf8(data.as_ref()).unwrap()
-                );
-                socket.send_slice(data, endpoint).unwrap();
-            }
-        }
-
-        // tcp:6969: respond "hello"
-        {
-            let mut socket = sockets.get::<TcpSocket>(tcp1_handle);
-            if !socket.is_open() {
-                socket.listen(6969).unwrap();
-            }
-
-            if socket.can_send() {
-                debug!("tcp:6969 send greeting");
-                writeln!(socket, "hello").unwrap();
-                debug!("tcp:6969 close");
-                socket.close();
-            }
-        }
-
         // tcp:6970: echo with reverse
         {
-            let mut socket = sockets.get::<TcpSocket>(tcp2_handle);
+            let mut socket = sockets.get::<TcpSocket>(tcp1_handle);
             if !socket.is_open() {
                 socket.listen(6970).unwrap()
             }
 
             if socket.is_active() && !tcp_6970_active {
-                debug!("tcp:6970 connected");
+                info!("tcp:6970 connected");
             } else if !socket.is_active() && tcp_6970_active {
                 debug!("tcp:6970 disconnected");
+                done = true;
             }
             tcp_6970_active = socket.is_active();
 
             if socket.may_recv() {
                 let data = socket
-                    .recv(|buffer| {
-                        let recvd_len = buffer.len();
-                        let mut data = buffer.to_owned();
-                        if !data.is_empty() {
-                            debug!(
-                                "tcp:6970 recv data: {:?}",
-                                str::from_utf8(data.as_ref()).unwrap_or("(invalid utf8)")
-                            );
-                            data = data.split(|&b| b == b'\n').collect::<Vec<_>>().concat();
-                            data.reverse();
-                            data.extend(b"\n");
-                        }
-                        (recvd_len, data)
-                    })
+                    .recv(|buffer| (buffer.len(), buffer.to_owned()))
                     .unwrap();
                 if socket.can_send() && !data.is_empty() {
-                    debug!(
-                        "tcp:6970 send data: {:?}",
-                        str::from_utf8(data.as_ref()).unwrap_or("(invalid utf8)")
-                    );
                     socket.send_slice(&data[..]).unwrap();
                 }
             } else if socket.may_send() {
-                debug!("tcp:6970 close");
+                info!("tcp:6970 close");
                 socket.close();
-            }
-        }
-
-        // tcp:6971: sinkhole
-        {
-            let mut socket = sockets.get::<TcpSocket>(tcp3_handle);
-            if !socket.is_open() {
-                socket.listen(6971).unwrap();
-                socket.set_keep_alive(Some(Duration::from_millis(1000)));
-                socket.set_timeout(Some(Duration::from_millis(2000)));
-            }
-
-            if socket.may_recv() {
-                socket
-                    .recv(|buffer| {
-                        if !buffer.is_empty() {
-                            debug!("tcp:6971 recv {:?} octets", buffer.len());
-                        }
-                        (buffer.len(), ())
-                    })
-                    .unwrap();
-            } else if socket.may_send() {
-                socket.close();
-            }
-        }
-
-        // tcp:6972: fountain
-        {
-            let mut socket = sockets.get::<TcpSocket>(tcp4_handle);
-            if !socket.is_open() {
-                socket.listen(6972).unwrap()
-            }
-
-            if socket.may_send() {
-                socket
-                    .send(|data| {
-                        if !data.is_empty() {
-                            debug!("tcp:6972 send {:?} octets", data.len());
-                            for (i, b) in data.iter_mut().enumerate() {
-                                *b = (i % 256) as u8;
-                            }
-                        }
-                        (data.len(), ())
-                    })
-                    .unwrap();
+                done = true;
             }
         }
     }
+
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 /// Test shootdown facilities in the kernel.

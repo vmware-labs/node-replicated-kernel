@@ -18,6 +18,7 @@ extern crate rexpect;
 
 use std::fmt::{self, Display, Formatter};
 use std::fs::{File, OpenOptions};
+use std::io::ErrorKind;
 use std::io::Write;
 use std::path::Path;
 use std::{io, process};
@@ -584,10 +585,15 @@ fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
 fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:
-    let _o = process::Command::new("sudo")
+    let o = process::Command::new("sudo")
         .args(&["service", "apparmor", "stop"])
-        .output()
-        .expect("failed to disable apparmor");
+        .output();
+    if o.is_err() {
+        match o.unwrap_err().kind() {
+            ErrorKind::NotFound => println!("AppArmor not found"),
+            _ => panic!("failed to disable apparmor"),
+        }
+    }
     let _o = process::Command::new("sudo")
         .args(&["killall", "dhcpd"])
         .output()

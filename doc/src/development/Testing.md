@@ -35,10 +35,12 @@ If you would like to run a specific integration test you can pass it with `--`:
 
 In case an integration test fails, adding `--nocapture` at the end (needs to
 come after the `--`) will make sure that the underlying `run.py` invocations are
-printed to the stdout.
+printed to the stdout. This can be helpful to figure out the exact `run.py`
+invocation that a test is doing so you can invoke it yourself manually for
+debugging.
 
-Note: Parallel testing for he kernel is not possible at the moment due to
-reliance on build flags for testing.
+> Parallel testing for he kernel is not possible at the moment due to reliance
+> on build flags for testing.
 
 ## Writing a unit-test for the kernel
 
@@ -77,3 +79,92 @@ To add a new integration test the following tests may be necessary:
    make not of the feature name used to include it.
 1. Add a runner function to `kernel/tests/integration-test.rs` that builds the
    kernel with the cargo feature runs it and checks the output.
+
+## Network
+
+nrk has support for three network interfaces at the moment: virtio, e1000 and
+vmxnet3. virtio and e1000 are available by using the respective rumpkernel
+drivers (and it's network stack). vmxnet3 is a standalone implementation that
+uses `smoltcp` for the network stack and is also capable of running in ring 0.
+
+### Ping
+
+A simple check is to use ping (on the host) to test the network stack
+functionality and latency. Adaptive `ping -A`, flooding `ping -f` are good modes
+to see that the low-level parts of the stack work and can handle an "infinite"
+amount of packets.
+
+Some expected output if it's working:
+
+```log
+$ ping 172.31.0.10
+64 bytes from 172.31.0.10: icmp_seq=1 ttl=64 time=0.259 ms
+64 bytes from 172.31.0.10: icmp_seq=2 ttl=64 time=0.245 ms
+64 bytes from 172.31.0.10: icmp_seq=3 ttl=64 time=0.267 ms
+64 bytes from 172.31.0.10: icmp_seq=4 ttl=64 time=0.200 ms
+```
+
+For network tests, it's easiest to start a DHCP server for the tap interface so
+the VM receives an IP by communicating with the server:
+
+```bash
+# Stop apparmor from blocking a custom dhcp instance
+service apparmor stop
+# Terminate any (old) existing dhcp instance
+sudo  killall dhcpd
+# Spawn a dhcp server, in the kernel/ directory do:
+sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf
+```
+
+A fully automated CI test that checks the network using ping is available as
+well, it can be invoked with the following command:
+
+```bash
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s04_userspace_rumprt_net
+```
+
+### socat and netcat
+
+`socat` is a helpful utility on the host to interface with the network, for
+example to open a UDP port and print on incoming packets on the command line,
+the following command can be used:
+
+```bash
+socat UDP-LISTEN:8889,fork stdout
+```
+
+Similarly we can use `netcat` to connect to a port and send a payload:
+
+```bash
+nc 172.31.0.10 6337
+```
+
+The integration tests `s05_redis_smoke` and `s04_userspace_rumprt_net` make use
+of those tool to verify that networking is working as expected.
+
+### tcpdump
+
+tcpdump is another handy tool to see all packets that are exchanged on a given
+interface etc. For debugging nrk network issues, this command is useful as it displays
+all packets on `tap0`:
+
+```bash
+tcpdump -i tap0 -vvv -XX
+```
+
+### Qemu Debug Output
+
+When developing drivers that are emulated in qemu, it can be useful to enable
+debug prints for the interface in QEMU to see what state the device is in. For
+example, to enable debug output for `vmxnet3` in qemu, you can change the
+`#undef` statements in `hw/net/vmxnet_debug.h` to `#define` and recompile the
+qemu sources (should look like this snippet below):
+
+```c
+#define VMXNET_DEBUG_CB
+#define VMXNET_DEBUG_INTERRUPTS
+#define VMXNET_DEBUG_CONFIG
+#define VMXNET_DEBUG_RINGS
+#define VMXNET_DEBUG_PACKETS
+#define VMXNET_DEBUG_SHMEM_ACCESS
+```

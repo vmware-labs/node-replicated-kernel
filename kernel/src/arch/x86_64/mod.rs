@@ -659,7 +659,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     };
     let num_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
     let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(num_cores);
-    let func = &|rid: &[AtomicBool], idx: usize| {
+    // CNR library allow max 192 replicas, so dependency with CNR.
+    const MAX_REPLICAS: usize = 192;
+    let func = move |rid: &[AtomicBool; 192], idx: usize| {
+        assert_eq!(rid.len(), MAX_REPLICAS);
         for replica in 0..num_nodes {
             if rid[replica].load(Ordering::Relaxed) == true {
                 let mut cores = atopology::MACHINE_TOPOLOGY

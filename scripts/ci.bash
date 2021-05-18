@@ -18,7 +18,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benc
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_ --nocapture
 #RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memcached_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_leveldb_benchmark --nocapture
-#RUST_TEST_THREADS=1 cargo test --features mlnrfs --test integration-test -- s06_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --nocapture
 
 # Clone repo
 rm -rf gh-pages
@@ -54,10 +54,10 @@ gzip ${DEPLOY_DIR}/vmops_benchmark.csv
 gzip ${DEPLOY_DIR}/vmops_benchmark_latency.csv
 
 # Copy memfs results
-#DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
-#mkdir -p ${DEPLOY_DIR}
-#mv fxmark_benchmark.csv ${DEPLOY_DIR}
-#gzip ${DEPLOY_DIR}/fxmark_benchmark.csv
+DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+mkdir -p ${DEPLOY_DIR}
+mv fxmark_benchmark.csv ${DEPLOY_DIR}
+gzip ${DEPLOY_DIR}/fxmark_benchmark.csv
 
 #Copy leveldb results
 DEPLOY_DIR="gh-pages/leveldb/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"

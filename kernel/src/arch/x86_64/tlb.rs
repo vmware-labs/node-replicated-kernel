@@ -100,7 +100,7 @@ impl Shootdown {
 
 pub fn enqueue(gtid: atopology::GlobalThreadId, s: WorkItem) {
     trace!("TLB enqueue shootdown msg {:?}", s);
-    assert!(IPI_WORKQUEUE[gtid as usize].push(s).is_ok());
+    let _ignore = IPI_WORKQUEUE[gtid as usize].push(s);
 }
 
 pub fn dequeue(gtid: atopology::GlobalThreadId) {

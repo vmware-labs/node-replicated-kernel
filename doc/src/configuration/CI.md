@@ -1,4 +1,4 @@
-# CI
+# Continuous integration (CI)
 
 We run tests using the gitlab-runner infrastructure. The following steps are
 necessary to set-up a new runner machine (and connect a github repo to it).

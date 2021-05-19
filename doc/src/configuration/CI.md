@@ -156,12 +156,32 @@ wget https://download.qemu.org/qemu-5.0.0.tar.xz
 tar xvJf qemu-5.0.0.tar.xz
 
 cd qemu-5.0.0
-./configure --enable-rdma --enable-debug
+./configure --enable-rdma
 make -j 28
 sudo make -j28 install
 
 # Check version (should be 5.0.0)
 qemu-system-x86 --version
+```
+
+## Install memaslap
+
+The memcached benchmark uses the `memaslap` binary that comes with
+`libmemcached` but is not included in the Ubuntu libmemcached-tools deb package.
+You'll have to install it manually from the sources:
+
+```bash
+sudo apt-get build-dep libmemcached-tools
+wget https://launchpad.net/libmemcached/1.0/1.0.18/+download/libmemcached-1.0.18.tar.gz
+tar zxvf libmemcached-1.0.18.tar.gz
+
+cd libmemcached-1.0.18/
+LDFLAGS='-lpthread' CXXFLAGS='-fpermissive' CFLAGS='-Wno-errors -fpermissive' ./configure --enable-memaslap --with-pthread=yes
+make -j12
+sudo make install
+sudo ldconfig
+
+cp memaslap /usr/local/bin
 ```
 
 ## Do a test-run

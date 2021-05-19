@@ -2,12 +2,12 @@
 
 There are two sets of dependencies required for the development process: build
 and run dependencies. We typically build, develop and test using the latest
-Ubuntu LTS version and run nrk in QEMU. Other Linux systems will probably
-work but might require a manual installation of all dependencies. Other
-operating systems likely won't work out of the box without some adjustments for
-code and the build-process.
+Ubuntu LTS version and run nrk in QEMU. Other Linux systems will probably work
+but might require a manual installation of all dependencies. Other operating
+systems likely won't work out of the box without some adjustments for code and
+the build-process.
 
-### Check-out the source tree
+## Check-out the source tree
 
 Check out the nrk sources first:
 
@@ -66,11 +66,10 @@ dependencies already.
 > newgrp docker
 > ```
 
-
 To create the image execute the following command in the `/scripts` directory.
 
-```
-$ bash ./docker-run.sh
+```bash
+bash ./docker-run.sh
 ```
 
 This will create the docker image and start the container. You will be dropped
@@ -82,13 +81,13 @@ had installed the dependencies natively.
 
 You can rebuild the image with:
 
-```
-$ bash ./docker-run.sh force-build
+```bash
+bash ./docker-run.sh force-build
 ```
 
 To exit the container, just type `exit` to terminate the shell.
 
-## Building
+## Build without running
 
 To just build the OS invoke the `run.py` script (in the kernel directory) with
 the `-n` parameter (no-run flag).
@@ -121,11 +120,15 @@ sudo apt build-dep qemu
 wget https://download.qemu.org/qemu-5.0.0.tar.xz
 tar xvJf qemu-5.0.0.tar.xz
 cd qemu-5.0.0
-./configure --enable-rdma --enable-debug
+./configure --enable-rdma
 make -j 28
 sudo make -j28 install
 sudo make rdmacm-mux
 ```
+
+You can also add `--enable-debug` to the configure script which will add debug
+information (useful for source information when stepping through qemu code in
+gdb).
 
 ### Use RDMA support in QEMU
 

@@ -25,4 +25,4 @@ steps happen:
 
 
 > For more information on how to run rkapps applications, refer to the
-> [Benchmarking](../Benchmarking.html) section.
+> [Benchmarking](..//benchmarking/Benchmarking.html) section.

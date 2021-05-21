@@ -13,43 +13,49 @@ use kpi::io::*;
 use kpi::process::{FrameId, ProcessInfo};
 use kpi::FileOperation;
 
-use node_replication::{Dispatch, ReplicaToken, Replica, Log};
 use lazy_static::lazy_static;
+use node_replication::{Dispatch, Log, Replica, ReplicaToken};
 
-use crate::arch::process::{UserPtr, UserSlice};
+use crate::arch::process::{Ring3Executor, Ring3Process, UserPtr, UserSlice};
 use crate::arch::Module;
 use crate::error::KError;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
-use crate::arch::process::Ring3Process;
+
+use crate::kcb::{self, ArchSpecificKcb};
+
+/// How many (concurrent) processes the systems supports.
+pub const MAX_PROCESSES: usize = 12;
 
 lazy_static! {
-    static ref PROCESS_TABLE: Vec<Arc<Replica<'static, NrProcess<Ring3Process>>>> = {
-        let log = Arc::new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
-            2 * 1024 * 1024,
-        ));
+    pub static ref PROCESS_TABLE: Vec<Vec<Arc<Replica<'static, NrProcess<Ring3Process>>>>> = {
+        let numa_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
+        let numa_nodes = if numa_nodes == 0 { numa_nodes + 1 } else { numa_nodes }; // Want at least one replica...
 
-        let mut channels = Vec::with_capacity(12);
-        for _i in 0..1 {
-            channels.push(Replica::<NrProcess<Ring3Process>>::new(&log));
+        let mut numa_cache = Vec::with_capacity(numa_nodes);
+        for n in 0..numa_nodes {
+            let process_replicas = Vec::with_capacity(MAX_PROCESSES);
+            numa_cache.push(process_replicas)
         }
 
-        channels
+        for pid in 0..MAX_PROCESSES {
+                let log = Arc::new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
+                    2 * 1024 * 1024,
+                ));
+
+            for node in 0..numa_nodes {
+                let kcb = kcb::get_kcb();
+                kcb.set_allocation_affinity(node as atopology::NodeId);
+                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::new(&log));
+                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
+                kcb.set_allocation_affinity(0 as atopology::NodeId);
+            }
+        }
+
+        numa_cache
     };
 }
-
-/*
-// The operation log for storing `WriteOperation`, it has a size of 2 MiB:
-let log = Arc::new(Log::<<NrProcess as Dispatch>::WriteOperation>::new(
-    2 * 1024 * 1024,
-));
-
-// Next, we create two replicas of the stack
-let replica1 = Replica::<Stack>::new(&log);
-let replica2 = Replica::<Stack>::new(&log);
-*/
-
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
@@ -61,10 +67,10 @@ pub enum ReadOps {
 #[derive(PartialEq, Clone, Debug)]
 pub enum Op {
     ProcRaiseIrq,
+    Load(Pid, &'static Module, Vec<Frame>),
 
     /// Assign a core to a process.
     ProcAllocateCore(
-        Pid,
         Option<atopology::NodeId>,
         Option<atopology::GlobalThreadId>,
         VAddr,
@@ -86,6 +92,7 @@ pub enum Op {
 
 #[derive(Debug, Clone)]
 pub enum NodeResult<E: Executor> {
+    Loaded,
     Destroyed,
     ProcessInfo(ProcessInfo),
     CoreAllocated(atopology::GlobalThreadId, Box<E>),
@@ -127,36 +134,36 @@ impl<P: Process + Default> Default for NrProcess<P> {
 // TODO(api-ergonomics): Fix ugly execute API
 impl<P: Process> NrProcess<P> {
     pub fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
-        /*let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute(ReadOps::MemResolve(pid, base), *token);
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        debug_assert!(base.as_u64() < kpi::KERNEL_BASE, "Invalid base");
 
-                match response {
-                    Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
-                    Err(e) => Err(e.clone()),
-                    _ => unreachable!("Got unexpected response"),
-                }
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response =
+            PROCESS_TABLE[node][pid].execute(ReadOps::MemResolve(base), kcb.process_token[pid]);
+        match response {
+            Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 
-    pub fn synchronize() -> Result<(), KError> {
-        /*let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute(ReadOps::Synchronize, *token);
+    pub fn synchronize(pid: Pid) -> Result<(), KError> {
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-                match response {
-                    Ok(NodeResult::Synchronized) => Ok(()),
-                    _ => unreachable!("Got unexpected response"),
-                }
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response =
+            PROCESS_TABLE[node][pid].execute(ReadOps::Synchronize, kcb.process_token[pid]);
+        match response {
+            Ok(NodeResult::Synchronized) => Ok(()),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 
     pub fn map_device_frame(
@@ -164,37 +171,35 @@ impl<P: Process> NrProcess<P> {
         frame: Frame,
         action: MapAction,
     ) -> Result<(u64, u64), KError> {
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        /*let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(Op::MemMapDevice(pid, frame, action), *token);
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
 
-                match response {
-                    Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
-                    _ => unreachable!("Got unexpected response"),
-                }
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        let response = PROCESS_TABLE[node][pid]
+            .execute_mut(Op::MemMapDevice(frame, action), kcb.process_token[pid]);
+        match response {
+            Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 
     pub fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
-        /*
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(Op::MemUnmap(pid, base), *token);
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-                match response {
-                    Ok(NodeResult::Unmapped(handle)) => Ok(handle),
-                    _ => unreachable!("Got unexpected response"),
-                }
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response =
+            PROCESS_TABLE[node][pid].execute_mut(Op::MemUnmap(base), kcb.process_token[pid]);
+        match response {
+            Ok(NodeResult::Unmapped(handle)) => Ok(handle),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 
     pub fn map_frame_id(
@@ -203,21 +208,21 @@ impl<P: Process> NrProcess<P> {
         base: VAddr,
         action: MapAction,
     ) -> Result<(PAddr, usize), KError> {
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        /*let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response =
-                    replica.execute_mut(Op::MemMapFrameId(pid, base, frame_id, action), *token);
-                match response {
-                    Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
-                    Err(e) => unreachable!("MappedFrameId {:?}", e),
-                    _ => unreachable!("unexpected response"),
-                }
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            Op::MemMapFrameId(base, frame_id, action),
+            kcb.process_token[pid],
+        );
+        match response {
+            Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 
     pub fn map_frames(
@@ -226,54 +231,49 @@ impl<P: Process> NrProcess<P> {
         frames: Vec<Frame>,
         action: MapAction,
     ) -> Result<(u64, u64), KError> {
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        /*let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let mut virtual_offset = 0;
-                for frame in frames {
-                    let response = replica.execute_mut(
-                        Op::MemMapFrame(pid, base + virtual_offset, frame, action),
-                        *token,
-                    );
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
 
-                    match response {
-                        Ok(NodeResult::Mapped) => {}
-                        e => unreachable!(
-                            "Got unexpected response MemMapFrame {:?} {:?} {:?} {:?}",
-                            e,
-                            base + virtual_offset,
-                            frame,
-                            action
-                        ),
-                    };
+        let mut virtual_offset = 0;
+        for frame in frames {
+            let response = PROCESS_TABLE[node][pid].execute_mut(
+                Op::MemMapFrame(base + virtual_offset, frame, action),
+                kcb.process_token[pid],
+            );
+            match response {
+                Ok(NodeResult::Mapped) => {}
+                e => unreachable!(
+                    "Got unexpected response MemMapFrame {:?} {:?} {:?} {:?}",
+                    e,
+                    base + virtual_offset,
+                    frame,
+                    action
+                ),
+            }
 
-                    virtual_offset += frame.size();
-                }
+            virtual_offset += frame.size();
+        }
 
-                Ok((base.as_u64(), virtual_offset as u64))
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        Ok((base.as_u64(), virtual_offset as u64))
     }
 
     pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
-        /*
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute(ReadOps::ProcessInfo(pid), *token);
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-                match &response {
-                    Ok(NodeResult::ProcessInfo(pinfo)) => Ok(*pinfo),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response =
+            PROCESS_TABLE[node][pid].execute(ReadOps::ProcessInfo, kcb.process_token[pid]);
+        match response {
+            Ok(NodeResult::ProcessInfo(pinfo)) => Ok(pinfo),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 
     pub fn allocate_core_to_process(
@@ -281,47 +281,41 @@ impl<P: Process> NrProcess<P> {
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,
         gtid: Option<atopology::GlobalThreadId>,
-    ) -> Result<(atopology::GlobalThreadId, Eid), KError> {
+    ) -> Result<(atopology::GlobalThreadId, Box<Ring3Executor>), KError> {
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        /*
         let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(
-                    Op::ProcAllocateCore(pid, gtid, affinity, entry_point),
-                    *token,
-                );
+        let node = kcb.arch.node();
 
-                match &response {
-                    Ok(NodeResult::CoreAllocated(rgtid, eid)) => {
-                        let _r = gtid.map(|gtid| debug_assert_eq!(gtid, *rgtid));
-                        Ok((*rgtid, *eid))
-                    }
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-         */
-         Err(KError::ReplicaNotSet)
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            Op::ProcAllocateCore(gtid, affinity, entry_point),
+            kcb.process_token[pid],
+        );
+        match response {
+            Ok(NodeResult::CoreAllocated(rgtid, executor)) => {
+                let _r = gtid.map(|gtid| debug_assert_eq!(gtid, rgtid));
+                Ok((rgtid, executor))
+            }
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 
     pub fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
-        /*
-        let kcb = super::kcb::get_kcb();
+        let pid = pid as usize;
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        kcb.replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute_mut(Op::AllocateFrameToProcess(pid, frame), *token);
-                match response {
-                    Ok(NodeResult::FrameId(fid)) => Ok(fid),
-                    Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
-                }
-            })
-        */
-        Err(KError::ReplicaNotSet)
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response = PROCESS_TABLE[node][pid]
+            .execute_mut(Op::AllocateFrameToProcess(frame), kcb.process_token[pid]);
+        match response {
+            Ok(NodeResult::FrameId(fid)) => Ok(fid),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
     }
 }
 
@@ -340,9 +334,7 @@ where
                 // A NOP that just makes sure we've advanced the replica
                 Ok(NodeResult::Synchronized)
             }
-            ReadOps::ProcessInfo => {
-                Ok(NodeResult::ProcessInfo(*self.process.pinfo()))
-            }
+            ReadOps::ProcessInfo => Ok(NodeResult::ProcessInfo(*self.process.pinfo())),
             ReadOps::MemResolve(base) => {
                 let (paddr, rights) = self.process.vspace().resolve(base)?;
                 Ok(NodeResult::Resolved(paddr, rights))
@@ -355,7 +347,12 @@ where
             Op::Destroy => unimplemented!("Destrroy"),
             Op::ProcRaiseIrq => unimplemented!("ProcRaiseIrq"),
             Op::MemAdjust => unimplemented!("MemAdjust"),
-            Op::ProcAllocateCore(pid, a, b, entry_point) => unimplemented!("ProcAllocateCore"),
+            Op::ProcAllocateCore(a, b, entry_point) => unimplemented!("ProcAllocateCore"),
+
+            Op::Load(pid, module, writeable_sections) => {
+                self.process.load(pid, module, writeable_sections)?;
+                Ok(NodeResult::Loaded)
+            }
 
             Op::DispatcherAllocation(frame) => {
                 let how_many = self.process.allocate_executors(frame)?;
@@ -371,9 +368,8 @@ where
             // Can be MapFrame with base supplied ...
             Op::MemMapDevice(frame, action) => {
                 let base = VAddr::from(frame.base.as_u64());
-                self.process.vspace_mut()
-                    .map_frame(base, frame, action)?;
-                    Ok(NodeResult::Mapped)
+                self.process.vspace_mut().map_frame(base, frame, action)?;
+                Ok(NodeResult::Mapped)
             }
 
             Op::MemMapFrameId(base, frame_id, action) => {
@@ -395,14 +391,13 @@ where
                 Ok(NodeResult::Unmapped(shootdown_handle))
             }
 
-            Op::ProcAllocateCore(pid, Some(gtid), Some(region), entry_point) => {
+            Op::ProcAllocateCore(Some(gtid), Some(region), entry_point) => {
                 let mut executor = self.process.get_executor(region)?;
                 let eid = executor.id();
                 unsafe {
                     (*executor.vcpu_kernel()).resume_with_upcall = entry_point;
                 }
                 self.active_cores.push(gtid);
-
 
                 Ok(NodeResult::CoreAllocated(gtid, executor))
             }

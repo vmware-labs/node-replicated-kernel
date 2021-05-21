@@ -1221,7 +1221,6 @@ pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     Ok(pid)
 }
 
-
 pub fn spawn2(binary: &'static str) -> Result<Pid, KError> {
     let kcb = kcb::get_kcb();
 

@@ -3,6 +3,8 @@
 
 //! KCB is the local kernel control that stores all core local state.
 
+#![allow(unused_imports)]
+
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
@@ -10,6 +12,7 @@ use core::convert::TryInto;
 use core::slice::from_raw_parts;
 
 use arr_macro::arr;
+use arrayvec::ArrayVec;
 use logos::Logos;
 use node_replication::{Replica, ReplicaToken};
 use slabmalloc::ZoneAllocator;
@@ -23,6 +26,7 @@ use crate::memory::mcache::TCache;
 use crate::memory::mcache::TCacheSp;
 use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PAddr, PhysicalPageProvider};
 use crate::nr::KernelNode;
+use crate::nrproc::{MAX_PROCESSES, PROCESS_TABLE};
 use crate::process::Process;
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
@@ -269,6 +273,9 @@ pub struct Kcb<A: ArchSpecificKcb> {
 
     /// Measures cycles spent in TLB shootdown handler for responder.
     pub tlb_time: u64,
+
+    /// Tokens to access process replicas
+    pub process_token: ArrayVec<ReplicaToken, { MAX_PROCESSES }>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -294,6 +301,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             print_buffer: None,
             replica: None,
             tlb_time: 0,
+            process_token: ArrayVec::new_const(),
         }
     }
 
@@ -303,6 +311,19 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         idx_token: ReplicaToken,
     ) {
         self.replica = Some((replica, idx_token));
+    }
+
+    pub fn register_with_process_replicas(&mut self) {
+        let node = self.arch.node();
+        debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
+
+        for pid in 0..MAX_PROCESSES {
+            debug_assert!(PROCESS_TABLE[node].len() > pid, "Invalid PID");
+
+            let token = PROCESS_TABLE[node][pid].register();
+            self.process_token
+                .push(token.expect("Need to be able to register"));
+        }
     }
 
     pub fn set_panic_mode(&mut self) {
@@ -419,6 +440,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 pub trait ArchSpecificKcb {
     type Process: Process + Sync + Default;
 
+    fn node(&self) -> usize;
     fn hwthread_id(&self) -> u64;
     fn install(&mut self);
 }

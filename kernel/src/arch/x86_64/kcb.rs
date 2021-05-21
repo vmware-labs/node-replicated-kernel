@@ -323,6 +323,13 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
     fn hwthread_id(&self) -> u64 {
         atopology::MACHINE_TOPOLOGY.current_thread().id
     }
+
+    fn node(&self) -> usize {
+        atopology::MACHINE_TOPOLOGY
+            .current_thread()
+            .node_id
+            .unwrap_or(0) as usize
+    }
 }
 
 impl Kcb<Arch86Kcb> {

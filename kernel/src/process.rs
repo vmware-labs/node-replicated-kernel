@@ -100,7 +100,12 @@ pub trait Process {
     type E: Executor + Copy + Sync + Send;
     type A: AddressSpace;
 
-    fn load(&mut self, pid: Pid, module: &Module, writable_sections: Vec<Frame>) -> Result<(), ProcessError>
+    fn load(
+        &mut self,
+        pid: Pid,
+        module: &Module,
+        writable_sections: Vec<Frame>,
+    ) -> Result<(), ProcessError>
     where
         Self: core::marker::Sized;
 
@@ -450,7 +455,6 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
             }
         })
 }*/
-
 
 /// Create dispatchers for a given Pid to run on all cores.
 ///

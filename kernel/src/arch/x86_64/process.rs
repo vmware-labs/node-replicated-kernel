@@ -679,7 +679,38 @@ pub struct Ring3Process {
     pub read_only_offset: VAddr,
 }
 
-impl Ring3Process {
+impl Default for Ring3Process {
+    fn default() -> Self {
+        let mut executor_cache: arrayvec::ArrayVec<
+            Option<Vec<Box<Ring3Executor>>>,
+            { super::MAX_NUMA_NODES },
+        > = Default::default();
+        for _i in 0..super::MAX_NUMA_NODES {
+            executor_cache.push(None);
+        }
+        let mut fds: arrayvec::ArrayVec<Option<Fd>, { MAX_FILES_PER_PROCESS }> = Default::default();
+        for _i in 0..MAX_FILES_PER_PROCESS {
+            fds.push(None);
+        }
+
+        Ring3Process {
+            pid: 0,
+            current_eid: 0,
+            offset: VAddr::from(0x20_0000_0000usize),
+            vspace: VSpace::new(),
+            entry_point: VAddr::from(0usize),
+            executor_cache,
+            executor_offset: VAddr::from(0x21_0000_0000usize),
+            fds,
+            pinfo: Default::default(),
+            frames: Vec::with_capacity(12),
+            writeable_sections: Vec::new(),
+            read_only_offset: VAddr::zero(),
+        }
+    }
+}
+
+/*impl Ring3Process {
     fn create(pid: Pid, writeable_sections: Vec<Frame>) -> Self {
         let mut executor_cache: arrayvec::ArrayVec<
             Option<Vec<Box<Ring3Executor>>>,
@@ -708,7 +739,7 @@ impl Ring3Process {
             read_only_offset: VAddr::zero(),
         }
     }
-}
+}*/
 
 impl fmt::Debug for Ring3Process {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -961,12 +992,14 @@ impl Process for Ring3Process {
     type A = VSpace;
 
     /// Create a process from a module
-    fn new(
-        module: &Module,
+    fn load(
+        &mut self,
         pid: Pid,
+        module: &Module,
         writeable_sections: Vec<Frame>,
-    ) -> Result<Ring3Process, ProcessError> {
-        let mut p = Ring3Process::create(pid, writeable_sections);
+    ) -> Result<(), ProcessError> {
+        self.pid = pid;
+        self.writeable_sections = writeable_sections;
 
         // Load the Module into the process address-space
         // This needs mostly sanitation work on elfloader and
@@ -975,10 +1008,10 @@ impl Process for Ring3Process {
             let e = elfloader::ElfBinary::new(module.name(), module.as_slice())?;
             if !e.is_pie() {
                 // We don't have an offset for non-pie applications (rump apps)
-                p.offset = VAddr::zero();
+                self.offset = VAddr::zero();
             }
-            p.entry_point = VAddr::from(e.entry_point());
-            e.load(&mut p)?;
+            self.entry_point = VAddr::from(e.entry_point());
+            e.load(self)?;
         }
 
         // Install the kernel mappings
@@ -989,11 +1022,11 @@ impl Process for Ring3Process {
             for i in 128..=135 {
                 let kernel_pml_entry = kcb.arch.init_vspace().pml4[i];
                 trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
-                p.vspace.page_table.pml4[i] = kernel_pml_entry;
+                self.vspace.page_table.pml4[i] = kernel_pml_entry;
             }
         });
 
-        Ok(p)
+        Ok(())
     }
 
     fn try_reserve_executors(
@@ -1171,6 +1204,25 @@ impl Process for Ring3Process {
 ///   so we can run on all cores
 /// - Finally we allocate a dispatcher to the current core (0) and start running the process
 pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
+    let kcb = kcb::get_kcb();
+
+    let pid = make_process(binary)?;
+    allocate_dispatchers(pid)?;
+
+    // Set current thread to run executor from our process (on the current core)
+    let thread = atopology::MACHINE_TOPOLOGY.current_thread();
+    let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
+        pid,
+        INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
+        thread.node_id.or(Some(0)),
+        Some(thread.id),
+    )?;
+
+    Ok(pid)
+}
+
+
+pub fn spawn2(binary: &'static str) -> Result<Pid, KError> {
     let kcb = kcb::get_kcb();
 
     let pid = make_process(binary)?;

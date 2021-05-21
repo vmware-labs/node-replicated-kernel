@@ -417,7 +417,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 }
 
 pub trait ArchSpecificKcb {
-    type Process: Process + Sync;
+    type Process: Process + Sync + Default;
 
     fn hwthread_id(&self) -> u64;
     fn install(&mut self);

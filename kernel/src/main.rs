@@ -69,6 +69,7 @@ mod memory;
 mod mlnr;
 mod mlnrfs;
 mod nr;
+mod nrproc;
 #[macro_use]
 mod prelude;
 mod mpmc;

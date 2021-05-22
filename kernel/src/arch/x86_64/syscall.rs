@@ -192,6 +192,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let pid = kcb.current_pid()?;
 
             let (gtid, eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
+                kcb,
                 pid,
                 VAddr::from(entry_point),
                 Some(affinity),

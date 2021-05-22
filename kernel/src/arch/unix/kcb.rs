@@ -4,14 +4,18 @@
 //! KCB is the local kernel control that stores all core local state.
 
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::any::Any;
 use core::cell::{RefCell, RefMut};
 
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::{Replica, ReplicaToken};
 
+use crate::error::KError;
 use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
+use crate::nrproc::NrProcess;
+use crate::process::Pid;
 use crate::process::ProcessError;
 use crate::{
     kcb::{ArchSpecificKcb, BootloaderArguments, Kcb},
@@ -122,5 +126,13 @@ impl ArchSpecificKcb for ArchKcb {
             .current_thread()
             .node_id
             .unwrap_or(0) as usize
+    }
+
+    fn current_pid(&self) -> Result<Pid, KError> {
+        Err(KError::ProcessNotSet)
+    }
+
+    fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>> {
+        &*super::process::PROCESS_TABLE
     }
 }

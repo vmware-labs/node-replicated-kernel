@@ -349,10 +349,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
 ///
 /// Parse & relocate ELF
 /// Create an initial VSpace
-pub fn make_process<P>(binary: &'static str) -> Result<Pid, KError>
-where
-    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
-{
+pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     KernelAllocator::try_refill_tcache(7, 1)?;
     let kcb = kcb::get_kcb();
 
@@ -465,10 +462,7 @@ where
 /// Create dispatchers for a given Pid to run on all cores.
 ///
 /// Also make sure they are all using NUMA local memory
-pub fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError>
-where
-    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
-{
+pub fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
     trace!("Allocate dispatchers");
 
     let mut create_per_region: Vec<(atopology::NodeId, usize)> =

@@ -12,6 +12,7 @@ use node_replication::Dispatch;
 
 use crate::arch::MAX_CORES;
 use crate::error::KError;
+use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::memory::vspace::{MapAction, TlbFlushHandle};
 use crate::memory::{PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process, ProcessError, MAX_PROCESSES};
@@ -60,9 +61,9 @@ impl<P: Process> Default for KernelNode<P> {
     }
 }
 
-impl<P> KernelNode<P>
+impl<P: 'static> KernelNode<P>
 where
-    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
+    P: Process + Default,
 {
     pub fn synchronize() -> Result<(), KError> {
         let kcb = super::kcb::get_kcb();
@@ -74,15 +75,22 @@ where
             })
     }
 
-    pub fn allocate_core_to_process(
+    //fn sum_uints<I>(iter: I) where I: Iterator, I::A = uint { ... }
+    // fn foo<I>(it: I) where I: Iterator<Item=Foo> {}
+
+    pub fn allocate_core_to_process<A>(
+        kcb: &mut Kcb<A>,
         pid: Pid,
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,
         gtid: Option<atopology::GlobalThreadId>,
-    ) -> Result<(atopology::GlobalThreadId, Eid), KError> {
-        let kcb = super::kcb::get_kcb();
-
+    ) -> Result<(atopology::GlobalThreadId, Eid), KError>
+    where
+        A: ArchSpecificKcb<Process = P>,
+        P: Process + core::marker::Sync,
+    {
         let (gtid, executor) = crate::nrproc::NrProcess::<P>::allocate_core_to_process(
+            kcb,
             pid,
             entry_point,
             affinity,

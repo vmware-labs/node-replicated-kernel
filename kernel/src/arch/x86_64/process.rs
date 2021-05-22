@@ -1237,8 +1237,6 @@ impl Process for Ring3Process {
 
 /// Spawns a new process
 ///
-/// This function is way too long because of several things that need to happen,
-/// and they are currently (TODO) not neatly encapsulated away in modules/functions
 /// We're loading a process from a module:
 /// - First we are constructing our own custom elfloader trait to load figure out
 ///   which program headers in the module will be writable (these should not be replicated by NR)
@@ -1246,6 +1244,7 @@ impl Process for Ring3Process {
 /// - Then we allocate a bunch of memory on all NUMA nodes to create enough dispatchers
 ///   so we can run on all cores
 /// - Finally we allocate a dispatcher to the current core (0) and start running the process
+#[cfg(target_os = "none")]
 pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     let kcb = kcb::get_kcb();
 
@@ -1255,6 +1254,7 @@ pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     // Set current thread to run executor from our process (on the current core)
     let thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
+        kcb,
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
         thread.node_id.or(Some(0)),

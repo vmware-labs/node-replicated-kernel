@@ -6,12 +6,14 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
 use apic::x2apic::X2APICDriver;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
+use node_replication::Replica;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -20,7 +22,7 @@ use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
 use crate::mlnrfs::{FileSystem, MlnrFS};
-
+use crate::nrproc::NrProcess;
 use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
 
@@ -330,11 +332,13 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
             .node_id
             .unwrap_or(0) as usize
     }
-}
 
-impl Kcb<Arch86Kcb> {
-    pub fn current_pid(&self) -> Result<Pid, KError> {
-        Ok(self.arch.current_process()?.pid)
+    fn current_pid(&self) -> Result<Pid, KError> {
+        Ok(self.current_process()?.pid)
+    }
+
+    fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>> {
+        &*super::process::PROCESS_TABLE
     }
 }
 

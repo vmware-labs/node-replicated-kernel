@@ -5,6 +5,7 @@
 
 use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
 use core::convert::TryInto;
 use core::fmt::Debug;
@@ -26,7 +27,8 @@ use crate::memory::mcache::TCache;
 use crate::memory::mcache::TCacheSp;
 use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PAddr, PhysicalPageProvider};
 use crate::nr::KernelNode;
-use crate::process::{Process, MAX_PROCESSES};
+use crate::nrproc::NrProcess;
+use crate::process::{Pid, Process, MAX_PROCESSES};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 
@@ -438,6 +440,10 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     pub fn kernel_binary(&self) -> &'static [u8] {
         self.kernel_binary
     }
+
+    pub fn current_pid(&self) -> Result<Pid, KError> {
+        self.arch.current_pid()
+    }
 }
 
 pub trait ArchSpecificKcb {
@@ -446,4 +452,6 @@ pub trait ArchSpecificKcb {
     fn node(&self) -> usize;
     fn hwthread_id(&self) -> u64;
     fn install(&mut self);
+    fn current_pid(&self) -> Result<Pid, KError>;
+    fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>>;
 }

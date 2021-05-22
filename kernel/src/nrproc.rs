@@ -15,7 +15,7 @@ use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
 
-use crate::kcb::ArchSpecificKcb;
+use crate::kcb::{ArchSpecificKcb, Kcb};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
@@ -92,7 +92,7 @@ impl<P: Process + Default> Default for NrProcess<P> {
 // TODO(api-ergonomics): Fix ugly execute API
 impl<P> NrProcess<P>
 where
-    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
+    P: Process,
 {
     pub fn load(
         pid: Pid,
@@ -244,18 +244,22 @@ where
         }
     }
 
-    pub fn allocate_core_to_process(
+    pub fn allocate_core_to_process<A>(
+        kcb: &Kcb<A>,
         pid: Pid,
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,
         gtid: Option<atopology::GlobalThreadId>,
-    ) -> Result<(atopology::GlobalThreadId, Box<P::E>), KError> {
+    ) -> Result<(atopology::GlobalThreadId, Box<P::E>), KError>
+    where
+        A: ArchSpecificKcb<Process = P>,
+        P: Process + core::marker::Sync + 'static,
+    {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = kcb.arch.node();
 
-        let response = PROCESS_TABLE[node][pid].execute_mut(
+        let response = kcb.arch.process_table()[node][pid].execute_mut(
             Op::ProcAllocateCore(gtid, affinity, entry_point),
             kcb.process_token[pid],
         );

@@ -700,7 +700,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     {
-        lazy_static::initialize(&crate::nrproc::PROCESS_TABLE);
+        lazy_static::initialize(&process::PROCESS_TABLE);
         let kcb = kcb::get_kcb();
         kcb.register_with_process_replicas();
     }

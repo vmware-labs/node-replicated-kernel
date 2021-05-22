@@ -190,15 +190,15 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             }
             let affinity = affinity.ok_or(crate::process::ProcessError::InvalidGlobalThreadId)?;
             let pid = kcb.current_pid()?;
-            let (gtid, executor) = nrproc::NrProcess::<Ring3Process>::allocate_core_to_process(
+
+            let (gtid, eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
                 pid,
                 VAddr::from(entry_point),
                 Some(affinity),
                 Some(gtid),
             )?;
-            unreachable!("put executor in nrsched?");
 
-            Ok((gtid, executor.eid as u64))
+            Ok((gtid, eid as u64))
         }
         ProcessOperation::AllocatePhysical => {
             let page_size: usize = arg2.try_into().unwrap_or(0);

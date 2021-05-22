@@ -24,6 +24,9 @@ use crate::mlnrfs::Fd;
 use crate::prelude::overlaps;
 use crate::{kcb, mlnr, nr, nrproc, round_up};
 
+/// How many (concurrent) processes the systems supports.
+pub const MAX_PROCESSES: usize = 12;
+
 /// This struct is used to copy the user buffer into kernel space, so that the
 /// user-application doesn't have any reference to any log operation in kernel space.
 #[derive(PartialEq, Clone, Debug)]
@@ -346,9 +349,10 @@ impl elfloader::ElfLoader for DataSecAllocator {
 ///
 /// Parse & relocate ELF
 /// Create an initial VSpace
-pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
-    use crate::arch::process::Ring3Process; // XXX
-
+pub fn make_process<P>(binary: &'static str) -> Result<Pid, KError>
+where
+    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
+{
     KernelAllocator::try_refill_tcache(7, 1)?;
     let kcb = kcb::get_kcb();
 
@@ -394,7 +398,7 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
             let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
             if let nr::NodeResult::PidAllocated(pid) = response {
                 mlnr::MlnrKernelNode::add_process(pid)?;
-                crate::nrproc::NrProcess::<Ring3Process>::load(pid, mod_file, data_frames)?;
+                crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)?;
                 Ok(pid)
             } else {
                 Err(KError::ProcessLoadingFailed)
@@ -461,7 +465,10 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
 /// Create dispatchers for a given Pid to run on all cores.
 ///
 /// Also make sure they are all using NUMA local memory
-pub fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
+pub fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError>
+where
+    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
+{
     trace!("Allocate dispatchers");
 
     let mut create_per_region: Vec<(atopology::NodeId, usize)> =
@@ -491,8 +498,7 @@ pub fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
                 frame.zero();
             }
 
-            use crate::arch::process::Ring3Process; // XXX
-            match nrproc::NrProcess::<Ring3Process>::allocate_dispatchers(pid, frame) {
+            match nrproc::NrProcess::<P>::allocate_dispatchers(pid, frame) {
                 Ok(count) => {
                     dispatchers_created += count;
                 }

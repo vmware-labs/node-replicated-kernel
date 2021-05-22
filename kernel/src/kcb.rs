@@ -3,8 +3,6 @@
 
 //! KCB is the local kernel control that stores all core local state.
 
-#![allow(unused_imports)]
-
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
@@ -22,13 +20,13 @@ use crate::arch::kcb::init_kcb;
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::error::KError;
 
+use crate::arch::process::PROCESS_TABLE;
 use crate::memory::emem::EmergencyAllocator;
 use crate::memory::mcache::TCache;
 use crate::memory::mcache::TCacheSp;
 use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PAddr, PhysicalPageProvider};
 use crate::nr::KernelNode;
-use crate::nrproc::{MAX_PROCESSES, PROCESS_TABLE};
-use crate::process::Process;
+use crate::process::{Process, MAX_PROCESSES};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 

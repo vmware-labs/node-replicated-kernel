@@ -17,6 +17,12 @@ pub struct VSpace {
     pub pml4: Pin<Box<PML4>>,
 }
 
+impl Default for VSpace {
+    fn default() -> Self {
+        VSpace::new()
+    }
+}
+
 impl fmt::Debug for VSpace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VSpace").finish()

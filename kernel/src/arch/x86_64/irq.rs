@@ -414,6 +414,10 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
     // Periodically advance replica state, then resume immediately
     nr::KernelNode::<Ring3Process>::synchronize();
     let kcb = get_kcb();
+    for pid in 0..crate::process::MAX_PROCESSES {
+        nrproc::NrProcess::<Ring3Process>::synchronize(pid);
+    }
+
     if kcb.arch.has_current_process() {
         // TODO(process-mgmt): Ensures that we still periodically
         // check and advance replicas even on cores that have a core.

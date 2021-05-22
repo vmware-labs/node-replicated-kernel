@@ -2097,6 +2097,6 @@ fn s06_leveldb_benchmark() {
             p.process.exit()
         };
 
-        qemu_run().is_ok();
+        check_for_successful_exit(&cmdline, qemu_run(), output);
     }
 }

@@ -12,19 +12,24 @@ use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
+use lazy_static::lazy_static;
+use node_replication::{Dispatch, Log, Replica, ReplicaToken};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
 use crate::error::KError;
+use crate::kcb::ArchSpecificKcb;
 use crate::kcb::{self, Kcb};
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{
     paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, PhysicalPageProvider, VAddr,
 };
 use crate::mlnrfs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
+use crate::nrproc::NrProcess;
 use crate::process::{
     allocate_dispatchers, make_process, Eid, Executor, Pid, Process, ProcessError, ResumeHandle,
+    MAX_PROCESSES,
 };
 use crate::{nr, round_up};
 
@@ -32,7 +37,38 @@ use super::kcb::Arch86Kcb;
 use super::vspace::*;
 use super::Module;
 
+pub type ArchExecutor = Ring3Executor;
+
 const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
+
+lazy_static! {
+    pub static ref PROCESS_TABLE: Vec<Vec<Arc<Replica<'static, NrProcess<Ring3Process>>>>> = {
+        // Want at least one replica...
+        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+
+        let mut numa_cache = Vec::with_capacity(numa_nodes);
+        for n in 0..numa_nodes {
+            let process_replicas = Vec::with_capacity(MAX_PROCESSES);
+            numa_cache.push(process_replicas)
+        }
+
+        for pid in 0..MAX_PROCESSES {
+                let log = Arc::new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
+                    2 * 1024 * 1024,
+                ));
+
+            for node in 0..numa_nodes {
+                let kcb = kcb::get_kcb();
+                kcb.set_allocation_affinity(node as atopology::NodeId);
+                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::new(&log));
+                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
+                kcb.set_allocation_affinity(0 as atopology::NodeId);
+            }
+        }
+
+        numa_cache
+    };
+}
 
 pub struct UserPtr<T> {
     value: *mut T,
@@ -903,7 +939,7 @@ impl elfloader::ElfLoader for Ring3Process {
                     );
                 }
 
-                let ptr = paddr.as_u64() as *mut u8;
+                let ptr: *mut u8 = paddr_to_kernel_vaddr(paddr).as_mut_ptr();
                 unsafe {
                     *ptr = *val;
                 }
@@ -1213,26 +1249,8 @@ impl Process for Ring3Process {
 pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     let kcb = kcb::get_kcb();
 
-    let pid = make_process(binary)?;
-    allocate_dispatchers(pid)?;
-
-    // Set current thread to run executor from our process (on the current core)
-    let thread = atopology::MACHINE_TOPOLOGY.current_thread();
-    let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
-        pid,
-        INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
-        thread.node_id.or(Some(0)),
-        Some(thread.id),
-    )?;
-
-    Ok(pid)
-}
-
-pub fn spawn2(binary: &'static str) -> Result<Pid, KError> {
-    let kcb = kcb::get_kcb();
-
-    let pid = make_process(binary)?;
-    allocate_dispatchers(pid)?;
+    let pid = make_process::<Ring3Process>(binary)?;
+    allocate_dispatchers::<Ring3Process>(pid)?;
 
     // Set current thread to run executor from our process (on the current core)
     let thread = atopology::MACHINE_TOPOLOGY.current_thread();

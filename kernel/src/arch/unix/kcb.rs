@@ -116,4 +116,11 @@ impl ArchSpecificKcb for ArchKcb {
     fn hwthread_id(&self) -> u64 {
         0
     }
+
+    fn node(&self) -> usize {
+        atopology::MACHINE_TOPOLOGY
+            .current_thread()
+            .node_id
+            .unwrap_or(0) as usize
+    }
 }

@@ -3,19 +3,56 @@
 
 //! A dummy process implementation for the unix platform.
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 
 use kpi::process::FrameId;
+use lazy_static::lazy_static;
+
+use node_replication::{Dispatch, Log, Replica};
 
 use crate::arch::Module;
 use crate::error::KError;
+use crate::kcb::{self, ArchSpecificKcb};
 use crate::memory::{Frame, VAddr};
 use crate::mlnrfs::Fd;
-use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle};
+use crate::nrproc::NrProcess;
+use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle, MAX_PROCESSES};
 
 use super::debug;
 use super::vspace::VSpace;
+
+pub type ArchExecutor = UnixThread;
+
+lazy_static! {
+    pub static ref PROCESS_TABLE: Vec<Vec<Arc<Replica<'static, NrProcess<UnixProcess>>>>> = {
+        // Want at least one replica...
+        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+
+        let mut numa_cache = Vec::with_capacity(numa_nodes);
+        for n in 0..numa_nodes {
+            let process_replicas = Vec::with_capacity(MAX_PROCESSES);
+            numa_cache.push(process_replicas)
+        }
+
+        for pid in 0..MAX_PROCESSES {
+                let log = Arc::new(Log::<<NrProcess<UnixProcess> as Dispatch>::WriteOperation>::new(
+                    2 * 1024 * 1024,
+                ));
+
+            for node in 0..numa_nodes {
+                let kcb = kcb::get_kcb();
+                assert!(kcb.set_allocation_affinity(node as atopology::NodeId).is_ok());
+                numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::new(&log));
+                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
+                assert!(kcb.set_allocation_affinity(0 as atopology::NodeId).is_ok());
+            }
+        }
+
+        numa_cache
+    };
+}
 
 /// TODO: This code is same as x86_64 process. Can we remove it?
 pub struct UserPtr<T> {
@@ -104,7 +141,7 @@ impl<'a> DerefMut for UserSlice<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct UnixProcess {
     vspace: VSpace,
     fd: Fd,
@@ -117,6 +154,11 @@ pub struct UnixThread {
     pid: Pid,
 }
 
+impl PartialEq<UnixThread> for UnixThread {
+    fn eq(&self, other: &UnixThread) -> bool {
+        self.pid == other.pid && self.eid == other.eid
+    }
+}
 pub struct UnixResumeHandle {}
 
 impl ResumeHandle for UnixResumeHandle {
@@ -159,16 +201,13 @@ impl Process for UnixProcess {
     type E = UnixThread;
     type A = VSpace;
 
-    fn new(
-        _module: &Module,
+    fn load(
+        &mut self,
         _pid: Pid,
+        _module: &Module,
         _writable_sections: Vec<Frame>,
-    ) -> Result<Self, ProcessError> {
-        Ok(UnixProcess {
-            vspace: VSpace::new(),
-            fd: Default::default(),
-            pinfo: Default::default(),
-        })
+    ) -> Result<(), ProcessError> {
+        Ok(())
     }
 
     fn try_reserve_executors(

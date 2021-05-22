@@ -1,35 +1,24 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![allow(unused)]
-
 use crate::prelude::*;
-use alloc::string::{String, ToString};
 use alloc::sync::{Arc, Weak};
-use alloc::vec;
-use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use hashbrown::HashMap;
-use kpi::io::*;
-use kpi::process::{FrameId, ProcessInfo};
-use kpi::FileOperation;
+use kpi::process::ProcessInfo;
 
-use node_replication::{Dispatch, ReplicaToken};
+use node_replication::Dispatch;
 
-use crate::arch::process::{UserPtr, UserSlice};
-use crate::arch::{Module, MAX_CORES};
+use crate::arch::MAX_CORES;
 use crate::error::KError;
-use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
-use crate::memory::{Frame, PAddr, VAddr};
-use crate::nrproc::MAX_PROCESSES;
-
-use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
+use crate::memory::vspace::{MapAction, TlbFlushHandle};
+use crate::memory::{PAddr, VAddr};
+use crate::process::{Eid, Executor, Pid, Process, ProcessError, MAX_PROCESSES};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
     CurrentExecutor(atopology::GlobalThreadId),
-    Synchronize,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -37,7 +26,7 @@ pub enum Op<E: Executor> {
     AllocatePid,
     ProcDestroy(Pid),
     /// Assign a core to a process.
-    SchedAllocateCore(Pid, Option<atopology::NodeId>, Box<E>),
+    SchedAllocateCore(Option<atopology::NodeId>, Box<E>),
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +44,6 @@ pub enum NodeResult<E: Executor> {
     Resolved(PAddr, MapAction),
     Executor(Weak<E>),
     FrameId(usize),
-    Synchronized,
 }
 
 pub struct KernelNode<P: Process> {
@@ -72,19 +60,17 @@ impl<P: Process> Default for KernelNode<P> {
     }
 }
 
-// TODO(api-ergonomics): Fix ugly execute API
-impl<P: Process> KernelNode<P> {
+impl<P> KernelNode<P>
+where
+    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
+{
     pub fn synchronize() -> Result<(), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute(ReadOps::Synchronize, *token);
-
-                match response {
-                    Ok(NodeResult::Synchronized) => Ok(()),
-                    _ => unreachable!("Got unexpected response"),
-                }
+                replica.sync(*token);
+                Ok(())
             })
     }
 
@@ -96,8 +82,7 @@ impl<P: Process> KernelNode<P> {
     ) -> Result<(atopology::GlobalThreadId, Eid), KError> {
         let kcb = super::kcb::get_kcb();
 
-        use crate::arch::process::Ring3Process; // XXX
-        let (gtid, executor) = crate::nrproc::NrProcess::<Ring3Process>::allocate_core_to_process(
+        let (gtid, executor) = crate::nrproc::NrProcess::<P>::allocate_core_to_process(
             pid,
             entry_point,
             affinity,
@@ -107,8 +92,8 @@ impl<P: Process> KernelNode<P> {
         kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response =
-                    replica.execute_mut(Op::SchedAllocateCore(pid, Some(gtid), executor), *token);
+                let op: Op<P::E> = Op::SchedAllocateCore(Some(gtid), executor);
+                let response = replica.execute_mut(op, *token);
 
                 match &response {
                     Ok(NodeResult::CoreAllocated(rgtid, eid)) => {
@@ -132,10 +117,6 @@ where
 
     fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
-            ReadOps::Synchronize => {
-                // A NOP that just makes sure we've advanced the replica
-                Ok(NodeResult::Synchronized)
-            }
             ReadOps::CurrentExecutor(gtid) => {
                 let executor = self
                     .scheduler_map
@@ -170,20 +151,18 @@ where
                     }
                 }
             }
-            Op::SchedAllocateCore(pid, Some(gtid), executor) => {
-                match self.scheduler_map.get(&gtid) {
-                    Some(executor) => {
-                        error!("Core {} already used by {}", gtid, executor.id());
-                        Err(KError::CoreAlreadyAllocated)
-                    }
-                    None => {
-                        let eid = executor.id();
-                        self.scheduler_map.insert(gtid, executor.into());
-                        Ok(NodeResult::CoreAllocated(gtid, eid))
-                    }
+            Op::SchedAllocateCore(Some(gtid), executor) => match self.scheduler_map.get(&gtid) {
+                Some(executor) => {
+                    error!("Core {} already used by {}", gtid, executor.id());
+                    Err(KError::CoreAlreadyAllocated)
                 }
-            }
-            Op::SchedAllocateCore(pid, a, executor) => unimplemented!(),
+                None => {
+                    let eid = executor.id();
+                    self.scheduler_map.insert(gtid, executor.into());
+                    Ok(NodeResult::CoreAllocated(gtid, eid))
+                }
+            },
+            Op::SchedAllocateCore(_gtid, _executor) => unimplemented!(),
         }
     }
 }

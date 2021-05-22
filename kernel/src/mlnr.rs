@@ -1,8 +1,6 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![allow(unused)]
-
 use crate::arch::process::{UserPtr, UserSlice};
 use crate::error::KError;
 use crate::memory::VAddr;
@@ -12,11 +10,10 @@ use crate::mlnrfs::{
     Modes, NrLock, Offset, FD, MNODE_OFFSET,
 };
 use crate::prelude::*;
-use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
+use crate::process::{userptr_to_str, KernSlice, Pid, ProcessError};
 
 use alloc::sync::Arc;
-use cnr::{Dispatch, LogMapper, ReplicaToken};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use cnr::{Dispatch, LogMapper};
 use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::FileOperation;
@@ -60,10 +57,10 @@ impl LogMapper for Modify {
             Modify::ProcessAdd(_pid) => push_to_all(nlogs, logs),
             Modify::ProcessRemove(_pid) => push_to_all(nlogs, logs),
             Modify::FileOpen(_pid, _filename, _flags, _modes) => push_to_all(nlogs, logs),
-            Modify::FileWrite(pid, _fd, mnode, _kernslice, _len, _offset) => {
+            Modify::FileWrite(_pid, _fd, mnode, _kernslice, _len, _offset) => {
                 logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
-            Modify::FileClose(pid, fd) => push_to_all(nlogs, logs),
+            Modify::FileClose(_pid, _fd) => push_to_all(nlogs, logs),
             Modify::FileDelete(_pid, _filename) => push_to_all(nlogs, logs),
             Modify::FileRename(_pid, _oldname, _newname) => push_to_all(nlogs, logs),
             Modify::MkDir(_pid, _name, _modes) => push_to_all(nlogs, logs),
@@ -230,7 +227,7 @@ impl MlnrKernelNode {
                 let response = replica.execute_mut_scan(Modify::FileClose(pid, fd), *token);
 
                 match &response {
-                    Ok(MlnrNodeResult::FileClosed(fd)) => Ok((0, 0)),
+                    Ok(MlnrNodeResult::FileClosed(_fd)) => Ok((0, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -277,7 +274,7 @@ impl MlnrKernelNode {
 
                 match &response {
                     Ok(MlnrNodeResult::FileInfo(f_info)) => {
-                        let mut user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
+                        let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
                         unsafe {
                             (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = f_info.ftype;
                             (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = f_info.fsize;
@@ -443,7 +440,7 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Access::FileInfo(pid, name, _mnode, info_ptr) => {
+            Access::FileInfo(pid, name, _mnode, _info_ptr) => {
                 match self.process_map.read().get(&pid) {
                     Some(_) => {
                         let filename;
@@ -521,7 +518,7 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Modify::ProcessRemove(pid) => unimplemented!("Process Remove"),
+            Modify::ProcessRemove(_pid) => unimplemented!("Process Remove"),
 
             Modify::FileOpen(pid, filename, flags, modes) => {
                 let flags = FileFlags::from(flags);
@@ -539,7 +536,7 @@ impl Dispatch for MlnrKernelNode {
 
                 match fd {
                     None => Err(KError::NotSupported),
-                    Some(mut fd) => {
+                    Some(fd) => {
                         let mnode_num;
                         if mnode.is_none() {
                             match self.fs.create(&filename, modes) {
@@ -553,7 +550,7 @@ impl Dispatch for MlnrKernelNode {
                         } else {
                             // File exists and FileOpen is called with O_TRUNC flag.
                             if flags.is_truncate() {
-                                self.fs.truncate(&filename);
+                                assert!(self.fs.truncate(&filename).is_ok());
                             }
                             mnode_num = *mnode.unwrap();
                         }
@@ -563,8 +560,8 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Modify::FileWrite(pid, fd, _mnode, kernslice, len, offset) => {
-                let mut process_lookup = self.process_map.read();
+            Modify::FileWrite(pid, fd, _mnode, kernslice, _len, offset) => {
+                let process_lookup = self.process_map.read();
                 let p = process_lookup
                     .get(&pid)
                     .expect("TODO: FileWrite process lookup failed");

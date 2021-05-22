@@ -1,67 +1,26 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![allow(unused)]
-
 use crate::prelude::*;
-use alloc::string::{String, ToString};
-use alloc::sync::{Arc, Weak};
-use alloc::vec;
+use alloc::sync::Weak;
 use alloc::vec::Vec;
-use hashbrown::HashMap;
-use kpi::io::*;
 use kpi::process::{FrameId, ProcessInfo};
-use kpi::FileOperation;
 
-use lazy_static::lazy_static;
-use node_replication::{Dispatch, Log, Replica, ReplicaToken};
+use node_replication::Dispatch;
 
-use crate::arch::process::{Ring3Executor, Ring3Process, UserPtr, UserSlice};
+use crate::arch::process::PROCESS_TABLE;
 use crate::arch::Module;
 use crate::error::KError;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
-use crate::process::{userptr_to_str, Eid, Executor, KernSlice, Pid, Process, ProcessError};
+use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
 
-use crate::kcb::{self, ArchSpecificKcb};
-
-/// How many (concurrent) processes the systems supports.
-pub const MAX_PROCESSES: usize = 12;
-
-lazy_static! {
-    pub static ref PROCESS_TABLE: Vec<Vec<Arc<Replica<'static, NrProcess<Ring3Process>>>>> = {
-        let numa_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
-        let numa_nodes = if numa_nodes == 0 { numa_nodes + 1 } else { numa_nodes }; // Want at least one replica...
-
-        let mut numa_cache = Vec::with_capacity(numa_nodes);
-        for n in 0..numa_nodes {
-            let process_replicas = Vec::with_capacity(MAX_PROCESSES);
-            numa_cache.push(process_replicas)
-        }
-
-        for pid in 0..MAX_PROCESSES {
-                let log = Arc::new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
-                    2 * 1024 * 1024,
-                ));
-
-            for node in 0..numa_nodes {
-                let kcb = kcb::get_kcb();
-                kcb.set_allocation_affinity(node as atopology::NodeId);
-                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::new(&log));
-                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
-                kcb.set_allocation_affinity(0 as atopology::NodeId);
-            }
-        }
-
-        numa_cache
-    };
-}
+use crate::kcb::ArchSpecificKcb;
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
     ProcessInfo,
     MemResolve(VAddr),
-    Synchronize,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -106,7 +65,6 @@ pub enum NodeResult<E: Executor> {
     Executor(Weak<E>),
     FrameId(usize),
     Invalid,
-    Synchronized,
 }
 
 impl<E: Executor> Default for NodeResult<E> {
@@ -116,7 +74,7 @@ impl<E: Executor> Default for NodeResult<E> {
 }
 
 pub struct NrProcess<P: Process> {
-    pid: Pid,
+    _pid: Pid,
     active_cores: Vec<(atopology::GlobalThreadId, Eid)>,
     process: Box<P>,
 }
@@ -124,7 +82,7 @@ pub struct NrProcess<P: Process> {
 impl<P: Process + Default> Default for NrProcess<P> {
     fn default() -> NrProcess<P> {
         NrProcess {
-            pid: 0,
+            _pid: 0,
             active_cores: Vec::new(),
             process: Box::new(P::default()),
         }
@@ -132,7 +90,10 @@ impl<P: Process + Default> Default for NrProcess<P> {
 }
 
 // TODO(api-ergonomics): Fix ugly execute API
-impl<P: Process> NrProcess<P> {
+impl<P> NrProcess<P>
+where
+    P: crate::process::Process<E = crate::arch::process::ArchExecutor>,
+{
     pub fn load(
         pid: Pid,
         module: &'static Module,
@@ -164,25 +125,18 @@ impl<P: Process> NrProcess<P> {
         let response =
             PROCESS_TABLE[node][pid].execute(ReadOps::MemResolve(base), kcb.process_token[pid]);
         match response {
-            Ok(NodeResult::Resolved(paddr, rights)) => Ok((paddr.as_u64(), 0x0)),
+            Ok(NodeResult::Resolved(paddr, _rights)) => Ok((paddr.as_u64(), 0x0)),
             Err(e) => Err(e.clone()),
             _ => unreachable!("Got unexpected response"),
         }
     }
 
-    pub fn synchronize(pid: Pid) -> Result<(), KError> {
+    pub fn synchronize(pid: Pid) {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-
         let kcb = super::kcb::get_kcb();
         let node = kcb.arch.node();
 
-        let response =
-            PROCESS_TABLE[node][pid].execute(ReadOps::Synchronize, kcb.process_token[pid]);
-        match response {
-            Ok(NodeResult::Synchronized) => Ok(()),
-            Err(e) => Err(e.clone()),
-            _ => unreachable!("Got unexpected response"),
-        }
+        PROCESS_TABLE[node][pid].sync(kcb.process_token[pid]);
     }
 
     pub fn map_device_frame(
@@ -295,7 +249,7 @@ impl<P: Process> NrProcess<P> {
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,
         gtid: Option<atopology::GlobalThreadId>,
-    ) -> Result<(atopology::GlobalThreadId, Box<Ring3Executor>), KError> {
+    ) -> Result<(atopology::GlobalThreadId, Box<P::E>), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -361,10 +315,6 @@ where
 
     fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
-            ReadOps::Synchronize => {
-                // A NOP that just makes sure we've advanced the replica
-                Ok(NodeResult::Synchronized)
-            }
             ReadOps::ProcessInfo => Ok(NodeResult::ProcessInfo(*self.process.pinfo())),
             ReadOps::MemResolve(base) => {
                 let (paddr, rights) = self.process.vspace().resolve(base)?;
@@ -422,7 +372,7 @@ where
             }
 
             Op::ProcAllocateCore(Some(gtid), Some(region), entry_point) => {
-                let mut executor = self.process.get_executor(region)?;
+                let executor = self.process.get_executor(region)?;
                 let eid = executor.id();
                 unsafe {
                     (*executor.vcpu_kernel()).resume_with_upcall = entry_point;
@@ -431,7 +381,7 @@ where
 
                 Ok(NodeResult::CoreAllocated(gtid, executor))
             }
-            Op::ProcAllocateCore(a, b, entry_point) => unimplemented!("ProcAllocateCore"),
+            Op::ProcAllocateCore(_a, _b, _entry_point) => unimplemented!("ProcAllocateCore"),
 
             Op::AllocateFrameToProcess(frame) => {
                 let fid = self.process.add_frame(frame)?;

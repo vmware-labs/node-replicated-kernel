@@ -7,6 +7,7 @@ use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cmp::PartialEq;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
@@ -504,6 +505,12 @@ pub struct Ring3Executor {
 
     /// A handle to the vspace PML4 entry point.
     pub pml4: PAddr,
+}
+
+impl PartialEq<Ring3Executor> for Ring3Executor {
+    fn eq(&self, other: &Ring3Executor) -> bool {
+        self.pid == other.pid && self.eid == other.eid
+    }
 }
 
 impl Ring3Executor {

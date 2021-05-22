@@ -117,7 +117,7 @@ impl<E: Executor> Default for NodeResult<E> {
 
 pub struct NrProcess<P: Process> {
     pid: Pid,
-    active_cores: Vec<atopology::GlobalThreadId>,
+    active_cores: Vec<(atopology::GlobalThreadId, Eid)>,
     process: Box<P>,
 }
 
@@ -133,8 +133,28 @@ impl<P: Process + Default> Default for NrProcess<P> {
 
 // TODO(api-ergonomics): Fix ugly execute API
 impl<P: Process> NrProcess<P> {
+    pub fn load(
+        pid: Pid,
+        module: &'static Module,
+        writeable_sections: Vec<Frame>,
+    ) -> Result<(), KError> {
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            Op::Load(pid, module, writeable_sections),
+            kcb.process_token[pid],
+        );
+        match response {
+            Ok(NodeResult::Loaded) => Ok(()),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
     pub fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         debug_assert!(base.as_u64() < kpi::KERNEL_BASE, "Invalid base");
 
@@ -151,7 +171,6 @@ impl<P: Process> NrProcess<P> {
     }
 
     pub fn synchronize(pid: Pid) -> Result<(), KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -171,7 +190,6 @@ impl<P: Process> NrProcess<P> {
         frame: Frame,
         action: MapAction,
     ) -> Result<(u64, u64), KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -187,7 +205,6 @@ impl<P: Process> NrProcess<P> {
     }
 
     pub fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -208,7 +225,6 @@ impl<P: Process> NrProcess<P> {
         base: VAddr,
         action: MapAction,
     ) -> Result<(PAddr, usize), KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -231,7 +247,6 @@ impl<P: Process> NrProcess<P> {
         frames: Vec<Frame>,
         action: MapAction,
     ) -> Result<(u64, u64), KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -261,7 +276,6 @@ impl<P: Process> NrProcess<P> {
     }
 
     pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -282,7 +296,6 @@ impl<P: Process> NrProcess<P> {
         affinity: Option<atopology::NodeId>,
         gtid: Option<atopology::GlobalThreadId>,
     ) -> Result<(atopology::GlobalThreadId, Box<Ring3Executor>), KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -303,7 +316,6 @@ impl<P: Process> NrProcess<P> {
     }
 
     pub fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
-        let pid = pid as usize;
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
@@ -313,6 +325,25 @@ impl<P: Process> NrProcess<P> {
             .execute_mut(Op::AllocateFrameToProcess(frame), kcb.process_token[pid]);
         match response {
             Ok(NodeResult::FrameId(fid)) => Ok(fid),
+            Err(e) => Err(e.clone()),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
+    pub fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response = PROCESS_TABLE[node][pid]
+            .execute_mut(Op::DispatcherAllocation(frame), kcb.process_token[pid]);
+
+        match response {
+            Ok(NodeResult::ExecutorsCreated(how_many)) => {
+                assert!(how_many > 0);
+                Ok(how_many)
+            }
             Err(e) => Err(e.clone()),
             _ => unreachable!("Got unexpected response"),
         }
@@ -347,7 +378,6 @@ where
             Op::Destroy => unimplemented!("Destrroy"),
             Op::ProcRaiseIrq => unimplemented!("ProcRaiseIrq"),
             Op::MemAdjust => unimplemented!("MemAdjust"),
-            Op::ProcAllocateCore(a, b, entry_point) => unimplemented!("ProcAllocateCore"),
 
             Op::Load(pid, module, writeable_sections) => {
                 self.process.load(pid, module, writeable_sections)?;
@@ -384,7 +414,7 @@ where
                 let mut shootdown_handle = self.process.vspace_mut().unmap(vaddr)?;
                 // Figure out which cores are running our current process
                 // (this is where we send IPIs later)
-                for gtid in self.active_cores.iter() {
+                for (gtid, _eid) in self.active_cores.iter() {
                     shootdown_handle.add_core(*gtid);
                 }
 
@@ -397,10 +427,11 @@ where
                 unsafe {
                     (*executor.vcpu_kernel()).resume_with_upcall = entry_point;
                 }
-                self.active_cores.push(gtid);
+                self.active_cores.push((gtid, eid));
 
                 Ok(NodeResult::CoreAllocated(gtid, executor))
             }
+            Op::ProcAllocateCore(a, b, entry_point) => unimplemented!("ProcAllocateCore"),
 
             Op::AllocateFrameToProcess(frame) => {
                 let fid = self.process.add_frame(frame)?;

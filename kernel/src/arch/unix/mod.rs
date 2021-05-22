@@ -27,6 +27,7 @@ use process::UnixProcess;
 pub use bootloader_shared::*;
 
 pub const MAX_NUMA_NODES: usize = 12;
+pub const MAX_CORES: usize = 192;
 
 pub fn halt() -> ! {
     unsafe { libc::exit(0) };

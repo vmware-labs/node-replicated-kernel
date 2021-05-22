@@ -51,7 +51,7 @@ use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::{Executor, ResumeHandle};
-use crate::{mlnr, nr, ExitReason};
+use crate::{mlnr, nr, nrproc, ExitReason};
 
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
@@ -314,7 +314,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
             .current_pid()
             .expect("A pid must be set in this if branch (US bit set in page-fault error)");
 
-        match nr::KernelNode::<Ring3Process>::resolve(pid, faulting_address_va) {
+        match nrproc::NrProcess::<Ring3Process>::resolve(pid, faulting_address_va) {
             Ok(_) => {
                 // Spurious page-fault, after resolve page-table is up to date
                 let r = kcb_iret_handle(kcb);

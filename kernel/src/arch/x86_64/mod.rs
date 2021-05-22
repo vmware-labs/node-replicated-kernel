@@ -68,7 +68,10 @@ use memory::paddr_to_kernel_vaddr;
 use process::Ring3Process;
 use vspace::page_table::PageTable;
 
+use self::process::Ring3Executor;
+
 pub const MAX_NUMA_NODES: usize = 12;
+pub const MAX_CORES: usize = 192;
 
 /// Make sure the machine supports what we require.
 fn assert_required_cpu_features() {
@@ -199,7 +202,7 @@ struct AppCoreArgs {
     global_memory: &'static GlobalMemory,
     thread: atopology::ThreadId,
     node: atopology::NodeId,
-    _log: Arc<Log<'static, Op>>,
+    _log: Arc<Log<'static, Op<Ring3Executor>>>,
     replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
     mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 }
@@ -292,7 +295,7 @@ fn boot_app_cores(
     cmdline: BootloaderArguments,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
-    log: Arc<Log<'static, Op>>,
+    log: Arc<Log<'static, Op<Ring3Executor>>>,
     bsp_replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
     mlnr_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
@@ -646,7 +649,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Create the global operation log and first replica
     // and store it in the BSP kcb
-    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
+    let log: Arc<Log<Op<Ring3Executor>>> = Arc::new(Log::<Op<Ring3Executor>>::new(LARGE_PAGE_SIZE));
     let bsp_replica = Replica::<KernelNode<Ring3Process>>::new(&log);
     let local_ridx = bsp_replica.register().unwrap();
     {

@@ -131,7 +131,7 @@ pub enum MlnrNodeResult {
 /// TODO: Most of the functions looks same as in nr.rs. Merge the
 /// two and maybe move all the functions to a separate file?
 impl MlnrKernelNode {
-    pub fn add_process(pid: u64) -> Result<(u64, u64), KError> {
+    pub fn add_process(pid: usize) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .mlnr_replica
@@ -139,7 +139,7 @@ impl MlnrKernelNode {
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut_scan(Modify::ProcessAdd(pid), *token);
                 match &response {
-                    Ok(MlnrNodeResult::ProcessAdded(pid)) => Ok((*pid, 0)),
+                    Ok(MlnrNodeResult::ProcessAdded(pid)) => Ok((*pid as u64, 0)),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(e) => Err(e.clone()),
                 }

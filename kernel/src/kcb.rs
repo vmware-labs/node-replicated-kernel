@@ -9,6 +9,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::convert::TryInto;
+use core::fmt::Debug;
 use core::slice::from_raw_parts;
 
 use arr_macro::arr;
@@ -235,7 +236,11 @@ impl PhysicalMemoryArena {
 
 /// The Kernel Control Block for a given core.
 /// It contains all core-local state of the kernel.
-pub struct Kcb<A: ArchSpecificKcb> {
+pub struct Kcb<A>
+where
+    A: ArchSpecificKcb,
+    <<A as ArchSpecificKcb>::Process as crate::process::Process>::E: Debug + 'static,
+{
     /// Architecture specific members of the KCB.
     pub arch: A,
 

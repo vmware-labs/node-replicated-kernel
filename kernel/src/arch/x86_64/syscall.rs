@@ -23,7 +23,7 @@ use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::mlnrfs::FileSystem;
 use crate::process::{Pid, ProcessError, ResumeHandle};
-use crate::{mlnr, nr};
+use crate::{mlnr, nr, nrproc};
 
 use super::gdt::GdtTable;
 use super::process::{Ring3Process, UserValue};
@@ -165,7 +165,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let kcb = super::kcb::get_kcb();
 
             let pid = kcb.current_pid()?;
-            let mut pinfo = nr::KernelNode::<Ring3Process>::pinfo(pid)?;
+            let mut pinfo = nrproc::NrProcess::<Ring3Process>::pinfo(pid)?;
             pinfo.cmdline = kcb.cmdline.test_cmdline;
             pinfo.app_cmdline = kcb.cmdline.app_cmdline;
 
@@ -190,14 +190,15 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             }
             let affinity = affinity.ok_or(crate::process::ProcessError::InvalidGlobalThreadId)?;
             let pid = kcb.current_pid()?;
-            let (gtid, eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
+            let (gtid, executor) = nrproc::NrProcess::<Ring3Process>::allocate_core_to_process(
                 pid,
                 VAddr::from(entry_point),
                 Some(affinity),
                 Some(gtid),
             )?;
+            unreachable!("put executor in nrsched?");
 
-            Ok((gtid, eid))
+            Ok((gtid, executor.eid as u64))
         }
         ProcessOperation::AllocatePhysical => {
             let page_size: usize = arg2.try_into().unwrap_or(0);
@@ -231,7 +232,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
 
             // Associate memory with the process
             let pid = kcb.current_pid()?;
-            let fid = nr::KernelNode::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
+            let fid = nrproc::NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
             Ok((fid as u64, frame.base.as_u64()))
         }
@@ -248,103 +249,93 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     trace!("handle_vspace {:?} {:#x} {:#x}", op, base, region_size);
 
     let kcb = super::kcb::get_kcb();
-    let mut plock = kcb.arch.current_process();
+    let mut p = kcb.arch.current_process()?;
 
     match op {
         VSpaceOperation::Map => unsafe {
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
-                let mut frames = Vec::with_capacity(bp + lp);
-                crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)?;
+            let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
+            let mut frames = Vec::with_capacity(bp + lp);
+            crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)?;
 
-                // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
-                // first frame mapped but if you map multiple Frames, no chance getting that
-                // Better would be a function to request physically consecutive DMA memory
-                // or use IO-MMU translation (see also rumpuser_pci_dmalloc)
-                // also better to just return what NR replies with...
-                let mut paddr = None;
-                let mut total_len = 0;
-                {
-                    let mut pmanager = kcb.mem_manager();
+            // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
+            // first frame mapped but if you map multiple Frames, no chance getting that
+            // Better would be a function to request physically consecutive DMA memory
+            // or use IO-MMU translation (see also rumpuser_pci_dmalloc)
+            // also better to just return what NR replies with...
+            let mut paddr = None;
+            let mut total_len = 0;
+            {
+                let mut pmanager = kcb.mem_manager();
 
-                    for _i in 0..lp {
-                        let mut frame = pmanager
-                            .allocate_large_page()
-                            .expect("We refilled so allocation should work.");
-                        total_len += frame.size;
-                        unsafe { frame.zero() };
-                        frames.push(frame);
-                        if paddr.is_none() {
-                            paddr = Some(frame.base);
-                        }
-                    }
-                    for _i in 0..bp {
-                        let mut frame = pmanager
-                            .allocate_base_page()
-                            .expect("We refilled so allocation should work.");
-                        total_len += frame.size;
-                        unsafe { frame.zero() };
-                        frames.push(frame);
-                        if paddr.is_none() {
-                            paddr = Some(frame.base);
-                        }
+                for _i in 0..lp {
+                    let mut frame = pmanager
+                        .allocate_large_page()
+                        .expect("We refilled so allocation should work.");
+                    total_len += frame.size;
+                    unsafe { frame.zero() };
+                    frames.push(frame);
+                    if paddr.is_none() {
+                        paddr = Some(frame.base);
                     }
                 }
+                for _i in 0..bp {
+                    let mut frame = pmanager
+                        .allocate_base_page()
+                        .expect("We refilled so allocation should work.");
+                    total_len += frame.size;
+                    unsafe { frame.zero() };
+                    frames.push(frame);
+                    if paddr.is_none() {
+                        paddr = Some(frame.base);
+                    }
+                }
+            }
 
-                nr::KernelNode::<Ring3Process>::map_frames(
-                    p.pid,
-                    base,
-                    frames,
-                    MapAction::ReadWriteUser,
-                )
-                .expect("Can't map memory");
-                Ok((paddr.unwrap().as_u64(), total_len as u64))
-            })
+            nrproc::NrProcess::<Ring3Process>::map_frames(
+                p.pid,
+                base,
+                frames,
+                MapAction::ReadWriteUser,
+            )
+            .expect("Can't map memory");
+
+            Ok((paddr.unwrap().as_u64(), total_len as u64))
         },
         VSpaceOperation::MapDevice => unsafe {
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                let paddr = PAddr::from(base.as_u64());
-                let size = region_size as usize;
+            let paddr = PAddr::from(base.as_u64());
+            let size = region_size as usize;
 
-                let frame = Frame::new(paddr, size, kcb.node);
+            let frame = Frame::new(paddr, size, kcb.node);
 
-                plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                    nr::KernelNode::<Ring3Process>::map_device_frame(
-                        p.pid,
-                        frame,
-                        MapAction::ReadWriteUser,
-                    )
-                })
-            })
+            nrproc::NrProcess::<Ring3Process>::map_device_frame(
+                p.pid,
+                frame,
+                MapAction::ReadWriteUser,
+            )
         },
         VSpaceOperation::MapFrame => unsafe {
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                let base = VAddr::from(arg2);
-                let frame_id: FrameId =
-                    arg3.try_into().map_err(|_e| ProcessError::InvalidFrameId)?;
+            let base = VAddr::from(arg2);
+            let frame_id: FrameId = arg3.try_into().map_err(|_e| ProcessError::InvalidFrameId)?;
 
-                let (paddr, size) = nr::KernelNode::<Ring3Process>::map_frame_id(
-                    p.pid,
-                    frame_id,
-                    base,
-                    MapAction::ReadWriteUser,
-                )?;
-                Ok((paddr.as_u64(), size as u64))
-            })
+            let (paddr, size) = nrproc::NrProcess::<Ring3Process>::map_frame_id(
+                p.pid,
+                frame_id,
+                base,
+                MapAction::ReadWriteUser,
+            )?;
+            Ok((paddr.as_u64(), size as u64))
         },
-        VSpaceOperation::Unmap => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-            let handle = nr::KernelNode::<Ring3Process>::unmap(p.pid, base)?;
+        VSpaceOperation::Unmap => {
+            let handle = nrproc::NrProcess::<Ring3Process>::unmap(p.pid, base)?;
             let va: u64 = handle.vaddr.as_u64();
             let sz: u64 = handle.frame.size as u64;
             super::tlb::shootdown(handle);
 
             Ok((va, sz))
-        }),
+        }
         VSpaceOperation::Identify => unsafe {
             trace!("Identify base {:#x}.", base);
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                nr::KernelNode::<Ring3Process>::resolve(p.pid, base)
-            })
+            nrproc::NrProcess::<Ring3Process>::resolve(p.pid, base)
         },
         VSpaceOperation::Unknown => {
             error!("Got an invalid VSpaceOperation code.");
@@ -476,9 +467,9 @@ fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KE
         while base <= upper_addr {
             // Validate addresses for the buffer end.
             if upper_addr - base <= BASE_PAGE_SIZE as u64 {
-                match nr::KernelNode::<Ring3Process>::resolve(pid, VAddr::from(base)) {
+                match nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base)) {
                     Ok(_) => {
-                        return nr::KernelNode::<Ring3Process>::resolve(
+                        return nrproc::NrProcess::<Ring3Process>::resolve(
                             pid,
                             VAddr::from(upper_addr - 1),
                         )
@@ -487,7 +478,7 @@ fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KE
                 }
             }
 
-            match nr::KernelNode::<Ring3Process>::resolve(pid, VAddr::from(base)) {
+            match nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base)) {
                 Ok(_) => {
                     base += BASE_PAGE_SIZE as u64;
                     continue;

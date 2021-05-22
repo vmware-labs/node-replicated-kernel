@@ -26,6 +26,8 @@ custom_error! {
     FileSystem{source: crate::mlnrfs::FileSystemError} = "FileSystem operation does file based io",
     ProcessError{source: crate::process::ProcessError} = "Process Operation failed",
     InvalidAffinityId = "Specified an invalid NUMA node ID for affinity.",
+    OutOfPids = "Can't spawn more processes (out of Pids)",
+    ProcessLoadingFailed = "Can't spawn more processes (out of Pids)",
 }
 
 impl Into<SystemCallError> for KError {

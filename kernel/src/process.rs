@@ -8,6 +8,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::TryInto;
+use core::fmt::Debug;
 
 use cstr_core::CStr;
 use custom_error_core::custom_error;
@@ -21,7 +22,7 @@ use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
 use crate::mlnrfs::Fd;
 use crate::prelude::overlaps;
-use crate::{kcb, mlnr, nr, round_up};
+use crate::{kcb, mlnr, nr, nrproc, round_up};
 
 /// This struct is used to copy the user buffer into kernel space, so that the
 /// user-application doesn't have any reference to any log operation in kernel space.
@@ -61,10 +62,10 @@ pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
 }
 
 /// Process ID.
-pub type Pid = u64;
+pub type Pid = usize;
 
 /// Executor ID.
-pub type Eid = u64;
+pub type Eid = usize;
 
 custom_error! {
 #[derive(PartialEq, Clone)]
@@ -81,6 +82,7 @@ pub ProcessError
     ExecutorAlreadyBorrowed = "The executor on the core was already borrowed (that's a bug).",
     NotEnoughMemory = "Unable to reserve memory for internal process data-structures.",
     InvalidFrameId = "The provided FrameId is not registered with the process",
+    TooManyProcesses = "Not enough space in process table (out of PIDs).",
 }
 
 impl From<&str> for ProcessError {
@@ -97,7 +99,7 @@ impl From<alloc::collections::TryReserveError> for ProcessError {
 
 /// Abstract definition of a process.
 pub trait Process {
-    type E: Executor + Copy + Sync + Send;
+    type E: Executor + Copy + Sync + Send + Debug + PartialEq;
     type A: AddressSpace;
 
     fn load(
@@ -345,6 +347,8 @@ impl elfloader::ElfLoader for DataSecAllocator {
 /// Parse & relocate ELF
 /// Create an initial VSpace
 pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
+    use crate::arch::process::Ring3Process; // XXX
+
     KernelAllocator::try_refill_tcache(7, 1)?;
     let kcb = kcb::get_kcb();
 
@@ -383,19 +387,17 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
         .map_err(|_e| ProcessError::UnableToLoad)?;
     let data_frames: Vec<Frame> = data_sec_loader.finish();
 
-    // Create a new process
+    // Allocate a new process
     kcb.replica
         .as_ref()
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-            let response = replica.execute_mut(nr::Op::ProcCreate(&mod_file, data_frames), *token);
-            match response {
-                Ok(nr::NodeResult::ProcCreated(pid)) => {
-                    match mlnr::MlnrKernelNode::add_process(pid) {
-                        Ok(pid) => Ok(pid.0),
-                        Err(e) => unreachable!("{}", e),
-                    }
-                }
-                _ => unreachable!("Got unexpected response"),
+            let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
+            if let nr::NodeResult::PidAllocated(pid) = response {
+                mlnr::MlnrKernelNode::add_process(pid)?;
+                crate::nrproc::NrProcess::<Ring3Process>::load(pid, mod_file, data_frames)?;
+                Ok(pid)
+            } else {
+                Err(KError::ProcessLoadingFailed)
             }
         })
 }
@@ -489,23 +491,13 @@ pub fn allocate_dispatchers(pid: Pid) -> Result<(), KError> {
                 frame.zero();
             }
 
-            let kcb = crate::kcb::get_kcb();
-            kcb.replica
-                .as_ref()
-                .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                    let response =
-                        replica.execute_mut(nr::Op::DispatcherAllocation(pid, frame), *token)?;
-
-                    match response {
-                        nr::NodeResult::ExecutorsCreated(how_many) => {
-                            assert!(how_many > 0);
-                            dispatchers_created += how_many;
-                            Ok(how_many)
-                        }
-                        _ => unreachable!("Got unexpected response"),
-                    }
-                })
-                .unwrap();
+            use crate::arch::process::Ring3Process; // XXX
+            match nrproc::NrProcess::<Ring3Process>::allocate_dispatchers(pid, frame) {
+                Ok(count) => {
+                    dispatchers_created += count;
+                }
+                _ => unreachable!("Got unexpected response"),
+            }
         }
     }
 

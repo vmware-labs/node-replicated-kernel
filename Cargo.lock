@@ -872,6 +872,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ee1c47aaa256ecabcaea351eae4a9b01ef39ed810004e298d2511ed284b1525"
 
 [[package]]
+name = "memoffset"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f83fb6581e8ed1f85fd45c116db8405483899489e38406156c25eb743554361d"
+dependencies = [
+ "autocfg 1.0.1",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -949,6 +958,7 @@ dependencies = [
  "libc 0.2.92",
  "log",
  "logos",
+ "memoffset",
  "node-replication",
  "proptest",
  "rand 0.8.3",

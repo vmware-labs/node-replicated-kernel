@@ -157,6 +157,11 @@ pub struct Arch86Kcb {
     syscall_stack: Option<OwnedStack>,
 }
 
+// The `syscall_stack_top` entry must be at offset 0 of KCB (referenced early-on in exec.S)
+static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, syscall_stack_top), 0);
+// The `save_area` entry must be at offset 8 of KCB (for assembly code)
+static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, save_area), 8);
+
 impl Arch86Kcb {
     pub(crate) fn new(
         kernel_args: &'static KernelArgs,
@@ -339,31 +344,5 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
 
     fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>> {
         &*super::process::PROCESS_TABLE
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use core::mem::MaybeUninit;
-
-    #[test]
-    fn syscall_stack_top_offset() {
-        let akcb: Arch86Kcb = unsafe { MaybeUninit::zeroed().assume_init() };
-        assert_eq!(
-            (&akcb.syscall_stack_top as *const _ as usize) - (&akcb as *const _ as usize),
-            0,
-            "The syscall_stack_top entry must be at offset 0 of KCB (referenced in assembly early on in exec.S)"
-        );
-    }
-
-    #[test]
-    fn save_area_offset() {
-        let akcb: Arch86Kcb = unsafe { MaybeUninit::zeroed().assume_init() };
-        assert_eq!(
-            (&akcb.save_area as *const _ as usize) - (&akcb as *const _ as usize),
-            8,
-            "The save_area entry must be at offset 8 of KCB (for assembly code)"
-        );
     }
 }

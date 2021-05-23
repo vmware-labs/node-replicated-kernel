@@ -543,6 +543,9 @@ pub struct Ring3Executor {
     pub pml4: PAddr,
 }
 
+// CPU context save area (must be first, see exec.S)
+static_assertions::const_assert_eq!(memoffset::offset_of!(Ring3Executor, save_area), 0);
+
 impl PartialEq<Ring3Executor> for Ring3Executor {
     fn eq(&self, other: &Ring3Executor) -> bool {
         self.pid == other.pid && self.eid == other.eid
@@ -752,37 +755,6 @@ impl Default for Ring3Process {
         }
     }
 }
-
-/*impl Ring3Process {
-    fn create(pid: Pid, writeable_sections: Vec<Frame>) -> Self {
-        let mut executor_cache: arrayvec::ArrayVec<
-            Option<Vec<Box<Ring3Executor>>>,
-            { super::MAX_NUMA_NODES },
-        > = Default::default();
-        for _i in 0..super::MAX_NUMA_NODES {
-            executor_cache.push(None);
-        }
-        let mut fds: arrayvec::ArrayVec<Option<Fd>, { MAX_FILES_PER_PROCESS }> = Default::default();
-        for _i in 0..MAX_FILES_PER_PROCESS {
-            fds.push(None);
-        }
-
-        Ring3Process {
-            pid,
-            offset: VAddr::from(ELF_OFFSET),
-            current_eid: 0,
-            vspace: VSpace::new(),
-            entry_point: VAddr::from(0usize),
-            executor_cache,
-            executor_offset: VAddr::from(EXECUTOR_OFFSET),
-            fds,
-            pinfo: Default::default(),
-            frames: Vec::with_capacity(12),
-            writeable_sections,
-            read_only_offset: VAddr::zero(),
-        }
-    }
-}*/
 
 impl fmt::Debug for Ring3Process {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1121,10 +1093,6 @@ impl Process for Ring3Process {
             );
         }
 
-        debug!(
-            "Ring3Executor::EXECUTOR_SPACE_REQUIREMENT = {}",
-            Ring3Executor::EXECUTOR_SPACE_REQUIREMENT
-        );
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
 
@@ -1152,7 +1120,7 @@ impl Process for Ring3Process {
                 memory.affinity,
             ));
 
-            debug!("Created {}", executor);
+            debug!("Created {} affinity {}", executor, memory.affinity);
 
             use alloc::vec;
             match &mut self.executor_cache[memory.affinity as usize] {

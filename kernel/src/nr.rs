@@ -75,9 +75,6 @@ where
             })
     }
 
-    //fn sum_uints<I>(iter: I) where I: Iterator, I::A = uint { ... }
-    // fn foo<I>(it: I) where I: Iterator<Item=Foo> {}
-
     pub fn allocate_core_to_process<A>(
         kcb: &mut Kcb<A>,
         pid: Pid,
@@ -96,6 +93,10 @@ where
             affinity,
             gtid,
         )?;
+
+        unsafe {
+            (*executor.vcpu_kernel()).resume_with_upcall = entry_point;
+        }
 
         kcb.replica
             .as_ref()
@@ -139,7 +140,7 @@ where
         match op {
             Op::AllocatePid => {
                 // TODO(performance): O(n) scan probably not what we really
-                // want, find for now, MAX_PROCESSES is tiny
+                // want, fine for now, MAX_PROCESSES is tiny
                 for i in 0..MAX_PROCESSES {
                     if !self.process_map.contains_key(&i) {
                         self.process_map.insert(i, ());
@@ -166,6 +167,7 @@ where
                 }
                 None => {
                     let eid = executor.id();
+                    trace!("Op::SchedAllocateCore gtid={} eid={}", gtid, eid);
                     self.scheduler_map.insert(gtid, executor.into());
                     Ok(NodeResult::CoreAllocated(gtid, eid))
                 }

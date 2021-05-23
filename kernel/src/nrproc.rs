@@ -378,9 +378,6 @@ where
             Op::ProcAllocateCore(Some(gtid), Some(region), entry_point) => {
                 let executor = self.process.get_executor(region)?;
                 let eid = executor.id();
-                unsafe {
-                    (*executor.vcpu_kernel()).resume_with_upcall = entry_point;
-                }
                 self.active_cores.push((gtid, eid));
 
                 Ok(NodeResult::CoreAllocated(gtid, executor))

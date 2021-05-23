@@ -38,15 +38,16 @@ pub fn schedule() -> ! {
     if unlikely(kcb.arch.current_process().is_err()) {
         kcb.replica.as_ref().map(|(replica, token)| {
             loop {
+                let gtid = kcb.arch.hwthread_id();
                 let response =
                     replica.execute(nr::ReadOps::CurrentExecutor(kcb.arch.hwthread_id()), *token);
 
                 match response {
                     Ok(nr::NodeResult::Executor(e)) => {
                         // We found a process, put it in the KCB
-                        let no = kcb::get_kcb()
-                            .arch
-                            .swap_current_process(Weak::upgrade(&e).unwrap());
+                        let e = Weak::upgrade(&e).unwrap();
+                        //info!("Start execution of {} on gtid {}", e.eid, gtid);
+                        let no = kcb::get_kcb().arch.swap_current_process(e);
                         assert!(no.is_none(), "Handle the case where we replace a process.");
                         if is_replica_main_thread {
                             // Make sure we periodically try and advance the replica on main-thread

@@ -46,6 +46,7 @@ crossbeam-queue = { version = "0.2", default-features = false, features = ["allo
 gimli = { version = "0.23", default-features = false, features = ["read", "endian-reader", "stable_deref_trait"] }
 addr2line = { version = "0.14.1", default-features = false, features = ["rustc-demangle"] }
 arrayvec = { version = "0.7.0", default-features = false }
+memoffset = { version = "0.6", features = ["unstable_const"] }
 
 [[bin]]
 name = "nrk"

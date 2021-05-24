@@ -3,7 +3,7 @@ set -ex
 
 # check formatting
 cd ..
-cargo +nightly fmt -- --check
+cargo fmt -- --check
 cd kernel
 
 # build

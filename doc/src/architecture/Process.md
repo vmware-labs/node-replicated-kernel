@@ -11,7 +11,7 @@ behind the NR interface for concurrency and replication.
 
 Therefore, the mapping database and page tables are replicated on every NUMA
 node, forming the biggest part of the process abstraction. A process exposes the
-following mutating operations for to modify its address space: `MapFrame` (to
+following mutating operations to modify its address space: `MapFrame` (to
 insert a mapping); `Unmap` (to remove mappings); and `Adjust` (to change
 permissions of a mapping). The virtual memory system also supports a
 non-mutating `Resolve` operation (that advances the local replica and queries

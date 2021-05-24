@@ -1,6 +1,6 @@
 # Scheduler
 
-In NRK, the kernel-level scheduler  s a coarse-grained scheduler that allocates
+In NRK, the kernel-level scheduler is a coarse-grained scheduler that allocates
 CPUs to processes. Processes make system calls to request for more cores and to
 give them up. The kernel notifies processes core allocations and deallocations
 via upcalls. To run on a core, a process allocates executor objects (*i.e.,* the

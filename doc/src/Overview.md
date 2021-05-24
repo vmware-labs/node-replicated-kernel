@@ -39,8 +39,8 @@ system. Various operation logs make sure the replicas are always synchronized.
 Our technique (called [node-replication](./architecture/NodeReplication.md))
 bears resemblance to state machine replication in distributed systems, and lifts
 our single-threaded data-structures into linearizable, concurrent structures.
-Our OSDI'21 paper has more details in what scenarios this approach can heavily
-outperforms the scalability of traditional lock-based or lock-free
+Our OSDI'21 paper has more details on scenarios where this approach can heavily
+outperform the scalability of traditional lock-based or lock-free
 data-structures.
 
 <figure>

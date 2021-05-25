@@ -11,3 +11,6 @@ install_run_dependencies
 bootstrap_rust
 install_rust_build_dependencies
 install_rust_run_dependencies
+
+# set permissions for tcpdump for vmxnet3 tests
+sudo setcap cap_net_raw,cap_net_admin=eip /usr/sbin/tcpdump

@@ -289,6 +289,8 @@ struct RunnerArgs<'a> {
     setaffinity: bool,
     /// Pre-alloc host memory for guest
     prealloc: bool,
+    /// Use large-pages for host memory
+    large_pages: bool,
 }
 
 #[allow(unused)]
@@ -310,6 +312,7 @@ impl<'a> RunnerArgs<'a> {
             nic: "e1000",
             setaffinity: false,
             prealloc: false,
+            large_pages: false,
         };
 
         if cfg!(feature = "prealloc") {
@@ -443,6 +446,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn large_pages(mut self) -> RunnerArgs<'a> {
+        self.large_pages = true;
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
@@ -502,6 +510,14 @@ impl<'a> RunnerArgs<'a> {
                 }
                 if self.prealloc {
                     cmd.push(String::from("--qemu-prealloc"));
+                }
+                if self.large_pages {
+                    // TODO: Also register some?
+                    // let pages = (self.memory+2) / 2;
+                    // sudo bash -c "echo $pages > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
+                    // and when done
+                    // sudo bash -c "echo 0 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
+                    cmd.push(String::from("--qemu-large-pages"));
                 }
 
                 // Form arguments for QEMU

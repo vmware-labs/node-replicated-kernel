@@ -11,7 +11,7 @@ use core::convert::TryInto;
 
 use cstr_core::CStr;
 use custom_error_core::custom_error;
-use kpi::process::FrameId;
+use kpi::process::{FrameId, ELF_OFFSET};
 
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
@@ -366,7 +366,7 @@ pub fn make_process(binary: &'static str) -> Result<Pid, KError> {
     let offset = if !elf_module.is_pie() {
         VAddr::zero()
     } else {
-        VAddr::from(0x20_0000_0000usize)
+        VAddr::from(ELF_OFFSET)
     };
 
     let mut data_sec_loader = DataSecAllocator {

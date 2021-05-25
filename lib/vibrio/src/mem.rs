@@ -14,8 +14,9 @@ use arrayvec::ArrayVec;
 use lazy_static::lazy_static;
 use log::{error, warn};
 use spin::Mutex;
-use x86::current::paging::{PAddr, VAddr};
+use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
+use kpi::process::{HEAP_PER_CORE_REGION, HEAP_START, MAX_CORES};
 use kpi::SystemCallError;
 
 use slabmalloc::*;
@@ -29,9 +30,6 @@ macro_rules! round_up {
         (($num + $s - 1) / $s) * $s
     };
 }
-
-// Max number of cores supported by the allocator.
-const MAX_CORES: usize = 96;
 
 #[cfg(target_os = "nrk")]
 #[global_allocator]
@@ -48,8 +46,8 @@ pub struct Pager {
 }
 
 impl Pager {
-    const BASE_PAGE_SIZE: usize = 4096;
-    const LARGE_PAGE_SIZE: usize = 2 * 1024 * 1024;
+    const BASE_PAGE_SIZE: usize = BASE_PAGE_SIZE;
+    const LARGE_PAGE_SIZE: usize = LARGE_PAGE_SIZE;
 
     /// Allocates a given `page_size`.
     fn alloc_page(&mut self, page_size: usize) -> Option<*mut u8> {
@@ -112,12 +110,11 @@ impl Pager {
 /// A pager for GlobalAlloc.
 lazy_static! {
     pub static ref PAGER: ArrayVec::<CachePadded<Mutex<Pager>>, MAX_CORES> = {
-        let mut pagers = ArrayVec::<CachePadded<Mutex<Pager>>, 96>::new();
+        let mut pagers = ArrayVec::<CachePadded<Mutex<Pager>>, { MAX_CORES }>::new();
         for i in 0..MAX_CORES {
-            pagers.push(CachePadded::new(Mutex::new(Pager {
-                sbrk: 0x52_0000_0000 + (i as u64 * 0x10_0000_0000),
-                limit: 0x52_0000_0000 + ((i + 1) as u64 * 0x10_0000_0000),
-            })));
+            let sbrk = (HEAP_START + (i * HEAP_PER_CORE_REGION)) as u64;
+            let limit = (HEAP_START + ((i + 1) * HEAP_PER_CORE_REGION)) as u64;
+            pagers.push(CachePadded::new(Mutex::new(Pager { sbrk, limit })));
         }
         pagers
     };

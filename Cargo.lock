@@ -724,6 +724,7 @@ dependencies = [
  "log",
  "serde",
  "serde_cbor",
+ "static_assertions",
  "x86 0.39.0",
 ]
 

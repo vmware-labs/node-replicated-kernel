@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
-use kpi::process::FrameId;
+use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
@@ -695,12 +695,12 @@ impl Ring3Process {
 
         Ring3Process {
             pid,
-            offset: VAddr::from(0x20_0000_0000usize),
+            offset: VAddr::from(ELF_OFFSET),
             current_eid: 0,
             vspace: VSpace::new(),
             entry_point: VAddr::from(0usize),
             executor_cache,
-            executor_offset: VAddr::from(0x21_0000_0000usize),
+            executor_offset: VAddr::from(EXECUTOR_OFFSET),
             fds,
             pinfo: Default::default(),
             frames: Vec::with_capacity(12),

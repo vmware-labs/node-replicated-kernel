@@ -2,7 +2,35 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use core::convert::TryInto;
+
 use serde::{Deserialize, Serialize};
+use x86::bits64::paging::PML4_SLOT_SIZE;
+
+/// Max number of cores supported by the process allocator.
+pub const MAX_CORES: usize = 96;
+
+/// Offset in address-space for ELF binary relocation.
+pub const ELF_OFFSET: usize = 0x20_0000_0000;
+
+/// Memory region space for shared executor region is allocated.
+pub const EXECUTOR_OFFSET: usize = 0x21_0000_0000;
+
+/// Start of Heap memory
+pub const HEAP_START: usize = 0x30_0000_0000;
+
+/// Address space region for each core in the heap.
+pub const HEAP_PER_CORE_REGION: usize = 0x2_0000_0000;
+
+/// End of Heap memory.
+pub const HEAP_END: usize = HEAP_START + ((MAX_CORES + 1) * HEAP_PER_CORE_REGION);
+
+// Make sure that all our process regions are in the first PML4 slot. This isn't
+// really necessary for anything except benchmarking: it helps for scalability
+// benchmarks if we know that all other slots are "empty" and we don't
+// accidentially try to map somewhere where there are already mappings...
+static_assertions::const_assert!(HEAP_END <= 2 * PML4_SLOT_SIZE);
+static_assertions::const_assert!(EXECUTOR_OFFSET <= PML4_SLOT_SIZE);
+static_assertions::const_assert!(ELF_OFFSET <= PML4_SLOT_SIZE);
 
 pub type FrameId = usize;
 

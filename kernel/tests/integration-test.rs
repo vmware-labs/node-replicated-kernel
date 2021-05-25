@@ -14,14 +14,14 @@
 //! * `s04_*`: User-space runtimes
 //! * `s05_*`: User-space applications
 //! * `s06_*`: User-space applications benchmarks
-extern crate rexpect;
-
 use std::fmt::{self, Display, Formatter};
 use std::fs::{File, OpenOptions};
 use std::io::ErrorKind;
 use std::io::Write;
 use std::path::Path;
 use std::{io, process};
+
+use hwloc2::{ObjectType, Topology};
 
 use csv::WriterBuilder;
 use rexpect::errors::*;
@@ -131,6 +131,24 @@ enum Machine {
 }
 
 impl Machine {
+    fn determine() -> Self {
+        match std::env::var(BAREMETAL_MACHINE) {
+            Ok(name) => {
+                if name.is_empty() {
+                    panic!("{} enviroment variable empty.", BAREMETAL_MACHINE);
+                }
+                if !Path::new(&name).exists() {
+                    panic!(
+                        "'{}.toml' file not found. Check {} enviroment variable.",
+                        name, BAREMETAL_MACHINE
+                    );
+                }
+                Machine::Baremetal(name)
+            }
+            _ => Machine::Qemu,
+        }
+    }
+
     fn name(&self) -> &str {
         match self {
             Machine::Qemu => "qemu",
@@ -138,9 +156,81 @@ impl Machine {
         }
     }
 
+    /// Return a set of cores to run benchmark, run fewer total iterations
+    /// and instead more with high core counts.
+    fn thread_defaults_low_mid_high(&self) -> Vec<usize> {
+        if cfg!(feature = "smoke") {
+            return vec![1, 4];
+        }
+
+        let uniform_threads = self.thread_defaults_uniform();
+        let mut threads = Vec::with_capacity(6);
+
+        for low in uniform_threads.iter().take(2) {
+            threads.push(*low);
+        }
+
+        let mid = uniform_threads.len() / 2;
+        if let Some(e) = uniform_threads.get(mid) {
+            threads.push(*e);
+        }
+
+        for high in uniform_threads.iter().rev().take(3) {
+            threads.push(*high);
+        }
+
+        threads.sort();
+        threads.dedup();
+
+        threads
+    }
+
+    /// Return a set of cores to run benchmark on sampled uniform between
+    /// 1..self.max_cores().
+    fn thread_defaults_uniform(&self) -> Vec<usize> {
+        if cfg!(feature = "smoke") {
+            return vec![1, 4];
+        }
+
+        let max_cores = self.max_cores();
+        let nodes = self.max_numa_nodes();
+
+        let mut threads = Vec::with_capacity(12);
+        // On larger machines thread increments are bigger than on smaller
+        // machines:
+        let thread_incremements = if max_cores > 96 {
+            16
+        } else if max_cores > 24 {
+            8
+        } else if max_cores > 16 {
+            4
+        } else {
+            2
+        };
+
+        for t in (0..(max_cores + 1)).step_by(thread_incremements) {
+            if t == 0 {
+                // Can't run on 0 threads
+                threads.push(t + 1);
+            } else {
+                threads.push(t);
+            }
+        }
+
+        threads.push(max_cores / nodes);
+        threads.push(max_cores);
+
+        threads.sort();
+        threads.dedup();
+
+        threads
+    }
+
     fn max_cores(&self) -> usize {
         if let Machine::Qemu = self {
-            num_cpus::get() / 2
+            let topo = Topology::new().expect("Can't retrieve System topology?");
+            topo.objects_with_type(&ObjectType::Core)
+                .map_or(1, |cpus| cpus.len())
         } else {
             match self.name() {
                 "l0318" => 96,
@@ -150,19 +240,12 @@ impl Machine {
         }
     }
 
-    fn max_sockets(&self) -> usize {
+    fn max_numa_nodes(&self) -> usize {
         if let Machine::Qemu = self {
-            match self.max_cores() {
-                6 => 1,
-                12 => 1,
-                28 => 2,
-                32 => 2,
-                56 => 2,
-                64 => 2,
-                96 => 4,
-                192 => 4,
-                _ => unreachable!("unknown core cnt"),
-            }
+            let topo = Topology::new().expect("Can't retrieve System topology?");
+            // TODO: Should be ObjectType::NUMANode but this fails in the C library?
+            topo.objects_with_type(&ObjectType::Package)
+                .map_or(1, |nodes| nodes.len())
         } else {
             match self.name() {
                 "l0318" => 4,
@@ -212,7 +295,7 @@ struct RunnerArgs<'a> {
 impl<'a> RunnerArgs<'a> {
     fn new(kernel_test: &'a str) -> RunnerArgs {
         let mut args = RunnerArgs {
-            machine: get_machine_from_env(),
+            machine: Machine::determine(),
             kernel_features: vec![kernel_test],
             user_features: Vec::new(),
             nodes: 0,
@@ -442,24 +525,6 @@ impl<'a> RunnerArgs<'a> {
         };
 
         cmd
-    }
-}
-
-fn get_machine_from_env() -> Machine {
-    match std::env::var(BAREMETAL_MACHINE) {
-        Ok(name) => {
-            if name.is_empty() {
-                panic!("{} enviroment variable empty.", BAREMETAL_MACHINE);
-            }
-            if !Path::new(&name).exists() {
-                panic!(
-                    "'{}.toml' file not found. Check {} enviroment variable.",
-                    name, BAREMETAL_MACHINE
-                );
-            }
-            Machine::Baremetal(name)
-        }
-        _ => Machine::Qemu,
     }
 }
 
@@ -974,7 +1039,7 @@ fn s03_userspace_smoke() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_multicore() {
-    let machine = get_machine_from_env();
+    let machine = Machine::determine();
     let num_cores: usize = machine.max_cores();
     let cmdline = RunnerArgs::new("test-userspace-smp")
         .user_features(&["test-scheduler-smp"])
@@ -1276,7 +1341,7 @@ fn s06_redis_benchmark_virtio() {
         use std::{thread, time};
         thread::sleep(time::Duration::from_secs(9));
 
-        let mut redis_client = redis_benchmark("virtio", 4000000)?;
+        let mut redis_client = redis_benchmark("virtio", 2000000)?;
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;
@@ -1318,47 +1383,10 @@ fn s06_redis_benchmark_e1000() {
     wait_for_sigterm(&cmdline, qemu_run(), output);
 }
 
-pub fn thread_defaults(max_cores: usize) -> Vec<usize> {
-    let mut threads = Vec::with_capacity(12);
-
-    // On larger machines thread increments are bigger than on
-    // smaller machines:
-    let thread_incremements = if max_cores > 120 {
-        8
-    } else if max_cores > 24 {
-        8
-    } else if max_cores > 16 {
-        4
-    } else {
-        2
-    };
-
-    for t in (0..(max_cores + 1)).step_by(thread_incremements) {
-        if t == 0 {
-            // Can't run on 0 threads
-            threads.push(t + 1);
-        } else {
-            threads.push(t);
-        }
-    }
-
-    if max_cores == 28 {
-        threads.push(28);
-    }
-
-    threads.sort();
-    threads
-}
-
 #[test]
 fn s06_vmops_benchmark() {
-    let machine = get_machine_from_env();
-
-    let threads = if cfg!(feature = "smoke") {
-        vec![1, 4]
-    } else {
-        thread_defaults(machine.max_cores())
-    };
+    let machine = Machine::determine();
+    let threads = machine.thread_defaults_uniform();
 
     let file_name = "vmops_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
@@ -1383,7 +1411,7 @@ fn s06_vmops_benchmark() {
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
         } else {
-            cmdline = cmdline.nodes(machine.max_sockets());
+            cmdline = cmdline.nodes(machine.max_numa_nodes());
         }
 
         let mut output = String::new();
@@ -1438,13 +1466,8 @@ fn s06_vmops_benchmark() {
 
 #[test]
 fn s06_shootdown_simple() {
-    let max_cores = num_cpus::get() / 2;
-
-    let threads = if cfg!(feature = "smoke") {
-        vec![1, 4]
-    } else {
-        thread_defaults(max_cores)
-    };
+    let machine = Machine::determine();
+    let threads = machine.thread_defaults_uniform();
 
     let file_name = "tlb_shootdown.csv";
     let _r = std::fs::remove_file(file_name);
@@ -1468,8 +1491,8 @@ fn s06_shootdown_simple() {
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
         } else {
-            let max_sockets = cmdline.machine.max_sockets();
-            cmdline = cmdline.nodes(max_sockets);
+            let max_numa_nodes = cmdline.machine.max_numa_nodes();
+            cmdline = cmdline.nodes(max_numa_nodes);
         }
 
         let mut output = String::new();
@@ -1516,12 +1539,8 @@ fn s06_shootdown_simple() {
 
 #[test]
 fn s06_vmops_latency_benchmark() {
-    let machine = get_machine_from_env();
-    let threads = if cfg!(feature = "smoke") {
-        vec![1, 4]
-    } else {
-        thread_defaults(machine.max_cores())
-    };
+    let machine = Machine::determine();
+    let threads = machine.thread_defaults_uniform();
 
     let file_name = "vmops_benchmark_latency.csv";
     let _r = std::fs::remove_file(file_name);
@@ -1547,7 +1566,7 @@ fn s06_vmops_latency_benchmark() {
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
         } else {
-            cmdline = cmdline.nodes(machine.max_sockets());
+            cmdline = cmdline.nodes(machine.max_numa_nodes());
         }
 
         let mut output = String::new();
@@ -1597,13 +1616,8 @@ fn s06_vmops_latency_benchmark() {
 
 #[test]
 fn s06_vmops_unmaplat_latency_benchmark() {
-    let machine = get_machine_from_env();
-
-    let threads = if cfg!(feature = "smoke") {
-        vec![1, 4]
-    } else {
-        thread_defaults(machine.max_cores())
-    };
+    let machine = Machine::determine();
+    let threads = machine.thread_defaults_uniform();
 
     let file_name = "vmops_unmaplat_benchmark_latency.csv";
     let _r = std::fs::remove_file(file_name);
@@ -1629,7 +1643,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
         if cfg!(feature = "smoke") && cores > 2 {
             cmdline = cmdline.nodes(2);
         } else {
-            cmdline = cmdline.nodes(machine.max_sockets());
+            cmdline = cmdline.nodes(machine.max_numa_nodes());
         }
 
         let mut output = String::new();
@@ -1680,42 +1694,30 @@ fn s06_vmops_unmaplat_latency_benchmark() {
 #[test]
 fn s06_fxmark_benchmark() {
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
-    let benchmarks = vec!["mixX0", "mixX10", "mixX60", "mixX100"];
+    let benchmarks = vec!["mixX0", "mixX10", "mixX100"];
     let num_microbenchs = benchmarks.len() as u64;
 
-    let machine = get_machine_from_env();
-    let threads = if cfg!(feature = "smoke") {
-        vec![1, 4]
-    } else {
-        thread_defaults(machine.max_cores())
-    };
+    let machine = Machine::determine();
+    let threads = machine.thread_defaults_low_mid_high();
 
     let file_name = "fxmark_benchmark.csv";
     let _ignore = std::fs::remove_file(file_name);
 
-    fn open_files(benchmark: &str, max_cores: usize) -> Vec<usize> {
-        match benchmark.contains("mix") {
-            true => {
-                if cfg!(feature = "smoke") {
-                    vec![1]
-                } else {
-                    match max_cores {
-                        28 => vec![1, 14],
-                        56 => vec![1, 28],
-                        32 => vec![1, 16],
-                        64 => vec![1, 32],
-                        96 => vec![1, 24],
-                        192 => vec![1, 48],
-                        _ => unreachable!(),
-                    }
-                }
+    fn open_files(benchmark: &str, max_cores: usize, nodes: usize) -> Vec<usize> {
+        if benchmark.contains("mix") {
+            if cfg!(feature = "smoke") {
+                vec![1]
+            } else {
+                vec![1, max_cores / nodes]
             }
-            false => vec![0],
+        } else {
+            vec![0]
         }
     }
 
     for benchmark in benchmarks {
-        let open_files: Vec<usize> = open_files(benchmark, machine.max_cores());
+        let open_files: Vec<usize> =
+            open_files(benchmark, machine.max_cores(), machine.max_numa_nodes());
         for &cores in threads.iter() {
             for &of in open_files.iter() {
                 let kernel_cmdline = format!("testcmd={}X{}X{}", cores, of, benchmark);
@@ -1738,7 +1740,7 @@ fn s06_fxmark_benchmark() {
                 if cfg!(feature = "smoke") && cores > 2 {
                     cmdline = cmdline.nodes(2);
                 } else {
-                    cmdline = cmdline.nodes(machine.max_sockets());
+                    cmdline = cmdline.nodes(machine.max_numa_nodes());
                 }
 
                 let mut output = String::new();
@@ -1995,17 +1997,8 @@ fn s06_memcached_benchmark() {
 
 #[test]
 fn s06_leveldb_benchmark() {
-    let max_cores = if num_cpus::get() > 12 && num_cpus::get() % 2 == 0 {
-        num_cpus::get() / 2
-    } else {
-        num_cpus::get()
-    };
-
-    let threads = if cfg!(feature = "smoke") {
-        vec![1, 4]
-    } else {
-        thread_defaults(max_cores)
-    };
+    let machine = Machine::determine();
+    let threads = machine.thread_defaults_uniform();
 
     // level-DB arguments
     let (reads, num, val_size) = if cfg!(feature = "smoke") {
@@ -2026,7 +2019,7 @@ fn s06_leveldb_benchmark() {
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
             .timeout(300_000)
-            .cores(max_cores)
+            .cores(machine.max_cores())
             .nodes(2)
             .use_virtio()
             .setaffinity()

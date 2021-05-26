@@ -1,9 +1,10 @@
 use alloc::boxed::Box;
 use core::pin::Pin;
+use core::alloc::Layout;
 
 use log::info;
 
-use driverkit::iomem::{IOBufChain, IOBufPool};
+use driverkit::iomem::{IOBuf, IOBufChain, IOBufPool};
 use driverkit::{devq::DevQueue, iomem::IOMemError};
 
 use smoltcp::phy::{self, Device, DeviceCapabilities};
@@ -26,6 +27,24 @@ impl DevQueuePhy {
     pub fn new(device: Pin<Box<VMXNet3>>) -> core::result::Result<DevQueuePhy, IOMemError> {
         let pool_tx = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
         let pool_rx = IOBufPool::new(MAX_PACKET_SZ, MAX_PACKET_SZ)?;
+
+        // Front-load an rx descriptor. This is necessary due to a bug in smoltcp
+        // that requries there be at least one rx descriptor before data can be received.
+        let mut chain = IOBufChain::new(0, 2).expect("Can't make IoBufChain?");
+        let layout = Layout::from_size_align(256, 128).expect("Correct Layout");
+
+        let mut seg0 = IOBuf::new(layout).expect("Can't make packet?");
+        seg0.expand();
+        let mut seg1 = IOBuf::new(layout).expect("Can't make packet?");
+        seg1.expand();
+
+        chain.segments.push_back(seg0);
+        chain.segments.push_back(seg1);
+        
+        let mut device = device;
+        device.rxq[0].enqueue(chain).expect("Can enqueue RX desc");
+        device.rxq[0].flush();
+
         Ok(Self {
             device,
             pool_tx,

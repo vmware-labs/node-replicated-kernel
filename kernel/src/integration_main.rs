@@ -500,21 +500,6 @@ pub fn xmain() {
     vmx.attach_pre();
     vmx.init();
 
-    // Front-load some rx descriptors
-    for i in 0..10 {
-        let mut chain = IOBufChain::new(0, 2).expect("Can't make IoBufChain?");
-        let layout = Layout::from_size_align(256, 128).expect("Correct Layout");
-
-        let mut seg0 = IOBuf::new(layout).expect("Can't make packet?");
-        seg0.expand();
-        let mut seg1 = IOBuf::new(layout).expect("Can't make packet?");
-        seg1.expand();
-
-        chain.segments.push_back(seg0);
-        chain.segments.push_back(seg1);
-        vmx.rxq[0].enqueue(chain).expect("Can enqueue RX desc");
-    }
-    vmx.rxq[0].flush();
 
     let mut bufchain1 = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
     let mut packet1 = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
@@ -602,22 +587,6 @@ fn xmain() {
         let mut vmx = VMXNet3::new(2, 2).unwrap();
         vmx.attach_pre();
         vmx.init();
-        // Front-load some rx descriptors
-        for i in 0..10 {
-            let mut chain = IOBufChain::new(0, 2).expect("Can't make IoBufChain?");
-            let layout = Layout::from_size_align(2048, 2048).expect("Correct Layout");
-
-            let mut seg0 = IOBuf::new(layout).expect("Can't make packet?");
-            seg0.expand();
-            let mut seg1 = IOBuf::new(layout).expect("Can't make packet?");
-            seg1.expand();
-
-            chain.segments.push_back(seg0);
-            chain.segments.push_back(seg1);
-            vmx.rxq[0].enqueue(chain).expect("Can enqueue RX desc");
-        }
-        vmx.rxq[0].flush();
-
         vmx
     };
 

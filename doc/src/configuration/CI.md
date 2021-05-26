@@ -84,23 +84,22 @@ Finally, edit `/etc/gitlab-runner/config.toml` to add the machine type
   environment = ["CI_MACHINE_TYPE=skylake4x"]
 ```
 
-Make sure to [delete
-`~/.bash_logout`](<https://gitlab.com/gitlab-org/gitlab-runner/issues/1379>) to
-avoid issues with CI.
-
 ## Give access to the benchmark repository
 
 Benchmark results are uploaded automatically to git.
 
 Generate a key for accessing the repository or use an existing key on the
-gitlab-runner account:
+gitlab-runner account. Make sure to [delete
+`~/.bash_logout`](<https://gitlab.com/gitlab-org/gitlab-runner/issues/1379>) to
+avoid issues with CI.
 
 ```bash
 su gitlab-runner
+rm ~/.bash_logout
 ssh-keygen
 ```
 
-Then, add the key to the `nrk-ci` account.
+Then, add the key to the github CI account.
 
 ## Configure software for the gitlab runner account
 
@@ -108,25 +107,10 @@ Install necessary software for use by the runner:
 
 ```bash
 git clone git@github.com:gz/bespin.git
-cd nrk/
+cd bespin/
 bash setup.sh
 source $HOME/.cargo/env
 sudo adduser gitlab-runner kvm
-```
-
-You might also need memaslap for the memcached tests which is not provided by default
-through ubuntu packages:
-
-```bash
-sudo apt-get build-dep libmemcached-tools
-wget https://launchpad.net/libmemcached/1.0/1.0.18/+download/libmemcached-1.0.18.tar.gz
-tar zxvf libmemcached-1.0.18.tar.gz
-cd libmemcached-1.0.18/
-LDFLAGS='-lpthread' CXXFLAGS='-fpermissive' CFLAGS='-Wno-errors -fpermissive' ./configure --enable-memaslap --with-pthread=yes
-make -j12
-sudo make install
-sudo ldconfig
-which memaslap
 ```
 
 ## Disable AppArmor
@@ -148,6 +132,7 @@ sudo reboot
 Make sure the QEMU version for the runner account is is >= 5:
 
 ```bash
+cd $HOME
 sudo apt update
 sudo apt install build-essential
 sudo apt build-dep qemu
@@ -171,6 +156,7 @@ The memcached benchmark uses the `memaslap` binary that comes with
 You'll have to install it manually from the sources:
 
 ```bash
+cd $HOME
 sudo apt-get build-dep libmemcached-tools
 wget https://launchpad.net/libmemcached/1.0/1.0.18/+download/libmemcached-1.0.18.tar.gz
 tar zxvf libmemcached-1.0.18.tar.gz
@@ -181,7 +167,7 @@ make -j12
 sudo make install
 sudo ldconfig
 
-cp memaslap /usr/local/bin
+which memaslap
 ```
 
 ## Do a test-run

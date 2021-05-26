@@ -91,15 +91,17 @@ Benchmark results are uploaded automatically to git.
 Generate a key for accessing the repository or use an existing key on the
 gitlab-runner account. Make sure to [delete
 `~/.bash_logout`](<https://gitlab.com/gitlab-org/gitlab-runner/issues/1379>) to
-avoid issues with CI.
+avoid issues with CI and add the user to the KVM group. Adding yourself to the
+KVM group requires a logout/reboot which we do in later steps.
 
 ```bash
 su gitlab-runner
 rm ~/.bash_logout
+sudo adduser gitlab-runner kvm
 ssh-keygen
 ```
 
-Then, add the key to the github CI account.
+Then, add the pub key (`.ssh/id_rsa.pub`) to the github CI account.
 
 ## Configure software for the gitlab runner account
 
@@ -110,21 +112,6 @@ git clone git@github.com:gz/bespin.git
 cd bespin/
 bash setup.sh
 source $HOME/.cargo/env
-sudo adduser gitlab-runner kvm
-```
-
-## Disable AppArmor
-
-An annoying security feature that blocks our DHCP server from starting for
-testing. You can set-up a rule for allowing this but it's easiest to just get
-rid of it on the CI machine:
-
-```bash
-sudo systemctl stop apparmor
-sudo systemctl disable apparmor
-sudo apt remove --assume-yes --purge apparmor
-# Unfortunately for apparmor and kvm group changes to take effect, we need to reboot:
-sudo reboot
 ```
 
 ## Install a recent qemu
@@ -170,14 +157,29 @@ sudo ldconfig
 which memaslap
 ```
 
+## Disable AppArmor
+
+An annoying security feature that blocks our DHCP server from starting for
+testing. You can set-up a rule for allowing this but it's easiest to just get
+rid of it on the CI machine:
+
+```bash
+sudo systemctl stop apparmor
+sudo systemctl disable apparmor
+sudo apt remove --assume-yes --purge apparmor
+# Unfortunately for apparmor and kvm group changes to take effect, we need to reboot:
+sudo reboot
+```
+
 ## Do a test-run
 
-Verify that the nrk tests run (this will take a while, but if it works CI
-likely will succeed too):
+After the reboot, verify that the nrk tests run (this will take a while, but if
+it works CI likely will succeed too):
 
 ```bash
 # Init submodules if not done so already:
 git submodule update --init
+source $HOME/.cargo/env
 
 cd kernel
 RUST_TEST_THREADS=1 cargo test --features smoke -- --nocapture

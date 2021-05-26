@@ -15,11 +15,22 @@ import toml
 import pexpect
 import plumbum
 import re
+import errno
 from time import sleep
 
 from plumbum import colors, local, SshMachine
-from plumbum.cmd import xargo, whoami, python3, cat
 from plumbum.commands import ProcessExecutionError
+
+from plumbum.cmd import whoami, python3, cat, getent, whoami
+try:
+    from plumbum.cmd import xargo
+except ImportError as e:
+    print("Unable to find the `xargo` binary in your $PATH")
+    print("")
+    print("Make sure to invoke `setup.sh` to install it.")
+    print("If you did that already, make sure the rust toolchain is on your path:")
+    print("Invoke `source $HOME/.cargo/env`")
+    sys.exit(errno.ENOENT)
 
 
 def exception_handler(exception_type, exception, traceback):
@@ -582,6 +593,13 @@ def run(args):
 if __name__ == '__main__':
     "Execution pipeline for building and launching nrk"
     args = parser.parse_args()
+
+    user = whoami().strip()
+    kvm_members = getent['group', 'kvm']().strip().split(":")[-1].split(',')
+    if not user in kvm_members:
+        print("Your user ({}) is not in the kvm group.".format(user))
+        print("Add yourself to the group with `sudo adduser {} kvm`".format(user))
+        sys.exit(errno.EACCES)
 
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")

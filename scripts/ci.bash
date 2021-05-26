@@ -27,7 +27,7 @@ git clone -b master git@github.com:gz/bespin-benchmarks.git gh-pages
 pip3 install -r gh-pages/requirements.txt
 
 # Create CSV entry
-export GIT_REV_CURRENT=`git rev-parse --short HEAD`
+export GIT_REV_CURRENT=`git rev-parse --short=8 HEAD`
 export CSV_LINE="`date +%Y-%m-%d`",${GIT_REV_CURRENT},"${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/index.html","${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/index.html"
 echo $CSV_LINE >> gh-pages/_data/$CI_MACHINE_TYPE.csv
 

@@ -66,10 +66,10 @@ Please enter the executor: ssh, virtualbox, docker+machine, kubernetes, docker, 
 shell
 ```
 
-In runner settings (Gitlab Web GUI), you can check-mark "Run untagged jobs"
-(Indicates whether this runner can pick jobs without tags). If this is needed or
-not depends on the `.gitlab-ci.yml` file in the project root. You can also
-increase the runner timeout there if necessary (the default is 1h).
+* In runner settings (Gitlab Web GUI), you can check-mark **"Run untagged jobs"**
+  (Indicates whether this runner can pick jobs without tags).
+* You may also need to increase the runner timeout there depending on the
+  machine size (the default is 1h).
 
 Finally, edit `/etc/gitlab-runner/config.toml` to add the machine type
 (skylake4x, skylake2x, ryzen5 *etc.*) to the environment of the runner

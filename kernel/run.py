@@ -599,6 +599,7 @@ if __name__ == '__main__':
     if not user in kvm_members:
         print("Your user ({}) is not in the kvm group.".format(user))
         print("Add yourself to the group with `sudo adduser {} kvm`".format(user))
+        print("You'll likely have to restart for changes to take effect.")
         sys.exit(errno.EACCES)
 
     if args.release:

@@ -1254,7 +1254,7 @@ fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::sessio
                 port, requests
             )
             .as_str(),
-            Some(25000),
+            Some(45000),
         )
     }
 

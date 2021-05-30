@@ -40,28 +40,62 @@ stack[10] = 0x0
 stack[11] = 0x268
 ```
 
-The typical workflow to figure out what's going on is:
+The typical workflow to figure out what went wrong:
 
-1. Generally speaking look for the instruction pointer (rip which is `0x534a39`
-   in our example).
-2. If the instruction pointer (and rsp and rbp) is below kernel base, we were
-   probably in user-space when the failure happened (you can also determine it
-   by looking at cs/ss but it's easier to tell from the other registers
-   usually).
-3. Determine exactly the error happened. To do this, we need to find the right
-   binary which was running. Those are usually located in
+1. Generally, look for the instruction pointer (`rip` which is `0x534a39` in our
+   example).
+1. If the instruction pointer (and `rsp` and `rbp`) is below kernel base, we
+   were probably in user-space when the failure happened (you can also determine
+   it by looking at cs/ss but it's easier to tell from the other registers).
+1. Determine exactly where the error happened. To do this, we need to find the
+   right binary which was running. Those are usually located in
    `target/x86_64-uefi/<release|debug>/esp/<binary>`.
-4. Use `addr2line -e <path to binary> <rip>` to see where the error happened.
-5. Sometimes `addr2line` doesn't find anything, it's good to check with objdump
+1. Use `addr2line -e <path to binary> <rip>` to see where the error happened.
+1. If the failure was in kernel space, make sure you adjust any addresses by
+   substracting the PIE offset where the kernel binary was executing in the
+   virtual space. Look for the following line `INFO: Kernel loaded at address:
+   0x4000bd573000`, it's printed by the bootloader early during the boot
+   process. Substract the printed number to get the correct offset in the ELF
+   file.
+1. Sometimes `addr2line` doesn't find anything, it's good to check with objdump,
    which also gives more context: `objdump -S --disassemble --demangle=rustc
    target/x86_64-uefi/<release|debug>/esp/<binary> | less`
-6. The function that gets reported might not be useful (e.g., if things fail in
+1. The function that gets reported might not be useful (e.g., if things fail in
    `memcpy`). In this case, look for addresses that could be return addresses on
    the stack dump and check them too (e.g., `0x534829` looks suspiciously like a
    return address).
-7. If all this fails, something went wrong in a bad way, maybe best to go back
+1. If all this fails, something went wrong in a bad way, maybe best to go back
    to printf debugging.
 
-> Always find the first occurrence of a failure in the log. Because our
+> Always find the first occurrence of a failure in the serial log. Because our
 > backtracing code is not very robust, it still quite often triggers cascading
 > failures which are not necessarily relevant.
+
+## Debugging rumpkernel/NetBSD components
+
+nrk user-space links with a rather large (NetBSD) code-base. When things go
+wrong somewhere in there, it's sometimes helpful to temporarily change or get
+some debug output directly in the C code.
+
+You can edit that code-base directly since it gets checked out and built in the
+target directory. For example, to edit the `rump_init` function, open the file
+in the `rumpkern` folder of the NetBSD source here:
+`target/x86_64-nrk-none/release/build/rumpkernel-$HASH/out/src-netbsd/sys/rump/librump/rumpkern/rump.c`
+
+Make sure to identify the correct $HASH that is used for the build if you find
+that there are multiple `rumpkernel-*` directories in the build dir, otherwise
+your changes won't take effect.
+
+After you're done with edits, you can manually invoke the build, and launch the
+OS again.
+
+```bash
+cd target/x86_64-nrk-none/release/build/rumpkernel-$HASH/out
+./build-rr.sh -j24 nrk -- -F "CFLAGS=-w"
+# Invoke run.py again...
+```
+
+> If you change the compiler/rustc version, do a clean build, or delete the
+> target directory your changes might be overridden as the sources exist only
+> inside the build directory (`target`). It's a good idea to save changes
+> somewhere for safekeeping if they are important.

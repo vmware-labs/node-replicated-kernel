@@ -151,20 +151,3 @@ all packets on `tap0`:
 ```bash
 tcpdump -i tap0 -vvv -XX
 ```
-
-### Qemu Debug Output
-
-When developing drivers that are emulated in qemu, it can be useful to enable
-debug prints for the interface in QEMU to see what state the device is in. For
-example, to enable debug output for `vmxnet3` in qemu, you can change the
-`#undef` statements in `hw/net/vmxnet_debug.h` to `#define` and recompile the
-qemu sources (should look like this snippet below):
-
-```c
-#define VMXNET_DEBUG_CB
-#define VMXNET_DEBUG_INTERRUPTS
-#define VMXNET_DEBUG_CONFIG
-#define VMXNET_DEBUG_RINGS
-#define VMXNET_DEBUG_PACKETS
-#define VMXNET_DEBUG_SHMEM_ACCESS
-```

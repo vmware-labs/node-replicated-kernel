@@ -99,3 +99,33 @@ cd target/x86_64-nrk-none/release/build/rumpkernel-$HASH/out
 > target directory your changes might be overridden as the sources exist only
 > inside the build directory (`target`). It's a good idea to save changes
 > somewhere for safekeeping if they are important.
+
+## Debugging in QEMU/KVM
+
+If the system ends up in a dead-lock, you might be able to get a sense of where
+things went south by asking qemu. Deadlocks with our kernel design are rare, but
+in user-space (thanks to locking APIs) it can definitely happen.
+
+The following steps should help:
+
+1. Add `--qemu-monitor` to the run.py invocation to start the qemu monitor.
+1. Connect to the monitor in a new terminal with `telnet 127.0.0.1 55555`.
+1. You can use `info registers -a` to get a dump of the current register state
+   for all vCPUs or any other command to query the hypervisor state.
+1. If you're stuck in some loop, getting a couple register dumps might tell you
+   more than invoking `info registers` just once.
+
+When developing drivers that are emulated in qemu, it can be useful to enable
+debug prints for the interface in QEMU to see what state the device is in. For
+example, to enable debug output for `vmxnet3` in the sources, you can change the
+`#undef` statements in `hw/net/vmxnet_debug.h` to `#define` and recompile the
+qemu sources (your changes should look similar to this snippet below):
+
+```c
+#define VMXNET_DEBUG_CB
+#define VMXNET_DEBUG_INTERRUPTS
+#define VMXNET_DEBUG_CONFIG
+#define VMXNET_DEBUG_RINGS
+#define VMXNET_DEBUG_PACKETS
+#define VMXNET_DEBUG_SHMEM_ACCESS
+```

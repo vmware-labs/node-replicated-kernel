@@ -3,35 +3,18 @@
 
 use alloc::string::{String, ToString};
 
+use kpi::io::FileType;
+
 use crate::arch::process::UserSlice;
 use crate::mlnrfs::file::*;
 use crate::mlnrfs::{FileSystemError, Mnode, Modes};
-
-/// Each memory-node can be of two types: directory or a file.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-#[repr(u64)]
-pub enum NodeType {
-    /// The mnode is of directory type
-    Directory = 1,
-    /// The mnode is of regular type
-    File = 2,
-}
-
-impl Into<u64> for NodeType {
-    fn into(self) -> u64 {
-        match self {
-            NodeType::Directory => 1,
-            NodeType::File => 2,
-        }
-    }
-}
 
 /// Memnode representation, similar to Inode for a memory-fs.
 #[derive(Debug)]
 pub struct MemNode {
     mnode_num: Mnode,
     name: String,
-    node_type: NodeType,
+    node_type: FileType,
     file: Option<File>,
 }
 
@@ -51,7 +34,7 @@ impl Default for MemNode {
         MemNode {
             mnode_num: u64::MAX,
             name: String::from(""),
-            node_type: NodeType::File,
+            node_type: FileType::File,
             file: None,
         }
     }
@@ -63,11 +46,11 @@ impl MemNode {
         mnode_num: Mnode,
         pathname: &str,
         modes: Modes,
-        node_type: NodeType,
+        node_type: FileType,
     ) -> Result<MemNode, FileSystemError> {
         let file = match node_type {
-            NodeType::Directory => None,
-            NodeType::File => match File::new(modes) {
+            FileType::Directory => None,
+            FileType::File => match File::new(modes) {
                 Ok(file) => Some(file),
                 Err(e) => return Err(e),
             },
@@ -84,7 +67,7 @@ impl MemNode {
     /// Write to an in-memory file.
     pub fn write(&mut self, buffer: &[u8], offset: usize) -> Result<usize, FileSystemError> {
         // Return if the user doesn't have write permissions for the file.
-        if self.node_type != NodeType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
+        if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
             return Err(FileSystemError::PermissionError);
         }
@@ -96,7 +79,7 @@ impl MemNode {
     /// Read from an in-memory file.
     pub fn read(&self, buffer: &mut UserSlice, offset: usize) -> Result<usize, FileSystemError> {
         // Return if the user doesn't have read permissions for the file.
-        if self.node_type != NodeType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
+        if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
         {
             return Err(FileSystemError::PermissionError);
         }
@@ -137,13 +120,13 @@ impl MemNode {
     }
 
     /// Get the type of mnode; Directory or file.
-    pub fn get_mnode_type(&self) -> NodeType {
+    pub fn get_mnode_type(&self) -> FileType {
         self.node_type
     }
 
     /// Truncate the file in reasponse of O_TRUNC flag.
     pub fn file_truncate(&mut self) -> Result<bool, FileSystemError> {
-        if self.node_type != NodeType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
+        if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
             return Err(FileSystemError::PermissionError);
         }
@@ -164,36 +147,36 @@ pub mod test {
     fn test_mnode_directory() {
         let filename = "dir";
         let memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::Directory).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::Directory).unwrap();
         assert_eq!(memnode.file, None);
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
-        assert_eq!(memnode.node_type, NodeType::Directory);
+        assert_eq!(memnode.node_type, FileType::Directory);
     }
 
     #[test]
     /// Create mnode file and verify the values.
     fn test_mnode_file() {
         let filename = "file.txt";
-        let memnode = MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+        let memnode = MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         assert_eq!(
             memnode.file,
             Some(File::new(FileModes::S_IRWXU.into()).unwrap())
         );
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
-        assert_eq!(memnode.node_type, NodeType::File);
+        assert_eq!(memnode.node_type, FileType::File);
     }
 
     #[test]
     fn test_mnode_write_directory() {
         let filename = "dir";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::Directory).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::Directory).unwrap();
         assert_eq!(memnode.file, None);
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
-        assert_eq!(memnode.node_type, NodeType::Directory);
+        assert_eq!(memnode.node_type, FileType::Directory);
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(
             memnode.write(buffer, 0),
@@ -206,14 +189,14 @@ pub mod test {
     fn test_mnode_file_write() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         assert_eq!(
             memnode.file,
             Some(File::new(FileModes::S_IRWXU.into()).unwrap())
         );
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
-        assert_eq!(memnode.node_type, NodeType::File);
+        assert_eq!(memnode.node_type, FileType::File);
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
     }
@@ -223,14 +206,14 @@ pub mod test {
     fn test_mnode_file_write_permission_error() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRUSR.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRUSR.into(), FileType::File).unwrap();
         assert_eq!(
             memnode.file,
             Some(File::new(FileModes::S_IRUSR.into()).unwrap())
         );
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
-        assert_eq!(memnode.node_type, NodeType::File);
+        assert_eq!(memnode.node_type, FileType::File);
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(
             memnode.write(buffer, 0),
@@ -243,14 +226,14 @@ pub mod test {
     fn test_mnode_file_read() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         assert_eq!(
             memnode.file,
             Some(File::new(FileModes::S_IRWXU.into()).unwrap())
         );
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
-        assert_eq!(memnode.node_type, NodeType::File);
+        assert_eq!(memnode.node_type, FileType::File);
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
         let buffer: &mut [u8; 10] = &mut [0; 10];
@@ -268,14 +251,14 @@ pub mod test {
     /// Read from mnode file which doesn't have read permissions.
     fn test_mnode_file_read_permission_error() {
         let filename = "file.txt";
-        let memnode = MemNode::new(1, filename, FileModes::S_IWUSR.into(), NodeType::File).unwrap();
+        let memnode = MemNode::new(1, filename, FileModes::S_IWUSR.into(), FileType::File).unwrap();
         assert_eq!(
             memnode.file,
             Some(File::new(FileModes::S_IWUSR.into()).unwrap())
         );
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
-        assert_eq!(memnode.node_type, NodeType::File);
+        assert_eq!(memnode.node_type, FileType::File);
         let buffer: &[u8; 10] = &[0xb; 10];
         assert_eq!(
             memnode.read(&mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
@@ -288,7 +271,7 @@ pub mod test {
     fn test_offset_tracking() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
 
@@ -319,7 +302,7 @@ pub mod test {
     fn test_read_at_offset() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
 
@@ -347,7 +330,7 @@ pub mod test {
     fn test_read_at_eof_offset() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
 
@@ -367,7 +350,7 @@ pub mod test {
     fn test_write_at_offset() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
@@ -389,7 +372,7 @@ pub mod test {
     fn test_write_at_eof_offset() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         let rbuffer: &mut [u8; 20] = &mut [0; 20];
 
@@ -423,7 +406,7 @@ pub mod test {
     fn test_file_truncate_for_writable_file() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
         assert_eq!(memnode.file_truncate(), Ok(true));
     }
 
@@ -432,7 +415,7 @@ pub mod test {
     fn test_file_truncate_for_writable_directory() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRWXU.into(), NodeType::Directory).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::Directory).unwrap();
         assert_eq!(
             memnode.file_truncate(),
             Err(FileSystemError::PermissionError)
@@ -444,7 +427,7 @@ pub mod test {
     fn test_file_truncate_for_nonwritable_file() {
         let filename = "file.txt";
         let mut memnode =
-            MemNode::new(1, filename, FileModes::S_IRUSR.into(), NodeType::File).unwrap();
+            MemNode::new(1, filename, FileModes::S_IRUSR.into(), FileType::File).unwrap();
         assert_eq!(
             memnode.file_truncate(),
             Err(FileSystemError::PermissionError)

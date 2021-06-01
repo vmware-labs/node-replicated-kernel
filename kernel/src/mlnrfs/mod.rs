@@ -23,7 +23,7 @@ mod rwlock;
 #[cfg(test)]
 mod test;
 
-use mnode::{MemNode, NodeType};
+use mnode::MemNode;
 
 /// The maximum number of open files for a process.
 pub const MAX_FILES_PER_PROCESS: usize = 4096;
@@ -178,7 +178,7 @@ impl Default for MlnrFS {
                     rootmnode,
                     rootdir,
                     FileModes::S_IRWXU.into(),
-                    NodeType::Directory,
+                    FileType::Directory,
                 )
                 .unwrap(),
             ),
@@ -214,7 +214,7 @@ impl FileSystem for MlnrFS {
         let mnode_num = self.get_next_mno() as u64;
         //TODO: For now all newly created mnode are for file. How to differentiate
         // between a file and a directory. Take input from the user?
-        let memnode = match MemNode::new(mnode_num, pathname, modes, NodeType::File) {
+        let memnode = match MemNode::new(mnode_num, pathname, modes, FileType::File) {
             Ok(memnode) => memnode,
             Err(e) => return Err(e),
         };
@@ -260,13 +260,13 @@ impl FileSystem for MlnrFS {
     fn file_info(&self, mnode: Mnode) -> FileInfo {
         match self.mnodes.read().get(&mnode) {
             Some(mnode) => match mnode.read().get_mnode_type() {
-                NodeType::Directory => FileInfo {
+                FileType::Directory => FileInfo {
                     fsize: 0,
-                    ftype: NodeType::Directory.into(),
+                    ftype: FileType::Directory.into(),
                 },
-                NodeType::File => FileInfo {
+                FileType::File => FileInfo {
                     fsize: mnode.read().get_file_size() as u64,
-                    ftype: NodeType::File.into(),
+                    ftype: FileType::File.into(),
                 },
             },
             None => unreachable!("file_info: shouldn't reach here"),
@@ -333,7 +333,7 @@ impl FileSystem for MlnrFS {
         }
 
         let mnode_num = self.get_next_mno() as u64;
-        let memnode = match MemNode::new(mnode_num, pathname, modes, NodeType::Directory) {
+        let memnode = match MemNode::new(mnode_num, pathname, modes, FileType::Directory) {
             Ok(memnode) => memnode,
             Err(e) => return Err(e),
         };

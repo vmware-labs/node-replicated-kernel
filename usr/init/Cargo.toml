@@ -22,8 +22,8 @@ cstr_core = { version = "0.2.3", default-features = false }
 spin = { version = "0.5.2", default_features = false }
 
 [features]
+default = []
 rumprt = ["vibrio/rumprt"]
-default = ["rumprt"]
 # Use virtio instead of e1000
 virtio = []
 

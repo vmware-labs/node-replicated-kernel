@@ -27,6 +27,7 @@ use core::slice::from_raw_parts_mut;
 use core::str::FromStr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use vibrio::io::FileType;
 #[cfg(feature = "rumprt")]
 use vibrio::rumprt;
 use vibrio::{sys_print, sys_println};
@@ -521,7 +522,7 @@ fn fs_test() {
         let fileinfo = vibrio::syscalls::Fs::getinfo("file.txt\0".as_ptr() as u64)
             .expect("FileOpen syscall failed");
         assert_eq!(fileinfo.fsize, 256);
-        assert_eq!(fileinfo.ftype, rumprt::Rump_FileType::File as u64);
+        assert_eq!(fileinfo.ftype, FileType::File.into());
 
         // Reset the slice content. And read the file content from the file and
         // check if it's same as the date which was written to the file.

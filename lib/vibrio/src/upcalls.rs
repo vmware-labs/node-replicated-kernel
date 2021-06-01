@@ -17,20 +17,21 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use log::trace;
 
-use crate::rumprt::crt::READY_TO_RUMBLE;
-
 pub static CORES_ONLINE: AtomicUsize = AtomicUsize::new(1);
 
 lazy_static! {
     pub static ref PROCESS_SCHEDULER: lineup::scheduler::SmpScheduler<'static> = {
-        if cfg!(feature = "rumprt") {
+        #[cfg(feature = "rumprt")]
+        {
             lineup::scheduler::SmpScheduler::with_upcalls(lineup::upcalls::Upcalls {
                 curlwp: crate::rumprt::rumpkern_curlwp,
                 deschedule: crate::rumprt::rumpkern_unsched,
                 schedule: crate::rumprt::rumpkern_sched,
                 context_switch: crate::rumprt::prt::context_switch,
             })
-        } else {
+        }
+        #[cfg(not(feature = "rumprt"))]
+        {
             lineup::scheduler::SmpScheduler::default()
         }
     };
@@ -64,8 +65,11 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
         CORES_ONLINE.fetch_add(1, Ordering::SeqCst);
 
         #[cfg(feature = "rumprt")]
-        while READY_TO_RUMBLE.load(Ordering::SeqCst) == false {
-            core::hint::spin_loop();
+        {
+            use crate::rumprt::crt::READY_TO_RUMBLE;
+            while READY_TO_RUMBLE.load(Ordering::SeqCst) == false {
+                core::hint::spin_loop();
+            }
         }
 
         let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id as usize);

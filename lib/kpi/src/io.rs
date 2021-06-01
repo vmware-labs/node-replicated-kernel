@@ -10,6 +10,25 @@ pub struct FileInfo {
     pub fsize: u64,
 }
 
+/// Each file-node can be of two types: directory or a file.
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[repr(u64)]
+pub enum FileType {
+    /// The mnode is of directory type
+    Directory = 1,
+    /// The mnode is of regular type
+    File = 2,
+}
+
+impl Into<u64> for FileType {
+    fn into(self) -> u64 {
+        match self {
+            FileType::Directory => 1,
+            FileType::File => 2,
+        }
+    }
+}
+
 bitflags! {
     /// File flags to open the file
     pub struct FileFlags:u64 {

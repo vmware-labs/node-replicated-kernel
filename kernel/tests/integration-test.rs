@@ -21,6 +21,13 @@ use std::io::Write;
 use std::path::Path;
 use std::{io, process};
 
+/*
+# s04_userspace_multicore
+# s06_fxmark_benchmark
+# s06_vmops_benchmark
+# s06_vmops_latency_benchmark
+# s06_vmops_unmaplat_latency_benchmark
+*/
 use hwloc2::{ObjectType, Topology};
 
 use csv::WriterBuilder;
@@ -1090,6 +1097,7 @@ fn s04_userspace_multicore() {
 fn s04_userspace_rumprt_net() {
     let cmdline = RunnerArgs::new("test-userspace")
         .user_feature("test-rump-net")
+        .user_feature("rumprt")
         .timeout(20_000);
 
     let mut output = String::new();
@@ -1134,6 +1142,7 @@ fn s04_userspace_rumprt_net() {
 fn s04_userspace_rumprt_fs() {
     let cmdline = &RunnerArgs::new("test-userspace")
         .user_feature("test-rump-tmpfs")
+        .user_feature("rumprt")
         .timeout(20_000);
     let mut output = String::new();
 

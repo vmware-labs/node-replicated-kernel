@@ -29,6 +29,7 @@ crossbeam-utils = {version = "0.8", default-features = false}
 arrayvec = { version = "0.7.0", default-features = false }
 
 [features]
+default = []
 # Include rumpkernel runtime
 rumprt = ["rumpkernel", "hashbrown"]
 # Use virtio for default networking driver

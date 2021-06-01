@@ -540,7 +540,7 @@ fn test_memfs_init() {
     assert_eq!(memfs.files.read().get(&root), Some(&Arc::new(1)));
     assert_eq!(
         *memfs.mnodes.read().get(&1).unwrap().read(),
-        MemNode::new(1, "/", FileModes::S_IRWXU.into(), NodeType::Directory).unwrap()
+        MemNode::new(1, "/", FileModes::S_IRWXU.into(), FileType::Directory).unwrap()
     );
 }
 

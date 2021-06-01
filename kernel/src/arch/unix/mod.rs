@@ -85,9 +85,8 @@ fn init_setup() {
     kcb::get_kcb().set_global_memory(global_memory_static);
     debug!("Memory allocation should work at this point...");
 
-    let log: Arc<Log<Op<process::ArchExecutor>>> =
-        Arc::new(Log::<Op<process::ArchExecutor>>::new(LARGE_PAGE_SIZE));
-    let bsp_replica = Replica::<KernelNode<UnixProcess>>::new(&log);
+    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
+    let bsp_replica = Replica::<KernelNode>::new(&log);
     let local_ridx = bsp_replica
         .register()
         .expect("Failed to register with Replica.");

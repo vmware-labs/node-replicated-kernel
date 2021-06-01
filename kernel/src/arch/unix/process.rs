@@ -23,8 +23,6 @@ use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle, MA
 use super::debug;
 use super::vspace::VSpace;
 
-pub type ArchExecutor = UnixThread;
-
 lazy_static! {
     pub static ref PROCESS_TABLE: Vec<Vec<Arc<Replica<'static, NrProcess<UnixProcess>>>>> = {
         // Want at least one replica...
@@ -150,8 +148,8 @@ pub struct UnixProcess {
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct UnixThread {
-    eid: Eid,
-    pid: Pid,
+    pub eid: Eid,
+    pub pid: Pid,
 }
 
 impl PartialEq<UnixThread> for UnixThread {

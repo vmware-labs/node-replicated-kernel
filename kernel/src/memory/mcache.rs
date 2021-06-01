@@ -141,7 +141,7 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
         }
 
         if lost_pages > 0 || lost_large_pages > 0 {
-            error!(
+            warn!(
                 "MCache population lost {} of memory.",
                 super::DataSize::from_bytes(
                     lost_pages * BASE_PAGE_SIZE + lost_large_pages * LARGE_PAGE_SIZE

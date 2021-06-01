@@ -6,7 +6,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr;
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use cstr_core::{CStr, CString};
 use log::{debug, error, info, Level};
@@ -167,8 +167,11 @@ pub unsafe extern "C" fn __libc_start_main() {
     unreachable!("return from main() in __libc_start_main?");
 }
 
+pub static READY_TO_RUMBLE: AtomicBool = AtomicBool::new(false);
+
 extern "C" fn ready() {
     info!("rump_init ready callback");
+    READY_TO_RUMBLE.store(true, Ordering::SeqCst);
 }
 
 extern "C" {

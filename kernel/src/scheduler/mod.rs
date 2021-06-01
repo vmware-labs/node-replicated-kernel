@@ -3,12 +3,12 @@
 
 //! Scheduling logic
 
-use alloc::sync::Weak;
 use core::intrinsics::unlikely;
 
 use crate::error::KError;
 use crate::kcb::{self, ArchSpecificKcb};
 use crate::nr;
+use crate::nrproc::NrProcess;
 use crate::process::{Executor, ResumeHandle};
 
 use crate::arch::timer;
@@ -35,19 +35,22 @@ pub fn schedule() -> ! {
     let is_replica_main_thread = false;
 
     // No process assigned to core? Figure out if there is one now:
-    if unlikely(kcb.arch.current_process().is_err()) {
+    if unlikely(kcb.arch.current_executor().is_err()) {
         kcb.replica.as_ref().map(|(replica, token)| {
             loop {
-                let gtid = kcb.arch.hwthread_id();
                 let response =
-                    replica.execute(nr::ReadOps::CurrentExecutor(kcb.arch.hwthread_id()), *token);
+                    replica.execute(nr::ReadOps::CurrentProcess(kcb.arch.hwthread_id()), *token);
 
                 match response {
-                    Ok(nr::NodeResult::Executor(e)) => {
-                        // We found a process, put it in the KCB
-                        let e = Weak::upgrade(&e).unwrap();
-                        //info!("Start execution of {} on gtid {}", e.eid, gtid);
-                        let no = kcb::get_kcb().arch.swap_current_process(e);
+                    Ok(nr::NodeResult::CoreInfo(ci)) => {
+                        let executor =
+                            NrProcess::allocate_executor(kcb, ci.pid).expect("This should work");
+                        unsafe {
+                            (*executor.vcpu_kernel()).resume_with_upcall = ci.entry_point;
+                        }
+
+                        // info!("Start execution of {} on gtid {}", executor.eid, gtid);
+                        let no = kcb::get_kcb().arch.swap_current_executor(executor);
                         assert!(no.is_none(), "Handle the case where we replace a process.");
                         if is_replica_main_thread {
                             // Make sure we periodically try and advance the replica on main-thread
@@ -85,11 +88,14 @@ pub fn schedule() -> ! {
             }
         });
     }
-    debug_assert!(kcb.arch.current_process().is_ok(), "Require executor next.");
+    debug_assert!(
+        kcb.arch.current_executor().is_ok(),
+        "Require executor next."
+    );
 
     // If we come here, we have a new process, dispatch it:
     unsafe {
-        let rh = kcb::get_kcb().arch.current_process().map(|p| p.start());
+        let rh = kcb::get_kcb().arch.current_executor().map(|p| p.start());
         rh.unwrap().resume()
     }
 }

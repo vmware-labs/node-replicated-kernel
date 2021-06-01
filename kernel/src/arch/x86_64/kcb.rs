@@ -85,17 +85,20 @@ pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut Kcb<A>) {
 }
 
 /// Contains the arch-specific contents of the KCB.
+///
+/// `repr(C)` because assembly code references entries of this struct.
 #[repr(C)]
 pub struct Arch86Kcb {
     /// Pointer to the syscall stack (this is )
     /// and should therefore always be at offset 0 of the Kcb struct!
     pub(crate) syscall_stack_top: *mut u8,
 
-    /// Pointer to the save area of the core,
-    /// this is referenced on trap/syscall entries to save the CPU state into it.
+    /// Pointer to the save area of the core, this is referenced on trap/syscall
+    /// entries to save the CPU state into it.
     ///
-    /// State from the save_area may be copied into current_process` save area
-    /// to handle upcalls (in the general state it is stored/resumed from here).
+    /// State from the save_area may be copied into the `current_executor` save
+    /// area to handle upcalls (in the general state it is stored/resumed from
+    /// here).
     pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
 
     /// A handle to the core-local interrupt driver.
@@ -114,10 +117,10 @@ pub struct Arch86Kcb {
     kernel_args: &'static KernelArgs,
 
     /// A handle to the currently active (scheduled) process.
-    current_process: Option<Arc<Ring3Executor>>,
+    current_executor: Option<Box<Ring3Executor>>,
 
-    /// A handle to the initial kernel address space (created for us by the bootloader)
-    /// It contains a 1:1 mapping of
+    /// A handle to the initial kernel address space (created for us by the
+    /// bootloader) It contains a 1:1 mapping of
     ///  * all physical memory (above `KERNEL_BASE`)
     ///  * IO APIC and local APIC memory (after initialization has completed)
     init_vspace: RefCell<PageTable>,
@@ -175,8 +178,7 @@ impl Arch86Kcb {
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
             idt: Default::default(),
-            // We don't have a process initially
-            current_process: None,
+            current_executor: None, // We don't have an executor to schedule initially
             save_area: None,
             init_vspace: RefCell::new(init_vspace),
             interrupt_stack: None,
@@ -226,23 +228,23 @@ impl Arch86Kcb {
     }
 
     /// Swaps out current process with a new process. Returns the old process.
-    pub fn swap_current_process(
+    pub fn swap_current_executor(
         &mut self,
-        new_current_process: Arc<Ring3Executor>,
-    ) -> Option<Arc<Ring3Executor>> {
-        self.current_process.replace(new_current_process)
+        new_executor: Box<Ring3Executor>,
+    ) -> Option<Box<Ring3Executor>> {
+        self.current_executor.replace(new_executor)
     }
 
-    pub fn has_current_process(&self) -> bool {
-        self.current_process.is_some()
+    pub fn has_executor(&self) -> bool {
+        self.current_executor.is_some()
     }
 
-    pub fn current_process(&self) -> Result<Arc<Ring3Executor>, ProcessError> {
+    pub fn current_executor(&self) -> Result<&Box<Ring3Executor>, ProcessError> {
         let p = self
-            .current_process
+            .current_executor
             .as_ref()
             .ok_or(ProcessError::ProcessNotSet)?;
-        Ok(p.clone())
+        Ok(p)
     }
 
     pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
@@ -339,7 +341,7 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
     }
 
     fn current_pid(&self) -> Result<Pid, KError> {
-        Ok(self.current_process()?.pid)
+        Ok(self.current_executor()?.pid)
     }
 
     fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>> {

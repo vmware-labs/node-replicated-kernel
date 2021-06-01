@@ -274,7 +274,7 @@ where
     pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
 
     /// A handle to the node-local kernel replica.
-    pub replica: Option<(Arc<Replica<'static, KernelNode<A::Process>>>, ReplicaToken)>,
+    pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
 
     /// Measures cycles spent in TLB shootdown handler for responder.
     pub tlb_time: u64,
@@ -312,7 +312,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn setup_node_replication(
         &mut self,
-        replica: Arc<Replica<'static, KernelNode<A::Process>>>,
+        replica: Arc<Replica<'static, KernelNode>>,
         idx_token: ReplicaToken,
     ) {
         self.replica = Some((replica, idx_token));

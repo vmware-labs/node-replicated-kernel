@@ -144,7 +144,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
         ProcessOperation::GetVCpuArea => unsafe {
             let kcb = super::kcb::get_kcb();
 
-            let vcpu_vaddr = kcb.arch.current_process()?.vcpu_addr().as_u64();
+            let vcpu_vaddr = kcb.arch.current_executor()?.vcpu_addr().as_u64();
 
             Ok((vcpu_vaddr, 0))
         },
@@ -191,15 +191,14 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let affinity = affinity.ok_or(crate::process::ProcessError::InvalidGlobalThreadId)?;
             let pid = kcb.current_pid()?;
 
-            let (gtid, eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
-                kcb,
+            let gtid = nr::KernelNode::allocate_core_to_process(
                 pid,
                 VAddr::from(entry_point),
                 Some(affinity),
                 Some(gtid),
             )?;
 
-            Ok((gtid, eid as u64))
+            Ok((gtid, 0))
         }
         ProcessOperation::AllocatePhysical => {
             let page_size: usize = arg2.try_into().unwrap_or(0);
@@ -250,7 +249,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     trace!("handle_vspace {:?} {:#x} {:#x}", op, base, region_size);
 
     let kcb = super::kcb::get_kcb();
-    let mut p = kcb.arch.current_process()?;
+    let mut p = kcb.arch.current_executor()?;
 
     match op {
         VSpaceOperation::Map => unsafe {
@@ -356,7 +355,8 @@ fn handle_fileio(
     let op = FileOperation::from(arg1);
 
     let kcb = super::kcb::get_kcb();
-    let mut plock = kcb.arch.current_process();
+    // TODO(refactor): Just get the pid upfront here, it's the only thing we use below
+    let mut plock = kcb.arch.current_executor();
 
     match op {
         FileOperation::Create => {

@@ -13,8 +13,13 @@
 //! [2]: www.barrelfish.org/publications/TN-010-Spec.pdf
 //! [3]: http://www.barrelfish.org/publications/ma-fuchs-tm-mp.pdf
 
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use log::trace;
+
+use crate::rumprt::crt::READY_TO_RUMBLE;
+
+pub static CORES_ONLINE: AtomicUsize = AtomicUsize::new(1);
 
 lazy_static! {
     pub static ref PROCESS_SCHEDULER: lineup::scheduler::SmpScheduler<'static> = {
@@ -56,6 +61,12 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
         use lineup::tls2::SchedulerControlBlock;
         let core_id = arg;
         log::info!("Got a new core ({}) assigned to us.", core_id);
+        CORES_ONLINE.fetch_add(1, Ordering::SeqCst);
+
+        #[cfg(feature = "rumprt")]
+        while READY_TO_RUMBLE.load(Ordering::SeqCst) == false {
+            core::hint::spin_loop();
+        }
 
         let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id as usize);
         loop {

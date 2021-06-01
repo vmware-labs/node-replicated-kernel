@@ -47,6 +47,7 @@ use x86::{dtables, Ring};
 use apic::ApicDriver;
 use log::debug;
 
+use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
@@ -315,8 +316,18 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
             .expect("A pid must be set in this if branch (US bit set in page-fault error)");
 
         match nrproc::NrProcess::<Ring3Process>::resolve(pid, faulting_address_va) {
-            Ok(_) => {
-                // Spurious page-fault, after resolve page-table is up to date
+            Ok((paddr, rights)) => {
+                // TODO(harden): We probably want to warn/abort if we get many
+                // "spurious" pfaults for the same addr in quick succession: one
+                // bug I encountered is when I accidentially made executor
+                // objects with the PML4 base address of the same process but
+                // from another replica, in that case it will end up pfaulting
+                // here until the other replica (by chance) advances and this
+                // code doesn't really do anything...
+                trace!(
+                    "Spurious page-fault, after resolve page-table is up to date {} {} -> {:#x} {:#b} on {}",
+                    pid, faulting_address_va, paddr, rights, kcb.arch.hwthread_id()
+                );
                 let r = kcb_iret_handle(kcb);
                 r.resume()
             }
@@ -393,7 +404,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     warn!("Got debug interrupt {}", desc.source);
 
     let kcb = get_kcb();
-    assert!(kcb.arch.has_current_process(), "Not from user-space?");
+    assert!(kcb.arch.has_executor(), "Not from user-space?");
     let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
     r.resume()
 }
@@ -412,13 +423,13 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
     }
 
     // Periodically advance replica state, then resume immediately
-    nr::KernelNode::<Ring3Process>::synchronize();
+    nr::KernelNode::synchronize();
     let kcb = get_kcb();
     for pid in 0..crate::process::MAX_PROCESSES {
         nrproc::NrProcess::<Ring3Process>::synchronize(pid);
     }
 
-    if kcb.arch.has_current_process() {
+    if kcb.arch.has_executor() {
         // TODO(process-mgmt): Ensures that we still periodically
         // check and advance replicas even on cores that have a core.
         // Only a single idle core per replica should probably do that,
@@ -580,7 +591,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             trace!("handle_generic_exception {:?}", a);
 
             let kcb = get_kcb();
-            let mut plock = kcb.arch.current_process();
+            let mut plock = kcb.arch.current_executor();
             let p = plock.as_mut().unwrap();
 
             let resumer = {
@@ -627,7 +638,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             super::tlb::dequeue(atopology::MACHINE_TOPOLOGY.current_thread().id);
 
             let kcb = get_kcb();
-            if kcb.arch.has_current_process() {
+            if kcb.arch.has_executor() {
                 // Return immediately
                 kcb.tlb_time += x86::time::rdtsc() - start;
                 kcb_iret_handle(kcb).resume()
@@ -636,11 +647,11 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 crate::scheduler::schedule()
             }
         } else if a.vector == MLNR_GC_INIT.into() {
-            // nr::KernelNode::<Ring3Process>::synchronize(); /* TODO: Do we need this?
+            // nr::KernelNode::synchronize(); /* TODO: Do we need this?
             super::tlb::dequeue(atopology::MACHINE_TOPOLOGY.current_thread().id);
 
             let kcb = get_kcb();
-            if kcb.arch.has_current_process() {
+            if kcb.arch.has_executor() {
                 kcb_iret_handle(kcb).resume()
             } else {
                 loop {

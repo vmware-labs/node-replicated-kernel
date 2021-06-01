@@ -37,8 +37,6 @@ use super::kcb::Arch86Kcb;
 use super::vspace::*;
 use super::Module;
 
-pub type ArchExecutor = Ring3Executor;
-
 const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
 
 lazy_static! {
@@ -742,11 +740,11 @@ impl Default for Ring3Process {
         Ring3Process {
             pid: 0,
             current_eid: 0,
-            offset: VAddr::from(0x20_0000_0000usize),
+            offset: VAddr::from(ELF_OFFSET),
             vspace: VSpace::new(),
             entry_point: VAddr::from(0usize),
             executor_cache,
-            executor_offset: VAddr::from(0x21_0000_0000usize),
+            executor_offset: VAddr::from(EXECUTOR_OFFSET),
             fds,
             pinfo: Default::default(),
             frames: Vec::with_capacity(12),
@@ -1079,22 +1077,27 @@ impl Process for Ring3Process {
 
     /// Create a series of dispatcher objects for the process
     fn allocate_executors(&mut self, memory: Frame) -> Result<usize, ProcessError> {
+        use crate::kcb::get_kcb;
+        let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
+        let executors_to_create = memory.size() / executor_space_requirement;
+        if memory.affinity as usize != get_kcb().arch.node() {
+            // Only create on current node -- note this breaks deterministic allocation!
+            return Ok(executors_to_create);
+        }
+
         KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
         {
             self.vspace
                 .map_frame(self.executor_offset, memory, MapAction::ReadWriteUser)
                 .expect("Can't map user-space executor memory.");
 
-            debug!(
+            info!(
                 "executor space base expanded {:#x} size: {} end {:#x}",
                 self.executor_offset,
                 memory.size(),
                 self.executor_offset + memory.size()
             );
         }
-
-        let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
-        let executors_to_create = memory.size() / executor_space_requirement;
 
         let mut cur_paddr_offset = memory.base;
         let mut cur_offset = self.executor_offset;
@@ -1221,8 +1224,7 @@ pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
 
     // Set current thread to run executor from our process (on the current core)
     let thread = atopology::MACHINE_TOPOLOGY.current_thread();
-    let (_gtid, _eid) = nr::KernelNode::<Ring3Process>::allocate_core_to_process(
-        kcb,
+    let _gtid = nr::KernelNode::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
         thread.node_id.or(Some(0)),

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::prelude::*;
-use alloc::sync::Weak;
 use alloc::vec::Vec;
 use kpi::process::{FrameId, ProcessInfo};
 
@@ -29,11 +28,7 @@ pub enum Op {
     Load(Pid, &'static Module, Vec<Frame>),
 
     /// Assign a core to a process.
-    ProcAllocateCore(
-        Option<atopology::NodeId>,
-        Option<atopology::GlobalThreadId>,
-        VAddr,
-    ),
+    AssignExecutor(atopology::NodeId, atopology::GlobalThreadId),
 
     Destroy,
 
@@ -54,7 +49,7 @@ pub enum NodeResult<E: Executor> {
     Loaded,
     Destroyed,
     ProcessInfo(ProcessInfo),
-    CoreAllocated(atopology::GlobalThreadId, Box<E>),
+    Executor(Box<E>),
     VectorAllocated(u64),
     ExecutorsCreated(usize),
     Mapped,
@@ -62,7 +57,6 @@ pub enum NodeResult<E: Executor> {
     Adjusted,
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
-    Executor(Weak<E>),
     FrameId(usize),
     Invalid,
 }
@@ -244,30 +238,22 @@ where
         }
     }
 
-    pub fn allocate_core_to_process<A>(
-        kcb: &Kcb<A>,
-        pid: Pid,
-        entry_point: VAddr,
-        affinity: Option<atopology::NodeId>,
-        gtid: Option<atopology::GlobalThreadId>,
-    ) -> Result<(atopology::GlobalThreadId, Box<P::E>), KError>
+    pub fn allocate_executor<A>(kcb: &Kcb<A>, pid: Pid) -> Result<Box<P::E>, KError>
     where
         A: ArchSpecificKcb<Process = P>,
         P: Process + core::marker::Sync + 'static,
     {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
+        let gtid = kcb.arch.hwthread_id();
         let node = kcb.arch.node();
 
         let response = kcb.arch.process_table()[node][pid].execute_mut(
-            Op::ProcAllocateCore(gtid, affinity, entry_point),
+            Op::AssignExecutor(gtid, node as u64),
             kcb.process_token[pid],
         );
         match response {
-            Ok(NodeResult::CoreAllocated(rgtid, executor)) => {
-                let _r = gtid.map(|gtid| debug_assert_eq!(gtid, rgtid));
-                Ok((rgtid, executor))
-            }
+            Ok(NodeResult::Executor(executor)) => Ok(executor),
             Err(e) => Err(e.clone()),
             _ => unreachable!("Got unexpected response"),
         }
@@ -298,10 +284,7 @@ where
             .execute_mut(Op::DispatcherAllocation(frame), kcb.process_token[pid]);
 
         match response {
-            Ok(NodeResult::ExecutorsCreated(how_many)) => {
-                assert!(how_many > 0);
-                Ok(how_many)
-            }
+            Ok(NodeResult::ExecutorsCreated(how_many)) => Ok(how_many),
             Err(e) => Err(e.clone()),
             _ => unreachable!("Got unexpected response"),
         }
@@ -375,14 +358,12 @@ where
                 Ok(NodeResult::Unmapped(shootdown_handle))
             }
 
-            Op::ProcAllocateCore(Some(gtid), Some(region), entry_point) => {
+            Op::AssignExecutor(gtid, region) => {
                 let executor = self.process.get_executor(region)?;
                 let eid = executor.id();
                 self.active_cores.push((gtid, eid));
-
-                Ok(NodeResult::CoreAllocated(gtid, executor))
+                Ok(NodeResult::Executor(executor))
             }
-            Op::ProcAllocateCore(_a, _b, _entry_point) => unimplemented!("ProcAllocateCore"),
 
             Op::AllocateFrameToProcess(frame) => {
                 let fid = self.process.add_frame(frame)?;

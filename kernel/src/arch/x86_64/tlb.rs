@@ -17,7 +17,6 @@ use x86::apic::{
 };
 
 use super::memory::BASE_PAGE_SIZE;
-use super::process::Ring3Process;
 use crate::memory::vspace::TlbFlushHandle;
 use crate::{is_page_aligned, mlnr, nr};
 
@@ -148,8 +147,8 @@ pub fn eager_advance_mlnr_replica() {
             match kcb.arch.mlnr_replica.as_ref() {
                 Some(replica) => {
                     let log_id = replica.1.id();
-                    // Synchronize NR-replica.
-                    let _ignore = nr::KernelNode::<Ring3Process>::synchronize();
+                    // Synchronize NR-replica
+                    let _ignore = nr::KernelNode::synchronize();
                     // Synchronize Mlnr-replica.
                     advance_log(log_id);
                 }

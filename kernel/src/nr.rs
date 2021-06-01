@@ -2,58 +2,57 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::prelude::*;
-use alloc::sync::{Arc, Weak};
 use core::fmt::Debug;
 
 use hashbrown::HashMap;
-use kpi::process::ProcessInfo;
-
 use node_replication::Dispatch;
 
 use crate::arch::MAX_CORES;
 use crate::error::KError;
-use crate::kcb::{ArchSpecificKcb, Kcb};
-use crate::memory::vspace::{MapAction, TlbFlushHandle};
-use crate::memory::{PAddr, VAddr};
-use crate::process::{Eid, Executor, Pid, Process, ProcessError, MAX_PROCESSES};
+use crate::memory::VAddr;
+use crate::process::{Pid, ProcessError, MAX_PROCESSES};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
-    CurrentExecutor(atopology::GlobalThreadId),
+    CurrentProcess(atopology::GlobalThreadId),
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub enum Op<E: Executor> {
+pub enum Op {
+    /// Allocate a new process (Pid)
     AllocatePid,
-    ProcDestroy(Pid),
-    /// Assign a core to a process.
-    SchedAllocateCore(Option<atopology::NodeId>, Box<E>),
+    /// Destroy a process
+    FreePid(Pid),
+    /// Assign a core to a process
+    SchedAllocateCore(
+        Pid,
+        Option<atopology::NodeId>,
+        Option<atopology::GlobalThreadId>,
+        VAddr,
+    ),
 }
 
 #[derive(Debug, Clone)]
-pub enum NodeResult<E: Executor> {
+pub enum NodeResult {
     PidAllocated(Pid),
-    ProcDestroyed,
-    ProcessInfo(ProcessInfo),
-    CoreAllocated(atopology::GlobalThreadId, Eid),
-    VectorAllocated(u64),
-    ExecutorsCreated(usize),
-    Mapped,
-    MappedFrameId(PAddr, usize),
-    Adjusted,
-    Unmapped(TlbFlushHandle),
-    Resolved(PAddr, MapAction),
-    Executor(Weak<E>),
-    FrameId(usize),
+    PidReturned,
+    CoreInfo(CoreInfo),
+    CoreAllocated(atopology::GlobalThreadId),
 }
 
-pub struct KernelNode<P: Process> {
+#[derive(Debug, Clone, Copy)]
+pub struct CoreInfo {
+    pub pid: Pid,
+    pub entry_point: VAddr,
+}
+
+pub struct KernelNode {
     process_map: HashMap<Pid, ()>,
-    scheduler_map: HashMap<atopology::GlobalThreadId, Arc<P::E>>,
+    scheduler_map: HashMap<atopology::GlobalThreadId, CoreInfo>,
 }
 
-impl<P: Process> Default for KernelNode<P> {
-    fn default() -> KernelNode<P> {
+impl Default for KernelNode {
+    fn default() -> KernelNode {
         KernelNode {
             process_map: HashMap::with_capacity(MAX_PROCESSES),
             scheduler_map: HashMap::with_capacity(MAX_CORES),
@@ -61,10 +60,7 @@ impl<P: Process> Default for KernelNode<P> {
     }
 }
 
-impl<P: 'static> KernelNode<P>
-where
-    P: Process + Default,
-{
+impl KernelNode {
     pub fn synchronize() -> Result<(), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.replica
@@ -75,40 +71,21 @@ where
             })
     }
 
-    pub fn allocate_core_to_process<A>(
-        kcb: &mut Kcb<A>,
+    pub fn allocate_core_to_process(
         pid: Pid,
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,
         gtid: Option<atopology::GlobalThreadId>,
-    ) -> Result<(atopology::GlobalThreadId, Eid), KError>
-    where
-        A: ArchSpecificKcb<Process = P>,
-        P: Process + core::marker::Sync,
-    {
-        let (gtid, executor) = crate::nrproc::NrProcess::<P>::allocate_core_to_process(
-            kcb,
-            pid,
-            entry_point,
-            affinity,
-            gtid,
-        )?;
-
-        unsafe {
-            (*executor.vcpu_kernel()).resume_with_upcall = entry_point;
-        }
-
+    ) -> Result<atopology::GlobalThreadId, KError> {
+        let kcb = super::kcb::get_kcb();
         kcb.replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let op: Op<P::E> = Op::SchedAllocateCore(Some(gtid), executor);
+                let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
                 let response = replica.execute_mut(op, *token);
 
                 match &response {
-                    Ok(NodeResult::CoreAllocated(rgtid, eid)) => {
-                        debug_assert_eq!(gtid, *rgtid);
-                        Ok((*rgtid, *eid))
-                    }
+                    Ok(NodeResult::CoreAllocated(rgtid)) => Ok(*rgtid),
                     Ok(_) => unreachable!("Got unexpected response"),
                     Err(r) => Err(r.clone()),
                 }
@@ -116,22 +93,19 @@ where
     }
 }
 
-impl<P> Dispatch for KernelNode<P>
-where
-    P: Process + Default,
-{
+impl Dispatch for KernelNode {
     type ReadOperation = ReadOps;
-    type WriteOperation = Op<P::E>;
-    type Response = Result<NodeResult<P::E>, KError>;
+    type WriteOperation = Op;
+    type Response = Result<NodeResult, KError>;
 
     fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
-            ReadOps::CurrentExecutor(gtid) => {
-                let executor = self
+            ReadOps::CurrentProcess(gtid) => {
+                let core_info = self
                     .scheduler_map
                     .get(&gtid)
                     .ok_or(KError::NoExecutorForCore)?;
-                Ok(NodeResult::Executor(Arc::downgrade(executor)))
+                Ok(NodeResult::CoreInfo(*core_info))
             }
         }
     }
@@ -149,30 +123,29 @@ where
                 }
                 Err(KError::OutOfPids)
             }
-            Op::ProcDestroy(pid) => {
+            Op::FreePid(pid) => {
                 // TODO(correctness): This is just a trivial,
                 // wrong implementation at the moment
                 match self.process_map.remove(&pid) {
-                    Some(_) => Ok(NodeResult::ProcDestroyed),
+                    Some(_) => Ok(NodeResult::PidReturned),
                     None => {
                         error!("Process not found");
                         Err(ProcessError::NoProcessFoundForPid.into())
                     }
                 }
             }
-            Op::SchedAllocateCore(Some(gtid), executor) => match self.scheduler_map.get(&gtid) {
-                Some(executor) => {
-                    error!("Core {} already used by {}", gtid, executor.id());
-                    Err(KError::CoreAlreadyAllocated)
+            Op::SchedAllocateCore(pid, _affinity, Some(gtid), entry_point) => {
+                match self.scheduler_map.get(&gtid) {
+                    Some(_cinfo) => Err(KError::CoreAlreadyAllocated),
+                    None => {
+                        trace!("Op::SchedAllocateCore pid={}, gtid={}", pid, gtid);
+                        self.scheduler_map
+                            .insert(gtid, CoreInfo { pid, entry_point });
+                        Ok(NodeResult::CoreAllocated(gtid))
+                    }
                 }
-                None => {
-                    let eid = executor.id();
-                    trace!("Op::SchedAllocateCore gtid={} eid={}", gtid, eid);
-                    self.scheduler_map.insert(gtid, executor.into());
-                    Ok(NodeResult::CoreAllocated(gtid, eid))
-                }
-            },
-            Op::SchedAllocateCore(_gtid, _executor) => unimplemented!(),
+            }
+            Op::SchedAllocateCore(_pid, _affinity, _gtid, _entry_point) => unimplemented!(),
         }
     }
 }

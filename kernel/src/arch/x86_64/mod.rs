@@ -65,10 +65,7 @@ use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
 
 use memory::paddr_to_kernel_vaddr;
-use process::Ring3Process;
 use vspace::page_table::PageTable;
-
-use self::process::Ring3Executor;
 
 pub const MAX_NUMA_NODES: usize = 12;
 pub const MAX_CORES: usize = 192;
@@ -202,8 +199,8 @@ struct AppCoreArgs {
     global_memory: &'static GlobalMemory,
     thread: atopology::ThreadId,
     node: atopology::NodeId,
-    _log: Arc<Log<'static, Op<Ring3Executor>>>,
-    replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
+    _log: Arc<Log<'static, Op>>,
+    replica: Arc<Replica<'static, KernelNode>>,
     mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 }
 
@@ -295,8 +292,8 @@ fn boot_app_cores(
     cmdline: BootloaderArguments,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
-    log: Arc<Log<'static, Op<Ring3Executor>>>,
-    bsp_replica: Arc<Replica<'static, KernelNode<Ring3Process>>>,
+    log: Arc<Log<'static, Op>>,
+    bsp_replica: Arc<Replica<'static, KernelNode>>,
     mlnr_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 ) {
@@ -305,8 +302,7 @@ fn boot_app_cores(
 
     // Let's go with one replica per NUMA node for now:
     let numa_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
-    let mut replicas: Vec<Arc<Replica<'static, KernelNode<Ring3Process>>>> =
-        Vec::with_capacity(numa_nodes);
+    let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> = Vec::with_capacity(numa_nodes);
     let mut mlnr_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
         Vec::with_capacity(numa_nodes);
 
@@ -318,11 +314,11 @@ fn boot_app_cores(
         debug!(
             "Allocate a replica for {} ({} bytes)",
             node,
-            core::mem::size_of::<Replica<'static, KernelNode<Ring3Process>>>()
+            core::mem::size_of::<Replica<'static, KernelNode>>()
         );
         kcb.set_allocation_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
-        replicas.push(Replica::<'static, KernelNode<Ring3Process>>::new(&log));
+        replicas.push(Replica::<'static, KernelNode>::new(&log));
         mlnr_replicas.push(MlnrReplica::new(mlnr_logs.clone()));
         kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }
@@ -649,8 +645,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Create the global operation log and first replica
     // and store it in the BSP kcb
-    let log: Arc<Log<Op<Ring3Executor>>> = Arc::new(Log::<Op<Ring3Executor>>::new(LARGE_PAGE_SIZE));
-    let bsp_replica = Replica::<KernelNode<Ring3Process>>::new(&log);
+    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
+    let bsp_replica = Replica::<KernelNode>::new(&log);
     let local_ridx = bsp_replica.register().unwrap();
     {
         let kcb = kcb::get_kcb();

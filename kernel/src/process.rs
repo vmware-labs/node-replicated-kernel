@@ -403,62 +403,6 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
         })
 }
 
-/*pub fn make_process2(binary: &'static str) -> Result<Replica<Process>, KError> {
-    KernelAllocator::try_refill_tcache(7, 1)?;
-    let kcb = kcb::get_kcb();
-
-    // Lookup binary of the process
-    let mut mod_file = None;
-    for module in &kcb.arch.kernel_args().modules {
-        if module.name() == binary {
-            mod_file = Some(module);
-        }
-    }
-
-    let mod_file = mod_file.expect(format!("Couldn't find '{}' binary.", binary).as_str());
-    info!(
-        "binary={} cmdline={} module={:?}",
-        binary, kcb.cmdline.test_cmdline, mod_file
-    );
-
-    let elf_module = unsafe {
-        elfloader::ElfBinary::new(mod_file.name(), mod_file.as_slice())
-            .map_err(|_e| ProcessError::UnableToParseElf)?
-    };
-
-    // We don't have an offset for non-pie applications (i.e., rump apps)
-    let offset = if !elf_module.is_pie() {
-        VAddr::zero()
-    } else {
-        VAddr::from(0x20_0000_0000usize)
-    };
-
-    let mut data_sec_loader = DataSecAllocator {
-        offset,
-        frames: Vec::with_capacity(2),
-    };
-    elf_module
-        .load(&mut data_sec_loader)
-        .map_err(|_e| ProcessError::UnableToLoad)?;
-    let data_frames: Vec<Frame> = data_sec_loader.finish();
-
-    // Create a new process
-    kcb.replica
-        .as_ref()
-        .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-            let response = replica.execute_mut(nr::Op::ProcCreate(&mod_file, data_frames), *token);
-            match response {
-                Ok(nr::NodeResult::ProcCreated(pid)) => {
-                    match mlnr::MlnrKernelNode::add_process(pid) {
-                        Ok(pid) => Ok(pid.0),
-                        Err(e) => unreachable!("{}", e),
-                    }
-                }
-                _ => unreachable!("Got unexpected response"),
-            }
-        })
-}*/
-
 /// Create dispatchers for a given Pid to run on all cores.
 ///
 /// Also make sure they are all using NUMA local memory

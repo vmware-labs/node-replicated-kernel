@@ -59,9 +59,9 @@ pub struct ArchKcb {
     init_vspace: Option<RefCell<VSpace>>,
     /// Arguments passed to the kernel by the bootloader.
     kernel_args: &'static KernelArgs,
-    pub replica: Option<(Arc<Replica<'static, KernelNode<UnixProcess>>>, ReplicaToken)>,
+    pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
     pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
-    pub current_process: Option<Arc<UnixThread>>,
+    pub current_executor: Option<Box<UnixThread>>,
 }
 
 impl ArchKcb {
@@ -71,7 +71,7 @@ impl ArchKcb {
             init_vspace: None,
             replica: None,
             mlnr_replica: None,
-            current_process: None,
+            current_executor: None,
         }
     }
 
@@ -92,23 +92,23 @@ impl ArchKcb {
         0
     }
 
-    pub fn swap_current_process(
+    pub fn swap_current_executor(
         &mut self,
-        new_current_process: Arc<UnixThread>,
-    ) -> Option<Arc<UnixThread>> {
+        current_executor: Box<UnixThread>,
+    ) -> Option<Box<UnixThread>> {
         None
     }
 
-    pub fn has_current_process(&self) -> bool {
-        self.current_process.is_some()
+    pub fn has_executor(&self) -> bool {
+        self.current_executor.is_some()
     }
 
-    pub fn current_process(&self) -> Result<Arc<UnixThread>, ProcessError> {
+    pub fn current_executor(&self) -> Result<&Box<UnixThread>, ProcessError> {
         let p = self
-            .current_process
+            .current_executor
             .as_ref()
             .ok_or(ProcessError::ProcessNotSet)?;
-        Ok(p.clone())
+        Ok(p)
     }
 }
 

@@ -19,6 +19,7 @@ use kpi::{
 };
 
 use crate::error::KError;
+use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::mlnrfs::FileSystem;
@@ -355,68 +356,63 @@ fn handle_fileio(
     let op = FileOperation::from(arg1);
 
     let kcb = super::kcb::get_kcb();
-    // TODO(refactor): Just get the pid upfront here, it's the only thing we use below
-    let mut plock = kcb.arch.current_executor();
+    let pid = kcb.arch.current_pid()?;
 
     match op {
         FileOperation::Create => {
             unreachable!("Create is changed to Open with O_CREAT flag in vibrio")
         }
-        FileOperation::Open => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+        FileOperation::Open => {
             let pathname = arg2;
             let flags = arg3;
             let modes = arg4;
-            match user_virt_addr_valid(p.pid, pathname, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::map_fd(p.pid, pathname, flags, modes),
+            match user_virt_addr_valid(pid, pathname, 0) {
+                Ok(_) => mlnr::MlnrKernelNode::map_fd(pid, pathname, flags, modes),
                 Err(e) => Err(e),
             }
-        }),
+        }
         FileOperation::Read | FileOperation::Write => {
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                let fd = arg2;
-                let buffer = arg3;
-                let len = arg4;
+            let fd = arg2;
+            let buffer = arg3;
+            let len = arg4;
 
-                match user_virt_addr_valid(p.pid, buffer, len) {
-                    Ok(_) => mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, -1),
-                    Err(e) => Err(e),
-                }
-            })
+            match user_virt_addr_valid(pid, buffer, len) {
+                Ok(_) => mlnr::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1),
+                Err(e) => Err(e),
+            }
         }
         FileOperation::ReadAt | FileOperation::WriteAt => {
-            plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
-                let fd = arg2;
-                let buffer = arg3;
-                let len = arg4;
-                let offset = arg5 as i64;
-
-                match user_virt_addr_valid(p.pid, buffer, len) {
-                    Ok(_) => mlnr::MlnrKernelNode::file_io(op, p.pid, fd, buffer, len, offset),
-                    Err(e) => Err(e),
-                }
-            })
-        }
-        FileOperation::Close => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
             let fd = arg2;
-            mlnr::MlnrKernelNode::unmap_fd(p.pid, fd)
-        }),
-        FileOperation::GetInfo => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+            let buffer = arg3;
+            let len = arg4;
+            let offset = arg5 as i64;
+
+            match user_virt_addr_valid(pid, buffer, len) {
+                Ok(_) => mlnr::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset),
+                Err(e) => Err(e),
+            }
+        }
+        FileOperation::Close => {
+            let fd = arg2;
+            mlnr::MlnrKernelNode::unmap_fd(pid, fd)
+        }
+        FileOperation::GetInfo => {
             let name = arg2;
             let info_ptr = arg3;
 
-            match user_virt_addr_valid(p.pid, name, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::file_info(p.pid, name, info_ptr),
+            match user_virt_addr_valid(pid, name, 0) {
+                Ok(_) => mlnr::MlnrKernelNode::file_info(pid, name, info_ptr),
                 Err(e) => Err(e),
             }
-        }),
-        FileOperation::Delete => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+        }
+        FileOperation::Delete => {
             let name = arg2;
 
-            match user_virt_addr_valid(p.pid, name, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::file_delete(p.pid, name),
+            match user_virt_addr_valid(pid, name, 0) {
+                Ok(_) => mlnr::MlnrKernelNode::file_delete(pid, name),
                 Err(e) => Err(e),
             }
-        }),
+        }
         FileOperation::WriteDirect => {
             let len = arg3;
             let mut offset = arg4 as usize;
@@ -432,25 +428,25 @@ fn handle_fileio(
                 Err(e) => Err(KError::FileSystem { source: e }),
             }
         }
-        FileOperation::FileRename => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+        FileOperation::FileRename => {
             let oldname = arg2;
             let newname = arg3;
             match (
-                user_virt_addr_valid(p.pid, oldname, 0),
-                user_virt_addr_valid(p.pid, newname, 0),
+                user_virt_addr_valid(pid, oldname, 0),
+                user_virt_addr_valid(pid, newname, 0),
             ) {
-                (Ok(_), Ok(_)) => mlnr::MlnrKernelNode::file_rename(p.pid, oldname, newname),
+                (Ok(_), Ok(_)) => mlnr::MlnrKernelNode::file_rename(pid, oldname, newname),
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }
-        }),
-        FileOperation::MkDir => plock.as_ref().map_or(Err(KError::ProcessNotSet), |p| {
+        }
+        FileOperation::MkDir => {
             let pathname = arg2;
             let modes = arg3;
-            match user_virt_addr_valid(p.pid, pathname, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::mkdir(p.pid, pathname, modes),
+            match user_virt_addr_valid(pid, pathname, 0) {
+                Ok(_) => mlnr::MlnrKernelNode::mkdir(pid, pathname, modes),
                 Err(e) => Err(e),
             }
-        }),
+        }
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
             Err(KError::NotSupported)

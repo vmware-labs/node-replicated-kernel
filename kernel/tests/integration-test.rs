@@ -2055,7 +2055,7 @@ fn s06_leveldb_benchmark() {
         if cfg!(feature = "smoke") {
             cmdline = cmdline.memory(8192);
         } else {
-            cmdline = cmdline.memory(81920);
+            cmdline = cmdline.memory(106496);
         }
 
         let mut output = String::new();

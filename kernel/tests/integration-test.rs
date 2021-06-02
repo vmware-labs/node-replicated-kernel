@@ -689,19 +689,19 @@ fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
 
     // Spawn a bash session for dhcpd, otherwise it seems we
     // can't kill the process since we do not run as root
-    let mut b = spawn_bash(Some(20000))?;
+    let mut b = spawn_bash(Some(25_000))?;
     b.send_line("sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf")?;
     Ok(b)
 }
 
 /// Helper function that spawns a UDP receiver socket on the host.
 fn spawn_receiver() -> Result<rexpect::session::PtySession> {
-    spawn("socat UDP-LISTEN:8889,fork stdout", Some(20000))
+    spawn("socat UDP-LISTEN:8889,fork stdout", Some(20_000))
 }
 
 /// Helper function that tries to ping the QEMU guest.
 fn spawn_ping() -> Result<rexpect::session::PtySession> {
-    spawn("ping 172.31.0.10", Some(20000))
+    spawn("ping 172.31.0.10", Some(20_000))
 }
 
 #[allow(unused)]
@@ -1366,7 +1366,7 @@ fn s06_redis_benchmark_virtio() {
         use std::{thread, time};
         thread::sleep(time::Duration::from_secs(9));
 
-        let mut redis_client = redis_benchmark("virtio", 2000000)?;
+        let mut redis_client = redis_benchmark("virtio", 2_000_000)?;
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;
@@ -1398,7 +1398,7 @@ fn s06_redis_benchmark_e1000() {
         use std::{thread, time};
         thread::sleep(time::Duration::from_secs(9));
 
-        let mut redis_client = redis_benchmark("e1000", 2000000)?;
+        let mut redis_client = redis_benchmark("e1000", 2_000_000)?;
 
         dhcp_server.send_control('c')?;
         redis_client.process.kill(SIGTERM)?;
@@ -1769,7 +1769,7 @@ fn s06_fxmark_benchmark() {
                 }
 
                 let mut output = String::new();
-                let mut qemu_run = |with_cores: usize| -> Result<WaitStatus> {
+                let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
                     let mut p = spawn_nrk(&cmdline)?;
 
                     // Parse lines like

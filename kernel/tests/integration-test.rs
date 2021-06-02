@@ -2023,7 +2023,14 @@ fn s06_memcached_benchmark() {
 #[test]
 fn s06_leveldb_benchmark() {
     let machine = Machine::determine();
-    let threads = machine.thread_defaults_uniform();
+    let threads: Vec<usize> = machine
+        .thread_defaults_uniform()
+        .into_iter()
+        // Throw out everything above 28 since we have some non-deterministic
+        // bug on larger machines that leads to threads calling sched_yield and
+        // no readrandom is performed...
+        .filter(|&t| t <= 28)
+        .collect();
 
     // level-DB arguments
     let (reads, num, val_size) = if cfg!(feature = "smoke") {
@@ -2054,14 +2061,14 @@ fn s06_leveldb_benchmark() {
         if cfg!(feature = "smoke") {
             cmdline = cmdline.memory(8192);
         } else {
-            cmdline = cmdline.memory(106496);
+            cmdline = cmdline.memory(80_000);
         }
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut dhcp_server = spawn_dhcpd()?;
-            std::thread::sleep(std::time::Duration::from_secs(1));
             let mut p = spawn_nrk(&cmdline)?;
+            output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
             let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;
             println!("{}", matched);

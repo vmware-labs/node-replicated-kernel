@@ -689,7 +689,7 @@ fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
 
     // Spawn a bash session for dhcpd, otherwise it seems we
     // can't kill the process since we do not run as root
-    let mut b = spawn_bash(Some(25_000))?;
+    let mut b = spawn_bash(Some(45_000))?;
     b.send_line("sudo dhcpd -f -d tap0 --no-pid -cf ./tests/dhcpd.conf")?;
     Ok(b)
 }
@@ -2066,8 +2066,8 @@ fn s06_leveldb_benchmark() {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dhcp_server = spawn_dhcpd()?;
             let mut p = spawn_nrk(&cmdline)?;
+            let mut dhcp_server = spawn_dhcpd()?;
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
             let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;

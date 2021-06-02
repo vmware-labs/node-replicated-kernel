@@ -2048,7 +2048,6 @@ fn s06_leveldb_benchmark() {
             .nodes(2)
             .use_virtio()
             .setaffinity()
-            .prealloc()
             .cmd(kernel_cmdline.as_str())
             .release();
 

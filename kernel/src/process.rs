@@ -381,7 +381,7 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
 
     let mut data_sec_loader = DataSecAllocator {
         offset,
-        frames: Vec::with_capacity(2),
+        frames: Vec::with_capacity(4),
     };
     elf_module
         .load(&mut data_sec_loader)

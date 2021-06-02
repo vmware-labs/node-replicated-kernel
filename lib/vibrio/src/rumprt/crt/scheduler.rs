@@ -39,7 +39,7 @@ pub unsafe extern "C" fn _sched_setparam() {
 
 #[no_mangle]
 pub unsafe extern "C" fn sched_yield() {
-    unreachable!("sched_yield");
+    log::error!("called sched_yield");
 }
 
 /// Restartable atomic sequences are code sequences which are guaranteed to

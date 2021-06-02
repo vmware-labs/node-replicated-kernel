@@ -2043,7 +2043,7 @@ fn s06_leveldb_benchmark() {
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
-            .timeout(300_000)
+            .timeout(80_000)
             .cores(machine.max_cores())
             .nodes(2)
             .use_virtio()

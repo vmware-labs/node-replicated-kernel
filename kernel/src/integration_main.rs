@@ -400,7 +400,7 @@ pub fn xmain() {
 ))]
 pub fn xmain() {
     let kcb = kcb::get_kcb();
-    crate::arch::process::spawn(kcb.cmdline.test_binary);
+    crate::arch::process::spawn(kcb.cmdline.init_binary);
     crate::scheduler::schedule()
 }
 

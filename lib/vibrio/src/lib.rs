@@ -8,7 +8,6 @@
 #![no_std]
 #![feature(
     alloc_error_handler,
-    const_fn,
     panic_info_message,
     c_variadic,
     ptr_internals,

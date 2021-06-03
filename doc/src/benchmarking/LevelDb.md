@@ -25,7 +25,7 @@ An example invocation to launch the db-bench binary directly through `run.py`:
 
 ```bash
 python3 run.py --kfeatures test-userspace-smp \
-    --cmd "log=info testbinary=dbbench.bin testcmd=28 appcmd=\'--threads=28 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535\'" \
+    --cmd "log=info init=dbbench.bin initargs=28 appcmd=\'--threads=28 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535\'" \
     --nic virtio --mods rkapps --ufeatures rkapps:leveldb-bench \
     --release --qemu-cores 28 --qemu-nodes 2 --qemu-memory 81920 \
     --qemu-affinity --qemu-prealloc

@@ -41,7 +41,7 @@ use the virtio NIC):
 python3 run.py \
   --kfeatures test-userspace \
   --nic e1000 \
-  --cmd "log=info testbinary=redis.bin" \
+  --cmd "log=info init=redis.bin" \
   --mods rkapps \
   --ufeatures "rkapps:redis" \
   --qemu-settings="-m 1024M"

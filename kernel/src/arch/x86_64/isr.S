@@ -5,7 +5,7 @@
 .extern handle_generic_exception
 
 /**
- * Generates isr_handler${num} service routines that save the context in
+ * Generates isr_handlerXX service routines that save the context in
  * the KCB and then call `handle_generic_exception`.
  *
  * This routine excepts that an initialized KCB is installed in the
@@ -94,7 +94,7 @@ isr.loop\ex:
 .endm
 
 /**
- * Generates isr_handler_early${num} service routines that save the vector
+ * Generates isr_handler_earlyXX service routines that save the vector
  * number on the stack then call `handle_generic_exception_early`.
  *
  * Minimal OS setup (i.e., just an IDT and interrupt stack) is required

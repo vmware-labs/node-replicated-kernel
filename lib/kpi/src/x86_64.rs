@@ -3,7 +3,7 @@
 
 //! Defines the public kernel interface that is specific to x86-64.
 
-#![allow(safe_packed_borrows)]
+#![allow(unaligned_references)]
 
 use core::fmt;
 
@@ -166,7 +166,6 @@ impl SaveArea {
 
 impl fmt::Debug for SaveArea {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
             write!(
                 f,
                 "SaveArea\r\n
@@ -194,6 +193,5 @@ rip = {:>#18x} rflags = {:?}",
                 self.rip,
                 RFlags::from_raw(self.rflags)
             )
-        }
     }
 }

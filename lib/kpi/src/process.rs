@@ -55,10 +55,10 @@ pub struct ProcessInfo {
     pub tls_len_total: u64,
     /// Required alignment
     pub alignment: u64,
-    /// Generic command line argument buffer, example: testbinary, testcmd, etc.
+    /// Command line arguments
     pub cmdline: &'static str,
-    /// App specific command line argument buffer, for example:
-    /// benchmarks, reads, value_size for leveldb benchmark.
+    /// App specific command line argument, for example: benchmarks, reads,
+    /// value_size for leveldb (passed to the rump init function).
     pub app_cmdline: &'static str,
 }
 

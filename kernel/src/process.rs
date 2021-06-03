@@ -11,7 +11,7 @@ use core::convert::TryInto;
 use core::fmt::Debug;
 
 use cstr_core::CStr;
-use custom_error_core::custom_error;
+use custom_error::custom_error;
 use kpi::process::{FrameId, ELF_OFFSET};
 
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
@@ -364,7 +364,7 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     let mod_file = mod_file.expect(format!("Couldn't find '{}' binary.", binary).as_str());
     info!(
         "binary={} cmdline={} module={:?}",
-        binary, kcb.cmdline.test_cmdline, mod_file
+        binary, kcb.cmdline.init_args, mod_file
     );
 
     let elf_module = unsafe {

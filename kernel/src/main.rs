@@ -26,11 +26,7 @@
     try_reserve,
     new_uninit,
     get_mut_unchecked,
-    const_fn,
-    const_maybe_uninit_as_ptr,
-    const_raw_ptr_deref,
-    const_ptr_offset_from,
-    const_refs_to_cell
+    const_fn_trait_bound
 )]
 #![cfg_attr(not(target_os = "none"), feature(thread_local))]
 #![cfg_attr(

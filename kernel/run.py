@@ -246,7 +246,10 @@ def deploy(args):
 
     # Write kernel cmd-line file in ESP dir
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
-        cmdfile.write('./kernel {}'.format(args.cmd))
+        if args.cmd:
+            cmdfile.write('./kernel {}'.format(args.cmd))
+        else:
+            cmdfile.write('./kernel')
 
     deployed = []
     # Deploy user-modules

@@ -111,9 +111,9 @@ If everything worked, you should see an output like this one at the end:
 
 ```log
 [...]
-Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32X8XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
-Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32X12XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
-Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32X16XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info initargs=32X8XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info initargs=32X12XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info initargs=32X16XmixX100" "--nic" "e1000" "--mods" "init" "--ufeatures" "fxmark" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
 ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 2769.78s
@@ -179,7 +179,7 @@ This step will take ~15-20min. If everything worked, you should see an output li
 
 ```log
 [...]
-Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testbinary=dbbench.bin testcmd=32 appcmd=\'--threads=32 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535\'" "--nic" "virtio" "--mods" "rkapps" "--ufeatures" "rkapps:leveldb-bench" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "81920" "--qemu-affinity" "--qemu-prealloc"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info init=dbbench.bin initargs=32 appcmd=\'--threads=32 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535\'" "--nic" "virtio" "--mods" "rkapps" "--ufeatures" "rkapps:leveldb-bench" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "81920" "--qemu-affinity" "--qemu-prealloc"
 readrandom   : done: 3200000,  949492.348 ops/sec; (100000 of 50000 found)
 ok
 
@@ -235,7 +235,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --
 This step will take ~3min. If everything worked, you should see an output like this one at the end:
 
 ```log
-Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info initargs=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "49152" "--qemu-affinity"
 ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 118.94s
@@ -252,7 +252,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benc
 This step will take ~2min. If everything worked, you should see an output like this one at the end:
 
 ```log
-Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops,latency" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "32768" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info initargs=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops,latency" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "32768" "--qemu-affinity"
 ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 106.67s
@@ -273,7 +273,7 @@ This step will take ~2min. If everything worked, you should see an output like t
 > NrOS.
 
 ```log
-Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info testcmd=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops-unmaplat,latency" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "32768" "--qemu-affinity"
+Invoke QEMU: "python3" "run.py" "--kfeatures" "test-userspace-smp" "--cmd" "log=info initargs=32" "--nic" "e1000" "--mods" "init" "--ufeatures" "bench-vmops-unmaplat,latency" "--release" "--qemu-cores" "32" "--qemu-nodes" "2" "--qemu-memory" "32768" "--qemu-affinity"
 ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 97.38s

@@ -21,7 +21,7 @@ use core::sync::atomic::AtomicU64;
 use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
-use custom_error_core::custom_error;
+use custom_error::custom_error;
 use slabmalloc::{Allocator, ZoneAllocator};
 use spin::Mutex;
 use x86::bits64::paging;

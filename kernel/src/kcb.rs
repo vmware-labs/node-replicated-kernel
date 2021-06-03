@@ -37,59 +37,39 @@ pub trait MemManager: PhysicalPageProvider + AllocatorStatistics + GrowBackend {
 /// Definition to parse the kernel command-line arguments.
 #[derive(Logos, Debug, PartialEq, Clone, Copy)]
 enum CmdToken {
-    /// Logos requires that we define two default variants,
-    /// one for end of input source,
-    #[end]
-    End,
-
     /// Kernel binary name
-    #[regex = "./[a-zA-Z]+"]
-    Binary,
+    #[regex("./[a-zA-Z]+")]
+    KernelBinary,
 
-    /// Argument separator (1 space)
-    #[token = " "]
-    ArgSeparator,
-
-    /// Test binary.
-    #[token = "testbinary="]
-    TestBinary,
-
-    /// Test command line argument.
-    #[token = "testcmd="]
-    TestCmd,
-
-    /// Test command line arguments to pass to application. Space-separated
-    #[token = "appcmd="]
-    AppCmd,
-
-    /// Log token.
-    #[token = "log="]
+    /// Kernel log level directive
+    #[token("log")]
     Log,
 
-    #[regex = "(trace|debug|info|warn|error)"]
-    LogLevelSimple,
+    /// Init binary (which is loaded by default)
+    #[token("init")]
+    InitBinary,
 
-    /// Regular expressions for parsing log-filter or file-path names.
-    ///
-    /// Example: 'nrk::memory=debug,atopology::acpi=debug'
-    /// TODO(improve): the regular expression "(,?([a-zA-Z]+(::)?[a-zA-Z]+)=?[a-zA-Z]+)+"
-    #[regex = "[a-zA-Z:,=]+"]
-    LogComplex,
+    /// Command line arguments to passed to init.
+    #[token("initargs")]
+    InitArgs,
 
-    /// A file that we want to execute
-    #[regex = "[a-zA-Z]+(\\.bin)?"]
-    File,
+    /// Command line arguments to passed to a (rump) application.
+    #[token("appcmd")]
+    AppArgs,
 
-    /// A CmdLine that we want to execute
-    #[regex = "[0-9a-zA-Z]+"]
-    CmdLine,
+    #[regex("[a-zA-Z0-9\\._-]*")]
+    Ident,
 
-    /// A Cmdline to pass to the application
-    #[regex = "'[0-9a-zA-Z =,-_]+'"]
-    AppCmdLine,
+    /// Kernel log level
+    #[token("=", priority = 22)]
+    KVSeparator,
+
+    #[regex(r#"'([^"\\]|\\t|\\u|\\n|[0-9a-zA-Z:.,_=]+|\\")*'"#)]
+    LiteralString,
 
     /// Anything not properly encoded
     #[error]
+    #[regex(r"[ ]+", logos::skip)]
     Error,
 }
 
@@ -98,23 +78,34 @@ enum CmdToken {
 #[derive(Copy, Clone, Debug)]
 pub struct BootloaderArguments {
     pub log_filter: &'static str,
-    pub test_binary: &'static str,
-    pub test_cmdline: &'static str,
-    pub app_cmdline: &'static str,
+    pub init_binary: &'static str,
+    pub init_args: &'static str,
+    pub app_args: &'static str,
+}
+
+impl Default for BootloaderArguments {
+    fn default() -> BootloaderArguments {
+        BootloaderArguments {
+            log_filter: "info",
+            init_binary: "init",
+            init_args: "",
+            app_args: "",
+        }
+    }
 }
 
 impl BootloaderArguments {
     pub const fn new(
         log_filter: &'static str,
-        test_binary: &'static str,
-        test_cmdline: &'static str,
-        app_cmdline: &'static str,
+        init_binary: &'static str,
+        init_args: &'static str,
+        app_args: &'static str,
     ) -> Self {
         BootloaderArguments {
             log_filter,
-            test_binary,
-            test_cmdline,
-            app_cmdline,
+            init_binary,
+            init_args,
+            app_args,
         }
     }
 
@@ -122,6 +113,7 @@ impl BootloaderArguments {
     ///
     /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
     pub fn from_str(args: &'static str) -> BootloaderArguments {
+        error!("from str");
         // The args argument will be a physical address slice that
         // goes away once we switch to a process address space
         // make sure we translate it into a kernel virtual address:
@@ -133,69 +125,90 @@ impl BootloaderArguments {
 
         let mut parsed_args: BootloaderArguments = Default::default();
         let mut lexer = CmdToken::lexer(args);
+        let mut prev = CmdToken::Error;
+        error!("from str {}", args);
 
-        loop {
-            lexer.advance();
-            match (lexer.token, lexer.slice()) {
-                (CmdToken::Binary, bin) => assert_eq!(bin, "./kernel"),
-                (CmdToken::Log, _) => {
-                    lexer.advance();
-                    parsed_args.log_filter = match (lexer.token, lexer.slice()) {
-                        // matches for simple things like `info`, `error` etc.
-                        (CmdToken::LogComplex, text) => text,
-                        (CmdToken::LogLevelSimple, level) => level,
-                        (key, v) => {
-                            unreachable!("Malformed command-line parsing log: {:?} -> {:?}", key, v)
+        while let Some(token) = lexer.next() {
+            let slice = lexer.slice();
+            error!("token {:?} {}", token, slice);
+
+            match token {
+                CmdToken::KernelBinary => {
+                    //assert_eq!(slice, "./kernel");
+                }
+                CmdToken::Log | CmdToken::InitBinary | CmdToken::InitArgs | CmdToken::AppArgs => {
+                    prev = token;
+                }
+                CmdToken::Ident => match prev {
+                    CmdToken::Log => {
+                        parsed_args.log_filter = slice;
+                        prev = CmdToken::Error;
+                    }
+                    CmdToken::InitBinary => {
+                        parsed_args.init_binary = slice;
+                        prev = CmdToken::Error;
+                    }
+                    CmdToken::InitArgs => {
+                        parsed_args.init_args = slice;
+                        prev = CmdToken::Error;
+                    }
+                    CmdToken::AppArgs => {
+                        parsed_args.app_args = slice;
+                        prev = CmdToken::Error;
+                    }
+                    _ => {
+                        error!(
+                            "Invalid cmd arguments: {} (stopped at Ident = {})",
+                            args, slice
+                        );
+                        return parsed_args;
+                    }
+                },
+                CmdToken::KVSeparator => {
+                    if prev != CmdToken::Log
+                        && prev != CmdToken::InitBinary
+                        && prev != CmdToken::InitArgs
+                    {
+                        error!("Unable to parse arguments: {}", args);
+                        return parsed_args;
+                    }
+                }
+                CmdToken::LiteralString => {
+                    // We strip the quotes with 1..slice.len()-1
+                    match prev {
+                        CmdToken::Log => {
+                            parsed_args.log_filter = &slice[1..slice.len() - 1];
+                            prev = CmdToken::Error;
                         }
-                    };
+                        CmdToken::InitBinary => {
+                            parsed_args.init_binary = &slice[1..slice.len() - 1];
+                            prev = CmdToken::Error;
+                        }
+                        CmdToken::InitArgs => {
+                            parsed_args.init_args = &slice[1..slice.len() - 1];
+                            prev = CmdToken::Error;
+                        }
+                        CmdToken::AppArgs => {
+                            parsed_args.app_args = &slice[1..slice.len() - 1];
+                            prev = CmdToken::Error;
+                        }
+                        _ => {
+                            error!(
+                                "Invalid cmd arguments: {} (stopped at LiteralString = {})",
+                                args, slice
+                            );
+                            return parsed_args;
+                        }
+                    }
                 }
-                (CmdToken::TestBinary, _) => {
-                    lexer.advance();
-                    parsed_args.test_binary = match (lexer.token, lexer.slice()) {
-                        (CmdToken::File, file_name) => file_name,
-                        (key, v) => unreachable!(
-                            "Malformed command-line parsing testbinary: {:?} -> {:?}",
-                            key, v
-                        ),
-                    };
+                CmdToken::Error => {
+                    error!("Error while parsing cmd args: {}", args);
+                    return parsed_args;
                 }
-                (CmdToken::TestCmd, _) => {
-                    lexer.advance();
-                    parsed_args.test_cmdline = match (lexer.token, lexer.slice()) {
-                        (CmdToken::CmdLine, test_cmdline) => test_cmdline,
-                        (key, v) => unreachable!(
-                            "Malformed command-line parsing testbinary: {:?} -> {:?}",
-                            key, v
-                        ),
-                    };
-                }
-                (CmdToken::AppCmd, _) => {
-                    lexer.advance();
-                    parsed_args.app_cmdline = match (lexer.token, lexer.slice()) {
-                        (CmdToken::AppCmdLine, app_cmdline) => app_cmdline,
-                        (key, v) => unreachable!(
-                            "Malformed command-line parsing application cmdline: {:?} -> {:?}",
-                            key, v
-                        ),
-                    };
-                }
-                (CmdToken::End, _) => break,
-                (_, _) => continue,
-            };
+            }
         }
 
         parsed_args
-    }
-}
-
-impl Default for BootloaderArguments {
-    fn default() -> BootloaderArguments {
-        BootloaderArguments {
-            log_filter: "info",
-            test_binary: "init",
-            test_cmdline: "init",
-            app_cmdline: "",
-        }
     }
 }
 
@@ -454,4 +467,75 @@ pub trait ArchSpecificKcb {
     fn install(&mut self);
     fn current_pid(&self) -> Result<Pid, KError>;
     fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>>;
+}
+
+#[cfg(test)]
+mod test {
+    use super::BootloaderArguments;
+
+    #[test]
+    fn parse_args_empty() {
+        let ba = BootloaderArguments::from_str("");
+        assert_eq!(ba.log_filter, "info");
+        assert_eq!(ba.init_binary, "init");
+        assert_eq!(ba.init_args, "")
+    }
+
+    #[test]
+    fn parse_args_nrk() {
+        let ba = BootloaderArguments::from_str("./nrk");
+        assert_eq!(ba.log_filter, "info");
+        assert_eq!(ba.init_binary, "init");
+        assert_eq!(ba.init_args, "")
+    }
+
+    #[test]
+    fn parse_args_basic() {
+        let ba = BootloaderArguments::from_str("./kernel");
+        assert_eq!(ba.log_filter, "info");
+        assert_eq!(ba.init_binary, "init");
+        assert_eq!(ba.init_args, "")
+    }
+
+    #[test]
+    fn parse_args_log() {
+        let ba = BootloaderArguments::from_str("./kernel log=error");
+        assert_eq!(ba.log_filter, "error");
+        assert_eq!(ba.init_binary, "init");
+        assert_eq!(ba.init_args, "")
+    }
+
+    #[test]
+    fn parse_args_init() {
+        let ba = BootloaderArguments::from_str("./kernel init=file log=trace");
+        assert_eq!(ba.log_filter, "trace");
+        assert_eq!(ba.init_binary, "file");
+        assert_eq!(ba.init_args, "")
+    }
+
+    #[test]
+    fn parse_args_initargs() {
+        let ba = BootloaderArguments::from_str("./kernel initargs=0");
+        assert_eq!(ba.log_filter, "info");
+        assert_eq!(ba.init_binary, "init");
+        assert_eq!(ba.init_args, "0")
+    }
+
+    #[test]
+    fn parse_args_leveldb() {
+        let args ="./kernel log=warn init=dbbench.bin initargs='--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535'";
+
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.log_filter, "warn");
+        assert_eq!(ba.init_binary, "dbbench.bin");
+        assert_eq!(ba.init_args, "--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535")
+    }
+
+    #[test]
+    fn parse_args_empty_literal() {
+        let args = "./kernel initargs=''";
+
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.init_args, "")
+    }
 }

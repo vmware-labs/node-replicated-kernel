@@ -6,7 +6,6 @@
 #![feature(thread_local)]
 #![feature(llvm_asm)]
 #![feature(alloc_error_handler)]
-#![feature(const_fn)]
 #![feature(panic_info_message)]
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
@@ -623,7 +622,7 @@ pub extern "C" fn _start() -> ! {
     let ncores: Option<usize> = pinfo.cmdline.parse().ok();
 
     #[cfg(feature = "fxmark")]
-    //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd testcmd=1xdrbl
+    //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd initargs=1xdrbl
     let (ncores, open_files, benchmark, write_ratio) = match fxmark::ARGs::from_str(pinfo.cmdline) {
         Ok(args) => (
             Some(args.cores),

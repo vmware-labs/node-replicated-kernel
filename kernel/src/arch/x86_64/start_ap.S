@@ -12,6 +12,7 @@
 #define MSR_IA32_EFER 0xc0000080
 
 /* Put this code in the data section because we need to modify parts of it and .text will be read-only */
+.att_syntax
 .data
 .balign 4096
 .code16

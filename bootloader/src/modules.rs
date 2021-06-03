@@ -19,7 +19,7 @@ use crate::kernel::{paddr_to_kernel_vaddr, paddr_to_uefi_vaddr, MODULE};
 use crate::{allocate_pages, round_up, KernelArgs, Module};
 
 /// Trying to get the file handle for the kernel binary.
-fn locate_binary(st: &SystemTable<Boot>, directory: &mut Directory, name: &str) -> RegularFile {
+fn locate_binary(_st: &SystemTable<Boot>, directory: &mut Directory, name: &str) -> RegularFile {
     // Look for the given binary name in the root folder of our EFI partition
     // in our case this is `target/x86_64-uefi/debug/esp/`
     // whereas the esp dir gets mounted with qemu using
@@ -65,7 +65,7 @@ fn determine_file_size(file: &mut RegularFile) -> usize {
 pub fn load_binary_into_memory(
     st: &SystemTable<Boot>,
     dir: &mut Directory,
-    file: &mut uefi::proto::media::file::FileInfo,
+    _file: &mut uefi::proto::media::file::FileInfo,
     name: &str,
 ) -> Module {
     // Get the binary, this should be a plain old
@@ -103,7 +103,7 @@ pub fn load_binary_into_memory(
 /// the esp dir gets mounted with qemu using `-drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp`
 ///
 /// When running on bare-metal, ipxe registers its own virtual file system where modules are stored.
-pub fn load_modules_on_all_sfs(st: &SystemTable<Boot>, dir_name: &str) -> Vec<(String, Module)> {
+pub fn load_modules_on_all_sfs(st: &SystemTable<Boot>, _dir_name: &str) -> Vec<(String, Module)> {
     let all_handles = st
         .boot_services()
         .find_handles::<SimpleFileSystem>()

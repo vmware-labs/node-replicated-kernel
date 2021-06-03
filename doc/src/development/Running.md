@@ -7,37 +7,37 @@ and config options refer to the `run.py --help` instructions.
 As an example, the following invocation
 
 ```bash
-python3 run.py --kfeatures test-userspace --cmd='log=info testbinary=redis.bin' --mods rkapps init --ufeatures rkapps:redis --machine qemu --qemu-settings='-m 1024M' --qemu-cores 2
+python3 run.py --kfeatures test-userspace --cmd='log=info init=redis.bin' --mods rkapps init --ufeatures rkapps:redis --machine qemu --qemu-settings='-m 1024M' --qemu-cores 2
 ```
 
 will
 
 - compile the kernel with Cargo feature `test-userspace`
-- pass the kernel the command-line arguments `log=info testbinary=redis.bin` on
+- pass the kernel the command-line arguments `log=info init=redis.bin` on
   start-up (sets logging to info and starts redis.bin for testing)
 - Compile two user-space modules `rkapps` (with cargo feature redis) and `init`
   (with no features)
 - Deploy and run the compiled system on `qemu` with 1024 MiB of memory and 2
   cores allocated to the VM
 
-If Docker is used as build environment, it is necessary to first compile the 
+If Docker is used as build environment, it is necessary to first compile the
 system with the required features inside the Docker container:
 ```bash
 python3 run.py --kfeatures test-userspace --mods rkapps init --ufeatures rkapps:redis -n
 ```
-Afterwards, the aforementioned command can be used to run NRK outside the 
-Docker container with the given configuration. The `run.py` script will 
-recognize that the system has already been build and will directly start 
+Afterwards, the aforementioned command can be used to run NRK outside the
+Docker container with the given configuration. The `run.py` script will
+recognize that the system has already been build and will directly start
 `qemu`.
 
 Sometimes it's helpful to know what commands are actually executed by `run.py`.
 For example to figure out what the exact qemu command line invocation was. In
 that case, `--verbose` can be supplied.
 
-Depending on the underlying system configuration NRK may abort because a 
-connection to the local network can not be established. In this case, the 
+Depending on the underlying system configuration NRK may abort because a
+connection to the local network can not be established. In this case, the
 following steps can help to resolve this issue:
-1. Disable AppArmor. Detailed instructions can be found 
+1. Disable AppArmor. Detailed instructions can be found
    [here](../configuration/CI.md#disable-apparmor).
 1. Manually start the DHCP server immediately after NRK has started:
    ```bash

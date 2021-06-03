@@ -41,7 +41,7 @@
 
 #![no_std]
 #![no_main]
-#![feature(llvm_asm, global_asm, slice_patterns)]
+#![feature(llvm_asm, global_asm)]
 
 #[macro_use]
 extern crate log;
@@ -148,7 +148,7 @@ fn estimate_memory_map_size(st: &SystemTable<Boot>) -> (usize, usize) {
 
 /// Load the memory map into buffer (which is hopefully big enough).
 fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
-    let (mm_size, no_descs) = estimate_memory_map_size(st);
+    let (mm_size, _no_descs) = estimate_memory_map_size(st);
     let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UEFI_MEMORY_MAP));
     let mm_slice: &mut [u8] = unsafe {
         slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)

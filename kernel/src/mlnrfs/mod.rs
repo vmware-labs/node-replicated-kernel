@@ -9,7 +9,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
-use custom_error_core::custom_error;
+use custom_error::custom_error;
 use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::SystemCallError;

@@ -25,7 +25,7 @@ Start the server binary on the VM instance:
 cd kernel
 python3 run.py  \
     --kfeatures test-userspace-smp \
-    --cmd 'log=info testbinary=memcached.bin' \
+    --cmd 'log=info init=memcached.bin' \
     --nic virtio \
     --mods rkapps \
     --qemu-settings='-m 1024M' \

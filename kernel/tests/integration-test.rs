@@ -1216,7 +1216,7 @@ fn s05_redis_smoke() {
     let cmdline = RunnerArgs::new("test-userspace")
         .module("rkapps")
         .user_feature("rkapps:redis")
-        .cmd("testbinary=redis.bin")
+        .cmd("init=redis.bin")
         .timeout(20_000);
 
     let mut output = String::new();
@@ -1349,7 +1349,7 @@ fn s06_redis_benchmark_virtio() {
     let cmdline = RunnerArgs::new("test-userspace")
         .module("rkapps")
         .user_feature("rkapps:redis")
-        .cmd("testbinary=redis.bin")
+        .cmd("init=redis.bin")
         .use_virtio()
         .release()
         .timeout(45_000);
@@ -1382,7 +1382,7 @@ fn s06_redis_benchmark_e1000() {
     let cmdline = RunnerArgs::new("test-userspace")
         .module("rkapps")
         .user_feature("rkapps:redis")
-        .cmd("testbinary=redis.bin")
+        .cmd("init=redis.bin")
         .release()
         .timeout(45_000);
 
@@ -1417,7 +1417,7 @@ fn s06_vmops_benchmark() {
     let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
-        let kernel_cmdline = format!("testcmd={}", cores);
+        let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
@@ -1498,7 +1498,7 @@ fn s06_shootdown_simple() {
     let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
-        let kernel_cmdline = format!("testcmd={}", cores);
+        let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new("test-shootdown-simple")
             .module("init")
             .cores(cores)
@@ -1571,7 +1571,7 @@ fn s06_vmops_latency_benchmark() {
     let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
-        let kernel_cmdline = format!("testcmd={}", cores);
+        let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops")
@@ -1648,7 +1648,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
     let _r = std::fs::remove_file(file_name);
 
     for &cores in threads.iter() {
-        let kernel_cmdline = format!("testcmd={}", cores);
+        let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new("test-userspace-smp")
             .module("init")
             .user_feature("bench-vmops-unmaplat")
@@ -1745,7 +1745,7 @@ fn s06_fxmark_benchmark() {
             open_files(benchmark, machine.max_cores(), machine.max_numa_nodes());
         for &cores in threads.iter() {
             for &of in open_files.iter() {
-                let kernel_cmdline = format!("testcmd={}X{}X{}", cores, of, benchmark);
+                let kernel_cmdline = format!("initargs={}X{}X{}", cores, of, benchmark);
                 let mut cmdline = RunnerArgs::new("test-userspace-smp")
                     .module("init")
                     .user_feature("fxmark")
@@ -1982,7 +1982,7 @@ fn s06_memcached_benchmark() {
 
     for nic in &["virtio", "e1000"] {
         for thread in threads.iter() {
-            let kernel_cmdline = format!("testbinary=memcached.bin testcmd={}", *thread);
+            let kernel_cmdline = format!("init=memcached.bin initargs={}", *thread);
             let cmdline = RunnerArgs::new("test-userspace-smp")
                 .module("rkapps")
                 .user_feature("rkapps:memcached")
@@ -2044,7 +2044,7 @@ fn s06_leveldb_benchmark() {
 
     for thread in threads.iter() {
         let kernel_cmdline = format!(
-            r#"testbinary=dbbench.bin testcmd={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
+            r#"init=dbbench.bin initargs={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
             *thread, *thread, reads, num, val_size
         );
         let mut cmdline = RunnerArgs::new("test-userspace-smp")

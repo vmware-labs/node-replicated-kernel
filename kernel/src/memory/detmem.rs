@@ -16,8 +16,8 @@ use core::ptr;
 use spin::Mutex;
 
 use crate::arch::MAX_NUMA_NODES;
+use arrayvec::ArrayVec;
 use atopology::MACHINE_TOPOLOGY;
-use smallvec::SmallVec;
 
 use crate::kcb;
 use crate::mpmc::Queue;
@@ -32,7 +32,7 @@ pub struct DeterministicMemoryProvider {
     /// We store the Layout and address (as u64 but it's really a *mut u8) for
     /// every allocation. Layout is technically not necessary (but used to
     /// sanity check the code).
-    qs: SmallVec<[Queue<(Layout, u64)>; MAX_NUMA_NODES]>,
+    qs: ArrayVec<Queue<(Layout, u64)>, MAX_NUMA_NODES>,
     /// Mutex that needs to be acquired when a leading replica needs to allocate
     /// for all replicas.
     fill: Mutex<()>,
@@ -50,7 +50,7 @@ impl DeterministicMemoryProvider {
         // allocations)*(max log entries till GC)
         const ALLOC_CAP: usize = 4096;
 
-        let mut qs = SmallVec::new();
+        let mut qs = ArrayVec::new();
         for _i in 0..nodes {
             qs.push(Queue::with_capacity(ALLOC_CAP));
         }
@@ -84,7 +84,7 @@ impl DeterministicMemoryProvider {
                 // Now that we locked `fill`, perform allocation for all
                 // replicas
 
-                let mut allocs = SmallVec::<[*mut u8; MAX_NUMA_NODES]>::new();
+                let mut allocs = ArrayVec::<*mut u8, MAX_NUMA_NODES>::new();
                 for i in 0..self.qs.len() {
                     allocs.push(unsafe { alloc(l) });
                 }

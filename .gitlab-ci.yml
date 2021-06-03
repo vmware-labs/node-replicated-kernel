@@ -2,8 +2,8 @@ stages:
   - build
   - run
   - test
-  - bench
   - document
+  - bench
 
 before_script:
   # Add SSH key

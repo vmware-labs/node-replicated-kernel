@@ -7,10 +7,10 @@ use core::ops::Range;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use apic::ApicDriver;
+use arrayvec::ArrayVec;
 use bit_field::BitField;
 use crossbeam_queue::ArrayQueue;
 use lazy_static::lazy_static;
-use smallvec::{smallvec, SmallVec};
 use x86::apic::{
     ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
     TriggerMode,
@@ -210,7 +210,7 @@ pub fn shootdown(handle: TlbFlushHandle) {
     // Cluster ID (LDR[31:16]) is the address of the destination cluster
     // We pre-configure the upper half (cluster ID) of LDR here in the SmallVec
     // by initializing the elements
-    let mut cluster_destination: SmallVec<[u32; 16]> = smallvec![
+    let mut cluster_destination: [u32; 16] = [
         0 << 16,
         1 << 16,
         2 << 16,

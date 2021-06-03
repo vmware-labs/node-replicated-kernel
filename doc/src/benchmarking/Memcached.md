@@ -72,4 +72,4 @@ The other defaults arguments the tool assumes are:
 
 > Unfortunately, the memaslap binary does not come with standard ubuntu
 > packages. Follow the [steps in the CI
-> guide](/configuration/CI.html#install-memaslap) to install it from sources.
+> guide](../configuration/CI.html#install-memaslap) to install it from sources.

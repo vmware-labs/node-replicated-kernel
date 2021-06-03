@@ -1005,7 +1005,6 @@ dependencies = [
  "arrayvec",
  "atopology",
  "backtracer_core",
- "bit-vec",
  "bit_field 0.10.1",
  "bootloader_shared",
  "cc",

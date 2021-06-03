@@ -6,10 +6,9 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::cmp::PartialEq;
-use core::convert::TryInto;
 use core::fmt;
 
-use bit_vec::BitVec;
+use bit_field::BitField;
 use custom_error::custom_error;
 use kpi::SystemCallError;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
@@ -20,7 +19,7 @@ use super::{Frame, PAddr, VAddr};
 pub struct TlbFlushHandle {
     pub vaddr: VAddr,
     pub frame: Frame,
-    pub core_map: BitVec<u32>,
+    pub core_map: CoreBitMap,
 }
 
 impl TlbFlushHandle {
@@ -28,13 +27,64 @@ impl TlbFlushHandle {
         TlbFlushHandle {
             vaddr,
             frame,
-            // TODO(constant): 256 should be max_cores
-            core_map: BitVec::from_elem(256, false),
+            core_map: Default::default(),
         }
     }
 
     pub fn add_core(&mut self, gtid: atopology::GlobalThreadId) {
-        self.core_map.set(gtid.try_into().unwrap(), true);
+        self.core_map.set_bit(gtid as usize, true)
+    }
+
+    pub fn cores(&self) -> CoreBitMapIter {
+        CoreBitMapIter(self.core_map)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct CoreBitMap {
+    pub low: u128,
+    pub high: u128,
+}
+// Who needs more than 256 cores anyways?
+static_assertions::const_assert!(crate::arch::MAX_CORES < (u128::BITS as usize) * 2);
+
+impl Default for CoreBitMap {
+    fn default() -> Self {
+        CoreBitMap { low: 0, high: 0 }
+    }
+}
+
+impl CoreBitMap {
+    pub fn set_bit(&mut self, bit: usize, value: bool) {
+        if bit <= 127 {
+            self.low.set_bit(bit, value);
+        } else {
+            let bit = bit - 128;
+            self.high.set_bit(bit, value);
+        }
+    }
+}
+
+pub struct CoreBitMapIter(CoreBitMap);
+
+impl Iterator for CoreBitMapIter {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0.low == 0u128 && self.0.high == 0u128 {
+            None
+        } else if self.0.low > 0u128 {
+            let least_significant_bit_pos = self.0.low.trailing_zeros() as usize;
+            let least_significant_bit = self.0.low & self.0.low.wrapping_neg();
+            self.0.low ^= least_significant_bit;
+            Some(least_significant_bit_pos)
+        } else {
+            debug_assert!(self.0.high > 0);
+            let least_significant_bit_pos = self.0.high.trailing_zeros() as usize;
+            let least_significant_bit = self.0.high & self.0.high.wrapping_neg();
+            self.0.high ^= least_significant_bit;
+            Some(u128::BITS as usize + least_significant_bit_pos)
+        }
     }
 }
 
@@ -756,5 +806,53 @@ pub(crate) mod model {
         let r1 = 0..10;
         let r2 = 11..12;
         assert!(ModelAddressSpace::intersection(r1, r2).is_none());
+    }
+
+    #[test]
+    fn tlb_flush_handle_full_core_set() {
+        use crate::arch::MAX_CORES;
+
+        let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+        for i in 0..MAX_CORES {
+            t.add_core(i as u64);
+        }
+
+        let mut v = Vec::with_capacity(MAX_CORES);
+        for c in t.cores() {
+            v.push(c);
+        }
+        assert!(v.iter().cloned().eq(0..v.len()));
+    }
+
+    #[test]
+    fn tlb_flush_handle_empty_core_set() {
+        use crate::arch::MAX_CORES;
+        let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+        assert_eq!(t.cores().count(), 0, "Is empty");
+    }
+
+    #[test]
+    fn tlb_flush_handle_med_core_set() {
+        use crate::arch::MAX_CORES;
+
+        let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+        for i in 0..MAX_CORES {
+            t.add_core((i & !0b1) as u64);
+        }
+
+        for c in t.cores() {
+            assert_eq!(c % 2, 0, "Is even");
+        }
+        assert_eq!(t.cores().count(), MAX_CORES / 2, "Correct length");
+    }
+
+    #[test]
+    #[should_panic]
+    fn tlb_flush_handle_invalid_core() {
+        use crate::arch::MAX_CORES;
+        let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+
+        let gtid: u64 = core::cmp::max((MAX_CORES + 1) as u64, (u128::BITS * 2) as u64);
+        t.add_core(gtid);
     }
 }

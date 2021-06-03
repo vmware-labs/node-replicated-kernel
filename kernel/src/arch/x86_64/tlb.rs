@@ -235,9 +235,8 @@ pub fn shootdown(handle: TlbFlushHandle) {
         Vec::with_capacity(atopology::MACHINE_TOPOLOGY.num_threads());
     let range = handle.vaddr.as_u64()..(handle.vaddr + handle.frame.size).as_u64();
 
-    for (gtid, include) in handle.core_map.into_iter().enumerate() {
-        // TODO: enumerates over all 256 potential entries...
-        if include && gtid != my_gtid {
+    for gtid in handle.cores() {
+        if gtid != my_gtid {
             let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid].apic_id();
             let cluster_addr = apic_id.x2apic_logical_cluster_address();
             let cluster = apic_id.x2apic_logical_cluster_id();

@@ -166,9 +166,9 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             let kcb = super::kcb::get_kcb();
 
             let pid = kcb.current_pid()?;
-            let mut pinfo = nr::KernelNode::<Ring3Process>::pinfo(pid)?;
+            let mut pinfo = nrproc::NrProcess::<Ring3Process>::pinfo(pid)?;
             pinfo.cmdline = kcb.cmdline.init_args;
-            pinfo.app_cmdline = kcb.cmdline.app_cmdline;
+            pinfo.app_cmdline = kcb.cmdline.app_args;
 
             let serialized = serde_cbor::to_vec(&pinfo).unwrap();
             if serialized.len() <= vaddr_buf_len as usize {

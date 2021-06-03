@@ -674,7 +674,7 @@ fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:
     let o = process::Command::new("sudo")
-        .args(&["service", "apparmor", "stop"])
+        .args(&["service", "apparmor", "teardown"])
         .output();
     if o.is_err() {
         match o.unwrap_err().kind() {

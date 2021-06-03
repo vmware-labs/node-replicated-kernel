@@ -64,7 +64,7 @@ enum CmdToken {
     #[token("=", priority = 22)]
     KVSeparator,
 
-    #[regex(r#"'([^"\\]|\\t|\\u|\\n|[0-9a-zA-Z:.,_=]+|\\")*'"#)]
+    #[regex(r#"'([^'\\]|\\t|\\u|\\n|[0-9a-zA-Z:.,_=]*|\\')*'"#)]
     LiteralString,
 
     /// Anything not properly encoded
@@ -113,7 +113,6 @@ impl BootloaderArguments {
     ///
     /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
     pub fn from_str(args: &'static str) -> BootloaderArguments {
-        error!("from str");
         // The args argument will be a physical address slice that
         // goes away once we switch to a process address space
         // make sure we translate it into a kernel virtual address:
@@ -126,11 +125,8 @@ impl BootloaderArguments {
         let mut parsed_args: BootloaderArguments = Default::default();
         let mut lexer = CmdToken::lexer(args);
         let mut prev = CmdToken::Error;
-        error!("from str {}", args);
-
         while let Some(token) = lexer.next() {
             let slice = lexer.slice();
-            error!("token {:?} {}", token, slice);
 
             match token {
                 CmdToken::KernelBinary => {
@@ -157,20 +153,18 @@ impl BootloaderArguments {
                         prev = CmdToken::Error;
                     }
                     _ => {
-                        error!(
-                            "Invalid cmd arguments: {} (stopped at Ident = {})",
-                            args, slice
-                        );
-                        return parsed_args;
+                        error!("Invalid cmd arguments: {} (skipped {})", args, slice);
+                        continue;
                     }
                 },
                 CmdToken::KVSeparator => {
                     if prev != CmdToken::Log
                         && prev != CmdToken::InitBinary
                         && prev != CmdToken::InitArgs
+                        && prev != CmdToken::AppArgs
                     {
-                        error!("Unable to parse arguments: {}", args);
-                        return parsed_args;
+                        error!("Malformed args (unexpected equal sign) in {}", args);
+                        continue;
                     }
                 }
                 CmdToken::LiteralString => {
@@ -193,17 +187,14 @@ impl BootloaderArguments {
                             prev = CmdToken::Error;
                         }
                         _ => {
-                            error!(
-                                "Invalid cmd arguments: {} (stopped at LiteralString = {})",
-                                args, slice
-                            );
-                            return parsed_args;
+                            error!("Invalid cmd arguments: {} (skipped {})", args, slice);
+                            continue;
                         }
                     }
                 }
                 CmdToken::Error => {
-                    error!("Error while parsing cmd args: {}", args);
-                    return parsed_args;
+                    error!("Ignored '{}' while parsing cmd args: {}", slice, args);
+                    continue;
                 }
             }
         }
@@ -478,7 +469,7 @@ mod test {
         let ba = BootloaderArguments::from_str("");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
-        assert_eq!(ba.init_args, "")
+        assert_eq!(ba.init_args, "");
     }
 
     #[test]
@@ -486,7 +477,7 @@ mod test {
         let ba = BootloaderArguments::from_str("./nrk");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
-        assert_eq!(ba.init_args, "")
+        assert_eq!(ba.init_args, "");
     }
 
     #[test]
@@ -494,7 +485,7 @@ mod test {
         let ba = BootloaderArguments::from_str("./kernel");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
-        assert_eq!(ba.init_args, "")
+        assert_eq!(ba.init_args, "");
     }
 
     #[test]
@@ -502,7 +493,7 @@ mod test {
         let ba = BootloaderArguments::from_str("./kernel log=error");
         assert_eq!(ba.log_filter, "error");
         assert_eq!(ba.init_binary, "init");
-        assert_eq!(ba.init_args, "")
+        assert_eq!(ba.init_args, "");
     }
 
     #[test]
@@ -510,7 +501,7 @@ mod test {
         let ba = BootloaderArguments::from_str("./kernel init=file log=trace");
         assert_eq!(ba.log_filter, "trace");
         assert_eq!(ba.init_binary, "file");
-        assert_eq!(ba.init_args, "")
+        assert_eq!(ba.init_args, "");
     }
 
     #[test]
@@ -518,24 +509,66 @@ mod test {
         let ba = BootloaderArguments::from_str("./kernel initargs=0");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
-        assert_eq!(ba.init_args, "0")
+        assert_eq!(ba.init_args, "0");
     }
 
     #[test]
     fn parse_args_leveldb() {
-        let args ="./kernel log=warn init=dbbench.bin initargs='--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535'";
+        let args = "./kernel log=warn init=dbbench.bin initargs=3 appcmd='--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535'";
 
         let ba = BootloaderArguments::from_str(args);
         assert_eq!(ba.log_filter, "warn");
         assert_eq!(ba.init_binary, "dbbench.bin");
-        assert_eq!(ba.init_args, "--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535")
+        assert_eq!(ba.init_args, "3");
+        assert_eq!(ba.app_args, "--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535");
+    }
+
+    #[test]
+    fn parse_args_fxmark() {
+        let args = "log=debug initargs=1X1XmixX0";
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.log_filter, "debug");
+        assert_eq!(ba.init_binary, "init");
+        assert_eq!(ba.init_args, "1X1XmixX0");
+    }
+
+    #[test]
+    fn parse_args_empty_literal_quotes() {
+        let args = "./kernel initargs='\"\"' log=debug";
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.log_filter, "debug");
+        assert_eq!(ba.init_args, "\"\"");
     }
 
     #[test]
     fn parse_args_empty_literal() {
-        let args = "./kernel initargs=''";
-
+        let args = "./kernel initargs='' log=debug";
         let ba = BootloaderArguments::from_str(args);
-        assert_eq!(ba.init_args, "")
+        assert_eq!(ba.log_filter, "debug");
+        assert_eq!(ba.init_args, "");
+    }
+
+    #[test]
+    fn parse_args_invalid() {
+        let args = "./kernel initg='asdf' log=debug";
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.log_filter, "debug");
+        assert_eq!(ba.init_args, "");
+    }
+
+    #[test]
+    fn parse_args_invalid2() {
+        let args = "./sadf init='asdf' log=debug";
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.log_filter, "debug");
+        assert_eq!(ba.init_args, "");
+    }
+
+    #[test]
+    fn parse_args_invalid3() {
+        let args = "./kernel init=---  as-s- log=debug";
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.log_filter, "debug");
+        assert_eq!(ba.init_args, "");
     }
 }

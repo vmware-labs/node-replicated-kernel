@@ -154,22 +154,14 @@ where
 }
 
 pub fn max_open_files() -> usize {
-    let max_cores = vibrio::syscalls::System::threads()
+    let mut nodes = vibrio::syscalls::System::threads()
         .expect("Can't get system topology")
-        .len();
-    let max_files = match max_cores {
-        28 => 14,
-        56 => 28,
-        32 => 16,
-        64 => 32,
-        96 => 24,
-        192 => 48,
-        _ => unreachable!(
-            "Unable to decide max #open files for mix-workload(max-cores {})",
-            max_cores
-        ),
-    };
-    max_files
+        .iter()
+        .map(|c| c.node_id)
+        .collect::<Vec<_>>();
+    nodes.sort();
+    nodes.dedup();
+    nodes.len()
 }
 
 pub fn bench(ncores: Option<usize>, open_files: usize, benchmark: String, write_ratio: usize) {

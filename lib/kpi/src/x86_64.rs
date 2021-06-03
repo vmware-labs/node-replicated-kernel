@@ -166,32 +166,32 @@ impl SaveArea {
 
 impl fmt::Debug for SaveArea {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(
-                f,
-                "SaveArea\r\n
+        write!(
+            f,
+            "SaveArea\r\n
 rax = {:>#18x} rbx = {:>#18x} rcx = {:>#18x} rdx = {:>#18x}
 rsi = {:>#18x} rdi = {:>#18x} rbp = {:>#18x} rsp = {:>#18x}
 r8  = {:>#18x} r9  = {:>#18x} r10 = {:>#18x} r11 = {:>#18x}
 r12 = {:>#18x} r13 = {:>#18x} r14 = {:>#18x} r15 = {:>#18x}
 rip = {:>#18x} rflags = {:?}",
-                self.rax,
-                self.rbx,
-                self.rcx,
-                self.rdx,
-                self.rsi,
-                self.rdi,
-                self.rbp,
-                self.rsp,
-                self.r8,
-                self.r9,
-                self.r10,
-                self.r11,
-                self.r12,
-                self.r13,
-                self.r14,
-                self.r15,
-                self.rip,
-                RFlags::from_raw(self.rflags)
-            )
+            self.rax,
+            self.rbx,
+            self.rcx,
+            self.rdx,
+            self.rsi,
+            self.rdi,
+            self.rbp,
+            self.rsp,
+            self.r8,
+            self.r9,
+            self.r10,
+            self.r11,
+            self.r12,
+            self.r13,
+            self.r14,
+            self.r15,
+            self.rip,
+            RFlags::from_raw(self.rflags)
+        )
     }
 }

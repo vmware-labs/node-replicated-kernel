@@ -8,6 +8,14 @@ a std runtime (`no-std`).
 
 ## Git
 
+For first time git users or new accounts, you'll have to configure your username
+and email:
+
+```bash
+git config --global user.name "Gerd Zellweger"
+git config --global user.email "mail@gerdzellweger.com"
+```
+
 To have better usability when working with submodules, you can configure git to
 update submodules automatically when doing a `git pull` etc.
 

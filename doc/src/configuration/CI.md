@@ -133,7 +133,7 @@ make -j 28
 sudo make -j28 install
 
 # Check version (should be 5.0.0)
-qemu-system-x86 --version
+qemu-system-x86_64 --version
 ```
 
 ## Install memaslap

@@ -74,6 +74,8 @@ parser.add_argument("-r", "--release", action="store_true",
                     help="Do a release build.")
 parser.add_argument("--kfeatures", type=str, nargs='+', default=[],
                     help="Cargo features to enable (in the kernel).")
+parser.add_argument("--no-kfeatures", action="store_true", default=False,
+                    help="Disable default Cargo features (in the kernel).", required=False)
 parser.add_argument("--ufeatures", type=str, nargs='+', default=[],
                     help="Cargo features to enable (in user-space, use module_name:feature_name syntax to specify module specific features, e.g. init:print-test).")
 parser.add_argument('-m', '--mods', nargs='+', default=['init'],
@@ -92,10 +94,10 @@ parser.add_argument("--qemu-memory", type=str,
                     help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
 parser.add_argument("--qemu-affinity", action="store_true", default=False,
                     help="Pin QEMU instance to dedicated host cores.")
-parser.add_argument('--qemu-prealloc', action="store_true", default=False,
-                    help='Pre-alloc memory for the guest', required=False)
-parser.add_argument('--qemu-large-pages', action="store_true", default=False,
-                    help='Use large-pages on the host for guest memory', required=False)
+parser.add_argument("--qemu-prealloc", action="store_true", default=False,
+                    help="Pre-alloc memory for the guest", required=False)
+parser.add_argument("--qemu-large-pages", action="store_true", default=False,
+                    help="Use large-pages on the host for guest memory", required=False)
 parser.add_argument("--qemu-settings", type=str,
                     help="Pass additional generic QEMU arguments.")
 parser.add_argument("--qemu-monitor", action="store_true",
@@ -156,6 +158,8 @@ def build_kernel(args):
             # TODO(cross-compilation): in case we use a cross compiler/linker
             # also set: CARGO_TARGET_X86_64_NRK_LINKER=x86_64-elf-ld
             build_args = ['build', '--target', KERNEL_TARGET]
+            if args.no_kfeatures:
+                build_args += ["--no-default-features"]
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
             build_args += CARGO_DEFAULT_ARGS

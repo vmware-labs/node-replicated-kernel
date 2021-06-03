@@ -280,15 +280,8 @@ pub extern "C" fn main() {
         }
     }
 
-    // App args should always be within single quotes and space-separated
-    let parsed_args: Vec<&str> = pinfo
-        .app_cmdline
-        .strip_prefix('\'')
-        .unwrap_or("")
-        .strip_suffix('\'')
-        .unwrap_or("")
-        .rsplit(' ')
-        .collect();
+    // Split app args into individual parts
+    let parsed_args: Vec<&str> = pinfo.app_cmdline.rsplit(' ').collect();
     // Necessary to maintain references to the arg CStrings
     let mut ref_args: Vec<CString> = Vec::with_capacity(parsed_args.len() + 1);
     ref_args.push(CString::new("some.bin").unwrap()); // First arg is always bin name

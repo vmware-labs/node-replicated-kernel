@@ -12,9 +12,8 @@ use crate::kcb;
 #[cfg(target_os = "none")]
 use crate::ExitReason;
 
-use alloc::rc::Rc;
-
 use addr2line::{gimli, Context};
+use alloc::rc::Rc;
 
 fn new_ctxt(
     file: &elfloader::ElfBinary,

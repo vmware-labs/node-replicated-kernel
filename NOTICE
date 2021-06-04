@@ -1,5 +1,5 @@
 node-replicated-kernel
-Copyright (c) 2021 VMware, Inc.
+Copyright © 2021 VMware, Inc.
 
 This product is dual licensed under the Apache v2.0 or MIT license.  You may not
 use this product except in compliance with the Apache v2.0 or MIT License.
@@ -7,6 +7,8 @@ use this product except in compliance with the Apache v2.0 or MIT License.
 This product may include a number of subcomponents with separate copyright
 notices and license terms. Your use of these subcomponents is subject to the
 terms and conditions of the subcomponent's license.
+
+-------------------------------------------------------------------------------
 
 * The binary files `bootloader/OVMF_CODE.fd` and `bootloader/OVMF_VARS.fd` are
   used when executing the project in a VM. These are pre-compiled binaries from
@@ -54,7 +56,10 @@ implication, estoppel or otherwise.
 * The bootloader links against the UEFI-RS library
   (https://github.com/rust-osdev/uefi-rs) which is released under MPL-2.0 code.
 
-* The kernel links with acpica (https://acpica.org/) which is licensed as BSD-3-Clause:
+-------------------------------------------------------------------------------
+
+* The kernel links with acpica (https://acpica.org/) which is licensed as
+  BSD-3-Clause:
 
 Some or all of this work - Copyright (c) 1999 - 2021, Intel Corp.
 All rights reserved.
@@ -85,6 +90,8 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-------------------------------------------------------------------------------
 
 * User-space programs may (optionally) link with NetBSD code which is licensed
 under BSD-2-Clause:
@@ -117,6 +124,8 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
+-------------------------------------------------------------------------------
+
 * The custom_error library is licensed under the BSD-2-Clause license:
 
 Copyright (c) 2018, Ophir LOJKINE
@@ -142,6 +151,8 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-------------------------------------------------------------------------------
 
 * The mpmc.rs file in kernel/src is licensed under the BSD-2-Clause license:
 
@@ -169,3 +180,23 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 The views and conclusions contained in the software and documentation are
 those of the authors and should not be interpreted as representing official
 policies, either expressed or implied, of Dmitry Vyukov.
+
+-------------------------------------------------------------------------------
+
+* The lib/vmxnet3 code is licensed with BSD-2-Clause, parts of it are inspired
+  by the FreeBSD driver:
+
+Copyright (c) 2013 Tsubai Masanari
+Copyright (c) 2013 Bryan Venteicher <bryanv@FreeBSD.org>
+
+Permission to use, copy, modify, and distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

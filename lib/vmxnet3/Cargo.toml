@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 edition = "2018"
 description = "vmxnet3 - a virtual NIC device driver"
-license = "MIT OR Apache-2.0"
+license = "BSD-2-Clause"
 
 [dependencies]
 log = "0.4"

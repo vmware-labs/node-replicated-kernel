@@ -1,5 +1,5 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
-// SPDX-License-Identifier: Apache-2.0 OR MIT
+// SPDX-License-Identifier: BSD-2-Clause
 
 //! PCI Bars:
 //! 	BAR 0 - MSI-X

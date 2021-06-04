@@ -16,7 +16,6 @@
 use crate::alloc::string::ToString;
 use alloc::borrow::Cow;
 use alloc::string::String;
-use alloc::vec::Vec;
 use alloc::{format, vec};
 use core::fmt::Write;
 use LabelText::*;
@@ -339,11 +338,6 @@ pub enum RenderOption {
     NoEdgeStyles,
     NoNodeStyles,
     RankDirectionLR,
-}
-
-/// Returns vec holding all the default render options.
-pub fn default_options() -> Vec<RenderOption> {
-    vec![]
 }
 
 /// Renders directed graph `g` in DOT syntax.

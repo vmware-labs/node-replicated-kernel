@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::string::ToString;
+use core::convert::From;
 
 use custom_error::custom_error;
 
@@ -28,6 +29,19 @@ custom_error! {
     InvalidAffinityId = "Specified an invalid NUMA node ID for affinity.",
     OutOfPids = "Can't spawn more processes (out of Pids)",
     ProcessLoadingFailed = "Can't spawn more processes (out of Pids)",
+    OutOfMemory = "Ran out of memory while performing an allocation",
+}
+
+impl From<fallible_collections::TryReserveError> for KError {
+    fn from(_e: fallible_collections::TryReserveError) -> Self {
+        KError::OutOfMemory
+    }
+}
+
+impl From<core::alloc::AllocError> for KError {
+    fn from(_e: core::alloc::AllocError) -> Self {
+        KError::OutOfMemory
+    }
 }
 
 impl Into<SystemCallError> for KError {

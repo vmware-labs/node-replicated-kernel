@@ -561,6 +561,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible_collections"
+version = "0.4.2"
+source = "git+https://github.com/gz/fallible_collections.git?branch=unstable-fix#7aaf817848f35d0cad029d7508274b0f809c2424"
+dependencies = [
+ "hashbrown 0.9.1",
+]
+
+[[package]]
 name = "flate2"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1011,6 +1019,7 @@ dependencies = [
  "driverkit",
  "elfloader",
  "env_logger 0.8.3",
+ "fallible_collections",
  "hashbrown 0.11.2",
  "hwloc2",
  "klogger",

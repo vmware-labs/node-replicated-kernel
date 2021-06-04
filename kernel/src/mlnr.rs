@@ -52,6 +52,7 @@ pub enum Modify {
 // TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Modify {
     fn hash(&self, nlogs: usize, logs: &mut Vec<usize>) {
+        debug_assert!(logs.capacity() >= nlogs, "Push can't fail.");
         logs.clear();
         match self {
             Modify::ProcessAdd(_pid) => push_to_all(nlogs, logs),
@@ -93,6 +94,7 @@ pub enum Access {
 //TODO: Stateless op to log mapping. Maintain some state for correct redirection.
 impl LogMapper for Access {
     fn hash(&self, nlogs: usize, logs: &mut Vec<usize>) {
+        debug_assert!(logs.capacity() >= nlogs, "Push can't fail.");
         logs.clear();
         match self {
             Access::FileRead(_pid, _fd, mnode, _buffer, _len, _offser) => {

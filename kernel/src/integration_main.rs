@@ -105,28 +105,30 @@ pub fn xmain() {
 
 /// Test allocation and deallocation of objects of various sizes.
 #[cfg(all(feature = "integration-test", feature = "test-alloc"))]
-pub fn xmain() {
+pub fn xmain() -> Result<(), crate::error::KError> {
     use alloc::vec::Vec;
+    use fallible_collections::vec::FallibleVec;
+
     {
-        let mut buf: Vec<u8> = Vec::with_capacity(0);
+        let mut buf: Vec<u8> = Vec::try_with_capacity(0)?;
         // test allocation sizes from 0 .. 8192
         for i in 0..1024 {
-            buf.push(i as u8);
+            buf.try_push(i as u8)?;
         }
     } // Make sure we drop here.
     info!("small allocations work.");
 
     {
         let size: usize = x86::bits64::paging::BASE_PAGE_SIZE; // 0.03 MiB, 8 pages
-        let mut buf: Vec<u8> = Vec::with_capacity(size);
+        let mut buf: Vec<u8> = Vec::try_with_capacity(size)?;
         for i in 0..size {
-            buf.push(i as u8);
+            buf.try_push(i as u8)?;
         }
 
         let size: usize = x86::bits64::paging::BASE_PAGE_SIZE * 256; // 8 MiB
-        let mut buf: Vec<usize> = Vec::with_capacity(size);
+        let mut buf: Vec<usize> = Vec::try_with_capacity(size)?;
         for i in 0..size {
-            buf.push(i as usize);
+            buf.try_push(i as usize)?;
         }
     } // Make sure we drop here.
     info!("large allocations work.");
@@ -681,12 +683,14 @@ fn xmain() {
     feature = "test-shootdown-simple",
     target_arch = "x86_64"
 ))]
-pub fn xmain() {
+pub fn xmain() -> Result<(), crate::error::KError> {
     use alloc::sync::Arc;
     use alloc::vec::Vec;
-    use apic::ApicDriver;
     use core::sync::atomic::spin_loop_hint;
     use core::time::Duration;
+
+    use apic::ApicDriver;
+    use fallible_collections::vec::FallibleVec;
     use x86::apic::{
         ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
         TriggerMode,
@@ -697,7 +701,7 @@ pub fn xmain() {
     unsafe {
         let start = rawtime::Instant::now();
 
-        let mut shootdowns = Vec::with_capacity(threads);
+        let mut shootdowns = Vec::try_with_capacity(threads)?;
         for t in atopology::MACHINE_TOPOLOGY.threads() {
             let id = t.apic_id();
             info!(
@@ -707,9 +711,9 @@ pub fn xmain() {
                 id.x2apic_logical_cluster_id(),
                 id.x2apic_logical_cluster_address(),
             );
-            let shootdown = Arc::new(arch::tlb::Shootdown::new(0x1000..0x2000));
+            let shootdown = Arc::try_new(arch::tlb::Shootdown::new(0x1000..0x2000))?;
             arch::tlb::enqueue(t.id, arch::tlb::WorkItem::Shootdown(shootdown.clone()));
-            shootdowns.push(shootdown);
+            shootdowns.try_push(shootdown)?;
         }
 
         {

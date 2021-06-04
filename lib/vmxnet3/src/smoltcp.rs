@@ -1,8 +1,9 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use alloc::boxed::Box;
 use core::pin::Pin;
 use core::alloc::Layout;
-
-use log::info;
 
 use driverkit::iomem::{IOBuf, IOBufChain, IOBufPool};
 use driverkit::{devq::DevQueue, iomem::IOMemError};

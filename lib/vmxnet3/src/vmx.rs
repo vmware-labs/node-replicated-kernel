@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #![allow(unused)]
 
 use alloc::alloc::{AllocError, Layout};
@@ -166,8 +169,8 @@ pub struct VMXNet3 {
     /// Queue state that is shared with the device
     qs: TRXQueueShared,
 
-    pub rxq: arrayvec::ArrayVec<[RxQueue; VMXNET3_MAX_RX_QUEUES]>,
-    pub txq: arrayvec::ArrayVec<[TxQueue; VMXNET3_MAX_TX_QUEUES]>,
+    pub rxq: arrayvec::ArrayVec<RxQueue, VMXNET3_MAX_RX_QUEUES>,
+    pub txq: arrayvec::ArrayVec<TxQueue, VMXNET3_MAX_TX_QUEUES>,
 
     /// Bytes of MAC Address for device
     lladdr: [u8; 6],

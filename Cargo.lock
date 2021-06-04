@@ -75,7 +75,7 @@ dependencies = [
 name = "apic"
 version = "0.0.1"
 dependencies = [
- "bit_field 0.10.1",
+ "bit_field",
  "bitflags 1.2.1",
  "driverkit",
  "env_logger 0.5.13",
@@ -106,11 +106,6 @@ dependencies = [
 
 [[package]]
 name = "arrayvec"
-version = "0.5.1"
-source = "git+https://github.com/gz/arrayvec.git#5279cfff8a03f038919ac00b101f04c74f6dba12"
-
-[[package]]
-name = "arrayvec"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a2f58b0bb10c380af2b26e57212856b8c9a59e0925b4c20f4a174a49734eaf7"
@@ -136,7 +131,7 @@ dependencies = [
  "cstr_core",
  "env_logger 0.8.3",
  "lazy_static",
- "libacpica",
+ "libacpica 0.0.6",
  "log",
  "procfs",
  "x86 0.39.0",
@@ -167,9 +162,9 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "backtrace"
-version = "0.3.59"
+version = "0.3.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4717cfcbfaa661a0fd48f8453951837ae7e8f81e481fbb136e3202d72805a744"
+checksum = "b7815ea54e4d821e791162e078acbebfd6d8c8939cd559c9335dceb1c8ca7282"
 dependencies = [
  "addr2line 0.15.1",
  "cc",
@@ -217,12 +212,6 @@ checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
 
 [[package]]
 name = "bit_field"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed8765909f9009617974ab6b7d332625b320b33c326b1e9321382ef1999b5d56"
-
-[[package]]
-name = "bit_field"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dcb6dd1c2376d2e096796e234a70e17e94cc2d5d54ff8ce42b28cef1d0d359a4"
@@ -243,7 +232,7 @@ checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 name = "bootloader"
 version = "0.0.1"
 dependencies = [
- "arrayvec 0.7.0",
+ "arrayvec",
  "bootloader_shared",
  "elfloader",
  "log",
@@ -256,7 +245,7 @@ dependencies = [
 name = "bootloader_shared"
 version = "0.0.1"
 dependencies = [
- "arrayvec 0.7.0",
+ "arrayvec",
  "uefi",
  "x86 0.39.0",
 ]
@@ -272,12 +261,6 @@ dependencies = [
  "regex-automata",
  "serde",
 ]
-
-[[package]]
-name = "byteorder"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fc10e8cc6b2580fda3f36eb6dc5316657f812a3df879a44a66fc9f0fdbc4855"
 
 [[package]]
 name = "byteorder"
@@ -490,18 +473,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f8a51dd197fa6ba5b4dc98a990a43cc13693c23eb0089ebb0fcc1f04152bca6"
 
 [[package]]
-name = "custom_error_core"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f8a51dd197fa6ba5b4dc98a990a43cc13693c23eb0089ebb0fcc1f04152bca6"
-
-[[package]]
 name = "driverkit"
-version = "0.4.0"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4174f55a3b80af6e18b72b9c8663a69592afa94ade2f12d44ad91b601e985719"
 dependencies = [
- "bit_field 0.9.0",
- "byteorder 0.5.3",
- "custom_error_core",
+ "byteorder",
+ "custom_error",
  "libc 0.2.95",
  "log",
  "matches",
@@ -697,7 +675,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4041af86e63ac4298ce40e5cca669066e75b6f1aa3390fe2561ffa5e1d9f4cc"
 dependencies = [
- "byteorder 1.4.3",
+ "byteorder",
 ]
 
 [[package]]
@@ -850,6 +828,12 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 dependencies = [
  "spin",
 ]
+
+[[package]]
+name = "libacpica"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8dd3dc6d0b6a0f182009726758232952246a6f78f834ce1291526bf92ab98a7"
 
 [[package]]
 name = "libacpica"
@@ -1011,10 +995,10 @@ dependencies = [
  "addr2line 0.14.1",
  "apic",
  "arr_macro",
- "arrayvec 0.7.0",
+ "arrayvec",
  "atopology",
  "backtracer_core",
- "bit_field 0.10.1",
+ "bit_field",
  "bootloader_shared",
  "cc",
  "cnr",
@@ -1032,7 +1016,7 @@ dependencies = [
  "klogger",
  "kpi",
  "lazy_static",
- "libacpica",
+ "libacpica 0.0.5",
  "libc 0.2.95",
  "log",
  "logos",
@@ -1045,6 +1029,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "slabmalloc",
+ "smoltcp",
  "spin",
  "static_assertions",
  "uefi",
@@ -1105,9 +1090,12 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.24.0"
+version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a5b3dd1c072ee7963717671d1ca129f1048fda25edea6b752bfc71ac8854170"
+checksum = "9023c1c0973b327f073c7f2fceb9bcc049862f93a7d14c6feb46c8a56460a0d5"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "once_cell"
@@ -1180,7 +1168,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab8809e0c18450a2db0f236d2a44ec0b4c1412d0eb936233579f0990faa5d5cd"
 dependencies = [
  "bitflags 1.2.1",
- "byteorder 1.4.3",
+ "byteorder",
  "chrono",
  "flate2",
  "hex",
@@ -1196,7 +1184,7 @@ checksum = "01c477819b845fe023d33583ebf10c9f62518c8d79a0960ba5c36d6ac8a55a5b"
 dependencies = [
  "bit-set",
  "bitflags 1.2.1",
- "byteorder 1.4.3",
+ "byteorder",
  "lazy_static",
  "num-traits",
  "quick-error",
@@ -1571,9 +1559,9 @@ dependencies = [
 
 [[package]]
 name = "rumpkernel"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b9c03afc78b7f625117530efaec8c5ea88056d21a2e784fd950d3502e701925"
+checksum = "db2ea17c58de6a680f7a7b696925c605f4a7d25afbefa9d7f3b3eb327b2f2d28"
 dependencies = [
  "num_cpus",
 ]
@@ -1642,13 +1630,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "smoltcp"
-version = "0.7.1"
+name = "smallvec"
+version = "0.6.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97173c1ef35b0a09304cb3882eba594761243005847cbbf6124f966e8da6519a"
+checksum = "b97fcaeba89edba30f044a10c6a3cc39df9c3f17d7cd829dd1446cab35f890e0"
+dependencies = [
+ "maybe-uninit",
+]
+
+[[package]]
+name = "smoltcp"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11b5647cc4676e9358e6b15b6536b34e5b413e5ae946a06b3f85e713132bcdfa"
 dependencies = [
  "bitflags 1.2.1",
- "byteorder 1.4.3",
+ "byteorder",
  "log",
  "managed",
 ]
@@ -1780,7 +1777,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bad643914094137d475641b6bab89462505316ec2ce70907ad20102d28a79ab8"
 dependencies = [
- "bit_field 0.10.1",
+ "bit_field",
 ]
 
 [[package]]
@@ -1840,7 +1837,7 @@ checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 name = "vibrio"
 version = "0.1.0"
 dependencies = [
- "arrayvec 0.7.0",
+ "arrayvec",
  "bitflags 1.2.1",
  "crossbeam-utils 0.8.5",
  "cstr_core",
@@ -1861,7 +1858,7 @@ dependencies = [
 name = "vmxnet3"
 version = "0.1.0"
 dependencies = [
- "arrayvec 0.5.1",
+ "arrayvec",
  "custom_error",
  "driverkit",
  "env_logger 0.8.3",
@@ -1947,7 +1944,7 @@ version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4fd9298cd1b1f88546fc0a5e8faa3354013cd010589299c624fde436aad76cc"
 dependencies = [
- "bit_field 0.10.1",
+ "bit_field",
  "bitflags 1.2.1",
  "raw-cpuid",
 ]
@@ -1958,7 +1955,7 @@ version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7726a0732fa834954e0cceacadb224b7a0deb55d6ea498e2fc1b591397bca57f"
 dependencies = [
- "bit_field 0.10.1",
+ "bit_field",
  "bitflags 1.2.1",
  "raw-cpuid",
 ]

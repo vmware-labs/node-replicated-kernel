@@ -3,14 +3,16 @@ name = "vmxnet3"
 version = "0.1.0"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
 edition = "2018"
+description = "vmxnet3 - a virtual NIC device driver"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 log = "0.4"
 static_assertions = "1.1.0"
 x86 = "0.39"
-arrayvec = { git = "https://github.com/gz/arrayvec.git", default-features = false, features = ["array-sizes-129-255"] }
+arrayvec = { version = "0.7.0", default-features = false }
 custom_error = { version = "1.9", default-features = false, features = ["unstable"] }
-driverkit = { path = "../driverkit" }
+driverkit = "0.7"
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ] }
 
 [target.'cfg(target_family = "unix")'.dev-dependencies]

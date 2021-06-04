@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use core::pin::Pin;
 use core::alloc::Layout;
+use core::pin::Pin;
 
 use driverkit::iomem::{IOBuf, IOBufChain, IOBufPool};
 use driverkit::{devq::DevQueue, iomem::IOMemError};
@@ -41,7 +41,7 @@ impl DevQueuePhy {
 
         chain.segments.push_back(seg0);
         chain.segments.push_back(seg1);
-        
+
         let mut device = device;
         device.rxq[0].enqueue(chain).expect("Can enqueue RX desc");
         device.rxq[0].flush();

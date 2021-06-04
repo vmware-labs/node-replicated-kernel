@@ -114,6 +114,13 @@ fn main() {
             .status()
             .unwrap();
 
+        println!("CHECKOUT ccde0e7 {:?}", out_dir);
+        Command::new("git")
+            .args(&["checkout", "ccde0e7ba9e8238f998e42a88ffe9f9a10fed942"])
+            .current_dir(&Path::new(&out_dir))
+            .status()
+            .unwrap();
+
         println!("BUILD {:?}", out_dir);
         for (key, value) in env::vars() {
             println!("{}: {}", key, value);

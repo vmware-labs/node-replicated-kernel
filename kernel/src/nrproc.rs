@@ -5,6 +5,7 @@ use crate::prelude::*;
 use alloc::vec::Vec;
 use kpi::process::{FrameId, ProcessInfo};
 
+use fallible_collections::vec::FallibleVec;
 use node_replication::Dispatch;
 
 use crate::arch::process::PROCESS_TABLE;
@@ -78,7 +79,8 @@ impl<P: Process + Default> Default for NrProcess<P> {
         NrProcess {
             _pid: 0,
             active_cores: Vec::new(),
-            process: Box::new(P::default()),
+            process: Box::try_new(P::default())
+                .expect("TODO: handle OOM; needs try_default support in NR"),
         }
     }
 }
@@ -361,7 +363,7 @@ where
             Op::AssignExecutor(gtid, region) => {
                 let executor = self.process.get_executor(region)?;
                 let eid = executor.id();
-                self.active_cores.push((gtid, eid));
+                self.active_cores.try_push((gtid, eid))?;
                 Ok(NodeResult::Executor(executor))
             }
 

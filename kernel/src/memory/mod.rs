@@ -13,7 +13,6 @@
 //!  * The NCache: A big stack of base and large-pages.
 //!  * The TCache: A smaller stack of base and large-pages.
 //!  * The KernelAllocator: Which implements GlobalAlloc.
-use crate::alloc::string::ToString;
 use core::alloc::{GlobalAlloc, Layout};
 use core::intrinsics::likely;
 use core::mem::transmute;
@@ -26,10 +25,10 @@ use slabmalloc::{Allocator, ZoneAllocator};
 use spin::Mutex;
 use x86::bits64::paging;
 
-pub mod detmem;
-pub mod emem;
-pub mod mcache;
-pub mod vspace;
+use crate::alloc::string::ToString;
+use crate::arch::MAX_NUMA_NODES;
+use crate::prelude::*;
+use crate::{kcb, round_up};
 
 /// Re-export arch specific memory definitions
 pub use crate::arch::memory::{
@@ -37,9 +36,15 @@ pub use crate::arch::memory::{
     LARGE_PAGE_SIZE,
 };
 
-use crate::prelude::*;
-use crate::{kcb, round_up};
 use vspace::MapAction;
+
+pub mod detmem;
+pub mod emem;
+pub mod mcache;
+pub mod vspace;
+
+/// How many initial physical memory regions we support.
+pub const MAX_PHYSICAL_REGIONS: usize = 64;
 
 custom_error! {
     #[derive(PartialEq, Clone)]
@@ -631,12 +636,6 @@ impl fmt::Display for DataSize {
     }
 }
 
-/// How initial physical memory regions we support.
-pub const MAX_PHYSICAL_REGIONS: usize = 64;
-
-/// How many NUMA nodes we support in the system.
-pub const AFFINITY_REGIONS: usize = 16;
-
 /// Represents the global memory system in the kernel.
 ///
 /// `node_caches` and and `emem` can be accessed concurrently and are protected
@@ -647,11 +646,11 @@ pub struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<Mutex<mcache::TCache>, { AFFINITY_REGIONS }>,
+    pub(crate) emem: ArrayVec<Mutex<mcache::TCache>, { MAX_NUMA_NODES }>,
 
     /// All node-caches in the system (one for every NUMA node).
     pub(crate) node_caches:
-        ArrayVec<CachePadded<Mutex<&'static mut mcache::NCache>>, { AFFINITY_REGIONS }>,
+        ArrayVec<CachePadded<Mutex<&'static mut mcache::NCache>>, { MAX_NUMA_NODES }>,
 }
 
 impl GlobalMemory {

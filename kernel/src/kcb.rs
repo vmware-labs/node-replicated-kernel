@@ -5,7 +5,6 @@
 
 use alloc::string::String;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
 use core::convert::TryInto;
 use core::fmt::Debug;
@@ -19,6 +18,7 @@ use slabmalloc::ZoneAllocator;
 
 use crate::arch::kcb::init_kcb;
 use crate::arch::memory::paddr_to_kernel_vaddr;
+use crate::arch::MAX_NUMA_NODES;
 use crate::error::KError;
 
 use crate::arch::process::PROCESS_TABLE;
@@ -457,7 +457,12 @@ pub trait ArchSpecificKcb {
     fn hwthread_id(&self) -> u64;
     fn install(&mut self);
     fn current_pid(&self) -> Result<Pid, KError>;
-    fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>>;
+    fn process_table(
+        &self,
+    ) -> &'static ArrayVec<
+        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
+        MAX_NUMA_NODES,
+    >;
 }
 
 #[cfg(test)]

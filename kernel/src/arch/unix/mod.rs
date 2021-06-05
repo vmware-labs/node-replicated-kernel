@@ -8,9 +8,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use arrayvec::ArrayVec;
 use ctor::ctor;
 use node_replication::{Log, Replica};
+use x86::current::paging::HUGE_PAGE_SIZE;
 
 use crate::memory::mcache::TCacheSp;
-use crate::memory::{GlobalMemory, GrowBackend, LARGE_PAGE_SIZE};
+use crate::memory::{GlobalMemory, GrowBackend, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 use crate::{xmain, ExitReason};
 
@@ -21,8 +22,6 @@ pub mod memory;
 pub mod process;
 pub mod timer;
 pub mod vspace;
-
-use process::UnixProcess;
 
 pub use bootloader_shared::*;
 
@@ -61,20 +60,20 @@ fn init_setup() {
 
     for _i in 0..64 {
         let frame = mm
-            .allocate_frame(4096)
+            .allocate_frame(BASE_PAGE_SIZE)
             .expect("We don't have vRAM available");
         tc.grow_base_pages(&[frame]).expect("Can't add base-page");
     }
 
     for _i in 0..5 {
         let frame = mm
-            .allocate_frame(2 * 1024 * 1024)
+            .allocate_frame(LARGE_PAGE_SIZE)
             .expect("We don't have vRAM available");
         tc.grow_large_pages(&[frame]).expect("Can't add large-page");
     }
 
     let frame = mm
-        .allocate_frame(2 * 1024 * 1024 * 1024)
+        .allocate_frame(2 * HUGE_PAGE_SIZE)
         .expect("We don't have vRAM available");
     let mut annotated_regions = ArrayVec::new();
     annotated_regions.push(frame);

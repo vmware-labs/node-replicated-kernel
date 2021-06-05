@@ -7,6 +7,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 
+use arrayvec::ArrayVec;
 use kpi::process::FrameId;
 use lazy_static::lazy_static;
 
@@ -15,35 +16,38 @@ use node_replication::{Dispatch, Log, Replica};
 use crate::arch::Module;
 use crate::error::KError;
 use crate::kcb::{self, ArchSpecificKcb};
-use crate::memory::{Frame, VAddr};
+use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
 use crate::mlnrfs::Fd;
 use crate::nrproc::NrProcess;
 use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle, MAX_PROCESSES};
 
 use super::debug;
 use super::vspace::VSpace;
+use super::MAX_NUMA_NODES;
 
 lazy_static! {
-    pub static ref PROCESS_TABLE: Vec<Vec<Arc<Replica<'static, NrProcess<UnixProcess>>>>> = {
+    pub static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<UnixProcess>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
         // Want at least one replica...
         let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
 
-        let mut numa_cache = Vec::with_capacity(numa_nodes);
+        let mut numa_cache = ArrayVec::new();
         for n in 0..numa_nodes {
-            let process_replicas = Vec::with_capacity(MAX_PROCESSES);
+            let process_replicas = ArrayVec::new();
             numa_cache.push(process_replicas)
         }
 
         for pid in 0..MAX_PROCESSES {
-                let log = Arc::new(Log::<<NrProcess<UnixProcess> as Dispatch>::WriteOperation>::new(
-                    2 * 1024 * 1024,
-                ));
+                let log = Arc::try_new(Log::<<NrProcess<UnixProcess> as Dispatch>::WriteOperation>::new(
+                    LARGE_PAGE_SIZE,
+                )).expect("Can't initialize processes, out of memory.");
 
             for node in 0..numa_nodes {
                 let kcb = kcb::get_kcb();
                 assert!(kcb.set_allocation_affinity(node as atopology::NodeId).is_ok());
+
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::new(&log));
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
+
                 assert!(kcb.set_allocation_affinity(0 as atopology::NodeId).is_ok());
             }
         }

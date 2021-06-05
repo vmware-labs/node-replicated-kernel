@@ -4,10 +4,10 @@
 //! KCB is the local kernel control that stores all core local state.
 
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::any::Any;
 use core::cell::{RefCell, RefMut};
 
+use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::{Replica, ReplicaToken};
 
@@ -15,8 +15,8 @@ use crate::error::KError;
 use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
-use crate::process::Pid;
 use crate::process::ProcessError;
+use crate::process::{Pid, MAX_PROCESSES};
 use crate::{
     kcb::{ArchSpecificKcb, BootloaderArguments, Kcb},
     memory::mcache::TCacheSp,
@@ -24,7 +24,7 @@ use crate::{
 
 use super::process::{UnixProcess, UnixThread};
 use super::vspace::VSpace;
-use super::KernelArgs;
+use super::{KernelArgs, MAX_NUMA_NODES};
 
 static KERNEL_ARGS: KernelArgs = KernelArgs::new();
 
@@ -132,7 +132,12 @@ impl ArchSpecificKcb for ArchKcb {
         Err(KError::ProcessNotSet)
     }
 
-    fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>> {
+    fn process_table(
+        &self,
+    ) -> &'static ArrayVec<
+        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
+        MAX_NUMA_NODES,
+    > {
         &*super::process::PROCESS_TABLE
     }
 }

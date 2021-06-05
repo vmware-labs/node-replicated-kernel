@@ -2,6 +2,9 @@
 // Copyright © 2010-2011 Dmitry Vyukov. All rights reserved.
 // SPDX-License-Identifier: BSD-2-Clause
 
+// http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
+// This queue is copy pasted from old rust stdlib.
+
 #![allow(warnings)] // For now...
 
 use alloc::sync::Arc;
@@ -10,8 +13,11 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
-// http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
-// This queue is copy pasted from old rust stdlib.
+use fallible_collections::vec::FallibleVec;
+use fallible_collections::vec::TryCollect;
+
+use crate::error::KError;
+use crate::prelude::*;
 
 struct Node<T> {
     sequence: AtomicUsize,
@@ -22,14 +28,10 @@ unsafe impl<T: Send> Send for Node<T> {}
 unsafe impl<T: Sync> Sync for Node<T> {}
 
 struct State<T> {
-    _pad0: [u8; 64],
-    buffer: Vec<UnsafeCell<Node<T>>>,
+    buffer: CachePadded<Vec<UnsafeCell<Node<T>>>>,
     mask: usize,
-    _pad1: [u8; 64],
-    enqueue_pos: AtomicUsize,
-    _pad2: [u8; 64],
-    dequeue_pos: AtomicUsize,
-    _pad3: [u8; 64],
+    enqueue_pos: CachePadded<AtomicUsize>,
+    dequeue_pos: CachePadded<AtomicUsize>,
 }
 
 unsafe impl<T: Send> Send for State<T> {}
@@ -40,7 +42,7 @@ pub struct Queue<T> {
 }
 
 impl<T: Send> State<T> {
-    fn with_capacity(capacity: usize) -> State<T> {
+    fn with_capacity(capacity: usize) -> Result<State<T>, KError> {
         let capacity = if capacity < 2 || (capacity & (capacity - 1)) != 0 {
             if capacity < 2 {
                 2
@@ -51,6 +53,7 @@ impl<T: Send> State<T> {
         } else {
             capacity
         };
+
         let buffer = (0..capacity)
             .map(|i| {
                 UnsafeCell::new(Node {
@@ -58,17 +61,14 @@ impl<T: Send> State<T> {
                     value: None,
                 })
             })
-            .collect::<Vec<_>>();
-        State {
-            _pad0: [0; 64],
-            buffer: buffer,
+            .try_collect::<Vec<_>>()?;
+
+        Ok(State {
+            buffer: CachePadded::new(buffer),
             mask: capacity - 1,
-            _pad1: [0; 64],
-            enqueue_pos: AtomicUsize::new(0),
-            _pad2: [0; 64],
-            dequeue_pos: AtomicUsize::new(0),
-            _pad3: [0; 64],
-        }
+            enqueue_pos: CachePadded::new(AtomicUsize::new(0)),
+            dequeue_pos: CachePadded::new(AtomicUsize::new(0)),
+        })
     }
 
     fn push(&self, value: T) -> Result<(), T> {
@@ -135,10 +135,10 @@ impl<T: Send> State<T> {
 }
 
 impl<T: Send> Queue<T> {
-    pub fn with_capacity(capacity: usize) -> Queue<T> {
-        Queue {
-            state: Arc::new(State::with_capacity(capacity)),
-        }
+    pub fn with_capacity(capacity: usize) -> Result<Queue<T>, KError> {
+        Ok(Queue {
+            state: Arc::try_new(State::with_capacity(capacity)?)?,
+        })
     }
 
     pub fn push(&self, value: T) -> Result<(), T> {

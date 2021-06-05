@@ -10,13 +10,17 @@ use alloc::vec::Vec;
 use core::convert::TryInto;
 use core::fmt::Debug;
 
+use arrayvec::ArrayVec;
 use cstr_core::CStr;
 use custom_error::custom_error;
+use fallible_collections::vec::FallibleVec;
+use fallible_collections::vec::TryCollect;
+use fallible_collections::TryReserveError;
 use kpi::process::{FrameId, ELF_OFFSET};
 
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
-use crate::arch::Module;
+use crate::arch::{Module, MAX_NUMA_NODES};
 use crate::error::KError;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
@@ -175,11 +179,11 @@ struct DataSecAllocator {
 impl DataSecAllocator {
     /// We can call finish on it to return the ordered list of frames that were
     /// used for the writeable section.
-    fn finish(self) -> Vec<Frame> {
+    fn finish(self) -> Result<Vec<Frame>, TryReserveError> {
         self.frames
             .into_iter()
             .map(|(_offset, base)| base)
-            .collect()
+            .try_collect()
     }
 }
 
@@ -381,12 +385,12 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
 
     let mut data_sec_loader = DataSecAllocator {
         offset,
-        frames: Vec::with_capacity(4),
+        frames: Vec::try_with_capacity(4)?,
     };
     elf_module
         .load(&mut data_sec_loader)
         .map_err(|_e| ProcessError::UnableToLoad)?;
-    let data_frames: Vec<Frame> = data_sec_loader.finish();
+    let data_frames: Vec<Frame> = data_sec_loader.finish()?;
 
     // Allocate a new process
     kcb.replica
@@ -394,8 +398,9 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
             let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
             if let nr::NodeResult::PidAllocated(pid) = response {
-                mlnr::MlnrKernelNode::add_process(pid)?;
-                crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)?;
+                mlnr::MlnrKernelNode::add_process(pid).expect("TODO(error-handling): revert state");
+                crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)
+                    .expect("TODO(error-handling): revert state properly");
                 Ok(pid)
             } else {
                 Err(KError::ProcessLoadingFailed)
@@ -409,8 +414,8 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
 pub fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
     trace!("Allocate dispatchers");
 
-    let mut create_per_region: Vec<(atopology::NodeId, usize)> =
-        Vec::with_capacity(atopology::MACHINE_TOPOLOGY.num_nodes() + 1);
+    let mut create_per_region: ArrayVec<(atopology::NodeId, usize), MAX_NUMA_NODES> =
+        ArrayVec::new();
 
     if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
         for node in atopology::MACHINE_TOPOLOGY.nodes() {

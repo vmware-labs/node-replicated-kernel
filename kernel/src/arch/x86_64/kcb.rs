@@ -6,12 +6,12 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
 use apic::x2apic::X2APICDriver;
+use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::Replica;
 use x86::current::segmentation::{self};
@@ -23,6 +23,7 @@ use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::mlnr::MlnrKernelNode;
 use crate::mlnrfs::{FileSystem, MlnrFS};
 use crate::nrproc::NrProcess;
+use crate::process::MAX_PROCESSES;
 use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
 
@@ -31,6 +32,7 @@ use super::irq::IdtTable;
 use super::process::{Ring3Executor, Ring3Process};
 use super::vspace::page_table::PageTable;
 use super::KernelArgs;
+use super::MAX_NUMA_NODES;
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
@@ -344,7 +346,12 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
         Ok(self.current_executor()?.pid)
     }
 
-    fn process_table(&self) -> &'static Vec<Vec<Arc<Replica<'static, NrProcess<Self::Process>>>>> {
+    fn process_table(
+        &self,
+    ) -> &'static ArrayVec<
+        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
+        MAX_NUMA_NODES,
+    > {
         &*super::process::PROCESS_TABLE
     }
 }

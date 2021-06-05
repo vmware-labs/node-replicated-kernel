@@ -14,28 +14,41 @@
 //! - Set-up system services like ACPI and physical memory management,
 //!   parse the machine topology.
 //! - Boot the rest of the system (see `start_app_core`).
+
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-
 use core::mem::transmute;
 use core::slice;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::kcb::{BootloaderArguments, Kcb};
+use crate::memory::{
+    mcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
+};
+use crate::mlnr::{MlnrKernelNode, Modify};
+use crate::nr::{KernelNode, Op};
+use crate::stack::OwnedStack;
+use crate::{xmain, ExitReason};
+
+use apic::x2apic;
 use apic::ApicDriver;
-use driverkit::DriverControl;
-
 use arrayvec::ArrayVec;
-
+use cnr::{Log as MlnrLog, Replica as MlnrReplica};
+use driverkit::DriverControl;
+use node_replication::{Log, Replica};
+use uefi::table::boot::MemoryType;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::{controlregs, cpuid};
 
-use cnr::{Log as MlnrLog, Replica as MlnrReplica};
-use node_replication::{Log, Replica};
+pub use bootloader_shared::*;
 
-use apic::x2apic;
+use crate::memory::MAX_PHYSICAL_REGIONS;
+use memory::paddr_to_kernel_vaddr;
+use vspace::page_table::PageTable;
 
+pub mod acpi;
 pub mod coreboot;
 pub mod debug;
 pub mod gdt;
@@ -48,24 +61,7 @@ pub mod timer;
 pub mod tlb;
 pub mod vspace;
 
-use uefi::table::boot::MemoryType;
-
-pub mod acpi;
 mod isr;
-
-pub use bootloader_shared::*;
-
-use crate::kcb::{BootloaderArguments, Kcb};
-use crate::memory::{
-    mcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
-};
-use crate::mlnr::{MlnrKernelNode, Modify};
-use crate::nr::{KernelNode, Op};
-use crate::stack::OwnedStack;
-use crate::{xmain, ExitReason};
-
-use memory::paddr_to_kernel_vaddr;
-use vspace::page_table::PageTable;
 
 pub const MAX_NUMA_NODES: usize = 12;
 pub const MAX_CORES: usize = 192;
@@ -410,8 +406,8 @@ fn boot_app_cores(
 /// There are some implicit assumptions here that a memory region always has
 /// just one affinity -- which is also what `topology` assumes.
 fn identify_numa_affinity(
-    memory_regions: &ArrayVec<Frame, 64>,
-    annotated_regions: &mut ArrayVec<Frame, 64>,
+    memory_regions: &ArrayVec<Frame, MAX_PHYSICAL_REGIONS>,
+    annotated_regions: &mut ArrayVec<Frame, MAX_PHYSICAL_REGIONS>,
 ) {
     if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
         for orig_frame in memory_regions.iter() {
@@ -455,7 +451,7 @@ fn identify_numa_affinity(
 /// We have a simple GDT, our address space, and stack set-up.
 /// The argc argument is abused as a pointer ot the KernelArgs struct
 /// passed by UEFI.
-#[cfg(target_os = "none")]
+//#[cfg(target_os = "none")]
 #[lang = "start"]
 #[no_mangle]
 #[start]
@@ -522,7 +518,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
     // regions of memory.
     let mut emanager: Option<mcache::TCacheSp> = None;
-    let mut memory_regions = ArrayVec::new();
+    let mut memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
     for region in &mut kernel_args.mm_iter {
         if region.ty == MemoryType::CONVENTIONAL {
             debug!("Found physical memory region {:?}", region);
@@ -610,6 +606,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         lazy_static::initialize(&atopology::MACHINE_TOPOLOGY);
         info!("Topology parsed");
         trace!("{:#?}", *atopology::MACHINE_TOPOLOGY);
+        assert!(
+            MAX_NUMA_NODES >= atopology::MACHINE_TOPOLOGY.num_nodes(),
+            "We don't support more NUMA nodes than `MAX_NUMA_NODES."
+        );
+        assert!(
+            MAX_CORES >= atopology::MACHINE_TOPOLOGY.num_threads(),
+            "We don't support more cores than `MAX_CORES."
+        );
     }
 
     // Identify NUMA region for physical memory (needs topology)
@@ -653,6 +657,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
 
+    //XXX:THIS IS WEIRD? why None -> 1, should be cores-per-node?, used wrong see below?
     let num_cores = match atopology::MACHINE_TOPOLOGY.nodes().nth(0) {
         Some(node) => node.threads().count(),
         None => 1,

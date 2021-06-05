@@ -655,7 +655,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 kcb_iret_handle(kcb).resume()
             } else {
                 loop {
-                    super::tlb::eager_advance_mlnr_replica();
+                    super::tlb::eager_advance_fs_replica();
 
                     // Reset a timer and sleep for some time
                     timer::set(timer::DEFAULT_TIMER_DEADLINE);

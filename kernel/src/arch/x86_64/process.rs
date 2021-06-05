@@ -11,6 +11,7 @@ use core::cmp::PartialEq;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
+use arrayvec::ArrayVec;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
 use node_replication::{Dispatch, Log, Replica, ReplicaToken};
@@ -36,29 +37,32 @@ use crate::{nr, round_up};
 use super::kcb::Arch86Kcb;
 use super::vspace::*;
 use super::Module;
+use super::MAX_NUMA_NODES;
 
 const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
 
 lazy_static! {
-    pub static ref PROCESS_TABLE: Vec<Vec<Arc<Replica<'static, NrProcess<Ring3Process>>>>> = {
+    pub static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
         // Want at least one replica...
         let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
 
-        let mut numa_cache = Vec::with_capacity(numa_nodes);
+        let mut numa_cache = ArrayVec::new();
         for n in 0..numa_nodes {
-            let process_replicas = Vec::with_capacity(MAX_PROCESSES);
+            let process_replicas = ArrayVec::new();
             numa_cache.push(process_replicas)
         }
 
         for pid in 0..MAX_PROCESSES {
-                let log = Arc::new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
-                    2 * 1024 * 1024,
-                ));
+                let log = Arc::try_new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
+                    LARGE_PAGE_SIZE,
+                )).expect("Can't initialize processes, out of memory.");
 
             for node in 0..numa_nodes {
                 let kcb = kcb::get_kcb();
                 kcb.set_allocation_affinity(node as atopology::NodeId);
+
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::new(&log));
+
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
                 kcb.set_allocation_affinity(0 as atopology::NodeId);
             }

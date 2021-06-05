@@ -69,7 +69,7 @@ pub fn schedule() -> ! {
                             }
 
                             // Advance mlnr replica
-                            crate::arch::advance_mlnr_replica();
+                            crate::arch::advance_fs_replica();
 
                             continue;
                         } else {

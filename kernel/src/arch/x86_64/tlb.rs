@@ -113,7 +113,7 @@ pub fn dequeue(gtid: atopology::GlobalThreadId) {
             }
             WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
         },
-        Err(_) => { /*IPI request was handled by eager_advance_mlnr_replica()*/ }
+        Err(_) => { /*IPI request was handled by eager_advance_fs_replica()*/ }
     }
 }
 
@@ -132,7 +132,7 @@ fn advance_log(log_id: usize) {
     }
 }
 
-pub fn eager_advance_mlnr_replica() {
+pub fn eager_advance_fs_replica() {
     let core_id = atopology::MACHINE_TOPOLOGY.current_thread().id;
     match IPI_WORKQUEUE[core_id as usize].pop() {
         Ok(msg) => {
@@ -154,7 +154,7 @@ pub fn eager_advance_mlnr_replica() {
                     // Synchronize Mlnr-replica.
                     advance_log(log_id);
                 }
-                None => unreachable!("eager_advance_mlnr_replica: KCB does not have mlnr_replica!"),
+                None => unreachable!("eager_advance_fs_replica: KCB does not have mlnr_replica!"),
             };
         }
     }

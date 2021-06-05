@@ -13,12 +13,12 @@ use alloc::alloc::{alloc, dealloc};
 use core::alloc::Layout;
 use core::ptr;
 
+use arrayvec::ArrayVec;
+use atopology::MACHINE_TOPOLOGY;
 use spin::Mutex;
 
 use crate::arch::MAX_NUMA_NODES;
-use arrayvec::ArrayVec;
-use atopology::MACHINE_TOPOLOGY;
-
+use crate::error::KError;
 use crate::kcb;
 use crate::mpmc::Queue;
 
@@ -39,7 +39,7 @@ pub struct DeterministicMemoryProvider {
 }
 
 impl DeterministicMemoryProvider {
-    pub fn new(nodes: usize) -> Self {
+    pub fn new(nodes: usize) -> Result<Self, KError> {
         assert!(
             nodes < MAX_NUMA_NODES,
             "Can't have more nodes than MAX_NUMA_NODES"
@@ -52,13 +52,13 @@ impl DeterministicMemoryProvider {
 
         let mut qs = ArrayVec::new();
         for _i in 0..nodes {
-            qs.push(Queue::with_capacity(ALLOC_CAP));
+            qs.push(Queue::with_capacity(ALLOC_CAP)?);
         }
 
-        Self {
+        Ok(Self {
             fill: Mutex::new(()),
             qs,
-        }
+        })
     }
 
     pub fn alloc(&self, l: Layout) -> *mut u8 {

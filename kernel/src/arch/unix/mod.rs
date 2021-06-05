@@ -32,8 +32,8 @@ pub fn halt() -> ! {
     unsafe { libc::exit(0) };
 }
 
-pub fn advance_mlnr_replica() {
-    unimplemented!("eager_advance_mlnr_replica not implemented for unix");
+pub fn advance_fs_replica() {
+    unimplemented!("eager_advance_fs_replica not implemented for unix");
 }
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);

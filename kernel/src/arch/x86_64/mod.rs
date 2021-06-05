@@ -37,6 +37,7 @@ use apic::ApicDriver;
 use arrayvec::ArrayVec;
 use cnr::{Log as MlnrLog, Replica as MlnrReplica};
 use driverkit::DriverControl;
+use fallible_collections::{FallibleVec, TryClone};
 use node_replication::{Log, Replica};
 use uefi::table::boot::MemoryType;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
@@ -197,7 +198,7 @@ struct AppCoreArgs {
     node: atopology::NodeId,
     _log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode>>,
-    mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+    fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -251,8 +252,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         let local_ridx = args.replica.register().unwrap();
         kcb.setup_node_replication(args.replica.clone(), local_ridx);
 
-        let mlnr_replica = args.mlnr_replica.register().unwrap();
-        kcb.arch.setup_mlnr(args.mlnr_replica.clone(), mlnr_replica);
+        let fs_replica = args.fs_replica.register().unwrap();
+        kcb.arch.setup_mlnr(args.fs_replica.clone(), fs_replica);
         kcb.register_with_process_replicas();
 
         // Don't modify this line without adjusting `coreboot` integration test:
@@ -290,8 +291,8 @@ fn boot_app_cores(
     kernel_args: &'static KernelArgs,
     log: Arc<Log<'static, Op>>,
     bsp_replica: Arc<Replica<'static, KernelNode>>,
-    mlnr_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
-    mlnr_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+    fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
+    fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 ) {
     let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
@@ -299,13 +300,13 @@ fn boot_app_cores(
     // Let's go with one replica per NUMA node for now:
     let numa_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
     let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> = Vec::with_capacity(numa_nodes);
-    let mut mlnr_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
+    let mut fs_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
         Vec::with_capacity(numa_nodes);
 
     // Push the replica for node 0
     debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
     replicas.push(bsp_replica);
-    mlnr_replicas.push(mlnr_replica);
+    fs_replicas.push(fs_replica);
     for node in 1..atopology::MACHINE_TOPOLOGY.num_nodes() {
         debug!(
             "Allocate a replica for {} ({} bytes)",
@@ -315,7 +316,7 @@ fn boot_app_cores(
         kcb.set_allocation_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
         replicas.push(Replica::<'static, KernelNode>::new(&log));
-        mlnr_replicas.push(MlnrReplica::new(mlnr_logs.clone()));
+        fs_replicas.push(MlnrReplica::new(fs_logs.clone()));
         kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }
 
@@ -354,7 +355,7 @@ fn boot_app_cores(
             thread: thread.id,
             _log: log.clone(),
             replica: replicas[node as usize].clone(),
-            mlnr_replica: mlnr_replicas[node as usize].clone(),
+            fs_replica: fs_replicas[node as usize].clone(),
         });
 
         unsafe {
@@ -606,13 +607,23 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         lazy_static::initialize(&atopology::MACHINE_TOPOLOGY);
         info!("Topology parsed");
         trace!("{:#?}", *atopology::MACHINE_TOPOLOGY);
+        let nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
+        let cores = atopology::MACHINE_TOPOLOGY.num_threads();
         assert!(
-            MAX_NUMA_NODES >= atopology::MACHINE_TOPOLOGY.num_nodes(),
+            MAX_NUMA_NODES >= nodes,
             "We don't support more NUMA nodes than `MAX_NUMA_NODES."
         );
         assert!(
-            MAX_CORES >= atopology::MACHINE_TOPOLOGY.num_threads(),
+            MAX_CORES >= cores,
             "We don't support more cores than `MAX_CORES."
+        );
+        assert!(
+            cnr::MAX_REPLICAS_PER_LOG >= nodes,
+            "We don't support as many replicas as we have NUMA nodes."
+        );
+        assert!(
+            node_replication::MAX_REPLICAS_PER_LOG >= nodes,
+            "We don't support as many replicas as we have NUMA nodes."
         );
     }
 
@@ -657,17 +668,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
 
-    //XXX:THIS IS WEIRD? why None -> 1, should be cores-per-node?, used wrong see below?
-    let num_cores = match atopology::MACHINE_TOPOLOGY.nodes().nth(0) {
-        Some(node) => node.threads().count(),
-        None => 1,
-    };
     let num_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
-    let mut mlnr_logs: Vec<Arc<MlnrLog<Modify>>> = Vec::with_capacity(num_cores);
-    // CNR library allow max 192 replicas, so dependency with CNR.
-    const MAX_REPLICAS: usize = 192;
-    let func = move |rid: &[AtomicBool; 192], idx: usize| {
-        assert_eq!(rid.len(), MAX_REPLICAS);
+    let func = move |rid: &[AtomicBool; cnr::MAX_REPLICAS_PER_LOG], idx: usize| {
+        assert_eq!(rid.len(), cnr::MAX_REPLICAS_PER_LOG);
         for replica in 0..num_nodes {
             if rid[replica].load(Ordering::Relaxed) == true {
                 let mut cores = atopology::MACHINE_TOPOLOGY
@@ -687,16 +690,35 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
     };
-    for i in 1..(num_cores + 1) {
-        let mut log = Arc::new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i));
+
+    let cores_per_node = atopology::MACHINE_TOPOLOGY
+        .nodes()
+        .nth(0)
+        .map(|node| node.threads().count())
+        .unwrap_or(1);
+
+    let mut fs_logs: Vec<Arc<MlnrLog<Modify>>> =
+        Vec::try_with_capacity(cores_per_node).expect("Not enough memory to initialize system");
+    for i in 0..cores_per_node {
+        // Log idx in range [1, cores_per_node+1]
+        let mut log = Arc::try_new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i + 1))
+            .expect("Not enough memory to initialize system");
         unsafe { Arc::get_mut_unchecked(&mut log).update_closure(func) };
-        mlnr_logs.push(log);
+
+        debug_assert!(fs_logs.capacity() >= i, "No reallocation for fs_logs.");
+        fs_logs.push(log);
     }
-    let mlnr_replica = MlnrReplica::<MlnrKernelNode>::new(mlnr_logs.clone());
-    let local_ridx = mlnr_replica.register().unwrap();
+
+    // Construct first replica
+    let fs_replica = MlnrReplica::<MlnrKernelNode>::new(
+        fs_logs
+            .try_clone()
+            .expect("Not enough memory to initialize system"),
+    );
+    let local_ridx = fs_replica.register().unwrap();
     {
         let kcb = kcb::get_kcb();
-        kcb.arch.setup_mlnr(mlnr_replica.clone(), local_ridx);
+        kcb.arch.setup_mlnr(fs_replica.clone(), local_ridx);
         kcb.arch.init_mlnrfs();
     }
 
@@ -714,8 +736,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kernel_args,
         log.clone(),
         bsp_replica,
-        mlnr_logs.clone(),
-        mlnr_replica,
+        fs_logs,
+        fs_replica,
     );
 
     // Done with initialization, now we go in
@@ -727,6 +749,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 }
 
 /// For cores that advances the replica eagerly. This avoids additional IPI costs.
-pub fn advance_mlnr_replica() {
-    tlb::eager_advance_mlnr_replica();
+pub fn advance_fs_replica() {
+    tlb::eager_advance_fs_replica();
 }

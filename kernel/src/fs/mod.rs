@@ -13,10 +13,12 @@ use custom_error::custom_error;
 use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::SystemCallError;
-pub use rwlock::RwLock as NrLock;
 use spin::RwLock;
 
+pub use rwlock::RwLock as NrLock;
+
 pub mod fd;
+
 mod file;
 mod mnode;
 mod rwlock;

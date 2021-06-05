@@ -3,12 +3,12 @@
 
 use crate::arch::process::{UserPtr, UserSlice};
 use crate::error::KError;
-use crate::memory::VAddr;
-use crate::mlnrfs::fd::FileDesc;
-use crate::mlnrfs::{
+use crate::fs::fd::FileDesc;
+use crate::fs::{
     Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MlnrFS, Mnode,
     Modes, NrLock, Offset, FD, MNODE_OFFSET,
 };
+use crate::memory::VAddr;
 use crate::prelude::*;
 use crate::process::{userptr_to_str, KernSlice, Pid, ProcessError};
 
@@ -133,7 +133,7 @@ impl MlnrKernelNode {
     pub fn add_process(pid: usize) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut_scan(Modify::ProcessAdd(pid), *token);
@@ -148,7 +148,7 @@ impl MlnrKernelNode {
     pub fn map_fd(pid: Pid, pathname: u64, flags: u64, modes: u64) -> Result<(FD, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename;
@@ -185,10 +185,9 @@ impl MlnrKernelNode {
             }
         };
         let kcb = super::kcb::get_kcb();
-        kcb.arch
-            .mlnr_replica
-            .as_ref()
-            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| match op {
+        kcb.arch.cnr_replica.as_ref().map_or(
+            Err(KError::ReplicaNotSet),
+            |(replica, token)| match op {
                 FileOperation::Write | FileOperation::WriteAt => {
                     let kernslice = KernSlice::new(buffer, len as usize);
 
@@ -217,13 +216,14 @@ impl MlnrKernelNode {
                     }
                 }
                 _ => unreachable!(),
-            })
+            },
+        )
     }
 
     pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut_scan(Modify::FileClose(pid, fd), *token);
@@ -239,7 +239,7 @@ impl MlnrKernelNode {
     pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename;
@@ -268,7 +268,7 @@ impl MlnrKernelNode {
         };
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response =
@@ -292,7 +292,7 @@ impl MlnrKernelNode {
     pub fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let oldfilename;
@@ -320,7 +320,7 @@ impl MlnrKernelNode {
     pub fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename;
@@ -344,7 +344,7 @@ impl MlnrKernelNode {
     pub fn fd_to_mnode(pid: Pid, fd: FD) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::FdToMnode(pid, fd), *token);
@@ -361,7 +361,7 @@ impl MlnrKernelNode {
     pub fn filename_to_mnode(pid: Pid, filename: Filename) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::FileNameToMnode(pid, filename), *token);
@@ -377,7 +377,7 @@ impl MlnrKernelNode {
     pub fn synchronize_log(log_id: usize) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         kcb.arch
-            .mlnr_replica
+            .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::Synchronize(log_id), *token);

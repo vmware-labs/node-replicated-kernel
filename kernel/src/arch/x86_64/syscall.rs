@@ -19,12 +19,12 @@ use kpi::{
 };
 
 use crate::error::KError;
+use crate::fs::FileSystem;
 use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
-use crate::mlnrfs::FileSystem;
 use crate::process::{Pid, ProcessError, ResumeHandle};
-use crate::{mlnr, nr, nrproc};
+use crate::{cnrfs, nr, nrproc};
 
 use super::gdt::GdtTable;
 use super::process::{Ring3Process, UserValue};
@@ -367,7 +367,7 @@ fn handle_fileio(
             let flags = arg3;
             let modes = arg4;
             match user_virt_addr_valid(pid, pathname, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::map_fd(pid, pathname, flags, modes),
+                Ok(_) => cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes),
                 Err(e) => Err(e),
             }
         }
@@ -377,7 +377,7 @@ fn handle_fileio(
             let len = arg4;
 
             match user_virt_addr_valid(pid, buffer, len) {
-                Ok(_) => mlnr::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1),
+                Ok(_) => cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1),
                 Err(e) => Err(e),
             }
         }
@@ -388,20 +388,20 @@ fn handle_fileio(
             let offset = arg5 as i64;
 
             match user_virt_addr_valid(pid, buffer, len) {
-                Ok(_) => mlnr::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset),
+                Ok(_) => cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset),
                 Err(e) => Err(e),
             }
         }
         FileOperation::Close => {
             let fd = arg2;
-            mlnr::MlnrKernelNode::unmap_fd(pid, fd)
+            cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
         }
         FileOperation::GetInfo => {
             let name = arg2;
             let info_ptr = arg3;
 
             match user_virt_addr_valid(pid, name, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::file_info(pid, name, info_ptr),
+                Ok(_) => cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr),
                 Err(e) => Err(e),
             }
         }
@@ -409,7 +409,7 @@ fn handle_fileio(
             let name = arg2;
 
             match user_virt_addr_valid(pid, name, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::file_delete(pid, name),
+                Ok(_) => cnrfs::MlnrKernelNode::file_delete(pid, name),
                 Err(e) => Err(e),
             }
         }
@@ -422,8 +422,8 @@ fn handle_fileio(
 
             let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
             let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
-            let mlnrfs = super::kcb::get_kcb().arch.mlnrfs.as_ref().unwrap();
-            match mlnrfs.write(2, &mut buffer, offset) {
+            let cnrfs = super::kcb::get_kcb().arch.cnrfs.as_ref().unwrap();
+            match cnrfs.write(2, &mut buffer, offset) {
                 Ok(len) => Ok((len as u64, 0)),
                 Err(e) => Err(KError::FileSystem { source: e }),
             }
@@ -435,7 +435,7 @@ fn handle_fileio(
                 user_virt_addr_valid(pid, oldname, 0),
                 user_virt_addr_valid(pid, newname, 0),
             ) {
-                (Ok(_), Ok(_)) => mlnr::MlnrKernelNode::file_rename(pid, oldname, newname),
+                (Ok(_), Ok(_)) => cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname),
                 (Err(e), _) | (_, Err(e)) => Err(e.clone()),
             }
         }
@@ -443,7 +443,7 @@ fn handle_fileio(
             let pathname = arg2;
             let modes = arg3;
             match user_virt_addr_valid(pid, pathname, 0) {
-                Ok(_) => mlnr::MlnrKernelNode::mkdir(pid, pathname, modes),
+                Ok(_) => cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes),
                 Err(e) => Err(e),
             }
         }

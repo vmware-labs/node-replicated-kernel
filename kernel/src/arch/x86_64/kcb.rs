@@ -18,10 +18,10 @@ use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
+use crate::cnrfs::MlnrKernelNode;
 use crate::error::KError;
+use crate::fs::{FileSystem, MlnrFS};
 use crate::kcb::{ArchSpecificKcb, Kcb};
-use crate::mlnr::MlnrKernelNode;
-use crate::mlnrfs::{FileSystem, MlnrFS};
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
 use crate::process::{Pid, ProcessError};
@@ -128,11 +128,11 @@ pub struct Arch86Kcb {
     init_vspace: RefCell<PageTable>,
 
     /// A handle to the node-local CNR based kernel replica.
-    pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
+    pub cnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
 
     /// A dummy in-memory file system to test the memory
     /// system and file system operations with MLNR.
-    pub mlnrfs: Option<MlnrFS>,
+    pub cnrfs: Option<MlnrFS>,
 
     /// Global id per hyperthread.
     id: usize,
@@ -186,8 +186,8 @@ impl Arch86Kcb {
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
-            mlnr_replica: None,
-            mlnrfs: None,
+            cnr_replica: None,
+            cnrfs: None,
             id: 0,
             max_threads: 0,
         }
@@ -201,7 +201,7 @@ impl Arch86Kcb {
         self.init_vspace.borrow_mut()
     }
 
-    pub fn setup_mlnr(
+    pub fn setup_cnr(
         &mut self,
         replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
         idx_token: MlnrReplicaToken,
@@ -212,13 +212,13 @@ impl Arch86Kcb {
             Some(node) => node.threads().count(),
             None => 1,
         };
-        self.mlnr_replica = Some((replica, idx_token));
+        self.cnr_replica = Some((replica, idx_token));
     }
 
     /// Initialized the dummy file-system to measure the write() system call overhead.
-    pub fn init_mlnrfs(&mut self) {
-        self.mlnrfs = Some(Default::default());
-        let _result = self.mlnrfs.as_ref().unwrap().create("nrk", 0x007);
+    pub fn init_cnrfs(&mut self) {
+        self.cnrfs = Some(Default::default());
+        let _result = self.cnrfs.as_ref().unwrap().create("nrk", 0x007);
     }
 
     pub fn id(&self) -> usize {

@@ -11,8 +11,8 @@ use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::{Replica, ReplicaToken};
 
+use crate::cnr::MlnrKernelNode;
 use crate::error::KError;
-use crate::mlnr::MlnrKernelNode;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
 use crate::process::ProcessError;
@@ -60,7 +60,7 @@ pub struct ArchKcb {
     /// Arguments passed to the kernel by the bootloader.
     kernel_args: &'static KernelArgs,
     pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
-    pub mlnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
+    pub cnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
     pub current_executor: Option<Box<UnixThread>>,
 }
 
@@ -70,7 +70,7 @@ impl ArchKcb {
             kernel_args,
             init_vspace: None,
             replica: None,
-            mlnr_replica: None,
+            cnr_replica: None,
             current_executor: None,
         }
     }

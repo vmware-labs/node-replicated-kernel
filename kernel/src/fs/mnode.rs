@@ -6,8 +6,9 @@ use alloc::string::{String, ToString};
 use kpi::io::FileType;
 
 use crate::arch::process::UserSlice;
-use crate::mlnrfs::file::*;
-use crate::mlnrfs::{FileSystemError, Mnode, Modes};
+
+use super::file::*;
+use super::{FileSystemError, Mnode, Modes};
 
 /// Memnode representation, similar to Inode for a memory-fs.
 #[derive(Debug)]

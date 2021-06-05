@@ -17,7 +17,7 @@ use x86::apic::{
 
 use super::memory::BASE_PAGE_SIZE;
 use crate::memory::vspace::TlbFlushHandle;
-use crate::{is_page_aligned, mlnr, nr};
+use crate::{cnrfs, is_page_aligned, nr};
 
 // In the xAPIC mode, the Destination Format Register (DFR) through the MMIO
 // interface determines the choice of a flat logical mode or a clustered logical
@@ -121,12 +121,12 @@ fn advance_log(log_id: usize) {
     // All metadata operations are done using log 1. So, make sure that the
     // replica has applied all those operation before any other log sync.
     if log_id != 1 {
-        match mlnr::MlnrKernelNode::synchronize_log(1) {
+        match cnrfs::MlnrKernelNode::synchronize_log(1) {
             Ok(_) => { /* Simply return */ }
             Err(e) => unreachable!("Error {:?} while advancing the log 1", e),
         }
     }
-    match mlnr::MlnrKernelNode::synchronize_log(log_id) {
+    match cnrfs::MlnrKernelNode::synchronize_log(log_id) {
         Ok(_) => { /* Simply return */ }
         Err(e) => unreachable!("Error {:?} while advancing the log {}", e, log_id),
     }
@@ -146,7 +146,7 @@ pub fn eager_advance_fs_replica() {
         }
         Err(_) => {
             let kcb = super::kcb::get_kcb();
-            match kcb.arch.mlnr_replica.as_ref() {
+            match kcb.arch.cnr_replica.as_ref() {
                 Some(replica) => {
                     let log_id = replica.1.id();
                     // Synchronize NR-replica
@@ -154,7 +154,7 @@ pub fn eager_advance_fs_replica() {
                     // Synchronize Mlnr-replica.
                     advance_log(log_id);
                 }
-                None => unreachable!("eager_advance_fs_replica: KCB does not have mlnr_replica!"),
+                None => unreachable!("eager_advance_fs_replica: KCB does not have cnr_replica!"),
             };
         }
     }

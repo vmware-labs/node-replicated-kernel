@@ -172,7 +172,7 @@ where
     }
 
     /// Unlocks the write lock; invoked by the drop() method.
-    pub(in crate::mlnrfs::rwlock) unsafe fn write_unlock(&self) {
+    pub(in crate::fs::rwlock) unsafe fn write_unlock(&self) {
         match self
             .wlock
             .compare_exchange_weak(true, false, Ordering::Acquire, Ordering::Acquire)
@@ -183,7 +183,7 @@ where
     }
 
     /// Unlocks the read lock; called by the drop() method.
-    pub(in crate::mlnrfs::rwlock) unsafe fn read_unlock(&self, tid: usize) {
+    pub(in crate::fs::rwlock) unsafe fn read_unlock(&self, tid: usize) {
         if self.rlock[tid].fetch_sub(1, Ordering::Release) == 0 {
             panic!("read_unlock() called without acquiring the read lock");
         }

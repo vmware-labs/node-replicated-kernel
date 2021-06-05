@@ -22,11 +22,11 @@ use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
 use crate::arch::{Module, MAX_NUMA_NODES};
 use crate::error::KError;
+use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
-use crate::mlnrfs::Fd;
 use crate::prelude::overlaps;
-use crate::{kcb, mlnr, nr, nrproc, round_up};
+use crate::{cnrfs, kcb, nr, nrproc, round_up};
 
 /// How many (concurrent) processes the systems supports.
 pub const MAX_PROCESSES: usize = 12;
@@ -398,7 +398,8 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
             let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
             if let nr::NodeResult::PidAllocated(pid) = response {
-                mlnr::MlnrKernelNode::add_process(pid).expect("TODO(error-handling): revert state");
+                cnrfs::MlnrKernelNode::add_process(pid)
+                    .expect("TODO(error-handling): revert state");
                 crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)
                     .expect("TODO(error-handling): revert state properly");
                 Ok(pid)

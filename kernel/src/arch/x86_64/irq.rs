@@ -52,7 +52,7 @@ use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::{Executor, ResumeHandle};
-use crate::{mlnr, nr, nrproc, ExitReason};
+use crate::{cnrfs, nr, nrproc, ExitReason};
 
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
@@ -103,7 +103,7 @@ macro_rules! idt_set {
 
 /// The IDT entry for handling the TLB work-queue
 pub const TLB_WORK_PENDING: u8 = 251;
-/// The IDT entry for handling GC in mlnr.
+/// The IDT entry for handling GC in cnr.
 pub const MLNR_GC_INIT: u8 = 250;
 
 /// The IDT table can hold a maximum of 256 entries.

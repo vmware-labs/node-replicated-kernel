@@ -23,11 +23,11 @@ use core::mem::transmute;
 use core::slice;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::cnrfs::{MlnrKernelNode, Modify};
 use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{
     mcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
 };
-use crate::mlnr::{MlnrKernelNode, Modify};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -253,7 +253,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         kcb.setup_node_replication(args.replica.clone(), local_ridx);
 
         let fs_replica = args.fs_replica.register().unwrap();
-        kcb.arch.setup_mlnr(args.fs_replica.clone(), fs_replica);
+        kcb.arch.setup_cnr(args.fs_replica.clone(), fs_replica);
         kcb.register_with_process_replicas();
 
         // Don't modify this line without adjusting `coreboot` integration test:
@@ -718,8 +718,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let local_ridx = fs_replica.register().unwrap();
     {
         let kcb = kcb::get_kcb();
-        kcb.arch.setup_mlnr(fs_replica.clone(), local_ridx);
-        kcb.arch.init_mlnrfs();
+        kcb.arch.setup_cnr(fs_replica.clone(), local_ridx);
+        kcb.arch.init_cnrfs();
     }
 
     {

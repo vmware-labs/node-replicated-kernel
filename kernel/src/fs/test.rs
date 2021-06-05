@@ -520,7 +520,7 @@ proptest! {
 /// Initialize and update file descriptor mnode number and permission flags.
 #[test]
 fn test_file_descriptor() {
-    use crate::mlnrfs::{Fd, FileDescriptor};
+    use crate::cnrfs::{Fd, FileDescriptor};
     let mut fd = Fd::init_fd();
     assert_eq!(fd.get_mnode(), u64::MAX);
     assert_eq!(fd.get_flags(), FileFlags::O_NONE);

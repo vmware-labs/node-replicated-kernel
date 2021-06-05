@@ -20,13 +20,13 @@ use x86::bits64::rflags;
 use x86::controlregs;
 
 use crate::error::KError;
+use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
 use crate::kcb::ArchSpecificKcb;
 use crate::kcb::{self, Kcb};
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{
     paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, PhysicalPageProvider, VAddr,
 };
-use crate::mlnrfs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
 use crate::nrproc::NrProcess;
 use crate::process::{
     allocate_dispatchers, make_process, Eid, Executor, Pid, Process, ProcessError, ResumeHandle,

@@ -14,10 +14,10 @@ use lazy_static::lazy_static;
 use node_replication::{Dispatch, Log, Replica};
 
 use crate::arch::Module;
+use crate::cnrfs::Fd;
 use crate::error::KError;
 use crate::kcb::{self, ArchSpecificKcb};
 use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
-use crate::mlnrfs::Fd;
 use crate::nrproc::NrProcess;
 use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle, MAX_PROCESSES};
 

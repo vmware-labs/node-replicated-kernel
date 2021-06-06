@@ -1,8 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use super::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
-use arr_macro::arr;
+use super::{Fd, FileDescriptor, FileSystemError, MAX_FILES_PER_PROCESS};
 
 pub struct FileDesc {
     fds: arrayvec::ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS>,
@@ -11,7 +10,6 @@ pub struct FileDesc {
 impl Default for FileDesc {
     fn default() -> Self {
         const NONE_FD: Option<Fd> = None;
-
         FileDesc {
             fds: arrayvec::ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]),
         }
@@ -20,41 +18,22 @@ impl Default for FileDesc {
 
 impl FileDesc {
     pub fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
-        let mut fd: i64 = -1;
-        for i in 0..MAX_FILES_PER_PROCESS {
-            match self.fds[i] {
-                None => {
-                    fd = i as i64;
-                    break;
-                }
-                _ => continue,
-            }
-        }
-
-        match fd {
-            -1 => None,
-            f => {
-                let filedesc = Fd::init_fd();
-                self.fds[f as usize] = Some(Default::default());
-                Some((f as u64, self.fds[f as usize].as_mut().unwrap()))
-            }
+        if let Some(fid) = self.fds.iter().position(|fd| fd.is_none()) {
+            self.fds[fid] = Some(Default::default());
+            Some((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
+        } else {
+            None
         }
     }
 
-    pub fn deallocate_fd(&mut self, fd: usize) -> usize {
-        let is_fd = {
-            if fd < MAX_FILES_PER_PROCESS && self.fds[fd].is_some() {
-                true
-            } else {
-                false
+    pub fn deallocate_fd(&mut self, fd: usize) -> Result<usize, FileSystemError> {
+        match self.fds.get_mut(fd) {
+            Some(fdinfo) => {
+                *fdinfo = None;
+                Ok(fd)
             }
-        };
-
-        if is_fd {
-            self.fds[fd] = None;
-            return fd;
+            None => Err(FileSystemError::InvalidFileDescriptor),
         }
-        MAX_FILES_PER_PROCESS + 1
     }
 
     pub fn get_fd(&self, index: usize) -> Option<&Fd> {

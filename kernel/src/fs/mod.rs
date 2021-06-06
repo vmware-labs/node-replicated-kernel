@@ -77,6 +77,18 @@ impl Into<SystemCallError> for FileSystemError {
     }
 }
 
+impl From<alloc::collections::TryReserveError> for FileSystemError {
+    fn from(_err: alloc::collections::TryReserveError) -> Self {
+        FileSystemError::OutOfMemory
+    }
+}
+
+impl From<core::alloc::AllocError> for FileSystemError {
+    fn from(_err: core::alloc::AllocError) -> Self {
+        FileSystemError::OutOfMemory
+    }
+}
+
 /// Abstract definition of file-system interface operations.
 pub trait FileSystem {
     fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError>;

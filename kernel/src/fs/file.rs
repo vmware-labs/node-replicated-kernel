@@ -1,11 +1,14 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::collections::TryReserveError;
 use alloc::vec::Vec;
 use core::mem::size_of;
 
+use fallible_collections::FallibleVec;
 use kpi::io::*;
-use x86::bits64::paging::BASE_PAGE_SIZE;
+
+use crate::memory::BASE_PAGE_SIZE;
 
 use super::{FileSystemError, Modes};
 
@@ -19,12 +22,8 @@ struct Buffer {
 impl Buffer {
     /// This function tries to allocate a vector of BASE_PAGE_SIZE long
     /// and returns a buffer in case of the success; error otherwise.
-    pub fn try_alloc_buffer() -> Result<Buffer, FileSystemError> {
-        let mut data = Vec::new();
-        match data.try_reserve(BASE_PAGE_SIZE) {
-            Ok(_) => Ok(Buffer { data }),
-            Err(_) => Err(FileSystemError::OutOfMemory),
-        }
+    pub fn try_alloc_buffer() -> Result<Buffer, TryReserveError> {
+        Vec::try_with_capacity(BASE_PAGE_SIZE).map(|data| Buffer { data })
     }
 }
 
@@ -40,11 +39,7 @@ impl File {
     /// Initialize a file. Pre-intialize the buffer list with 64 size.
     pub fn new(modes: Modes) -> Result<File, FileSystemError> {
         let modes = FileModes::from(modes);
-        let mut mcache: Vec<Buffer> = Vec::new();
-        match mcache.try_reserve(64 * size_of::<Buffer>()) {
-            Err(_) => return Err(FileSystemError::OutOfMemory),
-            Ok(_) => {}
-        }
+        let mcache = Vec::try_with_capacity(64 * size_of::<Buffer>())?;
         Ok(File { mcache, modes })
     }
 
@@ -82,11 +77,15 @@ impl File {
         self.modes
     }
 
-    /// This method is internally used by write_file() method. The additional length
-    /// is initialzed to zero.
-    pub fn increase_file_size(&mut self, curr_file_len: usize, new_len: usize) -> bool {
+    /// This method is internally used by write_file() method. The additional
+    /// length is initialzed to zero.
+    pub fn increase_file_size(
+        &mut self,
+        curr_file_len: usize,
+        new_len: usize,
+    ) -> Result<(), FileSystemError> {
         if new_len == 0 {
-            return true;
+            return Ok(());
         }
 
         let free_in_last_buffer = match self.mcache.last() {
@@ -95,49 +94,52 @@ impl File {
         };
 
         let add_new = new_len - curr_file_len;
-        match add_new <= free_in_last_buffer {
+        if add_new <= free_in_last_buffer {
             // Don't need to add new buffer
-            true => {
-                let offset = self.mcache.last().unwrap().data.len();
+            let offset = self.mcache.last().unwrap().data.len();
+            self.mcache
+                .last_mut()
+                .unwrap()
+                .data
+                .try_resize(offset + add_new, 0)
+                .map_err(|e| e.into())
+        } else {
+            // Add new buffer
+            if self.mcache.len() > 0 {
                 self.mcache
                     .last_mut()
                     .unwrap()
                     .data
-                    .resize(offset + add_new, 0);
-                return true;
+                    .try_resize(BASE_PAGE_SIZE, 0)?;
             }
 
-            // Add new buffer
-            false => {
-                if self.mcache.len() > 0 {
-                    self.mcache
-                        .last_mut()
-                        .unwrap()
-                        .data
-                        .resize(BASE_PAGE_SIZE, 0);
-                }
-                let remaining = add_new - free_in_last_buffer;
-                let new_buffers = ceil(remaining, BASE_PAGE_SIZE);
-                let mut vec = Vec::with_capacity(new_buffers);
-                for _i in 0..new_buffers {
-                    match Buffer::try_alloc_buffer() {
-                        Ok(mut buffer) => {
-                            buffer.data.resize(BASE_PAGE_SIZE, 0);
-                            vec.push(buffer);
-                        }
-                        Err(_) => return false,
-                    }
-                }
+            let remaining = add_new - free_in_last_buffer;
+            let new_buffers = ceil(remaining, BASE_PAGE_SIZE);
+            let mut vec = Vec::try_with_capacity(new_buffers)?;
 
-                // Filled all the buffers with zeros, resize the last buffer.
-                if new_len % BASE_PAGE_SIZE != 0 {
-                    let sure_bytes_to_write = (new_buffers - 1) * BASE_PAGE_SIZE;
-                    let bytes_in_last_buffer = new_len - (self.get_size() + sure_bytes_to_write);
-                    vec.last_mut().unwrap().data.resize(bytes_in_last_buffer, 0);
-                }
-                self.mcache.append(&mut vec);
-                return true;
+            for _i in 0..new_buffers {
+                let mut buffer = Buffer::try_alloc_buffer()?;
+                // TODO(error-handling): On failure, might want to
+                // shrink previous buffers again?
+                buffer.data.try_resize(BASE_PAGE_SIZE, 0)?;
+
+                debug_assert!(vec.len() < vec.capacity(), "ensured by try_with_capacity");
+                vec.push(buffer);
             }
+
+            // Filled all the buffers with zeros, resize the last buffer:
+            if new_len % BASE_PAGE_SIZE != 0 {
+                let sure_bytes_to_write = (new_buffers - 1) * BASE_PAGE_SIZE;
+                let bytes_in_last_buffer = new_len - (self.get_size() + sure_bytes_to_write);
+
+                // TODO(error-handling): shrink others again on error?
+                vec.last_mut()
+                    .unwrap()
+                    .data
+                    .try_resize(bytes_in_last_buffer, 0)?;
+            }
+
+            self.mcache.try_append(&mut vec).map_err(|e| e.into())
         }
     }
 
@@ -198,7 +200,7 @@ impl File {
         let new_len = start_offset + len;
         if new_len > 0
             && new_len > curr_file_len
-            && !self.increase_file_size(curr_file_len, new_len)
+            && self.increase_file_size(curr_file_len, new_len).is_err()
         {
             return Err(FileSystemError::OutOfMemory);
         }
@@ -316,7 +318,7 @@ pub mod test {
         assert_eq!(file.get_size(), 0);
 
         for i in 0..10000 {
-            assert_eq!(file.increase_file_size(file.get_size(), i), true);
+            assert!(file.increase_file_size(file.get_size(), i).is_ok());
             assert_eq!(file.get_size(), i);
             let buffer_num = ceil(i, BASE_PAGE_SIZE);
             assert_eq!(file.mcache.len(), buffer_num);

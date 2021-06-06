@@ -545,7 +545,7 @@ impl Dispatch for MlnrKernelNode {
                                 Ok(m_num) => mnode_num = m_num,
                                 Err(e) => {
                                     let fdesc = fd.0 as usize;
-                                    process_lookup.get_mut(&pid).unwrap().deallocate_fd(fdesc);
+                                    process_lookup.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
                                     return Err(KError::FileSystem { source: e });
                                 }
                             }
@@ -615,14 +615,8 @@ impl Dispatch for MlnrKernelNode {
                 let p = process_lookup
                     .get_mut(&pid)
                     .expect("TODO: FileClose process lookup failed");
-                let ret = p.deallocate_fd(fd as usize);
-                if ret == fd as usize {
-                    Ok(MlnrNodeResult::FileClosed(fd))
-                } else {
-                    Err(KError::FileSystem {
-                        source: FileSystemError::InvalidFileDescriptor,
-                    })
-                }
+                p.deallocate_fd(fd as usize)?;
+                Ok(MlnrNodeResult::FileClosed(fd))
             }
 
             Modify::FileDelete(pid, filename) => match self.process_map.read().get(&pid) {

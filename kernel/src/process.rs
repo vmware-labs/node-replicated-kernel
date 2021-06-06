@@ -20,7 +20,7 @@ use kpi::process::{FrameId, ELF_OFFSET};
 
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
-use crate::arch::{Module, MAX_NUMA_NODES};
+use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
 use crate::error::KError;
 use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;
@@ -32,7 +32,7 @@ use crate::{cnrfs, kcb, nr, nrproc, round_up};
 pub const MAX_PROCESSES: usize = 12;
 
 /// How many registered "named" frames a process can have.
-pub const MAX_FRAMES_PER_PROCESS: usize = 32;
+pub const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
 
 /// How many writable sections a process can have (part of the ELF file).
 pub const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;

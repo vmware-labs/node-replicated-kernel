@@ -91,8 +91,8 @@ impl PageTable {
 
                                                 if pte.is_present() {
                                                     let to = Nd::Page(pte.address());
-                                                    nodes.push(to.clone());
-                                                    edges.push((from.clone(), to.clone()));
+                                                    nodes.try_push(to.clone())?;
+                                                    edges.try_push((from.clone(), to.clone()))?;
                                                 }
                                             }*/
                                         }

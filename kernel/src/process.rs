@@ -446,9 +446,11 @@ pub fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
     if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
         for node in atopology::MACHINE_TOPOLOGY.nodes() {
             let threads = node.threads().count();
+            debug_assert!(!create_per_region.is_full(), "Ensured by for loop range");
             create_per_region.push((node.id, threads));
         }
     } else {
+        debug_assert!(!create_per_region.is_full(), "ensured MAX_NUMA_NODES >= 1");
         create_per_region.push((0, atopology::MACHINE_TOPOLOGY.num_threads()));
     }
 

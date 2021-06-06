@@ -312,14 +312,15 @@ fn boot_app_cores(
     replicas.push(bsp_replica);
     debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
     fs_replicas.push(fs_replica);
-    for node in 1..atopology::MACHINE_TOPOLOGY.num_nodes() {
+
+    for node in 1..numa_nodes {
         kcb.set_allocation_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
 
-        debug_assert!(replicas.capacity() >= node, "No re-allocation.");
+        debug_assert!(replicas.capacity() > node, "No re-allocation.");
         replicas.push(Replica::<'static, KernelNode>::new(&log));
 
-        debug_assert!(fs_replicas.capacity() >= node, "No re-allocation.");
+        debug_assert!(fs_replicas.capacity() > node, "No re-allocation.");
         fs_replicas.push(MlnrReplica::new(
             fs_logs
                 .try_clone()
@@ -721,7 +722,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         // TODO(api): `func` should be passed as part of constructor:
         unsafe { Arc::get_mut_unchecked(&mut log).update_closure(func) };
 
-        debug_assert!(fs_logs.capacity() >= i, "No re-allocation for fs_logs.");
+        debug_assert!(fs_logs.capacity() > i, "No re-allocation for fs_logs.");
         fs_logs.push(log);
     }
 

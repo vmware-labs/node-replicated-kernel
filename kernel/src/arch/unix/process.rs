@@ -31,12 +31,13 @@ lazy_static! {
         let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
 
         let mut numa_cache = ArrayVec::new();
-        for n in 0..numa_nodes {
+        for _n in 0..numa_nodes {
             let process_replicas = ArrayVec::new();
+            debug_assert!(!numa_cache.is_full(), "Ensured by loop range");
             numa_cache.push(process_replicas)
         }
 
-        for pid in 0..MAX_PROCESSES {
+        for _pid in 0..MAX_PROCESSES {
                 let log = Arc::try_new(Log::<<NrProcess<UnixProcess> as Dispatch>::WriteOperation>::new(
                     LARGE_PAGE_SIZE,
                 )).expect("Can't initialize processes, out of memory.");
@@ -45,6 +46,7 @@ lazy_static! {
                 let kcb = kcb::get_kcb();
                 assert!(kcb.set_allocation_affinity(node as atopology::NodeId).is_ok());
 
+                debug_assert!(!numa_cache[node].is_full(), "Ensured by loop range");
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::new(&log));
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
 

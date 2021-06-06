@@ -42,6 +42,8 @@ pub mod detmem;
 pub mod emem;
 pub mod mcache;
 pub mod vspace;
+#[cfg(test)]
+pub mod vspace_model;
 
 /// How many initial physical memory regions we support.
 pub const MAX_PHYSICAL_REGIONS: usize = 64;
@@ -646,11 +648,11 @@ pub struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<Mutex<mcache::TCache>, { MAX_NUMA_NODES }>,
+    pub(crate) emem: ArrayVec<Mutex<mcache::TCache>, MAX_NUMA_NODES>,
 
     /// All node-caches in the system (one for every NUMA node).
     pub(crate) node_caches:
-        ArrayVec<CachePadded<Mutex<&'static mut mcache::NCache>>, { MAX_NUMA_NODES }>,
+        ArrayVec<CachePadded<Mutex<&'static mut mcache::NCache>>, MAX_NUMA_NODES>,
 }
 
 impl GlobalMemory {
@@ -672,7 +674,7 @@ impl GlobalMemory {
     /// being used anywhere yet.
     /// The good news is that we only invoke this once during bootstrap.
     pub unsafe fn new(
-        mut memory: ArrayVec<Frame, { MAX_PHYSICAL_REGIONS }>,
+        mut memory: ArrayVec<Frame, MAX_PHYSICAL_REGIONS>,
     ) -> Result<GlobalMemory, AllocationError> {
         debug_assert!(!memory.is_empty());
         let mut gm = GlobalMemory::default();
@@ -688,7 +690,7 @@ impl GlobalMemory {
         // Construct the `emem`'s for all NUMA nodes:
         let mut cur_affinity = 0;
         // Top of the frames that we didn't end up using for the `emem` construction
-        let mut leftovers: ArrayVec<Frame, { MAX_PHYSICAL_REGIONS }> = ArrayVec::new();
+        let mut leftovers: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
         for frame in memory.iter_mut() {
             const EMEM_SIZE: usize = 2 * LARGE_PAGE_SIZE + 64 * BASE_PAGE_SIZE;
             if frame.affinity == cur_affinity && frame.size() > EMEM_SIZE {

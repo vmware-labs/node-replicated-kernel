@@ -466,7 +466,7 @@ fn identify_numa_affinity(
 /// We have a simple GDT, our address space, and stack set-up.
 /// The argc argument is abused as a pointer ot the KernelArgs struct
 /// passed by UEFI.
-//#[cfg(target_os = "none")]
+#[cfg(target_os = "none")]
 #[lang = "start"]
 #[no_mangle]
 #[start]

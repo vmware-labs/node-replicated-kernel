@@ -138,7 +138,7 @@ fn det_mem_provider() {
     const MAX_REPLICAS: usize = 4;
 
     let mut threads = Vec::with_capacity(MAX_REPLICAS);
-    let memalloc = Arc::new(DeterministicMemoryProvider::new(MAX_REPLICAS));
+    let memalloc = Arc::new(DeterministicMemoryProvider::new(MAX_REPLICAS).unwrap());
 
     for i in 0..MAX_REPLICAS {
         let memalloc = memalloc.clone();

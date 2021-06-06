@@ -4,7 +4,6 @@
 //! A trait defining architecture independent address spaces.
 
 use alloc::string::ToString;
-use alloc::vec::Vec;
 use core::cmp::PartialEq;
 use core::fmt;
 
@@ -134,10 +133,10 @@ pub trait AddressSpace {
     fn map_frames(
         &mut self,
         base: VAddr,
-        frames: &Vec<(Frame, MapAction)>,
+        frames: &[(Frame, MapAction)],
     ) -> Result<(), AddressSpaceError> {
         let mut cur_base = base;
-        for (frame, action) in frames.into_iter() {
+        for (frame, action) in frames {
             self.map_frame(cur_base, *frame, *action)?;
             cur_base = VAddr::from(cur_base.as_usize().checked_add(frame.size()).ok_or(
                 AddressSpaceError::BaseOverflow {

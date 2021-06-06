@@ -105,7 +105,7 @@ impl File {
                 .map_err(|e| e.into())
         } else {
             // Add new buffer
-            if self.mcache.len() > 0 {
+            if !self.mcache.is_empty() {
                 self.mcache
                     .last_mut()
                     .unwrap()

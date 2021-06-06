@@ -27,8 +27,8 @@ pub struct MemoryMapper {
     currently_allocated: usize,
 }
 
-impl MemoryMapper {
-    pub fn new() -> MemoryMapper {
+impl Default for MemoryMapper {
+    fn default() -> Self {
         MemoryMapper {
             currently_allocated: 0,
         }

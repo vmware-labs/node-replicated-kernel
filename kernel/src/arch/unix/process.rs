@@ -50,7 +50,7 @@ lazy_static! {
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::new(&log));
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
 
-                assert!(kcb.set_allocation_affinity(0 as atopology::NodeId).is_ok());
+                assert!(kcb.set_allocation_affinity(0u64).is_ok());
             }
         }
 
@@ -265,11 +265,11 @@ impl Process for UnixProcess {
         Err(ProcessError::InvalidFrameId)
     }
 
-    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, ProcessError> {
+    fn deallocate_frame(&mut self, _fid: FrameId) -> Result<Frame, ProcessError> {
         Err(ProcessError::InvalidFrameId)
     }
 }
 
-pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
+pub fn spawn(_binary: &'static str) -> Result<Pid, KError> {
     Ok(0)
 }

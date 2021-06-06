@@ -104,15 +104,10 @@ impl MemNode {
         }
 
         // Read from file only if its not at EOF.
-        match self
-            .file
+        self.file
             .as_ref()
             .unwrap()
             .read_file(&mut *buffer, offset, new_offset)
-        {
-            Ok(len) => return Ok(len),
-            Err(e) => return Err(e),
-        }
     }
 
     /// Get the file size

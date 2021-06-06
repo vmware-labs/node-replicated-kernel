@@ -3,7 +3,6 @@
 
 //! Generic process traits
 use alloc::boxed::Box;
-use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -67,9 +66,10 @@ pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
                 if !path.is_ascii() || path.is_empty() {
                     return Err(KError::NotSupported);
                 }
-                return Ok(String::from(path));
+                // TODO(allocation): handle, avoid allocation
+                Ok(String::from(path))
             }
-            Err(_) => return Err(KError::NotSupported),
+            Err(_) => Err(KError::NotSupported),
         }
     }
 }
@@ -386,7 +386,7 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
         }
     }
 
-    let mod_file = mod_file.expect(format!("Couldn't find '{}' binary.", binary).as_str());
+    let mod_file = mod_file.unwrap_or_else(|| panic!("Couldn't find '{}' binary.", binary));
     info!(
         "binary={} cmdline={} module={:?}",
         binary, kcb.cmdline.init_args, mod_file

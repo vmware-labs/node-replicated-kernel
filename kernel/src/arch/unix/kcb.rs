@@ -103,7 +103,7 @@ impl ArchKcb {
         self.current_executor.is_some()
     }
 
-    pub fn current_executor(&self) -> Result<&Box<UnixThread>, ProcessError> {
+    pub fn current_executor(&self) -> Result<&UnixThread, ProcessError> {
         let p = self
             .current_executor
             .as_ref()

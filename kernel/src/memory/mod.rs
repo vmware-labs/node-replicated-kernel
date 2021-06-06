@@ -380,7 +380,7 @@ impl KernelAllocator {
                 unsafe {
                     let base_page_ptr: *mut slabmalloc::ObjectPage =
                         frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
-                    zone.refill(layout, transmute(base_page_ptr))
+                    zone.refill(layout, &mut *base_page_ptr)
                         .expect("This should always succeed");
                 }
             } else {
@@ -390,7 +390,7 @@ impl KernelAllocator {
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()
                         .as_mut_ptr();
-                    zone.refill_large(layout, transmute(large_page_ptr))
+                    zone.refill_large(layout, &mut *large_page_ptr)
                         .expect("This should always succeed");
                 }
             }
@@ -401,7 +401,7 @@ impl KernelAllocator {
                 unsafe {
                     let base_page_ptr: *mut slabmalloc::ObjectPage =
                         frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
-                    zone.refill(layout, transmute(base_page_ptr))
+                    zone.refill(layout, &mut *base_page_ptr)
                         .expect("This should always succeed");
                 }
             } else {
@@ -411,7 +411,7 @@ impl KernelAllocator {
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()
                         .as_mut_ptr();
-                    zone.refill_large(layout, transmute(large_page_ptr))
+                    zone.refill_large(layout, &mut *large_page_ptr)
                         .expect("This should always succeed");
                 }
             }
@@ -1036,8 +1036,8 @@ impl Frame {
     /// instead?
     unsafe fn fill<T: Copy>(&mut self, pattern: T) -> bool {
         self.as_mut_slice::<T>().map_or(false, |obj| {
-            for i in 0..obj.len() {
-                obj[i] = pattern;
+            for e in obj {
+                *e = pattern;
             }
             true
         })
@@ -1089,16 +1089,19 @@ impl core::iter::Iterator for IntoBasePageIter {
     type Item = Frame;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.frame.size() > BASE_PAGE_SIZE {
-            let (low, high) = self.frame.split_at(BASE_PAGE_SIZE);
-            self.frame = high;
-            Some(low)
-        } else if self.frame.size() == BASE_PAGE_SIZE {
-            let mut last_page = Frame::empty();
-            core::mem::swap(&mut last_page, &mut self.frame);
-            Some(last_page)
-        } else {
-            None
+        use core::cmp::Ordering;
+        match self.frame.size().cmp(&BASE_PAGE_SIZE) {
+            Ordering::Greater => {
+                let (low, high) = self.frame.split_at(BASE_PAGE_SIZE);
+                self.frame = high;
+                Some(low)
+            }
+            Ordering::Equal => {
+                let mut last_page = Frame::empty();
+                core::mem::swap(&mut last_page, &mut self.frame);
+                Some(last_page)
+            }
+            Ordering::Less => None,
         }
     }
 }

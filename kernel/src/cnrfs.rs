@@ -484,7 +484,13 @@ impl Dispatch for MlnrKernelNode {
                 let (fid, fd) = p.allocate_fd().ok_or(KError::NotSupported)?;
 
                 let mnode_num;
-                if mnode.is_none() {
+                if let Some(mnode) = mnode {
+                    // File exists and FileOpen is called with O_TRUNC flag.
+                    if flags.is_truncate() {
+                        assert!(self.fs.truncate(&filename).is_ok());
+                    }
+                    mnode_num = *mnode;
+                } else {
                     match self.fs.create(&filename, modes) {
                         Ok(m_num) => mnode_num = m_num,
                         Err(e) => {
@@ -493,12 +499,6 @@ impl Dispatch for MlnrKernelNode {
                             return Err(KError::FileSystem { source: e });
                         }
                     }
-                } else {
-                    // File exists and FileOpen is called with O_TRUNC flag.
-                    if flags.is_truncate() {
-                        assert!(self.fs.truncate(&filename).is_ok());
-                    }
-                    mnode_num = *mnode.unwrap();
                 }
 
                 fd.update_fd(mnode_num, flags);

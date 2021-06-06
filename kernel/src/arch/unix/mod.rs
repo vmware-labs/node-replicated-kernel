@@ -56,7 +56,7 @@ fn init_setup() {
 
     // Allocate 32 MiB and add it to our heap
     let mut tc = TCacheSp::new(0);
-    let mut mm = memory::MemoryMapper::new();
+    let mut mm = memory::MemoryMapper::default();
 
     for _i in 0..64 {
         let frame = mm

@@ -54,7 +54,7 @@ unsafe impl Stack for StaticStack {
         }
 
         let adjusted_len = (self.0.len() - offset) & !(STACK_ALIGNMENT - 1);
-        unsafe { self.limit().offset(adjusted_len as isize) }
+        unsafe { self.limit().add(adjusted_len) }
     }
 
     #[inline(always)]

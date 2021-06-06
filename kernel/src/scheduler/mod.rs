@@ -36,7 +36,7 @@ pub fn schedule() -> ! {
 
     // No process assigned to core? Figure out if there is one now:
     if unlikely(kcb.arch.current_executor().is_err()) {
-        kcb.replica.as_ref().map(|(replica, token)| {
+        if let Some((replica, token)) = kcb.replica.as_ref() {
             loop {
                 let response =
                     replica.execute(nr::ReadOps::CurrentProcess(kcb.arch.hwthread_id()), *token);
@@ -86,7 +86,7 @@ pub fn schedule() -> ! {
                     }
                 };
             }
-        });
+        }
     }
     debug_assert!(
         kcb.arch.current_executor().is_ok(),

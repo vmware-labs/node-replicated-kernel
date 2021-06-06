@@ -269,10 +269,7 @@ impl FileSystem for MlnrFS {
     }
 
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
-        self.files
-            .read()
-            .get(&pathname.to_string())
-            .map(|mnode| mnode.clone())
+        self.files.read().get(&pathname.to_string()).cloned()
     }
 
     fn file_info(&self, mnode: Mnode) -> FileInfo {
@@ -298,25 +295,25 @@ impl FileSystem for MlnrFS {
                 match Arc::strong_count(&mnode) {
                     1 => {
                         self.mnodes.write().remove(&mnode);
-                        return Ok(true);
+                        Ok(true)
                     }
                     _ => {
                         self.files.write().insert(pathname.to_string(), mnode);
-                        return Err(FileSystemError::PermissionError);
+                        Err(FileSystemError::PermissionError)
                     }
                 }
             }
-            None => return Err(FileSystemError::InvalidFile),
-        };
+            None => Err(FileSystemError::InvalidFile),
+        }
     }
 
     fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError> {
         match self.files.read().get(&pathname.to_string()) {
             Some(mnode) => match self.mnodes.read().get(mnode) {
                 Some(memnode) => memnode.write().file_truncate(),
-                None => return Err(FileSystemError::InvalidFile),
+                None => Err(FileSystemError::InvalidFile),
             },
-            None => return Err(FileSystemError::InvalidFile),
+            None => Err(FileSystemError::InvalidFile),
         }
     }
 
@@ -334,8 +331,8 @@ impl FileSystem for MlnrFS {
         let mut lock_at_root = self.files.write();
         match lock_at_root.remove_entry(oldname) {
             Some((_key, oldnmode)) => match lock_at_root.insert(newname.to_string(), oldnmode) {
-                None => return Ok(true),
-                Some(_) => return Err(FileSystemError::PermissionError),
+                None => Ok(true),
+                Some(_) => Err(FileSystemError::PermissionError),
             },
             None => Err(FileSystemError::InvalidFile),
         }

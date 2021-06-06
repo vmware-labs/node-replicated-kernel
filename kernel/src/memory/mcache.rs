@@ -158,10 +158,10 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
     }
 
     /// Initialize an uninitialized MCache and return it.
-    pub fn init<'a>(
-        ncache: &'a mut MaybeUninit<MCache<BP, LP>>,
+    pub fn init(
+        ncache: &mut MaybeUninit<MCache<BP, LP>>,
         node: atopology::NodeId,
-    ) -> &'a mut MCache<BP, LP> {
+    ) -> &mut MCache<BP, LP> {
         unsafe {
             (*(ncache.as_mut_ptr())).node = node;
             (*(ncache.as_mut_ptr())).base_page_addresses = arrayvec::ArrayVec::new_const();

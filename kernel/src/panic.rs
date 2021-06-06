@@ -76,7 +76,7 @@ fn backtrace_format(
             sprint!("                                ");
         }
         if let Some(name) = symbol.name() {
-            if name.as_bytes().len() == 0 {
+            if name.as_bytes().is_empty() {
                 sprint!(" - <empty>");
             } else {
                 sprint!(" - {}", name);

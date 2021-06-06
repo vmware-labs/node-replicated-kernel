@@ -459,7 +459,7 @@ fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KE
         while base <= upper_addr {
             // Validate addresses for the buffer end.
             if upper_addr - base <= BASE_PAGE_SIZE as u64 {
-                let _r = nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base));
+                let _r = nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
                 return nrproc::NrProcess::<Ring3Process>::resolve(
                     pid,
                     VAddr::from(upper_addr - 1),

@@ -202,6 +202,7 @@ pub AddressSpaceError
     NotMapped = "The requested mapping was not found",
     InvalidLength = "The supplied length was invalid",
     InvalidBase = "The supplied base was invalid (alignment?)",
+    NotEnoughMemory = "Not enough memory to allocate address space data-structures",
 }
 
 impl Into<SystemCallError> for AddressSpaceError {
@@ -213,7 +214,14 @@ impl Into<SystemCallError> for AddressSpaceError {
             AddressSpaceError::NotMapped => SystemCallError::InternalError,
             AddressSpaceError::InvalidLength => SystemCallError::InternalError,
             AddressSpaceError::InvalidBase => SystemCallError::InternalError,
+            AddressSpaceError::NotEnoughMemory => SystemCallError::OutOfMemory,
         }
+    }
+}
+
+impl From<core::alloc::AllocError> for AddressSpaceError {
+    fn from(_err: core::alloc::AllocError) -> Self {
+        AddressSpaceError::NotEnoughMemory
     }
 }
 

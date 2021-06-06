@@ -106,7 +106,7 @@ where
         );
         match response {
             Ok(NodeResult::Loaded) => Ok(()),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -122,7 +122,7 @@ where
             PROCESS_TABLE[node][pid].execute(ReadOps::MemResolve(base), kcb.process_token[pid]);
         match response {
             Ok(NodeResult::Resolved(paddr, _rights)) => Ok((paddr.as_u64(), 0x0)),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -149,7 +149,7 @@ where
             .execute_mut(Op::MemMapDevice(frame, action), kcb.process_token[pid]);
         match response {
             Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -164,7 +164,7 @@ where
             PROCESS_TABLE[node][pid].execute_mut(Op::MemUnmap(base), kcb.process_token[pid]);
         match response {
             Ok(NodeResult::Unmapped(handle)) => Ok(handle),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -186,7 +186,7 @@ where
         );
         match response {
             Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -235,7 +235,7 @@ where
             PROCESS_TABLE[node][pid].execute(ReadOps::ProcessInfo, kcb.process_token[pid]);
         match response {
             Ok(NodeResult::ProcessInfo(pinfo)) => Ok(pinfo),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -256,7 +256,7 @@ where
         );
         match response {
             Ok(NodeResult::Executor(executor)) => Ok(executor),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -271,7 +271,7 @@ where
             .execute_mut(Op::AllocateFrameToProcess(frame), kcb.process_token[pid]);
         match response {
             Ok(NodeResult::FrameId(fid)) => Ok(fid),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }
@@ -287,7 +287,7 @@ where
 
         match response {
             Ok(NodeResult::ExecutorsCreated(how_many)) => Ok(how_many),
-            Err(e) => Err(e.clone()),
+            Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
     }

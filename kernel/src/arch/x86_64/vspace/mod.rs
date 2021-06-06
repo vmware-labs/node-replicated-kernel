@@ -119,11 +119,11 @@ impl Drop for VSpace {
 }
 
 impl VSpace {
-    pub(crate) fn new() -> Self {
-        VSpace {
+    pub(crate) fn new() -> Result<Self, AddressSpaceError> {
+        Ok(VSpace {
             mappings: BTreeMap::new(),
-            page_table: PageTable::new(),
-        }
+            page_table: PageTable::new()?,
+        })
     }
 
     pub fn map_identity(

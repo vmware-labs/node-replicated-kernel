@@ -282,7 +282,7 @@ pub fn xmain() {
         let initialized: AtomicBool = AtomicBool::new(false);
         let app_stack = OwnedStack::new(4096 * 32);
 
-        let arg: Arc<u64> = Arc::new(0xfefe);
+        let arg: Arc<u64> = Arc::try_new(0xfefe).expect("Can't Arc this");
         coreboot::initialize(
             thread_to_boot.apic_id(),
             nrk_init_ap,
@@ -327,7 +327,8 @@ pub fn xmain() {
     use alloc::sync::Arc;
     use node_replication::Log;
 
-    let mut log: Arc<Log<usize>> = Arc::new(Log::<usize>::new(1024 * 1024 * 1));
+    let mut log: Arc<Log<usize>> =
+        Arc::try_new(Log::<usize>::new(1024 * 1024 * 1)).expect("Can't Arc this");
 
     // Entry point for app. This function is called from start_ap.S:
     pub fn nrk_init_ap(mylog: Arc<Log<usize>>, initialized: &AtomicBool) {

@@ -373,20 +373,16 @@ fn handle_fileio(
             let pathname = arg2;
             let flags = arg3;
             let modes = arg4;
-            match user_virt_addr_valid(pid, pathname, 0) {
-                Ok(_) => cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes),
-                Err(e) => Err(e),
-            }
+            let _r = user_virt_addr_valid(pid, pathname, 0)?;
+            cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
         }
         FileOperation::Read | FileOperation::Write => {
             let fd = arg2;
             let buffer = arg3;
             let len = arg4;
 
-            match user_virt_addr_valid(pid, buffer, len) {
-                Ok(_) => cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1),
-                Err(e) => Err(e),
-            }
+            let _r = user_virt_addr_valid(pid, buffer, len)?;
+            cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1)
         }
         FileOperation::ReadAt | FileOperation::WriteAt => {
             let fd = arg2;
@@ -394,10 +390,8 @@ fn handle_fileio(
             let len = arg4;
             let offset = arg5 as i64;
 
-            match user_virt_addr_valid(pid, buffer, len) {
-                Ok(_) => cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset),
-                Err(e) => Err(e),
-            }
+            let _r = user_virt_addr_valid(pid, buffer, len)?;
+            cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset)
         }
         FileOperation::Close => {
             let fd = arg2;
@@ -407,18 +401,14 @@ fn handle_fileio(
             let name = arg2;
             let info_ptr = arg3;
 
-            match user_virt_addr_valid(pid, name, 0) {
-                Ok(_) => cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr),
-                Err(e) => Err(e),
-            }
+            let _r = user_virt_addr_valid(pid, name, 0)?;
+            cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr)
         }
         FileOperation::Delete => {
             let name = arg2;
 
-            match user_virt_addr_valid(pid, name, 0) {
-                Ok(_) => cnrfs::MlnrKernelNode::file_delete(pid, name),
-                Err(e) => Err(e),
-            }
+            let _r = user_virt_addr_valid(pid, name, 0)?;
+            cnrfs::MlnrKernelNode::file_delete(pid, name)
         }
         FileOperation::WriteDirect => {
             let len = arg3;
@@ -430,29 +420,26 @@ fn handle_fileio(
             let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
             let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
             let cnrfs = super::kcb::get_kcb().arch.cnrfs.as_ref().unwrap();
-            match cnrfs.write(2, &mut buffer, offset) {
-                Ok(len) => Ok((len as u64, 0)),
-                Err(e) => Err(KError::FileSystem { source: e }),
-            }
+
+            let len = cnrfs.write(2, &mut buffer, offset)?;
+
+            Ok((len as u64, 0))
         }
         FileOperation::FileRename => {
             let oldname = arg2;
             let newname = arg3;
-            match (
-                user_virt_addr_valid(pid, oldname, 0),
-                user_virt_addr_valid(pid, newname, 0),
-            ) {
-                (Ok(_), Ok(_)) => cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname),
-                (Err(e), _) | (_, Err(e)) => Err(e.clone()),
-            }
+
+            let _r = user_virt_addr_valid(pid, oldname, 0)?;
+            let _r = user_virt_addr_valid(pid, newname, 0)?;
+
+            cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)
         }
         FileOperation::MkDir => {
             let pathname = arg2;
             let modes = arg3;
-            match user_virt_addr_valid(pid, pathname, 0) {
-                Ok(_) => cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes),
-                Err(e) => Err(e),
-            }
+            let _r = user_virt_addr_valid(pid, pathname, 0)?;
+
+            cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes)
         }
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");
@@ -461,8 +448,9 @@ fn handle_fileio(
     }
 }
 
-/// TODO: This method makes file-operations slow, improve it to use large page sizes. Or maintain a list of
-/// (low, high) memory limits per process and check if (base, size) are within the process memory limits.
+/// TODO: This method makes file-operations slow, improve it to use large page
+/// sizes. Or maintain a list of (low, high) memory limits per process and check
+/// if (base, size) are within the process memory limits.
 fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KError> {
     let mut base = base;
     let upper_addr = base + size;
@@ -471,24 +459,15 @@ fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KE
         while base <= upper_addr {
             // Validate addresses for the buffer end.
             if upper_addr - base <= BASE_PAGE_SIZE as u64 {
-                match nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base)) {
-                    Ok(_) => {
-                        return nrproc::NrProcess::<Ring3Process>::resolve(
-                            pid,
-                            VAddr::from(upper_addr - 1),
-                        )
-                    }
-                    Err(e) => return Err(e.clone()),
-                }
+                let _r = nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base));
+                return nrproc::NrProcess::<Ring3Process>::resolve(
+                    pid,
+                    VAddr::from(upper_addr - 1),
+                );
             }
 
-            match nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base)) {
-                Ok(_) => {
-                    base += BASE_PAGE_SIZE as u64;
-                    continue;
-                }
-                Err(e) => return Err(e.clone()),
-            }
+            let _r = nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
+            base += BASE_PAGE_SIZE as u64;
         }
         return Ok((base, size));
     }

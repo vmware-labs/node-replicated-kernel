@@ -84,10 +84,10 @@ impl KernelNode {
                 let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
                 let response = replica.execute_mut(op, *token);
 
-                match &response {
-                    Ok(NodeResult::CoreAllocated(rgtid)) => Ok(*rgtid),
+                match response {
+                    Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }

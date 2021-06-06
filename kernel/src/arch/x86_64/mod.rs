@@ -355,7 +355,7 @@ fn boot_app_cores(
             .expect("Can't allocate large page");
 
         let initialized: AtomicBool = AtomicBool::new(false);
-        let arg: Arc<AppCoreArgs> = Arc::new(AppCoreArgs {
+        let arg: Arc<AppCoreArgs> = Arc::try_new(AppCoreArgs {
             _mem_region: mem_region,
             cmdline,
             kernel_binary,
@@ -370,7 +370,8 @@ fn boot_app_cores(
             fs_replica: fs_replicas[node as usize]
                 .try_clone()
                 .expect("Not enough memory to initialize system"),
-        });
+        })
+        .expect("Not enough memory to initialize system");
 
         unsafe {
             coreboot::initialize(
@@ -675,7 +676,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Create the global operation log and first replica
     // and store it in the BSP kcb
-    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
+    let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
+        .expect("Not enough memory to initialize system");
     let bsp_replica = Replica::<KernelNode>::new(&log);
     let local_ridx = bsp_replica.register().unwrap();
     {

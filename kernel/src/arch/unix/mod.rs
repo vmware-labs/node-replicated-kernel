@@ -84,7 +84,8 @@ fn init_setup() {
     kcb::get_kcb().set_global_memory(global_memory_static);
     debug!("Memory allocation should work at this point...");
 
-    let log: Arc<Log<Op>> = Arc::new(Log::<Op>::new(LARGE_PAGE_SIZE));
+    let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
+        .expect("Not enough memory to initialize system");
     let bsp_replica = Replica::<KernelNode>::new(&log);
     let local_ridx = bsp_replica
         .register()

@@ -46,7 +46,6 @@ pub enum Modify {
     FileDelete(Pid, String),
     FileRename(Pid, String, String),
     MkDir(Pid, String, Modes),
-    Invalid,
 }
 
 // TODO: Stateless op to log mapping. Maintain some state for correct redirection.
@@ -65,7 +64,6 @@ impl LogMapper for Modify {
             Modify::FileDelete(_pid, _filename) => push_to_all(nlogs, logs),
             Modify::FileRename(_pid, _oldname, _newname) => push_to_all(nlogs, logs),
             Modify::MkDir(_pid, _name, _modes) => push_to_all(nlogs, logs),
-            Modify::Invalid => unreachable!("Invalid operation"),
         }
 
         fn push_to_all(nlogs: usize, logs: &mut Vec<usize>) {
@@ -73,12 +71,6 @@ impl LogMapper for Modify {
                 logs.push(i);
             }
         }
-    }
-}
-
-impl Default for Modify {
-    fn default() -> Self {
-        Modify::Invalid
     }
 }
 
@@ -120,7 +112,7 @@ pub enum MlnrNodeResult {
     FileAccessed(Len),
     FileClosed(u64),
     FileDeleted(bool),
-    FileInfo(Arc<FileInfo>),
+    FileInfo(FileInfo),
     FileRenamed(bool),
     DirCreated(bool),
     MappedFileToMnode(u64),
@@ -137,10 +129,10 @@ impl MlnrKernelNode {
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut_scan(Modify::ProcessAdd(pid), *token);
-                match &response {
-                    Ok(MlnrNodeResult::ProcessAdded(pid)) => Ok((*pid as u64, 0)),
+                match response {
+                    Ok(MlnrNodeResult::ProcessAdded(pid)) => Ok((pid as u64, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(e) => Err(e.clone()),
                 }
             })
     }
@@ -151,19 +143,14 @@ impl MlnrKernelNode {
             .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename;
-                match userptr_to_str(pathname) {
-                    Ok(user_str) => filename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
+                let filename = userptr_to_str(pathname)?;
                 let response =
                     replica.execute_mut_scan(Modify::FileOpen(pid, filename, flags, modes), *token);
 
-                match &response {
-                    Ok(MlnrNodeResult::FileOpened(fd)) => Ok((*fd, 0)),
+                match response {
+                    Ok(MlnrNodeResult::FileOpened(fd)) => Ok((fd, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -192,14 +179,14 @@ impl MlnrKernelNode {
                     let kernslice = KernSlice::new(buffer, len as usize);
 
                     let response = replica.execute_mut(
-                        Modify::FileWrite(pid, fd, mnode, kernslice.buffer.clone(), len, offset),
+                        Modify::FileWrite(pid, fd, mnode, kernslice.buffer, len, offset),
                         *token,
                     );
 
-                    match &response {
-                        Ok(MlnrNodeResult::FileAccessed(len)) => Ok((*len, 0)),
+                    match response {
+                        Ok(MlnrNodeResult::FileAccessed(len)) => Ok((len, 0)),
+                        Err(e) => Err(e),
                         Ok(_) => unreachable!("Got unexpected response"),
-                        Err(r) => Err(r.clone()),
                     }
                 }
 
@@ -209,10 +196,10 @@ impl MlnrKernelNode {
                         *token,
                     );
 
-                    match &response {
-                        Ok(MlnrNodeResult::FileAccessed(len)) => Ok((*len, 0)),
+                    match response {
+                        Ok(MlnrNodeResult::FileAccessed(len)) => Ok((len, 0)),
+                        Err(e) => Err(e),
                         Ok(_) => unreachable!("Got unexpected response"),
-                        Err(r) => Err(r.clone()),
                     }
                 }
                 _ => unreachable!(),
@@ -228,10 +215,10 @@ impl MlnrKernelNode {
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut_scan(Modify::FileClose(pid, fd), *token);
 
-                match &response {
+                match response {
                     Ok(MlnrNodeResult::FileClosed(_fd)) => Ok((0, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -242,30 +229,20 @@ impl MlnrKernelNode {
             .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename;
-                match userptr_to_str(name) {
-                    Ok(user_str) => filename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
+                let filename = userptr_to_str(name)?;
                 let response = replica.execute_mut_scan(Modify::FileDelete(pid, filename), *token);
 
-                match &response {
+                match response {
                     Ok(MlnrNodeResult::FileDeleted(_)) => Ok((0, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
 
     pub fn file_info(pid: Pid, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
-        let mnode = match MlnrKernelNode::filename_to_mnode(pid, name) {
-            Ok((mnode, _)) => mnode,
-            Err(_) => {
-                return Err(KError::FileSystem {
-                    source: FileSystemError::PermissionError,
-                })
-            }
-        };
+        let (mnode, _) = MlnrKernelNode::filename_to_mnode(pid, name)?;
+
         let kcb = super::kcb::get_kcb();
         kcb.arch
             .cnr_replica
@@ -274,7 +251,7 @@ impl MlnrKernelNode {
                 let response =
                     replica.execute(Access::FileInfo(pid, name, mnode, info_ptr), *token);
 
-                match &response {
+                match response {
                     Ok(MlnrNodeResult::FileInfo(f_info)) => {
                         let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
                         unsafe {
@@ -283,8 +260,8 @@ impl MlnrKernelNode {
                         }
                         Ok((0, 0))
                     }
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -295,24 +272,15 @@ impl MlnrKernelNode {
             .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let oldfilename;
-                match userptr_to_str(oldname) {
-                    Ok(user_str) => oldfilename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
-                let newfilename;
-                match userptr_to_str(newname) {
-                    Ok(user_str) => newfilename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
+                let oldfilename = userptr_to_str(oldname)?;
+                let newfilename = userptr_to_str(newname)?;
 
                 let response = replica
                     .execute_mut_scan(Modify::FileRename(pid, oldfilename, newfilename), *token);
-                match &response {
+                match response {
                     Ok(MlnrNodeResult::FileRenamed(_)) => Ok((0, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -323,19 +291,14 @@ impl MlnrKernelNode {
             .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename;
-                match userptr_to_str(pathname) {
-                    Ok(user_str) => filename = user_str,
-                    Err(e) => return Err(e.clone()),
-                }
-
+                let filename = userptr_to_str(pathname)?;
                 let response =
                     replica.execute_mut_scan(Modify::MkDir(pid, filename, modes), *token);
 
-                match &response {
+                match response {
                     Ok(MlnrNodeResult::DirCreated(true)) => Ok((0, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -349,10 +312,10 @@ impl MlnrKernelNode {
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::FdToMnode(pid, fd), *token);
 
-                match &response {
-                    Ok(MlnrNodeResult::MappedFileToMnode(mnode)) => Ok((*mnode, 0)),
+                match response {
+                    Ok(MlnrNodeResult::MappedFileToMnode(mnode)) => Ok((mnode, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -366,10 +329,10 @@ impl MlnrKernelNode {
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::FileNameToMnode(pid, filename), *token);
 
-                match &response {
-                    Ok(MlnrNodeResult::MappedFileToMnode(mnode)) => Ok((*mnode, 0)),
+                match response {
+                    Ok(MlnrNodeResult::MappedFileToMnode(mnode)) => Ok((mnode, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -381,10 +344,10 @@ impl MlnrKernelNode {
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::Synchronize(log_id), *token);
-                match &response {
+                match response {
                     Ok(MlnrNodeResult::Synchronized) => Ok((0, 0)),
+                    Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
-                    Err(r) => Err(r.clone()),
                 }
             })
     }
@@ -402,16 +365,12 @@ impl Dispatch for MlnrKernelNode {
                 let process_lookup = self.process_map.read();
                 let p = process_lookup
                     .get(&pid)
-                    .expect("TODO: FileRead process lookup failed");
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
 
-                let fd = match p.get_fd(fd as usize) {
-                    Some(fd) => fd,
-                    None => {
-                        return Err(KError::FileSystem {
-                            source: FileSystemError::PermissionError,
-                        })
-                    }
-                };
+                let fd = p.get_fd(fd as usize).ok_or(KError::FileSystem {
+                    source: FileSystemError::PermissionError,
+                })?;
+
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();
 
@@ -443,64 +402,51 @@ impl Dispatch for MlnrKernelNode {
             }
 
             Access::FileInfo(pid, name, _mnode, _info_ptr) => {
-                match self.process_map.read().get(&pid) {
-                    Some(_) => {
-                        let filename;
-                        match userptr_to_str(name) {
-                            Ok(user_str) => filename = user_str,
-                            Err(e) => return Err(e.clone()),
-                        }
+                let _p = self
+                    .process_map
+                    .read()
+                    .get(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
 
-                        match self.fs.lookup(&filename) {
-                            // match on (file_exists, mnode_number)
-                            Some(mnode) => {
-                                let f_info = Arc::new(self.fs.file_info(*mnode));
+                let filename = userptr_to_str(name)?;
+                let mnode = self.fs.lookup(&filename).ok_or(KError::FileSystem {
+                    source: FileSystemError::InvalidFile,
+                })?;
 
-                                Ok(MlnrNodeResult::FileInfo(f_info.clone()))
-                            }
-                            None => Err(KError::FileSystem {
-                                source: FileSystemError::InvalidFile,
-                            }),
-                        }
-                    }
-                    None => Err(ProcessError::NoProcessFoundForPid.into()),
-                }
+                let f_info = self.fs.file_info(*mnode);
+                Ok(MlnrNodeResult::FileInfo(f_info))
             }
 
-            Access::FdToMnode(pid, fd) => match self.process_map.read().get(&pid) {
-                Some(p) => {
-                    let fd = match p.get_fd(fd as usize) {
-                        Some(fd) => fd,
-                        None => {
-                            return Err(KError::FileSystem {
-                                source: FileSystemError::PermissionError,
-                            })
-                        }
-                    };
-                    let mnode_num = fd.get_mnode();
-                    Ok(MlnrNodeResult::MappedFileToMnode(mnode_num))
-                }
-                None => Err(ProcessError::NoProcessFoundForPid.into()),
-            },
+            Access::FdToMnode(pid, fd) => {
+                let process_map_locked = self.process_map.read();
+                let p = process_map_locked
+                    .get(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
 
-            Access::FileNameToMnode(pid, name) => match self.process_map.read().get(&pid) {
-                Some(_) => {
-                    let filename;
-                    match userptr_to_str(name) {
-                        Ok(user_str) => filename = user_str,
-                        Err(e) => return Err(e.clone()),
-                    }
+                let fd = p.get_fd(fd as usize).ok_or(KError::FileSystem {
+                    source: FileSystemError::PermissionError,
+                })?;
+                let mnode_num = fd.get_mnode();
+                Ok(MlnrNodeResult::MappedFileToMnode(mnode_num))
+            }
 
-                    match self.fs.lookup(&filename) {
-                        // match on (file_exists, mnode_number)
-                        Some(mnode) => Ok(MlnrNodeResult::MappedFileToMnode(*mnode)),
-                        None => Err(KError::FileSystem {
-                            source: FileSystemError::InvalidFile,
-                        }),
-                    }
+            Access::FileNameToMnode(pid, name) => {
+                let _p = self
+                    .process_map
+                    .read()
+                    .get(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+
+                let filename = userptr_to_str(name)?;
+
+                match self.fs.lookup(&filename) {
+                    // match on (file_exists, mnode_number)
+                    Some(mnode) => Ok(MlnrNodeResult::MappedFileToMnode(*mnode)),
+                    None => Err(KError::FileSystem {
+                        source: FileSystemError::InvalidFile,
+                    }),
                 }
-                None => Err(ProcessError::NoProcessFoundForPid.into()),
-            },
+            }
 
             Access::Synchronize(_log_id) => {
                 // A NOP that just makes sure we've advanced the replica
@@ -530,36 +476,33 @@ impl Dispatch for MlnrKernelNode {
                         source: FileSystemError::PermissionError,
                     });
                 }
+
                 let mut process_lookup = self.process_map.write();
                 let p = process_lookup
                     .get_mut(&pid)
                     .expect("TODO: FileOpen process lookup failed");
-                let fd = p.allocate_fd();
+                let (fid, fd) = p.allocate_fd().ok_or(KError::NotSupported)?;
 
-                match fd {
-                    None => Err(KError::NotSupported),
-                    Some(fd) => {
-                        let mnode_num;
-                        if mnode.is_none() {
-                            match self.fs.create(&filename, modes) {
-                                Ok(m_num) => mnode_num = m_num,
-                                Err(e) => {
-                                    let fdesc = fd.0 as usize;
-                                    process_lookup.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
-                                    return Err(KError::FileSystem { source: e });
-                                }
-                            }
-                        } else {
-                            // File exists and FileOpen is called with O_TRUNC flag.
-                            if flags.is_truncate() {
-                                assert!(self.fs.truncate(&filename).is_ok());
-                            }
-                            mnode_num = *mnode.unwrap();
+                let mnode_num;
+                if mnode.is_none() {
+                    match self.fs.create(&filename, modes) {
+                        Ok(m_num) => mnode_num = m_num,
+                        Err(e) => {
+                            let fdesc = fid as usize;
+                            process_lookup.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
+                            return Err(KError::FileSystem { source: e });
                         }
-                        fd.1.update_fd(mnode_num, flags);
-                        Ok(MlnrNodeResult::FileOpened(fd.0))
                     }
+                } else {
+                    // File exists and FileOpen is called with O_TRUNC flag.
+                    if flags.is_truncate() {
+                        assert!(self.fs.truncate(&filename).is_ok());
+                    }
+                    mnode_num = *mnode.unwrap();
                 }
+
+                fd.update_fd(mnode_num, flags);
+                Ok(MlnrNodeResult::FileOpened(fid))
             }
 
             Modify::FileWrite(pid, fd, _mnode, kernslice, _len, offset) => {
@@ -567,14 +510,9 @@ impl Dispatch for MlnrKernelNode {
                 let p = process_lookup
                     .get(&pid)
                     .expect("TODO: FileWrite process lookup failed");
-                let fd = match p.get_fd(fd as usize) {
-                    Some(fd) => fd,
-                    None => {
-                        return Err(KError::FileSystem {
-                            source: FileSystemError::PermissionError,
-                        })
-                    }
-                };
+                let fd = p.get_fd(fd as usize).ok_or(KError::FileSystem {
+                    source: FileSystemError::PermissionError,
+                })?;
 
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();
@@ -598,7 +536,7 @@ impl Dispatch for MlnrKernelNode {
                     }
                 }
 
-                match self.fs.write(mnode_num, &kernslice.clone(), curr_offset) {
+                match self.fs.write(mnode_num, &kernslice, curr_offset) {
                     Ok(len) => {
                         if offset == -1 {
                             // Update offset when FileWrite doesn't give an explicit offset value.
@@ -619,31 +557,35 @@ impl Dispatch for MlnrKernelNode {
                 Ok(MlnrNodeResult::FileClosed(fd))
             }
 
-            Modify::FileDelete(pid, filename) => match self.process_map.read().get(&pid) {
-                Some(_) => match self.fs.delete(&filename) {
-                    Ok(is_deleted) => Ok(MlnrNodeResult::FileDeleted(is_deleted)),
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                },
-                None => Err(ProcessError::NoProcessFoundForPid.into()),
-            },
+            Modify::FileDelete(pid, filename) => {
+                let _p = self
+                    .process_map
+                    .read()
+                    .get(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                let is_deleted = self.fs.delete(&filename)?;
+                Ok(MlnrNodeResult::FileDeleted(is_deleted))
+            }
 
-            Modify::FileRename(pid, oldname, newname) => match self.process_map.read().get(&pid) {
-                Some(_) => match self.fs.rename(&oldname, &newname) {
-                    Ok(is_renamed) => Ok(MlnrNodeResult::FileRenamed(is_renamed)),
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                },
-                None => Err(ProcessError::NoProcessFoundForPid.into()),
-            },
+            Modify::FileRename(pid, oldname, newname) => {
+                let _p = self
+                    .process_map
+                    .read()
+                    .get(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                let is_renamed = self.fs.rename(&oldname, &newname)?;
+                Ok(MlnrNodeResult::FileRenamed(is_renamed))
+            }
 
-            Modify::MkDir(pid, filename, modes) => match self.process_map.read().get(&pid) {
-                Some(_) => match self.fs.mkdir(&filename, modes) {
-                    Ok(is_created) => Ok(MlnrNodeResult::DirCreated(is_created)),
-                    Err(e) => Err(KError::FileSystem { source: e }),
-                },
-                None => Err(ProcessError::NoProcessFoundForPid.into()),
-            },
-
-            Modify::Invalid => unreachable!("Got invalid OP"),
+            Modify::MkDir(pid, filename, modes) => {
+                let _p = self
+                    .process_map
+                    .read()
+                    .get(&pid)
+                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                let is_created = self.fs.mkdir(&filename, modes)?;
+                Ok(MlnrNodeResult::DirCreated(is_created))
+            }
         }
     }
 }

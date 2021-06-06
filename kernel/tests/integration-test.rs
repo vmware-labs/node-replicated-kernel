@@ -186,7 +186,7 @@ impl Machine {
             threads.push(*high);
         }
 
-        threads.sort();
+        threads.sort_unstable();
         threads.dedup();
 
         threads
@@ -227,7 +227,7 @@ impl Machine {
         threads.push(max_cores / nodes);
         threads.push(max_cores);
 
-        threads.sort();
+        threads.sort_unstable();
         threads.dedup();
 
         threads

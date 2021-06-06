@@ -146,11 +146,11 @@ impl FileDescriptor for Fd {
     }
 
     fn get_mnode(&self) -> Mnode {
-        self.mnode.clone()
+        self.mnode
     }
 
     fn get_flags(&self) -> FileFlags {
-        self.flags.clone()
+        self.flags
     }
 
     fn get_offset(&self) -> usize {
@@ -198,7 +198,10 @@ impl Default for MlnrFS {
             ),
         );
         let mut files = RwLock::new(HashMap::new());
-        files.write().insert(rootdir.to_string(), Arc::new(1));
+        files.write().insert(
+            rootdir.to_string(),
+            Arc::try_new(1).expect("Not enough memory to initialize system"),
+        );
         let root = (rootdir.to_string(), 1);
 
         MlnrFS {
@@ -220,21 +223,22 @@ impl MlnrFS {
 impl FileSystem for MlnrFS {
     fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError> {
         // Check if the file with the same name already exists.
-        match self.files.read().get(&pathname.to_string()) {
-            Some(_) => return Err(FileSystemError::AlreadyPresent),
-            None => {}
+        if self.files.read().get(&pathname.to_string()).is_some() {
+            return Err(FileSystemError::AlreadyPresent);
         }
 
         let mnode_num = self.get_next_mno() as u64;
+        // TODO(error-handling): can we ignore or should we decrease mnode_num
+        // on error?
+        let arc_mnode_num = Arc::try_new(mnode_num)?;
+
         //TODO: For now all newly created mnode are for file. How to differentiate
         // between a file and a directory. Take input from the user?
-        let memnode = match MemNode::new(mnode_num, pathname, modes, FileType::File) {
-            Ok(memnode) => memnode,
-            Err(e) => return Err(e),
-        };
+        let memnode = MemNode::new(mnode_num, pathname, modes, FileType::File)?;
+
         self.files
             .write()
-            .insert(pathname.to_string(), Arc::new(mnode_num));
+            .insert(pathname.to_string(), arc_mnode_num);
         self.mnodes.write().insert(mnode_num, NrLock::new(memnode));
 
         Ok(mnode_num)
@@ -268,7 +272,7 @@ impl FileSystem for MlnrFS {
         self.files
             .read()
             .get(&pathname.to_string())
-            .map(|mnode| Arc::clone(mnode))
+            .map(|mnode| mnode.clone())
     }
 
     fn file_info(&self, mnode: Mnode) -> FileInfo {
@@ -341,19 +345,21 @@ impl FileSystem for MlnrFS {
     /// by leveldb benchmark.
     fn mkdir(&self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError> {
         // Check if the file with the same name already exists.
-        match self.files.read().get(&pathname.to_string()) {
-            Some(_) => return Err(FileSystemError::AlreadyPresent),
-            None => {}
+        if self.files.read().get(&pathname.to_string()).is_some() {
+            return Err(FileSystemError::AlreadyPresent);
         }
 
         let mnode_num = self.get_next_mno() as u64;
+        // TODO(error-handling): Should we decrease mnode-num or ignore?
+        let arc_mnode_num = Arc::try_new(mnode_num)?;
+
         let memnode = match MemNode::new(mnode_num, pathname, modes, FileType::Directory) {
             Ok(memnode) => memnode,
             Err(e) => return Err(e),
         };
         self.files
             .write()
-            .insert(pathname.to_string(), Arc::new(mnode_num));
+            .insert(pathname.to_string(), arc_mnode_num);
         self.mnodes.write().insert(mnode_num, NrLock::new(memnode));
 
         Ok(true)

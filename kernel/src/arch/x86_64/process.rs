@@ -745,7 +745,7 @@ impl Default for Ring3Process {
             pid: 0,
             current_eid: 0,
             offset: VAddr::from(ELF_OFFSET),
-            vspace: VSpace::new(),
+            vspace: VSpace::new().expect("TODO(error-handling)"),
             entry_point: VAddr::from(0usize),
             executor_cache,
             executor_offset: VAddr::from(EXECUTOR_OFFSET),

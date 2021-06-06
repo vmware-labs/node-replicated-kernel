@@ -129,12 +129,14 @@ impl PageTable {
     /// Create a new address-space.
     ///
     /// Allocate an initial PML4 table for it.
-    pub fn new() -> PageTable {
-        PageTable {
-            pml4: Box::pin(
-                [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
-            ),
-        }
+    pub fn new() -> Result<PageTable, AddressSpaceError> {
+        let pml4 = Box::try_new(
+            [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
+        )?;
+
+        Ok(PageTable {
+            pml4: Box::into_pin(pml4),
+        })
     }
 
     pub fn pml4_address(&self) -> PAddr {

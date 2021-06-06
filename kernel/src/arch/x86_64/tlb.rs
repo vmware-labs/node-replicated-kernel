@@ -17,7 +17,6 @@ use x86::apic::{
 };
 
 use super::memory::BASE_PAGE_SIZE;
-use crate::arch::debug;
 use crate::memory::vspace::TlbFlushHandle;
 use crate::{cnrfs, is_page_aligned, nr};
 

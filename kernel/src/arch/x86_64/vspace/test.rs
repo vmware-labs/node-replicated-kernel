@@ -92,7 +92,7 @@ proptest! {
     fn model_equivalence(ops in actions()) {
         use TestAction::*;
 
-        let mut totest = VSpace::new();
+        let mut totest = VSpace::new().expect("Unable to create vspace");
         let mut model: ModelAddressSpace = Default::default();
 
         for action in ops {

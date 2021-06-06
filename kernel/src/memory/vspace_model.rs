@@ -119,7 +119,7 @@ impl AddressSpace for ModelAddressSpace {
         } else {
             // In case we have a mapping that conflicts return the first (lowest)
             // VAddr where a conflict happened:
-            overlapping_mappings.sort();
+            overlapping_mappings.sort_unstable();
             return Err(AddressSpaceError::AlreadyMapped {
                 base: *overlapping_mappings.get(0).unwrap(),
             });

@@ -5,7 +5,7 @@
 
 use crate::arch::process::UserSlice;
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::sync::Arc;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -189,6 +189,7 @@ impl Default for MlnrFS {
     fn default() -> MlnrFS {
         // Note: Alloc errors are currently ok in this function since this
         // happens during system initialization
+        use alloc::string::ToString;
 
         let rootdir = "/";
         let rootmnode = 1;
@@ -340,16 +341,12 @@ impl FileSystem for MlnrFS {
         if self.files.read().get(oldname).is_none() {
             return Err(FileSystemError::InvalidFile);
         }
+        let mut newname_key = try_make_path(newname)?;
 
         // If the newfile exists then overwrite it with the oldfile.
         if self.files.read().get(newname).is_some() {
             self.delete(newname).unwrap();
         }
-
-        // let newname_key = newname.to_string();
-        let mut newname_key = String::new();
-        newname_key.try_reserve(newname.len())?;
-        newname_key.push_str(newname);
 
         // TODO: Can we optimize it somehow?
         let mut lock_at_root = self.files.write();

@@ -298,25 +298,34 @@ fn boot_app_cores(
     let kcb = kcb::get_kcb();
 
     // Let's go with one replica per NUMA node for now:
-    let numa_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
-    let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> = Vec::with_capacity(numa_nodes);
+    let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+
+    let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> =
+        Vec::try_with_capacity(numa_nodes).expect("Not enough memory to initialize system");
     let mut fs_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
-        Vec::with_capacity(numa_nodes);
+        Vec::try_with_capacity(numa_nodes).expect("Not enough memory to initialize system");
 
     // Push the replica for node 0
     debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
+
+    debug_assert!(replicas.capacity() >= 1, "No re-allocation.");
     replicas.push(bsp_replica);
+    debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
     fs_replicas.push(fs_replica);
     for node in 1..atopology::MACHINE_TOPOLOGY.num_nodes() {
-        debug!(
-            "Allocate a replica for {} ({} bytes)",
-            node,
-            core::mem::size_of::<Replica<'static, KernelNode>>()
-        );
         kcb.set_allocation_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
+
+        debug_assert!(replicas.capacity() >= node, "No re-allocation.");
         replicas.push(Replica::<'static, KernelNode>::new(&log));
-        fs_replicas.push(MlnrReplica::new(fs_logs.clone()));
+
+        debug_assert!(fs_replicas.capacity() >= node, "No re-allocation.");
+        fs_replicas.push(MlnrReplica::new(
+            fs_logs
+                .try_clone()
+                .expect("Not enough memory to initialize system"),
+        ));
+
         kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }
 
@@ -338,7 +347,7 @@ fn boot_app_cores(
             .expect("Can't set affinity");
 
         // A simple stack for the app core (non bootstrap core)
-        let coreboot_stack: OwnedStack = OwnedStack::new(4096 * 512);
+        let coreboot_stack: OwnedStack = OwnedStack::new(BASE_PAGE_SIZE * 512);
         let mem_region = global_memory.node_caches[node as usize]
             .lock()
             .allocate_large_page()
@@ -354,8 +363,12 @@ fn boot_app_cores(
             global_memory,
             thread: thread.id,
             _log: log.clone(),
-            replica: replicas[node as usize].clone(),
-            fs_replica: fs_replicas[node as usize].clone(),
+            replica: replicas[node as usize]
+                .try_clone()
+                .expect("Not enough memory to initialize system"),
+            fs_replica: fs_replicas[node as usize]
+                .try_clone()
+                .expect("Not enough memory to initialize system"),
         });
 
         unsafe {
@@ -368,7 +381,7 @@ fn boot_app_cores(
             );
 
             // Wait until core is up or we time out
-            let timeout = x86::time::rdtsc() + 1_000_000_000;
+            let start = rawtime::Instant::now();
             loop {
                 // Did the core signal us initialization completed?
                 if initialized.load(Ordering::SeqCst) {
@@ -376,7 +389,7 @@ fn boot_app_cores(
                 }
 
                 // Have we waited long enough?
-                if x86::time::rdtsc() > timeout {
+                if start.elapsed().as_secs() > 1 {
                     panic!("Core {:?} didn't boot properly...", thread.apic_id());
                 }
 
@@ -389,6 +402,7 @@ fn boot_app_cores(
         debug!("Core {:?} has started", thread.apic_id());
         kcb.set_allocation_affinity(0).expect("Can't set affinity");
     }
+
     core::mem::forget(replicas);
 }
 
@@ -703,9 +717,11 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         // Log idx in range [1, cores_per_node+1]
         let mut log = Arc::try_new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i + 1))
             .expect("Not enough memory to initialize system");
+
+        // TODO(api): `func` should be passed as part of constructor:
         unsafe { Arc::get_mut_unchecked(&mut log).update_closure(func) };
 
-        debug_assert!(fs_logs.capacity() >= i, "No reallocation for fs_logs.");
+        debug_assert!(fs_logs.capacity() >= i, "No re-allocation for fs_logs.");
         fs_logs.push(log);
     }
 

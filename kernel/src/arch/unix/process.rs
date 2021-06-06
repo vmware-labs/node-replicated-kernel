@@ -14,8 +14,8 @@ use lazy_static::lazy_static;
 use node_replication::{Dispatch, Log, Replica};
 
 use crate::arch::Module;
-use crate::cnrfs::Fd;
 use crate::error::KError;
+use crate::fs::Fd;
 use crate::kcb::{self, ArchSpecificKcb};
 use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
@@ -243,8 +243,8 @@ impl Process for UnixProcess {
         Some((1, &mut self.fd))
     }
 
-    fn deallocate_fd(&mut self, _fd: usize) -> usize {
-        0
+    fn deallocate_fd(&mut self, _fd: usize) -> Result<usize, ProcessError> {
+        Err(ProcessError::InvalidFileDescriptor)
     }
 
     fn get_fd(&self, _index: usize) -> &Fd {
@@ -260,6 +260,10 @@ impl Process for UnixProcess {
     }
 
     fn get_frame(&mut self, _frame_id: FrameId) -> Result<Frame, ProcessError> {
+        Err(ProcessError::InvalidFrameId)
+    }
+
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, ProcessError> {
         Err(ProcessError::InvalidFrameId)
     }
 }

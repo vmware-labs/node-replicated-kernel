@@ -7,20 +7,27 @@ use alloc::vec::Vec;
 use core::mem::transmute;
 use core::pin::Pin;
 
+use fallible_collections::FallibleVec;
 use x86::controlregs;
 use x86::current::paging::*;
 
 use super::page_table::PageTable;
 use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr};
+use crate::error::KError;
 use crate::graphviz as dot;
 
 impl PageTable {
-    fn parse_nodes_edges<'a>(&'a self) -> (dot::Nodes<'a, Nd<'a>>, dot::Edges<'a, Ed<'a>>) {
-        let mut nodes = Vec::with_capacity(128);
-        let mut edges = Vec::with_capacity(128);
+    const INITIAL_EDGES_CAPACITY: usize = 128;
+    const INITIAL_NODES_CAPACITY: usize = 128;
+
+    fn parse_nodes_edges<'a>(
+        &'a self,
+    ) -> Result<(dot::Nodes<'a, Nd<'a>>, dot::Edges<'a, Ed<'a>>), KError> {
+        let mut nodes = Vec::try_with_capacity(PageTable::INITIAL_NODES_CAPACITY)?;
+        let mut edges = Vec::try_with_capacity(PageTable::INITIAL_EDGES_CAPACITY)?;
 
         let pml4_table = self.pml4.as_ref();
-        nodes.push(Nd::PML4(pml4_table, None));
+        nodes.try_push(Nd::PML4(pml4_table, None))?;
 
         unsafe {
             for (pml_idx, pml_item) in pml4_table.iter().enumerate() {
@@ -30,8 +37,8 @@ impl PageTable {
                     let pdpt_table =
                         transmute::<VAddr, &mut PDPT>(VAddr::from_u64(pml_item.address().as_u64()));
                     let to = Nd::PDPT(pdpt_table, None);
-                    nodes.push(to.clone());
-                    edges.push(((from.clone(), pml_idx), (to.clone(), 0)));
+                    nodes.try_push(to.clone())?;
+                    edges.try_push(((from.clone(), pml_idx), (to.clone(), 0)))?;
 
                     let from = to;
                     for (pdpt_idx, pdpt_item) in pdpt_table.iter().enumerate() {
@@ -43,12 +50,12 @@ impl PageTable {
                                 let _vaddr: usize = (512 * (512 * (512 * 0x1000))) * pml_idx
                                     + (512 * (512 * 0x1000)) * pdpt_idx;
                                 let _to = Nd::HugePage(pdpt_item.address());
-                            //nodes.push(to.clone());
-                            //edges.push((from.clone(), to.clone()));
+                                //nodes.try_push(to.clone())?;
+                                //edges.try_push((from.clone(), to.clone()))?;
                             } else {
                                 let to = Nd::PD(pd_table, None);
-                                nodes.push(to.clone());
-                                edges.push(((from.clone(), pdpt_idx), (to.clone(), 0)));
+                                nodes.try_push(to.clone())?;
+                                edges.try_push(((from.clone(), pdpt_idx), (to.clone(), 0)))?;
 
                                 let from = to;
                                 for (pd_idx, pd_item) in pd_table.iter().enumerate() {
@@ -62,13 +69,16 @@ impl PageTable {
                                                 * pml_idx
                                                 + (512 * (512 * 0x1000)) * pdpt_idx
                                                 + (512 * 0x1000) * pd_idx;
-                                        //let to = Nd::LargePage(pd_item.address());
-                                        //nodes.push(to.clone());
-                                        //edges.push((from.clone(), to.clone()));
+                                            //let to = Nd::LargePage(pd_item.address());
+                                            //nodes.try_push(to.clone())?;
+                                            //edges.try_push((from.clone(), to.clone()))?;
                                         } else {
                                             let to = Nd::PT(ptes, None);
-                                            nodes.push(to.clone());
-                                            edges.push(((from.clone(), pd_idx), (to.clone(), 0)));
+                                            nodes.try_push(to.clone())?;
+                                            edges.try_push((
+                                                (from.clone(), pd_idx),
+                                                (to.clone(), 0),
+                                            ))?;
 
                                             /*let from = to.clone();
                                             assert!(!pd_item.is_page());
@@ -95,7 +105,7 @@ impl PageTable {
             }
         }
 
-        (nodes.into(), edges.into())
+        Ok((nodes.into(), edges.into()))
     }
 }
 
@@ -359,12 +369,14 @@ impl<'a> dot::GraphWalk<'a> for PageTable {
     type Node = Nd<'a>;
     type Edge = Ed<'a>;
     fn nodes(&self) -> dot::Nodes<'a, Nd> {
-        let (nodes, _) = self.parse_nodes_edges();
+        // Failure ok this is only used for debugging
+        let (nodes, _) = self.parse_nodes_edges().expect("Can't parse nodes");
         nodes.into()
     }
 
     fn edges(&'a self) -> dot::Edges<'a, Ed> {
-        let (_, edges) = self.parse_nodes_edges();
+        // Failure ok this is only used for debugging
+        let (_, edges) = self.parse_nodes_edges().expect("Can't parse edges");
         edges.into()
     }
 

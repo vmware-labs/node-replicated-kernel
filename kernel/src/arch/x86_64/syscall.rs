@@ -8,10 +8,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto;
 
+use fallible_collections::FallibleVec;
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
-//use x86::tlb;
 
 use kpi::process::FrameId;
 use kpi::{
@@ -43,17 +43,20 @@ fn handle_system(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             let vaddr_buf_len = arg3; // buf.len() as u64
 
             let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
-            let mut return_threads = Vec::with_capacity(atopology::MACHINE_TOPOLOGY.num_threads());
+            let num_threads = atopology::MACHINE_TOPOLOGY.num_threads();
+
+            let mut return_threads = Vec::try_with_capacity(num_threads)?;
             for hwthread in hwthreads {
-                return_threads.push(kpi::system::CpuThread {
+                return_threads.try_push(kpi::system::CpuThread {
                     id: hwthread.id as usize,
                     node_id: hwthread.node_id.unwrap_or(0) as usize,
                     package_id: hwthread.package_id as usize,
                     core_id: hwthread.core_id as usize,
                     thread_id: hwthread.thread_id as usize,
-                });
+                })?;
             }
 
+            // TODO(dependency): Get rid of serde/serde_cbor, use something sane instead
             let serialized = serde_cbor::to_vec(&return_threads).unwrap();
             if serialized.len() <= vaddr_buf_len as usize {
                 let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
@@ -255,7 +258,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     match op {
         VSpaceOperation::Map => unsafe {
             let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
-            let mut frames = Vec::with_capacity(bp + lp);
+            let mut frames = Vec::try_with_capacity(bp + lp)?;
             crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)?;
 
             // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
@@ -274,7 +277,9 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                         .expect("We refilled so allocation should work.");
                     total_len += frame.size;
                     unsafe { frame.zero() };
-                    frames.push(frame);
+                    frames
+                        .try_push(frame)
+                        .expect("Can't fail see `try_with_capacity`");
                     if paddr.is_none() {
                         paddr = Some(frame.base);
                     }
@@ -285,7 +290,9 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                         .expect("We refilled so allocation should work.");
                     total_len += frame.size;
                     unsafe { frame.zero() };
-                    frames.push(frame);
+                    frames
+                        .try_push(frame)
+                        .expect("Can't fail see `try_with_capacity`");
                     if paddr.is_none() {
                         paddr = Some(frame.base);
                     }

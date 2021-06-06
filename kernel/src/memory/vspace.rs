@@ -826,7 +826,6 @@ pub(crate) mod model {
 
     #[test]
     fn tlb_flush_handle_empty_core_set() {
-        use crate::arch::MAX_CORES;
         let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
         assert_eq!(t.cores().count(), 0, "Is empty");
     }

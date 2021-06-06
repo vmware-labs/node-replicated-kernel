@@ -9,6 +9,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use apic::ApicDriver;
 use bit_field::BitField;
 use crossbeam_queue::ArrayQueue;
+use fallible_collections::FallibleVec;
 use lazy_static::lazy_static;
 use x86::apic::{
     ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
@@ -34,12 +35,17 @@ use crate::{cnrfs, is_page_aligned, nr};
 // derived from the 32-bit local x2APIC ID: Logical x2APIC ID = [(x2APIC
 // ID[19:4] « 16) | (1 « x2APIC ID[3:0])]
 
+const IPI_WORKQUEUE_CAPACITY: usize = 4;
+
 lazy_static! {
     static ref IPI_WORKQUEUE: Vec<ArrayQueue<WorkItem>> = {
-        let cores = atopology::MACHINE_TOPOLOGY.num_threads();
-        let mut channels = Vec::with_capacity(cores);
-        for _i in 0..cores {
-            channels.push(ArrayQueue::new(4));
+        let num_threads = atopology::MACHINE_TOPOLOGY.num_threads();
+        let mut channels =
+            Vec::try_with_capacity(num_threads).expect("Not enough memory to initialize system");
+        for _i in 0..num_threads {
+            // ArrayQueue does memory allocation on `new`, maybe have try_new,
+            // but this is fine since it's during initialization
+            channels.push(ArrayQueue::new(IPI_WORKQUEUE_CAPACITY));
         }
 
         channels
@@ -203,14 +209,11 @@ fn send_ipi_multicast(ldr: u32) {
 /// It divides IPIs into clusters to avoid overhead of sending IPIs individually.
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
 pub fn shootdown(handle: TlbFlushHandle) {
-    let my_gtid = {
-        let kcb = super::kcb::get_kcb();
-        kcb.arch.id()
-    };
+    let my_gtid = super::kcb::get_kcb().arch.id();
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
     // Cluster ID (LDR[31:16]) is the address of the destination cluster
-    // We pre-configure the upper half (cluster ID) of LDR here in the SmallVec
+    // We pre-configure the upper half (cluster ID) of LDR here
     // by initializing the elements
     let mut cluster_destination: [u32; 16] = [
         0 << 16,
@@ -232,7 +235,8 @@ pub fn shootdown(handle: TlbFlushHandle) {
     ];
 
     let mut shootdowns: Vec<Arc<Shootdown>> =
-        Vec::with_capacity(atopology::MACHINE_TOPOLOGY.num_threads());
+        Vec::try_with_capacity(atopology::MACHINE_TOPOLOGY.num_threads())
+            .expect("TODO(error-handling): ideally: no possible failure during shootdown");
     let range = handle.vaddr.as_u64()..(handle.vaddr + handle.frame.size).as_u64();
 
     for gtid in handle.cores() {
@@ -249,7 +253,8 @@ pub fn shootdown(handle: TlbFlushHandle) {
             );
             cluster_destination[cluster as usize].set_bit(cluster_addr as usize, true);
 
-            let shootdown = Arc::new(Shootdown::new(range.clone()));
+            let shootdown = Arc::try_new(Shootdown::new(range.clone()))
+                .expect("TODO(error-handling): ideally: no possible failure during shootdown");
             enqueue(gtid as u64, WorkItem::Shootdown(shootdown.clone()));
             shootdowns.push(shootdown);
         }

@@ -11,7 +11,7 @@ use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::{Replica, ReplicaToken};
 
-use crate::cnr::MlnrKernelNode;
+use crate::cnrfs::MlnrKernelNode;
 use crate::error::KError;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;

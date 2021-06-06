@@ -31,6 +31,12 @@ use crate::{cnrfs, kcb, nr, nrproc, round_up};
 /// How many (concurrent) processes the systems supports.
 pub const MAX_PROCESSES: usize = 12;
 
+/// How many registered "named" frames a process can have.
+pub const MAX_FRAMES_PER_PROCESS: usize = 32;
+
+/// How many writable sections a process can have (part of the ELF file).
+pub const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
+
 /// This struct is used to copy the user buffer into kernel space, so that the
 /// user-application doesn't have any reference to any log operation in kernel space.
 #[derive(PartialEq, Clone, Debug)]
@@ -90,6 +96,8 @@ pub ProcessError
     NotEnoughMemory = "Unable to reserve memory for internal process data-structures.",
     InvalidFrameId = "The provided FrameId is not registered with the process",
     TooManyProcesses = "Not enough space in process table (out of PIDs).",
+    TooManyRegisteredFrames = "Can't register more frames with the process (out of FIDs).",
+    InvalidFileDescriptor = "Invalid file-descriptor supplied (for invalidation)",
 }
 
 impl From<&str> for ProcessError {
@@ -100,6 +108,18 @@ impl From<&str> for ProcessError {
 
 impl From<alloc::collections::TryReserveError> for ProcessError {
     fn from(_err: alloc::collections::TryReserveError) -> Self {
+        ProcessError::NotEnoughMemory
+    }
+}
+
+impl From<core::alloc::AllocError> for ProcessError {
+    fn from(_err: core::alloc::AllocError) -> Self {
+        ProcessError::NotEnoughMemory
+    }
+}
+
+impl From<arrayvec::CapacityError<Frame>> for ProcessError {
+    fn from(_err: arrayvec::CapacityError<Frame>) -> Self {
         ProcessError::NotEnoughMemory
     }
 }
@@ -134,7 +154,7 @@ pub trait Process {
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)>;
 
-    fn deallocate_fd(&mut self, fd: usize) -> usize;
+    fn deallocate_fd(&mut self, fd: usize) -> Result<usize, ProcessError>;
 
     fn get_fd(&self, index: usize) -> &Fd;
 
@@ -142,6 +162,7 @@ pub trait Process {
 
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError>;
     fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError>;
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, ProcessError>;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU
@@ -385,12 +406,16 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
 
     let mut data_sec_loader = DataSecAllocator {
         offset,
-        frames: Vec::try_with_capacity(4)?,
+        frames: Vec::try_with_capacity(MAX_WRITEABLE_SECTIONS_PER_PROCESS)?,
     };
     elf_module
         .load(&mut data_sec_loader)
         .map_err(|_e| ProcessError::UnableToLoad)?;
     let data_frames: Vec<Frame> = data_sec_loader.finish()?;
+    debug_assert!(
+        data_frames.len() <= MAX_WRITEABLE_SECTIONS_PER_PROCESS,
+        "TODO(error-handlin): Maybe reject ELF files with more?"
+    );
 
     // Allocate a new process
     kcb.replica

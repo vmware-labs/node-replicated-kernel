@@ -1,8 +1,6 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![allow(warnings)]
-
 use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
 use alloc::sync::Arc;
@@ -12,27 +10,27 @@ use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
+use fallible_collections::try_vec;
+use fallible_collections::FallibleVec;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
-use node_replication::{Dispatch, Log, Replica, ReplicaToken};
+use node_replication::{Dispatch, Log, Replica};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
 use crate::error::KError;
-use crate::fs::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
+use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
 use crate::kcb::ArchSpecificKcb;
 use crate::kcb::{self, Kcb};
 use crate::memory::vspace::{AddressSpace, MapAction};
-use crate::memory::{
-    paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, PhysicalPageProvider, VAddr,
-};
+use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, VAddr};
 use crate::nrproc::NrProcess;
 use crate::process::{
-    allocate_dispatchers, make_process, Eid, Executor, Pid, Process, ProcessError, ResumeHandle,
-    MAX_PROCESSES,
+    Eid, Executor, Pid, Process, ProcessError, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
+    MAX_WRITEABLE_SECTIONS_PER_PROCESS,
 };
-use crate::{nr, round_up};
+use crate::round_up;
 
 use super::kcb::Arch86Kcb;
 use super::vspace::*;
@@ -47,24 +45,26 @@ lazy_static! {
         let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
 
         let mut numa_cache = ArrayVec::new();
-        for n in 0..numa_nodes {
+        for _n in 0..numa_nodes {
             let process_replicas = ArrayVec::new();
+            debug_assert!(!numa_cache.is_full());
             numa_cache.push(process_replicas)
         }
 
-        for pid in 0..MAX_PROCESSES {
+        for _pid in 0..MAX_PROCESSES {
                 let log = Arc::try_new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
                     LARGE_PAGE_SIZE,
                 )).expect("Can't initialize processes, out of memory.");
 
             for node in 0..numa_nodes {
                 let kcb = kcb::get_kcb();
-                kcb.set_allocation_affinity(node as atopology::NodeId);
+                kcb.set_allocation_affinity(node as atopology::NodeId).expect("Can't change affinity");
 
+                debug_assert!(!numa_cache[node].is_full());
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::new(&log));
 
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
-                kcb.set_allocation_affinity(0 as atopology::NodeId);
+                kcb.set_allocation_affinity(0 as atopology::NodeId).expect("Can't change affinity");
             }
         }
 
@@ -712,34 +712,34 @@ pub struct Ring3Process {
     /// The entry point of the ELF file (set during elfloading).
     pub entry_point: VAddr,
     /// Executor cache (holds a per-region cache of executors)
-    pub executor_cache:
-        arrayvec::ArrayVec<Option<Vec<Box<Ring3Executor>>>, { super::MAX_NUMA_NODES }>,
+    pub executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES>,
     /// Offset where executor memory is located in user-space.
     pub executor_offset: VAddr,
     /// File descriptors for the opened file.
-    pub fds: arrayvec::ArrayVec<Option<Fd>, { MAX_FILES_PER_PROCESS }>,
+    pub fds: ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS>,
     /// Physical frame objects registered to the process.
-    pub frames: Vec<Frame>,
+    pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
     /// Frames of the writeable ELF data section (shared across all replicated Process structs)
-    pub writeable_sections: Vec<Frame>,
-    /// Section in ELF where last read-only header is (TODO: assumes that all read-only segments
-    /// are before write).
+    pub writeable_sections: ArrayVec<Frame, MAX_WRITEABLE_SECTIONS_PER_PROCESS>,
+    /// Section in ELF where last read-only header is
+    ///
+    /// (TODO(robustness): assumes that all read-only segments come before
+    /// writable segments).
     pub read_only_offset: VAddr,
 }
 
 impl Default for Ring3Process {
     fn default() -> Self {
-        let mut executor_cache: arrayvec::ArrayVec<
-            Option<Vec<Box<Ring3Executor>>>,
-            { super::MAX_NUMA_NODES },
-        > = Default::default();
-        for _i in 0..super::MAX_NUMA_NODES {
-            executor_cache.push(None);
-        }
-        let mut fds: arrayvec::ArrayVec<Option<Fd>, { MAX_FILES_PER_PROCESS }> = Default::default();
-        for _i in 0..MAX_FILES_PER_PROCESS {
-            fds.push(None);
-        }
+        const NONE_EXECUTOR: Option<Vec<Box<Ring3Executor>>> = None;
+        let executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES> =
+            ArrayVec::from([NONE_EXECUTOR; MAX_NUMA_NODES]);
+
+        const NONE_FD: Option<Fd> = None;
+        let fds: ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS> =
+            ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]);
+
+        let frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS> =
+            ArrayVec::from([None; MAX_FRAMES_PER_PROCESS]);
 
         Ring3Process {
             pid: 0,
@@ -751,8 +751,8 @@ impl Default for Ring3Process {
             executor_offset: VAddr::from(EXECUTOR_OFFSET),
             fds,
             pinfo: Default::default(),
-            frames: Vec::with_capacity(12),
-            writeable_sections: Vec::new(),
+            frames,
+            writeable_sections: ArrayVec::new(),
             read_only_offset: VAddr::zero(),
         }
     }
@@ -884,7 +884,8 @@ impl elfloader::ElfLoader for Ring3Process {
     ) -> Result<(), &'static str> {
         let destination = self.offset + destination;
 
-        // Only write read-only sections, writable frames already have the right content
+        // Only write to the read-only sections, writable frames already have
+        // the right content (see DataSecLoader in src/process.rs)
         if !flags.is_write() {
             self.read_only_offset = destination + region.len();
             info!(
@@ -901,9 +902,8 @@ impl elfloader::ElfLoader for Ring3Process {
                     .resolve(vaddr)
                     .map_err(|_e| "Can't write to the resolved address in the kernel vspace.")?;
 
-                // TODO(perf): Inefficient byte-wise copy
-                // also within a 4 KiB / 2 MiB page we don't have to resolve_addr
-                // every time
+                // TODO(perf): Inefficient byte-wise copy also within a 4 KiB /
+                // 2 MiB page we don't have to resolve_addr every time
                 if idx == 0 {
                     trace!(
                         "write ptr = {:p} vaddr = {:#x} dest+idx={:#x}",
@@ -1016,7 +1016,11 @@ impl Process for Ring3Process {
         writeable_sections: Vec<Frame>,
     ) -> Result<(), ProcessError> {
         self.pid = pid;
-        self.writeable_sections = writeable_sections;
+        // TODO(error-handling): properly unwind on error
+        self.writeable_sections.clear();
+        for sec in writeable_sections {
+            self.writeable_sections.try_push(sec)?;
+        }
 
         // Load the Module into the process address-space
         // This needs mostly sanitation work on elfloader and
@@ -1048,8 +1052,8 @@ impl Process for Ring3Process {
 
     fn try_reserve_executors(
         &self,
-        how_many: usize,
-        affinity: atopology::NodeId,
+        _how_many: usize,
+        _affinity: atopology::NodeId,
     ) -> Result<(), TryReserveError> {
         // TODO(correctness): Lacking impl
         Ok(())
@@ -1103,36 +1107,36 @@ impl Process for Ring3Process {
             );
         }
 
-        let mut cur_paddr_offset = memory.base;
+        let cur_paddr_offset = memory.base;
         let mut cur_offset = self.executor_offset;
-        for cnt in 0..executors_to_create {
+        for _cnt in 0..executors_to_create {
             let executor_vmem_start = cur_offset;
             let executor_pmem_start = cur_paddr_offset;
 
             let executor_vmem_end = executor_vmem_start + executor_space_requirement;
-            let executor_pmem_end = executor_pmem_start + executor_space_requirement;
+            let _executor_pmem_end = executor_pmem_start + executor_space_requirement;
 
-            let upcall_stack_base = cur_offset + Ring3Executor::INIT_STACK_SIZE;
-            let vcpu_ctl =
+            let _upcall_stack_base = cur_offset + Ring3Executor::INIT_STACK_SIZE;
+            let _vcpu_ctl =
                 cur_offset + Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE;
             let vcpu_ctl_paddr = cur_paddr_offset
                 + Ring3Executor::INIT_STACK_SIZE
                 + Ring3Executor::UPCALL_STACK_SIZE;
 
-            let executor = Box::new(Ring3Executor::new(
+            let executor = Box::try_new(Ring3Executor::new(
                 &self,
                 self.current_eid,
                 crate::memory::paddr_to_kernel_vaddr(PAddr::from(vcpu_ctl_paddr)),
                 (executor_vmem_start, executor_vmem_end),
                 memory.affinity,
-            ));
+            ))?;
 
             debug!("Created {} affinity {}", executor, memory.affinity);
 
-            use alloc::vec;
+            // TODO(error-handling): Check that this properly unwinds on alloc errors...
             match &mut self.executor_cache[memory.affinity as usize] {
-                Some(ref mut vector) => vector.push(executor),
-                None => self.executor_cache[memory.affinity as usize] = Some(vec![executor]),
+                Some(ref mut vector) => vector.try_push(executor)?,
+                None => self.executor_cache[memory.affinity as usize] = Some(try_vec![executor]?),
             }
 
             self.current_eid += 1;
@@ -1151,41 +1155,22 @@ impl Process for Ring3Process {
     }
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
-        let mut fd: i64 = -1;
-        for i in 0..MAX_FILES_PER_PROCESS {
-            match self.fds[i] {
-                None => {
-                    fd = i as i64;
-                    break;
-                }
-                _ => continue,
-            }
-        }
-
-        match fd {
-            -1 => None,
-            f => {
-                let filedesc = Fd::init_fd();
-                self.fds[f as usize] = Some(Default::default());
-                Some((f as u64, self.fds[f as usize].as_mut().unwrap()))
-            }
+        if let Some(fid) = self.fds.iter().position(|fd| fd.is_none()) {
+            self.fds[fid] = Some(Default::default());
+            Some((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
+        } else {
+            None
         }
     }
 
-    fn deallocate_fd(&mut self, fd: usize) -> usize {
-        let is_fd = {
-            if fd >= 0 && fd < MAX_FILES_PER_PROCESS && self.fds[fd].is_some() {
-                true
-            } else {
-                false
+    fn deallocate_fd(&mut self, fd: usize) -> Result<usize, ProcessError> {
+        match self.fds.get_mut(fd) {
+            Some(fdinfo) => {
+                *fdinfo = None;
+                Ok(fd)
             }
-        };
-
-        if is_fd {
-            self.fds[fd] = None;
-            return fd;
+            None => Err(ProcessError::InvalidFileDescriptor),
         }
-        MAX_FILES_PER_PROCESS + 1
     }
 
     fn get_fd(&self, index: usize) -> &Fd {
@@ -1197,16 +1182,31 @@ impl Process for Ring3Process {
     }
 
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError> {
-        self.frames.try_reserve(1)?;
-        self.frames.push(frame);
-        Ok(self.frames.len() - 1)
+        if let Some(fid) = self.frames.iter().position(|fid| fid.is_none()) {
+            self.frames[fid] = Some(frame);
+            Ok(fid)
+        } else {
+            Err(ProcessError::TooManyRegisteredFrames)
+        }
     }
 
     fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError> {
         self.frames
             .get(frame_id)
             .cloned()
+            .flatten()
             .ok_or(ProcessError::InvalidFrameId)
+    }
+
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, ProcessError> {
+        match self.frames.get_mut(fid) {
+            Some(maybe_frame) => {
+                let mut old = None;
+                core::mem::swap(&mut old, maybe_frame);
+                old.ok_or(ProcessError::InvalidFileDescriptor)
+            }
+            _ => Err(ProcessError::InvalidFileDescriptor),
+        }
     }
 }
 
@@ -1221,7 +1221,8 @@ impl Process for Ring3Process {
 /// - Finally we allocate a dispatcher to the current core (0) and start running the process
 #[cfg(target_os = "none")]
 pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
-    let kcb = kcb::get_kcb();
+    use crate::nr;
+    use crate::process::{allocate_dispatchers, make_process};
 
     let pid = make_process::<Ring3Process>(binary)?;
     allocate_dispatchers::<Ring3Process>(pid)?;

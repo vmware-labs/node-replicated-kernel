@@ -108,13 +108,14 @@ impl LogMapper for Access {
 #[derive(Clone, Debug)]
 pub enum MlnrNodeResult {
     ProcessAdded(Pid),
+    ProcessRemoved(Pid),
     FileOpened(FD),
     FileAccessed(Len),
     FileClosed(u64),
-    FileDeleted(bool),
+    FileDeleted,
     FileInfo(FileInfo),
-    FileRenamed(bool),
-    DirCreated(bool),
+    FileRenamed,
+    DirCreated,
     MappedFileToMnode(u64),
     Synchronized,
 }
@@ -233,7 +234,7 @@ impl MlnrKernelNode {
                 let response = replica.execute_mut_scan(Modify::FileDelete(pid, filename), *token);
 
                 match response {
-                    Ok(MlnrNodeResult::FileDeleted(_)) => Ok((0, 0)),
+                    Ok(MlnrNodeResult::FileDeleted) => Ok((0, 0)),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -278,7 +279,7 @@ impl MlnrKernelNode {
                 let response = replica
                     .execute_mut_scan(Modify::FileRename(pid, oldfilename, newfilename), *token);
                 match response {
-                    Ok(MlnrNodeResult::FileRenamed(_)) => Ok((0, 0)),
+                    Ok(MlnrNodeResult::FileRenamed) => Ok((0, 0)),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -296,7 +297,7 @@ impl MlnrKernelNode {
                     replica.execute_mut_scan(Modify::MkDir(pid, filename, modes), *token);
 
                 match response {
-                    Ok(MlnrNodeResult::DirCreated(true)) => Ok((0, 0)),
+                    Ok(MlnrNodeResult::DirCreated) => Ok((0, 0)),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -458,15 +459,18 @@ impl Dispatch for MlnrKernelNode {
     fn dispatch_mut(&self, op: Self::WriteOperation) -> Self::Response {
         match op {
             Modify::ProcessAdd(pid) => {
-                match self.process_map.write().insert(pid, FileDesc::default()) {
-                    Some(_) => Err(KError::ProcessError {
-                        source: crate::process::ProcessError::NotEnoughMemory,
-                    }),
-                    None => Ok(MlnrNodeResult::ProcessAdded(pid)),
-                }
+                let mut pmap = self.process_map.write();
+                pmap.try_reserve(1)?;
+                pmap.try_insert(pid, FileDesc::default())
+                    .map_err(|_e| KError::FileDescForPidAlreadyAdded)?;
+                Ok(MlnrNodeResult::ProcessAdded(pid))
             }
 
-            Modify::ProcessRemove(_pid) => unimplemented!("Process Remove"),
+            Modify::ProcessRemove(pid) => {
+                let mut pmap = self.process_map.write();
+                let _file_desc = pmap.remove(&pid).ok_or(KError::NoFileDescForPid)?;
+                Ok(MlnrNodeResult::ProcessRemoved(pid))
+            }
 
             Modify::FileOpen(pid, filename, flags, modes) => {
                 let flags = FileFlags::from(flags);
@@ -477,8 +481,8 @@ impl Dispatch for MlnrKernelNode {
                     });
                 }
 
-                let mut process_lookup = self.process_map.write();
-                let p = process_lookup
+                let mut pmap = self.process_map.write();
+                let p = pmap
                     .get_mut(&pid)
                     .expect("TODO: FileOpen process lookup failed");
                 let (fid, fd) = p.allocate_fd().ok_or(KError::NotSupported)?;
@@ -495,7 +499,7 @@ impl Dispatch for MlnrKernelNode {
                         Ok(m_num) => mnode_num = m_num,
                         Err(e) => {
                             let fdesc = fid as usize;
-                            process_lookup.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
+                            pmap.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
                             return Err(KError::FileSystem { source: e });
                         }
                     }
@@ -563,8 +567,8 @@ impl Dispatch for MlnrKernelNode {
                     .read()
                     .get(&pid)
                     .ok_or(ProcessError::NoProcessFoundForPid)?;
-                let is_deleted = self.fs.delete(&filename)?;
-                Ok(MlnrNodeResult::FileDeleted(is_deleted))
+                let _is_deleted = self.fs.delete(&filename)?;
+                Ok(MlnrNodeResult::FileDeleted)
             }
 
             Modify::FileRename(pid, oldname, newname) => {
@@ -573,8 +577,8 @@ impl Dispatch for MlnrKernelNode {
                     .read()
                     .get(&pid)
                     .ok_or(ProcessError::NoProcessFoundForPid)?;
-                let is_renamed = self.fs.rename(&oldname, &newname)?;
-                Ok(MlnrNodeResult::FileRenamed(is_renamed))
+                let _is_renamed = self.fs.rename(&oldname, &newname)?;
+                Ok(MlnrNodeResult::FileRenamed)
             }
 
             Modify::MkDir(pid, filename, modes) => {
@@ -583,8 +587,8 @@ impl Dispatch for MlnrKernelNode {
                     .read()
                     .get(&pid)
                     .ok_or(ProcessError::NoProcessFoundForPid)?;
-                let is_created = self.fs.mkdir(&filename, modes)?;
-                Ok(MlnrNodeResult::DirCreated(is_created))
+                let _is_created = self.fs.mkdir(&filename, modes)?;
+                Ok(MlnrNodeResult::DirCreated)
             }
         }
     }

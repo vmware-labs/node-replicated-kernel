@@ -30,10 +30,18 @@ custom_error! {
     OutOfPids = "Can't spawn more processes (out of Pids)",
     ProcessLoadingFailed = "Can't spawn more processes (out of Pids)",
     OutOfMemory = "Ran out of memory while performing an allocation",
+    FileDescForPidAlreadyAdded = "PID is already stored in scheduler state",
+    NoFileDescForPid = "No file-descriptors found for Pid",
 }
 
 impl From<fallible_collections::TryReserveError> for KError {
     fn from(_e: fallible_collections::TryReserveError) -> Self {
+        KError::OutOfMemory
+    }
+}
+
+impl From<hashbrown::TryReserveError> for KError {
+    fn from(_e: hashbrown::TryReserveError) -> Self {
         KError::OutOfMemory
     }
 }

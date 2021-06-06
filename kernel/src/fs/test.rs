@@ -284,12 +284,12 @@ impl FileSystem for ModelFS {
     }
 
     /// Delete finds and removes a path from the oplog again.
-    fn delete(&self, pathname: &str) -> Result<bool, FileSystemError> {
+    fn delete(&self, pathname: &str) -> Result<(), FileSystemError> {
         if let Some(idx) = self.path_to_idx(&String::from(pathname)) {
             self.oplog.borrow_mut().remove(idx);
             // We leave corresponding ModelOperation::Write entries
             // in the log for now...
-            Ok(true)
+            Ok(())
         } else {
             Err(FileSystemError::InvalidFile)
         }
@@ -301,17 +301,17 @@ impl FileSystem for ModelFS {
     }
 
     /// Return a `dummy` response as this function is only used for open with O_TRUNC flag.
-    fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError> {
-        Ok(true)
+    fn truncate(&self, pathname: &str) -> Result<(), FileSystemError> {
+        Ok(())
     }
 
     /// Return a `dummy` response for rename operation
-    fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
-        Ok(true)
+    fn rename(&self, oldname: &str, newname: &str) -> Result<(), FileSystemError> {
+        Ok(())
     }
 
-    fn mkdir(&self, pathname: &str, mode: Modes) -> Result<bool, FileSystemError> {
-        Ok(true)
+    fn mkdir(&self, pathname: &str, mode: Modes) -> Result<(), FileSystemError> {
+        Ok(())
     }
 }
 
@@ -420,22 +420,22 @@ fn fill_pattern() -> impl Strategy<Value = char> {
     ]
 }
 
-/// Generates an offset.
+// Generates an offset.
 prop_compose! {
     fn offset_gen(max: usize)(offset in 0..max) -> usize { offset }
 }
 
-/// Generates a random mnode.
+// Generates a random mnode.
 prop_compose! {
     fn mnode_gen(max: u64)(mnode in 0..max) -> u64 { mnode }
 }
 
-/// Generates a random mode.
+// Generates a random mode.
 prop_compose! {
     fn mode_gen(max: u64)(mode in 0..max) -> u64 { mode }
 }
 
-/// Generates a random (read/write)-request size.
+// Generates a random (read/write)-request size.
 prop_compose! {
     fn size_gen(max: usize)(size in 0..max) -> usize { size }
 }
@@ -728,7 +728,7 @@ fn test_file_delete() {
 
     let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
     assert_eq!(mnode, 2);
-    assert_eq!(memfs.delete(filename), Ok(true));
+    assert_eq!(memfs.delete(filename), Ok(()));
     assert_eq!(memfs.delete(filename).is_err(), true);
     assert_eq!(memfs.lookup(filename), None);
     assert_eq!(
@@ -816,7 +816,7 @@ fn test_file_rename_to_existent_file() {
     let oldmnode = memfs.create(oldname, FileModes::S_IRWXU.into()).unwrap();
     let newmnode = memfs.create(newname, FileModes::S_IRWXU.into()).unwrap();
     assert_ne!(oldmnode, newmnode);
-    assert_eq!(memfs.rename(oldname, newname), Ok(true));
+    assert_eq!(memfs.rename(oldname, newname), Ok(()));
 
     // Old file is removed.
     assert_eq!(memfs.lookup(oldname), None);

@@ -89,6 +89,12 @@ impl From<core::alloc::AllocError> for FileSystemError {
     }
 }
 
+impl From<hashbrown::TryReserveError> for FileSystemError {
+    fn from(_err: hashbrown::TryReserveError) -> Self {
+        FileSystemError::OutOfMemory
+    }
+}
+
 /// Abstract definition of file-system interface operations.
 pub trait FileSystem {
     fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError>;
@@ -106,10 +112,10 @@ pub trait FileSystem {
     ) -> Result<usize, FileSystemError>;
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
     fn file_info(&self, mnode: Mnode) -> FileInfo;
-    fn delete(&self, pathname: &str) -> Result<bool, FileSystemError>;
-    fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError>;
-    fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError>;
-    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError>;
+    fn delete(&self, pathname: &str) -> Result<(), FileSystemError>;
+    fn truncate(&self, pathname: &str) -> Result<(), FileSystemError>;
+    fn rename(&self, oldname: &str, newname: &str) -> Result<(), FileSystemError>;
+    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), FileSystemError>;
 }
 
 /// Abstract definition of a file descriptor.
@@ -181,6 +187,9 @@ unsafe impl Sync for MlnrFS {}
 impl Default for MlnrFS {
     /// Initialize the file system from the root directory.
     fn default() -> MlnrFS {
+        // Note: Alloc errors are currently ok in this function since this
+        // happens during system initialization
+
         let rootdir = "/";
         let rootmnode = 1;
 
@@ -220,26 +229,38 @@ impl MlnrFS {
     }
 }
 
+/// Helper function for fallible string (paths) allocation
+///
+/// TODO(api): This should probably go into a FallibleString trait.
+fn try_make_path(path: &str) -> Result<String, alloc::collections::TryReserveError> {
+    // let newname_key = newname.to_string();
+    let mut new_string = String::new();
+    new_string.try_reserve(path.len())?;
+    new_string.push_str(path);
+    Ok(new_string)
+}
+
 impl FileSystem for MlnrFS {
     fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError> {
         // Check if the file with the same name already exists.
-        if self.files.read().get(&pathname.to_string()).is_some() {
+        if self.files.read().get(pathname).is_some() {
             return Err(FileSystemError::AlreadyPresent);
         }
+        let pathname_string = try_make_path(pathname)?;
 
         let mnode_num = self.get_next_mno() as u64;
         // TODO(error-handling): can we ignore or should we decrease mnode_num
         // on error?
         let arc_mnode_num = Arc::try_new(mnode_num)?;
+        let mut mnodes = self.mnodes.write();
+        mnodes.try_reserve(1)?;
 
-        //TODO: For now all newly created mnode are for file. How to differentiate
+        // TODO: For now all newly created mnode are for file. How to differentiate
         // between a file and a directory. Take input from the user?
         let memnode = MemNode::new(mnode_num, pathname, modes, FileType::File)?;
 
-        self.files
-            .write()
-            .insert(pathname.to_string(), arc_mnode_num);
-        self.mnodes.write().insert(mnode_num, NrLock::new(memnode));
+        self.files.write().insert(pathname_string, arc_mnode_num);
+        mnodes.insert(mnode_num, NrLock::new(memnode));
 
         Ok(mnode_num)
     }
@@ -269,7 +290,7 @@ impl FileSystem for MlnrFS {
     }
 
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
-        self.files.read().get(&pathname.to_string()).cloned()
+        self.files.read().get(pathname).cloned()
     }
 
     fn file_info(&self, mnode: Mnode) -> FileInfo {
@@ -288,27 +309,25 @@ impl FileSystem for MlnrFS {
         }
     }
 
-    fn delete(&self, pathname: &str) -> Result<bool, FileSystemError> {
-        match self.files.write().remove(&pathname.to_string()) {
-            Some(mnode) => {
-                // If the pathname is the only link to the memnode, then remove it.
-                match Arc::strong_count(&mnode) {
-                    1 => {
-                        self.mnodes.write().remove(&mnode);
-                        Ok(true)
-                    }
-                    _ => {
-                        self.files.write().insert(pathname.to_string(), mnode);
-                        Err(FileSystemError::PermissionError)
-                    }
-                }
+    fn delete(&self, pathname: &str) -> Result<(), FileSystemError> {
+        let mut files = self.files.write();
+        if let Some(mnode) = files.get(pathname) {
+            if Arc::strong_count(mnode) == 1 {
+                self.mnodes.write().remove(&mnode);
+            } else {
+                return Err(FileSystemError::PermissionError);
             }
-            None => Err(FileSystemError::InvalidFile),
+        } else {
+            return Err(FileSystemError::InvalidFile);
         }
+
+        let r = files.remove(pathname);
+        assert!(r.is_some(), "Didn't remove the mnode?");
+        Ok(())
     }
 
-    fn truncate(&self, pathname: &str) -> Result<bool, FileSystemError> {
-        match self.files.read().get(&pathname.to_string()) {
+    fn truncate(&self, pathname: &str) -> Result<(), FileSystemError> {
+        match self.files.read().get(pathname) {
             Some(mnode) => match self.mnodes.read().get(mnode) {
                 Some(memnode) => memnode.write().file_truncate(),
                 None => Err(FileSystemError::InvalidFile),
@@ -317,7 +336,7 @@ impl FileSystem for MlnrFS {
         }
     }
 
-    fn rename(&self, oldname: &str, newname: &str) -> Result<bool, FileSystemError> {
+    fn rename(&self, oldname: &str, newname: &str) -> Result<(), FileSystemError> {
         if self.files.read().get(oldname).is_none() {
             return Err(FileSystemError::InvalidFile);
         }
@@ -327,11 +346,16 @@ impl FileSystem for MlnrFS {
             self.delete(newname).unwrap();
         }
 
+        // let newname_key = newname.to_string();
+        let mut newname_key = String::new();
+        newname_key.try_reserve(newname.len())?;
+        newname_key.push_str(newname);
+
         // TODO: Can we optimize it somehow?
         let mut lock_at_root = self.files.write();
         match lock_at_root.remove_entry(oldname) {
-            Some((_key, oldnmode)) => match lock_at_root.insert(newname.to_string(), oldnmode) {
-                None => Ok(true),
+            Some((_key, oldnmode)) => match lock_at_root.insert(newname_key, oldnmode) {
+                None => Ok(()),
                 Some(_) => Err(FileSystemError::PermissionError),
             },
             None => Err(FileSystemError::InvalidFile),
@@ -340,25 +364,26 @@ impl FileSystem for MlnrFS {
 
     /// Create a directory. The implementation is quite simplistic for now, and only used
     /// by leveldb benchmark.
-    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<bool, FileSystemError> {
+    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), FileSystemError> {
         // Check if the file with the same name already exists.
-        if self.files.read().get(&pathname.to_string()).is_some() {
+        if self.files.read().get(pathname).is_some() {
             return Err(FileSystemError::AlreadyPresent);
         }
 
+        let pathname_key = try_make_path(pathname)?;
         let mnode_num = self.get_next_mno() as u64;
         // TODO(error-handling): Should we decrease mnode-num or ignore?
         let arc_mnode_num = Arc::try_new(mnode_num)?;
+        let mut mnodes = self.mnodes.write();
+        mnodes.try_reserve(1)?;
 
         let memnode = match MemNode::new(mnode_num, pathname, modes, FileType::Directory) {
             Ok(memnode) => memnode,
             Err(e) => return Err(e),
         };
-        self.files
-            .write()
-            .insert(pathname.to_string(), arc_mnode_num);
-        self.mnodes.write().insert(mnode_num, NrLock::new(memnode));
+        self.files.write().insert(pathname_key, arc_mnode_num);
+        mnodes.insert(mnode_num, NrLock::new(memnode));
 
-        Ok(true)
+        Ok(())
     }
 }

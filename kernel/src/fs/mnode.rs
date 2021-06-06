@@ -121,7 +121,7 @@ impl MemNode {
     }
 
     /// Truncate the file in reasponse of O_TRUNC flag.
-    pub fn file_truncate(&mut self) -> Result<bool, FileSystemError> {
+    pub fn file_truncate(&mut self) -> Result<(), FileSystemError> {
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
             return Err(FileSystemError::PermissionError);
@@ -129,7 +129,7 @@ impl MemNode {
 
         // The method doesn't fail after this point, so returning Ok().
         self.file.as_mut().unwrap().file_truncate();
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -403,7 +403,7 @@ pub mod test {
         let filename = "file.txt";
         let mut memnode =
             MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::File).unwrap();
-        assert_eq!(memnode.file_truncate(), Ok(true));
+        assert_eq!(memnode.file_truncate(), Ok(()));
     }
 
     #[test]

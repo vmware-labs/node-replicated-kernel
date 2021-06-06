@@ -54,8 +54,8 @@ pub struct KernelNode {
 impl Default for KernelNode {
     fn default() -> KernelNode {
         KernelNode {
-            process_map: HashMap::with_capacity(MAX_PROCESSES),
-            scheduler_map: HashMap::with_capacity(MAX_CORES),
+            process_map: HashMap::new(),   // with_capacity(MAX_PROCESSES),
+            scheduler_map: HashMap::new(), // with_capacity(MAX_CORES),
         }
     }
 }
@@ -117,30 +117,36 @@ impl Dispatch for KernelNode {
                 // want, fine for now, MAX_PROCESSES is tiny
                 for i in 0..MAX_PROCESSES {
                     if !self.process_map.contains_key(&i) {
-                        self.process_map.insert(i, ());
+                        self.process_map.try_reserve(1)?;
+                        let r = self.process_map.insert(i, ());
+                        assert!(r.is_none(), "!contains_key");
                         return Ok(NodeResult::PidAllocated(i));
                     }
                 }
                 Err(KError::OutOfPids)
             }
-            Op::FreePid(pid) => {
-                // TODO(correctness): This is just a trivial,
-                // wrong implementation at the moment
-                match self.process_map.remove(&pid) {
-                    Some(_) => Ok(NodeResult::PidReturned),
-                    None => {
-                        error!("Process not found");
-                        Err(ProcessError::NoProcessFoundForPid.into())
-                    }
+            // TODO: better impl, what about scheduler_map?
+            Op::FreePid(pid) => match self.process_map.remove(&pid) {
+                Some(_) => Ok(NodeResult::PidReturned),
+                None => {
+                    error!("Process not found");
+                    Err(ProcessError::NoProcessFoundForPid.into())
                 }
-            }
+            },
             Op::SchedAllocateCore(pid, _affinity, Some(gtid), entry_point) => {
+                assert!((gtid as usize) < MAX_CORES, "Invalid gtid");
+
                 match self.scheduler_map.get(&gtid) {
                     Some(_cinfo) => Err(KError::CoreAlreadyAllocated),
                     None => {
                         trace!("Op::SchedAllocateCore pid={}, gtid={}", pid, gtid);
-                        self.scheduler_map
+
+                        self.scheduler_map.try_reserve(1)?;
+                        let r = self
+                            .scheduler_map
                             .insert(gtid, CoreInfo { pid, entry_point });
+                        assert!(r.is_none(), "get() -> None");
+
                         Ok(NodeResult::CoreAllocated(gtid))
                     }
                 }

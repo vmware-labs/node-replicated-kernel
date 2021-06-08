@@ -7,8 +7,8 @@
 
 #![allow(non_camel_case_types)]
 
-use super::verbs::{pvrdma_srq_attr, pvrdma_qp_attr, pvrdma_port_attr};
 use super::pvrdma::be64;
+use super::verbs::{pvrdma_port_attr, pvrdma_qp_attr, pvrdma_srq_attr};
 
 macro_rules! bit {
     ($x:expr) => {
@@ -126,7 +126,7 @@ pub const fn page_dir_table(x: usize) -> usize {
     (x >> PVRDMA_PTABLE_SHIFT) & 0x1ff
 }
 
-pub const PVRDMA_PAGE_DIR_MAX_PAGES: u32 = 1*512*512;
+pub const PVRDMA_PAGE_DIR_MAX_PAGES: u32 = 1 * 512 * 512;
 pub const PVRDMA_MAX_FAST_REG_PAGES: u32 = 128;
 
 /// Max MSI-X vectors.
@@ -144,17 +144,16 @@ pub const PVRDMA_REG_IMR: u32 = 28;
 pub const PVRDMA_REG_MACL: u32 = 32;
 pub const PVRDMA_REG_MACH: u32 = 36;
 
-
 // Object flags
 
 /// Armed for solicited-only
-pub const PVRDMA_CQ_FLAG_ARMED_SOL: u32	= bit!(0);
+pub const PVRDMA_CQ_FLAG_ARMED_SOL: u32 = bit!(0);
 /// Armed
-pub const PVRDMA_CQ_FLAG_ARMED: u32		= bit!(1);
+pub const PVRDMA_CQ_FLAG_ARMED: u32 = bit!(1);
 /// DMA region
-pub const PVRDMA_MR_FLAG_DMA: u32		= bit!(0);
+pub const PVRDMA_MR_FLAG_DMA: u32 = bit!(0);
 /// Fast reg memory region
-pub const PVRDMA_MR_FLAG_FRMR: u32		= bit!(1);
+pub const PVRDMA_MR_FLAG_FRMR: u32 = bit!(1);
 
 // Base Memory Management Extension flags to support Fast Reg Memory Regions and
 // Fast Reg Work Requests. Each flag represents a verb operation and we must
@@ -167,7 +166,6 @@ pub const PVRDMA_BMME_FLAG_REMOTE_INV: u32 = bit!(1);
 /// Fast Reg Work Request
 pub const PVRDMA_BMME_FLAG_FAST_REG_WR: u32 = bit!(2);
 
-
 // GID types. The interpretation of the gid_types bit field in the device
 // capabilities will depend on the device mode. For now, the device only
 // supports RoCE as mode, so only the different GID types for RoCE are
@@ -175,7 +173,6 @@ pub const PVRDMA_BMME_FLAG_FAST_REG_WR: u32 = bit!(2);
 
 pub const PVRDMA_GID_TYPE_FLAG_ROCE_V1: u32 = bit!(0);
 pub const PVRDMA_GID_TYPE_FLAG_ROCE_V2: u32 = bit!(1);
-
 
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -216,7 +213,7 @@ pub enum pvrdma_intr_vector {
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum pvrdma_intr_cause {
-    PVRDMA_INTR_CAUSE_RESPONSE =  (1 << pvrdma_intr_vector::PVRDMA_INTR_VECTOR_RESPONSE as u32),
+    PVRDMA_INTR_CAUSE_RESPONSE = (1 << pvrdma_intr_vector::PVRDMA_INTR_VECTOR_RESPONSE as u32),
     PVRDMA_INTR_CAUSE_ASYNC = (1 << pvrdma_intr_vector::PVRDMA_INTR_VECTOR_ASYNC as u32),
     PVRDMA_INTR_CAUSE_CQ = (1 << pvrdma_intr_vector::PVRDMA_INTR_VECTOR_CQ as u32),
 }
@@ -261,7 +258,6 @@ pub struct pvrdma_gos_info {
 }
 
 impl pvrdma_gos_info {
-
     /// W: PVRDMA_GOS_BITS_
     #[inline]
     pub fn gos_bits(&self) -> u32 {
@@ -308,7 +304,7 @@ impl pvrdma_gos_info {
     pub fn gos_misc(&self) -> u32 {
         unsafe { ::core::mem::transmute(self._bitfield_1.get(22usize, 10u8) as u32) }
     }
-    
+
     #[inline]
     pub fn set_gos_misc(&mut self, val: u32) {
         unsafe {
@@ -423,7 +419,6 @@ pub struct pvrdma_ring_page_info {
     /// Page directory PA
     pub pdir_dma: u64,
 }
-
 
 #[repr(C, packed)]
 #[derive(Copy, Clone)]

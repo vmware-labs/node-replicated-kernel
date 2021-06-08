@@ -14,8 +14,8 @@
 mod pci;
 
 mod dev_api;
-mod verbs;
 mod pvrdma;
+mod verbs;
 
 use alloc::boxed::Box;
 

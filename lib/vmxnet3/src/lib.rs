@@ -11,6 +11,7 @@ pub mod reg;
 pub mod smoltcp;
 pub mod var;
 pub mod vmx;
+pub mod pvrdma;
 
 #[derive(Default)]
 pub struct BoundedU32<const LOW: u32, const HIGH: u32>(u32);

@@ -145,18 +145,47 @@ tar zxvf MLNX_OFED_LINUX-5.2-2.2.0.0-ubuntu20.04-x86_64.tgz
 ./mlnxofedinstall --all
 ```
 
-Before running the rdmacm-mux make sure that both ib_cm and rdma_cm kernel
-modules aren't loaded, otherwise the rdmacm-mux service will fail to start:
+Before running `rdmacm-mux` make sure that both ib_cm and rdma_cm kernel modules
+aren't loaded, otherwise the rdmacm-mux service will fail to start:
 
 ```bash
-sudo rmmod ib_ipoib
-sudo rmmod rdma_cm
-sudo rmmod ib_cm
+sudo rmmod ib_ipoib ib_cm rdma_cm rmmod ib_cm rdma_ucm rdma_cm
 ```
 
 Start the QEMU `racadm-mux` utility (before launching a qemu VM that uses
 pvrdma):
 
 ```bash
-./rdmacm-mux -d mlx5_0 -p 0
+sudo ./rdmacm-mux -d mlx5_0 -p 0
+```
+
+Unfortunately the tool doesn't have good error reporting (yet). But it is
+supposed to *not* exit/return immediately and keep running. If you find that it
+will exit immediately it might help to use `sudo strace <cmd>` to see if some
+system call failed.
+
+
+If you're not running qemu as root you might need permission to access
+`/var/run/rdmacm-mux-mlx5_0-0`:
+
+```
+sudo chmod a+rwx /var/run/rdmacm-mux-mlx5_0-0
+```
+
+You will need to make sure that a `bridge.conf` file exists, otherwise qemu
+aborts with this error:  `qemu-system-x86_64: bridge helper failed`. To fix it,
+create the file with `allow all` inside it:
+
+```
+sudo mkdir -p /usr/local/etc/qemu
+sudo bash -c "echo 'allow all' >> /usr/local/etc/qemu/bridge.conf"
+sudo chmod u+s /usr/local/libexec/qemu-bridge-helper
+```
+
+If everything is set-up correctly, you should be able to run the pvrdma smoke
+test:
+
+```bash
+cd kernel
+python3 run.py --kfeatures integration-test test-pvrdma-smoke --nic vmxnet3 --pvrdma
 ```

@@ -20,6 +20,8 @@ mod verbs;
 use alloc::boxed::Box;
 
 use custom_error::custom_error;
+use log::debug;
+
 use pci::BarAccess;
 
 custom_error! {pub PVRDMAError
@@ -37,8 +39,21 @@ pub struct PVRDMA {
 
 impl PVRDMA {
     pub fn new(nrx: usize, trx: usize) -> Result<Box<PVRDMA>, PVRDMAError> {
+        // TODO: supply as arguments/type
+        const BUS: u32 = 0x0;
+        const DEV: u32 = 0x10;
+        const FUN: u32 = 0x1;
+
+        let pci = BarAccess::new(BUS, DEV, FUN);
+
         Err(PVRDMAError::OutOfMemory)
     }
+
+    fn pci_probe(&mut self) {
+        debug!("Initializing pvrdma driver");
+    }
+
+    fn init_device(&mut self) {}
 }
 
 /*

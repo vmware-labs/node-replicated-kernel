@@ -132,3 +132,5 @@ test-replica-advance = ["integration-test"]
 test-vmxnet-smoke = ["integration-test"]
 # test-vmxnet-smoltcp: Test vmxnet NIC driver with a network stack
 test-vmxnet-smoltcp = ["integration-test", "smoltcp"]
+# test-pvrdma-smoke: Some test for pvrdma device
+test-pvrdma-smoke = ["integration-test"]

@@ -22,6 +22,14 @@ from plumbum import colors, local, SshMachine
 from plumbum.commands import ProcessExecutionError
 
 from plumbum.cmd import whoami, python3, cat, getent, whoami
+
+try:
+    from plumbum.cmd import brctl
+except ImportError as e:
+    print("Unable to find the `brctl` binary in your $PATH")
+    print("")
+    print("Make sure to invoke `setup.sh` to install it.")
+    sys.exit(errno.ENOENT)
 try:
     from plumbum.cmd import xargo
 except ImportError as e:
@@ -91,7 +99,7 @@ parser.add_argument("--qemu-nodes", type=int,
 parser.add_argument("--qemu-cores", type=int,
                     help="How many cores (will get evenly divided among nodes).", default=1)
 parser.add_argument("--qemu-memory", type=str,
-                    help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
+                    help="How much total memory in MiB (will be evenly divided among nodes).", default=1024)
 parser.add_argument("--qemu-affinity", action="store_true", default=False,
                     help="Pin QEMU instance to dedicated host cores.")
 parser.add_argument("--qemu-prealloc", action="store_true", default=False,
@@ -355,24 +363,51 @@ def run_qemu(args):
         # Now return the intersection of the two
         return list(sorted(set(mem_nodes).intersection(set(cpu_nodes))))
 
+    # This next part is all about constructing qemu arguments for host memory
+    # (e.g., something like this for every NUMA node):
+    # ```
+    # -object memory-backend-ram,merge=off,dump=on,prealloc=off,policy=bind,share=on,id=nmem0,size=1024M,host-nodes=0
+    # -numa node,memdev=nmem1,nodeid=1
+    # -numa cpu,node-id=1,socket-id=1
+    # ```
     host_numa_nodes_list = query_host_numa()
-    num_host_numa_nodes = len(host_numa_nodes_list)
-    if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
-        for node in range(0, args.qemu_nodes):
-            mem_per_node = int(args.qemu_memory) / args.qemu_nodes
-            prealloc = "on" if args.qemu_prealloc else "off"
-            large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
-            backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
-            # This is untested, not sure it works
-            #assert args.pvrdma and not args.qemu_default_args
-            qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{},share=on'.format(
-                backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
+    prealloc = "on" if args.qemu_prealloc else "off"
+    backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
+    memobject_template = [backend, "merge=off",
+                          "dump=on", "prealloc={}".format(prealloc), "policy=bind", "share=on"]
+    if args.qemu_large_pages:
+        memobject_template += ["hugetlb=on"]
+        memobject_template += ["hugetlbsize=2M"]
 
-            qemu_default_args += ['-numa',
+    if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
+        num_host_numa_nodes = len(host_numa_nodes_list)
+        mem_per_node = int(args.qemu_memory) / args.qemu_nodes
+
+        for node in range(0, args.qemu_nodes):
+            memobject = memobject_template.copy()
+            memobject += ["id=nmem{}".format(node)]
+            memobject += ["size={}M".format(int(mem_per_node))]
+            memobject += ["host-nodes={}".format(0 if num_host_numa_nodes ==
+                                                 0 else host_numa_nodes_list[node % num_host_numa_nodes])]
+
+            qemu_default_args += ["-object", ",".join(memobject)]
+            qemu_default_args += ["-numa",
                                   "node,memdev=nmem{},nodeid={}".format(node, node)]
             qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                 node, node)]
+    else:
+        memobject = memobject_template.copy()
+        memobject += ["id=nmem"]
+        memobject += ["size={}M".format(args.qemu_memory)]
+        # There isn't really a good answer here, either bind to the one we're running on
+        # or bind to all nodes.. let's pick all for now:
+        memobject += ["host-nodes={}-{}".format(
+            min(host_numa_nodes_list), max(host_numa_nodes_list))]
+        qemu_default_args += ["-object", ",".join(memobject)]
 
+    qemu_default_args += ['-m', str(args.qemu_memory)]
+
+    # We divide the CPUs evenly across nodes/sockets:
     if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
         qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
             args.qemu_cores, args.qemu_nodes, args.qemu_cores)]
@@ -380,12 +415,11 @@ def run_qemu(args):
         qemu_default_args += ["-smp",
                               "{},sockets=1".format(args.qemu_cores)]
 
-    if args.qemu_memory:
-        qemu_default_args += ['-m', str(args.qemu_memory)]
     if args.pvrdma:
-        # ip link add bridge1 type bridge ; ifconfig bridge1 up
-        qemu_default_args += ['-netdev', 'bridge,id=bridge1',
-                              '-device', 'vmxnet3,netdev=bridge1,mac=56:b4:44:e9:62:dc,addr=10.0,multifunction=on']
+        BRIDGE_DEV = "br0"
+        sudo[brctl]['addbr', BRIDGE_DEV]
+        qemu_default_args += ['-netdev', 'bridge,id={}'.format(BRIDGE_DEV),
+                              '-device', 'vmxnet3,netdev={},mac=56:b4:44:e9:62:dc,addr=10.0,multifunction=on'.format(BRIDGE_DEV)]
         qemu_default_args += ['-chardev', 'socket,path=/var/run/rdmacm-mux-mlx5_0-0,id=mads',
                               '-device', 'pvrdma,ibdev=mlx5_0,ibport=0,netdev=enp216s0f0,mad-chardev=mads,addr=10.1']
     if args.qemu_debug_cpu:

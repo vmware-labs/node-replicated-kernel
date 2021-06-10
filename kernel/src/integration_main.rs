@@ -674,6 +674,49 @@ fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Smoke test for vmxnet3 in the kernel, make sure we can send and receive some
+/// (hand-crafted) packets.
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-pvrdma-smoke",
+    target_arch = "x86_64"
+))]
+pub fn xmain() {
+    use alloc::alloc::Layout;
+    use alloc::prelude::v1::*;
+    use alloc::vec;
+
+    use crate::memory::vspace::MapAction;
+    use crate::memory::PAddr;
+
+    use driverkit::devq::*;
+    use driverkit::iomem::*;
+
+    let kcb = crate::kcb::get_kcb();
+    // TODO(hack): Map potential vmxnet3 bar addresses XD
+    for &bar in &[
+        0x81820000u64,
+        0x81826000u64,
+        0x81827000u64,
+        0x81828000u64,
+        0x81002000u64,
+        0x81003000u64,
+        0x81004000u64,
+        0x81005000u64,
+    ] {
+        kcb.arch
+            .init_vspace()
+            .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel);
+    }
+
+    arch::irq::enable();
+    let mut vmx = vmxnet3::vmx::VMXNet3::new(2, 2).unwrap();
+    vmx.attach_pre();
+    vmx.init();
+
+    let mut pvrdma = vmxnet3::pvrdma::PVRDMA::new(2, 2).unwrap();
+}
+
 /// Test shootdown facilities in the kernel.
 #[cfg(all(
     feature = "integration-test",

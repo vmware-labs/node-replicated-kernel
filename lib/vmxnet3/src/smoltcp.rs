@@ -136,7 +136,7 @@ impl<'a> Device<'a> for DevQueuePhy {
      */
     fn capabilities(&self) -> DeviceCapabilities {
         let mut caps = DeviceCapabilities::default();
-        caps.max_transmission_unit = 1536;
+        caps.max_transmission_unit = 1500;
         caps.max_burst_size = Some(1);
         caps
     }

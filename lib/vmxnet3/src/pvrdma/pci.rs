@@ -33,16 +33,31 @@
 
 use crate::pci::{busread, buswrite, confread, confwrite, BarIO};
 
+pub use crate::pci::KERNEL_BASE;
+use x86::current::paging::{PAddr, VAddr};
+
+///  TODO: get rid of this:
+pub fn kernel_vaddr_to_paddr(v: VAddr) -> PAddr {
+    let vaddr_val: usize = v.into();
+    PAddr::from(vaddr_val as u64 - KERNEL_BASE)
+}
+
+///  TODO: get rid of this:
+pub fn paddr_to_kernel_vaddr(p: PAddr) -> VAddr {
+    let paddr_val: u64 = p.into();
+    VAddr::from((paddr_val + KERNEL_BASE) as usize)
+}
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct BarAccess {
     /// Bus, device, function triplet of PCI device
     pci_addr: (u32, u32, u32),
     /// MSI-X
-    bar0: u64,
+    pub bar0: u64,
     /// Registers
-    bar1: u64,
+    pub bar1: u64,
     /// UAR
-    bar2: u64,
+    pub bar2: u64,
 }
 
 impl BarAccess {
@@ -53,17 +68,19 @@ impl BarAccess {
 
             let bar0 = confread(bus, dev, fun, 0x10);
             let bar1 = confread(bus, dev, fun, 0x14);
+            let bar2 = confread(bus, dev, fun, 0x18);
             //let bar_msix = pci::confread(BUS, DEV, FUN, 0x7);
 
             log::debug!("BAR0 at: {:#x}", bar0);
             log::debug!("BAR1 at: {:#x}", bar1);
+            log::debug!("BAR2 at: {:#x}", bar2);
             //debug!("MSI-X at: {:#x}", bar_msi);
 
             BarAccess {
                 pci_addr: (bus, dev, fun),
                 bar0: bar0.into(),
                 bar1: bar1.into(),
-                bar2: 0x0,
+                bar2: bar2.into(),
             }
         }
     }

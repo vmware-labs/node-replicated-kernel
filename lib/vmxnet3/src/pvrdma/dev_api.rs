@@ -133,16 +133,16 @@ pub const PVRDMA_MAX_FAST_REG_PAGES: u32 = 128;
 pub const PVRDMA_MAX_INTERRUPTS: u32 = 3;
 
 // Register offsets within PCI resource on BAR1.
-pub const PVRDMA_REG_VERSION: u32 = 0;
-pub const PVRDMA_REG_DSRLOW: u32 = 4;
-pub const PVRDMA_REG_DSRHIGH: u32 = 8;
-pub const PVRDMA_REG_CTL: u32 = 12;
-pub const PVRDMA_REG_REQUEST: u32 = 16;
-pub const PVRDMA_REG_ERR: u32 = 20;
-pub const PVRDMA_REG_ICR: u32 = 24;
-pub const PVRDMA_REG_IMR: u32 = 28;
-pub const PVRDMA_REG_MACL: u32 = 32;
-pub const PVRDMA_REG_MACH: u32 = 36;
+pub const PVRDMA_REG_VERSION: u64 = 0;
+pub const PVRDMA_REG_DSRLOW: u64 = 4;
+pub const PVRDMA_REG_DSRHIGH: u64 = 8;
+pub const PVRDMA_REG_CTL: u64 = 12;
+pub const PVRDMA_REG_REQUEST: u64 = 16;
+pub const PVRDMA_REG_ERR: u64 = 20;
+pub const PVRDMA_REG_ICR: u64 = 24;
+pub const PVRDMA_REG_IMR: u64 = 28;
+pub const PVRDMA_REG_MACL: u64 = 32;
+pub const PVRDMA_REG_MACH: u64 = 36;
 
 // Object flags
 
@@ -260,11 +260,11 @@ pub struct pvrdma_gos_info {
 impl pvrdma_gos_info {
     /// W: PVRDMA_GOS_BITS_
     #[inline]
-    pub fn gos_bits(&self) -> u32 {
+    pub fn gos_bits(&self) -> pvrdma_gos_bits {
         unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 2u8) as u32) }
     }
     #[inline]
-    pub fn set_gos_bits(&mut self, val: u32) {
+    pub fn set_gos_bits(&mut self, val: pvrdma_gos_bits) {
         unsafe {
             let val: u32 = ::core::mem::transmute(val);
             self._bitfield_1.set(0usize, 2u8, val as u64)
@@ -273,12 +273,12 @@ impl pvrdma_gos_info {
 
     /// W: PVRDMA_GOS_TYPE_
     #[inline]
-    pub fn gos_type(&self) -> u32 {
+    pub fn gos_type(&self) -> pvrdma_gos_type {
         unsafe { ::core::mem::transmute(self._bitfield_1.get(2usize, 4u8) as u32) }
     }
 
     #[inline]
-    pub fn set_gos_type(&mut self, val: u32) {
+    pub fn set_gos_type(&mut self, val: pvrdma_gos_type) {
         unsafe {
             let val: u32 = ::core::mem::transmute(val);
             self._bitfield_1.set(2usize, 4u8, val as u64)
@@ -315,11 +315,11 @@ impl pvrdma_gos_info {
 
     #[inline]
     pub fn new(
-        gos_bits: u32,
-        gos_type: u32,
+        gos_bits: pvrdma_gos_bits,
+        gos_type: pvrdma_gos_type,
         gos_ver: u32,
         gos_misc: u32,
-    ) -> __BindgenBitfieldUnit<[u8; 4usize]> {
+    ) -> Self {
         let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize]> = Default::default();
         __bindgen_bitfield_unit.set(0usize, 2u8, {
             let gos_bits: u32 = unsafe { ::core::mem::transmute(gos_bits) };
@@ -337,7 +337,12 @@ impl pvrdma_gos_info {
             let gos_misc: u32 = unsafe { ::core::mem::transmute(gos_misc) };
             gos_misc as u64
         });
-        __bindgen_bitfield_unit
+
+        pvrdma_gos_info {
+            _bitfield_align_1: [0; 0],
+            _bitfield_1: __bindgen_bitfield_unit,
+            pad: 0,
+        }
     }
 }
 
@@ -421,7 +426,7 @@ pub struct pvrdma_ring_page_info {
 }
 
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct pvrdma_device_shared_region {
     /// W: Driver version
     pub driver_version: u32,
@@ -437,25 +442,11 @@ pub struct pvrdma_device_shared_region {
     pub async_ring_pages: pvrdma_ring_page_info,
     /// W: CQ ring page info
     pub cq_ring_pages: pvrdma_ring_page_info,
-    /// Pageframe stuff
-    pub __bindgen_anon_1: pvrdma_device_shared_region__bindgen_ty_1,
+    /// W: UAR page frame (32bit val in case driver version is less than
+    /// PVRDMA_PPN64_VERSION)
+    pub uar_pfn: u64,
     /// Device capabilities
     pub caps: pvrdma_device_caps,
-}
-
-#[repr(C, packed)]
-#[derive(Copy, Clone)]
-pub union pvrdma_device_shared_region__bindgen_ty_1 {
-    /// W: UAR pageframe
-    pub uar_pfn: u32,
-    /// W: 64-bit UAR page frame
-    pub uar_pfn64: u64,
-}
-
-impl Default for pvrdma_device_shared_region__bindgen_ty_1 {
-    fn default() -> Self {
-        unsafe { ::core::mem::zeroed() }
-    }
 }
 
 #[repr(u32)]

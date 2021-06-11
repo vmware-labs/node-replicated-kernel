@@ -715,6 +715,7 @@ pub fn xmain() {
     vmx.init();
 
     let mut pvrdma = vmxnet3::pvrdma::PVRDMA::new(2, 2).unwrap();
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 /// Test shootdown facilities in the kernel.

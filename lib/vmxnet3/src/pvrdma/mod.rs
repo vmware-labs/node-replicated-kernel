@@ -18,10 +18,13 @@ mod pvrdma;
 mod verbs;
 
 use alloc::boxed::Box;
-use core::pin::Pin;
+use core::{alloc::Layout, pin::Pin};
+use driverkit::iomem::DmaObject;
+use x86::current::paging::{IOAddr, PAddr, VAddr, BASE_PAGE_SIZE};
 
 use custom_error::custom_error;
 use log::{debug, info};
+use static_assertions as sa;
 
 use crate::{
     pci::BarIO,
@@ -29,7 +32,52 @@ use crate::{
 };
 use pci::BarAccess;
 
-use self::dev_api::*;
+use self::{dev_api::*, pci::KERNEL_BASE};
+
+const PAGE_LAYOUT: Layout =
+    unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
+// Safety constraints for PAGE_LAYOUT:
+sa::const_assert!(BASE_PAGE_SIZE > 0); // align must not be zero
+sa::const_assert!(BASE_PAGE_SIZE.is_power_of_two()); // align must be a power of two
+
+pub struct DmaBuffer<const LEN: usize> {
+    buf: *mut u8,
+}
+
+impl<const LEN: usize> DmaBuffer<LEN> {
+    fn new() -> Result<Self, PVRDMAError> {
+        let buf = unsafe { alloc::alloc::alloc(PAGE_LAYOUT) };
+        if buf.is_null() {
+            return Err(PVRDMAError::OutOfMemory);
+        }
+
+        Ok(Self { buf })
+    }
+}
+
+impl<const LEN: usize> Drop for DmaBuffer<LEN> {
+    fn drop(&mut self) {
+        unsafe {
+            debug_assert!(!self.buf.is_null());
+            let layout = Layout::from_size_align_unchecked(LEN, BASE_PAGE_SIZE);
+            alloc::alloc::dealloc(self.buf, layout);
+        }
+    }
+}
+
+impl<const LEN: usize> DmaObject for DmaBuffer<LEN> {
+    fn paddr(&self) -> PAddr {
+        PAddr::from(self.buf as *const () as u64) - PAddr::from(KERNEL_BASE)
+    }
+
+    fn vaddr(&self) -> VAddr {
+        VAddr::from(self.buf as *const Self as *const () as usize)
+    }
+
+    fn ioaddr(&self) -> IOAddr {
+        IOAddr::from(self.paddr().as_u64())
+    }
+}
 
 custom_error! {pub PVRDMAError
     DeviceNotSupported = "Unknown  device/version",
@@ -47,6 +95,9 @@ pub struct PVRDMA {
     pci: BarAccess,
 
     dsr_version: u32,
+
+    cmd_slot: DmaBuffer<BASE_PAGE_SIZE>,
+    resp_slot: DmaBuffer<BASE_PAGE_SIZE>,
 
     /// Shared region between driver and host
     dsr: Pin<Box<pvrdma_device_shared_region>>,
@@ -78,9 +129,13 @@ impl PVRDMA {
         let uar_start = pci.bar2;
         let driver_uar = pvrdma_uar_map::new(uar_start);
         debug_assert!(
-            driver_uar.pfn <= u32::MAX as u64,
-            "Supposed to be 32bit for QEMU nic (check sources)"
+            dsr_version >= PVRDMA_PPN64_VERSION || driver_uar.pfn <= u32::MAX as u64,
+            "Must be <32bit for the QEMU NIC device (check source)"
         );
+
+        // Command & Response slot
+        let cmd_slot = DmaBuffer::<BASE_PAGE_SIZE>::new()?;
+        let resp_slot = DmaBuffer::<BASE_PAGE_SIZE>::new()?;
 
         // Construct initial driver shared region
         let dsr = Pin::new(Box::try_new(pvrdma_device_shared_region {
@@ -95,12 +150,10 @@ impl PVRDMA {
                 0,
             ),
             uar_pfn: driver_uar.pfn,
+            cmd_slot_dma: cmd_slot.ioaddr().as_u64(),
+            resp_slot_dma: resp_slot.ioaddr().as_u64(),
             ..Default::default()
         })?);
-
-        // Command slot
-
-        // Response slot
 
         // Async event ring
 
@@ -112,6 +165,8 @@ impl PVRDMA {
 
         let drv = Box::try_new(Self {
             pci,
+            cmd_slot,
+            resp_slot,
             dsr_version,
             dsr,
             driver_uar,

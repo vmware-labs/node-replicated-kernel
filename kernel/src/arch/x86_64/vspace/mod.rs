@@ -1,8 +1,9 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::collections::BTreeMap;
 use core::ops::Bound::*;
+
+use fallible_collections::btree::BTreeMap;
 
 mod debug;
 pub mod page_table; /* TODO(encapsulation): This should be a private module but we break encapsulation in a few places */
@@ -62,7 +63,8 @@ impl AddressSpace for VSpace {
             }
         }
 
-        self.mappings.insert(base, MappingInfo::new(frame, action));
+        self.mappings
+            .try_insert(base, MappingInfo::new(frame, action))?;
         self.page_table.map_frame(base, frame, action)
     }
 
@@ -89,7 +91,8 @@ impl AddressSpace for VSpace {
         }
 
         let r = self.page_table.unmap(base)?;
-        self.mappings.remove(&r.vaddr);
+        let rbt = self.mappings.remove(&r.vaddr);
+        debug_assert!(rbt.is_some());
         Ok(r)
     }
 

@@ -15,10 +15,10 @@ pub struct X2APICDriver {
     inner: X2APIC,
 }
 
-impl X2APICDriver {
+impl Default for X2APICDriver {
     /// Create a new x2APIC driver object.
-    pub fn new() -> X2APICDriver {
-        X2APICDriver {
+    fn default() -> Self {
+        Self {
             timer_vector: crate::TSC_TIMER_VECTOR,
             state: DriverState::Uninitialized,
             inner: X2APIC::new(),

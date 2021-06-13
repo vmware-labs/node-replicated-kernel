@@ -35,14 +35,27 @@ pub trait ApicDriver {
     fn tsc_set(&self, value: u64);
 
     /// Send a INIT IPI to a core.
+    ///
+    /// # Safety
+    /// This can reset a core.
     unsafe fn ipi_init(&mut self, core: ApicId);
 
     /// Deassert INIT IPI.
+    ///
+    /// # Safety
+    /// This can reset a core.
     unsafe fn ipi_init_deassert(&mut self);
 
     /// Send a STARTUP IPI to a core.
+    ///
+    /// # Safety
+    /// This can reset a core.
     unsafe fn ipi_startup(&mut self, core: ApicId, start_page: u8);
 
     /// Send a generic IPI.
+    ///
+    /// # Safety
+    /// Triggers an IPI on a remote core(s) and can easily crash them by sending
+    /// to the wrong core, or the wrong vector etc.
     unsafe fn send_ipi(&mut self, icr: Icr);
 }

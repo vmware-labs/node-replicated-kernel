@@ -178,7 +178,7 @@ unsafe fn find_current_ptables() -> PageTable {
 
 /// Construct the driver object to manipulate the interrupt controller (XAPIC)
 fn init_apic() -> x2apic::X2APICDriver {
-    let mut apic = x2apic::X2APICDriver::new();
+    let mut apic = x2apic::X2APICDriver::default();
     // Attach the driver to take control of the APIC:
     apic.attach();
 

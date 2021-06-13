@@ -14,11 +14,16 @@ use core::hint::spin_loop;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use crate::arch::MAX_CORES;
+
 use crossbeam_utils::CachePadded;
 
 /// Maximum number of reader threads that this lock supports.
-const MAX_READER_THREADS: usize = 192;
+const MAX_READER_THREADS: usize = MAX_CORES;
 const_assert!(MAX_READER_THREADS > 0);
+
+/// Default `rlock` member for initialization
+const DEFAULT_RLOCK: CachePadded<AtomicUsize> = CachePadded::new(AtomicUsize::new(0));
 
 /// A scalable reader-writer lock.
 ///
@@ -67,11 +72,9 @@ where
     /// Returns a new instance of a RwLock. Default constructs the
     /// underlying data structure.
     fn default() -> RwLock<T> {
-        use arr_macro::arr;
-
         RwLock {
             wlock: CachePadded::new(AtomicBool::new(false)),
-            rlock: arr![Default::default(); 192],
+            rlock: [DEFAULT_RLOCK; MAX_READER_THREADS],
             data: UnsafeCell::new(T::default()),
         }
     }
@@ -90,10 +93,9 @@ where
 {
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
     pub fn new(t: T) -> RwLock<T> {
-        use arr_macro::arr;
         RwLock {
             wlock: CachePadded::new(AtomicBool::new(false)),
-            rlock: arr![Default::default(); 192],
+            rlock: [DEFAULT_RLOCK; MAX_READER_THREADS],
             data: UnsafeCell::new(t),
         }
     }

@@ -10,7 +10,6 @@ use core::convert::TryInto;
 use core::fmt::Debug;
 use core::slice::from_raw_parts;
 
-use arr_macro::arr;
 use arrayvec::ArrayVec;
 use logos::Logos;
 use node_replication::{Replica, ReplicaToken};
@@ -295,6 +294,8 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         arch: A,
         node: atopology::NodeId,
     ) -> Kcb<A> {
+        const DEFAULT_PHYSICAL_MEMORY_ARENA: Option<PhysicalMemoryArena> = None;
+
         Kcb {
             arch,
             cmdline,
@@ -303,7 +304,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             emanager: RefCell::new(emanager),
             ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
             node,
-            memory_arenas: arr![None; 12], // crate::arch::MAX_NUMA_NODES
+            memory_arenas: [DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES],
             // Can't initialize these yet, we need basic Kcb first for
             // memory allocations (emanager):
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),

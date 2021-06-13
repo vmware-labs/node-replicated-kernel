@@ -39,7 +39,6 @@ hashbrown = { version = "0.11", features = [ "nightly" ] }
 cstr_core = { version = "0.2.3", default-features = false }
 uefi = "0.11.0"
 crossbeam-utils = { version = "0.8.0", default-features = false }
-arr_macro = "0.1.3"
 static_assertions = "1.1.0"
 bit_field = "0.10"
 crossbeam-queue = { version = "0.2", default-features = false, features = ["alloc"] }

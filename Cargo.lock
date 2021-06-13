@@ -1002,7 +1002,6 @@ version = "0.0.3"
 dependencies = [
  "addr2line 0.14.1",
  "apic",
- "arr_macro",
  "arrayvec",
  "atopology",
  "backtracer_core",

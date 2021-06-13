@@ -26,13 +26,15 @@ impl FallibleString for String {
     #[inline]
     fn try_push(&mut self, ch: char) -> Result<(), TryReserveError> {
         self.try_reserve(1)?;
-        Ok(self.push(ch))
+        self.push(ch);
+        Ok(())
     }
 
     #[inline]
     fn try_push_str(&mut self, string: &str) -> Result<(), TryReserveError> {
         self.try_reserve(string.len())?;
-        Ok(self.push_str(string))
+        self.push_str(string);
+        Ok(())
     }
 }
 
@@ -45,9 +47,9 @@ pub struct TryString {
     inner: String,
 }
 
-impl Into<String> for TryString {
-    fn into(self) -> String {
-        self.inner
+impl From<TryString> for String {
+    fn from(s: TryString) -> String {
+        s.inner
     }
 }
 

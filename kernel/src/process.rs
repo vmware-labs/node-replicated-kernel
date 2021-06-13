@@ -346,7 +346,7 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
         }
     }
 
-    let mod_file = mod_file.unwrap_or_else(|| panic!("Couldn't find '{}' binary.", binary));
+    let mod_file = mod_file.ok_or(KError::BinaryNotFound { binary })?;
     info!(
         "binary={} cmdline={} module={:?}",
         binary, kcb.cmdline.init_args, mod_file

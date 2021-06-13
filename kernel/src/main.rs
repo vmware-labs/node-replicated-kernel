@@ -117,7 +117,10 @@ pub enum ExitReason {
 #[no_mangle]
 #[cfg(not(feature = "integration-test"))]
 pub fn xmain() {
-    let _r = arch::process::spawn("init").expect("Can't launch init");
+    let ret = arch::process::spawn("init");
+    if let Err(e) = ret {
+        warn!("{}", e);
+    }
     crate::scheduler::schedule()
 }
 

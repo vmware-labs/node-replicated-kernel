@@ -58,6 +58,9 @@ fn init_setup() {
     let mut tc = TCacheSp::new(0);
     let mut mm = memory::MemoryMapper::default();
 
+    // avoids unused code warnings
+    let _stack = crate::stack::OwnedStack::new(LARGE_PAGE_SIZE);
+
     for _i in 0..64 {
         let frame = mm
             .allocate_frame(BASE_PAGE_SIZE)

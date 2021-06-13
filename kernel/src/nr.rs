@@ -130,7 +130,7 @@ impl Dispatch for KernelNode {
                 Some(_) => Ok(NodeResult::PidReturned),
                 None => {
                     error!("Process not found");
-                    Err(KError::NoProcessFoundForPid.into())
+                    Err(KError::NoProcessFoundForPid)
                 }
             },
             Op::SchedAllocateCore(pid, _affinity, Some(gtid), entry_point) => {

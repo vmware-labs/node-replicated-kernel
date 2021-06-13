@@ -53,6 +53,7 @@ pub enum KError {
     TooManyProcesses,
     TooManyRegisteredFrames,
     InvalidFileDescriptor,
+    BinaryNotFound { binary: &'static str },
 
     // Address space errors
     InvalidFrame,
@@ -120,14 +121,14 @@ impl From<slabmalloc::AllocationError> for KError {
     }
 }
 
-impl Into<SystemCallError> for KError {
+impl From<KError> for SystemCallError {
     /// Translate KErrors to SystemCallErrors.
     ///
     /// The idea is to reduce a big set of events into a smaller set of less precise errors.
     /// We can log the the precise errors before we return in the kernel since the conversion
     /// happens at the end of the system call.
-    fn into(self) -> SystemCallError {
-        match self {
+    fn from(e: KError) -> SystemCallError {
+        match e {
             KError::InvalidSyscallArgument1 { .. } => SystemCallError::NotSupported,
             KError::InvalidVSpaceOperation { .. } => SystemCallError::NotSupported,
             KError::InvalidProcessOperation { .. } => SystemCallError::NotSupported,
@@ -214,6 +215,7 @@ impl fmt::Display for KError {
             KError::InvalidFrameId => write!(f, "The provided FrameId is not registered with the process"),
             KError::TooManyProcesses => write!(f, "Not enough space in process table (out of PIDs)."),
             KError::TooManyRegisteredFrames => write!(f, "Can't register more frames with the process (out of FIDs)."),
+            KError::BinaryNotFound { binary } => write!(f, "Can't spawn binary {}: Not found", binary),
 
             KError::InvalidFrame => write!(f, "Supplied frame was invalid"),
             KError::AlreadyMapped{base} => write!(f, "Address space operation covers existing mapping {:?}", base),

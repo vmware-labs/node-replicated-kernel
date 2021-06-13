@@ -458,6 +458,8 @@ pub trait ArchSpecificKcb {
     fn hwthread_id(&self) -> u64;
     fn install(&mut self);
     fn current_pid(&self) -> Result<Pid, KError>;
+
+    #[allow(clippy::type_complexity)] // fix this once `associated_type_defaults` works
     fn process_table(
         &self,
     ) -> &'static ArrayVec<

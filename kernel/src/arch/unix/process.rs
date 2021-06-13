@@ -6,6 +6,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
+use x86::current::paging::PAddr;
 
 use arrayvec::ArrayVec;
 use kpi::process::FrameId;
@@ -17,9 +18,13 @@ use crate::arch::Module;
 use crate::error::KError;
 use crate::fs::Fd;
 use crate::kcb::{self, ArchSpecificKcb};
+use crate::memory::vspace::AddressSpace;
+use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
-use crate::process::{Eid, Executor, Pid, Process, ResumeHandle, MAX_PROCESSES};
+use crate::process::{
+    Eid, Executor, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
+};
 
 use super::debug;
 use super::vspace::VSpace;
@@ -150,6 +155,8 @@ pub struct UnixProcess {
     vspace: VSpace,
     fd: Fd,
     pinfo: kpi::process::ProcessInfo,
+    /// Physical frame objects registered to the process.
+    pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -211,7 +218,11 @@ impl Process for UnixProcess {
         _module: &Module,
         _writable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
-        Ok(())
+        self.vspace.map_frame(
+            VAddr::from(0x2000_0000),
+            Frame::new(PAddr::zero(), 0x0, 0x0),
+            MapAction::None,
+        )
     }
 
     fn try_reserve_executors(
@@ -267,6 +278,8 @@ impl Process for UnixProcess {
     }
 }
 
-pub fn spawn(_binary: &'static str) -> Result<Pid, KError> {
+pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
+    let pid = crate::process::make_process::<UnixProcess>(binary)?;
+    crate::process::allocate_dispatchers::<UnixProcess>(pid)?;
     Ok(0)
 }

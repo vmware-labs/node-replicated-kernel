@@ -87,9 +87,9 @@ impl Iterator for CoreBitMapIter {
 
 #[derive(Debug, PartialEq)]
 pub enum MappingType {
-    ElfText,
-    ElfData,
-    Executor,
+    _ElfText,
+    _ElfData,
+    _Executor,
     Heap,
 }
 
@@ -205,7 +205,7 @@ pub enum MapAction {
 
 impl MapAction {
     /// Transform MapAction into rights for 1 GiB page.
-    pub fn to_pdpt_rights(&self) -> PDPTFlags {
+    pub fn to_pdpt_rights(self) -> PDPTFlags {
         use MapAction::*;
         match self {
             None => PDPTFlags::empty(),
@@ -222,7 +222,7 @@ impl MapAction {
     }
 
     /// Transform MapAction into rights for 2 MiB page.
-    pub fn to_pd_rights(&self) -> PDFlags {
+    pub fn to_pd_rights(self) -> PDFlags {
         use MapAction::*;
         match self {
             None => PDFlags::empty(),
@@ -239,7 +239,7 @@ impl MapAction {
     }
 
     /// Transform MapAction into rights for 4KiB page.
-    pub fn to_pt_rights(&self) -> PTFlags {
+    pub fn to_pt_rights(self) -> PTFlags {
         use MapAction::*;
         match self {
             None => PTFlags::empty(),

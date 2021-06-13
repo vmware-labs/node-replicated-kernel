@@ -91,9 +91,10 @@ impl ArchKcb {
         0
     }
 
+    #[allow(clippy::boxed_local)]
     pub fn swap_current_executor(
         &mut self,
-        current_executor: Box<UnixThread>,
+        _current_executor: Box<UnixThread>,
     ) -> Option<Box<UnixThread>> {
         None
     }
@@ -131,6 +132,7 @@ impl ArchSpecificKcb for ArchKcb {
         Err(KError::ProcessNotSet)
     }
 
+    #[allow(clippy::type_complexity)] // fix this once `associated_type_defaults` works
     fn process_table(
         &self,
     ) -> &'static ArrayVec<

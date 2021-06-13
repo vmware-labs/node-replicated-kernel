@@ -11,25 +11,22 @@ use crate::memory::VAddr;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum KError {
-    // General errors
-    ProcessNotSet,
-    ReplicaNotSet,
-    NoExecutorForCore,
-    NotSupported,
+    // General error
     BadAddress,
     GlobalMemoryNotSet,
     CoreAlreadyAllocated,
+    OutOfMemory,
+    ReplicaNotSet,
+    ProcessNotSet,
+    NotSupported,
+    OutOfPids,
+    NoExecutorForCore,
+
+    // Syscall errors
     InvalidSyscallArgument1 { a: u64 },
     InvalidVSpaceOperation { a: u64 },
     InvalidProcessOperation { a: u64 },
     InvalidSystemOperation { a: u64 },
-
-    InvalidAffinityId,
-    OutOfPids,
-    ProcessLoadingFailed,
-    OutOfMemory,
-    FileDescForPidAlreadyAdded,
-    NoFileDescForPid,
 
     // Physical memory errors
     InvalidLayout,
@@ -38,8 +35,10 @@ pub enum KError {
     CantGrowFurther { count: usize },
     KcbUnavailable,
     ManagerAlreadyBorrowed,
+    InvalidAffinityId,
 
     // Process Errors
+    ProcessLoadingFailed,
     ProcessCreate,
     NoProcessFoundForPid,
     UnableToLoad,
@@ -71,6 +70,8 @@ pub enum KError {
     AlreadyPresent,
     DirectoryError,
     OpenFileLimit,
+    FileDescForPidAlreadyAdded,
+    NoFileDescForPid,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {

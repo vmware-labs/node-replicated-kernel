@@ -20,9 +20,9 @@ pub enum FileType {
     File = 2,
 }
 
-impl Into<u64> for FileType {
-    fn into(self) -> u64 {
-        match self {
+impl From<FileType> for u64 {
+    fn from(ft: FileType) -> Self {
+        match ft {
             FileType::Directory => 1,
             FileType::File => 2,
         }

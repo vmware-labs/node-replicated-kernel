@@ -76,7 +76,7 @@ impl Module {
 
     /// Return a slice to the binary loaded in the (kernel) address space.
     ///
-    /// # Unsafe
+    /// # Safety
     /// May not be mapped at all (for example in UEFI bootloader space).
     /// May be unmapped/changed arbitrarily later by the kernel.
     #[allow(unused)]
@@ -86,7 +86,7 @@ impl Module {
 
     /// Return a slice to the binary loaded in the physical address space.
     ///
-    /// # Unsafe
+    /// # Safety
     /// May not be mapped at all (for example in kernel space).
     /// May be unmapped/changed arbitrarily later by the kernel.
     #[allow(unused)]

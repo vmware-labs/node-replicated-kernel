@@ -1,12 +1,19 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use core::mem::transmute;
-
-use core::pin::Pin;
+//! An implementation of the x86-64 page-tables data-structure (radix tree).
+//!
+//! The code tries to use largest page sizes by default if possible. It
+//! currently won't clean-up empty page-tables during the lifetime of the struct
+//! (e.g. removing the last mapping in a leave table won't free the parent
+//! page-table). Everything is reclaimed on drop though.
 
 use alloc::boxed::Box;
+use core::alloc::Layout;
+use core::mem::transmute;
+use core::pin::Pin;
 
+use kpi::KERNEL_BASE;
 use x86::bits64::paging::*;
 
 use crate::error::KError;
@@ -14,7 +21,7 @@ use crate::kcb::MemManager;
 use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
-/// A modification operation on the PageTable.
+/// Describes a potential modification operation on existing page tables.
 enum Modify {
     /// Change rights of mapping to new MapAction.
     UpdateRights(MapAction),
@@ -22,8 +29,64 @@ enum Modify {
     Unmap,
 }
 
+/// The actual page-table. We allocate the PML4 upfront.
 pub struct PageTable {
     pub pml4: Pin<Box<PML4>>,
+}
+
+impl Drop for PageTable {
+    fn drop(&mut self) {
+        use alloc::alloc::dealloc;
+
+        // Safety (size not overflowing when rounding up is given with size == align):
+        static_assertions::const_assert!(BASE_PAGE_SIZE > 0); // align must not be zero
+        static_assertions::const_assert!(BASE_PAGE_SIZE.is_power_of_two()); // align must be a power of two
+        const PT_LAYOUT: Layout =
+            unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
+
+        // Do a DFS and free all page-table memory allocated below kernel-base,
+        // don't free the mapped frames -- we return them later through NR
+        for pml4_idx in 0..PAGE_SIZE_ENTRIES {
+            if pml4_idx < pml4_index(KERNEL_BASE.into()) && self.pml4[pml4_idx].is_present() {
+                for pdpt_idx in 0..PAGE_SIZE_ENTRIES {
+                    let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+                    if pdpt[pdpt_idx].is_present() {
+                        if !pdpt[pdpt_idx].is_page() {
+                            for pd_idx in 0..PAGE_SIZE_ENTRIES {
+                                let pd = self.get_pd(pdpt[pdpt_idx]);
+                                if pd[pd_idx].is_present() {
+                                    if !pd[pd_idx].is_page() {
+                                        for pt_idx in 0..PAGE_SIZE_ENTRIES {
+                                            let pt = self.get_pt(pd[pd_idx]);
+                                            if pt[pt_idx].is_present() {}
+                                        }
+                                        // Free this PT (page-table)
+                                        let addr = pd[pd_idx].address();
+                                        let vaddr = paddr_to_kernel_vaddr(addr);
+                                        unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                                    }
+                                } else {
+                                    // Encountered a 2 MiB mapping, nothing to free
+                                }
+                            }
+                            // Free this PDPT entry (PD page-table)
+                            let addr = pdpt[pdpt_idx].address();
+                            let vaddr = paddr_to_kernel_vaddr(addr);
+                            unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                        } else {
+                            // Encountered Page is a 1 GiB mapping, nothing to free
+                        }
+                    }
+                }
+
+                // Free this PML4 entry (PDPT page-table)
+                let addr = self.pml4[pml4_idx].address();
+                let vaddr = paddr_to_kernel_vaddr(addr);
+                unsafe { dealloc(vaddr.as_mut_ptr(), PT_LAYOUT) };
+                self.pml4[pml4_idx] = PML4Entry(0x0);
+            }
+        }
+    }
 }
 
 impl AddressSpace for PageTable {
@@ -108,12 +171,6 @@ impl AddressSpace for PageTable {
         let (vaddr, paddr, size, _rights) = self.modify_generic(base, Modify::Unmap)?;
         // TODO(correctness+memory): we lose topology information here...
         Ok(TlbFlushHandle::new(vaddr, Frame::new(paddr, size, 0)))
-    }
-}
-
-impl Drop for PageTable {
-    fn drop(&mut self) {
-        //panic!("Drop for PageTable!");
     }
 }
 

@@ -27,7 +27,7 @@ use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, VAddr};
 use crate::nrproc::NrProcess;
 use crate::process::{
-    Eid, Executor, Pid, Process, ProcessError, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
+    Eid, Executor, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
     MAX_WRITEABLE_SECTIONS_PER_PROCESS,
 };
 use crate::round_up;
@@ -773,7 +773,10 @@ impl elfloader::ElfLoader for Ring3Process {
     /// map the individual pieces of it with different access rights.
     /// This has the advantage that our address space is
     /// all a very simple 1:1 mapping of physical memory.
-    fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
+    fn allocate(
+        &mut self,
+        load_headers: elfloader::LoadableHeaders,
+    ) -> Result<(), elfloader::ElfLoaderErr> {
         for header in load_headers.into_iter() {
             let base = header.virtual_addr();
             let size = header.mem_size() as usize;
@@ -881,7 +884,7 @@ impl elfloader::ElfLoader for Ring3Process {
         flags: elfloader::Flags,
         destination: u64,
         region: &[u8],
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), elfloader::ElfLoaderErr> {
         let destination = self.offset + destination;
 
         // Only write to the read-only sections, writable frames already have
@@ -935,7 +938,10 @@ impl elfloader::ElfLoader for Ring3Process {
     /// with all dependencies we only expect to get relocations of type RELATIVE.
     /// Otherwise, the build would be broken or you got a garbage ELF file.
     /// We return an error in this case.
-    fn relocate(&mut self, entry: &elfloader::Rela<elfloader::P64>) -> Result<(), &'static str> {
+    fn relocate(
+        &mut self,
+        entry: &elfloader::Rela<elfloader::P64>,
+    ) -> Result<(), elfloader::ElfLoaderErr> {
         // Get the pointer to where the relocation happens in the
         // memory where we loaded the headers
         // The forumla for this is our offset where the kernel is starting,
@@ -967,11 +973,11 @@ impl elfloader::ElfLoader for Ring3Process {
             }
             Ok(())
         } else {
-            Err("Can only handle R_RELATIVE for relocation")
+            Err(elfloader::ElfLoaderErr::UnsupportedRelocationEntry)
         }
     }
 
-    fn make_readonly(&mut self, base: u64, size: usize) -> Result<(), &'static str> {
+    fn make_readonly(&mut self, base: u64, size: usize) -> Result<(), elfloader::ElfLoaderErr> {
         trace!(
             "Make readonly {:#x} -- {:#x}",
             self.offset + base,
@@ -994,7 +1000,7 @@ impl elfloader::ElfLoader for Ring3Process {
         tdata_length: u64,
         total_size: u64,
         align: u64,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), elfloader::ElfLoaderErr> {
         self.pinfo.has_tls = true;
         self.pinfo.tls_data = self.offset.as_u64() + tdata_start;
         self.pinfo.tls_data_len = tdata_length;
@@ -1014,7 +1020,7 @@ impl Process for Ring3Process {
         pid: Pid,
         module: &Module,
         writeable_sections: Vec<Frame>,
-    ) -> Result<(), ProcessError> {
+    ) -> Result<(), KError> {
         self.pid = pid;
         // TODO(error-handling): properly unwind on error
         self.writeable_sections.clear();
@@ -1026,7 +1032,7 @@ impl Process for Ring3Process {
         // This needs mostly sanitation work on elfloader and
         // ElfLoad trait impl for process to be safe
         unsafe {
-            let e = elfloader::ElfBinary::new(module.name(), module.as_slice())?;
+            let e = elfloader::ElfBinary::new(module.as_slice())?;
             if !e.is_pie() {
                 // We don't have an offset for non-pie applications (rump apps)
                 self.offset = VAddr::zero();
@@ -1070,21 +1076,19 @@ impl Process for Ring3Process {
     fn get_executor(
         &mut self,
         for_region: atopology::NodeId,
-    ) -> Result<Box<Ring3Executor>, ProcessError> {
+    ) -> Result<Box<Ring3Executor>, KError> {
         match &mut self.executor_cache[for_region as usize] {
             Some(ref mut executor_list) => {
-                let ret = executor_list
-                    .pop()
-                    .ok_or(ProcessError::ExecutorCacheExhausted)?;
+                let ret = executor_list.pop().ok_or(KError::ExecutorCacheExhausted)?;
                 //info!("get executor {} with affinity {}", ret.eid, for_region);
                 Ok(ret)
             }
-            None => Err(ProcessError::NoExecutorAllocated),
+            None => Err(KError::NoExecutorAllocated),
         }
     }
 
     /// Create a series of dispatcher objects for the process
-    fn allocate_executors(&mut self, memory: Frame) -> Result<usize, ProcessError> {
+    fn allocate_executors(&mut self, memory: Frame) -> Result<usize, KError> {
         use crate::kcb::get_kcb;
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
@@ -1163,13 +1167,13 @@ impl Process for Ring3Process {
         }
     }
 
-    fn deallocate_fd(&mut self, fd: usize) -> Result<usize, ProcessError> {
+    fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError> {
         match self.fds.get_mut(fd) {
             Some(fdinfo) => {
                 *fdinfo = None;
                 Ok(fd)
             }
-            None => Err(ProcessError::InvalidFileDescriptor),
+            None => Err(KError::InvalidFileDescriptor),
         }
     }
 
@@ -1181,31 +1185,31 @@ impl Process for Ring3Process {
         &self.pinfo
     }
 
-    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError> {
+    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError> {
         if let Some(fid) = self.frames.iter().position(|fid| fid.is_none()) {
             self.frames[fid] = Some(frame);
             Ok(fid)
         } else {
-            Err(ProcessError::TooManyRegisteredFrames)
+            Err(KError::TooManyRegisteredFrames)
         }
     }
 
-    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError> {
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, KError> {
         self.frames
             .get(frame_id)
             .cloned()
             .flatten()
-            .ok_or(ProcessError::InvalidFrameId)
+            .ok_or(KError::InvalidFrameId)
     }
 
-    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, ProcessError> {
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {
         match self.frames.get_mut(fid) {
             Some(maybe_frame) => {
                 let mut old = None;
                 core::mem::swap(&mut old, maybe_frame);
-                old.ok_or(ProcessError::InvalidFileDescriptor)
+                old.ok_or(KError::InvalidFileDescriptor)
             }
-            _ => Err(ProcessError::InvalidFileDescriptor),
+            _ => Err(KError::InvalidFileDescriptor),
         }
     }
 }

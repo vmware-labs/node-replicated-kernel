@@ -5,12 +5,12 @@ use crate::arch::process::{UserPtr, UserSlice};
 use crate::error::KError;
 use crate::fs::fd::FileDesc;
 use crate::fs::{
-    Buffer, FileDescriptor, FileSystem, FileSystemError, Filename, Flags, Len, MlnrFS, Mnode,
-    Modes, NrLock, Offset, FD, MNODE_OFFSET,
+    Buffer, FileDescriptor, FileSystem, Filename, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset,
+    FD, MNODE_OFFSET,
 };
 use crate::memory::VAddr;
 use crate::prelude::*;
-use crate::process::{userptr_to_str, KernSlice, Pid, ProcessError};
+use crate::process::{userptr_to_str, KernSlice, Pid};
 
 use alloc::sync::Arc;
 use cnr::{Dispatch, LogMapper};
@@ -166,11 +166,7 @@ impl MlnrKernelNode {
     ) -> Result<(Len, u64), KError> {
         let mnode = match MlnrKernelNode::fd_to_mnode(pid, fd) {
             Ok((mnode, _)) => mnode,
-            Err(_) => {
-                return Err(KError::FileSystem {
-                    source: FileSystemError::InvalidFileDescriptor,
-                })
-            }
+            Err(_) => return Err(KError::InvalidFileDescriptor),
         };
         let kcb = super::kcb::get_kcb();
         kcb.arch.cnr_replica.as_ref().map_or(
@@ -366,20 +362,16 @@ impl Dispatch for MlnrKernelNode {
                 let process_lookup = self.process_map.read();
                 let p = process_lookup
                     .get(&pid)
-                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                    .ok_or(KError::NoProcessFoundForPid)?;
 
-                let fd = p.get_fd(fd as usize).ok_or(KError::FileSystem {
-                    source: FileSystemError::PermissionError,
-                })?;
+                let fd = p.get_fd(fd as usize).ok_or(KError::PermissionError)?;
 
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();
 
                 // Check if the file has read-only or read-write permissions before reading it.
                 if !flags.is_read() {
-                    return Err(KError::FileSystem {
-                        source: FileSystemError::PermissionError,
-                    });
+                    return Err(KError::PermissionError);
                 }
 
                 // If the arguments doesn't provide an offset,
@@ -398,7 +390,7 @@ impl Dispatch for MlnrKernelNode {
                         }
                         Ok(MlnrNodeResult::FileAccessed(len as u64))
                     }
-                    Err(e) => Err(KError::FileSystem { source: e }),
+                    Err(e) => Err(e),
                 }
             }
 
@@ -407,12 +399,10 @@ impl Dispatch for MlnrKernelNode {
                     .process_map
                     .read()
                     .get(&pid)
-                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                    .ok_or(KError::NoProcessFoundForPid)?;
 
                 let filename = userptr_to_str(name)?;
-                let mnode = self.fs.lookup(&filename).ok_or(KError::FileSystem {
-                    source: FileSystemError::InvalidFile,
-                })?;
+                let mnode = self.fs.lookup(&filename).ok_or(KError::InvalidFile)?;
 
                 let f_info = self.fs.file_info(*mnode);
                 Ok(MlnrNodeResult::FileInfo(f_info))
@@ -422,11 +412,9 @@ impl Dispatch for MlnrKernelNode {
                 let process_map_locked = self.process_map.read();
                 let p = process_map_locked
                     .get(&pid)
-                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                    .ok_or(KError::NoProcessFoundForPid)?;
 
-                let fd = p.get_fd(fd as usize).ok_or(KError::FileSystem {
-                    source: FileSystemError::PermissionError,
-                })?;
+                let fd = p.get_fd(fd as usize).ok_or(KError::PermissionError)?;
                 let mnode_num = fd.get_mnode();
                 Ok(MlnrNodeResult::MappedFileToMnode(mnode_num))
             }
@@ -436,16 +424,14 @@ impl Dispatch for MlnrKernelNode {
                     .process_map
                     .read()
                     .get(&pid)
-                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                    .ok_or(KError::NoProcessFoundForPid)?;
 
                 let filename = userptr_to_str(name)?;
 
                 match self.fs.lookup(&filename) {
                     // match on (file_exists, mnode_number)
                     Some(mnode) => Ok(MlnrNodeResult::MappedFileToMnode(*mnode)),
-                    None => Err(KError::FileSystem {
-                        source: FileSystemError::InvalidFile,
-                    }),
+                    None => Err(KError::InvalidFile),
                 }
             }
 
@@ -476,9 +462,7 @@ impl Dispatch for MlnrKernelNode {
                 let flags = FileFlags::from(flags);
                 let mnode = self.fs.lookup(&filename);
                 if mnode.is_none() && !flags.is_create() {
-                    return Err(KError::FileSystem {
-                        source: FileSystemError::PermissionError,
-                    });
+                    return Err(KError::PermissionError);
                 }
 
                 let mut pmap = self.process_map.write();
@@ -500,7 +484,7 @@ impl Dispatch for MlnrKernelNode {
                         Err(e) => {
                             let fdesc = fid as usize;
                             pmap.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
-                            return Err(KError::FileSystem { source: e });
+                            return Err(e);
                         }
                     }
                 }
@@ -514,18 +498,14 @@ impl Dispatch for MlnrKernelNode {
                 let p = process_lookup
                     .get(&pid)
                     .expect("TODO: FileWrite process lookup failed");
-                let fd = p.get_fd(fd as usize).ok_or(KError::FileSystem {
-                    source: FileSystemError::PermissionError,
-                })?;
+                let fd = p.get_fd(fd as usize).ok_or(KError::PermissionError)?;
 
                 let mnode_num = fd.get_mnode();
                 let flags = fd.get_flags();
 
                 // Check if the file has write-only or read-write permissions before reading it.
                 if !flags.is_write() {
-                    return Err(KError::FileSystem {
-                        source: FileSystemError::PermissionError,
-                    });
+                    return Err(KError::PermissionError);
                 }
 
                 let mut curr_offset: usize = offset as usize;
@@ -548,7 +528,7 @@ impl Dispatch for MlnrKernelNode {
                         }
                         Ok(MlnrNodeResult::FileAccessed(len as u64))
                     }
-                    Err(e) => Err(KError::FileSystem { source: e }),
+                    Err(e) => Err(e),
                 }
             }
 
@@ -566,7 +546,7 @@ impl Dispatch for MlnrKernelNode {
                     .process_map
                     .read()
                     .get(&pid)
-                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                    .ok_or(KError::NoProcessFoundForPid)?;
                 let _is_deleted = self.fs.delete(&filename)?;
                 Ok(MlnrNodeResult::FileDeleted)
             }
@@ -576,7 +556,7 @@ impl Dispatch for MlnrKernelNode {
                     .process_map
                     .read()
                     .get(&pid)
-                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                    .ok_or(KError::NoProcessFoundForPid)?;
                 let _is_renamed = self.fs.rename(&oldname, &newname)?;
                 Ok(MlnrNodeResult::FileRenamed)
             }
@@ -586,7 +566,7 @@ impl Dispatch for MlnrKernelNode {
                     .process_map
                     .read()
                     .get(&pid)
-                    .ok_or(ProcessError::NoProcessFoundForPid)?;
+                    .ok_or(KError::NoProcessFoundForPid)?;
                 let _is_created = self.fs.mkdir(&filename, modes)?;
                 Ok(MlnrNodeResult::DirCreated)
             }

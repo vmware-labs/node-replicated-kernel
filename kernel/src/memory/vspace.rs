@@ -3,13 +3,11 @@
 
 //! A trait defining architecture independent address spaces.
 
-use alloc::string::ToString;
 use core::cmp::PartialEq;
 use core::fmt;
 
+use crate::error::KError;
 use bit_field::BitField;
-use custom_error::custom_error;
-use kpi::SystemCallError;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 
 use super::{Frame, PAddr, VAddr};
@@ -130,16 +128,12 @@ impl fmt::Debug for MappingInfo {
 pub trait AddressSpace {
     /// Maps a list of `frames` at `base` in the address space
     /// with the access rights defined by `action`.
-    fn map_frames(
-        &mut self,
-        base: VAddr,
-        frames: &[(Frame, MapAction)],
-    ) -> Result<(), AddressSpaceError> {
+    fn map_frames(&mut self, base: VAddr, frames: &[(Frame, MapAction)]) -> Result<(), KError> {
         let mut cur_base = base;
         for (frame, action) in frames {
             self.map_frame(cur_base, *frame, *action)?;
             cur_base = VAddr::from(cur_base.as_usize().checked_add(frame.size()).ok_or(
-                AddressSpaceError::BaseOverflow {
+                KError::BaseOverflow {
                     base: base.as_u64(),
                 },
             )?);
@@ -153,12 +147,7 @@ pub trait AddressSpace {
     ///
     /// Will return an error if new mapping overlaps with
     /// something already mapped.
-    fn map_frame(
-        &mut self,
-        base: VAddr,
-        frame: Frame,
-        action: MapAction,
-    ) -> Result<(), AddressSpaceError>;
+    fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError>;
 
     /// Estimates how many base-pages are needed (for page-tables)
     /// to map the given list of frames in the address space starting at `base`.
@@ -171,57 +160,21 @@ pub trait AddressSpace {
     ///
     /// # Returns
     /// The range (vregion) that was adjusted if successfull.
-    fn adjust(
-        &mut self,
-        vaddr: VAddr,
-        rights: MapAction,
-    ) -> Result<(VAddr, usize), AddressSpaceError>;
+    fn adjust(&mut self, vaddr: VAddr, rights: MapAction) -> Result<(VAddr, usize), KError>;
 
     /// Given a virtual address `vaddr` it returns the corresponding `PAddr`
     /// and access rights or an error in case no mapping is found.
-    fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError>;
+    fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), KError>;
 
     /// Removes the frame from the address space that contains `vaddr`.
     ///
     /// # Returns
     /// The frame to the caller along with a `TlbFlushHandle` that may have to be
     /// invoked to flush the TLB.
-    fn unmap(&mut self, vaddr: VAddr) -> Result<TlbFlushHandle, AddressSpaceError>;
+    fn unmap(&mut self, vaddr: VAddr) -> Result<TlbFlushHandle, KError>;
 
     // Returns an iterator of all currently mapped memory regions.
     //fn mappings()
-}
-
-custom_error! {
-#[derive(PartialEq, Clone)]
-pub AddressSpaceError
-    InvalidFrame = "Supplied frame was invalid",
-    AlreadyMapped{base: VAddr} = "Address space operation covers existing mapping",
-    BaseOverflow{base: u64} = "Provided virtual base was invalid (led to overflow on mappings).",
-    NotMapped = "The requested mapping was not found",
-    InvalidLength = "The supplied length was invalid",
-    InvalidBase = "The supplied base was invalid (alignment?)",
-    NotEnoughMemory = "Not enough memory to allocate address space data-structures",
-}
-
-impl Into<SystemCallError> for AddressSpaceError {
-    fn into(self) -> SystemCallError {
-        match self {
-            AddressSpaceError::InvalidFrame => SystemCallError::InternalError,
-            AddressSpaceError::AlreadyMapped { .. } => SystemCallError::InternalError,
-            AddressSpaceError::BaseOverflow { .. } => SystemCallError::InternalError,
-            AddressSpaceError::NotMapped => SystemCallError::InternalError,
-            AddressSpaceError::InvalidLength => SystemCallError::InternalError,
-            AddressSpaceError::InvalidBase => SystemCallError::InternalError,
-            AddressSpaceError::NotEnoughMemory => SystemCallError::OutOfMemory,
-        }
-    }
-}
-
-impl From<core::alloc::AllocError> for AddressSpaceError {
-    fn from(_err: core::alloc::AllocError) -> Self {
-        AddressSpaceError::NotEnoughMemory
-    }
 }
 
 /// Mapping rights to give to address translation.

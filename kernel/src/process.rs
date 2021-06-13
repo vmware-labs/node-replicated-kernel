@@ -3,7 +3,7 @@
 
 //! Generic process traits
 use alloc::boxed::Box;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::TryInto;
@@ -11,7 +11,6 @@ use core::fmt::Debug;
 
 use arrayvec::ArrayVec;
 use cstr_core::CStr;
-use custom_error::custom_error;
 use fallible_collections::vec::FallibleVec;
 use fallible_collections::vec::TryCollect;
 use fallible_collections::TryReserveError;
@@ -80,50 +79,6 @@ pub type Pid = usize;
 /// Executor ID.
 pub type Eid = usize;
 
-custom_error! {
-#[derive(PartialEq, Clone)]
-pub ProcessError
-    ProcessCreate{desc: String}  = "Unable to create process: {desc}",
-    ProcessNotSet = "The core has no current process set.",
-    NoProcessFoundForPid = "No process was associated with the given Pid.",
-    UnableToLoad = "Couldn't load process, invalid ELF file?",
-    UnableToParseElf = "Couldn't parse ELF file, invalid?",
-    NoExecutorAllocated = "We never allocated executors for this affinity region and process (need to fill cache).",
-    ExecutorCacheExhausted = "The executor cache for given affinity is empty (need to refill)",
-    InvalidGlobalThreadId = "Specified an invalid core",
-    ExecutorNoLongerValid = "The excutor was removed from the current core.",
-    ExecutorAlreadyBorrowed = "The executor on the core was already borrowed (that's a bug).",
-    NotEnoughMemory = "Unable to reserve memory for internal process data-structures.",
-    InvalidFrameId = "The provided FrameId is not registered with the process",
-    TooManyProcesses = "Not enough space in process table (out of PIDs).",
-    TooManyRegisteredFrames = "Can't register more frames with the process (out of FIDs).",
-    InvalidFileDescriptor = "Invalid file-descriptor supplied (for invalidation)",
-}
-
-impl From<&str> for ProcessError {
-    fn from(_err: &str) -> Self {
-        ProcessError::UnableToLoad
-    }
-}
-
-impl From<alloc::collections::TryReserveError> for ProcessError {
-    fn from(_err: alloc::collections::TryReserveError) -> Self {
-        ProcessError::NotEnoughMemory
-    }
-}
-
-impl From<core::alloc::AllocError> for ProcessError {
-    fn from(_err: core::alloc::AllocError) -> Self {
-        ProcessError::NotEnoughMemory
-    }
-}
-
-impl From<arrayvec::CapacityError<Frame>> for ProcessError {
-    fn from(_err: arrayvec::CapacityError<Frame>) -> Self {
-        ProcessError::NotEnoughMemory
-    }
-}
-
 /// Abstract definition of a process.
 pub trait Process {
     type E: Executor + Copy + Sync + Send + Debug + PartialEq;
@@ -134,7 +89,7 @@ pub trait Process {
         pid: Pid,
         module: &Module,
         writable_sections: Vec<Frame>,
-    ) -> Result<(), ProcessError>
+    ) -> Result<(), KError>
     where
         Self: core::marker::Sized;
 
@@ -143,26 +98,25 @@ pub trait Process {
         how_many: usize,
         affinity: atopology::NodeId,
     ) -> Result<(), alloc::collections::TryReserveError>;
-    fn allocate_executors(&mut self, frame: Frame) -> Result<usize, ProcessError>;
+    fn allocate_executors(&mut self, frame: Frame) -> Result<usize, KError>;
 
     fn vspace_mut(&mut self) -> &mut Self::A;
 
     fn vspace(&self) -> &Self::A;
 
-    fn get_executor(&mut self, for_region: atopology::NodeId)
-        -> Result<Box<Self::E>, ProcessError>;
+    fn get_executor(&mut self, for_region: atopology::NodeId) -> Result<Box<Self::E>, KError>;
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)>;
 
-    fn deallocate_fd(&mut self, fd: usize) -> Result<usize, ProcessError>;
+    fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError>;
 
     fn get_fd(&self, index: usize) -> &Fd;
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo;
 
-    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, ProcessError>;
-    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, ProcessError>;
-    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, ProcessError>;
+    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError>;
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, KError>;
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError>;
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU
@@ -209,7 +163,10 @@ impl DataSecAllocator {
 }
 
 impl elfloader::ElfLoader for DataSecAllocator {
-    fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
+    fn allocate(
+        &mut self,
+        load_headers: elfloader::LoadableHeaders,
+    ) -> Result<(), elfloader::ElfLoaderErr> {
         for header in load_headers.into_iter() {
             let base = header.virtual_addr();
             let size = header.mem_size() as usize;
@@ -261,7 +218,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
         flags: elfloader::Flags,
         destination: u64,
         region: &[u8],
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), elfloader::ElfLoaderErr> {
         debug!(
             "load(): destination = {:#x} region.len() = {:#x}",
             destination,
@@ -329,7 +286,10 @@ impl elfloader::ElfLoader for DataSecAllocator {
         Ok(())
     }
 
-    fn relocate(&mut self, entry: &elfloader::Rela<elfloader::P64>) -> Result<(), &'static str> {
+    fn relocate(
+        &mut self,
+        entry: &elfloader::Rela<elfloader::P64>,
+    ) -> Result<(), elfloader::ElfLoaderErr> {
         // Get the pointer to where the relocation happens in the
         // memory where we loaded the headers
         // The forumla for this is our offset where the kernel is starting,
@@ -361,7 +321,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
                             self.offset.as_u64() + entry.get_addend();
                     }
                 } else {
-                    return Err("Can only handle R_RELATIVE for relocation");
+                    return Err(elfloader::ElfLoaderErr::UnsupportedRelocationEntry);
                 }
             }
         }
@@ -393,8 +353,7 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     );
 
     let elf_module = unsafe {
-        elfloader::ElfBinary::new(mod_file.name(), mod_file.as_slice())
-            .map_err(|_e| ProcessError::UnableToParseElf)?
+        elfloader::ElfBinary::new(mod_file.as_slice()).map_err(|_e| KError::UnableToParseElf)?
     };
 
     // We don't have an offset for non-pie applications (i.e., rump apps)
@@ -410,7 +369,7 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     };
     elf_module
         .load(&mut data_sec_loader)
-        .map_err(|_e| ProcessError::UnableToLoad)?;
+        .map_err(|_e| KError::UnableToLoad)?;
     let data_frames: Vec<Frame> = data_sec_loader.finish()?;
     debug_assert!(
         data_frames.len() <= MAX_WRITEABLE_SECTIONS_PER_PROCESS,

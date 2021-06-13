@@ -132,10 +132,10 @@ impl ModelFS {
 
 impl FileSystem for ModelFS {
     // Create just puts the file in the oplop and increases mnode counter.
-    fn create(&self, pathname: &str, mode: Modes) -> Result<u64, FileSystemError> {
+    fn create(&self, pathname: &str, mode: Modes) -> Result<u64, KError> {
         let path = String::from(pathname);
         if self.file_exists(&path) {
-            Err(FileSystemError::AlreadyPresent)
+            Err(KError::AlreadyPresent)
         } else {
             *self.mnode_counter.borrow_mut() += 1;
             self.oplog.borrow_mut().push(ModelOperation::Created(
@@ -150,12 +150,7 @@ impl FileSystem for ModelFS {
     /// Write just logs the write to the oplog.
     ///
     /// Our model assumes that the buffer repeats the first byte for its entire length.
-    fn write(
-        &self,
-        mnode_num: Mnode,
-        buffer: &[u8],
-        offset: usize,
-    ) -> Result<usize, FileSystemError> {
+    fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError> {
         if self.mnode_exists(mnode_num) {
             for x in self.oplog.borrow().iter().rev() {
                 trace!("seen {:?}", x);
@@ -163,7 +158,7 @@ impl FileSystem for ModelFS {
                     // Check if the file is writable or not
                     ModelOperation::Created(_path, mode, mnode) => {
                         if mnode_num == *mnode && !FileModes::from(*mode).is_writable() {
-                            return Err(FileSystemError::PermissionError);
+                            return Err(KError::PermissionError);
                         }
                     }
                     _ => { /* The operation is not relevant */ }
@@ -182,7 +177,7 @@ impl FileSystem for ModelFS {
             }
             Ok(buffer.len())
         } else {
-            Err(FileSystemError::InvalidFile)
+            Err(KError::InvalidFile)
         }
     }
 
@@ -195,7 +190,7 @@ impl FileSystem for ModelFS {
         mnode_num: Mnode,
         buffer: &mut UserSlice,
         offset: usize,
-    ) -> Result<usize, FileSystemError> {
+    ) -> Result<usize, KError> {
         let _len = buffer.len();
         if self.mnode_exists(mnode_num) {
             // We store our 'retrieved' data in a buffer of Option<u8>
@@ -243,7 +238,7 @@ impl FileSystem for ModelFS {
 
                     ModelOperation::Created(_path, mode, mnode) => {
                         if mnode_num == *mnode && !FileModes::from(*mode).is_readable() {
-                            return Err(FileSystemError::PermissionError);
+                            return Err(KError::PermissionError);
                         }
                     }
 
@@ -274,7 +269,7 @@ impl FileSystem for ModelFS {
 
             Ok(bytes_read)
         } else {
-            Err(FileSystemError::InvalidFile)
+            Err(KError::InvalidFile)
         }
     }
 
@@ -284,14 +279,14 @@ impl FileSystem for ModelFS {
     }
 
     /// Delete finds and removes a path from the oplog again.
-    fn delete(&self, pathname: &str) -> Result<(), FileSystemError> {
+    fn delete(&self, pathname: &str) -> Result<(), KError> {
         if let Some(idx) = self.path_to_idx(&String::from(pathname)) {
             self.oplog.borrow_mut().remove(idx);
             // We leave corresponding ModelOperation::Write entries
             // in the log for now...
             Ok(())
         } else {
-            Err(FileSystemError::InvalidFile)
+            Err(KError::InvalidFile)
         }
     }
 
@@ -301,16 +296,16 @@ impl FileSystem for ModelFS {
     }
 
     /// Return a `dummy` response as this function is only used for open with O_TRUNC flag.
-    fn truncate(&self, pathname: &str) -> Result<(), FileSystemError> {
+    fn truncate(&self, pathname: &str) -> Result<(), KError> {
         Ok(())
     }
 
     /// Return a `dummy` response for rename operation
-    fn rename(&self, oldname: &str, newname: &str) -> Result<(), FileSystemError> {
+    fn rename(&self, oldname: &str, newname: &str) -> Result<(), KError> {
         Ok(())
     }
 
-    fn mkdir(&self, pathname: &str, mode: Modes) -> Result<(), FileSystemError> {
+    fn mkdir(&self, pathname: &str, mode: Modes) -> Result<(), KError> {
         Ok(())
     }
 }
@@ -597,7 +592,7 @@ fn test_file_write_permission_error() {
     // On error read returns 0.
     assert_eq!(
         memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(FileSystemError::PermissionError)
+        Err(KError::PermissionError)
     );
 }
 
@@ -700,7 +695,7 @@ fn test_file_duplicate_create() {
     );
     assert_eq!(
         memfs.create(filename, FileModes::S_IRWXU.into()),
-        Err(FileSystemError::AlreadyPresent)
+        Err(KError::AlreadyPresent)
     );
 }
 
@@ -733,11 +728,11 @@ fn test_file_delete() {
     assert_eq!(memfs.lookup(filename), None);
     assert_eq!(
         memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(FileSystemError::InvalidFile)
+        Err(KError::InvalidFile)
     );
     assert_eq!(
         memfs.read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(FileSystemError::InvalidFile)
+        Err(KError::InvalidFile)
     );
 }
 
@@ -802,10 +797,7 @@ fn test_file_rename_nonexistent_file() {
     let mut memfs: MlnrFS = Default::default();
     let oldname = "file.txt";
     let newname = "filenew.txt";
-    assert_eq!(
-        memfs.rename(oldname, newname),
-        Err(FileSystemError::InvalidFile)
-    );
+    assert_eq!(memfs.rename(oldname, newname), Err(KError::InvalidFile));
 }
 
 #[test]

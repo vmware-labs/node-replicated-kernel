@@ -8,9 +8,10 @@ use core::mem::size_of;
 use fallible_collections::FallibleVec;
 use kpi::io::*;
 
+use crate::error::KError;
 use crate::memory::BASE_PAGE_SIZE;
 
-use super::{FileSystemError, Modes};
+use super::Modes;
 
 #[derive(Debug, Eq, PartialEq)]
 /// The buffer is used by the file. Each buffer is BASE_PAGE_SIZE
@@ -37,7 +38,7 @@ pub struct File {
 
 impl File {
     /// Initialize a file. Pre-intialize the buffer list with 64 size.
-    pub fn new(modes: Modes) -> Result<File, FileSystemError> {
+    pub fn new(modes: Modes) -> Result<File, KError> {
         let modes = FileModes::from(modes);
         let mcache = Vec::try_with_capacity(64 * size_of::<Buffer>())?;
         Ok(File { mcache, modes })
@@ -83,7 +84,7 @@ impl File {
         &mut self,
         curr_file_len: usize,
         new_len: usize,
-    ) -> Result<(), FileSystemError> {
+    ) -> Result<(), KError> {
         if new_len == 0 {
             return Ok(());
         }
@@ -151,7 +152,7 @@ impl File {
         user_slice: &mut [u8],
         start_offset: usize,
         end_offset: usize,
-    ) -> Result<usize, FileSystemError> {
+    ) -> Result<usize, KError> {
         let mut buffer_num = offset_to_buffernum(start_offset, BASE_PAGE_SIZE);
         let mut offset_in_buffer = start_offset - (buffer_num * BASE_PAGE_SIZE);
         let mut copied = 0;
@@ -193,7 +194,7 @@ impl File {
         user_slice: &[u8],
         len: usize,
         start_offset: usize,
-    ) -> Result<usize, FileSystemError> {
+    ) -> Result<usize, KError> {
         // If offset is specified, then resize the file to the offset + len.
         // If offset is more than file size then fill the file with zeros till the offset.
         let curr_file_len = self.get_size();
@@ -202,7 +203,7 @@ impl File {
             && new_len > curr_file_len
             && self.increase_file_size(curr_file_len, new_len).is_err()
         {
-            return Err(FileSystemError::OutOfMemory);
+            return Err(KError::OutOfMemory);
         }
 
         let mut buffer_num = offset_to_buffernum(start_offset, BASE_PAGE_SIZE);

@@ -20,12 +20,10 @@ use core::sync::atomic::AtomicU64;
 use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
-use custom_error::custom_error;
 use slabmalloc::{Allocator, ZoneAllocator};
 use spin::Mutex;
 use x86::bits64::paging;
 
-use crate::alloc::string::ToString;
 use crate::arch::MAX_NUMA_NODES;
 use crate::prelude::*;
 use crate::{kcb, round_up};
@@ -47,33 +45,6 @@ pub mod vspace_model;
 
 /// How many initial physical memory regions we support.
 pub const MAX_PHYSICAL_REGIONS: usize = 64;
-
-custom_error! {
-    #[derive(PartialEq, Clone)]
-    pub AllocationError
-    InvalidLayout = "Invalid layout for allocator provided.",
-    CacheExhausted = "Couldn't allocate bytes on this cache, need to re-grow first.",
-    CacheFull = "Cache can't hold any more objects.",
-    CantGrowFurther{count: usize} = "Cache full; only added {count} elements.",
-    KcbUnavailable = "KCB not set, memory allocation won't work at this point.",
-    ManagerAlreadyBorrowed = "The memory manager was already borrowed (this is a bug).",
-}
-
-impl From<slabmalloc::AllocationError> for AllocationError {
-    fn from(err: slabmalloc::AllocationError) -> AllocationError {
-        match err {
-            slabmalloc::AllocationError::InvalidLayout => AllocationError::InvalidLayout,
-            // slabmalloc OOM just means we have to refill:
-            slabmalloc::AllocationError::OutOfMemory => AllocationError::CacheExhausted,
-        }
-    }
-}
-
-impl From<core::cell::BorrowMutError> for AllocationError {
-    fn from(_err: core::cell::BorrowMutError) -> AllocationError {
-        AllocationError::ManagerAlreadyBorrowed
-    }
-}
 
 /// The global allocator in the kernel.
 //#[cfg(not(any(test, fuzzing)))]
@@ -123,8 +94,8 @@ pub fn size_to_pages(size: usize) -> (usize, usize) {
 
 impl KernelAllocator {
     /// Try to allocate a piece of memory.
-    fn try_alloc(&self, layout: Layout) -> Result<ptr::NonNull<u8>, AllocationError> {
-        let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
+    fn try_alloc(&self, layout: Layout) -> Result<ptr::NonNull<u8>, KError> {
+        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
         match KernelAllocator::allocator_for(layout) {
             AllocatorType::Zone if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE => {
                 // TODO(rust): Silly code duplication follows if/else
@@ -246,9 +217,9 @@ impl KernelAllocator {
     /// Try to refill our core-local zone allocator.
     ///
     /// We come here if a previous allocation failed.
-    fn try_refill(&self, layout: Layout, e: AllocationError) -> Result<(), AllocationError> {
+    fn try_refill(&self, layout: Layout, e: KError) -> Result<(), KError> {
         match (KernelAllocator::allocator_for(layout), e) {
-            (AllocatorType::Zone, AllocationError::CacheExhausted) => {
+            (AllocatorType::Zone, KError::CacheExhausted) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
                 self.maybe_refill_tcache(needed_base_pages, needed_large_pages)?;
@@ -299,8 +270,8 @@ impl KernelAllocator {
     pub fn try_refill_tcache(
         needed_base_pages: usize,
         needed_large_pages: usize,
-    ) -> Result<(), AllocationError> {
-        let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
+    ) -> Result<(), KError> {
+        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
         if kcb.physical_memory.gmanager.is_none() {
             // No gmanager, can't refill then, let's hope it works anyways...
             return Ok(());
@@ -340,8 +311,8 @@ impl KernelAllocator {
         &self,
         needed_base_pages: usize,
         needed_large_pages: usize,
-    ) -> Result<(), AllocationError> {
-        let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
+    ) -> Result<(), KError> {
+        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
         let mem_manager = kcb.try_mem_manager()?;
 
         let free_bp = mem_manager.free_base_pages();
@@ -367,8 +338,8 @@ impl KernelAllocator {
     }
 
     /// Try refill zone
-    fn try_refill_zone(&self, layout: Layout) -> Result<(), AllocationError> {
-        let kcb = kcb::try_get_kcb().ok_or(AllocationError::KcbUnavailable)?;
+    fn try_refill_zone(&self, layout: Layout) -> Result<(), KError> {
+        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
         let needs_a_base_page = layout.size() <= slabmalloc::ZoneAllocator::MAX_BASE_ALLOC_SIZE;
 
         let mut mem_manager = kcb.try_mem_manager()?;
@@ -434,13 +405,13 @@ unsafe impl GlobalAlloc for KernelAllocator {
                 Ok(nptr) => {
                     return nptr.as_ptr();
                 }
-                Err(AllocationError::KcbUnavailable) => {
+                Err(KError::KcbUnavailable) => {
                     unreachable!(
                         "Bug; trying to get KCB 2x in during `try_alloc` {:?}",
                         layout
                     );
                 }
-                Err(AllocationError::ManagerAlreadyBorrowed) => {
+                Err(KError::ManagerAlreadyBorrowed) => {
                     unreachable!(
                         "ManagerAlreadyBorrowed trying to get mem manager 2x during `try_alloc`"
                     );
@@ -452,11 +423,11 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             // Refilling worked, re-try allocation
                             continue;
                         }
-                        Err(AllocationError::KcbUnavailable) => {
+                        Err(KError::KcbUnavailable) => {
                             error!("KcbUnavailable trying to get KCB during `try_refill`");
                             break;
                         }
-                        Err(AllocationError::ManagerAlreadyBorrowed) => {
+                        Err(KError::ManagerAlreadyBorrowed) => {
                             error!("ManagerAlreadyBorrowed trying to get mem manager 2x during `try_refill` {:?}", layout);
                             break;
                         }
@@ -675,7 +646,7 @@ impl GlobalMemory {
     /// The good news is that we only invoke this once during bootstrap.
     pub unsafe fn new(
         mut memory: ArrayVec<Frame, MAX_PHYSICAL_REGIONS>,
-    ) -> Result<GlobalMemory, AllocationError> {
+    ) -> Result<GlobalMemory, KError> {
         debug_assert!(!memory.is_empty());
         let mut gm = GlobalMemory::default();
 
@@ -782,14 +753,14 @@ impl fmt::Debug for GlobalMemory {
 /// A trait to allocate and release physical pages from an allocator.
 pub trait PhysicalPageProvider {
     /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.
-    fn allocate_base_page(&mut self) -> Result<Frame, AllocationError>;
+    fn allocate_base_page(&mut self) -> Result<Frame, KError>;
     /// Release a `BASE_PAGE_SIZE` for the given architecture back to the allocator.
-    fn release_base_page(&mut self, f: Frame) -> Result<(), AllocationError>;
+    fn release_base_page(&mut self, f: Frame) -> Result<(), KError>;
 
     /// Allocate a `LARGE_PAGE_SIZE` for the given architecture from the allocator.
-    fn allocate_large_page(&mut self) -> Result<Frame, AllocationError>;
+    fn allocate_large_page(&mut self) -> Result<Frame, KError>;
     /// Release a `LARGE_PAGE_SIZE` for the given architecture back to the allocator.
-    fn release_large_page(&mut self, f: Frame) -> Result<(), AllocationError>;
+    fn release_large_page(&mut self, f: Frame) -> Result<(), KError>;
 }
 
 /// The backend implementation necessary to implement if we want a client to be
@@ -799,13 +770,13 @@ pub trait GrowBackend {
     fn spare_base_page_capacity(&self) -> usize;
 
     /// Add a slice of base-pages to `self`.
-    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
+    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), KError>;
 
     /// How much capacity we have left to add large pages.
     fn spare_large_page_capacity(&self) -> usize;
 
     /// Add a slice of large-pages to `self`.
-    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError>;
+    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), KError>;
 }
 
 /// The backend implementation necessary to implement if we want
@@ -874,7 +845,7 @@ pub trait PhysicalAllocator {
     ///
     /// This method allocates at least a multiple of `BASE_PAGE_SIZE`
     /// so it can result in large amounts of internal fragmentation.
-    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, AllocationError>;
+    unsafe fn allocate_frame(&mut self, layout: Layout) -> Result<Frame, KError>;
 
     /// Give a frame previously allocated using `allocate_frame` back
     /// to the physical memory allocator.

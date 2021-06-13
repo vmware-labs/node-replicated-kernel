@@ -6,7 +6,6 @@
 // ARG2 %rdx
 // ARG3 %r8
 
-.att_syntax
 .text
 .extern jump_to_kernel
 jump_to_kernel: // fn(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64)

@@ -15,7 +15,6 @@ use crate::cnrfs::MlnrKernelNode;
 use crate::error::KError;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
-use crate::process::ProcessError;
 use crate::process::{Pid, MAX_PROCESSES};
 use crate::{
     kcb::{ArchSpecificKcb, BootloaderArguments, Kcb},
@@ -103,11 +102,11 @@ impl ArchKcb {
         self.current_executor.is_some()
     }
 
-    pub fn current_executor(&self) -> Result<&UnixThread, ProcessError> {
+    pub fn current_executor(&self) -> Result<&UnixThread, KError> {
         let p = self
             .current_executor
             .as_ref()
-            .ok_or(ProcessError::ProcessNotSet)?;
+            .ok_or(KError::ProcessNotSet)?;
         Ok(p)
     }
 }

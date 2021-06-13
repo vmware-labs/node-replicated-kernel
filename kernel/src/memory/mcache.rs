@@ -241,40 +241,40 @@ impl<const BP: usize, const LP: usize> AllocatorStatistics for MCache<BP, LP> {
 }
 
 impl<const BP: usize, const LP: usize> PhysicalPageProvider for MCache<BP, LP> {
-    fn allocate_base_page(&mut self) -> Result<Frame, AllocationError> {
+    fn allocate_base_page(&mut self) -> Result<Frame, KError> {
         let paddr = self
             .base_page_addresses
             .pop()
-            .ok_or(AllocationError::CacheExhausted)?;
+            .ok_or(KError::CacheExhausted)?;
         Ok(self.paddr_to_base_page(paddr))
     }
 
-    fn release_base_page(&mut self, frame: Frame) -> Result<(), AllocationError> {
+    fn release_base_page(&mut self, frame: Frame) -> Result<(), KError> {
         assert_eq!(frame.size(), BASE_PAGE_SIZE);
         assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
         assert_eq!(frame.affinity, self.node);
 
         self.base_page_addresses
             .try_push(frame.base)
-            .map_err(|_e| AllocationError::CacheFull)
+            .map_err(|_e| KError::CacheFull)
     }
 
-    fn allocate_large_page(&mut self) -> Result<Frame, AllocationError> {
+    fn allocate_large_page(&mut self) -> Result<Frame, KError> {
         let paddr = self
             .large_page_addresses
             .pop()
-            .ok_or(AllocationError::CacheExhausted)?;
+            .ok_or(KError::CacheExhausted)?;
         Ok(self.paddr_to_large_page(paddr))
     }
 
-    fn release_large_page(&mut self, frame: Frame) -> Result<(), AllocationError> {
+    fn release_large_page(&mut self, frame: Frame) -> Result<(), KError> {
         assert_eq!(frame.size(), LARGE_PAGE_SIZE);
         assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
         assert_eq!(frame.affinity, self.node);
 
         self.large_page_addresses
             .try_push(frame.base)
-            .map_err(|_e| AllocationError::CacheFull)
+            .map_err(|_e| KError::CacheFull)
     }
 }
 
@@ -283,7 +283,7 @@ impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
         self.base_page_addresses.capacity() - self.base_page_addresses.len()
     }
 
-    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError> {
+    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), KError> {
         for frame in free_list {
             assert_eq!(frame.size(), BASE_PAGE_SIZE);
             assert_eq!(frame.base % BASE_PAGE_SIZE, 0);
@@ -291,7 +291,7 @@ impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
 
             self.base_page_addresses
                 .try_push(frame.base)
-                .map_err(|_e| AllocationError::CacheFull)?;
+                .map_err(|_e| KError::CacheFull)?;
         }
         Ok(())
     }
@@ -300,7 +300,7 @@ impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
         self.large_page_addresses.capacity() - self.large_page_addresses.len()
     }
 
-    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), AllocationError> {
+    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), KError> {
         for frame in free_list {
             assert_eq!(frame.size(), LARGE_PAGE_SIZE);
             assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
@@ -308,7 +308,7 @@ impl<const BP: usize, const LP: usize> GrowBackend for MCache<BP, LP> {
 
             self.large_page_addresses
                 .try_push(frame.base)
-                .map_err(|_e| AllocationError::CacheFull)?;
+                .map_err(|_e| KError::CacheFull)?;
         }
         Ok(())
     }

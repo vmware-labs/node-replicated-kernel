@@ -3,17 +3,17 @@
 
 #![allow(unused)]
 
-use crate::arch::process::UserSlice;
-
 use alloc::string::String;
 use alloc::sync::Arc;
-
 use core::sync::atomic::{AtomicUsize, Ordering};
-use custom_error::custom_error;
+
 use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::SystemCallError;
 use spin::RwLock;
+
+use crate::arch::process::UserSlice;
+use crate::error::KError;
 
 pub use rwlock::RwLock as NrLock;
 
@@ -47,75 +47,22 @@ pub type Filename = u64;
 /// File offset
 pub type Offset = i64;
 
-custom_error! {
-    #[derive(PartialEq, Clone)]
-    pub FileSystemError
-    InvalidFileDescriptor = "Supplied file descriptor was invalid",
-    InvalidFile = "Supplied file was invalid",
-    InvalidFlags = "Supplied flags were invalid",
-    InvalidOffset = "Supplied offset was invalid",
-    PermissionError = "File/directory can't be read or written",
-    AlreadyPresent = "Fd/File already exists",
-    DirectoryError = "Can't read or write to a directory",
-    OpenFileLimit = "Maximum files are opened for a process",
-    OutOfMemory = "Unable to allocate memory for file",
-}
-
-impl Into<SystemCallError> for FileSystemError {
-    fn into(self) -> SystemCallError {
-        match self {
-            FileSystemError::InvalidFileDescriptor => SystemCallError::BadFileDescriptor,
-            FileSystemError::InvalidFile => SystemCallError::BadFileDescriptor,
-            FileSystemError::InvalidFlags => SystemCallError::BadFlags,
-            FileSystemError::InvalidOffset => SystemCallError::PermissionError,
-            FileSystemError::PermissionError => SystemCallError::PermissionError,
-            FileSystemError::AlreadyPresent => SystemCallError::PermissionError,
-            FileSystemError::DirectoryError => SystemCallError::PermissionError,
-            FileSystemError::OpenFileLimit => SystemCallError::OutOfMemory,
-            FileSystemError::OutOfMemory => SystemCallError::OutOfMemory,
-        }
-    }
-}
-
-impl From<alloc::collections::TryReserveError> for FileSystemError {
-    fn from(_err: alloc::collections::TryReserveError) -> Self {
-        FileSystemError::OutOfMemory
-    }
-}
-
-impl From<core::alloc::AllocError> for FileSystemError {
-    fn from(_err: core::alloc::AllocError) -> Self {
-        FileSystemError::OutOfMemory
-    }
-}
-
-impl From<hashbrown::TryReserveError> for FileSystemError {
-    fn from(_err: hashbrown::TryReserveError) -> Self {
-        FileSystemError::OutOfMemory
-    }
-}
-
 /// Abstract definition of file-system interface operations.
 pub trait FileSystem {
-    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError>;
-    fn write(
-        &self,
-        mnode_num: Mnode,
-        buffer: &[u8],
-        offset: usize,
-    ) -> Result<usize, FileSystemError>;
+    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, KError>;
+    fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError>;
     fn read(
         &self,
         mnode_num: Mnode,
         buffer: &mut UserSlice,
         offset: usize,
-    ) -> Result<usize, FileSystemError>;
+    ) -> Result<usize, KError>;
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
     fn file_info(&self, mnode: Mnode) -> FileInfo;
-    fn delete(&self, pathname: &str) -> Result<(), FileSystemError>;
-    fn truncate(&self, pathname: &str) -> Result<(), FileSystemError>;
-    fn rename(&self, oldname: &str, newname: &str) -> Result<(), FileSystemError>;
-    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), FileSystemError>;
+    fn delete(&self, pathname: &str) -> Result<(), KError>;
+    fn truncate(&self, pathname: &str) -> Result<(), KError>;
+    fn rename(&self, oldname: &str, newname: &str) -> Result<(), KError>;
+    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), KError>;
 }
 
 /// Abstract definition of a file descriptor.
@@ -234,7 +181,6 @@ impl MlnrFS {
 ///
 /// TODO(api): This should probably go into a FallibleString trait.
 fn try_make_path(path: &str) -> Result<String, alloc::collections::TryReserveError> {
-    // let newname_key = newname.to_string();
     let mut new_string = String::new();
     new_string.try_reserve(path.len())?;
     new_string.push_str(path);
@@ -242,10 +188,10 @@ fn try_make_path(path: &str) -> Result<String, alloc::collections::TryReserveErr
 }
 
 impl FileSystem for MlnrFS {
-    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, FileSystemError> {
+    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, KError> {
         // Check if the file with the same name already exists.
         if self.files.read().get(pathname).is_some() {
-            return Err(FileSystemError::AlreadyPresent);
+            return Err(KError::AlreadyPresent);
         }
         let pathname_string = try_make_path(pathname)?;
 
@@ -266,15 +212,10 @@ impl FileSystem for MlnrFS {
         Ok(mnode_num)
     }
 
-    fn write(
-        &self,
-        mnode_num: Mnode,
-        buffer: &[u8],
-        offset: usize,
-    ) -> Result<usize, FileSystemError> {
+    fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError> {
         match self.mnodes.read().get(&mnode_num) {
             Some(mnode) => mnode.write().write(buffer, offset),
-            None => Err(FileSystemError::InvalidFile),
+            None => Err(KError::InvalidFile),
         }
     }
 
@@ -283,10 +224,10 @@ impl FileSystem for MlnrFS {
         mnode_num: Mnode,
         buffer: &mut UserSlice,
         offset: usize,
-    ) -> Result<usize, FileSystemError> {
+    ) -> Result<usize, KError> {
         match self.mnodes.read().get(&mnode_num) {
             Some(mnode) => mnode.read().read(buffer, offset),
-            None => Err(FileSystemError::InvalidFile),
+            None => Err(KError::InvalidFile),
         }
     }
 
@@ -310,16 +251,16 @@ impl FileSystem for MlnrFS {
         }
     }
 
-    fn delete(&self, pathname: &str) -> Result<(), FileSystemError> {
+    fn delete(&self, pathname: &str) -> Result<(), KError> {
         let mut files = self.files.write();
         if let Some(mnode) = files.get(pathname) {
             if Arc::strong_count(mnode) == 1 {
                 self.mnodes.write().remove(&mnode);
             } else {
-                return Err(FileSystemError::PermissionError);
+                return Err(KError::PermissionError);
             }
         } else {
-            return Err(FileSystemError::InvalidFile);
+            return Err(KError::InvalidFile);
         }
 
         let r = files.remove(pathname);
@@ -327,19 +268,19 @@ impl FileSystem for MlnrFS {
         Ok(())
     }
 
-    fn truncate(&self, pathname: &str) -> Result<(), FileSystemError> {
+    fn truncate(&self, pathname: &str) -> Result<(), KError> {
         match self.files.read().get(pathname) {
             Some(mnode) => match self.mnodes.read().get(mnode) {
                 Some(memnode) => memnode.write().file_truncate(),
-                None => Err(FileSystemError::InvalidFile),
+                None => Err(KError::InvalidFile),
             },
-            None => Err(FileSystemError::InvalidFile),
+            None => Err(KError::InvalidFile),
         }
     }
 
-    fn rename(&self, oldname: &str, newname: &str) -> Result<(), FileSystemError> {
+    fn rename(&self, oldname: &str, newname: &str) -> Result<(), KError> {
         if self.files.read().get(oldname).is_none() {
-            return Err(FileSystemError::InvalidFile);
+            return Err(KError::InvalidFile);
         }
         let mut newname_key = try_make_path(newname)?;
 
@@ -353,18 +294,18 @@ impl FileSystem for MlnrFS {
         match lock_at_root.remove_entry(oldname) {
             Some((_key, oldnmode)) => match lock_at_root.insert(newname_key, oldnmode) {
                 None => Ok(()),
-                Some(_) => Err(FileSystemError::PermissionError),
+                Some(_) => Err(KError::PermissionError),
             },
-            None => Err(FileSystemError::InvalidFile),
+            None => Err(KError::InvalidFile),
         }
     }
 
     /// Create a directory. The implementation is quite simplistic for now, and only used
     /// by leveldb benchmark.
-    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), FileSystemError> {
+    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), KError> {
         // Check if the file with the same name already exists.
         if self.files.read().get(pathname).is_some() {
-            return Err(FileSystemError::AlreadyPresent);
+            return Err(KError::AlreadyPresent);
         }
 
         let pathname_key = try_make_path(pathname)?;

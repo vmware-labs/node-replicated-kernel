@@ -4,6 +4,7 @@ use core::iter::Iterator;
 use x86::current::paging::PTFlags;
 
 use super::vspace::*;
+use crate::error::KError;
 use crate::memory::{Frame, PAddr, VAddr, BASE_PAGE_SIZE};
 
 /// A simple model address space
@@ -52,23 +53,18 @@ impl Default for ModelAddressSpace {
 }
 
 impl AddressSpace for ModelAddressSpace {
-    fn map_frame(
-        &mut self,
-        base: VAddr,
-        frame: Frame,
-        action: MapAction,
-    ) -> Result<(), AddressSpaceError> {
+    fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         // Don't allow mapping of zero-sized frames
         if frame.size() == 0 {
-            return Err(AddressSpaceError::InvalidFrame);
+            return Err(KError::InvalidFrame);
         }
         if frame.base % frame.size() != 0 {
             // phys addr should be aligned to page-size
-            return Err(AddressSpaceError::InvalidFrame);
+            return Err(KError::InvalidFrame);
         }
         if base % frame.size() != 0 {
             // virtual addr should be aligned to page-size
-            return Err(AddressSpaceError::InvalidBase);
+            return Err(KError::InvalidBase);
         }
 
         // Is there an existing mapping that conflicts with the new mapping?
@@ -120,7 +116,7 @@ impl AddressSpace for ModelAddressSpace {
             // In case we have a mapping that conflicts return the first (lowest)
             // VAddr where a conflict happened:
             overlapping_mappings.sort_unstable();
-            return Err(AddressSpaceError::AlreadyMapped {
+            return Err(KError::AlreadyMapped {
                 base: *overlapping_mappings.get(0).unwrap(),
             });
         }
@@ -136,13 +132,9 @@ impl AddressSpace for ModelAddressSpace {
         0
     }
 
-    fn adjust(
-        &mut self,
-        base: VAddr,
-        new_rights: MapAction,
-    ) -> Result<(VAddr, usize), AddressSpaceError> {
+    fn adjust(&mut self, base: VAddr, new_rights: MapAction) -> Result<(VAddr, usize), KError> {
         if !base.is_base_page_aligned() {
-            return Err(AddressSpaceError::InvalidBase);
+            return Err(KError::InvalidBase);
         }
 
         for (cur_vaddr, _cur_paddr, cur_length, cur_rights) in self.oplog.iter_mut().rev() {
@@ -152,10 +144,10 @@ impl AddressSpace for ModelAddressSpace {
             }
         }
 
-        Err(AddressSpaceError::NotMapped)
+        Err(KError::NotMapped)
     }
 
-    fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
+    fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), KError> {
         // Walk through mappings, find mapping containing vaddr, return
         for (cur_vaddr, cur_paddr, length, rights) in self.oplog.iter().rev() {
             let cur_range = cur_vaddr.as_usize()..cur_vaddr.as_usize() + *length;
@@ -167,12 +159,12 @@ impl AddressSpace for ModelAddressSpace {
         }
 
         // The `vaddr` in question is not currently mapped
-        Err(AddressSpaceError::NotMapped)
+        Err(KError::NotMapped)
     }
 
-    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, AddressSpaceError> {
+    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, KError> {
         if !base.is_base_page_aligned() {
-            return Err(AddressSpaceError::InvalidBase);
+            return Err(KError::InvalidBase);
         }
 
         let mut found =
@@ -190,7 +182,7 @@ impl AddressSpace for ModelAddressSpace {
                 Frame::new(cur_paddr, cur_length, 0),
             ))
         } else {
-            Err(AddressSpaceError::NotMapped)
+            Err(KError::NotMapped)
         }
     }
 }
@@ -215,7 +207,7 @@ fn model_sanity_check() {
     let e = a
         .resolve(VAddr::from(0xffff_1000u64))
         .expect_err("resolve should not have succeeded");
-    assert_eq!(e, AddressSpaceError::NotMapped);
+    assert_eq!(e, KError::NotMapped);
 
     a.adjust(va, MapAction::ReadWriteUser)
         .expect("Can't adjust");
@@ -233,7 +225,7 @@ fn model_sanity_check() {
     let e = a
         .unmap(va)
         .expect_err("unmap of not mapped region succeeds?");
-    assert_eq!(e, AddressSpaceError::NotMapped);
+    assert_eq!(e, KError::NotMapped);
 }
 
 #[test]

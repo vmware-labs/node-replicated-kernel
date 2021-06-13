@@ -23,8 +23,8 @@ use crate::error::KError;
 use crate::fs::{FileSystem, MlnrFS};
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::nrproc::NrProcess;
+use crate::process::Pid;
 use crate::process::MAX_PROCESSES;
-use crate::process::{Pid, ProcessError};
 use crate::stack::{OwnedStack, Stack};
 
 use super::gdt::GdtTable;
@@ -241,11 +241,11 @@ impl Arch86Kcb {
         self.current_executor.is_some()
     }
 
-    pub fn current_executor(&self) -> Result<&Box<Ring3Executor>, ProcessError> {
+    pub fn current_executor(&self) -> Result<&Box<Ring3Executor>, KError> {
         let p = self
             .current_executor
             .as_ref()
-            .ok_or(ProcessError::ProcessNotSet)?;
+            .ok_or(KError::ProcessNotSet)?;
         Ok(p)
     }
 

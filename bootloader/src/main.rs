@@ -83,7 +83,7 @@ macro_rules! round_up {
 
 // Include the `jump_to_kernel` assembly function. This does some things we can't express in
 // rust like switching the stack.
-global_asm!(include_str!("switch.S"));
+global_asm!(include_str!("switch.S"), options(att_syntax));
 
 extern "C" {
     /// Switches from this UEFI bootloader to the kernel init function (passes the sysinfo argument),
@@ -381,7 +381,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Sta
     };
 
     // Parse the ELF file and load it into the new address space
-    let binary = elfloader::ElfBinary::new("kernel", kernel_blob).unwrap();
+    let binary = elfloader::ElfBinary::new(kernel_blob).unwrap();
     trace!("Load the ELF binary into the address space");
     binary.load(&mut kernel).expect("Can't load the kernel");
 

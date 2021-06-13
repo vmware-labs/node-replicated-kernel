@@ -19,7 +19,7 @@ use crate::fs::Fd;
 use crate::kcb::{self, ArchSpecificKcb};
 use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
-use crate::process::{Eid, Executor, Pid, Process, ProcessError, ResumeHandle, MAX_PROCESSES};
+use crate::process::{Eid, Executor, Pid, Process, ResumeHandle, MAX_PROCESSES};
 
 use super::debug;
 use super::vspace::VSpace;
@@ -210,7 +210,7 @@ impl Process for UnixProcess {
         _pid: Pid,
         _module: &Module,
         _writable_sections: Vec<Frame>,
-    ) -> Result<(), ProcessError> {
+    ) -> Result<(), KError> {
         Ok(())
     }
 
@@ -222,7 +222,7 @@ impl Process for UnixProcess {
         Ok(())
     }
 
-    fn allocate_executors(&mut self, _frame: Frame) -> Result<usize, ProcessError> {
+    fn allocate_executors(&mut self, _frame: Frame) -> Result<usize, KError> {
         Ok(0)
     }
 
@@ -234,10 +234,7 @@ impl Process for UnixProcess {
         &self.vspace
     }
 
-    fn get_executor(
-        &mut self,
-        _for_region: atopology::NodeId,
-    ) -> Result<Box<Self::E>, ProcessError> {
+    fn get_executor(&mut self, _for_region: atopology::NodeId) -> Result<Box<Self::E>, KError> {
         Ok(Box::new(UnixThread::default()))
     }
 
@@ -245,8 +242,8 @@ impl Process for UnixProcess {
         Some((1, &mut self.fd))
     }
 
-    fn deallocate_fd(&mut self, _fd: usize) -> Result<usize, ProcessError> {
-        Err(ProcessError::InvalidFileDescriptor)
+    fn deallocate_fd(&mut self, _fd: usize) -> Result<usize, KError> {
+        Err(KError::InvalidFileDescriptor)
     }
 
     fn get_fd(&self, _index: usize) -> &Fd {
@@ -257,16 +254,16 @@ impl Process for UnixProcess {
         &self.pinfo
     }
 
-    fn add_frame(&mut self, _frame: Frame) -> Result<FrameId, ProcessError> {
-        Err(ProcessError::InvalidFrameId)
+    fn add_frame(&mut self, _frame: Frame) -> Result<FrameId, KError> {
+        Err(KError::InvalidFrameId)
     }
 
-    fn get_frame(&mut self, _frame_id: FrameId) -> Result<Frame, ProcessError> {
-        Err(ProcessError::InvalidFrameId)
+    fn get_frame(&mut self, _frame_id: FrameId) -> Result<Frame, KError> {
+        Err(KError::InvalidFrameId)
     }
 
-    fn deallocate_frame(&mut self, _fid: FrameId) -> Result<Frame, ProcessError> {
-        Err(ProcessError::InvalidFrameId)
+    fn deallocate_frame(&mut self, _fid: FrameId) -> Result<Frame, KError> {
+        Err(KError::InvalidFrameId)
     }
 }
 

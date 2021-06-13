@@ -4,6 +4,8 @@
 pub use alloc::prelude::v1::*;
 pub use core::prelude::v1::*;
 
+pub use crate::error::KError;
+
 use core::fmt;
 use core::ops::{Deref, DerefMut};
 

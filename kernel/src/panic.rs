@@ -113,7 +113,7 @@ pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
     if kernel_info.is_some() {
         sprintln!("Backtrace:");
         let (elf_data, relocated_offset) = kernel_info.expect("Don't have kernel info");
-        match elfloader::ElfBinary::new("kernel", &elf_data) {
+        match elfloader::ElfBinary::new(&elf_data) {
             Ok(elf_binary) => {
                 let context = new_ctxt(&elf_binary);
 
@@ -151,7 +151,7 @@ pub fn backtrace() {
         sprintln!("Backtrace:");
 
         let (elf_data, relocated_offset) = kernel_info.expect("Don't have kernel info.");
-        match elfloader::ElfBinary::new("kernel", &elf_data) {
+        match elfloader::ElfBinary::new(&elf_data) {
             Ok(elf_binary) => {
                 let context = new_ctxt(&elf_binary);
                 let mut count = 0;

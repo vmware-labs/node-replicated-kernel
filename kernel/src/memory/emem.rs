@@ -9,9 +9,8 @@ use core::ptr::NonNull;
 // We *might* want to implement AllocRef instead here
 use slabmalloc::{self, LargeObjectPage, ObjectPage};
 
-use crate::memory::{
-    AllocationError, Frame, PAddr, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
-};
+use crate::error::KError;
+use crate::memory::{Frame, PAddr, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::round_up;
 
 /// A very simple allocator that only allocates and doesn't allow
@@ -58,7 +57,7 @@ impl EmergencyAllocator {
         EmergencyAllocator { index: 0, region }
     }
 
-    unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, AllocationError> {
+    unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, KError> {
         assert!(layout.align() <= BASE_PAGE_SIZE, "Alignment mismatch.");
         let size = round_up!(layout.size(), BASE_PAGE_SIZE);
 
@@ -75,7 +74,7 @@ impl EmergencyAllocator {
 
             Ok(low)
         } else {
-            Err(AllocationError::CacheExhausted)
+            Err(KError::CacheExhausted)
         }
     }
 }
@@ -138,22 +137,22 @@ unsafe impl<'a> slabmalloc::Allocator<'a> for EmergencyAllocator {
 
 /// A trait to allocate and release physical pages from an allocator.
 impl PhysicalPageProvider for EmergencyAllocator {
-    fn allocate_base_page(&mut self) -> Result<Frame, AllocationError> {
+    fn allocate_base_page(&mut self) -> Result<Frame, KError> {
         unsafe {
             let layout = Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE);
             self.allocate_layout(layout)
         }
     }
 
-    fn release_base_page(&mut self, f: Frame) -> Result<(), AllocationError> {
+    fn release_base_page(&mut self, f: Frame) -> Result<(), KError> {
         unreachable!("EarlyPhysicalAllocator can't deallocate {:?}", f);
     }
 
-    fn allocate_large_page(&mut self) -> Result<Frame, AllocationError> {
+    fn allocate_large_page(&mut self) -> Result<Frame, KError> {
         unimplemented!("Can't allocate large-pages with this")
     }
 
-    fn release_large_page(&mut self, f: Frame) -> Result<(), AllocationError> {
+    fn release_large_page(&mut self, f: Frame) -> Result<(), KError> {
         unreachable!("EarlyPhysicalAllocator can't deallocate {:?}", f);
     }
 }

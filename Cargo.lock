@@ -495,9 +495,9 @@ checksum = "e78d4f1cc4ae33bbfc157ed5d5a5ef3bc29227303d595861deb238fcec4e9457"
 
 [[package]]
 name = "elfloader"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e368ef542ceca07d3910510e7b0741e8bb531a684d604af8ef8a963eeb5fb1c7"
+checksum = "71e21aaf26d2f785aea55b7b2df1973ec1ee0462190789e1044e4d8c455df89a"
 dependencies = [
  "bitflags 1.2.1",
  "log",
@@ -1015,7 +1015,6 @@ dependencies = [
  "cstr_core",
  "csv",
  "ctor",
- "custom_error",
  "driverkit",
  "elfloader",
  "env_logger 0.8.3",

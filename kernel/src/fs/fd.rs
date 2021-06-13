@@ -1,7 +1,8 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use super::{Fd, FileDescriptor, FileSystemError, MAX_FILES_PER_PROCESS};
+use super::{Fd, FileDescriptor, MAX_FILES_PER_PROCESS};
+use crate::error::KError;
 
 pub struct FileDesc {
     fds: arrayvec::ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS>,
@@ -26,13 +27,13 @@ impl FileDesc {
         }
     }
 
-    pub fn deallocate_fd(&mut self, fd: usize) -> Result<usize, FileSystemError> {
+    pub fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError> {
         match self.fds.get_mut(fd) {
             Some(fdinfo) => {
                 *fdinfo = None;
                 Ok(fd)
             }
-            None => Err(FileSystemError::InvalidFileDescriptor),
+            None => Err(KError::InvalidFileDescriptor),
         }
     }
 

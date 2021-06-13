@@ -4,7 +4,7 @@
 //! Implements the necessary functionality to load the ELF image in machine memory.
 use crate::alloc::vec::Vec;
 
-use elfloader;
+use elfloader::{self, ElfLoaderErr};
 use x86::bits64::paging::*;
 
 use crate::vspace::*;
@@ -83,7 +83,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// For alignment the following should hold (I don't quite get
     /// what this parameter is useful for beyond the first load entry):
     /// base ≡ offset, modulo align_to. (Or rather, base % align = offset % align_to)
-    fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), &'static str> {
+    fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), ElfLoaderErr> {
         // Should contain what memory range we need to cover to contain
         // loadable regions:
         let mut min_base: VAddr = VAddr::from(usize::MAX);
@@ -171,7 +171,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
         _flags: elfloader::Flags,
         destination: u64,
         region: &[u8],
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), ElfLoaderErr> {
         let destination = self.offset + destination;
         debug!(
             "ELF Load at {:#x} -- {:#x}",
@@ -194,7 +194,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
                     *ptr = *val;
                 }
             } else {
-                return Err("Can't write to the resolved address in the kernel vspace.");
+                panic!("Can't write to the resolved address in the kernel vspace.");
             }
         }
 
@@ -207,7 +207,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// with all dependencies we only expect to get relocations of type RELATIVE.
     /// Otherwise, the build would be broken or you got a garbage ELF file.
     /// We return an error in this case.
-    fn relocate(&mut self, entry: &elfloader::Rela<elfloader::P64>) -> Result<(), &'static str> {
+    fn relocate(&mut self, entry: &elfloader::Rela<elfloader::P64>) -> Result<(), ElfLoaderErr> {
         // Get the pointer to where the relocation happens in the
         // memory where we loaded the headers
         // The forumla for this is our offset where the kernel is starting,
@@ -232,11 +232,11 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             }
             Ok(())
         } else {
-            Err("Can only handle R_RELATIVE for relocation")
+            Err(ElfLoaderErr::UnsupportedRelocationEntry)
         }
     }
 
-    fn make_readonly(&mut self, base: u64, size: usize) -> Result<(), &'static str> {
+    fn make_readonly(&mut self, base: u64, size: usize) -> Result<(), ElfLoaderErr> {
         trace!(
             "Make readonly {:#x} -- {:#x}",
             self.offset + base,

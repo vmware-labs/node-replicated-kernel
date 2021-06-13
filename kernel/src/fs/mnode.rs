@@ -6,9 +6,10 @@ use alloc::string::{String, ToString};
 use kpi::io::FileType;
 
 use crate::arch::process::UserSlice;
+use crate::error::KError;
 
 use super::file::*;
-use super::{FileSystemError, Mnode, Modes};
+use super::{Mnode, Modes};
 
 /// Memnode representation, similar to Inode for a memory-fs.
 #[derive(Debug)]
@@ -48,7 +49,7 @@ impl MemNode {
         pathname: &str,
         modes: Modes,
         node_type: FileType,
-    ) -> Result<MemNode, FileSystemError> {
+    ) -> Result<MemNode, KError> {
         let file = match node_type {
             FileType::Directory => None,
             FileType::File => match File::new(modes) {
@@ -66,11 +67,11 @@ impl MemNode {
     }
 
     /// Write to an in-memory file.
-    pub fn write(&mut self, buffer: &[u8], offset: usize) -> Result<usize, FileSystemError> {
+    pub fn write(&mut self, buffer: &[u8], offset: usize) -> Result<usize, KError> {
         // Return if the user doesn't have write permissions for the file.
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
-            return Err(FileSystemError::PermissionError);
+            return Err(KError::PermissionError);
         }
         let len: usize = buffer.len();
 
@@ -78,11 +79,11 @@ impl MemNode {
     }
 
     /// Read from an in-memory file.
-    pub fn read(&self, buffer: &mut UserSlice, offset: usize) -> Result<usize, FileSystemError> {
+    pub fn read(&self, buffer: &mut UserSlice, offset: usize) -> Result<usize, KError> {
         // Return if the user doesn't have read permissions for the file.
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
         {
-            return Err(FileSystemError::PermissionError);
+            return Err(KError::PermissionError);
         }
 
         let len: usize = buffer.len();
@@ -100,7 +101,7 @@ impl MemNode {
         // Return error if start-offset is greater than or equal to new-offset OR
         // new offset is greater than the file size.
         if offset >= new_offset || new_offset > self.get_file_size() as usize {
-            return Err(FileSystemError::InvalidOffset);
+            return Err(KError::InvalidOffset);
         }
 
         // Read from file only if its not at EOF.
@@ -121,10 +122,10 @@ impl MemNode {
     }
 
     /// Truncate the file in reasponse of O_TRUNC flag.
-    pub fn file_truncate(&mut self) -> Result<(), FileSystemError> {
+    pub fn file_truncate(&mut self) -> Result<(), KError> {
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
-            return Err(FileSystemError::PermissionError);
+            return Err(KError::PermissionError);
         }
 
         // The method doesn't fail after this point, so returning Ok().
@@ -174,10 +175,7 @@ pub mod test {
         assert_eq!(memnode.name, filename.to_string());
         assert_eq!(memnode.node_type, FileType::Directory);
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
-        assert_eq!(
-            memnode.write(buffer, 0),
-            Err(FileSystemError::PermissionError)
-        );
+        assert_eq!(memnode.write(buffer, 0), Err(KError::PermissionError));
     }
 
     #[test]
@@ -211,10 +209,7 @@ pub mod test {
         assert_eq!(memnode.name, filename.to_string());
         assert_eq!(memnode.node_type, FileType::File);
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
-        assert_eq!(
-            memnode.write(buffer, 0),
-            Err(FileSystemError::PermissionError)
-        );
+        assert_eq!(memnode.write(buffer, 0), Err(KError::PermissionError));
     }
 
     #[test]
@@ -258,7 +253,7 @@ pub mod test {
         let buffer: &[u8; 10] = &[0xb; 10];
         assert_eq!(
             memnode.read(&mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-            Err(FileSystemError::PermissionError)
+            Err(KError::PermissionError)
         );
     }
 
@@ -412,10 +407,7 @@ pub mod test {
         let filename = "file.txt";
         let mut memnode =
             MemNode::new(1, filename, FileModes::S_IRWXU.into(), FileType::Directory).unwrap();
-        assert_eq!(
-            memnode.file_truncate(),
-            Err(FileSystemError::PermissionError)
-        );
+        assert_eq!(memnode.file_truncate(), Err(KError::PermissionError));
     }
 
     #[test]
@@ -424,9 +416,6 @@ pub mod test {
         let filename = "file.txt";
         let mut memnode =
             MemNode::new(1, filename, FileModes::S_IRUSR.into(), FileType::File).unwrap();
-        assert_eq!(
-            memnode.file_truncate(),
-            Err(FileSystemError::PermissionError)
-        );
+        assert_eq!(memnode.file_truncate(), Err(KError::PermissionError));
     }
 }

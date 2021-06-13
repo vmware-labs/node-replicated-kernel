@@ -9,6 +9,7 @@ pub mod page_table; /* TODO(encapsulation): This should be a private module but 
 #[cfg(test)]
 mod test;
 
+use crate::error::KError;
 use crate::memory::vspace::*;
 use crate::memory::{Frame, PAddr, VAddr};
 
@@ -20,22 +21,17 @@ pub struct VSpace {
 }
 
 impl AddressSpace for VSpace {
-    fn map_frame(
-        &mut self,
-        base: VAddr,
-        frame: Frame,
-        action: MapAction,
-    ) -> Result<(), AddressSpaceError> {
+    fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         if frame.size() == 0 {
-            return Err(AddressSpaceError::InvalidFrame);
+            return Err(KError::InvalidFrame);
         }
         if frame.base % frame.size() != 0 {
             // physical address should be aligned to page-size
-            return Err(AddressSpaceError::InvalidFrame);
+            return Err(KError::InvalidFrame);
         }
         if base % frame.size() != 0 {
             // virtual addr should be aligned to page-size
-            return Err(AddressSpaceError::InvalidBase);
+            return Err(KError::InvalidBase);
         }
 
         let tomap_range = base.as_usize()..base.as_usize() + frame.size;
@@ -60,7 +56,7 @@ impl AddressSpace for VSpace {
             {
                 return Ok(());
             } else {
-                return Err(AddressSpaceError::AlreadyMapped {
+                return Err(KError::AlreadyMapped {
                     base: VAddr::from(existing_base),
                 });
             }
@@ -76,11 +72,11 @@ impl AddressSpace for VSpace {
         0
     }
 
-    fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
+    fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
         self.page_table.resolve(addr)
     }
 
-    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, AddressSpaceError> {
+    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, KError> {
         for (&existing_base, existing_mapping) in
             self.mappings.range((Unbounded, Included(base))).rev()
         {
@@ -88,7 +84,7 @@ impl AddressSpace for VSpace {
             if existing_map_range.contains(&base.as_usize()) {
                 break;
             } else {
-                return Err(AddressSpaceError::NotMapped);
+                return Err(KError::NotMapped);
             }
         }
 
@@ -97,16 +93,9 @@ impl AddressSpace for VSpace {
         Ok(r)
     }
 
-    fn adjust(
-        &mut self,
-        base: VAddr,
-        new_rights: MapAction,
-    ) -> Result<(VAddr, usize), AddressSpaceError> {
+    fn adjust(&mut self, base: VAddr, new_rights: MapAction) -> Result<(VAddr, usize), KError> {
         let r = self.page_table.adjust(base, new_rights)?;
-        let mapping = self
-            .mappings
-            .get_mut(&r.0)
-            .ok_or(AddressSpaceError::NotMapped)?;
+        let mapping = self.mappings.get_mut(&r.0).ok_or(KError::NotMapped)?;
         mapping.rights = new_rights;
         Ok(r)
     }
@@ -119,7 +108,7 @@ impl Drop for VSpace {
 }
 
 impl VSpace {
-    pub(crate) fn new() -> Result<Self, AddressSpaceError> {
+    pub(crate) fn new() -> Result<Self, KError> {
         Ok(VSpace {
             mappings: BTreeMap::new(),
             page_table: PageTable::new()?,
@@ -131,7 +120,7 @@ impl VSpace {
         base: PAddr,
         size: usize,
         rights: MapAction,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         self.page_table.map_identity(base, size, rights)
     }
 

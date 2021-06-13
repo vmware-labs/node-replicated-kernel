@@ -7,8 +7,9 @@ use alloc::boxed::Box;
 use core::fmt;
 use core::pin::Pin;
 
+use crate::error::KError;
 use crate::kcb::MemManager;
-use crate::memory::vspace::{AddressSpace, AddressSpaceError, MapAction, TlbFlushHandle};
+use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::Frame;
 
 use x86::bits64::paging::*;
@@ -45,18 +46,13 @@ impl VSpace {
         _rights: MapAction,
         _create_mappings: bool,
         _pager: &mut dyn MemManager,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         Ok(())
     }
 }
 
 impl AddressSpace for VSpace {
-    fn map_frame(
-        &mut self,
-        _base: VAddr,
-        _frame: Frame,
-        _action: MapAction,
-    ) -> Result<(), AddressSpaceError> {
+    fn map_frame(&mut self, _base: VAddr, _frame: Frame, _action: MapAction) -> Result<(), KError> {
         unimplemented!("map_frame");
     }
 
@@ -64,19 +60,15 @@ impl AddressSpace for VSpace {
         unimplemented!("map_memory_requirements");
     }
 
-    fn adjust(
-        &mut self,
-        _vaddr: VAddr,
-        _rights: MapAction,
-    ) -> Result<(VAddr, usize), AddressSpaceError> {
+    fn adjust(&mut self, _vaddr: VAddr, _rights: MapAction) -> Result<(VAddr, usize), KError> {
         unimplemented!("adjust");
     }
 
-    fn resolve(&self, _vaddr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
+    fn resolve(&self, _vaddr: VAddr) -> Result<(PAddr, MapAction), KError> {
         unimplemented!("resolve");
     }
 
-    fn unmap(&mut self, _vaddr: VAddr) -> Result<TlbFlushHandle, AddressSpaceError> {
+    fn unmap(&mut self, _vaddr: VAddr) -> Result<TlbFlushHandle, KError> {
         unimplemented!("unmap");
     }
 }

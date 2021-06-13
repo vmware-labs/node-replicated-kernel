@@ -9,6 +9,7 @@ use alloc::boxed::Box;
 
 use x86::bits64::paging::*;
 
+use crate::error::KError;
 use crate::kcb::MemManager;
 use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
@@ -26,12 +27,7 @@ pub struct PageTable {
 }
 
 impl AddressSpace for PageTable {
-    fn map_frame(
-        &mut self,
-        base: VAddr,
-        frame: Frame,
-        action: MapAction,
-    ) -> Result<(), AddressSpaceError> {
+    fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
         // These assertion are checked with error returns in `VSpace`
         debug_assert!(frame.size() > 0);
         debug_assert_eq!(
@@ -55,20 +51,16 @@ impl AddressSpace for PageTable {
         20
     }
 
-    fn adjust(
-        &mut self,
-        vaddr: VAddr,
-        rights: MapAction,
-    ) -> Result<(VAddr, usize), AddressSpaceError> {
+    fn adjust(&mut self, vaddr: VAddr, rights: MapAction) -> Result<(VAddr, usize), KError> {
         if !vaddr.is_base_page_aligned() {
-            return Err(AddressSpaceError::InvalidBase);
+            return Err(KError::InvalidBase);
         }
         let (vaddr, _paddr, size, _old_rights) =
             self.modify_generic(vaddr, Modify::UpdateRights(rights))?;
         Ok((vaddr, size))
     }
 
-    fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), AddressSpaceError> {
+    fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
         let pml4_idx = pml4_index(addr);
         if self.pml4[pml4_idx].is_present() {
             let pdpt_idx = pdpt_index(addr);
@@ -106,12 +98,12 @@ impl AddressSpace for PageTable {
         }
 
         // else:
-        Err(AddressSpaceError::NotMapped)
+        Err(KError::NotMapped)
     }
 
-    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, AddressSpaceError> {
+    fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, KError> {
         if !base.is_base_page_aligned() {
-            return Err(AddressSpaceError::InvalidBase);
+            return Err(KError::InvalidBase);
         }
         let (vaddr, paddr, size, _rights) = self.modify_generic(base, Modify::Unmap)?;
         // TODO(correctness+memory): we lose topology information here...
@@ -129,7 +121,7 @@ impl PageTable {
     /// Create a new address-space.
     ///
     /// Allocate an initial PML4 table for it.
-    pub fn new() -> Result<PageTable, AddressSpaceError> {
+    pub fn new() -> Result<PageTable, KError> {
         let pml4 = Box::try_new(
             [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
         )?;
@@ -153,7 +145,7 @@ impl PageTable {
         pbase: PAddr,
         size: usize,
         rights: MapAction,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         assert!(at_offset.is_base_page_aligned());
         assert!(pbase.is_base_page_aligned());
         assert_eq!(size % BASE_PAGE_SIZE, 0, "Size not a multiple of page-size");
@@ -179,7 +171,7 @@ impl PageTable {
         base: PAddr,
         size: usize,
         rights: MapAction,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         self.map_identity_with_offset(PAddr::from(0x0), base, size, rights)
     }
 
@@ -318,7 +310,7 @@ impl PageTable {
         rights: MapAction,
         insert_mapping: bool,
         pager: &mut dyn MemManager,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         let pdpt = self.get_or_alloc_pdpt(vbase, pager);
 
         // To track how much space we've mapped so far
@@ -336,7 +328,7 @@ impl PageTable {
                         // Return an error if a frame is present,
                         // and it's not exactly the frame+rights combo we're
                         // trying to map
-                        return Err(AddressSpaceError::AlreadyMapped {
+                        return Err(KError::AlreadyMapped {
                             base: vbase + mapped,
                         });
                     }
@@ -404,7 +396,7 @@ impl PageTable {
         rights: MapAction,
         insert_mapping: bool,
         pager: &mut dyn MemManager,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         let mut pd_idx = pd_index(vbase);
         let pd = self.get_pd_mut(pdpt_entry);
 
@@ -423,7 +415,7 @@ impl PageTable {
                         // Return an error if a frame is present,
                         // and it's not exactly the frame+rights combo we're
                         // trying to map anyways
-                        return Err(AddressSpaceError::AlreadyMapped {
+                        return Err(KError::AlreadyMapped {
                             base: vbase + mapped,
                         });
                     }
@@ -489,7 +481,7 @@ impl PageTable {
         rights: MapAction,
         insert_mapping: bool,
         pager: &mut dyn MemManager,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         let pt = self.get_pt_mut(pd_entry);
         let mut pt_idx = pt_index(vbase);
 
@@ -505,7 +497,7 @@ impl PageTable {
                         // Return an error if a frame is present,
                         // and it's not exactly the frame+rights combo we're
                         // trying to map anyways
-                        return Err(AddressSpaceError::AlreadyMapped {
+                        return Err(KError::AlreadyMapped {
                             base: vbase + mapped,
                         });
                     }
@@ -574,7 +566,7 @@ impl PageTable {
         rights: MapAction,
         insert_mapping: bool,
         pager: &mut dyn MemManager,
-    ) -> Result<(), AddressSpaceError> {
+    ) -> Result<(), KError> {
         let (pbase, psize) = pregion;
         assert!(pbase.is_base_page_aligned());
         assert!(vbase.is_base_page_aligned());
@@ -629,7 +621,7 @@ impl PageTable {
         if pdpt[pdpt_idx].is_page() {
             if !insert_mapping {
                 // Check if we could map in theory (no overlap)
-                return Err(AddressSpaceError::AlreadyMapped { base: vbase });
+                return Err(KError::AlreadyMapped { base: vbase });
             } else {
                 panic!(
                     "An existing mapping already covers the 1 GiB range we're trying to map in (vbase:{:#x} -> pbase:{:#x})", vbase, pbase
@@ -672,7 +664,7 @@ impl PageTable {
 
         if pd[pd_idx].is_page() {
             if !insert_mapping {
-                return Err(AddressSpaceError::AlreadyMapped { base: vbase });
+                return Err(KError::AlreadyMapped { base: vbase });
             } else {
                 panic!(
                     "An existing mapping already covers the 2 MiB range we're trying to map in?"
@@ -699,7 +691,7 @@ impl PageTable {
         &'a mut self,
         addr: VAddr,
         action: Modify,
-    ) -> Result<(VAddr, PAddr, usize, MapAction), AddressSpaceError> {
+    ) -> Result<(VAddr, PAddr, usize, MapAction), KError> {
         let pml4_idx = pml4_index(addr);
         if self.pml4[pml4_idx].is_present() {
             let pdpt_idx = pdpt_index(addr);
@@ -770,7 +762,7 @@ impl PageTable {
         }
 
         // else:
-        Err(AddressSpaceError::NotMapped)
+        Err(KError::NotMapped)
     }
 
     fn new_pt(pager: &mut dyn MemManager) -> PDEntry {

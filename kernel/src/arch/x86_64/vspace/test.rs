@@ -7,12 +7,13 @@ use core::cmp::{Eq, PartialEq};
 
 use proptest::prelude::*;
 
-use super::*;
+use crate::error::KError;
+use crate::memory::vspace_model::ModelAddressSpace;
 use crate::memory::KernelAllocator;
+use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::*;
 
-use crate::memory::vspace_model::ModelAddressSpace;
-use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestAction {
@@ -104,7 +105,7 @@ proptest! {
                     match (&rtotest, &rmodel) {
                         // For now we let the model and impl report different conflict addresses
                         // ideally they should still be valid conflicts (not checked) just different ones
-                        (Err(AddressSpaceError::AlreadyMapped { base: a }), Err(AddressSpaceError::AlreadyMapped { base: b })) => {},
+                        (Err(KError::AlreadyMapped { base: a }), Err(KError::AlreadyMapped { base: b })) => {},
                         _ => assert_eq!(rmodel, rtotest),
                     }
                 }

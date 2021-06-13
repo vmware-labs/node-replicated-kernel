@@ -23,7 +23,7 @@ use crate::fs::FileSystem;
 use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
-use crate::process::{Pid, ProcessError, ResumeHandle};
+use crate::process::{Pid, ResumeHandle};
 use crate::{cnrfs, nr, nrproc};
 
 use super::gdt::GdtTable;
@@ -192,7 +192,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
                     affinity = Some(thread.node_id.unwrap_or(0));
                 }
             }
-            let affinity = affinity.ok_or(crate::process::ProcessError::InvalidGlobalThreadId)?;
+            let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
             let pid = kcb.current_pid()?;
 
             let gtid = nr::KernelNode::allocate_core_to_process(
@@ -323,7 +323,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         },
         VSpaceOperation::MapFrame => unsafe {
             let base = VAddr::from(arg2);
-            let frame_id: FrameId = arg3.try_into().map_err(|_e| ProcessError::InvalidFrameId)?;
+            let frame_id: FrameId = arg3.try_into().map_err(|_e| KError::InvalidFrameId)?;
 
             let (paddr, size) = nrproc::NrProcess::<Ring3Process>::map_frame_id(
                 p.pid,

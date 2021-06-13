@@ -10,7 +10,7 @@ use node_replication::Dispatch;
 use crate::arch::MAX_CORES;
 use crate::error::KError;
 use crate::memory::VAddr;
-use crate::process::{Pid, ProcessError, MAX_PROCESSES};
+use crate::process::{Pid, MAX_PROCESSES};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
@@ -130,7 +130,7 @@ impl Dispatch for KernelNode {
                 Some(_) => Ok(NodeResult::PidReturned),
                 None => {
                     error!("Process not found");
-                    Err(ProcessError::NoProcessFoundForPid.into())
+                    Err(KError::NoProcessFoundForPid.into())
                 }
             },
             Op::SchedAllocateCore(pid, _affinity, Some(gtid), entry_point) => {

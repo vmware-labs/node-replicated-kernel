@@ -6,7 +6,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::convert::TryInto;
+use core::convert::{TryFrom, TryInto};
 use core::fmt::Debug;
 
 use arrayvec::ArrayVec;
@@ -20,6 +20,7 @@ use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
 use crate::error::KError;
+use crate::fallible_string::TryString;
 use crate::fs::Fd;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
@@ -65,8 +66,7 @@ pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
                 if !path.is_ascii() || path.is_empty() {
                     return Err(KError::NotSupported);
                 }
-                // TODO(allocation): handle, avoid allocation
-                Ok(String::from(path))
+                Ok(TryString::try_from(path)?.into())
             }
             Err(_) => Err(KError::NotSupported),
         }

@@ -45,6 +45,7 @@ use x86::{controlregs, cpuid};
 
 pub use bootloader_shared::*;
 
+use crate::fallible_string::FallibleString;
 use crate::memory::MAX_PHYSICAL_REGIONS;
 use memory::paddr_to_kernel_vaddr;
 use vspace::page_table::PageTable;
@@ -243,7 +244,9 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
-    static_kcb.enable_print_buffering(String::with_capacity(128));
+    static_kcb.enable_print_buffering(
+        String::try_with_capacity(128).expect("Not enough memory to initialize system"),
+    );
     static_kcb.install();
     core::mem::forget(kcb);
 
@@ -600,7 +603,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
-    static_kcb.enable_print_buffering(String::with_capacity(128));
+    static_kcb.enable_print_buffering(
+        String::try_with_capacity(128).expect("Not enough memory to initialize system"),
+    );
     static_kcb.install();
 
     // Make sure we don't drop the KCB and anything in it,

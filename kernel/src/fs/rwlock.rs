@@ -117,7 +117,7 @@ where
                 Ordering::Acquire,
             ) {
                 Ok(_) => break,
-                Err(x) => continue,
+                Err(_x) => continue,
             }
         }
 
@@ -178,7 +178,7 @@ where
             .compare_exchange_weak(true, false, Ordering::Acquire, Ordering::Acquire)
         {
             Ok(_) => (),
-            Err(x) => panic!("write_unlock() called without acquiring the write lock"),
+            Err(_x) => panic!("write_unlock() called without acquiring the write lock"),
         }
     }
 

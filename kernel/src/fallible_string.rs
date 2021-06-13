@@ -7,6 +7,8 @@ use alloc::string::String;
 
 /// trait implementing all fallible methods on vec
 pub trait FallibleString {
+    /// see with_capacity
+    fn try_with_capacity(capacity: usize) -> Result<String, TryReserveError>;
     /// see push
     fn try_push(&mut self, ch: char) -> Result<(), TryReserveError>;
     /// see push_str
@@ -14,6 +16,13 @@ pub trait FallibleString {
 }
 
 impl FallibleString for String {
+    #[inline]
+    fn try_with_capacity(capacity: usize) -> Result<String, TryReserveError> {
+        let mut s = String::new();
+        s.try_reserve(capacity)?;
+        Ok(s)
+    }
+
     #[inline]
     fn try_push(&mut self, ch: char) -> Result<(), TryReserveError> {
         self.try_reserve(1)?;

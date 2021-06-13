@@ -1,12 +1,14 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
+use core::convert::TryFrom;
 
 use kpi::io::FileType;
 
 use crate::arch::process::UserSlice;
 use crate::error::KError;
+use crate::fallible_string::TryString;
 
 use super::file::*;
 use super::{Mnode, Modes};
@@ -35,7 +37,7 @@ impl Default for MemNode {
     fn default() -> MemNode {
         MemNode {
             mnode_num: u64::MAX,
-            name: String::from(""),
+            name: String::new(),
             node_type: FileType::File,
             file: None,
         }
@@ -60,7 +62,7 @@ impl MemNode {
 
         Ok(MemNode {
             mnode_num,
-            name: pathname.to_string(),
+            name: TryString::try_from(pathname)?.into(),
             node_type,
             file,
         })
@@ -137,6 +139,7 @@ impl MemNode {
 #[cfg(test)]
 pub mod test {
     use super::*;
+    use alloc::string::ToString;
     use kpi::io::*;
 
     #[test]

@@ -13,6 +13,9 @@
 
 #![allow(unused)]
 
+// Non-fallible data-structures and code in this file is ok, we don't use it for
+// anything except debugging
+
 use crate::alloc::string::ToString;
 use alloc::borrow::Cow;
 use alloc::string::String;

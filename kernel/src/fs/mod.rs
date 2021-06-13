@@ -1,19 +1,18 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![allow(unused)]
-
 use alloc::string::String;
 use alloc::sync::Arc;
+use core::convert::TryFrom;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use hashbrown::HashMap;
 use kpi::io::*;
-use kpi::SystemCallError;
 use spin::RwLock;
 
 use crate::arch::process::UserSlice;
 use crate::error::KError;
+use crate::fallible_string::TryString;
 
 pub use rwlock::RwLock as NrLock;
 
@@ -134,14 +133,10 @@ unsafe impl Sync for MlnrFS {}
 impl Default for MlnrFS {
     /// Initialize the file system from the root directory.
     fn default() -> MlnrFS {
-        // Note: Alloc errors are currently ok in this function since this
-        // happens during system initialization
-        use alloc::string::ToString;
-
         let rootdir = "/";
         let rootmnode = 1;
 
-        let mut mnodes = NrLock::<HashMap<Mnode, NrLock<MemNode>>>::default();
+        let mnodes = NrLock::<HashMap<Mnode, NrLock<MemNode>>>::default();
         mnodes.write().insert(
             rootmnode,
             NrLock::new(
@@ -154,12 +149,19 @@ impl Default for MlnrFS {
                 .unwrap(),
             ),
         );
-        let mut files = RwLock::new(HashMap::new());
+        let files = RwLock::new(HashMap::new());
         files.write().insert(
-            rootdir.to_string(),
+            TryString::try_from(rootdir)
+                .expect("Not enough memory to initialize system")
+                .into(),
             Arc::try_new(1).expect("Not enough memory to initialize system"),
         );
-        let root = (rootdir.to_string(), 1);
+        let root = (
+            TryString::try_from(rootdir)
+                .expect("Not enough memory to initialize system")
+                .into(),
+            1,
+        );
 
         MlnrFS {
             mnodes,
@@ -177,23 +179,13 @@ impl MlnrFS {
     }
 }
 
-/// Helper function for fallible string (paths) allocation
-///
-/// TODO(api): This should probably go into a FallibleString trait.
-fn try_make_path(path: &str) -> Result<String, alloc::collections::TryReserveError> {
-    let mut new_string = String::new();
-    new_string.try_reserve(path.len())?;
-    new_string.push_str(path);
-    Ok(new_string)
-}
-
 impl FileSystem for MlnrFS {
     fn create(&self, pathname: &str, modes: Modes) -> Result<u64, KError> {
         // Check if the file with the same name already exists.
         if self.files.read().get(pathname).is_some() {
             return Err(KError::AlreadyPresent);
         }
-        let pathname_string = try_make_path(pathname)?;
+        let pathname_string = TryString::try_from(pathname)?.into();
 
         let mnode_num = self.get_next_mno() as u64;
         // TODO(error-handling): can we ignore or should we decrease mnode_num
@@ -282,7 +274,7 @@ impl FileSystem for MlnrFS {
         if self.files.read().get(oldname).is_none() {
             return Err(KError::InvalidFile);
         }
-        let mut newname_key = try_make_path(newname)?;
+        let newname_key = TryString::try_from(newname)?.into();
 
         // If the newfile exists then overwrite it with the oldfile.
         if self.files.read().get(newname).is_some() {
@@ -308,7 +300,7 @@ impl FileSystem for MlnrFS {
             return Err(KError::AlreadyPresent);
         }
 
-        let pathname_key = try_make_path(pathname)?;
+        let pathname_key = TryString::try_from(pathname)?.into();
         let mnode_num = self.get_next_mno() as u64;
         // TODO(error-handling): Should we decrease mnode-num or ignore?
         let arc_mnode_num = Arc::try_new(mnode_num)?;

@@ -1,10 +1,13 @@
-on: [push, pull_request]
+on: [push]
 name: Clippy check
 jobs:
   clippy_check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
+      - run: |
+          sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+          git submodule update --init
       - uses: actions-rs/toolchain@v1
         with:
             toolchain: nightly
@@ -13,3 +16,4 @@ jobs:
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          args: --package nrk

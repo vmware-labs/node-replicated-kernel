@@ -32,7 +32,7 @@ pub enum LabelText<'a> {
     ///
     /// Occurrences of backslashes (`\`) are escaped, and thus appear
     /// as backslashes in the rendered label.
-    LabelStr(Cow<'a, str>),
+    Label(Cow<'a, str>),
 
     /// This kind of label uses the graphviz label escString type:
     /// <http://www.graphviz.org/content/attrs#kescString>
@@ -44,14 +44,14 @@ pub enum LabelText<'a> {
     /// to break a line (centering the line preceding the `\n`), there
     /// are also the escape sequences `\l` which left-justifies the
     /// preceding line and `\r` which right-justifies it.
-    EscStr(Cow<'a, str>),
+    Esc(Cow<'a, str>),
 
     /// This uses a graphviz [HTML string label][html]. The string is
     /// printed exactly as given, but between `<` and `>`. **No
     /// escaping is performed.**
     ///
     /// [html]: http://www.graphviz.org/content/node-shapes#html
-    HtmlStr(Cow<'a, str>),
+    Html(Cow<'a, str>),
 }
 
 /// The style for a node or edge.
@@ -195,14 +195,14 @@ pub trait Labeller<'a> {
     /// The label need not be unique, and may be the empty string; the
     /// default is just the output from `node_id`.
     fn node_label(&'a self, n: &Self::Node) -> LabelText<'a> {
-        LabelStr(self.node_id(n).name)
+        Label(self.node_id(n).name)
     }
 
     /// Maps `e` to a label that will be used in the rendered output.
     /// The label need not be unique, and may be the empty string; the
     /// default is in fact the empty string.
     fn edge_label(&'a self, _e: &Self::Edge) -> LabelText<'a> {
-        LabelStr("".into())
+        Label("".into())
     }
 
     /// Maps `n` to a style that will be used in the rendered output.
@@ -227,15 +227,15 @@ pub fn escape_html(s: &str) -> String {
 
 impl<'a> LabelText<'a> {
     pub fn label<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
-        LabelStr(s.into())
+        Label(s.into())
     }
 
     pub fn escaped<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
-        EscStr(s.into())
+        Esc(s.into())
     }
 
     pub fn html<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
-        HtmlStr(s.into())
+        Html(s.into())
     }
 
     fn escape_char<F>(c: char, mut f: F)
@@ -244,7 +244,7 @@ impl<'a> LabelText<'a> {
     {
         match c {
             // not escaping \\, since Graphviz escString needs to
-            // interpret backslashes; see EscStr above.
+            // interpret backslashes; see Esc above.
             '\\' => f(c),
             _ => {
                 for c in c.escape_default() {
@@ -265,27 +265,27 @@ impl<'a> LabelText<'a> {
     /// This includes quotes or suitable delimiters.
     pub fn to_dot_string(&self) -> String {
         match *self {
-            LabelStr(ref s) => format!("\"{}\"", s.escape_default()),
-            EscStr(ref s) => format!("\"{}\"", LabelText::escape_str(&s)),
-            HtmlStr(ref s) => format!("<{}>", s),
+            Label(ref s) => format!("\"{}\"", s.escape_default()),
+            Esc(ref s) => format!("\"{}\"", LabelText::escape_str(s)),
+            Html(ref s) => format!("<{}>", s),
         }
     }
 
-    /// Decomposes content into string suitable for making EscStr that
+    /// Decomposes content into string suitable for making Esc that
     /// yields same content as self. The result obeys the law
-    /// render(`lt`) == render(`EscStr(lt.pre_escaped_content())`) for
+    /// render(`lt`) == render(`Esc(lt.pre_escaped_content())`) for
     /// all `lt: LabelText`.
     fn pre_escaped_content(self) -> Cow<'a, str> {
         match self {
-            EscStr(s) => s,
-            LabelStr(s) => {
+            Esc(s) => s,
+            Label(s) => {
                 if s.contains('\\') {
                     (&*s).escape_default().to_string().into()
                 } else {
                     s
                 }
             }
-            HtmlStr(s) => s,
+            Html(s) => s,
         }
     }
 
@@ -300,7 +300,7 @@ impl<'a> LabelText<'a> {
         let suffix = suffix.pre_escaped_content();
         prefix.push_str(r"\n\n");
         prefix.push_str(&suffix);
-        EscStr(prefix.into())
+        Esc(prefix.into())
     }
 }
 

@@ -715,7 +715,7 @@ impl GlobalMemory {
 
         // Populate the NCaches with all remaining memory
         // Ideally we fully exhaust all frames and put everything in the NCache
-        for (ncache_affinity, ref ncache) in gm.node_caches.iter().enumerate() {
+        for (ncache_affinity, ncache) in gm.node_caches.iter().enumerate() {
             let mut ncache_locked = ncache.lock();
             for frame in memory.iter() {
                 if frame.affinity == ncache_affinity as u64 {

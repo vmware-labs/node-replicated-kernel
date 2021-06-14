@@ -247,7 +247,7 @@ impl FileSystem for MlnrFS {
         let mut files = self.files.write();
         if let Some(mnode) = files.get(pathname) {
             if Arc::strong_count(mnode) == 1 {
-                self.mnodes.write().remove(&mnode);
+                self.mnodes.write().remove(mnode);
             } else {
                 return Err(KError::PermissionError);
             }

@@ -17,6 +17,7 @@ use core::ptr::{self, NonNull};
 
 use arrayvec::ArrayVec;
 use atopology::MACHINE_TOPOLOGY;
+use crossbeam_utils::CachePadded;
 use log::info;
 use spin::Mutex;
 
@@ -35,10 +36,10 @@ pub struct DeterministicAlloc {
     /// We store the Layout and address (as u64 but it's really a *mut u8) for
     /// every allocation. Layout is technically not necessary (but used to
     /// sanity check the code).
-    qs: ArrayVec<Queue<(Layout, u64)>, MAX_NUMA_NODES>,
+    qs: ArrayVec<CachePadded<Queue<(Layout, u64)>>, MAX_NUMA_NODES>,
     /// Mutex that needs to be acquired when a leading replica needs to allocate
     /// for all replicas.
-    fill: Mutex<()>,
+    fill: CachePadded<Mutex<()>>,
 }
 
 impl DeterministicAlloc {
@@ -62,11 +63,11 @@ impl DeterministicAlloc {
 
         let mut qs = ArrayVec::new();
         for _i in 0..nodes {
-            qs.push(Queue::with_capacity(ALLOC_CAP)?);
+            qs.push(CachePadded::new(Queue::with_capacity(ALLOC_CAP)?));
         }
 
         Ok(Self {
-            fill: Mutex::new(()),
+            fill: CachePadded::new(Mutex::new(())),
             qs,
         })
     }

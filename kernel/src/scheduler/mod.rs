@@ -68,7 +68,8 @@ pub fn schedule() -> ! {
                                 core::hint::spin_loop();
                             }
 
-                            // Advance cnr replica
+                            // Advance replicas
+                            crate::nrproc::advance_all();
                             crate::arch::advance_fs_replica();
 
                             continue;

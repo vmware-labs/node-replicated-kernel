@@ -20,12 +20,14 @@ use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
 
 use crate::kcb::{ArchSpecificKcb, Kcb};
 
+/// Immutable operations on the NrProcess.
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
     ProcessInfo,
     MemResolve(VAddr),
 }
 
+/// Mutable operations on the NrProcess.
 #[derive(PartialEq, Clone, Debug)]
 pub enum Op {
     ProcRaiseIrq,
@@ -48,6 +50,7 @@ pub enum Op {
     MemUnmap(VAddr),
 }
 
+/// Possible return values from the NrProcess.
 #[derive(Debug, Clone)]
 pub enum NodeResult<E: Executor> {
     Loaded,
@@ -62,24 +65,30 @@ pub enum NodeResult<E: Executor> {
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FrameId(usize),
-    Invalid,
 }
 
-impl<E: Executor> Default for NodeResult<E> {
-    fn default() -> Self {
-        NodeResult::Invalid
+/// Advances the replica of all the processes on the current NUMA node.
+pub fn advance_all() {
+    let kcb = super::kcb::get_kcb();
+    let node = kcb.arch.node();
+
+    for pid in 0..MAX_PROCESSES {
+        let _r = PROCESS_TABLE[node][pid].sync(kcb.process_token[pid]);
     }
 }
 
-pub struct NrProcess<P: Process, M: Allocator + Clone = DA> {
+/// A node-replicated process.
+pub struct NrProcess<P: Process, M: Allocator + Clone = alloc::alloc::Global> {
+    /// A list of all cores where the current process is running.
     active_cores: Vec<(atopology::GlobalThreadId, Eid), M>,
+    /// The process struct itself.
     process: Box<P>,
 }
 
 impl<P: Process> NrProcess<P> {
-    pub fn new(process: Box<P>, da: DA) -> NrProcess<P> {
+    pub fn new(process: Box<P>, _da: DA) -> NrProcess<P> {
         NrProcess {
-            active_cores: Vec::new_in(da.clone()),
+            active_cores: Vec::new(),
             process,
         }
     }

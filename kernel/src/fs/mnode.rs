@@ -269,7 +269,7 @@ pub mod test {
         let buffer: &mut [u8; 10] = &mut [0xb; 10];
         assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
 
-        for i in 0..10 {
+        for _i in 0..10 {
             //assert_eq!(i, memnode.offset.load(Ordering::Relaxed));
             let buffer: &mut [u8; 1] = &mut [0; 1];
             assert_eq!(

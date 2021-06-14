@@ -563,6 +563,7 @@ dependencies = [
 [[package]]
 name = "fallible_collections"
 version = "0.4.2"
+source = "git+https://github.com/gz/fallible_collections.git?branch=allocator_api#233fed3f13113b0b74c9516ff22e11761260def7"
 dependencies = [
  "hashbrown 0.9.1",
 ]

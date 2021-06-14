@@ -34,10 +34,7 @@
     nonnull_slice_from_raw_parts
 )]
 #![cfg_attr(not(target_os = "none"), feature(thread_local))]
-#![cfg_attr(
-    all(not(test), not(feature = "integration-test"), target_os = "none"),
-    deny(warnings)
-)]
+#![deny(warnings)]
 #![allow(unaligned_references)] // TODO(warnings)
 #![allow(unused_attributes)] // TODO(warnings): getting unused attribute #[inline(always)] with rustc > 1.43.0 / abc3073c9 (and it's not clear why)
 

@@ -12,7 +12,6 @@ members = [
     "lib/node-replication/nr",
     "lib/vibrio",
     "lib/vmxnet3",
-    "lib/fallible_collections",
     "usr/init",
     "usr/rkapps",
 ]

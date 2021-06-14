@@ -29,9 +29,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cnrfs::{MlnrKernelNode, Modify};
 use crate::kcb::{BootloaderArguments, Kcb};
-use crate::memory::{
-    mcache, Frame, GlobalMemory, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE,
-};
+use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -43,7 +41,6 @@ use cnr::{Log as MlnrLog, Replica as MlnrReplica};
 use driverkit::DriverControl;
 use fallible_collections::{FallibleVecGlobal, TryClone};
 use node_replication::{Log, Replica};
-use uefi::table::boot::MemoryType;
 use x86::bits64::paging::{PAddr, VAddr, PML4};
 use x86::{controlregs, cpuid};
 
@@ -194,6 +191,7 @@ fn init_apic() -> x2apic::X2APICDriver {
     apic
 }
 
+#[cfg(not(feature = "bsp-only"))]
 struct AppCoreArgs {
     _mem_region: Frame,
     cmdline: BootloaderArguments,
@@ -211,6 +209,7 @@ struct AppCoreArgs {
 ///
 /// This is almost identical to `_start` which is initializing the BSP core
 /// (and called from UEFI instead).
+#[cfg(not(feature = "bsp-only"))]
 fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     enable_sse();
     enable_fsgsbase();
@@ -293,6 +292,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 ///  - Initialized ACPI
 ///  - Initialized topology
 ///  - Local APIC driver
+#[cfg(not(feature = "bsp-only"))]
 fn boot_app_cores(
     cmdline: BootloaderArguments,
     kernel_binary: &'static [u8],
@@ -302,6 +302,8 @@ fn boot_app_cores(
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 ) {
+    use crate::memory::PhysicalPageProvider;
+
     let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
     debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
@@ -775,7 +777,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Done with initialization, now we go in
     // the arch-independent part:
-    xmain();
+    let _r = xmain();
 
     error!("Returned from main, shutting down...");
     debug::shutdown(ExitReason::ReturnFromMain);

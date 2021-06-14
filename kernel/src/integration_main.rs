@@ -9,7 +9,7 @@ pub fn xmain() {
         let tsc2 = x86::time::rdtsc();
 
         let start = rawtime::Instant::now();
-        let done = start.elapsed().as_nanos();
+        let _done = start.elapsed().as_nanos();
         // We do this twice because I think it traps the first time?
         let start = rawtime::Instant::now();
         let done = start.elapsed().as_nanos();
@@ -37,8 +37,7 @@ pub fn xmain() {
 ))]
 pub fn xmain() {
     use apic::ApicDriver;
-    use core::convert::TryInto;
-    use core::sync::atomic::spin_loop_hint;
+    use core::hint::spin_loop;
     use core::time::Duration;
 
     unsafe {
@@ -58,11 +57,11 @@ pub fn xmain() {
         let start = rawtime::Instant::now();
         crate::arch::irq::enable();
         while start.elapsed() < Duration::from_secs(1) {
-            spin_loop_hint();
+            spin_loop();
         }
         crate::arch::irq::disable();
 
-        let done = start.elapsed().as_nanos();
+        let _done = start.elapsed().as_nanos();
     }
     arch::debug::shutdown(ExitReason::Ok);
 }
@@ -108,6 +107,7 @@ pub fn xmain() {
 pub fn xmain() -> Result<(), crate::error::KError> {
     use alloc::vec::Vec;
     use fallible_collections::vec::FallibleVec;
+    use fallible_collections::FallibleVecGlobal;
 
     {
         let mut buf: Vec<u8> = Vec::try_with_capacity(0)?;
@@ -245,13 +245,11 @@ pub fn xmain() {
 /// get passed along correctly.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
-    use crate::stack::{OwnedStack, Stack};
+    use crate::stack::OwnedStack;
     use alloc::sync::Arc;
-    use apic::ApicDriver;
     use arch::coreboot;
     use atopology;
     use core::sync::atomic::{AtomicBool, Ordering};
-    use x86::apic::ApicId;
 
     // Entry point for app. This function is called from start_ap.S:
     pub fn nrk_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
@@ -317,17 +315,15 @@ pub fn xmain() {
 /// log to communicate information.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
 pub fn xmain() {
-    use crate::stack::{OwnedStack, Stack};
-    use apic::ApicDriver;
+    use crate::stack::OwnedStack;
     use arch::coreboot;
     use atopology;
     use core::sync::atomic::{AtomicBool, Ordering};
-    use x86::apic::ApicId;
 
     use alloc::sync::Arc;
     use node_replication::Log;
 
-    let mut log: Arc<Log<usize>> =
+    let log: Arc<Log<usize>> =
         Arc::try_new(Log::<usize>::new(1024 * 1024 * 1)).expect("Can't Arc this");
 
     // Entry point for app. This function is called from start_ap.S:
@@ -403,7 +399,7 @@ pub fn xmain() {
 ))]
 pub fn xmain() {
     let kcb = kcb::get_kcb();
-    crate::arch::process::spawn(kcb.cmdline.init_binary);
+    assert!(crate::arch::process::spawn(kcb.cmdline.init_binary).is_ok());
     crate::scheduler::schedule()
 }
 
@@ -418,7 +414,6 @@ pub fn xmain() {
 /// Test VSpace debugging.
 #[cfg(all(feature = "integration-test", feature = "test-vspace-debug"))]
 pub fn xmain() {
-    use core::borrow::Borrow;
     use graphviz::*;
 
     let kcb = kcb::get_kcb();
@@ -470,8 +465,6 @@ pub fn xmain() {
 ))]
 pub fn xmain() {
     use alloc::alloc::Layout;
-    use alloc::prelude::v1::*;
-    use alloc::vec;
 
     use crate::memory::vspace::MapAction;
     use crate::memory::PAddr;
@@ -503,13 +496,8 @@ pub fn xmain() {
     vmx.attach_pre();
     vmx.init();
 
-
     let mut bufchain1 = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
     let mut packet1 = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
-        .expect("Can't make packet?");
-
-    let mut bufchain2 = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
-    let mut packet2 = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
         .expect("Can't make packet?");
 
     // >>> from scapy.all import *
@@ -545,24 +533,16 @@ fn xmain() {
     use alloc::borrow::ToOwned;
     use alloc::collections::BTreeMap;
     use alloc::vec;
-    use alloc::vec::Vec;
-
-    use core::alloc::Layout;
     use core::cell::Cell;
-    use core::fmt::Write;
-    use core::str;
 
     use log::debug;
 
-    use driverkit::devq::DevQueue;
-    use driverkit::iomem::{IOBuf, IOBufChain};
     use vmxnet3::smoltcp::DevQueuePhy;
     use vmxnet3::vmx::VMXNet3;
 
     use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
     use smoltcp::socket::SocketSet;
     use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-    use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
     use smoltcp::time::{Duration, Instant};
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
@@ -622,7 +602,7 @@ fn xmain() {
     let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
     let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 10), 24)];
 
-    let mut builder = EthernetInterfaceBuilder::new(device)
+    let builder = EthernetInterfaceBuilder::new(device)
         .ip_addrs(ip_addrs)
         .ethernet_addr(ethernet_addr)
         .neighbor_cache(neighbor_cache);
@@ -687,11 +667,11 @@ fn xmain() {
 pub fn xmain() -> Result<(), crate::error::KError> {
     use alloc::sync::Arc;
     use alloc::vec::Vec;
-    use core::sync::atomic::spin_loop_hint;
-    use core::time::Duration;
+    use core::hint::spin_loop;
 
     use apic::ApicDriver;
     use fallible_collections::vec::FallibleVec;
+    use fallible_collections::FallibleVecGlobal;
     use x86::apic::{
         ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
         TriggerMode,
@@ -738,7 +718,7 @@ pub fn xmain() -> Result<(), crate::error::KError> {
 
         for shootdown in shootdowns {
             if !shootdown.is_acknowledged() {
-                spin_loop_hint();
+                spin_loop();
             }
         }
         let duration = start.elapsed().as_nanos();

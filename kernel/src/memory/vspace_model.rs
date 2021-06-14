@@ -391,7 +391,7 @@ fn tlb_flush_handle_full_core_set() {
 
 #[test]
 fn tlb_flush_handle_empty_core_set() {
-    let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+    let t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
     assert_eq!(t.cores().count(), 0, "Is empty");
 }
 

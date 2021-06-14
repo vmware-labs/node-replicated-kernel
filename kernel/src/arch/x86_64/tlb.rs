@@ -11,6 +11,7 @@ use bit_field::BitField;
 use crossbeam_queue::ArrayQueue;
 use fallible_collections::FallibleVecGlobal;
 use lazy_static::lazy_static;
+use log::trace;
 use x86::apic::{
     ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
     TriggerMode,

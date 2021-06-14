@@ -16,6 +16,8 @@
 //!   pages stack into an entry within the MCache list.
 use core::fmt;
 use core::mem::MaybeUninit;
+
+use log::{debug, warn};
 use static_assertions as sa;
 
 use super::*;

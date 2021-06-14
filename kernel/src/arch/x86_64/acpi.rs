@@ -8,8 +8,9 @@ use core::ffi::VaList;
 use core::ptr;
 
 use cstr_core::CStr;
+use klogger::sprint;
 use libacpica::*;
-use log::trace;
+use log::{debug, error, info, trace};
 
 use crate::alloc::alloc;
 use crate::kcb::Kcb;
@@ -470,10 +471,7 @@ pub extern "C" fn AcpiOsSignal(Function: UINT32, Info: *mut c_void) -> ACPI_STAT
 // C printf function in rust if we want to make sense of ACPI
 // debug messages (I don't want to do that...)
 extern "C" {
-    #[no_mangle]
     fn vprintf_(format: *const i8, args: VaList);
-
-    #[no_mangle]
     fn printf_(fmt: *const i8, ...) -> i32;
 }
 

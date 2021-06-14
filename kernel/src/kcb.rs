@@ -11,6 +11,7 @@ use core::fmt::Debug;
 use core::slice::from_raw_parts;
 
 use arrayvec::ArrayVec;
+use log::error;
 use logos::Logos;
 use node_replication::{Replica, ReplicaToken};
 use slabmalloc::ZoneAllocator;

@@ -13,6 +13,7 @@ use core::ptr;
 use apic::x2apic::X2APICDriver;
 use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
+use log::trace;
 use node_replication::Replica;
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;

@@ -1,9 +1,9 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use klogger::sprintln;
+use log::debug;
 use x86::io;
-
-//use alloc::boxed::Box;
 
 use super::ExitReason;
 

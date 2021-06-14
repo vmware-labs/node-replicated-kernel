@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use super::ExitReason;
+use klogger::sprintln;
 
 /// Shutdown the process.
 pub fn shutdown(val: ExitReason) -> ! {

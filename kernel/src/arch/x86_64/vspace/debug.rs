@@ -8,6 +8,7 @@ use core::mem::transmute;
 use core::pin::Pin;
 
 use fallible_collections::{FallibleVec, FallibleVecGlobal};
+use log::info;
 use x86::controlregs;
 use x86::current::paging::*;
 

@@ -8,6 +8,7 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 
 use kpi::KERNEL_BASE;
+use log::{debug, trace};
 use x86::bits64::paging::*;
 
 use crate::error::KError;

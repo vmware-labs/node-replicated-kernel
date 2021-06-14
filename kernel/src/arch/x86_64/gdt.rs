@@ -5,6 +5,7 @@
 
 use core::mem::size_of;
 
+use log::trace;
 use x86::bits64::segmentation::{load_cs, Descriptor64};
 use x86::bits64::task::*;
 use x86::dtables::*;

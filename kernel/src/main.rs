@@ -7,6 +7,7 @@
 //! the arch-specific initialization is done (see `arch/x86_64/mod.rs` for an example).
 
 #![cfg_attr(target_os = "none", no_std)]
+#![deny(warnings)]
 #![feature(
     intrinsics,
     core_intrinsics,
@@ -34,19 +35,8 @@
     nonnull_slice_from_raw_parts
 )]
 #![cfg_attr(not(target_os = "none"), feature(thread_local))]
-#![deny(warnings)]
-#![allow(unaligned_references)] // TODO(warnings)
-#![allow(unused_attributes)] // TODO(warnings): getting unused attribute #[inline(always)] with rustc > 1.43.0 / abc3073c9 (and it's not clear why)
 
-// TODO(cosmetics): Get rid of these three `extern crate` as we're in edition 2018:
 extern crate alloc;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate klogger;
-extern crate kpi;
-#[macro_use]
-extern crate static_assertions;
 
 /// The x86-64 platform specific code.
 #[cfg(all(target_arch = "x86_64", target_os = "none"))]
@@ -117,7 +107,7 @@ pub enum ExitReason {
 pub fn xmain() {
     let ret = arch::process::spawn("init");
     if let Err(e) = ret {
-        warn!("{}", e);
+        log::warn!("{}", e);
     }
     crate::scheduler::schedule()
 }

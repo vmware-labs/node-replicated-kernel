@@ -20,6 +20,7 @@ use core::sync::atomic::AtomicU64;
 use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
+use log::{debug, error, trace, warn};
 use slabmalloc::{Allocator, ZoneAllocator};
 use spin::Mutex;
 use x86::bits64::paging;

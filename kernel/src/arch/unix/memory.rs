@@ -3,8 +3,10 @@
 
 use core::mem::transmute;
 
-use crate::memory::Frame;
+use log::error;
 pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, CACHE_LINE_SIZE, LARGE_PAGE_SIZE};
+
+use crate::memory::Frame;
 
 /// Maximum amount of addressable physical memory in kernel (32 TiB).
 pub const KERNEL_BASE: u64 = 0x0;

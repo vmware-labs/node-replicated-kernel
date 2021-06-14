@@ -10,9 +10,9 @@ use core::sync::atomic::Ordering;
 
 use crate::alloc::borrow::ToOwned;
 
-use proptest::prelude::*;
-
 use kpi::io::*;
+use log::trace;
+use proptest::prelude::*;
 
 use super::*;
 use crate::*;

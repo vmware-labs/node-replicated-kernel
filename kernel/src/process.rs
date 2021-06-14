@@ -15,6 +15,7 @@ use fallible_collections::vec::FallibleVecGlobal;
 use fallible_collections::vec::TryCollect;
 use fallible_collections::TryReserveError;
 use kpi::process::{FrameId, ELF_OFFSET};
+use log::{debug, info, trace};
 
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;

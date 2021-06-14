@@ -45,7 +45,8 @@ use x86::segmentation::{
 use x86::{dtables, Ring};
 
 use apic::ApicDriver;
-use log::debug;
+use klogger::{sprint, sprintln};
+use log::{info, trace, warn};
 
 use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;

@@ -5,6 +5,7 @@ use crate::prelude::*;
 use core::fmt::Debug;
 
 use hashbrown::HashMap;
+use log::{error, trace};
 use node_replication::Dispatch;
 
 use crate::arch::MAX_CORES;

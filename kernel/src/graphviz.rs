@@ -21,6 +21,9 @@ use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::{format, vec};
 use core::fmt::Write;
+
+use klogger::{sprint, sprintln};
+
 use LabelText::*;
 
 /// The text for a graphviz label on a node or edge.

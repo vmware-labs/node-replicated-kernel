@@ -10,6 +10,7 @@ use alloc::sync::Arc;
 use core::sync::atomic::AtomicBool;
 
 use apic::ApicDriver;
+use log::trace;
 use x86::apic::ApicId;
 use x86::current::paging::PAddr;
 

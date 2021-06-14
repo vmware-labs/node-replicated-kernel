@@ -1,9 +1,15 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-/// Test time facilities in the kernel.
+// Various integration tests that run inside a VM and test different aspects
+// of the kernel. Check `kernel/tests/integration-test.rs` for the host-side
+// counterpart.
+
+/// Test timestamps in the kernel.
 #[cfg(all(feature = "integration-test", feature = "test-time"))]
 pub fn xmain() {
+    use klogger::sprintln;
+
     unsafe {
         let tsc = x86::time::rdtsc();
         let tsc2 = x86::time::rdtsc();
@@ -29,7 +35,7 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Test time facilities in the kernel.
+/// Test timer interrupt in the kernel.
 #[cfg(all(
     feature = "integration-test",
     feature = "test-timer",
@@ -39,6 +45,7 @@ pub fn xmain() {
     use apic::ApicDriver;
     use core::hint::spin_loop;
     use core::time::Duration;
+    use log::info;
 
     unsafe {
         let tsc = x86::time::rdtsc();
@@ -108,6 +115,7 @@ pub fn xmain() -> Result<(), crate::error::KError> {
     use alloc::vec::Vec;
     use fallible_collections::vec::FallibleVec;
     use fallible_collections::FallibleVecGlobal;
+    use log::info;
 
     {
         let mut buf: Vec<u8> = Vec::try_with_capacity(0)?;
@@ -172,6 +180,7 @@ pub fn xmain() {
 #[cfg(all(feature = "integration-test", feature = "test-acpi-topology"))]
 pub fn xmain() {
     use atopology::MACHINE_TOPOLOGY;
+    use log::info;
 
     // We have 80 cores ...
     assert_eq!(MACHINE_TOPOLOGY.num_threads(), 80);
@@ -245,11 +254,15 @@ pub fn xmain() {
 /// get passed along correctly.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
 pub fn xmain() {
-    use crate::stack::OwnedStack;
     use alloc::sync::Arc;
-    use arch::coreboot;
-    use atopology;
     use core::sync::atomic::{AtomicBool, Ordering};
+
+    use atopology;
+    use klogger::sprintln;
+    use log::info;
+
+    use crate::stack::OwnedStack;
+    use arch::coreboot;
 
     // Entry point for app. This function is called from start_ap.S:
     pub fn nrk_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
@@ -316,11 +329,12 @@ pub fn xmain() {
 #[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
 pub fn xmain() {
     use crate::stack::OwnedStack;
+    use alloc::sync::Arc;
     use arch::coreboot;
     use atopology;
     use core::sync::atomic::{AtomicBool, Ordering};
-
-    use alloc::sync::Arc;
+    use klogger::sprintln;
+    use log::info;
     use node_replication::Log;
 
     let log: Arc<Log<usize>> =
@@ -406,6 +420,7 @@ pub fn xmain() {
 /// Test SSE/floating point in the kernel.
 #[cfg(all(feature = "integration-test", feature = "test-sse"))]
 pub fn xmain() {
+    use log::info;
     info!("division = {}", 10.0 / 2.19);
     info!("division by zero = {}", 10.0 / 0.0);
     arch::debug::shutdown(ExitReason::Ok);
@@ -443,6 +458,8 @@ pub fn xmain() {
 pub fn xmain() {
     use alloc::sync::Arc;
     use arch::tlb::advance_replica;
+    use log::info;
+
     let threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
     unsafe {
@@ -466,11 +483,12 @@ pub fn xmain() {
 pub fn xmain() {
     use alloc::alloc::Layout;
 
-    use crate::memory::vspace::MapAction;
-    use crate::memory::PAddr;
-
     use driverkit::devq::*;
     use driverkit::iomem::*;
+    use log::info;
+
+    use crate::memory::vspace::MapAction;
+    use crate::memory::PAddr;
 
     let kcb = crate::kcb::get_kcb();
     // TODO(hack): Map potential vmxnet3 bar addresses XD
@@ -482,9 +500,11 @@ pub fn xmain() {
         0x81003000u64,
         0x81002000u64,
     ] {
-        kcb.arch
+        assert!(kcb
+            .arch
             .init_vspace()
-            .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel);
+            .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel)
+            .is_ok());
     }
 
     info!(
@@ -493,7 +513,7 @@ pub fn xmain() {
     );
     arch::irq::enable();
     let mut vmx = vmxnet3::vmx::VMXNet3::new(2, 2).unwrap();
-    vmx.attach_pre();
+    assert!(vmx.attach_pre().is_ok());
     vmx.init();
 
     let mut bufchain1 = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
@@ -514,7 +534,7 @@ pub fn xmain() {
         0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F,
         0x6F, 0x6F, 0x6F, 0x6F,
     ];
-    packet1.copy_in(&raw_data);
+    assert!(packet1.copy_in(&raw_data).is_ok());
     bufchain1.segments.push_back(packet1);
     vmx.txq[0].enqueue(bufchain1).expect("Enq. failed");
     vmx.txq[0].flush().expect("Flush failed?");
@@ -535,7 +555,7 @@ fn xmain() {
     use alloc::vec;
     use core::cell::Cell;
 
-    use log::debug;
+    use log::{debug, info};
 
     use vmxnet3::smoltcp::DevQueuePhy;
     use vmxnet3::vmx::VMXNet3;
@@ -543,7 +563,7 @@ fn xmain() {
     use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
     use smoltcp::socket::SocketSet;
     use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-    use smoltcp::time::{Duration, Instant};
+    use smoltcp::time::Instant;
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
 
     use crate::memory::vspace::MapAction;
@@ -560,15 +580,15 @@ fn xmain() {
             0x81003000u64,
             0x81002000u64,
         ] {
-            kcb.arch.init_vspace().map_identity(
-                PAddr::from(bar),
-                0x1000,
-                MapAction::ReadWriteKernel,
-            );
+            assert!(kcb
+                .arch
+                .init_vspace()
+                .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel,)
+                .is_ok());
         }
 
         let mut vmx = VMXNet3::new(2, 2).unwrap();
-        vmx.attach_pre();
+        assert!(vmx.attach_pre().is_ok());
         vmx.init();
         vmx
     };
@@ -580,10 +600,6 @@ fn xmain() {
     impl Clock {
         pub fn new() -> Clock {
             Clock(Cell::new(Instant::from_millis(0)))
-        }
-
-        pub fn advance(&self, duration: Duration) {
-            self.0.set(self.0.get() + duration)
         }
 
         pub fn elapsed(&self) -> Instant {
@@ -672,6 +688,7 @@ pub fn xmain() -> Result<(), crate::error::KError> {
     use apic::ApicDriver;
     use fallible_collections::vec::FallibleVec;
     use fallible_collections::FallibleVecGlobal;
+    use log::info;
     use x86::apic::{
         ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr, Level,
         TriggerMode,

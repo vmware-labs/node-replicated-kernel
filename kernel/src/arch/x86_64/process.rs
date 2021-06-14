@@ -14,6 +14,7 @@ use fallible_collections::try_vec;
 use fallible_collections::FallibleVec;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
+use log::{debug, info, trace, warn};
 use node_replication::{Dispatch, Log, Replica};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;

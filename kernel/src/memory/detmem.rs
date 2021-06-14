@@ -17,6 +17,7 @@ use core::ptr::{self, NonNull};
 
 use arrayvec::ArrayVec;
 use atopology::MACHINE_TOPOLOGY;
+use log::info;
 use spin::Mutex;
 
 use crate::arch::MAX_NUMA_NODES;

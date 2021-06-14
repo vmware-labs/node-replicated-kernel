@@ -20,7 +20,7 @@ use crossbeam_utils::CachePadded;
 
 /// Maximum number of reader threads that this lock supports.
 const MAX_READER_THREADS: usize = MAX_CORES;
-const_assert!(MAX_READER_THREADS > 0);
+static_assertions::const_assert!(MAX_READER_THREADS > 0);
 
 /// Default `rlock` member, used for array initialization
 #[allow(clippy::declare_interior_mutable_const)]

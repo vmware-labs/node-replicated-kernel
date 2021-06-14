@@ -7,6 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use arrayvec::ArrayVec;
 use ctor::ctor;
+use log::{debug, info};
 use node_replication::{Log, Replica};
 use x86::current::paging::HUGE_PAGE_SIZE;
 

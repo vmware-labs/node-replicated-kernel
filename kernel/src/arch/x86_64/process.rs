@@ -603,6 +603,11 @@ impl Ring3Executor {
             vcpu_ctl: vcpu_vaddr,
             save_area: Default::default(),
             entry_point: process.offset + process.entry_point,
+            // Note: The PML4 is a bit awkward here, we must ensure to use the
+            // PML4 of the local replica, but aside from some asserts in
+            // `start`, `resume` etc. nothing prevents us from running this
+            // executor on a different replica (which means the advance log on
+            // pfault would not really advance the right set of page-tables)
             pml4: process.vspace.pml4_address(),
         }
     }
@@ -649,6 +654,8 @@ impl Executor for Ring3Executor {
 
     /// Start the process (run it for the first time).
     fn start(&self) -> Self::Resumer {
+        assert_eq!(kcb::get_kcb().node, self.affinity, "Run on remote replica?");
+
         self.maybe_switch_vspace();
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
 
@@ -674,11 +681,15 @@ impl Executor for Ring3Executor {
     }
 
     fn resume(&self) -> Self::Resumer {
+        assert_eq!(kcb::get_kcb().node, self.affinity, "Run on remote replica?");
+
         self.maybe_switch_vspace();
         Ring3Resumer::new_restore(&self.save_area as *const kpi::arch::SaveArea)
     }
 
     fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer {
+        assert_eq!(kcb::get_kcb().node, self.affinity, "Run on remote replica?");
+
         self.maybe_switch_vspace();
         let entry_point = self.vcpu().resume_with_upcall;
         let cpu_ctl = self.vcpu().vaddr().as_u64();
@@ -1095,13 +1106,8 @@ impl Process for Ring3Process {
 
     /// Create a series of dispatcher objects for the process
     fn allocate_executors(&mut self, memory: Frame) -> Result<usize, KError> {
-        use crate::kcb::get_kcb;
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
-        if memory.affinity as usize != get_kcb().arch.node() {
-            // Only create on current node -- note this breaks deterministic allocation!
-            return Ok(executors_to_create);
-        }
 
         KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
         {

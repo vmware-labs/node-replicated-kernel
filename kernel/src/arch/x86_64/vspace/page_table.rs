@@ -17,9 +17,11 @@ use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
 /// Describes a potential modification operation on existing page tables.
-
 const PT_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
+// Safety (size not overflowing when rounding up is given with size == align):
+static_assertions::const_assert!(BASE_PAGE_SIZE > 0); // align must not be zero
+static_assertions::const_assert!(BASE_PAGE_SIZE.is_power_of_two()); // align must be a power of two
 
 /// A modification operation on the PageTable.
 enum Modify {
@@ -38,12 +40,6 @@ pub struct PageTable {
 impl Drop for PageTable {
     fn drop(&mut self) {
         use alloc::alloc::dealloc;
-
-        // Safety (size not overflowing when rounding up is given with size == align):
-        static_assertions::const_assert!(BASE_PAGE_SIZE > 0); // align must not be zero
-        static_assertions::const_assert!(BASE_PAGE_SIZE.is_power_of_two()); // align must be a power of two
-        const PT_LAYOUT: Layout =
-            unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
 
         // Do a DFS and free all page-table memory allocated below kernel-base,
         // don't free the mapped frames -- we return them later through NR

@@ -8,14 +8,7 @@ jobs:
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
-      - uses: actions-rs/toolchain@v1
-        with:
-            # Remove next two lines (to use rust-toolchain file)
-            # once this issue is fixed:
-            # https://github.com/actions-rs/toolchain/issues/126
-            toolchain: nightly
-            override: true
-            components: clippy
+          rustup show
       - uses: actions-rs/clippy-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

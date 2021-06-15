@@ -1,0 +1,38 @@
+# See
+# https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/enabling-and-disabling-version-updates
+# for details
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/kernel"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/bootloader"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/lib/bootloader_shared"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/lib/kpi"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/lib/lineup"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/lib/vibrio"
+    schedule:
+      interval: "daily"
+  - package-ecosystem: "cargo"
+    directory: "/lib/vmxnet3"
+    schedule:
+      interval: "daily"

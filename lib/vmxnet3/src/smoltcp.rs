@@ -221,7 +221,7 @@ impl<'a> Drop for TxPacket<'a> {
     fn drop(&mut self) {
         // info!("drop the TxPacket reference has buf: {}", !self.iobuf.is_none());
         // TODO: return the buffer back to the pool.
-        if !self.iobuf.is_none() {
+        if self.iobuf.is_some() {
             let iobuf = self.iobuf.take().unwrap();
             // info!("TxToken::consume n segments:{}", iobuf.segments.len());
             // we can drop the IOBufChain here.

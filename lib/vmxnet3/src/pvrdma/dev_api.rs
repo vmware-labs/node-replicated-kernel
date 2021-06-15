@@ -7,6 +7,8 @@
 
 #![allow(non_camel_case_types)]
 
+use x86::current::paging::IOAddr;
+
 use super::pvrdma::be64;
 use super::verbs::{pvrdma_port_attr, pvrdma_qp_attr, pvrdma_srq_attr};
 
@@ -126,7 +128,7 @@ pub const fn page_dir_table(x: usize) -> usize {
     (x >> PVRDMA_PTABLE_SHIFT) & 0x1ff
 }
 
-pub const PVRDMA_PAGE_DIR_MAX_PAGES: u32 = 1 * 512 * 512;
+pub const PVRDMA_PAGE_DIR_MAX_PAGES: u32 = 512 * 512;
 pub const PVRDMA_MAX_FAST_REG_PAGES: u32 = 128;
 
 /// Max MSI-X vectors.
@@ -423,6 +425,16 @@ pub struct pvrdma_ring_page_info {
     pub reserved: u32,
     /// Page directory PA
     pub pdir_dma: u64,
+}
+
+impl pvrdma_ring_page_info {
+    pub fn new(num_pages: u32, pdir_dma: IOAddr) -> Self {
+        Self {
+            num_pages,
+            reserved: 0,
+            pdir_dma: pdir_dma.as_u64(),
+        }
+    }
 }
 
 #[repr(C, packed)]

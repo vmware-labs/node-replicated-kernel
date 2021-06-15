@@ -2,34 +2,34 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 //! PCI Bars:
-//! 	BAR 0 - MSI-X
+//! BAR 0 - MSI-X
 //!         MSI-X vectors:
-//! 		(0) Command - used when execution of a command is completed.
-//! 		(1) Async - not in use.
-//! 		(2) Completion - used when a completion event is placed in
-//! 		  device's CQ ring.
-//! 	BAR 1 - Registers
+//!        (0) Command - used when execution of a command is completed.
+//!        (1) Async - not in use.
+//!        (2) Completion - used when a completion event is placed in
+//!          device's CQ ring.
+//! BAR 1 - Registers
 //!         --------------------------------------------------------
 //!         | VERSION |  DSR | CTL | REQ | ERR |  ICR | IMR  | MAC |
 //!         --------------------------------------------------------
-//! 		DSR - Address of driver/device shared memory used
+//!        DSR - Address of driver/device shared memory used
 //!               for the command channel, used for passing:
-//! 			    - General info such as driver version
-//! 			    - Address of 'command' and 'response'
-//! 			    - Address of async ring
-//! 			    - Address of device's CQ ring
-//! 			    - Device capabilities
-//! 		CTL - Device control operations (activate, reset etc)
-//! 		IMG - Set interrupt mask
-//! 		REQ - Command execution register
-//! 		ERR - Operation status
+//!                - General info such as driver version
+//!                - Address of 'command' and 'response'
+//!                - Address of async ring
+//!                - Address of device's CQ ring
+//!                - Device capabilities
+//!        CTL - Device control operations (activate, reset etc)
+//!        IMG - Set interrupt mask
+//!        REQ - Command execution register
+//!        ERR - Operation status
 //!
-//! 	BAR 2 - UAR
+//! BAR 2 - UAR
 //!         ---------------------------------------------------------
 //!         | QP_NUM  | SEND/RECV Flag ||  CQ_NUM |   ARM/POLL Flag |
 //!         ---------------------------------------------------------
-//! 		- Offset 0 used for QP operations (send and recv)
-//! 		- Offset 4 used for CQ operations (arm and poll)
+//!        - Offset 0 used for QP operations (send and recv)
+//!        - Offset 4 used for CQ operations (arm and poll)
 
 use crate::pci::{busread, buswrite, confread, confwrite, BarIO};
 

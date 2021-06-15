@@ -238,6 +238,10 @@ impl vmxnet3_txdesc {
         }
     }
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    #[inline]
     pub fn gen(&self) -> u32 {
         unsafe { ::core::mem::transmute(self._bitfield_1.get(14usize, 1u8) as u32) }
     }
@@ -604,6 +608,10 @@ impl vmxnet3_rxdesc {
         unsafe { ::core::mem::transmute(self._bitfield_1.get(0usize, 14u8) as u32) }
     }
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    #[inline]
     pub fn set_len(&mut self, val: u32) {
         unsafe {
             let val: u32 = ::core::mem::transmute(val);
@@ -829,6 +837,10 @@ impl vmxnet3_rxcompdesc {
     #[inline]
     pub fn len(&self) -> u32 {
         unsafe { ::core::mem::transmute(self._bitfield_1.get(64usize, 14u8) as u32) }
+    }
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
     #[inline]
     pub fn set_len(&mut self, val: u32) {

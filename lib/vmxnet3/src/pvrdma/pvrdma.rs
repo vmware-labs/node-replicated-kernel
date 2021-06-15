@@ -13,6 +13,15 @@ pub type be16 = u16;
 pub type be32 = u32;
 pub type be64 = u64;
 
+/// VMware PVRDMA PCI device id.
+pub const PCI_DEVICE_ID_VMWARE_PVRDMA: u32 = 2080;
+
+/// Default number of pages allocated for async event ring & completion queue
+/// event ring
+pub const PVRDMA_NUM_RING_PAGES: u32 = 4;
+
+pub const PVRDMA_QP_NUM_HEADER_PAGES: u32 = 1;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct pvrdma_uar_map {

@@ -580,7 +580,7 @@ impl RxQueue {
             vxrxq_intr_idx: 0,
             vxrxq_irq: Default::default(),
             vxrxq_cmd_ring: [vmxnet3_rxring::new(ndesc)?, vmxnet3_rxring::new(0)?],
-            vxrxq_comp_ring: vmxnet3_rxcomp_ring::new(1 * ndesc)?,
+            vxrxq_comp_ring: vmxnet3_rxcomp_ring::new(ndesc)?,
             vmx_flags,
             pidx_tail0: 0,
             pidx_head0: 0,
@@ -646,8 +646,7 @@ impl DevQueue for RxQueue {
         let rxd = &mut rxr.vxrxr_rxd;
 
         let mut idx = rxr.vxrxr_refill_start;
-        let mut i = 0;
-        for chain in chain.segments.iter() {
+        for (i, chain) in chain.segments.iter().enumerate() {
             //info!("rx.enqueue {:x}..{:x} ({})", chain.paddr().as_u64(),
             //       chain.paddr().as_u64() + chain.len() as u64,  chain.len());
             rxd[idx].addr = chain.paddr().as_u64();
@@ -659,7 +658,6 @@ impl DevQueue for RxQueue {
             });
             rxd[idx].set_gen(rxr.vxrxr_gen);
 
-            i += 1;
             idx += 1;
             if idx == ndesc {
                 idx = 0;
@@ -711,7 +709,7 @@ impl DevQueue for RxQueue {
         let rxc = &mut self.vxrxq_comp_ring;
         let mut rxcd = rxc.vxcr[self.pidx_tail0];
         // Skip zero-length entries
-        while rxcd.len() == 0 {
+        while rxcd.is_empty() {
             assert!(
                 rxcd.eop() && rxcd.sop(),
                 "Zero length packet without sop and eop set"
@@ -896,7 +894,7 @@ impl DevQueue for RxQueue {
                 expect_sop = rxcd.eop();
             }
 
-            if rxcd.eop() && rxcd.len() != 0 {
+            if rxcd.eop() && !rxcd.is_empty() {
                 available += 1;
             }
             if available >= budget {

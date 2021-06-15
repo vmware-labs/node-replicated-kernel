@@ -28,7 +28,10 @@ use static_assertions as sa;
 
 use crate::{
     pci::BarIO,
-    pvrdma::{dev_api::PVRDMA_VERSION, pvrdma::pvrdma_uar_map},
+    pvrdma::{
+        dev_api::PVRDMA_VERSION,
+        pvrdma::{pvrdma_uar_map, PVRDMA_NUM_RING_PAGES},
+    },
 };
 use pci::BarAccess;
 
@@ -156,6 +159,19 @@ impl PVRDMA {
         })?);
 
         // Async event ring
+        /*
+        dev->dsr->async_ring_pages.num_pages = PVRDMA_NUM_RING_PAGES;
+        ret = pvrdma_page_dir_init(dev, &dev->async_pdir,
+                       dev->dsr->async_ring_pages.num_pages, true);
+        if (ret)
+            goto err_free_slots;
+        dev->async_ring_state = dev->async_pdir.pages[0];
+        dev->dsr->async_ring_pages.pdir_dma = dev->async_pdir.dir_dma;
+        */
+
+        // xxx IOAddr
+        let ring_info = pvrdma_ring_page_info::new(PVRDMA_NUM_RING_PAGES, IOAddr::zero());
+        
 
         // CQ notification ring
 

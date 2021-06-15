@@ -285,7 +285,7 @@ impl VMXNet3 {
     }
 
     fn attach_post(&mut self) {
-        if self.rxq.len() > 0 {
+        if !self.rxq.is_empty() {
             self.vmx_flags |= VMXNET3_FLAG_RSS;
         }
 
@@ -350,11 +350,11 @@ impl VMXNet3 {
     fn retrieve_lladdr(&mut self) {
         let low = self.read_cmd(VMXNET3_CMD_GET_MACL);
         let high = self.read_cmd(VMXNET3_CMD_GET_MACH);
-        self.lladdr[0] = (low >> 0) as u8;
+        self.lladdr[0] = low as u8;
         self.lladdr[1] = (low >> 8) as u8;
         self.lladdr[2] = (low >> 16) as u8;
         self.lladdr[3] = (low >> 24) as u8;
-        self.lladdr[4] = (high >> 0) as u8;
+        self.lladdr[4] = high as u8;
         self.lladdr[5] = (high >> 8) as u8;
 
         // For testing only:

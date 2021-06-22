@@ -191,7 +191,7 @@ mod test {
         for i in 0..MAX_REPLICAS {
             let memalloc = memalloc.clone();
             threads.push(thread::spawn(move || {
-                crate::arch::kcb::get_kcb().node = (i % MAX_REPLICAS) as u64;
+                crate::arch::kcb::get_kcb().node = i % MAX_REPLICAS;
 
                 let mut order: Vec<(Layout, u64)> = Vec::with_capacity(ITERATIONS);
 

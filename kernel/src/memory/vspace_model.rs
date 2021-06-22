@@ -379,7 +379,7 @@ fn tlb_flush_handle_full_core_set() {
 
     let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
     for i in 0..MAX_CORES {
-        t.add_core(i as u64);
+        t.add_core(i);
     }
 
     let mut v = Vec::with_capacity(MAX_CORES);
@@ -401,7 +401,7 @@ fn tlb_flush_handle_med_core_set() {
 
     let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
     for i in 0..MAX_CORES {
-        t.add_core((i & !0b1) as u64);
+        t.add_core(i & !0b1);
     }
 
     for c in t.cores() {
@@ -416,6 +416,6 @@ fn tlb_flush_handle_invalid_core() {
     use crate::arch::MAX_CORES;
     let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
 
-    let gtid: u64 = core::cmp::max((MAX_CORES + 1) as u64, (u128::BITS * 2) as u64);
+    let gtid = core::cmp::max(MAX_CORES + 1, (u128::BITS * 2) as usize);
     t.add_core(gtid);
 }

@@ -255,10 +255,8 @@ impl<P: Process> NrProcess<P> {
         let gtid = kcb.arch.hwthread_id();
         let node = kcb.arch.node();
 
-        let response = kcb.arch.process_table()[node][pid].execute_mut(
-            Op::AssignExecutor(gtid, node as u64),
-            kcb.process_token[pid],
-        );
+        let response = kcb.arch.process_table()[node][pid]
+            .execute_mut(Op::AssignExecutor(gtid, node), kcb.process_token[pid]);
         match response {
             Ok(NodeResult::Executor(executor)) => Ok(executor),
             Err(e) => Err(e),

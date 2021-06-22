@@ -117,7 +117,7 @@ impl ArchSpecificKcb for ArchKcb {
 
     fn install(&mut self) {}
 
-    fn hwthread_id(&self) -> u64 {
+    fn hwthread_id(&self) -> usize {
         0
     }
 

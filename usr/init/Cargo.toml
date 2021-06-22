@@ -14,7 +14,7 @@ path = "src/init.rs"
 lineup = { path = "../../lib/lineup" }
 vibrio = { path = "../../lib/vibrio" }
 rawtime = "0.0.4"
-x86 = "0.39"
+x86 = "0.40"
 log = "0.4"
 libm = "0.2.1"
 lazy_static =  { version = "1.4", default_features = false }

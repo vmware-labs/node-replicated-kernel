@@ -332,7 +332,7 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
         }
     }
 
-    fn hwthread_id(&self) -> u64 {
+    fn hwthread_id(&self) -> usize {
         atopology::MACHINE_TOPOLOGY.current_thread().id
     }
 
@@ -340,7 +340,7 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
         atopology::MACHINE_TOPOLOGY
             .current_thread()
             .node_id
-            .unwrap_or(0) as usize
+            .unwrap_or(0)
     }
 
     fn current_pid(&self) -> Result<Pid, KError> {

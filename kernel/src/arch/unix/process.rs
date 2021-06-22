@@ -62,7 +62,7 @@ lazy_static! {
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
 
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
-                assert!(kcb.set_allocation_affinity(0u64).is_ok());
+                assert!(kcb.set_allocation_affinity(0).is_ok());
             }
         }
 

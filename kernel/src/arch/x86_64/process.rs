@@ -675,7 +675,7 @@ impl Executor for Ring3Executor {
                 self.stack_top(),
                 cpu_ctl,
                 kpi::upcall::NEW_CORE,
-                atopology::MACHINE_TOPOLOGY.current_thread().id,
+                atopology::MACHINE_TOPOLOGY.current_thread().id as u64,
             )
         }
     }

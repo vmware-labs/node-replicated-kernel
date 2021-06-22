@@ -184,7 +184,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             Ok((serialized.len() as u64, 0))
         }
         ProcessOperation::RequestCore => {
-            let gtid = arg2;
+            let gtid: usize = arg2.try_into().unwrap();
             let entry_point = arg3;
             let kcb = super::kcb::get_kcb();
 
@@ -204,7 +204,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
                 Some(gtid),
             )?;
 
-            Ok((gtid, 0))
+            Ok((arg2, 0))
         }
         ProcessOperation::AllocatePhysical => {
             let page_size: usize = arg2.try_into().unwrap_or(0);

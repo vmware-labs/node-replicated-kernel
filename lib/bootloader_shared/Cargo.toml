@@ -6,6 +6,6 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-x86 = "0.39"
+x86 = "0.40"
 arrayvec = { version = "0.7.0", default-features = false }
 uefi = "0.11.0"

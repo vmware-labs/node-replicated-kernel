@@ -256,7 +256,7 @@ pub fn shootdown(handle: TlbFlushHandle) {
 
             let shootdown = Arc::try_new(Shootdown::new(range.clone()))
                 .expect("TODO(error-handling): ideally: no possible failure during shootdown");
-            enqueue(gtid as u64, WorkItem::Shootdown(shootdown.clone()));
+            enqueue(gtid, WorkItem::Shootdown(shootdown.clone()));
 
             debug_assert!(shootdowns.len() < shootdowns.capacity(), "Avoid realloc");
             shootdowns.push(shootdown);

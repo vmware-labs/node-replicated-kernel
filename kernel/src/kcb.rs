@@ -6,7 +6,6 @@
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
-use core::convert::TryInto;
 use core::fmt::Debug;
 use core::slice::from_raw_parts;
 
@@ -355,25 +354,23 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     }
 
     pub fn set_allocation_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
-        let node_idx: usize = node.try_into().unwrap();
         if node == self.physical_memory.affinity {
             // Allocation affinity is already set to correct NUMA node
             return Ok(());
         }
 
-        if node_idx < self.memory_arenas.len() && node_idx < atopology::MACHINE_TOPOLOGY.num_nodes()
-        {
+        if node < self.memory_arenas.len() && node < atopology::MACHINE_TOPOLOGY.num_nodes() {
             let gmanager = self
                 .physical_memory
                 .gmanager
                 .ok_or(KError::GlobalMemoryNotSet)?;
 
-            if self.memory_arenas[node_idx].is_none() {
-                self.memory_arenas[node_idx] = Some(PhysicalMemoryArena::new(node, gmanager));
+            if self.memory_arenas[node].is_none() {
+                self.memory_arenas[node] = Some(PhysicalMemoryArena::new(node, gmanager));
             }
-            debug_assert!(self.memory_arenas[node_idx].is_some());
-            let mut arena = self.memory_arenas[node_idx].take().unwrap();
-            debug_assert_eq!(arena.affinity as usize, node_idx);
+            debug_assert!(self.memory_arenas[node].is_some());
+            let mut arena = self.memory_arenas[node].take().unwrap();
+            debug_assert_eq!(arena.affinity, node);
 
             core::mem::swap(&mut arena, &mut self.physical_memory);
             self.memory_arenas[arena.affinity as usize].replace(arena);
@@ -456,7 +453,7 @@ pub trait ArchSpecificKcb {
     type Process: Process + Sync;
 
     fn node(&self) -> usize;
-    fn hwthread_id(&self) -> u64;
+    fn hwthread_id(&self) -> usize;
     fn install(&mut self);
     fn current_pid(&self) -> Result<Pid, KError>;
 

@@ -703,8 +703,7 @@ impl GlobalMemory {
 
             let ncache_ptr = ncache_memory.uninitialized::<mcache::NCache>();
 
-            let ncache: &'static mut mcache::NCache =
-                mcache::NCache::init(ncache_ptr, affinity as atopology::NodeId);
+            let ncache: &'static mut mcache::NCache = mcache::NCache::init(ncache_ptr, affinity);
             debug_assert_eq!(
                 &*ncache as *const _ as u64,
                 paddr_to_kernel_vaddr(ncache_memory_addr).as_u64()
@@ -718,13 +717,13 @@ impl GlobalMemory {
         for (ncache_affinity, ncache) in gm.node_caches.iter().enumerate() {
             let mut ncache_locked = ncache.lock();
             for frame in memory.iter() {
-                if frame.affinity == ncache_affinity as u64 {
+                if frame.affinity == ncache_affinity {
                     trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
                     ncache_locked.populate_2m_first(*frame);
                 }
             }
             for frame in leftovers.iter() {
-                if frame.affinity == ncache_affinity as u64 {
+                if frame.affinity == ncache_affinity {
                     trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
                     ncache_locked.populate_2m_first(*frame);
                 }

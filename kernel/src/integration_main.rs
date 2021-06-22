@@ -682,15 +682,8 @@ fn xmain() {
     target_arch = "x86_64"
 ))]
 pub fn xmain() {
-    use alloc::alloc::Layout;
-    use alloc::prelude::v1::*;
-    use alloc::vec;
-
     use crate::memory::vspace::MapAction;
     use crate::memory::PAddr;
-
-    use driverkit::devq::*;
-    use driverkit::iomem::*;
 
     let kcb = crate::kcb::get_kcb();
     // TODO(hack): Map potential vmxnet3 bar addresses XD
@@ -704,17 +697,19 @@ pub fn xmain() {
         0x81004000u64,
         0x81005000u64,
     ] {
-        kcb.arch
+        assert!(kcb
+            .arch
             .init_vspace()
-            .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel);
+            .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel)
+            .is_ok());
     }
 
     arch::irq::enable();
     let mut vmx = vmxnet3::vmx::VMXNet3::new(2, 2).unwrap();
-    vmx.attach_pre();
+    assert!(vmx.attach_pre().is_ok());
     vmx.init();
 
-    let mut pvrdma = vmxnet3::pvrdma::PVRDMA::new(2, 2).unwrap();
+    let _pvrdma = vmxnet3::pvrdma::PVRDMA::new(2, 2).unwrap();
     arch::debug::shutdown(ExitReason::Ok);
 }
 

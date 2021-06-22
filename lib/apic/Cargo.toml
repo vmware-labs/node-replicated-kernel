@@ -9,7 +9,7 @@ keywords = ["os", "acpi", "irq", "driver", "x86"]
 edition = "2018"
 
 [dependencies]
-driverkit = "0.8"
+driverkit = { path = "../driverkit" }
 x86 = "0.40"
 log = "0.4"
 bitflags = "1.0"

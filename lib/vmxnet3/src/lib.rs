@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #![no_std]
-#![feature(core_intrinsics, try_reserve, allocator_api)]
+#![feature(slice_ptr_get, core_intrinsics, try_reserve, allocator_api)]
 
 extern crate alloc;
 

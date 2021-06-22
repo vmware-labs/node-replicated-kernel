@@ -1,225 +1,181 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: BSD-2-Clause
 
-use alloc::alloc::{Allocator, Layout};
-use alloc::collections::vec_deque::VecDeque;
-use alloc::vec;
-use alloc::vec::Vec;
-use alloc::{alloc::AllocError, collections::TryReserveError};
-use core::cmp;
-use core::ops::Index;
+//! Page directory for PVRDMA
+
+#![allow(non_camel_case_types)]
+
+use core::alloc::{AllocError, Allocator};
 use core::ptr::NonNull;
 
-use log::info;
+use alloc::alloc::Layout;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
-use custom_error::custom_error;
-use driverkit::iomem::KERNEL_BASE;
-use log::info;
-use x86::current::paging::{IOAddr, PAddr, VAddr};
+use fallible_collections::FallibleVecGlobal;
 
-custom_error! {pub PVRDMAError
-    PdirTooManyPages = "Too many pages for the pdir requested",
-    PageIndexOutOfRange = "supplied index was out of range",
-    InvalidMemoryReference = "No page set",
-    OutOfMemory  = "Unable to allocate raw memory."
+use driverkit::iomem::{DmaAllocator, DmaObject, KERNEL_BASE};
+use x86::current::paging::{IOAddr, PAddr, VAddr, BASE_PAGE_SIZE};
+
+use super::PVRDMAError;
+use crate::BoundedUSize;
+
+const PVRDMA_PDIR_SHIFT: usize = 18;
+const PVRDMA_PTABLE_SHIFT: usize = 9;
+const PVRDMA_PAGE_DIR_MAX_PAGES: usize = 512 * 512;
+const PVRDMA_PAGE_DIR_MAX_TABLES: usize = 512;
+const PVRDMA_PAGE_TABLE_MAX_PAGES: usize = 512;
+
+const fn pvrdma_page_dir_dir(n: usize) -> usize {
+    (n >> PVRDMA_PDIR_SHIFT) & 0x1
 }
 
-const PVRDMA_PDIR_SHIFT: u64 = 18;
-const PVRDMA_PTABLE_SHIFT: u64 = 9;
-// const PVRDMA_PAGE_DIR_DIR(x)		(((x) >> PVRDMA_PDIR_SHIFT) & 0x1)
-// const PVRDMA_PAGE_DIR_TABLE(x)	(((x) >> PVRDMA_PTABLE_SHIFT) & 0x1ff)
-// const PVRDMA_PAGE_DIR_PAGE(x)		((x) & 0x1ff)
-const PVRDMA_PAGE_DIR_MAX_PAGES: u64 = (1 * 512 * 512);
-const PVRDMA_PAGE_TABLE_MAX_PAGES: u64 = 512;
-
-#[inline]
-fn pvrdma_page_dir_table(n: u64) -> u64 {
-    (n >> PVRDMA_PTABLE_SHIFT) & 0x1ff
-}
-#[inline]
-fn pvrdma_page_dir_page(n: u64) -> u64 {
-    (n & 0x1ff)
+const fn pvrdma_page_dir_table(n: usize) -> usize {
+    (n >> PVRDMA_PTABLE_SHIFT) & (PVRDMA_PAGE_TABLE_MAX_PAGES - 1)
 }
 
-/// define the page size and the required alignment  XXX: shoud come form some definition?
-const PVRDMA_PAGE_SIZE: usize = 4096;
-const PVRDMA_PAGE_ALIGN: usize = 4096;
-
-/// allocator that backs the tables
-pub struct PVRDMATableAllocator {
-    /// Layout established for this allocator.
-    layout: Layout,
+/// const PVRDMA_PAGE_DIR_PAGE(x)		((x) & 0x1ff)
+const fn pvrdma_page_dir_page(n: usize) -> usize {
+    n & (PVRDMA_PAGE_TABLE_MAX_PAGES - 1)
 }
 
-impl PVRDMATableAllocator {
-    fn new(layout: Layout) -> Result<IOMemAllocator, IOMemError> {
-        Ok(IOMemAllocator { layout: layout })
+const PVRDMA_PAGE_SIZE: usize = BASE_PAGE_SIZE;
+const PVRDMA_PAGE_ALIGN: usize = BASE_PAGE_SIZE;
+
+/// Layout for allocated pages (and tables)
+const PAGE_LAYOUT: Layout =
+    unsafe { Layout::from_size_align_unchecked(PVRDMA_PAGE_SIZE, PVRDMA_PAGE_ALIGN) };
+// Safety:
+static_assertions::const_assert!(PVRDMA_PAGE_SIZE == PVRDMA_PAGE_ALIGN); // size not overflowing when rounding up
+static_assertions::const_assert!(PVRDMA_PAGE_SIZE > 0); // align must not be zero
+static_assertions::const_assert!(PVRDMA_PAGE_ALIGN.is_power_of_two()); // align must be a power of two
+
+/// Page-table type (contains IOAddrs for a series of pages)
+type PTable = [IOAddr; PVRDMA_PAGE_TABLE_MAX_PAGES];
+static_assertions::assert_eq_size!(PDir, [u8; 4096]);
+
+/// Table type
+pub struct Table(Box<PTable, DmaAllocator>);
+
+impl Table {
+    fn new(allocator: DmaAllocator) -> Result<Self, AllocError> {
+        Ok(Table(Box::try_new_in(
+            [IOAddr::zero(); PVRDMA_PAGE_TABLE_MAX_PAGES],
+            allocator,
+        )?))
     }
 }
 
-unsafe impl Allocator for PVRDMATableAllocator {
-    /// Allocates IO memory.
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[IOAddr]>, AllocError> {
-        // get the size to be allocated as a multiple of the initialized layout of the allocator
-
-        unsafe {
-            // do the actual allocation
-            // TODO: refer to the OS allocator
-            let ptr: *mut IOAddr = alloc::alloc::alloc_zeroed(layout);
-            if ptr.is_null() {
-                return Err(AllocError);
-            }
-
-            // wrap in in NonNull, remove option type
-            let ptr_nonnull = NonNull::new(ptr).unwrap();
-
-            // construct the NonNull slice for the return
-            Ok(NonNull::slice_from_raw_parts(ptr_nonnull, layout.size()))
-        }
-    }
-
-    /// Deallocates the previously allocated IO memory.
-    unsafe fn deallocate(&self, ptr: NonNull<u64>, layout: Layout) {
-        // XXX: check the layout matches the allocator here?
-        let buf = ptr.as_ptr();
-        // TODO: refer to the OS allocator
-        alloc::alloc::dealloc(buf, layout);
-    }
-}
-
-struct PVRDMATable {
-    entries: Vec<IOAddr, PVRDMATableAllocator>,
-    shadow: Vec<IOBuf>,
-}
-
-impl PVRDMATable {
-    pub fn new(do_alloc: bool) -> Result<IOBuf, PVRDMAError> {
-        let layout =
-            Layout::from_size_align(PVRDMA_PAGE_SIZE, PVRDMA_PAGE_ALIGN).expect("Correct Layout");
-        let allocator = IOMemAllocator::new(layout);
-
-        let buf: Vec<IOAddr, IOMemAllocator> =
-            Vec::with_capacity_in(layout.size(), allocator.unwrap());
-        buf.expand();
-
-        let mut shadow = Vec::<IOBuf>::new();
-        shadow.reserve_exact(PVRDMA_PAGE_TABLE_MAX_PAGES);
-
-        let mut table = {
-            entries = buf;
-            shadow = shadow
-        };
-
-        if (do_alloc) {
-            for i in 0..npages {
-                let page = IOBuf::new(layout).expect("Can't allocate memory for the pages?");
-                table.insert(i, page);
-            }
-        }
-
-        Ok(table)
-    }
-
-    pub fn insert(&mut self, idx: usize, buf: IOBuf) -> Result<PVRDMAError> {
-        if idx >= self.shadow.capacity() {
-            return PageIndexOutOfRange;
-        }
-        self.entries[idx] = buf.ioaddr();
-        self.shadow[idx] = buf;
-        Ok();
-    }
-
-    pub fn remove(&mut self, idx: usize, buf: IOBuf) -> Result<IOBuf, PVRDMAError> {
-        if idx >= self.shadow.capacity() {
-            return PageIndexOutOfRange;
-        }
-
-        self.entries[idx] = 0;
-        match self.shadow.get(idx) {
-            Some(x) => Ok(x), // is that element removed now?
-            None => InvalidMemoryReference,
-        }
-    }
-}
-
-impl DmaObject for PVRDMATable {
-    /// pysical of the table in main memory.
+impl DmaObject for Table {
     fn paddr(&self) -> PAddr {
-        PAddr::from(self.entries.as_ptr() as u64 - KERNEL_BASE)
+        PAddr::from(self.0.as_ptr() as u64 - KERNEL_BASE)
     }
 
-    /// Virtual address this buffer can be access by software.
     fn vaddr(&self) -> VAddr {
-        VAddr::from(self.entries.as_ptr() as u64)
+        VAddr::from(self.0.as_ptr() as u64)
     }
 
-    /// address as seen from the device
     fn ioaddr(&self) -> IOAddr {
         IOAddr::from(self.paddr().as_u64())
     }
 }
 
-/// represents the pvrdma page directory
-struct PVRDMAPageDir {
-    entries: Vec<u64, PVRDMATableAllocator>,
-    shadow: Vec<PVRDMATable>,
+/// Page-dir type (contains IOAddrs of PTables)
+type PDir = [IOAddr; PVRDMA_PAGE_TABLE_MAX_PAGES];
+static_assertions::assert_eq_size!(PDir, [u8; 4096]);
+
+/// Represents the pvrdma page directory
+pub struct pvrdma_page_dir {
+    /// State to access tables (e.g., the dir members) on the CPU.
+    tables: Vec<Table>,
+
+    /// The directory of tables (IO addresses of tables handed to the device).
+    dir: Box<PDir, DmaAllocator>,
+
+    /// Pages accessible by the CPU (that are stored inside PTables)
+    pub pages: Vec<NonNull<[u8]>>,
+
+    /// Underlying allocator for DMA accessible memory.
+    allocator: DmaAllocator,
 }
 
-impl PVRDMAPageDir {
-    pub fn new(npages: usize, do_alloc: bool) -> Result<IOBuf, PVRDMAError> {
-        if npages > PVRDMA_PAGE_DIR_MAX_PAGES {
-            return PVRDMAError;
-        }
+impl pvrdma_page_dir {
+    pub fn new(npages: usize, alloc_pages: bool) -> Result<Self, PVRDMAError> {
+        let allocator = DmaAllocator::default();
 
-        let layout =
-            Layout::from_size_align(PVRDMA_PAGE_SIZE, PVRDMA_PAGE_ALIGN).expect("Correct Layout");
-        let allocator = IOMemAllocator::new(layout);
+        let npages = BoundedUSize::<0, PVRDMA_PAGE_DIR_MAX_PAGES>::new(npages);
+        let mut pages = Vec::try_with_capacity(*npages)?;
 
-        let entries: Vec<IOAddr, IOMemAllocator> =
-            Vec::with_capacity_in(layout.size(), allocator.unwrap());
-        entries.expand();
+        let ntables = pvrdma_page_dir_table(*npages - 1) + 1;
+        debug_assert!(ntables <= PVRDMA_PAGE_DIR_MAX_TABLES);
 
-        // get the amount of tables
-        let ntables = pvrdma_page_dir_table(npages - 1) + 1;
-
-        let mut shadow = Vec::<PVRDMATable>::new();
-        shadow.reserve_exact(ntables);
-
+        let mut dir = Box::try_new_in([IOAddr::zero(); PVRDMA_PAGE_DIR_MAX_TABLES], allocator)?;
+        let mut tables = Vec::try_with_capacity(ntables)?;
         for i in 0..ntables {
-            shadow[i] = PVRDMATable::new(do_alloc).expect("Can't allocate memory for the tables");
-            entries[i] = shadow[i].ioaddr();
+            tables.push(Table::new(allocator)?);
+            dir[i] = tables[i].ioaddr();
         }
+
+        if alloc_pages {
+            for _i in 0..*npages {
+                let page = allocator.allocate(PAGE_LAYOUT)?;
+                pages.push(page);
+            }
+        }
+
+        Ok(Self {
+            allocator,
+            dir,
+            tables,
+            pages,
+        })
     }
 
-    pub fn insert(&mut self, idx: usize, buf: IOBuf) {
-        if idx > PVRDMA_PAGE_DIR_MAX_PAGES {
-            return PageIndexOutOfRange;
-        }
-        let tableid = pvrdma_page_dir_table(idx);
-        self.shadow[tableid].insert(buf)
+    pub fn table(&self, idx: usize) -> &Table {
+        debug_assert!(idx < PVRDMA_PAGE_DIR_MAX_PAGES);
+        let tidx = pvrdma_page_dir_table(idx);
+        &self.tables[tidx]
     }
 
-    pub fn remove(&mut self, idx: usize) -> Result<IOBuf, PVRDMAError> {
-        if idx > PVRDMA_PAGE_DIR_MAX_PAGES {
-            return PageIndexOutOfRange;
-        }
-        let tableid = pvrdma_page_dir_table(idx);
-        self.shadow[tableid].remove
+    pub fn get_dma(&self, idx: usize) -> IOAddr {
+        debug_assert!(idx < PVRDMA_PAGE_DIR_MAX_PAGES);
+        let pidx = pvrdma_page_dir_page(idx);
+        self.table(idx).0[pidx]
+    }
+
+    pub fn insert_dma() {
+        unimplemented!()
+    }
+
+    pub fn insert_umem() {
+        unimplemented!()
+    }
+
+    pub fn insert_page_list() {
+        unimplemented!()
     }
 }
 
-impl DmaObject for PVRDMAPageDir {
-    /// pysical of the table in main memory.
+impl Drop for pvrdma_page_dir {
+    fn drop(&mut self) {
+        for page in self.pages.iter() {
+            unsafe {
+                self.allocator
+                    .deallocate(page.as_non_null_ptr(), PAGE_LAYOUT)
+            };
+        }
+    }
+}
+
+impl DmaObject for pvrdma_page_dir {
     fn paddr(&self) -> PAddr {
-        PAddr::from(self.entries.as_ptr() as u64 - KERNEL_BASE)
+        PAddr::from(self.dir.as_ptr() as u64 - KERNEL_BASE)
     }
 
-    /// Virtual address this buffer can be access by software.
     fn vaddr(&self) -> VAddr {
-        VAddr::from(self.entries.as_ptr() as u64)
+        VAddr::from(self.dir.as_ptr() as u64)
     }
 
-    /// address as seen from the device
     fn ioaddr(&self) -> IOAddr {
         IOAddr::from(self.paddr().as_u64())
     }

@@ -14,10 +14,13 @@
 mod pci;
 
 mod dev_api;
+mod pagedir;
 mod pvrdma;
 mod verbs;
 
 use alloc::boxed::Box;
+use core::convert::TryInto;
+use core::ptr::NonNull;
 use core::{alloc::Layout, pin::Pin};
 use driverkit::iomem::DmaObject;
 use x86::current::paging::{IOAddr, PAddr, VAddr, BASE_PAGE_SIZE};
@@ -26,13 +29,11 @@ use custom_error::custom_error;
 use log::{debug, info};
 use static_assertions as sa;
 
-use crate::{
-    pci::BarIO,
-    pvrdma::{
-        dev_api::PVRDMA_VERSION,
-        pvrdma::{pvrdma_uar_map, PVRDMA_NUM_RING_PAGES},
-    },
-};
+use self::dev_api::PVRDMA_VERSION;
+use self::pagedir::pvrdma_page_dir;
+use self::pvrdma::{pvrdma_uar_map, PVRDMA_NUM_RING_PAGES};
+
+use crate::pci::BarIO;
 use pci::BarAccess;
 
 use self::{dev_api::*, pci::KERNEL_BASE};
@@ -85,11 +86,20 @@ impl<const LEN: usize> DmaObject for DmaBuffer<LEN> {
 custom_error! {pub PVRDMAError
     DeviceNotSupported = "Unknown  device/version",
     InterruptModeNotSupported = "Device requested an interrupt mode that is not supported by driver",
+    PdirTooManyPages = "Too many pages for the pdir requested",
+    PageIndexOutOfRange = "supplied index was out of range",
+    InvalidMemoryReference = "No page set",
     OutOfMemory  = "Unable to allocate raw memory.",
 }
 
 impl From<core::alloc::AllocError> for PVRDMAError {
     fn from(_e: core::alloc::AllocError) -> Self {
+        PVRDMAError::OutOfMemory
+    }
+}
+
+impl From<fallible_collections::TryReserveError> for PVRDMAError {
+    fn from(_e: fallible_collections::TryReserveError) -> Self {
         PVRDMAError::OutOfMemory
     }
 }
@@ -101,6 +111,20 @@ pub struct PVRDMA {
 
     cmd_slot: DmaBuffer<BASE_PAGE_SIZE>,
     resp_slot: DmaBuffer<BASE_PAGE_SIZE>,
+
+    /// Async event ring
+    async_pdir: pvrdma_page_dir,
+
+    /// Pointer to current page in `async_pdir`
+    /// TODO: For rust might be better if this remains a page_idx...
+    async_ring_state: NonNull<[u8]>,
+
+    /// Completion queue notification ring
+    cq_pdir: pvrdma_page_dir,
+
+    /// Pointer to current page in `cq_pdir`
+    /// TODO: For rust might be better if this remains a page_idx...
+    cq_ring_state: NonNull<[u8]>,
 
     /// Shared region between driver and host
     dsr: Pin<Box<pvrdma_device_shared_region>>,
@@ -140,6 +164,18 @@ impl PVRDMA {
         let cmd_slot = DmaBuffer::<BASE_PAGE_SIZE>::new()?;
         let resp_slot = DmaBuffer::<BASE_PAGE_SIZE>::new()?;
 
+        // Async event ring
+        let npages = PVRDMA_NUM_RING_PAGES;
+        let async_pdir = pvrdma_page_dir::new(npages.try_into().unwrap(), true)?;
+        let async_ring_state = async_pdir.pages[0];
+        let async_ring_pages = pvrdma_ring_page_info::new(npages, async_pdir.ioaddr());
+
+        // CQ notification ring
+        let npages = PVRDMA_NUM_RING_PAGES;
+        let cq_pdir = pvrdma_page_dir::new(npages.try_into().unwrap(), true)?;
+        let cq_ring_state = cq_pdir.pages[0];
+        let cq_ring_pages = pvrdma_ring_page_info::new(npages, cq_pdir.ioaddr());
+
         // Construct initial driver shared region
         let dsr = Pin::new(Box::try_new(pvrdma_device_shared_region {
             driver_version: PVRDMA_VERSION,
@@ -155,25 +191,10 @@ impl PVRDMA {
             uar_pfn: driver_uar.pfn,
             cmd_slot_dma: cmd_slot.ioaddr().as_u64(),
             resp_slot_dma: resp_slot.ioaddr().as_u64(),
+            async_ring_pages,
+            cq_ring_pages,
             ..Default::default()
         })?);
-
-        // Async event ring
-        /*
-        dev->dsr->async_ring_pages.num_pages = PVRDMA_NUM_RING_PAGES;
-        ret = pvrdma_page_dir_init(dev, &dev->async_pdir,
-                       dev->dsr->async_ring_pages.num_pages, true);
-        if (ret)
-            goto err_free_slots;
-        dev->async_ring_state = dev->async_pdir.pages[0];
-        dev->dsr->async_ring_pages.pdir_dma = dev->async_pdir.dir_dma;
-        */
-
-        // xxx IOAddr
-        let ring_info = pvrdma_ring_page_info::new(PVRDMA_NUM_RING_PAGES, IOAddr::zero());
-        
-
-        // CQ notification ring
 
         // Write the PA of the shared region to the device. The writes must be
         // ordered such that the high bits are written last. When the writes
@@ -186,6 +207,10 @@ impl PVRDMA {
             dsr_version,
             dsr,
             driver_uar,
+            async_pdir,
+            async_ring_state,
+            cq_pdir,
+            cq_ring_state,
             link_active: false,
         })?;
 

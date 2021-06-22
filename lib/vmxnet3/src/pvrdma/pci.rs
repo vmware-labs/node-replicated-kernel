@@ -31,7 +31,7 @@
 //!        - Offset 0 used for QP operations (send and recv)
 //!        - Offset 4 used for CQ operations (arm and poll)
 
-use crate::pci::{busread, buswrite, confread, confwrite, BarIO};
+use crate::pci::{busread, buswrite, confread, BarIO};
 
 pub use crate::pci::KERNEL_BASE;
 use x86::current::paging::{PAddr, VAddr};

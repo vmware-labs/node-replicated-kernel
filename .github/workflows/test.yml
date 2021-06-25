@@ -1,8 +1,8 @@
 on: [push]
 
-name: Compile and run tests
+name: Compile and run unit tests
 jobs:
-  clippy_check:
+  compile_and_test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1

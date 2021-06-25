@@ -315,7 +315,7 @@ fn assert_required_cpu_features() {
     assert!(has_fsgsbase);
     assert!(has_sse);
     assert!(has_apic);
-    assert!(has_x2apic);
+    assert!(has_x2apic); // If you fail here it probably means qemu wasn't running with KVM enabled...
     assert!(has_tsc);
     assert!(has_pae);
     assert!(has_pse);

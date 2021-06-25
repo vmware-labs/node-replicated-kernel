@@ -407,7 +407,7 @@ fn test_rwlock_smp() {
         cores.push(thread::spawn(move || {
             let scb: SchedulerControlBlock = SchedulerControlBlock::new(idx);
             let start = Instant::now();
-            while start.elapsed().as_secs() < 6 {
+            while start.elapsed().as_secs() < 10 {
                 s1.run(&scb);
             }
         }));

@@ -6,7 +6,6 @@
 //! type for doing memory allocation in user-space.
 
 use core::alloc::{GlobalAlloc, Layout};
-use core::iter::Map;
 use core::mem::transmute;
 use core::ptr::{self, NonNull};
 
@@ -30,6 +29,9 @@ macro_rules! round_up {
         (($num + $s - 1) / $s) * $s
     };
 }
+
+/// Start of large-page allocation (end of Zone allocator supported sizes)
+const LPRANGE_START: usize = ZoneAllocator::MAX_ALLOC_SIZE + 1;
 
 #[cfg(target_os = "nrk")]
 #[global_allocator]
@@ -107,8 +109,8 @@ impl Pager {
     }
 }
 
-/// A pager for GlobalAlloc.
 lazy_static! {
+    /// A pager for GlobalAlloc.
     pub static ref PAGER: ArrayVec::<CachePadded<Mutex<Pager>>, MAX_CORES> = {
         let mut pagers = ArrayVec::<CachePadded<Mutex<Pager>>, { MAX_CORES }>::new();
         for i in 0..MAX_CORES {
@@ -209,7 +211,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                     Err(AllocationError::InvalidLayout) => panic!("Can't allocate this size"),
                 }
             }
-            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => {
+            LPRANGE_START..=Pager::LARGE_PAGE_SIZE => {
                 // Best to use the underlying backend directly to allocate large
                 // to avoid fragmentation
                 try_alloc_largepage().expect("Can't allocate page?") as *mut _ as *mut u8
@@ -268,7 +270,7 @@ unsafe impl GlobalAlloc for SafeZoneAllocator {
                 // An proper reclamation strategy could be implemented here
                 // to release empty pages back from the ZoneAllocator to the PAGER
             }
-            ZoneAllocator::MAX_ALLOC_SIZE..=Pager::LARGE_PAGE_SIZE => PAGER[Environment::core_id()]
+            LPRANGE_START..=Pager::LARGE_PAGE_SIZE => PAGER[Environment::core_id()]
                 .lock()
                 .dealloc_page(ptr, Pager::LARGE_PAGE_SIZE),
             _ => error!("TODO: Currently can't dealloc of {:?}.", layout),
@@ -281,7 +283,7 @@ pub struct PerCoreAllocator;
 lazy_static! {
     pub static ref PER_CORE_MEM_ALLOCATOR: [SafeZoneAllocator; MAX_CORES] = {
         let mut allocators = ArrayVec::<SafeZoneAllocator, MAX_CORES>::new();
-        for i in 0..MAX_CORES {
+        for _i in 0..MAX_CORES {
             allocators.push(SafeZoneAllocator(CachePadded::new(Mutex::new(
                 ZoneAllocator::new(),
             ))));

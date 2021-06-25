@@ -65,6 +65,8 @@ pub struct ProcessInfo {
 #[cfg(test)]
 #[test]
 fn serialize() {
+    use alloc::vec::Vec;
+
     let _r = env_logger::try_init();
     let point = ProcessInfo {
         has_tls: true,
@@ -72,9 +74,11 @@ fn serialize() {
         tls_data_len: 4,
         tls_len_total: 8,
         alignment: 3,
+        cmdline: "test",
+        app_cmdline: "app_cmdline",
     };
 
-    let serialized = serde_cbor::to_vec(&point).unwrap();
+    let serialized: &'static [u8] = Vec::leak(serde_cbor::to_vec(&point).unwrap());
     let deserialized: ProcessInfo = serde_cbor::from_slice(&serialized).unwrap();
     log::info!("serialized.len = {}", serialized.len());
     log::info!("deserialized = {:?}", deserialized);

@@ -286,6 +286,7 @@ fn test_condvar() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     s.spawn(
@@ -298,6 +299,7 @@ fn test_condvar() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
@@ -391,6 +393,7 @@ fn test_condvar_smp() {
             },
             ptr::null_mut(),
             idx % corecnt,
+            None,
         );
     }
 
@@ -430,6 +433,7 @@ fn test_condvar_smp() {
             },
             ptr::null_mut(),
             idx % corecnt,
+            None,
         );
     }
 

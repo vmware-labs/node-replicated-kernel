@@ -7,6 +7,7 @@
 #![feature(linkage)]
 #![feature(thread_local)]
 #![feature(test)]
+#![cfg_attr(test, feature(bench_black_box))]
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;

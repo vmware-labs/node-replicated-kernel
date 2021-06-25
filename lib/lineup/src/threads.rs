@@ -44,7 +44,7 @@ pub(crate) struct Thread {
     pub(crate) return_with: Option<YieldResume>,
 
     /// If thread is registered to wake up for the specific interrupt vector.
-    pub(crate) interrupt_vector: Option<IrqVector>,
+    pub(crate) _interrupt_vector: Option<IrqVector>,
 
     /// Threads currently waiting (join, blocked) on us to exit.
     pub(crate) joinlist: Vec<(ThreadId, CoreId)>,
@@ -84,7 +84,7 @@ impl Thread {
         f: F,
         arg: *mut u8,
         upcalls: Upcalls,
-        interrupt_vector: Option<IrqVector>,
+        _interrupt_vector: Option<IrqVector>,
         tcb: *mut ThreadControlBlock<'static>,
     ) -> (
         Thread,
@@ -102,7 +102,7 @@ impl Thread {
             id: tid,
             affinity,
             return_with: None,
-            interrupt_vector,
+            _interrupt_vector,
             joinlist: Vec::with_capacity(crate::scheduler::SmpScheduler::MAX_THREADS),
             state: tcb,
         };

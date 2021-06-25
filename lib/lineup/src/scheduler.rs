@@ -556,6 +556,7 @@ mod tests {
             },
             ptr::null_mut(),
             0,
+            None,
         );
         s.spawn(
             DEFAULT_STACK_SIZE_BYTES,
@@ -564,6 +565,7 @@ mod tests {
             },
             ptr::null_mut(),
             1,
+            None,
         );
 
         // Spawn two pthreads each will dispatch lineup threads from "core 0"
@@ -659,6 +661,7 @@ mod tests {
             },
             ptr::null_mut(),
             0,
+            None,
         );
 
         // Spawn two pthreads each will dispatch lineup threads from "two cores"
@@ -722,6 +725,7 @@ mod tests {
     /// Running two long computations on two cores shouldn't take
     /// longer than running just one on one core.
     #[test]
+    #[ignore = "Fix cpuid/time on AMD machines"]
     fn scheduler_is_parallel() {
         let _r = env_logger::try_init();
 
@@ -754,6 +758,7 @@ mod tests {
             },
             ptr::null_mut(),
             0,
+            None,
         );
         s.spawn(
             DEFAULT_STACK_SIZE_BYTES,
@@ -762,6 +767,7 @@ mod tests {
             },
             ptr::null_mut(),
             1,
+            None,
         );
 
         // Spawn two pthreads each will dispatch lineup threads from "two cores"
@@ -845,6 +851,7 @@ mod tests {
     /// Test that sleeping events wake up in the correct order
     /// and sleep as long as we expect them to.
     #[test]
+    #[ignore = "Fix cpuid/time on AMD machines"]
     fn waitlist_wakeup() {
         let _r = env_logger::try_init();
         use crossbeam_queue::ArrayQueue;
@@ -869,6 +876,7 @@ mod tests {
             },
             ptr::null_mut(),
             0,
+            None,
         );
 
         s.spawn(
@@ -880,6 +888,7 @@ mod tests {
             },
             ptr::null_mut(),
             0,
+            None,
         );
 
         // Run the scheduler for 100 ms

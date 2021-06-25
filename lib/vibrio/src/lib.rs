@@ -11,7 +11,6 @@
     panic_info_message,
     c_variadic,
     ptr_internals,
-    ptr_offset_from,
     llvm_asm,
     lang_items,
     thread_local

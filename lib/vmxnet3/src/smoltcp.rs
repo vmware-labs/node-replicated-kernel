@@ -44,7 +44,7 @@ impl DevQueuePhy {
 
         let mut device = device;
         device.rxq[0].enqueue(chain).expect("Can enqueue RX desc");
-        device.rxq[0].flush();
+        assert!(device.rxq[0].flush().is_ok());
 
         Ok(Self {
             device,

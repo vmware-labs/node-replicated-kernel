@@ -1,6 +1,6 @@
 on: [push]
 
-name: Check build and formatting
+name: Check Formatting
 jobs:
   clippy_check:
     runs-on: ubuntu-latest
@@ -10,7 +10,5 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --package nrk
+    - name: Run cargo fmt
+      run: cargo fmt -- --check

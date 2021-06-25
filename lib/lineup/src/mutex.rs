@@ -159,7 +159,7 @@ impl MutexInner {
             // A better idea is probably to provide a callback to the yielder which then pushes
             // us in the waitlist after we've restored the generator (this would ensure we only update waitlist
             // after the generator has switched back to the scheduler context and is in a consistent state)
-            self.waitlist.push(tid);
+            assert!(self.waitlist.push(tid).is_ok());
 
             // This is fine as long as tid == self, in the scheduler we will just pop the front of runnable
             // instead of searching the whole list and discarding everhting that is tid:
@@ -293,6 +293,7 @@ fn test_mutex() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     s.spawn(
@@ -304,6 +305,7 @@ fn test_mutex() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
@@ -391,6 +393,7 @@ fn test_mutex_smp() {
             },
             ptr::null_mut(),
             idx % c,
+            None,
         );
     }
 

@@ -1,0 +1,40 @@
+on: [push]
+
+name: Compile and run tests
+jobs:
+  clippy_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - run: |
+          sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+          git submodule update --init
+          rustup show
+          bash setup.sh
+      - name: Compile check (x86_64-nrk)
+        run: python3 run.py --norun
+        working-directory: ./kernel
+      - name: Compile check (unix)
+        run: cargo run
+        working-directory: ./kernel
+      - name: Kernel unit tests
+        run: RUST_TEST_THREADS=1 cargo test --features smoke --bin nrk
+        working-directory: ./kernel
+      - name: apic tests
+        run: cargo test
+        working-directory: ./lib/apic
+      - name: bootloader_shared tests
+        run: cargo test
+        working-directory: ./lib/bootloader_shared
+      - name: kpi tests
+        run: cargo test
+        working-directory: ./lib/kpi
+      - name: lineup tests
+        run: RUST_TEST_THREADS=1 cargo test
+        working-directory: ./lib/lineup
+      - name: vibrio tests
+        run: cargo test
+        working-directory: ./lib/vibrio
+      - name: vmxnet3 tests
+        run: cargo test
+        working-directory: ./lib/vmxnet3

@@ -95,6 +95,7 @@ fn test_semaphore() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     s.spawn(
@@ -106,6 +107,7 @@ fn test_semaphore() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);

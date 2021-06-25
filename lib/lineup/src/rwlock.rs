@@ -285,6 +285,7 @@ fn test_rwlock() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     s.spawn(
@@ -300,6 +301,7 @@ fn test_rwlock() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
@@ -350,7 +352,7 @@ fn test_rwlock_smp() {
     // whereas `writes` should be correct...
     let reads: Arc<UnsafeSyncCell<usize>> = Arc::new(UnsafeSyncCell::new(0));
     let writes: Arc<UnsafeSyncCell<usize>> = Arc::new(UnsafeSyncCell::new(0));
-    pub const READ_LOCK_PER_THREAD: usize = 100_000;
+    pub const READ_LOCK_PER_THREAD: usize = 250_000;
     pub const WRITE_LOCK_PER_THREAD: usize = 5000;
 
     // spawn readers
@@ -372,6 +374,7 @@ fn test_rwlock_smp() {
             },
             ptr::null_mut(),
             idx % corecnt,
+            None,
         );
     }
 
@@ -394,6 +397,7 @@ fn test_rwlock_smp() {
             },
             ptr::null_mut(),
             idx % corecnt,
+            None,
         );
     }
 
@@ -403,7 +407,7 @@ fn test_rwlock_smp() {
         cores.push(thread::spawn(move || {
             let scb: SchedulerControlBlock = SchedulerControlBlock::new(idx);
             let start = Instant::now();
-            while start.elapsed().as_secs() < 3 {
+            while start.elapsed().as_secs() < 6 {
                 s1.run(&scb);
             }
         }));

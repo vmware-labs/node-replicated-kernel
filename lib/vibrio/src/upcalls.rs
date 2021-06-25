@@ -13,7 +13,7 @@
 //! [2]: www.barrelfish.org/publications/TN-010-Spec.pdf
 //! [3]: http://www.barrelfish.org/publications/ma-fuchs-tm-mp.pdf
 
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use lazy_static::lazy_static;
 use log::trace;
 
@@ -84,9 +84,7 @@ pub fn upcall_while_enabled(control: &mut kpi::arch::VirtualCpu, cmd: u64, arg: 
         // the SchedulerControlBlock register even if we return from run()
         let scheduler = lineup::tls2::Environment::scheduler();
         log::info!("got interrupt cmd={} arg={}", cmd, arg);
-        scheduler.pending_irqs.push(cmd).map_err(|_e| {
-            log::error!("Overflowed pending_irqs, missed cmd={} arg={}", cmd, arg);
-        });
+        assert!(scheduler.pending_irqs.push(cmd).is_ok());
     } else {
         log::error!("got unknown interrupt... {}", cmd);
     }

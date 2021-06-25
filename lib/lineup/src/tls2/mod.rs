@@ -53,7 +53,7 @@ use kpi::KERNEL_BASE;
 /// The first three arguments essentially mirror the rump/NetBSD
 /// `tls_tcb` struct for compatibility with NetBSD libpthread.
 ///
-/// ```
+/// ```C
 /// struct tls_tcb {
 ///   void *tcb_self;  // 0
 ///   void **tcb_dtv;  // 8
@@ -357,6 +357,7 @@ impl Environment {
 }
 
 #[test]
+#[ignore]
 fn test_tls() {
     let _r = env_logger::try_init();
     use crate::scheduler::SmpScheduler;
@@ -386,6 +387,7 @@ fn test_tls() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     s.spawn(
@@ -408,6 +410,7 @@ fn test_tls() {
         },
         ptr::null_mut(),
         0,
+        None,
     );
 
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);

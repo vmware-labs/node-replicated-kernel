@@ -311,6 +311,7 @@ fn test_rwlock() {
 /// A test for the RW lock on multiple cores.
 #[cfg(test)]
 #[test]
+#[ignore = "fails with illegal instruction on github runner"]
 fn test_rwlock_smp() {
     use alloc::sync::Arc;
     use core::ptr;

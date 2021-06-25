@@ -40,7 +40,7 @@ pub struct Fs;
 
 impl Fs {
     /// Create a file. The function internally calls file_open with O_CREAT flag.
-    pub unsafe fn create(pathname: u64, modes: u64) -> Result<u64, SystemCallError> {
+    pub fn create(pathname: u64, modes: u64) -> Result<u64, SystemCallError> {
         let flags: u64 = u64::from(FileFlags::O_WRONLY | FileFlags::O_CREAT);
         assert_eq!(flags, 0x202);
         Fs::open(pathname, flags, modes)
@@ -88,7 +88,7 @@ impl Fs {
 
     /// Read or write an opened file. `fd` is the file descriptor for the opened file.
     fn fileio(op: FileOperation, fd: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        if len <= 0 {
+        if len == 0 {
             return Err(SystemCallError::BadFileDescriptor);
         }
 
@@ -118,7 +118,7 @@ impl Fs {
         len: u64,
         offset: i64,
     ) -> Result<u64, SystemCallError> {
-        if len <= 0 {
+        if len == 0 {
             return Err(SystemCallError::BadFileDescriptor);
         }
 
@@ -189,7 +189,7 @@ impl Fs {
     }
 
     pub fn write_direct(buffer: u64, len: u64, offset: i64) -> Result<u64, SystemCallError> {
-        if len <= 0 {
+        if len == 0 {
             return Err(SystemCallError::BadFileDescriptor);
         }
         let mut is_offset = true;

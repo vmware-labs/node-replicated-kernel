@@ -6,7 +6,6 @@
 #![no_std]
 #![feature(llvm_asm)]
 
-#[allow(non_snake_case)]
 #[cfg(not(target_os = "none"))]
 extern crate alloc;
 

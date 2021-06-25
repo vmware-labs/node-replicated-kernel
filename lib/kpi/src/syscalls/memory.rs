@@ -16,18 +16,34 @@ use x86::bits64::paging::{PAddr, VAddr};
 pub struct VSpace;
 
 impl VSpace {
+    /// Back a region of memory with DRAM.
+    ///
+    /// # Safety
+    /// Manipulates address space of process.
     pub unsafe fn map(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
         VSpace::vspace(VSpaceOperation::Map, base, bound)
     }
 
+    /// Unmap region of virtual memory.
+    ///
+    /// # Safety
+    /// Manipulates address space of process.
     pub unsafe fn unmap(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
         VSpace::vspace(VSpaceOperation::Unmap, base, bound)
     }
 
+    /// Maps device memory (identity mapped with physical mem).
+    ///
+    /// # Safety
+    /// Manipulates address space of process.
     pub unsafe fn map_device(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
         VSpace::vspace(VSpaceOperation::MapDevice, base, bound)
     }
 
+    /// Maps a registered frame.
+    ///
+    /// # Safety
+    /// Manipulates address space of process.
     pub unsafe fn map_frame(
         frame_id: FrameId,
         base: u64,
@@ -48,8 +64,8 @@ impl VSpace {
         }
     }
 
-    pub unsafe fn identify(base: u64) -> Result<(VAddr, PAddr), SystemCallError> {
-        VSpace::vspace(VSpaceOperation::Identify, base, 0)
+    pub fn identify(base: u64) -> Result<(VAddr, PAddr), SystemCallError> {
+        unsafe { VSpace::vspace(VSpaceOperation::Identify, base, 0) }
     }
 
     /// Manipulate the virtual address space.

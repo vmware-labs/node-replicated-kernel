@@ -29,9 +29,10 @@ jobs:
       - name: kpi tests
         run: cargo test
         working-directory: ./lib/kpi
-      - name: lineup tests
-        run: RUST_TEST_THREADS=1 cargo test
-        working-directory: ./lib/lineup
+      # Disabled at the moment, fix the flaky tests:
+      #- name: lineup tests
+      #  run: RUST_TEST_THREADS=1 cargo test
+      #  working-directory: ./lib/lineup
       - name: vibrio tests
         run: cargo test
         working-directory: ./lib/vibrio

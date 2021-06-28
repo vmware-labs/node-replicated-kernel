@@ -1,4 +1,7 @@
-on: [push]
+on:
+  push:
+    branches-ignore:
+      - 'dependabot/**'
 
 name: Check build and formatting
 jobs:

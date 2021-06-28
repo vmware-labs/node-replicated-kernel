@@ -642,16 +642,6 @@ if __name__ == '__main__':
     "Execution pipeline for building and launching nrk"
     args = parser.parse_args()
 
-    user = whoami().strip()
-    kvm_members = getent['group', 'kvm']().strip().split(":")[-1].split(',')
-    if not user in kvm_members and not args.norun:
-        print("Your user ({}) is not in the kvm group.".format(user))
-        print("Add yourself to the group with `sudo adduser {} kvm`".format(user))
-        print("You'll likely have to restart for changes to take effect,")
-        print("or run `sudo chmod +666 /dev/kvm` if you don't care about")
-        print("kvm access restriction on the machine.")
-        sys.exit(errno.EACCES)
-
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")
     if args.verbose:
@@ -671,5 +661,20 @@ if __name__ == '__main__':
 
     # Run
     if not args.norun:
+        user = whoami().strip()
+        try :
+            # if there is no kvm group this may fail...
+            kvm_members = getent['group', 'kvm']().strip().split(":")[-1].split(',')
+        except :
+            kvm_members = []
+
+        if not user in kvm_members:
+            print("Your user ({}) is not in the kvm group.".format(user))
+            print("Add yourself to the group with `sudo adduser {} kvm`".format(user))
+            print("You'll likely have to restart for changes to take effect,")
+            print("or run `sudo chmod +666 /dev/kvm` if you don't care about")
+            print("kvm access restriction on the machine.")
+            sys.exit(errno.EACCES)
+
         r = run(args)
         sys.exit(r)

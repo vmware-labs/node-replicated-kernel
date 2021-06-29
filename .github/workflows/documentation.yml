@@ -2,6 +2,9 @@ on:
   push:
     branches:
       - master
+    paths:
+      - doc/**
+      - .github/**
 
 name: Deploy documentation
 jobs:
@@ -27,7 +30,7 @@ jobs:
           git config user.name bespin-ci
           git config user.email noreply@nrkernel.systems
           git add .
-          git commit -a -m "Added documentation."
-          git push origin master
+          git commit -a -m "Added documentation." || true
+          git push origin master || true
           cd ..
           rm -rf gh-pages/ book/

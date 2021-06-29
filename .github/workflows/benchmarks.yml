@@ -1,17 +1,18 @@
-name: Integration tests
+name: Benchmarks
 
-# Needs to remain [push] only, no pull-request at the moment
-# as "Integration tests" runs self-hosted and github settings are limited.
+# "Integration tests" needs to remain [push] only, no pull-request at the moment
+# as "Benchmarks" runs self-hosted and github settings are limited.
 # https://github.community/t/self-hosted-runner-security-with-public-repositories/17860
-on: [push]
-
-defaults:
-  run:
-    shell: bash
+on:
+  workflow_run:
+    workflows: ["Integration tests"]
+    types: [completed]
 
 jobs:
-  test-skylake2x:
+  bench-skylake2x:
     runs-on: [self-hosted, skylake2x]
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
     steps:
       - uses: actions/checkout@v2
       - run: |
@@ -22,7 +23,6 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - name: Integration tests (qemu/kvm)
         run: |
-          cd kernel
-          RUST_TEST_THREADS=1 cargo test --features smoke
+          bash scripts/ci.bash
     env:
       CI_MACHINE_TYPE: "skylake2x"

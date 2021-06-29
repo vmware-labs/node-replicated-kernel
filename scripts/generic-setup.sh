@@ -74,7 +74,13 @@ function install_rust_build_dependencies()
 
     # Install mdbook (used by docs/)
     if [ ! -x "$(command -v mdbook)" ]; then
-        cargo install mdbook
+        MDBOOK_FLAGS=""
+        if [ "$CI" = true ] ; then
+            # Reduce compile time by disabling `watch`, `serve` etc. commands
+            # otherwise this takes >5min in CI:
+            MDBOOK_FLAGS="--no-default-features"
+        fi
+        cargo install mdbook $MDBOOK_FLAGS
     fi
 }
 

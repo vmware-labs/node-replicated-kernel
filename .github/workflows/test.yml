@@ -10,8 +10,9 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-          bash setup.sh
       - uses: Swatinem/rust-cache@v1
+      - run: |
+          bash setup.sh
       - name: Compile check (x86_64-nrk)
         run: python3 run.py --norun
         working-directory: ./kernel

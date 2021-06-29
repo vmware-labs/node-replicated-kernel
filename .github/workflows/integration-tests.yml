@@ -17,11 +17,11 @@ jobs:
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
-          bash setup.sh
           rustup show
       - uses: Swatinem/rust-cache@v1
       - name: Integration tests (qemu/kvm)
         run: |
+          bash setup.sh
           cd kernel
           RUST_TEST_THREADS=1 cargo test --features smoke
     env:

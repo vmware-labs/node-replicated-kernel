@@ -17,9 +17,10 @@ jobs:
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
-          bash setup.sh
           rustup show
       - uses: Swatinem/rust-cache@v1
+      - run: |
+          bash setup.sh
       - name: Integration tests (qemu/kvm)
         run: |
           bash scripts/ci.bash

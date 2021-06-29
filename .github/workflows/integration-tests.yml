@@ -1,5 +1,3 @@
-name: Integration tests
-
 # Needs to remain [push] only, no pull-request at the moment
 # as "Integration tests" runs self-hosted and github settings are limited.
 # https://github.community/t/self-hosted-runner-security-with-public-repositories/17860
@@ -9,6 +7,7 @@ defaults:
   run:
     shell: bash
 
+name: Integration tests
 jobs:
   test-skylake2x:
     runs-on: [self-hosted, skylake2x]

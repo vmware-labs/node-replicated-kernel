@@ -22,7 +22,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --noc
 
 # Clone repo
 rm -rf gh-pages
-git clone -b master git@github.com:gz/bespin-benchmarks.git gh-pages
+git clone --depth 1 -b master git@github.com:gz/bespin-benchmarks.git gh-pages
 
 pip3 install -r gh-pages/requirements.txt
 

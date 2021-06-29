@@ -501,7 +501,8 @@ pub struct pvrdma_cqne {
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum pvrdma_cmd_typ {
-    PVRDMA_CMD_FIRST = 0,
+    //PVRDMA_CMD_FIRST = 0,
+    PVRDMA_CMD_QUERY_PORT = 0,
     PVRDMA_CMD_QUERY_PKEY = 1,
     PVRDMA_CMD_CREATE_PD = 2,
     PVRDMA_CMD_DESTROY_PD = 3,
@@ -528,7 +529,8 @@ pub enum pvrdma_cmd_typ {
 #[repr(i32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum pvrdma_resp_cmd_typ {
-    PVRDMA_CMD_FIRST_RESP = -2147483648,
+    //PVRDMA_CMD_FIRST_RESP = -2147483648,
+    PVRDMA_CMD_PORT_RESP = -2147483648,
     PVRDMA_CMD_QUERY_PKEY_RESP = -2147483647,
     PVRDMA_CMD_CREATE_PD_RESP = -2147483646,
     PVRDMA_CMD_DESTROY_PD_RESP_NOOP = -2147483645,
@@ -951,6 +953,30 @@ impl Default for pvrdma_cmd_req {
     }
 }
 
+use core::mem::size_of;
+
+impl pvrdma_cmd_req {
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                size_of::<pvrdma_cmd_req>(),
+            )
+        }
+    }
+
+    #[inline(always)]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self as *mut Self as *mut u8,
+                size_of::<pvrdma_cmd_req>(),
+            )
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub union pvrdma_cmd_resp {
@@ -973,5 +999,27 @@ pub union pvrdma_cmd_resp {
 impl Default for pvrdma_cmd_resp {
     fn default() -> Self {
         unsafe { ::core::mem::zeroed() }
+    }
+}
+
+impl pvrdma_cmd_resp {
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                size_of::<pvrdma_cmd_resp>(),
+            )
+        }
+    }
+
+    #[inline(always)]
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self as *mut Self as *mut u8,
+                size_of::<pvrdma_cmd_resp>(),
+            )
+        }
     }
 }

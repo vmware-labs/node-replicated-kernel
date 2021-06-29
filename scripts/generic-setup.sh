@@ -18,7 +18,7 @@ function install_build_dependencies()
     if [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
         $APT -o Acquire::Max-FutureTime=86400 update > /dev/null
 
-        # installing pytyhon build dependencie
+        # installing python build dependencies
         $APT install -y python3 python3-pip python3-plumbum python3-prctl python3-toml python3-pexpect > /dev/null
 
         # nrk build dependencies
@@ -87,7 +87,7 @@ function install_rust_build_dependencies()
 
 function install_rust_run_dependencies()
 {
-    # Install corealloc (used by run.py) -- only natively
+    # Install corealloc (used by run.py) -- only native
     if [ ! -x "$(command -v corealloc)" ]; then
         cargo install corealloc
     fi

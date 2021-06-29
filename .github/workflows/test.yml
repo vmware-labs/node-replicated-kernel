@@ -41,3 +41,6 @@ jobs:
       - name: vmxnet3 tests
         run: cargo test
         working-directory: ./lib/vmxnet3
+      - name: Build the documentation
+        run: mdbook build
+        working-directory: ./doc/

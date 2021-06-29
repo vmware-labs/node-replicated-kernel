@@ -1,0 +1,31 @@
+on:
+  push:
+    branches:
+      - main
+
+name: Deploy documentation
+jobs:
+  deploy_docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Checkout website repository
+        uses: actions/checkout@v2
+        with:
+          repository: gz/bespin-benchmarks
+          path: gh-pages
+          ssh-key: ${{ secrets.WEBSITE_DEPLOY_SSH_KEY }}
+      - run: |
+          source ~/.cargo/env
+          cargo install mdbook --no-default-features
+          cd doc
+          mdbook build -d ../book
+          cd ..
+          cd gh-pages
+          rm -rf ./book
+          mv ../book ./
+          git add .
+          git commit -a -m "Added documentation."
+          git push origin master
+          cd ..
+          rm -rf gh-pages/ book/

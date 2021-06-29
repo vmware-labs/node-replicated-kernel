@@ -13,7 +13,6 @@ jobs:
     runs-on: [self-hosted, skylake2x]
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
-    steps:
       - uses: actions/checkout@v2
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules

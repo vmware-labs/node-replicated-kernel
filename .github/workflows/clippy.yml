@@ -3,7 +3,7 @@ on:
     branches-ignore:
       - 'dependabot/**'
 
-name: Check build and formatting
+name: Run clippy
 jobs:
   clippy_check:
     runs-on: ubuntu-latest

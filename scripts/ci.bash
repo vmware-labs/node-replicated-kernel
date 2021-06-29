@@ -70,6 +70,10 @@ python3 gh-pages/_scripts/ci_history.py
 
 # Push gh-pages
 cd gh-pages
+if [ "$CI" = true ] ; then
+    git config user.email "no-reply@nrkernel.systems"
+    git config user.name "bespin-ci"
+fi
 git add .
 git commit -a -m "Added benchmark results for $GIT_REV_CURRENT."
 git push origin master

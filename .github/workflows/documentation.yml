@@ -24,6 +24,8 @@ jobs:
           cd gh-pages
           rm -rf ./book
           mv ../book ./
+          git config user.name bespin-ci
+          git config user.email noreply@nrkernel.systems
           git add .
           git commit -a -m "Added documentation."
           git push origin master

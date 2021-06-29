@@ -14,6 +14,7 @@
 mod pci;
 
 mod dev_api;
+mod dmabuffer;
 mod pagedir;
 mod pvrdma;
 mod verbs;
@@ -23,10 +24,10 @@ use core::convert::TryInto;
 use core::ptr::NonNull;
 use core::{alloc::Layout, pin::Pin};
 use driverkit::iomem::DmaObject;
-use x86::current::paging::{IOAddr, PAddr, VAddr, BASE_PAGE_SIZE};
+use x86::current::paging::BASE_PAGE_SIZE;
 
 use custom_error::custom_error;
-use log::{debug, info};
+use log::{debug, info, warn};
 use static_assertions as sa;
 
 use self::dev_api::PVRDMA_VERSION;
@@ -36,52 +37,13 @@ use self::pvrdma::{pvrdma_uar_map, PVRDMA_NUM_RING_PAGES};
 use crate::pci::BarIO;
 use pci::BarAccess;
 
-use self::{dev_api::*, pci::KERNEL_BASE};
+use self::{dev_api::*, dmabuffer::DmaBuffer};
 
 const PAGE_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
 // Safety constraints for PAGE_LAYOUT:
 sa::const_assert!(BASE_PAGE_SIZE > 0); // align must not be zero
 sa::const_assert!(BASE_PAGE_SIZE.is_power_of_two()); // align must be a power of two
-
-pub struct DmaBuffer<const LEN: usize> {
-    buf: *mut u8,
-}
-
-impl<const LEN: usize> DmaBuffer<LEN> {
-    fn new() -> Result<Self, PVRDMAError> {
-        let buf = unsafe { alloc::alloc::alloc(PAGE_LAYOUT) };
-        if buf.is_null() {
-            return Err(PVRDMAError::OutOfMemory);
-        }
-
-        Ok(Self { buf })
-    }
-}
-
-impl<const LEN: usize> Drop for DmaBuffer<LEN> {
-    fn drop(&mut self) {
-        unsafe {
-            debug_assert!(!self.buf.is_null());
-            let layout = Layout::from_size_align_unchecked(LEN, BASE_PAGE_SIZE);
-            alloc::alloc::dealloc(self.buf, layout);
-        }
-    }
-}
-
-impl<const LEN: usize> DmaObject for DmaBuffer<LEN> {
-    fn paddr(&self) -> PAddr {
-        PAddr::from(self.buf as *const () as u64) - PAddr::from(KERNEL_BASE)
-    }
-
-    fn vaddr(&self) -> VAddr {
-        VAddr::from(self.buf as *const Self as *const () as usize)
-    }
-
-    fn ioaddr(&self) -> IOAddr {
-        IOAddr::from(self.paddr().as_u64())
-    }
-}
 
 custom_error! {pub PVRDMAError
     DeviceNotSupported = "Unknown  device/version",
@@ -90,6 +52,8 @@ custom_error! {pub PVRDMAError
     PageIndexOutOfRange = "supplied index was out of range",
     InvalidMemoryReference = "No page set",
     OutOfMemory  = "Unable to allocate raw memory.",
+    CommandFault = "Failed to post a command to the device",
+    CommandFaultResponse = "Unknown response from device",
 }
 
 impl From<core::alloc::AllocError> for PVRDMAError {
@@ -231,6 +195,61 @@ impl PVRDMA {
     }
 
     fn init_device(&mut self) {}
+
+    fn cmd_recv(&self, resp: &mut pvrdma_cmd_resp, resp_code: u32) -> Result<(), PVRDMAError> {
+        // TODO: wait for completion
+
+        // maybe warp the copy in a spinlock
+        self.cmd_slot.copy_out(resp.as_mut_slice());
+
+        if unsafe { resp.hdr.ack } != resp_code {
+            warn!(
+                "unknown response {} expected {}",
+                unsafe { resp.hdr.ack },
+                resp_code
+            );
+            return Err(PVRDMAError::CommandFaultResponse);
+        }
+
+        return Ok(());
+    }
+
+    pub fn cmd_post(
+        &self,
+        cmd: &pvrdma_cmd_req,
+        resp: Option<(&mut pvrdma_cmd_resp, u32)>,
+    ) -> Result<(), PVRDMAError> {
+        // take the lock, if needed...
+
+        // copy in the buffer
+        // 	spin_lock(&dev->cmd_lock);
+        self.cmd_slot.copy_in(cmd.as_slice());
+        // 	spin_unlock(&dev->cmd_lock);
+
+        // initialize the completion, just clear the first
+        // not sure how we do this on bespin...
+        // init_completion(&dev->cmd_done);
+
+        // issue a barrier to ensure the requiest is written
+        // 	mb();
+
+        // 	pvrdma_write_reg(dev, PVRDMA_REG_REQUEST, 0);
+        //buswrite(self.bar1, PVRDMA_REG_REQUEST, 0)
+        self.pci.write_bar1(PVRDMA_REG_REQUEST, 0);
+
+        // issue a barrier to ensure the requiest is written
+        // 	mb();
+        let err = self.pci.read_bar1(PVRDMA_REG_ERR);
+        if err == 0 {
+            match resp {
+                Some((r, c)) => return self.cmd_recv(r, c),
+                None => return Ok(()),
+            }
+        } else {
+            warn!("failed to post request to pvrdma device");
+            return Err(PVRDMAError::CommandFault);
+        }
+    }
 }
 
 /*

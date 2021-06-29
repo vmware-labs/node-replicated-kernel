@@ -18,7 +18,6 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-          source ~/.cargo/env
       - uses: Swatinem/rust-cache@v1
       - run: |
           bash setup.sh

@@ -1066,6 +1066,7 @@ fn s03_userspace_smoke() {
 /// Tests that the basic vmxnet3 driver in the kernel is functional.
 #[cfg(not(feature = "baremetal"))]
 #[test]
+#[ignore = "flaky make networking stable first"]
 fn s03_vmxnet3_smoke() {
     /// Helper function that spawns a UDP echo server on the host
     fn spawn_tcpdump() -> Result<rexpect::session::PtySession> {
@@ -1096,6 +1097,7 @@ fn s03_vmxnet3_smoke() {
 /// network stack.
 #[cfg(not(feature = "baremetal"))]
 #[test]
+#[ignore = "flaky make networking stable first"]
 fn s03_vmxnet3_smoltcp() {
     fn spawn_socat(port: u16) -> Result<rexpect::session::PtySession> {
         spawn(

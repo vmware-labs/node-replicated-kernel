@@ -51,6 +51,9 @@ we currenly use the following labels `skylake2x`, `skylake4x`, `cascadelake2x`,
 nodes. Machines with identical hardware should have the same tag to allow
 parallel test execution.
 
+> If you add a new machine label, make sure to also add it to `utils.py` in the
+> CI website `_scripts` folder.
+
 Don't launch the runner yet (this comes as the last step).
 
 ## Give access to the benchmark repository

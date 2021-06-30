@@ -23,13 +23,7 @@ RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --noc
 # Clone repo
 rm -rf gh-pages
 git clone --depth 1 -b master git@github.com:gz/bespin-benchmarks.git gh-pages
-
 pip3 install -r gh-pages/requirements.txt
-
-# Create CSV entry
-export GIT_REV_CURRENT=`git rev-parse --short=8 HEAD`
-export CSV_LINE="`date +%Y-%m-%d`",${GIT_REV_CURRENT},"${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/index.html","${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/index.html"
-echo $CSV_LINE >> gh-pages/_data/$CI_MACHINE_TYPE.csv
 
 # Copy redis results
 DEPLOY_DIR="gh-pages/redis/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
@@ -66,7 +60,7 @@ mv leveldb_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/leveldb_benchmark.csv
 
 # Update CI history plots
-python3 gh-pages/_scripts/ci_history.py
+python3 gh-pages/_scripts/ci_history.py --append --machine $CI_MACHINE_TYPE
 
 # Push gh-pages
 cd gh-pages

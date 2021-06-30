@@ -23,5 +23,49 @@ jobs:
           bash setup.sh
           cd kernel
           RUST_TEST_THREADS=1 cargo test --features smoke
+  bench-skylake2x:
+    needs: test-skylake2x
+    runs-on: [self-hosted, skylake2x]
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+          git submodule update --init
+          rustup show
+      - uses: Swatinem/rust-cache@v1
+      - name: Run Benchmarks
+        run: |
+          bash setup.sh
+          bash scripts/ci.bash
     env:
       CI_MACHINE_TYPE: "skylake2x"
+  test-skylake4x:
+    runs-on: [self-hosted, skylake4x]
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+          git submodule update --init
+          rustup show
+      - uses: Swatinem/rust-cache@v1
+      - name: Integration tests (qemu/kvm)
+        run: |
+          bash setup.sh
+          cd kernel
+          RUST_TEST_THREADS=1 cargo test --features smoke
+  bench-skylake4x:
+    needs: test-skylake4x
+    runs-on: [self-hosted, skylake4x]
+    steps:
+      - uses: actions/checkout@v2
+      - run: |
+          sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+          git submodule update --init
+          rustup show
+      - uses: Swatinem/rust-cache@v1
+      - name: Run Benchmarks
+        run: |
+          bash setup.sh
+          bash scripts/ci.bash
+    env:
+      CI_MACHINE_TYPE: "skylake4x"

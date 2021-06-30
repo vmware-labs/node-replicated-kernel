@@ -11,6 +11,7 @@ Steps to add a new CI machine:
   1. [Disable AppArmor](#disable-apparmor)
   1. [Install a recent QEMU](#install-a-recent-qemu)
   1. [Do a test-run](#do-a-test-run)
+  1. [Start the new runner](#start-the-runner)
 
 ## Install github-runner software on a new test machine
 
@@ -23,7 +24,7 @@ sudo useradd github-runner -m -s /bin/zsh
 Add sudo capability for github-runner:
 
 ```bash
-visudo
+sudo visudo
 # github-runner  ALL=(ALL) NOPASSWD: ALL
 ```
 
@@ -36,10 +37,11 @@ Add runner`. Just make sure to replace the curl URL with the latest release from
 the link above. For the latest version at the time of writing the documentation:
 
 ```bash
+sudo su github-runner
 cd $HOME
 mkdir actions-runner && cd actions-runner
-curl -o actions-runner-linux-x64-2.278.0.tar.gz -L https://github.com/rust-lang/gha-runner/releases/download/v2.278.0-rust1/actions-runner-linux-x64-2.27
-8.0-rust1.tar.gz
+curl -o actions-runner-linux-x64-2.278.0.tar.gz -L https://github.com/rust-lang/gha-runner/releases/download/v2.278.0-rust1/actions-runner-linux-x64-2.278.0-rust1.tar.gz
+tar xzf ./actions-runner-linux-x64-2.278.0.tar.gz
 ./config.sh --url << repo url >> --token << token from web ui >>
 ```
 
@@ -49,13 +51,7 @@ we currenly use the following labels `skylake2x`, `skylake4x`, `cascadelake2x`,
 nodes. Machines with identical hardware should have the same tag to allow
 parallel test execution.
 
-Finally, launch the runner by permitting only jobs originating from push requests:
-
-```bash
-RUST_WHITELISTED_EVENT_NAME=push ./run.sh
-```
-
-TBD: Run as systemd service
+Don't launch the runner yet (this comes as the last step).
 
 ## Give access to the benchmark repository
 
@@ -66,7 +62,6 @@ github-runner account. Also add the user to the KVM group. Adding yourself to
 the KVM group requires a logout/reboot which we do in later steps.
 
 ```bash
-sudo su github-runner
 sudo adduser github-runner kvm
 ssh-keygen
 ```
@@ -155,6 +150,18 @@ source $HOME/.cargo/env
 cd kernel
 RUST_TEST_THREADS=1 cargo test --features smoke -- --nocapture
 ```
+
+## Start the runner
+
+Finally, launch the runner by permitting only jobs originating from push requests:
+
+```bash
+cd $HOME/actions-runner
+source $HOME/.cargo/env
+RUST_WHITELISTED_EVENT_NAME=push ./run.sh
+```
+
+TBD: Run/configure it as a systemd service.
 
 ## Repository settings
 

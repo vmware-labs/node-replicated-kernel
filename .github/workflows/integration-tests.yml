@@ -17,7 +17,6 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-      - uses: Swatinem/rust-cache@v1
       - name: Integration tests (qemu/kvm)
         run: |
           bash setup.sh
@@ -32,7 +31,6 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-      - uses: Swatinem/rust-cache@v1
       - name: Run Benchmarks
         run: |
           bash setup.sh
@@ -47,7 +45,6 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-      - uses: Swatinem/rust-cache@v1
       - name: Integration tests (qemu/kvm)
         run: |
           bash setup.sh
@@ -62,7 +59,6 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-      - uses: Swatinem/rust-cache@v1
       - name: Run Benchmarks
         run: |
           bash setup.sh

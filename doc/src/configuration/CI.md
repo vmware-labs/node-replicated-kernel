@@ -33,9 +33,23 @@ runner](https://github.com/rust-lang/gha-runner/). For more information, check
 
 Other than that, follow the steps listed under `Settings -> Actions -> Runner ->
 Add runner`. Just make sure to replace the curl URL with the latest release from
-the link above.
+the link above. For the latest version at the time of writing the documentation:
 
-Launch the runner by permitting only jobs coming from push requests:
+```bash
+cd $HOME
+mkdir actions-runner && cd actions-runner
+curl -o actions-runner-linux-x64-2.278.0.tar.gz -L https://github.com/rust-lang/gha-runner/releases/download/v2.278.0-rust1/actions-runner-linux-x64-2.27
+8.0-rust1.tar.gz
+./config.sh --url << repo url >> --token << token from web ui >>
+```
+
+When asked for labels, make sure to give it a machine specific tag. For example,
+we currenly use the following labels `skylake2x`, `skylake4x`, `cascadelake2x`,
+`ryzen5` to indicate different machine type and the number of sockets/NUMA
+nodes. Machines with identical hardware should have the same tag to allow
+parallel test execution.
+
+Finally, launch the runner by permitting only jobs originating from push requests:
 
 ```bash
 RUST_WHITELISTED_EVENT_NAME=push ./run.sh
@@ -141,3 +155,17 @@ source $HOME/.cargo/env
 cd kernel
 RUST_TEST_THREADS=1 cargo test --features smoke -- --nocapture
 ```
+
+## Repository settings
+
+If the repo is migrated to a new location, the following settings should be mirrored:
+
+1. Under Settings -> Secrets: Add secret `WEBSITE_DEPLOY_SSH_KEY` which contains
+   a key to push the generated documentation to the correct website repository.
+1. Under Settings -> Options: Disable "Allow merge commits"
+1. Under Settings -> Branches: Add branch protection for `master`, enable the following settings:
+   - Require pull request reviews before merging
+   - Dismiss stale pull request approvals when new commits are pushed
+   - Require status checks to pass before merging
+   - Require branches to be up to date before merging
+   - Require linear history

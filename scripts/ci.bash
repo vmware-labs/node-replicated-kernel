@@ -25,8 +25,11 @@ rm -rf gh-pages
 git clone --depth 1 -b master git@github.com:gz/bespin-benchmarks.git gh-pages
 pip3 install -r gh-pages/requirements.txt
 
-# Copy redis results
+# If you change this, adjust the command also in the append_csv function in utils.py:
+GIT_REV_CURRENT=`git rev-parse --short=8 HEAD`
 DEPLOY_DIR="gh-pages/redis/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+
+# Copy redis results
 mkdir -p ${DEPLOY_DIR}
 cp gh-pages/redis/index.markdown ${DEPLOY_DIR}
 mv redis_benchmark.csv ${DEPLOY_DIR}

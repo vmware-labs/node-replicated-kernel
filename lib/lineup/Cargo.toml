@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 kpi = { path = "../kpi" }
-crossbeam-utils = { version = "0.6", default-features = false }
+crossbeam-utils = { version = "0.8", default-features = false }
 crossbeam-queue = { version = "0.2", default-features = false, features = ["alloc"] }
 either = { version = "1.5", default-features = false }
 fringe = { git = "https://github.com/gz/libfringe.git", default-features = false, features = ["alloc"], branch = "llvm_asm" }

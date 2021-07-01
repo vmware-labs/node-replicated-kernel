@@ -7,37 +7,23 @@ defaults:
   run:
     shell: bash
 
-name: Integration tests
+name: Integration tests (skylake4x)
 jobs:
-  test-skylake2x:
-    runs-on: [self-hosted, skylake2x]
+  pre_job:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
     steps:
-      - uses: actions/checkout@v2.3.4
-      - run: |
-          sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
-          git submodule update --init
-          rustup show
-      - name: Integration tests (qemu/kvm)
-        run: |
-          bash setup.sh
-          cd kernel
-          RUST_TEST_THREADS=1 cargo test --features smoke
-  bench-skylake2x:
-    needs: test-skylake2x
-    runs-on: [self-hosted, skylake2x]
-    steps:
-      - uses: actions/checkout@v2.3.4
-      - run: |
-          sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
-          git submodule update --init
-          rustup show
-      - name: Run Benchmarks
-        run: |
-          bash setup.sh
-          bash scripts/ci.bash
-    env:
-      CI_MACHINE_TYPE: "skylake2x"
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@master
+        with:
+          concurrent_skipping: 'never'
+          skip_after_successful_duplicate: 'true'
+          paths_ignore: '["**/README.md", "**/docs/**"]'
+          do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
   test-skylake4x:
+    needs: pre_job
+    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     runs-on: [self-hosted, skylake4x]
     steps:
       - uses: actions/checkout@v2.3.4
@@ -51,6 +37,8 @@ jobs:
           cd kernel
           RUST_TEST_THREADS=1 cargo test --features smoke
   bench-skylake4x:
+    needs: pre_job
+    if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     needs: test-skylake4x
     runs-on: [self-hosted, skylake4x]
     steps:

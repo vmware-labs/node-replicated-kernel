@@ -16,7 +16,7 @@ rawtime = "0.0.4"
 backtracer_core = "0.0.2"
 x86 = "0.40"
 log = "0.4.6"
-spin = "0.5"
+spin = "0.9"
 arr_macro = "0.1"
 
 [features]

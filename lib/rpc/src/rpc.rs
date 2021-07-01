@@ -68,7 +68,6 @@ pub enum RPCType {
     FileRename = 12,
     /// Create a directory.
     MkDir = 13,
-
     Unknown,
 }
 

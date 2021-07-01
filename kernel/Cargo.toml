@@ -42,7 +42,7 @@ crossbeam-utils = { version = "0.8.0", default-features = false }
 static_assertions = "1.1.0"
 bit_field = "0.10"
 crossbeam-queue = { version = "0.2", default-features = false, features = ["alloc"] }
-addr2line = { version = "0.14.1", default-features = false, features = ["rustc-demangle"], optional = true }
+addr2line = { version = "0.15.2", default-features = false, features = ["rustc-demangle"], optional = true }
 arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }

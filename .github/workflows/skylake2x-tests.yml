@@ -37,9 +37,8 @@ jobs:
           cd kernel
           RUST_TEST_THREADS=1 cargo test --features smoke
   bench-skylake2x:
-    needs: pre_job
+    needs: [pre_job, test-skylake2x]
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
-    needs: test-skylake2x
     runs-on: [self-hosted, skylake2x]
     steps:
       - uses: actions/checkout@v2.3.4

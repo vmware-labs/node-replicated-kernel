@@ -10,7 +10,7 @@ language = "en"
 edition = "2018"
 
 [output.html]
-git-repository-url = "https://github.com/gz/bespin/tree/master/doc"
+git-repository-url = "https://github.com/vmware-labs/node-replicated-kernel/tree/master/doc"
 
 [output.html.search]
 limit-results = 20

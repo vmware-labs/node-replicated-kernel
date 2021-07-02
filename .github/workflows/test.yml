@@ -1,11 +1,11 @@
 on:
   push:
     paths-ignore:
-      - 'docs/**'
+      - 'doc/**'
       - '**.md'
   pull_request:
     paths-ignore:
-      - 'docs/**'
+      - 'doc/**'
       - '**.md'
 
 name: Compile and run unit tests

@@ -19,7 +19,7 @@ jobs:
         with:
           concurrent_skipping: 'never'
           skip_after_successful_duplicate: 'true'
-          paths_ignore: '["**/README.md", "**/docs/**"]'
+          paths_ignore: '["**/README.md", "**/doc/**"]'
           do_not_skip: '["pull_request", "workflow_dispatch", "schedule"]'
   test-skylake2x:
     needs: pre_job

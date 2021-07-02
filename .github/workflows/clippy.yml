@@ -3,7 +3,7 @@ on:
     branches-ignore:
       - 'dependabot/**'
     paths-ignore:
-      - 'docs/**'
+      - 'doc/**'
       - '**.md'
 
 name: Run clippy

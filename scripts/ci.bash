@@ -27,8 +27,14 @@ pip3 install -r gh-pages/requirements.txt
 
 # If you change this, adjust the command also in the append_csv function in utils.py:
 GIT_REV_CURRENT=`git rev-parse --short=8 HEAD`
-DEPLOY_DIR="gh-pages/redis/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+DATE_PREFIX=`date +"%Y-%m-%d-%H-%M"`
 
+DEPLOY_DIR="gh-pages/redis/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+    # If we already have results (created the directory),
+    # we will add the new results in a subdir
+    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
 # Copy redis results
 mkdir -p ${DEPLOY_DIR}
 cp gh-pages/redis/index.markdown ${DEPLOY_DIR}
@@ -37,12 +43,22 @@ gzip ${DEPLOY_DIR}/redis_benchmark.csv
 
 # Copy memcached results
 #DEPLOY_DIR="gh-pages/memcached/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+#if [ -d "${DEPLOY_DIR}" ]; then
+#    # If we already have results (created the directory),
+#    # we will add the new results in a subdir
+#    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+#fi
 #mkdir -p ${DEPLOY_DIR}
 #mv memcached_benchmark.csv ${DEPLOY_DIR}
 #gzip ${DEPLOY_DIR}/memcached_benchmark.csv
 
 # Copy vmops results
 DEPLOY_DIR="gh-pages/vmops/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+    # If we already have results (created the directory),
+    # we will add the new results in a subdir
+    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
 mkdir -p ${DEPLOY_DIR}
 cp gh-pages/vmops/index.markdown ${DEPLOY_DIR}
 mv vmops_benchmark.csv ${DEPLOY_DIR}
@@ -52,12 +68,22 @@ gzip ${DEPLOY_DIR}/vmops_benchmark_latency.csv
 
 # Copy memfs results
 DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+    # If we already have results (created the directory),
+    # we will add the new results in a subdir
+    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
 mkdir -p ${DEPLOY_DIR}
 mv fxmark_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/fxmark_benchmark.csv
 
 #Copy leveldb results
 DEPLOY_DIR="gh-pages/leveldb/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"
+if [ -d "${DEPLOY_DIR}" ]; then
+    # If we already have results (created the directory),
+    # we will add the new results in a subdir
+    DEPLOY_DIR=${DEPLOY_DIR}${DATE_PREFIX}
+fi
 mkdir -p ${DEPLOY_DIR}
 mv leveldb_benchmark.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/leveldb_benchmark.csv

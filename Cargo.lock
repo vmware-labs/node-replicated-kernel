@@ -2043,6 +2043,7 @@ name = "rpc"
 version = "0.1.0"
 dependencies = [
  "abomonation",
+ "core2",
  "kpi",
  "lazy_static",
  "log",

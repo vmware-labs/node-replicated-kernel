@@ -13,6 +13,7 @@ members = [
     "lib/rpc",
     "lib/vibrio",
     "lib/vmxnet3",
+    "lib/rpc",
     "usr/init",
     "usr/rkapps",
 ]

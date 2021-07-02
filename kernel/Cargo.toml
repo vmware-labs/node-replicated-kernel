@@ -20,6 +20,7 @@ node-replication = "0.1.1"
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 vmxnet3 = { path = "../lib/vmxnet3" }
+rpc = { path = "../lib/rpc" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 x86 = "0.43"
 klogger = "0.0.8"

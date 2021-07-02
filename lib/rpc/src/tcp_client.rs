@@ -77,8 +77,18 @@ impl ClusterClientAPI for TCPClient<'_> {
         loop {
             match self.iface.poll(&mut self.sockets, Instant::from_millis(0)) {
                 Ok(_) => {}
-            match self.iface.poll(&mut self.sockets, Instant::now()) {
-                Ok(_) => {},
+                Err(e) => {
+                    warn!("poll error: {}", e);
+                }
+            }
+            let socket = self.sockets.get::<TcpSocket>(self.server_handle.unwrap());
+            // Waiting for send/recv forces the TCP handshake to fully complete
+            if socket.is_active() && (socket.may_send() || socket.may_recv()) {
+                debug!("Connected to server, ready to send/recv data");
+                break;
+            }
+        }
+
         self.call(0, RPCType::Registration, Vec::new()).unwrap();
         Ok(self.client_id)
     }
@@ -96,6 +106,7 @@ impl RPCClientAPI for TCPClient<'_> {
             msg_type: rpc_id,
             msg_len: data.len() as u64,
         };
+
         // Serialize request header then request body
         let mut req_data = Vec::new();
         unsafe { encode(&req_hdr, &mut req_data) }.unwrap();

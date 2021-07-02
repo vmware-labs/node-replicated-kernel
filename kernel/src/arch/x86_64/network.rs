@@ -1,0 +1,73 @@
+use alloc::collections::BTreeMap;
+
+use vmxnet3::pci::BarAccess;
+use vmxnet3::smoltcp::DevQueuePhy;
+use vmxnet3::vmx::VMXNet3;
+
+use crate::memory::vspace::MapAction;
+use crate::memory::PAddr;
+use kpi::KERNEL_BASE;
+
+use smoltcp::iface::{EthernetInterfaceBuilder, EthernetInterface, NeighborCache};
+use smoltcp::wire::{IpAddress, EthernetAddress, IpCidr};
+
+pub struct SmolTCPDevice<'a> {
+    iface: Option<EthernetInterface<'a, DevQueuePhy>>,
+}
+
+impl SmolTCPDevice<'_> {
+    pub fn new() -> Self {
+        Self { 
+            iface: None 
+        }
+    }
+
+    pub fn is_initialized(&self) -> bool {
+        self.iface.is_some()
+    }
+
+    pub fn init(&mut self) {
+        // Already initialized - nothing to do.
+        if self.is_initialized() {
+            return;
+        }
+
+        const BUS: u32 = 0x0;
+        const DEV: u32 = 0x10;
+        const FUN: u32 = 0x0;
+        let pci = BarAccess::new(BUS, DEV, FUN);
+    
+        // TODO(hack): Map potential vmxnet3 bar addresses XD
+        // Do this in kernel space (offset of KERNEL_BASE) so the mapping persists
+        let kcb = super::kcb::get_kcb();
+        for &bar in &[pci.bar0 - KERNEL_BASE, pci.bar1 - KERNEL_BASE] {
+            kcb.arch
+                .init_vspace()
+                .map_identity_with_offset(
+                    PAddr::from(KERNEL_BASE),
+                    PAddr::from(bar),
+                    0x1000,
+                    MapAction::ReadWriteKernel,
+                )
+                .expect("Failed to write potential vmxnet3 bar addresses")
+        }
+    
+        // Create the VMX device
+        let mut vmx = VMXNet3::new(pci, 1, 1).unwrap();
+        vmx.attach_pre().expect("Failed to vmx.attach_pre()");
+        vmx.init();
+
+        // Create the EthernetInterface wrapping the VMX device
+        let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
+        let neighbor_cache = NeighborCache::new(BTreeMap::new());
+        let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
+        let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 10), 24)];
+        let iface = EthernetInterfaceBuilder::new(device)
+            .ip_addrs(ip_addrs)
+            .ethernet_addr(ethernet_addr)
+            .neighbor_cache(neighbor_cache)
+            .finalize();
+
+        self.iface = Some(iface);
+    }
+}

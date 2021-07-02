@@ -176,5 +176,4 @@ pub struct FIORPCRes {
     pub ret: Result<(u64, u64), RPCError>,
 }
 unsafe_abomonate!(FIORPCRes: ret);
-
 //////// End FILEIO Operations

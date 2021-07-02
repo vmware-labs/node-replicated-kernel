@@ -74,11 +74,11 @@ enum ExitStatus {
     /// An unrecoverable error happened (double-fault etc).
     UnrecoverableError,
     /// Kernel exited with unknown error status... Update the script.
-    Unknown(i8),
+    Unknown(i32),
 }
 
-impl From<i8> for ExitStatus {
-    fn from(exit_code: i8) -> Self {
+impl From<i32> for ExitStatus {
+    fn from(exit_code: i32) -> Self {
         match exit_code {
             0 => ExitStatus::Success,
             1 => ExitStatus::ReturnFromMain,
@@ -676,7 +676,7 @@ fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
 ///
 /// It uses our dhcpd config and listens on the tap0 interface
 /// (that we set up in our run.py script).
-fn spawn_dhcpd() -> Result<rexpect::session::PtyBashSession> {
+fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:
     let o = process::Command::new("sudo")

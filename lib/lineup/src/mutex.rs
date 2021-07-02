@@ -239,11 +239,11 @@ impl MutexInner {
                 }
 
                 match self.waitlist.pop() {
-                    Ok(next) => {
+                    Some(next) => {
                         yielder.make_runnable(next);
                         break;
                     }
-                    _ => {
+                    None => {
                         spin_loop();
                         continue;
                     }

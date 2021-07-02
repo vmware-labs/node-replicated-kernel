@@ -113,14 +113,14 @@ pub fn enqueue(gtid: atopology::GlobalThreadId, s: WorkItem) {
 
 pub fn dequeue(gtid: atopology::GlobalThreadId) {
     match IPI_WORKQUEUE[gtid as usize].pop() {
-        Ok(msg) => match msg {
+        Some(msg) => match msg {
             WorkItem::Shootdown(s) => {
                 trace!("TLB channel got msg {:?}", s);
                 s.process();
             }
             WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
         },
-        Err(_) => { /*IPI request was handled by eager_advance_fs_replica()*/ }
+        None => { /*IPI request was handled by eager_advance_fs_replica()*/ }
     }
 }
 
@@ -142,7 +142,7 @@ fn advance_log(log_id: usize) {
 pub fn eager_advance_fs_replica() {
     let core_id = atopology::MACHINE_TOPOLOGY.current_thread().id;
     match IPI_WORKQUEUE[core_id as usize].pop() {
-        Ok(msg) => {
+        Some(msg) => {
             match &msg {
                 WorkItem::Shootdown(_s) => {
                     // If its for TLB shootdown, insert it back into the queue.
@@ -151,7 +151,7 @@ pub fn eager_advance_fs_replica() {
                 WorkItem::AdvanceReplica(log_id) => advance_log(*log_id),
             }
         }
-        Err(_) => {
+        None => {
             let kcb = super::kcb::get_kcb();
             match kcb.arch.cnr_replica.as_ref() {
                 Some(replica) => {

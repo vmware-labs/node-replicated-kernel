@@ -403,11 +403,11 @@ impl<'a> SmpScheduler<'a> {
     fn check_interrupt(&self, state: &SchedulerControlBlock) {
         while !state.pending_irqs.is_empty() {
             match state.pending_irqs.pop() {
-                Ok(vec) => match self.irqvec_to_tid.lock().get(&vec) {
+                Some(vec) => match self.irqvec_to_tid.lock().get(&vec) {
                     Some(tid) => self.mark_runnable(*tid, state.core_id),
                     None => error!("Don't have a thread to handle IRQ vector {}", vec),
                 },
-                Err(_e) => unreachable!("Only one thread pops so this shouldn't happen"),
+                None => unreachable!("Only one thread pops so this shouldn't happen"),
             }
         }
     }

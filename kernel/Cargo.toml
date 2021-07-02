@@ -65,7 +65,7 @@ rand = { version = "0.8", features = ["small_rng"] }
 ctor = "0.1.20"
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
-rexpect = "0.3"
+rexpect = "0.4"
 proptest = "1.0.0"
 hwloc2 = "2.2"
 env_logger = "0.8"

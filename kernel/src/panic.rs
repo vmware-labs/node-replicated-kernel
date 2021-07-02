@@ -37,8 +37,7 @@ fn new_ctxt(
 
     let debug_abbrev: gimli::DebugAbbrev<_> = load_section(file, endian);
     let debug_addr: gimli::DebugAddr<_> = load_section(file, endian);
-    // For addr2line 0.15, blocked on https://github.com/gimli-rs/addr2line/pull/225
-    //let debug_aranges: gimli::DebugAranges<_> = load_section(file, endian);
+    let debug_aranges: gimli::DebugAranges<_> = load_section(file, endian);
     let debug_info: gimli::DebugInfo<_> = load_section(file, endian);
     let debug_line: gimli::DebugLine<_> = load_section(file, endian);
     let debug_line_str: gimli::DebugLineStr<_> = load_section(file, endian);
@@ -51,7 +50,7 @@ fn new_ctxt(
     Context::from_sections(
         debug_abbrev,
         debug_addr,
-        //debug_aranges,
+        debug_aranges,
         debug_info,
         debug_line,
         debug_line_str,

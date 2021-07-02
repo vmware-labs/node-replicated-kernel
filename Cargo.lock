@@ -8,7 +8,17 @@ version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a55f82cfe485775d02112886f4169bde0c5894d75e79ead7eafe7e40a25e45f7"
 dependencies = [
- "gimli",
+ "gimli 0.23.0",
+ "rustc-demangle",
+]
+
+[[package]]
+name = "addr2line"
+version = "0.15.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7a2e47a1fbe209ee101dd6d61285226744c6c8d3c21c8dc878ba6cb9f467f3a"
+dependencies = [
+ "gimli 0.24.0",
  "rustc-demangle",
 ]
 
@@ -148,7 +158,7 @@ version = "0.3.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ed203b9ba68b242c62b3fb7480f589dd49829be1edb3fe8fc8b4ffda2dcb8d"
 dependencies = [
- "addr2line",
+ "addr2line 0.14.1",
  "cfg-if 1.0.0",
  "libc 0.2.95",
  "miniz_oxide",
@@ -162,9 +172,23 @@ version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "134e2886f3e1b0b1bc5ce47c12ea02d5d341b6b61fac7c3afe79feac0f949315"
 dependencies = [
- "addr2line",
+ "addr2line 0.14.1",
  "cfg-if 0.1.10",
- "gimli",
+ "gimli 0.23.0",
+ "log",
+ "stable_deref_trait",
+ "x86 0.37.0",
+]
+
+[[package]]
+name = "backtracer_core"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64a08cfe3c738d333f57a9e75122169d7e076f57d00ba495e9896c08e2883947"
+dependencies = [
+ "addr2line 0.15.2",
+ "cfg-if 0.1.10",
+ "gimli 0.24.0",
  "log",
  "stable_deref_trait",
  "x86 0.37.0",
@@ -612,6 +636,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gimli"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e4075386626662786ddb0ec9081e7c7eeb1ba31951f447ca780ef9f5d568189"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "half"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -806,7 +839,7 @@ name = "lineup"
 version = "0.0.1"
 dependencies = [
  "arr_macro",
- "backtracer_core",
+ "backtracer_core 0.0.2",
  "crossbeam-queue",
  "crossbeam-utils 0.8.5",
  "either",
@@ -944,11 +977,11 @@ dependencies = [
 name = "nrk"
 version = "0.0.3"
 dependencies = [
- "addr2line",
+ "addr2line 0.15.2",
  "apic",
  "arrayvec",
  "atopology",
- "backtracer_core",
+ "backtracer_core 0.0.3",
  "bit_field",
  "bootloader_shared",
  "cc",
@@ -962,6 +995,7 @@ dependencies = [
  "elfloader",
  "env_logger 0.8.3",
  "fallible_collections",
+ "gimli 0.24.0",
  "hashbrown 0.11.2",
  "hwloc2",
  "klogger",

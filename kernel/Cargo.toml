@@ -27,7 +27,7 @@ driverkit = "0.8"
 spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"
-backtracer_core = "0.0.2"
+backtracer_core = "0.0.3"
 rawtime = "0.0.4"
 libacpica = "0.0.6"
 atopology = "0.0.17"
@@ -42,7 +42,8 @@ crossbeam-utils = { version = "0.8.0", default-features = false }
 static_assertions = "1.1.0"
 bit_field = "0.10"
 crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
-addr2line = { version = "0.14.1", default-features = false, features = ["rustc-demangle"], optional = true }
+addr2line = { version = "0.15", default-features = false, features = ["rustc-demangle"], optional = true }
+gimli = { version = "0.24", default-features = false, features = ["read", "endian-reader"] }
 arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }

@@ -939,6 +939,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         fs_replica,
     );
 
+    // Create network stack and instantiate RPC Client
+    #[cfg(feature = "remote-exokernel")]
+    {
+        let mut kcb = kcb::get_kcb();
+        kcb.arch.init_rpc(IpAddress::v4(172, 31, 0, 2), 6970);
+    }
+
     // Done with initialization, now we go in
     // the arch-independent part:
     let _r = xmain();

@@ -20,13 +20,13 @@ Please follow the given steps to reserve a machine to run the experiments.
 
 ## Download the code and setup the environment
 
-Download the source code `.tar.gz` file using [this
-link](https://www.cs.utah.edu/~stutsman/bespin-24ce69c.tar.gz).
+Check out the source code:
 
 ```bash
 cd $HOME
-tar zxvf bespin-24ce69c.tar.gz
-cd bespin_ae
+git clone https://github.com/vmware-labs/node-replicated-kernel.git nrk
+cd nrk
+git checkout osdi21-ae-v2
 bash setup.sh
 ```
 

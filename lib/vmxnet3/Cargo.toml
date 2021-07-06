@@ -8,6 +8,7 @@ license = "BSD-2-Clause"
 
 [dependencies]
 log = "0.4"
+kpi = { path = "../kpi" }
 static_assertions = "1.1.0"
 x86 = "0.43"
 arrayvec = { version = "0.7.0", default-features = false }

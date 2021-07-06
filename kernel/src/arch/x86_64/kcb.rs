@@ -138,6 +138,11 @@ pub struct Arch86Kcb {
     /// Global id per hyperthread.
     id: usize,
 
+    /// Global id of the NUMA node.
+    ///
+    /// Will be zero in case system doesn't have NUMA.
+    node_id: usize,
+
     /// Max number of hyperthreads on the current socket.
     max_threads: usize,
 
@@ -190,6 +195,7 @@ impl Arch86Kcb {
             cnr_replica: None,
             cnrfs: None,
             id: 0,
+            node_id: 0,
             max_threads: 0,
         }
     }
@@ -209,6 +215,7 @@ impl Arch86Kcb {
     ) {
         let thread = atopology::MACHINE_TOPOLOGY.current_thread();
         self.id = thread.id as usize;
+        self.node_id = thread.node_id.unwrap_or(0);
         self.max_threads = match atopology::MACHINE_TOPOLOGY.nodes().nth(0) {
             Some(node) => node.threads().count(),
             None => 1,
@@ -333,14 +340,11 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
     }
 
     fn hwthread_id(&self) -> usize {
-        atopology::MACHINE_TOPOLOGY.current_thread().id
+        self.id
     }
 
     fn node(&self) -> usize {
-        atopology::MACHINE_TOPOLOGY
-            .current_thread()
-            .node_id
-            .unwrap_or(0)
+        self.node_id
     }
 
     fn current_pid(&self) -> Result<Pid, KError> {

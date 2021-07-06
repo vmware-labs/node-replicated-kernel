@@ -25,6 +25,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::mem::transmute;
 use core::sync::atomic::{AtomicBool, Ordering};
+use smoltcp::wire::IpAddress;
 
 use crate::cnrfs::{MlnrKernelNode, Modify};
 use crate::kcb::{BootloaderArguments, Kcb};
@@ -940,10 +941,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
 
     // Create network stack and instantiate RPC Client
-    #[cfg(feature = "remote-exokernel")]
+    //#[cfg(feature = "remote-exokernel")]
     {
-        let mut kcb = kcb::get_kcb();
-        kcb.arch.init_rpc(IpAddress::v4(172, 31, 0, 2), 6970);
+        let kcb = kcb::get_kcb();
+        kcb.arch.init_rpc(IpAddress::v4(172, 31, 0, 11), 6970);
     }
 
     // Done with initialization, now we go in

@@ -62,16 +62,20 @@ pub fn schedule() -> ! {
                     }
                     Err(KError::NoExecutorForCore) => {
                         if is_replica_main_thread {
-                            // There is no process but we're main, aggressively
-                            // try and advance the replica
-                            for _i in 0..25_000 {
-                                core::hint::spin_loop();
-                            }
-
-                            // Advance replicas
+                            // There is no process but we're the "main" thread,
+                            // aggressively try and advance the replica
+                            let start = rawtime::Instant::now();
                             crate::nrproc::advance_all();
                             crate::arch::advance_fs_replica();
 
+                            if start.elapsed().as_millis() < 1 {
+                                // Wait for a bit in case we don't end up doing
+                                // any work, otherwise this causes too much
+                                // contention and tput drops around ~300k
+                                for _i in 0..25_000 {
+                                    core::hint::spin_loop();
+                                }
+                            }
                             continue;
                         } else {
                             // There is no process, set a timer and go to sleep

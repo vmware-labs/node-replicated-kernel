@@ -9,7 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a55f82cfe485775d02112886f4169bde0c5894d75e79ead7eafe7e40a25e45f7"
 dependencies = [
  "gimli 0.23.0",
- "rustc-demangle",
 ]
 
 [[package]]
@@ -164,20 +163,6 @@ dependencies = [
  "miniz_oxide",
  "object",
  "rustc-demangle",
-]
-
-[[package]]
-name = "backtracer_core"
-version = "0.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "134e2886f3e1b0b1bc5ce47c12ea02d5d341b6b61fac7c3afe79feac0f949315"
-dependencies = [
- "addr2line 0.14.1",
- "cfg-if 0.1.10",
- "gimli 0.23.0",
- "log",
- "stable_deref_trait",
- "x86 0.37.0",
 ]
 
 [[package]]
@@ -631,9 +616,6 @@ name = "gimli"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6503fe142514ca4799d4c26297c4248239fe8838d827db6bd6065c6ed29a6ce"
-dependencies = [
- "stable_deref_trait",
-]
 
 [[package]]
 name = "gimli"
@@ -839,7 +821,7 @@ name = "lineup"
 version = "0.0.1"
 dependencies = [
  "arr_macro",
- "backtracer_core 0.0.2",
+ "backtracer_core",
  "crossbeam-queue",
  "crossbeam-utils 0.8.5",
  "either",
@@ -981,7 +963,7 @@ dependencies = [
  "apic",
  "arrayvec",
  "atopology",
- "backtracer_core 0.0.3",
+ "backtracer_core",
  "bit_field",
  "bootloader_shared",
  "cc",

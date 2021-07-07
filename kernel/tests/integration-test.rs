@@ -1532,7 +1532,7 @@ fn s06_vmops_benchmark() {
             .cmd(kernel_cmdline.as_str());
 
         if cfg!(feature = "smoke") {
-            cmdline = cmdline.user_feature("smoke").memory(8192);
+            cmdline = cmdline.user_feature("smoke").memory(10 * 1024);
         } else {
             cmdline = cmdline.memory(48 * 1024);
         }
@@ -1687,7 +1687,7 @@ fn s06_vmops_latency_benchmark() {
             .cmd(kernel_cmdline.as_str());
 
         if cfg!(feature = "smoke") {
-            cmdline = cmdline.user_feature("smoke").memory(18192);
+            cmdline = cmdline.user_feature("smoke").memory(24 * 1024);
         } else {
             cmdline = cmdline.memory(32 * 1024);
         }

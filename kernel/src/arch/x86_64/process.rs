@@ -654,7 +654,8 @@ impl Executor for Ring3Executor {
 
     /// Start the process (run it for the first time).
     fn start(&self) -> Self::Resumer {
-        assert_eq!(kcb::get_kcb().node, self.affinity, "Run on remote replica?");
+        let kcb = kcb::get_kcb();
+        assert_eq!(kcb.arch.node_id, self.affinity, "Run on remote replica?");
 
         self.maybe_switch_vspace();
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
@@ -675,7 +676,7 @@ impl Executor for Ring3Executor {
                 self.stack_top(),
                 cpu_ctl,
                 kpi::upcall::NEW_CORE,
-                atopology::MACHINE_TOPOLOGY.current_thread().id as u64,
+                kcb.arch.id as u64,
             )
         }
     }
@@ -1244,12 +1245,13 @@ pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     allocate_dispatchers::<Ring3Process>(pid)?;
 
     // Set current thread to run executor from our process (on the current core)
-    let thread = atopology::MACHINE_TOPOLOGY.current_thread();
+    let kcb = kcb::get_kcb();
+
     let _gtid = nr::KernelNode::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
-        thread.node_id.or(Some(0)),
-        Some(thread.id),
+        Some(kcb.arch.node_id),
+        Some(kcb.arch.id),
     )?;
 
     Ok(pid)

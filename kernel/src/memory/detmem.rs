@@ -74,7 +74,8 @@ impl DeterministicAlloc {
 
     pub fn alloc(&self, l: Layout) -> *mut u8 {
         // Current NUMA node id (hack approximate with the thread id):
-        let nid = { kcb::get_kcb().node as usize };
+        let kcb = kcb::get_kcb();
+        let nid = kcb.node;
 
         if let Some((rl, ptr)) = self.qs[nid].pop() {
             // Queue wasn't empty; the leading replica already allocated on our
@@ -100,8 +101,10 @@ impl DeterministicAlloc {
 
                 let mut allocs = ArrayVec::<*mut u8, MAX_NUMA_NODES>::new();
                 for i in 0..self.qs.len() {
+                    kcb.set_allocation_affinity(i);
                     allocs.push(unsafe { alloc(l) });
                 }
+                kcb.set_allocation_affinity(nid);
                 // Check if any of the allocation failed:
                 let succeeded = allocs.iter().filter(|e| e.is_null()).count() == 0;
                 if succeeded {
@@ -117,6 +120,7 @@ impl DeterministicAlloc {
                 } else {
                     // If we didn't succeed to allocate on all nodes
                     for i in 0..self.qs.len() {
+                        kcb.set_allocation_affinity(i);
                         // Free any allocations that may have succeeded
                         if !allocs[i].is_null() {
                             unsafe { dealloc(allocs[i], l) };
@@ -124,6 +128,7 @@ impl DeterministicAlloc {
                         // Set all allocation results to NULL
                         self.qs[i].push((l, 0x0)).expect("Can't push (2)");
                     }
+                    kcb.set_allocation_affinity(nid);
                 }
 
                 // Return allocation for current queue

@@ -40,12 +40,12 @@ pub fn init_network<'a>() -> EthernetInterface<'a, DevQueuePhy> {
     // Create the EthernetInterface wrapping the VMX device
     let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let ethernet_addr = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
+    let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
     let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 12), 24)];
 
 
     let mut routes = Routes::new(BTreeMap::new());
-    routes.add_default_ipv4_route(Ipv4Address::new(172, 31, 0, 2)).unwrap();
+    routes.add_default_ipv4_route(Ipv4Address::new(172, 31, 0, 20)).unwrap();
 
     let iface = EthernetInterfaceBuilder::new(device)
         .ip_addrs(ip_addrs)

@@ -102,47 +102,50 @@ operation classes [using our earlier example in the NR
 section](NodeReplication.html#source-and-code-example):
 
 ```rust
-/// The replicated hashmap for CNR now uses a concurrent hashmap.
+use chashmap::CHashMap;
+use cnr::{Dispatch, LogMapper};
+
+/// The replicated hashmap uses a concurrent hashmap internally.
 pub struct CNRHashMap {
    storage: CHashMap<usize, usize>,
 }
 
 /// We support a mutable put operation on the hashmap.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Modify {
    Put(usize, usize),
 }
 
-/// The `LogMapper` trait is used to distribute the keys among multiple logs.
-/// It returns an operation class (for the hash-table this is trivial,
-/// each key can be it's own class).
-///
-/// One can change the implementation to improve the
+/// This `LogMapper` implementation distributes the keys amoung multiple logs
+/// in a round-robin fashion. One can change the implementation to improve the
 /// data locality based on the data sturucture layout in the memory.
 impl LogMapper for Modify {
-   fn hash(&self) -> usize {
+   fn hash(&self, nlogs: usize, logs: &mut Vec<usize>) {
+      debug_assert!(logs.capacity() >= nlogs, "guarantee on logs capacity");
+      debug_assert!(logs.is_empty(), "guarantee on logs content");
+
       match self {
-         Modify::Put(key, _val) => *key
+         Modify::Put(key, _val) => logs.push(*key % nlogs),
       }
    }
 }
 
-/// We support read operations to lookup a key from the hashmap.
-#[derive(Clone, Debug, PartialEq)]
+/// We support an immutable read operation to lookup a key from the hashmap.
+#[derive(Debug, PartialEq, Clone)]
 pub enum Access {
    Get(usize),
 }
 
-/// `Access` also needs to provide operation classes to know which logs to
-/// advance if the replica is outdated when executing a read.
-///
-/// The implementation must follows the same logic as the `Modify` enum. This
-/// ensures that the read and write operations for a particular key depend on
+/// `Access` follows the same operation to log mapping as the `Modify`. This
+/// ensures that the read and write operations for a particular key go to
 /// the same log.
 impl LogMapper for Access {
-   fn hash(&self) -> usize {
+   fn hash(&self, nlogs: usize, logs: &mut Vec<usize>) {
+      debug_assert!(logs.capacity() >= nlogs, "guarantee on logs capacity");
+      debug_assert!(logs.is_empty(), "guarantee on logs content");
+
       match self {
-         Access::Get(key) => *key
+         Access::Get(key) => logs.push(*key % nlogs),
       }
    }
 }
@@ -163,9 +166,6 @@ impl Dispatch for CNRHashMap {
    }
 
    /// The `dispatch_mut` function applies the mutable operations.
-   /// The difference here compared to NR is that this function
-   /// only provides &self (rather than &mut self) in NR.
-   /// The data-structure has to handle locking itself.
    fn dispatch_mut(&self, op: Self::WriteOperation) -> Self::Response {
        match op {
            Modify::Put(key, value) => self.storage.insert(key, value),

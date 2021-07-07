@@ -82,7 +82,9 @@ at the end of every frame tracks the meta-data for objects within the frame
 
 The kernel has to explicitly handle running out of memory. nrk uses fallible
 allocations to handle out-of-memory errors gracefully by returning an error to
-applications. This is not quite done in all cases yet and still needs work.
+applications. We do this in almost all cases in the kernel (with some exceptions
+during initializations etc.) but some of the 3rd party dependencies (e.g., to
+parse ELF binaries) are not completely converted to fallible allocations yet.
 
 Another issue is that handling out-of-memory errors in presence of replicated
 data-structures becomes a little more challenging: Allocations which happen to

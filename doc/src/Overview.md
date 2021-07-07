@@ -2,7 +2,7 @@
 
 Node Replicated Kernel (NRK) is a research prototype OS that started as a
 project at VMware Research, but is now being developed collaboratively by [a
-team of researchers from industry and academia](/Contributors.md). It is
+team of researchers from industry and academia](./Contributors.md). It is
 intended as a basis to explore ideas about the structure of operating systems
 for hardware of the future. NRK is written from scratch, almost all in Rust
 (with some assembly), and it runs on x86 platforms.
@@ -31,7 +31,7 @@ per-core communication channels and [distributed protocols (2PC,
 to achieve agreement, replication and sharing in the OS.
 
 [We overcome this complexity in NRK by using
-logs](/architecture/KernelArchitecture.md): The kernel relies primarily on
+logs](./architecture/KernelArchitecture.md): The kernel relies primarily on
 single-threaded data structures which are automatically replicated in the
 system. Various operation logs make sure the replicas are always synchronized.
 Our technique (called [node-replication](./architecture/NodeReplication.md))

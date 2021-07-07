@@ -13,7 +13,6 @@ states with the new operations.
 Next, we explain in more detail the three main techniques that NR makes use of:
 operation logs, scalable reader-writer locks and flat combining.
 
-
 ## The operation log
 
 The log uses a circular buffer to represent the abstract state of the concurrent
@@ -33,12 +32,110 @@ replicas would not be able to make any more progress.
   <img src="../diagrams/NrLog.png" alt="A log for a BTree and 2 replicas"/>
   <figcaption>
   Shows a log containing mutable operations for a 2x replicated BTree. Each
-  replica contains a tail and head pointer into the log. A global tail tracks
-  the tail of the "slowest" replica (i.e., the oldest entry that has not been
-  applied yet).
+  replica contains a local tail (ltail1 and ltail2) pointer into the log. A
+  global head tracks the oldest entry that is still outstanding (i.e., needs to
+  be consumed by at least one more replica before it can be overwritten).
   </figcaption>
 </figure>
 
+Next, we're going to explain the log in more detail for the curious reader
+(Warning: if you're not directly working on this, likely these subsections are
+pretty boring and can be skipped as well).
+
+### Log memory layout
+
+<figure>
+  <img src="../diagrams/log-memory-layout.png" alt="The memory layout of the Log struct"/>
+  <figcaption>
+  The log structure and it's members as they appear in memory.
+  </figcaption>
+</figure>
+
+[The
+log](https://github.com/vmware/node-replication/blob/b9871ddf423fd48e6a1558da83a7aa0fa7f5fda6/nr/src/log.rs)
+contains an array or slice of entries, `slog`, where it stores the mutable
+operations from the replicas. It also maintains a global `head` and `tail` which
+are a subregion in `slog`, and indicate the current operations in the log that
+still need to be consumed by at least one replica or have not been garbage
+collected by the log. The `head` points to the oldest "active" entry that still
+needs to be processed, and the `tail` to the newest. All replicas have their own
+`ltail` which tracks per-replica progress. At any point in time, an `ltail` will
+point somewhere in the subregion given by `head..tail`. `lmasks` are generation
+bits: they are flipped whenever a replica wraps around in the circular buffer.
+
+`next` is used internally by the library to hand out a registration tokens for
+replicas that register with the log (this is done only in the beginning, during
+setup). It tracks how many replicas are consuming from/appending to the log.
+
+The `ctail` is an optimization for reads and tracks the max of all `ltails`:
+e.g., it points to the log entry (`< tail`) after which there are no completed
+operations on any replica yet.
+
+### Consuming from the log
+
+The [`exec`
+method](https://github.com/vmware/node-replication/blob/b9871ddf423fd48e6a1558da83a7aa0fa7f5fda6/nr/src/log.rs#L471)
+is used by replicas to execute any outstanding operations from the log. It takes
+a closure that is executed for each outstanding entry, and a token to identify
+the replica that calls `exec`.
+
+Approximately, the method will do two things:
+
+1. Invoke the closure for every entry in the log which is in the sub-region
+   `ltail..tail` and afterwards sets `ltail = tail`.
+1. Finally, it may update the `ctail` if `ltail > ctail` to the new maximum.
+
+<figure>
+  <img src="../diagrams/tail-head-ctail.png" alt="Changes to ltail and ctail when calling exec"/>
+  <figcaption>
+  Indicates what happens to ltail[0] and ctail when replica 0 calles exec(): The
+  ltail will be updated to be equal to tail and the ctail (currently pointing to
+  the old max which is ltail[1] will point to a new max which is the same as
+  tail and ltail[0]). Of course it also applies all the entries between ltail[0]
+  and tail against the data-structure of replica 0.
+  </figcaption>
+</figure>
+
+### Appending to the log
+
+[The append
+operation](https://github.com/vmware/node-replication/blob/b9871ddf423fd48e6a1558da83a7aa0fa7f5fda6/nr/src/log.rs#L341)
+is invoked by replicas to insert mutable operations into the log. It takes a
+slice of new operations coming from the replica and the same closure as in
+`exec` to potentially apply some outstanding operations. This is necessary as
+the log could be full and unable to insert more operations. Then, we'd first
+have to update our own ltail a bit (or wait for other replicas to make
+progress).
+
+Approximately, the method will end up doing these steps:
+
+1. If there isn't enough space to insert our new batch of operations, try to
+   consume some entries from the log until we have enough space available.
+1. Do a compare exchange on the log `tail` to reserve space for our entries.
+1. Insert entries into the log
+1. See if we can collect some garbage aka old log entries no longer used ([next section](#garbage-collecting-the-log)).
+
+### Garbage collecting the log
+
+[`advance_head`](https://github.com/vmware/node-replication/blob/b9871ddf423fd48e6a1558da83a7aa0fa7f5fda6/nr/src/log.rs#L534)
+has the unfortunate job to collect the log garbage. Luckily this amounts to as
+little as periodically advancing the head pointer.
+
+For that it computes the minium of all `ltails`. If this minimum still ends up
+being the current head, it waits (and calls `exec` to try and advance its local
+tail). Once the min ltail is bigger than the head, it will update the head to
+that new minimum ltail and return.
+
+<figure>
+  <img src="../diagrams/advance-head.png" alt="advance head with two example cases"/>
+  <figcaption>
+  Shows the two possible scenarios in advance head: In the top diagram, the tail
+  of replica 0 points to the current head, so we can't advance the head pointer
+  and need to wait. In the bottom diagram, both ltail[0] and ltail[1] have
+  progressed further than head, so we don't need the entries between
+  head..ltail[0] anymore, and so head is advanced.
+  </figcaption>
+</figure>
 
 ## Flat combining
 

@@ -76,7 +76,7 @@ To check if the environment is setup properly, run
 
 ```bash
 source $HOME/.cargo/env
-cd bespin_ae/kernel
+cd $HOME/nrk/kernel
 python3 ./run.py --release
 ```
 
@@ -155,7 +155,7 @@ Plot the Figure 3 by running:
 
 ```bash
 # python3 fsops_plot.py <Linux fsops csv> <NrOS fsops csv>
-python3 fsops_plot.py $HOME/vmopsbench/fsops_benchmark.csv $HOME/bespin_ae/kernel/fxmark_benchmark.csv
+python3 fsops_plot.py $HOME/vmopsbench/fsops_benchmark.csv $HOME/nrk/kernel/fxmark_benchmark.csv
 ```
 
 > Arguments given in the plot scripts assume that the result files were not moved after the run.
@@ -171,7 +171,7 @@ Linux-tmpfs.
 To run the LevelDB benchmark on NrOS execute:
 
 ```bash
-cd $HOME/bespin_ae/kernel
+cd $HOME/nrk/kernel
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_leveldb_benchmark --nocapture
 ```
 
@@ -215,7 +215,7 @@ Run the following commands to plot the Figure 4.
 ```bash
 cd $HOME/plot-scripts
 # python3 leveldb_plot.py <Linux leveldb csv> <NrOS leveldb csv>
-python3 leveldb_plot.py $HOME/leveldb/linux_leveldb.csv $HOME/bespin_ae/kernel/leveldb_benchmark.csv
+python3 leveldb_plot.py $HOME/leveldb/linux_leveldb.csv $HOME/nrk/kernel/leveldb_benchmark.csv
 ```
 
 ## Figure 5 / 6a / 6c
@@ -228,7 +228,7 @@ for NR-VMem with Linux.
 To run the throughput benchmark (Figure 5) on NrOS execute:
 
 ```bash
-cd $HOME/bespin_ae/kernel
+cd $HOME/nrk/kernel
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --nocapture
 ```
 
@@ -263,7 +263,7 @@ The results will be stored in `vmops_benchmark_latency.csv`.
 To run the unmap latency benchmark (Figure 6c) on NrOS execute:
 
 ```bash
-cd $HOME/bespin_ae/kernel
+cd $HOME/nrk/kernel
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_unmaplat_latency_benchmark --nocapture
 ```
 
@@ -311,19 +311,19 @@ Plot Figure 5:
 
 ```bash
 # python3 vmops_throughput_plot.py  <linux vmops csv> <bespin vmops csv>
-python3  vmops_throughput_plot.py  $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv $HOME/bespin_ae/kernel/vmops_benchmark.csv
+python3  vmops_throughput_plot.py  $HOME/vmopsbench/vmops_linux_maponly-isolated-shared_threads_all_throughput_results.csv $HOME/nrk/kernel/vmops_benchmark.csv
 ```
 
 Plot Figure 6a:
 
 ```bash
 # python3 map_latency_plot.py <linux map-latency csv> <bespin map-latency csv>
-python3 map_latency_plot.py $HOME/vmopsbench/Linux-Map_latency_percentiles.csv $HOME/bespin_ae/kernel/vmops_benchmark_latency.csv
+python3 map_latency_plot.py $HOME/vmopsbench/Linux-Map_latency_percentiles.csv $HOME/nrk/kernel/vmops_benchmark_latency.csv
 ```
 
 Plot Figure 6c:
 
 ```bash
 # python3 mapunmap_latency_plot.py <linux unmap-latency csv> <bespin unmap-latency csv>
-python3 mapunmap_latency_plot.py $HOME/vmopsbench/Linux-Unmap_latency_percentiles.csv $HOME/bespin_ae/kernel/vmops_unmaplat_benchmark_latency.csv
+python3 mapunmap_latency_plot.py $HOME/vmopsbench/Linux-Unmap_latency_percentiles.csv $HOME/nrk/kernel/vmops_unmaplat_benchmark_latency.csv
 ```

@@ -303,14 +303,15 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
 /// TODO: Right now we terminate kernel.
 /// Should abort process and resume.
 unsafe fn pf_handler(a: &ExceptionArguments) {
+    use crate::arch::kcb;
+
     let err = PageFaultError::from_bits_truncate(a.exception as u32);
     let faulting_address = x86::controlregs::cr2();
+    let kcb = get_kcb();
 
     // If this is a user-mode page-fault make sure it's not a spurious
     // page-fault by not having a replica in-sync with others
     if err.contains(PageFaultError::US) {
-        let kcb = get_kcb();
-
         let faulting_address_va = VAddr::from(faulting_address);
         let pid = kcb
             .current_pid()
@@ -338,10 +339,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
         }
     }
 
-    sprintln!(
-        "[IRQ] Page Fault on {}",
-        atopology::MACHINE_TOPOLOGY.current_thread().id
-    );
+    sprintln!("[IRQ] Page Fault on {}", kcb.arch.id());
     sprintln!("{}", err);
 
     // Enable user-space access
@@ -356,7 +354,6 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     let faulting_address = x86::controlregs::cr2();
     sprint!("Faulting address: {:#x}", faulting_address);
     sprint!(" Instruction Pointer: {:#x}", a.rip);
-    use crate::arch::kcb;
 
     /*
     if !err.contains(PageFaultError::US) {
@@ -585,13 +582,14 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         trace!("handle_generic_exception {:?}", a);
         acknowledge();
 
+        let kcb = get_kcb();
+
         // If we have an active process we should do scheduler activations:
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
         if a.vector > 30 && a.vector < 250 || a.vector == 3 {
             trace!("handle_generic_exception {:?}", a);
 
-            let kcb = get_kcb();
             let mut plock = kcb.arch.current_executor();
             let p = plock.as_mut().unwrap();
 
@@ -632,13 +630,10 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } else if a.vector == 0x3 {
             dbg_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
-            trace!(
-                "got an interrupt {:?}",
-                atopology::MACHINE_TOPOLOGY.current_thread().apic_id()
-            );
-            super::tlb::dequeue(atopology::MACHINE_TOPOLOGY.current_thread().id);
-
             let kcb = get_kcb();
+            trace!("got an interrupt {:?}", kcb.arch.id());
+            super::tlb::dequeue(kcb.arch.id());
+
             if kcb.arch.has_executor() {
                 // Return immediately
                 kcb.tlb_time += x86::time::rdtsc() - start;
@@ -649,7 +644,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             }
         } else if a.vector == MLNR_GC_INIT.into() {
             // nr::KernelNode::synchronize(); /* TODO: Do we need this?
-            super::tlb::dequeue(atopology::MACHINE_TOPOLOGY.current_thread().id);
+            super::tlb::dequeue(kcb.arch.id());
 
             let kcb = get_kcb();
             if kcb.arch.has_executor() {

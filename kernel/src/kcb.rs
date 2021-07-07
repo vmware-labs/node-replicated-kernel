@@ -268,6 +268,8 @@ where
     pub physical_memory: PhysicalMemoryArena,
 
     /// Which NUMA node this KCB / core belongs to
+    ///
+    /// TODO(redundant): use kcb.arch.node_id
     pub node: atopology::NodeId,
 
     pub print_buffer: Option<String>,

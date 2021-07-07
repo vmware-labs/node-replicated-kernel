@@ -6,6 +6,7 @@ Here is a list of the contributors who helped to build NRK. Big shout-out to the
 - [Ankit Bhardwaj](https://ankitbhrdwj.github.io/)
 - [Chinmay Kulkarni](https://www.chinmayk.net/)
 - [Christian Menges](https://github.com/Garfield96/)
+- [Erika Hunhoff](https://hunhoffe.github.io/)
 - [Gerd Zellweger](https://gerdzellweger.com/)
 - [Irina Calciu](https://icalciu.github.io/)
 - [Reto Achermann](https://retoachermann.ch/)

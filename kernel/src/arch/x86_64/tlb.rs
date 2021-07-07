@@ -142,7 +142,7 @@ fn advance_log(log_id: usize) {
 
 pub fn eager_advance_fs_replica() {
     let kcb = kcb::get_kcb();
-    let core_id = kcb.arch.id;
+    let core_id = kcb.arch.id();
 
     match IPI_WORKQUEUE[core_id].pop() {
         Some(msg) => {

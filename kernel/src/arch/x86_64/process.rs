@@ -655,7 +655,7 @@ impl Executor for Ring3Executor {
     /// Start the process (run it for the first time).
     fn start(&self) -> Self::Resumer {
         let kcb = kcb::get_kcb();
-        assert_eq!(kcb.arch.node_id, self.affinity, "Run on remote replica?");
+        assert_eq!(kcb.arch.node(), self.affinity, "Run on remote replica?");
 
         self.maybe_switch_vspace();
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
@@ -676,7 +676,7 @@ impl Executor for Ring3Executor {
                 self.stack_top(),
                 cpu_ctl,
                 kpi::upcall::NEW_CORE,
-                kcb.arch.id as u64,
+                kcb.arch.id() as u64,
             )
         }
     }

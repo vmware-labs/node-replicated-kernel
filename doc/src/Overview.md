@@ -50,16 +50,16 @@ the system with a log.</figcaption>
 
 In user-space, NRK runs applications in [ring
 3](https://en.wikipedia.org/wiki/Protection_ring): Each application can be
-understood as a single isolated process/container/lightweight VM without means
-to share state with other processes (aside from explicit communication through
-the network). To run existing, well-known applications like
-[memcached](benchmarking/Memcached.md), [LevelDB](benchmarking/LevelDb.md) or
-[Redis](benchmarking/Redis.md), a process can link against
-[rumpkernel](https://github.com/rumpkernel), which instantiates and runs the
-[NetBSD](https://www.netbsd.org/) kernel and its user-space libraries (libc,
-libpthread etc.) within the process' address-space and therefore adds decent
-support for POSIX.
+understood as a single isolated process/container/lightweight VM with little
+opportunity to share state with other processes. To run existing, well-known
+applications like [memcached](benchmarking/Memcached.md),
+[LevelDB](benchmarking/LevelDb.md) or [Redis](benchmarking/Redis.md), a process
+can link against [rumpkernel](https://github.com/rumpkernel), which instantiates
+and runs the [NetBSD](https://www.netbsd.org/) kernel and its user-space
+libraries (libc, libpthread etc.) within the process' address-space and
+therefore adds decent support for POSIX.
 
-Finally, NRK is written from scratch in Rust: We take advantage of the use of
-a safe language for OS implementation to gain better security and correctness
-guarantees at compile time, while not impacting performance negatively.
+Finally, NRK is written from scratch in Rust: We take advantage of the use of a
+safe language with a rich type-system for OS implementation, to gain better
+security and correctness guarantees at compile time, while not impacting
+performance negatively.

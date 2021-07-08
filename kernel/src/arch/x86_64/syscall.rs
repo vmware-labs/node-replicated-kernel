@@ -383,12 +383,12 @@ fn handle_fileio(
         }
         FileOperation::Open => {
             let pathname = arg2;
-            //let flags = arg3;
-            //let modes = arg4;
+            let flags = arg3;
+            let modes = arg4;
 
             let mut client = kcb.arch.rpc_client.lock();
             let filename = userptr_to_str(pathname)?;
-            return match client.as_mut().unwrap().fio_open(filename.as_bytes()) {
+            return match client.as_mut().unwrap().fio_open(filename.as_bytes(), flags, modes) {
                 Ok(a) => Ok(a),
                 Err(err) => Err(err.into()),
             };

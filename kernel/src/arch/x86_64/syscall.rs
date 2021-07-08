@@ -26,7 +26,7 @@ use crate::fs::FileSystem;
 use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
-use crate::process::{Pid, ResumeHandle};
+use crate::process::{Pid, ResumeHandle, userptr_to_str};
 use crate::{cnrfs, nr, nrproc};
 
 use super::gdt::GdtTable;
@@ -383,10 +383,18 @@ fn handle_fileio(
         }
         FileOperation::Open => {
             let pathname = arg2;
-            let flags = arg3;
-            let modes = arg4;
-            let _r = user_virt_addr_valid(pid, pathname, 0)?;
-            cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
+            //let flags = arg3;
+            //let modes = arg4;
+
+            let mut client = kcb.arch.rpc_client.lock();
+            let filename = userptr_to_str(pathname)?;
+            return match client.as_mut().unwrap().fio_open(filename.as_bytes()) {
+                Ok(a) => Ok(a),
+                Err(err) => Err(err.into()),
+            };
+
+            //let _r = user_virt_addr_valid(pid, pathname, 0)?;
+            //cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
         }
         FileOperation::Read | FileOperation::Write => {
             let fd = arg2;

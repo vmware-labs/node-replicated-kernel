@@ -141,7 +141,7 @@ impl From<KError> for RPCError {
             KError::AlreadyPresent => RPCError::AlreadyPresent,
             KError::DirectoryError => RPCError::DirectoryError,
             KError::OpenFileLimit => RPCError::OpenFileLimit,
-            KError::FileDescForPidAlreadyAdded => RPCError::FileDescForPidAlreadyAdded,   
+            KError::FileDescForPidAlreadyAdded => RPCError::FileDescForPidAlreadyAdded,
             KError::NoFileDescForPid => RPCError::NoFileDescForPid,
 
             // Syscall errors
@@ -170,7 +170,7 @@ impl From<RPCError> for KError {
             RPCError::AlreadyPresent => KError::AlreadyPresent,
             RPCError::DirectoryError => KError::DirectoryError,
             RPCError::OpenFileLimit => KError::OpenFileLimit,
-            RPCError::FileDescForPidAlreadyAdded => KError::FileDescForPidAlreadyAdded,   
+            RPCError::FileDescForPidAlreadyAdded => KError::FileDescForPidAlreadyAdded,
             RPCError::NoFileDescForPid => KError::NoFileDescForPid,
 
             // Syscall errors

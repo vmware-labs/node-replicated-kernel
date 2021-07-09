@@ -55,10 +55,13 @@ pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
 fn rpc_test() {
     use vibrio::io::*;
     let fd = vibrio::syscalls::Fs::open(
-        "/home/ehunhoff/file1.txt\0".as_ptr() as u64, 
+        "file1.txt\0".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        u64::from(FileModes::S_IRWXU)).unwrap();
-    info!("rpc_test OK -- fd={}", fd);
+        u64::from(FileModes::S_IRWXU),
+    )
+    .unwrap();
+    vibrio::syscalls::Fs::close(fd);
+    info!("rpc_test OK");
 }
 
 fn print_test() {

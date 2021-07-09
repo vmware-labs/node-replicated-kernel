@@ -9,7 +9,11 @@ use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
+
+#[cfg(feature = "exokernel")]
 use smoltcp::wire::IpAddress;
+
+#[cfg(feature = "exokernel")]
 use spin::Mutex;
 
 use apic::x2apic::X2APICDriver;
@@ -17,11 +21,19 @@ use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use log::trace;
 use node_replication::Replica;
+
+#[cfg(feature = "exokernel")]
 use rpc::cluster_api::ClusterClientAPI;
+
+#[cfg(feature = "exokernel")]
 use rpc::tcp_client::TCPClient;
+
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
+
+#[cfg(feature = "exokernel")]
+use crate::arch::network::init_network;
 
 use crate::cnrfs::MlnrKernelNode;
 use crate::error::KError;
@@ -35,7 +47,6 @@ use crate::stack::{OwnedStack, Stack};
 use super::gdb::KernelDebugger;
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
-use super::network::init_network;
 use super::process::{Ring3Executor, Ring3Process};
 use super::vspace::page_table::PageTable;
 use super::KernelArgs;
@@ -189,6 +200,7 @@ pub struct Arch86Kcb {
     /// A handle to an RPC client
     ///
     /// This is (will be) used to send syscall data.
+    #[cfg(feature = "exokernel")]
     pub rpc_client: Mutex<Option<TCPClient<'static>>>,
 }
 
@@ -223,6 +235,8 @@ impl Arch86Kcb {
             node_id: 0,
             max_threads: 0,
             kdebug: None,
+
+            #[cfg(feature = "exokernel")]
             rpc_client: Mutex::new(None),
         }
     }
@@ -235,6 +249,7 @@ impl Arch86Kcb {
         self.init_vspace.borrow_mut()
     }
 
+    #[cfg(feature = "exokernel")]
     pub fn init_rpc(&mut self, server_ip: IpAddress, server_port: u16) {
         let mut dev = self.rpc_client.lock();
         if dev.is_none() {

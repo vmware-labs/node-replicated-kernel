@@ -101,3 +101,5 @@ cause-gpfault-early = []
 cause-double-fault = []
 # test-timer: print something when we get a timer interrupt
 test-timer = []
+# Assume controller is reachable
+exokernel = []

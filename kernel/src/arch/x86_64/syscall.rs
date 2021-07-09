@@ -385,20 +385,26 @@ fn handle_fileio(
             let pathname = arg2;
             let flags = arg3;
             let modes = arg4;
-            let filename = userptr_to_str(pathname)?;
 
-            let mut client = kcb.arch.rpc_client.lock();
-            return match client
-                .as_mut()
-                .unwrap()
-                .fio_open(filename.as_bytes(), flags, modes)
+            #[cfg(feature = "exokernel")]
             {
-                Ok(a) => Ok(a),
-                Err(err) => Err(err.into()),
-            };
+                let filename = userptr_to_str(pathname)?;
+                let mut client = kcb.arch.rpc_client.lock();
+                return match client
+                    .as_mut()
+                    .unwrap()
+                    .fio_open(filename.as_bytes(), flags, modes)
+                {
+                    Ok(a) => Ok(a),
+                    Err(err) => Err(err.into()),
+                };
+            }
 
-            //let _r = user_virt_addr_valid(pid, pathname, 0)?;
-            //cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
+            #[cfg(not(feature = "exokernel"))]
+            {
+                let _r = user_virt_addr_valid(pid, pathname, 0)?;
+                return cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes);
+            }
         }
         FileOperation::Read | FileOperation::Write => {
             let fd = arg2;
@@ -419,12 +425,18 @@ fn handle_fileio(
         }
         FileOperation::Close => {
             let fd = arg2;
-            //cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
-            let mut client = kcb.arch.rpc_client.lock();
-            return match client.as_mut().unwrap().fio_close(fd) {
-                Ok(a) => Ok(a),
-                Err(err) => Err(err.into()),
-            };
+
+            #[cfg(feature = "exokernel")]
+            {
+                let mut client = kcb.arch.rpc_client.lock();
+                return match client.as_mut().unwrap().fio_close(fd) {
+                    Ok(a) => Ok(a),
+                    Err(err) => Err(err.into()),
+                };
+            }
+
+            #[cfg(not(feature = "exokernel"))]
+            return cnrfs::MlnrKernelNode::unmap_fd(pid, fd);
         }
         FileOperation::GetInfo => {
             let name = arg2;

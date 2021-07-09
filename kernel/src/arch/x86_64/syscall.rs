@@ -26,7 +26,7 @@ use crate::fs::FileSystem;
 use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
-use crate::process::{Pid, ResumeHandle, userptr_to_str};
+use crate::process::{userptr_to_str, Pid, ResumeHandle};
 use crate::{cnrfs, nr, nrproc};
 
 use super::gdt::GdtTable;
@@ -385,10 +385,14 @@ fn handle_fileio(
             let pathname = arg2;
             let flags = arg3;
             let modes = arg4;
+            let filename = userptr_to_str(pathname)?;
 
             let mut client = kcb.arch.rpc_client.lock();
-            let filename = userptr_to_str(pathname)?;
-            return match client.as_mut().unwrap().fio_open(filename.as_bytes(), flags, modes) {
+            return match client
+                .as_mut()
+                .unwrap()
+                .fio_open(filename.as_bytes(), flags, modes)
+            {
                 Ok(a) => Ok(a),
                 Err(err) => Err(err.into()),
             };
@@ -415,7 +419,12 @@ fn handle_fileio(
         }
         FileOperation::Close => {
             let fd = arg2;
-            cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
+            //cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
+            let mut client = kcb.arch.rpc_client.lock();
+            return match client.as_mut().unwrap().fio_close(fd) {
+                Ok(a) => Ok(a),
+                Err(err) => Err(err.into()),
+            };
         }
         FileOperation::GetInfo => {
             let name = arg2;

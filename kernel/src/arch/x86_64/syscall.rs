@@ -454,17 +454,43 @@ fn handle_fileio(
             let buffer = arg3;
             let len = arg4;
             let offset = arg5 as i64;
+            let _r = user_virt_addr_valid(pid, buffer, len)?;
 
             #[cfg(feature = "exokernel")]
             {
                 // TODO - chunk writes/reads
-                unreachable!("FileOperation not allowed");
-                return Err(KError::NotSupported);
+                let mut client = kcb.arch.rpc_client.lock();
+
+                if op == FileOperation::ReadAt {
+                    let mut userslice = super::process::UserSlice::new(buffer, len as usize);
+                    return match client.as_mut().unwrap().fio_readat(
+                        pid as u64,
+                        fd,
+                        len,
+                        offset,
+                        &mut userslice,
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                } else {
+                    // write_at operation
+                    let kernslice = crate::process::KernSlice::new(buffer, len as usize);
+                    let buff_ptr = kernslice.buffer.clone();
+                    return match client.as_mut().unwrap().fio_writeat(
+                        pid as u64,
+                        fd,
+                        offset,
+                        buff_ptr.to_vec(),
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                }
             }
 
             #[cfg(not(feature = "exokernel"))]
             {
-                let _r = user_virt_addr_valid(pid, buffer, len)?;
                 return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset);
             }
         }
@@ -489,33 +515,57 @@ fn handle_fileio(
         FileOperation::GetInfo => {
             let name = arg2;
             let info_ptr = arg3;
+            let _r = user_virt_addr_valid(pid, name, 0)?;
 
             #[cfg(feature = "exokernel")]
             {
-                // TODO
-                unreachable!("FileOperation not allowed");
-                return Err(KError::NotSupported);
+                use crate::arch::process::UserPtr;
+                use kpi::io::FileInfo;
+
+                let filename = userptr_to_str(name)?;
+                let mut client = kcb.arch.rpc_client.lock();
+                return match client
+                    .as_mut()
+                    .unwrap()
+                    .fio_getinfo(pid as u64, filename.as_bytes())
+                {
+                    Ok((ftype, fsize)) => {
+                        let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
+                        unsafe {
+                            (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = ftype;
+                            (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = fsize;
+                        }
+                        Ok((0, 0))
+                    }
+                    Err(err) => Err(err.into()),
+                };
             }
 
             #[cfg(not(feature = "exokernel"))]
             {
-                let _r = user_virt_addr_valid(pid, name, 0)?;
                 return cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr);
             }
         }
         FileOperation::Delete => {
             let name = arg2;
+            let _r = user_virt_addr_valid(pid, name, 0)?;
 
             #[cfg(feature = "exokernel")]
             {
-                // TODO
-                unreachable!("FileOperation not allowed");
-                return Err(KError::NotSupported);
+                let filename = userptr_to_str(name)?;
+                let mut client = kcb.arch.rpc_client.lock();
+                return match client
+                    .as_mut()
+                    .unwrap()
+                    .fio_delete(pid as u64, filename.as_bytes())
+                {
+                    Ok(a) => Ok(a),
+                    Err(err) => Err(err.into()),
+                };
             }
 
             #[cfg(not(feature = "exokernel"))]
             {
-                let _r = user_virt_addr_valid(pid, name, 0)?;
                 return cnrfs::MlnrKernelNode::file_delete(pid, name);
             }
         }
@@ -542,21 +592,30 @@ fn handle_fileio(
                 return Ok((len as u64, 0));
             }
         }
+
         FileOperation::FileRename => {
             let oldname = arg2;
             let newname = arg3;
+            let _r = user_virt_addr_valid(pid, oldname, 0)?;
+            let _r = user_virt_addr_valid(pid, newname, 0)?;
 
             #[cfg(feature = "exokernel")]
             {
-                // TODO
-                unreachable!("FileOperation not allowed");
-                return Err(KError::NotSupported);
+                let oldname = userptr_to_str(oldname)?;
+                let newname = userptr_to_str(newname)?;
+                let mut client = kcb.arch.rpc_client.lock();
+                return match client.as_mut().unwrap().fio_rename(
+                    pid as u64,
+                    oldname.as_bytes(),
+                    newname.as_bytes(),
+                ) {
+                    Ok(a) => Ok(a),
+                    Err(err) => Err(err.into()),
+                };
             }
 
             #[cfg(not(feature = "exokernel"))]
             {
-                let _r = user_virt_addr_valid(pid, oldname, 0)?;
-                let _r = user_virt_addr_valid(pid, newname, 0)?;
                 return cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname);
             }
         }
@@ -568,8 +627,16 @@ fn handle_fileio(
             #[cfg(feature = "exokernel")]
             {
                 // TODO
-                unreachable!("FileOperation not allowed");
-                return Err(KError::NotSupported);
+                let pathname = userptr_to_str(pathname)?;
+                let mut client = kcb.arch.rpc_client.lock();
+                return match client.as_mut().unwrap().fio_mkdir(
+                    pid as u64,
+                    pathname.as_bytes(),
+                    modes,
+                ) {
+                    Ok(a) => Ok(a),
+                    Err(err) => Err(err.into()),
+                };
             }
 
             #[cfg(not(feature = "exokernel"))]

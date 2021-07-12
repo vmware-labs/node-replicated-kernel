@@ -172,6 +172,19 @@ pub struct RPCGetInfoReq {
 unsafe_abomonate!(RPCGetInfoReq: name);
 
 #[derive(Debug)]
+pub struct RPCMkDirReq {
+    pub pathname: Vec<u8>,
+    pub modes: u64,
+}
+unsafe_abomonate!(RPCMkDirReq: pathname, modes);
+
+#[derive(Debug)]
+pub struct RPCGetInfoReq {
+    pub name: Vec<u8>,
+}
+unsafe_abomonate!(RPCGetInfoReq: name);
+
+#[derive(Debug)]
 pub struct FIORPCRes {
     pub ret: Result<(u64, u64), RPCError>,
 }

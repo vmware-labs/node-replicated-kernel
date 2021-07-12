@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 x86 = "0.43"
+abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no_std" }
 bitflags = "1.2"
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_cbor = { version = "0.11", default-features = false, features = ["alloc"] }

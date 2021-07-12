@@ -1,6 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use abomonation::Abomonation;
 use bitflags::*;
 
 /// Struct used in `file_getinfo` systemcall.
@@ -9,6 +10,7 @@ pub struct FileInfo {
     pub ftype: u64,
     pub fsize: u64,
 }
+unsafe_abomonate!(FileInfo);
 
 /// Each file-node can be of two types: directory or a file.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

@@ -14,6 +14,9 @@
 #[cfg(not(target_os = "none"))]
 extern crate alloc;
 
+#[macro_use]
+extern crate abomonation;
+
 pub mod io;
 pub mod process;
 pub mod system;

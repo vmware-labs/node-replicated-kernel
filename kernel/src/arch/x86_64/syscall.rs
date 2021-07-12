@@ -412,8 +412,43 @@ fn handle_fileio(
             let buffer = arg3;
             let len = arg4;
 
-            let _r = user_virt_addr_valid(pid, buffer, len)?;
-            cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1)
+            #[cfg(feature = "exokernel")]
+            {
+                // TODO - chunk writes/reads
+                let mut client = kcb.arch.rpc_client.lock();
+
+                if op == FileOperation::Read {
+                    let mut kernslice = crate::process::KernSlice::new(buffer, len as usize);
+                    let mut buff_ptr = Arc::get_mut(&mut kernslice.buffer).unwrap();
+                    return match client.as_mut().unwrap().fio_read(
+                        pid as u64,
+                        fd,
+                        len,
+                        &mut buff_ptr,
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                } else {
+                    // write operation
+                    let kernslice = crate::process::KernSlice::new(buffer, len as usize);
+                    let buff_ptr = kernslice.buffer.clone();
+                    return match client.as_mut().unwrap().fio_write(
+                        pid as u64,
+                        fd,
+                        buff_ptr.to_vec(),
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                }
+            }
+
+            #[cfg(not(feature = "exokernel"))]
+            {
+                let _r = user_virt_addr_valid(pid, buffer, len)?;
+                return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1);
+            }
         }
         FileOperation::ReadAt | FileOperation::WriteAt => {
             let fd = arg2;
@@ -421,8 +456,18 @@ fn handle_fileio(
             let len = arg4;
             let offset = arg5 as i64;
 
-            let _r = user_virt_addr_valid(pid, buffer, len)?;
-            cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset)
+            #[cfg(feature = "exokernel")]
+            {
+                // TODO - chunk writes/reads
+                unreachable!("FileOperation not allowed");
+                return Err(KError::NotSupported);
+            }
+
+            #[cfg(not(feature = "exokernel"))]
+            {
+                let _r = user_virt_addr_valid(pid, buffer, len)?;
+                return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset);
+            }
         }
         FileOperation::Close => {
             let fd = arg2;
@@ -437,20 +482,43 @@ fn handle_fileio(
             }
 
             #[cfg(not(feature = "exokernel"))]
-            return cnrfs::MlnrKernelNode::unmap_fd(pid, fd);
+            {
+                #[cfg(not(feature = "exokernel"))]
+                return cnrfs::MlnrKernelNode::unmap_fd(pid, fd);
+            }
         }
         FileOperation::GetInfo => {
             let name = arg2;
             let info_ptr = arg3;
 
-            let _r = user_virt_addr_valid(pid, name, 0)?;
-            cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr)
+            #[cfg(feature = "exokernel")]
+            {
+                // TODO
+                unreachable!("FileOperation not allowed");
+                return Err(KError::NotSupported);
+            }
+
+            #[cfg(not(feature = "exokernel"))]
+            {
+                let _r = user_virt_addr_valid(pid, name, 0)?;
+                return cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr);
+            }
         }
         FileOperation::Delete => {
             let name = arg2;
 
-            let _r = user_virt_addr_valid(pid, name, 0)?;
-            cnrfs::MlnrKernelNode::file_delete(pid, name)
+            #[cfg(feature = "exokernel")]
+            {
+                // TODO
+                unreachable!("FileOperation not allowed");
+                return Err(KError::NotSupported);
+            }
+
+            #[cfg(not(feature = "exokernel"))]
+            {
+                let _r = user_virt_addr_valid(pid, name, 0)?;
+                return cnrfs::MlnrKernelNode::file_delete(pid, name);
+            }
         }
         FileOperation::WriteDirect => {
             let len = arg3;
@@ -459,29 +527,56 @@ fn handle_fileio(
                 offset = 0;
             }
 
-            let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
-            let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
-            let cnrfs = super::kcb::get_kcb().arch.cnrfs.as_ref().unwrap();
+            #[cfg(feature = "exokernel")]
+            {
+                // TODO
+                unreachable!("FileOperation not allowed");
+                return Err(KError::NotSupported);
+            }
 
-            let len = cnrfs.write(2, &mut buffer, offset)?;
-
-            Ok((len as u64, 0))
+            #[cfg(not(feature = "exokernel"))]
+            {
+                let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
+                let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
+                let cnrfs = super::kcb::get_kcb().arch.cnrfs.as_ref().unwrap();
+                let len = cnrfs.write(2, &mut buffer, offset)?;
+                return Ok((len as u64, 0));
+            }
         }
         FileOperation::FileRename => {
             let oldname = arg2;
             let newname = arg3;
 
-            let _r = user_virt_addr_valid(pid, oldname, 0)?;
-            let _r = user_virt_addr_valid(pid, newname, 0)?;
+            #[cfg(feature = "exokernel")]
+            {
+                // TODO
+                unreachable!("FileOperation not allowed");
+                return Err(KError::NotSupported);
+            }
 
-            cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)
+            #[cfg(not(feature = "exokernel"))]
+            {
+                let _r = user_virt_addr_valid(pid, oldname, 0)?;
+                let _r = user_virt_addr_valid(pid, newname, 0)?;
+                return cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname);
+            }
         }
         FileOperation::MkDir => {
             let pathname = arg2;
             let modes = arg3;
             let _r = user_virt_addr_valid(pid, pathname, 0)?;
 
-            cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes)
+            #[cfg(feature = "exokernel")]
+            {
+                // TODO
+                unreachable!("FileOperation not allowed");
+                return Err(KError::NotSupported);
+            }
+
+            #[cfg(not(feature = "exokernel"))]
+            {
+                return cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes);
+            }
         }
         FileOperation::Unknown => {
             unreachable!("FileOperation not allowed");

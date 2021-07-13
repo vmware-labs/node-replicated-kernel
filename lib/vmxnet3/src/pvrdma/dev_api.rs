@@ -562,6 +562,20 @@ pub struct pvrdma_cmd_hdr {
     pub reserved: u32,
 }
 
+impl pvrdma_cmd_hdr {
+    pub fn new(cmd: pvrdma_cmd_typ) -> pvrdma_cmd_hdr {
+        pvrdma_cmd_hdr {
+            cmd: cmd as u32, response: 0, reserved: 0
+        }
+    }
+
+    pub fn new_resp(cmd: pvrdma_cmd_typ, response: pvrdma_resp_cmd_typ) -> pvrdma_cmd_hdr {
+        pvrdma_cmd_hdr {
+            cmd: cmd as u32, response: response as u64, reserved: 0
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct pvrdma_cmd_resp_hdr {
@@ -713,12 +727,40 @@ pub struct pvrdma_cmd_create_cq {
     pub reserved: [u8; 4usize],
 }
 
+impl pvrdma_cmd_create_cq {
+    pub fn new(pdir_dma: IOAddr, ctx_handle: u32, cqe: u32, nchunks:u32) -> Self {
+        pvrdma_cmd_create_cq {
+            hdr: pvrdma_cmd_hdr::new(pvrdma_cmd_typ::PVRDMA_CMD_CREATE_CQ),
+            pdir_dma: pdir_dma.as_u64(),
+            ctx_handle,
+            cqe,
+            nchunks,
+            reserved: [0,0,0,0]
+        }
+    }
+
+    pub fn to_cmd(self) -> pvrdma_cmd_req {
+        let mut cmd = pvrdma_cmd_req::default();
+        cmd.create_cq = self;
+        cmd
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct pvrdma_cmd_create_cq_resp {
     pub hdr: pvrdma_cmd_resp_hdr,
     pub cq_handle: u32,
     pub cqe: u32,
+}
+
+impl pvrdma_cmd_create_cq_resp {
+    pub fn from_resp(resps: pvrdma_cmd_resp) -> Self {
+        unsafe {
+            debug_assert!(resps.hdr.response == pvrdma_resp_cmd_typ::PVRDMA_CMD_CREATE_CQ_RESP as u64);
+            resps.create_cq_resp
+        }
+    }
 }
 
 #[repr(C)]
@@ -743,6 +785,22 @@ pub struct pvrdma_cmd_destroy_cq {
     pub hdr: pvrdma_cmd_hdr,
     pub cq_handle: u32,
     pub reserved: [u8; 4usize],
+}
+
+impl pvrdma_cmd_destroy_cq {
+    pub fn new(cq_handle: u32) -> Self {
+        pvrdma_cmd_destroy_cq {
+            hdr: pvrdma_cmd_hdr::new(pvrdma_cmd_typ::PVRDMA_CMD_DESTROY_CQ),
+            cq_handle,
+            reserved: [0,0,0,0]
+        }
+    }
+
+    pub fn to_cmd(self) -> pvrdma_cmd_req {
+        let mut cmd = pvrdma_cmd_req::default();
+        cmd.destroy_cq = self;
+        cmd
+    }
 }
 
 #[repr(C)]

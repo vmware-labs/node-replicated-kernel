@@ -54,6 +54,7 @@ custom_error! {pub PVRDMAError
     OutOfMemory  = "Unable to allocate raw memory.",
     CommandFault = "Failed to post a command to the device",
     CommandFaultResponse = "Unknown response from device",
+    TooManyEntries = "Too many entries for the queue"
 }
 
 impl From<core::alloc::AllocError> for PVRDMAError {
@@ -217,7 +218,7 @@ impl PVRDMA {
     pub fn cmd_post(
         &self,
         cmd: &pvrdma_cmd_req,
-        resp: Option<(&mut pvrdma_cmd_resp, u32)>,
+        resp: Option<(&mut pvrdma_cmd_resp, pvrdma_resp_cmd_typ)>,
     ) -> Result<(), PVRDMAError> {
         // take the lock, if needed...
 
@@ -242,7 +243,7 @@ impl PVRDMA {
         let err = self.pci.read_bar1(PVRDMA_REG_ERR);
         if err == 0 {
             match resp {
-                Some((r, c)) => return self.cmd_recv(r, c),
+                Some((r, c)) => return self.cmd_recv(r, c as u32),
                 None => return Ok(()),
             }
         } else {

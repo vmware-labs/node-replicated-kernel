@@ -2,7 +2,7 @@
 
 The Node Replicated Kernel is an (experimental) research OS kernel for x86-64
 (amd64) machines written in rust. You can read more about it
-[here](https://gz.github.io/bespin-benchmarks/book/).
+[here](https://nrkernel.systems/book/).
 
 ## Installation
 

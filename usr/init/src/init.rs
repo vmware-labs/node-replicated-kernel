@@ -69,7 +69,7 @@ fn rpc_test() {
     info!("rpc_test write {:?} ({:?} bytes) = {:?}", wdata, 6, data1);
 
     // Test read
-    let mut rdata = [0; 6];
+    let mut rdata = [0u8; 6];
     let data2 = vibrio::syscalls::Fs::read(fd, rdata.as_mut_ptr() as u64, 6).unwrap();
     info!("rpc_test read {:?} ({:?} bytes) = {:?}", rdata, 6, data2);
 

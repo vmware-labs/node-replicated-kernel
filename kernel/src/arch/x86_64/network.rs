@@ -40,7 +40,14 @@ pub fn init_network<'a>() -> EthernetInterface<'a, DevQueuePhy> {
     // Create the EthernetInterface wrapping the VMX device
     let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
+
+    // TODO: MAC, IP, and default route should be dynamic
+    #[cfg(not(feature = "exokernel"))]
     let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
+
+    #[cfg(feature = "exokernel")]
+    let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdd]);
+
     let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 12), 24)];
 
     let mut routes = Routes::new(BTreeMap::new());

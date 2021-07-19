@@ -357,7 +357,8 @@ impl VMXNet3 {
         debug_assert_eq!(self.lladdr[2], 0x44);
         debug_assert_eq!(self.lladdr[3], 0xe9);
         debug_assert_eq!(self.lladdr[4], 0x62);
-        debug_assert_eq!(self.lladdr[5], 0xdc);
+        // TODO: removed due to needing two different MACs (0xdc and 0xdd) in testing
+        //debug_assert_eq!(self.lladdr[5], 0xdc);
     }
 
     fn set_lladdr(&mut self) {

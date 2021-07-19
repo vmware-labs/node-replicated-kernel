@@ -44,9 +44,15 @@ def exception_handler(exception_type, exception, traceback):
 SCRIPT_PATH = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
 CARGO_DEFAULT_ARGS = ["--color", "always"]
 ARCH = "x86_64"
+
 # TODO: should be generated for enabling parallel builds
 QEMU_TAP_NAME = 'tap0'
 QEMU_TAP_ZONE = '172.31.0.20/24'
+MAC = "56:b4:44:e9:62:dc"
+
+QEMU_TAP_NAME2 = 'tap2'
+QEMU_TAP_ZONE2 = '172.31.0.2/24'
+MAC2 = "56:b4:44:e9:62:dd"
 
 #
 # Important globals
@@ -372,10 +378,14 @@ def run_qemu(args):
         qemu_default_args += ['-netdev',
                               'tap,id=n0,script=no,ifname={}'.format(QEMU_TAP_NAME)]
     else:
+        if 'exokernel' in args.kfeatures:
+            mac, tap = MAC2, QEMU_TAP_NAME2,
+        else:
+            mac, tap = MAC, QEMU_TAP_NAME,
         qemu_default_args += ['-device',
-                              'vmxnet3,netdev=n1,mac=56:b4:44:e9:62:dc,addr=10.0']
+                              'vmxnet3,netdev=n1,mac={},addr=10.0'.format(mac)]
         qemu_default_args += ['-netdev',
-                              'tap,id=n1,script=no,ifname={}'.format(QEMU_TAP_NAME)]
+                              'tap,id=n1,script=no,ifname={}'.format(tap)]
 
     # qemu_default_args += ['-net', 'none']
 
@@ -447,6 +457,7 @@ def run_qemu(args):
         qemu_default_args += ['-m', str(args.qemu_memory)]
     if args.pvrdma:
         # ip link add bridge1 type bridge ; ifconfig bridge1 up
+        # TODO: mac address depend or exokernel or no?
         qemu_default_args += ['-netdev', 'bridge,id=bridge1',
                               '-device', 'vmxnet3,netdev=bridge1,mac=56:b4:44:e9:62:dc,addr=10.0,multifunction=on']
         qemu_default_args += ['-chardev', 'socket,path=/var/run/rdmacm-mux-mlx5_0-0,id=mads',
@@ -472,6 +483,16 @@ def run_qemu(args):
     # in the setup.sh script
     sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
     sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
+
+    if 'exokernel' in args.features or 'controller' in args.features:
+        sudo[tunctl[['-t', QEMU_TAP_NAME2, '-u', user, '-g', group]]]()
+        sudo[ifconfig[QEMU_TAP_NAME2, QEMU_TAP_ZONE2]]()
+
+        # TODO - set up bridge between interfaces
+        # sudo ip link add br0 type bridge
+        # sudo brctl addif br0 tap0
+        # sudo brctl addif br0 tap2
+        # sudo ip link set br0 up
 
     # Run a QEMU instance
     cmd = ['/usr/bin/env'] + qemu_args

@@ -819,7 +819,7 @@ fn xmain() {
 
     const RX_BUF_LEN: usize = 4096;
     const TX_BUF_LEN: usize = 4096;
-    const PORT: u16 = 10110;
+    const PORT: u16 = 6970;
 
     loop {
         match iface.poll(&mut sockets, Instant::from_millis(0)) {

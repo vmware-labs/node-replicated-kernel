@@ -786,7 +786,7 @@ fn xmain() {
     use abomonation::{decode, encode};
     use alloc::borrow::ToOwned;
     use alloc::{vec, vec::Vec};
-    use log::{debug, warn};
+    use log::{debug, warn, error};
 
     use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
     use smoltcp::time::Instant;
@@ -837,7 +837,7 @@ fn xmain() {
                     debug!("Listening at port {}", PORT);
                     server_state = ServerState::Listening;
                 } else {
-                    warn!("Bad state?? Should not be uninitialized and active");
+                    error!("Bad state?? Should not be uninitialized and active");
                     server_state = ServerState::Error;
                 }
             }
@@ -864,25 +864,33 @@ fn xmain() {
                         .unwrap();
                     if data.len() > 0 {
                         // Parse and check registration request
-                        if let Some((req, remaining)) =
+                        if let Some((hdr, remaining)) =
                             unsafe { decode::<RPCHeader>(&mut data) }
                         {
-                            debug!("Received registration request from client: {:?}", req);
+                            debug!("Received registration request from client: {:?}", hdr);
 
                             // validate request
                             if remaining.len() != 0
-                                || req.client_id != 0
-                                || req.req_id != 0
-                                || req.msg_len != 0
-                                || req.msg_type != RPCType::Registration
+                                || hdr.client_id != 0
+                                || hdr.pid != 0
+                                || hdr.req_id != 0
+                                || hdr.msg_len != 0
+                                || hdr.msg_type != RPCType::Registration
                             {
-                                warn!("Invalid registration request received, moving to error state");
+                                error!("Invalid registration request received, moving to error state");
                                 server_state = ServerState::Error;
                             } else {
-                                server_state = ServerState::RegistrationReceived;
+                                // TODO: pids shouldn't work directly, but okay for now.
+                                match cnrfs::MlnrKernelNode::add_process(hdr.pid) {
+                                    Ok(_) => server_state = ServerState::RegistrationReceived,
+                                    Err(err) => {
+                                        error!("Unable to register pid {:?} {:?}", hdr.pid, err);
+                                        server_state = ServerState::Error;
+                                    }
+                                }
                             }
                         } else {
-                            warn!("Invalid data received, expected registration request, moving to error state");
+                            error!("Invalid data received, expected registration request, moving to error state");
                             server_state = ServerState::Error;
                         }
                     }
@@ -891,7 +899,7 @@ fn xmain() {
             ServerState::RegistrationReceived => {
                 // TODO: server RPC requests
                 if !socket.is_active() {
-                    warn!("Client disconnected - returning to init state.");
+                    error!("Client disconnected - returning to init state.");
                     server_state = ServerState::Error;
                 }
                 if socket.can_send() {
@@ -931,7 +939,7 @@ fn xmain() {
                             unsafe { decode::<RPCHeader>(&mut data) }
                         {
                             if req.msg_len != payload.len() as u64 {
-                                warn!("Bad payload length for request {:?}, actually found {:?} bytes, {:?}", req, payload.len(), payload);
+                                error!("Bad payload length for request {:?}, actually found {:?} bytes, {:?}", req, payload.len(), payload);
                             } else {
                                 if is_fileio(req.msg_type) {
                                     let res_data = handle_fileio(req, payload);
@@ -949,7 +957,7 @@ fn xmain() {
             }
             ServerState::AwaitingResponse => {
                 if !socket.is_active() {
-                    warn!("Client disconnected - returning to init state.");
+                    error!("Client disconnected - returning to init state.");
                     server_state = ServerState::Error;
                 }
 

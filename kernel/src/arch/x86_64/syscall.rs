@@ -392,7 +392,7 @@ fn handle_fileio(
                 let filename = userptr_to_str(pathname)?;
                 let mut client = kcb.arch.rpc_client.lock();
                 return match client.as_mut().unwrap().fio_open(
-                    pid as u64,
+                    pid,
                     filename.as_bytes(),
                     flags,
                     modes,
@@ -420,12 +420,11 @@ fn handle_fileio(
 
                 if op == FileOperation::Read {
                     let mut userslice = super::process::UserSlice::new(buffer, len as usize);
-                    return match client.as_mut().unwrap().fio_read(
-                        pid as u64,
-                        fd,
-                        len,
-                        &mut userslice,
-                    ) {
+                    return match client
+                        .as_mut()
+                        .unwrap()
+                        .fio_read(pid, fd, len, &mut userslice)
+                    {
                         Ok(a) => Ok(a),
                         Err(err) => Err(err.into()),
                     };
@@ -433,11 +432,11 @@ fn handle_fileio(
                     // write operation
                     let kernslice = crate::process::KernSlice::new(buffer, len as usize);
                     let buff_ptr = kernslice.buffer.clone();
-                    return match client.as_mut().unwrap().fio_write(
-                        pid as u64,
-                        fd,
-                        buff_ptr.to_vec(),
-                    ) {
+                    return match client
+                        .as_mut()
+                        .unwrap()
+                        .fio_write(pid, fd, buff_ptr.to_vec())
+                    {
                         Ok(a) => Ok(a),
                         Err(err) => Err(err.into()),
                     };
@@ -464,7 +463,7 @@ fn handle_fileio(
                 if op == FileOperation::ReadAt {
                     let mut userslice = super::process::UserSlice::new(buffer, len as usize);
                     return match client.as_mut().unwrap().fio_readat(
-                        pid as u64,
+                        pid,
                         fd,
                         len,
                         offset,
@@ -478,7 +477,7 @@ fn handle_fileio(
                     let kernslice = crate::process::KernSlice::new(buffer, len as usize);
                     let buff_ptr = kernslice.buffer.clone();
                     return match client.as_mut().unwrap().fio_writeat(
-                        pid as u64,
+                        pid,
                         fd,
                         offset,
                         buff_ptr.to_vec(),
@@ -508,7 +507,6 @@ fn handle_fileio(
 
             #[cfg(not(feature = "exokernel"))]
             {
-                #[cfg(not(feature = "exokernel"))]
                 return cnrfs::MlnrKernelNode::unmap_fd(pid, fd);
             }
         }
@@ -527,7 +525,7 @@ fn handle_fileio(
                 return match client
                     .as_mut()
                     .unwrap()
-                    .fio_getinfo(pid as u64, filename.as_bytes())
+                    .fio_getinfo(pid, filename.as_bytes())
                 {
                     Ok((ftype, fsize)) => {
                         let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
@@ -557,7 +555,7 @@ fn handle_fileio(
                 return match client
                     .as_mut()
                     .unwrap()
-                    .fio_delete(pid as u64, filename.as_bytes())
+                    .fio_delete(pid, filename.as_bytes())
                 {
                     Ok(a) => Ok(a),
                     Err(err) => Err(err.into()),
@@ -605,7 +603,7 @@ fn handle_fileio(
                 let newname = userptr_to_str(newname)?;
                 let mut client = kcb.arch.rpc_client.lock();
                 return match client.as_mut().unwrap().fio_rename(
-                    pid as u64,
+                    pid,
                     oldname.as_bytes(),
                     newname.as_bytes(),
                 ) {
@@ -629,11 +627,11 @@ fn handle_fileio(
                 // TODO
                 let pathname = userptr_to_str(pathname)?;
                 let mut client = kcb.arch.rpc_client.lock();
-                return match client.as_mut().unwrap().fio_mkdir(
-                    pid as u64,
-                    pathname.as_bytes(),
-                    modes,
-                ) {
+                return match client
+                    .as_mut()
+                    .unwrap()
+                    .fio_mkdir(pid, pathname.as_bytes(), modes)
+                {
                     Ok(a) => Ok(a),
                     Err(err) => Err(err.into()),
                 };

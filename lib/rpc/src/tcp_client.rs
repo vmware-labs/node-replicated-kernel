@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{decode, encode};
-use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
 use log::{debug, trace, warn};
@@ -12,7 +11,6 @@ use smoltcp::socket::{SocketHandle, SocketSet, TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::IpAddress;
 
-use kpi::io::FileInfo;
 use vmxnet3::smoltcp::DevQueuePhy;
 
 use crate::cluster_api::{ClusterClientAPI, ClusterError, NodeId};

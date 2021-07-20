@@ -1366,7 +1366,7 @@ fn s03_userspace_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Tests that the basic vmxnet3 driver in the kernel is functional.
+/// Run the controller TCP RPC server
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_controller() {

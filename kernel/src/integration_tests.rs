@@ -791,12 +791,10 @@ fn xmain() {
     use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
     use smoltcp::time::Instant;
 
-    //use rpc::cluster_api::{ClusterControllerAPI, ClusterError, NodeId};
-    //use rpc::rpc::{is_fileio, RPCError, RPCHeader, RPCType};
-    use rpc::rpc::{RPCHeader, RPCType};
-    //use rpc::rpc_api::RPCServerAPI;
+    use rpc::rpc::{is_fileio, RPCHeader, RPCType};
 
     use crate::arch::network::init_network;
+    use crate::arch::remote_syscall::handle_fileio;
 
     #[derive(Debug, PartialEq, Eq, Copy, Clone)]
     pub enum ServerState {
@@ -815,7 +813,7 @@ fn xmain() {
     let socket_tx_buffer = TcpSocketBuffer::new(vec![0; TX_BUF_LEN]);
     let server_sock = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
     let server_handle = sockets.add(server_sock);
-    let mut server_state = (ServerState::Uninitialized, server_handle);
+    let mut server_state = ServerState::Uninitialized;
 
     const RX_BUF_LEN: usize = 4096;
     const TX_BUF_LEN: usize = 4096;
@@ -829,19 +827,18 @@ fn xmain() {
             }
         }
 
-        let (state, handle) = server_state;
-        let mut socket = sockets.get::<TcpSocket>(handle);
+        let mut socket = sockets.get::<TcpSocket>(server_handle);
         let mut response = vec![];
 
-        match state {
+        match server_state {
             ServerState::Uninitialized => {
                 if !socket.is_open() {
                     socket.listen(PORT).unwrap();
                     debug!("Listening at port {}", PORT);
-                    server_state = (ServerState::Listening, handle);
+                    server_state = ServerState::Listening;
                 } else {
                     warn!("Bad state?? Should not be uninitialized and active");
-                    server_state = (ServerState::Error, handle);
+                    server_state = ServerState::Error;
                 }
             }
             ServerState::Listening => {
@@ -849,13 +846,13 @@ fn xmain() {
                 // This is probably not strictly necessary on the server size
                 if socket.is_active() && (socket.may_send() || socket.may_recv()) {
                     debug!("Connected to client!");
-                    server_state = (ServerState::Connected, handle);
+                    server_state = ServerState::Connected;
                 }
             }
             ServerState::Connected => {
                 if !socket.is_active() {
                     warn!("Disconnected with client before registrations completed");
-                    server_state = (ServerState::Error, handle);
+                    server_state = ServerState::Error;
                 }
                 if socket.can_recv() {
                     let mut data = socket
@@ -880,13 +877,13 @@ fn xmain() {
                                 || req.msg_type != RPCType::Registration
                             {
                                 warn!("Invalid registration request received, moving to error state");
-                                server_state = (ServerState::Error, handle);
+                                server_state = ServerState::Error;
                             } else {
-                                server_state = (ServerState::RegistrationReceived, handle);
+                                server_state = ServerState::RegistrationReceived;
                             }
                         } else {
                             warn!("Invalid data received, expected registration request, moving to error state");
-                            server_state = (ServerState::Error, handle);
+                            server_state = ServerState::Error;
                         }
                     }
                 }
@@ -895,7 +892,7 @@ fn xmain() {
                 // TODO: server RPC requests
                 if !socket.is_active() {
                     warn!("Client disconnected - returning to init state.");
-                    server_state = (ServerState::Error, handle);
+                    server_state = ServerState::Error;
                 }
                 if socket.can_send() {
                     debug!("Assigned ID to client: {:?}", PORT);
@@ -910,12 +907,12 @@ fn xmain() {
                     let mut res_data = Vec::new();
                     unsafe { encode(&res, &mut res_data) }.unwrap();
                     socket.send_slice(&res_data).unwrap();
-                    server_state = (ServerState::Registered, handle);
+                    server_state = ServerState::Registered;
                 }
             }
             ServerState::Registered => {
                 if socket.can_recv() {
-                    let data = socket
+                    let mut data = socket
                         .recv(|buffer| {
                             let recvd_len = buffer.len();
                             let data = buffer.to_owned();
@@ -929,24 +926,36 @@ fn xmain() {
                             data
                         );
 
-                        // Set new client state and log request for processing
-                        //let mut requests = self.requests.lock();
-                        //requests.push_back((*p as u64, data));
-                        response.push(&data);
                         debug!("RPC data received: {:?}", data);
-                        server_state = (ServerState::AwaitingResponse, handle);
+                        if let Some((req, payload)) =
+                            unsafe { decode::<RPCHeader>(&mut data) }
+                        {
+                            if req.msg_len != payload.len() as u64 {
+                                warn!("Bad payload length for request {:?}, actually found {:?} bytes, {:?}", req, payload.len(), payload);
+                            } else {
+                                if is_fileio(req.msg_type) {
+                                    let res_data = handle_fileio(req, payload);
+                                    response.push(res_data);
+                                    server_state = ServerState::AwaitingResponse;
+                                } else {
+                                    warn!("RPCType not implemented, ignoring: {:?}", req);
+                                }
+                            }
+                        } else {
+                            warn!("Unable to parse RPC header, ignoring...");
+                        }
                     }
                 }
             }
             ServerState::AwaitingResponse => {
                 if !socket.is_active() {
                     warn!("Client disconnected - returning to init state.");
-                    server_state = (ServerState::Error, handle);
+                    server_state = ServerState::Error;
                 }
 
                 if socket.can_send() {
-                    socket.send_slice(response.pop().unwrap()).unwrap();
-                    server_state = (ServerState::Registered, handle);
+                    socket.send_slice(&response.pop().unwrap()[..]).unwrap();
+                    server_state = ServerState::Registered;
                 }
             }
             ServerState::Error => {

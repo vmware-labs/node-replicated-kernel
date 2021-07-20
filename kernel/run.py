@@ -478,12 +478,10 @@ def run_qemu(args):
     # Create a tap interface to communicate with guest and give it an IP
     user = (whoami)().strip()
     group = (local['id']['-gn'])().strip()
+
     # TODO: Could probably avoid 'sudo' here by doing
     # sudo setcap cap_net_admin .../run.py
     # in the setup.sh script
-    sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
-    sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
-
     if 'exokernel' in args.kfeatures:
         sudo[tunctl[['-t', QEMU_TAP_NAME2, '-u', user, '-g', group]]]()
         sudo[ifconfig[QEMU_TAP_NAME2, QEMU_TAP_ZONE2]]()

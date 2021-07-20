@@ -48,6 +48,10 @@ pub fn init_network<'a>() -> EthernetInterface<'a, DevQueuePhy> {
     #[cfg(feature = "exokernel")]
     let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdd]);
 
+    #[cfg(not(feature = "exokernel"))]
+    let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 11), 24)];
+
+    #[cfg(feature = "exokernel")]
     let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 12), 24)];
 
     let mut routes = Routes::new(BTreeMap::new());

@@ -1,15 +1,23 @@
 use abomonation::{decode, encode};
 use alloc::vec::Vec;
-use log::warn;
+use hashbrown::HashMap;
+use lazy_static::lazy_static;
+use log::{debug, error, warn};
 
 use kpi::io::FileInfo;
 use kpi::FileOperation;
 use rpc::rpc::*;
 
-use crate::cnrfs;
 use crate::error::KError;
+use crate::fs::NrLock;
+use crate::process::Pid;
+use crate::{cnrfs, nr};
 
 const MAX_READ: usize = 4096;
+
+lazy_static! {
+    static ref PID_MAP: NrLock<HashMap<Pid, Pid>> = NrLock::default();
+}
 
 #[inline(always)]
 fn construct_error_ret(res_hdr: RPCHeader, err: RPCError) -> Vec<u8> {
@@ -37,6 +45,38 @@ fn convert_return(cnrfs_ret: Result<(u64, u64), KError>) -> Result<(u64, u64), R
     }
 }
 
+pub fn register_pid(remote_pid: usize) -> Result<(), KError> {
+    let kcb = super::kcb::get_kcb();
+    kcb.replica
+        .as_ref()
+        .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
+            let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
+            if let nr::NodeResult::PidAllocated(local_pid) = response {
+                // TODO: some way to unwind if fails??
+                match cnrfs::MlnrKernelNode::add_process(local_pid) {
+                    Ok(_) => {
+                        // TODO: register pid
+                        let mut pmap = PID_MAP.write();
+                        pmap.try_reserve(1)?;
+                        pmap.try_insert(remote_pid, local_pid)
+                            .map_err(|_e| KError::FileDescForPidAlreadyAdded)?;
+                        debug!(
+                            "Mapped remote pid {} to local pid {}",
+                            remote_pid, local_pid
+                        );
+                        Ok(())
+                    }
+                    Err(err) => {
+                        error!("Unable to register pid {:?} {:?}", remote_pid, err);
+                        Err(KError::NoProcessFoundForPid)
+                    }
+                }
+            } else {
+                Err(KError::NoProcessFoundForPid)
+            }
+        })
+}
+
 /// RPC handler for file operations
 pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
     let mut res_hdr = RPCHeader {
@@ -46,6 +86,15 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
         msg_type: hdr.msg_type,
         msg_len: 0,
     };
+
+    let process_lookup = PID_MAP.read();
+    let local_pid = process_lookup.get(&hdr.pid);
+    if let None = local_pid {
+        error!("Failed to lookup remote pid {}", hdr.pid);
+        return construct_error_ret(res_hdr, RPCError::NoFileDescForPid);
+    }
+    let local_pid = *(local_pid.unwrap());
+
     match hdr.msg_type {
         RPCType::Create => {
             unreachable!("Create is changed to Open with O_CREAT flag in vibrio")
@@ -58,7 +107,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 }
                 let res = FIORPCRes {
                     ret: convert_return(cnrfs::MlnrKernelNode::map_fd(
-                        hdr.pid,
+                        local_pid,
                         req.pathname.as_ptr() as u64,
                         req.flags,
                         req.modes,
@@ -82,7 +131,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 let ret = if hdr.msg_type == RPCType::Read {
                     cnrfs::MlnrKernelNode::file_io(
                         FileOperation::Read,
-                        hdr.pid,
+                        local_pid,
                         req.fd,
                         buf.as_mut_ptr() as u64,
                         req.len,
@@ -91,7 +140,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 } else {
                     cnrfs::MlnrKernelNode::file_io(
                         FileOperation::ReadAt,
-                        hdr.pid,
+                        local_pid,
                         req.fd,
                         buf.as_mut_ptr() as u64,
                         req.len,
@@ -131,7 +180,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 let ret = if hdr.msg_type == RPCType::Write {
                     cnrfs::MlnrKernelNode::file_io(
                         FileOperation::Write,
-                        hdr.pid,
+                        local_pid,
                         req.fd,
                         remaining.as_mut_ptr() as u64,
                         req.len,
@@ -140,7 +189,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 } else {
                     cnrfs::MlnrKernelNode::file_io(
                         FileOperation::WriteAt,
-                        hdr.pid,
+                        local_pid,
                         req.fd,
                         remaining.as_mut_ptr() as u64,
                         req.len,
@@ -165,7 +214,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 }
 
                 let res = FIORPCRes {
-                    ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(hdr.pid, req.fd)),
+                    ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(local_pid, req.fd)),
                 };
                 construct_ret(res_hdr, res)
             } else {
@@ -182,7 +231,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
 
                 let file_info = [0u8; core::mem::size_of::<FileInfo>()];
                 let ret = cnrfs::MlnrKernelNode::file_info(
-                    hdr.pid,
+                    local_pid,
                     req.name.as_ptr() as u64,
                     file_info.as_ptr() as u64,
                 );
@@ -213,7 +262,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 }
                 let res = FIORPCRes {
                     ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
-                        hdr.pid,
+                        local_pid,
                         req.pathname.as_ptr() as u64,
                     )),
                 };
@@ -231,7 +280,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 }
                 let res = FIORPCRes {
                     ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
-                        hdr.pid,
+                        local_pid,
                         req.oldname.as_ptr() as u64,
                         req.newname.as_ptr() as u64,
                     )),
@@ -250,7 +299,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 }
                 let res = FIORPCRes {
                     ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
-                        hdr.pid,
+                        local_pid,
                         req.pathname.as_ptr() as u64,
                         req.modes,
                     )),

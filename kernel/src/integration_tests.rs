@@ -794,7 +794,7 @@ fn xmain() {
     use rpc::rpc::{is_fileio, RPCHeader, RPCType};
 
     use crate::arch::network::init_network;
-    use crate::arch::remote_syscall::handle_fileio;
+    use crate::arch::remote_syscall::{register_pid, handle_fileio};
 
     #[derive(Debug, PartialEq, Eq, Copy, Clone)]
     pub enum ServerState {
@@ -879,11 +879,10 @@ fn xmain() {
                                 error!("Invalid registration request received, moving to error state");
                                 server_state = ServerState::Error;
                             } else {
-                                // TODO: pids shouldn't work directly, but okay for now.
-                                match cnrfs::MlnrKernelNode::add_process(hdr.pid) {
+                                match register_pid(hdr.pid) {
                                     Ok(_) => server_state = ServerState::RegistrationReceived,
                                     Err(err) => {
-                                        error!("Unable to register pid {:?} {:?}", hdr.pid, err);
+                                        error!("Could not map remote pid {} to local pid {}", hdr.pid, err);
                                         server_state = ServerState::Error;
                                     }
                                 }
@@ -933,19 +932,19 @@ fn xmain() {
                             data
                         );
 
-                        if let Some((req, payload)) =
+                        if let Some((hdr, payload)) =
                             unsafe { decode::<RPCHeader>(&mut data) }
                         {
-                            if req.msg_len != payload.len() as u64 {
-                                error!("Bad payload length for request {:?}, actually found {:?} bytes, {:?}", req, payload.len(), payload);
+                            if hdr.msg_len != payload.len() as u64 {
+                                error!("Bad payload length for request {:?}, actually found {:?} bytes, {:?}", hdr, payload.len(), payload);
                             } else {
-                                if is_fileio(req.msg_type) {
-                                    let res_data = handle_fileio(req, payload);
+                                if is_fileio(hdr.msg_type) {
+                                    let res_data = handle_fileio(hdr, payload);
                                     debug!("Response pushed: {:?}", res_data);
                                     response_vec.push(res_data);
                                     server_state = ServerState::AwaitingResponse;
                                 } else {
-                                    warn!("RPCType not implemented, ignoring: {:?}", req);
+                                    warn!("RPCType not implemented, ignoring: {:?}", hdr);
                                 }
                             }
                         } else {

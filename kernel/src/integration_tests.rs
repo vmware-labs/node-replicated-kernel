@@ -814,6 +814,7 @@ fn xmain() {
     let server_sock = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
     let server_handle = sockets.add(server_sock);
     let mut server_state = ServerState::Uninitialized;
+    let mut response_vec = vec![];
 
     const RX_BUF_LEN: usize = 4096;
     const TX_BUF_LEN: usize = 4096;
@@ -828,8 +829,6 @@ fn xmain() {
         }
 
         let mut socket = sockets.get::<TcpSocket>(server_handle);
-        let mut response = vec![];
-
         match server_state {
             ServerState::Uninitialized => {
                 if !socket.is_open() {
@@ -934,7 +933,6 @@ fn xmain() {
                             data
                         );
 
-                        debug!("RPC data received: {:?}", data);
                         if let Some((req, payload)) =
                             unsafe { decode::<RPCHeader>(&mut data) }
                         {
@@ -943,7 +941,8 @@ fn xmain() {
                             } else {
                                 if is_fileio(req.msg_type) {
                                     let res_data = handle_fileio(req, payload);
-                                    response.push(res_data);
+                                    debug!("Response pushed: {:?}", res_data);
+                                    response_vec.push(res_data);
                                     server_state = ServerState::AwaitingResponse;
                                 } else {
                                     warn!("RPCType not implemented, ignoring: {:?}", req);
@@ -961,9 +960,11 @@ fn xmain() {
                     server_state = ServerState::Error;
                 }
 
-                if socket.can_send() {
-                    socket.send_slice(&response.pop().unwrap()[..]).unwrap();
-                    server_state = ServerState::Registered;
+                if socket.can_send() && response_vec.len() > 0 {
+                    if let Some(res) = response_vec.pop() {
+                        socket.send_slice(&res[..]).unwrap();
+                        server_state = ServerState::Registered;
+                    }
                 }
             }
             ServerState::Error => {

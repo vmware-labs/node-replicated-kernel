@@ -484,15 +484,18 @@ def run_qemu(args):
     sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
     sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
 
-    if 'exokernel' in args.features or 'controller' in args.features:
+    if 'exokernel' in args.kfeatures:
         sudo[tunctl[['-t', QEMU_TAP_NAME2, '-u', user, '-g', group]]]()
         sudo[ifconfig[QEMU_TAP_NAME2, QEMU_TAP_ZONE2]]()
+    else:
+        sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
+        sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
 
-        # TODO - set up bridge between interfaces
-        # sudo ip link add br0 type bridge
-        # sudo brctl addif br0 tap0
-        # sudo brctl addif br0 tap2
-        # sudo ip link set br0 up
+    # TODO - set up bridge between interfaces
+    # sudo ip link add br0 type bridge
+    # sudo brctl addif br0 tap0
+    # sudo brctl addif br0 tap2
+    # sudo ip link set br0 up
 
     # Run a QEMU instance
     cmd = ['/usr/bin/env'] + qemu_args

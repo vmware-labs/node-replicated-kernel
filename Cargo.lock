@@ -12,6 +12,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "abomonation"
+version = "0.7.3"
+source = "git+https://github.com/hunhoffe/abomonation.git?branch=no_std#80f5f6e80050f0730e7310539759bd82b3f8fb13"
+dependencies = [
+ "smoltcp",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1089,8 +1097,8 @@ dependencies = [
 name = "kpi"
 version = "0.1.0"
 dependencies = [
+ "abomonation 0.7.3 (git+https://github.com/hunhoffe/abomonation.git?branch=no_std)",
  "bit_field",
- "abomonation",
  "bitflags",
  "env_logger 0.5.13",
  "log",
@@ -1355,6 +1363,7 @@ dependencies = [
 name = "nrk"
 version = "0.0.4"
 dependencies = [
+ "abomonation 0.7.3 (git+https://github.com/hunhoffe/abomonation.git?branch=no_std)",
  "addr2line 0.16.0",
  "apic",
  "arrayvec",
@@ -2043,7 +2052,7 @@ dependencies = [
 name = "rpc"
 version = "0.1.0"
 dependencies = [
- "abomonation",
+ "abomonation 0.7.3 (git+https://github.com/hunhoffe/abomonation.git?branch=no-std)",
  "kpi",
  "lazy_static",
  "log",

@@ -776,6 +776,187 @@ pub fn cxl_read() {
     shutdown(ExitReason::Ok);
 }
 
+/// Test TCP RPC-based controller
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-controller",
+    target_arch = "x86_64"
+))]
+fn xmain() {
+    use abomonation::{decode, encode};
+    use alloc::borrow::ToOwned;
+    use alloc::{vec, vec::Vec};
+    use log::{debug, warn};
+
+    use smoltcp::socket::{SocketSet, TcpSocket, TcpSocketBuffer};
+    use smoltcp::time::Instant;
+
+    //use rpc::cluster_api::{ClusterControllerAPI, ClusterError, NodeId};
+    //use rpc::rpc::{is_fileio, RPCError, RPCHeader, RPCType};
+    use rpc::rpc::{RPCHeader, RPCType};
+    //use rpc::rpc_api::RPCServerAPI;
+
+    use crate::arch::network::init_network;
+
+    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+    pub enum ServerState {
+        Uninitialized,
+        Listening,
+        Connected,
+        RegistrationReceived,
+        Registered,
+        AwaitingResponse,
+        Error,
+    }
+
+    let mut iface = init_network();
+    let mut sockets = SocketSet::new(vec![]);
+    let socket_rx_buffer = TcpSocketBuffer::new(vec![0; RX_BUF_LEN]);
+    let socket_tx_buffer = TcpSocketBuffer::new(vec![0; TX_BUF_LEN]);
+    let server_sock = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
+    let server_handle = sockets.add(server_sock);
+    let mut server_state = (ServerState::Uninitialized, server_handle);
+
+    const RX_BUF_LEN: usize = 4096;
+    const TX_BUF_LEN: usize = 4096;
+    const PORT: u16 = 10110;
+
+    loop {
+        match iface.poll(&mut sockets, Instant::from_millis(0)) {
+            Ok(_) => {}
+            Err(e) => {
+                warn!("poll error: {}", e);
+            }
+        }
+
+        let (state, handle) = server_state;
+        let mut socket = sockets.get::<TcpSocket>(handle);
+        let mut response = vec![];
+
+        match state {
+            ServerState::Uninitialized => {
+                if !socket.is_open() {
+                    socket.listen(PORT).unwrap();
+                    debug!("Listening at port {}", PORT);
+                    server_state = (ServerState::Listening, handle);
+                } else {
+                    warn!("Bad state?? Should not be uninitialized and active");
+                    server_state = (ServerState::Error, handle);
+                }
+            }
+            ServerState::Listening => {
+                // Waiting for send/recv forces the TCP handshake to fully complete
+                // This is probably not strictly necessary on the server size
+                if socket.is_active() && (socket.may_send() || socket.may_recv()) {
+                    debug!("Connected to client!");
+                    server_state = (ServerState::Connected, handle);
+                }
+            }
+            ServerState::Connected => {
+                if !socket.is_active() {
+                    warn!("Disconnected with client before registrations completed");
+                    server_state = (ServerState::Error, handle);
+                }
+                if socket.can_recv() {
+                    let mut data = socket
+                        .recv(|buffer| {
+                            let recvd_len = buffer.len();
+                            let data = buffer.to_owned();
+                            (recvd_len, data)
+                        })
+                        .unwrap();
+                    if data.len() > 0 {
+                        // Parse and check registration request
+                        if let Some((req, remaining)) =
+                            unsafe { decode::<RPCHeader>(&mut data) }
+                        {
+                            debug!("Received registration request from client: {:?}", req);
+
+                            // validate request
+                            if remaining.len() != 0
+                                || req.client_id != 0
+                                || req.req_id != 0
+                                || req.msg_len != 0
+                                || req.msg_type != RPCType::Registration
+                            {
+                                warn!("Invalid registration request received, moving to error state");
+                                server_state = (ServerState::Error, handle);
+                            } else {
+                                server_state = (ServerState::RegistrationReceived, handle);
+                            }
+                        } else {
+                            warn!("Invalid data received, expected registration request, moving to error state");
+                            server_state = (ServerState::Error, handle);
+                        }
+                    }
+                }
+            }
+            ServerState::RegistrationReceived => {
+                // TODO: server RPC requests
+                if !socket.is_active() {
+                    warn!("Client disconnected - returning to init state.");
+                    server_state = (ServerState::Error, handle);
+                }
+                if socket.can_send() {
+                    debug!("Assigned ID to client: {:?}", PORT);
+
+                    let res = RPCHeader {
+                        client_id: PORT as u64,
+                        pid: 0,
+                        req_id: 0,
+                        msg_type: RPCType::Registration,
+                        msg_len: 0,
+                    };
+                    let mut res_data = Vec::new();
+                    unsafe { encode(&res, &mut res_data) }.unwrap();
+                    socket.send_slice(&res_data).unwrap();
+                    server_state = (ServerState::Registered, handle);
+                }
+            }
+            ServerState::Registered => {
+                if socket.can_recv() {
+                    let data = socket
+                        .recv(|buffer| {
+                            let recvd_len = buffer.len();
+                            let data = buffer.to_owned();
+                            (recvd_len, data)
+                        })
+                        .unwrap();
+                    if data.len() > 0 {
+                        debug!(
+                            "In Main, received RPC from client ({} bytes): {:?}",
+                            data.len(),
+                            data
+                        );
+
+                        // Set new client state and log request for processing
+                        //let mut requests = self.requests.lock();
+                        //requests.push_back((*p as u64, data));
+                        response.push(&data);
+                        debug!("RPC data received: {:?}", data);
+                        server_state = (ServerState::AwaitingResponse, handle);
+                    }
+                }
+            }
+            ServerState::AwaitingResponse => {
+                if !socket.is_active() {
+                    warn!("Client disconnected - returning to init state.");
+                    server_state = (ServerState::Error, handle);
+                }
+
+                if socket.can_send() {
+                    socket.send_slice(response.pop().unwrap()).unwrap();
+                    server_state = (ServerState::Registered, handle);
+                }
+            }
+            ServerState::Error => {
+                // unknown error, shut down.
+                arch::debug::shutdown(ExitReason::UnrecoverableError);
+            }
+        }
+    }
+}
+
 /// Test shootdown facilities in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 fn shootdown_simple() {

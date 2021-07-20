@@ -1366,6 +1366,25 @@ fn s03_userspace_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Tests that the basic vmxnet3 driver in the kernel is functional.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_controller() {
+    let cmdline = RunnerArgs::new("test-controller")
+        .timeout(25_000)
+        .use_vmxnet3();
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Tests that the vmxnet3 driver is functional together with the smoltcp
 /// network stack.
 #[cfg(not(feature = "baremetal"))]

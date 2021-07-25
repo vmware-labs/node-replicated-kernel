@@ -1038,6 +1038,7 @@ dependencies = [
  "arrayvec",
  "cstr_core",
  "hashbrown 0.11.2",
+ "kpi",
  "lazy_static",
  "libm",
  "lineup",
@@ -2785,7 +2786,11 @@ checksum = "1e85eb056bbe47f56d75dc0ccc5fe9c12211ed141292f4d7485d2a7c3dedda09"
 dependencies = [
  "bit_field",
  "bitflags",
+<<<<<<< HEAD
  "raw-cpuid 10.2.0",
+=======
+ "raw-cpuid 9.0.0",
+>>>>>>> First steps towards properties tests for syscalls
 ]
 
 [[package]]

@@ -710,9 +710,15 @@ fn test_file_read_permission_error() {
     let fd = vibrio::syscalls::Fs::open(
         "test_file_read_permission_error.txt".as_ptr() as u64,
         u64::from(FileFlags::O_WRONLY | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into()).unwrap();
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
     let mut rdata = [0u8; 6];
-    assert_eq!(vibrio::syscalls::Fs::read(fd, rdata.as_mut_ptr() as u64, 6), Err(SystemCallError::InternalError));
+    assert_eq!(
+        vibrio::syscalls::Fs::read(fd, rdata.as_mut_ptr() as u64, 6),
+        Err(SystemCallError::InternalError)
+    );
+    vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
 /// Create a file with non-write permission and try to write it.
@@ -720,9 +726,15 @@ fn test_file_write_permission_error() {
     let fd = vibrio::syscalls::Fs::open(
         "test_file_write_permission_error.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDONLY | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into()).unwrap();
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
     let mut wdata = [0u8; 6];
-    assert_eq!(vibrio::syscalls::Fs::write(fd, wdata.as_mut_ptr() as u64, 6), Err(SystemCallError::InternalError));
+    assert_eq!(
+        vibrio::syscalls::Fs::write(fd, wdata.as_mut_ptr() as u64, 6),
+        Err(SystemCallError::InternalError)
+    );
+    vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
 /// Create a file and write to it.
@@ -730,12 +742,15 @@ fn test_file_write() {
     let fd = vibrio::syscalls::Fs::open(
         "test_file_write.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into()).unwrap();
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
     let mut wdata = [0u8; 10];
     assert_eq!(
         vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
         Ok(10)
     );
+    vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
 /// Create a file, write to it and then later read. Verify the content.
@@ -743,7 +758,9 @@ fn test_file_read() {
     let fd = vibrio::syscalls::Fs::open(
         "test_file_read.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into()).unwrap();
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
 
     let wdata = [1u8; 10];
     let mut rdata = [0u8; 10];
@@ -757,134 +774,217 @@ fn test_file_read() {
         Ok(10)
     );
     assert_eq!(rdata[0], 1);
+    assert_eq!(rdata[5], 1);
     assert_eq!(rdata[9], 1);
+    vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
 /// Create a file and open again without create permission
 fn test_file_duplicate_open() {
-    let fd0 = vibrio::syscalls::Fs::open(
-        "test_file_duplicate_open.txt".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into());
-    assert_eq!(fd0, Err(SystemCallError::InternalError));
-
     let fd1 = vibrio::syscalls::Fs::open(
         "test_file_duplicate_open.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into()).unwrap();
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
     let fd2 = vibrio::syscalls::Fs::open(
         "test_file_duplicate_open.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into()).unwrap();
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
     assert_ne!(fd1, fd2);
+    vibrio::syscalls::Fs::close(fd1).unwrap();
+    vibrio::syscalls::Fs::close(fd2).unwrap();
 }
 
-/// Lookup for a fake file.
+/// Attempt to open file that is not present
 fn test_file_fake_open() {
-    let fd2 = vibrio::syscalls::Fs::open(
+    let fd = vibrio::syscalls::Fs::open(
         "test_file_fake_open.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into());
-    assert_eq!(fd2, Err(SystemCallError::InternalError));
+        FileModes::S_IRWXU.into(),
+    );
+    assert_eq!(fd, Err(SystemCallError::InternalError));
 }
 
-/*
 /// Test file_info.
 fn test_file_info() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-    assert_eq!(memfs.file_info(2), FileInfo { ftype: 2, fsize: 0 });
+    // Create file
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_info.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
+    vibrio::syscalls::Fs::close(fd).unwrap();
+
+    // Get file info
+    let ret = vibrio::syscalls::Fs::getinfo("test_file_info.txt".as_ptr() as u64);
+    assert_eq!(ret, Ok(FileInfo { ftype: 2, fsize: 0 }));
 }
 
 /// Test file deletion.
 fn test_file_delete() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let buffer: &mut [u8; 10] = &mut [0xb; 10];
+    // Create file
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_info.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
+    vibrio::syscalls::Fs::close(fd).unwrap();
 
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.delete(filename), Ok(()));
-    assert_eq!(memfs.delete(filename).is_err(), true);
-    assert_eq!(memfs.lookup(filename), None);
-    assert_eq!(
-        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(SystemCallError::InternalError)
+    // Delete file
+    let ret = vibrio::syscalls::Fs::delete("test_file_info.txt".as_ptr() as u64);
+    assert_eq!(ret, Ok(true));
+
+    // Attempt to open deleted file
+    let ret = vibrio::syscalls::Fs::open(
+        "test_file_info.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR),
+        FileModes::S_IRWXU.into(),
     );
-    assert_eq!(
-        memfs.read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(SystemCallError::InternalError)
-    );
+    assert_eq!(ret, Err(SystemCallError::InternalError));
 }
 
 fn test_file_rename() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let newname = "filenew.txt";
-    let oldfd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert!(memfs.rename(filename, newname).is_ok());
-    let fd = memfs.lookup(newname).unwrap();
-    assert_eq!(oldfd, fd);
+    // Create old
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_rename_old.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
+    vibrio::syscalls::Fs::close(fd).unwrap();
+
+    // Rename
+    let ret = vibrio::syscalls::Fs::rename(
+        "test_file_rename_old.txt".as_ptr() as u64,
+        "test_file_rename_new.txt".as_ptr() as u64,
+    );
+    assert_eq!(ret.is_ok(), true);
+
+    // Attempt to open old
+    let ret = vibrio::syscalls::Fs::open(
+        "test_file_rename_old.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR),
+        FileModes::S_IRWXU.into(),
+    );
+    assert_eq!(ret, Err(SystemCallError::InternalError));
+
+    // Attempt to open new
+    let ret = vibrio::syscalls::Fs::open(
+        "test_file_rename_new.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR),
+        FileModes::S_IRWXU.into(),
+    );
+    assert_eq!(ret.is_ok(), true);
+    vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
 fn test_file_rename_and_read() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let newname = "filenew.txt";
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    // Create old
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_rename_and_read_old.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
 
-    let buffer: &mut [u8; 10] = &mut [0xb; 10];
+    // Write and close
+    let wdata = [1u8; 9];
     assert_eq!(
-        memfs.write(fd, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Ok(10)
+        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 9),
+        Ok(9)
     );
+    vibrio::syscalls::Fs::close(fd).unwrap();
 
-    let rbuffer: &mut [u8; 10] = &mut [0x0; 10];
-    assert!(memfs.rename(filename, newname).is_ok());
-    let fd = memfs.lookup(newname).unwrap();
-    assert_eq!(
-        memfs.read(*fd, &mut UserSlice::new(rbuffer.as_ptr() as u64, 10), 0),
-        Ok(10)
+    // Rename
+    let ret = vibrio::syscalls::Fs::rename(
+        "test_file_rename_and_read_old.txt".as_ptr() as u64,
+        "test_file_rename_and_read_new.txt".as_ptr() as u64,
     );
-    assert_eq!(rbuffer[0], 0xb);
-    assert_eq!(rbuffer[9], 0xb);
+    assert_eq!(ret, Ok(0));
+
+    // Open new
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_rename_and_read_new.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
+
+    // Read
+    let mut rdata = [0u8; 9];
+    assert_eq!(
+        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 9, 0),
+        Ok(9)
+    );
+    assert_eq!(rdata[0], 1);
+    assert_eq!(rdata[5], 1);
+    assert_eq!(rdata[8], 1);
+
+    // Close
+    vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
 fn test_file_rename_and_write() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let newname = "filenew.txt";
-    let oldfd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert!(memfs.rename(filename, newname).is_ok());
-    let fd = memfs.lookup(newname).unwrap();
-    assert_eq!(oldfd, fd);
+    // Create old
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_rename_and_write_old.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
+    vibrio::syscalls::Fs::close(fd).unwrap();
 
-    let finfo = memfs.file_info(fd);
-    assert_eq!(finfo.fsize, 0);
-    let buffer: &mut [u8; 10] = &mut [0xb; 10];
-    assert_eq!(
-        memfs.write(fd, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Ok(10)
+    // Rename
+    let ret = vibrio::syscalls::Fs::rename(
+        "test_file_rename_and_write_old.txt".as_ptr() as u64,
+        "test_file_rename_and_write_new.txt".as_ptr() as u64,
     );
-    let finfo = memfs.file_info(fd);
-    assert_eq!(finfo.fsize, 10);
+    assert_eq!(ret, Ok(0));
+
+    // Open new
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_rename_and_write_old.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
+
+    // Write
+    let wdata = [1u8; 9];
+    assert_eq!(
+        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 9),
+        Ok(9)
+    );
+
+    // Read
+    let mut rdata = [0u8; 9];
+    assert_eq!(
+        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 9, 0),
+        Ok(9)
+    );
+    assert_eq!(rdata[0], 1);
+    assert_eq!(rdata[5], 1);
+    assert_eq!(rdata[8], 1);
+
+    vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
 fn test_file_rename_nonexistent_file() {
-    let memfs: MlnrFS = Default::default();
-    let oldname = "file.txt";
-    let newname = "filenew.txt";
-    assert_eq!(memfs.rename(oldname, newname), Err(SystemCallError::InternalError));
+    let ret = vibrio::syscalls::Fs::rename(
+        "test_file_rename_nonexistent_file_old.txt".as_ptr() as u64,
+        "test_file_rename_nonexistent_file_new.txt".as_ptr() as u64,
+    );
+    assert_eq!(ret, Err(SystemCallError::InternalError));
 }
 
+/*
 fn test_file_rename_to_existent_file() {
+    // TODO
     let memfs: MlnrFS = Default::default();
     let oldname = "file.txt";
     let newname = "filenew.txt";
@@ -910,13 +1010,11 @@ pub fn run_fio_syscall_tests() {
     test_file_read();
     test_file_duplicate_open();
     test_file_fake_open();
-    /*
     test_file_info();
     test_file_delete();
     test_file_rename();
     test_file_rename_and_read();
     test_file_rename_and_write();
     test_file_rename_nonexistent_file();
-    test_file_rename_to_existent_file();
-    */
+    //test_file_rename_to_existent_file();
 }

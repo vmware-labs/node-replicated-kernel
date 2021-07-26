@@ -41,10 +41,10 @@ use log::{debug, error, info, Level, Metadata, Record, SetLoggerError};
 mod vmops;
 
 mod f64;
+mod fs;
 #[cfg(feature = "fxmark")]
 mod fxmark;
 mod histogram;
-mod fs;
 
 use crate::fs::run_fio_syscall_tests;
 

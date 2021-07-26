@@ -12,6 +12,7 @@ path = "src/init.rs"
 
 [dependencies]
 lineup = { path = "../../lib/lineup" }
+kpi = { path = "../../lib/kpi" }
 vibrio = { path = "../../lib/vibrio" }
 rawtime = "0.0.4"
 x86 = "0.40"

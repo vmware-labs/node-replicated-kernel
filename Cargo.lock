@@ -485,6 +485,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_logger"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b2cf0344971ee6c64c31be0d530793fba457d322dfec2810c453d0ef228f9c3"
+dependencies = [
+ "atty",
+ "humantime 2.1.0",
+ "log",
+ "regex",
+ "termcolor",
+]
+
+[[package]]
 name = "errno"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -731,6 +744,7 @@ name = "init"
 version = "0.1.0"
 dependencies = [
  "cstr_core",
+ "kpi",
  "lazy_static",
  "libm",
  "lineup",
@@ -975,7 +989,7 @@ dependencies = [
  "ctor",
  "driverkit",
  "elfloader",
- "env_logger 0.8.3",
+ "env_logger 0.9.0",
  "fallible_collections",
  "gimli 0.24.0",
  "hashbrown 0.11.2",
@@ -1698,7 +1712,7 @@ dependencies = [
  "arrayvec",
  "custom_error",
  "driverkit",
- "env_logger 0.8.3",
+ "env_logger 0.9.0",
  "log",
  "smoltcp",
  "static_assertions",

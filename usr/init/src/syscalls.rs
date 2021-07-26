@@ -1090,6 +1090,39 @@ fn test_file_rename_to_existent_file() {
     vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
+/// Tests read_at and write_at
+fn test_file_position() {
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_position.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into(),
+    )
+    .unwrap();
+
+    let wdata = [1u8; 10];
+    let wdata2 = [2u8; 10];
+    let mut rdata = [0u8; 10];
+
+    assert_eq!(
+        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
+        Ok(10)
+    );
+    assert_eq!(
+        vibrio::syscalls::Fs::write_at(fd, wdata2.as_ptr() as u64, 10, 5),
+        Ok(10)
+    );
+    assert_eq!(
+        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 10, 2),
+        Ok(10)
+    );
+    assert_eq!(rdata[0], 1);
+    assert_eq!(rdata[2], 1);
+    assert_eq!(rdata[3], 2);
+    assert_eq!(rdata[9], 2);
+
+    vibrio::syscalls::Fs::close(fd).unwrap();
+}
+
 pub fn run_fio_syscall_tests() {
     model_read();
     model_overlapping_writes();
@@ -1110,4 +1143,5 @@ pub fn run_fio_syscall_tests() {
     test_file_rename_and_write();
     test_file_rename_nonexistent_file();
     test_file_rename_to_existent_file();
+    test_file_position();
 }

@@ -133,7 +133,10 @@ fn test_file_duplicate_close() {
     )
     .unwrap();
     assert_eq!(vibrio::syscalls::Fs::close(fd), Ok(0));
-    assert_eq!(vibrio::syscalls::Fs::close(fd), Err(SystemCallError::InternalError));
+    assert_eq!(
+        vibrio::syscalls::Fs::close(fd),
+        Err(SystemCallError::InternalError)
+    );
 }
 
 /// Ensure you can write and write with multiple file descriptors
@@ -221,7 +224,7 @@ fn test_file_delete_open() {
         FileModes::S_IRWXU.into(),
     )
     .unwrap();
-    
+
     // Delete file
     let ret = vibrio::syscalls::Fs::delete("test_file_info.txt".as_ptr() as u64);
     assert_eq!(ret, Err(SystemCallError::InternalError));
@@ -463,7 +466,7 @@ pub fn run_fio_syscall_tests() {
     test_file_multiple_fd();
     test_file_info();
     test_file_delete();
-    // TODO: check if this test is correct 
+    // TODO: check if this test is correct
     //test_file_delete_open();
     test_file_rename();
     test_file_rename_and_read();

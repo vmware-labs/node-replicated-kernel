@@ -11,6 +11,7 @@
 #![feature(core_intrinsics)]
 #![allow(unused_imports, dead_code)]
 extern crate alloc;
+extern crate kpi;
 extern crate spin;
 extern crate vibrio;
 extern crate x86;
@@ -43,6 +44,9 @@ mod f64;
 #[cfg(feature = "fxmark")]
 mod fxmark;
 mod histogram;
+mod fs;
+
+use crate::fs::run_fio_syscall_tests;
 
 #[thread_local]
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
@@ -559,6 +563,7 @@ fn fs_test() {
         test_fs_invalid_addresses();
     }
 
+    run_fio_syscall_tests();
     info!("fs_test OK");
 }
 

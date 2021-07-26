@@ -705,171 +705,90 @@ proptest! {
 }
 */
 
-/*
-/// Initialize memfs for root and verify the values.
-fn test_memfs_init() {
-    let memfs: MlnrFS = Default::default();
-    let root = String::from("/");
-    assert_eq!(memfs.root, (root.to_owned(), 1));
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 2);
-    assert_eq!(memfs.files.read().get(&root), Some(&Arc::new(1)));
-    assert_eq!(
-        *memfs.fds.read().get(&1).unwrap().read(),
-        MemNode::new(1, "/", FileModes::S_IRWXU.into(), FileType::Directory).unwrap()
-    );
-}
-
-/// Create a file on in-memory fs and verify all the values.
-fn test_file_create() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-}
-
 /// Create a file with non-read permission and try to read it.
 fn test_file_read_permission_error() {
-    let buffer = &[0; 10];
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IWUSR.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-    // On error read returns 0.
-    assert_eq!(
-        memfs
-            .read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
-            .is_err(),
-        true
-    );
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_read_permission_error.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_WRONLY | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into()).unwrap();
+    let mut rdata = [0u8; 6];
+    assert_eq!(vibrio::syscalls::Fs::read(fd, rdata.as_mut_ptr() as u64, 6), Err(SystemCallError::InternalError));
 }
 
 /// Create a file with non-write permission and try to write it.
 fn test_file_write_permission_error() {
-    let buffer = &[0; 10];
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-    // On error read returns 0.
-    assert_eq!(
-        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(SystemCallError::InternalError)
-    );
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_write_permission_error.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDONLY | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into()).unwrap();
+    let mut wdata = [0u8; 6];
+    assert_eq!(vibrio::syscalls::Fs::write(fd, wdata.as_mut_ptr() as u64, 6), Err(SystemCallError::InternalError));
 }
 
 /// Create a file and write to it.
 fn test_file_write() {
-    let buffer = &[0; 10];
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_write.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into()).unwrap();
+    let mut wdata = [0u8; 10];
     assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-    assert_eq!(
-        memfs
-            .write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
-            .unwrap(),
-        10
+        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
+        Ok(10)
     );
 }
 
 /// Create a file, write to it and then later read. Verify the content.
 fn test_file_read() {
-    let len = 10;
-    let wbuffer: &[u8; 10] = &[0xb; 10];
-    let rbuffer: &mut [u8; 10] = &mut [0; 10];
+    let fd = vibrio::syscalls::Fs::open(
+        "test_file_read.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into()).unwrap();
 
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
+    let wdata = [1u8; 10];
+    let mut rdata = [0u8; 10];
+
     assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
+        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
+        Ok(10)
     );
     assert_eq!(
-        memfs
-            .write(2, &mut UserSlice::new(wbuffer.as_ptr() as u64, len), 0)
-            .unwrap(),
-        len
+        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 10, 0),
+        Ok(10)
     );
-    assert_eq!(
-        memfs
-            .read(2, &mut UserSlice::new(rbuffer.as_ptr() as u64, len), 0)
-            .unwrap(),
-        len
-    );
-    assert_eq!(rbuffer[0], 0xb);
-    assert_eq!(rbuffer[9], 0xb);
+    assert_eq!(rdata[0], 1);
+    assert_eq!(rdata[9], 1);
 }
 
-/// Create a file and lookup for it.
-fn test_file_lookup() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-    let fd = memfs.lookup(filename);
-    assert_eq!(fd, Some(Arc::new(2)));
+/// Create a file and open again without create permission
+fn test_file_duplicate_open() {
+    let fd0 = vibrio::syscalls::Fs::open(
+        "test_file_duplicate_open.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR),
+        FileModes::S_IRWXU.into());
+    assert_eq!(fd0, Err(SystemCallError::InternalError));
+
+    let fd1 = vibrio::syscalls::Fs::open(
+        "test_file_duplicate_open.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
+        FileModes::S_IRWXU.into()).unwrap();
+    let fd2 = vibrio::syscalls::Fs::open(
+        "test_file_duplicate_open.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR),
+        FileModes::S_IRWXU.into()).unwrap();
+    assert_ne!(fd1, fd2);
 }
 
 /// Lookup for a fake file.
-fn test_file_fake_lookup() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-    let fd = memfs.lookup("filename");
-    assert_eq!(fd, None);
+fn test_file_fake_open() {
+    let fd2 = vibrio::syscalls::Fs::open(
+        "test_file_fake_open.txt".as_ptr() as u64,
+        u64::from(FileFlags::O_RDWR),
+        FileModes::S_IRWXU.into());
+    assert_eq!(fd2, Err(SystemCallError::InternalError));
 }
 
-/// Try to create a file with same name.
-fn test_file_duplicate_create() {
-    let memfs: MlnrFS = Default::default();
-    let filename = "file.txt";
-    let fd = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert_eq!(fd, 2);
-    assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
-    assert_eq!(
-        memfs.files.read().get(&String::from("file.txt")),
-        Some(&Arc::new(2))
-    );
-    assert_eq!(
-        memfs.create(filename, FileModes::S_IRWXU.into()),
-        Err(SystemCallError::InternalError)
-    );
-}
-
+/*
 /// Test file_info.
 fn test_file_info() {
     let memfs: MlnrFS = Default::default();
@@ -985,16 +904,13 @@ pub fn run_fio_syscall_tests() {
     model_read();
     model_overlapping_writes();
     //proptest! fn model_equivalence(ops in actions())
-    /*
-    test_memfs_init();
-    test_file_create();
     test_file_read_permission_error();
     test_file_write_permission_error();
     test_file_write();
     test_file_read();
-    test_file_lookup();
-    test_file_fake_lookup();
-    test_file_duplicate_create();
+    test_file_duplicate_open();
+    test_file_fake_open();
+    /*
     test_file_info();
     test_file_delete();
     test_file_rename();

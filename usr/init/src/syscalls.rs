@@ -541,29 +541,29 @@ enum TestAction {
     Write(u64, char, u64),
     ReadAt(u64, i64, u64),
     WriteAt(u64, i64, char, u64),
-    Create(Vec<String>, u64),
+    Open(Vec<String>, u64, u64),
     Delete(Vec<String>),
-    Lookup(Vec<String>),
+    Close(u64),
 }
 
 /// Generates one `TestAction` entry randomly.
 fn action() -> impl Strategy<Value = TestAction> {
     prop_oneof![
-        (mnode_gen(0x1000), size_gen(128)).prop_map(|(a, c)| TestAction::Read(a, c)),
-        (mnode_gen(0x1000), fill_pattern(), size_gen(64))
+        (fd_gen(0x10), size_gen(128)).prop_map(|(a, c)| TestAction::Read(a, c)),
+        (fd_gen(0x10), fill_pattern(), size_gen(64))
             .prop_map(|(a, c, d)| TestAction::Write(a, c, d)),
-        (mnode_gen(0x1000), offset_gen(0x1000), size_gen(128))
+        (fd_gen(0x10), offset_gen(0x1000), size_gen(128))
             .prop_map(|(a, b, c)| TestAction::ReadAt(a, b, c)),
         (
-            mnode_gen(0x1000),
+            fd_gen(0x10),
             offset_gen(0x1000),
             fill_pattern(),
             size_gen(64)
         )
             .prop_map(|(a, b, c, d)| TestAction::WriteAt(a, b, c, d)),
-        (path(), mode_gen(0xfff)).prop_map(|(a, b)| TestAction::Create(a, b)),
+        (path(), flag_gen(0xfff), mode_gen(0xfff)).prop_map(|(a, b, c)| TestAction::Open(a, b, c)),
         path().prop_map(TestAction::Delete),
-        path().prop_map(TestAction::Lookup),
+        fd_gen(0x10).prop_map(TestAction::Close),
     ]
 }
 
@@ -591,14 +591,19 @@ prop_compose! {
     fn offset_gen(max: i64)(offset in 0..max) -> i64 { offset }
 }
 
-// Generates a random mnode.
+// Generates a random file descriptor.
 prop_compose! {
-    fn mnode_gen(max: u64)(mnode in 0..max) -> u64 { mnode }
+    fn fd_gen(max: u64)(mnode in 0..max) -> u64 { mnode }
 }
 
 // Generates a random mode.
 prop_compose! {
     fn mode_gen(max: u64)(mode in 0..max) -> u64 { mode }
+}
+
+// Generates a random file flag.
+prop_compose! {
+    fn flag_gen(max: u64)(flag in 0..max) -> u64 { flag }
 }
 
 // Generates a random (read/write)-request size.
@@ -627,83 +632,77 @@ fn path() -> impl Strategy<Value = Vec<String>> {
     proptest::collection::vec(path_names(), 4)
 }
 
-/*
 proptest! {
     // Verify that our FS implementation behaves according to the `ModelFileSystem`.
     #[test]
     fn model_equivalence(ops in actions()) {
         let model: ModelFIO = Default::default();
-        let totest: MlnrFS = Default::default();
 
         use TestAction::*;
         for action in ops {
             match action {
-                Read(mnode, len) => {
+                Read(fd, len) => {
 
                     let mut buffer1: Vec<u8> = Vec::with_capacity(len);
                     let mut buffer2: Vec<u8> = Vec::with_capacity(len);
 
-                    let rmodel = model.read(mnode, buffer1.as_mut_ptr());
-                    let rtotest = totest.read(mnode, &mut UserSlice::from_slice(buffer2.as_mut_slice()), offset);
+                    let rmodel = model.read(fd, buffer1.as_mut_ptr(), len);
+                    let rtotest = vibrio::syscalls::Fs::read(fd, buffer.as_mut_slice() as u64, len);
                     assert_eq!(rmodel, rtotest);
                     assert_eq!(buffer1, buffer2);
                 }
-                WriteAt(mnode, offset, pattern, len) => {
+                Write(fd, pattern, len) => {
                     let mut buffer: Vec<u8> = Vec::with_capacity(len);
                     for _i in 0..len {
                         buffer.push(pattern as u8);
                     }
 
-                    let rmodel = model.write(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
-                    let rtotest = totest.writeat(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
+                    let rmodel = model.write(fd, buffer.as_mut_slice() as u64, len);
+                    let rtotest = vibrio::syscalls::Fs::write(fd, buffer.as_mut_slice() as u64, len);
                     assert_eq!(rmodel, rtotest);
                 }
-                ReadAt(mnode, offset, len) => {
+                ReadAt(fd, offset, len) => {
 
                     let mut buffer1: Vec<u8> = Vec::with_capacity(len);
                     let mut buffer2: Vec<u8> = Vec::with_capacity(len);
 
-                    let rmodel = model.read(mnode, &mut UserSlice::from_slice(buffer1.as_mut_slice()), offset);
-                    let rtotest = totest.readat(mnode, &mut UserSlice::from_slice(buffer2.as_mut_slice()), offset);
+                    let rmodel = model.read_at(fd, buffer1.as_mut_slice(), offset);
+                    let rtotest = vibrio::syscalls::Fs::read_at(fd, buffer1.as_mut_slice(), offset);
                     assert_eq!(rmodel, rtotest);
                     assert_eq!(buffer1, buffer2);
                 }
-                WriteAt(mnode, offset, pattern, len) => {
+                WriteAt(fd, offset, pattern, len) => {
                     let mut buffer: Vec<u8> = Vec::with_capacity(len);
                     for _i in 0..len {
                         buffer.push(pattern as u8);
                     }
 
-                    let rmodel = model.write(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
-                    let rtotest = totest.writeat(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
+                    let rmodel = model.write_at(fd, buffer.as_mut_slice(), len, offset);
+                    let rtotest = vibrio::syscalls::Fs::write_at(fd, buffer.as_mut_slice(), len, offset);
                     assert_eq!(rmodel, rtotest);
                 }
-                Create(path, mode) => {
+                Open(path, flags, mode) => {
                     let path_str = path.join("/");
-
-                    let rmodel = model.create(path_str.as_str(), mode);
-                    let rtotest = totest.create(path_str.as_str(), mode);
+                    let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
+                    let rtotest = vibrio::syscalls::Fs::open(path_str.as_ptr() as u64, flags, mode);
                     assert_eq!(rmodel, rtotest);
                 }
                 Delete(path) => {
                     let path_str = path.join("/");
 
-                    let rmodel = model.delete(path_str.as_str());
-                    let rtotest = totest.delete(path_str.as_str());
+                    let rmodel = model.delete(path_str.as_ptr() as u64);
+                    let rtotest = vibrio::syscalls::Fs::delete(path_str.as_ptr() as u64);
                     assert_eq!(rmodel, rtotest);
                 }
-                Lookup(path) => {
-                    let path_str = path.join("/");
-
-                    let rmodel = model.lookup(path_str.as_str());
-                    let rtotest = totest.lookup(path_str.as_str());
+                Close(fd) => {
+                    let rmodel = model.close(fd);
+                    let rtotest = vibrio::syscalls::Fs::close(fd);
                     assert_eq!(rmodel, rtotest);
                 }
             }
         }
     }
 }
-*/
 
 /// Create a file with non-read permission and try to read it.
 fn test_file_read_permission_error() {
@@ -809,34 +808,34 @@ fn test_file_fake_open() {
 }
 
 fn test_file_fake_close() {
-    let ret = vibrio::syscalls::Fs::close(6);
-    // TODO: I think this should return Err(SystemCallError::InternalError)??
-    assert_eq!(ret, Ok(0));
+    let ret = vibrio::syscalls::Fs::close(10536);
+    assert_eq!(ret, Err(SystemCallError::InternalError));
 }
 
+/*
 fn test_file_duplicate_close() {
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_duplicate_open.txt".as_ptr() as u64,
+        "test_file_duplicate_close.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
         FileModes::S_IRWXU.into(),
     )
     .unwrap();
     assert_eq!(vibrio::syscalls::Fs::close(fd), Ok(0));
-    // TODO: I think this should return Err(SystemCallError::InternalError)??
-    assert_eq!(vibrio::syscalls::Fs::close(fd), Ok(0));
+    assert_eq!(vibrio::syscalls::Fs::close(fd), Err(SystemCallError::InternalError));
 }
+*/
 
 /// Ensure you can write and write with multiple file descriptors
 fn test_file_multiple_fd() {
     // Open the same file twice
     let fd1 = vibrio::syscalls::Fs::open(
-        "test_file_duplicate_open.txt".as_ptr() as u64,
+        "test_file_multiple_fd.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
         FileModes::S_IRWXU.into(),
     )
     .unwrap();
     let fd2 = vibrio::syscalls::Fs::open(
-        "test_file_duplicate_open.txt".as_ptr() as u64,
+        "test_file_multiple_fd.txt".as_ptr() as u64,
         u64::from(FileFlags::O_RDWR),
         FileModes::S_IRWXU.into(),
     )
@@ -1126,15 +1125,15 @@ fn test_file_position() {
 pub fn run_fio_syscall_tests() {
     model_read();
     model_overlapping_writes();
-    //proptest! fn model_equivalence(ops in actions())
     test_file_read_permission_error();
     test_file_write_permission_error();
     test_file_write();
     test_file_read();
     test_file_duplicate_open();
     test_file_fake_open();
-    test_file_duplicate_close();
     test_file_fake_close();
+    // TODO: add test back in
+    //test_file_duplicate_close();
     test_file_multiple_fd();
     test_file_info();
     test_file_delete();
@@ -1144,4 +1143,7 @@ pub fn run_fio_syscall_tests() {
     test_file_rename_nonexistent_file();
     test_file_rename_to_existent_file();
     test_file_position();
+
+    // TODO: run properties tests
+    //proptest! fn model_equivalence(ops in actions())
 }

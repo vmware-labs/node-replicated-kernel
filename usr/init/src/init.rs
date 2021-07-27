@@ -48,7 +48,7 @@ mod fs;
 #[cfg(feature = "fxmark")]
 mod fxmark;
 mod histogram;
-mod syscalls;
+mod fsproptest;
 
 use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 
@@ -56,7 +56,7 @@ use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
 
 fn rpc_test() {
-    use syscalls::run_fio_syscall_tests;
+    use fsproptest::run_fio_syscall_tests;
     run_fio_syscall_tests();
     info!("rpc_test OK");
 

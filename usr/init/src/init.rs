@@ -45,10 +45,11 @@ mod vmops;
 
 mod f64;
 mod fs;
+mod fsproptest;
+
 #[cfg(feature = "fxmark")]
 mod fxmark;
 mod histogram;
-mod fsproptest;
 
 use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 

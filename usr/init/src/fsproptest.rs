@@ -287,6 +287,11 @@ impl ModelFIO {
     }
 
     pub fn write(&self, fid: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
+        // TODO: this seems wrong... should be InternalError??
+        if len == 0 {
+            return Err(SystemCallError::BadFileDescriptor);
+        }
+
         let fd = self.fds.get_fd(fid as usize)?;
         self.write_at(fid, buffer, len, fd.get_offset() as i64)
     }
@@ -301,11 +306,12 @@ impl ModelFIO {
         len: u64,
         offset: i64,
     ) -> Result<u64, SystemCallError> {
-        let mut fd = self.fds.get_fd(fid as usize);
-        if let Err(e) = fd {
+        // TODO: this seems wrong... should be InternalError??
+        if len == 0 {
             return Err(SystemCallError::BadFileDescriptor);
         }
-        let mut fd = fd.unwrap();
+
+        let mut fd = self.fds.get_fd(fid as usize)?;
         let flags = fd.get_flags();
 
         // check for write permissions
@@ -344,6 +350,11 @@ impl ModelFIO {
     }
 
     pub fn read(&self, fid: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
+        // TODO: this seems wrong... should be InternalError??
+        if len == 0 {
+            return Err(SystemCallError::BadFileDescriptor);
+        }
+
         let fd = self.fds.get_fd(fid as usize)?;
         self.read_at(fid, buffer, len, fd.get_offset() as i64)
     }
@@ -359,6 +370,11 @@ impl ModelFIO {
         len: u64,
         offset: i64,
     ) -> Result<u64, SystemCallError> {
+        // TODO: this seems wrong, should be internal Error??
+        if len == 0 {
+            return Err(SystemCallError::BadFileDescriptor);
+        }
+
         let fd = self.fds.get_fd(fid as usize)?;
         let flags = fd.get_flags();
 
@@ -473,7 +489,8 @@ impl ModelFIO {
     }
 
     pub fn close(&mut self, fd: u64) -> Result<u64, SystemCallError> {
-        self.fds.deallocate_fd(fd)
+        self.fds.deallocate_fd(fd)?;
+        Ok(0)
     }
 }
 

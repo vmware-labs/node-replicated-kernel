@@ -287,11 +287,7 @@ impl ModelFIO {
     }
 
     pub fn write(&self, fid: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        let fd = self.fds.get_fd(fid as usize);
-        if let Err(e) = fd {
-            return Err(SystemCallError::BadFileDescriptor);
-        }
-        let mut fd = fd.unwrap();
+        let fd = self.fds.get_fd(fid as usize)?;
         self.write_at(fid, buffer, len, fd.get_offset() as i64)
     }
 
@@ -640,74 +636,74 @@ fn path() -> impl Strategy<Value = Vec<String>> {
     proptest::collection::vec(path_names(), 4)
 }
 
-
 // Verify that our FS implementation behaves according to the `ModelFileSystem`.
 fn model_equivalence(ops: Vec<TestAction>) {
     let mut model: ModelFIO = Default::default();
 
-        use TestAction::*;
-        for action in ops {
-            match action {
-                Read(fd, len) => {
+    use TestAction::*;
+    for action in ops {
+        log::debug!("{:?}", action);
+        match action {
+            Read(fd, len) => {
+                let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
+                let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
 
-                    let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
-                    let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
+                let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
+                let rtotest = vibrio::syscalls::Fs::read(fd, buffer2.as_mut_ptr() as u64, len);
+                assert_eq!(rmodel, rtotest);
+                assert_eq!(buffer1, buffer2);
+            }
+            Write(fd, pattern, len) => {
+                let mut buffer: Vec<u8> = Vec::with_capacity(len as usize);
+                for _i in 0..len {
+                    buffer.push(pattern as u8);
+                }
 
-                    let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
-                    let rtotest = vibrio::syscalls::Fs::read(fd, buffer2.as_mut_ptr() as u64, len);
-                    assert_eq!(rmodel, rtotest);
-                    assert_eq!(buffer1, buffer2);
-                }
-                Write(fd, pattern, len) => {
-                    let mut buffer: Vec<u8> = Vec::with_capacity(len as usize);
-                    for _i in 0..len {
-                        buffer.push(pattern as u8);
-                    }
+                let rmodel = model.write(fd, buffer.as_mut_ptr() as u64, len);
+                let rtotest = vibrio::syscalls::Fs::write(fd, buffer.as_mut_ptr() as u64, len);
+                assert_eq!(rmodel, rtotest);
+            }
+            ReadAt(fd, len, offset) => {
+                let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
+                let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
 
-                    let rmodel = model.write(fd, buffer.as_mut_ptr() as u64, len);
-                    let rtotest = vibrio::syscalls::Fs::write(fd, buffer.as_mut_ptr() as u64, len);
-                    assert_eq!(rmodel, rtotest);
+                let rmodel = model.read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
+                let rtotest =
+                    vibrio::syscalls::Fs::read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
+                assert_eq!(rmodel, rtotest);
+                assert_eq!(buffer1, buffer2);
+            }
+            WriteAt(fd, pattern, len, offset) => {
+                let mut buffer: Vec<u8> = Vec::with_capacity(len as usize);
+                for _i in 0..len {
+                    buffer.push(pattern as u8);
                 }
-                ReadAt(fd, len, offset) => {
 
-                    let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
-                    let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
+                let rmodel = model.write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
+                let rtotest =
+                    vibrio::syscalls::Fs::write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
+                assert_eq!(rmodel, rtotest);
+            }
+            Open(path, flags, mode) => {
+                let path_str = path.join("/");
+                let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
+                let rtotest = vibrio::syscalls::Fs::open(path_str.as_ptr() as u64, flags, mode);
+                assert_eq!(rmodel, rtotest);
+            }
+            Delete(path) => {
+                let path_str = path.join("/");
 
-                    let rmodel = model.read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
-                    let rtotest = vibrio::syscalls::Fs::read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
-                    assert_eq!(rmodel, rtotest);
-                    assert_eq!(buffer1, buffer2);
-                }
-                WriteAt(fd, pattern, len, offset) => {
-                    let mut buffer: Vec<u8> = Vec::with_capacity(len as usize);
-                    for _i in 0..len {
-                        buffer.push(pattern as u8);
-                    }
-
-                    let rmodel = model.write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
-                    let rtotest = vibrio::syscalls::Fs::write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
-                    assert_eq!(rmodel, rtotest);
-                }
-                Open(path, flags, mode) => {
-                    let path_str = path.join("/");
-                    let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
-                    let rtotest = vibrio::syscalls::Fs::open(path_str.as_ptr() as u64, flags, mode);
-                    assert_eq!(rmodel, rtotest);
-                }
-                Delete(path) => {
-                    let path_str = path.join("/");
-
-                    let rmodel = model.delete(path_str.as_ptr() as u64);
-                    let rtotest = vibrio::syscalls::Fs::delete(path_str.as_ptr() as u64);
-                    assert_eq!(rmodel, rtotest);
-                }
-                Close(fd) => {
-                    let rmodel = model.close(fd);
-                    let rtotest = vibrio::syscalls::Fs::close(fd);
-                    assert_eq!(rmodel, rtotest);
-                }
+                let rmodel = model.delete(path_str.as_ptr() as u64);
+                let rtotest = vibrio::syscalls::Fs::delete(path_str.as_ptr() as u64);
+                assert_eq!(rmodel, rtotest);
+            }
+            Close(fd) => {
+                let rmodel = model.close(fd);
+                let rtotest = vibrio::syscalls::Fs::close(fd);
+                assert_eq!(rmodel, rtotest);
             }
         }
+    }
 }
 
 pub fn run_fio_syscall_tests() {

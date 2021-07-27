@@ -475,7 +475,8 @@ impl Dispatch for MlnrKernelNode {
                 if let Some(mnode) = mnode {
                     // File exists and FileOpen is called with O_TRUNC flag.
                     if flags.is_truncate() {
-                        assert!(self.fs.truncate(&filename).is_ok());
+                        // Truncate may fail if file modes is not readable
+                        self.fs.truncate(&filename)?;
                     }
                     mnode_num = *mnode;
                 } else {

@@ -46,7 +46,7 @@ mod fs;
 mod fxmark;
 mod histogram;
 
-use crate::fs::run_fio_syscall_tests;
+use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 
 #[thread_local]
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
@@ -567,6 +567,11 @@ fn fs_test() {
     info!("fs_test OK");
 }
 
+fn fs_prop_test() {
+    run_fio_syscall_proptests();
+    info!("fs_prop_test OK");
+}
+
 fn fs_write_test() {
     use vibrio::syscalls::Fs;
 
@@ -678,6 +683,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "fs-write")]
     fs_write_test();
+
+    #[cfg(feature = "test-fs-prop")]
+    fs_prop_test();
 
     #[cfg(feature = "fxmark")]
     fxmark::bench(ncores, open_files, benchmark, write_ratio);

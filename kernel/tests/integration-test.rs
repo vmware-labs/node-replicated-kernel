@@ -1951,6 +1951,32 @@ fn s06_test_fs() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Property tests for file-system support.
+///
+/// This tests various file-system systemcalls such as:
+///  * File open, close
+///  * File read, write
+///  * File getinfo
+#[test]
+fn s06_test_fs_prop() {
+    let cmdline = RunnerArgs::new("test-userspace-smp")
+        .module("init")
+        .user_feature("test-fs-prop")
+        .release()
+        .timeout(20_000);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        p.exp_string("fs_prop_test OK")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 fn memcached_benchmark(
     driver: &'static str,
     cores: usize,

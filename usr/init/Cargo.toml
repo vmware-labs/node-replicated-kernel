@@ -18,9 +18,12 @@ rawtime = "0.0.4"
 x86 = "0.40"
 log = "0.4"
 libm = "0.2.1"
+arrayvec = { version = "0.7.0", default-features = false }
 lazy_static =  { version = "1.4", default_features = false }
 cstr_core = { version = "0.2.3", default-features = false }
 spin = { version = "0.5.2", default_features = false }
+hashbrown = { version = "0.11", features = [ "nightly" ] }
+proptest = {version = "1.0.0", default-features = false, features = ['alloc', 'hardware-rng']}
 
 [features]
 default = []
@@ -39,6 +42,7 @@ test-scheduler-smp = []
 test-rump-tmpfs = [ "rumprt" ]
 test-rump-net = [ "rumprt" ]
 test-fs = []
+test-fs-prop = []
 
 # Simple micro-benchmarks
 bench-vmops = []

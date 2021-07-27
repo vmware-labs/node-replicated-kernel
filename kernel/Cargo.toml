@@ -43,7 +43,7 @@ static_assertions = "1.1.0"
 bit_field = "0.10"
 crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
 addr2line = { version = "0.15", default-features = false, features = ["rustc-demangle"], optional = true }
-gimli = { version = "0.24", default-features = false, features = ["read", "endian-reader"] }
+gimli = { version = "0.25", default-features = false, features = ["read", "endian-reader"] }
 arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }

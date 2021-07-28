@@ -30,7 +30,7 @@ impl FileDesc {
     pub fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError> {
         match self.fds.get_mut(fd) {
             Some(fdinfo) => match fdinfo {
-                Some(info) => {
+                Some(_info) => {
                     *fdinfo = None;
                     Ok(fd)
                 }

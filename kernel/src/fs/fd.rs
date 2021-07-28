@@ -31,7 +31,6 @@ impl FileDesc {
         match self.fds.get_mut(fd) {
             Some(fdinfo) => match fdinfo {
                 Some(info) => {
-                    log::debug!("deallocating: {:?}", info);
                     *fdinfo = None;
                     Ok(fd)
                 }

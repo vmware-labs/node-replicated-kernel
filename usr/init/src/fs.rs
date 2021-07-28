@@ -30,7 +30,7 @@ pub fn userptr_to_str(useraddr: u64) -> Result<String, SystemCallError> {
     unsafe {
         match CStr::from_ptr(user_ptr.as_ptr()).to_str() {
             Ok(path) => Ok(path.to_string()),
-            Err(_) => Err(SystemCallError::NotSupported),
+            Err(_) => Err(SystemCallError::InternalError),
         }
     }
 }
@@ -354,13 +354,7 @@ impl ModelFIO {
     }
 
     pub fn read(&self, fid: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        // TODO: this seems wrong... should be InternalError??
-        if len == 0 {
-            return Err(SystemCallError::BadFileDescriptor);
-        }
-
-        let fd = self.fds.get_fd(fid as usize)?;
-        self.read_at(fid, buffer, len, fd.get_offset() as i64)
+        self.read_at(fid, buffer, len, -1)
     }
 
     /// read loops through the oplog and tries to fill up the buffer by looking
@@ -380,6 +374,12 @@ impl ModelFIO {
         }
 
         let fd = self.fds.get_fd(fid as usize)?;
+
+        let mut my_offset = offset;
+        if my_offset == -1 {
+            my_offset = fd.get_offset() as i64;
+        }
+
         let flags = fd.get_flags();
 
         // check for read permissions
@@ -407,7 +407,7 @@ impl ModelFIO {
                         // in that write
                         let cur_segment_range =
                             *foffset as usize..(*foffset as usize + *flength as usize);
-                        let read_range = offset as usize..(offset as usize + len as usize);
+                        let read_range = my_offset as usize..(my_offset as usize + len as usize);
                         trace!("*wfd == fd = {}", *wmnode == mnode);
                         trace!(
                             "ModelFIO::overlaps(&cur_segment_range, &read_range) = {}",
@@ -418,9 +418,9 @@ impl ModelFIO {
                                 |overlapping_range| {
                                     trace!("overlapping_range = {:?}", overlapping_range);
                                     for idx in overlapping_range {
-                                        if buffer_gatherer[idx - offset as usize].is_none() {
+                                        if buffer_gatherer[idx - my_offset as usize].is_none() {
                                             // No earlier write, we know that 'pattern' must be at idx
-                                            buffer_gatherer[idx - offset as usize] =
+                                            buffer_gatherer[idx - my_offset as usize] =
                                                 Some(*fpattern as u8);
                                         }
                                     }
@@ -462,7 +462,9 @@ impl ModelFIO {
                 trace!("buffer = {:?}", slice);
             }
 
-            fd.update_offset(offset as usize + len as usize);
+            if offset != -1 {
+                fd.update_offset(offset as usize + len as usize);
+            }
             Ok(bytes_read)
         } else {
             Err(SystemCallError::InternalError)
@@ -478,15 +480,13 @@ impl ModelFIO {
     pub fn delete(&self, name: u64) -> Result<bool, SystemCallError> {
         let path = userptr_to_str(name)?;
         if let Some(mnode) = self.lookup(&path) {
-            // Check to see if there are any open fds to this mnode.
+            // TODO: Check to see if there are any open fds to this mnode.
             // If not, we delete the file.
-            if let Err(_) = self.fds.get_fd(mnode as usize) {
-                if let Some(idx) = self.path_to_idx(&path) {
-                    self.oplog.borrow_mut().remove(idx);
-                    // We leave corresponding ModelOperation::Write entries
-                    // in the log for now...
-                    return Ok(true);
-                }
+            if let Some(idx) = self.path_to_idx(&path) {
+                self.oplog.borrow_mut().remove(idx);
+                // We leave corresponding ModelOperation::Write entries
+                // in the log for now...
+                return Ok(true);
             }
         }
         Err(SystemCallError::InternalError)
@@ -672,8 +672,8 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     rtotest_fd = *fd_map.get(&fd).unwrap();
                 }
 
-                let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
-                let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
+                let mut buffer1 = [0u8; 128];
+                let mut buffer2 = [0u8; 128];
 
                 log::debug!(
                     "Read({:?}), model_fd={:?}, syscall_fd={:?}",
@@ -684,8 +684,11 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
                 let rtotest =
                     vibrio::syscalls::Fs::read(rtotest_fd, buffer2.as_mut_ptr() as u64, len);
-                assert_eq!(rmodel, rtotest);
                 assert_eq!(buffer1, buffer2);
+                if rmodel != rtotest {
+                    log::debug!("Read buffers:\n\t{:?}\n\t{:?}", buffer1, buffer2)
+                }
+                assert_eq!(rmodel, rtotest);
             }
             Write(fd, pattern, len) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -716,8 +719,8 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     rtotest_fd = *fd_map.get(&fd).unwrap();
                 }
 
-                let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
-                let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
+                let mut buffer1 = [0u8; 128];
+                let mut buffer2 = [0u8; 128];
 
                 log::debug!(
                     "ReadAt({:?}, {:?}), model_fd={:?}, syscall_fd={:?}",
@@ -734,6 +737,9 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     offset,
                 );
                 assert_eq!(buffer1, buffer2);
+                if rmodel != rtotest {
+                    log::debug!("ReadAt buffers:\n\t{:?}\n\t{:?}", buffer1, buffer2)
+                }
                 assert_eq!(rmodel, rtotest);
             }
             WriteAt(fd, pattern, len, offset) => {
@@ -775,6 +781,12 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 // Add mapping from rmodel_fd -> rtotest_fd
                 if rmodel.is_ok() {
                     fd_map.insert(rmodel.unwrap(), rtotest.unwrap());
+                    log::debug!(
+                        "Open {:?} model_fd={:?} syscall_fd={:?}",
+                        path,
+                        rmodel.unwrap(),
+                        rtotest.unwrap()
+                    );
                 }
             }
             Delete(path) => {

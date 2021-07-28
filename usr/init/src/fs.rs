@@ -662,7 +662,6 @@ fn model_equivalence(ops: Vec<TestAction>) {
 
     use TestAction::*;
     for action in ops {
-        log::debug!("{:?}", action);
         match action {
             Read(fd, len) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -673,6 +672,12 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
                 let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
 
+                log::debug!(
+                    "Read({:?}), model_fd={:?}, syscall_fd={:?}",
+                    len,
+                    fd,
+                    rtotest_fd
+                );
                 //let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
                 let rtotest =
                     vibrio::syscalls::Fs::read(rtotest_fd, buffer2.as_mut_ptr() as u64, len);
@@ -690,6 +695,13 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     buffer.push(pattern as u8);
                 }
 
+                log::debug!(
+                    "Write({:?}, {:?}), model_fd={:?}, syscall_fd={:?}",
+                    pattern,
+                    len,
+                    fd,
+                    rtotest_fd
+                );
                 //let rmodel = model.write(fd, buffer.as_mut_ptr() as u64, len);
                 let rtotest =
                     vibrio::syscalls::Fs::write(rtotest_fd, buffer.as_mut_ptr() as u64, len);
@@ -704,6 +716,13 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 let mut buffer1: Vec<u8> = Vec::with_capacity(len as usize);
                 let mut buffer2: Vec<u8> = Vec::with_capacity(len as usize);
 
+                log::debug!(
+                    "ReadAt({:?}, {:?}), model_fd={:?}, syscall_fd={:?}",
+                    len,
+                    offset,
+                    fd,
+                    rtotest_fd
+                );
                 //let rmodel = model.read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
                 let rtotest = vibrio::syscalls::Fs::read_at(
                     rtotest_fd,
@@ -725,6 +744,14 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     buffer.push(pattern as u8);
                 }
 
+                log::debug!(
+                    "WriteAt({:?}, {:?}, {:?}), model_fd={:?}, syscall_fd={:?}",
+                    pattern,
+                    len,
+                    offset,
+                    fd,
+                    rtotest_fd
+                );
                 //let rmodel = model.write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
                 let rtotest = vibrio::syscalls::Fs::write_at(
                     rtotest_fd,
@@ -736,6 +763,8 @@ fn model_equivalence(ops: Vec<TestAction>) {
             }
             Open(path, flags, mode) => {
                 let path_str = path.join("/");
+
+                log::debug!("Open({:?}, {:?}, {:?})", path, flags, mode);
                 //let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
                 let rtotest = vibrio::syscalls::Fs::open(path_str.as_ptr() as u64, flags, mode);
                 //assert_eq!(rmodel.is_ok(), rtotest.is_ok());
@@ -748,6 +777,7 @@ fn model_equivalence(ops: Vec<TestAction>) {
             Delete(path) => {
                 let path_str = path.join("/");
 
+                log::debug!("Delete({:?})", path_str);
                 //let rmodel = model.delete(path_str.as_ptr() as u64);
                 let rtotest = vibrio::syscalls::Fs::delete(path_str.as_ptr() as u64);
                 //assert_eq!(rmodel, rtotest);
@@ -758,6 +788,7 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     rtotest_fd = *fd_map.get(&fd).unwrap();
                 }
 
+                log::debug!("Close(), model_fd={:?}, syscall_fd={:?}", fd, rtotest_fd);
                 //let rmodel = model.close(fd);
                 let rtotest = vibrio::syscalls::Fs::close(rtotest_fd);
                 //assert_eq!(rmodel, rtotest);
@@ -774,7 +805,8 @@ fn model_equivalence(ops: Vec<TestAction>) {
 pub fn run_fio_syscall_proptests() {
     model_read();
     model_overlapping_writes();
-    proptest!( |(ops in actions())| {
+    // Reduce the number of tests so we don't use up all the cache
+    proptest!(ProptestConfig::with_cases(35), |(ops in actions())| {
         model_equivalence(ops);
     });
 }

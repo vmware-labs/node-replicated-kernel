@@ -111,10 +111,13 @@ impl FileDesc {
 
     pub fn deallocate_fd(&mut self, fd: u64) -> Result<u64, SystemCallError> {
         match self.fds.get_mut(fd as usize) {
-            Some(fdinfo) => {
-                *fdinfo = None;
-                Ok(fd)
-            }
+            Some(fdinfo) => match fdinfo {
+                Some(_info) => {
+                    *fdinfo = None;
+                    Ok(fd)
+                }
+                None => Err(SystemCallError::InternalError),
+            },
             None => Err(SystemCallError::InternalError),
         }
     }
@@ -678,11 +681,11 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     fd,
                     rtotest_fd
                 );
-                //let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
+                let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
                 let rtotest =
                     vibrio::syscalls::Fs::read(rtotest_fd, buffer2.as_mut_ptr() as u64, len);
-                //assert_eq!(rmodel, rtotest);
-                //assert_eq!(buffer1, buffer2);
+                assert_eq!(rmodel, rtotest);
+                assert_eq!(buffer1, buffer2);
             }
             Write(fd, pattern, len) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -702,10 +705,10 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     fd,
                     rtotest_fd
                 );
-                //let rmodel = model.write(fd, buffer.as_mut_ptr() as u64, len);
+                let rmodel = model.write(fd, buffer.as_mut_ptr() as u64, len);
                 let rtotest =
                     vibrio::syscalls::Fs::write(rtotest_fd, buffer.as_mut_ptr() as u64, len);
-                //assert_eq!(rmodel, rtotest);
+                assert_eq!(rmodel, rtotest);
             }
             ReadAt(fd, len, offset) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -723,15 +726,15 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     fd,
                     rtotest_fd
                 );
-                //let rmodel = model.read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
+                let rmodel = model.read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
                 let rtotest = vibrio::syscalls::Fs::read_at(
                     rtotest_fd,
                     buffer1.as_mut_ptr() as u64,
                     len,
                     offset,
                 );
-                //assert_eq!(buffer1, buffer2);
-                //assert_eq!(rmodel, rtotest);
+                assert_eq!(buffer1, buffer2);
+                assert_eq!(rmodel, rtotest);
             }
             WriteAt(fd, pattern, len, offset) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -752,35 +755,35 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     fd,
                     rtotest_fd
                 );
-                //let rmodel = model.write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
+                let rmodel = model.write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
                 let rtotest = vibrio::syscalls::Fs::write_at(
                     rtotest_fd,
                     buffer.as_mut_ptr() as u64,
                     len,
                     offset,
                 );
-                //assert_eq!(rmodel, rtotest);
+                assert_eq!(rmodel, rtotest);
             }
             Open(path, flags, mode) => {
                 let path_str = path.join("/");
 
                 log::debug!("Open({:?}, {:?}, {:?})", path, flags, mode);
-                //let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
+                let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
                 let rtotest = vibrio::syscalls::Fs::open(path_str.as_ptr() as u64, flags, mode);
-                //assert_eq!(rmodel.is_ok(), rtotest.is_ok());
+                assert_eq!(rmodel.is_ok(), rtotest.is_ok());
 
                 // Add mapping from rmodel_fd -> rtotest_fd
-                //if rmodel.is_ok() {
-                //    fd_map.insert(rmodel.unwrap(), rtotest.unwrap());
-                //}
+                if rmodel.is_ok() {
+                    fd_map.insert(rmodel.unwrap(), rtotest.unwrap());
+                }
             }
             Delete(path) => {
                 let path_str = path.join("/");
 
                 log::debug!("Delete({:?})", path_str);
-                //let rmodel = model.delete(path_str.as_ptr() as u64);
+                let rmodel = model.delete(path_str.as_ptr() as u64);
                 let rtotest = vibrio::syscalls::Fs::delete(path_str.as_ptr() as u64);
-                //assert_eq!(rmodel, rtotest);
+                assert_eq!(rmodel, rtotest);
             }
             Close(fd) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -789,14 +792,14 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 }
 
                 log::debug!("Close(), model_fd={:?}, syscall_fd={:?}", fd, rtotest_fd);
-                //let rmodel = model.close(fd);
+                let rmodel = model.close(fd);
                 let rtotest = vibrio::syscalls::Fs::close(rtotest_fd);
-                //assert_eq!(rmodel, rtotest);
+                assert_eq!(rmodel, rtotest);
 
                 // Remove mapping from rmodel_fd -> rtotest_fd
-                //if rmodel.is_ok() && fd_map.contains_key(&fd) {
-                //    fd_map.remove(&fd);
-                //}
+                if rmodel.is_ok() && fd_map.contains_key(&fd) {
+                    fd_map.remove(&fd);
+                }
             }
         }
     }

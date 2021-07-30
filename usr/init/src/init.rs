@@ -527,7 +527,7 @@ fn fs_test() {
         assert_eq!(ret, 256);
 
         let fileinfo = vibrio::syscalls::Fs::getinfo("file.txt\0".as_ptr() as u64)
-            .expect("FileOpen syscall failed");
+            .expect("GetInfo syscall failed");
         assert_eq!(fileinfo.fsize, 256);
         assert_eq!(fileinfo.ftype, FileType::File.into());
 

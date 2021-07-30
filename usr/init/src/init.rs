@@ -46,8 +46,6 @@ mod vmops;
 
 mod f64;
 mod fs;
-mod fsproptest;
-
 #[cfg(feature = "fxmark")]
 mod fxmark;
 mod histogram;
@@ -56,38 +54,6 @@ use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 
 #[thread_local]
 pub static mut TLS_TEST: [&str; 2] = ["abcd", "efgh"];
-
-fn rpc_test() {
-    use fsproptest::run_fio_syscall_tests;
-    run_fio_syscall_tests();
-    info!("rpc_test OK");
-
-    //use vibrio::io::*;
-
-    // Test open
-    //let fd = vibrio::syscalls::Fs::open(
-    //    "file1.txt\0".as_ptr() as u64,
-    //    u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-    //    u64::from(FileModes::S_IRWXU),
-    //)
-    //.unwrap();
-
-    // Test write
-    //let mut wdata = b"hello\0";
-    //let data1 = vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 6).unwrap();
-    //info!("rpc_test write {:?} ({:?} bytes) = {:?}", wdata, 6, data1);
-
-    // Test read
-    //let mut rdata = [0u8; 6];
-    //let data2 = vibrio::syscalls::Fs::read(fd, rdata.as_mut_ptr() as u64, 6).unwrap();
-    //info!("rpc_test read {:?} ({:?} bytes) = {:?}", rdata, 6, data2);
-
-    // Test close
-    //vibrio::syscalls::Fs::close(fd).unwrap();
-
-    // Give okay
-    //info!("rpc_test OK");
-}
 
 fn print_test() {
     let _r = vibrio::syscalls::Process::print("test\r\n");

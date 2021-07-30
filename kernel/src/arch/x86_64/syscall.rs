@@ -525,7 +525,7 @@ fn handle_fileio(
                 return match client
                     .as_mut()
                     .unwrap()
-                    .fio_getinfo(pid, filename.as_bytes())
+                    .fio_getinfo(pid, filename)
                 {
                     Ok((ftype, fsize)) => {
                         let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));

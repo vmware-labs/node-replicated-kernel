@@ -35,7 +35,6 @@ virtio = []
 
 # Tests we run with CI make sure that the base features of
 # the kernel are working:
-test-rpc = []
 test-print = []
 test-map = []
 test-alloc = []

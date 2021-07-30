@@ -277,10 +277,12 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                     warn!("Trailing data in payload: {:?}", remaining);
                     return construct_error_ret(res_hdr, RPCError::ExtraData);
                 }
+                let mut pathname = req.pathname.clone();
+                pathname.push('\0');
                 let res = FIORPCRes {
                     ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
                         local_pid,
-                        req.pathname.as_ptr() as u64,
+                        pathname.as_ptr() as u64,
                     )),
                 };
                 construct_ret(res_hdr, res)
@@ -299,11 +301,15 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                     warn!("Trailing data in payload: {:?}", remaining);
                     return construct_error_ret(res_hdr, RPCError::MalformedRequest);
                 }
+                let mut oldname = req.oldname.clone();
+                oldname.push('\0');
+                let mut newname = req.newname.clone();
+                newname.push('\0');
                 let res = FIORPCRes {
                     ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
                         local_pid,
-                        req.oldname.as_ptr() as u64,
-                        req.newname.as_ptr() as u64,
+                        oldname.as_ptr() as u64,
+                        newname.as_ptr() as u64,
                     )),
                 };
                 construct_ret(res_hdr, res)

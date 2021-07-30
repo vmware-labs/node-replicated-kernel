@@ -6,7 +6,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use core::cmp::{Eq, PartialEq};
+use core::cmp::{max, min, Eq, PartialEq};
 use core::slice::{from_raw_parts, from_raw_parts_mut};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use cstr_core::CStr;
@@ -105,6 +105,7 @@ impl FileDesc {
             self.fds[fid] = Some(Default::default());
             Ok((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
         } else {
+            log::warn!("allocate_fd: Failed to allocate file descriptor");
             Err(SystemCallError::InternalError)
         }
     }
@@ -112,11 +113,18 @@ impl FileDesc {
     pub fn deallocate_fd(&mut self, fd: u64) -> Result<u64, SystemCallError> {
         match self.fds.get_mut(fd as usize) {
             Some(fdinfo) => match fdinfo {
-                Some(_info) => {
+                Some(info) => {
+                    log::warn!("deallocate_fd: removing {:?}", info);
                     *fdinfo = None;
                     Ok(fd)
                 }
-                None => Err(SystemCallError::InternalError),
+                None => {
+                    log::warn!(
+                        "deallocate_fd: Found fd at index {:?} but value wasn't actually set.",
+                        fd
+                    );
+                    Err(SystemCallError::InternalError)
+                }
             },
             None => Err(SystemCallError::InternalError),
         }
@@ -126,6 +134,7 @@ impl FileDesc {
         if let Some(fd) = self.fds[index].as_ref() {
             Ok(fd)
         } else {
+            log::warn!("get_fd: Failed to find fd at index {:?}", index);
             Err(SystemCallError::InternalError)
         }
     }
@@ -140,6 +149,7 @@ impl FileDesc {
         }) {
             Some(fid as u64)
         } else {
+            log::warn!("find_fd: Failed to find fd for mnode {:?}", mnode);
             None
         }
     }
@@ -219,8 +229,51 @@ impl ModelFIO {
                 _ => {}
             }
         }
-
         false
+    }
+
+    fn file_size(&self, look_for: Mnode) -> i64 {
+        let mut len = 0;
+        for x in self.oplog.borrow().iter().rev() {
+            match x {
+                ModelOperation::Write(mnode, foffset, fpattern, flength) => {
+                    if look_for == *mnode {
+                        len = max(foffset + *flength as i64, len);
+                    }
+                }
+                // Disregard any operations before file creation
+                ModelOperation::Created(_, _, mnode) => {
+                    if look_for == *mnode {
+                        return len;
+                    }
+                }
+                _ => {}
+            }
+        }
+        len
+    }
+
+    fn remove_entries(&self, look_for: Mnode, remove_created: bool, remove_write: bool) {
+        let mut my_idxs = Vec::new();
+        for (idx, x) in self.oplog.borrow().iter().enumerate().rev() {
+            match x {
+                ModelOperation::Write(current_mnode, _foffset, _fpattern, _flength) => {
+                    if remove_write && &look_for == current_mnode {
+                        my_idxs.push(idx);
+                    }
+                }
+                ModelOperation::Created(_path, _modes, current_mnode) => {
+                    if remove_created && &look_for == current_mnode {
+                        my_idxs.push(idx);
+                    }
+                }
+            }
+        }
+
+        let mut oplog = self.oplog.borrow_mut();
+        for idx in my_idxs.iter() {
+            let removed = oplog.remove(*idx);
+        }
     }
 
     /// Checks if there is overlap between two ranges
@@ -253,51 +306,66 @@ impl ModelFIO {
     pub fn open(&mut self, pathname: u64, flags: u64, modes: u64) -> Result<u64, SystemCallError> {
         let path = userptr_to_str(pathname)?;
         let flags = FileFlags::from(flags);
+        let mut modes = FileModes::from(modes);
+
+        if flags.is_append() && flags.is_truncate() {
+            log::warn!("open() - both truncate and append flags were set");
+            return Err(SystemCallError::InternalError);
+        }
 
         // If file exists, only create new fd
         if let Some(mnode) = self.lookup(&path) {
             if flags.is_create() {
-                Err(SystemCallError::InternalError)
-            } else {
-                let (fid, fd) = self.fds.allocate_fd()?;
-                fd.update_fd(*self.mnode_counter.borrow(), flags);
-
-                if flags.is_append() {
-                    // TODO: if append, set position to end of file
-                }
-                if flags.is_truncate() {
-                    // TODO: truncate length of file
-                }
-
-                Ok(fid)
+                log::warn!("open() - create flag specified for file that already exists");
+                //Err(SystemCallError::InternalError)
             }
+
+            let size = self.file_size(mnode);
+            let idx = self.path_to_idx(&path).unwrap();
+            if let ModelOperation::Created(_path, old_modes, _mnode) =
+                self.oplog.borrow().get(idx).unwrap()
+            {
+                modes = *old_modes;
+            }
+            let (fid, fd) = self.fds.allocate_fd()?;
+            fd.update_fd(mnode, flags);
+
+            if flags.is_append() {
+                fd.update_offset(size as usize);
+            } else if flags.is_truncate() {
+                if modes.is_writable() {
+                    self.remove_entries(mnode, false, true);
+                } else {
+                    log::warn!("open() - no write permissions, so cannot truncate");
+                    self.fds.deallocate_fd(fid)?;
+                    return Err(SystemCallError::InternalError);
+                }
+            }
+
+            Ok(fid)
 
         // Create new file if necessary
         } else {
             if !flags.is_create() {
+                log::warn!("open() - called on non-existing file without create flag");
                 return Err(SystemCallError::InternalError);
             }
 
             *self.mnode_counter.borrow_mut() += 1;
+            let mnode = *self.mnode_counter.borrow();
             self.oplog.borrow_mut().push(ModelOperation::Created(
                 path,
                 FileModes::from(modes),
-                *self.mnode_counter.borrow(),
+                mnode,
             ));
             let (fid, fd) = self.fds.allocate_fd()?;
-            fd.update_fd(*self.mnode_counter.borrow(), flags);
+            fd.update_fd(mnode, flags);
             Ok(fid)
         }
     }
 
     pub fn write(&self, fid: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        // TODO: this seems wrong... should be InternalError??
-        if len == 0 {
-            return Err(SystemCallError::BadFileDescriptor);
-        }
-
-        let fd = self.fds.get_fd(fid as usize)?;
-        self.write_at(fid, buffer, len, fd.get_offset() as i64)
+        self.write_at(fid, buffer, len, -1)
     }
 
     /// Write just logs the write to the oplog.
@@ -320,17 +388,31 @@ impl ModelFIO {
 
         // check for write permissions
         if !flags.is_write() {
+            log::warn!("write_at() - File {:?} lacks write flag permissions", fid);
             return Err(SystemCallError::InternalError);
         }
 
         let mnode = fd.get_mnode();
         if self.mnode_exists(mnode) {
+            let mut my_offset = offset;
+            if my_offset == -1 {
+                if fd.get_flags().is_append() {
+                    my_offset = self.file_size(mnode);
+                } else {
+                    my_offset = fd.get_offset() as i64;
+                }
+            }
+
             for x in self.oplog.borrow().iter().rev() {
-                trace!("seen {:?}", x);
                 match x {
                     // Check if the file is writable or not
                     ModelOperation::Created(_path, mode, current_mnode) => {
-                        if mnode == *current_mnode && !FileModes::from(*mode).is_writable() {
+                        if mnode == *current_mnode && !mode.is_writable() {
+                            log::warn!(
+                                "write_at() - File {:?} lacks write mode permissions {:?}",
+                                fid,
+                                mode
+                            );
                             return Err(SystemCallError::InternalError);
                         }
                     }
@@ -344,11 +426,16 @@ impl ModelFIO {
                 let pattern = slice[0] as char;
                 self.oplog
                     .borrow_mut()
-                    .push(ModelOperation::Write(mnode, offset, pattern, len));
+                    .push(ModelOperation::Write(mnode, my_offset, pattern, len));
+
+                if offset == -1 {
+                    fd.update_offset(my_offset as usize + len as usize);
+                }
             }
-            fd.update_offset(offset as usize + len as usize);
+
             Ok(len)
         } else {
+            log::warn!("write_at() - Failed to find mnode for fid {:?}", fid);
             Err(SystemCallError::InternalError)
         }
     }
@@ -374,7 +461,6 @@ impl ModelFIO {
         }
 
         let fd = self.fds.get_fd(fid as usize)?;
-
         let mut my_offset = offset;
         if my_offset == -1 {
             my_offset = fd.get_offset() as i64;
@@ -384,30 +470,59 @@ impl ModelFIO {
 
         // check for read permissions
         if !flags.is_read() {
+            log::warn!("read_at() - File {:?} lacks read flag permissions", fid);
             return Err(SystemCallError::InternalError);
         }
 
         let mnode = fd.get_mnode();
         if self.mnode_exists(mnode) {
+            for x in self.oplog.borrow().iter().rev() {
+                match x {
+                    ModelOperation::Created(_path, mode, cmnode) => {
+                        if mnode == *cmnode && !mode.is_readable() {
+                            log::warn!(
+                                "read_at() - File {:?} lacks read mode permissions {:?}",
+                                fid,
+                                mode
+                            );
+                            return Err(SystemCallError::InternalError);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // If offset is beyond file size, nothing to read
+            let size = self.file_size(mnode);
+            if my_offset >= size {
+                return Ok(0);
+            }
+
+            // Calculate how many bytes we expect to read
+            let expected_bytes = min(size - my_offset, len as i64);
+            if expected_bytes == 0 {
+                return Ok(0);
+            }
+
             // We store our 'retrieved' data in a buffer of Option<u8>
             // to make sure in case we have consecutive writes to the same region
             // we take the last one, and also to detect if we
             // read more than what ever got written to the file...
-            let mut buffer_gatherer: Vec<Option<u8>> = Vec::with_capacity(len as usize);
-            for _i in 0..len {
+            let mut buffer_gatherer: Vec<Option<u8>> = Vec::with_capacity(expected_bytes as usize);
+            for _i in 0..expected_bytes {
                 buffer_gatherer.push(None);
             }
 
             // Start with the latest writes first
             for x in self.oplog.borrow().iter().rev() {
-                trace!("seen {:?}", x);
                 match x {
                     ModelOperation::Write(wmnode, foffset, fpattern, flength) => {
                         // Write is for the correct file and the offset starts somewhere
                         // in that write
                         let cur_segment_range =
                             *foffset as usize..(*foffset as usize + *flength as usize);
-                        let read_range = my_offset as usize..(my_offset as usize + len as usize);
+                        let read_range =
+                            my_offset as usize..(my_offset as usize + expected_bytes as usize);
                         trace!("*wfd == fd = {}", *wmnode == mnode);
                         trace!(
                             "ModelFIO::overlaps(&cur_segment_range, &read_range) = {}",
@@ -430,12 +545,7 @@ impl ModelFIO {
                         }
                         // else: The write is not relevant
                     }
-
-                    ModelOperation::Created(_path, mode, cmnode) => {
-                        if mnode == *cmnode && !FileModes::from(*mode).is_readable() {
-                            return Err(SystemCallError::InternalError);
-                        }
-                    }
+                    _ => {}
                 }
             }
             // We need to copy buffer gatherer back in buffer:
@@ -444,7 +554,8 @@ impl ModelFIO {
             let _iter = buffer_gatherer.iter().enumerate().rev();
             let mut drop_top = true;
             let mut bytes_read = 0;
-            let mut slice = unsafe { from_raw_parts_mut(buffer as *mut u8, len as usize) };
+            let mut slice =
+                unsafe { from_raw_parts_mut(buffer as *mut u8, expected_bytes as usize) };
             for (idx, val) in buffer_gatherer.iter().enumerate().rev() {
                 if drop_top {
                     if val.is_some() {
@@ -462,11 +573,12 @@ impl ModelFIO {
                 trace!("buffer = {:?}", slice);
             }
 
-            if offset != -1 {
-                fd.update_offset(offset as usize + len as usize);
+            if offset == -1 {
+                fd.update_offset(my_offset as usize + expected_bytes as usize);
             }
-            Ok(bytes_read)
+            Ok(expected_bytes as u64)
         } else {
+            log::warn!("read_at() - Failed to find mnode for fid {:?}", fid);
             Err(SystemCallError::InternalError)
         }
     }
@@ -476,24 +588,22 @@ impl ModelFIO {
         self.path_to_mnode(&String::from(pathname))
     }
 
-    /// Delete finds sand removes a path from the oplog again.
+    /// Delete finds and removes a path from the oplog again.
     pub fn delete(&self, name: u64) -> Result<bool, SystemCallError> {
         let path = userptr_to_str(name)?;
+        // TODO: Check to see if there are any open fds to this mnode.
+
         if let Some(mnode) = self.lookup(&path) {
-            // TODO: Check to see if there are any open fds to this mnode.
-            // If not, we delete the file.
-            if let Some(idx) = self.path_to_idx(&path) {
-                self.oplog.borrow_mut().remove(idx);
-                // We leave corresponding ModelOperation::Write entries
-                // in the log for now...
-                return Ok(true);
-            }
+            self.remove_entries(mnode, true, true);
+            Ok(true)
+        } else {
+            log::warn!("delete() - Failed to find mnode for path {:?}", path);
+            Err(SystemCallError::InternalError)
         }
-        Err(SystemCallError::InternalError)
     }
 
-    pub fn close(&mut self, fd: u64) -> Result<u64, SystemCallError> {
-        self.fds.deallocate_fd(fd)?;
+    pub fn close(&mut self, fid: u64) -> Result<u64, SystemCallError> {
+        self.fds.deallocate_fd(fid)?;
         Ok(0)
     }
 }
@@ -577,14 +687,9 @@ fn action() -> impl Strategy<Value = TestAction> {
         (fd_gen(0xA), size_gen(128)).prop_map(|(a, c)| TestAction::Read(a, c)),
         (fd_gen(0xA), fill_pattern(), size_gen(64))
             .prop_map(|(a, c, d)| TestAction::Write(a, c, d)),
-        (fd_gen(0xA), size_gen(128), offset_gen(0x1000))
+        (fd_gen(0xA), size_gen(128), offset_gen(128))
             .prop_map(|(a, b, c)| TestAction::ReadAt(a, b, c)),
-        (
-            fd_gen(0xA),
-            fill_pattern(),
-            size_gen(64),
-            offset_gen(0x1000),
-        )
+        (fd_gen(0xA), fill_pattern(), size_gen(64), offset_gen(128),)
             .prop_map(|(a, b, c, d)| TestAction::WriteAt(a, b, c, d)),
         (path(), flag_gen(0xfff), mode_gen(0xfff)).prop_map(|(a, b, c)| TestAction::Open(a, b, c)),
         path().prop_map(TestAction::Delete),
@@ -640,7 +745,7 @@ prop_compose! {
 /// Generates a random path entry.
 fn path_names() -> impl Strategy<Value = String> {
     prop_oneof![
-        Just(String::from("/")),
+        //Just(String::from("/")),
         Just(String::from("nrk")),
         Just(String::from("hello")),
         Just(String::from("world")),
@@ -674,21 +779,11 @@ fn model_equivalence(ops: Vec<TestAction>) {
 
                 let mut buffer1 = [0u8; 128];
                 let mut buffer2 = [0u8; 128];
-
-                log::debug!(
-                    "Read({:?}), model_fd={:?}, syscall_fd={:?}",
-                    len,
-                    fd,
-                    rtotest_fd
-                );
                 let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
                 let rtotest =
                     vibrio::syscalls::Fs::read(rtotest_fd, buffer2.as_mut_ptr() as u64, len);
-                assert_eq!(buffer1, buffer2);
-                if rmodel != rtotest {
-                    log::debug!("Read buffers:\n\t{:?}\n\t{:?}", buffer1, buffer2)
-                }
                 assert_eq!(rmodel, rtotest);
+                assert_eq!(buffer1, buffer2);
             }
             Write(fd, pattern, len) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -700,14 +795,6 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 for _i in 0..len {
                     buffer.push(pattern as u8);
                 }
-
-                log::debug!(
-                    "Write({:?}, {:?}), model_fd={:?}, syscall_fd={:?}",
-                    pattern,
-                    len,
-                    fd,
-                    rtotest_fd
-                );
                 let rmodel = model.write(fd, buffer.as_mut_ptr() as u64, len);
                 let rtotest =
                     vibrio::syscalls::Fs::write(rtotest_fd, buffer.as_mut_ptr() as u64, len);
@@ -721,26 +808,15 @@ fn model_equivalence(ops: Vec<TestAction>) {
 
                 let mut buffer1 = [0u8; 128];
                 let mut buffer2 = [0u8; 128];
-
-                log::debug!(
-                    "ReadAt({:?}, {:?}), model_fd={:?}, syscall_fd={:?}",
-                    len,
-                    offset,
-                    fd,
-                    rtotest_fd
-                );
                 let rmodel = model.read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
                 let rtotest = vibrio::syscalls::Fs::read_at(
                     rtotest_fd,
-                    buffer1.as_mut_ptr() as u64,
+                    buffer2.as_mut_ptr() as u64,
                     len,
                     offset,
                 );
-                assert_eq!(buffer1, buffer2);
-                if rmodel != rtotest {
-                    log::debug!("ReadAt buffers:\n\t{:?}\n\t{:?}", buffer1, buffer2)
-                }
                 assert_eq!(rmodel, rtotest);
+                assert_eq!(buffer1, buffer2);
             }
             WriteAt(fd, pattern, len, offset) => {
                 let mut rtotest_fd = fd + FD_OFFSET;
@@ -752,15 +828,6 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 for _i in 0..len {
                     buffer.push(pattern as u8);
                 }
-
-                log::debug!(
-                    "WriteAt({:?}, {:?}, {:?}), model_fd={:?}, syscall_fd={:?}",
-                    pattern,
-                    len,
-                    offset,
-                    fd,
-                    rtotest_fd
-                );
                 let rmodel = model.write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
                 let rtotest = vibrio::syscalls::Fs::write_at(
                     rtotest_fd,
@@ -771,9 +838,9 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 assert_eq!(rmodel, rtotest);
             }
             Open(path, flags, mode) => {
-                let path_str = path.join("/");
+                let mut path_str = path.join("/");
+                path_str.push('\0');
 
-                log::debug!("Open({:?}, {:?}, {:?})", path, flags, mode);
                 let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
                 let rtotest = vibrio::syscalls::Fs::open(path_str.as_ptr() as u64, flags, mode);
                 assert_eq!(rmodel.is_ok(), rtotest.is_ok());
@@ -781,18 +848,12 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 // Add mapping from rmodel_fd -> rtotest_fd
                 if rmodel.is_ok() {
                     fd_map.insert(rmodel.unwrap(), rtotest.unwrap());
-                    log::debug!(
-                        "Open {:?} model_fd={:?} syscall_fd={:?}",
-                        path,
-                        rmodel.unwrap(),
-                        rtotest.unwrap()
-                    );
                 }
             }
             Delete(path) => {
-                let path_str = path.join("/");
+                let mut path_str = path.join("/");
+                path_str.push('\0');
 
-                log::debug!("Delete({:?})", path_str);
                 let rmodel = model.delete(path_str.as_ptr() as u64);
                 let rtotest = vibrio::syscalls::Fs::delete(path_str.as_ptr() as u64);
                 assert_eq!(rmodel, rtotest);
@@ -803,7 +864,6 @@ fn model_equivalence(ops: Vec<TestAction>) {
                     rtotest_fd = *fd_map.get(&fd).unwrap();
                 }
 
-                log::debug!("Close(), model_fd={:?}, syscall_fd={:?}", fd, rtotest_fd);
                 let rmodel = model.close(fd);
                 let rtotest = vibrio::syscalls::Fs::close(rtotest_fd);
                 assert_eq!(rmodel, rtotest);
@@ -815,13 +875,34 @@ fn model_equivalence(ops: Vec<TestAction>) {
             }
         }
     }
+
+    // Clean up file system by closing all open file descriptors and deleting all existing files
+    for rtotest_fd in fd_map.values() {
+        assert_eq!(vibrio::syscalls::Fs::close(*rtotest_fd).is_ok(), true);
+    }
+    for x in model.oplog.borrow().iter() {
+        match x {
+            ModelOperation::Created(path, _modes, mnode) => {
+                // mnode=1 is the root ("/") which we can't/shouldn't delete.
+                let mut my_path = path.clone();
+                my_path.push('\0');
+                if *mnode != 1 {
+                    assert_eq!(
+                        vibrio::syscalls::Fs::delete(my_path.as_ptr() as u64).is_ok(),
+                        true
+                    );
+                }
+            }
+            _ => { /* we don't care about write entries */ }
+        }
+    }
 }
 
 pub fn run_fio_syscall_proptests() {
-    model_read();
-    model_overlapping_writes();
+    //model_read();
+    //model_overlapping_writes();
     // Reduce the number of tests so we don't use up all the cache
-    proptest!(ProptestConfig::with_cases(35), |(ops in actions())| {
+    proptest!(ProptestConfig::with_cases(100), |(ops in actions())| {
         model_equivalence(ops);
     });
 }

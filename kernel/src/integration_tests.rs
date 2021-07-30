@@ -807,6 +807,10 @@ fn xmain() {
         Error,
     }
 
+    const RX_BUF_LEN: usize = 8192;
+    const TX_BUF_LEN: usize = 8192;
+    const PORT: u16 = 6970;
+
     let mut iface = init_network();
     let mut sockets = SocketSet::new(vec![]);
     let socket_rx_buffer = TcpSocketBuffer::new(vec![0; RX_BUF_LEN]);
@@ -815,10 +819,6 @@ fn xmain() {
     let server_handle = sockets.add(server_sock);
     let mut server_state = ServerState::Uninitialized;
     let mut response_vec = vec![];
-
-    const RX_BUF_LEN: usize = 4096;
-    const TX_BUF_LEN: usize = 4096;
-    const PORT: u16 = 6970;
 
     loop {
         match iface.poll(&mut sockets, Instant::from_millis(0)) {

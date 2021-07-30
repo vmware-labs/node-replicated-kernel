@@ -1958,13 +1958,12 @@ fn s06_test_fs() {
 ///  * File read, write
 ///  * File getinfo
 #[test]
-#[ignore = "always fails, seems to be bug in cnrfs?"]
 fn s06_test_fs_prop() {
     let cmdline = RunnerArgs::new("test-userspace")
         .module("init")
         .user_feature("test-fs-prop")
         .release()
-        .timeout(20_000);
+        .timeout(120_000);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {

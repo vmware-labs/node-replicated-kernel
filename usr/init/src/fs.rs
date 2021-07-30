@@ -105,7 +105,7 @@ impl FileDesc {
             self.fds[fid] = Some(Default::default());
             Ok((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
         } else {
-            log::warn!("allocate_fd: Failed to allocate file descriptor");
+            trace!("allocate_fd: Failed to allocate file descriptor");
             Err(SystemCallError::InternalError)
         }
     }
@@ -114,12 +114,12 @@ impl FileDesc {
         match self.fds.get_mut(fd as usize) {
             Some(fdinfo) => match fdinfo {
                 Some(info) => {
-                    log::warn!("deallocate_fd: removing {:?}", info);
+                    trace!("deallocate_fd: removing {:?}", info);
                     *fdinfo = None;
                     Ok(fd)
                 }
                 None => {
-                    log::warn!(
+                    trace!(
                         "deallocate_fd: Found fd at index {:?} but value wasn't actually set.",
                         fd
                     );
@@ -134,7 +134,7 @@ impl FileDesc {
         if let Some(fd) = self.fds[index].as_ref() {
             Ok(fd)
         } else {
-            log::warn!("get_fd: Failed to find fd at index {:?}", index);
+            trace!("get_fd: Failed to find fd at index {:?}", index);
             Err(SystemCallError::InternalError)
         }
     }
@@ -149,7 +149,7 @@ impl FileDesc {
         }) {
             Some(fid as u64)
         } else {
-            log::warn!("find_fd: Failed to find fd for mnode {:?}", mnode);
+            trace!("find_fd: Failed to find fd for mnode {:?}", mnode);
             None
         }
     }
@@ -309,14 +309,14 @@ impl ModelFIO {
         let mut modes = FileModes::from(modes);
 
         if flags.is_append() && flags.is_truncate() {
-            log::warn!("open() - both truncate and append flags were set");
+            trace!("open() - both truncate and append flags were set");
             return Err(SystemCallError::InternalError);
         }
 
         // If file exists, only create new fd
         if let Some(mnode) = self.lookup(&path) {
             if flags.is_create() {
-                log::warn!("open() - create flag specified for file that already exists");
+                trace!("open() - create flag specified for file that already exists");
                 //Err(SystemCallError::InternalError)
             }
 
@@ -336,7 +336,7 @@ impl ModelFIO {
                 if modes.is_writable() {
                     self.remove_entries(mnode, false, true);
                 } else {
-                    log::warn!("open() - no write permissions, so cannot truncate");
+                    trace!("open() - no write permissions, so cannot truncate");
                     self.fds.deallocate_fd(fid)?;
                     return Err(SystemCallError::InternalError);
                 }
@@ -347,7 +347,7 @@ impl ModelFIO {
         // Create new file if necessary
         } else {
             if !flags.is_create() {
-                log::warn!("open() - called on non-existing file without create flag");
+                trace!("open() - called on non-existing file without create flag");
                 return Err(SystemCallError::InternalError);
             }
 
@@ -388,7 +388,7 @@ impl ModelFIO {
 
         // check for write permissions
         if !flags.is_write() {
-            log::warn!("write_at() - File {:?} lacks write flag permissions", fid);
+            trace!("write_at() - File {:?} lacks write flag permissions", fid);
             return Err(SystemCallError::InternalError);
         }
 
@@ -408,7 +408,7 @@ impl ModelFIO {
                     // Check if the file is writable or not
                     ModelOperation::Created(_path, mode, current_mnode) => {
                         if mnode == *current_mnode && !mode.is_writable() {
-                            log::warn!(
+                            trace!(
                                 "write_at() - File {:?} lacks write mode permissions {:?}",
                                 fid,
                                 mode
@@ -435,7 +435,7 @@ impl ModelFIO {
 
             Ok(len)
         } else {
-            log::warn!("write_at() - Failed to find mnode for fid {:?}", fid);
+            trace!("write_at() - Failed to find mnode for fid {:?}", fid);
             Err(SystemCallError::InternalError)
         }
     }
@@ -470,7 +470,7 @@ impl ModelFIO {
 
         // check for read permissions
         if !flags.is_read() {
-            log::warn!("read_at() - File {:?} lacks read flag permissions", fid);
+            trace!("read_at() - File {:?} lacks read flag permissions", fid);
             return Err(SystemCallError::InternalError);
         }
 
@@ -480,7 +480,7 @@ impl ModelFIO {
                 match x {
                     ModelOperation::Created(_path, mode, cmnode) => {
                         if mnode == *cmnode && !mode.is_readable() {
-                            log::warn!(
+                            trace!(
                                 "read_at() - File {:?} lacks read mode permissions {:?}",
                                 fid,
                                 mode
@@ -578,7 +578,7 @@ impl ModelFIO {
             }
             Ok(expected_bytes as u64)
         } else {
-            log::warn!("read_at() - Failed to find mnode for fid {:?}", fid);
+            trace!("read_at() - Failed to find mnode for fid {:?}", fid);
             Err(SystemCallError::InternalError)
         }
     }
@@ -597,7 +597,7 @@ impl ModelFIO {
             self.remove_entries(mnode, true, true);
             Ok(true)
         } else {
-            log::warn!("delete() - Failed to find mnode for path {:?}", path);
+            trace!("delete() - Failed to find mnode for path {:?}", path);
             Err(SystemCallError::InternalError)
         }
     }

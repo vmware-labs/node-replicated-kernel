@@ -130,7 +130,7 @@ impl BarIO for BarAccess {
 
 #[cfg(test)]
 impl BarAccess {
-    pub(crate) fn new(bus: u32, dev: u32, fun: u32) -> Self {
+    pub fn new(bus: u32, dev: u32, fun: u32) -> Self {
         BarAccess {
             pci_addr: (bus, dev, fun),
             bar0: 0x0,

@@ -28,21 +28,17 @@ sudo visudo
 # github-runner  ALL=(ALL) NOPASSWD: ALL
 ```
 
-For added security we use the binaries of [Rust's action
-runner](https://github.com/rust-lang/gha-runner/). For more information, check
-[this PR](https://github.com/actions/runner/pull/783).
+> For better security with self-hosted code exeuction, make sure to enable
+> `Settings -> Actions -> Runners -> Require approval for all outside collaborators`
+> in the github repo settings!
 
 Other than that, follow the steps listed under `Settings -> Actions -> Runner ->
-Add runner`. Just make sure to replace the curl URL with the latest release from
-the link above. For the latest version at the time of writing the documentation:
+Add runner`:
 
 ```bash
 sudo su github-runner
 cd $HOME
-mkdir actions-runner && cd actions-runner
-curl -o actions-runner-linux-x64-2.278.0.tar.gz -L https://github.com/rust-lang/gha-runner/releases/download/v2.278.0-rust1/actions-runner-linux-x64-2.278.0-rust1.tar.gz
-tar xzf ./actions-runner-linux-x64-2.278.0.tar.gz
-./config.sh --url << repo url >> --token << token from web ui >>
+<< steps from Web-UI >>
 ```
 
 When asked for labels, make sure to give it a machine specific tag. For example,
@@ -54,7 +50,7 @@ parallel test execution.
 > If you add a new machine label, make sure to also add it to `utils.py` in the
 > CI website `_scripts` folder.
 
-Don't launch the runner yet (this comes as the last step).
+Don't launch the runner yet with `run.sh` (this happens further below in the doc).
 
 ## Give access to the benchmark repository
 
@@ -156,12 +152,12 @@ RUST_TEST_THREADS=1 cargo test --features smoke -- --nocapture
 
 ## Start the runner
 
-Finally, launch the runner by permitting only jobs originating from push requests:
+Finally, launch the runner:
 
 ```bash
 cd $HOME/actions-runner
 source $HOME/.cargo/env
-RUST_WHITELISTED_EVENT_NAME=push ./run.sh
+./run.sh
 ```
 
 TBD: Run/configure it as a systemd service.
@@ -179,3 +175,5 @@ If the repo is migrated to a new location, the following settings should be mirr
    - Require status checks to pass before merging
    - Require branches to be up to date before merging
    - Require linear history
+1. Under Settings -> Actions -> Runners:
+   - "Require approval for all outside collaborators"

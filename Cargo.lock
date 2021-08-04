@@ -640,6 +640,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gimli"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0a01e0497841a3b2db4f8afa483cce65f7e96a3498bd6c541734792aeac8fe7"
+dependencies = [
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "half"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -746,7 +755,6 @@ dependencies = [
  "arrayvec",
  "cstr_core",
  "hashbrown 0.11.2",
- "kpi",
  "lazy_static",
  "libm",
  "lineup",
@@ -792,7 +800,7 @@ name = "kpi"
 version = "0.1.0"
 dependencies = [
  "bitflags",
- "env_logger 0.8.3",
+ "env_logger 0.9.0",
  "log",
  "serde",
  "serde_cbor",
@@ -842,7 +850,7 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-utils 0.8.5",
  "either",
- "env_logger 0.8.3",
+ "env_logger 0.9.0",
  "fringe",
  "hashbrown 0.11.2",
  "kpi",
@@ -994,7 +1002,7 @@ dependencies = [
  "elfloader",
  "env_logger 0.9.0",
  "fallible_collections",
- "gimli 0.24.0",
+ "gimli 0.25.0",
  "hashbrown 0.11.2",
  "hwloc2",
  "klogger",

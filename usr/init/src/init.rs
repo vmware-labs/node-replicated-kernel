@@ -11,7 +11,6 @@
 #![feature(core_intrinsics)]
 #![allow(unused_imports, dead_code)]
 extern crate alloc;
-extern crate kpi;
 extern crate spin;
 extern crate vibrio;
 extern crate x86;

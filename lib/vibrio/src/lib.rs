@@ -18,7 +18,7 @@
 extern crate alloc;
 extern crate kpi;
 
-pub use kpi::{io, syscalls};
+pub use kpi::*;
 
 extern crate arrayvec;
 extern crate lazy_static;

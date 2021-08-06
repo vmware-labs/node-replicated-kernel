@@ -30,7 +30,7 @@ slabmalloc = "0.10"
 backtracer_core = "0.0.3"
 rawtime = "0.0.4"
 libacpica = "0.0.6"
-atopology = "0.0.17"
+atopology = "0.0.18"
 # External libraries we use:
 log = "0.4"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }

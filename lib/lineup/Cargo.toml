@@ -13,7 +13,7 @@ either = { version = "1.5", default-features = false }
 fringe = { git = "https://github.com/gz/libfringe.git", default-features = false, features = ["alloc"], branch = "llvm_asm" }
 hashbrown = { version = "0.11.2", features = [ "nightly" ] }
 rawtime = "0.0.4"
-backtracer_core = "0.0.3"
+backtracer_core = "0.0.4"
 x86 = "0.40"
 log = "0.4.6"
 spin = "0.9"

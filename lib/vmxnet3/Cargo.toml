@@ -12,7 +12,7 @@ static_assertions = "1.1.0"
 x86 = "0.40"
 arrayvec = { version = "0.7.0", default-features = false }
 custom_error = { version = "1.9", default-features = false, features = ["unstable"] }
-driverkit = "0.8"
+driverkit = "0.9"
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ] }
 
 [target.'cfg(target_family = "unix")'.dev-dependencies]

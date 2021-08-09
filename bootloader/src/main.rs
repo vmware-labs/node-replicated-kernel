@@ -300,12 +300,14 @@ fn assert_required_cpu_features() {
     let has_smep = efi.as_ref().map_or(false, |f| f.has_smep());
     let has_fsgsbase = efi.as_ref().map_or(false, |f| f.has_fsgsbase());
 
-    let efni = cpuid.get_extended_function_info();
+    let efni = cpuid.get_extended_processor_and_feature_identifiers();
     let has_1gib_pages = efni.as_ref().map_or(false, |f| f.has_1gib_pages());
     let has_rdtscp = efni.as_ref().map_or(false, |f| f.has_rdtscp());
     let has_syscall_sysret = efni.as_ref().map_or(false, |f| f.has_syscall_sysret());
     let has_execute_disable = efni.as_ref().map_or(false, |f| f.has_execute_disable());
-    let has_invariant_tsc = efni.as_ref().map_or(false, |f| f.has_invariant_tsc());
+
+    let apmi = cpuid.get_advanced_power_mgmt_info();
+    let has_invariant_tsc = apmi.as_ref().map_or(false, |f| f.has_invariant_tsc());
 
     assert!(has_sse3);
     assert!(has_osfxsr);

@@ -9,8 +9,8 @@ keywords = ["os", "acpi", "irq", "driver", "x86"]
 edition = "2018"
 
 [dependencies]
-driverkit = "0.8"
-x86 = "0.40"
+driverkit = "0.9"
+x86 = "0.41"
 log = "0.4"
 bitflags = "1.0"
 bit_field = "0.10.0"

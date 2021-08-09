@@ -13,11 +13,11 @@ dependencies = [
 
 [[package]]
 name = "addr2line"
-version = "0.15.2"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7a2e47a1fbe209ee101dd6d61285226744c6c8d3c21c8dc878ba6cb9f467f3a"
+checksum = "3e61f2b7f93d2c7d2b08263acaa4a363b3e276806c68af6134c44f523bf1aacd"
 dependencies = [
- "gimli 0.24.0",
+ "gimli 0.25.0",
  "rustc-demangle",
 ]
 
@@ -71,7 +71,7 @@ dependencies = [
  "driverkit",
  "env_logger 0.5.13",
  "log",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -115,17 +115,17 @@ dependencies = [
 
 [[package]]
 name = "atopology"
-version = "0.0.17"
+version = "0.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "066352905145f3e426556fc8ec16e781296427436573123f3f488ca9b9372adb"
+checksum = "88d48b6e9166b636c4fa919614a4e54881579ba77981f6f5b2ab3ae9d4c58bba"
 dependencies = [
  "cstr_core",
- "env_logger 0.8.3",
+ "env_logger 0.9.0",
  "lazy_static",
  "libacpica",
  "log",
  "procfs",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -167,13 +167,13 @@ dependencies = [
 
 [[package]]
 name = "backtracer_core"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64a08cfe3c738d333f57a9e75122169d7e076f57d00ba495e9896c08e2883947"
+checksum = "cf9dbec16738b72257605568a78ee718f94f6df6afb173d0eab400c39a7ec9a1"
 dependencies = [
- "addr2line 0.15.2",
+ "addr2line 0.16.0",
  "cfg-if 0.1.10",
- "gimli 0.24.0",
+ "gimli 0.25.0",
  "log",
  "stable_deref_trait",
  "x86 0.37.0",
@@ -222,7 +222,7 @@ dependencies = [
  "log",
  "uefi",
  "uefi-services",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -231,7 +231,7 @@ version = "0.0.1"
 dependencies = [
  "arrayvec",
  "uefi",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -428,9 +428,9 @@ checksum = "4f8a51dd197fa6ba5b4dc98a990a43cc13693c23eb0089ebb0fcc1f04152bca6"
 
 [[package]]
 name = "driverkit"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b2c8fe882f6bddfe743cd9a5d1c35f5db8a1f2a6dc146ae79d8428213ac305"
+checksum = "86ea6848d8843cf8fda500e5bb03cf1486e63a34b753697783bd00396aac6c9a"
 dependencies = [
  "byteorder",
  "custom_error",
@@ -438,7 +438,7 @@ dependencies = [
  "log",
  "matches",
  "mmap",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -632,15 +632,6 @@ checksum = "f6503fe142514ca4799d4c26297c4248239fe8838d827db6bd6065c6ed29a6ce"
 
 [[package]]
 name = "gimli"
-version = "0.24.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4075386626662786ddb0ec9081e7c7eeb1ba31951f447ca780ef9f5d568189"
-dependencies = [
- "stable_deref_trait",
-]
-
-[[package]]
-name = "gimli"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0a01e0497841a3b2db4f8afa483cce65f7e96a3498bd6c541734792aeac8fe7"
@@ -763,7 +754,7 @@ dependencies = [
  "rawtime",
  "spin 0.5.2",
  "vibrio",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -805,7 +796,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "static_assertions",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -857,7 +848,7 @@ dependencies = [
  "log",
  "rawtime",
  "spin 0.9.1",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -984,7 +975,7 @@ dependencies = [
 name = "nrk"
 version = "0.0.3"
 dependencies = [
- "addr2line 0.15.2",
+ "addr2line 0.16.0",
  "apic",
  "arrayvec",
  "atopology",
@@ -1026,7 +1017,7 @@ dependencies = [
  "static_assertions",
  "uefi",
  "vmxnet3",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -1357,6 +1348,15 @@ name = "raw-cpuid"
 version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c27cb5785b85bd05d4eb171556c9a1a514552e26123aeae6bb7d811353148026"
+dependencies = [
+ "bitflags",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "10.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "929f54e29691d4e6a9cc558479de70db7aa3d98cd6fe7ab86d7507aa2886b9d2"
 dependencies = [
  "bitflags",
 ]
@@ -1749,7 +1749,7 @@ dependencies = [
  "serde_cbor",
  "slabmalloc",
  "spin 0.5.2",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -1763,7 +1763,7 @@ dependencies = [
  "log",
  "smoltcp",
  "static_assertions",
- "x86 0.40.0",
+ "x86 0.41.0",
 ]
 
 [[package]]
@@ -1860,13 +1860,13 @@ dependencies = [
 
 [[package]]
 name = "x86"
-version = "0.40.0"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "702d51a8a099ea6b47826796377591d2ed47116c7f0454f0d08d1d9872944880"
+checksum = "edcf43654d533a571fe7f7116373098a95ebc01279efdc5038fc45d3b220cb5a"
 dependencies = [
  "bit_field",
  "bitflags",
- "raw-cpuid 9.0.0",
+ "raw-cpuid 10.2.0",
 ]
 
 [[package]]

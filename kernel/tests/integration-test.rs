@@ -1689,7 +1689,7 @@ fn s06_vmops_latency_benchmark() {
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(24 * 1024);
         } else {
-            cmdline = cmdline.memory(32 * 1024);
+            cmdline = cmdline.memory(48 * 1024);
         }
 
         if cfg!(feature = "smoke") && cores > 2 {
@@ -1766,7 +1766,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
         if cfg!(feature = "smoke") {
             cmdline = cmdline.user_feature("smoke").memory(18192);
         } else {
-            cmdline = cmdline.memory(32 * 1024);
+            cmdline = cmdline.memory(48 * 1024);
         }
 
         if cfg!(feature = "smoke") && cores > 2 {

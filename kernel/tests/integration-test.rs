@@ -278,6 +278,8 @@ struct RunnerArgs<'a> {
     cores: usize,
     /// Total memory of the system (in MiB).
     memory: usize,
+    /// Total persistent memory of the system (in MiB).
+    pmem: usize,
     /// Kernel command line argument.
     cmd: Option<&'a str>,
     /// Which user-space modules to include.
@@ -310,6 +312,7 @@ impl<'a> RunnerArgs<'a> {
             nodes: 0,
             cores: 1,
             memory: 1024,
+            pmem: 1024,
             cmd: None,
             mods: Vec::new(),
             release: false,
@@ -394,6 +397,14 @@ impl<'a> RunnerArgs<'a> {
     /// The amount is evenly divided among all nodes.
     fn memory(mut self, mibs: usize) -> RunnerArgs<'a> {
         self.memory = mibs;
+        self
+    }
+
+    /// How much total system persistent memory (in MiB) that the instance should get.
+    ///
+    /// The amount is evenly divided among all nodes.
+    fn pmem(mut self, mibs: usize) -> RunnerArgs<'a> {
+        self.pmem = mibs;
         self
     }
 
@@ -517,6 +528,9 @@ impl<'a> RunnerArgs<'a> {
 
                 cmd.push(String::from("--qemu-memory"));
                 cmd.push(format!("{}", self.memory));
+
+                cmd.push(String::from("--qemu-pmem"));
+                cmd.push(format!("{}", self.pmem));
 
                 if self.setaffinity {
                     cmd.push(String::from("--qemu-affinity"));
@@ -998,6 +1012,28 @@ fn s02_coreboot_nrlog() {
         output += p.exp_string("ACPI Initialized")?.as_str();
         output += p.exp_string("Hello from the other side")?.as_str();
         output += p.exp_string("Core has started")?.as_str();
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Test that we can multiple cores and use the node-replication log to communicate.
+#[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
+#[test]
+fn s02_nvdimm_discover() {
+    let cmdline = RunnerArgs::new("test-nvdimm-discover")
+        .nodes(2)
+        .cores(2)
+        .pmem(1024);
+
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
+
+        output += p.exp_string("NVDIMMs Discovered")?.as_str();
         output += p.exp_eof()?.as_str();
         p.process.exit()
     };

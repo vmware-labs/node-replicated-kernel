@@ -116,6 +116,8 @@ test-acpi-topology = [ "integration-test", "bsp-only" ]
 test-coreboot-smoke = ["integration-test", "bsp-only" ]
 # coreboot_nrlog: Test APIs to boot-up additional cores and communicate using nr
 test-coreboot-nrlog = ["integration-test", "bsp-only" ]
+# NVDIMM: test NVDIMMs can be discovered
+test-nvdimm-discover = [ "integration-test", "bsp-only" ]
 # coreboot: Test core booting logic (during actual system initialization)
 test-coreboot = ["integration-test" ]
 # userspace: run a test in user-space by spawning the init process

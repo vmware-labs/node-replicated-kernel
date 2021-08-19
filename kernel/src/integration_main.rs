@@ -398,6 +398,39 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
+/// Checks that we can discover NVDIMMs, query the ACPI NFIT tables,
+/// and parse the topology.
+#[cfg(all(feature = "integration-test", feature = "test-nvdimm-discover"))]
+pub fn xmain() {
+    use atopology::MemoryType::PERSISTENT_MEMORY;
+    use atopology::MACHINE_TOPOLOGY;
+    use log::info;
+
+    let page_size: usize = x86::bits64::paging::BASE_PAGE_SIZE;
+    let per_socket_pmem: usize = 512 * 1024 * 1024;
+
+    let pmems = MACHINE_TOPOLOGY.persistent_memory();
+    let nodes = MACHINE_TOPOLOGY.num_nodes();
+
+    // We have two numa nodes
+    assert_eq!(nodes, 2);
+
+    // We have two PMEM regions.
+    assert_eq!(pmems.size_hint().0, 2);
+
+    for pmem in pmems {
+        // Each region of the Persistent Memory type.
+        assert_eq!(pmem.ty, PERSISTENT_MEMORY);
+
+        // Number of pages on each socket
+        assert_eq!(pmem.page_count as usize, per_socket_pmem / page_size);
+    }
+
+    info!("NVDIMMs Discovered");
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 /// Tests that the system initializes all cores.
 #[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
 pub fn xmain() {

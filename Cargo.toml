@@ -12,8 +12,6 @@ members = [
     "lib/node-replication/nr",
     "lib/vibrio",
     "lib/vmxnet3",
-    "lib/acpica-sys",
-    "lib/rust-topology",
     "usr/init",
     "usr/rkapps",
 ]

@@ -102,28 +102,28 @@ in the docker container in `/source`.
 
 ## Install QEMU from sources
 
-> Note that normally this step won't be necessary and you can use the QEMU
-> distribution that comes with Ubuntu.
-
-Sometimes it's necessary to run QEMU from the latest sources, to debug an issue
-or to use a new feature not yet available in the Ubuntu deb release. The
-following steps can be used to build it from scratch:
+Make sure the QEMU version for the account is is >= 6 . The following steps can
+be used to build it from scratch, if it the Ubuntu release has a lesser version
+in the package repository.
 
 First, make sure to uncomment all #deb-src lines in /etc/apt/sources.list if not
 already uncommented. Then, run the following commands:
 
 ```bash
 sudo apt update
-sudo apt install build-essential
+sudo apt install build-essential libpmem-dev libdaxctl-dev
 apt source qemu
 sudo apt build-dep qemu
-wget https://download.qemu.org/qemu-5.0.0.tar.xz
-tar xvJf qemu-5.0.0.tar.xz
-cd qemu-5.0.0
-./configure --enable-rdma
+wget https://download.qemu.org/qemu-6.0.0.tar.xz
+tar xvJf qemu-6.0.0.tar.xz
+cd qemu-6.0.0
+./configure --enable-rdma --enable-libpmem
 make -j 28
 sudo make -j28 install
 sudo make rdmacm-mux
+
+# Check version (should be >=6.0.0)
+qemu-system-x86_64 --version
 ```
 
 You can also add `--enable-debug` to the configure script which will add debug

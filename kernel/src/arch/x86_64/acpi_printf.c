@@ -843,7 +843,8 @@ static int _vsnprintf(out_fct_type out, char *buffer, const size_t maxlen, const
         }
         else
         {
-          const int value = (flags & FLAGS_CHAR) ? (char)va_arg(va, int) : (flags & FLAGS_SHORT) ? (short int)va_arg(va, int) : va_arg(va, int);
+          const int value = (flags & FLAGS_CHAR) ? (char)va_arg(va, int) : (flags & FLAGS_SHORT) ? (short int)va_arg(va, int)
+                                                                                                 : va_arg(va, int);
           idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned int)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
         }
       }
@@ -862,7 +863,8 @@ static int _vsnprintf(out_fct_type out, char *buffer, const size_t maxlen, const
         }
         else
         {
-          const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)va_arg(va, unsigned int) : (flags & FLAGS_SHORT) ? (unsigned short int)va_arg(va, unsigned int) : va_arg(va, unsigned int);
+          const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)va_arg(va, unsigned int) : (flags & FLAGS_SHORT) ? (unsigned short int)va_arg(va, unsigned int)
+                                                                                                                            : va_arg(va, unsigned int);
           idx = _ntoa_long(out, buffer, idx, maxlen, value, false, base, precision, width, flags);
         }
       }
@@ -980,7 +982,7 @@ static int _vsnprintf(out_fct_type out, char *buffer, const size_t maxlen, const
       format++;
       break;
     }
-    __attribute__ ((fallthrough));
+      __attribute__((fallthrough));
     case '%':
       out('%', buffer, idx++, maxlen);
       format++;
@@ -1049,4 +1051,12 @@ int fctprintf(void (*out)(char character, void *arg), void *arg, const char *for
   const int ret = _vsnprintf(_out_fct, (char *)(uintptr_t)&out_fct_wrap, (size_t)-1, format, va);
   va_end(va);
   return ret;
+}
+
+// acpica needs this to print stuff to stdout, but I don't know why exactly.
+// Maybe some unsetting some configuration options ACPI_LIBRARY /
+// APCI_APPLICATION would make sure this is no longer called..
+size_t fwrite(const void *ptr, size_t size, size_t nmemb, void *stream)
+{
+  printf_("acpi called fwrite, probably shouldn't happen or just print this to stdout...");
 }

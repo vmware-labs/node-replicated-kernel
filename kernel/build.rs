@@ -8,7 +8,7 @@ use std::process::Command;
 
 fn main() {
     // macos currently can't deal with assembly
-    if std::env::consts::OS == "linux" {
+    if std::env::consts::OS == "linux" && env::var("TARGET").unwrap() == "x86_64-nrk" {
         env::set_var("CC", "gcc");
         println!("cargo:rerun-if-changed=src/arch/x86_64/start_ap.S");
         println!("cargo:rerun-if-changed=src/arch/x86_64/exec.S");

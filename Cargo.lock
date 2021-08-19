@@ -116,26 +116,13 @@ dependencies = [
 [[package]]
 name = "atopology"
 version = "0.0.21"
-dependencies = [
- "cstr_core",
- "env_logger 0.9.0",
- "lazy_static",
- "libacpica 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "log",
- "procfs",
- "x86 0.41.0",
-]
-
-[[package]]
-name = "atopology"
-version = "0.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5ae1d5d93cfaf465bdb5afa28df02324f9ea2aebf9e0642c7f49581156a13a7"
 dependencies = [
  "cstr_core",
  "env_logger 0.9.0",
  "lazy_static",
- "libacpica 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libacpica",
  "log",
  "procfs",
  "x86 0.41.0",
@@ -824,10 +811,6 @@ dependencies = [
 [[package]]
 name = "libacpica"
 version = "0.0.8"
-
-[[package]]
-name = "libacpica"
-version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "750696106cf168dfc2a71dacb3a2e5224612425f04fd6772b482804e4e6b55b8"
 
@@ -995,7 +978,7 @@ dependencies = [
  "addr2line 0.16.0",
  "apic",
  "arrayvec",
- "atopology 0.0.21 (registry+https://github.com/rust-lang/crates.io-index)",
+ "atopology",
  "backtracer_core",
  "bit_field",
  "bootloader_shared",
@@ -1016,7 +999,7 @@ dependencies = [
  "klogger",
  "kpi",
  "lazy_static",
- "libacpica 0.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libacpica",
  "libc 0.2.95",
  "log",
  "logos",

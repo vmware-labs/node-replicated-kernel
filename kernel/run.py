@@ -391,8 +391,11 @@ def run_qemu(args):
                               "{},sockets=1".format(args.qemu_cores)]
 
     if args.qemu_memory:
-        qemu_default_args += ['-m', '{},slots={},maxmem=1024G'.format(
-            str(args.qemu_memory), len(host_numa_nodes_list))]
+        if args.qemu_nodes:
+            qemu_default_args += ['-m', '{},slots={},maxmem=1024G'.format(
+                str(args.qemu_memory), len(host_numa_nodes_list))]
+        else:
+            qemu_default_args += ['-m', str(args.qemu_memory)]
     if args.pvrdma:
         # ip link add bridge1 type bridge ; ifconfig bridge1 up
         qemu_default_args += ['-netdev', 'bridge,id=bridge1',

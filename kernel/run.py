@@ -92,6 +92,8 @@ parser.add_argument("--qemu-cores", type=int,
                     help="How many cores (will get evenly divided among nodes).", default=1)
 parser.add_argument("--qemu-memory", type=str,
                     help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
+parser.add_argument("--qemu-pmem", type=str,
+                    help="How much total peristent memory in MiB (will get evenly divided among nodes).", default=1024)
 parser.add_argument("--qemu-affinity", action="store_true", default=False,
                     help="Pin QEMU instance to dedicated host cores.")
 parser.add_argument("--qemu-prealloc", action="store_true", default=False,
@@ -360,6 +362,7 @@ def run_qemu(args):
     if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
         for node in range(0, args.qemu_nodes):
             mem_per_node = int(args.qemu_memory) / args.qemu_nodes
+            pmem_per_node = int(args.qemu_pmem) / args.qemu_nodes
             prealloc = "on" if args.qemu_prealloc else "off"
             large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
             backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
@@ -372,7 +375,14 @@ def run_qemu(args):
                                   "node,memdev=nmem{},nodeid={}".format(node, node)]
             qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                 node, node)]
+            # NVDIMM related arguments
+            qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path=/mnt/node{},size={}M,pmem=on,share=on'.format(
+                node, node, int(pmem_per_node))]
+            qemu_default_args += ['-device',
+                                  'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
+    if args.qemu_nodes > 1 and args.qemu_pmem:
+        qemu_default_args += ['-M', 'nvdimm=on,nvdimm-persistence=cpu']
     if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
         qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
             args.qemu_cores, args.qemu_nodes, args.qemu_cores)]
@@ -381,7 +391,8 @@ def run_qemu(args):
                               "{},sockets=1".format(args.qemu_cores)]
 
     if args.qemu_memory:
-        qemu_default_args += ['-m', str(args.qemu_memory)]
+        qemu_default_args += ['-m', '{},slots={},maxmem=1024G'.format(
+            str(args.qemu_memory), len(host_numa_nodes_list))]
     if args.pvrdma:
         # ip link add bridge1 type bridge ; ifconfig bridge1 up
         qemu_default_args += ['-netdev', 'bridge,id=bridge1',

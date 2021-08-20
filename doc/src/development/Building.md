@@ -161,7 +161,7 @@ pvrdma):
 ./rdmacm-mux -d mlx5_0 -p 0
 ```
 
-### Use NVDIMM in QEMU
+## Use NVDIMM in QEMU
 
 Qemu has suport for NVDIMM that is provided by a memory backed file or memory backend ram. A simple way to create a vNVDIMM device at startup time is done via the following command line options:
 
@@ -192,7 +192,7 @@ Qemu has suport for NVDIMM that is provided by a memory backed file or memory ba
  - `device nvdimm,id=nvdimm1,memdev=mem1` creates a read/write
    virtual NVDIMM device whose storage is provided by above memory backend device.
 
-  ## Guest Data Persistence
+  ### Guest Data Persistence
 
   Though QEMU supports multiple types of vNVDIMM backends on Linux,
   the only backend that can guarantee the guest write persistence is:
@@ -202,7 +202,7 @@ Qemu has suport for NVDIMM that is provided by a memory backed file or memory ba
 
   When using DAX file (A file supporting direct mapping of persistent memory) as a backend, write persistence is guaranteed if the host kernel has support for the `MAP_SYNC` flag in the mmap system call and additionally both 'pmem' and 'share' flags are set to 'on' on the backend.
 
-  ## NVDIMM Persistence
+  ### NVDIMM Persistence
 
   Users can provide a persistence value to a guest via the optional `nvdimm-persistence` machine command line option:
 
@@ -216,7 +216,7 @@ Qemu has suport for NVDIMM that is provided by a memory backed file or memory ba
 
   `cpu` - The platform supports flushing dirty data from the CPU cache to the NVDIMMs in the event of power loss.
 
-### Emulate PMEM on a Machine
+## Emulate PMEM on a Machine
 
 Linux systems allows to emulate DRAM as PMEM. The emulated device is seen as the Persistent Memory Region by the OS. The emulated devices are used only for developement purposes. Usually these are faster than actual PMEM devices and does not provide any persistence.
 

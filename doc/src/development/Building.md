@@ -163,7 +163,7 @@ pvrdma):
 
 ## Use NVDIMM in QEMU
 
-Qemu has suport for NVDIMM that is provided by a memory backed file or memory backend ram. A simple way to create a vNVDIMM device at startup time is done via the following command line options:
+Qemu has support for NVDIMM that is provided by a memory-backend-file or memory-backend-ram. A simple way to create a vNVDIMM device at startup time is done via the following command-line options:
 
 ```bash
  -machine pc,nvdimm
@@ -194,13 +194,12 @@ Qemu has suport for NVDIMM that is provided by a memory backed file or memory ba
 
   ### Guest Data Persistence
 
-  Though QEMU supports multiple types of vNVDIMM backends on Linux,
-  the only backend that can guarantee the guest write persistence is:
+  Though QEMU supports multiple types of vNVDIMM backends on Linux, the only backend that can guarantee the guest write persistence is:
 
   - DAX device (e.g., `/dev/dax0.0`, ) or
   - DAX file(mounted with dax option)
 
-  When using DAX file (A file supporting direct mapping of persistent memory) as a backend, write persistence is guaranteed if the host kernel has support for the `MAP_SYNC` flag in the mmap system call and additionally both 'pmem' and 'share' flags are set to 'on' on the backend.
+  When using DAX file (A file supporting direct mapping of persistent memory) as a backend, write persistence is guaranteed if the host kernel has support for the `MAP_SYNC` flag in the mmap system call and additionally, both 'pmem' and 'share' flags are set to 'on' on the backend.
 
   ### NVDIMM Persistence
 
@@ -218,21 +217,21 @@ Qemu has suport for NVDIMM that is provided by a memory backed file or memory ba
 
 ## Emulate PMEM using DRAM
 
-Linux systems allows to emulate DRAM as PMEM. The emulated device is seen as the Persistent Memory Region by the OS. The emulated devices are used only for developement purposes. Usually these are faster than actual PMEM devices and does not provide any persistence.
+Linux systems allow emulating DRAM as PMEM. These devices are seen as the Persistent Memory Region by the OS. Usually, these devices are faster than actual PMEM devices and do not provide any persistence. So, such devices are used only for development purposes.
 
-First, the OS needs to reserve a region of the DRAM as PMEM. Use dmesg to find the usable region(s):
+On Linux, to find the DRAM region that can be used as PMEM, use dmesg:
 
 ```bash
 dmesg | grep BIOS-e820
 ```
 
-The usable region will have usable word at the end.
+The viable region will have "usable" word at the end.
 
 ```bash
 [    0.000000] BIOS-e820: [mem 0x0000000100000000-0x000000053fffffff] usable
 ```
 
-This means that the memory region between 4 GiB (0x0000000100000000) and 21 GiB (0x000000053fffffff) is usable. Say we want to reserve a 16 GiB region start from 4 GiB, we need add this information to the grub configuration file.
+This means that the memory region between 4 GiB (0x0000000100000000) and 21 GiB (0x000000053fffffff) is usable. Say we want to reserve a 16 GiB region starting from 4 GiB; we need to add this information to the grub configuration file.
 
 ```bash
 sudo vi /etc/default/grub

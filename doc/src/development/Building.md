@@ -216,7 +216,7 @@ Qemu has suport for NVDIMM that is provided by a memory backed file or memory ba
 
   `cpu` - The platform supports flushing dirty data from the CPU cache to the NVDIMMs in the event of power loss.
 
-## Emulate PMEM on a Machine
+## Emulate PMEM using DRAM
 
 Linux systems allows to emulate DRAM as PMEM. The emulated device is seen as the Persistent Memory Region by the OS. The emulated devices are used only for developement purposes. Usually these are faster than actual PMEM devices and does not provide any persistence.
 

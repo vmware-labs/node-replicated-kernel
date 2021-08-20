@@ -357,9 +357,32 @@ def run_qemu(args):
         # Now return the intersection of the two
         return list(sorted(set(mem_nodes).intersection(set(cpu_nodes))))
 
+    pmem_test_path = "test"
+    def pmem_paths(args):
+        paths = []
+        host_numa_nodes_list = query_host_numa()
+        num_host_numa_nodes = len(host_numa_nodes_list)
+
+        if args.qemu_nodes and args.qemu_nodes > 0:
+            for node in range(0, args.qemu_nodes):
+                default = "/mnt/node{}".format(node)
+                isDir = os.path.isdir(default)
+                if isDir:
+                    paths.append(default)
+                else:
+                    if len(paths) > 0:
+                        paths.append(paths[node % num_host_numa_nodes])
+                    else:
+                        f = open("{}".format(pmem_test_path), "w+")
+                        paths += [pmem_test_path] * args.qemu_nodes
+                        return paths
+        return paths
+
     host_numa_nodes_list = query_host_numa()
     num_host_numa_nodes = len(host_numa_nodes_list)
     if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
+        pmem_paths = pmem_paths(args)
+        assert len(pmem_paths) == args.qemu_nodes
         for node in range(0, args.qemu_nodes):
             mem_per_node = int(args.qemu_memory) / args.qemu_nodes
             pmem_per_node = int(args.qemu_pmem) / args.qemu_nodes
@@ -376,8 +399,8 @@ def run_qemu(args):
             qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                 node, node)]
             # NVDIMM related arguments
-            qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path=/mnt/node{},size={}M,pmem=on,share=on'.format(
-                node, node, int(pmem_per_node))]
+            qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem=on,share=on'.format(
+                node, pmem_paths[node], int(pmem_per_node))]
             qemu_default_args += ['-device',
                                   'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
@@ -393,7 +416,7 @@ def run_qemu(args):
     if args.qemu_memory:
         if args.qemu_nodes:
             qemu_default_args += ['-m', '{},slots={},maxmem=1024G'.format(
-                str(args.qemu_memory), len(host_numa_nodes_list))]
+                str(args.qemu_memory), args.qemu_nodes)]
         else:
             qemu_default_args += ['-m', str(args.qemu_memory)]
     if args.pvrdma:
@@ -475,6 +498,10 @@ def run_qemu(args):
         log("Invocation was: {}".format(cmd))
         if execution.stderr:
             print("STDERR: {}".format(execution.stderr.decode('utf-8')))
+
+    # If the test creates a fake pmem path; remove it.
+    if os.path.isfile(pmem_test_path):
+        os.remove(pmem_test_path)
 
     return nrk_exit_code
 

@@ -194,11 +194,14 @@ pub fn xmain() {
     // ... with 512 MiB of RAM per NUMA node ...
     for (nid, node) in MACHINE_TOPOLOGY.nodes().enumerate() {
         match nid {
-            0 => assert_eq!(node.memory().count(), 2),
-            _ => assert_eq!(node.memory().count(), 1),
+            0 => assert_eq!(node.memory().filter(|ma| !ma.is_non_volatile() & !ma.is_hotplug_region()).count(), 2),
+            _ => assert_eq!(node.memory().filter(|ma| !ma.is_non_volatile() & !ma.is_hotplug_region()).count(), 1),
         };
 
-        let bytes_per_node: u64 = node.memory().map(|ma| ma.length).sum();
+        let bytes_per_node: u64 = node
+            .memory()
+            .map(|ma| if !ma.is_non_volatile() & !ma.is_hotplug_region() { ma.length } else { 0 })
+            .sum();
 
         if nid > 0 {
             assert_eq!(

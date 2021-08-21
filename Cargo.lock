@@ -115,9 +115,9 @@ dependencies = [
 
 [[package]]
 name = "atopology"
-version = "0.0.22"
+version = "0.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd2ad8bb3b226dbe6f9945fa2799640d763dfbe1e1985f88f1afbefda9bd7736"
+checksum = "5da93346525be1de90c93873b398f0071b9d3720e96c7a9072cc17d6f0d568db"
 dependencies = [
  "bitflags",
  "cstr_core",

@@ -21,6 +21,8 @@
   - [Debugging](./development/Debugging.md)
   - [Testing](./development/Testing.md)
   - [Tracing](./development/Tracing.md)
+- [Verification](./verification/Verification.md)
+  - [VSpace](./verification/VSpace.md)
 - [Benchmarking](./benchmarking/Benchmarking.md)
   - [Microbenchmarks](./benchmarking/Microbenchmarks.md)
   - [Redis](./benchmarking/Redis.md)

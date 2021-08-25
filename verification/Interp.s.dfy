@@ -1,5 +1,5 @@
-include "./lib/Lang/NativeTypes.s.dfy"
-include "./lib/Base/KeyType.s.dfy"
+include "./vbtrfs/lib/Lang/NativeTypes.s.dfy"
+include "./vbtrfs/lib/Base/KeyType.s.dfy"
 include "MemoryTypes.s.dfy"
 
 module InterpMod {
@@ -26,7 +26,7 @@ module InterpMod {
 
     function Unmap(base: VAddr) : (outInterp : Interp)
     {
-      Interp(mi := mi - {base})
+      Interp(mi)
     }
   }
 

@@ -1,5 +1,5 @@
-include "./lib/Lang/NativeTypes.s.dfy"
-include "./lib/Base/KeyType.s.dfy"
+include "./vbtrfs/lib/Lang/NativeTypes.s.dfy"
+include "./vbtrfs/lib/Base/KeyType.s.dfy"
 include "MemoryTypes.s.dfy"
 include "Interp.s.dfy"
 
@@ -9,7 +9,7 @@ module VSpaceSpec {
   import InterpMod
 
   // UI
-  datatype VSpaceSpecOp = MapFrame(base: VAddr, frame: Frame) | Resolve(base: VAddr, paddr: PAddr) | Unmap(base: VAddr) | NoopInput
+  datatype Input = MapFrame(base: VAddr, frame: Frame) | Resolve(base: VAddr, paddr: PAddr) | Unmap(base: VAddr) | NoopInput
   datatype Output = Resolved(pa: PAddr) | Ok | KError | Unmapped(handle: TlbFlushHandle) | NoopOutput
 
   // State machine

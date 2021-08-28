@@ -358,6 +358,7 @@ def run_qemu(args):
         return list(sorted(set(mem_nodes).intersection(set(cpu_nodes))))
 
     pmem_test_path = "test"
+    pmem = "off"
     def pmem_paths(args):
         paths = []
         host_numa_nodes_list = query_host_numa()
@@ -369,6 +370,7 @@ def run_qemu(args):
                 isDir = os.path.isdir(default)
                 if isDir:
                     paths.append(default)
+                    pmem = "on"
                 else:
                     if len(paths) > 0:
                         paths.append(paths[node % num_host_numa_nodes])
@@ -399,8 +401,8 @@ def run_qemu(args):
             qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                 node, node)]
             # NVDIMM related arguments
-            qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem=on,share=on'.format(
-                node, pmem_paths[node], int(pmem_per_node))]
+            qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem={},share=on'.format(
+                node, pmem_paths[node], int(pmem_per_node), pmem)]
             qemu_default_args += ['-device',
                                   'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 

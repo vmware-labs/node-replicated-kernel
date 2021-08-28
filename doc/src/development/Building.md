@@ -144,8 +144,9 @@ steps are necessary:
 Install Mellanox drivers (or any other native drivers for your RDMA card):
 
 ```bash
-wget https://content.mellanox.com/ofed/MLNX_OFED-5.2-2.2.0.0/MLNX_OFED_LINUX-5.2-2.2.0.0-ubuntu20.04-x86_64.tgz
-tar zxvf MLNX_OFED_LINUX-5.2-2.2.0.0-ubuntu20.04-x86_64.tgz
+wget https://content.mellanox.com/ofed/MLNX_OFED-5.4-1.0.3.0/MLNX_OFED_LINUX-5.4-1.0.3.0-ubuntu20.04-x86_64.tgz
+tar zxvf MLNX_OFED_LINUX-5.4-1.0.3.0-ubuntu20.04-x86_64.tgz
+cd MLNX_OFED_LINUX-5.4-1.0.3.0-ubuntu20.04-x86_64
 ./mlnxofedinstall --all
 ```
 

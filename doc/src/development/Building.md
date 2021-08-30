@@ -268,6 +268,12 @@ show a persistent memory region like the following:
 ```
 
 We will see this reserved memory range as `/dev/pmem0`. Now the emulated PMEM
-region is ready to use. Mount it with the dax option (`sudo mount -o dax
-/dev/pmem0 /mnt/pmem0`) and use it as a `mem-path=/mnt/pmem0` as explained
-[earlier](#use-NVDIMM-in-QEMU).
+region is ready to use. Mount it with the dax option.
+
+```bash
+sudo mkdir /mnt/mem
+sudo mkfs.ext4 /dev/pmem0
+sudo mount -o dax /dev/pmem0 /mnt/mem
+```
+
+Use it as a `mem-path=/mnt/pmem0` as explained [earlier](#use-NVDIMM-in-QEMU).

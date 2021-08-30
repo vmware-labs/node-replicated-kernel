@@ -142,7 +142,28 @@ source $HOME/.cargo/env
 ./run.sh
 ```
 
-TBD: Run/configure it as a systemd service.
+## Start runner as systemd service
+
+```bash
+cd $HOME/actions-runner
+sudo ./svc.sh install
+sudo ./svc.sh start
+```
+
+Check the runner status with:
+```bash
+sudo ./svc.sh status
+```
+
+Stop the runner with:
+```bash
+sudo ./svc.sh stop
+```
+
+Uninstall the service with:
+```bash
+sudo ./svc.sh uninstall
+```
 
 ## Repository settings
 

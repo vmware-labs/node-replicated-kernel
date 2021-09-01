@@ -312,7 +312,7 @@ impl<'a> RunnerArgs<'a> {
             nodes: 0,
             cores: 1,
             memory: 1024,
-            pmem: 1024,
+            pmem: 0,
             cmd: None,
             mods: Vec::new(),
             release: false,
@@ -937,7 +937,8 @@ fn s02_acpi_topology() {
     let cmdline = &RunnerArgs::new("test-acpi-topology")
         .cores(80)
         .nodes(8)
-        .memory(4096);
+        .memory(4096)
+        .pmem(1024);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {

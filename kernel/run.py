@@ -93,7 +93,7 @@ parser.add_argument("--qemu-cores", type=int,
 parser.add_argument("--qemu-memory", type=str,
                     help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
 parser.add_argument("--qemu-pmem", type=str,
-                    help="How much total peristent memory in MiB (will get evenly divided among nodes).", default=1024)
+                    help="How much total peristent memory in MiB (will get evenly divided among nodes).", required=False, default=None)
 parser.add_argument("--qemu-affinity", action="store_true", default=False,
                     help="Pin QEMU instance to dedicated host cores.")
 parser.add_argument("--qemu-prealloc", action="store_true", default=False,
@@ -383,8 +383,9 @@ def run_qemu(args):
     host_numa_nodes_list = query_host_numa()
     num_host_numa_nodes = len(host_numa_nodes_list)
     if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
-        pmem_paths = pmem_paths(args)
-        assert len(pmem_paths) == args.qemu_nodes
+        if int(args.qemu_pmem):
+            pmem_paths = pmem_paths(args)
+            assert len(pmem_paths) == args.qemu_nodes
         for node in range(0, args.qemu_nodes):
             mem_per_node = int(args.qemu_memory) / args.qemu_nodes
             pmem_per_node = int(args.qemu_pmem) / args.qemu_nodes
@@ -401,12 +402,13 @@ def run_qemu(args):
             qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                 node, node)]
             # NVDIMM related arguments
-            qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem={},share=on'.format(
-                node, pmem_paths[node], int(pmem_per_node), pmem)]
-            qemu_default_args += ['-device',
-                                  'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
+            if int(args.qemu_pmem):
+                qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem={},share=on'.format(
+                    node, pmem_paths[node], int(pmem_per_node), pmem)]
+                qemu_default_args += ['-device',
+                                    'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
-    if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_pmem:
+    if args.qemu_nodes and args.qemu_nodes > 0 and int(args.qemu_pmem):
         qemu_default_args += ['-M', 'nvdimm=on,nvdimm-persistence=cpu']
     if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
         qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
@@ -416,7 +418,7 @@ def run_qemu(args):
                               "{},sockets=1".format(args.qemu_cores)]
 
     if args.qemu_memory:
-        if args.qemu_nodes:
+        if args.qemu_nodes and int(args.qemu_pmem):
             qemu_default_args += ['-m', '{},slots={},maxmem={}M'.format(
                 str(args.qemu_memory), args.qemu_nodes, int(args.qemu_memory) + int(args.qemu_pmem))]
         else:

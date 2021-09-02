@@ -9,6 +9,7 @@
 #![cfg_attr(target_os = "none", no_std)]
 #![deny(warnings)]
 #![feature(
+    is_sorted,
     intrinsics,
     core_intrinsics,
     llvm_asm,

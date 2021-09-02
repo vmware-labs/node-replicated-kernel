@@ -441,7 +441,7 @@ impl<'a> VSpace<'a> {
                 .allocate_pages(AllocateType::AnyPages, typ, how_many)
             {
                 Ok(num) => {
-                    st.as_ref().boot_services().memset(
+                    st.as_ref().boot_services().set_mem(
                         num.unwrap() as *mut u8,
                         how_many * BASE_PAGE_SIZE,
                         0u8,

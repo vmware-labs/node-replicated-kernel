@@ -109,7 +109,7 @@ pub fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> 
     // (UEFI Specification 2.8, EFI_BOOT_SERVICES.AllocatePages())
     unsafe {
         st.boot_services()
-            .memset(num as *mut u8, pages * BASE_PAGE_SIZE, 0u8)
+            .set_mem(num as *mut u8, pages * BASE_PAGE_SIZE, 0u8)
     };
 
     PAddr::from(num)
@@ -334,8 +334,8 @@ fn assert_required_cpu_features() {
 /// Start function of the bootloader.
 /// The symbol name is defined through `/Entry:uefi_start` in `x86_64-uefi.json`.
 #[no_mangle]
-pub extern "C" fn uefi_start(handle: uefi::Handle, st: SystemTable<Boot>) -> Status {
-    uefi_services::init(&st).expect_success("Can't initialize UEFI");
+pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) -> Status {
+    uefi_services::init(&mut st).expect_success("Can't initialize UEFI");
     log::set_max_level(log::LevelFilter::Info);
     //setup_screen(&st);
     //serial_init(&st);

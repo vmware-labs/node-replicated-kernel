@@ -267,6 +267,9 @@ where
     /// Related meta-data to manage physical memory for a given NUMA node.
     pub physical_memory: PhysicalMemoryArena,
 
+    /// Related meta-data to manage persistent memory for a given NUMA node.
+    pub pmem_memory: PhysicalMemoryArena,
+
     /// Which NUMA node this KCB / core belongs to
     ///
     /// TODO(redundant): use kcb.arch.node_id
@@ -310,6 +313,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             // Can't initialize these yet, we need basic Kcb first for
             // memory allocations (emanager):
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),
+            pmem_memory: PhysicalMemoryArena::uninit_with_node(node),
             print_buffer: None,
             replica: None,
             tlb_time: 0,
@@ -355,6 +359,10 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.physical_memory.gmanager = Some(gm);
     }
 
+    pub fn set_global_pmem(&mut self, gm: &'static GlobalMemory) {
+        self.pmem_memory.gmanager = Some(gm);
+    }
+
     pub fn set_allocation_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
         if node == self.physical_memory.affinity {
             // Allocation affinity is already set to correct NUMA node
@@ -385,6 +393,10 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn set_physical_memory_manager(&mut self, pmanager: TCache) {
         self.physical_memory.pmanager = Some(RefCell::new(pmanager));
+    }
+
+    pub fn set_pmem_manager(&mut self, pmanager: TCache) {
+        self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
     pub fn enable_print_buffering(&mut self, buffer: String) {

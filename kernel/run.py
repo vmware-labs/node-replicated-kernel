@@ -295,6 +295,16 @@ def run_qemu(args):
 
     from plumbum.cmd import sudo, tunctl, ifconfig, corealloc
     from plumbum.machines import LocalCommand
+    from packaging import version
+
+    if args.qemu_pmem and int(args.qemu_pmem):
+        required_version = version.parse("6.0.0")
+        version_check = ['/usr/bin/env'] + ['qemu-system-x86_64'] + ['-version']
+        # TODO: Ad-hoc approach to find version number. Can we improve it?
+        ver = str(subprocess.check_output(version_check)).split(' ')[3].split('\\n')[0]
+        if version.parse(ver) < required_version:
+            print("Update Qemu to version {} or higher".format(required_version))
+            sys.exit(errno.EACCES)
 
     log("Starting QEMU")
     debug_release = 'release' if args.release else 'debug'

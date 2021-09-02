@@ -649,6 +649,8 @@ impl GlobalMemory {
     pub unsafe fn new(
         mut memory: ArrayVec<Frame, MAX_PHYSICAL_REGIONS>,
     ) -> Result<GlobalMemory, KError> {
+        assert!(memory.is_sorted_by(|a, b| a.affinity.partial_cmp(&b.affinity)));
+
         debug_assert!(!memory.is_empty());
         let mut gm = GlobalMemory::default();
 

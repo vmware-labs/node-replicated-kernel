@@ -770,6 +770,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         let mut annotated_regions = ArrayVec::new();
         identify_numa_affinity(&memory_regions, &mut annotated_regions);
         drop(memory_regions);
+        annotated_regions.sort_by(|&a, &b| a.affinity.partial_cmp(&b.affinity).unwrap());
 
         // This call is safe here because we assume that our `annotated_regions` is correct.
         let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };

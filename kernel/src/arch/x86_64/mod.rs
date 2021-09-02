@@ -29,7 +29,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::cnrfs::{MlnrKernelNode, Modify};
 use crate::kcb::{BootloaderArguments, Kcb};
-use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE};
+use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::{xmain, ExitReason};
@@ -49,8 +49,10 @@ use x86::{controlregs, cpuid};
 pub use bootloader_shared::*;
 
 use crate::fallible_string::FallibleString;
+use crate::memory::vspace::MapAction;
 use crate::memory::MAX_PHYSICAL_REGIONS;
 use memory::paddr_to_kernel_vaddr;
+use uefi::table::boot::MemoryType;
 use vspace::page_table::PageTable;
 
 pub mod acpi;
@@ -475,6 +477,54 @@ fn identify_numa_affinity(
     );
 }
 
+/// Map the persistent memory addresses to the vspace.
+fn map_physical_persistent_memory() {
+    use atopology::MemoryType;
+    let desc_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();
+    let kcb = kcb::get_kcb();
+    for entry in desc_iter {
+        if entry.phys_start == 0x0 {
+            debug!("Don't map memory entry at physical zero? {:#?}", entry);
+            continue;
+        }
+
+        // Compute physical base and size for the region we're about to map
+        let phys_range_start = PAddr::from(entry.phys_start);
+        let size = entry.page_count as usize * BASE_PAGE_SIZE;
+        let phys_range_end =
+            PAddr::from(entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64);
+
+        if phys_range_start.as_u64() <= 0xfee00000u64 && phys_range_end.as_u64() >= 0xfee00000u64 {
+            debug!("{:?} covers APIC range, ignore for now.", entry);
+            continue;
+        }
+
+        let rights: MapAction = match entry.ty {
+            MemoryType::PERSISTENT_MEMORY => MapAction::ReadWriteKernel,
+            _ => {
+                error!("Unknown memory type, what should we do? {:#?}", entry);
+                MapAction::None
+            }
+        };
+
+        debug!(
+            "Doing {:?} on {:#x} -- {:#x}",
+            rights, phys_range_start, phys_range_end
+        );
+        if rights != MapAction::None && entry.ty == MemoryType::PERSISTENT_MEMORY {
+            kcb.arch
+                .init_vspace()
+                .map_identity(phys_range_start, size, rights)
+                .expect("Unable to add PMem address to user-space");
+
+            kcb.arch
+                .init_vspace()
+                .map_identity_with_offset(PAddr::from(KERNEL_BASE), phys_range_start, size, rights)
+                .expect("Unable to add PMem address to Kernel-space");
+        }
+    }
+}
+
 /// Entry function that is called from UEFI
 /// At this point we are in x86-64 (long) mode,
 /// We have a simple GDT, our address space, and stack set-up.
@@ -487,7 +537,6 @@ fn identify_numa_affinity(
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
     use crate::memory::LARGE_PAGE_SIZE;
     use core::slice;
-    use uefi::table::boot::MemoryType;
 
     sprint!("\r\n");
     enable_sse();
@@ -640,6 +689,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         lazy_static::initialize(&atopology::MACHINE_TOPOLOGY);
         info!("Topology parsed");
+        map_physical_persistent_memory();
+
         trace!("{:#?}", *atopology::MACHINE_TOPOLOGY);
         let nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
         let cores = atopology::MACHINE_TOPOLOGY.num_threads();

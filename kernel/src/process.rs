@@ -273,7 +273,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
                             "Copied {} bytes from {:p} to {:p}",
                             copy_end - copy_start,
                             region_to_copy.as_ptr(),
-                            frame_vaddr.as_mut_ptr::<u8>().add(copy_start)
+                            frame_vaddr.as_mut_ptr::<u8>().add(copy_in_frame_start)
                         );
 
                         destination += copy_end - copy_start;

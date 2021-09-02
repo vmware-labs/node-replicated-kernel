@@ -445,15 +445,18 @@ fn identify_numa_affinity(
             for node in atopology::MACHINE_TOPOLOGY.nodes() {
                 // trying to find a NUMA memory affinity that contains the given `orig_frame`
                 for affinity_region in node.memory() {
-                    match affinity_region.contains(orig_frame.base.into(), orig_frame.end().into())
-                    {
-                        (_, mid, _) => {
-                            if mid.0 > 0 {
-                                let mid_paddr = (PAddr::from(mid.0), PAddr::from(mid.1));
-                                let annotated_frame = Frame::from_range(mid_paddr, node.id);
-                                trace!("Identified NUMA region for {:?}", annotated_frame);
-                                assert!(!annotated_regions.is_full());
-                                annotated_regions.push(annotated_frame);
+                    if !affinity_region.is_hotplug_region() {
+                        match affinity_region
+                            .contains(orig_frame.base.into(), orig_frame.end().into())
+                        {
+                            (_, mid, _) => {
+                                if mid.0 > 0 {
+                                    let mid_paddr = (PAddr::from(mid.0), PAddr::from(mid.1));
+                                    let annotated_frame = Frame::from_range(mid_paddr, node.id);
+                                    trace!("Identified NUMA region for {:?}", annotated_frame);
+                                    assert!(!annotated_regions.is_full());
+                                    annotated_regions.push(annotated_frame);
+                                }
                             }
                         }
                     }
@@ -689,7 +692,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         lazy_static::initialize(&atopology::MACHINE_TOPOLOGY);
         info!("Topology parsed");
-        map_physical_persistent_memory();
 
         trace!("{:#?}", *atopology::MACHINE_TOPOLOGY);
         let nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
@@ -738,6 +740,51 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_global_memory(&global_memory_static);
         let tcache = mcache::TCache::new(0);
         kcb.set_physical_memory_manager(tcache);
+    }
+
+    // 1. Discover persistent memory using topology information.
+    // 2. Identity map the persistent memoy regions to user and kernel space.
+    // 3. Find the NUMA-affinity for each persistent memory region.
+    // 4. Use the region and affinity region to bind an allocator to the regions.
+    if atopology::MACHINE_TOPOLOGY
+        .persistent_memory()
+        .next()
+        .is_some()
+    {
+        map_physical_persistent_memory();
+
+        let mut memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
+        let mut pmem_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();
+        for region in &mut pmem_iter {
+            if region.ty == atopology::MemoryType::PERSISTENT_MEMORY {
+                debug!("Found physical memory region {:?}", region);
+
+                let base: PAddr = PAddr::from(region.phys_start);
+                let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
+                let f = Frame::new(base, size, 0);
+
+                assert!(!memory_regions.is_full());
+                memory_regions.push(f);
+            }
+        }
+        let mut annotated_regions = ArrayVec::new();
+        identify_numa_affinity(&memory_regions, &mut annotated_regions);
+        drop(memory_regions);
+
+        // This call is safe here because we assume that our `annotated_regions` is correct.
+        let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
+        // Also GlobalMemory should live forver, (we hand out a reference to `global_memory` to every core)
+        // that's fine since it is allocated on our BSP init stack (which isn't reclaimed):
+        let global_memory_static =
+            unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
+
+        // Make sure our BSP core has a reference to GlobalMemory
+        {
+            let kcb = kcb::get_kcb();
+            kcb.set_global_pmem(&global_memory_static);
+            let tcache = mcache::TCache::new(0);
+            kcb.set_pmem_manager(tcache);
+        }
     }
 
     // Set-up interrupt routing drivers (I/O APIC controllers)

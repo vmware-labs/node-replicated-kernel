@@ -974,6 +974,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "node-replication"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "543994e9256730547686686300c92a99c2241e9e31c66a994af38dc5f91d0ea0"
+dependencies = [
+ "crossbeam-utils 0.8.5",
+ "log",
+ "static_assertions",
+]
+
+[[package]]
 name = "nrk"
 version = "0.0.4"
 dependencies = [
@@ -1006,7 +1017,7 @@ dependencies = [
  "log",
  "logos",
  "memoffset",
- "node-replication",
+ "node-replication 0.1.1",
  "proptest",
  "rand 0.8.3",
  "rawtime",

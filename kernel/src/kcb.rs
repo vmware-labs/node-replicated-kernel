@@ -454,6 +454,13 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         )
     }
 
+    pub fn pmem_manager(&self) -> RefMut<dyn MemManager> {
+        self.pmem_memory
+            .pmanager
+            .as_ref()
+            .map_or(self.emanager(), |pmem| pmem.borrow_mut())
+    }
+
     pub fn kernel_binary(&self) -> &'static [u8] {
         self.kernel_binary
     }

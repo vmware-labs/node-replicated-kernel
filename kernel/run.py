@@ -393,12 +393,11 @@ def run_qemu(args):
     host_numa_nodes_list = query_host_numa()
     num_host_numa_nodes = len(host_numa_nodes_list)
     if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
-        if int(args.qemu_pmem):
+        if args.qemu_pmem and int(args.qemu_pmem):
             pmem_paths = pmem_paths(args)
             assert len(pmem_paths) == args.qemu_nodes
         for node in range(0, args.qemu_nodes):
             mem_per_node = int(args.qemu_memory) / args.qemu_nodes
-            pmem_per_node = int(args.qemu_pmem) / args.qemu_nodes
             prealloc = "on" if args.qemu_prealloc else "off"
             large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
             backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
@@ -412,13 +411,14 @@ def run_qemu(args):
             qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                 node, node)]
             # NVDIMM related arguments
-            if int(args.qemu_pmem):
+            if args.qemu_pmem and int(args.qemu_pmem):
+                pmem_per_node = int(args.qemu_pmem) / args.qemu_nodes
                 qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem={},share=on'.format(
                     node, pmem_paths[node], int(pmem_per_node), pmem)]
                 qemu_default_args += ['-device',
                                     'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
-    if args.qemu_nodes and args.qemu_nodes > 0 and int(args.qemu_pmem):
+    if args.qemu_pmem and int(args.qemu_pmem):
         qemu_default_args += ['-M', 'nvdimm=on,nvdimm-persistence=cpu']
     if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
         qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
@@ -428,7 +428,7 @@ def run_qemu(args):
                               "{},sockets=1".format(args.qemu_cores)]
 
     if args.qemu_memory:
-        if args.qemu_nodes and int(args.qemu_pmem):
+        if args.qemu_pmem and int(args.qemu_pmem):
             qemu_default_args += ['-m', '{},slots={},maxmem={}M'.format(
                 str(args.qemu_memory), args.qemu_nodes, int(args.qemu_memory) + int(args.qemu_pmem))]
         else:

@@ -198,10 +198,12 @@ fn init_apic() -> x2apic::X2APICDriver {
 #[cfg(not(feature = "bsp-only"))]
 struct AppCoreArgs {
     _mem_region: Frame,
+    _pmem_region: Option<Frame>,
     cmdline: BootloaderArguments,
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
+    global_pmem: Option<&'static GlobalMemory>,
     thread: atopology::ThreadId,
     node: atopology::NodeId,
     _log: Arc<Log<'static, Op>>,
@@ -236,6 +238,11 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     kcb.set_global_memory(args.global_memory);
     kcb.set_physical_memory_manager(mcache::TCache::new(args.node));
+
+    if args.global_pmem.is_some() {
+        kcb.set_global_pmem(args.global_pmem.unwrap());
+        kcb.set_pmem_manager(mcache::TCache::new(args.node));
+    }
 
     let static_kcb = unsafe {
         core::mem::transmute::<&mut Kcb<kcb::Arch86Kcb>, &'static mut Kcb<kcb::Arch86Kcb>>(&mut kcb)
@@ -349,6 +356,8 @@ fn boot_app_cores(
         .gmanager
         .expect("boot_app_cores requires kcb.gmanager");
 
+    let global_pmem = kcb.pmem_memory.gmanager;
+
     // For now just boot everything, except ourselves
     // Create a single log and one replica...
     let threads_to_boot = atopology::MACHINE_TOPOLOGY
@@ -367,15 +376,26 @@ fn boot_app_cores(
             .lock()
             .allocate_large_page()
             .expect("Can't allocate large page");
+        let pmem_region = match global_pmem.is_some() {
+            true => Some(
+                global_pmem.unwrap().node_caches[node as usize]
+                    .lock()
+                    .allocate_large_page()
+                    .expect("Can't allocate large page"),
+            ),
+            false => None,
+        };
 
         let initialized: AtomicBool = AtomicBool::new(false);
         let arg: Arc<AppCoreArgs> = Arc::try_new(AppCoreArgs {
             _mem_region: mem_region,
+            _pmem_region: pmem_region,
             cmdline,
             kernel_binary,
             kernel_args,
             node,
             global_memory,
+            global_pmem,
             thread: thread.id,
             _log: log.clone(),
             replica: replicas[node as usize]

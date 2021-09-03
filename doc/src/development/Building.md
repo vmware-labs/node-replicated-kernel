@@ -271,9 +271,80 @@ We will see this reserved memory range as `/dev/pmem0`. Now the emulated PMEM
 region is ready to use. Mount it with the dax option.
 
 ```bash
-sudo mkdir /mnt/mem
+sudo mkdir /mnt/pmem0
 sudo mkfs.ext4 /dev/pmem0
-sudo mount -o dax /dev/pmem0 /mnt/mem
+sudo mount -o dax /dev/pmem0 /mnt/pmem0
 ```
 
 Use it as a `mem-path=/mnt/pmem0` as explained [earlier](#use-NVDIMM-in-QEMU).
+
+#### Configure and Provision NVDIMMs
+
+The NVDIMMs need to be configured and provisioned before using them for the
+applications. Intel `ipmctl` tool can be used to discover and provision the
+Intel PMs on a Linux machine.
+
+To show all the NVDIMMs attached to the machine, run:
+
+```bash
+sudo ipmctl show -dimm
+```
+
+To show all the NVDIMMs attached on a socket, run:
+
+```bash
+sudo ipmctl show -dimm -socket SocketID
+```
+
+##### Provisioning
+
+NVDIMMs can be configured both in volatile (MemoryMode) and non-volatile
+(AppDirect) modes or a mix of two using `ipmctl` tool on Linux.
+
+We are only interested in using the NVDIMMs in AppDirect mode. Even in
+AppDirect mode, the NVDIMMs can be configured in two ways; AppDirect and
+AppDirectNotInterleaved. In AppDirect mode, the data is interleaved across
+multiple DIMMs, and to use each NVDIMMs individually, AppDirectNotInterleaved
+is used. To configure multiple DIMMs in AppDirect interleaved mode, run:
+
+```bash
+sudo ipmctl create -goal PersistentMemoryType=AppDirect
+```
+
+Reboot the machine to reflect the changes made using the -goal command. The
+command creates a region on each socket on the machine.
+
+```bash
+ndctl show --regions
+```
+
+To show the DIMMs included in each region, run:
+
+```bash
+ndctl show --regions --dimms
+```
+
+Each region can be divided in one or more namespaces in order to show the storage
+devices in the operating system. To create the namespace(s), run:
+
+```bash
+sudo ndctl create-namesapce --mode=[raw/sector/fsdax/devdax]
+```
+
+The namespace can be created in different modes like raw, sector, fsdax,
+and devdax. The default mode is fsdax.
+
+Reboot the machine after creating the namespaces, and the devices will
+show-up in /dev/* depending on the mode. For example, if the mode is
+fsdax, the devices will be named /dev/pmem*.
+
+Mount these devices:
+
+```bash
+sudo mkdir /mnt/pmem0
+sudo mkfs.ext4 /dev/pmem0
+sudo mount -o dax /dev/pmem0 /mnt/pmem0
+```
+
+These mount points can be used directly in the userspace applications or
+for Qemu virtual machine as explained [earlier](#use-NVDIMM-in-QEMU).

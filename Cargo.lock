@@ -585,6 +585,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f5f3913fa0bfe7ee1fd8248b6b9f42a5af4b9d65ec2dd2c3c26132b950ecfc2"
 
 [[package]]
+name = "gdbstub"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e135587d3f6eee6fa02c4ba174270c2337424e6d852c156942c0840b3c0f5cc"
+dependencies = [
+ "cfg-if 0.1.10",
+ "log",
+ "managed 0.8.0",
+ "num-traits",
+ "paste",
+]
+
+[[package]]
+name = "gdbstub_arch"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e358b9c0e1468eae66099062e47bb502849308b987b74b5e72f1936397c33c16"
+dependencies = [
+ "gdbstub",
+ "num-traits",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -785,9 +808,9 @@ dependencies = [
 
 [[package]]
 name = "klogger"
-version = "0.0.7"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb30d50c5011314e85d5ec9ebcc9602da97986cb46259b63d470dac8a2c9faf6"
+checksum = "24ac0ef0ee3979a00920537cdacca32bd025242702081e09b378569b98a6ab0c"
 dependencies = [
  "heapless",
  "log",
@@ -910,6 +933,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c75de51135344a4f8ed3cfe2720dc27736f7711989703a0b43aadf3753c55577"
 
 [[package]]
+name = "managed"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
+
+[[package]]
 name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1014,6 +1043,8 @@ dependencies = [
  "elfloader",
  "env_logger 0.9.0",
  "fallible_collections",
+ "gdbstub",
+ "gdbstub_arch",
  "gimli 0.25.0",
  "hashbrown 0.11.2",
  "hwloc2",
@@ -1134,6 +1165,12 @@ dependencies = [
  "smallvec",
  "winapi 0.3.9",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acbf547ad0c65e31259204bd90935776d1c693cec2f4ff7abb7a1bbbd40dfe58"
 
 [[package]]
 name = "pkg-config"
@@ -1592,7 +1629,7 @@ dependencies = [
  "bitflags",
  "byteorder",
  "log",
- "managed",
+ "managed 0.7.2",
 ]
 
 [[package]]

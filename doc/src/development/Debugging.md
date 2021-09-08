@@ -129,3 +129,25 @@ qemu sources (your changes should look similar to this snippet below):
 #define VMXNET_DEBUG_PACKETS
 #define VMXNET_DEBUG_SHMEM_ACCESS
 ```
+
+## Debugging with gdb
+
+NRK provides an implementation for the gdb remote protocol using a separate
+serial line for communication.
+
+To use it, start `run.py` with the `--gdb` argument. Once booted, the following
+line will appear:
+
+```log
+Waiting for a GDB connection on I/O port 0x2f8...
+Use `target remote localhost:1234` in gdb session to connect
+```
+
+Connect with GDB to the kernel:
+
+```bash
+gdb
+(gdb) target remote localhost:1234
+Remote debugging using localhost:1234
+...
+```

@@ -281,6 +281,10 @@ where
     /// but we intialize it lazily upon calling `set_allocation_affinity`.
     pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
 
+    /// Contains a bunch of pmem arenas, can be one for every NUMA node
+    /// but we intialize it lazily upon calling `set_allocation_affinity`.
+    pub pmem_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
+
     /// A handle to the node-local kernel replica.
     pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
 
@@ -310,6 +314,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
             node,
             memory_arenas: [DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES],
+            pmem_arenas: [DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES],
             // Can't initialize these yet, we need basic Kcb first for
             // memory allocations (emanager):
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),
@@ -384,6 +389,34 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
             core::mem::swap(&mut arena, &mut self.physical_memory);
             self.memory_arenas[arena.affinity as usize].replace(arena);
+
+            Ok(())
+        } else {
+            Err(KError::InvalidAffinityId)
+        }
+    }
+
+    pub fn set_pmem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
+        if node == self.pmem_memory.affinity {
+            // Allocation affinity is already set to correct NUMA node
+            return Ok(());
+        }
+
+        if node < self.pmem_arenas.len() && node < atopology::MACHINE_TOPOLOGY.num_nodes() {
+            let gmanager = self
+                .pmem_memory
+                .gmanager
+                .ok_or(KError::GlobalMemoryNotSet)?;
+
+            if self.pmem_arenas[node].is_none() {
+                self.pmem_arenas[node] = Some(PhysicalMemoryArena::new(node, gmanager));
+            }
+            debug_assert!(self.pmem_arenas[node].is_some());
+            let mut arena = self.pmem_arenas[node].take().unwrap();
+            debug_assert_eq!(arena.affinity, node);
+
+            core::mem::swap(&mut arena, &mut self.pmem_memory);
+            self.pmem_arenas[arena.affinity as usize].replace(arena);
 
             Ok(())
         } else {

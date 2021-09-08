@@ -203,7 +203,7 @@ struct AppCoreArgs {
     kernel_binary: &'static [u8],
     kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
-    global_pmem: Option<&'static GlobalMemory>,
+    global_pmem: &'static GlobalMemory,
     thread: atopology::ThreadId,
     node: atopology::NodeId,
     _log: Arc<Log<'static, Op>>,
@@ -239,8 +239,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     kcb.set_global_memory(args.global_memory);
     kcb.set_physical_memory_manager(mcache::TCache::new(args.node));
 
-    if args.global_pmem.is_some() {
-        kcb.set_global_pmem(args.global_pmem.unwrap());
+    if args.global_pmem.node_caches.len() > 0 {
+        kcb.set_global_pmem(args.global_pmem);
         kcb.set_pmem_manager(mcache::TCache::new(args.node));
     }
 
@@ -356,7 +356,10 @@ fn boot_app_cores(
         .gmanager
         .expect("boot_app_cores requires kcb.gmanager");
 
-    let global_pmem = kcb.pmem_memory.gmanager;
+    let global_pmem = kcb
+        .pmem_memory
+        .gmanager
+        .expect("boot_app_cores requires kcb.pmem_memory.gmanager");
 
     // For now just boot everything, except ourselves
     // Create a single log and one replica...
@@ -376,13 +379,16 @@ fn boot_app_cores(
             .lock()
             .allocate_large_page()
             .expect("Can't allocate large page");
-        let pmem_region = match global_pmem.is_some() {
-            true => Some(
-                global_pmem.unwrap().node_caches[node as usize]
-                    .lock()
-                    .allocate_large_page()
-                    .expect("Can't allocate large page"),
-            ),
+        let pmem_region = match global_pmem.node_caches.len() == numa_nodes {
+            true => {
+                kcb.set_pmem_affinity(node).expect("Can't set affinity");
+                Some(
+                    global_pmem.node_caches[node as usize]
+                        .lock()
+                        .allocate_large_page()
+                        .expect("Can't allocate large page"),
+                )
+            }
             false => None,
         };
 
@@ -766,46 +772,43 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // 2. Identity map the persistent memoy regions to user and kernel space.
     // 3. Find the NUMA-affinity for each persistent memory region.
     // 4. Use the region and affinity region to bind an allocator to the regions.
-    if atopology::MACHINE_TOPOLOGY
-        .persistent_memory()
-        .next()
-        .is_some()
+    map_physical_persistent_memory();
+
+    let mut memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
+    let mut pmem_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();
+    for region in &mut pmem_iter {
+        if region.ty == atopology::MemoryType::PERSISTENT_MEMORY {
+            debug!("Found physical memory region {:?}", region);
+
+            let base: PAddr = PAddr::from(region.phys_start);
+            let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
+            let f = Frame::new(base, size, 0);
+
+            assert!(!memory_regions.is_full());
+            memory_regions.push(f);
+        }
+    }
+    let mut annotated_regions = ArrayVec::new();
+    identify_numa_affinity(&memory_regions, &mut annotated_regions);
+    drop(memory_regions);
+    annotated_regions.sort_by(|&a, &b| a.affinity.partial_cmp(&b.affinity).unwrap());
+
+    // This call is safe here because we assume that our `annotated_regions` is correct.
+    let global_memory = match annotated_regions.len() > 0 {
+        true => unsafe { GlobalMemory::new(annotated_regions).unwrap() },
+        false => GlobalMemory::default(),
+    };
+    // Also GlobalMemory should live forver, (we hand out a reference to `global_memory` to every core)
+    // that's fine since it is allocated on our BSP init stack (which isn't reclaimed):
+    let global_memory_static =
+        unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
+
+    // Make sure our BSP core has a reference to GlobalMemory
     {
-        map_physical_persistent_memory();
-
-        let mut memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
-        let mut pmem_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();
-        for region in &mut pmem_iter {
-            if region.ty == atopology::MemoryType::PERSISTENT_MEMORY {
-                debug!("Found physical memory region {:?}", region);
-
-                let base: PAddr = PAddr::from(region.phys_start);
-                let size: usize = region.page_count as usize * BASE_PAGE_SIZE;
-                let f = Frame::new(base, size, 0);
-
-                assert!(!memory_regions.is_full());
-                memory_regions.push(f);
-            }
-        }
-        let mut annotated_regions = ArrayVec::new();
-        identify_numa_affinity(&memory_regions, &mut annotated_regions);
-        drop(memory_regions);
-        annotated_regions.sort_by(|&a, &b| a.affinity.partial_cmp(&b.affinity).unwrap());
-
-        // This call is safe here because we assume that our `annotated_regions` is correct.
-        let global_memory = unsafe { GlobalMemory::new(annotated_regions).unwrap() };
-        // Also GlobalMemory should live forver, (we hand out a reference to `global_memory` to every core)
-        // that's fine since it is allocated on our BSP init stack (which isn't reclaimed):
-        let global_memory_static =
-            unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
-
-        // Make sure our BSP core has a reference to GlobalMemory
-        {
-            let kcb = kcb::get_kcb();
-            kcb.set_global_pmem(&global_memory_static);
-            let tcache = mcache::TCache::new(0);
-            kcb.set_pmem_manager(tcache);
-        }
+        let kcb = kcb::get_kcb();
+        kcb.set_global_pmem(&global_memory_static);
+        let tcache = mcache::TCache::new(0);
+        kcb.set_pmem_manager(tcache);
     }
 
     // Set-up interrupt routing drivers (I/O APIC controllers)

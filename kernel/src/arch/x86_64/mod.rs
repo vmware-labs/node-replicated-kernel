@@ -68,6 +68,8 @@ pub mod timer;
 pub mod tlb;
 pub mod vspace;
 
+#[cfg(feature = "gdb")]
+mod gdb;
 mod isr;
 
 pub const MAX_NUMA_NODES: usize = 12;
@@ -590,7 +592,11 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Parse the command line arguments
     let cmdline = BootloaderArguments::from_str(kernel_args.command_line);
-    klogger::init(cmdline.log_filter).expect("Can't set-up logging");
+    klogger::init(
+        cmdline.log_filter,
+        debug::SERIAL_PRINT_PORT.load(Ordering::Relaxed),
+    )
+    .expect("Can't set-up logging");
 
     info!(
         "Started at {} with {:?} since CPU startup",
@@ -889,6 +895,34 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         lazy_static::initialize(&process::PROCESS_TABLE);
         let kcb = kcb::get_kcb();
         kcb.register_with_process_replicas();
+    }
+
+    #[cfg(feature = "gdb")]
+    {
+        use gdbstub::{DisconnectReason, GdbStubError};
+        let mut target = gdb::GdbRemote::new();
+        let connection = gdb::wait_for_gdb_connection(debug::GDB_REMOTE_PORT)
+            .expect("No connection to GDB possible");
+        info!("gdb {:?}", connection);
+        let mut debugger = gdbstub::GdbStub::new(connection);
+        // Instead of taking ownership of the system, `GdbStub` takes a &mut, yielding
+        // ownership back to the caller once the debugging session is closed.
+        match debugger.run(&mut target) {
+            Ok(disconnect_reason) => match disconnect_reason {
+                DisconnectReason::Disconnect => error!("GDB client disconnected."),
+                DisconnectReason::TargetTerminated(_r) => error!("Target terminated!"),
+                DisconnectReason::TargetExited(_r) => error!("Target exited!"),
+                DisconnectReason::Kill => error!("GDB client sent a kill command!"),
+            },
+            // Handle any target-specific errors
+            Err(GdbStubError::TargetError(e)) => {
+                error!("Target raised a fatal error: {:?}", e);
+                // `gdbstub` will not immediate close the debugging session if a
+                // fatal error occurs, enabling "post mortem" debugging if required.
+                let _r = debugger.run(&mut target);
+            }
+            Err(e) => error!("Got error {:?}", e),
+        }
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)

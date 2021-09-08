@@ -111,6 +111,8 @@ parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
 parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio", "vmxnet3"],
                     help='What NIC model to use for emulation', required=False)
+parser.add_argument('-g', '--gdb', action="store_true",
+                    help="Expect GDB remote connection in kernel")
 
 # Baremetal argument
 parser.add_argument('--configure-ipxe', action="store_true", default=False,
@@ -165,6 +167,8 @@ def build_kernel(args):
                 build_args += ["--no-default-features"]
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
+            if args.gdb:
+                build_args += ['--features', 'gdb']
             build_args += CARGO_DEFAULT_ARGS
             if args.verbose:
                 print("cd {}".format(KERNEL_PATH))
@@ -300,9 +304,11 @@ def run_qemu(args):
 
     if args.qemu_pmem:
         required_version = version.parse("6.0.0")
-        version_check = ['/usr/bin/env'] + ['qemu-system-x86_64'] + ['-version']
+        version_check = ['/usr/bin/env'] + \
+            ['qemu-system-x86_64'] + ['-version']
         # TODO: Ad-hoc approach to find version number. Can we improve it?
-        ver = str(subprocess.check_output(version_check)).split(' ')[3].split('\\n')[0]
+        ver = str(subprocess.check_output(version_check)
+                  ).split(' ')[3].split('\\n')[0]
         if version.parse(ver) < required_version:
             print("Update Qemu to version {} or higher".format(required_version))
             sys.exit(errno.EACCES)
@@ -319,6 +325,11 @@ def run_qemu(args):
     # Use serial communication
     # '-nographic',
     qemu_default_args += ['-display', 'none', '-serial', 'stdio']
+
+    if args.gdb:
+        # Add a second serial line (VM I/O port 0x2f8 <-> localhost:1234) that
+        # we use to connect with gdb
+        qemu_default_args += ['-serial', 'tcp:127.0.0.1:1234,server,nowait']
 
     # Add UEFI bootloader support
     qemu_default_args += ['-drive',
@@ -383,7 +394,7 @@ def run_qemu(args):
                     backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
 
                 qemu_default_args += ['-numa',
-                                    "node,memdev=nmem{},nodeid={}".format(node, node)]
+                                      "node,memdev=nmem{},nodeid={}".format(node, node)]
                 qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
                     node, node)]
 
@@ -399,7 +410,7 @@ def run_qemu(args):
                         qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem=off,share=on'.format(
                             node, tmp.name, int(pmem_per_node))]
                 qemu_default_args += ['-device',
-                                    'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
+                                      'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
     if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
         qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
@@ -649,6 +660,11 @@ if __name__ == '__main__':
         print("or run `sudo chmod +666 /dev/kvm` if you don't care about")
         print("kvm access restriction on the machine.")
         sys.exit(errno.EACCES)
+
+    if 'gdb' in args.kfeatures and not args.gdb:
+        print("You set gdb in kfeatures but haven't provided `--gdb` to `run.py`.")
+        print("Just use `--gdb` to make sure `run.py` configures QEMU with the proper serial line.")
+        sys.exit(errno.EINVAL)
 
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")

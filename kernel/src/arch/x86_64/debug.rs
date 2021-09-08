@@ -1,6 +1,9 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use core::sync::atomic::AtomicU16;
+use core::sync::atomic::Ordering;
+
 use klogger::sprintln;
 use log::debug;
 use x86::io;
@@ -10,35 +13,40 @@ use super::ExitReason;
 static PORT1: u16 = 0x3f8; /* COM1 */
 static PORT2: u16 = 0x2f8; /* COM2 */
 
-//const INPUT_FULL: u8 = 1;
+/// Standard serial print port.
+///
+/// Might be changed through command line option, hence the atomic.
+pub static SERIAL_PRINT_PORT: AtomicU16 = AtomicU16::new(PORT1);
+
+/// QEMU debug exit device.
+///
+/// If you change this line, you must also adjust `run.py`.
+static QEMU_DEBUG_EXIT_PORT: u16 = 0xf4;
+
+/// GDB remote communication line.
+///
+/// If you change this line, you must also adjust `run.py`.
+pub static GDB_REMOTE_PORT: u16 = PORT2;
 
 pub fn init() {
     unsafe {
-        io::outb(PORT1 + 1, 0x00); // Disable all interrupts
-        io::outb(PORT1 + 3, 0x80); // Enable DLAB (set baud rate divisor)
-        io::outb(PORT1 + 0, 0x01); // Set divisor to 1 (lo byte) 115200 baud
-        io::outb(PORT1 + 1, 0x00); //                  (hi byte)
-        io::outb(PORT1 + 3, 0x03); // 8 bits, no parity, one stop bit
-        io::outb(PORT1 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-        io::outb(PORT1 + 1, 0x01); // Enable receive data IRQ
-
-        io::outb(PORT2 + 1, 0x00); // Disable all interrupts
-        io::outb(PORT2 + 3, 0x80); // Enable DLAB (set baud rate divisor)
-        io::outb(PORT2 + 0, 0x01); // Set divisor to 1 (lo byte) 115200 baud
-        io::outb(PORT2 + 1, 0x00); //                  (hi byte)
-        io::outb(PORT2 + 3, 0x03); // 8 bits, no parity, one stop bit
-        io::outb(PORT2 + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-        io::outb(PORT2 + 1, 0x01); // Enable receive data IRQ
+        for p in [PORT1, PORT2] {
+            io::outb(p + 1, 0x00); // Disable all interrupts
+            io::outb(p + 3, 0x80); // Enable DLAB (set baud rate divisor)
+            io::outb(p + 0, 0x01); // Set divisor to 1 (lo byte) 115200 baud
+            io::outb(p + 1, 0x00); //                  (hi byte)
+            io::outb(p + 3, 0x03); // 8 bits, no parity, one stop bit
+            io::outb(p + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
+            io::outb(p + 1, 0x01); // Enable receive data IRQ
+        }
     }
+
     debug!("serial initialized");
 }
 
 pub unsafe fn getc() -> char {
-    /*while !(io::inb(PORT1 + 5) & INPUT_FULL) > 0 {
-        core::sync::atomic::spin_loop_hint()
-    }*/
-
-    let scancode = io::inb(PORT1 + 0);
+    let port = SERIAL_PRINT_PORT.load(Ordering::Relaxed);
+    let scancode = io::inb(port + 0);
     scancode as char
 }
 
@@ -51,15 +59,12 @@ pub unsafe fn puts(s: &str) {
 
 /// Write a single byte to the output channel
 pub unsafe fn putb(b: u8) {
-    // Wait for the serial PORT1's FIFO to be ready
-    while (io::inb(PORT1 + 5) & 0x20) == 0 {}
-    // Send the byte out the serial PORT1
-    io::outb(PORT1, b);
+    let port = SERIAL_PRINT_PORT.load(Ordering::Relaxed);
 
-    // Wait for the serial PORT1's FIFO to be ready
-    while (io::inb(PORT2 + 5) & 0x20) == 0 {}
-    // Send the byte out the serial PORT2
-    io::outb(PORT2, b);
+    // Wait for the serial SERIAL_PRINT_PORT's FIFO to be ready
+    while (io::inb(port + 5) & 0b0010_0000) == 0 {}
+    // Send the byte out the serial SERIAL_PRINT_PORT
+    io::outb(port, b);
 }
 
 /// Shutdown the processor.
@@ -70,7 +75,7 @@ pub fn shutdown(val: ExitReason) -> ! {
     unsafe {
         // For QEMU with debug-exit,iobase=0xf4,iosize=0x04
         // qemu will call: exit((val << 1) | 1);
-        io::outb(0xf4, val as u8);
+        io::outb(QEMU_DEBUG_EXIT_PORT, val as u8);
     }
 
     // For CI run.py bare-metal execution, parses exit code

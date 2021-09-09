@@ -50,7 +50,7 @@ fn init_setup() {
     // Note anything lower than Info is currently broken
     // because macros in mem management will do a recursive
     // allocation and this stuff is not reentrant...
-    let _r = klogger::init("info");
+    let _r = klogger::init("info", 0);
 
     lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);

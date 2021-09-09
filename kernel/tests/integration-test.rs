@@ -2327,7 +2327,7 @@ fn s06_write_amplification() {
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline)?;
 
-        output += p.exp_string("pmem_alloc OK")?.as_str();
+        output += p.exp_string("Write Amplication Test OK")?.as_str();
         output += p.exp_eof()?.as_str();
         p.process.exit()
     };

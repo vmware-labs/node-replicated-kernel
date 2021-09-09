@@ -49,6 +49,7 @@ pub enum Op {
     MemMapFrameId(VAddr, FrameId, MapAction),
     MemAdjust,
     MemUnmap(VAddr),
+    TrackDirtyPage(VAddr, VAddr, VAddr, u64),
 }
 
 /// Possible return values from the NrProcess.
@@ -66,6 +67,7 @@ pub enum NodeResult<E: Executor> {
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FrameId(usize),
+    DirtyPageTracked,
 }
 
 /// Advances the replica of all the processes on the current NUMA node.
@@ -231,6 +233,31 @@ impl<P: Process> NrProcess<P> {
         Ok((base.as_u64(), virtual_offset as u64))
     }
 
+    pub fn get_dirty_pages(
+        pid: Pid,
+        start: VAddr,
+        end: VAddr,
+        list: VAddr,
+        len: u64,
+    ) -> Result<(u64, u64), KError> {
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+
+        let kcb = super::kcb::get_kcb();
+        let node = kcb.arch.node();
+
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            Op::TrackDirtyPage(start, end, list, len),
+            kcb.process_token[pid],
+        );
+        match response {
+            Ok(NodeResult::DirtyPageTracked) => Ok((0, 0)),
+            e => unreachable!(
+                "Got unexpected response DirtyPage {:?} {:?} {:?}",
+                start, end, e
+            ),
+        }
+    }
+
     pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
@@ -363,6 +390,21 @@ where
                 }
 
                 Ok(NodeResult::Unmapped(shootdown_handle))
+            }
+
+            Op::TrackDirtyPage(start, end, mut list, len) => {
+                use crate::arch::process::UserPtr;
+                // Convert the user pointer into a vector.
+                let slice_ptr = UserPtr::new(&mut list);
+                let user_slice: &mut [PAddr] = unsafe {
+                    core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len as usize)
+                };
+                let mut dirty_pages = user_slice.to_vec();
+
+                self.process
+                    .vspace_mut()
+                    .get_dirty_pages(start, end, &mut dirty_pages);
+                Ok(NodeResult::DirtyPageTracked)
             }
 
             Op::AssignExecutor(gtid, region) => {

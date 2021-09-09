@@ -249,7 +249,13 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
 }
 
 /// System call handler for vspace operations
-fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
+fn handle_vspace(
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+) -> Result<(u64, u64), KError> {
     let op = VSpaceOperation::from(arg1);
     let base = VAddr::from(arg2);
     let region_size = arg3;
@@ -356,6 +362,13 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         VSpaceOperation::Identify => unsafe {
             trace!("Identify base {:#x}.", base);
             nrproc::NrProcess::<Ring3Process>::resolve(p.pid, base)
+        },
+        VSpaceOperation::DirtyPages => unsafe {
+            let start = VAddr::from(arg2);
+            let end = VAddr::from(arg3);
+            let list = VAddr::from(arg4);
+
+            nrproc::NrProcess::<Ring3Process>::get_dirty_pages(p.pid, start, end, list, arg5)
         },
         VSpaceOperation::Unknown => {
             error!("Got an invalid VSpaceOperation code.");
@@ -548,7 +561,7 @@ pub extern "C" fn syscall_handle(
     let status: Result<(u64, u64), KError> = match SystemCall::new(function) {
         SystemCall::System => handle_system(arg1, arg2, arg3),
         SystemCall::Process => handle_process(arg1, arg2, arg3),
-        SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
+        SystemCall::VSpace => handle_vspace(arg1, arg2, arg3, arg4, arg5),
         SystemCall::FileIO => handle_fileio(arg1, arg2, arg3, arg4, arg5),
         _ => Err(KError::InvalidSyscallArgument1 { a: function }),
     };

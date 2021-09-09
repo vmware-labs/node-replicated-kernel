@@ -164,6 +164,8 @@ pub enum VSpaceOperation {
     MapPMem = 6,
     /// Unmap a PMem mapped region
     UnmapPMem = 7,
+    /// Identify dirty pages in a region
+    DirtyPages = 8,
     Unknown,
 }
 
@@ -178,6 +180,7 @@ impl From<u64> for VSpaceOperation {
             5 => VSpaceOperation::Identify,
             6 => VSpaceOperation::MapPMem,
             7 => VSpaceOperation::UnmapPMem,
+            8 => VSpaceOperation::DirtyPages,
             _ => VSpaceOperation::Unknown,
         }
     }
@@ -194,6 +197,7 @@ impl From<&str> for VSpaceOperation {
             "Identify" => VSpaceOperation::Identify,
             "MapPMem" => VSpaceOperation::MapPMem,
             "UnmapPMem" => VSpaceOperation::UnmapPMem,
+            "DirtyPages" => VSpaceOperation::DirtyPages,
             _ => VSpaceOperation::Unknown,
         }
     }

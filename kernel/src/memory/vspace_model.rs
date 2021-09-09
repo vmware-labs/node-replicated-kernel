@@ -185,6 +185,15 @@ impl AddressSpace for ModelAddressSpace {
             Err(KError::NotMapped)
         }
     }
+
+    fn get_dirty_pages(
+        &mut self,
+        _start: VAddr,
+        _end: VAddr,
+        _dirty_pages: &mut alloc::vec::Vec<PAddr>,
+    ) {
+        unimplemented!("get_dirty_pages");
+    }
 }
 
 /// A simple test to see if our model is doing what it's supposed to do.

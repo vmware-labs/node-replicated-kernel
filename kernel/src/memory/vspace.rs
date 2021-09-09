@@ -176,6 +176,14 @@ pub trait AddressSpace {
 
     // Returns an iterator of all currently mapped memory regions.
     //fn mappings()
+
+    /// Find all the dirty pages in the virtual address range between start and end.
+    fn get_dirty_pages(
+        &mut self,
+        start: VAddr,
+        end: VAddr,
+        dirty_pages: &mut alloc::vec::Vec<PAddr>,
+    );
 }
 
 /// Mapping rights to give to address translation.

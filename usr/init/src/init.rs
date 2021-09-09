@@ -684,8 +684,9 @@ fn pmem_alloc(ncores: Option<usize>) {
 }
 
 fn test_write_amplication() {
+    use alloc::vec::Vec;
     use vibrio::MemType;
-    use x86::bits64::paging::BASE_PAGE_SIZE;
+    use x86::bits64::paging::{PAddr, BASE_PAGE_SIZE};
     use x86::random::rdrand32;
 
     fn map_region<'a>(base: u64, size: usize, mem_type: MemType) -> &'a mut [u8] {
@@ -748,7 +749,17 @@ fn test_write_amplication() {
         info!("IOPS {}", iops);
     }
 
-    info!("pmem_alloc OK");
+    let vec_len = size / BASE_PAGE_SIZE;
+    let mut dirty_pages: Vec<PAddr> = Vec::with_capacity(vec_len);
+    vibrio::syscalls::VSpace::dirty_pages(
+        dram_base,
+        pmem_base,
+        dirty_pages.as_mut_ptr() as *const Vec<PAddr> as u64,
+        vec_len as u64,
+    );
+
+    info!("Dirty pages {:?}", dirty_pages.len());
+    info!("Write Amplication Test OK");
 }
 
 pub fn install_vcpu_area() {

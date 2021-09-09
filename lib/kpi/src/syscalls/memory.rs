@@ -84,6 +84,26 @@ impl VSpace {
         unsafe { VSpace::vspace(VSpaceOperation::Identify, base, 0) }
     }
 
+    pub fn dirty_pages(start: u64, end: u64, list: u64, len: u64) -> Result<u64, SystemCallError> {
+        let (r1, r2) = unsafe {
+            syscall!(
+                SystemCall::VSpace as u64,
+                VSpaceOperation::DirtyPages,
+                start,
+                end,
+                list,
+                len,
+                2
+            )
+        };
+
+        if r1 == 0 {
+            Ok(r2)
+        } else {
+            Err(SystemCallError::from(r1))
+        }
+    }
+
     /// Manipulate the virtual address space.
     unsafe fn vspace(
         op: VSpaceOperation,

@@ -74,6 +74,10 @@ impl AddressSpace for VSpace {
     fn unmap(&mut self, _vaddr: VAddr) -> Result<TlbFlushHandle, KError> {
         unimplemented!("unmap");
     }
+
+    fn get_dirty_pages(&mut self, _start: VAddr, _end: VAddr, _dirty_pages: &mut Vec<PAddr>) {
+        unimplemented!("get_dirty_pages");
+    }
 }
 
 impl Drop for VSpace {

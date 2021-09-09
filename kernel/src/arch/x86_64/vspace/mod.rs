@@ -102,6 +102,15 @@ impl AddressSpace for VSpace {
         mapping.rights = new_rights;
         Ok(r)
     }
+
+    fn get_dirty_pages(
+        &mut self,
+        start: VAddr,
+        end: VAddr,
+        dirty_pages: &mut alloc::vec::Vec<PAddr>,
+    ) {
+        self.page_table.get_dirty_pages(start, end, dirty_pages);
+    }
 }
 
 impl Drop for VSpace {

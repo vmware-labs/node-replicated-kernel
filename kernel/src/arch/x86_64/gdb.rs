@@ -1,15 +1,22 @@
 #![allow(warnings)]
+use core::convert::TryInto;
 
 use crate::error::KError;
 
 use gdbstub::target::ext::base::singlethread::SingleThreadOps;
 use gdbstub::target::ext::base::singlethread::{GdbInterrupt, ResumeAction, StopReason};
 use gdbstub::target::ext::base::BaseOps;
+use gdbstub::target::ext::breakpoints::{
+    Breakpoints, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps, WatchKind,
+};
 use gdbstub::target::{Target, TargetResult};
 use gdbstub::Connection;
 
-use log::info;
+use log::{error, info};
+use x86::debugregs;
 use x86::io;
+
+use crate::memory::VAddr;
 
 pub fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
     let gdb = GdbSerial::new(port);
@@ -103,15 +110,31 @@ impl Connection for GdbSerial {
     }
 }
 
-pub struct GdbRemote;
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum BreakType {
+    /// For instructions
+    Breakpoint,
+    /// For data access/writes
+    Watchpoint(WatchKind),
+}
 
-impl GdbRemote {
+/// A kernel level debug implementation that can interface with GDB over remote
+/// serial protocol.
+pub struct KernelDebugger {
+    hw_break_points: [Option<(VAddr, BreakType)>; 4],
+}
+
+impl KernelDebugger {
+    const GLOBAL_BP_FLAG: bool = true;
+
     pub fn new() -> Self {
-        Self
+        Self {
+            hw_break_points: [None; 4],
+        }
     }
 }
 
-impl Target for GdbRemote {
+impl Target for KernelDebugger {
     type Error = ();
     type Arch = gdbstub_arch::x86::X86_64_SSE;
 
@@ -120,7 +143,7 @@ impl Target for GdbRemote {
     }
 }
 
-impl SingleThreadOps for GdbRemote {
+impl SingleThreadOps for KernelDebugger {
     fn resume(
         &mut self,
         action: ResumeAction,
@@ -181,5 +204,139 @@ impl SingleThreadOps for GdbRemote {
     fn write_addrs(&mut self, start_addr: u64, _data: &[u8]) -> TargetResult<(), Self> {
         info!("write_addrs start_addr {:#x}", start_addr);
         Ok(())
+    }
+}
+
+impl Breakpoints for KernelDebugger {
+    fn hw_breakpoint(&mut self) -> Option<HwBreakpointOps<Self>> {
+        Some(self)
+    }
+
+    fn hw_watchpoint(&mut self) -> Option<HwWatchpointOps<Self>> {
+        Some(self)
+    }
+}
+
+fn watchkind_to_breakcondition(kind: WatchKind) -> debugregs::BreakCondition {
+    match kind {
+        // There is no read-only break condition in x86
+        WatchKind::Read => debugregs::BreakCondition::DataReadsWrites,
+        WatchKind::Write => debugregs::BreakCondition::DataWrites,
+        WatchKind::ReadWrite => debugregs::BreakCondition::DataReadsWrites,
+    }
+}
+
+impl HwWatchpoint for KernelDebugger {
+    fn add_hw_watchpoint(&mut self, addr: u64, kind: WatchKind) -> TargetResult<bool, Self> {
+        for (reg, entry) in debugregs::BREAKPOINT_REGS
+            .iter()
+            .zip(self.hw_break_points.iter_mut())
+        {
+            if entry.is_none() {
+                *entry = Some((VAddr::from(addr), BreakType::Watchpoint(kind)));
+
+                // Safety: We're in CPL0, can handle debug interrupt.
+                unsafe {
+                    // Set address in dr{0-3} register
+                    debugregs::dr_write(*reg, addr.try_into().unwrap());
+                    // Enable bp in dr7
+                    let mut dr7 = debugregs::dr7();
+                    let bc = watchkind_to_breakcondition(kind);
+                    dr7.enable_bp(
+                        *reg,
+                        bc,
+                        // TODO: Not sure if this is a good size.
+                        // Maybe read the docs carefully to resolve.
+                        debugregs::BreakSize::Bytes8,
+                        KernelDebugger::GLOBAL_BP_FLAG,
+                    );
+                    debugregs::dr7_write(dr7);
+                }
+                return Ok(true);
+            }
+        }
+
+        // No more debug registers available for use
+        Ok(false)
+    }
+
+    fn remove_hw_watchpoint(&mut self, addr: u64, kind: WatchKind) -> TargetResult<bool, Self> {
+        for (reg, entry) in debugregs::BREAKPOINT_REGS
+            .iter()
+            .zip(self.hw_break_points.iter_mut())
+        {
+            if let Some((entry_vaddr, BreakType::Watchpoint(kind))) = entry {
+                if entry_vaddr.as_u64() == addr {
+                    unsafe {
+                        debugregs::dr_write(*reg, 0x0);
+                        let mut dr7 = debugregs::dr7();
+                        dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
+                        debugregs::dr7_write(dr7);
+                    }
+                    return Ok(true);
+                }
+            }
+        }
+
+        // No break point matching the address was found
+        error!("Unable to remove hw watchpoint for addr {:#x}", addr);
+        Ok(false)
+    }
+}
+
+impl HwBreakpoint for KernelDebugger {
+    fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
+        for (reg, entry) in debugregs::BREAKPOINT_REGS
+            .iter()
+            .zip(self.hw_break_points.iter_mut())
+        {
+            if entry.is_none() {
+                *entry = Some((VAddr::from(addr), BreakType::Breakpoint));
+
+                // Safety: We're in CPL0, can handle debug interrupt.
+                unsafe {
+                    // Set address in dr{0-3} register
+                    debugregs::dr_write(*reg, addr.try_into().unwrap());
+                    // Enable bp in dr7
+                    let mut dr7 = debugregs::dr7();
+                    dr7.enable_bp(
+                        *reg,
+                        debugregs::BreakCondition::Instructions,
+                        // This has to be Bytes1 on x86 for instructions, so I
+                        // think we can ignore the _kind arg
+                        debugregs::BreakSize::Bytes1,
+                        KernelDebugger::GLOBAL_BP_FLAG,
+                    );
+                    debugregs::dr7_write(dr7);
+                }
+                return Ok(true);
+            }
+        }
+
+        // No more debug registers available for use
+        Ok(false)
+    }
+
+    fn remove_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
+        for (reg, entry) in debugregs::BREAKPOINT_REGS
+            .iter()
+            .zip(self.hw_break_points.iter_mut())
+        {
+            if let Some((entry_vaddr, BreakType::Breakpoint)) = entry {
+                if entry_vaddr.as_u64() == addr {
+                    unsafe {
+                        debugregs::dr_write(*reg, 0x0);
+                        let mut dr7 = debugregs::dr7();
+                        dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
+                        debugregs::dr7_write(dr7);
+                    }
+                    return Ok(true);
+                }
+            }
+        }
+
+        // No break point matching the address was found
+        error!("Unable to remove hw breakpoint for addr {:#x}", addr);
+        Ok(false)
     }
 }

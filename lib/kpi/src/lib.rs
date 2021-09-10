@@ -135,6 +135,17 @@ impl From<&str> for ProcessOperation {
     }
 }
 
+/// Flags to specify the memory type
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[repr(u64)]
+pub enum MemType {
+    /// The allocations will be done from DRAM.
+    DRAM = 1,
+    /// The allocations will be done from PMEM.
+    PMEM = 2,
+    Invalid,
+}
+
 /// Flags for the map system call
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]

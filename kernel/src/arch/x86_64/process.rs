@@ -26,7 +26,7 @@ use crate::kcb::ArchSpecificKcb;
 use crate::kcb::{self, Kcb};
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction};
-use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, PAddr, VAddr};
+use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, MemType, PAddr, VAddr};
 use crate::nrproc::NrProcess;
 use crate::process::{
     Eid, Executor, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
@@ -834,7 +834,8 @@ impl elfloader::ElfLoader for Ring3Process {
             debug!("page_base {} lps: {}", page_base, large_pages);
 
             // TODO(correctness): add 20 as estimate of worst case pt requirements
-            KernelAllocator::try_refill_tcache(20, large_pages).expect("Refill didn't work");
+            KernelAllocator::try_refill_tcache(20, large_pages, MemType::DRAM)
+                .expect("Refill didn't work");
 
             let kcb = crate::kcb::get_kcb();
 
@@ -1110,7 +1111,7 @@ impl Process for Ring3Process {
         let executor_space_requirement = Ring3Executor::EXECUTOR_SPACE_REQUIREMENT;
         let executors_to_create = memory.size() / executor_space_requirement;
 
-        KernelAllocator::try_refill_tcache(20, 0).expect("Refill didn't work");
+        KernelAllocator::try_refill_tcache(20, 0, MemType::DRAM).expect("Refill didn't work");
         {
             self.vspace
                 .map_frame(self.executor_offset, memory, MapAction::ReadWriteUser)

@@ -259,10 +259,15 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     let mut p = kcb.arch.current_executor()?;
 
     match op {
-        VSpaceOperation::Map => unsafe {
+        VSpaceOperation::Map | VSpaceOperation::MapPM => unsafe {
             let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
             let mut frames = Vec::try_with_capacity(bp + lp)?;
-            crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, MemType::DRAM)?;
+            let mem_type = match op {
+                VSpaceOperation::Map => MemType::DRAM,
+                VSpaceOperation::MapPM => MemType::PMEM,
+                _ => unreachable!(), // We already checked before coming here.
+            };
+            crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, mem_type)?;
 
             // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
             // first frame mapped but if you map multiple Frames, no chance getting that
@@ -272,7 +277,11 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             let mut paddr = None;
             let mut total_len = 0;
             {
-                let mut pmanager = kcb.mem_manager();
+                let mut pmanager = match mem_type {
+                    MemType::DRAM => kcb.mem_manager(),
+                    MemType::PMEM => kcb.pmem_manager(),
+                    _ => unreachable!(),
+                };
 
                 for _i in 0..lp {
                     let mut frame = pmanager
@@ -336,7 +345,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             )?;
             Ok((paddr.as_u64(), size as u64))
         },
-        VSpaceOperation::Unmap => {
+        VSpaceOperation::Unmap | VSpaceOperation::UnmapPM => {
             let handle = nrproc::NrProcess::<Ring3Process>::unmap(p.pid, base)?;
             let va: u64 = handle.vaddr.as_u64();
             let sz: u64 = handle.frame.size as u64;

@@ -15,6 +15,7 @@ use fallible_collections::vec::FallibleVecGlobal;
 use fallible_collections::vec::TryCollect;
 use fallible_collections::TryReserveError;
 use kpi::process::{FrameId, ELF_OFFSET};
+use kpi::MemType;
 use log::{debug, info, trace};
 
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
@@ -191,7 +192,8 @@ impl elfloader::ElfLoader for DataSecAllocator {
                     size_page
                 );
                 let large_pages = size_page / LARGE_PAGE_SIZE;
-                KernelAllocator::try_refill_tcache(0, large_pages).expect("Refill didn't work");
+                KernelAllocator::try_refill_tcache(0, large_pages, MemType::DRAM)
+                    .expect("Refill didn't work");
 
                 let kcb = crate::kcb::get_kcb();
                 let mut pmanager = kcb.mem_manager();
@@ -336,7 +338,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
 /// Parse & relocate ELF
 /// Create an initial VSpace
 pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
-    KernelAllocator::try_refill_tcache(7, 1)?;
+    KernelAllocator::try_refill_tcache(7, 1, MemType::DRAM)?;
     let kcb = kcb::get_kcb();
 
     // Lookup binary of the process
@@ -417,7 +419,7 @@ pub fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
     for (affinity, to_create) in create_per_region {
         let mut dispatchers_created = 0;
         while dispatchers_created < to_create {
-            KernelAllocator::try_refill_tcache(20, 1)?;
+            KernelAllocator::try_refill_tcache(20, 1, MemType::DRAM)?;
             let mut frame = {
                 let kcb = crate::kcb::get_kcb();
                 kcb.physical_memory.gmanager.unwrap().node_caches[affinity as usize]

@@ -17,7 +17,8 @@ use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 
 use kpi::process::FrameId;
 use kpi::{
-    FileOperation, ProcessOperation, SystemCall, SystemCallError, SystemOperation, VSpaceOperation,
+    FileOperation, MemType, ProcessOperation, SystemCall, SystemCallError, SystemOperation,
+    VSpaceOperation,
 };
 
 use crate::error::KError;
@@ -223,7 +224,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             } else {
                 (0, 1)
             };
-            crate::memory::KernelAllocator::try_refill_tcache(bp, lp)?;
+            crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::DRAM)?;
 
             // Allocate the page (need to make sure we drop pamanager again
             // before we go to NR):
@@ -261,7 +262,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
         VSpaceOperation::Map => unsafe {
             let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
             let mut frames = Vec::try_with_capacity(bp + lp)?;
-            crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp)?;
+            crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, MemType::DRAM)?;
 
             // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
             // first frame mapped but if you map multiple Frames, no chance getting that

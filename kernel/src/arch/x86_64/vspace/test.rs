@@ -10,7 +10,7 @@ use proptest::prelude::*;
 use crate::error::KError;
 use crate::memory::vspace_model::ModelAddressSpace;
 use crate::memory::KernelAllocator;
-use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+use crate::memory::{MemType, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::*;
 
 use super::*;
@@ -100,7 +100,7 @@ proptest! {
         for action in ops {
             match action {
                 Map(base, frame, rights) => {
-                    KernelAllocator::try_refill_tcache(14, 14).expect("Can't refill TCache");
+                    KernelAllocator::try_refill_tcache(14, 14, MemType::DRAM).expect("Can't refill TCache");
                     let rmodel = model.map_frame(base, frame, rights);
                     let rtotest = totest.map_frame(base, frame, rights);
                     match (&rtotest, &rmodel) {

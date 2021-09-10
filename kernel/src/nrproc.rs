@@ -8,6 +8,7 @@ use core::alloc::Allocator;
 
 use fallible_collections::vec::FallibleVec;
 use kpi::process::{FrameId, ProcessInfo};
+use kpi::MemType;
 use node_replication::Dispatch;
 
 use crate::arch::process::PROCESS_TABLE;
@@ -333,7 +334,7 @@ where
             }
 
             Op::MemMapFrame(base, frame, action) => {
-                crate::memory::KernelAllocator::try_refill_tcache(7, 0)?;
+                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::DRAM)?;
                 self.process.vspace_mut().map_frame(base, frame, action)?;
                 Ok(NodeResult::Mapped)
             }
@@ -347,7 +348,7 @@ where
 
             Op::MemMapFrameId(base, frame_id, action) => {
                 let frame = self.process.get_frame(frame_id)?;
-                crate::memory::KernelAllocator::try_refill_tcache(7, 0)?;
+                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::DRAM)?;
 
                 self.process.vspace_mut().map_frame(base, frame, action)?;
                 Ok(NodeResult::MappedFrameId(frame.base, frame.size))

@@ -34,6 +34,7 @@ pub use crate::arch::memory::{
     kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE,
     LARGE_PAGE_SIZE,
 };
+pub use kpi::MemType;
 
 use vspace::MapAction;
 
@@ -230,12 +231,20 @@ impl KernelAllocator {
             (AllocatorType::MapBig, _) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
-                KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages)
+                KernelAllocator::try_refill_tcache(
+                    needed_base_pages,
+                    needed_large_pages,
+                    MemType::DRAM,
+                )
             }
             (AllocatorType::MemManager, _) => {
                 let (needed_base_pages, needed_large_pages) =
                     KernelAllocator::refill_amount(layout);
-                KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages)
+                KernelAllocator::try_refill_tcache(
+                    needed_base_pages,
+                    needed_large_pages,
+                    MemType::DRAM,
+                )
             }
             (AllocatorType::Zone, _) => unreachable!("Not sure how to handle"),
         }
@@ -272,16 +281,27 @@ impl KernelAllocator {
     pub fn try_refill_tcache(
         needed_base_pages: usize,
         needed_large_pages: usize,
+        mem_type: MemType,
     ) -> Result<(), KError> {
         let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
-        if kcb.physical_memory.gmanager.is_none() {
+        if mem_type == MemType::DRAM && kcb.physical_memory.gmanager.is_none() {
+            // No gmanager, can't refill then, let's hope it works anyways...
+            return Ok(());
+        }
+        if mem_type == MemType::PMEM && kcb.pmem_memory.gmanager.is_none() {
             // No gmanager, can't refill then, let's hope it works anyways...
             return Ok(());
         }
 
-        let gmanager = kcb.physical_memory.gmanager.unwrap(); // Ok because of check above.
+        let (gmanager, mut mem_manager) = match mem_type {
+            MemType::DRAM => (
+                kcb.physical_memory.gmanager.unwrap(),
+                kcb.try_mem_manager()?,
+            ),
+            MemType::PMEM => (kcb.pmem_memory.gmanager.unwrap(), kcb.pmem_manager()),
+            _ => unreachable!(),
+        };
         let mut ncache = gmanager.node_caches[kcb.physical_memory.affinity as usize].lock();
-        let mut mem_manager = kcb.try_mem_manager()?;
         // Make sure we don't overflow the TCache
         let needed_base_pages =
             core::cmp::min(mem_manager.spare_base_page_capacity(), needed_base_pages);
@@ -328,7 +348,7 @@ impl KernelAllocator {
                 "Refilling the TCache: needed_bp {} needed_lp {} free_bp {} free_lp {}",
                 needed_base_pages, needed_large_pages, free_bp, free_lp
             );
-            KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages)
+            KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages, MemType::DRAM)
         } else {
             debug!(
                 "Refilling unnecessary: needed_bp {} needed_lp {} free_bp {} free_lp {}",

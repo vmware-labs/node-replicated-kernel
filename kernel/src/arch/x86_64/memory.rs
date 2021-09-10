@@ -4,7 +4,7 @@
 //! Function and definitions that are specific to how the
 //! x86-64 address space is laid out.
 
-pub use kpi::KERNEL_BASE;
+pub use kpi::{MemType, KERNEL_BASE};
 pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 /// Translate a kernel 'virtual' address to the physical address of the memory.

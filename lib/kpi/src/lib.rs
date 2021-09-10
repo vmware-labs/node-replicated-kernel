@@ -160,6 +160,10 @@ pub enum VSpaceOperation {
     MapFrame = 4,
     /// Resolve a virtual to a physical address
     Identify = 5,
+    /// Map some anonymous memory from PMem
+    MapPM = 6,
+    /// Unmap a PMem mapped region
+    UnmapPM = 7,
     Unknown,
 }
 
@@ -172,6 +176,8 @@ impl From<u64> for VSpaceOperation {
             3 => VSpaceOperation::MapDevice,
             4 => VSpaceOperation::MapFrame,
             5 => VSpaceOperation::Identify,
+            6 => VSpaceOperation::MapPM,
+            7 => VSpaceOperation::UnmapPM,
             _ => VSpaceOperation::Unknown,
         }
     }
@@ -186,6 +192,8 @@ impl From<&str> for VSpaceOperation {
             "MapDevice" => VSpaceOperation::MapDevice,
             "MapFrame" => VSpaceOperation::MapFrame,
             "Identify" => VSpaceOperation::Identify,
+            "MapPM" => VSpaceOperation::MapPM,
+            "UnmapPM" => VSpaceOperation::UnmapPM,
             _ => VSpaceOperation::Unknown,
         }
     }

@@ -32,6 +32,22 @@ impl VSpace {
         VSpace::vspace(VSpaceOperation::Unmap, base, bound)
     }
 
+    /// Back a region of memory with PMEM.
+    ///
+    /// # Safety
+    /// Manipulates address space of process.
+    pub unsafe fn map_pmem(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
+        VSpace::vspace(VSpaceOperation::MapPM, base, bound)
+    }
+
+    /// Unmap region of virtual memory.
+    ///
+    /// # Safety
+    /// Manipulates address space of process.
+    pub unsafe fn unmap_pmem(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
+        VSpace::vspace(VSpaceOperation::UnmapPM, base, bound)
+    }
+
     /// Maps device memory (identity mapped with physical mem).
     ///
     /// # Safety

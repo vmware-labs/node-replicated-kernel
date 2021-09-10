@@ -900,7 +900,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     #[cfg(feature = "gdb")]
     {
         use gdbstub::{DisconnectReason, GdbStubError};
-        let mut target = gdb::GdbRemote::new();
+        let mut target = gdb::KernelDebugger::new();
         let connection = gdb::wait_for_gdb_connection(debug::GDB_REMOTE_PORT)
             .expect("No connection to GDB possible");
         info!("gdb {:?}", connection);

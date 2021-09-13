@@ -2286,13 +2286,15 @@ fn s06_leveldb_benchmark() {
 /// Tests that basic pmem allocation support is functional.
 #[test]
 fn s06_pmem_alloc() {
-    let cmdline = RunnerArgs::new("test-userspace")
+    let machine = Machine::determine();
+    let cmdline = RunnerArgs::new("test-userspace-smp")
         .module("init")
         .user_feature("test-pmem-alloc")
-        .nodes(2)
-        .cores(2)
+        .nodes(machine.max_numa_nodes())
+        .cores(machine.max_cores())
         .release()
-        .pmem(1024)
+        .memory(2048)
+        .pmem(2048)
         .timeout(20_000);
     let mut output = String::new();
 

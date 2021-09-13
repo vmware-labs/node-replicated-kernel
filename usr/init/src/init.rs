@@ -602,18 +602,83 @@ fn fs_write_test() {
     info!("fs_write Ok");
 }
 
-fn pmem_alloc() {
-    let base: u64 = 0xff000;
-    let size: u64 = 0x1000;
-    unsafe {
-        // Allocate a buffer and write data into it, which is later written to the file.
-        vibrio::syscalls::VSpace::map_pmem(base, size).expect("Map syscall failed");
+fn pmem_alloc(ncores: Option<usize>) {
+    use alloc::vec::Vec;
+    use lineup::threads::ThreadId;
+    use lineup::tls2::{Environment, SchedulerControlBlock};
 
-        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
-        for i in slice.iter_mut() {
-            *i = 0xb;
+    unsafe extern "C" fn bencher_trampoline(_arg1: *mut u8) -> *mut u8 {
+        map();
+        ptr::null_mut()
+    }
+
+    fn map() {
+        let core_id = Environment::scheduler().core_id as u64;
+        let size: u64 = 0x1000;
+        let base: u64 = 0xff000 + core_id * size;
+        unsafe {
+            // Allocate a buffer and write data into it, which is later written to the file.
+            vibrio::syscalls::VSpace::map_pmem(base, size).expect("Map syscall failed");
+
+            let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
+            for i in slice.iter_mut() {
+                *i = 0xb;
+            }
+            assert_eq!(slice[99], 0xb);
         }
-        assert_eq!(slice[99], 0xb);
+    }
+
+    let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
+    let cores = ncores.unwrap_or(hwthreads.len());
+
+    let mut maximum = 1; // We already have core 0
+    for hwthread in hwthreads.iter().take(cores) {
+        if hwthread.id != 0 {
+            match vibrio::syscalls::Process::request_core(
+                hwthread.id,
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+            ) {
+                Ok(_) => {
+                    maximum += 1;
+                    continue;
+                }
+                Err(e) => {
+                    error!("Can't spawn on {:?}: {:?}", hwthread.id, e);
+                    break;
+                }
+            }
+        }
+    }
+    info!("Spawned {} cores", maximum);
+
+    s.spawn(
+        32 * 4096,
+        move |_| {
+            for idx in maximum..maximum + 1 {
+                let mut thandles = Vec::with_capacity(idx);
+
+                for core_id in 0..idx {
+                    thandles.push(
+                        Environment::thread()
+                            .spawn_on_core(Some(bencher_trampoline), idx as *mut u8, core_id)
+                            .expect("Can't spawn bench thread?"),
+                    );
+                }
+
+                for thandle in thandles {
+                    Environment::thread().join(thandle);
+                }
+            }
+        },
+        ptr::null_mut(),
+        0,
+        None,
+    );
+
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    while s.has_active_threads() {
+        s.run(&scb);
     }
     info!("pmem_alloc OK");
 }
@@ -706,7 +771,7 @@ pub extern "C" fn _start() -> ! {
     fxmark::bench(ncores, open_files, benchmark, write_ratio);
 
     #[cfg(feature = "test-pmem-alloc")]
-    pmem_alloc();
+    pmem_alloc(ncores);
 
     vibrio::vconsole::init();
 

@@ -293,15 +293,20 @@ impl KernelAllocator {
             return Ok(());
         }
 
-        let (gmanager, mut mem_manager) = match mem_type {
+        let (gmanager, mut mem_manager, affinity) = match mem_type {
             MemType::DRAM => (
                 kcb.physical_memory.gmanager.unwrap(),
                 kcb.try_mem_manager()?,
+                kcb.physical_memory.affinity as usize,
             ),
-            MemType::PMEM => (kcb.pmem_memory.gmanager.unwrap(), kcb.pmem_manager()),
+            MemType::PMEM => (
+                kcb.pmem_memory.gmanager.unwrap(),
+                kcb.pmem_manager(),
+                kcb.pmem_memory.affinity as usize,
+            ),
             _ => unreachable!(),
         };
-        let mut ncache = gmanager.node_caches[kcb.physical_memory.affinity as usize].lock();
+        let mut ncache = gmanager.node_caches[affinity].lock();
         // Make sure we don't overflow the TCache
         let needed_base_pages =
             core::cmp::min(mem_manager.spare_base_page_capacity(), needed_base_pages);

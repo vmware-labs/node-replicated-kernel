@@ -602,6 +602,22 @@ fn fs_write_test() {
     info!("fs_write Ok");
 }
 
+fn pmem_alloc() {
+    let base: u64 = 0xff000;
+    let size: u64 = 0x1000;
+    unsafe {
+        // Allocate a buffer and write data into it, which is later written to the file.
+        vibrio::syscalls::VSpace::map_pmem(base, size).expect("Map syscall failed");
+
+        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
+        for i in slice.iter_mut() {
+            *i = 0xb;
+        }
+        assert_eq!(slice[99], 0xb);
+    }
+    info!("pmem_alloc OK");
+}
+
 pub fn install_vcpu_area() {
     let ctl =
         vibrio::syscalls::Process::vcpu_control_area().expect("Can't read vcpu control area.");
@@ -688,6 +704,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "fxmark")]
     fxmark::bench(ncores, open_files, benchmark, write_ratio);
+
+    #[cfg(feature = "test-pmem-alloc")]
+    pmem_alloc();
 
     vibrio::vconsole::init();
 

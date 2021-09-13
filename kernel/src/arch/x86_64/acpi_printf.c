@@ -1059,4 +1059,5 @@ int fctprintf(void (*out)(char character, void *arg), void *arg, const char *for
 size_t fwrite(const void *ptr, size_t size, size_t nmemb, void *stream)
 {
   printf_("acpi called fwrite, probably shouldn't happen or just print this to stdout...");
+  return 0;
 }

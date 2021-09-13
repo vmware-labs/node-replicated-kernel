@@ -23,6 +23,7 @@ fn main() {
             .flag("-shared")
             .flag("-nostartfiles")
             .flag("-fPIC")
+            .flag("-Wno-unused-parameter")
             .file("src/arch/x86_64/start_ap.S")
             .file("src/arch/x86_64/exec.S")
             .file("src/arch/x86_64/acpi_printf.c")

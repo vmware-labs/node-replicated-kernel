@@ -42,6 +42,7 @@ test-rump-tmpfs = [ "rumprt" ]
 test-rump-net = [ "rumprt" ]
 test-fs = []
 test-fs-prop = []
+test-pmem-alloc = []
 
 # Simple micro-benchmarks
 bench-vmops = []

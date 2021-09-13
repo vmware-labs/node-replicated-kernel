@@ -2282,3 +2282,27 @@ fn s06_leveldb_benchmark() {
         check_for_successful_exit(&cmdline, qemu_run(), output);
     }
 }
+
+/// Tests that basic pmem allocation support is functional.
+#[test]
+fn s06_pmem_alloc() {
+    let cmdline = RunnerArgs::new("test-userspace")
+        .module("init")
+        .user_feature("test-pmem-alloc")
+        .nodes(2)
+        .cores(2)
+        .release()
+        .pmem(1024)
+        .timeout(20_000);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        output += p.exp_string("pmem_alloc OK")?.as_str();
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}

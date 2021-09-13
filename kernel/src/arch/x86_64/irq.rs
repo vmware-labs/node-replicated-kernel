@@ -94,7 +94,7 @@ macro_rules! idt_set {
         // $ist is normally set to 0, which means we use the interrupt_stack from the kcb.
         // $ist is set to 1 for double-faults and other severe exceptions
         // to use the `unrecoverable_fault_stack` from the kcb
-        $idt_table[$num] = DescriptorBuilder::interrupt_descriptor(seg, $f as u64)
+        $idt_table[$num as usize] = DescriptorBuilder::interrupt_descriptor(seg, $f as u64)
             .dpl(Ring::Ring3)
             .ist($ist)
             .present()
@@ -128,31 +128,31 @@ impl Default for IdtTable {
         // Our IdtTable starts out with 256 'NULL' descriptors
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
-        idt_set!(table.0, 0, isr_handler0, 0);
-        idt_set!(table.0, 1, isr_handler1, 0);
-        idt_set!(table.0, 2, isr_handler2, 0);
-        idt_set!(table.0, 3, isr_handler3, 0);
-        idt_set!(table.0, 4, isr_handler4, 0);
-        idt_set!(table.0, 5, isr_handler5, 0);
-        idt_set!(table.0, 6, isr_handler6, 0);
-        idt_set!(table.0, 7, isr_handler7, 0);
+        idt_set!(table.0, DIVIDE_ERROR_VECTOR, isr_handler0, 0);
+        idt_set!(table.0, DEBUG_VECTOR, isr_handler1, 0);
+        idt_set!(table.0, NONMASKABLE_INTERRUPT_VECTOR, isr_handler2, 0);
+        idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler3, 0);
+        idt_set!(table.0, OVERFLOW_VECTOR, isr_handler4, 0);
+        idt_set!(table.0, BOUND_RANGE_EXCEEDED_VECTOR, isr_handler5, 0);
+        idt_set!(table.0, INVALID_OPCODE_VECTOR, isr_handler6, 0);
+        idt_set!(table.0, DEVICE_NOT_AVAILABLE_VECTOR, isr_handler7, 0);
         // For double-faults, we use the
         // _early handler to abort in any case:
-        idt_set!(table.0, 8, isr_handler_early8, 1);
-        idt_set!(table.0, 9, isr_handler9, 0);
-        idt_set!(table.0, 10, isr_handler10, 0);
-        idt_set!(table.0, 11, isr_handler11, 0);
-        idt_set!(table.0, 12, isr_handler12, 0);
-        idt_set!(table.0, 13, isr_handler13, 0);
-        idt_set!(table.0, 14, isr_handler14, 0);
+        idt_set!(table.0, DOUBLE_FAULT_VECTOR, isr_handler_early8, 1);
+        idt_set!(table.0, COPROCESSOR_SEGMENT_OVERRUN_VECTOR, isr_handler9, 0);
+        idt_set!(table.0, INVALID_TSS_VECTOR, isr_handler10, 0);
+        idt_set!(table.0, SEGMENT_NOT_PRESENT_VECTOR, isr_handler11, 0);
+        idt_set!(table.0, STACK_SEGEMENT_FAULT_VECTOR, isr_handler12, 0);
+        idt_set!(table.0, GENERAL_PROTECTION_FAULT_VECTOR, isr_handler13, 0);
+        idt_set!(table.0, PAGE_FAULT_VECTOR, isr_handler14, 0);
 
-        idt_set!(table.0, 16, isr_handler16, 0);
-        idt_set!(table.0, 17, isr_handler17, 0);
+        idt_set!(table.0, X87_FPU_VECTOR, isr_handler16, 0);
+        idt_set!(table.0, ALIGNMENT_CHECK_VECTOR, isr_handler17, 0);
         // For machine-check exceptions, we use the
         // _early handler to abort in any case:
-        idt_set!(table.0, 18, isr_handler_early18, 1);
-        idt_set!(table.0, 19, isr_handler19, 0);
-        idt_set!(table.0, 20, isr_handler20, 0);
+        idt_set!(table.0, MACHINE_CHECK_VECTOR, isr_handler_early18, 1);
+        idt_set!(table.0, SIMD_FLOATING_POINT_VECTOR, isr_handler19, 0);
+        idt_set!(table.0, VIRTUALIZATION_VECTOR, isr_handler20, 0);
         idt_set!(table.0, 30, isr_handler30, 0);
 
         // PIC interrupts:
@@ -187,28 +187,41 @@ impl IdtTable {
     fn early() -> IdtTable {
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
-        idt_set!(table.0, 0, isr_handler_early0, 0);
-        idt_set!(table.0, 1, isr_handler_early1, 0);
-        idt_set!(table.0, 2, isr_handler_early2, 0);
-        idt_set!(table.0, 3, isr_handler_early3, 0);
-        idt_set!(table.0, 4, isr_handler_early4, 0);
-        idt_set!(table.0, 5, isr_handler_early5, 0);
-        idt_set!(table.0, 6, isr_handler_early6, 0);
-        idt_set!(table.0, 7, isr_handler_early7, 0);
-        idt_set!(table.0, 8, isr_handler_early8, 0);
-        idt_set!(table.0, 9, isr_handler_early9, 0);
-        idt_set!(table.0, 10, isr_handler_early10, 0);
-        idt_set!(table.0, 11, isr_handler_early11, 0);
-        idt_set!(table.0, 12, isr_handler_early12, 0);
-        idt_set!(table.0, 13, isr_handler_early13, 0);
-        idt_set!(table.0, 14, isr_handler_early14, 0);
+        idt_set!(table.0, DIVIDE_ERROR_VECTOR, isr_handler_early0, 0);
+        idt_set!(table.0, DEBUG_VECTOR, isr_handler_early1, 0);
+        idt_set!(table.0, NONMASKABLE_INTERRUPT_VECTOR, isr_handler_early2, 0);
+        idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler_early3, 0);
+        idt_set!(table.0, OVERFLOW_VECTOR, isr_handler_early4, 0);
+        idt_set!(table.0, BOUND_RANGE_EXCEEDED_VECTOR, isr_handler_early5, 0);
+        idt_set!(table.0, INVALID_OPCODE_VECTOR, isr_handler_early6, 0);
+        idt_set!(table.0, DEVICE_NOT_AVAILABLE_VECTOR, isr_handler_early7, 0);
+        // For double-faults, we use the
+        // _early handler to abort in any case:
+        idt_set!(table.0, DOUBLE_FAULT_VECTOR, isr_handler_early8, 1);
+        idt_set!(
+            table.0,
+            COPROCESSOR_SEGMENT_OVERRUN_VECTOR,
+            isr_handler_early9,
+            0
+        );
+        idt_set!(table.0, INVALID_TSS_VECTOR, isr_handler_early10, 0);
+        idt_set!(table.0, SEGMENT_NOT_PRESENT_VECTOR, isr_handler_early11, 0);
+        idt_set!(table.0, STACK_SEGEMENT_FAULT_VECTOR, isr_handler_early12, 0);
+        idt_set!(
+            table.0,
+            GENERAL_PROTECTION_FAULT_VECTOR,
+            isr_handler_early13,
+            0
+        );
+        idt_set!(table.0, PAGE_FAULT_VECTOR, isr_handler_early14, 0);
 
-        idt_set!(table.0, 16, isr_handler_early16, 0);
-        idt_set!(table.0, 17, isr_handler_early17, 0);
-        idt_set!(table.0, 18, isr_handler_early18, 0);
-        idt_set!(table.0, 19, isr_handler_early19, 0);
-        idt_set!(table.0, 20, isr_handler_early20, 0);
-        idt_set!(table.0, 30, isr_handler_early30, 0);
+        idt_set!(table.0, X87_FPU_VECTOR, isr_handler_early16, 0);
+        idt_set!(table.0, ALIGNMENT_CHECK_VECTOR, isr_handler_early17, 0);
+        // For machine-check exceptions, we use the
+        // _early handler to abort in any case:
+        idt_set!(table.0, MACHINE_CHECK_VECTOR, isr_handler_early18, 1);
+        idt_set!(table.0, SIMD_FLOATING_POINT_VECTOR, isr_handler_early19, 0);
+        idt_set!(table.0, VIRTUALIZATION_VECTOR, isr_handler_early20, 0);
 
         idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler_early251, 0);
 
@@ -587,7 +600,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // If we have an active process we should do scheduler activations:
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
-        if a.vector > 30 && a.vector < 250 || a.vector == 3 {
+        if a.vector > 30 && a.vector < 250 || a.vector == BREAKPOINT_VECTOR.into() {
             trace!("handle_generic_exception {:?}", a);
 
             let mut plock = kcb.arch.current_executor();

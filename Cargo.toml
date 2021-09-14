@@ -10,6 +10,7 @@ members = [
     "lib/lineup",
     "lib/node-replication/cnr",
     "lib/node-replication/nr",
+    "lib/rpc",
     "lib/vibrio",
     "lib/vmxnet3",
     "usr/init",

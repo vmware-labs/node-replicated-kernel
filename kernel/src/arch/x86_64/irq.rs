@@ -59,7 +59,7 @@ use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
 use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring3Process, Ring3Resumer};
-use super::{debug, timer};
+use super::{debug, gdb, timer};
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -94,6 +94,7 @@ macro_rules! idt_set {
         // $ist is normally set to 0, which means we use the interrupt_stack from the kcb.
         // $ist is set to 1 for double-faults and other severe exceptions
         // to use the `unrecoverable_fault_stack` from the kcb
+        // and 2 for debug exception to use the `debug_stack` from the kcb.
         $idt_table[$num as usize] = DescriptorBuilder::interrupt_descriptor(seg, $f as u64)
             .dpl(Ring::Ring3)
             .ist($ist)
@@ -129,7 +130,7 @@ impl Default for IdtTable {
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
         idt_set!(table.0, DIVIDE_ERROR_VECTOR, isr_handler0, 0);
-        idt_set!(table.0, DEBUG_VECTOR, isr_handler1, 0);
+        idt_set!(table.0, DEBUG_VECTOR, isr_handler1, 2);
         idt_set!(table.0, NONMASKABLE_INTERRUPT_VECTOR, isr_handler2, 0);
         idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler3, 0);
         idt_set!(table.0, OVERFLOW_VECTOR, isr_handler4, 0);
@@ -188,7 +189,7 @@ impl IdtTable {
         let mut table = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
         idt_set!(table.0, DIVIDE_ERROR_VECTOR, isr_handler_early0, 0);
-        idt_set!(table.0, DEBUG_VECTOR, isr_handler_early1, 0);
+        idt_set!(table.0, DEBUG_VECTOR, isr_handler_early1, 2);
         idt_set!(table.0, NONMASKABLE_INTERRUPT_VECTOR, isr_handler_early2, 0);
         idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler_early3, 0);
         idt_set!(table.0, OVERFLOW_VECTOR, isr_handler_early4, 0);
@@ -414,6 +415,8 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
     warn!("Got debug interrupt {}", desc.source);
 
+    gdb::event_loop(None);
+
     let kcb = get_kcb();
     assert!(kcb.arch.has_executor(), "Not from user-space?");
     let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
@@ -636,11 +639,13 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } // make sure we drop the KCB object here
 
         // Shortcut to handle protection and page faults
-        if a.vector == 0xd {
+        if a.vector == GENERAL_PROTECTION_FAULT_VECTOR.into() {
             gp_handler(&a);
-        } else if a.vector == 0xe {
+        } else if a.vector == PAGE_FAULT_VECTOR.into() {
             pf_handler(&a);
-        } else if a.vector == 0x3 {
+        } else if a.vector == DEBUG_VECTOR.into() {
+            dbg_handler(&a);
+        } else if a.vector == BREAKPOINT_VECTOR.into() {
             dbg_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
             let kcb = get_kcb();

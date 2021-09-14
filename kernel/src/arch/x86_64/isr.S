@@ -59,18 +59,47 @@ in_kernel\ex:
     popq %r15
     movq %r15, 0*8(%rax)
 
-    // Save %rsp of interrupted process
-    movq 5*8(%rsp), %r15
-    movq %r15, 7*8(%rax)
+    // Save `ExceptionArguments` in `save_area` too,
+    // not everything is technically needed (except for RIP, RSP) 
+    // but the rest this is useful during gdb debugging.
+    //
+    // ExceptionArguments/rsp looks like this:
+    //
+    // at 00(rsp) => vector (pos 20)
+    // at 08(rsp) => exception (pos 21)
+    // at 16(rsp) => rip (pos 16)
+    // at 24(rsp) => cs (pos 22)
+    // at 32(rsp) => rflags (pos 17)
+    // at 40(rsp) => rsp (pos 7)
+    // at 48(rsp) => ss (pos 23)
+
+    // Save vector of interrupt
+    movq 0*8(%rsp), %r15
+    movq %r15, 20*8(%rax)
+
+    // Save exception of interrupt
+    movq 1*8(%rsp), %r15
+    movq %r15, 21*8(%rax)
 
     // Save RIP were we were at before we got interrupted
-    // This is at rsp+16 (put there by the hardware):
     movq 2*8(%rsp), %r15
     movq %r15, 16*8(%rax)
+
+    // Save cs before we got interrupted
+    movq 3*8(%rsp), %r15
+    movq %r15, 22*8(%rax)
 
     // Save RFLAGS of interrupted process
     movq 4*8(%rsp), %r15
     movq %r15, 17*8(%rax)
+
+    // Save %rsp of interrupted process
+    movq 5*8(%rsp), %r15
+    movq %r15, 7*8(%rax)
+
+    // Save ss before we got interrupted
+    movq 6*8(%rsp), %r15
+    movq %r15, 23*8(%rax)
 
     // Saves the fs register
     rdfsbase %r15
@@ -84,7 +113,7 @@ in_kernel\ex:
     pushq $0x0
     callq handle_generic_exception
 
-    // We should not return form handle_generic_exception.
+    // We should not return from `handle_generic_exception`.
     // In case we do, cause a page-fault to ease debugging
     movq  (0xdeadf), %rax
 

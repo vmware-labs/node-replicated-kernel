@@ -1,24 +1,45 @@
 #![allow(warnings)]
 use core::convert::TryInto;
+use core::lazy;
 
-use crate::error::KError;
-
-use gdbstub::target::ext::base::singlethread::SingleThreadOps;
-use gdbstub::target::ext::base::singlethread::{GdbInterrupt, ResumeAction, StopReason};
+use gdbstub::target::ext::base::multithread::ThreadStopReason;
+use gdbstub::target::ext::base::singlethread::{
+    GdbInterrupt, ResumeAction, SingleThreadOps, StopReason,
+};
 use gdbstub::target::ext::base::BaseOps;
 use gdbstub::target::ext::breakpoints::{
     Breakpoints, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps, WatchKind,
 };
 use gdbstub::target::{Target, TargetResult};
-use gdbstub::Connection;
-
+use gdbstub::{
+    Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError, GdbStubStateMachine,
+};
+use lazy_static::lazy_static;
 use log::{error, info};
+use spin::Mutex;
 use x86::debugregs;
 use x86::io;
 
+use super::debug::GDB_REMOTE_PORT;
+use crate::error::KError;
 use crate::memory::VAddr;
 
-pub fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
+/// Indicates the reason for interruption (e.g. a breakpoint was hit).
+pub type KCoreStopReason = ThreadStopReason<u64>;
+
+lazy_static! {
+    /// The GDB connection state machine.
+    ///
+    /// This is a state machine that handles the communication with the GDB.
+    pub static ref GDB_STUB: Mutex<Option<gdbstub::GdbStubStateMachine<'static, KernelDebugger, GdbSerial>>> = {
+        let connection = wait_for_gdb_connection(GDB_REMOTE_PORT).expect("Can't connect to GDB");
+        Mutex::new(Some(gdbstub::GdbStub::new(connection).run_state_machine().expect("Can't start GDB session")))
+    };
+}
+
+/// Wait until a GDB connection is established (e.g., until we can read
+/// something from the serial line).
+fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
     let gdb = GdbSerial::new(port);
 
     info!("Waiting for a GDB connection (I/O port {:#x})...", port);
@@ -31,6 +52,64 @@ pub fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
 
     info!("Debugger connected");
     Ok(gdb)
+}
+
+/// Resume the gdb client connection by passing an optional event for the
+/// interruption.
+///
+/// # Arguments
+/// - `resume_with`: Should probably always be Some(reason) except the first
+///   time after connecting.
+pub fn event_loop(resume_with: Option<KCoreStopReason>) -> Result<(), KError> {
+    let mut gdb_stm = GDB_STUB.lock().take().unwrap();
+    let target = super::kcb::get_kcb()
+        .arch
+        .kdebug
+        .as_mut()
+        .expect("Need a target");
+
+    loop {
+        gdb_stm = match gdb_stm {
+            GdbStubStateMachine::Pump(mut gdb_stm_inner) => {
+                // This means we expect stuff on the serial line (from GDB)
+                // Let's read and react to it:
+                let byte = gdb_stm_inner.borrow_conn().read()?;
+                match gdb_stm_inner.pump(target, byte) {
+                    Ok((_, Some(disconnect_reason))) => {
+                        match disconnect_reason {
+                            DisconnectReason::Disconnect => info!("GDB Disconnected"),
+                            DisconnectReason::TargetExited(_) => info!("Target exited"),
+                            DisconnectReason::TargetTerminated(_) => info!("Target halted"),
+                            DisconnectReason::Kill => info!("GDB sent a kill command"),
+                        }
+                        break;
+                    }
+                    Ok((gdb_stm_new, None)) => gdb_stm_new,
+                    Err(GdbStubError::TargetError(_e)) => {
+                        info!("Target raised a fatal error");
+                        break;
+                    }
+                    Err(_e) => {
+                        info!("gdbstub internal error");
+                        break;
+                    }
+                }
+            }
+            deferred_stop_reason => {
+                // This means we need to continue executing stuff, so let's put
+                // our STM back in `GDB_STUB` and exit.
+                let r = GDB_STUB.lock().replace(deferred_stop_reason);
+                assert!(
+                    r.is_none(),
+                    "Put something in GDB_STUB which we shouldn't have..."
+                );
+
+                return Ok(());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -73,20 +152,7 @@ impl GdbSerial {
 }
 
 impl Connection for GdbSerial {
-    type Error = GdbSerialErr;
-
-    fn read(&mut self) -> Result<u8, Self::Error> {
-        if let Some(byte) = self.peeked {
-            self.peeked = None;
-            Ok(byte)
-        } else {
-            while !self.can_read() {
-                core::hint::spin_loop();
-            }
-            let b = self.read_byte();
-            Ok(b)
-        }
-    }
+    type Error = KError;
 
     fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
         while !self.can_write() {
@@ -100,13 +166,27 @@ impl Connection for GdbSerial {
         if !self.can_read() {
             Ok(None)
         } else {
-            self.peeked = Some(self.read_byte());
-            Ok(self.peeked)
+            Ok(Some(self.read_byte()))
         }
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
         Ok(())
+    }
+}
+
+impl ConnectionExt for GdbSerial {
+    fn read(&mut self) -> Result<u8, Self::Error> {
+        if let Some(byte) = self.peeked {
+            self.peeked = None;
+            Ok(byte)
+        } else {
+            while !self.can_read() {
+                core::hint::spin_loop();
+            }
+            let b = self.read_byte();
+            Ok(b)
+        }
     }
 }
 
@@ -135,7 +215,7 @@ impl KernelDebugger {
 }
 
 impl Target for KernelDebugger {
-    type Error = ();
+    type Error = KError;
     type Arch = gdbstub_arch::x86::X86_64_SSE;
 
     fn base_ops(&mut self) -> BaseOps<Self::Arch, Self::Error> {
@@ -148,9 +228,9 @@ impl SingleThreadOps for KernelDebugger {
         &mut self,
         action: ResumeAction,
         gdb_interrupt: GdbInterrupt<'_>,
-    ) -> Result<StopReason<u64>, ()> {
+    ) -> Result<Option<StopReason<u64>>, KError> {
         info!("resume {:?}", action);
-        Ok(StopReason::Exited(0x0))
+        Ok(None)
     }
 
     fn read_registers(
@@ -158,32 +238,39 @@ impl SingleThreadOps for KernelDebugger {
         regs: &mut gdbstub_arch::x86::reg::X86_64CoreRegs,
     ) -> TargetResult<(), Self> {
         info!("read_registers");
+        let kcb = super::kcb::get_kcb();
+        if let Some(saved) = &kcb.arch.save_area {
+            // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
+            regs.regs[00] = saved.rax;
+            regs.regs[01] = saved.rbx;
+            regs.regs[02] = saved.rcx;
+            regs.regs[03] = saved.rdx;
+            regs.regs[04] = saved.rsi;
+            regs.regs[05] = saved.rdi;
+            regs.regs[06] = saved.rbp;
+            regs.regs[07] = saved.rsp;
+            regs.regs[08] = saved.r8;
+            regs.regs[09] = saved.r9;
+            regs.regs[10] = saved.r10;
+            regs.regs[11] = saved.r11;
+            regs.regs[12] = saved.r12;
+            regs.regs[13] = saved.r13;
+            regs.regs[14] = saved.r14;
+            regs.regs[15] = saved.r15;
 
-        // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
-        regs.regs[0] = 0x0;
-        regs.regs[1] = 0x0;
-        regs.regs[2] = 0x0;
-        regs.regs[3] = 0x0;
-        regs.regs[4] = 0x0;
-        regs.regs[5] = 0x0;
-        regs.regs[6] = 0x0;
-        regs.regs[7] = 0x0;
-        for i in 8..16 {
-            regs.regs[i] = 0x0;
+            regs.rip = saved.rip;
+            regs.eflags = saved.rflags.try_into().unwrap();
+
+            // Segment registers: CS, SS, DS, ES, FS, GS
+            regs.segments = gdbstub_arch::x86::reg::X86SegmentRegs {
+                cs: saved.cs.try_into().unwrap(),
+                ss: saved.ss.try_into().unwrap(),
+                ds: 0x0,
+                es: 0x0,
+                fs: saved.fs.try_into().unwrap(),
+                gs: saved.gs.try_into().unwrap(),
+            };
         }
-
-        regs.rip = 0x0;
-        regs.eflags = 0x0 as u32;
-
-        // Segment registers: CS, SS, DS, ES, FS, GS
-        regs.segments = gdbstub_arch::x86::reg::X86SegmentRegs {
-            cs: 0x0,
-            ss: 0x0,
-            ds: 0x0,
-            es: 0x0,
-            fs: 0x0,
-            gs: 0x0,
-        };
 
         Ok(())
     }
@@ -227,11 +314,27 @@ fn watchkind_to_breakcondition(kind: WatchKind) -> debugregs::BreakCondition {
 }
 
 impl HwWatchpoint for KernelDebugger {
-    fn add_hw_watchpoint(&mut self, addr: u64, kind: WatchKind) -> TargetResult<bool, Self> {
+    fn add_hw_watchpoint(
+        &mut self,
+        addr: u64,
+        len: u64,
+        kind: WatchKind,
+    ) -> TargetResult<bool, Self> {
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
         {
+            let bs = match len {
+                1 => debugregs::BreakSize::Bytes1,
+                2 => debugregs::BreakSize::Bytes2,
+                4 => debugregs::BreakSize::Bytes4,
+                8 => debugregs::BreakSize::Bytes8,
+                _ => {
+                    error!("Unsupported len argument provided by GDB: {}", len);
+                    debugregs::BreakSize::Bytes8
+                }
+            };
+
             if entry.is_none() {
                 *entry = Some((VAddr::from(addr), BreakType::Watchpoint(kind)));
 
@@ -242,14 +345,7 @@ impl HwWatchpoint for KernelDebugger {
                     // Enable bp in dr7
                     let mut dr7 = debugregs::dr7();
                     let bc = watchkind_to_breakcondition(kind);
-                    dr7.enable_bp(
-                        *reg,
-                        bc,
-                        // TODO: Not sure if this is a good size.
-                        // Maybe read the docs carefully to resolve.
-                        debugregs::BreakSize::Bytes8,
-                        KernelDebugger::GLOBAL_BP_FLAG,
-                    );
+                    dr7.enable_bp(*reg, bc, bs, KernelDebugger::GLOBAL_BP_FLAG);
                     debugregs::dr7_write(dr7);
                 }
                 return Ok(true);
@@ -260,7 +356,12 @@ impl HwWatchpoint for KernelDebugger {
         Ok(false)
     }
 
-    fn remove_hw_watchpoint(&mut self, addr: u64, kind: WatchKind) -> TargetResult<bool, Self> {
+    fn remove_hw_watchpoint(
+        &mut self,
+        addr: u64,
+        _len: u64,
+        kind: WatchKind,
+    ) -> TargetResult<bool, Self> {
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())

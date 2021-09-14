@@ -68,7 +68,6 @@ pub mod timer;
 pub mod tlb;
 pub mod vspace;
 
-#[cfg(feature = "gdb")]
 mod gdb;
 mod isr;
 
@@ -254,6 +253,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     static_kcb.arch.set_interrupt_stacks(
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
+        OwnedStack::new(64 * BASE_PAGE_SIZE),
     );
     static_kcb
         .arch
@@ -697,6 +697,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     static_kcb.arch.set_interrupt_stacks(
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
+        OwnedStack::new(64 * BASE_PAGE_SIZE),
     );
     static_kcb
         .arch
@@ -899,30 +900,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     #[cfg(feature = "gdb")]
     {
-        use gdbstub::{DisconnectReason, GdbStubError};
-        let mut target = gdb::KernelDebugger::new();
-        let connection = gdb::wait_for_gdb_connection(debug::GDB_REMOTE_PORT)
-            .expect("No connection to GDB possible");
-        info!("gdb {:?}", connection);
-        let mut debugger = gdbstub::GdbStub::new(connection);
-        // Instead of taking ownership of the system, `GdbStub` takes a &mut, yielding
-        // ownership back to the caller once the debugging session is closed.
-        match debugger.run(&mut target) {
-            Ok(disconnect_reason) => match disconnect_reason {
-                DisconnectReason::Disconnect => error!("GDB client disconnected."),
-                DisconnectReason::TargetTerminated(_r) => error!("Target terminated!"),
-                DisconnectReason::TargetExited(_r) => error!("Target exited!"),
-                DisconnectReason::Kill => error!("GDB client sent a kill command!"),
-            },
-            // Handle any target-specific errors
-            Err(GdbStubError::TargetError(e)) => {
-                error!("Target raised a fatal error: {:?}", e);
-                // `gdbstub` will not immediate close the debugging session if a
-                // fatal error occurs, enabling "post mortem" debugging if required.
-                let _r = debugger.run(&mut target);
-            }
-            Err(e) => error!("Got error {:?}", e),
-        }
+        lazy_static::initialize(&gdb::GDB_STUB);
+
+        let target = gdb::KernelDebugger::new();
+        let kcb = kcb::get_kcb();
+        kcb.arch
+            .attach_debugger(target)
+            .expect("Can't set debug target");
+        unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)

@@ -28,6 +28,7 @@ use crate::process::Pid;
 use crate::process::MAX_PROCESSES;
 use crate::stack::{OwnedStack, Stack};
 
+use super::gdb::KernelDebugger;
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
 use super::process::{Ring3Executor, Ring3Process};
@@ -143,6 +144,9 @@ pub struct Arch86Kcb {
     /// Will be zero in case system doesn't have NUMA.
     pub node_id: atopology::NodeId,
 
+    /// Debugger interface that communicates with external GDB instance.
+    pub kdebug: Option<KernelDebugger>,
+
     /// Max number of hyperthreads on the current socket.
     max_threads: usize,
 
@@ -160,6 +164,16 @@ pub struct Arch86Kcb {
     /// (see `set_interrupt_stacks`).
     /// This member should probably not be touched from normal code.
     unrecoverable_fault_stack: Option<OwnedStack>,
+
+    /// A debug stack that is used for for debug exceptions
+    /// (int 0x1, breakpoints, watchpoints etc.)
+    ///
+    /// Ensures we can inspect old stack with GDB.
+    ///
+    /// The CPU switches to this memory location automatically
+    /// (see `set_interrupt_stacks`).
+    /// This member should probably not be touched from normal code.
+    debug_stack: Option<OwnedStack>,
 
     /// A handle to the syscall stack memory location.
     ///
@@ -192,11 +206,13 @@ impl Arch86Kcb {
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
+            debug_stack: None,
             cnr_replica: None,
             cnrfs: None,
             id: 0,
             node_id: 0,
             max_threads: 0,
+            kdebug: None,
         }
     }
 
@@ -258,11 +274,17 @@ impl Arch86Kcb {
         Ok(p)
     }
 
-    pub fn set_interrupt_stacks(&mut self, ex_stack: OwnedStack, fault_stack: OwnedStack) {
+    pub fn set_interrupt_stacks(
+        &mut self,
+        ex_stack: OwnedStack,
+        fault_stack: OwnedStack,
+        debug_stack: OwnedStack,
+    ) {
         // Add the stack-top to the TSS so the CPU ends up switching
         // to this stack on an interrupt
         debug_assert_eq!(ex_stack.base() as u64 % 16, 0, "Stack not 16-byte aligned");
         self.tss.set_rsp(x86::Ring::Ring0, ex_stack.base() as u64);
+
         // Prepare ist[0] in tss for the double-fault stack
         debug_assert_eq!(
             fault_stack.base() as u64 % 16,
@@ -270,6 +292,13 @@ impl Arch86Kcb {
             "Stack not 16-byte aligned"
         );
         self.tss.set_ist(0, fault_stack.base() as u64);
+
+        debug_assert_eq!(
+            debug_stack.base() as u64 % 16,
+            0,
+            "Stack not 16-byte aligned"
+        );
+        self.tss.set_ist(1, debug_stack.base() as u64);
 
         // Link TSS in Gdt
         // It's important to only construct the GdtTable
@@ -314,6 +343,15 @@ impl Arch86Kcb {
 
     pub fn kernel_args(&self) -> &'static KernelArgs {
         self.kernel_args
+    }
+
+    pub fn attach_debugger(&mut self, debugger: KernelDebugger) -> Result<(), KError> {
+        if self.kdebug.is_none() {
+            self.kdebug = Some(debugger);
+            Ok(())
+        } else {
+            Err(KError::DebuggerAlreadyAttached)
+        }
     }
 
     #[cfg(feature = "test-double-fault")]

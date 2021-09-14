@@ -102,7 +102,7 @@ impl From<u8> for RPCType {
 }
 unsafe_abomonate!(RPCType);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RPCHeader {
     pub client_id: u64,
     pub pid: usize,

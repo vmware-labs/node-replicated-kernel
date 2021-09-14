@@ -33,19 +33,34 @@ impl RPCServerAPI for MPSCServer {
     }
 
     /// receives next RPC call with RPC ID
-    fn rpc_recv(&self) -> Result<(&RPCHeader, Vec<u8>), RPCError> {
+    fn rpc_recv(&self) -> Result<(RPCHeader, Vec<u8>), RPCError> {
         let mut req_data = self.rx.recv().unwrap(); // TODO: handle error more gracefully
-        return if let Some((hdr, data)) = unsafe { decode::<RPCHeader>(&mut req_data) } {
-            Ok((hdr, data.to_vec()))
-        } else {
-            Err(RPCError::MalformedRequest)
-        };
+        let (hdr, data) = unsafe { decode::<RPCHeader>(&mut req_data) }.unwrap();
+        Ok((*hdr, data.to_vec()))
     }
 
     /// replies an RPC call with results
-    fn rpc_reply(&self, _client: NodeId, data: Vec<u8>) -> Result<(), RPCError> {
+    fn rpc_reply(&self, client: NodeId, data: Vec<u8>) -> Result<(), RPCError> {
+        // Create response header
+        let res_hdr = RPCHeader {
+            client_id: client,
+            pid: 0,    // dummy value, no real client ID
+            req_id: 0, // dummy value, no real request ID
+            msg_type: RPCType::Unknown,
+            msg_len: data.len() as u64,
+        };
+
+        // Serialize request header then request body
+        // We assume data is already serialized
+        let mut res_data = Vec::new();
+        unsafe { encode(&res_hdr, &mut res_data) }.unwrap();
+        if data.len() > 0 {
+            res_data.extend(data);
+        }
+
+        // Send the data
         self.tx
-            .send(data)
+            .send(res_data)
             .map_err(|_my_err| RPCError::TransportError)
     }
 

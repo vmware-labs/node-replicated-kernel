@@ -2293,7 +2293,7 @@ fn s06_pmem_alloc() {
         .nodes(machine.max_numa_nodes())
         .cores(machine.max_cores())
         .release()
-        .memory(2048)
+        .memory(8192)
         .pmem(2048)
         .timeout(20_000);
     let mut output = String::new();

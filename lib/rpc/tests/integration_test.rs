@@ -1,4 +1,9 @@
+mod common;
+
 #[test]
 fn add_two() {
-    assert_eq!(4, 2 + 2);
+    use common::MPSCClient;
+    use common::MPSCServer;
+
+    println!("HI");
 }

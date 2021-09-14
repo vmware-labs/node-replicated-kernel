@@ -1,14 +1,21 @@
 use std::fmt::Error;
+use std::sync::mpsc::{SyncSender, Receiver};
 
 use rpc::cluster_api::{ClusterControllerAPI, ClusterError, NodeId};
 use rpc::rpc::*;
 use rpc::rpc_api::RPCServerAPI;
 
-pub struct MPSCServer {}
+pub struct MPSCServer {
+    rx : Receiver<Vec<u8>>,
+    tx : SyncSender<Vec<u8>>,
+}
 
 impl MPSCServer {
-    pub fn new() -> MPSCServer {
-        MPSCServer {}
+    pub fn new(rx : Receiver<Vec<u8>>, tx : SyncSender<Vec<u8>>) -> MPSCServer {
+        MPSCServer {
+            rx : rx,
+            tx : tx,
+        }
     }
 }
 
@@ -26,12 +33,13 @@ impl RPCServerAPI for MPSCServer {
 
     /// receives next RPC call with RPC ID
     fn rpc_recv(&self) -> Result<(&RPCHeader, Vec<u8>), RPCError> {
+        //self.rx.recv().map_err(|my_err| { RPCError::TransportError} )
         Err(RPCError::NotSupported)
     }
 
     /// replies an RPC call with results
-    fn rpc_reply(&self, client: NodeId, data: Vec<u8>) -> Result<(), RPCError> {
-        Err(RPCError::NotSupported)
+    fn rpc_reply(&self, _client: NodeId, data: Vec<u8>) -> Result<(), RPCError> {
+        self.tx.send(data).map_err(|my_err| { RPCError::TransportError} )
     }
 
     /// Run the RPC server

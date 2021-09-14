@@ -10,6 +10,7 @@ use gdbstub::target::ext::base::BaseOps;
 use gdbstub::target::ext::breakpoints::{
     Breakpoints, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps, WatchKind,
 };
+use gdbstub::target::ext::section_offsets::{Offsets, SectionOffsets, SectionOffsetsOps};
 use gdbstub::target::{Target, TargetResult};
 use gdbstub::{
     Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError, GdbStubStateMachine,
@@ -221,6 +222,20 @@ impl Target for KernelDebugger {
     fn base_ops(&mut self) -> BaseOps<Self::Arch, Self::Error> {
         BaseOps::SingleThread(self)
     }
+
+    fn section_offsets(&mut self) -> Option<SectionOffsetsOps<Self>> {
+        Some(self)
+    }
+}
+
+impl Breakpoints for KernelDebugger {
+    fn hw_breakpoint(&mut self) -> Option<HwBreakpointOps<Self>> {
+        Some(self)
+    }
+
+    fn hw_watchpoint(&mut self) -> Option<HwWatchpointOps<Self>> {
+        Some(self)
+    }
 }
 
 impl SingleThreadOps for KernelDebugger {
@@ -294,13 +309,18 @@ impl SingleThreadOps for KernelDebugger {
     }
 }
 
-impl Breakpoints for KernelDebugger {
-    fn hw_breakpoint(&mut self) -> Option<HwBreakpointOps<Self>> {
-        Some(self)
-    }
+impl SectionOffsets for KernelDebugger {
+    fn get_section_offsets(&mut self) -> Result<Offsets<u64>, KError> {
+        info!("get_section_offsets");
+        let kcb = super::kcb::get_kcb();
+        let boot_args = kcb.arch.kernel_args();
+        let kernel_reloc_offset = boot_args.kernel_elf_offset.as_u64();
 
-    fn hw_watchpoint(&mut self) -> Option<HwWatchpointOps<Self>> {
-        Some(self)
+        Ok(Offsets::Sections {
+            text: kernel_reloc_offset,
+            data: kernel_reloc_offset,
+            bss: None,
+        })
     }
 }
 

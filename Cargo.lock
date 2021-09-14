@@ -3,6 +3,14 @@
 version = 3
 
 [[package]]
+name = "abomonation"
+version = "0.7.3"
+source = "git+https://github.com/hunhoffe/abomonation.git?branch=no_std#f8dd415285452e7250fda7ccc907622d89160b3d"
+dependencies = [
+ "smoltcp",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1449,6 +1457,19 @@ dependencies = [
  "num_cpus",
  "rumpkernel",
  "vibrio",
+]
+
+[[package]]
+name = "rpc"
+version = "0.1.0"
+dependencies = [
+ "abomonation",
+ "kpi",
+ "lazy_static",
+ "log",
+ "smoltcp",
+ "spin 0.5.2",
+ "vmxnet3",
 ]
 
 [[package]]

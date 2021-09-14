@@ -382,20 +382,17 @@ def run_qemu(args):
                     paths.append(default)
                     pmem = "on"
                 else:
-                    if len(paths) > 0:
-                        paths.append(paths[node % num_host_numa_nodes])
-                    else:
-                        f = open("{}".format(pmem_test_path), "w+")
-                        paths += [pmem_test_path] * args.qemu_nodes
-                        return paths
+                    path = "{}-{}".format(pmem_test_path, node)
+                    open(path, "w+")
+                    paths.append(path)
         return paths
 
     host_numa_nodes_list = query_host_numa()
     num_host_numa_nodes = len(host_numa_nodes_list)
     if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
         if args.qemu_pmem and int(args.qemu_pmem):
-            pmem_paths = pmem_paths(args)
-            assert len(pmem_paths) == args.qemu_nodes
+            pm_paths = pmem_paths(args)
+            assert len(pm_paths) == args.qemu_nodes
         for node in range(0, args.qemu_nodes):
             mem_per_node = int(args.qemu_memory) / args.qemu_nodes
             prealloc = "on" if args.qemu_prealloc else "off"
@@ -414,7 +411,7 @@ def run_qemu(args):
             if args.qemu_pmem and int(args.qemu_pmem):
                 pmem_per_node = int(args.qemu_pmem) / args.qemu_nodes
                 qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem={},share=on'.format(
-                    node, pmem_paths[node], int(pmem_per_node), pmem)]
+                    node, pm_paths[node], int(pmem_per_node), pmem)]
                 qemu_default_args += ['-device',
                                     'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
@@ -514,8 +511,9 @@ def run_qemu(args):
             print("STDERR: {}".format(execution.stderr.decode('utf-8')))
 
     # If the test creates a fake pmem path; remove it.
-    if os.path.isfile(pmem_test_path):
-        os.remove(pmem_test_path)
+    for path in pmem_paths(args):
+        if os.path.isfile(path) and pmem_test_path in path:
+            os.remove(path)
 
     return nrk_exit_code
 

@@ -74,6 +74,10 @@ pub enum KError {
     OpenFileLimit,
     FileDescForPidAlreadyAdded,
     NoFileDescForPid,
+
+    // Debugging
+    DebuggerAlreadyAttached,
+    DebuggerStmFailure,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {
@@ -242,6 +246,9 @@ impl fmt::Display for KError {
             KError::AlreadyPresent => write!(f, "Fd/File already exists"),
             KError::DirectoryError => write!(f, "Can't read or write to a directory"),
             KError::OpenFileLimit => write!(f, "Maximum files are opened for a process"),
+
+            KError::DebuggerAlreadyAttached => write!(f, "Debugger is already attached"),
+            KError::DebuggerStmFailure => write!(f, "Failure while running the GDB state machine"),
         }
     }
 }

@@ -48,8 +48,8 @@ arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
 fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "allocator_api", features = ["unstable"] }
-gdbstub = { version = "0.5.0", default-features = false, features = ["alloc"], optional = true }
-gdbstub_arch = { version = "0.1.1", optional = true }
+gdbstub = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6", revision = "9227dfd", default-features = false, features = ["alloc"] }
+gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6", revision = "9227dfd" }
 
 [[bin]]
 name = "nrk"
@@ -79,7 +79,7 @@ cc = "1.0"
 [features]
 default = ["addr2line", "serde", "serde_cbor"]
 # gdb server
-gdb = ["gdbstub", "gdbstub_arch"]
+gdb = []
 # Run an integration test instead of standard kernel main function
 integration-test = []
 # smoke: Shorten long running benchmarks to test just functionality

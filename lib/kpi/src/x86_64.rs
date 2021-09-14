@@ -102,8 +102,14 @@ pub struct SaveArea {
     pub gs: u64,
     /// 19: %fs register
     pub fs: u64,
-    /// 20-23: reserved (fxsave alignment -- TODO: don't want this)
-    pub reserved1: [u64; 4],
+    /// 20: Vector in case of interruption
+    pub vector: u64,
+    /// 21: Error code in case of interruption
+    pub exception: u64,
+    /// 22: %cs register
+    pub cs: u64,
+    /// 23: %ss register
+    pub ss: u64,
     /// 24: Floating point register state
     pub fxsave: [u8; 512],
 }
@@ -137,7 +143,10 @@ impl SaveArea {
             rflags: 0,
             fs: 0,
             gs: 0,
-            reserved1: [0; 4],
+            vector: 0,
+            exception: 0,
+            cs: 0,
+            ss: 0,
             fxsave: [0; 512],
         }
     }

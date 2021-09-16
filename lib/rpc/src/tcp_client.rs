@@ -111,7 +111,6 @@ impl RPCClientAPI for TCPClient<'_> {
         let mut req_data = Vec::new();
         unsafe { encode(&req_hdr, &mut req_data) }.unwrap();
         if data.len() > 0 {
-            //unsafe { encode(&data, &mut req_data) }.unwrap();
             req_data.extend(data);
         }
 

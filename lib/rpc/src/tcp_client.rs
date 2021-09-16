@@ -89,7 +89,7 @@ impl ClusterClientAPI for TCPClient<'_> {
             }
         }
 
-        self.rpc_call(0, RPCType::Registration, Vec::new()).unwrap();
+        self.call(0, RPCType::Registration, Vec::new()).unwrap();
         Ok(self.client_id)
     }
 }
@@ -97,12 +97,7 @@ impl ClusterClientAPI for TCPClient<'_> {
 /// RPC client operations
 impl RPCClientAPI for TCPClient<'_> {
     /// calls a remote RPC function with ID
-    fn rpc_call(
-        &mut self,
-        pid: usize,
-        rpc_id: RPCType,
-        data: Vec<u8>,
-    ) -> Result<Vec<u8>, RPCError> {
+    fn call(&mut self, pid: usize, rpc_id: RPCType, data: Vec<u8>) -> Result<Vec<u8>, RPCError> {
         // Create request header
         let req_hdr = RPCHeader {
             client_id: self.client_id,
@@ -121,17 +116,17 @@ impl RPCClientAPI for TCPClient<'_> {
         }
 
         // Send request
-        self.msg_send(req_data).unwrap();
+        self.send(req_data).unwrap();
 
         // Receive response header
-        let mut res_data = self.msg_recv(core::mem::size_of::<RPCHeader>()).unwrap();
+        let mut res_data = self.recv(core::mem::size_of::<RPCHeader>()).unwrap();
         let (res_hdr, extra) = unsafe { decode::<RPCHeader>(&mut res_data) }.unwrap();
         assert_eq!(extra.len(), 0);
 
         // Read the rest of the data
         let mut payload_data = Vec::new();
         if res_hdr.msg_len > 0 {
-            payload_data = self.msg_recv(res_hdr.msg_len as usize).unwrap();
+            payload_data = self.recv(res_hdr.msg_len as usize).unwrap();
         }
 
         // Check request & client IDs, and also length of received data
@@ -158,7 +153,7 @@ impl RPCClientAPI for TCPClient<'_> {
     }
 
     /// send data to a remote node
-    fn msg_send(&mut self, data: Vec<u8>) -> Result<(), RPCError> {
+    fn send(&mut self, data: Vec<u8>) -> Result<(), RPCError> {
         let mut data_sent = 0;
         loop {
             match self.iface.poll(&mut self.sockets, Instant::from_millis(0)) {
@@ -174,7 +169,7 @@ impl RPCClientAPI for TCPClient<'_> {
                 let mut socket = self.sockets.get::<TcpSocket>(self.server_handle.unwrap());
                 if socket.can_send() && socket.send_capacity() > 0 && data_sent < data.len() {
                     let end_index = data_sent + core::cmp::min(data.len(), socket.send_capacity());
-                    debug!("msg_send [{:?}-{:?}]", data_sent, end_index);
+                    debug!("send [{:?}-{:?}]", data_sent, end_index);
                     if let Ok(bytes_sent) = socket.send_slice(&data[data_sent..end_index]) {
                         trace!(
                             "Client sent: [{:?}-{:?}] {:?}/{:?} bytes",
@@ -193,7 +188,7 @@ impl RPCClientAPI for TCPClient<'_> {
     }
 
     /// receive data from a remote node
-    fn msg_recv(&mut self, expected_data: usize) -> Result<Vec<u8>, RPCError> {
+    fn recv(&mut self, expected_data: usize) -> Result<Vec<u8>, RPCError> {
         let mut data = vec![0; expected_data];
         let mut total_data_received = 0;
 
@@ -215,7 +210,7 @@ impl RPCClientAPI for TCPClient<'_> {
                     {
                         total_data_received += bytes_received;
                         trace!(
-                            "msg_rcv got {:?}/{:?} bytes",
+                            "rcv got {:?}/{:?} bytes",
                             total_data_received,
                             expected_data
                         );
@@ -254,7 +249,7 @@ impl TCPClient<'_> {
         unsafe { encode(&req, &mut req_data) }.unwrap();
         req_data.extend(data);
 
-        let mut res = self.rpc_call(pid, RPCType::WriteAt, req_data).unwrap();
+        let mut res = self.call(pid, RPCType::WriteAt, req_data).unwrap();
         if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
@@ -292,7 +287,7 @@ impl TCPClient<'_> {
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
 
-        let mut res = self.rpc_call(pid, RPCType::ReadAt, req_data).unwrap();
+        let mut res = self.call(pid, RPCType::ReadAt, req_data).unwrap();
         if let Some((res, data)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             // If result is good, check how much data was returned
             if let Ok((bytes_read, _)) = res.ret {
@@ -353,7 +348,7 @@ impl TCPClient<'_> {
         };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.rpc_call(pid, rpc_type, req_data).unwrap();
+        let mut res = self.call(pid, rpc_type, req_data).unwrap();
         if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
@@ -370,7 +365,7 @@ impl TCPClient<'_> {
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
 
-        let mut res = self.rpc_call(pid, RPCType::Close, req_data).unwrap();
+        let mut res = self.call(pid, RPCType::Close, req_data).unwrap();
         if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
@@ -386,7 +381,7 @@ impl TCPClient<'_> {
         let req = RPCDeleteReq { pathname: pathname };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.rpc_call(pid, RPCType::Delete, req_data).unwrap();
+        let mut res = self.call(pid, RPCType::Delete, req_data).unwrap();
         if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
@@ -410,7 +405,7 @@ impl TCPClient<'_> {
         };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.rpc_call(pid, RPCType::FileRename, req_data).unwrap();
+        let mut res = self.call(pid, RPCType::FileRename, req_data).unwrap();
         if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
@@ -434,7 +429,7 @@ impl TCPClient<'_> {
         };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.rpc_call(pid, RPCType::MkDir, req_data).unwrap();
+        let mut res = self.call(pid, RPCType::MkDir, req_data).unwrap();
         if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
@@ -450,7 +445,7 @@ impl TCPClient<'_> {
         let req = RPCGetInfoReq { name: name };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.rpc_call(pid, RPCType::GetInfo, req_data).unwrap();
+        let mut res = self.call(pid, RPCType::GetInfo, req_data).unwrap();
         if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);

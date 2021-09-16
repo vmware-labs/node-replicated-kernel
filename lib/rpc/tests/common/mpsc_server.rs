@@ -27,20 +27,20 @@ impl ClusterControllerAPI for MPSCServer {
 
 impl RPCServerAPI for MPSCServer {
     /// register an RPC func with an ID
-    fn rpc_register(&self, _rpc_id: RPCType) -> Result<(), RPCError> {
+    fn register(&self, _rpc_id: RPCType) -> Result<(), RPCError> {
         // TODO
         Err(RPCError::NotSupported)
     }
 
     /// receives next RPC call with RPC ID
-    fn rpc_recv(&self) -> Result<(RPCHeader, Vec<u8>), RPCError> {
+    fn recv(&self) -> Result<(RPCHeader, Vec<u8>), RPCError> {
         let mut req_data = self.rx.recv().unwrap(); // TODO: handle error more gracefully
         let (hdr, data) = unsafe { decode::<RPCHeader>(&mut req_data) }.unwrap();
         Ok((*hdr, data.to_vec()))
     }
 
     /// replies an RPC call with results
-    fn rpc_reply(&self, client: NodeId, data: Vec<u8>) -> Result<(), RPCError> {
+    fn reply(&self, client: NodeId, data: Vec<u8>) -> Result<(), RPCError> {
         // Create response header
         let res_hdr = RPCHeader {
             client_id: client,
@@ -65,10 +65,10 @@ impl RPCServerAPI for MPSCServer {
     }
 
     /// Run the RPC server
-    fn rpc_run_server(&mut self) -> Result<(), RPCError> {
+    fn run_server(&mut self) -> Result<(), RPCError> {
         loop {
-            let (_rpc_hdr, data) = self.rpc_recv()?;
-            self.rpc_reply(0, data)?;
+            let (_rpc_hdr, data) = self.recv()?;
+            self.reply(0, data)?;
         }
     }
 }

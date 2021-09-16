@@ -222,6 +222,22 @@ impl MapAction {
         }
     }
 
+    pub fn is_readable(&self) -> bool {
+        *self != MapAction::None
+    }
+
+    pub fn is_writable(&self) -> bool {
+        use MapAction::*;
+        match self {
+            ReadWriteUser => true,
+            ReadWriteUserNoCache => true,
+            ReadWriteKernel => true,
+            ReadWriteExecuteUser => true,
+            ReadWriteExecuteKernel => true,
+            _ => false,
+        }
+    }
+
     /// Transform MapAction into rights for 2 MiB page.
     pub fn to_pd_rights(self) -> PDFlags {
         use MapAction::*;

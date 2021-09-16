@@ -21,20 +21,13 @@ use std::io::Write;
 use std::path::Path;
 use std::{io, process};
 
-/*
-# s04_userspace_multicore
-# s06_fxmark_benchmark
-# s06_vmops_benchmark
-# s06_vmops_latency_benchmark
-# s06_vmops_unmaplat_latency_benchmark
-*/
 use hwloc2::{ObjectType, Topology};
 
 use csv::WriterBuilder;
 use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
-use rexpect::session::spawn_command;
+use rexpect::session::{spawn_command, PtyReplSession};
 use rexpect::{spawn, spawn_bash};
 use serde::Serialize;
 
@@ -300,6 +293,8 @@ struct RunnerArgs<'a> {
     prealloc: bool,
     /// Use large-pages for host memory
     large_pages: bool,
+    /// Enable gdb
+    gdb: bool,
 }
 
 #[allow(unused)]
@@ -323,6 +318,7 @@ impl<'a> RunnerArgs<'a> {
             setaffinity: false,
             prealloc: false,
             large_pages: false,
+            gdb: false,
         };
 
         if cfg!(feature = "prealloc") {
@@ -475,6 +471,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn gdb(mut self) -> RunnerArgs<'a> {
+        self.gdb = true;
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
@@ -516,6 +517,10 @@ impl<'a> RunnerArgs<'a> {
 
         if self.release {
             cmd.push(String::from("--release"));
+        }
+
+        if self.gdb {
+            cmd.push(String::from("--gdb"));
         }
 
         match &self.machine {
@@ -1040,6 +1045,73 @@ fn s02_nvdimm_discover() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Test that we can use GDB for kernel debugging.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s02_gdb() {
+    /// Spawn the gdb debugger
+    pub fn spawn_gdb(binary: &str) -> Result<PtyReplSession> {
+        spawn(format!("gdb {}", binary).as_str(), Some(3_000)).and_then(|p| {
+            Ok(PtyReplSession {
+                prompt: "(gdb) ".to_string(),
+                pty_session: p,
+                quit_command: Some("quit".to_string()),
+                echo_on: false,
+            })
+        })
+    }
+
+    let cmdline = RunnerArgs::new("test-gdb").gdb().cores(1);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
+        // Wait until kernel is waiting for debugger:
+        output += p
+            .exp_string("Use `target remote localhost:1234` in gdb to connect.")?
+            .as_str();
+
+        // Spawn GDB
+        let binary = if cmdline.release {
+            "../target/x86_64-uefi/release/esp/kernel"
+        } else {
+            "../target/x86_64-uefi/debug/esp/kernel"
+        };
+        let mut gdb = spawn_gdb(binary)?;
+        output += gdb.wait_for_prompt()?.as_str();
+
+        // Perform some basic functionality test which exercises the gdb code:
+
+        // Test connection
+        gdb.send_line("target remote localhost:1234")?;
+        output += p.exp_string("Debugger connected.")?.as_str();
+        output += gdb
+            .exp_string("Remote debugging using localhost:1234")?
+            .as_str();
+
+        // Test symbol resolution (`SectionOffsets`) and reads from memory
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("print cmdline")?;
+        output += gdb.exp_string("nrk::kcb::BootloaderArguments")?.as_str();
+
+        // Test `breakpoints`
+
+        // Test `watchpoints`
+
+        // Test `step`, `stepi`
+
+        // Test `info registers`
+
+        // Test writes to memory
+
+        // Test `continue`
+
+        p.process.kill(SIGTERM)
+    };
+
+    wait_for_sigterm(&cmdline, qemu_run(), output);
 }
 
 /// Test that we boot up all cores in the system.

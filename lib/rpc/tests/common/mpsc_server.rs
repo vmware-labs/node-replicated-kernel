@@ -33,7 +33,7 @@ impl RPCServerAPI for MPSCServer {
     }
 
     /// receives next RPC call with RPC ID
-    fn recv(&self) -> Result<(RPCHeader, Vec<u8>), RPCError> {
+    fn receive(&self) -> Result<(RPCHeader, Vec<u8>), RPCError> {
         let mut req_data = self.rx.recv().unwrap(); // TODO: handle error more gracefully
         let (hdr, data) = unsafe { decode::<RPCHeader>(&mut req_data) }.unwrap();
         Ok((*hdr, data.to_vec()))
@@ -67,7 +67,7 @@ impl RPCServerAPI for MPSCServer {
     /// Run the RPC server
     fn run_server(&mut self) -> Result<(), RPCError> {
         loop {
-            let (_rpc_hdr, data) = self.recv()?;
+            let (_rpc_hdr, data) = self.receive()?;
             self.reply(0, data)?;
         }
     }

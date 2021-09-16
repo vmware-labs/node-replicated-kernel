@@ -13,7 +13,7 @@ pub trait RPCServerAPI {
     fn register(&self, rpc_id: RPCType) -> Result<(), RPCError>;
 
     /// receives next RPC call with RPC ID
-    fn recv(&self) -> Result<(RPCHeader, Vec<u8>), RPCError>;
+    fn receive(&self) -> Result<(RPCHeader, Vec<u8>), RPCError>;
 
     /// replies an RPC call with results
     fn reply(&self, client: NodeId, data: Vec<u8>) -> Result<(), RPCError>;

@@ -11,7 +11,7 @@ use gdbstub::target::ext::breakpoints::{
     Breakpoints, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps, WatchKind,
 };
 use gdbstub::target::ext::section_offsets::{Offsets, SectionOffsets, SectionOffsetsOps};
-use gdbstub::target::{Target, TargetResult};
+use gdbstub::target::{Target, TargetError, TargetResult};
 use gdbstub::{
     Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError, GdbStubStateMachine,
 };
@@ -23,7 +23,8 @@ use x86::io;
 
 use super::debug::GDB_REMOTE_PORT;
 use crate::error::KError;
-use crate::memory::VAddr;
+use crate::memory::vspace::AddressSpace;
+use crate::memory::{VAddr, BASE_PAGE_SIZE};
 
 /// Indicates the reason for interruption (e.g. a breakpoint was hit).
 pub type KCoreStopReason = ThreadStopReason<u64>;
@@ -44,6 +45,8 @@ fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
     let gdb = GdbSerial::new(port);
 
     info!("Waiting for a GDB connection (I/O port {:#x})...", port);
+    // If you modify the next line, you also need to adjust the corresponding
+    // line in the `s02_gdb` integration test:
     info!("Use `target remote localhost:1234` in gdb to connect.");
 
     // Block until a GDB client connects:
@@ -51,7 +54,9 @@ fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
         core::hint::spin_loop();
     }
 
-    info!("Debugger connected");
+    // If you modify the next line, you also need to adjust the corresponding
+    // line in the `s02_gdb` integration test:
+    info!("Debugger connected.");
     Ok(gdb)
 }
 
@@ -280,11 +285,13 @@ impl SingleThreadOps for KernelDebugger {
             regs.segments = gdbstub_arch::x86::reg::X86SegmentRegs {
                 cs: saved.cs.try_into().unwrap(),
                 ss: saved.ss.try_into().unwrap(),
-                ds: 0x0,
-                es: 0x0,
+                ds: 0x0, // Don't bother with ds; should be irrelevant on 64bit
+                es: 0x0, // Don't bother with es; should be irrelevant on 64bit
                 fs: saved.fs.try_into().unwrap(),
                 gs: saved.gs.try_into().unwrap(),
             };
+
+            // TODO: SIMD registers here...
         }
 
         Ok(())
@@ -298,20 +305,85 @@ impl SingleThreadOps for KernelDebugger {
         Ok(())
     }
 
-    fn read_addrs(&mut self, start_addr: u64, _data: &mut [u8]) -> TargetResult<(), Self> {
-        info!("read_addrs start_addr {:#x}", start_addr);
+    fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<(), Self> {
+        // (Un)Safety: Well, this can easily violate the rust aliasing model
+        // because when we arrive in the debugger; there might some mutable
+        // reference to the PTs somewhere in a context that was modifying the
+        // PTs. We'll just have to accept this for debugging.
+        let pt = unsafe { super::vspace::page_table::ReadOnlyPageTable::current() };
+
+        let start_addr: usize = start_addr.try_into().unwrap();
+        for i in 0..data.len() {
+            let va = VAddr::from(start_addr + i);
+
+            // Check access rights for start of every new page we encounter (and
+            // for the first byte that might start within a page)
+            if i == 0 || (start_addr + i) % BASE_PAGE_SIZE == 0 {
+                match pt.resolve(va) {
+                    Ok((pa, rights)) => {
+                        if !rights.is_readable() {
+                            // Mapped but not read-able (this can't really happen would mean
+                            // something like swapped out but we don't do that)
+                            return Err(TargetError::NonFatal);
+                        }
+                    }
+                    Err(_) => {
+                        // Target page was not mapped
+                        return Err(TargetError::NonFatal);
+                    }
+                }
+            }
+
+            // Read the byte
+            let ptr: *const u8 = va.as_ptr();
+            // Safety: This should be ok, see all the effort above...
+            data[i] = unsafe { *ptr };
+        }
+
         Ok(())
     }
 
-    fn write_addrs(&mut self, start_addr: u64, _data: &[u8]) -> TargetResult<(), Self> {
-        info!("write_addrs start_addr {:#x}", start_addr);
+    fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
+        // (Un)Safety: Well, this can easily violate the rust aliasing model
+        // because when we arrive in the debugger; there might some mutable
+        // reference to the PTs somewhere in a context that was modifying the
+        // PTs. We'll just have to accept this for debugging.
+        let pt = unsafe { super::vspace::page_table::ReadOnlyPageTable::current() };
+
+        let start_addr: usize = start_addr.try_into().unwrap();
+        for (i, payload) in data.iter().enumerate() {
+            let va = VAddr::from(start_addr + i);
+
+            // Check access rights for start of every new page that we encounter
+            // (and for the first byte that might start within a page)
+            if i == 0 || (start_addr + i) % BASE_PAGE_SIZE == 0 {
+                match pt.resolve(va) {
+                    Ok((pa, rights)) => {
+                        if !rights.is_writable() {
+                            // Mapped but not writeable
+                            return Err(TargetError::NonFatal);
+                        }
+                    }
+                    Err(_) => {
+                        // Target page was not mapped
+                        return Err(TargetError::NonFatal);
+                    }
+                }
+            }
+
+            // (Un)Safety: gdb writing in random memory locations? Surely this
+            // won't end safely.
+            let ptr: *mut u8 = va.as_mut_ptr();
+            unsafe { *ptr = *payload };
+        }
+
         Ok(())
     }
 }
 
 impl SectionOffsets for KernelDebugger {
+    /// Tells GDB where in memory the bootloader has put our kernel binary.
     fn get_section_offsets(&mut self) -> Result<Offsets<u64>, KError> {
-        info!("get_section_offsets");
         let kcb = super::kcb::get_kcb();
         let boot_args = kcb.arch.kernel_args();
         let kernel_reloc_offset = boot_args.kernel_elf_offset.as_u64();

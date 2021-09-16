@@ -878,3 +878,108 @@ impl PageTable {
         unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
     }
 }
+
+pub struct ReadOnlyPageTable<'a> {
+    pml4: &'a PML4,
+}
+
+impl<'a> ReadOnlyPageTable<'a> {
+    /// Get read-only access to the current page-table.
+    ///
+    /// # Safety
+    /// Be aware, pretty unsafe. We need to ensure that the current page-table
+    /// is not modified or aliased mutably during the lifetime of this object.
+    ///
+    /// Generally only use this for debugging and sanity checking memory
+    /// accesses for kernel GDB where it's clear we are in a state where won't
+    /// make modification to PTs.
+    ///
+    /// Otherwise, access through NR/VSpace object is the way to go.
+    ///
+    /// # TODO
+    /// We should have better type-safety for this to help with unsafety.
+    /// Ideally using some token that is consumed on every page-table switch.
+    pub unsafe fn current() -> Self {
+        let cr3 = PAddr::from(x86::controlregs::cr3());
+        assert_ne!(cr3, PAddr::zero());
+        let pml4 = transmute::<VAddr, &PML4>(paddr_to_kernel_vaddr(cr3));
+        ReadOnlyPageTable { pml4 }
+    }
+
+    /// Resolve a PDEntry to a page table.
+    fn get_pt(&self, entry: PDEntry) -> &PT {
+        assert_ne!(entry.address(), PAddr::zero());
+        unsafe { transmute::<VAddr, &mut PT>(paddr_to_kernel_vaddr(entry.address())) }
+    }
+
+    /// Resolve a PDPTEntry to a page directory.
+    fn get_pd(&self, entry: PDPTEntry) -> &PD {
+        assert_ne!(entry.address(), PAddr::zero());
+        unsafe { transmute::<VAddr, &mut PD>(paddr_to_kernel_vaddr(entry.address())) }
+    }
+
+    /// Resolve a PML4Entry to a PDPT.
+    fn get_pdpt(&self, entry: PML4Entry) -> &PDPT {
+        assert_ne!(entry.address(), PAddr::zero());
+        unsafe { transmute::<VAddr, &mut PDPT>(paddr_to_kernel_vaddr(entry.address())) }
+    }
+}
+
+impl<'a> AddressSpace for ReadOnlyPageTable<'a> {
+    fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
+        let pml4_idx = pml4_index(addr);
+        if self.pml4[pml4_idx].is_present() {
+            let pdpt_idx = pdpt_index(addr);
+            let pdpt = self.get_pdpt(self.pml4[pml4_idx]);
+            if pdpt[pdpt_idx].is_present() {
+                if pdpt[pdpt_idx].is_page() {
+                    // Page is a 1 GiB mapping, we have to return here
+                    let page_offset = addr.huge_page_offset();
+                    let paddr = pdpt[pdpt_idx].address() + page_offset;
+                    let flags: MapAction = pdpt[pdpt_idx].flags().into();
+                    return Ok((paddr, flags));
+                } else {
+                    let pd_idx = pd_index(addr);
+                    let pd = self.get_pd(pdpt[pdpt_idx]);
+                    if pd[pd_idx].is_present() {
+                        if pd[pd_idx].is_page() {
+                            // Encountered a 2 MiB mapping, we have to return here
+                            let page_offset = addr.large_page_offset();
+                            let paddr = pd[pd_idx].address() + page_offset;
+                            let flags: MapAction = pd[pd_idx].flags().into();
+                            return Ok((paddr, flags));
+                        } else {
+                            let pt_idx = pt_index(addr);
+                            let pt = self.get_pt(pd[pd_idx]);
+                            if pt[pt_idx].is_present() {
+                                let page_offset = addr.base_page_offset();
+                                let paddr = pt[pt_idx].address() + page_offset;
+                                let flags: MapAction = pt[pt_idx].flags().into();
+                                return Ok((paddr, flags));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // else:
+        Err(KError::NotMapped)
+    }
+
+    fn map_frame(&mut self, _base: VAddr, _frame: Frame, _action: MapAction) -> Result<(), KError> {
+        Err(KError::NotSupported)
+    }
+
+    fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {
+        0
+    }
+
+    fn adjust(&mut self, _vaddr: VAddr, _rights: MapAction) -> Result<(VAddr, usize), KError> {
+        Err(KError::NotSupported)
+    }
+
+    fn unmap(&mut self, _base: VAddr) -> Result<TlbFlushHandle, KError> {
+        Err(KError::NotSupported)
+    }
+}

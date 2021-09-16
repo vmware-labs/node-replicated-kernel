@@ -72,8 +72,11 @@ enum CmdToken {
     Error,
 }
 
-/// Arguments parsed from command line string passed
-/// from the bootloader to the kernel.
+/// Arguments parsed from command line string passed from the bootloader to the
+/// kernel.
+///
+/// # Note
+/// If you move or rename this, you may also need to update the `s02_gdb` test.
 #[derive(Copy, Clone, Debug)]
 pub struct BootloaderArguments {
     pub log_filter: &'static str,

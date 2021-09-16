@@ -73,7 +73,18 @@ pub enum RPCType {
 }
 
 pub fn is_fileio(op: RPCType) -> bool {
-    return op >= RPCType::Create && op <= RPCType::MkDir;
+    return op == RPCType::Create
+        || op == RPCType::Open
+        || op == RPCType::Read
+        || op == RPCType::ReadAt
+        || op == RPCType::Write
+        || op == RPCType::WriteAt
+        || op == RPCType::Close
+        || op == RPCType::GetInfo
+        || op == RPCType::Delete
+        || op == RPCType::WriteDirect
+        || op == RPCType::FileRename
+        || op == RPCType::MkDir;
 }
 
 impl From<u8> for RPCType {

@@ -26,7 +26,7 @@ Run `bash setup.sh`, this will install required dependencies on Linux to build a
 
 If you just want to compile the code you can also execute:
 
-1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=x86_64-nrk```
+1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 cargo build --target=x86_64-nrk```
 
 in the kernel directory (run.py will do that on your behalf).
 

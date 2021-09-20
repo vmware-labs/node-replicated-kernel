@@ -49,6 +49,7 @@ bench-vmops = []
 bench-vmops-unmaplat = []
 fs-write = []
 fxmark = []
+test-write-amplification = []
 
 # smoke: A way to tell the micro-benchmarks
 # to only run for a short period, don't consume many

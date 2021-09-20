@@ -683,6 +683,50 @@ fn pmem_alloc(ncores: Option<usize>) {
     info!("pmem_alloc OK");
 }
 
+fn test_write_amplication() {
+    use x86::random::rdrand32;
+    let base: u64 = 0xff000000;
+    let mut new_base = base;
+    let mut size: u64 = 2 * 1024 * 1024 * 128; // 128 is Max TCache size for 2 MB pages
+    let iterate = 8;
+
+    let write_slice = [0xb; 64];
+    let total_lines = (iterate * size) / write_slice.len() as u64;
+
+    // Allocate 2 GB of frames
+    for i in 0..iterate {
+        unsafe {
+            vibrio::syscalls::VSpace::map(new_base, size).expect("Map syscall failed");
+            new_base += size;
+        }
+    }
+    let slice: &mut [u8] =
+        unsafe { from_raw_parts_mut(base as *mut u8, (iterate * size) as usize) };
+
+    for _ in 0..5 {
+        let mut random_num: u32 = 0;
+        let mut iops = 0;
+        let start = rawtime::Instant::now();
+        while start.elapsed().as_secs() < 1 {
+            for _ in 0..32 {
+                unsafe { rdrand32(&mut random_num) };
+                let rand = random_num as u64 % total_lines;
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        write_slice.as_ptr(),
+                        slice[rand as usize..].as_mut_ptr(),
+                        write_slice.len(),
+                    )
+                };
+                iops += 1;
+            }
+        }
+        info!("IOPS {}", iops);
+    }
+
+    info!("pmem_alloc OK");
+}
+
 pub fn install_vcpu_area() {
     let ctl =
         vibrio::syscalls::Process::vcpu_control_area().expect("Can't read vcpu control area.");
@@ -772,6 +816,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-pmem-alloc")]
     pmem_alloc(ncores);
+
+    #[cfg(feature = "test-write-amplification")]
+    test_write_amplication();
 
     vibrio::vconsole::init();
 

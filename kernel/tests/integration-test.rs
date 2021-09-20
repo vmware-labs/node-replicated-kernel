@@ -2309,3 +2309,27 @@ fn s06_pmem_alloc() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
+
+/// Tests the pmem based write-amplification overheads.
+#[test]
+fn s06_write_amplification() {
+    let cmdline = RunnerArgs::new("test-userspace")
+        .module("init")
+        .user_feature("test-write-amplification")
+        .nodes(1)
+        .cores(1)
+        .release()
+        .memory(4096)
+        .timeout(20_000);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        output += p.exp_string("pmem_alloc OK")?.as_str();
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}

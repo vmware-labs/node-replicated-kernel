@@ -162,8 +162,8 @@ static_assertions::const_assert_eq!(
 );
 
 impl SaveArea {
-    pub const RAX_OFFSET: usize = 0 * 8;
-    pub const RBX_OFFSET: usize = 1 * 8;
+    pub const RAX_OFFSET: usize = 0;
+    pub const RBX_OFFSET: usize = 8;
     pub const RCX_OFFSET: usize = 2 * 8;
     pub const RDX_OFFSET: usize = 3 * 8;
     pub const RSI_OFFSET: usize = 4 * 8;

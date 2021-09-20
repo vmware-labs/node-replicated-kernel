@@ -70,7 +70,8 @@ notification when you git push.
 
 ### Code Style
 
-We rely on [rustfmt](https://github.com/rust-lang/rustfmt) to automatically format our code.
+- We rely on [rustfmt](https://github.com/rust-lang/rustfmt) to automatically format our code.
+- We use AT&T syntax for assembly code: `options(att_syntax)` in Rust `asm!` blocks.
 
 ### Formatting Commit Messages
 

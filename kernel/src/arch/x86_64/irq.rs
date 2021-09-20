@@ -58,7 +58,7 @@ use crate::{cnrfs, nr, nrproc, ExitReason};
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};
 use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
-use super::process::{Ring3Process, Ring3Resumer};
+use super::process::{Ring0Resumer, Ring3Process, Ring3Resumer};
 use super::{debug, gdb, timer};
 
 /// A macro to initialize an entry in an IDT table.
@@ -415,12 +415,15 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
     warn!("Got debug interrupt {}", desc.source);
 
-    gdb::event_loop(None);
-
     let kcb = get_kcb();
-    assert!(kcb.arch.has_executor(), "Not from user-space?");
-    let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
-    r.resume()
+    if kcb.arch.has_executor() {
+        let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
+        r.resume()
+    } else {
+        gdb::event_loop(None);
+        let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
+        r.resume()
+    }
 }
 
 /// Handler for the timer exception.

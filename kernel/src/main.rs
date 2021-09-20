@@ -13,6 +13,7 @@
     intrinsics,
     core_intrinsics,
     llvm_asm,
+    asm,
     lang_items,
     start,
     box_syntax,

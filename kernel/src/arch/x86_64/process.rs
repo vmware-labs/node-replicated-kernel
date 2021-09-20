@@ -9,9 +9,11 @@ use core::cmp::PartialEq;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
+use crate::error::KError;
 use arrayvec::ArrayVec;
 use fallible_collections::try_vec;
 use fallible_collections::FallibleVec;
+use kpi::arch::SaveArea;
 use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
 use lazy_static::lazy_static;
 use log::{debug, info, trace, warn};
@@ -20,7 +22,6 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::controlregs;
 
-use crate::error::KError;
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
 use crate::kcb::ArchSpecificKcb;
 use crate::kcb::{self, Kcb};
@@ -195,6 +196,103 @@ impl<'a> Drop for UserSlice<'a> {
     }
 }
 
+/// Resume the state saved in `SaveArea` using the `iretq` instruction.
+///
+/// # Safety
+/// Pretty unsafe low-level API that switches to an arbitrary
+/// context/instruction pointer. Caller should make sure that `state` is
+/// "valid", meaning is an alive context that has not already been resumed.
+unsafe fn iret_restore(state: *const kpi::arch::SaveArea) -> ! {
+    asm!("
+    // Restore the gs register
+    swapgs
+
+    // Restore the fs register
+    movq {fs_offset}(%rdi), %rsi
+    wrfsbase %rsi
+
+    // Restore vector registers
+    fxrstor {fxsave_offset}(%rdi)
+
+    // Restore CPU registers
+    movq  {rax_offset}(%rdi), %rax
+    movq  {rbx_offset}(%rdi), %rbx
+    movq  {rcx_offset}(%rdi), %rcx
+    movq  {rdx_offset}(%rdi), %rdx
+    movq  {rsi_offset}(%rdi), %rsi
+    // %rdi: Restore last (see below) to preserve `save_area`
+    movq  {rbp_offset}(%rdi), %rbp
+    // %rsp: Restored through iretq stack set-up
+    movq  {r8_offset}(%rdi), %r8
+    movq  {r9_offset}(%rdi), %r9
+    movq {r10_offset}(%rdi), %r10
+    movq {r11_offset}(%rdi), %r11
+    movq {r12_offset}(%rdi), %r12
+    movq {r13_offset}(%rdi), %r13
+    movq {r14_offset}(%rdi), %r14
+    movq {r15_offset}(%rdi), %r15
+
+    //
+    // Establish stack frame for iretq: [ss, rsp, rflags, cs, rip]
+    //
+
+    // ss register
+    pushq {ss_offset}(%rdi)
+    // %rsp register
+    pushq {rsp_offset}(%rdi)
+    // rflags register
+    pushq {rflags_offset}(%rdi)
+    // cs register
+    pushq {cs_offset}(%rdi)
+    // %rip
+    pushq {rip_offset}(%rdi)
+
+    // Restore rdi register last, since it was used to reach `state`
+    movq {rdi_offset}(%rdi), %rdi
+    iretq
+    ",
+    rax_offset = const SaveArea::RAX_OFFSET,
+    rbx_offset = const SaveArea::RBX_OFFSET,
+    rcx_offset = const SaveArea::RCX_OFFSET,
+    rdx_offset = const SaveArea::RDX_OFFSET,
+    rsi_offset = const SaveArea::RSI_OFFSET,
+    rdi_offset = const SaveArea::RDI_OFFSET,
+    rbp_offset = const SaveArea::RBP_OFFSET,
+    rsp_offset = const SaveArea::RSP_OFFSET,
+    r8_offset = const SaveArea::R8_OFFSET,
+    r9_offset = const SaveArea::R9_OFFSET,
+    r10_offset = const SaveArea::R10_OFFSET,
+    r11_offset = const SaveArea::R11_OFFSET,
+    r12_offset = const SaveArea::R12_OFFSET,
+    r13_offset = const SaveArea::R13_OFFSET,
+    r14_offset = const SaveArea::R14_OFFSET,
+    r15_offset = const SaveArea::R15_OFFSET,
+    rip_offset = const SaveArea::RIP_OFFSET,
+    rflags_offset = const SaveArea::RFLAGS_OFFSET,
+    fs_offset = const SaveArea::FS_OFFSET,
+    cs_offset = const SaveArea::CS_OFFSET,
+    ss_offset = const SaveArea::SS_OFFSET,
+    fxsave_offset = const SaveArea::FXSAVE_OFFSET,
+    in("rdi") state,
+    options(att_syntax, noreturn));
+}
+
+pub struct Ring0Resumer {
+    pub save_area: *const kpi::arch::SaveArea,
+}
+
+impl Ring0Resumer {
+    pub fn new_iret(save_area: *const kpi::arch::SaveArea) -> Ring0Resumer {
+        Ring0Resumer { save_area }
+    }
+}
+
+impl ResumeHandle for Ring0Resumer {
+    unsafe fn resume(self) -> ! {
+        iret_restore(self.save_area)
+    }
+}
+
 /// A Ring3Resumer that can either be an upcall or a context restore.
 ///
 /// # TODO
@@ -289,54 +387,7 @@ impl Ring3Resumer {
     }
 
     unsafe fn iret_restore(self) -> ! {
-        //info!("resuming User-space with ctxt: {:?}", (*(self.save_area)),);
-
-        // Resumes a process using iretq
-        llvm_asm!("
-                // Restore fs and gs registers
-                swapgs
-                movq 19*8(%rdi), %rsi
-                wrfsbase %rsi
-
-                // Restore vector registers
-                fxrstor 24*8(%rdi)
-
-                // Restore CPU registers
-                movq  0*8(%rdi), %rax
-                movq  1*8(%rdi), %rbx
-                movq  2*8(%rdi), %rcx
-                movq  3*8(%rdi), %rdx
-                movq  4*8(%rdi), %rsi
-                // %rdi: Restore last (see below) to preserve `save_area`
-                movq  6*8(%rdi), %rbp
-                // %rsp: Restored through iretq stack set-up
-                movq  8*8(%rdi), %r8
-                movq  9*8(%rdi), %r9
-                movq 10*8(%rdi), %r10
-                movq 11*8(%rdi), %r11
-                movq 12*8(%rdi), %r12
-                movq 13*8(%rdi), %r13
-                movq 14*8(%rdi), %r14
-                movq 15*8(%rdi), %r15
-
-                // SS (TODO(style): hard-coded constant)
-                pushq $$35
-                // %rsp
-                pushq 7*8(%rdi)
-                // RFLAGS
-                pushq 17*8(%rdi)
-                // Code-segment (TODO(style): hard-coded constant)
-                pushq $$27
-                // %rip
-                pushq 16*8(%rdi)
-
-                // Restore rdi register last, since it was used to reach `state`
-                movq 5*8(%rdi), %rdi
-                iretq
-                " ::
-            "{rdi}" (self.save_area));
-
-        unreachable!("We should not come here!");
+        iret_restore(self.save_area)
     }
 
     unsafe fn restore(self) -> ! {

@@ -120,7 +120,74 @@ impl Default for SaveArea {
     }
 }
 
+// Statically assert member offsets of SaveArea, this will make sure that if we
+// use the defined constants in the assembly code, we'll hopefully get the
+// addressing right.
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rax), SaveArea::RAX_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rbx), SaveArea::RBX_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rcx), SaveArea::RCX_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rdx), SaveArea::RDX_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rsi), SaveArea::RSI_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rdi), SaveArea::RDI_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rbp), SaveArea::RBP_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rsp), SaveArea::RSP_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r8), SaveArea::R8_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r9), SaveArea::R9_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r10), SaveArea::R10_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r11), SaveArea::R11_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r12), SaveArea::R12_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r13), SaveArea::R13_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r14), SaveArea::R14_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, r15), SaveArea::R15_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, rip), SaveArea::RIP_OFFSET);
+static_assertions::const_assert_eq!(
+    memoffset::offset_of!(SaveArea, rflags),
+    SaveArea::RFLAGS_OFFSET
+);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, fs), SaveArea::FS_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, gs), SaveArea::GS_OFFSET);
+static_assertions::const_assert_eq!(
+    memoffset::offset_of!(SaveArea, vector),
+    SaveArea::VECTOR_OFFSET
+);
+static_assertions::const_assert_eq!(
+    memoffset::offset_of!(SaveArea, exception),
+    SaveArea::EXCEPTION_OFFSET
+);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, cs), SaveArea::CS_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, ss), SaveArea::SS_OFFSET);
+static_assertions::const_assert_eq!(
+    memoffset::offset_of!(SaveArea, fxsave),
+    SaveArea::FXSAVE_OFFSET
+);
+
 impl SaveArea {
+    pub const RAX_OFFSET: usize = 0 * 8;
+    pub const RBX_OFFSET: usize = 1 * 8;
+    pub const RCX_OFFSET: usize = 2 * 8;
+    pub const RDX_OFFSET: usize = 3 * 8;
+    pub const RSI_OFFSET: usize = 4 * 8;
+    pub const RDI_OFFSET: usize = 5 * 8;
+    pub const RBP_OFFSET: usize = 6 * 8;
+    pub const RSP_OFFSET: usize = 7 * 8;
+    pub const R8_OFFSET: usize = 8 * 8;
+    pub const R9_OFFSET: usize = 9 * 8;
+    pub const R10_OFFSET: usize = 10 * 8;
+    pub const R11_OFFSET: usize = 11 * 8;
+    pub const R12_OFFSET: usize = 12 * 8;
+    pub const R13_OFFSET: usize = 13 * 8;
+    pub const R14_OFFSET: usize = 14 * 8;
+    pub const R15_OFFSET: usize = 15 * 8;
+    pub const RIP_OFFSET: usize = 16 * 8;
+    pub const RFLAGS_OFFSET: usize = 17 * 8;
+    pub const GS_OFFSET: usize = 18 * 8;
+    pub const FS_OFFSET: usize = 19 * 8;
+    pub const VECTOR_OFFSET: usize = 20 * 8;
+    pub const EXCEPTION_OFFSET: usize = 21 * 8;
+    pub const CS_OFFSET: usize = 22 * 8;
+    pub const SS_OFFSET: usize = 23 * 8;
+    pub const FXSAVE_OFFSET: usize = 24 * 8;
+
     pub const fn empty() -> SaveArea {
         SaveArea {
             rax: 0,
@@ -141,8 +208,8 @@ impl SaveArea {
             r15: 0,
             rip: 0,
             rflags: 0,
-            fs: 0,
             gs: 0,
+            fs: 0,
             vector: 0,
             exception: 0,
             cs: 0,

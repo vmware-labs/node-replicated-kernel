@@ -71,12 +71,12 @@ pub struct GdtTable {
 
 impl GdtTable {
     #[allow(dead_code)]
-    pub const NULL_INDEX: usize = 0;
-    pub const CS_KERNEL_INDEX: usize = 1;
-    pub const SS_KERNEL_INDEX: usize = 2;
-    pub const CS_USER_INDEX: usize = 3;
-    pub const SS_USER_INDEX: usize = 4;
-    pub const TSS_INDEX: usize = 5;
+    pub const NULL_INDEX: u16 = 0;
+    pub const CS_KERNEL_INDEX: u16 = 1;
+    pub const SS_KERNEL_INDEX: u16 = 2;
+    pub const CS_USER_INDEX: u16 = kpi::arch::CS_USER_GDT_INDEX;
+    pub const SS_USER_INDEX: u16 = kpi::arch::SS_USER_GDT_INDEX;
+    pub const TSS_INDEX: u16 = 5;
 
     /// Creates a new GdtTable with a provided TaskStateSegment.
     ///
@@ -139,20 +139,28 @@ impl GdtTable {
     }
 
     /// Return the selector for the kernel cs (code segment).
-    pub fn kernel_cs_selector() -> SegmentSelector {
+    pub const fn kernel_cs_selector() -> SegmentSelector {
         SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0)
-            | SegmentSelector::TI_GDT
     }
 
     /// Return the selector for the kernel ss (stack segment).
-    pub fn kernel_ss_selector() -> SegmentSelector {
+    pub const fn kernel_ss_selector() -> SegmentSelector {
         SegmentSelector::new(GdtTable::SS_KERNEL_INDEX as u16, Ring::Ring0)
-            | SegmentSelector::TI_GDT
+    }
+
+    /// Return the selector for the kernel ss (stack segment).
+    pub const fn user_cs_selector() -> SegmentSelector {
+        kpi::arch::CS_SELECTOR
+    }
+
+    /// Return the selector for the kernel ss (stack segment).
+    pub const fn user_ss_selector() -> SegmentSelector {
+        kpi::arch::SS_SELECTOR
     }
 
     /// Return the selector for the task segment.
-    fn tss_selector() -> SegmentSelector {
-        SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0) | SegmentSelector::TI_GDT
+    const fn tss_selector() -> SegmentSelector {
+        SegmentSelector::new(GdtTable::TSS_INDEX as u16, Ring::Ring0)
     }
 }
 

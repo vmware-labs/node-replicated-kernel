@@ -71,8 +71,7 @@ notification when you git push.
 ### Code Style
 
 - We rely on [rustfmt](https://github.com/rust-lang/rustfmt) to automatically format our code.
-- We organize/separate imports organized into three blocks (all separated by one
-  newline):
+- We organize/separate imports into three blocks (all separated by one newline):
   - 1st block for core language things: `core`, `alloc`, `std` etc.
   - 2nd block for libraries: `vibrio`, `x86`, `lazy_static` etc.
   - 3rd block for internal imports: `crate::*`, `super::*` etc.

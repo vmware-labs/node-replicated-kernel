@@ -254,13 +254,13 @@ impl ResumeHandle for Ring0Resumer {
             //
 
             // ss register
-            pushq {ss}
+            pushq ${ss}
             // %rsp register
             pushq {rsp_offset}(%rdi)
             // rflags register
             pushq {rflags_offset}(%rdi)
             // cs register
-            pushq {cs}
+            pushq ${cs}
             // %rip
             pushq {rip_offset}(%rdi)
 
@@ -423,13 +423,13 @@ impl Ring3Resumer {
             //
 
             // ss register
-            pushq {ss}
+            pushq ${ss}
             // %rsp register
             pushq {rsp_offset}(%rdi)
             // rflags register
             pushq {rflags_offset}(%rdi)
             // cs register
-            pushq {cs}
+            pushq ${cs}
             // %rip
             pushq {rip_offset}(%rdi)
 

@@ -238,6 +238,18 @@ impl MapAction {
         )
     }
 
+    pub fn is_executable(&self) -> bool {
+        use MapAction::*;
+        matches!(
+            self,
+            ReadExecuteUser
+                | ReadExecuteKernel
+                | ReadWriteKernel
+                | ReadWriteExecuteUser
+                | ReadWriteExecuteKernel
+        )
+    }
+
     /// Transform MapAction into rights for 2 MiB page.
     pub fn to_pd_rights(self) -> PDFlags {
         use MapAction::*;

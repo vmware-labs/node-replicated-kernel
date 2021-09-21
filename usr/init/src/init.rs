@@ -3,12 +3,14 @@
 
 #![no_std]
 #![no_main]
-#![feature(thread_local)]
-#![feature(llvm_asm)]
-#![feature(alloc_error_handler)]
-#![feature(panic_info_message)]
-#![feature(lang_items)]
-#![feature(core_intrinsics)]
+#![feature(
+    asm,
+    thread_local,
+    alloc_error_handler,
+    panic_info_message,
+    lang_items,
+    core_intrinsics
+)]
 #![allow(unused_imports, dead_code)]
 extern crate alloc;
 extern crate spin;

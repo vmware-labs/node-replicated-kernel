@@ -2317,9 +2317,10 @@ fn s06_write_amplification() {
         .module("init")
         .user_feature("test-write-amplification")
         .nodes(1)
-        .cores(1)
+        .cores(2)
         .release()
         .memory(4096)
+        .pmem(4096)
         .timeout(20_000);
     let mut output = String::new();
 

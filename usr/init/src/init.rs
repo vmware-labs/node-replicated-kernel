@@ -684,24 +684,48 @@ fn pmem_alloc(ncores: Option<usize>) {
 }
 
 fn test_write_amplication() {
+    use vibrio::MemType;
+    use x86::bits64::paging::BASE_PAGE_SIZE;
     use x86::random::rdrand32;
-    let base: u64 = 0xff000000;
-    let mut new_base = base;
-    let mut size: u64 = 2 * 1024 * 1024 * 128; // 128 is Max TCache size for 2 MB pages
-    let iterate = 8;
+
+    fn map_region<'a>(base: u64, size: usize, mem_type: MemType) -> &'a mut [u8] {
+        assert!(size >= BASE_PAGE_SIZE);
+        let mut new_base = base;
+        let iterate = size / BASE_PAGE_SIZE;
+
+        for i in 0..iterate {
+            match mem_type {
+                MemType::DRAM => unsafe {
+                    vibrio::syscalls::VSpace::map(new_base, BASE_PAGE_SIZE as u64)
+                        .expect("Map syscall failed");
+                },
+                MemType::PMEM => unsafe {
+                    vibrio::syscalls::VSpace::map_pmem(new_base, BASE_PAGE_SIZE as u64)
+                        .expect("MapPmem syscall failed");
+                },
+                MemType::Invalid => unreachable!(),
+            }
+
+            new_base += BASE_PAGE_SIZE as u64;
+        }
+
+        let slice: &mut [u8] = unsafe { from_raw_parts_mut(base as *mut u8, size) };
+        for i in slice.iter_mut() {
+            *i = 0xb;
+        }
+        slice
+    }
+
+    // Max number of 4K pages allowed on one node; limited by NCache.
+    let size = BASE_PAGE_SIZE * 130000;
+    let dram_base: u64 = 0xff000;
+    let dram_slice = map_region(dram_base, size, MemType::DRAM);
+
+    let pmem_base: u64 = dram_base + size as u64;
+    let pmem_slice = map_region(pmem_base, size, MemType::PMEM);
 
     let write_slice = [0xb; 64];
-    let total_lines = (iterate * size) / write_slice.len() as u64;
-
-    // Allocate 2 GB of frames
-    for i in 0..iterate {
-        unsafe {
-            vibrio::syscalls::VSpace::map(new_base, size).expect("Map syscall failed");
-            new_base += size;
-        }
-    }
-    let slice: &mut [u8] =
-        unsafe { from_raw_parts_mut(base as *mut u8, (iterate * size) as usize) };
+    let total_lines = size / write_slice.len();
 
     for _ in 0..5 {
         let mut random_num: u32 = 0;
@@ -710,11 +734,11 @@ fn test_write_amplication() {
         while start.elapsed().as_secs() < 1 {
             for _ in 0..32 {
                 unsafe { rdrand32(&mut random_num) };
-                let rand = random_num as u64 % total_lines;
+                let rand = random_num as usize % total_lines;
                 unsafe {
                     ptr::copy_nonoverlapping(
                         write_slice.as_ptr(),
-                        slice[rand as usize..].as_mut_ptr(),
+                        dram_slice[rand..].as_mut_ptr(),
                         write_slice.len(),
                     )
                 };

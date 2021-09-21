@@ -151,3 +151,10 @@ gdb
 Remote debugging using localhost:1234
 ...
 ```
+
+### Breakpoints
+
+We currently only support the x86-64 architecture with hardware breakpoints
+because the kernel code section is not writeable. So you'll have to use the
+[hbreak](https://sourceware.org/gdb/onlinedocs/gdb/Set-Breaks.html). For
+watchpoints, by default it will already use hardware watchpoints.

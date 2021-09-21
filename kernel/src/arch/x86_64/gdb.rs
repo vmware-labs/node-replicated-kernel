@@ -8,7 +8,8 @@ use gdbstub::target::ext::base::singlethread::{
 };
 use gdbstub::target::ext::base::BaseOps;
 use gdbstub::target::ext::breakpoints::{
-    Breakpoints, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps, WatchKind,
+    Breakpoints, BreakpointsOps, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps,
+    SwBreakpointOps, WatchKind,
 };
 use gdbstub::target::ext::section_offsets::{Offsets, SectionOffsets, SectionOffsetsOps};
 use gdbstub::target::{Target, TargetError, TargetResult};
@@ -231,9 +232,17 @@ impl Target for KernelDebugger {
     fn section_offsets(&mut self) -> Option<SectionOffsetsOps<Self>> {
         Some(self)
     }
+
+    fn breakpoints(&mut self) -> Option<BreakpointsOps<Self>> {
+        Some(self)
+    }
 }
 
 impl Breakpoints for KernelDebugger {
+    fn sw_breakpoint(&mut self) -> Option<SwBreakpointOps<Self>> {
+        None
+    }
+
     fn hw_breakpoint(&mut self) -> Option<HwBreakpointOps<Self>> {
         Some(self)
     }
@@ -306,6 +315,7 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<(), Self> {
+        info!("read_addr {:#x}", start_addr);
         // (Un)Safety: Well, this can easily violate the rust aliasing model
         // because when we arrive in the debugger; there might some mutable
         // reference to the PTs somewhere in a context that was modifying the
@@ -328,6 +338,7 @@ impl SingleThreadOps for KernelDebugger {
                         }
                     }
                     Err(_) => {
+                        error!("Target page was not mapped.");
                         // Target page was not mapped
                         return Err(TargetError::NonFatal);
                     }
@@ -344,6 +355,8 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
+        info!("write_addrs {:#x}", start_addr);
+
         // (Un)Safety: Well, this can easily violate the rust aliasing model
         // because when we arrive in the debugger; there might some mutable
         // reference to the PTs somewhere in a context that was modifying the
@@ -360,12 +373,17 @@ impl SingleThreadOps for KernelDebugger {
                 match pt.resolve(va) {
                     Ok((pa, rights)) => {
                         if !rights.is_writable() {
-                            // Mapped but not writeable
+                            if rights.is_executable() {
+                                error!("Target page mapped but not writeable. If you were trying to set a breakpoint use `hbreak` instead of `break`.");
+                            } else {
+                                error!("Target page mapped but not writeable.");
+                            }
                             return Err(TargetError::NonFatal);
                         }
                     }
                     Err(_) => {
                         // Target page was not mapped
+                        error!("Target page not mapped.");
                         return Err(TargetError::NonFatal);
                     }
                 }
@@ -412,6 +430,7 @@ impl HwWatchpoint for KernelDebugger {
         len: u64,
         kind: WatchKind,
     ) -> TargetResult<bool, Self> {
+        info!("add hw watchpoint {:#x} {}", addr, len);
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
@@ -479,6 +498,8 @@ impl HwWatchpoint for KernelDebugger {
 
 impl HwBreakpoint for KernelDebugger {
     fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
+        info!("add hw breakpoint {:#x}", addr);
+
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
@@ -500,6 +521,7 @@ impl HwBreakpoint for KernelDebugger {
                         debugregs::BreakSize::Bytes1,
                         KernelDebugger::GLOBAL_BP_FLAG,
                     );
+                    info!("added hw breakpoint {:#x}", addr);
                     debugregs::dr7_write(dr7);
                 }
                 return Ok(true);

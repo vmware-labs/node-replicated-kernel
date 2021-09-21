@@ -20,7 +20,7 @@ use log::{debug, info, trace, warn};
 use node_replication::{Dispatch, Log, Replica};
 use x86::bits64::paging::*;
 use x86::bits64::rflags;
-use x86::controlregs;
+use x86::{controlregs, Ring};
 
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
 use crate::kcb::ArchSpecificKcb;
@@ -35,6 +35,7 @@ use crate::process::{
 };
 use crate::round_up;
 
+use super::gdt::GdtTable;
 use super::kcb::Arch86Kcb;
 use super::vspace::*;
 use super::Module;
@@ -202,80 +203,6 @@ impl<'a> Drop for UserSlice<'a> {
 /// Pretty unsafe low-level API that switches to an arbitrary
 /// context/instruction pointer. Caller should make sure that `state` is
 /// "valid", meaning is an alive context that has not already been resumed.
-unsafe fn iret_restore(state: *const kpi::arch::SaveArea) -> ! {
-    asm!("
-    // Restore the gs register
-    swapgs
-
-    // Restore the fs register
-    movq {fs_offset}(%rdi), %rsi
-    wrfsbase %rsi
-
-    // Restore vector registers
-    fxrstor {fxsave_offset}(%rdi)
-
-    // Restore CPU registers
-    movq  {rax_offset}(%rdi), %rax
-    movq  {rbx_offset}(%rdi), %rbx
-    movq  {rcx_offset}(%rdi), %rcx
-    movq  {rdx_offset}(%rdi), %rdx
-    movq  {rsi_offset}(%rdi), %rsi
-    // %rdi: Restore last (see below) to preserve `save_area`
-    movq  {rbp_offset}(%rdi), %rbp
-    // %rsp: Restored through iretq stack set-up
-    movq  {r8_offset}(%rdi), %r8
-    movq  {r9_offset}(%rdi), %r9
-    movq {r10_offset}(%rdi), %r10
-    movq {r11_offset}(%rdi), %r11
-    movq {r12_offset}(%rdi), %r12
-    movq {r13_offset}(%rdi), %r13
-    movq {r14_offset}(%rdi), %r14
-    movq {r15_offset}(%rdi), %r15
-
-    //
-    // Establish stack frame for iretq: [ss, rsp, rflags, cs, rip]
-    //
-
-    // ss register
-    pushq {ss_offset}(%rdi)
-    // %rsp register
-    pushq {rsp_offset}(%rdi)
-    // rflags register
-    pushq {rflags_offset}(%rdi)
-    // cs register
-    pushq {cs_offset}(%rdi)
-    // %rip
-    pushq {rip_offset}(%rdi)
-
-    // Restore rdi register last, since it was used to reach `state`
-    movq {rdi_offset}(%rdi), %rdi
-    iretq
-    ",
-    rax_offset = const SaveArea::RAX_OFFSET,
-    rbx_offset = const SaveArea::RBX_OFFSET,
-    rcx_offset = const SaveArea::RCX_OFFSET,
-    rdx_offset = const SaveArea::RDX_OFFSET,
-    rsi_offset = const SaveArea::RSI_OFFSET,
-    rdi_offset = const SaveArea::RDI_OFFSET,
-    rbp_offset = const SaveArea::RBP_OFFSET,
-    rsp_offset = const SaveArea::RSP_OFFSET,
-    r8_offset = const SaveArea::R8_OFFSET,
-    r9_offset = const SaveArea::R9_OFFSET,
-    r10_offset = const SaveArea::R10_OFFSET,
-    r11_offset = const SaveArea::R11_OFFSET,
-    r12_offset = const SaveArea::R12_OFFSET,
-    r13_offset = const SaveArea::R13_OFFSET,
-    r14_offset = const SaveArea::R14_OFFSET,
-    r15_offset = const SaveArea::R15_OFFSET,
-    rip_offset = const SaveArea::RIP_OFFSET,
-    rflags_offset = const SaveArea::RFLAGS_OFFSET,
-    fs_offset = const SaveArea::FS_OFFSET,
-    cs_offset = const SaveArea::CS_OFFSET,
-    ss_offset = const SaveArea::SS_OFFSET,
-    fxsave_offset = const SaveArea::FXSAVE_OFFSET,
-    in("rdi") state,
-    options(att_syntax, noreturn));
-}
 
 pub struct Ring0Resumer {
     pub save_area: *const kpi::arch::SaveArea,
@@ -289,7 +216,82 @@ impl Ring0Resumer {
 
 impl ResumeHandle for Ring0Resumer {
     unsafe fn resume(self) -> ! {
-        iret_restore(self.save_area)
+        // TODO(code-duplication): Elimiate code duplication for this and Ring3
+        // iret_restore. Problem is that the `ss` and `cs` register needs to be
+        // const, alternative take it from save_area but it might not be right
+        // in there e.g., has kernel cs/ss when we resume to user-space
+        asm!("
+            // Restore the gs register
+            swapgs
+
+            // Restore the fs register
+            movq {fs_offset}(%rdi), %rsi
+            wrfsbase %rsi
+
+            // Restore vector registers
+            fxrstor {fxsave_offset}(%rdi)
+
+            // Restore CPU registers
+            movq  {rax_offset}(%rdi), %rax
+            movq  {rbx_offset}(%rdi), %rbx
+            movq  {rcx_offset}(%rdi), %rcx
+            movq  {rdx_offset}(%rdi), %rdx
+            movq  {rsi_offset}(%rdi), %rsi
+            // %rdi: Restore last (see below) to preserve `save_area`
+            movq  {rbp_offset}(%rdi), %rbp
+            // %rsp: Restored through iretq stack set-up
+            movq  {r8_offset}(%rdi), %r8
+            movq  {r9_offset}(%rdi), %r9
+            movq {r10_offset}(%rdi), %r10
+            movq {r11_offset}(%rdi), %r11
+            movq {r12_offset}(%rdi), %r12
+            movq {r13_offset}(%rdi), %r13
+            movq {r14_offset}(%rdi), %r14
+            movq {r15_offset}(%rdi), %r15
+
+            //
+            // Establish stack frame for iretq: [ss, rsp, rflags, cs, rip]
+            //
+
+            // ss register
+            pushq {ss}
+            // %rsp register
+            pushq {rsp_offset}(%rdi)
+            // rflags register
+            pushq {rflags_offset}(%rdi)
+            // cs register
+            pushq {cs}
+            // %rip
+            pushq {rip_offset}(%rdi)
+
+            // Restore rdi register last, since it was used to reach `state`
+            movq {rdi_offset}(%rdi), %rdi
+            iretq
+        ",
+        rax_offset = const SaveArea::RAX_OFFSET,
+        rbx_offset = const SaveArea::RBX_OFFSET,
+        rcx_offset = const SaveArea::RCX_OFFSET,
+        rdx_offset = const SaveArea::RDX_OFFSET,
+        rsi_offset = const SaveArea::RSI_OFFSET,
+        rdi_offset = const SaveArea::RDI_OFFSET,
+        rbp_offset = const SaveArea::RBP_OFFSET,
+        rsp_offset = const SaveArea::RSP_OFFSET,
+        r8_offset = const SaveArea::R8_OFFSET,
+        r9_offset = const SaveArea::R9_OFFSET,
+        r10_offset = const SaveArea::R10_OFFSET,
+        r11_offset = const SaveArea::R11_OFFSET,
+        r12_offset = const SaveArea::R12_OFFSET,
+        r13_offset = const SaveArea::R13_OFFSET,
+        r14_offset = const SaveArea::R14_OFFSET,
+        r15_offset = const SaveArea::R15_OFFSET,
+        rip_offset = const SaveArea::RIP_OFFSET,
+        rflags_offset = const SaveArea::RFLAGS_OFFSET,
+        fs_offset = const SaveArea::FS_OFFSET,
+        fxsave_offset = const SaveArea::FXSAVE_OFFSET,
+        cs = const GdtTable::kernel_cs_selector().bits(),
+        ss = const GdtTable::kernel_ss_selector().bits(),
+        in("rdi") self.save_area,
+        options(att_syntax, noreturn));
     }
 }
 
@@ -387,11 +389,82 @@ impl Ring3Resumer {
     }
 
     unsafe fn iret_restore(self) -> ! {
-        iret_restore(self.save_area)
+        asm!("
+            // Restore the gs register
+            swapgs
+
+            // Restore the fs register
+            movq {fs_offset}(%rdi), %rsi
+            wrfsbase %rsi
+
+            // Restore vector registers
+            fxrstor {fxsave_offset}(%rdi)
+
+            // Restore CPU registers
+            movq  {rax_offset}(%rdi), %rax
+            movq  {rbx_offset}(%rdi), %rbx
+            movq  {rcx_offset}(%rdi), %rcx
+            movq  {rdx_offset}(%rdi), %rdx
+            movq  {rsi_offset}(%rdi), %rsi
+            // %rdi: Restore last (see below) to preserve `save_area`
+            movq  {rbp_offset}(%rdi), %rbp
+            // %rsp: Restored through iretq stack set-up
+            movq  {r8_offset}(%rdi), %r8
+            movq  {r9_offset}(%rdi), %r9
+            movq {r10_offset}(%rdi), %r10
+            movq {r11_offset}(%rdi), %r11
+            movq {r12_offset}(%rdi), %r12
+            movq {r13_offset}(%rdi), %r13
+            movq {r14_offset}(%rdi), %r14
+            movq {r15_offset}(%rdi), %r15
+
+            //
+            // Establish stack frame for iretq: [ss, rsp, rflags, cs, rip]
+            //
+
+            // ss register
+            pushq {ss}
+            // %rsp register
+            pushq {rsp_offset}(%rdi)
+            // rflags register
+            pushq {rflags_offset}(%rdi)
+            // cs register
+            pushq {cs}
+            // %rip
+            pushq {rip_offset}(%rdi)
+
+            // Restore rdi register last, since it was used to reach `state`
+            movq {rdi_offset}(%rdi), %rdi
+            iretq
+        ",
+        rax_offset = const SaveArea::RAX_OFFSET,
+        rbx_offset = const SaveArea::RBX_OFFSET,
+        rcx_offset = const SaveArea::RCX_OFFSET,
+        rdx_offset = const SaveArea::RDX_OFFSET,
+        rsi_offset = const SaveArea::RSI_OFFSET,
+        rdi_offset = const SaveArea::RDI_OFFSET,
+        rbp_offset = const SaveArea::RBP_OFFSET,
+        rsp_offset = const SaveArea::RSP_OFFSET,
+        r8_offset = const SaveArea::R8_OFFSET,
+        r9_offset = const SaveArea::R9_OFFSET,
+        r10_offset = const SaveArea::R10_OFFSET,
+        r11_offset = const SaveArea::R11_OFFSET,
+        r12_offset = const SaveArea::R12_OFFSET,
+        r13_offset = const SaveArea::R13_OFFSET,
+        r14_offset = const SaveArea::R14_OFFSET,
+        r15_offset = const SaveArea::R15_OFFSET,
+        rip_offset = const SaveArea::RIP_OFFSET,
+        rflags_offset = const SaveArea::RFLAGS_OFFSET,
+        fs_offset = const SaveArea::FS_OFFSET,
+        fxsave_offset = const SaveArea::FXSAVE_OFFSET,
+        cs = const GdtTable::user_cs_selector().bits(),
+        ss = const GdtTable::user_ss_selector().bits(),
+        in("rdi") self.save_area,
+        options(att_syntax, noreturn));
     }
 
     unsafe fn restore(self) -> ! {
-        let user_rflags = rflags::RFlags::from_priv(x86::Ring::Ring3)
+        let user_rflags = rflags::RFlags::from_priv(Ring::Ring3)
             | rflags::RFlags::FLAGS_A1
             | rflags::RFlags::FLAGS_IF;
 
@@ -401,54 +474,68 @@ impl Ring3Resumer {
         // This routine assumes the following set-up
         // %rdi points to SaveArea
         // r11 has rflags
-        llvm_asm!("
-                // Restore CPU registers
-                movq  0*8(%rdi), %rax
-                movq  1*8(%rdi), %rbx
-                // %rcx: Don't restore it will contain user-space rip
-                movq  3*8(%rdi), %rdx
-                // %rdi and %rsi: Restore last (see below) to preserve `save_area`
-                movq  6*8(%rdi), %rbp
-                movq  7*8(%rdi), %rsp
-                movq  8*8(%rdi), %r8
-                movq  9*8(%rdi), %r9
-                movq 10*8(%rdi), %r10
-                // %r11: Don't restore it will contain RFlags
-                movq 12*8(%rdi), %r12
-                movq 13*8(%rdi), %r13
-                movq 14*8(%rdi), %r14
-                movq 15*8(%rdi), %r15
+        asm!("
+            // Restore CPU registers
+            movq  {rax_offset}(%rdi), %rax
+            movq  {rbx_offset}(%rdi), %rbx
+            // %rcx: Don't restore it will contain user-space rip
+            movq  {rdx_offset}(%rdi), %rdx
+            // %rdi and %rsi: Restore last (see below) to preserve `save_area`
+            movq  {rbp_offset}(%rdi), %rbp
+            movq  {rsp_offset}(%rdi), %rsp
+            movq  {r8_offset}(%rdi), %r8
+            movq  {r9_offset}(%rdi), %r9
+            movq  {r10_offset}(%rdi), %r10
+            // %r11: Don't restore it will contain RFlags
+            movq {r12_offset}(%rdi), %r12
+            movq {r13_offset}(%rdi), %r13
+            movq {r14_offset}(%rdi), %r14
+            movq {r15_offset}(%rdi), %r15
 
-                // Restore fs and gs registers
-                swapgs
-                movq 19*8(%rdi), %rsi
-                wrfsbase %rsi
+            // Restore fs and gs registers
+            swapgs
+            movq {fs_offset}(%rdi), %rsi
+            wrfsbase %rsi
 
-                // Restore vector registers
-                fxrstor 24*8(%rdi)
+            // Restore vector registers
+            fxrstor {fxsave_offset}(%rdi)
 
-                // sysretq expects user-space %rip in %rcx
-                movq 16*8(%rdi),%rcx
-                // sysretq expects rflags in %r11
-                //movq 17*8(%rdi),%r11
+            // sysretq expects user-space %rip in %rcx
+            movq {rip_offset}(%rdi),%rcx
+            // sysretq expects rflags in %r11
 
-                // At last, restore %rsi and %rdi before we return
-                movq  4*8(%rdi), %rsi
-                movq  5*8(%rdi), %rdi
+            // At last, restore %rsi and %rdi before we return
+            movq  {rsi_offset}(%rdi), %rsi
+            movq  {rdi_offset}(%rdi), %rdi
 
-                // Let's do sysretq instead of iretq (slow, measure?)
-                // (TODO: we need to be more careful about CVE-2012-0217)
-                sysretq
-            " ::
-            "{r11}" (user_rflags.bits())
-            "{rdi}" (self.save_area));
-
-        unreachable!("We should not come here!");
+            sysretq
+            ",
+            rax_offset = const SaveArea::RAX_OFFSET,
+            rbx_offset = const SaveArea::RBX_OFFSET,
+            rdx_offset = const SaveArea::RDX_OFFSET,
+            rsi_offset = const SaveArea::RSI_OFFSET,
+            rdi_offset = const SaveArea::RDI_OFFSET,
+            rbp_offset = const SaveArea::RBP_OFFSET,
+            rsp_offset = const SaveArea::RSP_OFFSET,
+            r8_offset = const SaveArea::R8_OFFSET,
+            r9_offset = const SaveArea::R9_OFFSET,
+            r10_offset = const SaveArea::R10_OFFSET,
+            r12_offset = const SaveArea::R12_OFFSET,
+            r13_offset = const SaveArea::R13_OFFSET,
+            r14_offset = const SaveArea::R14_OFFSET,
+            r15_offset = const SaveArea::R15_OFFSET,
+            rip_offset = const SaveArea::RIP_OFFSET,
+            fs_offset = const SaveArea::FS_OFFSET,
+            fxsave_offset = const SaveArea::FXSAVE_OFFSET,
+            in("rdi") self.save_area,
+            in("r11") user_rflags.bits(),
+            options(att_syntax, noreturn)
+        );
     }
 
     unsafe fn upcall(self) -> ! {
         trace!("About to go to user-space: {:#x}", self.entry_point);
-        // TODO: For now we allow unconditional IO access from user-space
+        // TODO(safety): For now we allow unconditional IO access from user-space
         let user_flags =
             rflags::RFlags::FLAGS_IOPL3 | rflags::RFlags::FLAGS_A1 | rflags::RFlags::FLAGS_IF;
 
@@ -461,22 +548,22 @@ impl Ring3Resumer {
         // %rcx Program entry point in Ring 3
         // %r11 RFlags
         trace!("Jumping to {:#x}", self.entry_point);
-        llvm_asm!("
+        asm!("
                 // rax: contains stack pointer
-                movq       $$0, %rbx
+                movq       $0, %rbx
                 // rcx: has entry point
                 // rdi: 1st argument
                 // rsi: 2nd argument
                 // rdx: 3rd argument
                 // rsp and rbp are set to provided `stack_top`
-                movq       $$0, %r8
-                movq       $$0, %r9
-                movq       $$0, %r10
+                movq       $0, %r8
+                movq       $0, %r9
+                movq       $0, %r10
                 // r11 register is used for RFlags
-                movq       $$0, %r12
-                movq       $$0, %r13
-                movq       $$0, %r14
-                movq       $$0, %r15
+                movq       $0, %r12
+                movq       $0, %r13
+                movq       $0, %r14
+                movq       $0, %r15
 
                 // Reset vector registers
                 fninit
@@ -488,16 +575,15 @@ impl Ring3Resumer {
                 movq %rax, %rsp
 
                 sysretq
-            " ::
-            "{rcx}" (self.entry_point.as_u64())
-            "{rdi}" (self.cpu_ctl)
-            "{rsi}" (self.vector)
-            "{rdx}" (self.exception)
-            "{rax}" (self.stack_top.as_u64())
-            "{r11}" (user_flags.bits())
+            ",
+            in("rcx") self.entry_point.as_u64(),
+            in("rdi") self.cpu_ctl,
+            in("rsi") self.vector,
+            in("rdx") self.exception,
+            in("rax") self.stack_top.as_u64(),
+            in("r11") user_flags.bits(),
+            options(att_syntax, noreturn)
         );
-
-        unreachable!("We should not come here!");
     }
 
     unsafe fn start(self) -> ! {
@@ -516,22 +602,22 @@ impl Ring3Resumer {
         // %rcx Program entry point in Ring 3
         // %r11 RFlags
         trace!("Jumping to {:#x}", self.entry_point);
-        llvm_asm!("
+        asm!("
                 // rax: contains stack pointer
-                movq       $$0, %rbx
+                movq       $0, %rbx
                 // rcx: has entry point
                 // rdi: 1st argument
                 // rsi: 2nd argument
                 // rdx: 3rd argument
                 // rsp and rbp are set to provided `stack_top`
-                movq       $$0, %r8
-                movq       $$0, %r9
-                movq       $$0, %r10
+                movq       $0, %r8
+                movq       $0, %r9
+                movq       $0, %r10
                 // r11 register is used for RFlags
-                movq       $$0, %r12
-                movq       $$0, %r13
-                movq       $$0, %r14
-                movq       $$0, %r15
+                movq       $0, %r12
+                movq       $0, %r13
+                movq       $0, %r14
+                movq       $0, %r15
 
                 // Reset vector registers
                 fninit
@@ -544,16 +630,15 @@ impl Ring3Resumer {
                 movq %rax, %rsp
 
                 sysretq
-            " ::
-            "{rcx}" (self.entry_point.as_u64())
-            "{rdi}" (self.cpu_ctl)
-            "{rsi}" (self.vector)
-            "{rdx}" (self.exception)
-            "{rax}" (self.stack_top.as_u64())
-            "{r11}" (user_flags.bits())
+            ",
+            in("rcx") self.entry_point.as_u64(),
+            in("rdi") self.cpu_ctl,
+            in("rsi") self.vector,
+            in("rdx") self.exception,
+            in("rax") self.stack_top.as_u64(),
+            in("r11") user_flags.bits(),
+            options(att_syntax, noreturn)
         );
-
-        unreachable!("We should not come here!");
     }
 }
 

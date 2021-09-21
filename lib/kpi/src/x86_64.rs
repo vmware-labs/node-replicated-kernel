@@ -9,6 +9,16 @@ use core::fmt;
 
 use x86::bits64::paging::VAddr;
 use x86::bits64::rflags::RFlags;
+use x86::segmentation::SegmentSelector;
+use x86::Ring;
+
+pub const CS_USER_GDT_INDEX: u16 = 3;
+pub const CS_SELECTOR: SegmentSelector = SegmentSelector::new(CS_USER_GDT_INDEX, Ring::Ring3);
+static_assertions::const_assert_eq!(CS_SELECTOR.bits(), 27);
+
+pub const SS_USER_GDT_INDEX: u16 = 4;
+pub const SS_SELECTOR: SegmentSelector = SegmentSelector::new(SS_USER_GDT_INDEX, Ring::Ring3);
+static_assertions::const_assert_eq!(SS_SELECTOR.bits(), 35);
 
 /// The virtual CPU is a shared data-structure between the kernel and user-space
 /// that facilitates IRQ/trap delivery and emulation of critical sections

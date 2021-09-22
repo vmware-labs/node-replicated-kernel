@@ -182,8 +182,8 @@ pub trait AddressSpace {
         &mut self,
         start: VAddr,
         end: VAddr,
-        dirty_pages: &mut alloc::vec::Vec<PAddr>,
-    );
+        dirty_pages: &mut [VAddr],
+    ) -> Result<u64, KError>;
 }
 
 /// Mapping rights to give to address translation.

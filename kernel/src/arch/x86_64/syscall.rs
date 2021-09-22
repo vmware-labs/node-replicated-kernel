@@ -366,9 +366,8 @@ fn handle_vspace(
         VSpaceOperation::DirtyPages => unsafe {
             let start = VAddr::from(arg2);
             let end = VAddr::from(arg3);
-            let list = VAddr::from(arg4);
 
-            nrproc::NrProcess::<Ring3Process>::get_dirty_pages(p.pid, start, end, list, arg5)
+            nrproc::NrProcess::<Ring3Process>::get_dirty_pages(p.pid, start, end, arg4, arg5)
         },
         VSpaceOperation::Unknown => {
             error!("Got an invalid VSpaceOperation code.");

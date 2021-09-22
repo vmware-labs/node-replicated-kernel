@@ -107,9 +107,9 @@ impl AddressSpace for VSpace {
         &mut self,
         start: VAddr,
         end: VAddr,
-        dirty_pages: &mut alloc::vec::Vec<PAddr>,
-    ) {
-        self.page_table.get_dirty_pages(start, end, dirty_pages);
+        dirty_pages: &mut [VAddr],
+    ) -> Result<u64, KError> {
+        self.page_table.get_dirty_pages(start, end, dirty_pages)
     }
 }
 

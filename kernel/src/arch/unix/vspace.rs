@@ -75,7 +75,12 @@ impl AddressSpace for VSpace {
         unimplemented!("unmap");
     }
 
-    fn get_dirty_pages(&mut self, _start: VAddr, _end: VAddr, _dirty_pages: &mut Vec<PAddr>) {
+    fn get_dirty_pages(
+        &mut self,
+        _start: VAddr,
+        _end: VAddr,
+        _dirty_pages: &mut [VAddr],
+    ) -> Result<u64, KError> {
         unimplemented!("get_dirty_pages");
     }
 }

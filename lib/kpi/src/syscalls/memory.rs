@@ -85,7 +85,7 @@ impl VSpace {
     }
 
     pub fn dirty_pages(start: u64, end: u64, list: u64, len: u64) -> Result<u64, SystemCallError> {
-        let (r1, r2) = unsafe {
+        let (err, count) = unsafe {
             syscall!(
                 SystemCall::VSpace as u64,
                 VSpaceOperation::DirtyPages,
@@ -97,10 +97,10 @@ impl VSpace {
             )
         };
 
-        if r1 == 0 {
-            Ok(r2)
+        if err == 0 {
+            Ok(count)
         } else {
-            Err(SystemCallError::from(r1))
+            Err(SystemCallError::from(err))
         }
     }
 

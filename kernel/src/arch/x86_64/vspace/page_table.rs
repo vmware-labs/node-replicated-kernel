@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::mem::transmute;
 use core::ops::Add;
@@ -170,7 +169,14 @@ impl AddressSpace for PageTable {
         Ok(TlbFlushHandle::new(vaddr, Frame::new(paddr, size, 0)))
     }
 
-    fn get_dirty_pages(&mut self, start: VAddr, end: VAddr, dirty_pages: &mut Vec<PAddr>) {
+    fn get_dirty_pages(
+        &mut self,
+        start: VAddr,
+        end: VAddr,
+        dirty_pages: &mut [VAddr],
+    ) -> Result<u64, KError> {
+        let mut count: u64 = 0;
+        let dirty_pages = &mut dirty_pages.iter_mut();
         let instant = rawtime::Instant::now();
         let mut addr = start;
         while addr >= start && addr <= end {
@@ -181,37 +187,34 @@ impl AddressSpace for PageTable {
                 if pdpt[pdpt_idx].is_present() {
                     if pdpt[pdpt_idx].is_page() {
                         // Page is a 1 GiB mapping, we have to return here
-                        let page_offset = addr.huge_page_offset();
-                        let paddr = pdpt[pdpt_idx].address() + page_offset;
                         let flags = pdpt[pdpt_idx].flags();
-                        addr = addr.add(HUGE_PAGE_SIZE);
                         if flags & PDPTFlags::D == PDPTFlags::D {
-                            dirty_pages.push(paddr);
+                            *dirty_pages.next().unwrap() = addr;
+                            count += 1;
                         }
+                        addr = addr.add(HUGE_PAGE_SIZE);
                     } else {
                         let pd_idx = pd_index(addr);
                         let pd = self.get_pd(pdpt[pdpt_idx]);
                         if pd[pd_idx].is_present() {
                             if pd[pd_idx].is_page() {
                                 // Encountered a 2 MiB mapping, we have to return here
-                                let page_offset = addr.large_page_offset();
-                                let paddr = pd[pd_idx].address() + page_offset;
                                 let flags = pd[pd_idx].flags();
-                                addr = addr.add(LARGE_PAGE_SIZE);
                                 if flags & PDFlags::D == PDFlags::D {
-                                    dirty_pages.push(paddr);
+                                    *dirty_pages.next().unwrap() = addr;
+                                    count += 1;
                                 }
+                                addr = addr.add(LARGE_PAGE_SIZE);
                             } else {
                                 let pt_idx = pt_index(addr);
                                 let pt = self.get_pt(pd[pd_idx]);
                                 if pt[pt_idx].is_present() {
-                                    let page_offset = addr.base_page_offset();
-                                    let paddr = pt[pt_idx].address() + page_offset;
                                     let flags = pt[pt_idx].flags();
-                                    addr = addr.add(BASE_PAGE_SIZE);
                                     if flags & PTFlags::D == PTFlags::D {
-                                        dirty_pages.push(paddr);
+                                        *dirty_pages.next().unwrap() = addr;
+                                        count += 1;
                                     }
+                                    addr = addr.add(BASE_PAGE_SIZE);
                                 }
                             }
                         }
@@ -219,7 +222,12 @@ impl AddressSpace for PageTable {
                 }
             }
         }
-        log::info!("{}", instant.elapsed().as_millis());
+        log::debug!(
+            "Total dirty pages {}, tracking time {} ms",
+            count,
+            instant.elapsed().as_millis()
+        );
+        Ok(count)
     }
 }
 

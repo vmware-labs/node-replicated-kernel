@@ -190,8 +190,8 @@ impl AddressSpace for ModelAddressSpace {
         &mut self,
         _start: VAddr,
         _end: VAddr,
-        _dirty_pages: &mut alloc::vec::Vec<PAddr>,
-    ) {
+        _dirty_pages: &mut [VAddr],
+    ) -> Result<u64, KError> {
         unimplemented!("get_dirty_pages");
     }
 }

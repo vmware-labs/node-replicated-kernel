@@ -686,21 +686,22 @@ fn pmem_alloc(ncores: Option<usize>) {
 fn test_write_amplication() {
     use alloc::vec::Vec;
     use vibrio::MemType;
-    use x86::bits64::paging::{PAddr, BASE_PAGE_SIZE};
+    use x86::bits64::paging::{VAddr, BASE_PAGE_SIZE};
     use x86::random::rdrand32;
 
     fn map_region<'a>(base: u64, size: usize, mem_type: MemType) -> &'a mut [u8] {
         assert!(size >= BASE_PAGE_SIZE);
+        assert!(size % BASE_PAGE_SIZE == 0);
         let mut new_base = base;
         let iterate = size / BASE_PAGE_SIZE;
 
         for i in 0..iterate {
             match mem_type {
-                MemType::DRAM => unsafe {
+                MemType::Mem => unsafe {
                     vibrio::syscalls::VSpace::map(new_base, BASE_PAGE_SIZE as u64)
                         .expect("Map syscall failed");
                 },
-                MemType::PMEM => unsafe {
+                MemType::PMem => unsafe {
                     vibrio::syscalls::VSpace::map_pmem(new_base, BASE_PAGE_SIZE as u64)
                         .expect("MapPmem syscall failed");
                 },
@@ -710,20 +711,17 @@ fn test_write_amplication() {
             new_base += BASE_PAGE_SIZE as u64;
         }
 
-        let slice: &mut [u8] = unsafe { from_raw_parts_mut(base as *mut u8, size) };
-        for i in slice.iter_mut() {
-            *i = 0xb;
-        }
-        slice
+        unsafe { from_raw_parts_mut(base as *mut u8, size) }
     }
 
     // Max number of 4K pages allowed on one node; limited by NCache.
-    let size = BASE_PAGE_SIZE * 130000;
+    const pages: usize = 130000;
+    let size = BASE_PAGE_SIZE * pages;
     let dram_base: u64 = 0xff000;
-    let dram_slice = map_region(dram_base, size, MemType::DRAM);
+    let dram_slice = map_region(dram_base, size, MemType::Mem);
 
     let pmem_base: u64 = dram_base + size as u64;
-    let pmem_slice = map_region(pmem_base, size, MemType::PMEM);
+    let pmem_slice = map_region(pmem_base, size, MemType::PMem);
 
     let write_slice = [0xb; 64];
     let total_lines = size / write_slice.len();
@@ -749,16 +747,16 @@ fn test_write_amplication() {
         info!("IOPS {}", iops);
     }
 
-    let vec_len = size / BASE_PAGE_SIZE;
-    let mut dirty_pages: Vec<PAddr> = Vec::with_capacity(vec_len);
-    vibrio::syscalls::VSpace::dirty_pages(
+    let mut dirty_pages = [VAddr::from(0); pages];
+    let count = vibrio::syscalls::VSpace::dirty_pages(
         dram_base,
-        pmem_base,
-        dirty_pages.as_mut_ptr() as *const Vec<PAddr> as u64,
-        vec_len as u64,
-    );
+        pmem_base - BASE_PAGE_SIZE as u64,
+        dirty_pages.as_ptr() as u64,
+        pages as u64,
+    )
+    .expect("Dirty page tracking failed");
 
-    info!("Dirty pages {:?}", dirty_pages.len());
+    info!("Dirty pages {}", count);
     info!("Write Amplication Test OK");
 }
 

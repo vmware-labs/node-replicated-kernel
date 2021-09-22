@@ -17,6 +17,7 @@ import plumbum
 import re
 import errno
 from time import sleep
+import tempfile
 
 from plumbum import colors, local, SshMachine
 from plumbum.commands import ProcessExecutionError
@@ -90,10 +91,10 @@ parser.add_argument("--qemu-nodes", type=int,
                     help="How many NUMA nodes and sockets (for qemu).", required=False, default=None)
 parser.add_argument("--qemu-cores", type=int,
                     help="How many cores (will get evenly divided among nodes).", default=1)
-parser.add_argument("--qemu-memory", type=str,
+parser.add_argument("--qemu-memory", type=int,
                     help="How much total memory in MiB (will get evenly divided among nodes).", default=1024)
-parser.add_argument("--qemu-pmem", type=str,
-                    help="How much total peristent memory in MiB (will get evenly divided among nodes).", required=False, default=None)
+parser.add_argument("--qemu-pmem", type=int,
+                    help="How much total peristent memory in MiB (will get evenly divided among nodes).", required=False, default=0)
 parser.add_argument("--qemu-affinity", action="store_true", default=False,
                     help="Pin QEMU instance to dedicated host cores.")
 parser.add_argument("--qemu-prealloc", action="store_true", default=False,
@@ -297,7 +298,7 @@ def run_qemu(args):
     from plumbum.machines import LocalCommand
     from packaging import version
 
-    if args.qemu_pmem and int(args.qemu_pmem):
+    if args.qemu_pmem:
         required_version = version.parse("6.0.0")
         version_check = ['/usr/bin/env'] + ['qemu-system-x86_64'] + ['-version']
         # TODO: Ad-hoc approach to find version number. Can we improve it?
@@ -367,69 +368,52 @@ def run_qemu(args):
         # Now return the intersection of the two
         return list(sorted(set(mem_nodes).intersection(set(cpu_nodes))))
 
-    pmem_test_path = "test"
-    pmem = "off"
-    def pmem_paths(args):
-        paths = []
-        host_numa_nodes_list = query_host_numa()
-        num_host_numa_nodes = len(host_numa_nodes_list)
-
-        if args.qemu_nodes and args.qemu_nodes > 0:
-            for node in range(0, args.qemu_nodes):
-                default = "/mnt/node{}".format(node)
-                isDir = os.path.isdir(default)
-                if isDir:
-                    paths.append(default)
-                    pmem = "on"
-                else:
-                    path = "{}-{}".format(pmem_test_path, node)
-                    open(path, "w+")
-                    paths.append(path)
-        return paths
-
     host_numa_nodes_list = query_host_numa()
     num_host_numa_nodes = len(host_numa_nodes_list)
-    if args.qemu_nodes and args.qemu_nodes > 0 and args.qemu_cores > 1:
-        if args.qemu_pmem and int(args.qemu_pmem):
-            pm_paths = pmem_paths(args)
-            assert len(pm_paths) == args.qemu_nodes
+    if args.qemu_nodes and args.qemu_nodes > 0:
         for node in range(0, args.qemu_nodes):
-            mem_per_node = int(args.qemu_memory) / args.qemu_nodes
-            prealloc = "on" if args.qemu_prealloc else "off"
-            large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
-            backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
-            # This is untested, not sure it works
-            #assert args.pvrdma and not args.qemu_default_args
-            qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{},share=on'.format(
-                backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
+            if args.qemu_cores > 1:
+                mem_per_node = args.qemu_memory / args.qemu_nodes
+                prealloc = "on" if args.qemu_prealloc else "off"
+                large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
+                backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
+                # This is untested, not sure it works
+                #assert args.pvrdma and not args.qemu_default_args
+                qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{},share=on'.format(
+                    backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
 
-            qemu_default_args += ['-numa',
-                                  "node,memdev=nmem{},nodeid={}".format(node, node)]
-            qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
-                node, node)]
+                qemu_default_args += ['-numa',
+                                    "node,memdev=nmem{},nodeid={}".format(node, node)]
+                qemu_default_args += ["-numa", "cpu,node-id={},socket-id={}".format(
+                    node, node)]
+
             # NVDIMM related arguments
-            if args.qemu_pmem and int(args.qemu_pmem):
-                pmem_per_node = int(args.qemu_pmem) / args.qemu_nodes
-                qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem={},share=on'.format(
-                    node, pm_paths[node], int(pmem_per_node), pmem)]
+            if args.qemu_cores > 0 and args.qemu_pmem:
+                pmem_per_node = args.qemu_pmem / args.qemu_nodes
+                default = "/mnt/node{}".format(node)
+                if os.path.isdir(default):
+                    qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem=on,share=on'.format(
+                        node, default, int(pmem_per_node))]
+                else:
+                    with tempfile.NamedTemporaryFile() as tmp:
+                        qemu_default_args += ['-object', 'memory-backend-file,id=pmem{},mem-path={},size={}M,pmem=off,share=on'.format(
+                            node, tmp.name, int(pmem_per_node))]
                 qemu_default_args += ['-device',
                                     'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
-    if args.qemu_pmem and int(args.qemu_pmem):
-        qemu_default_args += ['-M', 'nvdimm=on,nvdimm-persistence=cpu']
-    if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
+    if args.qemu_cores and args.qemu_nodes:
         qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
             args.qemu_cores, args.qemu_nodes, args.qemu_cores)]
     else:
         qemu_default_args += ["-smp",
                               "{},sockets=1".format(args.qemu_cores)]
 
-    if args.qemu_memory:
-        if args.qemu_pmem and int(args.qemu_pmem):
-            qemu_default_args += ['-m', '{},slots={},maxmem={}M'.format(
-                str(args.qemu_memory), args.qemu_nodes, int(args.qemu_memory) + int(args.qemu_pmem))]
-        else:
-            qemu_default_args += ['-m', str(args.qemu_memory)]
+    if args.qemu_nodes and args.qemu_memory and args.qemu_pmem:
+        qemu_default_args += ['-M', 'nvdimm=on,nvdimm-persistence=cpu']
+        qemu_default_args += ['-m', '{},slots={},maxmem={}M'.format(
+            str(args.qemu_memory), args.qemu_nodes, args.qemu_memory + args.qemu_pmem)]
+    elif args.qemu_memory:
+        qemu_default_args += ['-m', str(args.qemu_memory)]
     if args.pvrdma:
         # ip link add bridge1 type bridge ; ifconfig bridge1 up
         qemu_default_args += ['-netdev', 'bridge,id=bridge1',
@@ -509,11 +493,6 @@ def run_qemu(args):
         log("Invocation was: {}".format(cmd))
         if execution.stderr:
             print("STDERR: {}".format(execution.stderr.decode('utf-8')))
-
-    # If the test creates a fake pmem path; remove it.
-    for path in pmem_paths(args):
-        if os.path.isfile(path) and pmem_test_path in path:
-            os.remove(path)
 
     return nrk_exit_code
 

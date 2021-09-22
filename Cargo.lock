@@ -2054,6 +2054,7 @@ name = "rpc"
 version = "0.1.0"
 dependencies = [
  "abomonation 0.7.3 (git+https://github.com/hunhoffe/abomonation.git?branch=no-std)",
+ "hashbrown 0.11.2",
  "kpi",
  "lazy_static",
  "log",

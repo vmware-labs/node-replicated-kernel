@@ -6,6 +6,7 @@ use log::{debug, error, warn};
 
 use kpi::io::{FileFlags, FileInfo, FileModes};
 use kpi::FileOperation;
+use rpc::fio_rpc::*;
 use rpc::rpc::*;
 
 use crate::error::KError;
@@ -21,12 +22,12 @@ lazy_static! {
 
 #[inline(always)]
 fn construct_error_ret(res_hdr: RPCHeader, err: RPCError) -> Vec<u8> {
-    let res = FIORPCRes { ret: Err(err) };
+    let res = FIORes { ret: Err(err) };
     construct_ret(res_hdr, res)
 }
 
 #[inline(always)]
-fn construct_ret(mut res_hdr: RPCHeader, res: FIORPCRes) -> Vec<u8> {
+fn construct_ret(mut res_hdr: RPCHeader, res: FIORes) -> Vec<u8> {
     let mut res_data = Vec::new();
     unsafe { encode(&res, &mut res_data) }.unwrap();
     res_hdr.msg_len = res_data.len() as u64;
@@ -95,12 +96,12 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
     }
     let local_pid = *(local_pid.unwrap());
 
-    match hdr.msg_type {
-        RPCType::Create => {
+    match FileIO::from(hdr.msg_type) {
+        FileIO::Create => {
             unreachable!("Create is changed to Open with O_CREAT flag in vibrio")
         }
-        RPCType::Open => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCOpenReq>(payload) } {
+        FileIO::Open => {
+            if let Some((req, remaining)) = unsafe { decode::<OpenReq>(payload) } {
                 debug!(
                     "Open(pathname={:?}, flags={:?}, modes={:?}), local_pid={:?}",
                     req.pathname,
@@ -115,7 +116,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 let mut pathname = req.pathname.clone();
                 pathname.push('\0');
 
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(cnrfs::MlnrKernelNode::map_fd(
                         local_pid,
                         pathname.as_ptr() as u64,
@@ -129,8 +130,8 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 construct_error_ret(res_hdr, RPCError::MalformedRequest)
             }
         }
-        RPCType::Read | RPCType::ReadAt => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCRWReq>(payload) } {
+        FileIO::Read | FileIO::ReadAt => {
+            if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
                 debug!(
                     "Read(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
                     req.fd, req.len, req.offset, local_pid
@@ -142,7 +143,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
 
                 // TODO: allocate buffer, extract bytes read
                 let mut buf = [0; MAX_READ];
-                let ret = if hdr.msg_type == RPCType::Read {
+                let ret = if hdr.msg_type == FileIO::Read as RPCType {
                     cnrfs::MlnrKernelNode::file_io(
                         FileOperation::Read,
                         local_pid,
@@ -163,7 +164,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 };
 
                 let mut res_data = Vec::new();
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(ret),
                 };
 
@@ -185,8 +186,8 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 construct_error_ret(res_hdr, RPCError::MalformedRequest)
             }
         }
-        RPCType::Write | RPCType::WriteAt => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCRWReq>(payload) } {
+        FileIO::Write | FileIO::WriteAt => {
+            if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
                 debug!(
                     "Write(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
                     req.fd, req.len, req.offset, local_pid
@@ -195,7 +196,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                     return construct_error_ret(res_hdr, RPCError::MalformedRequest);
                 }
 
-                let ret = if hdr.msg_type == RPCType::Write {
+                let ret = if hdr.msg_type == FileIO::Write as RPCType {
                     cnrfs::MlnrKernelNode::file_io(
                         FileOperation::Write,
                         local_pid,
@@ -215,7 +216,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                     )
                 };
 
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(ret),
                 };
                 construct_ret(res_hdr, res)
@@ -224,15 +225,15 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 construct_error_ret(res_hdr, RPCError::MalformedRequest)
             }
         }
-        RPCType::Close => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCCloseReq>(payload) } {
+        FileIO::Close => {
+            if let Some((req, remaining)) = unsafe { decode::<CloseReq>(payload) } {
                 debug!("Close(fd={:?}), local_pid={:?}", req.fd, local_pid);
                 if remaining.len() > 0 {
                     warn!("Trailing data in payload: {:?}", remaining);
                     return construct_error_ret(res_hdr, RPCError::ExtraData);
                 }
 
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(local_pid, req.fd)),
                 };
                 construct_ret(res_hdr, res)
@@ -241,8 +242,8 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 construct_error_ret(res_hdr, RPCError::MalformedRequest)
             }
         }
-        RPCType::GetInfo => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCGetInfoReq>(payload) } {
+        FileIO::GetInfo => {
+            if let Some((req, remaining)) = unsafe { decode::<GetInfoReq>(payload) } {
                 debug!("GetInfo(name={:?}), local_pid={:?}", req.name, local_pid);
                 if remaining.len() > 0 {
                     warn!("Trailing data in payload: {:?}", remaining);
@@ -261,7 +262,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                     ret = Ok((fileinfo.ftype, fileinfo.fsize));
                 }
                 debug!("GetInfo() returned ret={:?} fileinfo={:?}", ret, fileinfo);
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(ret),
                 };
                 construct_ret(res_hdr, res)
@@ -270,8 +271,8 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 construct_error_ret(res_hdr, RPCError::MalformedRequest)
             }
         }
-        RPCType::Delete => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCDeleteReq>(payload) } {
+        FileIO::Delete => {
+            if let Some((req, remaining)) = unsafe { decode::<DeleteReq>(payload) } {
                 debug!("Delete(name={:?}), local_pid={:?}", req.pathname, local_pid);
                 if remaining.len() > 0 {
                     warn!("Trailing data in payload: {:?}", remaining);
@@ -279,7 +280,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 }
                 let mut pathname = req.pathname.clone();
                 pathname.push('\0');
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
                         local_pid,
                         pathname.as_ptr() as u64,
@@ -291,8 +292,8 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 construct_error_ret(res_hdr, RPCError::MalformedRequest)
             }
         }
-        RPCType::FileRename => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCRenameReq>(payload) } {
+        FileIO::FileRename => {
+            if let Some((req, remaining)) = unsafe { decode::<RenameReq>(payload) } {
                 debug!(
                     "FileRename(oldname={:?}, newname={:?}), local_pid={:?}",
                     req.oldname, req.newname, local_pid
@@ -305,7 +306,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 oldname.push('\0');
                 let mut newname = req.newname.clone();
                 newname.push('\0');
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
                         local_pid,
                         oldname.as_ptr() as u64,
@@ -318,8 +319,8 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                 construct_error_ret(res_hdr, RPCError::MalformedRequest)
             }
         }
-        RPCType::MkDir => {
-            if let Some((req, remaining)) = unsafe { decode::<RPCOpenReq>(payload) } {
+        FileIO::MkDir => {
+            if let Some((req, remaining)) = unsafe { decode::<OpenReq>(payload) } {
                 debug!(
                     "MkDir(pathname={:?}), local_pid={:?}",
                     req.pathname, local_pid
@@ -328,7 +329,7 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
                     warn!("Trailing data in payload: {:?}", remaining);
                     return construct_error_ret(res_hdr, RPCError::ExtraData);
                 }
-                let res = FIORPCRes {
+                let res = FIORes {
                     ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
                         local_pid,
                         req.pathname.as_ptr() as u64,

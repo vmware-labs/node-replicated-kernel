@@ -188,7 +188,7 @@ impl FileSystem for ModelFS {
     fn read(
         &self,
         mnode_num: Mnode,
-        buffer: &mut UserSlice,
+        buffer: &mut UserSlice<u8>,
         offset: usize,
     ) -> Result<usize, KError> {
         let _len = buffer.len();

@@ -126,33 +126,33 @@ impl<T> DerefMut for UserValue<T> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct UserSlice<'a> {
-    pub buffer: &'a mut [u8],
+pub struct UserSlice<'a, T> {
+    pub buffer: &'a mut [T],
 }
 
-impl<'a> UserSlice<'a> {
-    pub fn from_slice(buffer: &'a mut [u8]) -> Self {
+impl<'a, T> UserSlice<'a, T> {
+    pub fn from_slice(buffer: &'a mut [T]) -> Self {
         UserSlice { buffer }
     }
 
-    pub fn new(base: u64, len: usize) -> UserSlice<'a> {
+    pub fn new(base: u64, len: usize) -> UserSlice<'a, T> {
         let mut user_ptr = VAddr::from(base);
         let slice_ptr = UserPtr::new(&mut user_ptr);
-        let user_slice: &mut [u8] =
+        let user_slice: &mut [T] =
             unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
         UserSlice { buffer: user_slice }
     }
 }
 
-impl<'a> Deref for UserSlice<'a> {
-    type Target = [u8];
+impl<'a, T> Deref for UserSlice<'a, T> {
+    type Target = [T];
     fn deref(&self) -> &Self::Target {
         &*self.buffer
     }
 }
 
-impl<'a> DerefMut for UserSlice<'a> {
-    fn deref_mut(&mut self) -> &mut [u8] {
+impl<'a, T> DerefMut for UserSlice<'a, T> {
+    fn deref_mut(&mut self) -> &mut [T] {
         self.buffer
     }
 }

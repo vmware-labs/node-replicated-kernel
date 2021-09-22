@@ -53,7 +53,7 @@ pub trait FileSystem {
     fn read(
         &self,
         mnode_num: Mnode,
-        buffer: &mut UserSlice,
+        buffer: &mut UserSlice<u8>,
         offset: usize,
     ) -> Result<usize, KError>;
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
@@ -214,7 +214,7 @@ impl FileSystem for MlnrFS {
     fn read(
         &self,
         mnode_num: Mnode,
-        buffer: &mut UserSlice,
+        buffer: &mut UserSlice<u8>,
         offset: usize,
     ) -> Result<usize, KError> {
         match self.mnodes.read().get(&mnode_num) {

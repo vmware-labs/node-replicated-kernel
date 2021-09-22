@@ -81,7 +81,7 @@ impl MemNode {
     }
 
     /// Read from an in-memory file.
-    pub fn read(&self, buffer: &mut UserSlice, offset: usize) -> Result<usize, KError> {
+    pub fn read(&self, buffer: &mut UserSlice<u8>, offset: usize) -> Result<usize, KError> {
         // Return if the user doesn't have read permissions for the file.
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
         {

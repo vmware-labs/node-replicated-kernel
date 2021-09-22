@@ -14,6 +14,7 @@ use smoltcp::wire::IpAddress;
 use vmxnet3::smoltcp::DevQueuePhy;
 
 use crate::cluster_api::{ClusterClientAPI, ClusterError, NodeId};
+use crate::fio_rpc::*;
 use crate::rpc::*;
 use crate::rpc_api::RPCClientAPI;
 
@@ -87,7 +88,8 @@ impl ClusterClientAPI for TCPClient<'_> {
             }
         }
 
-        self.call(0, RPCType::Registration, Vec::new()).unwrap();
+        self.call(0, FileIO::Registration as RPCType, Vec::new())
+            .unwrap();
         Ok(self.client_id)
     }
 }
@@ -127,7 +129,7 @@ impl RPCClientAPI for TCPClient<'_> {
         }
 
         // Check request & client IDs, and also length of received data
-        if ((res_hdr.client_id != self.client_id) && rpc_id != RPCType::Registration)
+        if ((res_hdr.client_id != self.client_id) && FileIO::from(rpc_id) != FileIO::Registration)
             || res_hdr.req_id != self.req_id
         {
             warn!(
@@ -141,7 +143,7 @@ impl RPCClientAPI for TCPClient<'_> {
         self.req_id += 1;
 
         // If registration, update id
-        if rpc_id == RPCType::Registration {
+        if FileIO::from(rpc_id) == FileIO::Registration {
             self.client_id = res_hdr.client_id;
             debug!("Set client ID to: {}", self.client_id);
             return Ok(Vec::new());
@@ -237,7 +239,7 @@ impl TCPClient<'_> {
         offset: i64,
         data: Vec<u8>,
     ) -> Result<(u64, u64), RPCError> {
-        let req = RPCRWReq {
+        let req = RWReq {
             fd: fd,
             len: data.len() as u64,
             offset: offset,
@@ -246,8 +248,10 @@ impl TCPClient<'_> {
         unsafe { encode(&req, &mut req_data) }.unwrap();
         req_data.extend(data);
 
-        let mut res = self.call(pid, RPCType::WriteAt, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        let mut res = self
+            .call(pid, FileIO::WriteAt as RPCType, req_data)
+            .unwrap();
+        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
             }
@@ -276,7 +280,7 @@ impl TCPClient<'_> {
         offset: i64,
         buff_ptr: &mut [u8],
     ) -> Result<(u64, u64), RPCError> {
-        let req = RPCRWReq {
+        let req = RWReq {
             fd: fd,
             len: len,
             offset: offset,
@@ -284,8 +288,8 @@ impl TCPClient<'_> {
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
 
-        let mut res = self.call(pid, RPCType::ReadAt, req_data).unwrap();
-        if let Some((res, data)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        let mut res = self.call(pid, FileIO::ReadAt as RPCType, req_data).unwrap();
+        if let Some((res, data)) = unsafe { decode::<FIORes>(&mut res) } {
             // If result is good, check how much data was returned
             if let Ok((bytes_read, _)) = res.ret {
                 if bytes_read != data.len() as u64 {
@@ -317,7 +321,7 @@ impl TCPClient<'_> {
         flags: u64,
         modes: u64,
     ) -> Result<(u64, u64), RPCError> {
-        self.fio_open_create(pid, pathname, flags, modes, RPCType::Create)
+        self.fio_open_create(pid, pathname, flags, modes, FileIO::Create as RPCType)
     }
 
     pub fn fio_open(
@@ -327,7 +331,7 @@ impl TCPClient<'_> {
         flags: u64,
         modes: u64,
     ) -> Result<(u64, u64), RPCError> {
-        self.fio_open_create(pid, pathname, flags, modes, RPCType::Open)
+        self.fio_open_create(pid, pathname, flags, modes, FileIO::Open as RPCType)
     }
 
     fn fio_open_create(
@@ -338,7 +342,7 @@ impl TCPClient<'_> {
         modes: u64,
         rpc_type: RPCType,
     ) -> Result<(u64, u64), RPCError> {
-        let req = RPCOpenReq {
+        let req = OpenReq {
             pathname: pathname,
             flags: flags,
             modes: modes,
@@ -346,7 +350,7 @@ impl TCPClient<'_> {
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
         let mut res = self.call(pid, rpc_type, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
             }
@@ -358,12 +362,12 @@ impl TCPClient<'_> {
     }
 
     pub fn fio_close(&mut self, pid: usize, fd: u64) -> Result<(u64, u64), RPCError> {
-        let req = RPCCloseReq { fd: fd };
+        let req = CloseReq { fd: fd };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
 
-        let mut res = self.call(pid, RPCType::Close, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        let mut res = self.call(pid, FileIO::Close as RPCType, req_data).unwrap();
+        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
             }
@@ -375,11 +379,11 @@ impl TCPClient<'_> {
     }
 
     pub fn fio_delete(&mut self, pid: usize, pathname: String) -> Result<(u64, u64), RPCError> {
-        let req = RPCDeleteReq { pathname: pathname };
+        let req = DeleteReq { pathname: pathname };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.call(pid, RPCType::Delete, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        let mut res = self.call(pid, FileIO::Delete as RPCType, req_data).unwrap();
+        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
             }
@@ -396,14 +400,16 @@ impl TCPClient<'_> {
         oldname: String,
         newname: String,
     ) -> Result<(u64, u64), RPCError> {
-        let req = RPCRenameReq {
+        let req = RenameReq {
             oldname: oldname,
             newname: newname,
         };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.call(pid, RPCType::FileRename, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        let mut res = self
+            .call(pid, FileIO::FileRename as RPCType, req_data)
+            .unwrap();
+        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
             }
@@ -420,14 +426,14 @@ impl TCPClient<'_> {
         pathname: String,
         modes: u64,
     ) -> Result<(u64, u64), RPCError> {
-        let req = RPCMkDirReq {
+        let req = MkDirReq {
             pathname: pathname,
             modes: modes,
         };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.call(pid, RPCType::MkDir, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        let mut res = self.call(pid, FileIO::MkDir as RPCType, req_data).unwrap();
+        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
             }
@@ -439,11 +445,13 @@ impl TCPClient<'_> {
     }
 
     pub fn fio_getinfo(&mut self, pid: usize, name: String) -> Result<(u64, u64), RPCError> {
-        let req = RPCGetInfoReq { name: name };
+        let req = GetInfoReq { name: name };
         let mut req_data = Vec::new();
         unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.call(pid, RPCType::GetInfo, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORPCRes>(&mut res) } {
+        let mut res = self
+            .call(pid, FileIO::GetInfo as RPCType, req_data)
+            .unwrap();
+        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
             if remaining.len() > 0 {
                 return Err(RPCError::ExtraData);
             }

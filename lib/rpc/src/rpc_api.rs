@@ -7,10 +7,15 @@ use core::result::Result;
 use crate::cluster_api::NodeId;
 use crate::rpc::{RPCError, RPCHeader, RPCType};
 
+/// RPC Handler function
+pub type RPCHandler = fn(hdr: RPCHeader, payload: Vec<u8>) -> Result<Vec<u8>, RPCError>;
+
 /// RPC server operations
-pub trait RPCServerAPI {
+pub trait RPCServerAPI<'a> {
     /// register an RPC func with an ID
-    fn register(&self, rpc_id: RPCType) -> Result<(), RPCError>;
+    fn register<'c>(&'a mut self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<(), RPCError>
+    where
+        'c: 'a;
 
     /// receives next RPC call with RPC ID
     fn receive(&self) -> Result<(RPCHeader, Vec<u8>), RPCError>;

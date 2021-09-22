@@ -1,6 +1,7 @@
 #![allow(warnings)]
 use core::convert::TryInto;
 use core::lazy;
+use core::num::NonZeroUsize;
 
 use gdbstub::target::ext::base::multithread::ThreadStopReason;
 use gdbstub::target::ext::base::singlethread::{
@@ -16,6 +17,7 @@ use gdbstub::target::{Target, TargetError, TargetResult};
 use gdbstub::{
     Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError, GdbStubStateMachine,
 };
+
 use lazy_static::lazy_static;
 use log::{error, info};
 use spin::Mutex;
@@ -28,7 +30,11 @@ use crate::memory::vspace::AddressSpace;
 use crate::memory::{VAddr, BASE_PAGE_SIZE};
 
 /// Indicates the reason for interruption (e.g. a breakpoint was hit).
-pub type KCoreStopReason = ThreadStopReason<u64>;
+pub enum KCoreStopReason {
+    /// DebugInterrupt came in (e.g., this normally means we hit a breakpoint or
+    /// the are at the start of the kernel)
+    DebugInterrupt,
+}
 
 lazy_static! {
     /// The GDB connection state machine.
@@ -67,13 +73,79 @@ fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
 /// # Arguments
 /// - `resume_with`: Should probably always be Some(reason) except the first
 ///   time after connecting.
-pub fn event_loop(resume_with: Option<KCoreStopReason>) -> Result<(), KError> {
+pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
     let mut gdb_stm = GDB_STUB.lock().take().unwrap();
     let target = super::kcb::get_kcb()
         .arch
         .kdebug
         .as_mut()
         .expect("Need a target");
+
+    let resume_with = match reason {
+        KCoreStopReason::DebugInterrupt => {
+            // Safety: We are in the kernel so we can access dr6.
+            let mut dr6 = unsafe { debugregs::dr6() };
+
+            let bp = if dr6.contains(debugregs::Dr6::B0) {
+                dr6.remove(debugregs::Dr6::B0);
+                target.hw_break_points[0]
+            } else if dr6.contains(debugregs::Dr6::B1) {
+                dr6.remove(debugregs::Dr6::B1);
+                target.hw_break_points[1]
+            } else if dr6.contains(debugregs::Dr6::B2) {
+                dr6.remove(debugregs::Dr6::B2);
+                target.hw_break_points[2]
+            } else if dr6.contains(debugregs::Dr6::B3) {
+                dr6.remove(debugregs::Dr6::B3);
+                target.hw_break_points[3]
+            } else {
+                // If None, we are either single-stepping (debugregs::Dr6::BS,
+                // handled below) or are at the start of the kernel (no
+                // breakpoints were set yet)
+                None
+            };
+
+            // Map things to a gdbstub stop reason:
+            let stop: Option<ThreadStopReason<u64>> = if let Some((va, BreakType::Breakpoint)) = bp
+            {
+                info!("stop reason is hwbreak at {:?}", va);
+                Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
+            } else if let Some((va, BreakType::Watchpoint(kind))) = bp {
+                Some(ThreadStopReason::Watch {
+                    tid: NonZeroUsize::new(1).unwrap(),
+                    kind,
+                    addr: va.as_u64(),
+                })
+            } else if dr6.contains(debugregs::Dr6::BS) {
+                assert!(
+                    dr6 == debugregs::Dr6::BS,
+                    "According to the Intel SDM, stepping takes priority over other break/watch points at the same address."
+                );
+                dr6.remove(debugregs::Dr6::BS);
+                Some(ThreadStopReason::DoneStep)
+            } else {
+                None
+            };
+
+            // Sanity check that we indeed handled all bits in dr6 (except RTM
+            // which isn't a condition):
+            if !dr6.difference(debugregs::Dr6::RTM).is_empty() {
+                // The code assumes that only one BP (or BS) condition gets set
+                // for a single IRQ. If multiple conditions can trigger per IRQ,
+                // we need to rethink this code.
+                //
+                // Maybe we have to handle every potential flag in dr6 in some
+                // loop one after the other, or ignore some? For now, we just
+                // log and then clear/ignore the unhandled bits:
+                error!("Unhandled/ignored these conditions in dr6: {:?}", dr6);
+                dr6 = debugregs::Dr6::empty(); // This will clear RTM (we don't use this atm.)
+            }
+
+            unsafe { debugregs::dr6_write(dr6) };
+
+            stop
+        }
+    };
 
     loop {
         gdb_stm = match gdb_stm {
@@ -102,16 +174,48 @@ pub fn event_loop(resume_with: Option<KCoreStopReason>) -> Result<(), KError> {
                     }
                 }
             }
-            deferred_stop_reason => {
+            GdbStubStateMachine::DeferredStopReason(mut gdb_stm_inner) => {
+                // need to "select" on both the data coming over the connection
+                // (which gets passed to `pump`) and whatever mechanism it is
+                // using to detect stop events.
+                //let byte = gdb
+                //    .borrow_conn()
+                //    .read()
+                //    .map_err(gdbstub::GdbStubError::ConnectionRead)?;
+
                 // This means we need to continue executing stuff, so let's put
                 // our STM back in `GDB_STUB` and exit.
-                let r = GDB_STUB.lock().replace(deferred_stop_reason);
-                assert!(
-                    r.is_none(),
-                    "Put something in GDB_STUB which we shouldn't have..."
-                );
-
-                return Ok(());
+                if let Some(reason) = resume_with {
+                    match gdb_stm_inner.deferred_stop_reason(target, reason) {
+                        Ok((_, Some(disconnect_reason))) => {
+                            match disconnect_reason {
+                                DisconnectReason::Disconnect => info!("GDB Disconnected"),
+                                DisconnectReason::TargetExited(_) => info!("Target exited"),
+                                DisconnectReason::TargetTerminated(_) => info!("Target halted"),
+                                DisconnectReason::Kill => info!("GDB sent a kill command"),
+                            }
+                            break;
+                        }
+                        Ok((gdb_stm_new, None)) => gdb_stm_new,
+                        Err(GdbStubError::TargetError(_e)) => {
+                            info!("Target raised a fatal error");
+                            break;
+                        }
+                        Err(_e) => {
+                            info!("gdbstub internal error");
+                            break;
+                        }
+                    }
+                } else {
+                    let r = GDB_STUB
+                        .lock()
+                        .replace(GdbStubStateMachine::DeferredStopReason(gdb_stm_inner));
+                    assert!(
+                        r.is_none(),
+                        "Put something in GDB_STUB which we shouldn't have..."
+                    );
+                    return Ok(());
+                }
             }
         }
     }

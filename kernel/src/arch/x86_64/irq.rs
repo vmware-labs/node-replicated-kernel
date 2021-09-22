@@ -420,7 +420,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
         let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
         r.resume()
     } else {
-        gdb::event_loop(None);
+        gdb::event_loop(gdb::KCoreStopReason::DebugInterrupt);
         let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
         r.resume()
     }

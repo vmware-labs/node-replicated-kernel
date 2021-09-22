@@ -36,7 +36,6 @@ pub struct TCPServer<'a> {
     sockets: SocketSet<'a>,
     server_handle: SocketHandle,
     state: ServerState,
-    clients: HashMap<NodeId, SocketHandle>,
     handlers: HashMap<RPCType, &'a RPCHandler>,
 }
 
@@ -55,7 +54,6 @@ impl TCPServer<'_> {
             sockets: sockets,
             server_handle: server_handle,
             state: ServerState::Listening,
-            clients: HashMap::new(),
             handlers: HashMap::new(),
         }
     }

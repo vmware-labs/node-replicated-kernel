@@ -1096,9 +1096,16 @@ fn s02_gdb() {
         gdb.send_line("print cmdline")?;
         output += gdb.exp_string("nrk::kcb::BootloaderArguments")?.as_str();
 
-        // Test `breakpoints`
+        // Test hardware breakpoints: `hbreak`, `continue`
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("hbreak xmain")?;
+        output += gdb.exp_string("Hardware assisted breakpoint 1")?.as_str();
 
-        // Test `watchpoints`
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("continue")?;
+        output += gdb.exp_string("Breakpoint 1")?.as_str();
+
+        // Test watchpoints
 
         // Test `step`, `stepi`
 

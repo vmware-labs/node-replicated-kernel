@@ -278,11 +278,11 @@ where
     pub print_buffer: Option<String>,
 
     /// Contains a bunch of memory arenas, can be one for every NUMA node
-    /// but we intialize it lazily upon calling `set_allocation_affinity`.
+    /// but we intialize it lazily upon calling `set_mem_affinity`.
     pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
 
     /// Contains a bunch of pmem arenas, can be one for every NUMA node
-    /// but we intialize it lazily upon calling `set_allocation_affinity`.
+    /// but we intialize it lazily upon calling `set_pmem_affinity`.
     pub pmem_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
 
     /// A handle to the node-local kernel replica.
@@ -360,7 +360,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         init_kcb(self);
     }
 
-    pub fn set_global_memory(&mut self, gm: &'static GlobalMemory) {
+    pub fn set_global_mem(&mut self, gm: &'static GlobalMemory) {
         self.physical_memory.gmanager = Some(gm);
     }
 
@@ -368,7 +368,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.pmem_memory.gmanager = Some(gm);
     }
 
-    pub fn set_allocation_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
+    pub fn set_mem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
         if node == self.physical_memory.affinity {
             // Allocation affinity is already set to correct NUMA node
             return Ok(());
@@ -424,7 +424,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         }
     }
 
-    pub fn set_physical_memory_manager(&mut self, pmanager: TCache) {
+    pub fn set_mem_manager(&mut self, pmanager: TCache) {
         self.physical_memory.pmanager = Some(RefCell::new(pmanager));
     }
 

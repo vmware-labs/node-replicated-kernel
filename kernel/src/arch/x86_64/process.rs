@@ -61,7 +61,7 @@ lazy_static! {
             let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
                 let kcb = kcb::get_kcb();
-                kcb.set_allocation_affinity(node as atopology::NodeId).expect("Can't change affinity");
+                kcb.set_mem_affinity(node as atopology::NodeId).expect("Can't change affinity");
                 debug_assert!(!numa_cache[node].is_full());
 
                 let p = Box::try_new(Ring3Process::new(pid, da.clone()).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
@@ -70,7 +70,7 @@ lazy_static! {
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&log, nrp));
 
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
-                kcb.set_allocation_affinity(0 as atopology::NodeId).expect("Can't change affinity");
+                kcb.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
             }
         }
 

@@ -236,8 +236,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let mut kcb =
         Kcb::<kcb::Arch86Kcb>::new(args.kernel_binary, args.cmdline, emanager, arch, args.node);
 
-    kcb.set_global_memory(args.global_memory);
-    kcb.set_physical_memory_manager(mcache::TCache::new(args.node));
+    kcb.set_global_mem(args.global_memory);
+    kcb.set_mem_manager(mcache::TCache::new(args.node));
 
     if args.global_pmem.node_caches.len() > 0 {
         kcb.set_global_pmem(args.global_pmem);
@@ -335,7 +335,7 @@ fn boot_app_cores(
     fs_replicas.push(fs_replica);
 
     for node in 1..numa_nodes {
-        kcb.set_allocation_affinity(node as atopology::NodeId)
+        kcb.set_mem_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
 
         debug_assert!(replicas.capacity() > node, "No re-allocation.");
@@ -348,7 +348,7 @@ fn boot_app_cores(
                 .expect("Not enough memory to initialize system"),
         ));
 
-        kcb.set_allocation_affinity(0).expect("Can't set affinity");
+        kcb.set_mem_affinity(0).expect("Can't set affinity");
     }
 
     let global_memory = kcb
@@ -370,8 +370,7 @@ fn boot_app_cores(
     for thread in threads_to_boot {
         let node = thread.node_id.unwrap_or(0);
         trace!("Booting {:?} on node {}", thread, node);
-        kcb.set_allocation_affinity(node)
-            .expect("Can't set affinity");
+        kcb.set_mem_affinity(node).expect("Can't set affinity");
 
         // A simple stack for the app core (non bootstrap core)
         let coreboot_stack: OwnedStack = OwnedStack::new(BASE_PAGE_SIZE * 512);
@@ -442,7 +441,7 @@ fn boot_app_cores(
 
         assert!(initialized.load(Ordering::SeqCst));
         debug!("Core {:?} has started", thread.apic_id());
-        kcb.set_allocation_affinity(0).expect("Can't set affinity");
+        kcb.set_mem_affinity(0).expect("Can't set affinity");
     }
 
     core::mem::forget(replicas);
@@ -763,9 +762,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Make sure our BSP core has a reference to GlobalMemory
     {
         let kcb = kcb::get_kcb();
-        kcb.set_global_memory(&global_memory_static);
+        kcb.set_global_mem(&global_memory_static);
         let tcache = mcache::TCache::new(0);
-        kcb.set_physical_memory_manager(tcache);
+        kcb.set_mem_manager(tcache);
     }
 
     // 1. Discover persistent memory using topology information.

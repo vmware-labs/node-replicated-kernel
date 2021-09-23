@@ -2284,6 +2284,7 @@ fn s06_leveldb_benchmark() {
 }
 
 /// Tests that basic pmem allocation support is functional.
+/// TODO: Store persistent data durably and test it.
 #[test]
 fn s06_pmem_alloc() {
     let machine = Machine::determine();

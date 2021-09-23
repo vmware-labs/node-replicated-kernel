@@ -51,7 +51,7 @@ lazy_static! {
             let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
                 let kcb = kcb::get_kcb();
-                assert!(kcb.set_allocation_affinity(node as atopology::NodeId).is_ok());
+                assert!(kcb.set_mem_affinity(node as atopology::NodeId).is_ok());
 
                 debug_assert!(!numa_cache[node].is_full(), "Ensured by loop range");
 
@@ -62,7 +62,7 @@ lazy_static! {
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
 
                 debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
-                assert!(kcb.set_allocation_affinity(0).is_ok());
+                assert!(kcb.set_mem_affinity(0).is_ok());
             }
         }
 

@@ -368,27 +368,25 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.pmem_memory.gmanager = Some(gm);
     }
 
-    pub fn set_mem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
-        if node == self.physical_memory.affinity {
-            // Allocation affinity is already set to correct NUMA node
-            return Ok(());
-        }
-
-        if node < self.memory_arenas.len() && node < atopology::MACHINE_TOPOLOGY.num_nodes() {
-            let gmanager = self
-                .physical_memory
-                .gmanager
-                .ok_or(KError::GlobalMemoryNotSet)?;
-
-            if self.memory_arenas[node].is_none() {
-                self.memory_arenas[node] = Some(PhysicalMemoryArena::new(node, gmanager));
+    // Swaps out the current arena (from where we allocate memory) with a new
+    // arena from the one that can get memory from the provided `node`. If no
+    // arena for the current `node` exists, we create a new arena.
+    fn swap_manager(
+        gmanager: &'static GlobalMemory,
+        current_arena: &mut PhysicalMemoryArena,
+        arenas: &mut [Option<PhysicalMemoryArena>],
+        node: atopology::NodeId,
+    ) -> Result<(), KError> {
+        if node < arenas.len() && node < atopology::MACHINE_TOPOLOGY.num_nodes() {
+            if arenas[node].is_none() {
+                arenas[node] = Some(PhysicalMemoryArena::new(node, gmanager));
             }
-            debug_assert!(self.memory_arenas[node].is_some());
-            let mut arena = self.memory_arenas[node].take().unwrap();
+            debug_assert!(arenas[node].is_some());
+            let mut arena = arenas[node].take().unwrap();
             debug_assert_eq!(arena.affinity, node);
 
-            core::mem::swap(&mut arena, &mut self.physical_memory);
-            self.memory_arenas[arena.affinity as usize].replace(arena);
+            core::mem::swap(&mut arena, current_arena);
+            arenas[arena.affinity as usize].replace(arena);
 
             Ok(())
         } else {
@@ -396,32 +394,35 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         }
     }
 
+    pub fn set_mem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
+        if node == self.physical_memory.affinity {
+            // Allocation affinity is already set to correct NUMA node
+            return Ok(());
+        }
+        let gmanager = self
+            .physical_memory
+            .gmanager
+            .ok_or(KError::GlobalMemoryNotSet)?;
+
+        Kcb::<A>::swap_manager(
+            gmanager,
+            &mut self.physical_memory,
+            &mut self.memory_arenas,
+            node,
+        )
+    }
+
     pub fn set_pmem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
         if node == self.pmem_memory.affinity {
             // Allocation affinity is already set to correct NUMA node
             return Ok(());
         }
+        let gmanager = self
+            .pmem_memory
+            .gmanager
+            .ok_or(KError::GlobalMemoryNotSet)?;
 
-        if node < self.pmem_arenas.len() && node < atopology::MACHINE_TOPOLOGY.num_nodes() {
-            let gmanager = self
-                .pmem_memory
-                .gmanager
-                .ok_or(KError::GlobalMemoryNotSet)?;
-
-            if self.pmem_arenas[node].is_none() {
-                self.pmem_arenas[node] = Some(PhysicalMemoryArena::new(node, gmanager));
-            }
-            debug_assert!(self.pmem_arenas[node].is_some());
-            let mut arena = self.pmem_arenas[node].take().unwrap();
-            debug_assert_eq!(arena.affinity, node);
-
-            core::mem::swap(&mut arena, &mut self.pmem_memory);
-            self.pmem_arenas[arena.affinity as usize].replace(arena);
-
-            Ok(())
-        } else {
-            Err(KError::InvalidAffinityId)
-        }
+        Kcb::<A>::swap_manager(gmanager, &mut self.pmem_memory, &mut self.pmem_arenas, node)
     }
 
     pub fn set_mem_manager(&mut self, pmanager: TCache) {

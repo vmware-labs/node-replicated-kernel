@@ -111,7 +111,7 @@ already uncommented. Then, run the following commands:
 
 ```bash
 sudo apt update
-sudo apt install build-essential libpmem-dev libdaxctl-dev
+sudo apt install build-essential libpmem-dev libdaxctl-dev ninja-build
 apt source qemu
 sudo apt build-dep qemu
 wget https://download.qemu.org/qemu-6.0.0.tar.xz

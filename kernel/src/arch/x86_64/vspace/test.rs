@@ -100,7 +100,7 @@ proptest! {
         for action in ops {
             match action {
                 Map(base, frame, rights) => {
-                    KernelAllocator::try_refill_tcache(14, 14, MemType::DRAM).expect("Can't refill TCache");
+                    KernelAllocator::try_refill_tcache(14, 14, MemType::Mem).expect("Can't refill TCache");
                     let rmodel = model.map_frame(base, frame, rights);
                     let rtotest = totest.map_frame(base, frame, rights);
                     match (&rtotest, &rmodel) {

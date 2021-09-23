@@ -334,7 +334,7 @@ where
             }
 
             Op::MemMapFrame(base, frame, action) => {
-                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::DRAM)?;
+                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
                 self.process.vspace_mut().map_frame(base, frame, action)?;
                 Ok(NodeResult::Mapped)
             }
@@ -348,7 +348,7 @@ where
 
             Op::MemMapFrameId(base, frame_id, action) => {
                 let frame = self.process.get_frame(frame_id)?;
-                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::DRAM)?;
+                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
 
                 self.process.vspace_mut().map_frame(base, frame, action)?;
                 Ok(NodeResult::MappedFrameId(frame.base, frame.size))

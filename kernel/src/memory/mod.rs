@@ -234,7 +234,7 @@ impl KernelAllocator {
                 KernelAllocator::try_refill_tcache(
                     needed_base_pages,
                     needed_large_pages,
-                    MemType::DRAM,
+                    MemType::Mem,
                 )
             }
             (AllocatorType::MemManager, _) => {
@@ -243,7 +243,7 @@ impl KernelAllocator {
                 KernelAllocator::try_refill_tcache(
                     needed_base_pages,
                     needed_large_pages,
-                    MemType::DRAM,
+                    MemType::Mem,
                 )
             }
             (AllocatorType::Zone, _) => unreachable!("Not sure how to handle"),
@@ -284,22 +284,22 @@ impl KernelAllocator {
         mem_type: MemType,
     ) -> Result<(), KError> {
         let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
-        if mem_type == MemType::DRAM && kcb.physical_memory.gmanager.is_none() {
+        if mem_type == MemType::Mem && kcb.physical_memory.gmanager.is_none() {
             // No gmanager, can't refill then, let's hope it works anyways...
             return Ok(());
         }
-        if mem_type == MemType::PMEM && kcb.pmem_memory.gmanager.is_none() {
+        if mem_type == MemType::PMem && kcb.pmem_memory.gmanager.is_none() {
             // No gmanager, can't refill then, let's hope it works anyways...
             return Ok(());
         }
 
         let (gmanager, mut mem_manager, affinity) = match mem_type {
-            MemType::DRAM => (
+            MemType::Mem => (
                 kcb.physical_memory.gmanager.unwrap(),
                 kcb.try_mem_manager()?,
                 kcb.physical_memory.affinity as usize,
             ),
-            MemType::PMEM => (
+            MemType::PMem => (
                 kcb.pmem_memory.gmanager.unwrap(),
                 kcb.pmem_manager(),
                 kcb.pmem_memory.affinity as usize,
@@ -353,7 +353,7 @@ impl KernelAllocator {
                 "Refilling the TCache: needed_bp {} needed_lp {} free_bp {} free_lp {}",
                 needed_base_pages, needed_large_pages, free_bp, free_lp
             );
-            KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages, MemType::DRAM)
+            KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages, MemType::Mem)
         } else {
             debug!(
                 "Refilling unnecessary: needed_bp {} needed_lp {} free_bp {} free_lp {}",

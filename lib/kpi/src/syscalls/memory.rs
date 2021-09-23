@@ -21,7 +21,7 @@ impl VSpace {
     /// # Safety
     /// Manipulates address space of process.
     pub unsafe fn map(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
-        VSpace::vspace(VSpaceOperation::Map, base, bound)
+        VSpace::vspace(VSpaceOperation::MapMem, base, bound)
     }
 
     /// Unmap region of virtual memory.
@@ -29,7 +29,7 @@ impl VSpace {
     /// # Safety
     /// Manipulates address space of process.
     pub unsafe fn unmap(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
-        VSpace::vspace(VSpaceOperation::Unmap, base, bound)
+        VSpace::vspace(VSpaceOperation::UnmapMem, base, bound)
     }
 
     /// Back a region of memory with PMEM.
@@ -37,7 +37,7 @@ impl VSpace {
     /// # Safety
     /// Manipulates address space of process.
     pub unsafe fn map_pmem(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
-        VSpace::vspace(VSpaceOperation::MapPM, base, bound)
+        VSpace::vspace(VSpaceOperation::MapPMem, base, bound)
     }
 
     /// Unmap region of virtual memory.
@@ -45,7 +45,7 @@ impl VSpace {
     /// # Safety
     /// Manipulates address space of process.
     pub unsafe fn unmap_pmem(base: u64, bound: u64) -> Result<(VAddr, PAddr), SystemCallError> {
-        VSpace::vspace(VSpaceOperation::UnmapPM, base, bound)
+        VSpace::vspace(VSpaceOperation::UnmapPMem, base, bound)
     }
 
     /// Maps device memory (identity mapped with physical mem).
@@ -67,7 +67,7 @@ impl VSpace {
         let frame_id: u64 = frame_id.try_into().unwrap();
         let (err, paddr, _size) = syscall!(
             SystemCall::VSpace as u64,
-            VSpaceOperation::MapFrame as u64,
+            VSpaceOperation::MapMemFrame as u64,
             base,
             frame_id,
             3

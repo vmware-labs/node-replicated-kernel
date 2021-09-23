@@ -140,9 +140,9 @@ impl From<&str> for ProcessOperation {
 #[repr(u64)]
 pub enum MemType {
     /// The allocations will be done from DRAM.
-    DRAM = 1,
+    Mem = 1,
     /// The allocations will be done from PMEM.
-    PMEM = 2,
+    PMem = 2,
     Invalid,
 }
 
@@ -151,19 +151,19 @@ pub enum MemType {
 #[repr(u64)]
 pub enum VSpaceOperation {
     /// Map some anonymous memory
-    Map = 1,
+    MapMem = 1,
     /// Unmap a mapped region
-    Unmap = 2,
+    UnmapMem = 2,
     /// Identity map some device memory
     MapDevice = 3,
     /// Map a previously allocated physical frame,
-    MapFrame = 4,
+    MapMemFrame = 4,
     /// Resolve a virtual to a physical address
     Identify = 5,
     /// Map some anonymous memory from PMem
-    MapPM = 6,
+    MapPMem = 6,
     /// Unmap a PMem mapped region
-    UnmapPM = 7,
+    UnmapPMem = 7,
     Unknown,
 }
 
@@ -171,13 +171,13 @@ impl From<u64> for VSpaceOperation {
     /// Construct a SystemCall enum based on a 64-bit value.
     fn from(op: u64) -> VSpaceOperation {
         match op {
-            1 => VSpaceOperation::Map,
-            2 => VSpaceOperation::Unmap,
+            1 => VSpaceOperation::MapMem,
+            2 => VSpaceOperation::UnmapMem,
             3 => VSpaceOperation::MapDevice,
-            4 => VSpaceOperation::MapFrame,
+            4 => VSpaceOperation::MapMemFrame,
             5 => VSpaceOperation::Identify,
-            6 => VSpaceOperation::MapPM,
-            7 => VSpaceOperation::UnmapPM,
+            6 => VSpaceOperation::MapPMem,
+            7 => VSpaceOperation::UnmapPMem,
             _ => VSpaceOperation::Unknown,
         }
     }
@@ -187,13 +187,13 @@ impl From<&str> for VSpaceOperation {
     /// Construct a VSpaceOperation enum based on a str.
     fn from(op: &str) -> VSpaceOperation {
         match op {
-            "Map" => VSpaceOperation::Map,
-            "Unmap" => VSpaceOperation::Unmap,
+            "MapMem" => VSpaceOperation::MapMem,
+            "UnmapMem" => VSpaceOperation::UnmapMem,
             "MapDevice" => VSpaceOperation::MapDevice,
-            "MapFrame" => VSpaceOperation::MapFrame,
+            "MapMemFrame" => VSpaceOperation::MapMemFrame,
             "Identify" => VSpaceOperation::Identify,
-            "MapPM" => VSpaceOperation::MapPM,
-            "UnmapPM" => VSpaceOperation::UnmapPM,
+            "MapPMem" => VSpaceOperation::MapPMem,
+            "UnmapPMem" => VSpaceOperation::UnmapPMem,
             _ => VSpaceOperation::Unknown,
         }
     }

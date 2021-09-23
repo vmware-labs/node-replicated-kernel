@@ -224,7 +224,7 @@ fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError>
             } else {
                 (0, 1)
             };
-            crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::DRAM)?;
+            crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::Mem)?;
 
             // Allocate the page (need to make sure we drop pamanager again
             // before we go to NR):
@@ -259,12 +259,12 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
     let mut p = kcb.arch.current_executor()?;
 
     match op {
-        VSpaceOperation::Map | VSpaceOperation::MapPM => unsafe {
+        VSpaceOperation::MapMem | VSpaceOperation::MapPMem => unsafe {
             let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
             let mut frames = Vec::try_with_capacity(bp + lp)?;
             let mem_type = match op {
-                VSpaceOperation::Map => MemType::DRAM,
-                VSpaceOperation::MapPM => MemType::PMEM,
+                VSpaceOperation::MapMem => MemType::Mem,
+                VSpaceOperation::MapPMem => MemType::PMem,
                 _ => unreachable!(), // We already checked before coming here.
             };
             crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, mem_type)?;
@@ -278,8 +278,8 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             let mut total_len = 0;
             {
                 let mut pmanager = match mem_type {
-                    MemType::DRAM => kcb.mem_manager(),
-                    MemType::PMEM => kcb.pmem_manager(),
+                    MemType::Mem => kcb.mem_manager(),
+                    MemType::PMem => kcb.pmem_manager(),
                     _ => unreachable!(),
                 };
 
@@ -333,7 +333,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
                 MapAction::ReadWriteUser,
             )
         },
-        VSpaceOperation::MapFrame => unsafe {
+        VSpaceOperation::MapMemFrame => unsafe {
             let base = VAddr::from(arg2);
             let frame_id: FrameId = arg3.try_into().map_err(|_e| KError::InvalidFrameId)?;
 
@@ -345,7 +345,7 @@ fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> 
             )?;
             Ok((paddr.as_u64(), size as u64))
         },
-        VSpaceOperation::Unmap | VSpaceOperation::UnmapPM => {
+        VSpaceOperation::UnmapMem | VSpaceOperation::UnmapPMem => {
             let handle = nrproc::NrProcess::<Ring3Process>::unmap(p.pid, base)?;
             let va: u64 = handle.vaddr.as_u64();
             let sz: u64 = handle.frame.size as u64;

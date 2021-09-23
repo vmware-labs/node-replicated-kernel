@@ -506,6 +506,11 @@ fn identify_numa_affinity(
 }
 
 /// Map the persistent memory addresses to the vspace.
+///
+/// # TODO
+/// This is a temporary hack until the bootloader shows us the persistent regions
+/// when we query the uefi memory map. For some reason they don't show up with
+/// current qemu edk2 OVMF builds. So we query ACPI directly here to find them.
 fn map_physical_persistent_memory() {
     use atopology::MemoryType;
     let desc_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();

@@ -401,7 +401,7 @@ def run_qemu(args):
                 qemu_default_args += ['-device',
                                     'nvdimm,node={},slot={},id=nvdimm{},memdev=pmem{}'.format(node, node, node, node)]
 
-    if args.qemu_cores and args.qemu_nodes:
+    if args.qemu_cores and args.qemu_cores > 1 and args.qemu_nodes:
         qemu_default_args += ["-smp", "{},sockets={},maxcpus={}".format(
             args.qemu_cores, args.qemu_nodes, args.qemu_cores)]
     else:

@@ -19,8 +19,9 @@ use gdbstub::{
 };
 
 use lazy_static::lazy_static;
-use log::{error, info};
+use log::{error, info, trace};
 use spin::Mutex;
+use x86::bits64::rflags::RFlags;
 use x86::debugregs;
 use x86::io;
 
@@ -159,18 +160,24 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
 
     match target.resume_with {
         Some(ResumeAction::Continue) => {
-            info!("Resuming execution");
+            trace!("Resume execution.");
+            let kcb = super::kcb::get_kcb();
+            // If we were stepping, we need to remove the TF bit again for resuming
+            if let Some(saved) = &mut kcb.arch.save_area {
+                let mut rflags = RFlags::from_bits_truncate(saved.rflags);
+                rflags.remove(x86::bits64::rflags::RFlags::FLAGS_TF);
+                saved.rflags = rflags.bits();
+            }
         }
         Some(ResumeAction::Step) => {
-            // Set RFLAGS TF
-            info!("Stepping, set TF flag");
+            trace!("Step execution, set TF flag.");
             let kcb = super::kcb::get_kcb();
             if let Some(saved) = &mut kcb.arch.save_area {
-                saved.rflags |= x86::bits64::rflags::RFlags::FLAGS_TF.bits();
+                saved.rflags |= RFlags::FLAGS_TF.bits();
             }
         }
         _ => {
-            info!("Resume strategy unclear...");
+            unimplemented!("Resume strategy not handled...");
         }
     }
 
@@ -638,7 +645,7 @@ impl HwWatchpoint for KernelDebugger {
 
 impl HwBreakpoint for KernelDebugger {
     fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
-        info!("add hw breakpoint {:#x}", addr);
+        trace!("add hw breakpoint {:#x}", addr);
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
@@ -672,6 +679,8 @@ impl HwBreakpoint for KernelDebugger {
     }
 
     fn remove_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
+        trace!("remove_hw_breakpoint {:#x}", addr);
+
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
@@ -684,6 +693,7 @@ impl HwBreakpoint for KernelDebugger {
                         dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
                         debugregs::dr7_write(dr7);
                     }
+                    *entry = None;
                     return Ok(true);
                 }
             }

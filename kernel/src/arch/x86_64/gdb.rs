@@ -81,71 +81,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
         .as_mut()
         .expect("Need a target");
 
-    let resume_with = match reason {
-        KCoreStopReason::DebugInterrupt => {
-            // Safety: We are in the kernel so we can access dr6.
-            let mut dr6 = unsafe { debugregs::dr6() };
-
-            let bp = if dr6.contains(debugregs::Dr6::B0) {
-                dr6.remove(debugregs::Dr6::B0);
-                target.hw_break_points[0]
-            } else if dr6.contains(debugregs::Dr6::B1) {
-                dr6.remove(debugregs::Dr6::B1);
-                target.hw_break_points[1]
-            } else if dr6.contains(debugregs::Dr6::B2) {
-                dr6.remove(debugregs::Dr6::B2);
-                target.hw_break_points[2]
-            } else if dr6.contains(debugregs::Dr6::B3) {
-                dr6.remove(debugregs::Dr6::B3);
-                target.hw_break_points[3]
-            } else {
-                // If None, we are either single-stepping (debugregs::Dr6::BS,
-                // handled below) or are at the start of the kernel (no
-                // breakpoints were set yet)
-                None
-            };
-
-            // Map things to a gdbstub stop reason:
-            let stop: Option<ThreadStopReason<u64>> = if let Some((va, BreakType::Breakpoint)) = bp
-            {
-                info!("stop reason is hwbreak at {:?}", va);
-                Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
-            } else if let Some((va, BreakType::Watchpoint(kind))) = bp {
-                Some(ThreadStopReason::Watch {
-                    tid: NonZeroUsize::new(1).unwrap(),
-                    kind,
-                    addr: va.as_u64(),
-                })
-            } else if dr6.contains(debugregs::Dr6::BS) {
-                assert!(
-                    dr6 == debugregs::Dr6::BS,
-                    "According to the Intel SDM, stepping takes priority over other break/watch points at the same address."
-                );
-                dr6.remove(debugregs::Dr6::BS);
-                Some(ThreadStopReason::DoneStep)
-            } else {
-                None
-            };
-
-            // Sanity check that we indeed handled all bits in dr6 (except RTM
-            // which isn't a condition):
-            if !dr6.difference(debugregs::Dr6::RTM).is_empty() {
-                // The code assumes that only one BP (or BS) condition gets set
-                // for a single IRQ. If multiple conditions can trigger per IRQ,
-                // we need to rethink this code.
-                //
-                // Maybe we have to handle every potential flag in dr6 in some
-                // loop one after the other, or ignore some? For now, we just
-                // log and then clear/ignore the unhandled bits:
-                error!("Unhandled/ignored these conditions in dr6: {:?}", dr6);
-                dr6 = debugregs::Dr6::empty(); // This will clear RTM (we don't use this atm.)
-            }
-
-            unsafe { debugregs::dr6_write(dr6) };
-
-            stop
-        }
-    };
+    let mut resume_with = target.determine_stop_reason(reason);
 
     loop {
         gdb_stm = match gdb_stm {
@@ -185,7 +121,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
 
                 // This means we need to continue executing stuff, so let's put
                 // our STM back in `GDB_STUB` and exit.
-                if let Some(reason) = resume_with {
+                if let Some(reason) = resume_with.take() {
                     match gdb_stm_inner.deferred_stop_reason(target, reason) {
                         Ok((_, Some(disconnect_reason))) => {
                             match disconnect_reason {
@@ -207,6 +143,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else {
+                    // probably need to pump here?
                     let r = GDB_STUB
                         .lock()
                         .replace(GdbStubStateMachine::DeferredStopReason(gdb_stm_inner));
@@ -214,9 +151,26 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         r.is_none(),
                         "Put something in GDB_STUB which we shouldn't have..."
                     );
-                    return Ok(());
+                    break;
                 }
             }
+        }
+    }
+
+    match target.resume_with {
+        Some(ResumeAction::Continue) => {
+            info!("Resuming execution");
+        }
+        Some(ResumeAction::Step) => {
+            // Set RFLAGS TF
+            info!("Stepping, set TF flag");
+            let kcb = super::kcb::get_kcb();
+            if let Some(saved) = &mut kcb.arch.save_area {
+                saved.rflags |= x86::bits64::rflags::RFlags::FLAGS_TF.bits();
+            }
+        }
+        _ => {
+            info!("Resume strategy unclear...");
         }
     }
 
@@ -313,6 +267,7 @@ enum BreakType {
 /// serial protocol.
 pub struct KernelDebugger {
     hw_break_points: [Option<(VAddr, BreakType)>; 4],
+    resume_with: Option<ResumeAction>,
 }
 
 impl KernelDebugger {
@@ -321,6 +276,82 @@ impl KernelDebugger {
     pub fn new() -> Self {
         Self {
             hw_break_points: [None; 4],
+            resume_with: None,
+        }
+    }
+
+    /// Figures out why a core got a debug interrupt by looking through the
+    /// hardware debug register and reading which one was hit.
+    ///
+    // Also does some additional stuff like re-enabling the breakpoints.
+    fn determine_stop_reason(&mut self, reason: KCoreStopReason) -> Option<ThreadStopReason<u64>> {
+        match reason {
+            KCoreStopReason::DebugInterrupt => {
+                // Safety: We are in the kernel so we can access dr6.
+                let mut dr6 = unsafe { debugregs::dr6() };
+
+                let bp = if dr6.contains(debugregs::Dr6::B0) {
+                    dr6.remove(debugregs::Dr6::B0);
+                    self.hw_break_points[0]
+                } else if dr6.contains(debugregs::Dr6::B1) {
+                    dr6.remove(debugregs::Dr6::B1);
+                    self.hw_break_points[1]
+                } else if dr6.contains(debugregs::Dr6::B2) {
+                    dr6.remove(debugregs::Dr6::B2);
+                    self.hw_break_points[2]
+                } else if dr6.contains(debugregs::Dr6::B3) {
+                    dr6.remove(debugregs::Dr6::B3);
+                    self.hw_break_points[3]
+                } else {
+                    // If None, we are either single-stepping (debugregs::Dr6::BS,
+                    // handled below) or are at the start of the kernel (no
+                    // breakpoints were set yet)
+                    None
+                };
+
+                // Map things to a gdbstub stop reason:
+                let stop: Option<ThreadStopReason<u64>> =
+                    if let Some((va, BreakType::Breakpoint)) = bp {
+                        info!("stop reason is hwbreak at {:?}", va);
+                        Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
+                    } else if let Some((va, BreakType::Watchpoint(kind))) = bp {
+                        Some(ThreadStopReason::Watch {
+                            tid: NonZeroUsize::new(1).unwrap(),
+                            kind,
+                            addr: va.as_u64(),
+                        })
+                    } else if dr6.contains(debugregs::Dr6::BS) {
+                        // When the BS flag is set, any of the other debug status bits also may be set.
+                        assert_eq!(
+                            self.resume_with,
+                            Some(ResumeAction::Step),
+                            "Single-stepping only happens in resume."
+                        );
+                        dr6.remove(debugregs::Dr6::BS);
+                        info!("stop reason is DoneStep");
+                        Some(ThreadStopReason::DoneStep)
+                    } else {
+                        None
+                    };
+
+                // Sanity check that we indeed handled all bits in dr6 (except RTM
+                // which isn't a condition):
+                if !dr6.difference(debugregs::Dr6::RTM).is_empty() {
+                    // The code assumes that only one BP (or BS) condition gets set
+                    // for a single IRQ. If multiple conditions can trigger per IRQ,
+                    // we need to rethink this code.
+                    //
+                    // Maybe we have to handle every potential flag in dr6 in some
+                    // loop one after the other, or ignore some? For now, we just
+                    // log and then clear/ignore the unhandled bits:
+                    error!("Unhandled/ignored these conditions in dr6: {:?}", dr6);
+                    dr6 = debugregs::Dr6::empty(); // This will clear RTM (we don't use this atm.)
+                }
+
+                unsafe { debugregs::dr6_write(dr6) };
+
+                stop
+            }
         }
     }
 }
@@ -362,7 +393,12 @@ impl SingleThreadOps for KernelDebugger {
         action: ResumeAction,
         gdb_interrupt: GdbInterrupt<'_>,
     ) -> Result<Option<StopReason<u64>>, KError> {
-        info!("resume {:?}", action);
+        self.resume_with = Some(action);
+        info!("resume_with =  {:?}", action);
+
+        // If the target is running under the more advanced GdbStubStateMachine
+        // API, it is possible to "defer" reporting a stop reason to some point
+        // outside of the resume implementation by returning None.
         Ok(None)
     }
 
@@ -603,7 +639,6 @@ impl HwWatchpoint for KernelDebugger {
 impl HwBreakpoint for KernelDebugger {
     fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
         info!("add hw breakpoint {:#x}", addr);
-
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())

@@ -635,4 +635,11 @@ mod test {
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "");
     }
+
+    #[test]
+    fn parse_log_level_complex() {
+        let args = "./kernel log='gdbstub=trace,nrk::arch::gdb=trace'";
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.log_filter, "gdbstub=trace,nrk::arch::gdb=trace");
+    }
 }

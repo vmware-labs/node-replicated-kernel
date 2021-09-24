@@ -1,11 +1,63 @@
 # Debugging
 
-Unfortunately currently the debugging facilities are quite limited. Use
-`printf`-style debugging, logging and staring at code...
+Currently the debugging facilities are not as good as on production operating
+systems. However, there are some options available: gdb, `printf`-style
+debugging, logging and staring at code, which we will discuss in this chapter.
+
+## GDB support in the kernel
+
+> tldr: To use gdb, add `--gdb` to `run.py`.
+
+NRK provides an implementation for the gdb remote protocol using a separate
+serial line for communication. This means you can use gdb to connect to the
+running system.
+
+To use it, start `run.py` with the `--gdb` argument. Once booted, the following
+line will appear:
+
+```log
+Waiting for a GDB connection on I/O port 0x2f8...
+Use `target remote localhost:1234` in gdb session to connect
+```
+
+Next, connect with GDB to the kernel, using:
+
+```bash
+$ gdb
+[...]
+(gdb) target remote localhost:1234
+Remote debugging using localhost:1234
+[...]
+```
+
+> Note that if you execute gdb in the kernel directory, the `.gdbinit` file
+> there already executes `target remote localhost:1234` for you. But you have to
+> add the kernel directory as a "trusted" path by adding this line to
+> `$HOME/.gdbinit`:
+>
+> ```log
+> add-auto-load-safe-path <REPO-BASE>/kernel/.gdbinit
+> ```
+
+
+### Breakpoints
+
+We currently only support the x86-64 architecture with hardware breakpoints
+because the kernel code section is not writeable. So you'll have to use the
+[hbreak](https://sourceware.org/gdb/onlinedocs/gdb/Set-Breaks.html). For
+watchpoints, by default it will already use hardware watchpoints.
+
+
+## `printf` debugging with the log crate
 
 Here are a few tips:
 
-- Change the log-level of the kernel to info, debug, or even trace: `python3 run.py --cmd='log=info'`
+- Change the log-level of the kernel to info, debug, or even trace:
+  `python3 run.py --cmd='log=info'`
+- Logging can also be enabled per-module basis. For example, to enable trace
+  output for just the `gdbstub` library and the `gdb` module in the kernel this
+  is how the necessary `--cmd` invocation for `run.py` would look like:
+  `--cmd "log='gdbstub=trace,nrk::arch::gdb=trace'"`
 - Change the log-level of the user-space libOS in vibrio (search for `Level::`)
 - Make sure the [Tests](./Testing.md) run (to see if something broke).
 
@@ -129,32 +181,3 @@ qemu sources (your changes should look similar to this snippet below):
 #define VMXNET_DEBUG_PACKETS
 #define VMXNET_DEBUG_SHMEM_ACCESS
 ```
-
-## Debugging with gdb
-
-NRK provides an implementation for the gdb remote protocol using a separate
-serial line for communication.
-
-To use it, start `run.py` with the `--gdb` argument. Once booted, the following
-line will appear:
-
-```log
-Waiting for a GDB connection on I/O port 0x2f8...
-Use `target remote localhost:1234` in gdb session to connect
-```
-
-Connect with GDB to the kernel:
-
-```bash
-gdb
-(gdb) target remote localhost:1234
-Remote debugging using localhost:1234
-...
-```
-
-### Breakpoints
-
-We currently only support the x86-64 architecture with hardware breakpoints
-because the kernel code section is not writeable. So you'll have to use the
-[hbreak](https://sourceware.org/gdb/onlinedocs/gdb/Set-Breaks.html). For
-watchpoints, by default it will already use hardware watchpoints.

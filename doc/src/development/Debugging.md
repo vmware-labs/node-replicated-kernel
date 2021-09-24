@@ -23,17 +23,17 @@ Use `target remote localhost:1234` in gdb session to connect
 Next, connect with GDB to the kernel, using:
 
 ```bash
-$ gdb
+$ cd kernel
+$ gdb ../target/x86_64-uefi/<debug | release>/esp/kernel
 [...]
 (gdb) target remote localhost:1234
 Remote debugging using localhost:1234
 [...]
 ```
 
-> Note that if you execute gdb in the kernel directory, the `.gdbinit` file
-> there already executes `target remote localhost:1234` for you. But you have to
-> add the kernel directory as a "trusted" path by adding this line to
-> `$HOME/.gdbinit`:
+> If you execute gdb in the kernel directory, the `.gdbinit` file there already
+> executes `target remote localhost:1234` for you. But you have to add the
+> kernel directory as a "trusted" path by adding this line to `$HOME/.gdbinit`:
 >
 > ```log
 > add-auto-load-safe-path <REPO-BASE>/kernel/.gdbinit

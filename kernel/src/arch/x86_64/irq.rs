@@ -132,7 +132,7 @@ impl Default for IdtTable {
         idt_set!(table.0, DIVIDE_ERROR_VECTOR, isr_handler0, 0);
         idt_set!(table.0, DEBUG_VECTOR, isr_handler1, 2);
         idt_set!(table.0, NONMASKABLE_INTERRUPT_VECTOR, isr_handler2, 0);
-        idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler3, 0);
+        idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler3, 2);
         idt_set!(table.0, OVERFLOW_VECTOR, isr_handler4, 0);
         idt_set!(table.0, BOUND_RANGE_EXCEEDED_VECTOR, isr_handler5, 0);
         idt_set!(table.0, INVALID_OPCODE_VECTOR, isr_handler6, 0);
@@ -191,7 +191,7 @@ impl IdtTable {
         idt_set!(table.0, DIVIDE_ERROR_VECTOR, isr_handler_early0, 0);
         idt_set!(table.0, DEBUG_VECTOR, isr_handler_early1, 2);
         idt_set!(table.0, NONMASKABLE_INTERRUPT_VECTOR, isr_handler_early2, 0);
-        idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler_early3, 0);
+        idt_set!(table.0, BREAKPOINT_VECTOR, isr_handler_early3, 2);
         idt_set!(table.0, OVERFLOW_VECTOR, isr_handler_early4, 0);
         idt_set!(table.0, BOUND_RANGE_EXCEEDED_VECTOR, isr_handler_early5, 0);
         idt_set!(table.0, INVALID_OPCODE_VECTOR, isr_handler_early6, 0);
@@ -408,9 +408,6 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 }
 
 /// Handler for a debug exception.
-///
-/// The default behavior right now is just to print a warning and resume
-/// execution in user-space.
 unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
     warn!("Got debug interrupt {}", desc.source);
@@ -421,6 +418,55 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
         r.resume()
     } else {
         gdb::event_loop(gdb::KCoreStopReason::DebugInterrupt);
+        let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
+        r.resume()
+    }
+}
+
+/// Handler for a breakpoint exception.
+///
+/// The default behavior right now is just to print a warning and resume
+/// execution in user-space.
+unsafe fn bkp_handler(a: &ExceptionArguments) {
+    let desc = &EXCEPTIONS[a.vector as usize];
+    warn!("Got breakpoint interrupt {}", desc.source);
+
+    let kcb = get_kcb();
+    if kcb.arch.has_executor() {
+        // breakpoints lead to upcalls here since we use int!(3) in user-space
+        // to test upcall. In the future we probably wan't to use gdb here and
+        // do something better to test upcalls than this...
+        let mut plock = kcb.arch.current_executor();
+        let p = plock.as_mut().unwrap();
+
+        let resumer = {
+            let was_disabled = {
+                trace!("vcpu state is: pc_disabled {:?}", p.vcpu().pc_disabled);
+                let was_disabled = p.vcpu().upcalls_disabled(VAddr::from(a.rip));
+                p.vcpu().disable_upcalls();
+                was_disabled
+            };
+
+            if was_disabled {
+                // Resume to the current save area...
+                warn!("Upcalling while disabled");
+                kcb_resume_handle(kcb)
+            } else {
+                // Copy CURRENT_SAVE_AREA to process enabled save area
+                // then resume in the upcall handler
+                kcb.arch.save_area.as_ref().map(|sa| {
+                    p.vcpu().enabled_state = **sa;
+                });
+
+                p.upcall(a.vector, a.exception)
+            }
+        };
+
+        trace!("resuming now...");
+        drop(plock);
+        resumer.resume()
+    } else {
+        gdb::event_loop(gdb::KCoreStopReason::BreakpointInterrupt);
         let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
         r.resume()
     }
@@ -547,7 +593,7 @@ fn kcb_iret_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
 #[no_mangle]
 pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     sprintln!("[IRQ] Got an exception during kernel initialization:");
-    //sprintln!("{:?}", a);
+    sprintln!("{:?}", a);
 
     match a.vector as u8 {
         GENERAL_PROTECTION_FAULT_VECTOR => {
@@ -606,7 +652,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // If we have an active process we should do scheduler activations:
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
-        if a.vector > 30 && a.vector < 250 || a.vector == BREAKPOINT_VECTOR.into() {
+        if a.vector > 30 && a.vector < 250 {
             trace!("handle_generic_exception {:?}", a);
 
             let mut plock = kcb.arch.current_executor();
@@ -649,7 +695,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } else if a.vector == DEBUG_VECTOR.into() {
             dbg_handler(&a);
         } else if a.vector == BREAKPOINT_VECTOR.into() {
-            dbg_handler(&a);
+            bkp_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
             let kcb = get_kcb();
             trace!("got an interrupt {:?}", kcb.arch.id());

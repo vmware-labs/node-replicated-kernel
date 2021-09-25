@@ -7,7 +7,7 @@ use gdbstub::target::ext::base::multithread::ThreadStopReason;
 use gdbstub::target::ext::base::singlethread::{
     GdbInterrupt, ResumeAction, SingleThreadOps, StopReason,
 };
-use gdbstub::target::ext::base::BaseOps;
+use gdbstub::target::ext::base::{BaseOps, SingleRegisterAccess, SingleRegisterAccessOps};
 use gdbstub::target::ext::breakpoints::{
     Breakpoints, BreakpointsOps, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps,
     SwBreakpointOps, WatchKind,
@@ -17,6 +17,8 @@ use gdbstub::target::{Target, TargetError, TargetResult};
 use gdbstub::{
     Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError, GdbStubStateMachine,
 };
+use gdbstub_arch::x86::reg::id::{X86SegmentRegId, X86_64CoreRegId};
+use gdbstub_arch::x86::X86_64_SSE;
 
 use lazy_static::lazy_static;
 use log::{error, info, trace};
@@ -32,9 +34,16 @@ use crate::memory::{VAddr, BASE_PAGE_SIZE};
 
 /// Indicates the reason for interruption (e.g. a breakpoint was hit).
 pub enum KCoreStopReason {
-    /// DebugInterrupt came in (e.g., this normally means we hit a breakpoint or
-    /// the are at the start of the kernel)
+    /// DebugInterrupt was received.
+    ///
+    /// This normally means we hit a hardware breakpoint, watchpoint, rflags
+    /// step-mode was enabled or we are at the start of the kernel program)
     DebugInterrupt,
+    /// A breakpoint was hit.
+    ///
+    /// This usually means gdb fiddled with the instructions and inserted an
+    /// `int 3` somewhere it deemed necessary.
+    BreakpointInterrupt,
 }
 
 lazy_static! {
@@ -105,8 +114,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         info!("Target raised a fatal error");
                         break;
                     }
-                    Err(_e) => {
-                        info!("gdbstub internal error");
+                    Err(e) => {
+                        error!("gdbstub internal error {:?}", e);
                         break;
                     }
                 }
@@ -138,8 +147,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                             info!("Target raised a fatal error");
                             break;
                         }
-                        Err(_e) => {
-                            info!("gdbstub internal error");
+                        Err(e) => {
+                            error!("gdbstub internal error {:?}", e);
                             break;
                         }
                     }
@@ -249,16 +258,16 @@ impl Connection for GdbSerial {
 
 impl ConnectionExt for GdbSerial {
     fn read(&mut self) -> Result<u8, Self::Error> {
-        if let Some(byte) = self.peeked {
-            self.peeked = None;
-            Ok(byte)
-        } else {
-            while !self.can_read() {
-                core::hint::spin_loop();
-            }
-            let b = self.read_byte();
-            Ok(b)
+        //        if let Some(byte) = self.peeked {
+        //            self.peeked = None;
+        //            Ok(byte)
+        //        } else {
+        while !self.can_read() {
+            core::hint::spin_loop();
         }
+        let b = self.read_byte();
+        Ok(b)
+        //        }
     }
 }
 
@@ -293,6 +302,9 @@ impl KernelDebugger {
     // Also does some additional stuff like re-enabling the breakpoints.
     fn determine_stop_reason(&mut self, reason: KCoreStopReason) -> Option<ThreadStopReason<u64>> {
         match reason {
+            KCoreStopReason::BreakpointInterrupt => {
+                Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
+            }
             KCoreStopReason::DebugInterrupt => {
                 // Safety: We are in the kernel so we can access dr6.
                 let mut dr6 = unsafe { debugregs::dr6() };
@@ -365,7 +377,7 @@ impl KernelDebugger {
 
 impl Target for KernelDebugger {
     type Error = KError;
-    type Arch = gdbstub_arch::x86::X86_64_SSE;
+    type Arch = X86_64_SSE;
 
     fn base_ops(&mut self) -> BaseOps<Self::Arch, Self::Error> {
         BaseOps::SingleThread(self)
@@ -401,7 +413,7 @@ impl SingleThreadOps for KernelDebugger {
         gdb_interrupt: GdbInterrupt<'_>,
     ) -> Result<Option<StopReason<u64>>, KError> {
         self.resume_with = Some(action);
-        info!("resume_with =  {:?}", action);
+        trace!("resume_with =  {:?}", action);
 
         // If the target is running under the more advanced GdbStubStateMachine
         // API, it is possible to "defer" reporting a stop reason to some point
@@ -413,7 +425,7 @@ impl SingleThreadOps for KernelDebugger {
         &mut self,
         regs: &mut gdbstub_arch::x86::reg::X86_64CoreRegs,
     ) -> TargetResult<(), Self> {
-        info!("read_registers");
+        trace!("read_registers");
         let kcb = super::kcb::get_kcb();
         if let Some(saved) = &kcb.arch.save_area {
             // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
@@ -447,9 +459,8 @@ impl SingleThreadOps for KernelDebugger {
                 gs: saved.gs.try_into().unwrap(),
             };
 
-            // TODO: SIMD registers here...
+            // TODO(unimplemented): Add SIMD registers here
         }
-
         Ok(())
     }
 
@@ -457,7 +468,41 @@ impl SingleThreadOps for KernelDebugger {
         &mut self,
         regs: &gdbstub_arch::x86::reg::X86_64CoreRegs,
     ) -> TargetResult<(), Self> {
-        info!("write_registers {:?}", regs);
+        trace!("write_registers {:?}", regs);
+        let kcb = super::kcb::get_kcb();
+        if let Some(saved) = &mut kcb.arch.save_area {
+            // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
+            saved.rax = regs.regs[00];
+            saved.rbx = regs.regs[01];
+            saved.rcx = regs.regs[02];
+            saved.rdx = regs.regs[03];
+            saved.rsi = regs.regs[04];
+            saved.rdi = regs.regs[05];
+            saved.rbp = regs.regs[06];
+            saved.rsp = regs.regs[07];
+            saved.r8 = regs.regs[08];
+            saved.r9 = regs.regs[09];
+            saved.r10 = regs.regs[10];
+            saved.r11 = regs.regs[11];
+            saved.r12 = regs.regs[12];
+            saved.r13 = regs.regs[13];
+            saved.r14 = regs.regs[14];
+            saved.r15 = regs.regs[15];
+
+            saved.rip = regs.rip;
+            saved.rflags = regs.eflags.try_into().unwrap();
+
+            // Segment registers: CS, SS, DS, ES, FS, GS
+            saved.cs = regs.segments.cs.try_into().unwrap();
+            saved.ss = regs.segments.ss.try_into().unwrap();
+            // ignore ss, ds because we don't use it.
+            // saved.ds = regs.segments.ds.try_into().unwrap();
+            // saved.es = regs.segments.es.try_into().unwrap();
+            saved.fs = regs.segments.fs.try_into().unwrap();
+            saved.gs = regs.segments.gs.try_into().unwrap();
+
+            // TODO(unimplemented): Add SIMD registers here
+        }
         Ok(())
     }
 
@@ -521,9 +566,10 @@ impl SingleThreadOps for KernelDebugger {
                     Ok((pa, rights)) => {
                         if !rights.is_writable() {
                             if rights.is_executable() {
-                                error!("Target page mapped but not writeable. If you were trying to set a breakpoint use `hbreak` instead of `break`.");
+                                error!("Target page as read-execute. Can't write at address.");
+                                error!("If you were trying to set a breakpoint use `hbreak` instead of `break`");
                             } else {
-                                error!("Target page mapped but not writeable.");
+                                error!("Target page mapped as read-only. Can't write at address.");
                             }
                             return Err(TargetError::NonFatal);
                         }
@@ -543,6 +589,218 @@ impl SingleThreadOps for KernelDebugger {
         }
 
         Ok(())
+    }
+
+    fn single_register_access(&mut self) -> Option<SingleRegisterAccessOps<(), Self>> {
+        Some(self)
+        //None
+    }
+}
+
+impl SingleRegisterAccess<()> for KernelDebugger {
+    fn read_register(
+        &mut self,
+        tid: (),
+        reg_id: X86_64CoreRegId,
+        dst: &mut [u8],
+    ) -> TargetResult<(), Self> {
+        info!("read_register {:?}", reg_id);
+        let kcb = super::kcb::get_kcb();
+
+        if let Some(saved) = &mut kcb.arch.save_area {
+            match reg_id {
+                X86_64CoreRegId::Gpr(00) => dst.copy_from_slice(&saved.rax.to_le_bytes()),
+                X86_64CoreRegId::Gpr(01) => dst.copy_from_slice(&saved.rbx.to_le_bytes()),
+                X86_64CoreRegId::Gpr(02) => dst.copy_from_slice(&saved.rcx.to_le_bytes()),
+                X86_64CoreRegId::Gpr(03) => dst.copy_from_slice(&saved.rdx.to_le_bytes()),
+                X86_64CoreRegId::Gpr(04) => dst.copy_from_slice(&saved.rsi.to_le_bytes()),
+                X86_64CoreRegId::Gpr(05) => dst.copy_from_slice(&saved.rdi.to_le_bytes()),
+                X86_64CoreRegId::Gpr(06) => dst.copy_from_slice(&saved.rbp.to_le_bytes()),
+                X86_64CoreRegId::Gpr(07) => dst.copy_from_slice(&saved.rsp.to_le_bytes()),
+                X86_64CoreRegId::Gpr(08) => dst.copy_from_slice(&saved.r8.to_le_bytes()),
+                X86_64CoreRegId::Gpr(09) => dst.copy_from_slice(&saved.r9.to_le_bytes()),
+                X86_64CoreRegId::Gpr(10) => dst.copy_from_slice(&saved.r10.to_le_bytes()),
+                X86_64CoreRegId::Gpr(11) => dst.copy_from_slice(&saved.r11.to_le_bytes()),
+                X86_64CoreRegId::Gpr(12) => dst.copy_from_slice(&saved.r12.to_le_bytes()),
+                X86_64CoreRegId::Gpr(13) => dst.copy_from_slice(&saved.r13.to_le_bytes()),
+                X86_64CoreRegId::Gpr(14) => dst.copy_from_slice(&saved.r14.to_le_bytes()),
+                X86_64CoreRegId::Gpr(15) => dst.copy_from_slice(&saved.r15.to_le_bytes()),
+                X86_64CoreRegId::Rip => {
+                    assert!(dst.len() == 8);
+                    dst.copy_from_slice(&saved.rip.to_le_bytes())
+                }
+                X86_64CoreRegId::Eflags => {
+                    let rflags: u32 = saved.rflags.try_into().unwrap();
+                    dst.copy_from_slice(&rflags.to_le_bytes())
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::CS) => {
+                    let cs: u32 = saved.cs.try_into().unwrap();
+                    dst.copy_from_slice(&cs.to_le_bytes())
+                }
+
+                X86_64CoreRegId::Segment(X86SegmentRegId::SS) => {
+                    let ss: u32 = saved.ss.try_into().unwrap();
+                    dst.copy_from_slice(&ss.to_le_bytes())
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::DS) => {
+                    return Err(TargetError::NonFatal);
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::ES) => {
+                    return Err(TargetError::NonFatal);
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::FS) => {
+                    let fs: u32 = saved.fs.try_into().unwrap();
+                    dst.copy_from_slice(&fs.to_le_bytes())
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::GS) => {
+                    let gs: u32 = saved.gs.try_into().unwrap();
+                    dst.copy_from_slice(&gs.to_le_bytes())
+                }
+                //X86_64CoreRegId::St(u8) => {},
+                //X86_64CoreRegId::Fpu(X87FpuInternalRegId) => {},
+                //X86_64CoreRegId::Xmm(u8) => {},
+                //X86_64CoreRegId::Mxcsr => {},
+                missing => {
+                    error!("Unimplemented register {:?}", missing);
+                    return Err(TargetError::NonFatal);
+                }
+            };
+
+            Ok(())
+        } else {
+            Err(TargetError::NonFatal)
+        }
+    }
+
+    fn write_register(
+        &mut self,
+        tid: (),
+        reg_id: X86_64CoreRegId,
+        val: &[u8],
+    ) -> TargetResult<(), Self> {
+        error!("write_register {:?} {:?}", reg_id, val);
+        let kcb = super::kcb::get_kcb();
+
+        if let Some(saved) = &mut kcb.arch.save_area {
+            match reg_id {
+                X86_64CoreRegId::Gpr(00) => {
+                    saved.rax =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(01) => {
+                    saved.rbx =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(02) => {
+                    saved.rcx =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(03) => {
+                    saved.rdx =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(04) => {
+                    saved.rsi =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(05) => {
+                    saved.rdi =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(06) => {
+                    saved.rbp =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(07) => {
+                    saved.rsp =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(08) => {
+                    saved.r8 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(09) => {
+                    saved.r9 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(10) => {
+                    saved.r10 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(11) => {
+                    saved.r11 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(12) => {
+                    saved.r12 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(13) => {
+                    saved.r13 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(14) => {
+                    saved.r14 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Gpr(15) => {
+                    saved.r15 =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                }
+                X86_64CoreRegId::Rip => {
+                    assert!(val.len() == 8);
+                    info!("before rip {:#x}", saved.rip);
+                    saved.rip =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
+                    info!("set rip {:#x}", saved.rip);
+                    return Ok(());
+                }
+                X86_64CoreRegId::Eflags => {
+                    saved.rflags =
+                        u32::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?)
+                            as u64;
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::CS) => {
+                    saved.cs =
+                        u32::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?)
+                            as u64;
+                }
+
+                X86_64CoreRegId::Segment(X86SegmentRegId::SS) => {
+                    saved.ss =
+                        u32::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?)
+                            as u64;
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::DS) => {
+                    return Err(TargetError::NonFatal);
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::ES) => {
+                    return Err(TargetError::NonFatal);
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::FS) => {
+                    saved.fs =
+                        u32::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?)
+                            as u64;
+                }
+                X86_64CoreRegId::Segment(X86SegmentRegId::GS) => {
+                    saved.gs =
+                        u32::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?)
+                            as u64;
+                }
+                //X86_64CoreRegId::St(u8) => {},
+                //X86_64CoreRegId::Fpu(X87FpuInternalRegId) => {},
+                //X86_64CoreRegId::Xmm(u8) => {},
+                //X86_64CoreRegId::Mxcsr => {},
+                missing => {
+                    error!("Unimplemented register {:?}", missing);
+                    return Err(TargetError::NonFatal);
+                }
+            };
+
+            Ok(())
+        } else {
+            Err(TargetError::NonFatal)
+        }
     }
 }
 
@@ -577,7 +835,7 @@ impl HwWatchpoint for KernelDebugger {
         len: u64,
         kind: WatchKind,
     ) -> TargetResult<bool, Self> {
-        info!("add hw watchpoint {:#x} {}", addr, len);
+        info!("add hw watchpoint {:#x} {} {:?}", addr, len, kind);
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
@@ -610,7 +868,7 @@ impl HwWatchpoint for KernelDebugger {
             }
         }
 
-        // No more debug registers available for use
+        error!("No more debug registers available for add_hw_watchpoint");
         Ok(false)
     }
 
@@ -632,6 +890,8 @@ impl HwWatchpoint for KernelDebugger {
                         dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
                         debugregs::dr7_write(dr7);
                     }
+
+                    *entry = None;
                     return Ok(true);
                 }
             }
@@ -674,7 +934,7 @@ impl HwBreakpoint for KernelDebugger {
             }
         }
 
-        // No more debug registers available for use
+        error!("No more debug registers available for add_hw_breakpoint");
         Ok(false)
     }
 
@@ -693,6 +953,7 @@ impl HwBreakpoint for KernelDebugger {
                         dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
                         debugregs::dr7_write(dr7);
                     }
+
                     *entry = None;
                     return Ok(true);
                 }

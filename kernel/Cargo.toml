@@ -48,8 +48,11 @@ arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
 fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "allocator_api", features = ["unstable"] }
-gdbstub = { git = "https://github.com/gz/gdbstub.git", branch = "dev/0.6", default-features = false, features = ["alloc"] }
-gdbstub_arch = { git = "https://github.com/gz/gdbstub.git", branch = "dev/0.6" }
+#gdbstub = { git = "https://github.com/gz/gdbstub.git", branch = "dev/0.6", default-features = false, features = ["alloc"] }
+#gdbstub_arch = { git = "https://github.com/gz/gdbstub.git", branch = "dev/0.6" }
+
+gdbstub = { path = "../../gdbstub", default-features = false, features = ["alloc", "trace-pkt"] }
+gdbstub_arch = { path = "../../gdbstub/gdbstub_arch" }
 
 [[bin]]
 name = "nrk"
@@ -139,4 +142,4 @@ test-vmxnet-smoke = ["integration-test"]
 # test-vmxnet-smoltcp: Test vmxnet NIC driver with a network stack
 test-vmxnet-smoltcp = ["integration-test", "smoltcp"]
 # test-gdb: Test gdbstub integration for the kernel
-test-gdb = ["gdb", "bsp-only"]
+test-gdb = ["integration-test", "bsp-only", "gdb"]

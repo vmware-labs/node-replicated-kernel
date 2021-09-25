@@ -58,6 +58,146 @@ impl VirtualCpu {
     }
 }
 
+pub const ST_REGS: [StReg; 8] = [
+    StReg::St0,
+    StReg::St1,
+    StReg::St2,
+    StReg::St3,
+    StReg::St4,
+    StReg::St5,
+    StReg::St6,
+    StReg::St7,
+];
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum StReg {
+    St0,
+    St1,
+    St2,
+    St3,
+    St4,
+    St5,
+    St6,
+    St7,
+}
+
+/// The 64bit mode FXSAVE map.
+///
+/// REX.W = 0 (not sure if we do this)
+#[repr(C, packed)]
+#[derive(Copy, Clone, Debug, Default)]
+pub struct FxSave {
+    /// Floating-point control register
+    pub fcw: u16,
+    /// Floating-point status register
+    pub fsw: u16,
+    /// Tag word
+    pub ftw: u8,
+    _reserved0: u8,
+    /// x87 FPU Opcode
+    pub fop: u16,
+    /// x87 FPU Instruction Pointer Offset
+    pub fip: u32,
+    /// x87 FPU Instruction Pointer Selector
+    pub fcs: u16,
+    _reserved1: u16,
+    /// x87 FPU Instruction Operand (Data) Pointer Offset
+    pub fdp: u32,
+    /// x87 FPU Instruction Operand (Data) Pointer Selector
+    pub fds: u16,
+    _reserved2: u16,
+    /// MXCSR Register State
+    pub mxcsr: u32,
+    /// MXCSR_MASK
+    pub mxcsr_mask: u32,
+    /// Legacy floating point registers plus a bunch of high-order, reserved bits.
+    ///
+    /// # Note
+    /// Should be accessed with the `st()` function which will hand out only the
+    /// relevant 80 bits of the u128.
+    st: [u128; 8],
+    /// XMM registers
+    pub xmm: [u128; 16],
+    _reserved3: [u64; 12],
+}
+
+// Make sure FxSave is even 512 bytes.
+static_assertions::assert_eq_size!(FxSave, [u8; 512]);
+
+impl FxSave {
+    pub const FCW_OFFSET: usize = 0;
+    pub const FSW_OFFSET: usize = 2;
+    pub const FTW_OFFSET: usize = 4;
+    pub const FOP_OFFSET: usize = 6;
+    pub const FIP_OFFSET: usize = 8;
+    pub const FCS_OFFSET: usize = 12;
+    pub const FDP_OFFSET: usize = 16;
+    pub const FDS_OFFSET: usize = 16 + 4;
+    pub const MCXSR_OFFSET: usize = 16 + 8;
+    pub const MXCSR_MASK_OFFSET: usize = 16 + 12;
+    pub const ST_OFFSET: usize = 32;
+    pub const XMM_OFFSET: usize = 160;
+
+    pub const fn empty() -> Self {
+        Self {
+            fcw: 0,
+            fsw: 0,
+            ftw: 0,
+            _reserved0: 0,
+            fop: 0,
+            fip: 0,
+            fcs: 0,
+            _reserved1: 0,
+            fdp: 0,
+            fds: 0,
+            _reserved2: 0,
+            mxcsr: 0,
+            mxcsr_mask: 0,
+            st: [0; 8],
+            xmm: [0; 16],
+            _reserved3: [0; 12],
+        }
+    }
+
+    /// Returns the ST register as a slice of ten u8's (80 bit value).
+    ///
+    /// Little endian byte order of course.
+    pub fn st(&self, idx: StReg) -> [u8; 10] {
+        use core::convert::TryInto;
+
+        let val = match idx {
+            StReg::St0 => self.st[0],
+            StReg::St1 => self.st[1],
+            StReg::St2 => self.st[2],
+            StReg::St3 => self.st[3],
+            StReg::St4 => self.st[4],
+            StReg::St5 => self.st[5],
+            StReg::St6 => self.st[6],
+            StReg::St7 => self.st[7],
+        }
+        .to_be_bytes();
+
+        val[0..10].try_into().unwrap()
+    }
+}
+
+// Statically assert member offsets of FxSave.
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, fcw), FxSave::FCW_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, fsw), FxSave::FSW_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, ftw), FxSave::FTW_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, fop), FxSave::FOP_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, fip), FxSave::FIP_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, fcs), FxSave::FCS_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, fdp), FxSave::FDP_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, fds), FxSave::FDS_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, mxcsr), FxSave::MCXSR_OFFSET);
+static_assertions::const_assert_eq!(
+    memoffset::offset_of!(FxSave, mxcsr_mask),
+    FxSave::MXCSR_MASK_OFFSET
+);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, st), FxSave::ST_OFFSET);
+static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, xmm), FxSave::XMM_OFFSET);
+
 /// Memory area that is used by a CPU/scheduler to capture and save
 /// the current CPU register state.
 ///
@@ -121,7 +261,7 @@ pub struct SaveArea {
     /// 23: %ss register
     pub ss: u64,
     /// 24: Floating point register state
-    pub fxsave: [u8; 512],
+    pub fxsave: FxSave,
 }
 
 impl Default for SaveArea {
@@ -224,7 +364,7 @@ impl SaveArea {
             exception: 0,
             cs: 0,
             ss: 0,
-            fxsave: [0; 512],
+            fxsave: FxSave::empty(),
         }
     }
 

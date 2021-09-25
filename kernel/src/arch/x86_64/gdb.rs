@@ -20,6 +20,7 @@ use gdbstub::{
 use gdbstub_arch::x86::reg::id::{X86SegmentRegId, X86_64CoreRegId};
 use gdbstub_arch::x86::X86_64_SSE;
 
+use kpi::arch::{StReg, ST_REGS};
 use lazy_static::lazy_static;
 use log::{error, info, trace};
 use spin::Mutex;
@@ -425,7 +426,6 @@ impl SingleThreadOps for KernelDebugger {
         &mut self,
         regs: &mut gdbstub_arch::x86::reg::X86_64CoreRegs,
     ) -> TargetResult<(), Self> {
-        trace!("read_registers");
         let kcb = super::kcb::get_kcb();
         if let Some(saved) = &kcb.arch.save_area {
             // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
@@ -459,8 +459,29 @@ impl SingleThreadOps for KernelDebugger {
                 gs: saved.gs.try_into().unwrap(),
             };
 
-            // TODO(unimplemented): Add SIMD registers here
+            // FPU registers: ST0 through ST7
+            for (i, reg) in ST_REGS.iter().enumerate() {
+                regs.st[i] = saved.fxsave.st(*reg);
+            }
+
+            // FPU internal registers
+            regs.fpu.fctrl = saved.fxsave.fcw.try_into().unwrap();
+            regs.fpu.fstat = saved.fxsave.fsw.try_into().unwrap();
+            regs.fpu.ftag = saved.fxsave.ftw.try_into().unwrap();
+            regs.fpu.fiseg = saved.fxsave.fcs.try_into().unwrap();
+            regs.fpu.fioff = saved.fxsave.fip.try_into().unwrap();
+            regs.fpu.foseg = saved.fxsave.fds.try_into().unwrap();
+            regs.fpu.fooff = saved.fxsave.fdp.try_into().unwrap();
+            regs.fpu.fop = saved.fxsave.fop.try_into().unwrap();
+
+            // SIMD Registers: XMM0 through XMM15
+            regs.xmm = saved.fxsave.xmm;
+
+            // SSE Status/Control Register
+            regs.mxcsr = saved.fxsave.mxcsr;
         }
+
+        trace!("read_registers {:?}", regs);
         Ok(())
     }
 
@@ -501,7 +522,26 @@ impl SingleThreadOps for KernelDebugger {
             saved.fs = regs.segments.fs.try_into().unwrap();
             saved.gs = regs.segments.gs.try_into().unwrap();
 
-            // TODO(unimplemented): Add SIMD registers here
+            // FPU registers: ST0 through ST7
+            for (i, reg) in ST_REGS.iter().enumerate() {
+                //regs.st[i] = saved.fxsave.st(*reg);
+            }
+
+            // FPU internal registers
+            saved.fxsave.fcw = regs.fpu.fctrl.try_into().unwrap();
+            saved.fxsave.fsw = regs.fpu.fstat.try_into().unwrap();
+            saved.fxsave.ftw = regs.fpu.ftag.try_into().unwrap();
+            saved.fxsave.fcs = regs.fpu.fiseg.try_into().unwrap();
+            saved.fxsave.fip = regs.fpu.fioff.try_into().unwrap();
+            saved.fxsave.fds = regs.fpu.foseg.try_into().unwrap();
+            saved.fxsave.fdp = regs.fpu.fooff.try_into().unwrap();
+            saved.fxsave.fop = regs.fpu.fop.try_into().unwrap();
+
+            // SIMD Registers: XMM0 through XMM15
+            saved.fxsave.xmm = regs.xmm;
+
+            // SSE Status/Control Register
+            saved.fxsave.mxcsr = regs.mxcsr;
         }
         Ok(())
     }
@@ -592,8 +632,8 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn single_register_access(&mut self) -> Option<SingleRegisterAccessOps<(), Self>> {
-        Some(self)
-        //None
+        //Some(self)
+        None
     }
 }
 
@@ -791,8 +831,8 @@ impl SingleRegisterAccess<()> for KernelDebugger {
                 //X86_64CoreRegId::Fpu(X87FpuInternalRegId) => {},
                 //X86_64CoreRegId::Xmm(u8) => {},
                 //X86_64CoreRegId::Mxcsr => {},
-                missing => {
-                    error!("Unimplemented register {:?}", missing);
+                _ => {
+                    error!("Unimplemented register");
                     return Err(TargetError::NonFatal);
                 }
             };

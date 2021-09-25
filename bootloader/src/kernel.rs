@@ -122,12 +122,25 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
                 align_to
             );
 
+            #[cfg(feature = "all-writable")]
             let map_action = match (flags.is_execute(), flags.is_write(), flags.is_read()) {
                 (false, false, false) => MapAction::None,
                 (true, false, false) => MapAction::None,
                 (false, true, false) => MapAction::None,
                 (false, false, true) => MapAction::ReadKernel,
                 (true, false, true) => MapAction::ReadExecuteKernel,
+                (true, true, false) => MapAction::None,
+                (false, true, true) => MapAction::ReadWriteKernel,
+                (true, true, true) => MapAction::ReadWriteExecuteKernel,
+            };
+
+            #[cfg(not(feature = "all-writable"))]
+            let map_action = match (flags.is_execute(), flags.is_write(), flags.is_read()) {
+                (false, false, false) => MapAction::None,
+                (true, false, false) => MapAction::None,
+                (false, true, false) => MapAction::None,
+                (false, false, true) => MapAction::ReadWriteKernel,
+                (true, false, true) => MapAction::ReadWriteExecuteKernel,
                 (true, true, false) => MapAction::None,
                 (false, true, true) => MapAction::ReadWriteKernel,
                 (true, true, true) => MapAction::ReadWriteExecuteKernel,

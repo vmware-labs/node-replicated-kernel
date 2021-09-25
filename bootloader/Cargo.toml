@@ -6,6 +6,13 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 resolver = "2"
 
+[features]
+default = []
+# Map all read-only kernel sections as writable. This is not safe and should not
+# be enabled except for when we use a debugger to overwrite instructions to
+# generate traps at arbitrary locations.
+all-writeable = []
+
 [dependencies]
 ## Internal dependencies
 bootloader_shared = { path = "../lib/bootloader_shared" }

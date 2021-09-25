@@ -1106,8 +1106,25 @@ fn s02_gdb() {
         output += gdb.exp_string("Breakpoint 1")?.as_str();
 
         // Test watchpoints
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("step")?; // Need one step so `watchpoint_trigger` is "in context"
+
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("watch -l watchpoint_trigger")?;
+        output += gdb.exp_string("Hardware watchpoint 2")?.as_str();
+
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("continue")?;
+
+        output += gdb
+            .exp_string("Hardware watchpoint 2: -location watchpoint_trigger")?
+            .as_str();
+        output += gdb.exp_string("Old value = 0")?.as_str();
+        output += gdb.exp_string("New value = 3735928559")?.as_str();
 
         // Test `step`, `stepi`
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("step")?;
 
         // Test `info registers`
 

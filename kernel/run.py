@@ -146,6 +146,10 @@ def build_bootloader(args):
     uefi_build_args += ['--package', 'bootloader']
     uefi_build_args += CARGO_DEFAULT_ARGS
 
+    if args.gdb:
+        # Make all memory writable for easier manipulation with gdb
+        uefi_build_args += ['--features', 'all-writeable']
+
     with local.cwd(BOOTLOADER_PATH):
         with local.env(RUST_TARGET_PATH=BOOTLOADER_PATH.absolute()):
             if args.verbose:

@@ -194,13 +194,29 @@ pub fn xmain() {
     // ... with 512 MiB of RAM per NUMA node ...
     for (nid, node) in MACHINE_TOPOLOGY.nodes().enumerate() {
         match nid {
-            0 => assert_eq!(node.memory().filter(|ma| !ma.is_non_volatile() & !ma.is_hotplug_region()).count(), 2),
-            _ => assert_eq!(node.memory().filter(|ma| !ma.is_non_volatile() & !ma.is_hotplug_region()).count(), 1),
+            0 => assert_eq!(
+                node.memory()
+                    .filter(|ma| !ma.is_non_volatile() & !ma.is_hotplug_region())
+                    .count(),
+                2
+            ),
+            _ => assert_eq!(
+                node.memory()
+                    .filter(|ma| !ma.is_non_volatile() & !ma.is_hotplug_region())
+                    .count(),
+                1
+            ),
         };
 
         let bytes_per_node: u64 = node
             .memory()
-            .map(|ma| if !ma.is_non_volatile() & !ma.is_hotplug_region() { ma.length } else { 0 })
+            .map(|ma| {
+                if !ma.is_non_volatile() & !ma.is_hotplug_region() {
+                    ma.length
+                } else {
+                    0
+                }
+            })
             .sum();
 
         if nid > 0 {
@@ -471,6 +487,29 @@ pub fn xmain() {
     graphviz::render_opts(&*kcb.arch.init_vspace(), &[RenderOption::RankDirectionLR]);
 
     arch::debug::shutdown(ExitReason::Ok);
+}
+
+// Careful note: If you change any of the lines order/amount/variable names etc.
+// in this function, you *most likely* have to adjust s02_gdb in
+// `integration-test.rs`.
+#[cfg(all(feature = "integration-test", any(feature = "test-gdb")))]
+pub fn xmain() {
+    use log::info;
+
+    // watchpoint test:
+    let mut watchpoint_trigger: usize = 0;
+    info!("watchpoint_trigger is {}", watchpoint_trigger);
+
+    watchpoint_trigger = 0xdeadbeef;
+    info!("watchpoint_trigger is {}", watchpoint_trigger);
+
+    // step test:
+    for i in 0..2 {
+        info!("step i={}", i);
+    }
+
+    // continue until exit:
+    arch::debug::shutdown(ExitReason::ReturnFromMain);
 }
 
 #[cfg(all(

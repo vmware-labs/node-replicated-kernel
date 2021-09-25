@@ -47,6 +47,13 @@ because the kernel code section is not writeable. So you'll have to use the
 [hbreak](https://sourceware.org/gdb/onlinedocs/gdb/Set-Breaks.html). For
 watchpoints, by default it will already use hardware watchpoints.
 
+### Watchpoints
+
+Use `watch -l watchpoint_trigger` to set a watchpoint. The `-l` option is
+important because it watches the memory location of the variable/expression
+rather than the expression. Normal `watch` is not yet supported as gdb may try
+to overwrite `.text` locations (which are mapped read-execute and not writeable)
+in the kernel.
 
 ## `printf` debugging with the log crate
 

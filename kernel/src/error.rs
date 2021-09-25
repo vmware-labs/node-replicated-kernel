@@ -78,6 +78,8 @@ pub enum KError {
     // Debugging
     DebuggerAlreadyAttached,
     DebuggerStmFailure,
+    DebuggerUnableToReadRegister,
+    DebuggerUnableToWriteRegister,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {
@@ -249,6 +251,9 @@ impl fmt::Display for KError {
 
             KError::DebuggerAlreadyAttached => write!(f, "Debugger is already attached"),
             KError::DebuggerStmFailure => write!(f, "Failure while running the GDB state machine"),
+            KError::DebuggerUnableToReadRegister => write!(f, "Can't read register"),
+            KError::DebuggerUnableToWriteRegister => write!(f, "Can't write register"),
+
         }
     }
 }

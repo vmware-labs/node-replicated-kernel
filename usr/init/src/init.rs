@@ -723,40 +723,66 @@ fn test_write_amplication() {
     let pmem_base: u64 = dram_base + size as u64;
     let pmem_slice = map_region(pmem_base, size, MemType::PMem);
 
-    let write_slice = [0xb; 64];
-    let total_lines = size / write_slice.len();
+    let write_slice = [0xb; BASE_PAGE_SIZE];
+    let mut dirty_pages = [VAddr::from(0); pages];
 
-    for _ in 0..5 {
+    // Number of 4K pages for 32, 64, 128, 256, 512 MB
+    for page in [8192, 16384, 32768, 65536, 130000].iter() {
+        let size = *page * BASE_PAGE_SIZE;
+        let total_lines = size / write_slice.len();
+        let dram_end = dram_base + size as u64;
+
         let mut random_num: u32 = 0;
-        let mut iops = 0;
+
         let start = rawtime::Instant::now();
         while start.elapsed().as_secs() < 1 {
-            for _ in 0..32 {
-                unsafe { rdrand32(&mut random_num) };
-                let rand = random_num as usize % total_lines;
-                unsafe {
-                    ptr::copy_nonoverlapping(
-                        write_slice.as_ptr(),
-                        dram_slice[rand..].as_mut_ptr(),
-                        write_slice.len(),
-                    )
-                };
-                iops += 1;
-            }
+            unsafe { rdrand32(&mut random_num) };
+            let rand = random_num as usize % total_lines;
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    write_slice[..64].as_ptr(),
+                    dram_slice[rand..].as_mut_ptr(),
+                    write_slice[..64].len(),
+                )
+            };
         }
-        info!("IOPS {}", iops);
+
+        let start = rawtime::Instant::now();
+        let _ = vibrio::syscalls::VSpace::dirty_pages(
+            dram_base,
+            dram_end - BASE_PAGE_SIZE as u64,
+            dirty_pages.as_ptr() as u64,
+            *page as u64,
+        )
+        .expect("Dirty page tracking failed");
+
+        info!(
+            "4K-pages {}, DP time {} us",
+            page,
+            start.elapsed().as_micros()
+        );
     }
 
-    let mut dirty_pages = [VAddr::from(0); pages];
-    let count = vibrio::syscalls::VSpace::dirty_pages(
-        dram_base,
-        pmem_base - BASE_PAGE_SIZE as u64,
-        dirty_pages.as_ptr() as u64,
-        pages as u64,
-    )
-    .expect("Dirty page tracking failed");
+    for slice_len in [64, 4096].iter() {
+        let mut iops = 0;
+        let mut rand_num = 0;
+        let total_line = size / *slice_len;
+        let start = rawtime::Instant::now();
+        while start.elapsed().as_secs() < 1 {
+            unsafe { rdrand32(&mut rand_num) };
+            let rand = rand_num as usize % total_line;
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    write_slice[..*slice_len].as_ptr(),
+                    pmem_slice[rand..].as_mut_ptr(),
+                    write_slice[..*slice_len].len(),
+                );
+            }
+            iops += 1;
+        }
+        info!("Slice len {}, IOPS {}", slice_len, iops);
+    }
 
-    info!("Dirty pages {}", count);
     info!("Write Amplication Test OK");
 }
 

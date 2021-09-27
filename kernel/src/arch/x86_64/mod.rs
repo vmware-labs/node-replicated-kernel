@@ -253,7 +253,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     static_kcb.arch.set_interrupt_stacks(
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
-        OwnedStack::new(64 * BASE_PAGE_SIZE),
+        OwnedStack::new(128 * BASE_PAGE_SIZE),
     );
     static_kcb
         .arch
@@ -697,7 +697,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     static_kcb.arch.set_interrupt_stacks(
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
-        OwnedStack::new(64 * BASE_PAGE_SIZE),
+        OwnedStack::new(128 * BASE_PAGE_SIZE),
     );
     static_kcb
         .arch

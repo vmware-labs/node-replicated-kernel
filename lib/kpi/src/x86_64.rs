@@ -6,11 +6,18 @@
 #![allow(unaligned_references)]
 
 use core::fmt;
+use core::ops::Range;
 
 use x86::bits64::paging::VAddr;
 use x86::bits64::rflags::RFlags;
 use x86::segmentation::SegmentSelector;
 use x86::Ring;
+
+/// Maximum supported virtual address bits (48).
+pub const VADDR_MAX_BITS: usize = 48;
+
+/// Supported virtual address range.
+pub const VADDR_RANGE: Range<usize> = 0..(1 << VADDR_MAX_BITS);
 
 pub const CS_USER_GDT_INDEX: u16 = 3;
 pub const CS_SELECTOR: SegmentSelector = SegmentSelector::new(CS_USER_GDT_INDEX, Ring::Ring3);

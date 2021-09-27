@@ -410,7 +410,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 /// Handler for a debug exception.
 unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
-    warn!("Got debug interrupt {}", desc.source);
+    trace!("Got debug interrupt {}", desc.source);
 
     let kcb = get_kcb();
     if kcb.arch.has_executor() {

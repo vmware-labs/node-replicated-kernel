@@ -1053,7 +1053,8 @@ fn s02_nvdimm_discover() {
 fn s02_gdb() {
     /// Spawn the gdb debugger
     pub fn spawn_gdb(binary: &str) -> Result<PtyReplSession> {
-        spawn(format!("gdb {}", binary).as_str(), Some(3_000)).and_then(|p| {
+        // The `-nx` ignores any potential .gdbinit files that may mess with the test
+        spawn(format!("gdb -nx {}", binary).as_str(), Some(3_000)).and_then(|p| {
             Ok(PtyReplSession {
                 prompt: "(gdb) ".to_string(),
                 pty_session: p,
@@ -1122,20 +1123,22 @@ fn s02_gdb() {
         output += gdb.exp_string("Old value = 0")?.as_str();
         output += gdb.exp_string("New value = 3735928559")?.as_str();
 
-        // Test `step`, `stepi`
-        output += gdb.wait_for_prompt()?.as_str();
-        gdb.send_line("step")?;
-
-        // Test `info registers`
-
-        // Test writes to memory
+        for _i in 0..15 {
+            // Test if we can step through info!("") -- lots of steps  just do 15
+            output += gdb.wait_for_prompt()?.as_str();
+            gdb.send_line("step")?;
+        }
 
         // Test `continue`
+        output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("continue")?;
+        output += gdb.exp_string("Remote connection closed")?.as_str();
 
-        p.process.kill(SIGTERM)
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
     };
 
-    wait_for_sigterm(&cmdline, qemu_run(), output);
+    check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
 /// Test that we boot up all cores in the system.

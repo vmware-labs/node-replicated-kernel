@@ -31,7 +31,7 @@ pub mod arch {
 }
 
 /// Start of the kernel address space.
-pub const KERNEL_BASE: u64 = 0x400000000000;
+pub const KERNEL_BASE: u64 = 0x4000_0000_0000;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]

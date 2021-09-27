@@ -22,13 +22,14 @@ use gdbstub_arch::x86::X86_64_SSE;
 
 use kpi::arch::{StReg, ST_REGS};
 use lazy_static::lazy_static;
-use log::{error, info, trace};
+use log::{debug, error, info, trace, warn};
 use spin::Mutex;
 use x86::bits64::rflags::RFlags;
 use x86::debugregs;
 use x86::io;
 
 use super::debug::GDB_REMOTE_PORT;
+use crate::arch::memory::KERNEL_BASE;
 use crate::error::KError;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{VAddr, BASE_PAGE_SIZE};
@@ -85,6 +86,10 @@ fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
 /// - `resume_with`: Should probably always be Some(reason) except the first
 ///   time after connecting.
 pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
+    if GDB_STUB.is_locked() {
+        panic!("re-entrant into event_loop!");
+    }
+
     let mut gdb_stm = GDB_STUB.lock().take().unwrap();
     let target = super::kcb::get_kcb()
         .arch
@@ -111,8 +116,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         break;
                     }
                     Ok((gdb_stm_new, None)) => gdb_stm_new,
-                    Err(GdbStubError::TargetError(_e)) => {
-                        info!("Target raised a fatal error");
+                    Err(GdbStubError::TargetError(e)) => {
+                        error!("Debugger raised a fatal error {:?}", e);
                         break;
                     }
                     Err(e) => {
@@ -144,8 +149,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                             break;
                         }
                         Ok((gdb_stm_new, None)) => gdb_stm_new,
-                        Err(GdbStubError::TargetError(_e)) => {
-                            info!("Target raised a fatal error");
+                        Err(GdbStubError::TargetError(e)) => {
+                            error!("Target raised a fatal error {:?}", e);
                             break;
                         }
                         Err(e) => {
@@ -304,6 +309,7 @@ impl KernelDebugger {
     fn determine_stop_reason(&mut self, reason: KCoreStopReason) -> Option<ThreadStopReason<u64>> {
         match reason {
             KCoreStopReason::BreakpointInterrupt => {
+                unimplemented!("Breakpoint interrupt not implemented");
                 Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
             }
             KCoreStopReason::DebugInterrupt => {
@@ -332,7 +338,6 @@ impl KernelDebugger {
                 // Map things to a gdbstub stop reason:
                 let stop: Option<ThreadStopReason<u64>> =
                     if let Some((va, BreakType::Breakpoint)) = bp {
-                        info!("stop reason is hwbreak at {:?}", va);
                         Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
                     } else if let Some((va, BreakType::Watchpoint(kind))) = bp {
                         Some(ThreadStopReason::Watch {
@@ -348,7 +353,7 @@ impl KernelDebugger {
                             "Single-stepping only happens in resume."
                         );
                         dr6.remove(debugregs::Dr6::BS);
-                        info!("stop reason is DoneStep");
+                        trace!("stop reason is DoneStep");
                         Some(ThreadStopReason::DoneStep)
                     } else {
                         None
@@ -390,6 +395,10 @@ impl Target for KernelDebugger {
 
     fn breakpoints(&mut self) -> Option<BreakpointsOps<Self>> {
         Some(self)
+    }
+
+    fn use_x_upcase_packet(&self) -> bool {
+        true
     }
 }
 
@@ -481,7 +490,7 @@ impl SingleThreadOps for KernelDebugger {
             regs.mxcsr = saved.fxsave.mxcsr;
         }
 
-        trace!("read_registers {:?}", regs);
+        trace!("read_registers {:02X?}", regs);
         Ok(())
     }
 
@@ -547,7 +556,7 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn read_addrs(&mut self, start_addr: u64, data: &mut [u8]) -> TargetResult<(), Self> {
-        info!("read_addr {:#x}", start_addr);
+        trace!("read_addr {:#x}", start_addr);
         // (Un)Safety: Well, this can easily violate the rust aliasing model
         // because when we arrive in the debugger; there might some mutable
         // reference to the PTs somewhere in a context that was modifying the
@@ -555,6 +564,11 @@ impl SingleThreadOps for KernelDebugger {
         let pt = unsafe { super::vspace::page_table::ReadOnlyPageTable::current() };
 
         let start_addr: usize = start_addr.try_into().unwrap();
+        if !kpi::arch::VADDR_RANGE.contains(&start_addr) {
+            warn!("Address out of range {}", start_addr);
+            return Err(TargetError::NonFatal);
+        }
+
         for i in 0..data.len() {
             let va = VAddr::from(start_addr + i);
 
@@ -570,7 +584,7 @@ impl SingleThreadOps for KernelDebugger {
                         }
                     }
                     Err(_) => {
-                        error!("Target page was not mapped.");
+                        warn!("Target page was not mapped.");
                         // Target page was not mapped
                         return Err(TargetError::NonFatal);
                     }
@@ -587,7 +601,7 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn write_addrs(&mut self, start_addr: u64, data: &[u8]) -> TargetResult<(), Self> {
-        info!("write_addrs {:#x}", start_addr);
+        trace!("write_addrs {:#x}", start_addr);
 
         // (Un)Safety: Well, this can easily violate the rust aliasing model
         // because when we arrive in the debugger; there might some mutable
@@ -602,21 +616,38 @@ impl SingleThreadOps for KernelDebugger {
             // Check access rights for start of every new page that we encounter
             // (and for the first byte that might start within a page)
             if i == 0 || (start_addr + i) % BASE_PAGE_SIZE == 0 {
+                if !kpi::arch::VADDR_RANGE.contains(&start_addr) {
+                    warn!("Address out of range {}", start_addr);
+                    return Err(TargetError::NonFatal);
+                }
+
                 match pt.resolve(va) {
                     Ok((pa, rights)) => {
+                        // Not implemented: We don't allow writing in executable
+                        // `.text`. This gives some warnings in gdb because it
+                        // tries to set breakpoints by writing `int 3` in random
+                        // code location. This currently doesn't work, either
+                        // because we don't adjust the rip properly or don't
+                        // implement the swbreak function or it's generally bad
+                        // to overwrite code that is potentially used by the
+                        // gdbstub functionality too (like what happens if you
+                        // set a breakpoint in the log crate)
+                        //
+                        // I believe gdb falls back to stepping if the returns
+                        // NonFatal.
+                        if rights.is_executable() {
+                            debug!("Can't write to executable page.");
+                            debug!("If you were trying to set a breakpoint use `hbreak` instead of `break`");
+                            return Err(TargetError::NonFatal);
+                        }
                         if !rights.is_writable() {
-                            if rights.is_executable() {
-                                error!("Target page as read-execute. Can't write at address.");
-                                error!("If you were trying to set a breakpoint use `hbreak` instead of `break`");
-                            } else {
-                                error!("Target page mapped as read-only. Can't write at address.");
-                            }
+                            debug!("Target page mapped as read-only. Can't write at address.");
                             return Err(TargetError::NonFatal);
                         }
                     }
                     Err(_) => {
                         // Target page was not mapped
-                        error!("Target page not mapped.");
+                        warn!("Target page not mapped.");
                         return Err(TargetError::NonFatal);
                     }
                 }
@@ -644,7 +675,7 @@ impl SingleRegisterAccess<()> for KernelDebugger {
         reg_id: X86_64CoreRegId,
         dst: &mut [u8],
     ) -> TargetResult<(), Self> {
-        info!("read_register {:?}", reg_id);
+        trace!("read_register {:?}", reg_id);
         let kcb = super::kcb::get_kcb();
 
         if let Some(saved) = &mut kcb.arch.save_area {
@@ -718,7 +749,7 @@ impl SingleRegisterAccess<()> for KernelDebugger {
         reg_id: X86_64CoreRegId,
         val: &[u8],
     ) -> TargetResult<(), Self> {
-        error!("write_register {:?} {:?}", reg_id, val);
+        trace!("write_register {:?} {:?}", reg_id, val);
         let kcb = super::kcb::get_kcb();
 
         if let Some(saved) = &mut kcb.arch.save_area {
@@ -788,12 +819,9 @@ impl SingleRegisterAccess<()> for KernelDebugger {
                         u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
                 }
                 X86_64CoreRegId::Rip => {
-                    assert!(val.len() == 8);
-                    info!("before rip {:#x}", saved.rip);
+                    assert_eq!(val.len(), 8, "gdbstub/issues/80");
                     saved.rip =
                         u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?);
-                    info!("set rip {:#x}", saved.rip);
-                    return Ok(());
                 }
                 X86_64CoreRegId::Eflags => {
                     saved.rflags =
@@ -830,7 +858,11 @@ impl SingleRegisterAccess<()> for KernelDebugger {
                 //X86_64CoreRegId::St(u8) => {},
                 //X86_64CoreRegId::Fpu(X87FpuInternalRegId) => {},
                 //X86_64CoreRegId::Xmm(u8) => {},
-                //X86_64CoreRegId::Mxcsr => {},
+                X86_64CoreRegId::Mxcsr => {
+                    saved.fxsave.mxcsr =
+                        u64::from_le_bytes(val.try_into().map_err(|e| TargetError::NonFatal)?)
+                            as u32;
+                }
                 _ => {
                     error!("Unimplemented register");
                     return Err(TargetError::NonFatal);
@@ -875,7 +907,7 @@ impl HwWatchpoint for KernelDebugger {
         len: u64,
         kind: WatchKind,
     ) -> TargetResult<bool, Self> {
-        info!("add hw watchpoint {:#x} {} {:?}", addr, len, kind);
+        trace!("add hw watchpoint {:#x} {} {:?}", addr, len, kind);
         for (reg, entry) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
@@ -886,7 +918,7 @@ impl HwWatchpoint for KernelDebugger {
                 4 => debugregs::BreakSize::Bytes4,
                 8 => debugregs::BreakSize::Bytes8,
                 _ => {
-                    error!("Unsupported len argument provided by GDB: {}", len);
+                    warn!("Unsupported len ({}) provided by GDB, use 8 bytes.", len);
                     debugregs::BreakSize::Bytes8
                 }
             };
@@ -908,7 +940,7 @@ impl HwWatchpoint for KernelDebugger {
             }
         }
 
-        error!("No more debug registers available for add_hw_watchpoint");
+        warn!("No more debug registers available for add_hw_watchpoint");
         Ok(false)
     }
 
@@ -938,7 +970,7 @@ impl HwWatchpoint for KernelDebugger {
         }
 
         // No break point matching the address was found
-        error!("Unable to remove hw watchpoint for addr {:#x}", addr);
+        warn!("Unable to remove hw watchpoint for addr {:#x}", addr);
         Ok(false)
     }
 }
@@ -967,14 +999,13 @@ impl HwBreakpoint for KernelDebugger {
                         debugregs::BreakSize::Bytes1,
                         KernelDebugger::GLOBAL_BP_FLAG,
                     );
-                    info!("added hw breakpoint {:#x}", addr);
                     debugregs::dr7_write(dr7);
                 }
                 return Ok(true);
             }
         }
 
-        error!("No more debug registers available for add_hw_breakpoint");
+        warn!("No more debug registers available for add_hw_breakpoint");
         Ok(false)
     }
 
@@ -1001,7 +1032,7 @@ impl HwBreakpoint for KernelDebugger {
         }
 
         // No break point matching the address was found
-        error!("Unable to remove hw breakpoint for addr {:#x}", addr);
+        warn!("Unable to remove hw breakpoint for addr {:#x}", addr);
         Ok(false)
     }
 }

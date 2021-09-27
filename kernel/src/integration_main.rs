@@ -499,17 +499,15 @@ pub fn xmain() {
     // watchpoint test:
     let mut watchpoint_trigger: usize = 0;
     info!("watchpoint_trigger is {}", watchpoint_trigger);
-
     watchpoint_trigger = 0xdeadbeef;
     info!("watchpoint_trigger is {}", watchpoint_trigger);
 
-    // step test:
-    for i in 0..2 {
-        info!("step i={}", i);
-    }
+    // step  through all of info:
+    info!("step");
+    info!("step");
 
     // continue until exit:
-    arch::debug::shutdown(ExitReason::ReturnFromMain);
+    arch::debug::shutdown(ExitReason::Ok);
 }
 
 #[cfg(all(

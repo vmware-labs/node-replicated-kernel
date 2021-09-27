@@ -293,8 +293,8 @@ struct RunnerArgs<'a> {
     prealloc: bool,
     /// Use large-pages for host memory
     large_pages: bool,
-    /// Enable gdb
-    gdb: bool,
+    /// Enable gdb for the kernel
+    kgdb: bool,
 }
 
 #[allow(unused)]
@@ -318,7 +318,7 @@ impl<'a> RunnerArgs<'a> {
             setaffinity: false,
             prealloc: false,
             large_pages: false,
-            gdb: false,
+            kgdb: false,
         };
 
         if cfg!(feature = "prealloc") {
@@ -471,8 +471,8 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
-    fn gdb(mut self) -> RunnerArgs<'a> {
-        self.gdb = true;
+    fn kgdb(mut self) -> RunnerArgs<'a> {
+        self.kgdb = true;
         self
     }
 
@@ -519,8 +519,8 @@ impl<'a> RunnerArgs<'a> {
             cmd.push(String::from("--release"));
         }
 
-        if self.gdb {
-            cmd.push(String::from("--gdb"));
+        if self.kgdb {
+            cmd.push(String::from("--kgdb"));
         }
 
         match &self.machine {
@@ -1064,7 +1064,7 @@ fn s02_gdb() {
         })
     }
 
-    let cmdline = RunnerArgs::new("test-gdb").gdb().cores(1);
+    let cmdline = RunnerArgs::new("test-gdb").kgdb().cores(1);
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {

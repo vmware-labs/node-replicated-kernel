@@ -1,18 +1,19 @@
 # Debugging
 
-Currently the debugging facilities are not as good as on production operating
+Currently the debugging facilities are not as good as on a production operating
 systems. However, there are some options available: gdb, `printf`-style
-debugging, logging and staring at code, which we will discuss in this chapter.
+debugging, logging and staring at code. We will discuss the options in this
+chapter.
 
 ## GDB support in the kernel
 
-> tldr: To use gdb, add `--gdb` to `run.py`.
+> tldr: To use gdb, add `--kgdb` to `run.py`.
 
 NRK provides an implementation for the gdb remote protocol using a separate
 serial line for communication. This means you can use gdb to connect to the
 running system.
 
-To use it, start `run.py` with the `--gdb` argument. Once booted, the following
+To use it, start `run.py` with the `--kgdb` argument. Once booted, the following
 line will appear:
 
 ```log
@@ -39,6 +40,8 @@ Remote debugging using localhost:1234
 > add-auto-load-safe-path <REPO-BASE>/kernel/.gdbinit
 > ```
 
+The [GDB dashboard](https://github.com/cyrus-and/gdb-dashboard) works as well,
+just insert `target remote localhost:1234` at the top of the `.gdbinit` file.
 
 ### Breakpoints
 

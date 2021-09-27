@@ -70,7 +70,7 @@ dependencies = [
  "driverkit",
  "env_logger 0.5.13",
  "log",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -114,9 +114,9 @@ dependencies = [
 
 [[package]]
 name = "atopology"
-version = "0.0.23"
+version = "0.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5da93346525be1de90c93873b398f0071b9d3720e96c7a9072cc17d6f0d568db"
+checksum = "a207cd59d97314560997eb49839a758f9174e7f5751b57dc58d5642c2bc18f48"
 dependencies = [
  "bitflags",
  "cstr_core",
@@ -126,7 +126,7 @@ dependencies = [
  "log",
  "procfs",
  "static_assertions",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -224,7 +224,7 @@ dependencies = [
  "log",
  "uefi",
  "uefi-services",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -233,7 +233,7 @@ version = "0.0.1"
 dependencies = [
  "arrayvec",
  "uefi",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -430,9 +430,9 @@ checksum = "4f8a51dd197fa6ba5b4dc98a990a43cc13693c23eb0089ebb0fcc1f04152bca6"
 
 [[package]]
 name = "driverkit"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86ea6848d8843cf8fda500e5bb03cf1486e63a34b753697783bd00396aac6c9a"
+checksum = "194674f92f19aefbf0f1f3a5ede20b1edcbbc8f1f96fb060f976c9119a2fce03"
 dependencies = [
  "byteorder",
  "custom_error",
@@ -440,7 +440,7 @@ dependencies = [
  "log",
  "matches",
  "mmap",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -579,9 +579,10 @@ checksum = "8f5f3913fa0bfe7ee1fd8248b6b9f42a5af4b9d65ec2dd2c3c26132b950ecfc2"
 [[package]]
 name = "gdbstub"
 version = "0.5.0"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#488a4b133a755c1009cca1d1560e3250fd456d31"
 dependencies = [
  "bitflags",
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "log",
  "managed 0.8.0",
  "num-traits",
@@ -591,6 +592,7 @@ dependencies = [
 [[package]]
 name = "gdbstub_arch"
 version = "0.1.0"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#488a4b133a755c1009cca1d1560e3250fd456d31"
 dependencies = [
  "gdbstub",
  "num-traits",
@@ -770,7 +772,7 @@ dependencies = [
  "rawtime",
  "spin 0.5.2",
  "vibrio",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -813,7 +815,7 @@ dependencies = [
  "serde",
  "serde_cbor",
  "static_assertions",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -865,7 +867,7 @@ dependencies = [
  "log",
  "rawtime",
  "spin 0.9.2",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -1053,7 +1055,7 @@ dependencies = [
  "static_assertions",
  "uefi",
  "vmxnet3",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -1161,9 +1163,9 @@ checksum = "acbf547ad0c65e31259204bd90935776d1c693cec2f4ff7abb7a1bbbd40dfe58"
 
 [[package]]
 name = "pkg-config"
-version = "0.3.19"
+version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c"
+checksum = "7c9b1041b4387893b91ee6746cddfc28516aff326a3519fb2adf820932c5e6cb"
 
 [[package]]
 name = "ppv-lite86"
@@ -1188,9 +1190,9 @@ dependencies = [
 
 [[package]]
 name = "procfs"
-version = "0.9.1"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab8809e0c18450a2db0f236d2a44ec0b4c1412d0eb936233579f0990faa5d5cd"
+checksum = "95e344cafeaeefe487300c361654bcfc85db3ac53619eeccced29f5ea18c4c70"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -1800,7 +1802,7 @@ dependencies = [
  "serde_cbor",
  "slabmalloc",
  "spin 0.5.2",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -1814,7 +1816,7 @@ dependencies = [
  "log",
  "smoltcp",
  "static_assertions",
- "x86 0.41.0",
+ "x86 0.42.0",
 ]
 
 [[package]]
@@ -1911,8 +1913,9 @@ dependencies = [
 
 [[package]]
 name = "x86"
-version = "0.41.0"
-source = "git+https://github.com/gz/rust-x86#51c86e5ce99917affe754b1e640945a5f2bd2ce7"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61c369bf32f7366e68ca188445cf68dbc94cd0454898d62e8e8f57903964f895"
 dependencies = [
  "bit_field",
  "bitflags",

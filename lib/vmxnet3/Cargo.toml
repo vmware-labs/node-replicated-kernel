@@ -9,10 +9,10 @@ license = "BSD-2-Clause"
 [dependencies]
 log = "0.4"
 static_assertions = "1.1.0"
-x86 = "0.41"
+x86 = "0.42"
 arrayvec = { version = "0.7.0", default-features = false }
 custom_error = { version = "1.9", default-features = false, features = ["unstable"] }
-driverkit = "0.9"
+driverkit = "0.10"
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ] }
 
 [target.'cfg(target_family = "unix")'.dev-dependencies]

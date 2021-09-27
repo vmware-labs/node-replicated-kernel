@@ -242,11 +242,7 @@ impl MapAction {
         use MapAction::*;
         matches!(
             self,
-            ReadExecuteUser
-                | ReadExecuteKernel
-                | ReadWriteKernel
-                | ReadWriteExecuteUser
-                | ReadWriteExecuteKernel
+            ReadExecuteUser | ReadExecuteKernel | ReadWriteExecuteUser | ReadWriteExecuteKernel
         )
     }
 

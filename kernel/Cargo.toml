@@ -21,16 +21,16 @@ cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-x86 = "0.41"
+x86 = "0.42"
 klogger = "0.0.8"
-driverkit = "0.9"
+driverkit = "0.10"
 spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"
 backtracer_core = "0.0.4"
 rawtime = "0.0.4"
 libacpica = "0.0.8"
-atopology = "0.0.23"
+atopology = "0.0.24"
 # External libraries we use:
 log = "0.4"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
@@ -48,11 +48,8 @@ arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6", features = ["unstable_const"] }
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
 fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "allocator_api", features = ["unstable"] }
-#gdbstub = { git = "https://github.com/gz/gdbstub.git", branch = "dev/0.6", default-features = false, features = ["alloc"] }
-#gdbstub_arch = { git = "https://github.com/gz/gdbstub.git", branch = "dev/0.6" }
-
-gdbstub = { path = "../../gdbstub", default-features = false, features = ["alloc", "trace-pkt"] }
-gdbstub_arch = { path = "../../gdbstub/gdbstub_arch" }
+gdbstub = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6", default-features = false, features = ["alloc"] }
+gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6" }
 
 [[bin]]
 name = "nrk"

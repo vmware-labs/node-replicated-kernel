@@ -397,9 +397,9 @@ impl Target for KernelDebugger {
         Some(self)
     }
 
-    fn use_x_upcase_packet(&self) -> bool {
-        true
-    }
+    //fn use_x_upcase_packet(&self) -> bool {
+    //    true
+    //}
 }
 
 impl Breakpoints for KernelDebugger {

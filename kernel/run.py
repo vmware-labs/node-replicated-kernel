@@ -111,8 +111,8 @@ parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
 parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio", "vmxnet3"],
                     help='What NIC model to use for emulation', required=False)
-parser.add_argument('-g', '--gdb', action="store_true",
-                    help="Expect GDB remote connection in kernel")
+parser.add_argument('--kgdb', action="store_true",
+                    help="Use the GDB remote debugger to connect to the kernel")
 
 # Baremetal argument
 parser.add_argument('--configure-ipxe', action="store_true", default=False,
@@ -146,7 +146,7 @@ def build_bootloader(args):
     uefi_build_args += ['--package', 'bootloader']
     uefi_build_args += CARGO_DEFAULT_ARGS
 
-    if args.gdb:
+    if args.kgdb:
         # Make all memory writable for easier manipulation with gdb
         uefi_build_args += ['--features', 'all-writeable']
 
@@ -171,7 +171,7 @@ def build_kernel(args):
                 build_args += ["--no-default-features"]
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
-            if args.gdb:
+            if args.kgdb:
                 build_args += ['--features', 'gdb']
             build_args += CARGO_DEFAULT_ARGS
             if args.verbose:
@@ -330,7 +330,7 @@ def run_qemu(args):
     # '-nographic',
     qemu_default_args += ['-display', 'none', '-serial', 'stdio']
 
-    if args.gdb:
+    if args.kgdb:
         # Add a second serial line (VM I/O port 0x2f8 <-> localhost:1234) that
         # we use to connect with gdb
         qemu_default_args += ['-serial', 'tcp:127.0.0.1:1234,server,nowait']
@@ -665,9 +665,9 @@ if __name__ == '__main__':
         print("kvm access restriction on the machine.")
         sys.exit(errno.EACCES)
 
-    if 'gdb' in args.kfeatures and not args.gdb:
-        print("You set gdb in kfeatures but haven't provided `--gdb` to `run.py`.")
-        print("Just use `--gdb` to make sure `run.py` configures QEMU with the proper serial line.")
+    if 'gdb' in args.kfeatures and not args.kgdb:
+        print("You set gdb in kfeatures but haven't provided `--kgdb` to `run.py`.")
+        print("Just use `--kgdb` to make sure `run.py` configures QEMU with the proper serial line.")
         sys.exit(errno.EINVAL)
 
     if args.release:

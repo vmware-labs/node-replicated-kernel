@@ -12,6 +12,7 @@
     is_sorted,
     intrinsics,
     core_intrinsics,
+    llvm_asm,
     asm,
     lang_items,
     start,

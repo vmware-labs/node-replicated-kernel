@@ -124,7 +124,7 @@ pub fn cause_gpfault() {
 #[cfg(feature = "test-double-fault")]
 pub fn cause_double_fault() {
     unsafe {
-        x86::int!(0x8);
+        x86::int!(x86::irq::DOUBLE_FAULT_VECTOR);
     }
 }
 

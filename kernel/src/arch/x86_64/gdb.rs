@@ -10,7 +10,7 @@ use gdbstub::target::ext::base::singlethread::{
 use gdbstub::target::ext::base::{BaseOps, SingleRegisterAccess, SingleRegisterAccessOps};
 use gdbstub::target::ext::breakpoints::{
     Breakpoints, BreakpointsOps, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps,
-    SwBreakpointOps, WatchKind,
+    SwBreakpoint, SwBreakpointOps, WatchKind,
 };
 use gdbstub::target::ext::section_offsets::{Offsets, SectionOffsets, SectionOffsetsOps};
 use gdbstub::target::{Target, TargetError, TargetResult};
@@ -397,14 +397,14 @@ impl Target for KernelDebugger {
         Some(self)
     }
 
-    //fn use_x_upcase_packet(&self) -> bool {
-    //    true
-    //}
+    fn use_x_upcase_packet(&self) -> bool {
+        true
+    }
 }
 
 impl Breakpoints for KernelDebugger {
     fn sw_breakpoint(&mut self) -> Option<SwBreakpointOps<Self>> {
-        None
+        Some(self)
     }
 
     fn hw_breakpoint(&mut self) -> Option<HwBreakpointOps<Self>> {
@@ -636,8 +636,8 @@ impl SingleThreadOps for KernelDebugger {
                         // I believe gdb falls back to stepping if the returns
                         // NonFatal.
                         if rights.is_executable() {
-                            debug!("Can't write to executable page.");
-                            debug!("If you were trying to set a breakpoint use `hbreak` instead of `break`");
+                            error!("Can't write to executable page.");
+                            error!("If you were trying to set a breakpoint use `hbreak` instead of `break`");
                             return Err(TargetError::NonFatal);
                         }
                         if !rights.is_writable() {
@@ -972,6 +972,17 @@ impl HwWatchpoint for KernelDebugger {
         // No break point matching the address was found
         warn!("Unable to remove hw watchpoint for addr {:#x}", addr);
         Ok(false)
+    }
+}
+impl SwBreakpoint for KernelDebugger {
+    fn add_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
+        info!("add sw breakpoint {:#x}", addr);
+        self.add_hw_breakpoint(addr, kind)
+    }
+
+    fn remove_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
+        info!("remove sw breakpoint {:#x}", addr);
+        self.remove_hw_breakpoint(addr, kind)
     }
 }
 

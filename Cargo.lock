@@ -579,7 +579,7 @@ checksum = "8f5f3913fa0bfe7ee1fd8248b6b9f42a5af4b9d65ec2dd2c3c26132b950ecfc2"
 [[package]]
 name = "gdbstub"
 version = "0.5.0"
-source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#488a4b133a755c1009cca1d1560e3250fd456d31"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#d616b2bc33c6e169ba9d9799d4cdf2367feedc48"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
@@ -592,7 +592,7 @@ dependencies = [
 [[package]]
 name = "gdbstub_arch"
 version = "0.1.0"
-source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#488a4b133a755c1009cca1d1560e3250fd456d31"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#d616b2bc33c6e169ba9d9799d4cdf2367feedc48"
 dependencies = [
  "gdbstub",
  "num-traits",

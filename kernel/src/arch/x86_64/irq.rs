@@ -593,7 +593,13 @@ fn kcb_iret_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
 #[no_mangle]
 pub extern "C" fn handle_generic_exception_early(a: ExceptionArguments) -> ! {
     sprintln!("[IRQ] Got an exception during kernel initialization:");
-    sprintln!("{:?}", a);
+
+    // TODO(harden): If we print `a` unconditionally here (which might be useful
+    // for debugging), it will fail for the `s01_double_fault` test. Not exactly
+    // clear why, I figured because `exception` doesn't get pushed by int 8, but
+    // that's not it.
+    //
+    // sprintln!("{:?}", a);
 
     match a.vector as u8 {
         GENERAL_PROTECTION_FAULT_VECTOR => {

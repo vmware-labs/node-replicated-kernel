@@ -13,7 +13,7 @@ use smoltcp::time::Instant;
 
 use vmxnet3::smoltcp::DevQueuePhy;
 
-use crate::cluster_api::{ClusterControllerAPI, ClusterError, NodeId};
+use crate::cluster_api::*;
 use crate::fio_rpc::*;
 use crate::rpc::*;
 use crate::rpc_api::{RPCHandler, RPCServerAPI};
@@ -49,18 +49,20 @@ impl TCPServer<'_> {
         debug!("Listening at port {}", port);
         let server_handle = sockets.add(server_sock);
 
-        TCPServer {
+        let mut server = TCPServer {
             iface: iface,
             sockets: sockets,
             server_handle: server_handle,
             state: ServerState::Listening,
             handlers: HashMap::new(),
-        }
+        };
+        //server.register(CLUSTER_OPERATION, &TCPServer::add_client);
+        server
     }
 }
 
 impl ClusterControllerAPI for TCPServer<'_> {
-    fn add_client(&mut self) -> Result<NodeId, ClusterError> {
+    fn add_client(&mut self, hdr: RPCHeader, payload: Vec<u8>) -> Result<NodeId, ClusterError> {
         Err(ClusterError::Unknown)
     }
 }
@@ -72,7 +74,7 @@ impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
     where
         'c: 'a,
     {
-        if self.handlers.contains_key(&rpc_id) {
+        if is_reserved(rpc_id) || self.handlers.contains_key(&rpc_id) {
             return Err(RPCError::DuplicateRPCType);
         }
         self.handlers.insert(rpc_id, handler);

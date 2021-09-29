@@ -45,18 +45,32 @@ just insert `target remote localhost:1234` at the top of the `.gdbinit` file.
 
 ### Breakpoints
 
-We currently only support the x86-64 architecture with hardware breakpoints
-because the kernel code section is not writeable. So you'll have to use the
-[hbreak](https://sourceware.org/gdb/onlinedocs/gdb/Set-Breaks.html). For
-watchpoints, by default it will already use hardware watchpoints.
+> tldr: use `break` or `hbreak` in gdb.
+
+Currently the maximum limit of supported breakpoints (and watchpoints) is four.
+
+Why? Because we use the x86-64 debug registers for breakpoints and there are
+only 4 such registers. Our gdb stub implements both software and hardware
+breakpoints with the debug registers.
+
+An alternative technique would be to either insert `int3` into `.text` for
+software interrupts (or let gdb do it automatically if software interrupts are
+marked as not supported by the stub). However, this is a bit more complicated
+because we need to prevent cascading breakpoints (e.g., the debug interrupt
+handler should ideally not hit a breakpoint while executing). With only debug
+registers, this is fairly easy to achieve, as we just have disable them on entry
+and re-enable them when we resume, whereas the `int3` approach would involve
+patching/reverting a bunch of `.text` offsets. On the plus side it would enable
+an arbitrary amount of breakpoints if this ever becomes necessary.
 
 ### Watchpoints
 
-Use `watch -l watchpoint_trigger` to set a watchpoint. The `-l` option is
-important because it watches the memory location of the variable/expression
-rather than the expression. Normal `watch` is not yet supported as gdb may try
-to overwrite `.text` locations (which are mapped read-execute and not writeable)
-in the kernel.
+Again the maximum limit is four watchpoints (and breakpoints) at the same time.
+
+Use `watch -l <variable>` to set a watchpoint. The `-l` option is important
+because it watches the memory location of the variable/expression rather than
+the expression. Normal `watch` is not supported as gdb may try to overwrite
+`.text` locations (which are mapped only as read-execute) in the kernel.
 
 ## `printf` debugging with the log crate
 

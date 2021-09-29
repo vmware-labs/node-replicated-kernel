@@ -106,7 +106,7 @@ in_kernel\ex:
     movq %r15, 19*8(%rax)
 
     // Save vector registers
-    fxsave 24*8(%rax)
+    fxsave 28*8(%rax)
 
     // Ensure 16-byte stack pointer alignment
     // `reserved` in `ExceptionArguments`

@@ -410,13 +410,13 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 /// Handler for a debug exception.
 unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
-    trace!("Got debug interrupt {}", desc.source);
 
     let kcb = get_kcb();
     if kcb.arch.has_executor() {
         let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
         r.resume()
     } else {
+        debug::disable_all_breakpoints();
         gdb::event_loop(gdb::KCoreStopReason::DebugInterrupt);
         let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
         r.resume()
@@ -650,7 +650,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
     unsafe {
         let start = x86::time::rdtsc();
         assert!(a.vector < 256);
-        trace!("handle_generic_exception {:?}", a);
+        //trace!("handle_generic_exception {:?}", a);
         acknowledge();
 
         let kcb = get_kcb();

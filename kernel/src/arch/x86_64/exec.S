@@ -42,7 +42,7 @@ syscall_enter:
     movq %rcx, 16*8(%rax)
 
     // Save vector registers
-    fxsave 24*8(%rax)
+    fxsave 28*8(%rax)
 
     // Saves fs register
     rdfsbase %r15

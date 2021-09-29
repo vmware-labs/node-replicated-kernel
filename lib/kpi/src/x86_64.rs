@@ -35,7 +35,7 @@ static_assertions::const_assert_eq!(SS_SELECTOR.bits(), 35);
 /// This struct is referenced by several assembly code pieces through the kernel
 /// and in [vibrio]. Care must be taken to adjust them after any changes to
 /// this struct.
-#[repr(C, packed)]
+#[repr(C, align(16))]
 #[derive(Debug)]
 pub struct VirtualCpu {
     /// CPU state if interrupted while not disabled
@@ -91,7 +91,7 @@ pub enum StReg {
 /// The 64bit mode FXSAVE map.
 ///
 /// REX.W = 0 (not sure if we do this)
-#[repr(C, packed)]
+#[repr(C, align(16))]
 #[derive(Copy, Clone, Debug, Default)]
 pub struct FxSave {
     /// Floating-point control register
@@ -128,7 +128,7 @@ pub struct FxSave {
     _reserved3: [u64; 12],
 }
 
-// Make sure FxSave is even 512 bytes.
+// Make sure FxSave is 512 bytes.
 static_assertions::assert_eq_size!(FxSave, [u8; 512]);
 
 impl FxSave {
@@ -213,7 +213,7 @@ static_assertions::const_assert_eq!(memoffset::offset_of!(FxSave, xmm), FxSave::
 /// and in [vibrio]. Care must be taken to adjust them after any changes to
 /// this struct.
 /// Grep for SaveArea to find all occurences.
-#[repr(C, packed)]
+#[repr(C, align(16))]
 #[derive(Copy, Clone)]
 pub struct SaveArea {
     /// 0: ret val, not preserved, holds 1st ret arg (error code)
@@ -267,7 +267,12 @@ pub struct SaveArea {
     pub cs: u64,
     /// 23: %ss register
     pub ss: u64,
-    /// 24: Floating point register state
+    /// 24: What (hardware breakpoints dr0-dr3) are enabled.
+    /// Uses bits 0, 1, 2, 3 for dr0, dr1, dr2, dr3 respectively.
+    pub enabled_bps: u64,
+    /// 25-27: Reserved (to preserve alignment for `fxsave`)
+    pub _reserved: [u64; 3],
+    /// 28: Floating point register state
     pub fxsave: FxSave,
 }
 
@@ -314,6 +319,10 @@ static_assertions::const_assert_eq!(
 static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, cs), SaveArea::CS_OFFSET);
 static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, ss), SaveArea::SS_OFFSET);
 static_assertions::const_assert_eq!(
+    memoffset::offset_of!(SaveArea, enabled_bps),
+    SaveArea::ENABLED_BPS_OFFSET
+);
+static_assertions::const_assert_eq!(
     memoffset::offset_of!(SaveArea, fxsave),
     SaveArea::FXSAVE_OFFSET
 );
@@ -343,7 +352,8 @@ impl SaveArea {
     pub const EXCEPTION_OFFSET: usize = 21 * 8;
     pub const CS_OFFSET: usize = 22 * 8;
     pub const SS_OFFSET: usize = 23 * 8;
-    pub const FXSAVE_OFFSET: usize = 24 * 8;
+    pub const ENABLED_BPS_OFFSET: usize = 24 * 8;
+    pub const FXSAVE_OFFSET: usize = 28 * 8;
 
     pub const fn empty() -> SaveArea {
         SaveArea {
@@ -371,6 +381,8 @@ impl SaveArea {
             exception: 0,
             cs: 0,
             ss: 0,
+            enabled_bps: 0,
+            _reserved: [0; 3],
             fxsave: FxSave::empty(),
         }
     }

@@ -90,6 +90,36 @@ pub fn shutdown(val: ExitReason) -> ! {
     }
 }
 
+/// Disables all hardware breakpoints.
+pub fn enable_breakpoint(reg: x86::debugregs::Breakpoint) {
+    // Safety: CPL0, debugregs enabled
+    let mut dr7 = unsafe { x86::debugregs::dr7() };
+
+    // TODO: split into enable/configure, gdb code configures, this just enables
+    dr7.enable_bp(
+        reg,
+        x86::debugregs::BreakCondition::Instructions,
+        x86::debugregs::BreakSize::Bytes1,
+        super::gdb::KernelDebugger::GLOBAL_BP_FLAG,
+    );
+
+    // Safety: CPL0, debugregs enabled
+    unsafe { x86::debugregs::dr7_write(dr7) };
+}
+
+/// Disables all hardware breakpoints.
+pub fn disable_all_breakpoints() {
+    // Safety: CPL0, debugregs enabled
+    let mut dr7 = unsafe { x86::debugregs::dr7() };
+
+    for reg in x86::debugregs::BREAKPOINT_REGS.iter() {
+        dr7.disable_bp(*reg, super::gdb::KernelDebugger::GLOBAL_BP_FLAG);
+    }
+
+    // Safety: CPL0, debugregs enabled
+    unsafe { x86::debugregs::dr7_write(dr7) };
+}
+
 #[cfg(any(
     feature = "test-pfault-early",
     all(feature = "integration-test", feature = "test-pfault")

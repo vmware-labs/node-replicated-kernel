@@ -118,7 +118,7 @@ pub unsafe fn resume(control: &mut kpi::arch::VirtualCpu) -> ! {
             wrfsbase %rdi
 
             // Restore vector register
-            fxrstor 24*8(%rsi)
+            fxrstor 28*8(%rsi)
 
             // Restore CPU registers
             movq  0*8(%rsi), %rax

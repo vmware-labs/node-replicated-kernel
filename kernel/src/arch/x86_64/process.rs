@@ -216,6 +216,26 @@ impl Ring0Resumer {
 
 impl ResumeHandle for Ring0Resumer {
     unsafe fn resume(self) -> ! {
+        // Re-enable wanted hardware breakpoints on re-entry:
+        #[cfg(feature = "gdb")]
+        {
+            use super::debug;
+            use x86::debugregs::Breakpoint;
+            let enabled_bps = self.save_area.as_ref().unwrap().enabled_bps;
+
+            if enabled_bps & 0b1 > 0 {
+                debug::enable_breakpoint(Breakpoint::Dr0);
+            }
+            if enabled_bps & 0b10 > 0 {
+                debug::enable_breakpoint(Breakpoint::Dr1);
+            }
+            if enabled_bps & 0b100 > 0 {
+                debug::enable_breakpoint(Breakpoint::Dr2);
+            }
+            if enabled_bps & 0b1000 > 0 {
+                debug::enable_breakpoint(Breakpoint::Dr3);
+            }
+        }
         // TODO(code-duplication): Elimiate code duplication for this and Ring3
         // iret_restore. Problem is that the `ss` and `cs` register needs to be
         // const, alternative take it from save_area but it might not be right

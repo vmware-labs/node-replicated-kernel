@@ -293,7 +293,7 @@ pub struct KernelDebugger {
 }
 
 impl KernelDebugger {
-    const GLOBAL_BP_FLAG: bool = true;
+    pub const GLOBAL_BP_FLAG: bool = true;
 
     pub fn new() -> Self {
         Self {
@@ -988,10 +988,16 @@ impl SwBreakpoint for KernelDebugger {
 
 impl HwBreakpoint for KernelDebugger {
     fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
-        trace!("add hw breakpoint {:#x}", addr);
-        for (reg, entry) in debugregs::BREAKPOINT_REGS
+        let kcb = super::kcb::get_kcb();
+        trace!(
+            "add hw breakpoint {:#x} (in ELF: {:#x}",
+            addr,
+            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
+        );
+        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
+            .enumerate()
         {
             if entry.is_none() {
                 *entry = Some((VAddr::from(addr), BreakType::Breakpoint));
@@ -1010,6 +1016,13 @@ impl HwBreakpoint for KernelDebugger {
                         debugregs::BreakSize::Bytes1,
                         KernelDebugger::GLOBAL_BP_FLAG,
                     );
+                    // TODO: just configure here..
+                    dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
+                    kcb.arch
+                        .save_area
+                        .as_mut()
+                        .map(|sa| sa.enabled_bps |= 1 << idx);
+
                     debugregs::dr7_write(dr7);
                 }
                 return Ok(true);
@@ -1021,11 +1034,13 @@ impl HwBreakpoint for KernelDebugger {
     }
 
     fn remove_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
+        let kcb = super::kcb::get_kcb();
         trace!("remove_hw_breakpoint {:#x}", addr);
 
-        for (reg, entry) in debugregs::BREAKPOINT_REGS
+        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
+            .enumerate()
         {
             if let Some((entry_vaddr, BreakType::Breakpoint)) = entry {
                 if entry_vaddr.as_u64() == addr {
@@ -1037,6 +1052,10 @@ impl HwBreakpoint for KernelDebugger {
                     }
 
                     *entry = None;
+                    kcb.arch
+                        .save_area
+                        .as_mut()
+                        .map(|sa| sa.enabled_bps &= !(1 << idx));
                     return Ok(true);
                 }
             }

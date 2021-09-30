@@ -21,16 +21,16 @@ cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-x86 = "0.42"
+x86 = "0.43"
 klogger = "0.0.8"
-driverkit = "0.10"
+driverkit = "0.11"
 spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"
 backtracer_core = "0.0.4"
 rawtime = "0.0.4"
 libacpica = "0.0.8"
-atopology = "0.0.24"
+atopology = "0.0.25"
 # External libraries we use:
 log = "0.4"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }

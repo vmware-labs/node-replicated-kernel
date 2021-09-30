@@ -4,10 +4,9 @@ use core::lazy;
 use core::num::NonZeroUsize;
 
 use bit_field::BitField;
+use gdbstub::state_machine::GdbStubStateMachine;
 use gdbstub::target::ext::base::multithread::ThreadStopReason;
-use gdbstub::target::ext::base::singlethread::{
-    GdbInterrupt, ResumeAction, SingleThreadOps, StopReason,
-};
+use gdbstub::target::ext::base::singlethread::{ResumeAction, SingleThreadOps, StopReason};
 use gdbstub::target::ext::base::{BaseOps, SingleRegisterAccess, SingleRegisterAccessOps};
 use gdbstub::target::ext::breakpoints::{
     Breakpoints, BreakpointsOps, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps,
@@ -15,9 +14,7 @@ use gdbstub::target::ext::breakpoints::{
 };
 use gdbstub::target::ext::section_offsets::{Offsets, SectionOffsets, SectionOffsetsOps};
 use gdbstub::target::{Target, TargetError, TargetResult};
-use gdbstub::{
-    Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError, GdbStubStateMachine,
-};
+use gdbstub::{Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError};
 use gdbstub_arch::x86::reg::id::{X86SegmentRegId, X86_64CoreRegId};
 use gdbstub_arch::x86::X86_64_SSE;
 use kpi::arch::{StReg, ST_REGS};
@@ -52,7 +49,7 @@ lazy_static! {
     /// The GDB connection state machine.
     ///
     /// This is a state machine that handles the communication with the GDB.
-    pub static ref GDB_STUB: Mutex<Option<gdbstub::GdbStubStateMachine<'static, KernelDebugger, GdbSerial>>> = {
+    pub static ref GDB_STUB: Mutex<Option<GdbStubStateMachine<'static, KernelDebugger, GdbSerial>>> = {
         let connection = wait_for_gdb_connection(GDB_REMOTE_PORT).expect("Can't connect to GDB");
         Mutex::new(Some(gdbstub::GdbStub::new(connection).run_state_machine().expect("Can't start GDB session")))
     };
@@ -249,14 +246,6 @@ impl Connection for GdbSerial {
         Ok(())
     }
 
-    fn peek(&mut self) -> Result<Option<u8>, Self::Error> {
-        if !self.can_read() {
-            Ok(None)
-        } else {
-            Ok(Some(self.read_byte()))
-        }
-    }
-
     fn flush(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -274,6 +263,14 @@ impl ConnectionExt for GdbSerial {
         let b = self.read_byte();
         Ok(b)
         //        }
+    }
+
+    fn peek(&mut self) -> Result<Option<u8>, Self::Error> {
+        if !self.can_read() {
+            Ok(None)
+        } else {
+            Ok(Some(self.read_byte()))
+        }
     }
 }
 
@@ -417,18 +414,14 @@ impl Breakpoints for KernelDebugger {
 }
 
 impl SingleThreadOps for KernelDebugger {
-    fn resume(
-        &mut self,
-        action: ResumeAction,
-        gdb_interrupt: GdbInterrupt<'_>,
-    ) -> Result<Option<StopReason<u64>>, KError> {
+    fn resume(&mut self, action: ResumeAction) -> Result<(), Self::Error> {
         self.resume_with = Some(action);
         trace!("resume_with =  {:?}", action);
 
         // If the target is running under the more advanced GdbStubStateMachine
         // API, it is possible to "defer" reporting a stop reason to some point
         // outside of the resume implementation by returning None.
-        Ok(None)
+        Ok(())
     }
 
     fn read_registers(

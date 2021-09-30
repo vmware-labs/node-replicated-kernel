@@ -573,7 +573,7 @@ checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 [[package]]
 name = "gdbstub"
 version = "0.5.0"
-source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#c5489a09ab921118c15f2142cc55e2c728572e69"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=refactor/blocking-event-loop#2f3d9c703cbd00af387de6fd72d0adb55d8728cd"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
@@ -586,7 +586,7 @@ dependencies = [
 [[package]]
 name = "gdbstub_arch"
 version = "0.1.0"
-source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#c5489a09ab921118c15f2142cc55e2c728572e69"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=refactor/blocking-event-loop#2f3d9c703cbd00af387de6fd72d0adb55d8728cd"
 dependencies = [
  "gdbstub",
  "num-traits",

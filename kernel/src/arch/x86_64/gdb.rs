@@ -3,6 +3,7 @@ use core::convert::TryInto;
 use core::lazy;
 use core::num::NonZeroUsize;
 
+use bit_field::BitField;
 use gdbstub::target::ext::base::multithread::ThreadStopReason;
 use gdbstub::target::ext::base::singlethread::{
     GdbInterrupt, ResumeAction, SingleThreadOps, StopReason,
@@ -19,7 +20,6 @@ use gdbstub::{
 };
 use gdbstub_arch::x86::reg::id::{X86SegmentRegId, X86_64CoreRegId};
 use gdbstub_arch::x86::X86_64_SSE;
-
 use kpi::arch::{StReg, ST_REGS};
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace, warn};
@@ -674,44 +674,45 @@ impl SingleRegisterAccess<()> for KernelDebugger {
         tid: (),
         reg_id: X86_64CoreRegId,
         dst: &mut [u8],
-    ) -> TargetResult<(), Self> {
+    ) -> TargetResult<usize, Self> {
         trace!("read_register {:?}", reg_id);
         let kcb = super::kcb::get_kcb();
 
         if let Some(saved) = &mut kcb.arch.save_area {
+            fn copy_out(dst: &mut [u8], src: &[u8]) -> TargetResult<usize, KernelDebugger> {
+                dst.copy_from_slice(src);
+                Ok(src.len())
+            }
+
             match reg_id {
-                X86_64CoreRegId::Gpr(00) => dst.copy_from_slice(&saved.rax.to_le_bytes()),
-                X86_64CoreRegId::Gpr(01) => dst.copy_from_slice(&saved.rbx.to_le_bytes()),
-                X86_64CoreRegId::Gpr(02) => dst.copy_from_slice(&saved.rcx.to_le_bytes()),
-                X86_64CoreRegId::Gpr(03) => dst.copy_from_slice(&saved.rdx.to_le_bytes()),
-                X86_64CoreRegId::Gpr(04) => dst.copy_from_slice(&saved.rsi.to_le_bytes()),
-                X86_64CoreRegId::Gpr(05) => dst.copy_from_slice(&saved.rdi.to_le_bytes()),
-                X86_64CoreRegId::Gpr(06) => dst.copy_from_slice(&saved.rbp.to_le_bytes()),
-                X86_64CoreRegId::Gpr(07) => dst.copy_from_slice(&saved.rsp.to_le_bytes()),
-                X86_64CoreRegId::Gpr(08) => dst.copy_from_slice(&saved.r8.to_le_bytes()),
-                X86_64CoreRegId::Gpr(09) => dst.copy_from_slice(&saved.r9.to_le_bytes()),
-                X86_64CoreRegId::Gpr(10) => dst.copy_from_slice(&saved.r10.to_le_bytes()),
-                X86_64CoreRegId::Gpr(11) => dst.copy_from_slice(&saved.r11.to_le_bytes()),
-                X86_64CoreRegId::Gpr(12) => dst.copy_from_slice(&saved.r12.to_le_bytes()),
-                X86_64CoreRegId::Gpr(13) => dst.copy_from_slice(&saved.r13.to_le_bytes()),
-                X86_64CoreRegId::Gpr(14) => dst.copy_from_slice(&saved.r14.to_le_bytes()),
-                X86_64CoreRegId::Gpr(15) => dst.copy_from_slice(&saved.r15.to_le_bytes()),
-                X86_64CoreRegId::Rip => {
-                    assert!(dst.len() == 8);
-                    dst.copy_from_slice(&saved.rip.to_le_bytes())
-                }
+                X86_64CoreRegId::Gpr(00) => copy_out(dst, &saved.rax.to_le_bytes()),
+                X86_64CoreRegId::Gpr(01) => copy_out(dst, &saved.rbx.to_le_bytes()),
+                X86_64CoreRegId::Gpr(02) => copy_out(dst, &saved.rcx.to_le_bytes()),
+                X86_64CoreRegId::Gpr(03) => copy_out(dst, &saved.rdx.to_le_bytes()),
+                X86_64CoreRegId::Gpr(04) => copy_out(dst, &saved.rsi.to_le_bytes()),
+                X86_64CoreRegId::Gpr(05) => copy_out(dst, &saved.rdi.to_le_bytes()),
+                X86_64CoreRegId::Gpr(06) => copy_out(dst, &saved.rbp.to_le_bytes()),
+                X86_64CoreRegId::Gpr(07) => copy_out(dst, &saved.rsp.to_le_bytes()),
+                X86_64CoreRegId::Gpr(08) => copy_out(dst, &saved.r8.to_le_bytes()),
+                X86_64CoreRegId::Gpr(09) => copy_out(dst, &saved.r9.to_le_bytes()),
+                X86_64CoreRegId::Gpr(10) => copy_out(dst, &saved.r10.to_le_bytes()),
+                X86_64CoreRegId::Gpr(11) => copy_out(dst, &saved.r11.to_le_bytes()),
+                X86_64CoreRegId::Gpr(12) => copy_out(dst, &saved.r12.to_le_bytes()),
+                X86_64CoreRegId::Gpr(13) => copy_out(dst, &saved.r13.to_le_bytes()),
+                X86_64CoreRegId::Gpr(14) => copy_out(dst, &saved.r14.to_le_bytes()),
+                X86_64CoreRegId::Gpr(15) => copy_out(dst, &saved.r15.to_le_bytes()),
+                X86_64CoreRegId::Rip => copy_out(dst, &saved.rip.to_le_bytes()),
                 X86_64CoreRegId::Eflags => {
                     let rflags: u32 = saved.rflags.try_into().unwrap();
-                    dst.copy_from_slice(&rflags.to_le_bytes())
+                    copy_out(dst, &rflags.to_le_bytes())
                 }
                 X86_64CoreRegId::Segment(X86SegmentRegId::CS) => {
                     let cs: u32 = saved.cs.try_into().unwrap();
-                    dst.copy_from_slice(&cs.to_le_bytes())
+                    copy_out(dst, &cs.to_le_bytes())
                 }
-
                 X86_64CoreRegId::Segment(X86SegmentRegId::SS) => {
                     let ss: u32 = saved.ss.try_into().unwrap();
-                    dst.copy_from_slice(&ss.to_le_bytes())
+                    copy_out(dst, &ss.to_le_bytes())
                 }
                 X86_64CoreRegId::Segment(X86SegmentRegId::DS) => {
                     return Err(TargetError::NonFatal);
@@ -721,11 +722,11 @@ impl SingleRegisterAccess<()> for KernelDebugger {
                 }
                 X86_64CoreRegId::Segment(X86SegmentRegId::FS) => {
                     let fs: u32 = saved.fs.try_into().unwrap();
-                    dst.copy_from_slice(&fs.to_le_bytes())
+                    copy_out(dst, &fs.to_le_bytes())
                 }
                 X86_64CoreRegId::Segment(X86SegmentRegId::GS) => {
                     let gs: u32 = saved.gs.try_into().unwrap();
-                    dst.copy_from_slice(&gs.to_le_bytes())
+                    copy_out(dst, &gs.to_le_bytes())
                 }
                 //X86_64CoreRegId::St(u8) => {},
                 //X86_64CoreRegId::Fpu(X87FpuInternalRegId) => {},
@@ -735,9 +736,7 @@ impl SingleRegisterAccess<()> for KernelDebugger {
                     error!("Unimplemented register {:?}", missing);
                     return Err(TargetError::NonFatal);
                 }
-            };
-
-            Ok(())
+            }
         } else {
             Err(TargetError::NonFatal)
         }
@@ -907,10 +906,17 @@ impl HwWatchpoint for KernelDebugger {
         len: u64,
         kind: WatchKind,
     ) -> TargetResult<bool, Self> {
-        trace!("add hw watchpoint {:#x} {} {:?}", addr, len, kind);
-        for (reg, entry) in debugregs::BREAKPOINT_REGS
+        info!("add_hw_watchpoint {:#x} {} {:?}", addr, len, kind);
+        let sa = super::kcb::get_kcb()
+            .arch
+            .save_area
+            .as_mut()
+            .expect("Need to have a save area");
+
+        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
+            .enumerate()
         {
             let bs = match len {
                 1 => debugregs::BreakSize::Bytes1,
@@ -925,17 +931,19 @@ impl HwWatchpoint for KernelDebugger {
 
             if entry.is_none() {
                 *entry = Some((VAddr::from(addr), BreakType::Watchpoint(kind)));
+                let bc = watchkind_to_breakcondition(kind);
 
-                // Safety: We're in CPL0, can handle debug interrupt.
+                // Safety: We're in CPL0.
+                //
+                // TODO: For more safety we should sanitize the address to make
+                // sure we can't set it inside certain regions (on code that is
+                // used by the gdb module etc.)
                 unsafe {
-                    // Set address in dr{0-3} register
-                    debugregs::dr_write(*reg, addr.try_into().unwrap());
-                    // Enable bp in dr7
-                    let mut dr7 = debugregs::dr7();
-                    let bc = watchkind_to_breakcondition(kind);
-                    dr7.enable_bp(*reg, bc, bs, KernelDebugger::GLOBAL_BP_FLAG);
-                    debugregs::dr7_write(dr7);
+                    reg.configure(addr.try_into().unwrap(), bc, bs);
                 }
+                sa.enabled_bps.set_bit(idx, true);
+                info!("sa.enabled_bps {:#b}", sa.enabled_bps);
+
                 return Ok(true);
             }
         }
@@ -950,18 +958,23 @@ impl HwWatchpoint for KernelDebugger {
         _len: u64,
         kind: WatchKind,
     ) -> TargetResult<bool, Self> {
-        for (reg, entry) in debugregs::BREAKPOINT_REGS
+        info!("remove_hw_watchpoint {:#x} {} {:?}", addr, _len, kind);
+        let sa = super::kcb::get_kcb()
+            .arch
+            .save_area
+            .as_mut()
+            .expect("Need to have a save area");
+
+        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
+            .enumerate()
         {
             if let Some((entry_vaddr, BreakType::Watchpoint(kind))) = entry {
                 if entry_vaddr.as_u64() == addr {
-                    unsafe {
-                        debugregs::dr_write(*reg, 0x0);
-                        let mut dr7 = debugregs::dr7();
-                        dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
-                        debugregs::dr7_write(dr7);
-                    }
+                    unsafe { reg.disable_global() }
+                    sa.enabled_bps.set_bit(idx, false);
+                    info!("sa.enabled_bps {:#b}", sa.enabled_bps);
 
                     *entry = None;
                     return Ok(true);
@@ -989,11 +1002,17 @@ impl SwBreakpoint for KernelDebugger {
 impl HwBreakpoint for KernelDebugger {
     fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
         let kcb = super::kcb::get_kcb();
-        trace!(
+        info!(
             "add hw breakpoint {:#x} (in ELF: {:#x}",
             addr,
             addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
         );
+        let sa = kcb
+            .arch
+            .save_area
+            .as_mut()
+            .expect("Need to have a save area");
+
         for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
             .zip(self.hw_break_points.iter_mut())
@@ -1002,29 +1021,25 @@ impl HwBreakpoint for KernelDebugger {
             if entry.is_none() {
                 *entry = Some((VAddr::from(addr), BreakType::Breakpoint));
 
-                // Safety: We're in CPL0, can handle debug interrupt.
+                // Safety: We're in CPL0.
+                //
+                // TODO: For more safety we should sanitize the address to make
+                // sure we can't set it inside certain regions (on code that is
+                // used by the gdb module etc.)
                 unsafe {
-                    // Set address in dr{0-3} register
-                    debugregs::dr_write(*reg, addr.try_into().unwrap());
-                    // Enable bp in dr7
-                    let mut dr7 = debugregs::dr7();
-                    dr7.enable_bp(
-                        *reg,
+                    // break size has to be Bytes1 on x86 for instructions, so I
+                    // think we can ignore the `_kind` arg
+                    reg.configure(
+                        addr.try_into().unwrap(),
                         debugregs::BreakCondition::Instructions,
-                        // This has to be Bytes1 on x86 for instructions, so I
-                        // think we can ignore the _kind arg
                         debugregs::BreakSize::Bytes1,
-                        KernelDebugger::GLOBAL_BP_FLAG,
                     );
-                    // TODO: just configure here..
-                    dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
-                    kcb.arch
-                        .save_area
-                        .as_mut()
-                        .map(|sa| sa.enabled_bps |= 1 << idx);
-
-                    debugregs::dr7_write(dr7);
                 }
+
+                // Don't enable the BP, but mark register as "to enable" for the
+                // context restore logic:
+                sa.enabled_bps.set_bit(idx, true);
+                info!("sa.enabled_bps {:#b}", sa.enabled_bps);
                 return Ok(true);
             }
         }
@@ -1035,7 +1050,16 @@ impl HwBreakpoint for KernelDebugger {
 
     fn remove_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
         let kcb = super::kcb::get_kcb();
-        trace!("remove_hw_breakpoint {:#x}", addr);
+        info!(
+            "remove_hw_breakpoint {:#x} (in ELF: {:#x}",
+            addr,
+            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
+        );
+        let sa = kcb
+            .arch
+            .save_area
+            .as_mut()
+            .expect("Need to have a save area");
 
         for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
@@ -1045,17 +1069,10 @@ impl HwBreakpoint for KernelDebugger {
             if let Some((entry_vaddr, BreakType::Breakpoint)) = entry {
                 if entry_vaddr.as_u64() == addr {
                     unsafe {
-                        debugregs::dr_write(*reg, 0x0);
-                        let mut dr7 = debugregs::dr7();
-                        dr7.disable_bp(*reg, KernelDebugger::GLOBAL_BP_FLAG);
-                        debugregs::dr7_write(dr7);
+                        reg.disable_global();
                     }
-
                     *entry = None;
-                    kcb.arch
-                        .save_area
-                        .as_mut()
-                        .map(|sa| sa.enabled_bps &= !(1 << idx));
+                    sa.enabled_bps.set_bit(idx, false);
                     return Ok(true);
                 }
             }

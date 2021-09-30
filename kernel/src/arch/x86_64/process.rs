@@ -219,21 +219,21 @@ impl ResumeHandle for Ring0Resumer {
         // Re-enable wanted hardware breakpoints on re-entry:
         #[cfg(feature = "gdb")]
         {
-            use super::debug;
+            use bit_field::BitField;
             use x86::debugregs::Breakpoint;
             let enabled_bps = self.save_area.as_ref().unwrap().enabled_bps;
 
-            if enabled_bps & 0b1 > 0 {
-                debug::enable_breakpoint(Breakpoint::Dr0);
+            if enabled_bps.get_bit(0) {
+                Breakpoint::Dr0.enable_global();
             }
-            if enabled_bps & 0b10 > 0 {
-                debug::enable_breakpoint(Breakpoint::Dr1);
+            if enabled_bps.get_bit(1) {
+                Breakpoint::Dr1.enable_global();
             }
-            if enabled_bps & 0b100 > 0 {
-                debug::enable_breakpoint(Breakpoint::Dr2);
+            if enabled_bps.get_bit(2) {
+                Breakpoint::Dr2.enable_global();
             }
-            if enabled_bps & 0b1000 > 0 {
-                debug::enable_breakpoint(Breakpoint::Dr3);
+            if enabled_bps.get_bit(3) {
+                Breakpoint::Dr3.enable_global();
             }
         }
         // TODO(code-duplication): Elimiate code duplication for this and Ring3

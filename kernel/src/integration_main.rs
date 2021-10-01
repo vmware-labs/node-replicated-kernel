@@ -506,6 +506,9 @@ pub fn xmain() {
     info!("step");
     info!("step");
 
+    //let cond = true;
+    //while cond {}
+
     // continue until exit:
     arch::debug::shutdown(ExitReason::Ok);
 }

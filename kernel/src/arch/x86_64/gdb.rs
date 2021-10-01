@@ -207,6 +207,8 @@ pub struct GdbSerial {
 }
 
 impl GdbSerial {
+    const LINE_STATUS_REGISTER: u16 = 5;
+
     /// Create a new GdbSerial connection.
     fn new(port: u16) -> Self {
         GdbSerial { port, peeked: None }
@@ -214,7 +216,9 @@ impl GdbSerial {
 
     /// Determines if something is available to read.
     fn can_read(&self) -> bool {
-        unsafe { (io::inb(self.port + 5) & 0b0000_0001) > 0 }
+        const DATA_READY_BIT: usize = 0;
+        let line_status = unsafe { io::inb(self.port + GdbSerial::LINE_STATUS_REGISTER) };
+        line_status.get_bit(DATA_READY_BIT)
     }
 
     /// Read a byte from the serial line.
@@ -225,7 +229,9 @@ impl GdbSerial {
 
     /// Is the serial port FIFO ready?
     fn can_write(&self) -> bool {
-        unsafe { (io::inb(self.port + 5) & 0b0010_0000) > 0 }
+        const TRANSMIT_EMPTY_BIT: usize = 5;
+        let line_status = unsafe { io::inb(self.port + GdbSerial::LINE_STATUS_REGISTER) };
+        line_status.get_bit(TRANSMIT_EMPTY_BIT)
     }
 
     /// Send the byte out the serial port
@@ -253,23 +259,25 @@ impl Connection for GdbSerial {
 
 impl ConnectionExt for GdbSerial {
     fn read(&mut self) -> Result<u8, Self::Error> {
-        //        if let Some(byte) = self.peeked {
-        //            self.peeked = None;
-        //            Ok(byte)
-        //        } else {
-        while !self.can_read() {
-            core::hint::spin_loop();
+        if let Some(byte) = self.peeked {
+            self.peeked = None;
+            Ok(byte)
+        } else {
+            while !self.can_read() {
+                core::hint::spin_loop();
+            }
+            let b = self.read_byte();
+            Ok(b)
         }
-        let b = self.read_byte();
-        Ok(b)
-        //        }
     }
 
     fn peek(&mut self) -> Result<Option<u8>, Self::Error> {
         if !self.can_read() {
             Ok(None)
         } else {
-            Ok(Some(self.read_byte()))
+            let b = self.read_byte();
+            self.peeked = Some(b);
+            Ok(self.peeked)
         }
     }
 }

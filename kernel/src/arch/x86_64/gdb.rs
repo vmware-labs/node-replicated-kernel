@@ -43,6 +43,8 @@ pub enum KCoreStopReason {
     /// This usually means gdb fiddled with the instructions and inserted an
     /// `int 3` somewhere it deemed necessary.
     BreakpointInterrupt,
+    /// We have received data on the (serial) line between us and gdb.
+    ConnectionInterrupt,
 }
 
 lazy_static! {
@@ -298,8 +300,6 @@ pub struct KernelDebugger {
 }
 
 impl KernelDebugger {
-    pub const GLOBAL_BP_FLAG: bool = true;
-
     pub fn new() -> Self {
         Self {
             hw_break_points: [None; 4],
@@ -313,6 +313,7 @@ impl KernelDebugger {
     // Also does some additional stuff like re-enabling the breakpoints.
     fn determine_stop_reason(&mut self, reason: KCoreStopReason) -> Option<ThreadStopReason<u64>> {
         match reason {
+            KCoreStopReason::ConnectionInterrupt => Some(ThreadStopReason::GdbCtrlCInterrupt),
             KCoreStopReason::BreakpointInterrupt => {
                 unimplemented!("Breakpoint interrupt not implemented");
                 Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))

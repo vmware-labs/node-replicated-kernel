@@ -496,6 +496,7 @@ pub fn xmain() {
 pub fn xmain() {
     use log::info;
 
+    arch::irq::ioapic_establish_route(0x0, 0x0);
     // watchpoint test:
     let mut watchpoint_trigger: usize = 0;
     info!("watchpoint_trigger is {}", watchpoint_trigger);
@@ -506,8 +507,9 @@ pub fn xmain() {
     info!("step");
     info!("step");
 
-    //let cond = true;
-    //while cond {}
+    arch::irq::enable();
+    let cond = true;
+    while cond {}
 
     // continue until exit:
     arch::debug::shutdown(ExitReason::Ok);

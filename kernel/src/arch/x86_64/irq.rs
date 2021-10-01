@@ -407,6 +407,15 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::PageFault);
 }
 
+/// Handler for incoming gdb serial line interrupt.
+unsafe fn gdb_serial_handler(a: &ExceptionArguments) {
+    let kcb = get_kcb();
+    debug::disable_all_breakpoints();
+    gdb::event_loop(gdb::KCoreStopReason::ConnectionInterrupt);
+    let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
+    r.resume()
+}
+
 /// Handler for a debug exception.
 unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
@@ -658,8 +667,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // If we have an active process we should do scheduler activations:
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
-        if a.vector > 30 && a.vector < 250 {
-            trace!("handle_generic_exception {:?}", a);
+        if a.vector > 30 && a.vector < 250 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
+            info!("handle_generic_exception {:?}", a);
 
             let mut plock = kcb.arch.current_executor();
             let p = plock.as_mut().unwrap();
@@ -702,6 +711,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             dbg_handler(&a);
         } else if a.vector == BREAKPOINT_VECTOR.into() {
             bkp_handler(&a);
+        } else if a.vector == debug::GDB_REMOTE_IRQ_VECTOR.into() {
+            gdb_serial_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
             let kcb = get_kcb();
             trace!("got an interrupt {:?}", kcb.arch.id());

@@ -10,8 +10,15 @@ use x86::io;
 
 use super::ExitReason;
 
-static PORT1: u16 = 0x3f8; /* COM1 */
-static PORT2: u16 = 0x2f8; /* COM2 */
+/// Serial port 1.
+const PORT1: u16 = 0x3f8; /* COM1 */
+/// `PORT1` IRQ vector.
+const _PORT1_IRQ: u8 = 32 + 4;
+
+/// Serial port 2.
+const PORT2: u16 = 0x2f8; /* COM2 */
+/// `PORT2` IRQ vector.
+const PORT2_IRQ: u8 = 32 + 3;
 
 /// Standard serial print port.
 ///
@@ -21,23 +28,35 @@ pub static SERIAL_PRINT_PORT: AtomicU16 = AtomicU16::new(PORT1);
 /// QEMU debug exit device.
 ///
 /// If you change this line, you must also adjust `run.py`.
-static QEMU_DEBUG_EXIT_PORT: u16 = 0xf4;
+const QEMU_DEBUG_EXIT_PORT: u16 = 0xf4;
 
 /// GDB remote communication line.
 ///
 /// If you change this line, you must also adjust `run.py`.
-pub static GDB_REMOTE_PORT: u16 = PORT2;
+pub const GDB_REMOTE_PORT: u16 = PORT2;
+
+/// GDB remote IRQ port (e.g., IRQ associated with `PORT2`).
+pub const GDB_REMOTE_IRQ_VECTOR: u8 = PORT2_IRQ;
 
 pub fn init() {
+    //const DATA_REGISTER: u16 = 0;
+    const INTERRUPT_ENABLE_REGISTER: u16 = 1;
+    // IRQ line bits:
+    const DATA_AVAILABLE_IRQ_BIT: u16 = 0;
+    //const TRANSMITTER_EMPTY_IRQ_BIT: u16 = 1;
+    //const BREAK_ERROR_IRQ_BIT: u16 = 2;
+    //const STATUS_CHANGE_IRQ_BIT: u16 = 3;
+
+    let irq_mask = 1 << DATA_AVAILABLE_IRQ_BIT;
     unsafe {
         for p in [PORT1, PORT2] {
-            io::outb(p + 1, 0x00); // Disable all interrupts
+            io::outb(p + INTERRUPT_ENABLE_REGISTER, 0x00); // Disable all interrupts
             io::outb(p + 3, 0x80); // Enable DLAB (set baud rate divisor)
             io::outb(p + 0, 0x01); // Set divisor to 1 (lo byte) 115200 baud
             io::outb(p + 1, 0x00); //                  (hi byte)
             io::outb(p + 3, 0x03); // 8 bits, no parity, one stop bit
             io::outb(p + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-            io::outb(p + 1, 0x01); // Enable receive data IRQ
+            io::outb(p + INTERRUPT_ENABLE_REGISTER, irq_mask); // Enable receive data IRQ
         }
     }
 

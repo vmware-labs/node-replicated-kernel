@@ -47,7 +47,6 @@ pub fn init() {
     //const BREAK_ERROR_IRQ_BIT: u16 = 2;
     //const STATUS_CHANGE_IRQ_BIT: u16 = 3;
 
-    let irq_mask = 1 << DATA_AVAILABLE_IRQ_BIT;
     unsafe {
         for p in [PORT1, PORT2] {
             io::outb(p + INTERRUPT_ENABLE_REGISTER, 0x00); // Disable all interrupts
@@ -56,7 +55,7 @@ pub fn init() {
             io::outb(p + 1, 0x00); //                  (hi byte)
             io::outb(p + 3, 0x03); // 8 bits, no parity, one stop bit
             io::outb(p + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-            io::outb(p + INTERRUPT_ENABLE_REGISTER, irq_mask); // Enable receive data IRQ
+            io::outb(p + INTERRUPT_ENABLE_REGISTER, 1 << DATA_AVAILABLE_IRQ_BIT); // Enable receive data IRQ
         }
     }
 

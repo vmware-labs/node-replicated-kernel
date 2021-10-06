@@ -668,7 +668,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
         if a.vector > 30 && a.vector < 250 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
-            info!("handle_generic_exception {:?}", a);
+            trace!("handle_generic_exception {:?}", a);
 
             let mut plock = kcb.arch.current_executor();
             let p = plock.as_mut().unwrap();

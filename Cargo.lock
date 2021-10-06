@@ -573,7 +573,7 @@ checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 [[package]]
 name = "gdbstub"
 version = "0.5.0"
-source = "git+https://github.com/daniel5151/gdbstub.git?branch=refactor/blocking-event-loop#2f3d9c703cbd00af387de6fd72d0adb55d8728cd"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#5a933ee5f23cd43643eb6342874bb8f71104b860"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
@@ -586,7 +586,7 @@ dependencies = [
 [[package]]
 name = "gdbstub_arch"
 version = "0.1.0"
-source = "git+https://github.com/daniel5151/gdbstub.git?branch=refactor/blocking-event-loop#2f3d9c703cbd00af387de6fd72d0adb55d8728cd"
+source = "git+https://github.com/daniel5151/gdbstub.git?branch=dev/0.6#5a933ee5f23cd43643eb6342874bb8f71104b860"
 dependencies = [
  "gdbstub",
  "num-traits",
@@ -1644,9 +1644,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "syn"
-version = "1.0.77"
+version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5239bc68e0fef57495900cfea4e8dc75596d9a319d7e16b1e0a440d24e6fe0a0"
+checksum = "a4eac2e6c19f5c3abc0c229bea31ff0b9b091c7b14990e8924b92902a303a0c0"
 dependencies = [
  "proc-macro2",
  "quote",

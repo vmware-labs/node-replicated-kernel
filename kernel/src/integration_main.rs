@@ -508,8 +508,11 @@ pub fn xmain() {
     info!("step");
 
     arch::irq::enable();
-    let cond = true;
+    let mut cond = true;
     while cond {}
+
+    cond = false;
+    info!("cond is {}", cond);
 
     // continue until exit:
     arch::debug::shutdown(ExitReason::Ok);

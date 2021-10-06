@@ -6,7 +6,9 @@ use core::num::NonZeroUsize;
 use bit_field::BitField;
 use gdbstub::state_machine::{Event, GdbStubStateMachine};
 use gdbstub::target::ext::base::multithread::ThreadStopReason;
-use gdbstub::target::ext::base::singlethread::{ResumeAction, SingleThreadOps, StopReason};
+use gdbstub::target::ext::base::singlethread::{
+    SingleThreadOps, SingleThreadSingleStep, SingleThreadSingleStepOps, StopReason,
+};
 use gdbstub::target::ext::base::{BaseOps, SingleRegisterAccess, SingleRegisterAccessOps};
 use gdbstub::target::ext::breakpoints::{
     Breakpoints, BreakpointsOps, HwBreakpoint, HwBreakpointOps, HwWatchpoint, HwWatchpointOps,
@@ -222,7 +224,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
     }
 
     match target.resume_with.take() {
-        Some(ResumeAction::Continue) => {
+        Some(ExecMode::Continue) => {
             trace!("Resume execution.");
             let kcb = super::kcb::get_kcb();
             // If we were stepping, we need to remove the TF bit again for resuming
@@ -232,7 +234,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 saved.rflags = rflags.bits();
             }
         }
-        Some(ResumeAction::Step) => {
+        Some(ExecMode::SingleStep) => {
             trace!("Step execution, set TF flag.");
             let kcb = super::kcb::get_kcb();
             if let Some(saved) = &mut kcb.arch.save_area {
@@ -354,6 +356,13 @@ impl ConnectionExt for GdbSerial {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ExecMode {
+    /// Continue program unconditionally
+    Continue,
+    SingleStep,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum BreakType {
     /// For instructions
     Breakpoint,
@@ -365,7 +374,8 @@ enum BreakType {
 /// serial protocol.
 pub struct KernelDebugger {
     hw_break_points: [Option<(VAddr, BreakType)>; 4],
-    resume_with: Option<ResumeAction>,
+    signal: Option<u8>,
+    resume_with: Option<ExecMode>,
 }
 
 impl KernelDebugger {
@@ -373,6 +383,7 @@ impl KernelDebugger {
         Self {
             hw_break_points: [None; 4],
             resume_with: None,
+            signal: None,
         }
     }
 
@@ -491,10 +502,32 @@ impl Breakpoints for KernelDebugger {
     }
 }
 
+impl SingleThreadSingleStep for KernelDebugger {
+    fn step(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+        self.signal = signal;
+        self.resume_with = Some(ExecMode::SingleStep);
+        info!(
+            "set signal = {:?} resume_with =  {:?}",
+            signal, self.resume_with
+        );
+
+        Ok(())
+    }
+}
+
 impl SingleThreadOps for KernelDebugger {
-    fn resume(&mut self, action: ResumeAction) -> Result<(), Self::Error> {
-        self.resume_with = Some(action);
-        info!("set resume_with =  {:?}", action);
+    fn support_single_step(&mut self) -> Option<SingleThreadSingleStepOps<Self>> {
+        //Some(self)
+        None
+    }
+
+    fn resume(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+        self.signal = signal;
+        self.resume_with = Some(ExecMode::Continue);
+        info!(
+            "set signal = {:?} resume_with =  {:?}",
+            signal, self.resume_with
+        );
 
         // If the target is running under the more advanced GdbStubStateMachine
         // API, it is possible to "defer" reporting a stop reason to some point

@@ -145,20 +145,24 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                     let byte = gdb_stm_inner.borrow_conn().read().unwrap();
                     match gdb_stm_inner.pump(target, byte) {
                         Ok((pumped_stm, e)) => match e {
-                            Event::None => pumped_stm.into(),
+                            Event::None => GdbStubStateMachine::DeferredStopReason(pumped_stm),
                             Event::CtrlCInterrupt => {
-                                // Why don't we call `deferred_stop_reason` with
-                                // a ThreadStopReason::Signal(5) here?
-                                //
-                                // The stm will transition into the
-                                // DeferredStopReason here but next time we have
-                                // `data_to_read = False`. So, we'll execute the
-                                // `else if` branch below, which means we
-                                // consome the `stop_reason` that we constructed
-                                // earlier and this (independently) determined
-                                // the Signal(5) exit reason because we got a
-                                // serial line interrupt...
-                                pumped_stm.into()
+                                // if the target wants to handle the interrupt, report the
+                                // stop reason
+                                if let Some(stop_reason) = stop_reason.take() {
+                                    match pumped_stm
+                                        .deferred_stop_reason(target, stop_reason)
+                                        .unwrap()
+                                    {
+                                        (_, Some(disconnect_reason)) => {
+                                            info!("disconnect reason {:?}", disconnect_reason);
+                                            break;
+                                        }
+                                        (gdb, None) => gdb,
+                                    }
+                                } else {
+                                    pumped_stm.into()
+                                }
                             }
                             Event::Disconnect(reason) => {
                                 info!("GDB client disconnected: {:?}", reason);

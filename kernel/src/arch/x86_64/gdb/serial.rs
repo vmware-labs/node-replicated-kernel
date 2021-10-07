@@ -4,7 +4,7 @@
 //! GDB serial line connection implementation.
 
 use bit_field::BitField;
-use gdbstub::{Connection, ConnectionExt, DisconnectReason, GdbStub, GdbStubError};
+use gdbstub::{Connection, ConnectionExt};
 use x86::io;
 
 use crate::error::KError;
@@ -21,7 +21,7 @@ pub struct GdbSerial {
 
 impl GdbSerial {
     const INTERRUPT_ENABLE_REGISTER: u16 = 1;
-    const IRQ_IDENTIFICATION_REGISTER: u16 = 2;
+    const _IRQ_IDENTIFICATION_REGISTER: u16 = 2;
     const LINE_STATUS_REGISTER: u16 = 5;
 
     /// Create a new GdbSerial connection.
@@ -55,8 +55,8 @@ impl GdbSerial {
         unsafe { io::outb(self.port, byte) }
     }
 
-    pub fn iir(&self) -> u8 {
-        unsafe { io::inb(self.port + GdbSerial::IRQ_IDENTIFICATION_REGISTER) }
+    pub fn _iir(&self) -> u8 {
+        unsafe { io::inb(self.port + GdbSerial::_IRQ_IDENTIFICATION_REGISTER) }
     }
 
     /// Enable receive interrupt.

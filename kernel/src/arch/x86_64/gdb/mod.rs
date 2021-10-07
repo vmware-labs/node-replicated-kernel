@@ -380,15 +380,15 @@ enum BreakType {
     Watchpoint(WatchKind),
 }
 
-/// State of the breakpoint.
+/// Keeps information about any breakpoints we've set.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-struct BreakpointState(VAddr, BreakType, BreakRequest);
+struct BreakState(VAddr, BreakType, BreakRequest);
 
 /// A kernel level debug implementation that can interface with GDB over remote
 /// serial protocol.
 pub struct KernelDebugger {
     /// Maintains meta-data about our hardware breakpoint registers.
-    hw_break_points: [Option<BreakpointState>; 4],
+    hw_break_points: [Option<BreakState>; 4],
     /// Resume program with this signal (if needed).
     signal: Option<u8>,
     /// How we resume the program (set by gdbstub in resume or step).
@@ -428,11 +428,7 @@ impl KernelDebugger {
             .enumerate()
         {
             if entry.is_none() {
-                *entry = Some(BreakpointState(
-                    VAddr::from(addr),
-                    BreakType::Breakpoint,
-                    req,
-                ));
+                *entry = Some(BreakState(VAddr::from(addr), BreakType::Breakpoint, req));
 
                 // Safety: We're in CPL0.
                 //
@@ -484,7 +480,7 @@ impl KernelDebugger {
             .zip(self.hw_break_points.iter_mut())
             .enumerate()
         {
-            if let Some(BreakpointState(entry_addr, BreakType::Breakpoint, entry_req)) = entry {
+            if let Some(BreakState(entry_addr, BreakType::Breakpoint, entry_req)) = entry {
                 if entry_addr.as_u64() == addr && *entry_req == req {
                     unsafe {
                         reg.disable_global();
@@ -536,45 +532,42 @@ impl KernelDebugger {
                 };
 
                 // Map things to a gdbstub stop reason:
-                let stop: Option<ThreadStopReason<u64>> = if let Some(BreakpointState(
-                    va,
-                    BreakType::Breakpoint,
-                    BreakRequest::Hardware,
-                )) = bp
-                {
-                    Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
-                } else if let Some(BreakpointState(
-                    va,
-                    BreakType::Breakpoint,
-                    BreakRequest::Software,
-                )) = bp
-                {
-                    Some(ThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
-                } else if let Some(BreakpointState(
-                    va,
-                    BreakType::Watchpoint(kind),
-                    BreakRequest::Hardware,
-                )) = bp
-                {
-                    Some(ThreadStopReason::Watch {
-                        tid: NonZeroUsize::new(1).unwrap(),
-                        kind,
-                        addr: va.as_u64(),
-                    })
-                } else if let Some(BreakpointState(
-                    va,
-                    BreakType::Watchpoint(kind),
-                    BreakRequest::Software,
-                )) = bp
-                {
-                    unimplemented!("Shouldn't have ever set a software watchpoint!")
-                } else if dr6.contains(debugregs::Dr6::BS) {
-                    // When the BS flag is set, any of the other debug status bits also may be set.
-                    dr6.remove(debugregs::Dr6::BS);
-                    Some(ThreadStopReason::DoneStep)
-                } else {
-                    None
-                };
+                let stop: Option<ThreadStopReason<u64>> =
+                    if let Some(BreakState(va, BreakType::Breakpoint, BreakRequest::Hardware)) = bp
+                    {
+                        Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
+                    } else if let Some(BreakState(
+                        va,
+                        BreakType::Breakpoint,
+                        BreakRequest::Software,
+                    )) = bp
+                    {
+                        Some(ThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
+                    } else if let Some(BreakState(
+                        va,
+                        BreakType::Watchpoint(kind),
+                        BreakRequest::Hardware,
+                    )) = bp
+                    {
+                        Some(ThreadStopReason::Watch {
+                            tid: NonZeroUsize::new(1).unwrap(),
+                            kind,
+                            addr: va.as_u64(),
+                        })
+                    } else if let Some(BreakState(
+                        va,
+                        BreakType::Watchpoint(kind),
+                        BreakRequest::Software,
+                    )) = bp
+                    {
+                        unimplemented!("Shouldn't have ever set a software watchpoint!")
+                    } else if dr6.contains(debugregs::Dr6::BS) {
+                        // When the BS flag is set, any of the other debug status bits also may be set.
+                        dr6.remove(debugregs::Dr6::BS);
+                        Some(ThreadStopReason::DoneStep)
+                    } else {
+                        None
+                    };
 
                 // Sanity check that we indeed handled all bits in dr6 (except RTM
                 // which isn't a condition):
@@ -635,6 +628,8 @@ impl Breakpoints for KernelDebugger {
 
 impl SingleThreadSingleStep for KernelDebugger {
     fn step(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+        assert!(signal.is_none(), "Not supported at the moment.");
+
         self.signal = signal;
         self.resume_with = Some(ExecMode::SingleStep);
         info!(
@@ -653,7 +648,8 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn resume(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
-        assert!(signal.is_none(), "NYI");
+        assert!(signal.is_none(), "Not supported at the moment.");
+
         self.signal = signal;
         self.resume_with = Some(ExecMode::Continue);
         trace!(
@@ -1167,7 +1163,7 @@ impl HwWatchpoint for KernelDebugger {
             };
 
             if entry.is_none() {
-                *entry = Some(BreakpointState(
+                *entry = Some(BreakState(
                     VAddr::from(addr),
                     BreakType::Watchpoint(kind),
                     BreakRequest::Hardware,
@@ -1211,9 +1207,7 @@ impl HwWatchpoint for KernelDebugger {
             .zip(self.hw_break_points.iter_mut())
             .enumerate()
         {
-            if let Some(BreakpointState(entry_vaddr, BreakType::Watchpoint(kind), entry_req)) =
-                entry
-            {
+            if let Some(BreakState(entry_vaddr, BreakType::Watchpoint(kind), entry_req)) = entry {
                 if entry_vaddr.as_u64() == addr && *entry_req == BreakRequest::Hardware {
                     unsafe { reg.disable_global() }
                     sa.enabled_bps.set_bit(idx, false);

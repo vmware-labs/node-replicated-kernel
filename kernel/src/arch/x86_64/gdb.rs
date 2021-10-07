@@ -361,6 +361,17 @@ enum ExecMode {
     SingleStep,
 }
 
+/// What kind of breakpoint GDB is trying to set.
+///
+/// Heads-up we're using hardware breakpoint either way.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum BreakRequest {
+    /// GDB requested a hardware breakpoint
+    Hardware,
+    /// GDB requested a software breakpoint
+    Software,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum BreakType {
     /// For instructions
@@ -369,11 +380,18 @@ enum BreakType {
     Watchpoint(WatchKind),
 }
 
+/// State of the breakpoint.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct BreakpointState(VAddr, BreakType, BreakRequest);
+
 /// A kernel level debug implementation that can interface with GDB over remote
 /// serial protocol.
 pub struct KernelDebugger {
-    hw_break_points: [Option<(VAddr, BreakType)>; 4],
+    /// Maintains meta-data about our hardware breakpoint registers.
+    hw_break_points: [Option<BreakpointState>; 4],
+    /// Resume program with this signal (if needed).
     signal: Option<u8>,
+    /// How we resume the program (set by gdbstub in resume or step).
     resume_with: Option<ExecMode>,
 }
 
@@ -384,6 +402,103 @@ impl KernelDebugger {
             resume_with: None,
             signal: None,
         }
+    }
+
+    fn add_breakpoint(
+        &mut self,
+        req: BreakRequest,
+        addr: u64,
+        _kind: usize,
+    ) -> TargetResult<bool, Self> {
+        let kcb = super::kcb::get_kcb();
+        trace!(
+            "add_breakpoint {:#x} (in ELF: {:#x}",
+            addr,
+            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
+        );
+        let sa = kcb
+            .arch
+            .save_area
+            .as_mut()
+            .expect("Need to have a save area");
+
+        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
+            .iter()
+            .zip(self.hw_break_points.iter_mut())
+            .enumerate()
+        {
+            if entry.is_none() {
+                *entry = Some(BreakpointState(
+                    VAddr::from(addr),
+                    BreakType::Breakpoint,
+                    req,
+                ));
+
+                // Safety: We're in CPL0.
+                //
+                // TODO: For more safety we should sanitize the address to make
+                // sure we can't set it inside certain regions (on code that is
+                // used by the gdb module etc.)
+                unsafe {
+                    // break size has to be Bytes1 on x86 for instructions, so I
+                    // think we can ignore the `_kind` arg
+                    reg.configure(
+                        addr.try_into().unwrap(),
+                        debugregs::BreakCondition::Instructions,
+                        debugregs::BreakSize::Bytes1,
+                    );
+                }
+
+                // Don't enable the BP, but mark register as "to enable" for the
+                // context restore logic:
+                sa.enabled_bps.set_bit(idx, true);
+                info!("sa.enabled_bps {:#b}", sa.enabled_bps);
+                return Ok(true);
+            }
+        }
+
+        warn!("No more debug registers available for add_hw_breakpoint");
+        Ok(false)
+    }
+
+    fn remove_breakpoint(
+        &mut self,
+        req: BreakRequest,
+        addr: u64,
+        _kind: usize,
+    ) -> TargetResult<bool, Self> {
+        let kcb = super::kcb::get_kcb();
+        trace!(
+            "remove_breakpoint {:#x} (in ELF: {:#x}",
+            addr,
+            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
+        );
+        let sa = kcb
+            .arch
+            .save_area
+            .as_mut()
+            .expect("Need to have a save area");
+
+        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
+            .iter()
+            .zip(self.hw_break_points.iter_mut())
+            .enumerate()
+        {
+            if let Some(BreakpointState(entry_addr, BreakType::Breakpoint, entry_req)) = entry {
+                if entry_addr.as_u64() == addr && *entry_req == req {
+                    unsafe {
+                        reg.disable_global();
+                    }
+                    *entry = None;
+                    sa.enabled_bps.set_bit(idx, false);
+                    return Ok(true);
+                }
+            }
+        }
+
+        // No break point matching the address was found
+        warn!("Unable to remove hw breakpoint for addr {:#x}", addr);
+        Ok(false)
     }
 
     /// Figures out why a core got a debug interrupt by looking through the
@@ -421,22 +536,45 @@ impl KernelDebugger {
                 };
 
                 // Map things to a gdbstub stop reason:
-                let stop: Option<ThreadStopReason<u64>> =
-                    if let Some((va, BreakType::Breakpoint)) = bp {
-                        Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
-                    } else if let Some((va, BreakType::Watchpoint(kind))) = bp {
-                        Some(ThreadStopReason::Watch {
-                            tid: NonZeroUsize::new(1).unwrap(),
-                            kind,
-                            addr: va.as_u64(),
-                        })
-                    } else if dr6.contains(debugregs::Dr6::BS) {
-                        // When the BS flag is set, any of the other debug status bits also may be set.
-                        dr6.remove(debugregs::Dr6::BS);
-                        Some(ThreadStopReason::DoneStep)
-                    } else {
-                        None
-                    };
+                let stop: Option<ThreadStopReason<u64>> = if let Some(BreakpointState(
+                    va,
+                    BreakType::Breakpoint,
+                    BreakRequest::Hardware,
+                )) = bp
+                {
+                    Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
+                } else if let Some(BreakpointState(
+                    va,
+                    BreakType::Breakpoint,
+                    BreakRequest::Software,
+                )) = bp
+                {
+                    Some(ThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
+                } else if let Some(BreakpointState(
+                    va,
+                    BreakType::Watchpoint(kind),
+                    BreakRequest::Hardware,
+                )) = bp
+                {
+                    Some(ThreadStopReason::Watch {
+                        tid: NonZeroUsize::new(1).unwrap(),
+                        kind,
+                        addr: va.as_u64(),
+                    })
+                } else if let Some(BreakpointState(
+                    va,
+                    BreakType::Watchpoint(kind),
+                    BreakRequest::Software,
+                )) = bp
+                {
+                    unimplemented!("Shouldn't have ever set a software watchpoint!")
+                } else if dr6.contains(debugregs::Dr6::BS) {
+                    // When the BS flag is set, any of the other debug status bits also may be set.
+                    dr6.remove(debugregs::Dr6::BS);
+                    Some(ThreadStopReason::DoneStep)
+                } else {
+                    None
+                };
 
                 // Sanity check that we indeed handled all bits in dr6 (except RTM
                 // which isn't a condition):
@@ -510,8 +648,8 @@ impl SingleThreadSingleStep for KernelDebugger {
 
 impl SingleThreadOps for KernelDebugger {
     fn support_single_step(&mut self) -> Option<SingleThreadSingleStepOps<Self>> {
-        //Some(self)
-        None
+        Some(self)
+        //None
     }
 
     fn resume(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
@@ -1029,7 +1167,11 @@ impl HwWatchpoint for KernelDebugger {
             };
 
             if entry.is_none() {
-                *entry = Some((VAddr::from(addr), BreakType::Watchpoint(kind)));
+                *entry = Some(BreakpointState(
+                    VAddr::from(addr),
+                    BreakType::Watchpoint(kind),
+                    BreakRequest::Hardware,
+                ));
                 let bc = watchkind_to_breakcondition(kind);
 
                 // Safety: We're in CPL0.
@@ -1069,8 +1211,10 @@ impl HwWatchpoint for KernelDebugger {
             .zip(self.hw_break_points.iter_mut())
             .enumerate()
         {
-            if let Some((entry_vaddr, BreakType::Watchpoint(kind))) = entry {
-                if entry_vaddr.as_u64() == addr {
+            if let Some(BreakpointState(entry_vaddr, BreakType::Watchpoint(kind), entry_req)) =
+                entry
+            {
+                if entry_vaddr.as_u64() == addr && *entry_req == BreakRequest::Hardware {
                     unsafe { reg.disable_global() }
                     sa.enabled_bps.set_bit(idx, false);
                     info!("sa.enabled_bps {:#b}", sa.enabled_bps);
@@ -1089,96 +1233,21 @@ impl HwWatchpoint for KernelDebugger {
 impl SwBreakpoint for KernelDebugger {
     fn add_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
         trace!("add sw breakpoint {:#x}", addr);
-        self.add_hw_breakpoint(addr, kind)
+        self.add_breakpoint(BreakRequest::Software, addr, kind)
     }
 
     fn remove_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
         trace!("remove sw breakpoint {:#x}", addr);
-        self.remove_hw_breakpoint(addr, kind)
+        self.remove_breakpoint(BreakRequest::Software, addr, kind)
     }
 }
 
 impl HwBreakpoint for KernelDebugger {
     fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
-        let kcb = super::kcb::get_kcb();
-        trace!(
-            "add hw breakpoint {:#x} (in ELF: {:#x}",
-            addr,
-            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
-        );
-        let sa = kcb
-            .arch
-            .save_area
-            .as_mut()
-            .expect("Need to have a save area");
-
-        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
-            .iter()
-            .zip(self.hw_break_points.iter_mut())
-            .enumerate()
-        {
-            if entry.is_none() {
-                *entry = Some((VAddr::from(addr), BreakType::Breakpoint));
-
-                // Safety: We're in CPL0.
-                //
-                // TODO: For more safety we should sanitize the address to make
-                // sure we can't set it inside certain regions (on code that is
-                // used by the gdb module etc.)
-                unsafe {
-                    // break size has to be Bytes1 on x86 for instructions, so I
-                    // think we can ignore the `_kind` arg
-                    reg.configure(
-                        addr.try_into().unwrap(),
-                        debugregs::BreakCondition::Instructions,
-                        debugregs::BreakSize::Bytes1,
-                    );
-                }
-
-                // Don't enable the BP, but mark register as "to enable" for the
-                // context restore logic:
-                sa.enabled_bps.set_bit(idx, true);
-                info!("sa.enabled_bps {:#b}", sa.enabled_bps);
-                return Ok(true);
-            }
-        }
-
-        warn!("No more debug registers available for add_hw_breakpoint");
-        Ok(false)
+        self.add_breakpoint(BreakRequest::Hardware, addr, _kind)
     }
 
     fn remove_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
-        let kcb = super::kcb::get_kcb();
-        trace!(
-            "remove_hw_breakpoint {:#x} (in ELF: {:#x}",
-            addr,
-            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
-        );
-        let sa = kcb
-            .arch
-            .save_area
-            .as_mut()
-            .expect("Need to have a save area");
-
-        for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
-            .iter()
-            .zip(self.hw_break_points.iter_mut())
-            .enumerate()
-        {
-            if let Some((entry_vaddr, BreakType::Breakpoint)) = entry {
-                if entry_vaddr.as_u64() == addr {
-                    unsafe {
-                        reg.disable_global();
-                    }
-                    *entry = None;
-                    sa.enabled_bps.set_bit(idx, false);
-                    return Ok(true);
-                }
-            }
-        }
-
-        // No break point matching the address was found
-        warn!("Unable to remove hw breakpoint for addr {:#x}", addr);
-        Ok(false)
+        self.remove_breakpoint(BreakRequest::Hardware, addr, _kind)
     }
 }

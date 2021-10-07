@@ -88,7 +88,6 @@ fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
 /// - `resume_with`: Should probably always be Some(reason) except the first
 ///   time after connecting.
 pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
-    info!("event_loop reason {:?} ", reason);
     if GDB_STUB.is_locked() {
         panic!("re-entrant into event_loop!");
     }
@@ -101,11 +100,11 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
         .expect("Need a target");
 
     let mut stop_reason = target.determine_stop_reason(reason);
-    info!("stop_reason {:?} ", stop_reason);
+    debug!("event_loop stop_reason {:?}", stop_reason);
     loop {
         gdb_stm = match gdb_stm {
             GdbStubStateMachine::Pump(mut gdb_stm_inner) => {
-                info!("pumping...");
+                //trace!("GdbStubStateMachine::Pump");
 
                 // This means we expect stuff on the serial line (from GDB)
                 // Let's read and react to it:
@@ -135,6 +134,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 }
             }
             GdbStubStateMachine::DeferredStopReason(mut gdb_stm_inner) => {
+                //trace!("GdbStubStateMachine::DeferredStopReason");
+
                 // If we're here we were running but have stopped now (either
                 // because we hit Ctrl+c in gdb and hence got a serial interrupt
                 // or we hit a breakpoint).
@@ -143,7 +144,6 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 let data_to_read = conn.peek().unwrap().is_some();
 
                 if data_to_read {
-                    info!("data to read");
                     let byte = gdb_stm_inner.borrow_conn().read().unwrap();
                     match gdb_stm_inner.pump(target, byte) {
                         Ok((pumped_stm, e)) => match e {
@@ -152,6 +152,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                                 // if the target wants to handle the interrupt, report the
                                 // stop reason
                                 if let Some(stop_reason) = stop_reason.take() {
+                                    assert_eq!(stop_reason, ThreadStopReason::Signal(5));
                                     match pumped_stm
                                         .deferred_stop_reason(target, stop_reason)
                                         .unwrap()
@@ -181,7 +182,6 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if let Some(reason) = stop_reason.take() {
-                    info!("deferred_stop_reason");
                     match gdb_stm_inner.deferred_stop_reason(target, reason) {
                         Ok((gdb_stm_new, None)) => gdb_stm_new,
                         Ok((_, Some(disconnect_reason))) => {
@@ -203,7 +203,6 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if target.resume_with.is_some() {
-                    info!("before resuming...");
                     // We don't have a `stop_reason` and we don't have something
                     // to read on the line. This probably means we're done and
                     // we should run again.
@@ -217,7 +216,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                     );
                     break;
                 } else {
-                    unreachable!("cant happen?");
+                    unreachable!("Can't happen?");
                 }
             }
         }
@@ -225,7 +224,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
 
     match target.resume_with.take() {
         Some(ExecMode::Continue) => {
-            trace!("Resume execution.");
+            //trace!("Resume execution.");
             let kcb = super::kcb::get_kcb();
             // If we were stepping, we need to remove the TF bit again for resuming
             if let Some(saved) = &mut kcb.arch.save_area {
@@ -433,13 +432,7 @@ impl KernelDebugger {
                         })
                     } else if dr6.contains(debugregs::Dr6::BS) {
                         // When the BS flag is set, any of the other debug status bits also may be set.
-                        /*assert_eq!(
-                            self.resume_with,
-                            Some(ResumeAction::Step),
-                            "Single-stepping only happens in resume."
-                        );*/
                         dr6.remove(debugregs::Dr6::BS);
-                        trace!("stop reason is DoneStep");
                         Some(ThreadStopReason::DoneStep)
                     } else {
                         None
@@ -522,11 +515,13 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn resume(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+        assert!(signal.is_none(), "NYI");
         self.signal = signal;
         self.resume_with = Some(ExecMode::Continue);
-        info!(
-            "set signal = {:?} resume_with =  {:?}",
-            signal, self.resume_with
+        trace!(
+            "resume: signal = {:?} resume_with =  {:?}",
+            signal,
+            self.resume_with
         );
 
         // If the target is running under the more advanced GdbStubStateMachine
@@ -1010,7 +1005,7 @@ impl HwWatchpoint for KernelDebugger {
         len: u64,
         kind: WatchKind,
     ) -> TargetResult<bool, Self> {
-        info!("add_hw_watchpoint {:#x} {} {:?}", addr, len, kind);
+        trace!("add_hw_watchpoint {:#x} {} {:?}", addr, len, kind);
         let sa = super::kcb::get_kcb()
             .arch
             .save_area
@@ -1062,7 +1057,7 @@ impl HwWatchpoint for KernelDebugger {
         _len: u64,
         kind: WatchKind,
     ) -> TargetResult<bool, Self> {
-        info!("remove_hw_watchpoint {:#x} {} {:?}", addr, _len, kind);
+        trace!("remove_hw_watchpoint {:#x} {} {:?}", addr, _len, kind);
         let sa = super::kcb::get_kcb()
             .arch
             .save_area
@@ -1093,12 +1088,12 @@ impl HwWatchpoint for KernelDebugger {
 }
 impl SwBreakpoint for KernelDebugger {
     fn add_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
-        info!("add sw breakpoint {:#x}", addr);
+        trace!("add sw breakpoint {:#x}", addr);
         self.add_hw_breakpoint(addr, kind)
     }
 
     fn remove_sw_breakpoint(&mut self, addr: u64, kind: usize) -> TargetResult<bool, Self> {
-        info!("remove sw breakpoint {:#x}", addr);
+        trace!("remove sw breakpoint {:#x}", addr);
         self.remove_hw_breakpoint(addr, kind)
     }
 }
@@ -1106,7 +1101,7 @@ impl SwBreakpoint for KernelDebugger {
 impl HwBreakpoint for KernelDebugger {
     fn add_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
         let kcb = super::kcb::get_kcb();
-        info!(
+        trace!(
             "add hw breakpoint {:#x} (in ELF: {:#x}",
             addr,
             addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
@@ -1154,7 +1149,7 @@ impl HwBreakpoint for KernelDebugger {
 
     fn remove_hw_breakpoint(&mut self, addr: u64, _kind: usize) -> TargetResult<bool, Self> {
         let kcb = super::kcb::get_kcb();
-        info!(
+        trace!(
             "remove_hw_breakpoint {:#x} (in ELF: {:#x}",
             addr,
             addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),

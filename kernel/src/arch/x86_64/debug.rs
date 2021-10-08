@@ -49,13 +49,20 @@ pub fn init() {
 
     unsafe {
         for p in [PORT1, PORT2] {
-            io::outb(p + INTERRUPT_ENABLE_REGISTER, 0x00); // Disable all interrupts
-            io::outb(p + 3, 0x80); // Enable DLAB (set baud rate divisor)
-            io::outb(p + 0, 0x01); // Set divisor to 1 (lo byte) 115200 baud
-            io::outb(p + 1, 0x00); //                  (hi byte)
-            io::outb(p + 3, 0x03); // 8 bits, no parity, one stop bit
-            io::outb(p + 2, 0xC7); // Enable FIFO, clear them, with 14-byte threshold
-            io::outb(p + INTERRUPT_ENABLE_REGISTER, 1 << DATA_AVAILABLE_IRQ_BIT); // Enable receive data IRQ
+            // Disable all interrupts
+            io::outb(p + INTERRUPT_ENABLE_REGISTER, 0x00);
+            // Enable DLAB (set baud rate divisor)
+            io::outb(p + 3, 0x80);
+            // Set divisor to 1 (lo byte) 115200 baud
+            io::outb(p + 0, 0x01);
+            //                  (hi byte)
+            io::outb(p + 1, 0x00);
+            // 8 bits, no parity, one stop bit
+            io::outb(p + 3, 0x03);
+            // Enable FIFO, clear them, with 14-byte threshold
+            io::outb(p + 2, 0xC7);
+            // Enable receive data IRQ
+            io::outb(p + INTERRUPT_ENABLE_REGISTER, 1 << DATA_AVAILABLE_IRQ_BIT);
         }
     }
 

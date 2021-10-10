@@ -4,11 +4,10 @@
 use alloc::vec::Vec;
 use core::result::Result;
 
-use crate::cluster_api::NodeId;
-use crate::rpc::{RPCError, RPCHeader, RPCType};
+use crate::rpc::{RPCError, RPCType};
 
 /// RPC Handler function
-pub type RPCHandler = fn(hdr: RPCHeader, payload: Vec<u8>) -> Result<Vec<u8>, RPCError>;
+pub type RPCHandler = fn(hdr: &mut Vec<u8>, payload: &mut Vec<u8>) -> Result<Vec<u8>, RPCError>;
 
 /// RPC server operations
 pub trait RPCServerAPI<'a> {
@@ -18,10 +17,10 @@ pub trait RPCServerAPI<'a> {
         'c: 'a;
 
     /// receives next RPC call with RPC ID
-    fn receive(&self) -> Result<(RPCHeader, Vec<u8>), RPCError>;
+    fn receive(&self) -> Result<RPCType, RPCError>;
 
     /// replies an RPC call with results
-    fn reply(&self, client: NodeId, data: Vec<u8>) -> Result<(), RPCError>;
+    fn reply(&self) -> Result<(), RPCError>;
 
     /// Run the RPC server
     fn run_server(&mut self) -> Result<(), RPCError>;

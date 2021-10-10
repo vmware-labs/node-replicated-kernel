@@ -13,7 +13,7 @@ use smoltcp::wire::IpAddress;
 
 use vmxnet3::smoltcp::DevQueuePhy;
 
-use crate::cluster_api::{ClusterClientAPI, ClusterError, NodeId};
+use crate::cluster_api::{ClusterClientAPI, NodeId};
 use crate::fio_rpc::*;
 use crate::rpc::*;
 use crate::rpc_api::RPCClientAPI;
@@ -54,7 +54,7 @@ impl TCPClient<'_> {
 impl ClusterClientAPI for TCPClient<'_> {
     /// Register with controller, analogous to LITE join_cluster()
     /// TODO: add timeout?? with error returned if timeout occurs?
-    fn join_cluster(&mut self) -> Result<NodeId, ClusterError> {
+    fn join_cluster(&mut self) -> Result<NodeId, RPCError> {
         // create client socket
         let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; RX_BUF_LEN]);
         let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; TX_BUF_LEN]);

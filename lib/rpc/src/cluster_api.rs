@@ -3,7 +3,7 @@
 
 use core::result::Result;
 
-use crate::rpc::{RPCType, RPCError};
+use crate::rpc::{RPCError, RPCType};
 
 /// Node ID for servers/clients
 pub type NodeId = u64;

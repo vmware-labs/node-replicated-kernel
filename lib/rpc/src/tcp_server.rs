@@ -3,9 +3,9 @@
 
 use abomonation::decode;
 use alloc::{vec, vec::Vec};
+use core::cell::RefCell;
 use hashbrown::HashMap;
 use log::{debug, trace, warn};
-use core::cell::RefCell;
 
 use smoltcp::iface::EthernetInterface;
 use smoltcp::socket::{SocketHandle, SocketSet, TcpSocket, TcpSocketBuffer};
@@ -95,7 +95,11 @@ impl TCPServer<'_> {
         // Chunked receive into internal buffer
         let mut sockets = self.sockets.borrow_mut();
         loop {
-            match self.iface.borrow_mut().poll(&mut sockets, Instant::from_millis(0)) {
+            match self
+                .iface
+                .borrow_mut()
+                .poll(&mut sockets, Instant::from_millis(0))
+            {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("poll error: {}", e);
@@ -110,17 +114,19 @@ impl TCPServer<'_> {
             } else {
                 let mut socket = sockets.get::<TcpSocket>(self.server_handle);
                 if socket.can_recv() {
-
                     // Write slice into hdr_buff (for RPC Header) or buff (for RPC data)
                     let result = if is_hdr {
-                        socket.recv_slice(&mut self.hdr_buff.borrow_mut()[total_data_received..expected_data])
+                        socket.recv_slice(
+                            &mut self.hdr_buff.borrow_mut()[total_data_received..expected_data],
+                        )
                     } else {
-                        socket.recv_slice(&mut self.buff.borrow_mut()[total_data_received..expected_data])
+                        socket.recv_slice(
+                            &mut self.buff.borrow_mut()[total_data_received..expected_data],
+                        )
                     };
 
                     // Update total data received
-                    if let Ok(bytes_received) = result
-                    {
+                    if let Ok(bytes_received) = result {
                         total_data_received += bytes_received;
                         trace!(
                             "rcv got {:?}/{:?} bytes",
@@ -150,7 +156,11 @@ impl TCPServer<'_> {
         // Chunked send from internal buffer
         let mut sockets = self.sockets.borrow_mut();
         loop {
-            match self.iface.borrow_mut().poll(&mut sockets, Instant::from_millis(0)) {
+            match self
+                .iface
+                .borrow_mut()
+                .poll(&mut sockets, Instant::from_millis(0))
+            {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("poll error: {}", e);
@@ -163,11 +173,11 @@ impl TCPServer<'_> {
 
             // If not done, send more data
             } else {
-
                 // Only send as much as space in socket.send_capacity
                 let mut socket = sockets.get::<TcpSocket>(self.server_handle);
                 if socket.can_send() && socket.send_capacity() > 0 && data_sent < expected_data {
-                    let end_index = data_sent + core::cmp::min(expected_data - data_sent, socket.send_capacity());
+                    let end_index = data_sent
+                        + core::cmp::min(expected_data - data_sent, socket.send_capacity());
                     debug!("send [{:?}-{:?}]", data_sent, end_index);
 
                     // Send in hdr_buff (for RPCHeader) or buff (for RPC data)
@@ -204,7 +214,11 @@ impl ClusterControllerAPI for TCPServer<'_> {
         {
             let mut sockets = self.sockets.borrow_mut();
             loop {
-                match self.iface.borrow_mut().poll(&mut sockets, Instant::from_millis(0)) {
+                match self
+                    .iface
+                    .borrow_mut()
+                    .poll(&mut sockets, Instant::from_millis(0))
+                {
                     Ok(_) => {}
                     Err(e) => {
                         warn!("poll error: {}", e);
@@ -216,7 +230,7 @@ impl ClusterControllerAPI for TCPServer<'_> {
                 if socket.is_active() && (socket.may_send() || socket.may_recv()) {
                     debug!("Connected to client!");
                     break;
-                }   
+                }
             }
         }
 
@@ -230,7 +244,7 @@ impl ClusterControllerAPI for TCPServer<'_> {
 
         // Send response
         self.reply()?;
-        
+
         // Single client server, so all client IDs are 0
         Ok(0)
     }
@@ -289,7 +303,7 @@ impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
                     func(&mut self.hdr_buff.borrow_mut(), &mut self.buff.borrow_mut())?;
                     self.reply()?;
                 }
-                None => debug!("Invalid RPCType({}), ignoring", rpc_id)
+                None => debug!("Invalid RPCType({}), ignoring", rpc_id),
             }
             debug!("Finished handling RPC");
         }

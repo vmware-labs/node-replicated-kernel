@@ -7,12 +7,16 @@ use core::result::Result;
 use crate::rpc::{RPCError, RPCType};
 
 /// RPC Handler function
-pub type RPCHandler = fn(hdr: &mut Vec<u8>, payload: &mut Vec<u8>) -> Result<Vec<u8>, RPCError>;
+pub type RPCHandler = fn(hdr: &mut Vec<u8>, payload: &mut Vec<u8>) -> Result<(), RPCError>;
 
 /// RPC server operations
 pub trait RPCServerAPI<'a> {
     /// register an RPC func with an ID
-    fn register<'c>(&'a mut self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<(), RPCError>
+    fn register<'c>(
+        &'a mut self,
+        rpc_id: RPCType,
+        handler: &'c RPCHandler,
+    ) -> Result<&mut Self, RPCError>
     where
         'c: 'a;
 

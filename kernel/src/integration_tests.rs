@@ -785,13 +785,18 @@ pub fn cxl_read() {
 fn xmain() {
     use rpc::tcp_server::TCPServer;
     use rpc::rpc_api::RPCServerAPI;
+    use rpc::rpc::RPCType;
     use crate::arch::network::init_network;
+    use crate::arch::exokernel::*;
 
     const PORT: u16 = 6970;
 
     let iface = init_network();
     let mut server = TCPServer::new(iface, PORT);
-    server.run_server().unwrap();
+
+    // TODO: register handlers
+    server.register(FileIO::Open as RPCType, &OPEN_HANDLER).unwrap()
+        .run_server().unwrap();
 
     arch::debug::shutdown(ExitReason::Ok);
 }

@@ -13,7 +13,6 @@ extern crate smoltcp;
 extern crate vmxnet3;
 
 pub mod cluster_api;
-pub mod fio_rpc;
 pub mod rpc;
 pub mod rpc_api;
 pub mod tcp_client;

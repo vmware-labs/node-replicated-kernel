@@ -1,6 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+/*
 use abomonation::{decode, encode};
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
@@ -14,7 +15,6 @@ use smoltcp::wire::IpAddress;
 use vmxnet3::smoltcp::DevQueuePhy;
 
 use crate::cluster_api::{ClusterClientAPI, NodeId};
-use crate::fio_rpc::*;
 use crate::rpc::*;
 use crate::rpc_api::RPCClientAPI;
 
@@ -461,3 +461,4 @@ impl TCPClient<'_> {
         }
     }
 }
+*/

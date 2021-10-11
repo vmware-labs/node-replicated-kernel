@@ -3,16 +3,10 @@
 
 use core::result::Result;
 
-use crate::rpc::{RPCError, RPCType};
+use crate::rpc::RPCError;
 
 /// Node ID for servers/clients
 pub type NodeId = u64;
-
-pub const CLUSTER_OPERATION: RPCType = 0;
-
-pub fn is_reserved(rpc_id: RPCType) -> bool {
-    return rpc_id == CLUSTER_OPERATION;
-}
 
 pub trait ClusterControllerAPI {
     ///  Controller-side implementation for LITE join_cluster()

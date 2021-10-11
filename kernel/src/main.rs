@@ -41,6 +41,10 @@
 
 extern crate alloc;
 
+#[cfg(feature = "test-controller")]
+#[macro_use]
+extern crate abomonation;
+
 /// The x86-64 platform specific code.
 #[cfg(all(target_arch = "x86_64", target_os = "none"))]
 #[path = "arch/x86_64/mod.rs"]

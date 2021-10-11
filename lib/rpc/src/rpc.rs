@@ -40,7 +40,8 @@ unsafe_abomonate!(RPCError);
 
 pub type RPCType = u8;
 
-#[derive(Debug, Clone, Copy)]
+// TODO: remove copy, clone
+#[derive(Debug, Copy, Clone)]
 pub struct RPCHeader {
     pub client_id: u64,
     pub pid: usize,

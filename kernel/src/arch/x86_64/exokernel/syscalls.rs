@@ -1,12 +1,12 @@
-use abomonation::{decode, encode};
+// Copyright © 2021 University of Colorado. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+use abomonation::{decode, encode, Abomonation};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
-use log::{debug, error, warn};
+use log::{debug, error};
 
-use kpi::io::{FileFlags, FileInfo, FileModes};
-use kpi::FileOperation;
-use rpc::fio_rpc::*;
 use rpc::rpc::*;
 
 use crate::error::KError;
@@ -14,40 +14,78 @@ use crate::fs::NrLock;
 use crate::process::Pid;
 use crate::{cnrfs, nr};
 
-const MAX_READ: usize = 4096;
+#[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
+#[repr(u8)]
+pub enum FileIO {
+    /// Open a file
+    Open = 1,
+    /// Read from a file
+    Read = 2,
+    /// Read from a file from the given offset
+    ReadAt = 3,
+    /// Write to a file
+    Write = 4,
+    /// Write to a file
+    WriteAt = 5,
+    /// Close an opened file.
+    Close = 6,
+    /// Get the information related to the file.
+    GetInfo = 7,
+    /// Delete the file
+    Delete = 8,
+    /// Write to a file without going into NR.
+    WriteDirect = 9,
+    /// Rename a file.
+    FileRename = 10,
+    /// Create a directory.
+    MkDir = 11,
+
+    Unknown = 12,
+}
+
+impl From<RPCType> for FileIO {
+    /// Construct a RPCType enum based on a 8-bit value.
+    fn from(op: RPCType) -> FileIO {
+        match op {
+            1 => FileIO::Open,
+            2 => FileIO::Read,
+            3 => FileIO::ReadAt,
+            4 => FileIO::Write,
+            5 => FileIO::WriteAt,
+            6 => FileIO::Close,
+            7 => FileIO::GetInfo,
+            8 => FileIO::Delete,
+            9 => FileIO::WriteDirect,
+            10 => FileIO::FileRename,
+            11 => FileIO::MkDir,
+            _ => FileIO::Unknown,
+        }
+    }
+}
+unsafe_abomonate!(FileIO);
+
+#[derive(Debug)]
+pub struct FIORes {
+    pub ret: Result<(u64, u64), RPCError>,
+}
+unsafe_abomonate!(FIORes: ret);
 
 lazy_static! {
     static ref PID_MAP: NrLock<HashMap<Pid, Pid>> = NrLock::default();
 }
 
-#[inline(always)]
-fn construct_error_ret(res_hdr: RPCHeader, err: RPCError) -> Vec<u8> {
-    let res = FIORes { ret: Err(err) };
-    construct_ret(res_hdr, res)
-}
-
-#[inline(always)]
-fn construct_ret(mut res_hdr: RPCHeader, res: FIORes) -> Vec<u8> {
-    let mut res_data = Vec::new();
-    unsafe { encode(&res, &mut res_data) }.unwrap();
-    res_hdr.msg_len = res_data.len() as u64;
-
-    let mut data = Vec::new();
-    unsafe { encode(&res_hdr, &mut data) }.unwrap();
-    data.extend(res_data);
-    data
-}
-
-#[inline(always)]
-fn convert_return(cnrfs_ret: Result<(u64, u64), KError>) -> Result<(u64, u64), RPCError> {
-    match cnrfs_ret {
-        Ok(ret) => Ok(ret),
-        Err(err) => Err(err.into()),
+pub fn get_local_pid(remote_pid: usize) -> Option<usize> {
+    let process_lookup = PID_MAP.read();
+    let local_pid = process_lookup.get(&remote_pid);
+    if let None = local_pid {
+        error!("Failed to lookup remote pid {}", remote_pid);
+        return None;
     }
+    Some(*(local_pid.unwrap()))
 }
 
 pub fn register_pid(remote_pid: usize) -> Result<(), KError> {
-    let kcb = super::kcb::get_kcb();
+    let kcb = super::super::kcb::get_kcb();
     kcb.replica
         .as_ref()
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
@@ -78,6 +116,103 @@ pub fn register_pid(remote_pid: usize) -> Result<(), KError> {
         })
 }
 
+#[inline(always)]
+pub fn construct_error_ret(
+    hdr: &mut Vec<u8>,
+    payload: &mut Vec<u8>,
+    err: RPCError,
+) -> Result<(), RPCError> {
+    let res = FIORes { ret: Err(err) };
+    construct_ret(hdr, payload, res)
+}
+
+#[inline(always)]
+pub fn construct_ret(
+    hdr: &mut Vec<u8>,
+    payload: &mut Vec<u8>,
+    res: FIORes,
+) -> Result<(), RPCError> {
+    // Encode payload in buffer
+    unsafe { encode(&res, payload) }.unwrap();
+
+    // Modify header and write into output buffer
+    // TODO: this is a copy of the header, which we would like to avoid.
+    let mut new_hdr = {
+        let (parsed_hdr, _) = unsafe { decode::<RPCHeader>(hdr) }.unwrap();
+        *parsed_hdr
+    };
+    new_hdr.msg_len = core::mem::size_of::<FIORes>() as u64;
+    unsafe { encode(&new_hdr, hdr) }.unwrap();
+    Ok(())
+}
+
+#[inline(always)]
+pub fn convert_return(cnrfs_ret: Result<(u64, u64), KError>) -> Result<(u64, u64), RPCError> {
+    match cnrfs_ret {
+        Ok(ret) => Ok(ret),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/*
+use abomonation::{Abomonation, decode, encode};
+use alloc::vec::Vec;
+use alloc::string::String;
+use hashbrown::HashMap;
+use lazy_static::lazy_static;
+use log::{debug, error, warn};
+
+use kpi::io::{FileFlags, FileInfo, FileModes};
+use kpi::FileOperation;
+use rpc::rpc::*;
+
+use crate::error::KError;
+use crate::fs::NrLock;
+use crate::process::Pid;
+use crate::{cnrfs, nr};
+
+#[derive(Debug)]
+pub struct CloseReq {
+    pub fd: u64,
+}
+unsafe_abomonate!(CloseReq: fd);
+
+#[derive(Debug)]
+pub struct DeleteReq {
+    pub pathname: String,
+}
+unsafe_abomonate!(DeleteReq: pathname);
+
+#[derive(Debug)]
+pub struct RenameReq {
+    pub oldname: String,
+    pub newname: String,
+}
+unsafe_abomonate!(RenameReq: oldname, newname);
+
+#[derive(Debug)]
+pub struct RWReq {
+    pub fd: u64,
+    pub len: u64,
+    pub offset: i64,
+}
+unsafe_abomonate!(RWReq: fd, len, offset);
+
+#[derive(Debug)]
+pub struct MkDirReq {
+    pub pathname: String,
+    pub modes: u64,
+}
+unsafe_abomonate!(MkDirReq: pathname, modes);
+
+#[derive(Debug)]
+pub struct GetInfoReq {
+    pub name: String,
+}
+unsafe_abomonate!(GetInfoReq: name);
+*/
+
+/*
 /// RPC handler for file operations
 pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
     let mut res_hdr = RPCHeader {
@@ -345,3 +480,4 @@ pub fn handle_fileio(hdr: &RPCHeader, payload: &mut [u8]) -> Vec<u8> {
         _ => construct_error_ret(res_hdr, RPCError::NotSupported),
     }
 }
+*/

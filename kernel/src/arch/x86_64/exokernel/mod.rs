@@ -13,9 +13,11 @@ pub mod open_create;
 pub mod rename;
 pub mod rw;
 
+pub use fio::FileIO;
+
 // Re-export client registration
 use self::fio::register_client;
-pub const REGISTER_CLIENT: RegistrationHandler = register_client;
+pub const CLIENT_REGISTRAR: RegistrationHandler = register_client;
 
 // Re-export handlers
 use self::open_create::handle_open;

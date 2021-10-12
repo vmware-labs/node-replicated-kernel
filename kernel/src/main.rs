@@ -41,7 +41,7 @@
 
 extern crate alloc;
 
-#[cfg(feature = "test-controller")]
+#[cfg(any(feature = "test-controller", feature = "exokernel"))]
 #[macro_use]
 extern crate abomonation;
 

@@ -795,8 +795,9 @@ fn xmain() {
     let mut server = TCPServer::new(iface, PORT);
 
     // TODO: register handlers
-    server.register(FileIO::Open as RPCType, &OPEN_HANDLER).unwrap()
-        .run_server().unwrap();
+    let (server, _) = server.register(FileIO::Open as RPCType, &OPEN_HANDLER).unwrap()
+        .add_client(&CLIENT_REGISTRAR).unwrap();
+    server.run_server().unwrap();
 
     arch::debug::shutdown(ExitReason::Ok);
 }

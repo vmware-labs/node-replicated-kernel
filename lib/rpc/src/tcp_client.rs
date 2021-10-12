@@ -1,9 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-/*
 use abomonation::{decode, encode};
-use alloc::string::String;
 use alloc::{vec, vec::Vec};
 use log::{debug, trace, warn};
 
@@ -33,17 +31,17 @@ pub struct TCPClient<'a> {
 }
 
 impl TCPClient<'_> {
-    pub fn new<'a>(
+    pub fn new(
         server_ip: IpAddress,
         server_port: u16,
-        iface: EthernetInterface<'a, DevQueuePhy>,
-    ) -> TCPClient<'a> {
+        iface: EthernetInterface<'_, DevQueuePhy>,
+    ) -> TCPClient<'_> {
         TCPClient {
-            iface: iface,
+            iface,
             sockets: SocketSet::new(vec![]),
             server_handle: None,
-            server_ip: server_ip,
-            server_port: server_port,
+            server_ip,
+            server_port,
             client_port: 10110,
             client_id: 0,
             req_id: 0,
@@ -88,8 +86,8 @@ impl ClusterClientAPI for TCPClient<'_> {
             }
         }
 
-        self.call(0, FileIO::Registration as RPCType, Vec::new())
-            .unwrap();
+        // TODO: define proper type for registration??
+        self.call(0, 0_u8, Vec::new()).unwrap();
         Ok(self.client_id)
     }
 }
@@ -101,7 +99,7 @@ impl RPCClientAPI for TCPClient<'_> {
         // Create request header
         let req_hdr = RPCHeader {
             client_id: self.client_id,
-            pid: pid,
+            pid,
             req_id: self.req_id,
             msg_type: rpc_id,
             msg_len: data.len() as u64,
@@ -110,7 +108,7 @@ impl RPCClientAPI for TCPClient<'_> {
         // Serialize request header then request body
         let mut req_data = Vec::new();
         unsafe { encode(&req_hdr, &mut req_data) }.unwrap();
-        if data.len() > 0 {
+        if !data.is_empty() {
             req_data.extend(data);
         }
 
@@ -129,9 +127,7 @@ impl RPCClientAPI for TCPClient<'_> {
         }
 
         // Check request & client IDs, and also length of received data
-        if ((res_hdr.client_id != self.client_id) && FileIO::from(rpc_id) != FileIO::Registration)
-            || res_hdr.req_id != self.req_id
-        {
+        if res_hdr.client_id != self.client_id || res_hdr.req_id != self.req_id {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",
                 res_hdr.client_id, self.client_id, res_hdr.req_id, self.req_id
@@ -142,8 +138,8 @@ impl RPCClientAPI for TCPClient<'_> {
         // Increment request id
         self.req_id += 1;
 
-        // If registration, update id
-        if FileIO::from(rpc_id) == FileIO::Registration {
+        // If registration, update id TODO: proper RPC type?
+        if rpc_id == 0u8 {
             self.client_id = res_hdr.client_id;
             debug!("Set client ID to: {}", self.client_id);
             return Ok(Vec::new());
@@ -177,7 +173,7 @@ impl RPCClientAPI for TCPClient<'_> {
                             end_index,
                             data.len()
                         );
-                        data_sent = data_sent + bytes_sent;
+                        data_sent += bytes_sent;
                     } else {
                         debug!("send_slice failed... trying again?");
                     }
@@ -221,244 +217,3 @@ impl RPCClientAPI for TCPClient<'_> {
         }
     }
 }
-
-impl TCPClient<'_> {
-    pub fn fio_write(
-        &mut self,
-        pid: usize,
-        fd: u64,
-        data: Vec<u8>,
-    ) -> Result<(u64, u64), RPCError> {
-        self.fio_writeat(pid, fd, -1, data)
-    }
-
-    pub fn fio_writeat(
-        &mut self,
-        pid: usize,
-        fd: u64,
-        offset: i64,
-        data: Vec<u8>,
-    ) -> Result<(u64, u64), RPCError> {
-        let req = RWReq {
-            fd: fd,
-            len: data.len() as u64,
-            offset: offset,
-        };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-        req_data.extend(data);
-
-        let mut res = self
-            .call(pid, FileIO::WriteAt as RPCType, req_data)
-            .unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
-            if remaining.len() > 0 {
-                return Err(RPCError::ExtraData);
-            }
-            debug!("Write() {:?}", res);
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-
-    pub fn fio_read(
-        &mut self,
-        pid: usize,
-        fd: u64,
-        len: u64,
-        buff_ptr: &mut [u8],
-    ) -> Result<(u64, u64), RPCError> {
-        self.fio_readat(pid, fd, len, -1, buff_ptr)
-    }
-
-    pub fn fio_readat(
-        &mut self,
-        pid: usize,
-        fd: u64,
-        len: u64,
-        offset: i64,
-        buff_ptr: &mut [u8],
-    ) -> Result<(u64, u64), RPCError> {
-        let req = RWReq {
-            fd: fd,
-            len: len,
-            offset: offset,
-        };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-
-        let mut res = self.call(pid, FileIO::ReadAt as RPCType, req_data).unwrap();
-        if let Some((res, data)) = unsafe { decode::<FIORes>(&mut res) } {
-            // If result is good, check how much data was returned
-            if let Ok((bytes_read, _)) = res.ret {
-                if bytes_read != data.len() as u64 {
-                    warn!(
-                        "Unexpected amount of data: bytes_read={:?}, data.len={:?}",
-                        bytes_read,
-                        data.len()
-                    );
-                    return Err(RPCError::MalformedResponse);
-
-                // write data into user supplied buffer
-                // TODO: more efficient way to write data?
-                } else if bytes_read > 0 {
-                    debug!("Read buff_ptr[0..{:?}] = {:?}", bytes_read, data);
-                    buff_ptr[..bytes_read as usize].copy_from_slice(&data);
-                }
-                debug!("Read() {:?} {:?}", res, buff_ptr);
-            }
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-
-    pub fn fio_create(
-        &mut self,
-        pid: usize,
-        pathname: String,
-        flags: u64,
-        modes: u64,
-    ) -> Result<(u64, u64), RPCError> {
-        self.fio_open_create(pid, pathname, flags, modes, FileIO::Create as RPCType)
-    }
-
-    pub fn fio_open(
-        &mut self,
-        pid: usize,
-        pathname: String,
-        flags: u64,
-        modes: u64,
-    ) -> Result<(u64, u64), RPCError> {
-        self.fio_open_create(pid, pathname, flags, modes, FileIO::Open as RPCType)
-    }
-
-    fn fio_open_create(
-        &mut self,
-        pid: usize,
-        pathname: String,
-        flags: u64,
-        modes: u64,
-        rpc_type: RPCType,
-    ) -> Result<(u64, u64), RPCError> {
-        let req = OpenReq {
-            pathname: pathname,
-            flags: flags,
-            modes: modes,
-        };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.call(pid, rpc_type, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
-            if remaining.len() > 0 {
-                return Err(RPCError::ExtraData);
-            }
-            debug!("Open() {:?}", res);
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-
-    pub fn fio_close(&mut self, pid: usize, fd: u64) -> Result<(u64, u64), RPCError> {
-        let req = CloseReq { fd: fd };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-
-        let mut res = self.call(pid, FileIO::Close as RPCType, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
-            if remaining.len() > 0 {
-                return Err(RPCError::ExtraData);
-            }
-            debug!("Close() {:?}", res);
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-
-    pub fn fio_delete(&mut self, pid: usize, pathname: String) -> Result<(u64, u64), RPCError> {
-        let req = DeleteReq { pathname: pathname };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.call(pid, FileIO::Delete as RPCType, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
-            if remaining.len() > 0 {
-                return Err(RPCError::ExtraData);
-            }
-            debug!("Delete() {:?}", res);
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-
-    pub fn fio_rename(
-        &mut self,
-        pid: usize,
-        oldname: String,
-        newname: String,
-    ) -> Result<(u64, u64), RPCError> {
-        let req = RenameReq {
-            oldname: oldname,
-            newname: newname,
-        };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self
-            .call(pid, FileIO::FileRename as RPCType, req_data)
-            .unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
-            if remaining.len() > 0 {
-                return Err(RPCError::ExtraData);
-            }
-            debug!("Rename() {:?}", res);
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-
-    pub fn fio_mkdir(
-        &mut self,
-        pid: usize,
-        pathname: String,
-        modes: u64,
-    ) -> Result<(u64, u64), RPCError> {
-        let req = MkDirReq {
-            pathname: pathname,
-            modes: modes,
-        };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self.call(pid, FileIO::MkDir as RPCType, req_data).unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
-            if remaining.len() > 0 {
-                return Err(RPCError::ExtraData);
-            }
-            debug!("MkDir() {:?}", res);
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-
-    pub fn fio_getinfo(&mut self, pid: usize, name: String) -> Result<(u64, u64), RPCError> {
-        let req = GetInfoReq { name: name };
-        let mut req_data = Vec::new();
-        unsafe { encode(&req, &mut req_data) }.unwrap();
-        let mut res = self
-            .call(pid, FileIO::GetInfo as RPCType, req_data)
-            .unwrap();
-        if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
-            if remaining.len() > 0 {
-                return Err(RPCError::ExtraData);
-            }
-            return res.ret;
-        } else {
-            return Err(RPCError::MalformedResponse);
-        }
-    }
-}
-*/

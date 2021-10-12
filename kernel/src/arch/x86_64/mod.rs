@@ -60,7 +60,10 @@ use vspace::page_table::PageTable;
 pub mod acpi;
 pub mod coreboot;
 pub mod debug;
+
+#[cfg(any(feature = "exokernel", feature = "test-controller"))]
 pub mod exokernel;
+
 pub mod gdt;
 pub mod irq;
 pub mod kcb;

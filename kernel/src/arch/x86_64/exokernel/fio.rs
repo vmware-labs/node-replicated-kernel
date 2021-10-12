@@ -7,6 +7,7 @@ use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use log::{debug, error};
 
+use rpc::cluster_api::NodeId;
 use rpc::rpc::*;
 
 use crate::error::KError;
@@ -17,6 +18,8 @@ use crate::{cnrfs, nr};
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
 pub enum FileIO {
+    /// Create a file
+    Create = 0,
     /// Open a file
     Open = 1,
     /// Read from a file
@@ -47,6 +50,7 @@ impl From<RPCType> for FileIO {
     /// Construct a RPCType enum based on a 8-bit value.
     fn from(op: RPCType) -> FileIO {
         match op {
+            0 => FileIO::Create,
             1 => FileIO::Open,
             2 => FileIO::Read,
             3 => FileIO::ReadAt,
@@ -84,7 +88,7 @@ pub fn get_local_pid(remote_pid: usize) -> Option<usize> {
     Some(*(local_pid.unwrap()))
 }
 
-pub fn register_pid(remote_pid: usize) -> Result<(), KError> {
+pub fn register_pid(remote_pid: usize) -> Result<usize, KError> {
     let kcb = super::super::kcb::get_kcb();
     kcb.replica
         .as_ref()
@@ -103,7 +107,7 @@ pub fn register_pid(remote_pid: usize) -> Result<(), KError> {
                             "Mapped remote pid {} to local pid {}",
                             remote_pid, local_pid
                         );
-                        Ok(())
+                        Ok(local_pid)
                     }
                     Err(err) => {
                         error!("Unable to register pid {:?} {:?}", remote_pid, err);
@@ -114,6 +118,17 @@ pub fn register_pid(remote_pid: usize) -> Result<(), KError> {
                 Err(KError::NoProcessFoundForPid)
             }
         })
+}
+
+pub fn register_client(hdr: &mut Vec<u8>, _payload: &mut Vec<u8>) -> Result<NodeId, RPCError> {
+    // parse header to get remote pid
+    let (parsed_hdr, _) = unsafe { decode::<RPCHeader>(hdr) }.unwrap();
+
+    // use local pid as client ID
+    match register_pid(parsed_hdr.pid) {
+        Ok(client_id) => Ok(client_id as NodeId),
+        Err(err) => Err(err.into()),
+    }
 }
 
 #[inline(always)]
@@ -153,64 +168,6 @@ pub fn convert_return(cnrfs_ret: Result<(u64, u64), KError>) -> Result<(u64, u64
         Err(err) => Err(err.into()),
     }
 }
-
-/*
-use abomonation::{Abomonation, decode, encode};
-use alloc::vec::Vec;
-use alloc::string::String;
-use hashbrown::HashMap;
-use lazy_static::lazy_static;
-use log::{debug, error, warn};
-
-use kpi::io::{FileFlags, FileInfo, FileModes};
-use kpi::FileOperation;
-use rpc::rpc::*;
-
-use crate::error::KError;
-use crate::fs::NrLock;
-use crate::process::Pid;
-use crate::{cnrfs, nr};
-
-#[derive(Debug)]
-pub struct CloseReq {
-    pub fd: u64,
-}
-unsafe_abomonate!(CloseReq: fd);
-
-#[derive(Debug)]
-pub struct DeleteReq {
-    pub pathname: String,
-}
-unsafe_abomonate!(DeleteReq: pathname);
-
-#[derive(Debug)]
-pub struct RenameReq {
-    pub oldname: String,
-    pub newname: String,
-}
-unsafe_abomonate!(RenameReq: oldname, newname);
-
-#[derive(Debug)]
-pub struct RWReq {
-    pub fd: u64,
-    pub len: u64,
-    pub offset: i64,
-}
-unsafe_abomonate!(RWReq: fd, len, offset);
-
-#[derive(Debug)]
-pub struct MkDirReq {
-    pub pathname: String,
-    pub modes: u64,
-}
-unsafe_abomonate!(MkDirReq: pathname, modes);
-
-#[derive(Debug)]
-pub struct GetInfoReq {
-    pub name: String,
-}
-unsafe_abomonate!(GetInfoReq: name);
-*/
 
 /*
 /// RPC handler for file operations

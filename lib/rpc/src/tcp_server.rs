@@ -203,9 +203,14 @@ impl TCPServer<'_> {
     }
 }
 
-impl ClusterControllerAPI for TCPServer<'_> {
-    fn add_client(&mut self) -> Result<NodeId, RPCError> {
-        // 'Accept' a client connection; scoped so mutable borrow of sockets terminates before calling other functions that poll
+impl<'a> ClusterControllerAPI<'a> for TCPServer<'a> {
+    fn add_client<'c>(
+        &'a mut self,
+        func: &'c RegistrationHandler,
+    ) -> Result<(&mut Self, NodeId), RPCError>
+    where
+        'c: 'a,
+    {
         {
             let mut sockets = self.sockets.borrow_mut();
             loop {
@@ -235,13 +240,14 @@ impl ClusterControllerAPI for TCPServer<'_> {
         // Validate registration header
         let (_hdr, _) = unsafe { decode::<RPCHeader>(&mut self.hdr_buff.borrow_mut()) }.unwrap();
 
-        // TODO: modify header, right now just echoes
+        // Run specified registration function
+        let client_id = func(&mut self.hdr_buff.borrow_mut(), &mut self.buff.borrow_mut())?;
 
         // Send response
         self.reply()?;
 
         // Single client server, so all client IDs are 0
-        Ok(0)
+        Ok((self, client_id))
     }
 }
 
@@ -292,9 +298,6 @@ impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
 
     /// Run the RPC server
     fn run_server(&mut self) -> Result<(), RPCError> {
-        debug!("Starting to run server!");
-        self.add_client()?;
-        debug!("Added client!");
         loop {
             let rpc_id = self.receive()?;
             match self.handlers.borrow().get(&rpc_id) {

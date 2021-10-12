@@ -1,15 +1,16 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, Abomonation};
+use abomonation::{decode, encode, Abomonation};
 use alloc::string::String;
 use alloc::vec::Vec;
 use log::{debug, warn};
 
 use kpi::io::{FileFlags, FileModes};
 use rpc::rpc::*;
+use rpc::rpc_api::RPCClientAPI;
 
-use crate::arch::exokernel::syscalls::*;
+use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
 
 #[derive(Debug)]
@@ -19,6 +20,67 @@ pub struct OpenReq {
     pub modes: u64,
 }
 unsafe_abomonate!(OpenReq: pathname, flags, modes);
+
+pub fn rpc_create<T: RPCClientAPI>(
+    rpc_client: &mut T,
+    pid: usize,
+    pathname: String,
+    flags: u64,
+    modes: u64,
+) -> Result<(u64, u64), RPCError> {
+    rpc_open_create(
+        rpc_client,
+        pid,
+        pathname,
+        flags,
+        modes,
+        FileIO::Create as RPCType,
+    )
+}
+
+pub fn rpc_open<T: RPCClientAPI>(
+    rpc_client: &mut T,
+    pid: usize,
+    pathname: String,
+    flags: u64,
+    modes: u64,
+) -> Result<(u64, u64), RPCError> {
+    rpc_open_create(
+        rpc_client,
+        pid,
+        pathname,
+        flags,
+        modes,
+        FileIO::Open as RPCType,
+    )
+}
+
+fn rpc_open_create<T: RPCClientAPI>(
+    rpc_client: &mut T,
+    pid: usize,
+    pathname: String,
+    flags: u64,
+    modes: u64,
+    rpc_type: RPCType,
+) -> Result<(u64, u64), RPCError> {
+    let req = OpenReq {
+        pathname: pathname,
+        flags: flags,
+        modes: modes,
+    };
+    let mut req_data = Vec::new();
+    unsafe { encode(&req, &mut req_data) }.unwrap();
+    let mut res = rpc_client.call(pid, rpc_type, req_data).unwrap();
+    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
+        if remaining.len() > 0 {
+            return Err(RPCError::ExtraData);
+        }
+        debug!("Open() {:?}", res);
+        return res.ret;
+    } else {
+        return Err(RPCError::MalformedResponse);
+    }
+}
 
 pub fn handle_open(hdr: &mut Vec<u8>, payload: &mut Vec<u8>) -> Result<(), RPCError> {
     let local_pid = {

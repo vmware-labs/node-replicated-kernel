@@ -92,13 +92,11 @@ impl<'a> Device<'a> for DevQueuePhy {
                 self.device.txq[0].dequeue().expect("Couldn't dequeue?")
             } else {
                 // info!("TX: new buffer chain");
-                let mut iobuf = IOBufChain::new(0, 2).expect("Can't create chain?");
+                let mut iobuf = IOBufChain::new(0, 1).expect("Can't create chain?");
                 let layout = Layout::from_size_align(MAX_PACKET_SZ, 128).expect("Correct Layout");
                 let seg0 = IOBuf::new(layout).expect("Can't make packet?");
-                let seg1 = IOBuf::new(layout).expect("Can't make packet?");
 
                 iobuf.append(seg0);
-                iobuf.append(seg1);
                 iobuf
             };
 

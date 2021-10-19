@@ -13,7 +13,7 @@ jobs:
   formatting:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2.3.4
+      - uses: actions/checkout@v2.3.5
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init

@@ -638,6 +638,7 @@ fn xmain() {
 
     use log::{debug, info};
 
+    use vmxnet3::pci::BarAccess;
     use vmxnet3::smoltcp::DevQueuePhy;
     use vmxnet3::vmx::VMXNet3;
 
@@ -649,26 +650,27 @@ fn xmain() {
 
     use crate::memory::vspace::MapAction;
     use crate::memory::PAddr;
+    use crate::memory::KERNEL_BASE;
 
+    arch::irq::ioapic_establish_route(0x0, 0x0);
+    crate::arch::irq::enable();
     let vmx = {
         let kcb = crate::kcb::get_kcb();
-        // TODO(hack): Map potential vmxnet3 bar addresses XD
-        for &bar in &[
-            0x81828000u64,
-            0x81827000u64,
-            0x81005000u64,
-            0x81004000u64,
-            0x81003000u64,
-            0x81002000u64,
-        ] {
+        let ba = BarAccess::new(0x0, 0x10, 0x0);
+        for &bar in &[ba.bar0 - KERNEL_BASE, ba.bar1 - KERNEL_BASE] {
             assert!(kcb
                 .arch
                 .init_vspace()
-                .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel,)
+                .map_identity_with_offset(
+                    PAddr::from(KERNEL_BASE),
+                    PAddr::from(bar),
+                    0x1000,
+                    MapAction::ReadWriteKernel,
+                )
                 .is_ok());
         }
 
-        let mut vmx = VMXNet3::new(2, 2).unwrap();
+        let mut vmx = VMXNet3::new(ba, 2, 2).unwrap();
         assert!(vmx.attach_pre().is_ok());
         vmx.init();
         vmx

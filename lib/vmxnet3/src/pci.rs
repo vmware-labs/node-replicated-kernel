@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 
 #![allow(unused)]
-use log::error;
+use log::{debug, error, trace};
 use x86::io;
 
 pub use driverkit::iomem::DmaObject;
@@ -25,18 +25,26 @@ pub(crate) unsafe fn confread(bus: u32, dev: u32, fun: u32, reg: u32) -> u32 {
 
     io::outl(PCI_CONF_ADDR, addr);
     let v = io::inl(PCI_CONF_DATA);
-    error!(
+    trace!(
         "confread ({:#x} {:#x} {:#x}) reg({}) val = {:#x}",
-        bus, dev, fun, reg, v
+        bus,
+        dev,
+        fun,
+        reg,
+        v
     );
 
     v
 }
 
 pub(crate) unsafe fn confwrite(bus: u32, dev: u32, fun: u32, reg: u32, value: u32) {
-    error!(
+    trace!(
         "confwrite ({:#x} {:#x} {:#x}) reg({:#x}) = value({:#x})",
-        bus, dev, fun, reg, value
+        bus,
+        dev,
+        fun,
+        reg,
+        value
     );
 
     let addr = pci_bus_address(bus, dev, fun, reg);
@@ -46,14 +54,16 @@ pub(crate) unsafe fn confwrite(bus: u32, dev: u32, fun: u32, reg: u32, value: u3
 
 pub(crate) unsafe fn busread(bar_base: u64, offset: u64) -> u32 {
     let v = *((bar_base + offset) as *mut u32);
-    error!("busread ({:#x} + {:#x}) val = {:#x}", bar_base, offset, v);
+    trace!("busread ({:#x} + {:#x}) val = {:#x}", bar_base, offset, v);
     v
 }
 
 pub(crate) unsafe fn buswrite(bar_base: u64, offset: u64, value: u32) {
-    error!(
+    trace!(
         "buswrite ({:#x} + {:#x}) = value({:#x})",
-        bar_base, offset, value
+        bar_base,
+        offset,
+        value
     );
     *((bar_base + offset) as *mut u32) = value;
 }
@@ -68,16 +78,16 @@ pub(crate) trait BarIO {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct BarAccess {
     /// Bus, device, function triplet of PCI device
-    pci_addr: (u32, u32, u32),
+    pub pci_addr: (u32, u32, u32),
     /// IO memory address of BAR0
-    bar0: u64,
+    pub bar0: u64,
     /// IO memory address of BAR1
-    bar1: u64,
+    pub bar1: u64,
 }
 
 #[cfg(not(test))]
 impl BarAccess {
-    pub(crate) fn new(bus: u32, dev: u32, fun: u32) -> Self {
+    pub fn new(bus: u32, dev: u32, fun: u32) -> Self {
         unsafe {
             let devline = confread(bus, dev, fun, 0x0);
             assert_eq!(devline, 0x7b015ad, "Sanity check for vmxnet3");
@@ -86,14 +96,14 @@ impl BarAccess {
             let bar1 = confread(bus, dev, fun, 0x14);
             //let bar_msix = pci::confread(BUS, DEV, FUN, 0x7);
 
-            log::debug!("BAR0 at: {:#x}", bar0);
-            log::debug!("BAR1 at: {:#x}", bar1);
+            debug!("BAR0 at: {:#x}", bar0);
+            debug!("BAR1 at: {:#x}", bar1);
             //debug!("MSI-X at: {:#x}", bar_msi);
 
             BarAccess {
                 pci_addr: (bus, dev, fun),
-                bar0: bar0.into(),
-                bar1: bar1.into(),
+                bar0: bar0 as u64 + KERNEL_BASE,
+                bar1: bar1 as u64 + KERNEL_BASE,
             }
         }
     }

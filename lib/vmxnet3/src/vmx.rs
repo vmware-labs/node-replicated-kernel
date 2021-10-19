@@ -183,14 +183,7 @@ pub struct VMXNet3 {
 impl DmaObject for VMXNet3 {}
 
 impl VMXNet3 {
-    pub fn new(nrx: usize, trx: usize) -> Result<Pin<Box<VMXNet3>>, VMXNet3Error> {
-        // TODO: supply as arguments/type
-        const BUS: u32 = 0x0;
-        const DEV: u32 = 0x10;
-        const FUN: u32 = 0x0;
-
-        let pci = BarAccess::new(BUS, DEV, FUN);
-
+    pub fn new(pci: BarAccess, nrx: usize, trx: usize) -> Result<Pin<Box<VMXNet3>>, VMXNet3Error> {
         let ntxqsets = BoundedUSize::<1, VMXNET3_MAX_TX_QUEUES>::new(trx);
         let nrxqsets = BoundedUSize::<1, VMXNET3_MAX_RX_QUEUES>::new(nrx);
 

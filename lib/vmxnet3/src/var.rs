@@ -591,10 +591,11 @@ impl RxQueue {
     }
 
     pub fn len(&self) -> usize {
-        let size = self.vxrxq_cmd_ring[0].vxrxr_ndesc();
-        debug_assert!(size.is_power_of_two());
-
-        (self.pidx_head0.wrapping_sub(self.pidx_tail0)) & (size - 1)
+        if self.pidx_head0 > self.pidx_tail0 {
+            return self.pidx_head0 - self.pidx_tail0;
+        } else {
+            return self.pidx_tail0 - self.pidx_head0;
+        }
     }
 
     pub fn capacity(&self) -> usize {
@@ -622,7 +623,7 @@ impl DmaObject for RxQueue {}
 
 impl DevQueue for RxQueue {
     fn enqueue(&mut self, chain: IOBufChain) -> Result<(), IOBufChain> {
-        if (self.capacity() - 1) - self.len() < chain.segments.len() {
+        if self.capacity() - self.len() < chain.segments.len() {
             // We don't bother trying to enqueue a partial packet
             return Err(chain);
         }

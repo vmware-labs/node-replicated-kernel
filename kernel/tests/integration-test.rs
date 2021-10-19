@@ -1199,41 +1199,10 @@ fn s03_userspace_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Tests that the basic vmxnet3 driver in the kernel is functional.
-#[cfg(not(feature = "baremetal"))]
-#[test]
-#[ignore = "flaky make networking stable first"]
-fn s03_vmxnet3_smoke() {
-    /// Helper function that spawns a UDP echo server on the host
-    fn spawn_tcpdump() -> Result<rexpect::session::PtySession> {
-        spawn("tcpdump -i tap0 -vvv", Some(25000))
-    }
-
-    let cmdline = RunnerArgs::new("test-vmxnet-smoke")
-        .timeout(25_000)
-        .use_vmxnet3();
-
-    let mut output = String::new();
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut tcpdump = spawn_tcpdump()?;
-        let mut p = spawn_nrk(&cmdline)?;
-
-        output += tcpdump
-            .exp_string("172.31.0.10.9999 > 172.31.0.20.5553: [udp sum ok] UDP, length 22")?
-            .as_str();
-
-        output += p.exp_eof()?.as_str();
-        p.process.exit()
-    };
-
-    check_for_successful_exit(&cmdline, qemu_run(), output);
-}
-
 /// Tests that the vmxnet3 driver is functional together with the smoltcp
 /// network stack.
 #[cfg(not(feature = "baremetal"))]
 #[test]
-#[ignore = "flaky make networking stable first"]
 fn s03_vmxnet3_smoltcp() {
     fn spawn_socat(port: u16) -> Result<rexpect::session::PtySession> {
         spawn(

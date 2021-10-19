@@ -554,76 +554,6 @@ pub fn xmain() {
     arch::debug::shutdown(ExitReason::Ok);
 }
 
-/// Smoke test for vmxnet3 in the kernel, make sure we can send and receive some
-/// (hand-crafted) packets.
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-vmxnet-smoke",
-    target_arch = "x86_64"
-))]
-pub fn xmain() {
-    use alloc::alloc::Layout;
-
-    use driverkit::devq::*;
-    use driverkit::iomem::*;
-    use log::info;
-
-    use crate::memory::vspace::MapAction;
-    use crate::memory::PAddr;
-
-    let kcb = crate::kcb::get_kcb();
-    // TODO(hack): Map potential vmxnet3 bar addresses XD
-    for &bar in &[
-        0x81828000u64,
-        0x81827000u64,
-        0x81005000u64,
-        0x81004000u64,
-        0x81003000u64,
-        0x81002000u64,
-    ] {
-        assert!(kcb
-            .arch
-            .init_vspace()
-            .map_identity(PAddr::from(bar), 0x1000, MapAction::ReadWriteKernel)
-            .is_ok());
-    }
-
-    info!(
-        "vmxnet3 size {}",
-        core::mem::size_of::<vmxnet3::vmx::VMXNet3>()
-    );
-    arch::irq::enable();
-    let mut vmx = vmxnet3::vmx::VMXNet3::new(2, 2).unwrap();
-    assert!(vmx.attach_pre().is_ok());
-    vmx.init();
-
-    let mut bufchain1 = IOBufChain::new(0, 1).expect("Can't make IoBufChain?");
-    let mut packet1 = IOBuf::new(Layout::from_size_align(1024, 128).expect("Correct Layout"))
-        .expect("Can't make packet?");
-
-    // >>> from scapy.all import *
-    // >>> p = Ether(src="56:b4:44:e9:62:dc", dst="6e:6d:5f:ab:62:3a")/IP(src="172.31.0.10", dst="172.31.0.20")/UDP(dport=5553,sport=9999)/Raw(load="oooooooooooooooooooooo")
-    // >>> hexdump(p)
-    // 0000   6E 6D 5F AB 62 3A 56 B4  44 E9 62 DC 08 00 45 00   nm_.b:V.D.b...E.
-    // 0010   00 32 00 01 00 00 40 11  22 5E AC 1F 00 0A AC 1F   .2....@."^......
-    // 0020   00 14 27 0F 15 B1 00 1E  A0 CB 6F 6F 6F 6F 6F 6F   ..'.......oooooo
-    // 0030   6F 6F 6F 6F 6F 6F 6F 6F  6F 6F 6F 6F 6F 6F 6F 6F   oooooooooooooooo
-    let raw_data = [
-        0x6E, 0x6D, 0x5F, 0xAB, 0x62, 0x3A, 0x56, 0xB4, 0x44, 0xE9, 0x62, 0xDC, 0x08, 0x00, 0x45,
-        0x00, 0x00, 0x32, 0x00, 0x01, 0x00, 0x00, 0x40, 0x11, 0x22, 0x5E, 0xAC, 0x1F, 0x00, 0x0A,
-        0xAC, 0x1F, 0x00, 0x14, 0x27, 0x0F, 0x15, 0xB1, 0x00, 0x1E, 0xA0, 0xCB, 0x6F, 0x6F, 0x6F,
-        0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F, 0x6F,
-        0x6F, 0x6F, 0x6F, 0x6F,
-    ];
-    assert!(packet1.copy_in(&raw_data).is_ok());
-    bufchain1.segments.push_back(packet1);
-    vmx.txq[0].enqueue(bufchain1).expect("Enq. failed");
-    vmx.txq[0].flush().expect("Flush failed?");
-    info!("Sent Payload");
-
-    arch::debug::shutdown(ExitReason::Ok);
-}
-
 /// Test vmxnet3 integrated with smoltcp.
 #[cfg(all(
     feature = "integration-test",
@@ -652,8 +582,8 @@ fn xmain() {
     use crate::memory::PAddr;
     use crate::memory::KERNEL_BASE;
 
-    arch::irq::ioapic_establish_route(0x0, 0x0);
-    crate::arch::irq::enable();
+    //arch::irq::ioapic_establish_route(0x0, 0x0);
+    //crate::arch::irq::enable();
     let vmx = {
         let kcb = crate::kcb::get_kcb();
         let ba = BarAccess::new(0x0, 0x10, 0x0);
@@ -694,8 +624,8 @@ fn xmain() {
 
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
-    let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 64]);
-    let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 128]);
+    let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 4096]);
+    let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 4096]);
     let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 
     let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);

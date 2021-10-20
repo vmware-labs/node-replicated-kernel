@@ -1,7 +1,6 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::decode;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use hashbrown::HashMap;
@@ -20,14 +19,13 @@ use crate::rpc_api::{RPCHandler, RPCServerAPI};
 const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
 const BUF_LEN: usize = 8192;
-const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
 
 pub struct TCPServer<'a> {
     iface: RefCell<EthernetInterface<'a, DevQueuePhy>>,
     sockets: RefCell<SocketSet<'a>>,
     server_handle: SocketHandle,
     handlers: RefCell<HashMap<RPCType, &'a RPCHandler>>,
-    hdr_buff: RefCell<Vec<u8>>,
+    hdr: RefCell<RPCHeader>,
     buff: RefCell<Vec<u8>>,
 }
 
@@ -39,9 +37,6 @@ impl TCPServer<'_> {
         let mut buff = Vec::new();
         buff.try_reserve(BUF_LEN).unwrap();
         buff.resize(BUF_LEN, 0);
-        let mut hdr_buff = Vec::new();
-        hdr_buff.try_reserve_exact(HDR_LEN).unwrap();
-        hdr_buff.resize(HDR_LEN, 0);
 
         // Create SocketSet w/ space for 1 socket
         let mut sock_vec = Vec::new();
@@ -72,7 +67,7 @@ impl TCPServer<'_> {
             sockets: RefCell::new(sockets),
             server_handle,
             handlers: RefCell::new(HashMap::new()),
-            hdr_buff: RefCell::new(hdr_buff),
+            hdr: RefCell::new(RPCHeader::new()),
             buff: RefCell::new(buff),
         }
     }
@@ -82,7 +77,7 @@ impl TCPServer<'_> {
 
         // Check write size - make sure it fits in buffer
         if is_hdr {
-            assert!(expected_data <= self.hdr_buff.borrow().len());
+            assert!(expected_data == HDR_LEN);
         } else {
             assert!(expected_data <= self.buff.borrow().len());
         }
@@ -109,11 +104,13 @@ impl TCPServer<'_> {
             } else {
                 let mut socket = sockets.get::<TcpSocket>(self.server_handle);
                 if socket.can_recv() {
-                    // Write slice into hdr_buff (for RPC Header) or buff (for RPC data)
+                    // Write slice into hdr (for RPC Header) or buff (for RPC data)
                     let result = if is_hdr {
-                        socket.recv_slice(
-                            &mut self.hdr_buff.borrow_mut()[total_data_received..expected_data],
-                        )
+                        {
+                            let hdr = self.hdr.borrow();
+                            let hdr_slice = unsafe { hdr_as_bytes(&hdr) };
+                            socket.recv_slice(&mut hdr_slice[..])
+                        }
                     } else {
                         socket.recv_slice(
                             &mut self.buff.borrow_mut()[total_data_received..expected_data],
@@ -143,7 +140,7 @@ impl TCPServer<'_> {
 
         // Check send size - make sure send is within buffer bounds
         if is_hdr {
-            assert!(expected_data <= self.hdr_buff.borrow().len());
+            assert!(expected_data == HDR_LEN);
         } else {
             assert!(expected_data <= self.buff.borrow().len());
         }
@@ -175,9 +172,13 @@ impl TCPServer<'_> {
                         + core::cmp::min(expected_data - data_sent, socket.send_capacity());
                     debug!("send [{:?}-{:?}]", data_sent, end_index);
 
-                    // Send in hdr_buff (for RPCHeader) or buff (for RPC data)
+                    // Send in hdr (for RPCHeader) or buff (for RPC data)
                     let result = if is_hdr {
-                        socket.send_slice(&self.hdr_buff.borrow()[data_sent..end_index])
+                        {
+                            let hdr = self.hdr.borrow();
+                            let hdr_slice = unsafe { hdr_as_bytes(&hdr) };
+                            socket.send_slice(&mut hdr_slice[..])
+                        }
                     } else {
                         socket.send_slice(&self.buff.borrow()[data_sent..end_index])
                     };
@@ -237,11 +238,8 @@ impl<'a> ClusterControllerAPI<'a> for TCPServer<'a> {
         // Receive registration information
         self.receive()?;
 
-        // Validate registration header
-        let (_hdr, _) = unsafe { decode::<RPCHeader>(&mut self.hdr_buff.borrow_mut()) }.unwrap();
-
         // Run specified registration function
-        let client_id = func(&mut self.hdr_buff.borrow_mut(), &mut self.buff.borrow_mut())?;
+        let client_id = func(&mut self.hdr.borrow_mut(), &mut self.buff.borrow_mut())?;
 
         // Send response
         self.reply()?;
@@ -274,13 +272,9 @@ impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
         // Read header into internal buffer
         self.recv(true, HDR_LEN)?;
 
-        // Parse out RPC Header
-        let mut hdr_buff = self.hdr_buff.borrow_mut();
-        let (hdr, _) = unsafe { decode::<RPCHeader>(&mut hdr_buff) }.unwrap();
-
         // Receive the rest of the data
-        self.recv(false, hdr.msg_len as usize)?;
-        Ok(hdr.msg_type)
+        self.recv(false, self.hdr.borrow().msg_len as usize)?;
+        Ok(self.hdr.borrow().msg_type)
     }
 
     /// replies an RPC call with results
@@ -288,12 +282,8 @@ impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
         // Send header from internal buffer
         self.send(true, HDR_LEN)?;
 
-        // Parse out RPC Header
-        let mut hdr_buff = self.hdr_buff.borrow_mut();
-        let (hdr, _) = unsafe { decode::<RPCHeader>(&mut hdr_buff) }.unwrap();
-
         // Send the rest of the data
-        self.send(false, hdr.msg_len as usize)
+        self.send(false, self.hdr.borrow().msg_len as usize)
     }
 
     /// Run the RPC server
@@ -302,7 +292,11 @@ impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
             let rpc_id = self.receive()?;
             match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
-                    func(&mut self.hdr_buff.borrow_mut(), &mut self.buff.borrow_mut())?;
+                    {
+                        let mut hdr = self.hdr.borrow_mut();
+                        let msg_len = hdr.msg_len;
+                        func(&mut hdr, &mut self.buff.borrow_mut()[..msg_len as usize])?;
+                    }
                     self.reply()?;
                 }
                 None => debug!("Invalid RPCType({}), ignoring", rpc_id),

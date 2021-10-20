@@ -3,6 +3,7 @@
 
 use abomonation::Abomonation;
 use alloc::vec::Vec;
+use core::convert::TryInto;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 pub enum RPCError {
@@ -40,8 +41,7 @@ unsafe_abomonate!(RPCError);
 
 pub type RPCType = u8;
 
-// TODO: remove copy, clone
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug)]
 pub struct RPCHeader {
     pub client_id: u64,
     pub pid: usize,
@@ -49,4 +49,24 @@ pub struct RPCHeader {
     pub msg_type: RPCType,
     pub msg_len: u64,
 }
+
+impl RPCHeader {
+    pub fn new() -> RPCHeader {
+        RPCHeader {
+            client_id: 0,
+            pid: 0,
+            req_id: 0,
+            msg_type: 0,
+            msg_len: 0,
+        }
+    }
+}
 unsafe_abomonate!(RPCHeader: client_id, pid, req_id, msg_type, msg_len);
+
+pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
+
+pub unsafe fn hdr_as_bytes(hdr: &RPCHeader) -> &mut [u8; HDR_LEN] {
+    ::core::slice::from_raw_parts_mut(
+        (hdr as *const RPCHeader) as *mut u8, HDR_LEN,
+    ).try_into().expect("slice with incorrect length")
+}

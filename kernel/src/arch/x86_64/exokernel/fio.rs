@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode, Abomonation};
+use abomonation::{encode, Abomonation};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
@@ -120,12 +120,9 @@ pub fn register_pid(remote_pid: usize) -> Result<usize, KError> {
         })
 }
 
-pub fn register_client(hdr: &mut Vec<u8>, _payload: &mut Vec<u8>) -> Result<NodeId, RPCError> {
-    // parse header to get remote pid
-    let (parsed_hdr, _) = unsafe { decode::<RPCHeader>(hdr) }.unwrap();
-
+pub fn register_client(hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<NodeId, RPCError> {
     // use local pid as client ID
-    match register_pid(parsed_hdr.pid) {
+    match register_pid(hdr.pid) {
         Ok(client_id) => Ok(client_id as NodeId),
         Err(err) => Err(err.into()),
     }
@@ -133,8 +130,8 @@ pub fn register_client(hdr: &mut Vec<u8>, _payload: &mut Vec<u8>) -> Result<Node
 
 #[inline(always)]
 pub fn construct_error_ret(
-    hdr: &mut Vec<u8>,
-    payload: &mut Vec<u8>,
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
     err: RPCError,
 ) -> Result<(), RPCError> {
     let res = FIORes { ret: Err(err) };
@@ -143,21 +140,16 @@ pub fn construct_error_ret(
 
 #[inline(always)]
 pub fn construct_ret(
-    hdr: &mut Vec<u8>,
-    payload: &mut Vec<u8>,
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
     res: FIORes,
 ) -> Result<(), RPCError> {
     // Encode payload in buffer
-    unsafe { encode(&res, payload) }.unwrap();
+    // TODO: don't want to need to call to_vec()
+    unsafe { encode(&res, &mut payload.to_vec()) }.unwrap();
 
     // Modify header and write into output buffer
-    // TODO: this is a copy of the header, which we would like to avoid.
-    let mut new_hdr = {
-        let (parsed_hdr, _) = unsafe { decode::<RPCHeader>(hdr) }.unwrap();
-        *parsed_hdr
-    };
-    new_hdr.msg_len = core::mem::size_of::<FIORes>() as u64;
-    unsafe { encode(&new_hdr, hdr) }.unwrap();
+    hdr.msg_len = core::mem::size_of::<FIORes>() as u64;
     Ok(())
 }
 

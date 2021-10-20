@@ -139,11 +139,7 @@ pub fn construct_error_ret(
 }
 
 #[inline(always)]
-pub fn construct_ret(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    res: FIORes,
-) -> Result<(), RPCError> {
+pub fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: FIORes) -> Result<(), RPCError> {
     // Encode payload in buffer
     // TODO: don't want to need to call to_vec()
     unsafe { encode(&res, &mut payload.to_vec()) }.unwrap();

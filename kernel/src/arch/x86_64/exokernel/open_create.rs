@@ -84,9 +84,7 @@ fn rpc_open_create<T: RPCClientAPI>(
 
 pub fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
-    let local_pid = {
-        get_local_pid(hdr.pid)
-    };
+    let local_pid = { get_local_pid(hdr.pid) };
 
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);

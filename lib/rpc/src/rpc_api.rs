@@ -4,10 +4,10 @@
 use alloc::vec::Vec;
 use core::result::Result;
 
-use crate::rpc::{RPCError, RPCType};
+use crate::rpc::{RPCError, RPCHeader, RPCType};
 
 /// RPC Handler function
-pub type RPCHandler = fn(hdr: &mut Vec<u8>, payload: &mut Vec<u8>) -> Result<(), RPCError>;
+pub type RPCHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError>;
 
 /// RPC server operations
 pub trait RPCServerAPI<'a> {

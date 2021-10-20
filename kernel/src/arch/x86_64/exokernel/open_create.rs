@@ -82,13 +82,10 @@ fn rpc_open_create<T: RPCClientAPI>(
     }
 }
 
-pub fn handle_open(hdr: &mut Vec<u8>, payload: &mut Vec<u8>) -> Result<(), RPCError> {
+pub fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+    // Lookup local pid
     let local_pid = {
-        // Parse header
-        let (parsed_hdr, _) = unsafe { decode::<RPCHeader>(hdr) }.unwrap();
-
-        // Lookup local pid
-        get_local_pid(parsed_hdr.pid)
+        get_local_pid(hdr.pid)
     };
 
     if local_pid.is_none() {

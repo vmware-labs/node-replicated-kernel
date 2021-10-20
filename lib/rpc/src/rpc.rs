@@ -49,9 +49,12 @@ pub struct RPCHeader {
     pub msg_type: RPCType,
     pub msg_len: u64,
 }
+unsafe_abomonate!(RPCHeader: client_id, pid, req_id, msg_type, msg_len);
 
-impl RPCHeader {
-    pub fn new() -> RPCHeader {
+pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
+
+impl Default for RPCHeader {
+    fn default() -> Self {
         RPCHeader {
             client_id: 0,
             pid: 0,
@@ -61,12 +64,21 @@ impl RPCHeader {
         }
     }
 }
-unsafe_abomonate!(RPCHeader: client_id, pid, req_id, msg_type, msg_len);
 
-pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
+impl RPCHeader {
+    /// # Safety
+    /// - `self` must be valid RPCHeader
+    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; HDR_LEN] {
+        ::core::slice::from_raw_parts_mut((self as *const RPCHeader) as *mut u8, HDR_LEN)
+            .try_into()
+            .expect("slice with incorrect length")
+    }
 
-pub unsafe fn hdr_as_bytes(hdr: &RPCHeader) -> &mut [u8; HDR_LEN] {
-    ::core::slice::from_raw_parts_mut(
-        (hdr as *const RPCHeader) as *mut u8, HDR_LEN,
-    ).try_into().expect("slice with incorrect length")
+    /// # Safety
+    /// - `self` must be valid RPCHeader
+    pub unsafe fn as_bytes(&self) -> &[u8; HDR_LEN] {
+        ::core::slice::from_raw_parts((self as *const RPCHeader) as *const u8, HDR_LEN)
+            .try_into()
+            .expect("slice with incorrect length")
+    }
 }

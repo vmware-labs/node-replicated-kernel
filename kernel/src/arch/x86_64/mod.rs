@@ -900,13 +900,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     #[cfg(feature = "gdb")]
     {
-        lazy_static::initialize(&gdb::GDB_STUB);
-
         let target = gdb::KernelDebugger::new();
         let kcb = kcb::get_kcb();
         kcb.arch
             .attach_debugger(target)
             .expect("Can't set debug target");
+        lazy_static::initialize(&gdb::GDB_STUB);
         unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
     }
 

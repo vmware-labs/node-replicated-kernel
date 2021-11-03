@@ -3,13 +3,14 @@
 
 use core::num::NonZeroUsize;
 
-use gdbstub::state_machine::{Event, GdbStubStateMachine};
+use gdbstub::common::Signal;
+use gdbstub::state_machine::GdbStubStateMachine;
 use gdbstub::target::ext::base::multithread::ThreadStopReason;
 use gdbstub::target::ext::base::BaseOps;
 use gdbstub::target::ext::breakpoints::BreakpointsOps;
 use gdbstub::target::ext::section_offsets::SectionOffsetsOps;
 use gdbstub::target::Target;
-use gdbstub::{ConnectionExt, DisconnectReason, GdbStubError};
+use gdbstub::{ConnectionExt, GdbStubError};
 use gdbstub_arch::x86::X86_64_SSE;
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
@@ -52,7 +53,12 @@ lazy_static! {
     /// This is a state machine that handles the communication with the GDB.
     pub static ref GDB_STUB: Mutex<Option<GdbStubStateMachine<'static, KernelDebugger, GdbSerial>>> = {
         let connection = wait_for_gdb_connection(GDB_REMOTE_PORT).expect("Can't connect to GDB");
-        Mutex::new(Some(gdbstub::GdbStub::new(connection).run_state_machine().expect("Can't start GDB session")))
+        let target = super::kcb::get_kcb()
+            .arch
+            .kdebug
+            .as_mut()
+            .expect("Need a target");
+        Mutex::new(Some(gdbstub::GdbStub::new(connection).run_state_machine(target).expect("Can't start GDB session")))
     };
 }
 
@@ -99,8 +105,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
     debug!("event_loop stop_reason {:?}", stop_reason);
     loop {
         gdb_stm = match gdb_stm {
-            GdbStubStateMachine::Pump(mut gdb_stm_inner) => {
-                //trace!("GdbStubStateMachine::Pump");
+            GdbStubStateMachine::Idle(mut gdb_stm_inner) => {
+                //trace!("GdbStubStateMachine::Idle");
 
                 // This means we expect stuff on the serial line (from GDB)
                 // Let's read and react to it:
@@ -108,17 +114,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 conn.disable_irq();
                 let byte = conn.read()?;
 
-                match gdb_stm_inner.pump(target, byte) {
-                    Ok((gdb_stm_new, None)) => gdb_stm_new,
-                    Ok((_, Some(disconnect_reason))) => {
-                        match disconnect_reason {
-                            DisconnectReason::Disconnect => info!("GDB Disconnected"),
-                            DisconnectReason::TargetExited(_) => info!("Target exited"),
-                            DisconnectReason::TargetTerminated(_) => info!("Target halted"),
-                            DisconnectReason::Kill => info!("GDB sent a kill command"),
-                        }
-                        break;
-                    }
+                match gdb_stm_inner.incoming_data(target, byte) {
+                    Ok(gdb) => gdb,
                     Err(GdbStubError::TargetError(e)) => {
                         error!("Debugger raised a fatal error {:?}", e);
                         break;
@@ -129,7 +126,20 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                     }
                 }
             }
-            GdbStubStateMachine::DeferredStopReason(mut gdb_stm_inner) => {
+            GdbStubStateMachine::CtrlCInterrupt(gdb_stm_inner) => {
+                match gdb_stm_inner.interrupt_handled(target, Some(ThreadStopReason::DoneStep)) {
+                    Ok(gdb) => gdb,
+                    Err(e) => {
+                        error!("gdbstub error {:?}", e);
+                        break;
+                    }
+                }
+            }
+            GdbStubStateMachine::Disconnected(_gdb_stm_inner) => {
+                error!("GdbStubStateMachine::Disconnected byebye");
+                break;
+            }
+            GdbStubStateMachine::Running(mut gdb_stm_inner) => {
                 //trace!("GdbStubStateMachine::DeferredStopReason");
 
                 // If we're here we were running but have stopped now (either
@@ -141,33 +151,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
 
                 if data_to_read {
                     let byte = gdb_stm_inner.borrow_conn().read().unwrap();
-                    match gdb_stm_inner.pump(target, byte) {
-                        Ok((pumped_stm, e)) => match e {
-                            Event::None => GdbStubStateMachine::DeferredStopReason(pumped_stm),
-                            Event::CtrlCInterrupt => {
-                                // if the target wants to handle the interrupt, report the
-                                // stop reason
-                                if let Some(stop_reason) = stop_reason.take() {
-                                    assert_eq!(stop_reason, ThreadStopReason::Signal(5));
-                                    match pumped_stm
-                                        .deferred_stop_reason(target, stop_reason)
-                                        .unwrap()
-                                    {
-                                        (_, Some(disconnect_reason)) => {
-                                            info!("disconnect reason {:?}", disconnect_reason);
-                                            break;
-                                        }
-                                        (gdb, None) => gdb,
-                                    }
-                                } else {
-                                    pumped_stm.into()
-                                }
-                            }
-                            Event::Disconnect(reason) => {
-                                info!("GDB client disconnected: {:?}", reason);
-                                break;
-                            }
-                        },
+                    match gdb_stm_inner.incoming_data(target, byte) {
+                        Ok(pumped_stm) => pumped_stm,
                         Err(GdbStubError::TargetError(e)) => {
                             error!("Target raised a fatal error: {:?}", e);
                             break;
@@ -178,17 +163,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if let Some(reason) = stop_reason.take() {
-                    match gdb_stm_inner.deferred_stop_reason(target, reason) {
-                        Ok((gdb_stm_new, None)) => gdb_stm_new,
-                        Ok((_, Some(disconnect_reason))) => {
-                            match disconnect_reason {
-                                DisconnectReason::Disconnect => info!("GDB Disconnected"),
-                                DisconnectReason::TargetExited(_) => info!("Target exited"),
-                                DisconnectReason::TargetTerminated(_) => info!("Target halted"),
-                                DisconnectReason::Kill => info!("GDB sent a kill command"),
-                            }
-                            break;
-                        }
+                    match gdb_stm_inner.report_stop(target, reason) {
+                        Ok(gdb_stm_new) => gdb_stm_new,
                         Err(GdbStubError::TargetError(e)) => {
                             error!("Target raised a fatal error {:?}", e);
                             break;
@@ -205,7 +181,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                     conn.enable_irq();
                     let r = GDB_STUB
                         .lock()
-                        .replace(GdbStubStateMachine::DeferredStopReason(gdb_stm_inner));
+                        .replace(GdbStubStateMachine::Running(gdb_stm_inner));
                     assert!(
                         r.is_none(),
                         "Put something in GDB_STUB which we shouldn't have..."
@@ -257,7 +233,7 @@ pub struct KernelDebugger {
     /// Maintains meta-data about our hardware breakpoint registers.
     hw_break_points: [Option<BreakState>; 4],
     /// Resume program with this signal (if needed).
-    _signal: Option<u8>,
+    _signal: Option<Signal>,
     /// How we resume the program (set by gdbstub in resume or step).
     resume_with: Option<ExecMode>,
 }
@@ -277,7 +253,7 @@ impl KernelDebugger {
     // Also does some additional stuff like re-enabling the breakpoints.
     fn determine_stop_reason(&mut self, reason: KCoreStopReason) -> Option<ThreadStopReason<u64>> {
         match reason {
-            KCoreStopReason::ConnectionInterrupt => Some(ThreadStopReason::Signal(5)),
+            KCoreStopReason::ConnectionInterrupt => Some(ThreadStopReason::Signal(Signal::SIGTRAP)),
             KCoreStopReason::BreakpointInterrupt => {
                 unimplemented!("Breakpoint interrupt not implemented");
                 //Some(ThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
@@ -373,11 +349,11 @@ impl Target for KernelDebugger {
         BaseOps::SingleThread(self)
     }
 
-    fn section_offsets(&mut self) -> Option<SectionOffsetsOps<Self>> {
+    fn support_section_offsets(&mut self) -> Option<SectionOffsetsOps<Self>> {
         Some(self)
     }
 
-    fn breakpoints(&mut self) -> Option<BreakpointsOps<Self>> {
+    fn support_breakpoints(&mut self) -> Option<BreakpointsOps<Self>> {
         Some(self)
     }
 

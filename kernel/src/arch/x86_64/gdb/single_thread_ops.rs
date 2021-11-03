@@ -3,6 +3,7 @@
 
 use core::convert::TryInto;
 
+use gdbstub::common::Signal;
 use gdbstub::target::ext::base::singlethread::{
     SingleThreadOps, SingleThreadSingleStep, SingleThreadSingleStepOps,
 };
@@ -17,7 +18,7 @@ use crate::memory::{VAddr, BASE_PAGE_SIZE};
 use kpi::arch::ST_REGS;
 
 impl SingleThreadOps for KernelDebugger {
-    fn resume(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+    fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
         assert!(signal.is_none(), "Not supported at the moment.");
 
         self._signal = signal;
@@ -265,7 +266,7 @@ impl SingleThreadOps for KernelDebugger {
         Ok(())
     }
 
-    fn single_register_access(&mut self) -> Option<SingleRegisterAccessOps<(), Self>> {
+    fn support_single_register_access(&mut self) -> Option<SingleRegisterAccessOps<(), Self>> {
         //Some(self)
         None
     }
@@ -278,7 +279,7 @@ impl SingleThreadOps for KernelDebugger {
 
 /// Adds `gdbstub` support for single-stepping.
 impl SingleThreadSingleStep for KernelDebugger {
-    fn step(&mut self, signal: Option<u8>) -> Result<(), Self::Error> {
+    fn step(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
         assert!(signal.is_none(), "Not supported at the moment.");
 
         self._signal = signal;

@@ -139,15 +139,15 @@ impl KernelDebugger {
 
 /// Tell gdbstub we do support breakpoints.
 impl Breakpoints for KernelDebugger {
-    fn sw_breakpoint(&mut self) -> Option<SwBreakpointOps<Self>> {
+    fn support_sw_breakpoint(&mut self) -> Option<SwBreakpointOps<Self>> {
         Some(self)
     }
 
-    fn hw_breakpoint(&mut self) -> Option<HwBreakpointOps<Self>> {
+    fn support_hw_breakpoint(&mut self) -> Option<HwBreakpointOps<Self>> {
         Some(self)
     }
 
-    fn hw_watchpoint(&mut self) -> Option<HwWatchpointOps<Self>> {
+    fn support_hw_watchpoint(&mut self) -> Option<HwWatchpointOps<Self>> {
         Some(self)
     }
 }

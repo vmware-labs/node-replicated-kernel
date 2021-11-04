@@ -98,7 +98,7 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
     loop {
         gdb_stm = match gdb_stm {
             GdbStubStateMachine::Idle(mut gdb_stm_inner) => {
-                trace!("GdbStubStateMachine::Idle");
+                //trace!("GdbStubStateMachine::Idle");
                 // This means we expect stuff on the serial line (from GDB)
                 // Let's read and react to it:
                 let conn = gdb_stm_inner.borrow_conn();

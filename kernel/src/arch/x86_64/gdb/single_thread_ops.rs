@@ -43,6 +43,7 @@ impl SingleThreadOps for KernelDebugger {
         &mut self,
         regs: &mut gdbstub_arch::x86::reg::X86_64CoreRegs,
     ) -> TargetResult<(), Self> {
+        trace!("read_registers");
         let kcb = super::super::kcb::get_kcb();
         if let Some(saved) = &kcb.save_area {
             // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
@@ -273,13 +274,11 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn support_single_register_access(&mut self) -> Option<SingleRegisterAccessOps<(), Self>> {
-        //Some(self)
-        None
+        Some(self)
     }
 
     fn support_single_step(&mut self) -> Option<SingleThreadSingleStepOps<Self>> {
         Some(self)
-        //None
     }
 }
 

@@ -1327,6 +1327,22 @@ fn s02_gdb() {
         // Test `continue`
         output += gdb.wait_for_prompt()?.as_str();
         gdb.send_line("continue")?;
+        // We're in the "infinite" loop now, we won't get a prompt...
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        // Interrupt execution with a Ctrl+C
+        gdb.send_control('c')?;
+        output += gdb
+            .exp_string("Program received signal SIGINT, Interrupt.")?
+            .as_str();
+        output += gdb.wait_for_prompt()?.as_str();
+
+        // Get out of the loop by overwriting var (test mem/register write)
+        gdb.send_line("set cond = false")?;
+        output += gdb.wait_for_prompt()?.as_str();
+
+        // Should go to the end now...
+        gdb.send_line("continue")?;
         output += gdb.exp_string("Remote connection closed")?.as_str();
 
         output += p.exp_eof()?.as_str();

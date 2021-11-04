@@ -579,23 +579,25 @@ fn vspace_debug() {
 fn gdb() {
     use log::info;
 
-    //arch::irq::ioapic_establish_route(0x0, 0x0);
-
     // watchpoint test:
     let mut watchpoint_trigger: usize = 0;
     info!("watchpoint_trigger is {}", watchpoint_trigger);
     watchpoint_trigger = 0xdeadbeef;
     info!("watchpoint_trigger is {}", watchpoint_trigger);
 
-    // step  through all of info:
+    // step through all of info:
     info!("step");
     info!("step");
 
-    //arch::irq::enable();
-    //let mut cond = true;
-    //while cond {}
-    //cond = false;
-    //info!("cond is {}", cond);
+    // Test ctrl+c
+    arch::irq::ioapic_establish_route(0x0, 0x0); // TODO(api): enables serial irq
+    arch::irq::enable();
+    let mut cond = true;
+    while cond {}
+    cond = false; // make sure cond is mut
+                  // (I figured having cond mut is a little less shady
+                  // if we overwrite it with gdb)
+    info!("cond is {}", cond);
 
     // continue until exit:
     shutdown(ExitReason::Ok);

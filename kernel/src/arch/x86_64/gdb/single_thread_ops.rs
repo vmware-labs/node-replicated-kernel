@@ -24,9 +24,13 @@ impl SingleThreadOps for KernelDebugger {
         self._signal = signal;
         self.resume_with = Some(ExecMode::Continue);
         trace!(
-            "resume: signal = {:?} resume_with =  {:?}",
+            "SingleThreadOps::resume: signal = {:?} resume_with = {:?}",
             signal,
             self.resume_with
+        );
+        info!(
+            "SingleThreadOps::resume: signal = {:?} resume_with = {:?}",
+            signal, self.resume_with
         );
 
         // If the target is running under the more advanced GdbStubStateMachine
@@ -287,7 +291,7 @@ impl SingleThreadSingleStep for KernelDebugger {
         self._signal = signal;
         self.resume_with = Some(ExecMode::SingleStep);
         info!(
-            "set signal = {:?} resume_with =  {:?}",
+            "SingleThreadSingleStep::step: set signal = {:?} resume_with =  {:?}",
             signal, self.resume_with
         );
 

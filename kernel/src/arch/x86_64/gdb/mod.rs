@@ -119,9 +119,18 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
             }
             GdbStubStateMachine::CtrlCInterrupt(gdb_stm_inner) => {
                 trace!("GdbStubStateMachine::CtrlCInterrupt");
-                let reason = stop_reason.take();
-                assert_eq!(reason, Some(ThreadStopReason::Signal(Signal::SIGINT)));
-                match gdb_stm_inner.interrupt_handled(&mut target, reason) {
+                let _reason = stop_reason.take();
+                // Ideally, this would hold: assert_eq!(reason,
+                // Some(ThreadStopReason::Signal(Signal::SIGINT)));
+                //
+                // But, turns out `reason` can be `StepDone` too if we are
+                // single-stepping through things and the ctrl+c packet arrives
+                // while we're in this file.
+                //
+                // So we just consume `reason` and report SIGINT unconditionally.
+                match gdb_stm_inner
+                    .interrupt_handled(&mut target, Some(ThreadStopReason::Signal(Signal::SIGINT)))
+                {
                     Ok(gdb) => gdb,
                     Err(e) => {
                         error!("gdbstub error {:?}", e);
@@ -144,6 +153,8 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 let data_to_read = conn.peek().unwrap().is_some();
 
                 if data_to_read {
+                    trace!("GdbStubStateMachine::Running data_to_read");
+
                     let byte = gdb_stm_inner.borrow_conn().read().unwrap();
                     match gdb_stm_inner.incoming_data(&mut target, byte) {
                         Ok(pumped_stm) => pumped_stm,
@@ -157,6 +168,8 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if let Some(reason) = stop_reason.take() {
+                    trace!("GdbStubStateMachine::Running stop_reason");
+
                     match gdb_stm_inner.report_stop(&mut target, reason) {
                         Ok(gdb_stm_new) => gdb_stm_new,
                         Err(GdbStubError::TargetError(e)) => {
@@ -169,6 +182,8 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if target.resume_with.is_some() {
+                    trace!("GdbStubStateMachine::Running target.resume_with.is_some");
+
                     // We don't have a `stop_reason` and we don't have something
                     // to read on the line. This probably means we're done and
                     // we should run again.

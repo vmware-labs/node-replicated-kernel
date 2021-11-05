@@ -22,6 +22,7 @@ use super::debug::GDB_REMOTE_PORT;
 use crate::error::KError;
 
 mod breakpoints;
+mod multi_thread_ops;
 mod section_offsets;
 mod serial;
 mod single_register;
@@ -354,7 +355,11 @@ impl Target for KernelDebugger {
     type Arch = X86_64_SSE;
 
     fn base_ops(&mut self) -> BaseOps<Self::Arch, Self::Error> {
-        BaseOps::SingleThread(self)
+        if cfg!(feature = "bsp-only") {
+            BaseOps::SingleThread(self)
+        } else {
+            BaseOps::MultiThread(self)
+        }
     }
 
     fn support_section_offsets(&mut self) -> Option<SectionOffsetsOps<Self>> {

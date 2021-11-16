@@ -51,12 +51,9 @@ pub fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPC
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, remaining)) = unsafe { decode::<GetInfoReq>(payload) } {
+    if let Some((req, _)) = unsafe { decode::<GetInfoReq>(payload) } {
         debug!("GetInfo(name={:?}), local_pid={:?}", req.name, local_pid);
-        if remaining.len() > 0 {
-            warn!("Trailing data in payload: {:?}", remaining);
-            return construct_error_ret(hdr, payload, RPCError::ExtraData);
-        }
+
         let fileinfo: FileInfo = Default::default();
         let mut name = req.name.clone();
         // TODO: FIX THIS

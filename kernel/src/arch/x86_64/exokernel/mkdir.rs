@@ -56,15 +56,12 @@ pub fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCEr
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, remaining)) = unsafe { decode::<MkDirReq>(payload) } {
+    if let Some((req, _)) = unsafe { decode::<MkDirReq>(payload) } {
         debug!(
             "MkDir(pathname={:?}), local_pid={:?}",
             req.pathname, local_pid
         );
-        if remaining.len() > 0 {
-            warn!("Trailing data in payload: {:?}", remaining);
-            return construct_error_ret(hdr, payload, RPCError::ExtraData);
-        }
+
         let res = FIORes {
             ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
                 local_pid,

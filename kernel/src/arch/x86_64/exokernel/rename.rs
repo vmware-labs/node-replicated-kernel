@@ -56,15 +56,12 @@ pub fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCE
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, remaining)) = unsafe { decode::<RenameReq>(payload) } {
+    if let Some((req, _)) = unsafe { decode::<RenameReq>(payload) } {
         debug!(
             "FileRename(oldname={:?}, newname={:?}), local_pid={:?}",
             req.oldname, req.newname, local_pid
         );
-        if remaining.len() > 0 {
-            warn!("Trailing data in payload: {:?}", remaining);
-            return construct_error_ret(hdr, payload, RPCError::ExtraData);
-        }
+
         // TODO: fix this
         let mut oldname = req.oldname.clone();
         oldname.push('\0');

@@ -44,6 +44,7 @@ pub fn rpc_close<T: RPCClientAPI>(
 
 pub fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
+    debug!("Starting close... {:?}", payload.as_ptr());
     let local_pid = { get_local_pid(hdr.pid) };
 
     if local_pid.is_none() {
@@ -51,16 +52,16 @@ pub fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCEr
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, remaining)) = unsafe { decode::<CloseReq>(payload) } {
+    if let Some((req, _)) = unsafe { decode::<CloseReq>(payload) } {
         debug!("Close(fd={:?}), local_pid={:?}", req.fd, local_pid);
-        if remaining.len() > 0 {
-            warn!("Trailing data in payload: {:?}", remaining);
-            return construct_error_ret(hdr, payload, RPCError::ExtraData);
-        }
-
         let res = FIORes {
             ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(local_pid, req.fd)),
         };
+        debug!(
+            "About to construct close ret: {:?} FIORES_SIZE={:?}",
+            payload.as_ptr(),
+            FIORES_SIZE
+        );
         construct_ret(hdr, payload, res)
     } else {
         warn!("Invalid payload for request: {:?}", hdr);

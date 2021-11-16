@@ -5,12 +5,14 @@ use abomonation::{decode, encode, Abomonation};
 use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use kpi::FileOperation;
 use log::{debug, warn};
 
 use rpc::rpc::*;
 use rpc::rpc_api::RPCClientAPI;
 
 use crate::arch::exokernel::fio::*;
+use crate::cnrfs;
 
 #[derive(Debug)]
 pub struct RWReq {
@@ -110,5 +112,119 @@ pub fn rpc_readat<T: RPCClientAPI>(
         return res.ret;
     } else {
         return Err(RPCError::MalformedResponse);
+    }
+}
+
+pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+    // Lookup local pid
+    let local_pid = { get_local_pid(hdr.pid) };
+
+    if local_pid.is_none() {
+        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
+    }
+    let local_pid = local_pid.unwrap();
+
+    // Extract data needed from the request
+    let fd;
+    let len;
+    let mut offset = -1;
+    let mut msg_type = FileIO::ReadAt;
+    if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
+        debug!(
+            "Read(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
+            req.fd, req.len, req.offset, local_pid
+        );
+        if remaining.len() > 0 {
+            warn!("Trailing data in payload: {:?}", remaining);
+            return construct_error_ret(hdr, payload, RPCError::ExtraData);
+        }
+        fd = req.fd;
+        len = req.len;
+        if hdr.msg_type == FileIO::Read as RPCType {
+            offset = req.offset;
+            msg_type = FileIO::Read;
+        }
+    } else {
+        warn!("Invalid payload for request: {:?}", hdr);
+        return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+    }
+
+    // Read directly into payload buffer, at offset after result field & header
+    let ret = if msg_type == FileIO::Read {
+        cnrfs::MlnrKernelNode::file_io(
+            FileOperation::Read,
+            local_pid,
+            fd,
+            payload[FIORES_SIZE as usize..].as_mut_ptr() as u64,
+            len,
+            -1,
+        )
+    } else {
+        cnrfs::MlnrKernelNode::file_io(
+            FileOperation::ReadAt,
+            local_pid,
+            fd,
+            payload[FIORES_SIZE as usize..].as_mut_ptr() as u64,
+            len,
+            offset,
+        )
+    };
+
+    let mut additional_data = 0;
+    if let Ok((bytes_read, _)) = ret {
+        additional_data = bytes_read;
+    }
+
+    let res = FIORes {
+        ret: convert_return(ret),
+    };
+    construct_ret_extra_data(hdr, payload, res, additional_data as u64)
+}
+
+pub fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+    // Lookup local pid
+    let local_pid = { get_local_pid(hdr.pid) };
+
+    if local_pid.is_none() {
+        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
+    }
+    let local_pid = local_pid.unwrap();
+
+    if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
+        debug!(
+            "Write(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
+            req.fd, req.len, req.offset, local_pid
+        );
+        if remaining.len() as u64 != req.len {
+            return construct_error_ret(hdr, payload, RPCError::ExtraData);
+        }
+
+        let ret = if hdr.msg_type == FileIO::Write as RPCType {
+            cnrfs::MlnrKernelNode::file_io(
+                FileOperation::Write,
+                local_pid,
+                req.fd,
+                remaining.as_mut_ptr() as u64,
+                req.len,
+                -1,
+            )
+        } else {
+            cnrfs::MlnrKernelNode::file_io(
+                FileOperation::WriteAt,
+                local_pid,
+                req.fd,
+                remaining.as_mut_ptr() as u64,
+                req.len,
+                req.offset,
+            )
+        };
+
+        let res = FIORes {
+            ret: convert_return(ret),
+        };
+        construct_ret(hdr, payload, res)
+    } else {
+        warn!("Invalid payload for request: {:?}", hdr);
+        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
     }
 }

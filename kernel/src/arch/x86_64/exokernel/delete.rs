@@ -51,12 +51,8 @@ pub fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCE
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, remaining)) = unsafe { decode::<DeleteReq>(payload) } {
+    if let Some((req, _)) = unsafe { decode::<DeleteReq>(payload) } {
         debug!("Delete(name={:?}), local_pid={:?}", req.pathname, local_pid);
-        if remaining.len() > 0 {
-            warn!("Trailing data in payload: {:?}", remaining);
-            return construct_error_ret(hdr, payload, RPCError::ExtraData);
-        }
         let mut pathname = req.pathname.clone();
         pathname.push('\0');
         let res = FIORes {

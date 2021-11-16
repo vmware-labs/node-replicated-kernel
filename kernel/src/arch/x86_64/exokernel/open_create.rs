@@ -94,7 +94,7 @@ pub fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
     let local_pid = local_pid.unwrap();
 
     // Parse body
-    if let Some((req, remaining)) = unsafe { decode::<OpenReq>(payload) } {
+    if let Some((req, _)) = unsafe { decode::<OpenReq>(payload) } {
         debug!(
             "Open(pathname={:?}, flags={:?}, modes={:?}), local_pid={:?}",
             req.pathname,
@@ -102,10 +102,6 @@ pub fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
             FileModes::from(req.modes),
             local_pid
         );
-        if remaining.len() > 0 {
-            warn!("Trailing data in payload: {:?}", remaining);
-            return construct_error_ret(hdr, payload, RPCError::ExtraData);
-        }
 
         // TODO: FIX DATA COPY
         let mut pathname = req.pathname.clone();

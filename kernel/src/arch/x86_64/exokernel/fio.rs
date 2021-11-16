@@ -74,6 +74,7 @@ pub struct FIORes {
     pub ret: Result<(u64, u64), RPCError>,
 }
 unsafe_abomonate!(FIORes: ret);
+pub const FIORES_SIZE: u64 = core::mem::size_of::<FIORes>() as u64;
 
 lazy_static! {
     static ref PID_MAP: NrLock<HashMap<Pid, Pid>> = NrLock::default();
@@ -140,16 +141,22 @@ pub fn construct_error_ret(
 }
 
 #[inline(always)]
-pub fn construct_ret(
+pub fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: FIORes) -> Result<(), RPCError> {
+    construct_ret_extra_data(hdr, payload, res, 0)
+}
+
+#[inline(always)]
+pub fn construct_ret_extra_data(
     hdr: &mut RPCHeader,
     mut payload: &mut [u8],
     res: FIORes,
+    additional_data_len: u64,
 ) -> Result<(), RPCError> {
     // Encode payload in buffer
     unsafe { encode(&res, &mut payload) }.unwrap();
 
     // Modify header and write into output buffer
-    hdr.msg_len = core::mem::size_of::<FIORes>() as u64;
+    hdr.msg_len = FIORES_SIZE + additional_data_len;
     Ok(())
 }
 

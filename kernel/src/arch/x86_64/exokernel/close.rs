@@ -5,12 +5,13 @@ use abomonation::{decode, encode, Abomonation};
 use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use log::debug;
+use log::{debug, warn};
 
 use rpc::rpc::*;
 use rpc::rpc_api::RPCClientAPI;
 
 use crate::arch::exokernel::fio::*;
+use crate::cnrfs;
 
 #[derive(Debug)]
 pub struct CloseReq {
@@ -38,5 +39,31 @@ pub fn rpc_close<T: RPCClientAPI>(
         return res.ret;
     } else {
         return Err(RPCError::MalformedResponse);
+    }
+}
+
+pub fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+    // Lookup local pid
+    let local_pid = { get_local_pid(hdr.pid) };
+
+    if local_pid.is_none() {
+        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
+    }
+    let local_pid = local_pid.unwrap();
+
+    if let Some((req, remaining)) = unsafe { decode::<CloseReq>(payload) } {
+        debug!("Close(fd={:?}), local_pid={:?}", req.fd, local_pid);
+        if remaining.len() > 0 {
+            warn!("Trailing data in payload: {:?}", remaining);
+            return construct_error_ret(hdr, payload, RPCError::ExtraData);
+        }
+
+        let res = FIORes {
+            ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(local_pid, req.fd)),
+        };
+        construct_ret(hdr, payload, res)
+    } else {
+        warn!("Invalid payload for request: {:?}", hdr);
+        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
     }
 }

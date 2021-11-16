@@ -6,11 +6,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use kpi::io::FileInfo;
+use log::{debug, warn};
 
 use rpc::rpc::*;
 use rpc::rpc_api::RPCClientAPI;
 
 use crate::arch::exokernel::fio::*;
+use crate::cnrfs;
 
 #[derive(Debug)]
 pub struct GetInfoReq {
@@ -36,5 +39,44 @@ pub fn rpc_getinfo<T: RPCClientAPI>(
         return res.ret;
     } else {
         return Err(RPCError::MalformedResponse);
+    }
+}
+
+pub fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+    // Lookup local pid
+    let local_pid = { get_local_pid(hdr.pid) };
+
+    if local_pid.is_none() {
+        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
+    }
+    let local_pid = local_pid.unwrap();
+
+    if let Some((req, remaining)) = unsafe { decode::<GetInfoReq>(payload) } {
+        debug!("GetInfo(name={:?}), local_pid={:?}", req.name, local_pid);
+        if remaining.len() > 0 {
+            warn!("Trailing data in payload: {:?}", remaining);
+            return construct_error_ret(hdr, payload, RPCError::ExtraData);
+        }
+        let fileinfo: FileInfo = Default::default();
+        let mut name = req.name.clone();
+        // TODO: FIX THIS
+        name.push('\0');
+
+        let mut ret = cnrfs::MlnrKernelNode::file_info(
+            local_pid,
+            name.as_ptr() as u64,
+            &fileinfo as *const FileInfo as u64,
+        );
+        if ret.is_ok() {
+            ret = Ok((fileinfo.ftype, fileinfo.fsize));
+        }
+        debug!("GetInfo() returned ret={:?} fileinfo={:?}", ret, fileinfo);
+        let res = FIORes {
+            ret: convert_return(ret),
+        };
+        construct_ret(hdr, payload, res)
+    } else {
+        warn!("Invalid payload for request: {:?}", hdr);
+        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
     }
 }

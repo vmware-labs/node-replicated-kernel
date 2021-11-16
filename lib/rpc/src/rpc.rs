@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::Abomonation;
-use core2::io::Write;
-use core2::io::Result as IOResult;
 use core::convert::TryInto;
+use core2::io::Result as IOResult;
+use core2::io::Write;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 pub enum RPCError {

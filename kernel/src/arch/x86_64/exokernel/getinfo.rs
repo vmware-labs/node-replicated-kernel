@@ -4,8 +4,8 @@
 use abomonation::{decode, encode, Abomonation};
 use alloc::string::String;
 use alloc::vec::Vec;
-use core2::io::Write;
 use core2::io::Result as IOResult;
+use core2::io::Write;
 
 use rpc::rpc::*;
 use rpc::rpc_api::RPCClientAPI;

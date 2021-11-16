@@ -3,6 +3,8 @@
 
 use abomonation::{decode, encode, Abomonation};
 use alloc::vec::Vec;
+use core2::io::Write;
+use core2::io::Result as IOResult;
 use log::{debug, warn};
 
 use rpc::rpc::*;

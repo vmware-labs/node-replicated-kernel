@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::Abomonation;
-use alloc::vec::Vec;
+use core2::io::Write;
+use core2::io::Result as IOResult;
 use core::convert::TryInto;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]

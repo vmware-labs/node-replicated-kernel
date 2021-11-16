@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{encode, Abomonation};
-use alloc::vec::Vec;
+use core2::io::Write;
+use core2::io::Result as IOResult;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use log::{debug, error};
@@ -139,10 +140,9 @@ pub fn construct_error_ret(
 }
 
 #[inline(always)]
-pub fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: FIORes) -> Result<(), RPCError> {
+pub fn construct_ret(hdr: &mut RPCHeader, mut payload: &mut [u8], res: FIORes) -> Result<(), RPCError> {
     // Encode payload in buffer
-    // TODO: don't want to need to call to_vec()
-    unsafe { encode(&res, &mut payload.to_vec()) }.unwrap();
+    unsafe { encode(&res, &mut payload) }.unwrap();
 
     // Modify header and write into output buffer
     hdr.msg_len = core::mem::size_of::<FIORes>() as u64;

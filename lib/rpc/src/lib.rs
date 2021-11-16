@@ -7,6 +7,7 @@
 #[macro_use]
 extern crate abomonation;
 extern crate alloc;
+extern crate core2;
 extern crate lazy_static;
 extern crate smoltcp;
 

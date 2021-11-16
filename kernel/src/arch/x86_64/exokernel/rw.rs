@@ -116,7 +116,6 @@ pub fn rpc_readat<T: RPCClientAPI>(
 }
 
 pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    debug!("Starting read: {:?}", payload.as_ptr());
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
 
@@ -166,7 +165,6 @@ pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
             offset,
         )
     };
-    debug!("After calling read: {:?}", payload);
 
     let mut additional_data = 0;
     if let Ok((bytes_read, _)) = ret {
@@ -176,12 +174,10 @@ pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
     let res = FIORes {
         ret: convert_return(ret),
     };
-    debug!("About to construct read ret: {:?}", payload.as_ptr());
     construct_ret_extra_data(hdr, payload, res, additional_data as u64)
 }
 
 pub fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    debug!("Starting write: {:?}", payload.as_ptr());
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
 
@@ -219,7 +215,6 @@ pub fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCEr
         let res = FIORes {
             ret: convert_return(ret),
         };
-        debug!("About to construct write ret: {:?}", payload.as_ptr());
         construct_ret(hdr, payload, res)
     } else {
         warn!("Invalid payload for request: {:?}", hdr);

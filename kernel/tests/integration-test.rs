@@ -1370,7 +1370,7 @@ fn s03_userspace_smoke() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_controller() {
-    let cmdline = RunnerArgs::new("test-controller")
+    let cmdline = RunnerArgs::new("controller")
         .timeout(25_000)
         .use_vmxnet3();
 

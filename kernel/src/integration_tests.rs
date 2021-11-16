@@ -12,7 +12,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
+const INTEGRATION_TESTS: [(&'static str, MainFn); 27] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -39,6 +39,7 @@ const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
     ("gdb", gdb),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
+    ("controller", controller),
 ];
 
 #[cfg(feature = "integration-test")]
@@ -777,18 +778,14 @@ pub fn cxl_read() {
 }
 
 /// Test TCP RPC-based controller
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-controller",
-    target_arch = "x86_64"
-))]
-fn xmain() {
-    use rpc::tcp_server::TCPServer;
-    use rpc::rpc_api::RPCServerAPI;
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+fn controller() {
+    use crate::arch::exokernel::*;
+    use crate::arch::network::init_network;
     use rpc::cluster_api::ClusterControllerAPI;
     use rpc::rpc::RPCType;
-    use crate::arch::network::init_network;
-    use crate::arch::exokernel::*;
+    use rpc::rpc_api::RPCServerAPI;
+    use rpc::tcp_server::TCPServer;
 
     const PORT: u16 = 6970;
 
@@ -796,11 +793,14 @@ fn xmain() {
     let mut server = TCPServer::new(iface, PORT);
 
     // TODO: register handlers
-    let (server, _) = server.register(FileIO::Open as RPCType, &OPEN_HANDLER).unwrap()
-        .add_client(&CLIENT_REGISTRAR).unwrap();
+    let (server, _) = server
+        .register(FileIO::Open as RPCType, &OPEN_HANDLER)
+        .unwrap()
+        .add_client(&CLIENT_REGISTRAR)
+        .unwrap();
     server.run_server().unwrap();
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test shootdown facilities in the kernel.

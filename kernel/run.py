@@ -113,6 +113,8 @@ parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio", "vmxne
                     help='What NIC model to use for emulation', required=False)
 parser.add_argument('--kgdb', action="store_true",
                     help="Use the GDB remote debugger to connect to the kernel")
+parser.add_argument('--enable-ivshmem', action="store_true", default=False,
+                    help="Enable the ivshmem device", required=False)
 
 # Baremetal argument
 parser.add_argument('--configure-ipxe', action="store_true", default=False,
@@ -348,6 +350,10 @@ def run_qemu(args):
     # Debug port to exit qemu and communicate back exit-code for tests
     qemu_default_args += ['-device',
                           'isa-debug-exit,iobase=0xf4,iosize=0x04']
+
+    if args.enable_ivshmem:
+        qemu_default_args += ['-object', 'memory-backend-file,size=2G,mem-path=/mnt/huge/shmem-file,share=on,id=HMB']
+        qemu_default_args += ['-device', 'ivshmem-plain,memdev=HMB']
 
     # Enable networking with outside world
     if args.nic != "vmxnet3":

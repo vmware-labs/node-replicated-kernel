@@ -292,7 +292,6 @@ impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
                 Some(func) => {
                     {
                         let mut hdr = self.hdr.borrow_mut();
-                        let msg_len = hdr.msg_len;
                         func(&mut hdr, &mut self.buff.borrow_mut())?;
                     }
                     self.reply()?;

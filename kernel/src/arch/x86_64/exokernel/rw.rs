@@ -47,9 +47,15 @@ pub fn rpc_writeat<T: RPCClientAPI>(
     unsafe { encode(&req, &mut req_data) }.unwrap();
     req_data.extend(data);
 
-    let mut res = rpc_client
-        .call(pid, FileIO::WriteAt as RPCType, req_data)
-        .unwrap();
+    let mut res = if offset == -1 {
+        rpc_client
+            .call(pid, FileIO::Write as RPCType, req_data)
+            .unwrap()
+    } else {
+        rpc_client
+            .call(pid, FileIO::WriteAt as RPCType, req_data)
+            .unwrap()
+    };
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -87,9 +93,15 @@ pub fn rpc_readat<T: RPCClientAPI>(
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();
 
-    let mut res = rpc_client
-        .call(pid, FileIO::ReadAt as RPCType, req_data)
-        .unwrap();
+    let mut res = if offset == -1 {
+        rpc_client
+            .call(pid, FileIO::Read as RPCType, req_data)
+            .unwrap()
+    } else {
+        rpc_client
+            .call(pid, FileIO::ReadAt as RPCType, req_data)
+            .unwrap()
+    };
     if let Some((res, data)) = unsafe { decode::<FIORes>(&mut res) } {
         // If result is good, check how much data was returned
         if let Ok((bytes_read, _)) = res.ret {

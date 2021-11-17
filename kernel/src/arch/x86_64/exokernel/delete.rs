@@ -25,6 +25,7 @@ pub fn rpc_delete<T: RPCClientAPI>(
     pid: usize,
     pathname: String,
 ) -> Result<(u64, u64), RPCError> {
+    debug!("Delete({:?})", pathname);
     let req = DeleteReq { pathname: pathname };
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();

@@ -27,6 +27,7 @@ pub fn rpc_mkdir<T: RPCClientAPI>(
     pathname: String,
     modes: u64,
 ) -> Result<(u64, u64), RPCError> {
+    debug!("MkDir({:?})", pathname);
     let req = MkDirReq {
         pathname: pathname,
         modes: modes,

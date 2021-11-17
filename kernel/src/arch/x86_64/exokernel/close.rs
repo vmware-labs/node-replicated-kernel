@@ -24,10 +24,10 @@ pub fn rpc_close<T: RPCClientAPI>(
     pid: usize,
     fd: u64,
 ) -> Result<(u64, u64), RPCError> {
+    debug!("Close({:?}", fd);
     let req = CloseReq { fd: fd };
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();
-
     let mut res = rpc_client
         .call(pid, FileIO::Close as RPCType, req_data)
         .unwrap();

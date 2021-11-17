@@ -65,6 +65,7 @@ fn rpc_open_create<T: RPCClientAPI>(
     modes: u64,
     rpc_type: RPCType,
 ) -> Result<(u64, u64), RPCError> {
+    debug!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
     let req = OpenReq {
         pathname: pathname,
         flags: flags,

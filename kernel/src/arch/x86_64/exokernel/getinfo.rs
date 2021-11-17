@@ -26,6 +26,7 @@ pub fn rpc_getinfo<T: RPCClientAPI>(
     pid: usize,
     name: String,
 ) -> Result<(u64, u64), RPCError> {
+    debug!("GetInfo({:?})", name);
     let req = GetInfoReq { name: name };
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();
@@ -36,6 +37,7 @@ pub fn rpc_getinfo<T: RPCClientAPI>(
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
+        debug!("GetInfo() {:?}", res);
         return res.ret;
     } else {
         return Err(RPCError::MalformedResponse);

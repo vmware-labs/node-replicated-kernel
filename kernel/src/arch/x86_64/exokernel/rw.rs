@@ -38,6 +38,7 @@ pub fn rpc_writeat<T: RPCClientAPI>(
     offset: i64,
     data: Vec<u8>,
 ) -> Result<(u64, u64), RPCError> {
+    debug!("Write({:?}, {:?})", fd, offset);
     let req = RWReq {
         fd: fd,
         len: data.len() as u64,
@@ -85,6 +86,7 @@ pub fn rpc_readat<T: RPCClientAPI>(
     offset: i64,
     buff_ptr: &mut [u8],
 ) -> Result<(u64, u64), RPCError> {
+    debug!("Read({:?}, {:?})", len, offset);
     let req = RWReq {
         fd: fd,
         len: len,
@@ -92,7 +94,6 @@ pub fn rpc_readat<T: RPCClientAPI>(
     };
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();
-
     let mut res = if offset == -1 {
         rpc_client
             .call(pid, FileIO::Read as RPCType, req_data)

@@ -27,6 +27,7 @@ pub fn rpc_rename<T: RPCClientAPI>(
     oldname: String,
     newname: String,
 ) -> Result<(u64, u64), RPCError> {
+    debug!("Rename({:?}, {:?})", oldname, newname);
     let req = RenameReq {
         oldname: oldname,
         newname: newname,

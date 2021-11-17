@@ -140,7 +140,7 @@ pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
     let fd;
     let len;
     let mut offset = -1;
-    let mut msg_type = FileIO::ReadAt;
+    let mut operation = FileOperation::Read;
     if let Some((req, _)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
             "Read(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
@@ -148,9 +148,9 @@ pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
         );
         fd = req.fd;
         len = req.len;
-        if hdr.msg_type == FileIO::Read as RPCType {
+        if hdr.msg_type == FileIO::ReadAt as RPCType {
             offset = req.offset;
-            msg_type = FileIO::Read;
+            operation = FileOperation::ReadAt;
         }
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
@@ -158,25 +158,14 @@ pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
     }
 
     // Read directly into payload buffer, at offset after result field & header
-    let ret = if msg_type == FileIO::Read {
-        cnrfs::MlnrKernelNode::file_io(
-            FileOperation::Read,
-            local_pid,
-            fd,
-            payload[FIORES_SIZE as usize..].as_mut_ptr() as u64,
-            len,
-            -1,
-        )
-    } else {
-        cnrfs::MlnrKernelNode::file_io(
-            FileOperation::ReadAt,
-            local_pid,
-            fd,
-            payload[FIORES_SIZE as usize..].as_mut_ptr() as u64,
-            len,
-            offset,
-        )
-    };
+    let ret = cnrfs::MlnrKernelNode::file_io(
+        operation,
+        local_pid,
+        fd,
+        payload[FIORES_SIZE as usize..].as_mut_ptr() as u64,
+        len,
+        offset,
+    );
 
     let mut additional_data = 0;
     if let Ok((bytes_read, _)) = ret {

@@ -16,8 +16,8 @@ use crate::cluster_api::{ClusterClientAPI, NodeId};
 use crate::rpc::*;
 use crate::rpc_api::RPCClientAPI;
 
-const RX_BUF_LEN: usize = 4096;
-const TX_BUF_LEN: usize = 4096;
+const RX_BUF_LEN: usize = 8192;
+const TX_BUF_LEN: usize = 8192;
 
 pub struct TCPClient<'a> {
     iface: EthernetInterface<'a, DevQueuePhy>,
@@ -36,9 +36,14 @@ impl TCPClient<'_> {
         server_port: u16,
         iface: EthernetInterface<'_, DevQueuePhy>,
     ) -> TCPClient<'_> {
+        // Create SocketSet w/ space for 1 socket
+        let mut sock_vec = Vec::new();
+        sock_vec.try_reserve_exact(1).unwrap();
+        let mut sockets = SocketSet::new(sock_vec);
+
         TCPClient {
             iface,
-            sockets: SocketSet::new(vec![]),
+            sockets: sockets,
             server_handle: None,
             server_ip,
             server_port,
@@ -54,9 +59,16 @@ impl ClusterClientAPI for TCPClient<'_> {
     /// TODO: add timeout?? with error returned if timeout occurs?
     fn join_cluster(&mut self) -> Result<NodeId, RPCError> {
         // create client socket
-        let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; RX_BUF_LEN]);
-        let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; TX_BUF_LEN]);
-        let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+        // Create RX and TX buffers for the socket
+        let mut sock_vec = Vec::new();
+        sock_vec.try_reserve_exact(RX_BUF_LEN).unwrap();
+        sock_vec.resize(RX_BUF_LEN, 0);
+        let socket_rx_buffer = TcpSocketBuffer::new(sock_vec);
+        let mut sock_vec = Vec::new();
+        sock_vec.try_reserve_exact(TX_BUF_LEN).unwrap();
+        sock_vec.resize(TX_BUF_LEN, 0);
+        let socket_tx_buffer = TcpSocketBuffer::new(sock_vec);
+        let tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
         self.server_handle = Some(self.sockets.add(tcp_socket));
 
         {

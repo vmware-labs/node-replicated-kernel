@@ -44,7 +44,6 @@ pub fn rpc_close<T: RPCClientAPI>(
 
 pub fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
-    debug!("Starting close... {:?}", payload.as_ptr());
     let local_pid = { get_local_pid(hdr.pid) };
 
     if local_pid.is_none() {
@@ -57,11 +56,6 @@ pub fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCEr
         let res = FIORes {
             ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(local_pid, req.fd)),
         };
-        debug!(
-            "About to construct close ret: {:?} FIORES_SIZE={:?}",
-            payload.as_ptr(),
-            FIORES_SIZE
-        );
         construct_ret(hdr, payload, res)
     } else {
         warn!("Invalid payload for request: {:?}", hdr);

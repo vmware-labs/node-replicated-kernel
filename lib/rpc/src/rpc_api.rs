@@ -39,5 +39,5 @@ pub trait RPCClientAPI {
     fn send(&self, data: Vec<u8>) -> Result<(), RPCError>;
 
     /// receive data from a remote node
-    fn recv(&self, expected_data: usize) -> Result<Vec<u8>, RPCError>;
+    fn recv(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError>;
 }

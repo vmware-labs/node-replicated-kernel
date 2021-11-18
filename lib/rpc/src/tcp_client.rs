@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{decode, encode};
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use core::cell::RefCell;
 use log::{debug, trace, warn};
 
@@ -29,6 +29,7 @@ pub struct TCPClient<'a> {
     client_port: u16,
     client_id: NodeId,
     req_id: u64,
+    hdr: RefCell<RPCHeader>,
 }
 
 impl TCPClient<'_> {
@@ -51,6 +52,7 @@ impl TCPClient<'_> {
             client_port: 10110,
             client_id: 0,
             req_id: 0,
+            hdr: RefCell::new(RPCHeader::default()),
         }
     }
 }
@@ -142,14 +144,25 @@ impl RPCClientAPI for TCPClient<'_> {
         self.send(req_data).unwrap();
 
         // Receive response header
-        let mut res_data = self.recv(core::mem::size_of::<RPCHeader>()).unwrap();
+        let mut res_data = Vec::new();
+        res_data
+            .try_reserve_exact(core::mem::size_of::<RPCHeader>())
+            .unwrap();
+        res_data.resize(core::mem::size_of::<RPCHeader>(), 0);
+        self.recv(core::mem::size_of::<RPCHeader>(), &mut res_data)
+            .unwrap();
         let (res_hdr, extra) = unsafe { decode::<RPCHeader>(&mut res_data) }.unwrap();
         assert_eq!(extra.len(), 0);
 
         // Read the rest of the data
         let mut payload_data = Vec::new();
+        payload_data
+            .try_reserve_exact(res_hdr.msg_len as usize)
+            .unwrap();
+        payload_data.resize(res_hdr.msg_len as usize, 0);
         if res_hdr.msg_len > 0 {
-            payload_data = self.recv(res_hdr.msg_len as usize).unwrap();
+            self.recv(res_hdr.msg_len as usize, &mut payload_data)
+                .unwrap();
         }
 
         // Check request & client IDs, and also length of received data
@@ -214,9 +227,11 @@ impl RPCClientAPI for TCPClient<'_> {
     }
 
     /// receive data from a remote node
-    fn recv(&self, expected_data: usize) -> Result<Vec<u8>, RPCError> {
-        let mut data = vec![0; expected_data];
+    fn recv(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError> {
         let mut total_data_received = 0;
+
+        // Check write size - make sure it fits in buffer
+        assert!(expected_data <= data_buff.len());
 
         let mut sockets = self.sockets.borrow_mut();
         loop {
@@ -232,12 +247,12 @@ impl RPCClientAPI for TCPClient<'_> {
             }
 
             if total_data_received == expected_data {
-                return Ok(data);
+                return Ok(());
             } else {
                 let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
                 if socket.can_recv() {
                     if let Ok(bytes_received) =
-                        socket.recv_slice(&mut data[total_data_received..expected_data])
+                        socket.recv_slice(&mut data_buff[total_data_received..expected_data])
                     {
                         total_data_received += bytes_received;
                         trace!(

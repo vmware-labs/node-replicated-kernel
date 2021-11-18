@@ -1,10 +1,9 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::decode;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use log::{debug, trace, warn};
+use log::{debug, warn};
 
 use smoltcp::iface::EthernetInterface;
 use smoltcp::socket::{SocketHandle, SocketSet, TcpSocket, TcpSocketBuffer};
@@ -115,7 +114,7 @@ impl ClusterClientAPI for TCPClient<'_> {
         }
 
         // TODO: define proper type for registration??
-        self.call(0, 0_u8, Vec::new()).unwrap();
+        self.call(0, 0_u8, &Vec::new()).unwrap();
         Ok(self.client_id)
     }
 }
@@ -123,7 +122,7 @@ impl ClusterClientAPI for TCPClient<'_> {
 /// RPC client operations
 impl RPCClientAPI for TCPClient<'_> {
     /// calls a remote RPC function with ID
-    fn call(&mut self, pid: usize, rpc_id: RPCType, data: Vec<u8>) -> Result<Vec<u8>, RPCError> {
+    fn call(&mut self, pid: usize, rpc_id: RPCType, data: &[u8]) -> Result<Vec<u8>, RPCError> {
         // Create request header
         {
             let mut hdr = self.hdr.borrow_mut();
@@ -137,17 +136,17 @@ impl RPCClientAPI for TCPClient<'_> {
         {
             let hdr = self.hdr.borrow();
             let hdr_slice = unsafe { hdr.as_bytes() };
-            self.send(HDR_LEN, &hdr_slice[..]);
+            self.send(HDR_LEN, &hdr_slice[..]).unwrap();
         }
 
         // send request data
-        self.send(data.len(), &data);
+        self.send(data.len(), &data).unwrap();
 
         // Receive response header
         {
             let mut hdr = self.hdr.borrow_mut();
             let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            self.recv(HDR_LEN, &mut hdr_slice[..]);
+            self.recv(HDR_LEN, &mut hdr_slice[..]).unwrap();
         }
 
         // Read the rest of the data
@@ -252,8 +251,7 @@ impl RPCClientAPI for TCPClient<'_> {
                         total_data_received += bytes_received;
                         debug!(
                             "rcv got {:?}/{:?} bytes",
-                            total_data_received,
-                            expected_data
+                            total_data_received, expected_data
                         );
                     } else {
                         warn!("recv_slice failed... trying again?");

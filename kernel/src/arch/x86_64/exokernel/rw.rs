@@ -50,11 +50,11 @@ pub fn rpc_writeat<T: RPCClientAPI>(
 
     let mut res = if offset == -1 {
         rpc_client
-            .call(pid, FileIO::Write as RPCType, req_data)
+            .call(pid, FileIO::Write as RPCType, &req_data)
             .unwrap()
     } else {
         rpc_client
-            .call(pid, FileIO::WriteAt as RPCType, req_data)
+            .call(pid, FileIO::WriteAt as RPCType, &req_data)
             .unwrap()
     };
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
@@ -96,11 +96,11 @@ pub fn rpc_readat<T: RPCClientAPI>(
     unsafe { encode(&req, &mut req_data) }.unwrap();
     let mut res = if offset == -1 {
         rpc_client
-            .call(pid, FileIO::Read as RPCType, req_data)
+            .call(pid, FileIO::Read as RPCType, &req_data)
             .unwrap()
     } else {
         rpc_client
-            .call(pid, FileIO::ReadAt as RPCType, req_data)
+            .call(pid, FileIO::ReadAt as RPCType, &req_data)
             .unwrap()
     };
     if let Some((res, data)) = unsafe { decode::<FIORes>(&mut res) } {

@@ -31,7 +31,7 @@ pub fn rpc_getinfo<T: RPCClientAPI>(
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();
     let mut res = rpc_client
-        .call(pid, FileIO::GetInfo as RPCType, req_data)
+        .call(pid, FileIO::GetInfo as RPCType, &req_data)
         .unwrap();
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
         if remaining.len() > 0 {

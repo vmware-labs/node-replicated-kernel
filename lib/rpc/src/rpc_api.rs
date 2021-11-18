@@ -20,10 +20,12 @@ pub trait RPCServerAPI<'a> {
     where
         'c: 'a;
 
-    /// receives next RPC call with RPC ID
+    // TODO: add buff pointer as argument??
+    /// receives next RPC call with RPC ID - data written to internal buffer
     fn receive(&self) -> Result<RPCType, RPCError>;
 
-    /// replies an RPC call with results
+    // TODO: add buff pointer as argument??
+    /// replies an RPC call with results - data sent from internal buffer
     fn reply(&self) -> Result<(), RPCError>;
 
     /// Run the RPC server
@@ -36,7 +38,7 @@ pub trait RPCClientAPI {
     fn call(&mut self, pid: usize, rpc_id: RPCType, data: Vec<u8>) -> Result<Vec<u8>, RPCError>;
 
     /// send data to a remote node
-    fn send(&self, data: Vec<u8>) -> Result<(), RPCError>;
+    fn send(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError>;
 
     /// receive data from a remote node
     fn recv(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError>;

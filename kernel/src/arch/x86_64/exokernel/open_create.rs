@@ -73,7 +73,7 @@ fn rpc_open_create<T: RPCClientAPI>(
     };
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();
-    let mut res = rpc_client.call(pid, rpc_type, req_data).unwrap();
+    let mut res = rpc_client.call(pid, rpc_type, &req_data).unwrap();
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);

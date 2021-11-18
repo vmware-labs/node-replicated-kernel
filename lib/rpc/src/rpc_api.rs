@@ -35,7 +35,7 @@ pub trait RPCServerAPI<'a> {
 /// RPC client operations
 pub trait RPCClientAPI {
     /// calls a remote RPC function with ID
-    fn call(&mut self, pid: usize, rpc_id: RPCType, data: Vec<u8>) -> Result<Vec<u8>, RPCError>;
+    fn call(&mut self, pid: usize, rpc_id: RPCType, data: &[u8]) -> Result<Vec<u8>, RPCError>;
 
     /// send data to a remote node
     fn send(&self, expected_data: usize, data_buff: &[u8]) -> Result<(), RPCError>;

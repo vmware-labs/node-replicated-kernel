@@ -120,8 +120,7 @@ impl TCPServer<'_> {
                         total_data_received += bytes_received;
                         debug!(
                             "rcv got {:?}/{:?} bytes",
-                            total_data_received,
-                            expected_data
+                            total_data_received, expected_data
                         );
 
                     // Ignore failures

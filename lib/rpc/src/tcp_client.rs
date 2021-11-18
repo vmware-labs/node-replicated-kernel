@@ -250,7 +250,7 @@ impl RPCClientAPI for TCPClient<'_> {
                         socket.recv_slice(&mut data_buff[total_data_received..expected_data])
                     {
                         total_data_received += bytes_received;
-                        trace!(
+                        debug!(
                             "rcv got {:?}/{:?} bytes",
                             total_data_received,
                             expected_data

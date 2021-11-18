@@ -141,7 +141,7 @@ impl RPCClientAPI for TCPClient<'_> {
         }
 
         // Send request
-        self.send(req_data).unwrap();
+        self.send(req_data.len(), &mut req_data).unwrap();
 
         // Receive response header
         let mut res_data = Vec::new();
@@ -187,8 +187,10 @@ impl RPCClientAPI for TCPClient<'_> {
     }
 
     /// send data to a remote node
-    fn send(&self, data: Vec<u8>) -> Result<(), RPCError> {
+    fn send(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError> {
         let mut data_sent = 0;
+        assert!(expected_data <= data_buff.len());
+
         let mut sockets = self.sockets.borrow_mut();
         loop {
             match self
@@ -202,20 +204,21 @@ impl RPCClientAPI for TCPClient<'_> {
                 }
             }
 
-            if data_sent == data.len() {
+            if data_sent == expected_data {
                 return Ok(());
             } else {
                 let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
-                if socket.can_send() && socket.send_capacity() > 0 && data_sent < data.len() {
-                    let end_index = data_sent + core::cmp::min(data.len(), socket.send_capacity());
+                if socket.can_send() && socket.send_capacity() > 0 && data_sent < expected_data {
+                    let end_index =
+                        data_sent + core::cmp::min(expected_data, socket.send_capacity());
                     debug!("send [{:?}-{:?}]", data_sent, end_index);
-                    if let Ok(bytes_sent) = socket.send_slice(&data[data_sent..end_index]) {
+                    if let Ok(bytes_sent) = socket.send_slice(&data_buff[data_sent..end_index]) {
                         trace!(
                             "Client sent: [{:?}-{:?}] {:?}/{:?} bytes",
                             data_sent,
                             end_index,
                             end_index,
-                            data.len()
+                            expected_data
                         );
                         data_sent += bytes_sent;
                     } else {

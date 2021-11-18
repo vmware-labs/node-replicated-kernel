@@ -118,7 +118,7 @@ impl TCPServer<'_> {
                     // Update total data received
                     if let Ok(bytes_received) = result {
                         total_data_received += bytes_received;
-                        trace!(
+                        debug!(
                             "rcv got {:?}/{:?} bytes",
                             total_data_received,
                             expected_data

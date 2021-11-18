@@ -168,23 +168,31 @@ impl TCPServer<'_> {
                 if socket.can_send() && socket.send_capacity() > 0 && data_sent < expected_data {
                     let end_index = data_sent
                         + core::cmp::min(expected_data - data_sent, socket.send_capacity());
-                    debug!("send [{:?}-{:?}]", data_sent, end_index);
-
                     // Send in hdr (for RPCHeader) or buff (for RPC data)
                     let result = if is_hdr {
                         {
                             let hdr = self.hdr.borrow();
                             let hdr_slice = unsafe { hdr.as_bytes() };
-                            socket.send_slice(&hdr_slice[..])
+                            let ret = socket.send_slice(&hdr_slice[..]);
+                            debug!(
+                                "sent: [{:?}-{:?}] {:?}/{:?} bytes",
+                                data_sent, end_index, end_index, expected_data
+                            );
+                            ret
                         }
                     } else {
-                        socket.send_slice(&self.buff.borrow()[data_sent..end_index])
+                        let ret = socket.send_slice(&self.buff.borrow()[data_sent..end_index]);
+                        debug!(
+                            "sent: [{:?}-{:?}] {:?}/{:?} bytes",
+                            data_sent, end_index, end_index, expected_data
+                        );
+                        ret
                     };
 
                     // Log and update total
                     if let Ok(bytes_sent) = result {
                         trace!(
-                            "Client sent: [{:?}-{:?}] {:?}/{:?} bytes",
+                            "sent: [{:?}-{:?}] {:?}/{:?} bytes",
                             data_sent,
                             end_index,
                             end_index,

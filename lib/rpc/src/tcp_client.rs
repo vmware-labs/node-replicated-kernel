@@ -207,14 +207,10 @@ impl RPCClientAPI for TCPClient<'_> {
                 if socket.can_send() && socket.send_capacity() > 0 && data_sent < expected_data {
                     let end_index =
                         data_sent + core::cmp::min(expected_data, socket.send_capacity());
-                    debug!("send [{:?}-{:?}]", data_sent, end_index);
                     if let Ok(bytes_sent) = socket.send_slice(&data_buff[data_sent..end_index]) {
-                        trace!(
-                            "Client sent: [{:?}-{:?}] {:?}/{:?} bytes",
-                            data_sent,
-                            end_index,
-                            end_index,
-                            expected_data
+                        debug!(
+                            "sent: [{:?}-{:?}] {:?}/{:?} bytes",
+                            data_sent, end_index, end_index, expected_data
                         );
                         data_sent += bytes_sent;
                     } else {

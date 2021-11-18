@@ -3,6 +3,7 @@
 
 use abomonation::{decode, encode};
 use alloc::{vec, vec::Vec};
+use core::cell::RefCell;
 use log::{debug, trace, warn};
 
 use smoltcp::iface::EthernetInterface;
@@ -20,8 +21,8 @@ const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
 
 pub struct TCPClient<'a> {
-    iface: EthernetInterface<'a, DevQueuePhy>,
-    sockets: SocketSet<'a>,
+    iface: RefCell<EthernetInterface<'a, DevQueuePhy>>,
+    sockets: RefCell<SocketSet<'a>>,
     server_handle: Option<SocketHandle>,
     server_ip: IpAddress,
     server_port: u16,
@@ -39,11 +40,11 @@ impl TCPClient<'_> {
         // Create SocketSet w/ space for 1 socket
         let mut sock_vec = Vec::new();
         sock_vec.try_reserve_exact(1).unwrap();
-        let mut sockets = SocketSet::new(sock_vec);
+        let sockets = SocketSet::new(sock_vec);
 
         TCPClient {
-            iface,
-            sockets: sockets,
+            iface: RefCell::new(iface),
+            sockets: RefCell::new(sockets),
             server_handle: None,
             server_ip,
             server_port,
@@ -69,10 +70,16 @@ impl ClusterClientAPI for TCPClient<'_> {
         sock_vec.resize(TX_BUF_LEN, 0);
         let socket_tx_buffer = TcpSocketBuffer::new(sock_vec);
         let tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
-        self.server_handle = Some(self.sockets.add(tcp_socket));
+
+        // Add to sockets
+        {
+            let mut sockets = self.sockets.borrow_mut();
+            self.server_handle = Some(sockets.add(tcp_socket));
+        }
 
         {
-            let mut socket = self.sockets.get::<TcpSocket>(self.server_handle.unwrap());
+            let mut sockets = self.sockets.borrow_mut();
+            let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
             socket
                 .connect((self.server_ip, self.server_port), self.client_port)
                 .unwrap();
@@ -83,18 +90,25 @@ impl ClusterClientAPI for TCPClient<'_> {
         }
 
         // Connect to server
-        loop {
-            match self.iface.poll(&mut self.sockets, Instant::from_millis(0)) {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!("poll error: {}", e);
+        {
+            let mut sockets = self.sockets.borrow_mut();
+            loop {
+                match self
+                    .iface
+                    .borrow_mut()
+                    .poll(&mut sockets, Instant::from_millis(0))
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
+                    }
                 }
-            }
-            let socket = self.sockets.get::<TcpSocket>(self.server_handle.unwrap());
-            // Waiting for send/recv forces the TCP handshake to fully complete
-            if socket.is_active() && (socket.may_send() || socket.may_recv()) {
-                debug!("Connected to server, ready to send/recv data");
-                break;
+                let socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
+                // Waiting for send/recv forces the TCP handshake to fully complete
+                if socket.is_active() && (socket.may_send() || socket.may_recv()) {
+                    debug!("Connected to server, ready to send/recv data");
+                    break;
+                }
             }
         }
 
@@ -160,10 +174,15 @@ impl RPCClientAPI for TCPClient<'_> {
     }
 
     /// send data to a remote node
-    fn send(&mut self, data: Vec<u8>) -> Result<(), RPCError> {
+    fn send(&self, data: Vec<u8>) -> Result<(), RPCError> {
         let mut data_sent = 0;
+        let mut sockets = self.sockets.borrow_mut();
         loop {
-            match self.iface.poll(&mut self.sockets, Instant::from_millis(0)) {
+            match self
+                .iface
+                .borrow_mut()
+                .poll(&mut sockets, Instant::from_millis(0))
+            {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("poll error: {}", e);
@@ -173,7 +192,7 @@ impl RPCClientAPI for TCPClient<'_> {
             if data_sent == data.len() {
                 return Ok(());
             } else {
-                let mut socket = self.sockets.get::<TcpSocket>(self.server_handle.unwrap());
+                let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
                 if socket.can_send() && socket.send_capacity() > 0 && data_sent < data.len() {
                     let end_index = data_sent + core::cmp::min(data.len(), socket.send_capacity());
                     debug!("send [{:?}-{:?}]", data_sent, end_index);
@@ -195,12 +214,17 @@ impl RPCClientAPI for TCPClient<'_> {
     }
 
     /// receive data from a remote node
-    fn recv(&mut self, expected_data: usize) -> Result<Vec<u8>, RPCError> {
+    fn recv(&self, expected_data: usize) -> Result<Vec<u8>, RPCError> {
         let mut data = vec![0; expected_data];
         let mut total_data_received = 0;
 
+        let mut sockets = self.sockets.borrow_mut();
         loop {
-            match self.iface.poll(&mut self.sockets, Instant::from_millis(0)) {
+            match self
+                .iface
+                .borrow_mut()
+                .poll(&mut sockets, Instant::from_millis(0))
+            {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("poll error: {}", e);
@@ -210,7 +234,7 @@ impl RPCClientAPI for TCPClient<'_> {
             if total_data_received == expected_data {
                 return Ok(data);
             } else {
-                let mut socket = self.sockets.get::<TcpSocket>(self.server_handle.unwrap());
+                let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
                 if socket.can_recv() {
                     if let Ok(bytes_received) =
                         socket.recv_slice(&mut data[total_data_received..expected_data])

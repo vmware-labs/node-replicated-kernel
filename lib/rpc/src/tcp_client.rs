@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode};
+use abomonation::decode;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use log::{debug, trace, warn};
@@ -125,51 +125,47 @@ impl RPCClientAPI for TCPClient<'_> {
     /// calls a remote RPC function with ID
     fn call(&mut self, pid: usize, rpc_id: RPCType, data: Vec<u8>) -> Result<Vec<u8>, RPCError> {
         // Create request header
-        let req_hdr = RPCHeader {
-            client_id: self.client_id,
-            pid,
-            req_id: self.req_id,
-            msg_type: rpc_id,
-            msg_len: data.len() as u64,
-        };
-
-        // Serialize request header then request body
-        let mut req_data = Vec::new();
-        unsafe { encode(&req_hdr, &mut req_data) }.unwrap();
-        if !data.is_empty() {
-            req_data.extend(data);
+        {
+            let mut hdr = self.hdr.borrow_mut();
+            hdr.pid = pid;
+            hdr.req_id = self.req_id;
+            hdr.msg_type = rpc_id;
+            hdr.msg_len = data.len() as u64;
         }
 
-        // Send request
-        self.send(req_data.len(), &mut req_data).unwrap();
+        // Send header
+        {
+            let hdr = self.hdr.borrow();
+            let hdr_slice = unsafe { hdr.as_bytes() };
+            self.send(HDR_LEN, &hdr_slice[..]);
+        }
+
+        // send request data
+        self.send(data.len(), &data);
 
         // Receive response header
-        let mut res_data = Vec::new();
-        res_data
-            .try_reserve_exact(core::mem::size_of::<RPCHeader>())
-            .unwrap();
-        res_data.resize(core::mem::size_of::<RPCHeader>(), 0);
-        self.recv(core::mem::size_of::<RPCHeader>(), &mut res_data)
-            .unwrap();
-        let (res_hdr, extra) = unsafe { decode::<RPCHeader>(&mut res_data) }.unwrap();
-        assert_eq!(extra.len(), 0);
+        {
+            let mut hdr = self.hdr.borrow_mut();
+            let hdr_slice = unsafe { hdr.as_mut_bytes() };
+            self.recv(HDR_LEN, &mut hdr_slice[..]);
+        }
 
         // Read the rest of the data
+        let hdr = self.hdr.borrow();
         let mut payload_data = Vec::new();
         payload_data
-            .try_reserve_exact(res_hdr.msg_len as usize)
+            .try_reserve_exact(hdr.msg_len as usize)
             .unwrap();
-        payload_data.resize(res_hdr.msg_len as usize, 0);
-        if res_hdr.msg_len > 0 {
-            self.recv(res_hdr.msg_len as usize, &mut payload_data)
-                .unwrap();
+        payload_data.resize(hdr.msg_len as usize, 0);
+        if hdr.msg_len > 0 {
+            self.recv(hdr.msg_len as usize, &mut payload_data).unwrap();
         }
 
         // Check request & client IDs, and also length of received data
-        if res_hdr.client_id != self.client_id || res_hdr.req_id != self.req_id {
+        if hdr.client_id != self.client_id || hdr.req_id != self.req_id {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",
-                res_hdr.client_id, self.client_id, res_hdr.req_id, self.req_id
+                hdr.client_id, self.client_id, hdr.req_id, self.req_id
             );
             return Err(RPCError::MalformedResponse);
         }
@@ -179,7 +175,7 @@ impl RPCClientAPI for TCPClient<'_> {
 
         // If registration, update id TODO: proper RPC type?
         if rpc_id == 0u8 {
-            self.client_id = res_hdr.client_id;
+            self.client_id = hdr.client_id;
             debug!("Set client ID to: {}", self.client_id);
             return Ok(Vec::new());
         }
@@ -187,7 +183,7 @@ impl RPCClientAPI for TCPClient<'_> {
     }
 
     /// send data to a remote node
-    fn send(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError> {
+    fn send(&self, expected_data: usize, data_buff: &[u8]) -> Result<(), RPCError> {
         let mut data_sent = 0;
         assert!(expected_data <= data_buff.len());
 

@@ -15,6 +15,7 @@
 extern crate alloc;
 
 pub mod io;
+pub mod pci;
 pub mod process;
 pub mod system;
 pub mod upcall;

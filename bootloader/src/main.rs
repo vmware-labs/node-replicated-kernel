@@ -66,12 +66,10 @@ use x86::controlregs;
 
 mod kernel;
 mod modules;
-mod pci;
 mod vspace;
 
 use kernel::*;
 use modules::*;
-use pci::*;
 use vspace::*;
 
 use bootloader_shared::*;
@@ -529,7 +527,6 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
             kernel.offset + binary.entry_point()
         );
 
-        pci_init();
         info!("Exiting boot services. About to jump...");
         let (_st, mmiter) = st
             .exit_boot_services(handle, mm_slice)

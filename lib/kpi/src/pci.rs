@@ -39,11 +39,10 @@ impl PCIAddress {
     fn read(&self, offset: u32) -> u32 {
         let addr = self.0 | offset;
 
-        let v = unsafe {
+        unsafe {
             io::outl(PCI_CONF_ADDR, addr);
             io::inl(PCI_CONF_DATA)
-        };
-        v
+        }
     }
 
     fn write(&self, offset: u32, value: u32) {
@@ -73,16 +72,11 @@ pub struct PCIHeader(PCIAddress);
 impl PCIHeader {
     pub fn new(bus: u8, device: u8, function: u8) -> PCIHeader {
         let addr = PCIAddress::new(bus, device, function);
-        let header = PCIHeader(addr);
-        header
+        PCIHeader(addr)
     }
 
     pub fn is_valid(&self) -> bool {
-        if self.0.read(0) != 0xFFFFFFFF {
-            true
-        } else {
-            false
-        }
+        self.0.read(0) != 0xFFFFFFFF
     }
 }
 
@@ -119,14 +113,14 @@ impl From<u16> for ClassCode {
 #[derive(Debug)]
 enum BarType {
     IO,
-    MEM,
+    Mem,
 }
 
 impl From<bool> for BarType {
     fn from(value: bool) -> BarType {
         match value {
             true => BarType::IO,
-            false => BarType::MEM,
+            false => BarType::Mem,
         }
     }
 }
@@ -144,8 +138,7 @@ pub struct PCIDevice(PCIHeader);
 impl PCIDevice {
     pub fn new(bus: u8, device: u8, function: u8) -> PCIDevice {
         let header = PCIHeader::new(bus, device, function);
-        let device = PCIDevice(header);
-        device
+        PCIDevice(header)
     }
 
     pub fn is_present(&self) -> bool {

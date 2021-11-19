@@ -785,10 +785,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // 4. Use the region and affinity region to bind an allocator to the regions.
     map_physical_persistent_memory();
 
-    let pci_dev =
-        kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110).expect("No PCI device found");
-    info!("{:?}", pci_dev.bar(0));
-    info!("{:?}", pci_dev.bar(2));
+    if let Some(pci_dev) = kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110) {
+        info!("{:?}", pci_dev.bar(0));
+        info!("{:?}", pci_dev.bar(2));
+    }
 
     let mut memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
     let mut pmem_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();

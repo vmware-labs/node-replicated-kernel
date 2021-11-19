@@ -30,6 +30,7 @@ use crate::nrproc::NrProcess;
 use crate::process::{Pid, Process, MAX_PROCESSES};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
+use kpi::pci::Bar;
 
 pub trait MemManager: PhysicalPageProvider + AllocatorStatistics + GrowBackend {}
 
@@ -330,6 +331,9 @@ where
 
     /// Tokens to access process replicas
     pub process_token: ArrayVec<ReplicaToken, { MAX_PROCESSES }>,
+
+    /// Reference to a shared memory device.
+    pub cxl_device: Option<Bar>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -360,6 +364,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             replica: None,
             tlb_time: 0,
             process_token: ArrayVec::new_const(),
+            cxl_device: None,
         }
     }
 
@@ -468,6 +473,12 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn set_pmem_manager(&mut self, pmanager: TCache) {
         self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
+    }
+
+    pub fn set_cxl_region(&mut self) {
+        if let Some(pci_dev) = kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110) {
+            self.cxl_device = pci_dev.bar(2);
+        }
     }
 
     pub fn enable_print_buffering(&mut self, buffer: String) {

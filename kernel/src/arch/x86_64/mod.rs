@@ -239,6 +239,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     kcb.set_global_mem(args.global_memory);
     kcb.set_mem_manager(mcache::TCache::new(args.node));
+    kcb.set_cxl_region();
 
     if args.global_pmem.node_caches.len() > 0 {
         kcb.set_global_pmem(args.global_pmem);
@@ -785,11 +786,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // 4. Use the region and affinity region to bind an allocator to the regions.
     map_physical_persistent_memory();
 
-    if let Some(pci_dev) = kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110) {
-        info!("{:?}", pci_dev.bar(0));
-        info!("{:?}", pci_dev.bar(2));
-    }
-
     let mut memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
     let mut pmem_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();
     for region in &mut pmem_iter {
@@ -825,6 +821,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_global_pmem(&global_memory_static);
         let tcache = mcache::TCache::new(0);
         kcb.set_pmem_manager(tcache);
+    }
+
+    // Intialize the shared memory region.
+    {
+        let kcb = kcb::get_kcb();
+        kcb.set_cxl_region();
     }
 
     // Set-up interrupt routing drivers (I/O APIC controllers)

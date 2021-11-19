@@ -352,7 +352,20 @@ def run_qemu(args):
                           'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
     if args.enable_ivshmem:
-        qemu_default_args += ['-object', 'memory-backend-file,size=2G,mem-path=/mnt/huge/shmem-file,share=on,id=HMB']
+        default = "/mnt/huge"
+        filepath = ""
+        if os.path.isdir(default):
+            filepath = default + "/ivshmem"
+        else:
+            with tempfile.NamedTemporaryFile() as tmp:
+                filepath = tmp.name
+
+        print(filepath)
+        qemu_default_args += [
+            '-object',
+            'memory-backend-file,size=2G,mem-path={},share=on,id=HMB'.format(
+                filepath)
+        ]
         qemu_default_args += ['-device', 'ivshmem-plain,memdev=HMB']
 
     # Enable networking with outside world

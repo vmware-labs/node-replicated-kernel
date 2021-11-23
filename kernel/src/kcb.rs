@@ -475,10 +475,8 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
-    pub fn set_cxl_region(&mut self) {
-        if let Some(pci_dev) = kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110) {
-            self.cxl_device = pci_dev.bar(2);
-        }
+    pub fn set_cxl_region(&mut self, cxl_dev: Option<Bar>) {
+        self.cxl_device = cxl_dev;
     }
 
     pub fn enable_print_buffering(&mut self, buffer: String) {

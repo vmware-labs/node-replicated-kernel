@@ -110,7 +110,7 @@ impl From<u16> for ClassCode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum BarType {
     IO,
     Mem,
@@ -125,7 +125,7 @@ impl From<bool> for BarType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Bar {
     region_type: BarType,
     prefetchable: bool,

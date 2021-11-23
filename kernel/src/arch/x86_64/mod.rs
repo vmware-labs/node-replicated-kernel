@@ -41,6 +41,7 @@ use cnr::{Log as MlnrLog, Replica as MlnrReplica};
 use driverkit::DriverControl;
 use fallible_collections::{FallibleVecGlobal, TryClone};
 use klogger::sprint;
+use kpi::pci::Bar;
 use log::{debug, error, info, trace};
 use node_replication::{Log, Replica};
 use x86::bits64::paging::{PAddr, VAddr, PML4};
@@ -210,6 +211,7 @@ struct AppCoreArgs {
     _log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode>>,
     fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+    cxl_dev: Option<Bar>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -239,7 +241,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     kcb.set_global_mem(args.global_memory);
     kcb.set_mem_manager(mcache::TCache::new(args.node));
-    kcb.set_cxl_region();
+    kcb.set_cxl_region(args.cxl_dev);
 
     if args.global_pmem.node_caches.len() > 0 {
         kcb.set_global_pmem(args.global_pmem);
@@ -315,6 +317,7 @@ fn boot_app_cores(
     bsp_replica: Arc<Replica<'static, KernelNode>>,
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+    cxl_dev: Option<Bar>,
 ) {
     use crate::memory::PhysicalPageProvider;
 
@@ -412,6 +415,7 @@ fn boot_app_cores(
             fs_replica: fs_replicas[node as usize]
                 .try_clone()
                 .expect("Not enough memory to initialize system"),
+            cxl_dev,
         })
         .expect("Not enough memory to initialize system");
 
@@ -824,9 +828,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     // Intialize the shared memory region.
+    let mut cxl_dev = None;
     {
         let kcb = kcb::get_kcb();
-        kcb.set_cxl_region();
+        if let Some(pci_dev) = kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110) {
+            cxl_dev = pci_dev.bar(2);
+        }
+        kcb.set_cxl_region(cxl_dev);
     }
 
     // Set-up interrupt routing drivers (I/O APIC controllers)
@@ -926,6 +934,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         bsp_replica,
         fs_logs,
         fs_replica,
+        cxl_dev,
     );
 
     // Done with initialization, now we go in

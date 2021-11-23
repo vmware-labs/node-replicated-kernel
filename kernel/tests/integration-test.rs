@@ -43,9 +43,6 @@ const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 52:54:00:12:34:5
 /// Environment variable that points to machine config (for baremetal booting)
 const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";
 
-/// Add PCI enumeration time to be added in timeout for each benchmark.
-const PCI_ENUMERATION_TIME: u64 = 1000;
-
 /// Different ExitStatus codes as returned by NRK.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 enum ExitStatus {
@@ -453,7 +450,7 @@ impl<'a> RunnerArgs<'a> {
     }
 
     fn timeout(mut self, timeout: u64) -> RunnerArgs<'a> {
-        self.timeout = Some(timeout + PCI_ENUMERATION_TIME);
+        self.timeout = Some(timeout);
         self
     }
 

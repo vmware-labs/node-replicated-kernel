@@ -41,6 +41,7 @@ use cnr::{Log as MlnrLog, Replica as MlnrReplica};
 use driverkit::DriverControl;
 use fallible_collections::{FallibleVecGlobal, TryClone};
 use klogger::sprint;
+#[cfg(not(feature = "bsp-only"))]
 use kpi::pci::Bar;
 use log::{debug, error, info, trace};
 use node_replication::{Log, Replica};

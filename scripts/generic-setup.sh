@@ -19,7 +19,7 @@ function install_build_dependencies()
         $APT -o Acquire::Max-FutureTime=86400 update > /dev/null
 
         # installing python build dependencies
-        $APT install -y python3 python3-pip python3-plumbum python3-prctl python3-toml python3-pexpect > /dev/null
+        $APT install -y python3 python3-pip python3-plumbum python3-prctl python3-toml python3-pexpect python3-packaging > /dev/null
 
         # nrk build dependencies
         $APT install -y uml-utilities mtools zlib1g-dev make gcc build-essential git curl > /dev/null

@@ -75,6 +75,9 @@ mod stack;
 
 pub mod panic;
 
+#[cfg(feature = "integration-test")]
+mod integration_tests;
+
 /// A kernel exit status.
 ///
 /// This is used to communicate the exit status
@@ -106,15 +109,21 @@ pub enum ExitReason {
 /// This function is executed from each core (which is
 /// different from a traditional main routine).
 #[no_mangle]
-#[cfg(not(feature = "integration-test"))]
 pub fn xmain() {
-    let ret = arch::process::spawn("init");
-    if let Err(e) = ret {
-        log::warn!("{}", e);
+    #[cfg(not(feature = "integration-test"))]
+    {
+        let ret = arch::process::spawn("init");
+        if let Err(e) = ret {
+            log::warn!("{}", e);
+        }
+        crate::scheduler::schedule()
     }
-    crate::scheduler::schedule()
+    #[cfg(feature = "integration-test")]
+    {
+        if let Some(test) = kcb::get_kcb().cmdline.test {
+            integration_tests::run_test(test)
+        } else {
+            log::error!("No test selected, exiting...");
+        }
+    }
 }
-
-// Including a series of other, custom `xmain` routines that get
-// selected when compiling for a specific integration test
-include!("integration_main.rs");

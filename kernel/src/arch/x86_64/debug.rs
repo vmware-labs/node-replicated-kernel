@@ -127,10 +127,7 @@ pub fn disable_all_breakpoints() {
     }
 }
 
-#[cfg(any(
-    feature = "test-pfault-early",
-    all(feature = "integration-test", feature = "test-pfault")
-))]
+#[cfg(feature = "integration-test")]
 #[inline(never)]
 pub fn cause_pfault() {
     use super::memory::{paddr_to_kernel_vaddr, PAddr};
@@ -145,10 +142,7 @@ pub fn cause_pfault() {
     }
 }
 
-#[cfg(any(
-    feature = "test-gpfault-early",
-    all(feature = "integration-test", feature = "test-gpfault")
-))]
+#[cfg(feature = "integration-test")]
 pub fn cause_gpfault() {
     // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
     // So we cause a GP by loading garbage in the ss segment register.
@@ -158,7 +152,7 @@ pub fn cause_gpfault() {
     }
 }
 
-#[cfg(feature = "test-double-fault")]
+#[cfg(feature = "integration-test")]
 pub fn cause_double_fault() {
     unsafe {
         x86::int!(x86::irq::DOUBLE_FAULT_VECTOR);
@@ -167,7 +161,7 @@ pub fn cause_double_fault() {
 
 /// Verify that we're actually using the fault-stack
 /// as part of the test
-#[cfg(feature = "test-double-fault")]
+#[cfg(feature = "integration-test")]
 pub fn assert_being_on_fault_stack() {
     let (low, high) = super::kcb::get_kcb().arch.fault_stack_range();
     let rsp = x86::current::registers::rsp();

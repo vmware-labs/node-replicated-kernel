@@ -81,7 +81,7 @@ default = ["addr2line", "serde", "serde_cbor"]
 # gdb server
 gdb = []
 # Run an integration test instead of standard kernel main function
-integration-test = []
+integration-test = ["smoltcp", "gdb"]
 # smoke: Shorten long running benchmarks to test just functionality
 smoke = []
 # baremetal: Compile benchmarks for running on bare-metal

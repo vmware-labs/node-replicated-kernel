@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 vmxnet3 = { path = "../vmxnet3" }
 kpi = { path = "../kpi" }
-abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no_std" }
+abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std" }
 lazy_static = "1.4.0"
 log = "0.4"
 smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp" ] }

@@ -5,9 +5,53 @@
 // of the kernel. Check `kernel/tests/integration-test.rs` for the host-side
 // counterpart.
 
+use crate::arch::debug::shutdown;
+use crate::kcb;
+use crate::ExitReason;
+
+type MainFn = fn();
+
+#[cfg(feature = "integration-test")]
+const INTEGRATION_TESTS: [(&'static str, MainFn); 24] = [
+    ("exit", just_exit),
+    ("wrgsbase", wrgsbase),
+    ("pfault-early", just_exit),
+    ("gpfault-early", just_exit),
+    ("pfault", pfault),
+    ("gpfault", gpfault),
+    ("double-fault", just_exit),
+    ("alloc", alloc),
+    ("sse", sse),
+    ("time", time),
+    ("timer", timer),
+    ("acpi-smoke", acpi_smoke),
+    ("acpi-topology", acpi_topology),
+    ("coreboot-smoke", coreboot_smoke),
+    ("coreboot-nrlog", coreboot_nrlog),
+    ("nvdimm-discover", nvdimm_discover),
+    ("coreboot", coreboot),
+    ("userspace", userspace),
+    ("userspace-smp", userspace),
+    ("vspace-debug", vspace_debug),
+    ("shootdown-simple", shootdown_simple),
+    ("replica-advance", replica_advance),
+    ("vmxnet-smoltcp", vmxnet_smoltcp),
+    ("gdb", gdb),
+];
+
+#[cfg(feature = "integration-test")]
+pub fn run_test(name: &'static str) -> ! {
+    for (test, fun) in INTEGRATION_TESTS {
+        if name == test {
+            fun();
+        }
+    }
+    panic!("Can't find requested test");
+}
+
 /// Test timestamps in the kernel.
-#[cfg(all(feature = "integration-test", feature = "test-time"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn time() {
     use klogger::sprintln;
 
     unsafe {
@@ -32,16 +76,12 @@ pub fn xmain() {
             assert!(done <= 150);
         }
     }
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test timer interrupt in the kernel.
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-timer",
-    target_arch = "x86_64"
-))]
-pub fn xmain() {
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+fn timer() {
     use apic::ApicDriver;
     use core::hint::spin_loop;
     use core::time::Duration;
@@ -70,85 +110,81 @@ pub fn xmain() {
 
         let _done = start.elapsed().as_nanos();
     }
-    arch::debug::shutdown(ExitReason::Ok);
-}
-
-/// Test that we can exit the machine.
-#[cfg(all(feature = "integration-test", feature = "test-exit"))]
-pub fn xmain() {
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test wrgsbase performance.
-#[cfg(all(feature = "integration-test", feature = "test-wrgsbase"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn wrgsbase() {
+    use log::info;
+
     unsafe {
         let iterations = 100_000;
         let start = x86::time::rdtsc();
-        for i in 0..iterations {
+        for _i in 0..iterations {
             x86::current::segmentation::wrgsbase(0x1);
         }
         let end = x86::time::rdtsc();
         info!("wrgsbase cycles: {}", (end - start) / iterations)
     }
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test the debug facility for page-faults.
-#[cfg(all(feature = "integration-test", feature = "test-pfault"))]
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 #[inline(never)]
-pub fn xmain() {
-    use arch::debug;
+fn pfault() {
+    use crate::arch::debug;
     debug::cause_pfault();
 }
 
 /// Test the debug facility for general-protection-faults.
-#[cfg(all(feature = "integration-test", feature = "test-gpfault"))]
-pub fn xmain() {
-    use arch::debug;
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+fn gpfault() {
+    use crate::arch::debug;
     debug::cause_gpfault();
 }
 
 /// Test allocation and deallocation of objects of various sizes.
-#[cfg(all(feature = "integration-test", feature = "test-alloc"))]
-pub fn xmain() -> Result<(), crate::error::KError> {
+#[cfg(feature = "integration-test")]
+fn alloc() {
     use alloc::vec::Vec;
     use fallible_collections::vec::FallibleVec;
     use fallible_collections::FallibleVecGlobal;
     use log::info;
 
     {
-        let mut buf: Vec<u8> = Vec::try_with_capacity(0)?;
+        let mut buf: Vec<u8> = Vec::try_with_capacity(0).expect("Can alloc");
         // test allocation sizes from 0 .. 8192
         for i in 0..1024 {
-            buf.try_push(i as u8)?;
+            buf.try_push(i as u8).expect("succeeds");
         }
     } // Make sure we drop here.
     info!("small allocations work.");
 
     {
         let size: usize = x86::bits64::paging::BASE_PAGE_SIZE; // 0.03 MiB, 8 pages
-        let mut buf: Vec<u8> = Vec::try_with_capacity(size)?;
+        let mut buf: Vec<u8> = Vec::try_with_capacity(size).expect("Can alloc");
         for i in 0..size {
-            buf.try_push(i as u8)?;
+            buf.try_push(i as u8).expect("succeeds");
         }
 
         let size: usize = x86::bits64::paging::BASE_PAGE_SIZE * 256; // 8 MiB
-        let mut buf: Vec<usize> = Vec::try_with_capacity(size)?;
+        let mut buf: Vec<usize> = Vec::try_with_capacity(size).expect("Can alloc");
         for i in 0..size {
-            buf.try_push(i as usize)?;
+            buf.try_push(i as usize).expect("succeeds");
         }
     } // Make sure we drop here.
     info!("large allocations work.");
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Checks that we can initialize ACPI, query the ACPI tables,
 /// and parse the topology. The test ensures things work in case we
 /// have no numa nodes.
-#[cfg(all(feature = "integration-test", feature = "test-acpi-smoke"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn acpi_smoke() {
     use atopology::MACHINE_TOPOLOGY;
 
     // We have 2 cores ...
@@ -172,13 +208,13 @@ pub fn xmain() {
         };
     }
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Checks that we can initialize ACPI, query the ACPI tables
 /// and correctly parse a large NUMA topology (8 sockets, 80 cores).
-#[cfg(all(feature = "integration-test", feature = "test-acpi-topology"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn acpi_topology() {
     use atopology::MACHINE_TOPOLOGY;
     use log::info;
 
@@ -264,27 +300,26 @@ pub fn xmain() {
     }
 
     info!("test-acpi-topology done.");
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Tests core booting.
 ///
 /// Boots a single core, checks we can print from it and arguments
 /// get passed along correctly.
-#[cfg(all(feature = "integration-test", feature = "test-coreboot-smoke"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn coreboot_smoke() {
     use alloc::sync::Arc;
     use core::sync::atomic::{AtomicBool, Ordering};
 
-    use atopology;
     use klogger::sprintln;
     use log::info;
 
+    use crate::arch::coreboot;
     use crate::stack::OwnedStack;
-    use arch::coreboot;
 
     // Entry point for app. This function is called from start_ap.S:
-    pub fn nrk_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
+    fn nrk_init_ap(arg1: Arc<u64>, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
@@ -340,17 +375,16 @@ pub fn xmain() {
         info!("Core has started");
     }
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Tests booting of a core and using the node-replication
 /// log to communicate information.
-#[cfg(all(feature = "integration-test", feature = "test-coreboot-nrlog"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn coreboot_nrlog() {
+    use crate::arch::coreboot;
     use crate::stack::OwnedStack;
     use alloc::sync::Arc;
-    use arch::coreboot;
-    use atopology;
     use core::sync::atomic::{AtomicBool, Ordering};
     use klogger::sprintln;
     use log::info;
@@ -360,7 +394,7 @@ pub fn xmain() {
         Arc::try_new(Log::<usize>::new(1024 * 1024 * 1)).expect("Can't Arc this");
 
     // Entry point for app. This function is called from start_ap.S:
-    pub fn nrk_init_ap(mylog: Arc<Log<usize>>, initialized: &AtomicBool) {
+    fn nrk_init_ap(mylog: Arc<Log<usize>>, initialized: &AtomicBool) {
         crate::arch::enable_sse();
         crate::arch::enable_fsgsbase();
 
@@ -414,13 +448,13 @@ pub fn xmain() {
         info!("Core has started");
     }
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Checks that we can discover NVDIMMs, query the ACPI NFIT tables,
 /// and parse the topology.
-#[cfg(all(feature = "integration-test", feature = "test-nvdimm-discover"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn nvdimm_discover() {
     use atopology::MemoryType::PERSISTENT_MEMORY;
     use atopology::MACHINE_TOPOLOGY;
     use log::info;
@@ -447,53 +481,51 @@ pub fn xmain() {
 
     info!("NVDIMMs Discovered");
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Tests that the system initializes all cores.
-#[cfg(all(feature = "integration-test", feature = "test-coreboot"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn coreboot() {
     // If we've come here the test has already completed,
     // as core initialization happens during init.
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test process loading / user-space.
-#[cfg(all(
-    feature = "integration-test",
-    any(feature = "test-userspace", feature = "test-userspace-smp")
-))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn userspace() {
     let kcb = kcb::get_kcb();
     assert!(crate::arch::process::spawn(kcb.cmdline.init_binary).is_ok());
     crate::scheduler::schedule()
 }
 
 /// Test SSE/floating point in the kernel.
-#[cfg(all(feature = "integration-test", feature = "test-sse"))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn sse() {
     use log::info;
     info!("division = {}", 10.0 / 2.19);
     info!("division by zero = {}", 10.0 / 0.0);
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test VSpace debugging.
-#[cfg(all(feature = "integration-test", feature = "test-vspace-debug"))]
-pub fn xmain() {
-    use graphviz::*;
-
+#[cfg(feature = "integration-test")]
+fn vspace_debug() {
     let kcb = kcb::get_kcb();
-    graphviz::render_opts(&*kcb.arch.init_vspace(), &[RenderOption::RankDirectionLR]);
+    crate::graphviz::render_opts(
+        &*kcb.arch.init_vspace(),
+        &[crate::graphviz::RenderOption::RankDirectionLR],
+    );
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 // Careful note: If you change any of the lines order/amount/variable names etc.
 // in this function, you *most likely* have to adjust s02_gdb in
 // `integration-test.rs`.
-#[cfg(all(feature = "integration-test", any(feature = "test-gdb")))]
-pub fn xmain() {
+#[cfg(feature = "integration-test")]
+fn gdb() {
     use log::info;
 
     //arch::irq::ioapic_establish_route(0x0, 0x0);
@@ -515,52 +547,34 @@ pub fn xmain() {
     //info!("cond is {}", cond);
 
     // continue until exit:
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(
-    feature = "integration-test",
-    any(
-        feature = "test-pfault-early",
-        feature = "test-gpfault-early",
-        feature = "test-double-fault"
-    )
-))]
-pub fn xmain() {
-    arch::debug::shutdown(ExitReason::ReturnFromMain);
+#[cfg(feature = "integration-test")]
+fn just_exit() {
+    shutdown(ExitReason::ReturnFromMain);
 }
 
 /// Test shootdown facilities in the kernel.
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-replica-advance",
-    target_arch = "x86_64"
-))]
-pub fn xmain() {
-    use alloc::sync::Arc;
-    use arch::tlb::advance_replica;
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+fn replica_advance() {
+    use crate::arch::tlb::advance_replica;
     use log::info;
 
-    let threads = atopology::MACHINE_TOPOLOGY.num_threads();
+    //let _threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
-    unsafe {
-        let start = rawtime::Instant::now();
-        advance_replica(0x1, 0x0);
-        let duration = start.elapsed().as_nanos();
+    let start = rawtime::Instant::now();
+    advance_replica(0x1, 0x0);
+    let _duration = start.elapsed().as_nanos();
 
-        info!("advance-replica done?");
-        loop {}
-    }
-    arch::debug::shutdown(ExitReason::Ok);
+    info!("advance-replica done?");
+    loop {}
+    //shutdown(ExitReason::Ok);
 }
 
 /// Test vmxnet3 integrated with smoltcp.
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-vmxnet-smoltcp",
-    target_arch = "x86_64"
-))]
-fn xmain() {
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+fn vmxnet_smoltcp() {
     use alloc::borrow::ToOwned;
     use alloc::collections::BTreeMap;
     use alloc::vec;
@@ -611,11 +625,11 @@ fn xmain() {
     pub struct Clock(Cell<Instant>);
 
     impl Clock {
-        pub fn new() -> Clock {
+        fn new() -> Clock {
             Clock(Cell::new(Instant::from_millis(0)))
         }
 
-        pub fn elapsed(&self) -> Instant {
+        fn elapsed(&self) -> Instant {
             self.0.get()
         }
     }
@@ -684,16 +698,12 @@ fn xmain() {
         }
     }
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test shootdown facilities in the kernel.
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-shootdown-simple",
-    target_arch = "x86_64"
-))]
-pub fn xmain() -> Result<(), crate::error::KError> {
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+fn shootdown_simple() {
     use alloc::sync::Arc;
     use alloc::vec::Vec;
     use core::hint::spin_loop;
@@ -707,12 +717,14 @@ pub fn xmain() -> Result<(), crate::error::KError> {
         TriggerMode,
     };
 
+    use crate::arch;
+
     let threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
     unsafe {
         let start = rawtime::Instant::now();
 
-        let mut shootdowns = Vec::try_with_capacity(threads)?;
+        let mut shootdowns = Vec::try_with_capacity(threads).expect("succeeds");
         for t in atopology::MACHINE_TOPOLOGY.threads() {
             let id = t.apic_id();
             info!(
@@ -722,9 +734,10 @@ pub fn xmain() -> Result<(), crate::error::KError> {
                 id.x2apic_logical_cluster_id(),
                 id.x2apic_logical_cluster_address(),
             );
-            let shootdown = Arc::try_new(arch::tlb::Shootdown::new(0x1000..0x2000))?;
+            let shootdown =
+                Arc::try_new(arch::tlb::Shootdown::new(0x1000..0x2000)).expect("succeeds");
             arch::tlb::enqueue(t.id, arch::tlb::WorkItem::Shootdown(shootdown.clone()));
-            shootdowns.try_push(shootdown)?;
+            shootdowns.try_push(shootdown).expect("succeeds");
         }
 
         {
@@ -756,5 +769,5 @@ pub fn xmain() -> Result<(), crate::error::KError> {
         info!("name,cores,shootdown_duration_ns");
         info!("shootdown-simple,{},{}", threads, duration);
     }
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }

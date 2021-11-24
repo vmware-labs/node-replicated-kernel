@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -exu
+set -ex
 
 source scripts/generic-setup.sh
 

@@ -40,7 +40,15 @@ enum CmdToken {
     #[regex("./[a-zA-Z]+")]
     KernelBinary,
 
-    /// Kernel log level directive
+    /// Don't boot the other cores
+    #[token("bsp-only")]
+    BspOnly,
+
+    /// Run kernel test
+    #[token("test")]
+    Test,
+
+    /// Run kernel test
     #[token("log")]
     Log,
 
@@ -83,6 +91,9 @@ pub struct BootloaderArguments {
     pub init_binary: &'static str,
     pub init_args: &'static str,
     pub app_args: &'static str,
+    pub test: Option<&'static str>,
+    pub bsp_only: bool,
+    pub kgdb: bool,
 }
 
 impl Default for BootloaderArguments {
@@ -92,6 +103,9 @@ impl Default for BootloaderArguments {
             init_binary: "init",
             init_args: "",
             app_args: "",
+            bsp_only: false,
+            test: None,
+            kgdb: false,
         }
     }
 }
@@ -108,6 +122,9 @@ impl BootloaderArguments {
             init_binary,
             init_args,
             app_args,
+            bsp_only: false,
+            test: None,
+            kgdb: false,
         }
     }
 
@@ -134,7 +151,14 @@ impl BootloaderArguments {
                 CmdToken::KernelBinary => {
                     //assert_eq!(slice, "./kernel");
                 }
-                CmdToken::Log | CmdToken::InitBinary | CmdToken::InitArgs | CmdToken::AppArgs => {
+                CmdToken::BspOnly => {
+                    parsed_args.bsp_only = true;
+                }
+                CmdToken::Log
+                | CmdToken::Test
+                | CmdToken::InitBinary
+                | CmdToken::InitArgs
+                | CmdToken::AppArgs => {
                     prev = token;
                 }
                 CmdToken::Ident => match prev {
@@ -154,6 +178,10 @@ impl BootloaderArguments {
                         parsed_args.app_args = slice;
                         prev = CmdToken::Error;
                     }
+                    CmdToken::Test => {
+                        parsed_args.test = Some(slice);
+                        prev = CmdToken::Error;
+                    }
                     _ => {
                         error!("Invalid cmd arguments: {} (skipped {})", args, slice);
                         continue;
@@ -164,6 +192,7 @@ impl BootloaderArguments {
                         && prev != CmdToken::InitBinary
                         && prev != CmdToken::InitArgs
                         && prev != CmdToken::AppArgs
+                        && prev != CmdToken::Test
                     {
                         error!("Malformed args (unexpected equal sign) in {}", args);
                         continue;
@@ -171,21 +200,26 @@ impl BootloaderArguments {
                 }
                 CmdToken::LiteralString => {
                     // We strip the quotes with 1..slice.len()-1
+                    let slice_no_quote = &slice[1..slice.len() - 1];
                     match prev {
                         CmdToken::Log => {
-                            parsed_args.log_filter = &slice[1..slice.len() - 1];
+                            parsed_args.log_filter = slice_no_quote;
                             prev = CmdToken::Error;
                         }
                         CmdToken::InitBinary => {
-                            parsed_args.init_binary = &slice[1..slice.len() - 1];
+                            parsed_args.init_binary = slice_no_quote;
                             prev = CmdToken::Error;
                         }
                         CmdToken::InitArgs => {
-                            parsed_args.init_args = &slice[1..slice.len() - 1];
+                            parsed_args.init_args = slice_no_quote;
                             prev = CmdToken::Error;
                         }
                         CmdToken::AppArgs => {
-                            parsed_args.app_args = &slice[1..slice.len() - 1];
+                            parsed_args.app_args = slice_no_quote;
+                            prev = CmdToken::Error;
+                        }
+                        CmdToken::Test => {
+                            parsed_args.test = Some(slice_no_quote);
                             prev = CmdToken::Error;
                         }
                         _ => {
@@ -641,5 +675,12 @@ mod test {
         let args = "./kernel log='gdbstub=trace,nrk::arch::gdb=trace'";
         let ba = BootloaderArguments::from_str(args);
         assert_eq!(ba.log_filter, "gdbstub=trace,nrk::arch::gdb=trace");
+    }
+
+    #[test]
+    fn parse_test() {
+        let args = "./kernel test=userspace";
+        let ba = BootloaderArguments::from_str(args);
+        assert_eq!(ba.test, Some("userspace"));
     }
 }

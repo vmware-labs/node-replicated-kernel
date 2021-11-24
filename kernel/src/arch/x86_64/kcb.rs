@@ -354,7 +354,7 @@ impl Arch86Kcb {
         }
     }
 
-    #[cfg(feature = "test-double-fault")]
+    #[cfg(feature = "integration-test")]
     pub fn fault_stack_range(&self) -> (u64, u64) {
         (
             self.unrecoverable_fault_stack

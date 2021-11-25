@@ -709,7 +709,11 @@ fn vmxnet_smoltcp() {
 /// Write and test the content on a shared-mem device.
 pub const CXL_CONTENT: u8 = 0xb;
 
-#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+#[cfg(all(
+    feature = "integration-test",
+    target_arch = "x86_64",
+    any(feature = "test-cxl-read", feature = "test-cxl-write")
+))]
 fn discover_ivshmem_dev() -> (u64, u64) {
     use crate::memory::vspace::MapAction;
     use crate::memory::PAddr;

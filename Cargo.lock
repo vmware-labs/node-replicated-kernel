@@ -913,6 +913,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
+name = "memfile"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28989c5dcae5625bb50871c6ab07e347f3dba0675d134eba4abaf57dc6cffdb7"
+dependencies = [
+ "libc 0.2.107",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1011,6 +1020,7 @@ dependencies = [
  "libc 0.2.107",
  "log",
  "logos",
+ "memfile",
  "memoffset",
  "node-replication 0.1.1",
  "proptest",

@@ -118,6 +118,11 @@ parser.add_argument('--qemu-ivshmem',
                     help="Enable the ivshmem device with the size in MiB.",
                     required=False,
                     default=0)
+parser.add_argument('--qemu-shmem-path',
+                    type=str,
+                    help="Provide shared memory file path.",
+                    required=False,
+                    default="")
 
 # Baremetal argument
 parser.add_argument('--configure-ipxe', action="store_true", default=False,
@@ -355,18 +360,14 @@ def run_qemu(args):
                           'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
     if args.qemu_ivshmem:
-        default = "/mnt/huge"
-        filepath = ""
-        if os.path.isdir(default):
-            filepath = default + "/ivshmem"
-        else:
-            with tempfile.NamedTemporaryFile() as tmp:
-                filepath = tmp.name
+        if not args.qemu_shmem_path:
+            print("Provide path to the shared memory file.")
+            sys.exit(errno.EINVAL)
 
         qemu_default_args += [
             '-object',
             'memory-backend-file,size={}M,mem-path={},share=on,id=HMB'.format(
-                args.qemu_ivshmem, filepath)
+                args.qemu_ivshmem, args.qemu_shmem_path)
         ]
         qemu_default_args += ['-device', 'ivshmem-plain,memdev=HMB']
 

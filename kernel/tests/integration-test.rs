@@ -297,6 +297,8 @@ struct RunnerArgs<'a> {
     large_pages: bool,
     /// Enable gdb for the kernel
     kgdb: bool,
+    /// shared memory size.
+    ivshmem: usize,
 }
 
 #[allow(unused)]
@@ -322,6 +324,7 @@ impl<'a> RunnerArgs<'a> {
             prealloc: false,
             large_pages: false,
             kgdb: false,
+            ivshmem: 0,
         };
 
         if cfg!(feature = "prealloc") {
@@ -479,6 +482,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn ivshmem(mut self, mibs: usize) -> RunnerArgs<'a> {
+        self.ivshmem = mibs;
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
@@ -544,6 +552,9 @@ impl<'a> RunnerArgs<'a> {
 
                 cmd.push(String::from("--qemu-pmem"));
                 cmd.push(format!("{}", self.pmem));
+
+                cmd.push(String::from("--qemu-ivshmem"));
+                cmd.push(format!("{}", self.ivshmem));
 
                 if self.setaffinity {
                     cmd.push(String::from("--qemu-affinity"));
@@ -1288,6 +1299,34 @@ fn s03_vmxnet3_smoltcp() {
         client.process.exit()?;
         output += p.exp_eof()?.as_str();
 
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Tests that the shared memory device is functional by running Bespin two
+/// time; once to write data, and second time to read it.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_ivshmem_write_and_read() {
+    let cmdline = RunnerArgs::new("test-cxl-write").timeout(30_000).ivshmem(2);
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+
+    let cmdline = RunnerArgs::new("test-cxl-read").timeout(30_000).ivshmem(2);
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_eof()?.as_str();
         p.process.exit()
     };
 

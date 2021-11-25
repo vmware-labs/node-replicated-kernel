@@ -299,6 +299,8 @@ struct RunnerArgs<'a> {
     kgdb: bool,
     /// shared memory size.
     ivshmem: usize,
+    /// Shared memory file path.
+    shmem_path: String,
 }
 
 #[allow(unused)]
@@ -325,6 +327,7 @@ impl<'a> RunnerArgs<'a> {
             large_pages: false,
             kgdb: false,
             ivshmem: 0,
+            shmem_path: String::new(),
         };
 
         if cfg!(feature = "prealloc") {
@@ -487,6 +490,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn shmem_path(mut self, path: &str) -> RunnerArgs<'a> {
+        self.shmem_path = String::from(path);
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
@@ -555,6 +563,9 @@ impl<'a> RunnerArgs<'a> {
 
                 cmd.push(String::from("--qemu-ivshmem"));
                 cmd.push(format!("{}", self.ivshmem));
+
+                cmd.push(String::from("--qemu-shmem-path"));
+                cmd.push(format!("{}", self.shmem_path));
 
                 if self.setaffinity {
                     cmd.push(String::from("--qemu-affinity"));
@@ -1310,7 +1321,19 @@ fn s03_vmxnet3_smoltcp() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_ivshmem_write_and_read() {
-    let cmdline = RunnerArgs::new("test-cxl-write").timeout(30_000).ivshmem(2);
+    use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+
+    let filename = String::from("ivshmem-file");
+    let filelen = 2048;
+    let file =
+        MemFile::create(filename.as_str(), CreateOptions::new()).expect("Unable to create memfile");
+    file.set_len(filelen).expect("Unable to set file length");
+
+    let cmdline = RunnerArgs::new("test-cxl-write")
+        .timeout(30_000)
+        .ivshmem(filelen as usize / 1024)
+        .shmem_path(&filename);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -1321,7 +1344,10 @@ fn s03_ivshmem_write_and_read() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 
-    let cmdline = RunnerArgs::new("test-cxl-read").timeout(30_000).ivshmem(2);
+    let cmdline = RunnerArgs::new("test-cxl-read")
+        .timeout(30_000)
+        .ivshmem(filelen as usize / 1024)
+        .shmem_path(&filename);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -1331,6 +1357,7 @@ fn s03_ivshmem_write_and_read() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
+    let _ignore = remove_file(&filename);
 }
 
 /// Tests the lineup scheduler multi-core ability.

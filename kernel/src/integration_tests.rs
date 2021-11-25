@@ -706,6 +706,79 @@ fn vmxnet_smoltcp() {
     shutdown(ExitReason::Ok);
 }
 
+/// Write and test the content on a shared-mem device.
+pub const CXL_CONTENT: u8 = 0xb;
+
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+fn discover_ivshmem_dev() -> (u64, u64) {
+    use crate::memory::vspace::MapAction;
+    use crate::memory::PAddr;
+    use crate::memory::KERNEL_BASE;
+
+    let pci_dev = kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110)
+        .expect("Unable to find the shared memory device");
+    let cxl_dev = pci_dev.bar(2).expect("Unable to find the BAR");
+    let base_paddr = cxl_dev.address;
+    let size = cxl_dev.size;
+
+    // If the PCI dev is not the bus master; make it.
+    if !pci_dev.is_bus_master() {
+        pci_dev.enable_bus_mastering();
+    }
+
+    let kcb = crate::kcb::get_kcb();
+    assert!(kcb
+        .arch
+        .init_vspace()
+        .map_identity_with_offset(
+            PAddr::from(KERNEL_BASE),
+            PAddr::from(base_paddr),
+            size as usize,
+            MapAction::ReadWriteKernel,
+        )
+        .is_ok());
+
+    (base_paddr, size)
+}
+
+/// Test cxl device in the kernel.
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-cxl-write",
+    target_arch = "x86_64"
+))]
+pub fn xmain() {
+    use crate::memory::KERNEL_BASE;
+
+    let (base_paddr, size) = discover_ivshmem_dev();
+    for i in 0..size {
+        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+        unsafe { core::ptr::write(region, CXL_CONTENT) };
+    }
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
+/// Test cxl device in the kernel.
+#[cfg(all(
+    feature = "integration-test",
+    feature = "test-cxl-read",
+    target_arch = "x86_64"
+))]
+pub fn xmain() {
+    use crate::memory::KERNEL_BASE;
+
+    let (base_paddr, size) = discover_ivshmem_dev();
+
+    for i in 0..size {
+        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+        let read = unsafe { core::ptr::read(region) };
+        assert_eq!(read, CXL_CONTENT);
+    }
+
+    arch::debug::shutdown(ExitReason::Ok);
+}
+
 /// Test shootdown facilities in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 fn shootdown_simple() {

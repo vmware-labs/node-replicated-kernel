@@ -113,7 +113,7 @@ parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio", "vmxne
                     help='What NIC model to use for emulation', required=False)
 parser.add_argument('--kgdb', action="store_true",
                     help="Use the GDB remote debugger to connect to the kernel")
-parser.add_argument('--enable-ivshmem',
+parser.add_argument('--qemu-ivshmem',
                     type=int,
                     help="Enable the ivshmem device with the size in MiB.",
                     required=False,
@@ -354,7 +354,7 @@ def run_qemu(args):
     qemu_default_args += ['-device',
                           'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
-    if args.enable_ivshmem:
+    if args.qemu_ivshmem:
         default = "/mnt/huge"
         filepath = ""
         if os.path.isdir(default):
@@ -366,7 +366,7 @@ def run_qemu(args):
         qemu_default_args += [
             '-object',
             'memory-backend-file,size={}M,mem-path={},share=on,id=HMB'.format(
-                args.enable_ivshmem, filepath)
+                args.qemu_ivshmem, filepath)
         ]
         qemu_default_args += ['-device', 'ivshmem-plain,memdev=HMB']
 

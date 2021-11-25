@@ -111,7 +111,7 @@ impl From<u16> for ClassCode {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum BarType {
+pub enum BarType {
     IO,
     Mem,
 }
@@ -127,10 +127,10 @@ impl From<bool> for BarType {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Bar {
-    region_type: BarType,
-    prefetchable: bool,
-    address: u64,
-    size: u64,
+    pub region_type: BarType,
+    pub prefetchable: bool,
+    pub address: u64,
+    pub size: u64,
 }
 
 pub struct PCIDevice(PCIHeader);
@@ -162,6 +162,16 @@ impl PCIDevice {
         self.0 .0.read(0x02) as DeviceId
     }
 
+    pub fn is_bus_master(&self) -> bool {
+        self.0 .0.read(0x04).get_bit(2)
+    }
+
+    pub fn enable_bus_mastering(&self) {
+        let mut command = self.0 .0.read(0x04);
+        command.set_bit(2, true);
+        self.0 .0.write(0x04, command);
+    }
+
     pub fn bar(&self, index: u8) -> Option<Bar> {
         match self.device_type() {
             PCIDeviceType::ENDPOINT => assert!(index < 6),
@@ -177,11 +187,10 @@ impl PCIDevice {
             false => {
                 let locatable = base.get_bits(1..3);
                 let prefetchable = base.get_bit(3);
-                let address = base.get_bits(4..32) << 4;
 
                 self.0 .0.write(offset, 0xFFFFFFFF);
                 let size_encoded = self.0 .0.read(offset);
-                self.0 .0.write(offset, address);
+                self.0 .0.write(offset, base);
 
                 if size_encoded == 0x0 {
                     return None;
@@ -197,14 +206,14 @@ impl PCIDevice {
                         // 32-bit address
                         0 => {
                             let size = !(size_encoded & !0xF) + 1;
-                            (address as u64, size as u64)
+                            ((base & 0xFFFFFFF0) as u64, size as u64)
                         }
                         // 64-bit address
                         2 => {
                             let next_offset = offset + 4;
                             let next_bar = self.0 .0.read(next_offset);
-                            let address = (next_bar as u64 & 0xFFFFFFFF) << 32
-                                | (address & 0xFFFFFFF0) as u64;
+                            let address =
+                                (base & 0xFFFFFFF0) as u64 | (next_bar as u64 & 0xFFFFFFFF) << 32;
 
                             // Size for 64-bit Memory Space BARs:
                             self.0 .0.write(next_offset, 0xFFFFFFFF);

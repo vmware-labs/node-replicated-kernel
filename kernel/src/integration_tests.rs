@@ -13,13 +13,13 @@ type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
 const INTEGRATION_TESTS: [(&'static str, MainFn); 24] = [
-    ("exit", just_exit),
+    ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
-    ("pfault-early", just_exit),
-    ("gpfault-early", just_exit),
+    ("pfault-early", just_exit_fail),
+    ("gpfault-early", just_exit_fail),
     ("pfault", pfault),
     ("gpfault", gpfault),
-    ("double-fault", just_exit),
+    ("double-fault", just_exit_fail),
     ("alloc", alloc),
     ("sse", sse),
     ("time", time),
@@ -551,7 +551,12 @@ fn gdb() {
 }
 
 #[cfg(feature = "integration-test")]
-fn just_exit() {
+fn just_exit_ok() {
+    shutdown(ExitReason::Ok);
+}
+
+#[cfg(feature = "integration-test")]
+fn just_exit_fail() {
     shutdown(ExitReason::ReturnFromMain);
 }
 

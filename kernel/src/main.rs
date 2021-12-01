@@ -120,6 +120,7 @@ pub fn xmain() {
     }
     #[cfg(feature = "integration-test")]
     {
+        log::debug!("About to run '{:?}'", kcb::get_kcb().cmdline.test);
         if let Some(test) = kcb::get_kcb().cmdline.test {
             integration_tests::run_test(test)
         } else {

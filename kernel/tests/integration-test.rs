@@ -31,6 +31,27 @@ use rexpect::session::{spawn_command, PtyReplSession};
 use rexpect::{spawn, spawn_bash};
 use serde::Serialize;
 
+/*
+struct BuildDir {
+    target_dir: Option<&'static str>,
+}
+
+impl BuildDir {
+    fn build_lock(&mut self) -> BuildDir {
+        let p = replace(&mut self.target_dir, None);
+        p.unwrap()
+    }
+}
+static mut BUILD_DIRECTORY: Peripherals = Peripherals {
+    serial: Some(SerialPort),
+};
+
+fn main() {
+    let serial_1 = unsafe { PERIPHERALS.take_serial() };
+    // This panics!
+    // let serial_2 = unsafe { PERIPHERALS.take_serial() };
+}*/
+
 /// Port we use for the Redis instances.
 const REDIS_PORT: u16 = 6379;
 
@@ -256,17 +277,28 @@ impl Machine {
     }
 }
 
+/// Arguments passed to the run.py script to build a test.
+#[derive(Clone)]
+struct BuildArgs<'a> {
+    /// Test name of kernel integration test.
+    kernel_features: Vec<&'a str>,
+    /// Features passed to compiled user-space modules.
+    user_features: Vec<&'a str>,
+    /// Which user-space modules to include.
+    mods: Vec<&'a str>,
+    /// Should we compile in release mode?
+    release: bool,
+}
+
 /// Arguments passed to the run.py script to configure a test.
 #[derive(Clone)]
 struct RunnerArgs<'a> {
     /// Which machine we should execute on
     machine: Machine,
+    /// Any arguments used during the build of kernel/user-space
+    build_args: BuildArgs<'a>,
     /// Kernel test (aka xmain function) that should be executed.
     kernel_test: &'a str,
-    /// Test name of kernel integration test.
-    kernel_features: Vec<&'a str>,
-    /// Features passed to compiled user-space modules.
-    user_features: Vec<&'a str>,
     /// Number of NUMA nodes the VM should have.
     nodes: usize,
     /// Number of cores the VM should have.
@@ -277,10 +309,6 @@ struct RunnerArgs<'a> {
     pmem: usize,
     /// Kernel command line argument.
     cmd: Option<&'a str>,
-    /// Which user-space modules to include.
-    mods: Vec<&'a str>,
-    /// Should we compile in release mode?
-    release: bool,
     /// If true don't run, just compile.
     norun: bool,
     /// Parameters to add to the QEMU command line
@@ -309,15 +337,17 @@ impl<'a> RunnerArgs<'a> {
         let mut args = RunnerArgs {
             machine: Machine::determine(),
             kernel_test,
-            kernel_features: vec!["integration-test"],
-            user_features: Vec::new(),
+            build_args: BuildArgs {
+                kernel_features: vec!["integration-test"],
+                user_features: Vec::new(),
+                mods: Vec::new(),
+                release: false,
+            },
             nodes: 0,
             cores: 1,
             memory: 1024,
             pmem: 0,
             cmd: None,
-            mods: Vec::new(),
-            release: false,
             norun: false,
             qemu_args: Vec::new(),
             timeout: Some(15_000),
@@ -345,25 +375,25 @@ impl<'a> RunnerArgs<'a> {
 
     /// What cargo features should be passed to the kernel build.
     fn kernel_features(mut self, kernel_features: &[&'a str]) -> RunnerArgs<'a> {
-        self.kernel_features.extend_from_slice(kernel_features);
+        self.build_args.kernel_features.extend_from_slice(kernel_features);
         self
     }
 
     /// Add a cargo feature to the kernel build.
     fn kernel_feature(mut self, kernel_feature: &'a str) -> RunnerArgs<'a> {
-        self.kernel_features.push(kernel_feature);
+        self.build_args.kernel_features.push(kernel_feature);
         self
     }
 
     /// What cargo features should be passed to the user-space modules build.
     fn user_features(mut self, user_features: &[&'a str]) -> RunnerArgs<'a> {
-        self.user_features.extend_from_slice(user_features);
+        self.build_args.user_features.extend_from_slice(user_features);
         self
     }
 
     /// Add a cargo feature to the user-space modules build.
     fn user_feature(mut self, user_feature: &'a str) -> RunnerArgs<'a> {
-        self.user_features.push(user_feature);
+        self.build_args.user_features.push(user_feature);
         self
     }
 
@@ -421,19 +451,19 @@ impl<'a> RunnerArgs<'a> {
 
     /// Which user-space modules we want to include.
     fn modules(mut self, mods: &[&'a str]) -> RunnerArgs<'a> {
-        self.mods.extend_from_slice(mods);
+        self.build_args.mods.extend_from_slice(mods);
         self
     }
 
     /// Adds a user-space module to the build and deployment.
     fn module(mut self, module: &'a str) -> RunnerArgs<'a> {
-        self.mods.push(module);
+        self.build_args.mods.push(module);
         self
     }
 
     /// Do a release build.
     fn release(mut self) -> RunnerArgs<'a> {
-        self.release = true;
+        self.build_args.release = true;
         self
     }
 
@@ -499,8 +529,8 @@ impl<'a> RunnerArgs<'a> {
     fn as_cmd(&'a self) -> Vec<String> {
         use std::ops::Add;
         // Add features for build
-        let kernel_features = String::from(self.kernel_features.join(","));
-        let user_features = String::from(self.user_features.join(","));
+        let kernel_features = String::from(self.build_args.kernel_features.join(","));
+        let user_features = String::from(self.build_args.user_features.join(","));
 
         let log_level = match std::env::var("RUST_LOG") {
             Ok(lvl) if lvl == "debug" => "debug",
@@ -526,12 +556,12 @@ impl<'a> RunnerArgs<'a> {
             String::from(self.nic),
         ];
 
-        if !self.mods.is_empty() {
+        if !self.build_args.mods.is_empty() {
             cmd.push("--mods".to_string());
-            cmd.push(self.mods.join(" "));
+            cmd.push(self.build_args.mods.join(" "));
         }
 
-        match self.user_features.is_empty() {
+        match self.build_args.user_features.is_empty() {
             false => {
                 cmd.push(String::from("--ufeatures"));
                 cmd.push(user_features);
@@ -539,7 +569,7 @@ impl<'a> RunnerArgs<'a> {
             true => {}
         };
 
-        if self.release {
+        if self.build_args.release {
             cmd.push(String::from("--release"));
         }
 
@@ -1127,7 +1157,7 @@ fn s02_gdb() {
             .as_str();
 
         // Spawn GDB
-        let binary = if cmdline.release {
+        let binary = if cmdline.build_args.release {
             "../target/x86_64-uefi/release/esp/kernel"
         } else {
             "../target/x86_64-uefi/debug/esp/kernel"

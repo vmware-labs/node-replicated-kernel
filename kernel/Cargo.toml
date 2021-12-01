@@ -78,63 +78,24 @@ cc = "1.0"
 
 [features]
 default = ["addr2line", "serde", "serde_cbor"]
-# gdb server
+# Enable gdb server code (supply --kgdb to run.py)
 gdb = []
-# Run an integration test instead of standard kernel main function
-integration-test = ["smoltcp", "gdb"]
-# smoke: Shorten long running benchmarks to test just functionality
+# Runs an integration test (supplied as commandline `test=` argument) instead of
+# standard kernel main function.
+integration-test = ["smoltcp"]
+# smoke: Shorten long running benchmarks to test just functionality.
 smoke = []
 # baremetal: Compile benchmarks for running on bare-metal
 baremetal = []
-# pre-alloc guest memory: For serious benchmarking where we want to avoid VM exits as much as possible
+# pre-alloc guest memory: For benchmark sensitive to VM exits.
 prealloc = []
-# Don't boot entire system. only initialize bsp core
+# Don't boot entire system. Only initialize one core.
 bsp-only = []
-# exit: test qemu exit functionality (used heavily for CI)
-test-exit = ["integration-test", "bsp-only"]
-# wrgsbase: Test wrgsbase performance
-test-wrgsbase = ["integration-test", "bsp-only"]
-# pfault-early: test page-fault handler early on during init
-test-pfault-early = ["integration-test", "bsp-only"]
-# gpfault-early: test general protection fault handler early on during init
-test-gpfault-early = ["integration-test", "bsp-only"]
-# pfault: test page-fault handler
-test-pfault = ["integration-test", "bsp-only"]
-# gpfault: test general protection fault handler
-test-gpfault = ["integration-test", "bsp-only"]
-# double_fault: test double fault handler
-test-double-fault = ["integration-test", "bsp-only"]
-# alloc: test memory allocation
-test-alloc = ["integration-test", "bsp-only"]
-# sse: test SIMD register are usable
-test-sse = ["integration-test", "bsp-only"]
-# test time
-test-time = ["integration-test", "bsp-only"]
-# test apic timer
-test-timer = ["integration-test", "bsp-only"]
-# acpi: test ACPI can initialize
-test-acpi-smoke = [ "integration-test", "bsp-only" ]
-# acpi: test ACPI with complex topology
-test-acpi-topology = [ "integration-test", "bsp-only" ]
-# coreboot_smoke: Test APIs to boot-up additional cores
-test-coreboot-smoke = ["integration-test", "bsp-only" ]
-# coreboot_nrlog: Test APIs to boot-up additional cores and communicate using nr
-test-coreboot-nrlog = ["integration-test", "bsp-only" ]
-# NVDIMM: test NVDIMMs can be discovered
-test-nvdimm-discover = [ "integration-test", "bsp-only" ]
-# coreboot: Test core booting logic (during actual system initialization)
-test-coreboot = ["integration-test" ]
-# userspace: run a test in user-space by spawning the init process
-test-userspace = ["integration-test", "bsp-only"]
-# userspace_smp: Test that we can dispatch a process on multiple cores
-test-userspace-smp = ["integration-test"]
-# vspace_debug: print initial vspace in graphviz format
-test-vspace-debug = ["integration-test", "bsp-only"]
-# test-shootdown: Test simple TLB shootdown
-test-shootdown-simple = ["integration-test"]
-# test-replica-advance: Test advancing replica
-test-replica-advance = ["integration-test"]
-# test-vmxnet-smoltcp: Test vmxnet NIC driver with a network stack
-test-vmxnet-smoltcp = ["integration-test", "smoltcp"]
-# test-gdb: Test gdbstub integration for the kernel
-test-gdb = ["integration-test", "bsp-only", "gdb"]
+# pfault-early: cause a page-fault early during init
+cause-pfault-early = []
+# gpfault-early: cause a gp-fault early during init
+cause-gpfault-early = []
+# double-fault: cause a double-fault early during init
+cause-double-fault = []
+# test-timer: print something when we get a timer interrupt
+test-timer = []

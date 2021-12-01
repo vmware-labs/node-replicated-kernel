@@ -605,9 +605,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
 
     // At this point we should be able to handle exceptions:
-    #[cfg(feature = "test-pfault-early")]
+    #[cfg(feature = "cause-pfault-early")]
     debug::cause_pfault();
-    #[cfg(feature = "test-gpfault-early")]
+    #[cfg(feature = "cause-gpfault-early")]
     debug::cause_gpfault();
 
     // Figure out what this machine supports,
@@ -716,7 +716,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // return to _start.
     core::mem::forget(kcb);
 
-    #[cfg(feature = "test-double-fault")]
+    #[cfg(feature = "cause-double-fault")]
     debug::cause_double_fault();
 
     // Initialize the ACPI sub-system (needs alloc)

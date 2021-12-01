@@ -1129,7 +1129,7 @@ fn s02_gdb() {
 
         // Test hardware breakpoints: `hbreak`, `continue`
         output += gdb.wait_for_prompt()?.as_str();
-        gdb.send_line("hbreak xmain")?;
+        gdb.send_line("hbreak gdb")?;
         output += gdb.exp_string("Hardware assisted breakpoint 1")?.as_str();
 
         output += gdb.wait_for_prompt()?.as_str();

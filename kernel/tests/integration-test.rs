@@ -1330,7 +1330,7 @@ fn s03_ivshmem_write_and_read() {
         MemFile::create(filename.as_str(), CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen).expect("Unable to set file length");
 
-    let cmdline = RunnerArgs::new("test-cxl-write")
+    let cmdline = RunnerArgs::new("cxl-write")
         .timeout(30_000)
         .ivshmem(filelen as usize / 1024)
         .shmem_path(&filename);
@@ -1344,7 +1344,7 @@ fn s03_ivshmem_write_and_read() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 
-    let cmdline = RunnerArgs::new("test-cxl-read")
+    let cmdline = RunnerArgs::new("cxl-read")
         .timeout(30_000)
         .ivshmem(filelen as usize / 1024)
         .shmem_path(&filename);

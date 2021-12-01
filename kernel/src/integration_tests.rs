@@ -12,7 +12,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&'static str, MainFn); 24] = [
+const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -37,6 +37,8 @@ const INTEGRATION_TESTS: [(&'static str, MainFn); 24] = [
     ("replica-advance", replica_advance),
     ("vmxnet-smoltcp", vmxnet_smoltcp),
     ("gdb", gdb),
+    ("cxl-read", cxl_read),
+    ("cxl-write", cxl_write),
 ];
 
 #[cfg(feature = "integration-test")]
@@ -709,11 +711,7 @@ fn vmxnet_smoltcp() {
 /// Write and test the content on a shared-mem device.
 pub const CXL_CONTENT: u8 = 0xb;
 
-#[cfg(all(
-    feature = "integration-test",
-    target_arch = "x86_64",
-    any(feature = "test-cxl-read", feature = "test-cxl-write")
-))]
+#[cfg(all(feature = "integration-test", target_arch = "x86_64",))]
 fn discover_ivshmem_dev() -> (u64, u64) {
     use crate::memory::vspace::MapAction;
     use crate::memory::PAddr;
@@ -746,12 +744,8 @@ fn discover_ivshmem_dev() -> (u64, u64) {
 }
 
 /// Test cxl device in the kernel.
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-cxl-write",
-    target_arch = "x86_64"
-))]
-pub fn xmain() {
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+pub fn cxl_write() {
     use crate::memory::KERNEL_BASE;
 
     let (base_paddr, size) = discover_ivshmem_dev();
@@ -760,16 +754,12 @@ pub fn xmain() {
         unsafe { core::ptr::write(region, CXL_CONTENT) };
     }
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test cxl device in the kernel.
-#[cfg(all(
-    feature = "integration-test",
-    feature = "test-cxl-read",
-    target_arch = "x86_64"
-))]
-pub fn xmain() {
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+pub fn cxl_read() {
     use crate::memory::KERNEL_BASE;
 
     let (base_paddr, size) = discover_ivshmem_dev();
@@ -780,7 +770,7 @@ pub fn xmain() {
         assert_eq!(read, CXL_CONTENT);
     }
 
-    arch::debug::shutdown(ExitReason::Ok);
+    shutdown(ExitReason::Ok);
 }
 
 /// Test shootdown facilities in the kernel.

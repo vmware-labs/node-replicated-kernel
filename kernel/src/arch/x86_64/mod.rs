@@ -61,7 +61,7 @@ pub mod acpi;
 pub mod coreboot;
 pub mod debug;
 
-#[cfg(any(feature = "exokernel", feature = "test-controller"))]
+#[cfg(any(feature = "exokernel", feature = "controller"))]
 pub mod exokernel;
 
 pub mod gdt;

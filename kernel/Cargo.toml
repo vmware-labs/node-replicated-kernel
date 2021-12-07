@@ -103,7 +103,7 @@ cause-gpfault-early = []
 cause-double-fault = []
 # test-timer: print something when we get a timer interrupt
 test-timer = []
-# Assume controller is reachable
+# Run as exokernel
 exokernel = ["core2", "abomonation"]
-# test-controller: Test RPC-based controller
-test-controller = ["integration-test", "core2", "abomonation"]
+# Run as controller
+controller = ["integration-test", "core2", "abomonation"]

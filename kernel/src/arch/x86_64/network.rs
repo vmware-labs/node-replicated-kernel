@@ -16,7 +16,7 @@ pub fn init_network<'a>() -> EthernetInterface<'a, DevQueuePhy> {
     const DEV: u32 = 0x10;
     const FUN: u32 = 0x0;
     let pci = BarAccess::new(BUS, DEV, FUN);
-    
+
     // TODO(hack): Map potential vmxnet3 bar addresses XD
     // Do this in kernel space (offset of KERNEL_BASE) so the mapping persists
     let kcb = super::kcb::get_kcb();
@@ -31,7 +31,7 @@ pub fn init_network<'a>() -> EthernetInterface<'a, DevQueuePhy> {
             )
             .expect("Failed to write potential vmxnet3 bar addresses")
     }
-    
+
     // Create the VMX device
     let mut vmx = VMXNet3::new(pci, 1, 1).unwrap();
     vmx.attach_pre().expect("Failed to vmx.attach_pre()");

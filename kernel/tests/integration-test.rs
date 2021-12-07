@@ -263,6 +263,10 @@ impl Machine {
 ///
 /// (Ideally we could override this if we ever need to and set the
 /// `CARGO_TARGET_DIR`)
+///
+/// # Note
+/// For the tests, all BuildEnvironment's (with different dir) need to be
+/// singleton instances, protected for example by a Mutex.
 struct BuildEnvironment {
     _dir: &'static str,
 }

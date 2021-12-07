@@ -177,8 +177,6 @@ def build_kernel(args):
                 build_args += ["--no-default-features"]
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
-            if args.kgdb:
-                build_args += ['--features', 'gdb']
             build_args += CARGO_DEFAULT_ARGS
             if args.verbose:
                 print("cd {}".format(KERNEL_PATH))

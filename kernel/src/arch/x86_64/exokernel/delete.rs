@@ -28,11 +28,17 @@ pub fn rpc_delete<T: RPCClientAPI>(
     debug!("Delete({:?})", pathname);
     let req = DeleteReq { pathname: pathname };
     let mut req_data = Vec::new();
+    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
     unsafe { encode(&req, &mut req_data) }.unwrap();
-    let mut res = rpc_client
-        .call(pid, FileIO::Delete as RPCType, &req_data)
+    rpc_client
+        .call(
+            pid,
+            FileIO::Delete as RPCType,
+            &req_data,
+            &mut [&mut res_data],
+        )
         .unwrap();
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
+    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }

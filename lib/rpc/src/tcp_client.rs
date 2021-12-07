@@ -114,7 +114,7 @@ impl ClusterClientAPI for TCPClient<'_> {
         }
 
         // TODO: define proper type for registration??
-        self.call(0, 0_u8, &Vec::new()).unwrap();
+        self.call(0, 0_u8, &[], &mut []).unwrap();
         Ok(self.client_id)
     }
 }
@@ -122,14 +122,24 @@ impl ClusterClientAPI for TCPClient<'_> {
 /// RPC client operations
 impl RPCClientAPI for TCPClient<'_> {
     /// calls a remote RPC function with ID
-    fn call(&mut self, pid: usize, rpc_id: RPCType, data: &[u8]) -> Result<Vec<u8>, RPCError> {
+    fn call(
+        &mut self,
+        pid: usize,
+        rpc_id: RPCType,
+        data_in: &[u8],
+        data_out: &mut [&mut [u8]],
+    ) -> Result<(), RPCError> {
+        // Calculate total data_out len
+        let data_out_len = data_out.iter().fold(0, |acc, x| acc + x.len());
+        assert!(data_out_len < RX_BUF_LEN);
+
         // Create request header
         {
             let mut hdr = self.hdr.borrow_mut();
             hdr.pid = pid;
             hdr.req_id = self.req_id;
             hdr.msg_type = rpc_id;
-            hdr.msg_len = data.len() as u64;
+            hdr.msg_len = data_in.len() as u64;
         }
 
         // Send header
@@ -140,7 +150,7 @@ impl RPCClientAPI for TCPClient<'_> {
         }
 
         // send request data
-        self.send(data.len(), &data).unwrap();
+        self.send(data_in.len(), data_in).unwrap();
 
         // Receive response header
         {
@@ -151,13 +161,19 @@ impl RPCClientAPI for TCPClient<'_> {
 
         // Read the rest of the data
         let hdr = self.hdr.borrow();
-        let mut payload_data = Vec::new();
-        payload_data
-            .try_reserve_exact(hdr.msg_len as usize)
-            .unwrap();
-        payload_data.resize(hdr.msg_len as usize, 0);
-        if hdr.msg_len > 0 {
-            self.recv(hdr.msg_len as usize, &mut payload_data).unwrap();
+        assert!(hdr.msg_len as usize <= data_out_len);
+        let mut return_bytes = hdr.msg_len as usize;
+        for data in data_out.iter_mut() {
+            // Read entirety of expected data
+            if data.len() <= return_bytes {
+                self.recv(data.len(), data).unwrap();
+                return_bytes -= data.len();
+
+            // Read partial of expected data; no more data to read so break
+            } else {
+                self.recv(return_bytes, data).unwrap();
+                break;
+            }
         }
 
         // Check request & client IDs, and also length of received data
@@ -176,9 +192,9 @@ impl RPCClientAPI for TCPClient<'_> {
         if rpc_id == 0u8 {
             self.client_id = hdr.client_id;
             debug!("Set client ID to: {}", self.client_id);
-            return Ok(Vec::new());
+            return Ok(());
         }
-        Ok(payload_data)
+        Ok(())
     }
 
     /// send data to a remote node

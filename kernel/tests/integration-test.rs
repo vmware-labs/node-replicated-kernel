@@ -1370,9 +1370,7 @@ fn s03_userspace_smoke() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_controller() {
-    let cmdline = RunnerArgs::new("controller")
-        .timeout(25_000)
-        .use_vmxnet3();
+    let cmdline = RunnerArgs::new("controller").timeout(25_000).use_vmxnet3();
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {

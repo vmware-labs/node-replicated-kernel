@@ -1,4 +1,6 @@
-# Environment
+# Configuration
+
+Some tips and pointers for setting up and configuring the development environment.
 
 ## VSCode
 

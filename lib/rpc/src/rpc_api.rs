@@ -1,7 +1,6 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::vec::Vec;
 use core::result::Result;
 
 use crate::rpc::{RPCError, RPCHeader, RPCType};
@@ -35,7 +34,13 @@ pub trait RPCServerAPI<'a> {
 /// RPC client operations
 pub trait RPCClientAPI {
     /// calls a remote RPC function with ID
-    fn call(&mut self, pid: usize, rpc_id: RPCType, data: &[u8]) -> Result<Vec<u8>, RPCError>;
+    fn call(
+        &mut self,
+        pid: usize,
+        rpc_id: RPCType,
+        data_in: &[u8],
+        data_out: &mut [&mut [u8]],
+    ) -> Result<(), RPCError>;
 
     /// send data to a remote node
     fn send(&self, expected_data: usize, data_buff: &[u8]) -> Result<(), RPCError>;

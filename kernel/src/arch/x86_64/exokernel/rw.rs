@@ -45,19 +45,30 @@ pub fn rpc_writeat<T: RPCClientAPI>(
         offset: offset,
     };
     let mut req_data = Vec::new();
+    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
     unsafe { encode(&req, &mut req_data) }.unwrap();
     req_data.extend(data);
 
-    let mut res = if offset == -1 {
+    if offset == -1 {
         rpc_client
-            .call(pid, FileIO::Write as RPCType, &req_data)
-            .unwrap()
+            .call(
+                pid,
+                FileIO::Write as RPCType,
+                &req_data,
+                &mut [&mut res_data],
+            )
+            .unwrap();
     } else {
         rpc_client
-            .call(pid, FileIO::WriteAt as RPCType, &req_data)
-            .unwrap()
-    };
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res) } {
+            .call(
+                pid,
+                FileIO::WriteAt as RPCType,
+                &req_data,
+                &mut [&mut res_data],
+            )
+            .unwrap();
+    }
+    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -94,34 +105,31 @@ pub fn rpc_readat<T: RPCClientAPI>(
     };
     let mut req_data = Vec::new();
     unsafe { encode(&req, &mut req_data) }.unwrap();
-    let mut res = if offset == -1 {
+    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    if offset == -1 {
         rpc_client
-            .call(pid, FileIO::Read as RPCType, &req_data)
-            .unwrap()
+            .call(
+                pid,
+                FileIO::Read as RPCType,
+                &req_data,
+                &mut [&mut res_data, buff_ptr],
+            )
+            .unwrap();
     } else {
         rpc_client
-            .call(pid, FileIO::ReadAt as RPCType, &req_data)
-            .unwrap()
-    };
-    if let Some((res, data)) = unsafe { decode::<FIORes>(&mut res) } {
-        // If result is good, check how much data was returned
-        if let Ok((bytes_read, _)) = res.ret {
-            if bytes_read != data.len() as u64 {
-                warn!(
-                    "Unexpected amount of data: bytes_read={:?}, data.len={:?}",
-                    bytes_read,
-                    data.len()
-                );
-                return Err(RPCError::MalformedResponse);
-
-            // write data into user supplied buffer
-            // TODO: more efficient way to write data?
-            } else if bytes_read > 0 {
-                debug!("Read buff_ptr[0..{:?}] = {:?}", bytes_read, data);
-                buff_ptr[..bytes_read as usize].copy_from_slice(&data);
-            }
-            debug!("Read() {:?} {:?}", res, buff_ptr);
+            .call(
+                pid,
+                FileIO::ReadAt as RPCType,
+                &req_data,
+                &mut [&mut res_data, buff_ptr],
+            )
+            .unwrap();
+    }
+    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+        if remaining.len() > 0 {
+            return Err(RPCError::ExtraData);
         }
+        debug!("Read(At)() {:?}", res);
         return res.ret;
     } else {
         return Err(RPCError::MalformedResponse);

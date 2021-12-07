@@ -82,6 +82,9 @@ pub mod panic;
 #[cfg(feature = "integration-test")]
 mod integration_tests;
 
+#[cfg(feature = "controller")]
+mod controller_main;
+
 /// A kernel exit status.
 ///
 /// This is used to communicate the exit status
@@ -114,6 +117,9 @@ pub enum ExitReason {
 /// different from a traditional main routine).
 #[no_mangle]
 pub fn xmain() {
+    #[cfg(feature = "controller")] {
+        controller_main::run();
+    }
     #[cfg(not(feature = "integration-test"))]
     {
         let ret = arch::process::spawn("init");

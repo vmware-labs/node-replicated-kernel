@@ -12,7 +12,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&'static str, MainFn); 27] = [
+const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -39,7 +39,6 @@ const INTEGRATION_TESTS: [(&'static str, MainFn); 27] = [
     ("gdb", gdb),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
-    ("controller", controller),
 ];
 
 #[cfg(feature = "integration-test")]
@@ -773,51 +772,6 @@ pub fn cxl_read() {
         let read = unsafe { core::ptr::read(region) };
         assert_eq!(read, BUFFER_CONTENT);
     }
-
-    shutdown(ExitReason::Ok);
-}
-
-/// Test TCP RPC-based controller
-#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
-fn controller() {
-    use rpc::cluster_api::ClusterControllerAPI;
-    use rpc::rpc::RPCType;
-    use rpc::rpc_api::RPCServerAPI;
-    use rpc::tcp_server::TCPServer;
-
-    use crate::arch::exokernel::*;
-    use crate::arch::network::init_network;
-
-    const PORT: u16 = 6970;
-
-    let iface = init_network();
-    let mut server = TCPServer::new(iface, PORT);
-
-    // TODO: register handlers
-    let (server, _) = server
-        .register(FileIO::Close as RPCType, &CLOSE_HANDLER)
-        .unwrap()
-        .register(FileIO::Delete as RPCType, &DELETE_HANDLER)
-        .unwrap()
-        .register(FileIO::GetInfo as RPCType, &GETINFO_HANDLER)
-        .unwrap()
-        .register(FileIO::MkDir as RPCType, &MKDIR_HANDLER)
-        .unwrap()
-        .register(FileIO::Open as RPCType, &OPEN_HANDLER)
-        .unwrap()
-        .register(FileIO::FileRename as RPCType, &RENAME_HANDLER)
-        .unwrap()
-        .register(FileIO::Write as RPCType, &WRITE_HANDLER)
-        .unwrap()
-        .register(FileIO::WriteAt as RPCType, &WRITE_HANDLER)
-        .unwrap()
-        .register(FileIO::Read as RPCType, &READ_HANDLER)
-        .unwrap()
-        .register(FileIO::ReadAt as RPCType, &READ_HANDLER)
-        .unwrap()
-        .add_client(&CLIENT_REGISTRAR)
-        .unwrap();
-    server.run_server().unwrap();
 
     shutdown(ExitReason::Ok);
 }

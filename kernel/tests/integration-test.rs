@@ -1366,23 +1366,6 @@ fn s03_userspace_smoke() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Run the controller TCP RPC server
-#[cfg(not(feature = "baremetal"))]
-#[test]
-fn s03_controller() {
-    let cmdline = RunnerArgs::new("controller").timeout(25_000).use_vmxnet3();
-
-    let mut output = String::new();
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline)?;
-
-        output += p.exp_eof()?.as_str();
-        p.process.exit()
-    };
-
-    check_for_successful_exit(&cmdline, qemu_run(), output);
-}
-
 /// Tests that the vmxnet3 driver is functional together with the smoltcp
 /// network stack.
 #[cfg(not(feature = "baremetal"))]

@@ -106,4 +106,4 @@ test-timer = []
 # Run as exokernel
 exokernel = ["core2", "abomonation"]
 # Run as controller
-controller = ["integration-test", "core2", "abomonation"]
+controller = ["core2", "abomonation"]

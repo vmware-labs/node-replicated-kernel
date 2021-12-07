@@ -19,9 +19,11 @@ use std::fs::{File, OpenOptions};
 use std::io::ErrorKind;
 use std::io::Write;
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard};
 use std::{io, process};
 
 use hwloc2::{ObjectType, Topology};
+use lazy_static::lazy_static;
 
 use csv::WriterBuilder;
 use rexpect::errors::*;
@@ -30,27 +32,6 @@ use rexpect::process::wait::WaitStatus;
 use rexpect::session::{spawn_command, PtyReplSession};
 use rexpect::{spawn, spawn_bash};
 use serde::Serialize;
-
-/*
-struct BuildDir {
-    target_dir: Option<&'static str>,
-}
-
-impl BuildDir {
-    fn build_lock(&mut self) -> BuildDir {
-        let p = replace(&mut self.target_dir, None);
-        p.unwrap()
-    }
-}
-static mut BUILD_DIRECTORY: Peripherals = Peripherals {
-    serial: Some(SerialPort),
-};
-
-fn main() {
-    let serial_1 = unsafe { PERIPHERALS.take_serial() };
-    // This panics!
-    // let serial_2 = unsafe { PERIPHERALS.take_serial() };
-}*/
 
 /// Port we use for the Redis instances.
 const REDIS_PORT: u16 = 6379;
@@ -277,6 +258,29 @@ impl Machine {
     }
 }
 
+/// A build environement, currently we only have one it has a link to the
+/// `target` directory.
+///
+/// (Ideally we could override this if we ever need to and set the
+/// `CARGO_TARGET_DIR`)
+struct BuildEnvironment {
+    _dir: &'static str,
+}
+
+lazy_static! {
+    static ref TARGET_DIR: Mutex<BuildEnvironment> =
+        Mutex::new(BuildEnvironment { _dir: "target" });
+}
+
+/// A type that exists when the given target enviroment has been successfully
+/// built with the given BuildArgs.
+///
+/// Use `BuildArgs::build` to construct (by providing a BuildEnvironment).
+struct Built<'a> {
+    _env: MutexGuard<'static, BuildEnvironment>,
+    with_args: BuildArgs<'a>,
+}
+
 /// Arguments passed to the run.py script to build a test.
 #[derive(Clone)]
 struct BuildArgs<'a> {
@@ -288,6 +292,129 @@ struct BuildArgs<'a> {
     mods: Vec<&'a str>,
     /// Should we compile in release mode?
     release: bool,
+}
+
+impl<'a> Default for BuildArgs<'a> {
+    fn default() -> BuildArgs<'a> {
+        BuildArgs {
+            kernel_features: vec!["integration-test"],
+            user_features: Vec::new(),
+            mods: Vec::new(),
+            release: false,
+        }
+    }
+}
+
+impl<'a> BuildArgs<'a> {
+    fn default_build() -> Built<'a> {
+        let env = TARGET_DIR.lock().unwrap();
+        BuildArgs::default().build(env)
+    }
+
+    /// Build the kernel/user-space.
+    fn build(self, _env: MutexGuard<'static, BuildEnvironment>) -> Built<'a> {
+        let mut compile_args = self.as_cmd();
+        compile_args.push("--norun".to_string());
+
+        let o = process::Command::new("python3")
+            .args(compile_args.clone())
+            // TODO(unimplemented): This will place the new `target` directory
+            // under kernel if tests are executed in the kernel directory
+            // ideally we just want to customize the name of the directory but
+            // still have them in the base-directory -- we'd need this if we
+            // ever need to have two different builds per test.
+            //
+            // .env("CARGO_TARGET_DIR", env.dir)
+            .output()
+            .expect("failed to build");
+
+        if !o.status.success() {
+            io::stdout().write_all(&o.stdout).unwrap();
+            io::stderr().write_all(&o.stderr).unwrap();
+
+            panic!("Building test failed: {:?}", compile_args.join(" "));
+        }
+
+        Built {
+            _env,
+            with_args: self,
+        }
+    }
+
+    /// Converts the RunnerArgs to a run.py command line invocation.
+    fn as_cmd(&'a self) -> Vec<String> {
+        // Add features for build
+        let kernel_features = String::from(self.kernel_features.join(","));
+        let user_features = String::from(self.user_features.join(","));
+
+        let mut cmd = vec![
+            "run.py".to_string(),
+            //"--norun".to_string(),
+        ];
+
+        if !self.kernel_features.is_empty() {
+            cmd.push("--kfeatures".to_string());
+            cmd.push(kernel_features);
+        }
+
+        if !self.user_features.is_empty() {
+            cmd.push("--ufeatures".to_string());
+            cmd.push(user_features);
+        }
+
+        if !self.mods.is_empty() {
+            cmd.push("--mods".to_string());
+            cmd.push(self.mods.join(" "));
+        }
+
+        if self.release {
+            cmd.push("--release".to_string());
+        }
+
+        cmd
+    }
+
+    /// What cargo features should be passed to the kernel build.
+    fn kernel_features(mut self, kernel_features: &[&'a str]) -> BuildArgs<'a> {
+        self.kernel_features.extend_from_slice(kernel_features);
+        self
+    }
+
+    /// Add a cargo feature to the kernel build.
+    fn kernel_feature(mut self, kernel_feature: &'a str) -> BuildArgs<'a> {
+        self.kernel_features.push(kernel_feature);
+        self
+    }
+
+    /// What cargo features should be passed to the user-space modules build.
+    fn user_features(mut self, user_features: &[&'a str]) -> BuildArgs<'a> {
+        self.user_features.extend_from_slice(user_features);
+        self
+    }
+
+    /// Add a cargo feature to the user-space modules build.
+    fn user_feature(mut self, user_feature: &'a str) -> BuildArgs<'a> {
+        self.user_features.push(user_feature);
+        self
+    }
+
+    /// Which user-space modules we want to include.
+    fn modules(mut self, mods: &[&'a str]) -> BuildArgs<'a> {
+        self.mods.extend_from_slice(mods);
+        self
+    }
+
+    /// Adds a user-space module to the build and deployment.
+    fn module(mut self, module: &'a str) -> BuildArgs<'a> {
+        self.mods.push(module);
+        self
+    }
+
+    /// Do a release build.
+    fn release(mut self) -> BuildArgs<'a> {
+        self.release = true;
+        self
+    }
 }
 
 /// Arguments passed to the run.py script to configure a test.
@@ -333,16 +460,40 @@ struct RunnerArgs<'a> {
 
 #[allow(unused)]
 impl<'a> RunnerArgs<'a> {
+    fn new_with_build(kernel_test: &'a str, built: &'a Built<'a>) -> RunnerArgs<'a> {
+        let mut args = RunnerArgs {
+            machine: Machine::determine(),
+            kernel_test,
+            build_args: built.with_args.clone(),
+            nodes: 0,
+            cores: 1,
+            memory: 1024,
+            pmem: 0,
+            cmd: None,
+            norun: false,
+            qemu_args: Vec::new(),
+            timeout: Some(15_000),
+            nic: "e1000",
+            setaffinity: false,
+            prealloc: false,
+            large_pages: false,
+            kgdb: false,
+            ivshmem: 0,
+            shmem_path: String::new(),
+        };
+
+        if cfg!(feature = "prealloc") {
+            args = args.prealloc().disable_timeout();
+        }
+
+        args
+    }
+
     fn new(kernel_test: &'a str) -> RunnerArgs {
         let mut args = RunnerArgs {
             machine: Machine::determine(),
             kernel_test,
-            build_args: BuildArgs {
-                kernel_features: vec!["integration-test"],
-                user_features: Vec::new(),
-                mods: Vec::new(),
-                release: false,
-            },
+            build_args: Default::default(),
             nodes: 0,
             cores: 1,
             memory: 1024,
@@ -375,25 +526,29 @@ impl<'a> RunnerArgs<'a> {
 
     /// What cargo features should be passed to the kernel build.
     fn kernel_features(mut self, kernel_features: &[&'a str]) -> RunnerArgs<'a> {
-        self.build_args.kernel_features.extend_from_slice(kernel_features);
+        panic!("get rid of here");
+        self.build_args = self.build_args.kernel_features(kernel_features);
         self
     }
 
     /// Add a cargo feature to the kernel build.
     fn kernel_feature(mut self, kernel_feature: &'a str) -> RunnerArgs<'a> {
-        self.build_args.kernel_features.push(kernel_feature);
+        panic!("get rid of here");
+        self.build_args = self.build_args.kernel_feature(kernel_feature);
         self
     }
 
     /// What cargo features should be passed to the user-space modules build.
     fn user_features(mut self, user_features: &[&'a str]) -> RunnerArgs<'a> {
-        self.build_args.user_features.extend_from_slice(user_features);
+        panic!("get rid of here");
+        self.build_args = self.build_args.user_features(user_features);
         self
     }
 
     /// Add a cargo feature to the user-space modules build.
     fn user_feature(mut self, user_feature: &'a str) -> RunnerArgs<'a> {
-        self.build_args.user_features.push(user_feature);
+        panic!("get rid of here");
+        self.build_args = self.build_args.user_feature(user_feature);
         self
     }
 
@@ -451,19 +606,22 @@ impl<'a> RunnerArgs<'a> {
 
     /// Which user-space modules we want to include.
     fn modules(mut self, mods: &[&'a str]) -> RunnerArgs<'a> {
-        self.build_args.mods.extend_from_slice(mods);
+        panic!("get rid of here");
+        self.build_args = self.build_args.modules(mods);
         self
     }
 
     /// Adds a user-space module to the build and deployment.
     fn module(mut self, module: &'a str) -> RunnerArgs<'a> {
-        self.build_args.mods.push(module);
+        panic!("get rid of here");
+        self.build_args = self.build_args.module(module);
         self
     }
 
     /// Do a release build.
     fn release(mut self) -> RunnerArgs<'a> {
-        self.build_args.release = true;
+        panic!("get rid of here");
+        self.build_args = self.build_args.release();
         self
     }
 
@@ -527,11 +685,7 @@ impl<'a> RunnerArgs<'a> {
 
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
-        use std::ops::Add;
-        // Add features for build
-        let kernel_features = String::from(self.build_args.kernel_features.join(","));
-        let user_features = String::from(self.build_args.user_features.join(","));
-
+        // Figure out log-level
         let log_level = match std::env::var("RUST_LOG") {
             Ok(lvl) if lvl == "debug" => "debug",
             Ok(lvl) if lvl == "trace" => "trace",
@@ -541,41 +695,18 @@ impl<'a> RunnerArgs<'a> {
             _ => "info",
         };
 
-        let mut cmd = vec![
-            String::from("run.py"),
-            String::from("--kfeatures"),
-            kernel_features,
-            String::from("--cmd"),
-            format!(
-                "log={} test={} {}",
-                log_level,
-                self.kernel_test,
-                self.cmd.unwrap_or("")
-            ),
-            String::from("--nic"),
-            String::from(self.nic),
-        ];
+        // Start with cmdline from build
+        let mut cmd = self.build_args.as_cmd();
 
-        if !self.build_args.mods.is_empty() {
-            cmd.push("--mods".to_string());
-            cmd.push(self.build_args.mods.join(" "));
-        }
-
-        match self.build_args.user_features.is_empty() {
-            false => {
-                cmd.push(String::from("--ufeatures"));
-                cmd.push(user_features);
-            }
-            true => {}
-        };
-
-        if self.build_args.release {
-            cmd.push(String::from("--release"));
-        }
-
-        if self.kgdb {
-            cmd.push(String::from("--kgdb"));
-        }
+        cmd.push(String::from("--cmd"));
+        cmd.push(format!(
+            "log={} test={} {}",
+            log_level,
+            self.kernel_test,
+            self.cmd.unwrap_or("")
+        ));
+        cmd.push(String::from("--nic"));
+        cmd.push(String::from(self.nic));
 
         match &self.machine {
             Machine::Qemu => {
@@ -588,21 +719,29 @@ impl<'a> RunnerArgs<'a> {
                 cmd.push(String::from("--qemu-memory"));
                 cmd.push(format!("{}", self.memory));
 
-                cmd.push(String::from("--qemu-pmem"));
-                cmd.push(format!("{}", self.pmem));
+                if self.pmem > 0 {
+                    cmd.push(String::from("--qemu-pmem"));
+                    cmd.push(format!("{}", self.pmem));
+                }
 
-                cmd.push(String::from("--qemu-ivshmem"));
-                cmd.push(format!("{}", self.ivshmem));
+                if self.ivshmem > 0 {
+                    cmd.push(String::from("--qemu-ivshmem"));
+                    cmd.push(format!("{}", self.ivshmem));
+                }
 
-                cmd.push(String::from("--qemu-shmem-path"));
-                cmd.push(format!("{}", self.shmem_path));
+                if !self.shmem_path.is_empty() {
+                    cmd.push(String::from("--qemu-shmem-path"));
+                    cmd.push(format!("{}", self.shmem_path));
+                }
 
                 if self.setaffinity {
                     cmd.push(String::from("--qemu-affinity"));
                 }
+
                 if self.prealloc {
                     cmd.push(String::from("--qemu-prealloc"));
                 }
+
                 if self.large_pages {
                     // TODO: Also register some?
                     // let pages = (self.memory+2) / 2;
@@ -624,13 +763,14 @@ impl<'a> RunnerArgs<'a> {
             }
         }
 
+        if self.kgdb {
+            cmd.push(String::from("--kgdb"));
+        }
+
         // Don't run qemu, just build?
-        match self.norun {
-            false => {}
-            true => {
-                cmd.push(String::from("--norun"));
-            }
-        };
+        if self.norun {
+            cmd.push(String::from("--norun"));
+        }
 
         cmd
     }
@@ -720,23 +860,6 @@ fn wait_for_sigterm(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
 /// Otherwise the 15s timeout we set on the PtySession may not be enough
 /// to build from scratch and run the test.
 fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
-    // Compile the code with correct settings first:
-    let cloned_args = args.clone();
-    let compile_args = cloned_args.norun();
-
-    let o = process::Command::new("python3")
-        .args(compile_args.as_cmd())
-        .output()
-        .expect("failed to build");
-    if !o.status.success() {
-        io::stdout().write_all(&o.stdout).unwrap();
-        io::stderr().write_all(&o.stderr).unwrap();
-        panic!(
-            "Building test failed: {:?}",
-            compile_args.as_cmd().join(" ")
-        );
-    }
-
     let mut o = process::Command::new("python3");
     o.args(args.as_cmd());
 
@@ -801,7 +924,8 @@ fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
 /// and communicate if our tests passed or failed.
 #[test]
 fn s00_exit() {
-    let cmdline = RunnerArgs::new("exit").kernel_feature("bsp-only");
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("exit", &build).kernel_feature("bsp-only");
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -820,7 +944,8 @@ fn s00_exit() {
 /// since we don't have memory allocation.
 #[test]
 fn s00_pfault_early() {
-    let cmdline = RunnerArgs::new("pfault-early")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("pfault-early", &build)
         .qemu_arg("-d int,cpu_reset")
         .kernel_feature("bsp-only")
         .kernel_feature("cause-pfault-early");
@@ -846,7 +971,8 @@ fn s00_pfault_early() {
 /// In essence a trap should be raised and we should get a backtrace.
 #[test]
 fn s01_pfault() {
-    let cmdline = RunnerArgs::new("pfault").kernel_feature("bsp-only");
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("pfault", &build).kernel_feature("bsp-only");
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -866,7 +992,8 @@ fn s01_pfault() {
 /// since we don't have memory allocation.
 #[test]
 fn s00_gpfault_early() {
-    let cmdline = RunnerArgs::new("gpfault-early")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("gpfault-early", &build)
         .qemu_arg("-d int,cpu_reset")
         .kernel_feature("bsp-only")
         .kernel_feature("cause-gpfault-early");
@@ -892,7 +1019,8 @@ fn s00_gpfault_early() {
 /// Again we'd expect a trap and a backtrace.
 #[test]
 fn s01_gpfault() {
-    let cmdline = RunnerArgs::new("gpfault").kernel_feature("bsp-only");
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("gpfault", &build).kernel_feature("bsp-only");
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -917,7 +1045,8 @@ fn s01_gpfault() {
 /// faults that can always happen unexpected.
 #[test]
 fn s01_double_fault() {
-    let cmdline = RunnerArgs::new("double-fault")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("double-fault", &build)
         .qemu_arg("-d int,cpu_reset")
         .kernel_feature("bsp-only")
         .kernel_feature("cause-double-fault");
@@ -939,7 +1068,8 @@ fn s01_double_fault() {
 /// and the global allocator integration.
 #[test]
 fn s01_alloc() {
-    let cmdline = RunnerArgs::new("alloc").kernel_feature("bsp-only");
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("alloc", &build).kernel_feature("bsp-only");
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -959,7 +1089,8 @@ fn s01_alloc() {
 /// point.
 #[test]
 fn s01_sse() {
-    let cmdline = RunnerArgs::new("sse").kernel_feature("bsp-only");
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("sse", &build).kernel_feature("bsp-only");
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -976,7 +1107,10 @@ fn s01_sse() {
 #[test]
 fn s01_time() {
     eprintln!("Doing a release build, this might take a while...");
-    let cmdline = RunnerArgs::new("time").kernel_feature("bsp-only").release();
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("time", &build)
+        .kernel_feature("bsp-only")
+        .release();
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -990,7 +1124,8 @@ fn s01_time() {
 
 #[test]
 fn s01_timer() {
-    let cmdline = RunnerArgs::new("timer")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("timer", &build)
         .kernel_feature("bsp-only")
         .kernel_feature("test-timer");
     let mut output = String::new();
@@ -1010,7 +1145,8 @@ fn s01_timer() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_topology() {
-    let cmdline = &RunnerArgs::new("acpi-topology")
+    let build = BuildArgs::default_build();
+    let cmdline = &RunnerArgs::new_with_build("acpi-topology", &build)
         .cores(80)
         .nodes(8)
         .memory(4096)
@@ -1034,7 +1170,8 @@ fn s02_acpi_topology() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_smoke() {
-    let cmdline = &RunnerArgs::new("acpi-smoke")
+    let build = BuildArgs::default_build();
+    let cmdline = &RunnerArgs::new_with_build("acpi-smoke", &build)
         .cores(2)
         .memory(1024)
         .kernel_feature("bsp-only");
@@ -1058,7 +1195,8 @@ fn s02_acpi_smoke() {
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_coreboot_smoke() {
-    let cmdline = RunnerArgs::new("coreboot-smoke")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("coreboot-smoke", &build)
         .cores(2)
         // Adding this to qemu will print register state on CPU rests (triple-faults)
         // helpful to debug core-booting related failures:
@@ -1082,7 +1220,8 @@ fn s02_coreboot_smoke() {
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_coreboot_nrlog() {
-    let cmdline = RunnerArgs::new("coreboot-nrlog")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("coreboot-nrlog", &build)
         .cores(4)
         // Adding this to qemu will print register state on CPU rests (triple-faults)
         // helpful to debug core-booting related failures:
@@ -1106,7 +1245,8 @@ fn s02_coreboot_nrlog() {
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_nvdimm_discover() {
-    let cmdline = RunnerArgs::new("nvdimm-discover")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("nvdimm-discover", &build)
         .nodes(2)
         .cores(2)
         .pmem(1024)
@@ -1142,7 +1282,8 @@ fn s02_gdb() {
         })
     }
 
-    let cmdline = RunnerArgs::new("gdb")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("gdb", &build)
         .kgdb()
         .kernel_feature("gdb")
         .kernel_feature("bsp-only")
@@ -1227,7 +1368,11 @@ fn s02_gdb() {
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s03_coreboot() {
-    let cmdline = &RunnerArgs::new("coreboot").cores(32).nodes(4).memory(4096);
+    let build = BuildArgs::default_build();
+    let cmdline = &RunnerArgs::new_with_build("coreboot", &build)
+        .cores(32)
+        .nodes(4)
+        .memory(4096);
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline).expect("Can't spawn QEMU instance");
@@ -1254,7 +1399,8 @@ fn s03_coreboot() {
 ///  * BSD libOS in user-space
 #[test]
 fn s03_userspace_smoke() {
-    let cmdline = RunnerArgs::new("userspace")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .kernel_feature("bsp-only")
         .user_features(&[
             "test-print",
@@ -1322,7 +1468,8 @@ fn s03_vmxnet3_smoltcp() {
         "euzwvaicwxgzbfsaygfublcsugoljmipgawnvwzdficcqmrbtqnbiyfmdwq",
     );
 
-    let cmdline = RunnerArgs::new("vmxnet-smoltcp")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("vmxnet-smoltcp", &build)
         .timeout(30_000)
         .use_vmxnet3();
 
@@ -1353,6 +1500,7 @@ fn s03_vmxnet3_smoltcp() {
 fn s03_ivshmem_write_and_read() {
     use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;
+    let build = BuildArgs::default_build();
 
     let filename = String::from("ivshmem-file");
     let filelen = 2048;
@@ -1360,7 +1508,7 @@ fn s03_ivshmem_write_and_read() {
         MemFile::create(filename.as_str(), CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen).expect("Unable to set file length");
 
-    let cmdline = RunnerArgs::new("cxl-write")
+    let cmdline = RunnerArgs::new_with_build("cxl-write", &build)
         .timeout(30_000)
         .ivshmem(filelen as usize / 1024)
         .shmem_path(&filename);
@@ -1374,7 +1522,7 @@ fn s03_ivshmem_write_and_read() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 
-    let cmdline = RunnerArgs::new("cxl-read")
+    let cmdline = RunnerArgs::new_with_build("cxl-read", &build)
         .timeout(30_000)
         .ivshmem(filelen as usize / 1024)
         .shmem_path(&filename);
@@ -1398,7 +1546,8 @@ fn s03_ivshmem_write_and_read() {
 fn s04_userspace_multicore() {
     let machine = Machine::determine();
     let num_cores: usize = machine.max_cores();
-    let cmdline = RunnerArgs::new("userspace-smp")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .user_features(&["test-scheduler-smp"])
         .cores(num_cores)
         .memory(2048)
@@ -1429,7 +1578,8 @@ fn s04_userspace_multicore() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_rumprt_net() {
-    let cmdline = RunnerArgs::new("userspace")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .user_feature("test-rump-net")
         .user_feature("rumprt")
         .timeout(20_000);
@@ -1474,7 +1624,8 @@ fn s04_userspace_rumprt_net() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_rumprt_fs() {
-    let cmdline = &RunnerArgs::new("userspace")
+    let build = BuildArgs::default_build();
+    let cmdline = &RunnerArgs::new_with_build("userspace", &build)
         .user_feature("test-rump-tmpfs")
         .user_feature("rumprt")
         .timeout(20_000);
@@ -1513,7 +1664,8 @@ fn s02_vspace_debug() {
         Ok(())
     }
 
-    let cmdline = &RunnerArgs::new("vspace-debug")
+    let build = BuildArgs::default_build();
+    let cmdline = &RunnerArgs::new_with_build("vspace-debug", &build)
         .timeout(45_000)
         .memory(2048)
         .kernel_feature("bsp-only");
@@ -1548,7 +1700,8 @@ fn s02_vspace_debug() {
 //#[test]
 #[allow(unused)]
 fn s05_redis_smoke() {
-    let cmdline = RunnerArgs::new("userspace")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .module("rkapps")
         .user_feature("rkapps:redis")
         .cmd("init=redis.bin")
@@ -1681,7 +1834,8 @@ fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::sessio
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_redis_benchmark_virtio() {
-    let cmdline = RunnerArgs::new("userspace")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .module("rkapps")
         .user_feature("rkapps:redis")
         .cmd("init=redis.bin")
@@ -1714,7 +1868,8 @@ fn s06_redis_benchmark_virtio() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_redis_benchmark_e1000() {
-    let cmdline = RunnerArgs::new("userspace")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .module("rkapps")
         .user_feature("rkapps:redis")
         .cmd("init=redis.bin")
@@ -1745,6 +1900,7 @@ fn s06_redis_benchmark_e1000() {
 
 #[test]
 fn s06_vmops_benchmark() {
+    let build = BuildArgs::default_build();
     let machine = Machine::determine();
     let threads = machine.thread_defaults_uniform();
 
@@ -1753,7 +1909,7 @@ fn s06_vmops_benchmark() {
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("initargs={}", cores);
-        let mut cmdline = RunnerArgs::new("userspace-smp")
+        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .module("init")
             .user_feature("bench-vmops")
             .cores(machine.max_cores())
@@ -1827,6 +1983,7 @@ fn s06_vmops_benchmark() {
 #[test]
 fn s06_shootdown_simple() {
     let machine = Machine::determine();
+    let build = BuildArgs::default_build();
     let threads = machine.thread_defaults_uniform();
 
     let file_name = "tlb_shootdown.csv";
@@ -1834,7 +1991,7 @@ fn s06_shootdown_simple() {
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("initargs={}", cores);
-        let mut cmdline = RunnerArgs::new("shootdown-simple")
+        let mut cmdline = RunnerArgs::new_with_build("shootdown-simple", &build)
             .module("init")
             .cores(cores)
             .setaffinity()
@@ -1900,6 +2057,7 @@ fn s06_shootdown_simple() {
 #[test]
 fn s06_vmops_latency_benchmark() {
     let machine = Machine::determine();
+    let build = BuildArgs::default_build();
     let threads = machine.thread_defaults_uniform();
 
     let file_name = "vmops_benchmark_latency.csv";
@@ -1907,7 +2065,7 @@ fn s06_vmops_latency_benchmark() {
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("initargs={}", cores);
-        let mut cmdline = RunnerArgs::new("userspace-smp")
+        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .module("init")
             .user_feature("bench-vmops")
             .user_feature("latency")
@@ -1977,6 +2135,7 @@ fn s06_vmops_latency_benchmark() {
 #[test]
 fn s06_vmops_unmaplat_latency_benchmark() {
     let machine = Machine::determine();
+    let build = BuildArgs::default_build();
     let threads = machine.thread_defaults_uniform();
 
     let file_name = "vmops_unmaplat_benchmark_latency.csv";
@@ -1984,7 +2143,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
 
     for &cores in threads.iter() {
         let kernel_cmdline = format!("initargs={}", cores);
-        let mut cmdline = RunnerArgs::new("userspace-smp")
+        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .module("init")
             .user_feature("bench-vmops-unmaplat")
             .user_feature("latency")
@@ -2058,6 +2217,7 @@ fn s06_fxmark_benchmark() {
     let num_microbenchs = benchmarks.len() as u64;
 
     let machine = Machine::determine();
+    let build = BuildArgs::default_build();
     let threads = machine.thread_defaults_low_mid_high();
 
     let file_name = "fxmark_benchmark.csv";
@@ -2081,7 +2241,7 @@ fn s06_fxmark_benchmark() {
         for &cores in threads.iter() {
             for &of in open_files.iter() {
                 let kernel_cmdline = format!("initargs={}X{}X{}", cores, of, benchmark);
-                let mut cmdline = RunnerArgs::new("userspace-smp")
+                let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
                     .module("init")
                     .user_feature("fxmark")
                     .memory(1024)
@@ -2164,7 +2324,8 @@ fn s06_fxmark_benchmark() {
 ///  * All the above operations with invalid userspace pointers
 #[test]
 fn s06_test_fs() {
-    let cmdline = RunnerArgs::new("userspace-smp")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .module("init")
         .user_feature("test-fs")
         .release()
@@ -2190,7 +2351,8 @@ fn s06_test_fs() {
 ///  * File getinfo
 #[test]
 fn s06_test_fs_prop() {
-    let cmdline = RunnerArgs::new("userspace")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .module("init")
         .user_feature("test-fs-prop")
         .release()
@@ -2340,11 +2502,12 @@ fn s06_memcached_benchmark() {
 
     let file_name = "memcached_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
+    let build = BuildArgs::default_build();
 
     for nic in &["virtio", "e1000"] {
         for thread in threads.iter() {
             let kernel_cmdline = format!("init=memcached.bin initargs={}", *thread);
-            let cmdline = RunnerArgs::new("userspace-smp")
+            let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
                 .module("rkapps")
                 .user_feature("rkapps:memcached")
                 .memory(8192)
@@ -2384,6 +2547,8 @@ fn s06_memcached_benchmark() {
 #[test]
 fn s06_leveldb_benchmark() {
     let machine = Machine::determine();
+    let build = BuildArgs::default_build();
+
     let threads: Vec<usize> = machine
         .thread_defaults_uniform()
         .into_iter()
@@ -2408,7 +2573,7 @@ fn s06_leveldb_benchmark() {
             r#"init=dbbench.bin initargs={} appcmd='--threads={} --benchmarks=fillseq,readrandom --reads={} --num={} --value_size={}'"#,
             *thread, *thread, reads, num, val_size
         );
-        let mut cmdline = RunnerArgs::new("userspace-smp")
+        let mut cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
             .module("rkapps")
             .user_feature("rkapps:leveldb-bench")
             .timeout(180_000)
@@ -2482,7 +2647,8 @@ fn s06_leveldb_benchmark() {
 #[test]
 fn s06_pmem_alloc() {
     let machine = Machine::determine();
-    let cmdline = RunnerArgs::new("userspace-smp")
+    let build = BuildArgs::default_build();
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .module("init")
         .user_feature("test-pmem-alloc")
         .nodes(machine.max_numa_nodes())

@@ -3,13 +3,17 @@
 
 use core::result::Result;
 
-use crate::rpc::{RPCError, RPCHeader, RPCType};
+use crate::rpc::{NodeId, RPCError, RPCHeader, RPCType};
 
 /// RPC Handler function
 pub type RPCHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError>;
 
+/// RPC Client registration function
+pub type RegistrationHandler =
+    fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<NodeId, RPCError>;
+
 /// RPC server operations
-pub trait RPCServerAPI<'a> {
+pub trait RPCServer<'a> {
     /// register an RPC func with an ID
     fn register<'c>(
         &'a mut self,
@@ -32,7 +36,10 @@ pub trait RPCServerAPI<'a> {
 }
 
 /// RPC client operations
-pub trait RPCClientAPI {
+pub trait RPCClient {
+    /// Registers with a RPC server
+    fn connect(&mut self) -> Result<NodeId, RPCError>;
+
     /// calls a remote RPC function with ID
     fn call(
         &mut self,
@@ -41,10 +48,24 @@ pub trait RPCClientAPI {
         data_in: &[u8],
         data_out: &mut [&mut [u8]],
     ) -> Result<(), RPCError>;
+}
+
+pub trait RPCTransport {
+    /// Maximum per-send payload size
+    fn max_send(&self) -> usize;
+
+    /// Maximum per-send payload size
+    fn max_recv(&self) -> usize;
 
     /// send data to a remote node
     fn send(&self, expected_data: usize, data_buff: &[u8]) -> Result<(), RPCError>;
 
     /// receive data from a remote node
     fn recv(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError>;
+
+    /// Controller-side implementation for LITE join_cluster()
+    fn client_connect(&mut self) -> Result<(), RPCError>;
+
+    /// Client-side implementation for LITE join_cluster()
+    fn server_accept(&mut self) -> Result<(), RPCError>;
 }

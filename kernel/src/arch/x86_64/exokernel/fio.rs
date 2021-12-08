@@ -8,7 +8,6 @@ use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use log::{debug, error};
 
-use rpc::cluster_api::NodeId;
 use rpc::rpc::*;
 
 use crate::error::KError;

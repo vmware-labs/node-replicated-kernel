@@ -9,7 +9,7 @@ use core2::io::Write;
 use log::{debug, warn};
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClientAPI;
+use rpc::rpc_api::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
@@ -21,7 +21,7 @@ pub struct RenameReq {
 }
 unsafe_abomonate!(RenameReq: oldname, newname);
 
-pub fn rpc_rename<T: RPCClientAPI>(
+pub fn rpc_rename<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     oldname: String,

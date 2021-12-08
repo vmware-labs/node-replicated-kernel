@@ -10,30 +10,15 @@ use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
-#[cfg(feature = "exokernel")]
-use smoltcp::wire::IpAddress;
-
-#[cfg(feature = "exokernel")]
-use spin::Mutex;
-
 use apic::x2apic::X2APICDriver;
 use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use log::trace;
 use node_replication::Replica;
 
-#[cfg(feature = "exokernel")]
-use rpc::cluster_api::ClusterClientAPI;
-
-#[cfg(feature = "exokernel")]
-use rpc::tcp_client::TCPClient;
-
 use x86::current::segmentation::{self};
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
-
-#[cfg(feature = "exokernel")]
-use crate::arch::network::init_network;
 
 use crate::cnrfs::MlnrKernelNode;
 use crate::error::KError;
@@ -51,6 +36,12 @@ use super::process::{Ring3Executor, Ring3Process};
 use super::vspace::page_table::PageTable;
 use super::KernelArgs;
 use super::MAX_NUMA_NODES;
+
+#[cfg(feature = "exokernel")]
+use {
+    crate::arch::network::init_network, rpc::rpc_api::RPCClient, rpc::rpc_client::DefaultRPCClient,
+    rpc::tcp_transport::TCPTransport, smoltcp::wire::IpAddress, spin::Mutex,
+};
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
@@ -201,7 +192,7 @@ pub struct Arch86Kcb {
     ///
     /// This is (will be) used to send syscall data.
     #[cfg(feature = "exokernel")]
-    pub rpc_client: Mutex<Option<TCPClient<'static>>>,
+    pub rpc_client: Mutex<Option<DefaultRPCClient>>,
 }
 
 // The `syscall_stack_top` entry must be at offset 0 of KCB (referenced early-on in exec.S)
@@ -254,8 +245,9 @@ impl Arch86Kcb {
         let mut dev = self.rpc_client.lock();
         if dev.is_none() {
             let iface = init_network();
-            let mut client = TCPClient::new(server_ip, server_port, iface);
-            client.join_cluster().unwrap();
+            let rpc_transport = Box::new(TCPTransport::new(server_ip, server_port, iface));
+            let mut client = DefaultRPCClient::new(rpc_transport);
+            client.connect().unwrap();
             *dev = Some(client);
         }
     }

@@ -9,7 +9,7 @@ use core2::io::Write;
 use log::{debug, warn};
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClientAPI;
+use rpc::rpc_api::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
@@ -21,7 +21,7 @@ pub struct MkDirReq {
 }
 unsafe_abomonate!(MkDirReq: pathname, modes);
 
-pub fn rpc_mkdir<T: RPCClientAPI>(
+pub fn rpc_mkdir<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     pathname: String,

@@ -9,7 +9,7 @@ use core2::io::Write;
 use log::{debug, warn};
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClientAPI;
+use rpc::rpc_api::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
@@ -20,7 +20,7 @@ pub struct DeleteReq {
 }
 unsafe_abomonate!(DeleteReq: pathname);
 
-pub fn rpc_delete<T: RPCClientAPI>(
+pub fn rpc_delete<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     pathname: String,

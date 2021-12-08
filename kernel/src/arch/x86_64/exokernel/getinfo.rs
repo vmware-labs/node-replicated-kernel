@@ -10,7 +10,7 @@ use kpi::io::FileInfo;
 use log::{debug, warn};
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClientAPI;
+use rpc::rpc_api::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
@@ -21,7 +21,7 @@ pub struct GetInfoReq {
 }
 unsafe_abomonate!(GetInfoReq: name);
 
-pub fn rpc_getinfo<T: RPCClientAPI>(
+pub fn rpc_getinfo<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     name: String,

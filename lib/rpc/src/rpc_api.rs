@@ -23,6 +23,14 @@ pub trait RPCServer<'a> {
     where
         'c: 'a;
 
+    ///  Controller-side implementation for LITE join_cluster()
+    fn add_client<'c>(
+        &'a mut self,
+        func: &'c RegistrationHandler,
+    ) -> Result<(&mut Self, NodeId), RPCError>
+    where
+        'c: 'a;
+
     // TODO: add buff pointer as argument??
     /// receives next RPC call with RPC ID - data written to internal buffer
     fn receive(&self) -> Result<RPCType, RPCError>;

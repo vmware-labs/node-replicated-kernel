@@ -1,21 +1,20 @@
 use crate::arch::debug::shutdown;
 use crate::ExitReason;
 
+use rpc::rpc::RPCType;
+use rpc::rpc_api::RPCServer;
+use rpc::rpc_server::DefaultRPCServer;
+
+use crate::arch::exokernel::*;
+use crate::arch::network::init_network;
+
+const PORT: u16 = 6970;
+
 /// Test TCP RPC-based controller
 #[cfg(target_arch = "x86_64")]
 pub fn run() {
-    use rpc::cluster_api::ClusterControllerAPI;
-    use rpc::rpc::RPCType;
-    use rpc::rpc_api::RPCServerAPI;
-    use rpc::tcp_server::TCPServer;
-
-    use crate::arch::exokernel::*;
-    use crate::arch::network::init_network;
-
-    const PORT: u16 = 6970;
-
     let iface = init_network();
-    let mut server = TCPServer::new(iface, PORT);
+    let mut server = DefaultRPCServer::new(iface, PORT);
 
     // TODO: register handlers
     let (server, _) = server

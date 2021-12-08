@@ -13,7 +13,7 @@ use smoltcp::time::Instant;
 use vmxnet3::smoltcp::DevQueuePhy;
 
 use crate::rpc::*;
-use crate::rpc_api::{RPCHandler, RPCServer};
+use crate::rpc_api::{RPCHandler, RPCServer, RegistrationHandler};
 
 const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
@@ -261,5 +261,25 @@ impl<'a> RPCServer<'a> for DefaultRPCServer<'a> {
             }
             debug!("Finished handling RPC");
         }
+    }
+
+    fn add_client<'c>(
+        &'a mut self,
+        func: &'c RegistrationHandler,
+    ) -> Result<(&mut Self, NodeId), RPCError>
+    where
+        'c: 'a,
+    {
+        // Receive registration information
+        self.receive()?;
+
+        // Run specified registration function
+        let client_id = func(&mut self.hdr.borrow_mut(), &mut self.buff.borrow_mut())?;
+
+        // Send response
+        self.reply()?;
+
+        // Single client server, so all client IDs are 0
+        Ok((self, client_id))
     }
 }

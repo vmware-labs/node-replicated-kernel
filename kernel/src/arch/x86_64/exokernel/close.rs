@@ -8,7 +8,7 @@ use core2::io::Write;
 use log::{debug, warn};
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClientAPI;
+use rpc::rpc_api::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
@@ -19,7 +19,7 @@ pub struct CloseReq {
 }
 unsafe_abomonate!(CloseReq: fd);
 
-pub fn rpc_close<T: RPCClientAPI>(
+pub fn rpc_close<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     fd: u64,

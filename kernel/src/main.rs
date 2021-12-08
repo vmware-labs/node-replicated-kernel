@@ -117,7 +117,8 @@ pub enum ExitReason {
 /// different from a traditional main routine).
 #[no_mangle]
 pub fn xmain() {
-    #[cfg(feature = "controller")] {
+    #[cfg(feature = "controller")]
+    {
         controller_main::run();
     }
     #[cfg(not(feature = "integration-test"))]

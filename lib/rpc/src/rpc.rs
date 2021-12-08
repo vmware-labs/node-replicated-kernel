@@ -6,6 +6,9 @@ use core::convert::TryInto;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 
+/// Node ID for servers/clients
+pub type NodeId = u64;
+
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 pub enum RPCError {
     // RPC

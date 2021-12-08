@@ -12,15 +12,14 @@ use smoltcp::time::Instant;
 
 use vmxnet3::smoltcp::DevQueuePhy;
 
-use crate::cluster_api::*;
 use crate::rpc::*;
-use crate::rpc_api::{RPCHandler, RPCServerAPI};
+use crate::rpc_api::{RPCHandler, RPCServer};
 
 const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
 const BUF_LEN: usize = 8192;
 
-pub struct TCPServer<'a> {
+pub struct DefaultRPCServer<'a> {
     iface: RefCell<EthernetInterface<'a, DevQueuePhy>>,
     sockets: RefCell<SocketSet<'a>>,
     server_handle: SocketHandle,
@@ -29,8 +28,8 @@ pub struct TCPServer<'a> {
     buff: RefCell<Vec<u8>>,
 }
 
-impl TCPServer<'_> {
-    pub fn new(iface: EthernetInterface<'_, DevQueuePhy>, port: u16) -> TCPServer<'_> {
+impl DefaultRPCServer<'_> {
+    pub fn new(iface: EthernetInterface<'_, DevQueuePhy>, port: u16) -> DefaultRPCServer<'_> {
         // Allocate space for server buffers
         let mut buff = Vec::new();
         buff.try_reserve(BUF_LEN).unwrap();
@@ -60,7 +59,7 @@ impl TCPServer<'_> {
         let server_handle = sockets.add(server_sock);
 
         // Initialize the server struct
-        TCPServer {
+        DefaultRPCServer {
             iface: RefCell::new(iface),
             sockets: RefCell::new(sockets),
             server_handle,
@@ -209,53 +208,8 @@ impl TCPServer<'_> {
     }
 }
 
-impl<'a> ClusterControllerAPI<'a> for TCPServer<'a> {
-    fn add_client<'c>(
-        &'a mut self,
-        func: &'c RegistrationHandler,
-    ) -> Result<(&mut Self, NodeId), RPCError>
-    where
-        'c: 'a,
-    {
-        {
-            let mut sockets = self.sockets.borrow_mut();
-            loop {
-                match self
-                    .iface
-                    .borrow_mut()
-                    .poll(&mut sockets, Instant::from_millis(0))
-                {
-                    Ok(_) => {}
-                    Err(e) => {
-                        warn!("poll error: {}", e);
-                    }
-                }
-
-                // This is equivalent (more or less) to accept
-                let socket = sockets.get::<TcpSocket>(self.server_handle);
-                if socket.is_active() && (socket.may_send() || socket.may_recv()) {
-                    debug!("Connected to client!");
-                    break;
-                }
-            }
-        }
-
-        // Receive registration information
-        self.receive()?;
-
-        // Run specified registration function
-        let client_id = func(&mut self.hdr.borrow_mut(), &mut self.buff.borrow_mut())?;
-
-        // Send response
-        self.reply()?;
-
-        // Single client server, so all client IDs are 0
-        Ok((self, client_id))
-    }
-}
-
 /// RPC server operations
-impl<'a> RPCServerAPI<'a> for TCPServer<'a> {
+impl<'a> RPCServer<'a> for DefaultRPCServer<'a> {
     /// register an RPC func with an ID
     fn register<'c>(
         &'a mut self,

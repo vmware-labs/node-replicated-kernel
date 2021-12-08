@@ -9,7 +9,7 @@ use kpi::FileOperation;
 use log::{debug, warn};
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClientAPI;
+use rpc::rpc_api::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
@@ -22,7 +22,7 @@ pub struct RWReq {
 }
 unsafe_abomonate!(RWReq: fd, len, offset);
 
-pub fn rpc_write<T: RPCClientAPI>(
+pub fn rpc_write<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     fd: u64,
@@ -31,7 +31,7 @@ pub fn rpc_write<T: RPCClientAPI>(
     rpc_writeat(rpc_client, pid, fd, -1, data)
 }
 
-pub fn rpc_writeat<T: RPCClientAPI>(
+pub fn rpc_writeat<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     fd: u64,
@@ -79,7 +79,7 @@ pub fn rpc_writeat<T: RPCClientAPI>(
     }
 }
 
-pub fn rpc_read<T: RPCClientAPI>(
+pub fn rpc_read<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     fd: u64,
@@ -89,7 +89,7 @@ pub fn rpc_read<T: RPCClientAPI>(
     rpc_readat(rpc_client, pid, fd, len, -1, buff_ptr)
 }
 
-pub fn rpc_readat<T: RPCClientAPI>(
+pub fn rpc_readat<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     fd: u64,

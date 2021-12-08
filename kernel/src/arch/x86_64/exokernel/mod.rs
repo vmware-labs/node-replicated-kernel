@@ -1,8 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use rpc::cluster_api::RegistrationHandler;
-use rpc::rpc_api::RPCHandler;
+use rpc::rpc_api::{RPCHandler, RegistrationHandler};
 
 pub mod close;
 pub mod delete;

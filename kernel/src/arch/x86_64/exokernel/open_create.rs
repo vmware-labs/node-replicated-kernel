@@ -10,7 +10,7 @@ use log::{debug, warn};
 
 use kpi::io::{FileFlags, FileModes};
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClientAPI;
+use rpc::rpc_api::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
@@ -23,7 +23,7 @@ pub struct OpenReq {
 }
 unsafe_abomonate!(OpenReq: pathname, flags, modes);
 
-pub fn rpc_create<T: RPCClientAPI>(
+pub fn rpc_create<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     pathname: String,
@@ -40,7 +40,7 @@ pub fn rpc_create<T: RPCClientAPI>(
     )
 }
 
-pub fn rpc_open<T: RPCClientAPI>(
+pub fn rpc_open<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     pathname: String,
@@ -57,7 +57,7 @@ pub fn rpc_open<T: RPCClientAPI>(
     )
 }
 
-fn rpc_open_create<T: RPCClientAPI>(
+fn rpc_open_create<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     pathname: String,

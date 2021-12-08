@@ -245,7 +245,7 @@ impl Arch86Kcb {
         let mut dev = self.rpc_client.lock();
         if dev.is_none() {
             let iface = init_network();
-            let rpc_transport = Box::new(TCPTransport::new(server_ip, server_port, iface));
+            let rpc_transport = Box::new(TCPTransport::new(Some(server_ip), server_port, iface));
             let mut client = DefaultRPCClient::new(rpc_transport);
             client.connect().unwrap();
             *dev = Some(client);

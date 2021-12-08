@@ -22,26 +22,42 @@ pub struct TCPTransport<'a> {
     iface: RefCell<EthernetInterface<'a, DevQueuePhy>>,
     sockets: RefCell<SocketSet<'a>>,
     server_handle: Option<SocketHandle>,
-    server_ip: IpAddress,
+    server_ip: Option<IpAddress>,
     server_port: u16,
     client_port: u16,
 }
 
 impl TCPTransport<'_> {
     pub fn new(
-        server_ip: IpAddress,
+        server_ip: Option<IpAddress>,
         server_port: u16,
         iface: EthernetInterface<'_, DevQueuePhy>,
     ) -> TCPTransport<'_> {
         // Create SocketSet w/ space for 1 socket
         let mut sock_vec = Vec::new();
         sock_vec.try_reserve_exact(1).unwrap();
-        let sockets = SocketSet::new(sock_vec);
+        let mut sockets = SocketSet::new(sock_vec);
+
+        // Create RX and TX buffers for the socket
+        let mut sock_vec = Vec::new();
+        sock_vec.try_reserve_exact(RX_BUF_LEN).unwrap();
+        sock_vec.resize(RX_BUF_LEN, 0);
+        let socket_rx_buffer = TcpSocketBuffer::new(sock_vec);
+        let mut sock_vec = Vec::new();
+        sock_vec.try_reserve_exact(TX_BUF_LEN).unwrap();
+        sock_vec.resize(TX_BUF_LEN, 0);
+
+        // Create the TCP socket
+        let socket_tx_buffer = TcpSocketBuffer::new(sock_vec);
+        let tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
+
+        // Add to sockets and remember socket handle
+        let server_handle = Some(sockets.add(tcp_socket));
 
         TCPTransport {
             iface: RefCell::new(iface),
             sockets: RefCell::new(sockets),
-            server_handle: None,
+            server_handle,
             server_ip,
             server_port,
             client_port: 10110,
@@ -141,33 +157,19 @@ impl RPCTransport for TCPTransport<'_> {
     /// Register with controller, analogous to LITE join_cluster()
     /// TODO: add timeout?? with error returned if timeout occurs?
     fn client_connect(&mut self) -> Result<(), RPCError> {
-        // create client socket
-        // Create RX and TX buffers for the socket
-        let mut sock_vec = Vec::new();
-        sock_vec.try_reserve_exact(RX_BUF_LEN).unwrap();
-        sock_vec.resize(RX_BUF_LEN, 0);
-        let socket_rx_buffer = TcpSocketBuffer::new(sock_vec);
-        let mut sock_vec = Vec::new();
-        sock_vec.try_reserve_exact(TX_BUF_LEN).unwrap();
-        sock_vec.resize(TX_BUF_LEN, 0);
-        let socket_tx_buffer = TcpSocketBuffer::new(sock_vec);
-        let tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
-
-        // Add to sockets
-        {
-            let mut sockets = self.sockets.borrow_mut();
-            self.server_handle = Some(sockets.add(tcp_socket));
-        }
-
         {
             let mut sockets = self.sockets.borrow_mut();
             let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
             socket
-                .connect((self.server_ip, self.server_port), self.client_port)
+                .connect(
+                    (self.server_ip.unwrap(), self.server_port),
+                    self.client_port,
+                )
                 .unwrap();
             debug!(
                 "Attempting to connect to server {}:{}",
-                self.server_ip, self.server_port
+                self.server_ip.unwrap(),
+                self.server_port
             );
         }
 
@@ -196,7 +198,15 @@ impl RPCTransport for TCPTransport<'_> {
         Ok(())
     }
 
-    fn server_accept(&mut self) -> Result<(), RPCError> {
+    fn server_accept(&self) -> Result<(), RPCError> {
+        // Add to sockets
+        {
+            let mut sockets = self.sockets.borrow_mut();
+            let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
+            socket.listen(self.server_port).unwrap();
+            debug!("Listening at port {}", self.server_port);
+        }
+
         let mut sockets = self.sockets.borrow_mut();
         loop {
             match self

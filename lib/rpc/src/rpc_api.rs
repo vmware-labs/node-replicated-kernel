@@ -15,32 +15,17 @@ pub type RegistrationHandler =
 /// RPC server operations
 pub trait RPCServer<'a> {
     /// register an RPC func with an ID
-    fn register<'c>(
-        &'a mut self,
-        rpc_id: RPCType,
-        handler: &'c RPCHandler,
-    ) -> Result<&mut Self, RPCError>
+    fn register<'c>(&self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<&Self, RPCError>
     where
         'c: 'a;
 
     ///  Controller-side implementation for LITE join_cluster()
-    fn add_client<'c>(
-        &'a mut self,
-        func: &'c RegistrationHandler,
-    ) -> Result<(&mut Self, NodeId), RPCError>
+    fn add_client<'c>(&self, func: &'c RegistrationHandler) -> Result<(&Self, NodeId), RPCError>
     where
         'c: 'a;
 
-    // TODO: add buff pointer as argument??
-    /// receives next RPC call with RPC ID - data written to internal buffer
-    fn receive(&self) -> Result<RPCType, RPCError>;
-
-    // TODO: add buff pointer as argument??
-    /// replies an RPC call with results - data sent from internal buffer
-    fn reply(&self) -> Result<(), RPCError>;
-
     /// Run the RPC server
-    fn run_server(&mut self) -> Result<(), RPCError>;
+    fn run_server(&self) -> Result<(), RPCError>;
 }
 
 /// RPC client operations
@@ -75,5 +60,5 @@ pub trait RPCTransport {
     fn client_connect(&mut self) -> Result<(), RPCError>;
 
     /// Client-side implementation for LITE join_cluster()
-    fn server_accept(&mut self) -> Result<(), RPCError>;
+    fn server_accept(&self) -> Result<(), RPCError>;
 }

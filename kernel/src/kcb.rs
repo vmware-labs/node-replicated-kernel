@@ -30,7 +30,7 @@ use crate::nrproc::NrProcess;
 use crate::process::{Pid, Process, MAX_PROCESSES};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
-use kpi::pci::Bar;
+use driverkit::pci::PciDevice;
 
 pub trait MemManager: PhysicalPageProvider + AllocatorStatistics + GrowBackend {}
 
@@ -333,7 +333,7 @@ where
     pub process_token: ArrayVec<ReplicaToken, { MAX_PROCESSES }>,
 
     /// Reference to a shared memory device.
-    pub cxl_device: Option<Bar>,
+    pub ivshmem_dev: Option<PciDevice>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -364,7 +364,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             replica: None,
             tlb_time: 0,
             process_token: ArrayVec::new_const(),
-            cxl_device: None,
+            ivshmem_dev: None,
         }
     }
 
@@ -475,8 +475,8 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
-    pub fn set_cxl_region(&mut self, cxl_dev: Option<Bar>) {
-        self.cxl_device = cxl_dev;
+    pub fn set_ivshmem_device(&mut self, ivshmem_dev: PciDevice) {
+        self.ivshmem_dev = Some(ivshmem_dev);
     }
 
     pub fn enable_print_buffering(&mut self, buffer: String) {

@@ -396,12 +396,6 @@ impl<'a> BuildArgs<'a> {
         self
     }
 
-    /// Which user-space modules we want to include.
-    fn modules(mut self, mods: &[&'a str]) -> BuildArgs<'a> {
-        self.mods.extend_from_slice(mods);
-        self
-    }
-
     /// Adds a user-space module to the build and deployment.
     fn module(mut self, module: &'a str) -> BuildArgs<'a> {
         self.mods.push(module);
@@ -571,27 +565,6 @@ impl<'a> RunnerArgs<'a> {
     /// Command line passed to the kernel.
     fn cmd(mut self, cmd: &'a str) -> RunnerArgs<'a> {
         self.cmd = Some(cmd);
-        self
-    }
-
-    /// Which user-space modules we want to include.
-    fn modules(mut self, mods: &[&'a str]) -> RunnerArgs<'a> {
-        panic!("get rid of here");
-        self.build_args = self.build_args.modules(mods);
-        self
-    }
-
-    /// Adds a user-space module to the build and deployment.
-    fn module(mut self, module: &'a str) -> RunnerArgs<'a> {
-        panic!("get rid of here");
-        self.build_args = self.build_args.module(module);
-        self
-    }
-
-    /// Do a release build.
-    fn release(mut self) -> RunnerArgs<'a> {
-        panic!("get rid of here");
-        self.build_args = self.build_args.release();
         self
     }
 
@@ -1460,8 +1433,8 @@ fn s03_vmxnet3_smoltcp() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Tests that the shared memory device is functional by running Bespin two
-/// time; once to write data, and second time to read it.
+/// Test that the shared memory device is functional by running NRK twice: once
+/// to produce data, and one to consume it.
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_ivshmem_write_and_read() {
@@ -1957,10 +1930,11 @@ fn s06_vmops_benchmark() {
 #[test]
 fn s06_shootdown_simple() {
     let machine = Machine::determine();
+    let build = BuildArgs::default().module("init").release();
     let build = if cfg!(feature = "smoke") {
-        BuildArgs::default().release().user_feature("smoke").build()
+        build.user_feature("smoke").build()
     } else {
-        BuildArgs::default().release().build()
+        build.build()
     };
 
     let threads = machine.thread_defaults_uniform();
@@ -1971,7 +1945,6 @@ fn s06_shootdown_simple() {
     for &cores in threads.iter() {
         let kernel_cmdline = format!("initargs={}", cores);
         let mut cmdline = RunnerArgs::new_with_build("shootdown-simple", &build)
-            .module("init")
             .cores(cores)
             .setaffinity()
             .timeout(12_000 + cores as u64 * 3000)

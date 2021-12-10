@@ -18,7 +18,6 @@
 //! - Set-up system services like ACPI and physical memory management,
 //!   parse the machine topology.
 //! - Boot the rest of the system (see `start_app_core`).
-#![cfg_attr(not(target_os = "none"), allow(unused))]
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -38,11 +37,10 @@ use apic::x2apic;
 use apic::ApicDriver;
 use arrayvec::ArrayVec;
 use cnr::{Log as MlnrLog, Replica as MlnrReplica};
+#[cfg(not(feature = "bsp-only"))]
 use driverkit::DriverControl;
 use fallible_collections::{FallibleVecGlobal, TryClone};
 use klogger::sprint;
-#[cfg(not(feature = "bsp-only"))]
-use kpi::pci::Bar;
 use log::{debug, error, info, trace};
 use node_replication::{Log, Replica};
 use x86::bits64::paging::{PAddr, VAddr, PML4};
@@ -212,7 +210,6 @@ struct AppCoreArgs {
     _log: Arc<Log<'static, Op>>,
     replica: Arc<Replica<'static, KernelNode>>,
     fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
-    cxl_dev: Option<Bar>,
 }
 
 /// Entry point for application cores. This is normally called from `start_ap.S`.
@@ -242,7 +239,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     kcb.set_global_mem(args.global_memory);
     kcb.set_mem_manager(mcache::TCache::new(args.node));
-    kcb.set_cxl_region(args.cxl_dev);
 
     if args.global_pmem.node_caches.len() > 0 {
         kcb.set_global_pmem(args.global_pmem);
@@ -318,7 +314,6 @@ fn boot_app_cores(
     bsp_replica: Arc<Replica<'static, KernelNode>>,
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
-    cxl_dev: Option<Bar>,
 ) {
     use crate::memory::PhysicalPageProvider;
 
@@ -416,7 +411,6 @@ fn boot_app_cores(
             fs_replica: fs_replicas[node as usize]
                 .try_clone()
                 .expect("Not enough memory to initialize system"),
-            cxl_dev,
         })
         .expect("Not enough memory to initialize system");
 
@@ -828,16 +822,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.set_pmem_manager(tcache);
     }
 
-    // Intialize the shared memory region.
-    let mut cxl_dev = None;
-    {
-        let kcb = kcb::get_kcb();
-        if let Some(pci_dev) = kpi::pci::pci_device_lookup_with_devinfo(0x1af4, 0x1110) {
-            cxl_dev = pci_dev.bar(2);
-        }
-        kcb.set_cxl_region(cxl_dev);
-    }
-
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
@@ -908,6 +892,24 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.arch.init_cnrfs();
     }
 
+    // Intialize PCI
+    {
+        let pci_devices =
+            driverkit::pci::scan_bus().expect("Can't allocate memory for PCI devices");
+        for device in pci_devices {
+            info!("PCI: {}", device);
+
+            // TODO(hack): set cross-VM memory region:
+            // (Ideally we have a proper driver + device interface for such things)
+            const RED_HAT_INC: u16 = 0x1af4;
+            const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
+            if device.vendor_id() == RED_HAT_INC && device.device_id() == INTER_VM_SHARED_MEM_DEV {
+                let kcb = kcb::get_kcb();
+                kcb.set_ivshmem_device(device);
+            }
+        }
+    }
+
     {
         lazy_static::initialize(&process::PROCESS_TABLE);
         let kcb = kcb::get_kcb();
@@ -935,7 +937,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         bsp_replica,
         fs_logs,
         fs_replica,
-        cxl_dev,
     );
 
     // Done with initialization, now we go in

@@ -37,7 +37,6 @@ use apic::x2apic;
 use apic::ApicDriver;
 use arrayvec::ArrayVec;
 use cnr::{Log as MlnrLog, Replica as MlnrReplica};
-#[cfg(not(feature = "bsp-only"))]
 use driverkit::DriverControl;
 use fallible_collections::{FallibleVecGlobal, TryClone};
 use klogger::sprint;
@@ -181,7 +180,6 @@ unsafe fn find_current_ptables() -> PageTable {
 
 /// Construct the driver object to manipulate the interrupt controller (XAPIC)
 fn init_apic() -> x2apic::X2APICDriver {
-    use driverkit::DriverControl;
     let mut apic = x2apic::X2APICDriver::default();
     // Attach the driver to take control of the APIC:
     apic.attach();

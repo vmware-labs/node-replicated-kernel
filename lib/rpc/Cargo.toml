@@ -20,3 +20,5 @@ vmxnet3 = { path = "../vmxnet3", optional = true }
 "mpsc_transport" = ["std"]
 
 "std" = []
+
+"test" = ["mpsc_transport"]

@@ -13,7 +13,7 @@ use smoltcp::wire::IpAddress;
 use vmxnet3::smoltcp::DevQueuePhy;
 
 use crate::rpc::*;
-use crate::rpc_api::RPCTransport;
+use crate::transport::Transport;
 
 const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
@@ -65,7 +65,7 @@ impl TCPTransport<'_> {
     }
 }
 
-impl RPCTransport for TCPTransport<'_> {
+impl Transport for TCPTransport<'_> {
     fn max_send(&self) -> usize {
         RX_BUF_LEN
     }

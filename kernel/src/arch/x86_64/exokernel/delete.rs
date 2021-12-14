@@ -5,7 +5,7 @@ use abomonation::decode;
 use log::debug;
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClient;
+use rpc::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;

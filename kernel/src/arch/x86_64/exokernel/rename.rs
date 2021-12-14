@@ -7,7 +7,7 @@ use core2::io::Write;
 use log::{debug, error, warn};
 
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClient;
+use rpc::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;

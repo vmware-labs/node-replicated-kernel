@@ -39,8 +39,8 @@ use super::MAX_NUMA_NODES;
 
 #[cfg(feature = "exokernel")]
 use {
-    crate::arch::network::init_network, rpc::rpc_api::RPCClient, rpc::rpc_client::DefaultRPCClient,
-    rpc::transport::smoltcp::TCPTransport, smoltcp::wire::IpAddress, spin::Mutex,
+    crate::arch::network::init_network, rpc::client::Client as SmolRPCClient,
+    rpc::transport::TCPTransport, rpc::RPCClient, smoltcp::wire::IpAddress, spin::Mutex,
 };
 
 /// Try to retrieve the KCB by reading the gs register.
@@ -192,7 +192,7 @@ pub struct Arch86Kcb {
     ///
     /// This is (will be) used to send syscall data.
     #[cfg(feature = "exokernel")]
-    pub rpc_client: Mutex<Option<DefaultRPCClient>>,
+    pub rpc_client: Mutex<Option<SmolRPCClient>>,
 }
 
 // The `syscall_stack_top` entry must be at offset 0 of KCB (referenced early-on in exec.S)
@@ -246,7 +246,7 @@ impl Arch86Kcb {
         if dev.is_none() {
             let iface = init_network();
             let rpc_transport = Box::new(TCPTransport::new(Some(server_ip), server_port, iface));
-            let mut client = DefaultRPCClient::new(rpc_transport);
+            let mut client = SmolRPCClient::new(rpc_transport);
             client.connect().unwrap();
             *dev = Some(client);
         }

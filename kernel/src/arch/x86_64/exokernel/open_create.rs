@@ -8,7 +8,7 @@ use log::{debug, warn};
 
 use kpi::io::{FileFlags, FileModes};
 use rpc::rpc::*;
-use rpc::rpc_api::RPCClient;
+use rpc::RPCClient;
 
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;

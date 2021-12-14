@@ -40,7 +40,7 @@ use super::MAX_NUMA_NODES;
 #[cfg(feature = "exokernel")]
 use {
     crate::arch::network::init_network, rpc::rpc_api::RPCClient, rpc::rpc_client::DefaultRPCClient,
-    rpc::tcp_transport::TCPTransport, smoltcp::wire::IpAddress, spin::Mutex,
+    rpc::transport::smoltcp::TCPTransport, smoltcp::wire::IpAddress, spin::Mutex,
 };
 
 /// Try to retrieve the KCB by reading the gs register.

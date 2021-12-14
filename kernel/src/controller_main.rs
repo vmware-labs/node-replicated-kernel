@@ -8,7 +8,7 @@ use alloc::prelude::v1::Box;
 use rpc::rpc::RPCType;
 use rpc::rpc_api::RPCServer;
 use rpc::rpc_server::DefaultRPCServer;
-use rpc::tcp_transport::TCPTransport;
+use rpc::transport::smoltcp::TCPTransport;
 
 use crate::arch::exokernel::*;
 use crate::arch::network::init_network;

@@ -7,7 +7,7 @@
 #[macro_use]
 extern crate abomonation;
 
-#[cfg(feature = "smoltcp_transport")]
+#[cfg(not(feature = "std"))]
 extern crate alloc;
 
 #[cfg(feature = "smoltcp_transport")]
@@ -16,8 +16,10 @@ extern crate smoltcp;
 #[cfg(feature = "smoltcp_transport")]
 extern crate vmxnet3;
 
+pub mod api;
+pub mod client;
 pub mod rpc;
-pub mod rpc_api;
-pub mod rpc_client;
-pub mod rpc_server;
+pub mod server;
 pub mod transport;
+
+pub use api::{RPCClient, RPCServer};

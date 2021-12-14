@@ -1,23 +1,28 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::prelude::v1::Box;
-use core::cell::RefCell;
+#[cfg(feature = "std")]
+use {std::boxed::Box, std::cell::RefCell};
+
+#[cfg(not(feature = "std"))]
+use {alloc::prelude::v1::Box, core::cell::RefCell};
+
 use log::{debug, warn};
 
+use crate::api::*;
 use crate::rpc::*;
-use crate::rpc_api::*;
+use crate::transport::Transport;
 
-pub struct DefaultRPCClient {
-    transport: Box<dyn RPCTransport>,
+pub struct Client {
+    transport: Box<dyn Transport>,
     client_id: NodeId,
     req_id: u64,
     hdr: RefCell<RPCHeader>,
 }
 
-impl DefaultRPCClient {
-    pub fn new<T: 'static + RPCTransport>(transport: Box<T>) -> DefaultRPCClient {
-        DefaultRPCClient {
+impl Client {
+    pub fn new<T: 'static + Transport>(transport: Box<T>) -> Client {
+        Client {
             transport,
             client_id: 0,
             req_id: 0,
@@ -27,7 +32,7 @@ impl DefaultRPCClient {
 }
 
 /// RPC client operations
-impl RPCClient for DefaultRPCClient {
+impl RPCClient for Client {
     /// Registers with a RPC server
     fn connect(&mut self) -> Result<NodeId, RPCError> {
         self.transport.client_connect()?;

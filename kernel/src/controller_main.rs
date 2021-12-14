@@ -6,9 +6,9 @@ use crate::ExitReason;
 use alloc::prelude::v1::Box;
 
 use rpc::rpc::RPCType;
-use rpc::rpc_api::RPCServer;
-use rpc::rpc_server::DefaultRPCServer;
-use rpc::transport::smoltcp::TCPTransport;
+use rpc::server::Server;
+use rpc::transport::TCPTransport;
+use rpc::RPCServer;
 
 use crate::arch::exokernel::*;
 use crate::arch::network::init_network;
@@ -20,7 +20,7 @@ const PORT: u16 = 6970;
 pub fn run() {
     let iface = init_network();
     let rpc_transport = Box::new(TCPTransport::new(None, PORT, iface));
-    let server = DefaultRPCServer::new(rpc_transport);
+    let server = Server::new(rpc_transport);
 
     let (server, _) = server
         .register(FileIO::Close as RPCType, &CLOSE_HANDLER)

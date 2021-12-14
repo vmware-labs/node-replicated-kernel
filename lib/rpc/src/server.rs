@@ -1,26 +1,30 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::prelude::v1::Box;
-use alloc::vec::Vec;
-use core::cell::RefCell;
+#[cfg(feature = "std")]
+use {std::boxed::Box, std::cell::RefCell, std::vec::Vec};
+
+#[cfg(not(feature = "std"))]
+use {alloc::prelude::v1::Box, alloc::vec::Vec, core::cell::RefCell};
+
 use hashbrown::HashMap;
 use log::debug;
 
+use crate::api::*;
 use crate::rpc::*;
-use crate::rpc_api::*;
+use crate::transport::Transport;
 
 const MAX_BUFF_LEN: usize = 8192;
 
-pub struct DefaultRPCServer<'a> {
-    transport: Box<dyn RPCTransport + 'a>,
+pub struct Server<'a> {
+    transport: Box<dyn Transport + 'a>,
     handlers: RefCell<HashMap<RPCType, &'a RPCHandler>>,
     hdr: RefCell<RPCHeader>,
     buff: RefCell<Vec<u8>>,
 }
 
-impl<'t, 'a> DefaultRPCServer<'a> {
-    pub fn new<T: 't + RPCTransport>(transport: Box<T>) -> DefaultRPCServer<'a>
+impl<'t, 'a> Server<'a> {
+    pub fn new<T: 't + Transport>(transport: Box<T>) -> Server<'a>
     where
         't: 'a,
     {
@@ -30,7 +34,7 @@ impl<'t, 'a> DefaultRPCServer<'a> {
         buff.resize(MAX_BUFF_LEN, 0);
 
         // Initialize the server struct
-        DefaultRPCServer {
+        Server {
             transport,
             handlers: RefCell::new(HashMap::new()),
             hdr: RefCell::new(RPCHeader::default()),
@@ -76,7 +80,7 @@ impl<'t, 'a> DefaultRPCServer<'a> {
 }
 
 /// RPC server operations
-impl<'a> RPCServer<'a> for DefaultRPCServer<'a> {
+impl<'a> RPCServer<'a> for Server<'a> {
     /// register an RPC func with an ID
     fn register<'c>(&self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<&Self, RPCError>
     where

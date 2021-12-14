@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{decode, encode, Abomonation};
-use alloc::string::String;
-use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use log::{debug, warn};
@@ -16,30 +14,26 @@ use crate::cnrfs;
 
 #[derive(Debug)]
 pub struct MkDirReq {
-    pub pathname: String,
     pub modes: u64,
 }
-unsafe_abomonate!(MkDirReq: pathname, modes);
+unsafe_abomonate!(MkDirReq: modes);
 
 pub fn rpc_mkdir<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
-    pathname: String,
+    pathname: &[u8],
     modes: u64,
 ) -> Result<(u64, u64), RPCError> {
     debug!("MkDir({:?})", pathname);
-    let req = MkDirReq {
-        pathname: pathname,
-        modes: modes,
-    };
-    let mut req_data = Vec::new();
+    let req = MkDirReq { modes: modes };
+    let mut req_data = [0u8; core::mem::size_of::<MkDirReq>()];
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
-    unsafe { encode(&req, &mut req_data) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
     rpc_client
         .call(
             pid,
             FileIO::MkDir as RPCType,
-            &req_data,
+            &[&req_data, &pathname],
             &mut [&mut res_data],
         )
         .unwrap();
@@ -63,22 +57,20 @@ pub fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCEr
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, _)) = unsafe { decode::<MkDirReq>(payload) } {
-        debug!(
-            "MkDir(pathname={:?}), local_pid={:?}",
-            req.pathname, local_pid
-        );
+    let modes = match unsafe { decode::<MkDirReq>(payload) } {
+        Some((req, _)) => req.modes,
+        None => {
+            warn!("Invalid payload for request: {:?}", hdr);
+            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        }
+    };
 
-        let res = FIORes {
-            ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
-                local_pid,
-                req.pathname.as_ptr() as u64,
-                req.modes,
-            )),
-        };
-        construct_ret(hdr, payload, res)
-    } else {
-        warn!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
-    }
+    let res = FIORes {
+        ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
+            local_pid,
+            (&payload[..core::mem::size_of::<MkDirReq>()]).as_ptr() as u64,
+            modes,
+        )),
+    };
+    construct_ret(hdr, payload, res)
 }

@@ -38,7 +38,7 @@ pub trait RPCClient {
         &mut self,
         pid: usize,
         rpc_id: RPCType,
-        data_in: &[u8],
+        data_in: &[&[u8]],
         data_out: &mut [&mut [u8]],
     ) -> Result<(), RPCError>;
 }

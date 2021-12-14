@@ -42,15 +42,16 @@ impl RPCClient for DefaultRPCClient {
         &mut self,
         pid: usize,
         rpc_id: RPCType,
-        data_in: &[u8],
+        data_in: &[&[u8]],
         data_out: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
         // Calculate total data_out len
         let data_out_len = data_out.iter().fold(0, |acc, x| acc + x.len());
+        let data_in_len = data_in.iter().fold(0, |acc, x| acc + x.len());
 
         // Check lengths
         assert!(data_out_len + HDR_LEN <= self.transport.max_send());
-        assert!(data_in.len() + HDR_LEN <= self.transport.max_recv());
+        assert!(data_in_len + HDR_LEN <= self.transport.max_recv());
 
         // Create request header
         {
@@ -58,7 +59,7 @@ impl RPCClient for DefaultRPCClient {
             hdr.pid = pid;
             hdr.req_id = self.req_id;
             hdr.msg_type = rpc_id;
-            hdr.msg_len = data_in.len() as u64;
+            hdr.msg_len = data_in_len as u64;
         }
 
         // Send header
@@ -69,7 +70,9 @@ impl RPCClient for DefaultRPCClient {
         }
 
         // send request data
-        self.transport.send(data_in.len(), data_in).unwrap();
+        for data in data_in.iter() {
+            self.transport.send(data.len(), data).unwrap();
+        }
 
         // Receive response header
         {

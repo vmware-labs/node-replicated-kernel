@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{decode, encode, Abomonation};
-use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use log::{debug, warn};
@@ -26,14 +25,14 @@ pub fn rpc_close<T: RPCClient>(
 ) -> Result<(u64, u64), RPCError> {
     debug!("Close({:?}", fd);
     let req = CloseReq { fd: fd };
-    let mut req_data = Vec::new();
+    let mut req_data = [0u8; core::mem::size_of::<CloseReq>()];
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
-    unsafe { encode(&req, &mut req_data) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
     rpc_client
         .call(
             pid,
             FileIO::Close as RPCType,
-            &req_data,
+            &[&req_data],
             &mut [&mut res_data],
         )
         .unwrap();

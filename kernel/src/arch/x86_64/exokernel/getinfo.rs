@@ -1,13 +1,9 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode, Abomonation};
-use alloc::string::String;
-use alloc::vec::Vec;
-use core2::io::Result as IOResult;
-use core2::io::Write;
+use abomonation::decode;
 use kpi::io::FileInfo;
-use log::{debug, warn};
+use log::debug;
 
 use rpc::rpc::*;
 use rpc::rpc_api::RPCClient;
@@ -15,27 +11,18 @@ use rpc::rpc_api::RPCClient;
 use crate::arch::exokernel::fio::*;
 use crate::cnrfs;
 
-#[derive(Debug)]
-pub struct GetInfoReq {
-    pub name: String,
-}
-unsafe_abomonate!(GetInfoReq: name);
-
 pub fn rpc_getinfo<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
-    name: String,
+    name: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     debug!("GetInfo({:?})", name);
-    let req = GetInfoReq { name: name };
-    let mut req_data = Vec::new();
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
-    unsafe { encode(&req, &mut req_data) }.unwrap();
     rpc_client
         .call(
             pid,
             FileIO::GetInfo as RPCType,
-            &req_data,
+            &[&name],
             &mut [&mut res_data],
         )
         .unwrap();
@@ -59,29 +46,20 @@ pub fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPC
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, _)) = unsafe { decode::<GetInfoReq>(payload) } {
-        debug!("GetInfo(name={:?}), local_pid={:?}", req.name, local_pid);
+    let fileinfo: FileInfo = Default::default();
+    let mut ret = cnrfs::MlnrKernelNode::file_info(
+        local_pid,
+        (&payload).as_ptr() as u64,
+        &fileinfo as *const FileInfo as u64,
+    );
 
-        let fileinfo: FileInfo = Default::default();
-        let mut name = req.name.clone();
-        // TODO: FIX THIS
-        name.push('\0');
-
-        let mut ret = cnrfs::MlnrKernelNode::file_info(
-            local_pid,
-            name.as_ptr() as u64,
-            &fileinfo as *const FileInfo as u64,
-        );
-        if ret.is_ok() {
-            ret = Ok((fileinfo.ftype, fileinfo.fsize));
-        }
-        debug!("GetInfo() returned ret={:?} fileinfo={:?}", ret, fileinfo);
-        let res = FIORes {
-            ret: convert_return(ret),
-        };
-        construct_ret(hdr, payload, res)
-    } else {
-        warn!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
+    if ret.is_ok() {
+        ret = Ok((fileinfo.ftype, fileinfo.fsize));
     }
+
+    debug!("GetInfo() returned ret={:?} fileinfo={:?}", ret, fileinfo);
+    let res = FIORes {
+        ret: convert_return(ret),
+    };
+    construct_ret(hdr, payload, res)
 }

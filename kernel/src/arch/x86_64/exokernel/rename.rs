@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{decode, encode, Abomonation};
-use alloc::string::String;
-use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use log::{debug, warn};
@@ -16,30 +14,28 @@ use crate::cnrfs;
 
 #[derive(Debug)]
 pub struct RenameReq {
-    pub oldname: String,
-    pub newname: String,
+    pub oldname_len: u64,
 }
-unsafe_abomonate!(RenameReq: oldname, newname);
+unsafe_abomonate!(RenameReq: oldname_len);
 
 pub fn rpc_rename<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
-    oldname: String,
-    newname: String,
+    oldname: &[u8],
+    newname: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     debug!("Rename({:?}, {:?})", oldname, newname);
     let req = RenameReq {
-        oldname: oldname,
-        newname: newname,
+        oldname_len: oldname.len() as u64,
     };
-    let mut req_data = Vec::new();
+    let mut req_data = [0u8; core::mem::size_of::<RenameReq>()];
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
-    unsafe { encode(&req, &mut req_data) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
     rpc_client
         .call(
             pid,
             FileIO::FileRename as RPCType,
-            &req_data,
+            &[&req_data, &oldname, &newname],
             &mut [&mut res_data],
         )
         .unwrap();
@@ -63,27 +59,20 @@ pub fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCE
     }
     let local_pid = local_pid.unwrap();
 
-    if let Some((req, _)) = unsafe { decode::<RenameReq>(payload) } {
-        debug!(
-            "FileRename(oldname={:?}, newname={:?}), local_pid={:?}",
-            req.oldname, req.newname, local_pid
-        );
+    let oldname_len = match unsafe { decode::<RenameReq>(payload) } {
+        Some((req, _)) => req.oldname_len as usize,
+        None => {
+            warn!("Invalid payload for request: {:?}", hdr);
+            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        }
+    };
 
-        // TODO: fix this
-        let mut oldname = req.oldname.clone();
-        oldname.push('\0');
-        let mut newname = req.newname.clone();
-        newname.push('\0');
-        let res = FIORes {
-            ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
-                local_pid,
-                oldname.as_ptr() as u64,
-                newname.as_ptr() as u64,
-            )),
-        };
-        construct_ret(hdr, payload, res)
-    } else {
-        warn!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
-    }
+    let res = FIORes {
+        ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
+            local_pid,
+            payload[..oldname_len - 1].as_ptr() as u64,
+            payload[oldname_len..].as_ptr() as u64,
+        )),
+    };
+    construct_ret(hdr, payload, res)
 }

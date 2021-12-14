@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{decode, encode, Abomonation};
-use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::FileOperation;
@@ -26,7 +25,7 @@ pub fn rpc_write<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
     fd: u64,
-    data: Vec<u8>,
+    data: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     rpc_writeat(rpc_client, pid, fd, -1, data)
 }
@@ -36,7 +35,7 @@ pub fn rpc_writeat<T: RPCClient>(
     pid: usize,
     fd: u64,
     offset: i64,
-    data: Vec<u8>,
+    data: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     debug!("Write({:?}, {:?})", fd, offset);
     let req = RWReq {
@@ -44,17 +43,16 @@ pub fn rpc_writeat<T: RPCClient>(
         len: data.len() as u64,
         offset: offset,
     };
-    let mut req_data = Vec::new();
+    let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
-    unsafe { encode(&req, &mut req_data) }.unwrap();
-    req_data.extend(data);
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     if offset == -1 {
         rpc_client
             .call(
                 pid,
                 FileIO::Write as RPCType,
-                &req_data,
+                &[&req_data, &data],
                 &mut [&mut res_data],
             )
             .unwrap();
@@ -63,7 +61,7 @@ pub fn rpc_writeat<T: RPCClient>(
             .call(
                 pid,
                 FileIO::WriteAt as RPCType,
-                &req_data,
+                &[&req_data, &data],
                 &mut [&mut res_data],
             )
             .unwrap();
@@ -103,15 +101,15 @@ pub fn rpc_readat<T: RPCClient>(
         len: len,
         offset: offset,
     };
-    let mut req_data = Vec::new();
-    unsafe { encode(&req, &mut req_data) }.unwrap();
+    let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
     if offset == -1 {
         rpc_client
             .call(
                 pid,
                 FileIO::Read as RPCType,
-                &req_data,
+                &[&req_data],
                 &mut [&mut res_data, buff_ptr],
             )
             .unwrap();
@@ -120,7 +118,7 @@ pub fn rpc_readat<T: RPCClient>(
             .call(
                 pid,
                 FileIO::ReadAt as RPCType,
-                &req_data,
+                &[&req_data],
                 &mut [&mut res_data, buff_ptr],
             )
             .unwrap();

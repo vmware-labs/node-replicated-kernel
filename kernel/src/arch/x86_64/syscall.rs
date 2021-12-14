@@ -7,6 +7,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto;
+use cstr_core::CStr;
 
 use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use klogger::{sprint, sprintln};
@@ -34,6 +35,9 @@ use super::process::{Ring3Process, UserValue};
 
 #[cfg(feature = "exokernel")]
 use crate::arch::exokernel::*;
+
+#[cfg(feature = "exokernel")]
+use crate::arch::process::UserPtr;
 
 extern "C" {
     #[no_mangle]
@@ -392,9 +396,18 @@ fn handle_fileio(
 
             #[cfg(feature = "exokernel")]
             {
-                let filename = userptr_to_str(pathname)?;
+                let mut pathname_user_ptr = VAddr::from(pathname);
+                let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
+                let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
+
                 let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_open(client.as_mut().unwrap(), pid, filename, flags, modes) {
+                return match rpc_open(
+                    client.as_mut().unwrap(),
+                    pid,
+                    pathname_cstr.to_bytes_with_nul(),
+                    flags,
+                    modes,
+                ) {
                     Ok(a) => Ok(a),
                     Err(err) => Err(err.into()),
                 };
@@ -426,7 +439,7 @@ fn handle_fileio(
                     // write operation
                     let kernslice = crate::process::KernSlice::new(buffer, len as usize);
                     let buff_ptr = kernslice.buffer.clone();
-                    return match rpc_write(client.as_mut().unwrap(), pid, fd, buff_ptr.to_vec()) {
+                    return match rpc_write(client.as_mut().unwrap(), pid, fd, &buff_ptr) {
                         Ok(a) => Ok(a),
                         Err(err) => Err(err.into()),
                     };
@@ -467,13 +480,7 @@ fn handle_fileio(
                     // write_at operation
                     let kernslice = crate::process::KernSlice::new(buffer, len as usize);
                     let buff_ptr = kernslice.buffer.clone();
-                    return match rpc_writeat(
-                        client.as_mut().unwrap(),
-                        pid,
-                        fd,
-                        offset,
-                        buff_ptr.to_vec(),
-                    ) {
+                    return match rpc_writeat(client.as_mut().unwrap(), pid, fd, offset, &buff_ptr) {
                         Ok(a) => Ok(a),
                         Err(err) => Err(err.into()),
                     };
@@ -512,9 +519,16 @@ fn handle_fileio(
                 use crate::arch::process::UserPtr;
                 use kpi::io::FileInfo;
 
-                let filename = userptr_to_str(name)?;
+                let mut filename_user_ptr = VAddr::from(name);
+                let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
+                let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
+
                 let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_getinfo(client.as_mut().unwrap(), pid, filename) {
+                return match rpc_getinfo(
+                    client.as_mut().unwrap(),
+                    pid,
+                    filename_cstr.to_bytes_with_nul(),
+                ) {
                     Ok((ftype, fsize)) => {
                         let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
                         unsafe {
@@ -538,9 +552,16 @@ fn handle_fileio(
 
             #[cfg(feature = "exokernel")]
             {
-                let filename = userptr_to_str(name)?;
+                let mut filename_user_ptr = VAddr::from(name);
+                let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
+                let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
+
                 let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_delete(client.as_mut().unwrap(), pid, filename) {
+                return match rpc_delete(
+                    client.as_mut().unwrap(),
+                    pid,
+                    filename_cstr.to_bytes_with_nul(),
+                ) {
                     Ok(a) => Ok(a),
                     Err(err) => Err(err.into()),
                 };
@@ -583,10 +604,21 @@ fn handle_fileio(
 
             #[cfg(feature = "exokernel")]
             {
-                let oldname = userptr_to_str(oldname)?;
-                let newname = userptr_to_str(newname)?;
+                let mut old_user_ptr = VAddr::from(oldname);
+                let old_str_ptr = UserPtr::new(&mut old_user_ptr);
+                let old_cstr = unsafe { CStr::from_ptr(old_str_ptr.as_ptr()) };
+
+                let mut new_user_ptr = VAddr::from(newname);
+                let new_str_ptr = UserPtr::new(&mut new_user_ptr);
+                let new_cstr = unsafe { CStr::from_ptr(new_str_ptr.as_ptr()) };
+
                 let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_rename(client.as_mut().unwrap(), pid, oldname, newname) {
+                return match rpc_rename(
+                    client.as_mut().unwrap(),
+                    pid,
+                    old_cstr.to_bytes_with_nul(),
+                    new_cstr.to_bytes_with_nul(),
+                ) {
                     Ok(a) => Ok(a),
                     Err(err) => Err(err.into()),
                 };
@@ -604,10 +636,17 @@ fn handle_fileio(
 
             #[cfg(feature = "exokernel")]
             {
-                // TODO
-                let pathname = userptr_to_str(pathname)?;
+                let mut pathname_user_ptr = VAddr::from(pathname);
+                let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
+                let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
+
                 let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_mkdir(client.as_mut().unwrap(), pid, pathname, modes) {
+                return match rpc_mkdir(
+                    client.as_mut().unwrap(),
+                    pid,
+                    pathname_cstr.to_bytes_with_nul(),
+                    modes,
+                ) {
                     Ok(a) => Ok(a),
                     Err(err) => Err(err.into()),
                 };

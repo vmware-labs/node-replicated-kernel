@@ -69,8 +69,8 @@ impl<'t, 'a> DefaultRPCServer<'a> {
         // Send response data
         {
             let msg_len = self.hdr.borrow().msg_len as usize;
-            let mut buff = self.buff.borrow_mut();
-            self.transport.send(msg_len, &mut buff[0..msg_len])
+            let buff = self.buff.borrow_mut();
+            self.transport.send(msg_len, &buff[0..msg_len])
         }
     }
 }

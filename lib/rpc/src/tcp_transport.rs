@@ -67,11 +67,11 @@ impl TCPTransport<'_> {
 
 impl RPCTransport for TCPTransport<'_> {
     fn max_send(&self) -> usize {
-        return RX_BUF_LEN;
+        RX_BUF_LEN
     }
 
     fn max_recv(&self) -> usize {
-        return TX_BUF_LEN;
+        TX_BUF_LEN
     }
 
     /// send data to a remote node

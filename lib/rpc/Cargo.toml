@@ -7,11 +7,16 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-vmxnet3 = { path = "../vmxnet3" }
-core2 = { version = "0.3", default-features = false, features = [ "alloc" ] }
 abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false }
-lazy_static = "1.4.0"
-log = "0.4"
-smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp" ] }
-spin = "0.5.2"
 hashbrown = { version = "0.11", features = [ "nightly" ] }
+log = "0.4"
+smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp" ], optional = true }
+vmxnet3 = { path = "../vmxnet3", optional = true }
+
+[features]
+"default" = ["smoltcp_transport"]
+
+"smoltcp_transport" = ["smoltcp", "vmxnet3"]
+"mpsc_transport" = ["std"]
+
+"std" = []

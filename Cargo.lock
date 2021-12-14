@@ -2047,12 +2047,9 @@ name = "rpc"
 version = "0.1.0"
 dependencies = [
  "abomonation",
- "core2",
  "hashbrown 0.11.2",
- "lazy_static",
  "log",
  "smoltcp",
- "spin 0.5.2",
  "vmxnet3",
 ]
 

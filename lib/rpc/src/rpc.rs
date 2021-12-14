@@ -3,8 +3,6 @@
 
 use abomonation::Abomonation;
 use core::convert::TryInto;
-use core2::io::Result as IOResult;
-use core2::io::Write;
 
 /// Node ID for servers/clients
 pub type NodeId = u64;
@@ -53,8 +51,6 @@ pub struct RPCHeader {
     pub msg_type: RPCType,
     pub msg_len: u64,
 }
-unsafe_abomonate!(RPCHeader: client_id, pid, req_id, msg_type, msg_len);
-
 pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
 
 impl Default for RPCHeader {

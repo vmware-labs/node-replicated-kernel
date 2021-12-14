@@ -4,7 +4,7 @@
 use abomonation::{decode, encode, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use log::{debug, warn};
+use log::{debug, error, warn};
 
 use rpc::rpc::*;
 use rpc::rpc_api::RPCClient;
@@ -44,9 +44,10 @@ pub fn rpc_rename<T: RPCClient>(
             return Err(RPCError::ExtraData);
         }
         debug!("Rename() {:?}", res);
-        return res.ret;
+        res.ret
     } else {
-        return Err(RPCError::MalformedResponse);
+        error!("Rename(): Malformed response");
+        Err(RPCError::MalformedResponse)
     }
 }
 
@@ -70,8 +71,10 @@ pub fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCE
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
             local_pid,
-            payload[..oldname_len - 1].as_ptr() as u64,
-            payload[oldname_len..].as_ptr() as u64,
+            payload[core::mem::size_of::<RenameReq>()
+                ..(core::mem::size_of::<RenameReq>() + oldname_len)]
+                .as_ptr() as u64,
+            payload[(core::mem::size_of::<RenameReq>() + oldname_len)..].as_ptr() as u64,
         )),
     };
     construct_ret(hdr, payload, res)

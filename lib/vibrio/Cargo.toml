@@ -16,7 +16,7 @@ kpi = { path = "../kpi" }
 lineup = { path = "../lineup" }
 bitflags = "1.2"
 log = "0.4"
-x86 = "0.43"
+x86 = "0.44"
 slabmalloc = "0.10"
 rawtime = "0.0.4"
 rumpkernel = { version = "0.0.4", optional = true }

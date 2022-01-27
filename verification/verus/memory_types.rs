@@ -1,12 +1,6 @@
 use builtin::*;
 
-pub enum Result<T> {
-    Ok(T),
-    Err,
-}
+// TODO use the tuple wrapper types once they are supported
+pub struct MemRegion { pub base: nat, pub size: nat }
 
-pub struct PAddr(usize);
-pub struct VAddr(usize);
-pub struct Frame { base: PAddr, size: usize }
-pub struct TlbFlushHandle { base: PAddr, size: usize }
-
+#[spec] pub const BASE_PAGE_SIZE: nat = 4096;

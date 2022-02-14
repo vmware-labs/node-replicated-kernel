@@ -137,11 +137,13 @@ pub enum NodeEntry {
     Page(MemRegion),
 }
 
+// Root [8, 16, 24]
+
 #[spec]
 pub struct PrefixTreeNode {
-    pub map: Map<nat /* prefix */, Box<NodeEntry>>,
-    pub prefix_size: nat,
-    pub next_sizes: Seq<nat>,
+    pub map: Map<nat /* addr */, Box<NodeEntry>>,
+    pub page_size: nat,       // 1 GiB, 2 MiB, 4 KiB
+    pub next_sizes: Seq<nat>, // NOTE: track whether this level can map a page
 }
 
 fndecl!(pub fn pow2(v: nat) -> nat);
@@ -153,19 +155,19 @@ impl PrefixTreeNode {
 
         true
         && self.map.dom().finite()
-        // && exists(|i: nat| self.prefix_size == 1 << i)
-        && forall(|b: nat| self.map.dom().contains(b) >>= b % self.prefix_size == 0)
+        // && exists(|i: nat| self.page_size == 1 << i)
+        && forall(|b: nat| self.map.dom().contains(b) >>= b % self.page_size == 0)
         && if self.next_sizes.len() == 0 {
             forall(|b: nat| self.map.dom().contains(b) >>= self.map.index(b).is_Page())
         } else {
-            self.prefix_size < self.next_sizes.index(0)
+            self.page_size > self.next_sizes.index(0)
         }
         && forall(|b: nat| (self.map.dom().contains(b) && self.map.index(b).is_Directory()) >>= {
             let directory = self.map.index(b).get_Directory_0();
             true
             && equal(directory.next_sizes, self.next_sizes.subrange(1, self.next_sizes.len()))
-            && directory.prefix_size == self.next_sizes.index(0)
-            && self.map.index(b).get_Directory_0().inv()
+            && directory.page_size == self.next_sizes.index(0)
+            && directory.inv()
         })
     }
 
@@ -174,31 +176,28 @@ impl PrefixTreeNode {
         arbitrary()
     }
 
-    // NOTE: pages are 1 GiB, 2 MiB, 4 KiB
-    // NOTE: on ARM consecutive entries in vspace and physical space, one TLB entry
-    // NOTE: the memory alloc may fail
     #[spec] pub fn map_frame(self, base: nat, frame: MemRegion) -> PrefixTreeNode {
         decreases(self.next_sizes.len());
 
-        if self.inv() && self.view().accepted_mapping(base, frame) && frame.size <= self.prefix_size {
-            if frame.size == self.prefix_size {
+        if self.inv() && self.view().accepted_mapping(base, frame) && frame.size <= self.page_size {
+            if frame.size == self.page_size {
                 PrefixTreeNode {
                     map: self.map.insert(base, box NodeEntry::Page(frame)),
                     ..self
                 }
             } else {
-                let directory = if self.map.dom().contains(base) {
+                let directory: PrefixTreeNode = if self.map.dom().contains(base) {
                     self.map.index(base).get_Directory_0()
                 } else {
                     PrefixTreeNode {
                         map: map![],
-                        prefix_size: self.next_sizes.index(0),
+                        page_size: self.next_sizes.index(0),
                         next_sizes: self.next_sizes.subrange(1, self.next_sizes.len()),
                     }
                 };
                 let updated_directory = directory.map_frame(base, frame);
                 PrefixTreeNode {
-                    map: self.map.insert(base, box NodeEntry::Directory(updated_directory)),
+                    map: self.map.insert(base % self.page_size, box NodeEntry::Directory(updated_directory)),
                     ..self
                 }
             }
@@ -206,10 +205,74 @@ impl PrefixTreeNode {
             arbitrary()
         }
     }
+
+    // NOTE: maybe return whether the frame was unmapped
+    #[spec] pub fn unmap_frame(self, base: nat) -> (nat /* size */, PrefixTreeNode) {
+        decreases(self.next_sizes.len());
+
+        if base % self.page_size == 0 {
+            if self.map.dom().contains(base) {
+                (
+                    self.page_size,
+                    PrefixTreeNode {
+                        map: self.map.remove(base),
+                        ..self
+                    }
+                )
+            } else {
+                arbitrary()
+            }
+        } else {
+            let directory_addr = base % self.page_size;
+            if self.map.dom().contains(directory_addr) {
+                let (page_size, directory) = self.map.index(directory_addr).get_Directory_0().unmap_frame(base);
+                (
+                    page_size,
+                    if directory.map.dom().len() > 0 {
+                        PrefixTreeNode {
+                            map: self.map.insert(directory_addr, box NodeEntry::Directory(directory)),
+                            ..self
+                        }
+                    } else {
+                        PrefixTreeNode {
+                            map: self.map.remove(directory_addr),
+                            ..self
+                        }
+                    }
+                )
+            } else {
+                arbitrary()
+            }
+        }
+    }
 }
+
+// #[exec] fn unmap_frame(&mut self, vaddr: usize) {
+//     requires(self.view().map.dom().contains(vaddr));
+//     ensures(self.view().map == old(self).view().map.remove(vaddr));
+// }
+
+// #[exec] fn unmap_frame(&mut self, vaddr: usize) -> (Option<()>, Frame) {
+//     ensures(|res: Option<()>| [
+//         if self.view().map.dom().contains(vaddr) {
+//             true
+//             && res == Some(())
+//             && self.view().map == old(self).view().map.remove(vaddr)
+//         } else {
+//             true
+//             && res == None
+//             && equal(self, old(self))
+//         }
+//     ])
+// }
 
 // #[exec] fn actually_resolve(self, vaddr: usize) -> ActualMemRegion {
 //     requires(self.view().map.dom().contains(vaddr));
 // }
 //
 
+// NOTE: pages are 1 GiB, 2 MiB, 4 KiB
+// NOTE: on ARM consecutive entries in vspace and physical space, one TLB entry
+// NOTE: the memory alloc may fail
+// NOTE: use linearity to prevent a frame being mapped in the kernel and user-space at the same
+// time

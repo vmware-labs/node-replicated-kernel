@@ -9,8 +9,10 @@ edition = "2018"
 [dependencies]
 abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false }
 hashbrown = { version = "0.11", features = [ "nightly" ] }
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
 log = "0.4"
-smoltcp = { version = "0.7.1", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp" ], optional = true }
+smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp", "medium-ethernet" ], optional = true }
+rawtime = "0.0.4"
 vmxnet3 = { path = "../vmxnet3", optional = true }
 
 [features]

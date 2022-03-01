@@ -1,4 +1,5 @@
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use vmxnet3::pci::BarAccess;
 use vmxnet3::smoltcp::DevQueuePhy;
@@ -8,10 +9,10 @@ use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
 use kpi::KERNEL_BASE;
 
-use smoltcp::iface::{EthernetInterface, EthernetInterfaceBuilder, NeighborCache, Routes};
+use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 
-pub fn init_network<'a>() -> EthernetInterface<'a, DevQueuePhy> {
+pub fn init_network<'a>() -> Interface<'a, DevQueuePhy> {
     const BUS: u32 = 0x0;
     const DEV: u32 = 0x10;
     const FUN: u32 = 0x0;
@@ -59,9 +60,12 @@ pub fn init_network<'a>() -> EthernetInterface<'a, DevQueuePhy> {
         .add_default_ipv4_route(Ipv4Address::new(172, 31, 0, 20))
         .unwrap();
 
-    let iface = EthernetInterfaceBuilder::new(device)
+    // Create SocketSet w/ space for 1 socket
+    let mut sock_vec = Vec::new();
+    sock_vec.try_reserve_exact(1).unwrap();
+    let iface = InterfaceBuilder::new(device, sock_vec)
         .ip_addrs(ip_addrs)
-        .ethernet_addr(ethernet_addr)
+        .hardware_addr(ethernet_addr.into())
         .routes(routes)
         .neighbor_cache(neighbor_cache)
         .finalize();

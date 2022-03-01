@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use log::{debug, warn};
 
-use smoltcp::iface::EthernetInterface;
-use smoltcp::socket::{SocketHandle, SocketSet, TcpSocket, TcpSocketBuffer};
+use smoltcp::iface::{Interface, SocketHandle};
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::IpAddress;
 
@@ -19,24 +19,21 @@ const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
 
 pub struct TCPTransport<'a> {
-    iface: RefCell<EthernetInterface<'a, DevQueuePhy>>,
-    sockets: RefCell<SocketSet<'a>>,
-    server_handle: Option<SocketHandle>,
+    iface: RefCell<Interface<'a, DevQueuePhy>>,
+    server_handle: SocketHandle,
     server_ip: Option<IpAddress>,
     server_port: u16,
     client_port: u16,
 }
 
 impl TCPTransport<'_> {
-    pub fn new(
+    pub fn new<'a>(
         server_ip: Option<IpAddress>,
         server_port: u16,
-        iface: EthernetInterface<'_, DevQueuePhy>,
-    ) -> TCPTransport<'_> {
-        // Create SocketSet w/ space for 1 socket
-        let mut sock_vec = Vec::new();
-        sock_vec.try_reserve_exact(1).unwrap();
-        let mut sockets = SocketSet::new(sock_vec);
+        iface: Interface<'a, DevQueuePhy>,
+    ) -> TCPTransport<'a> {
+        lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
+        lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
 
         // Create RX and TX buffers for the socket
         let mut sock_vec = Vec::new();
@@ -49,14 +46,17 @@ impl TCPTransport<'_> {
 
         // Create the TCP socket
         let socket_tx_buffer = TcpSocketBuffer::new(sock_vec);
-        let tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
+        let mut tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
+        tcp_socket.set_ack_delay(None);
+
+        // Create wrapper for iface
+        let iface_ref = RefCell::new(iface);
 
         // Add to sockets and remember socket handle
-        let server_handle = Some(sockets.add(tcp_socket));
+        let server_handle = iface_ref.borrow_mut().add_socket(tcp_socket);
 
         TCPTransport {
-            iface: RefCell::new(iface),
-            sockets: RefCell::new(sockets),
+            iface: iface_ref,
             server_handle,
             server_ip,
             server_port,
@@ -78,32 +78,33 @@ impl Transport for TCPTransport<'_> {
     fn send(&self, expected_data: usize, data_buff: &[u8]) -> Result<(), RPCError> {
         let mut data_sent = 0;
         assert!(expected_data <= data_buff.len());
+        if expected_data == 0 {
+            return Ok(());
+        }
+        debug!("Attempting to send {:?} bytes", expected_data);
 
-        let mut sockets = self.sockets.borrow_mut();
         loop {
-            match self
-                .iface
-                .borrow_mut()
-                .poll(&mut sockets, Instant::from_millis(0))
             {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!("poll error: {}", e);
+                let mut iface = self.iface.borrow_mut();
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
+                    }
                 }
             }
 
             if data_sent == expected_data {
                 return Ok(());
             } else {
-                let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
-                if socket.can_send() && socket.send_capacity() > 0 && data_sent < expected_data {
-                    let end_index =
-                        data_sent + core::cmp::min(expected_data, socket.send_capacity());
-                    if let Ok(bytes_sent) = socket.send_slice(&data_buff[data_sent..end_index]) {
-                        debug!(
-                            "sent: [{:?}-{:?}] {:?}/{:?} bytes",
-                            data_sent, end_index, end_index, expected_data
-                        );
+                let mut iface = self.iface.borrow_mut();
+                let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+                if socket.can_send() && data_sent < expected_data {
+                    if let Ok(bytes_sent) = socket.send_slice(&data_buff[data_sent..expected_data])
+                    {
+                        debug!("sent [{:?}-{:?}]", data_sent, data_sent + bytes_sent,);
                         data_sent += bytes_sent;
                     } else {
                         debug!("send_slice failed... trying again?");
@@ -115,37 +116,44 @@ impl Transport for TCPTransport<'_> {
 
     /// receive data from a remote node
     fn recv(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError> {
-        let mut total_data_received = 0;
+        let mut data_received = 0;
 
         // Check write size - make sure it fits in buffer
         assert!(expected_data <= data_buff.len());
 
-        let mut sockets = self.sockets.borrow_mut();
+        if expected_data == 0 {
+            return Ok(());
+        }
+        debug!("Attempting to receive {:?} bytes", expected_data);
+
         loop {
-            match self
-                .iface
-                .borrow_mut()
-                .poll(&mut sockets, Instant::from_millis(0))
             {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!("poll error: {}", e);
+                let mut iface = self.iface.borrow_mut();
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
+                    }
                 }
             }
 
-            if total_data_received == expected_data {
+            if data_received == expected_data {
                 return Ok(());
             } else {
-                let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
-                if socket.can_recv() {
+                let mut iface = self.iface.borrow_mut();
+                let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+                if socket.can_recv() && data_received < expected_data {
                     if let Ok(bytes_received) =
-                        socket.recv_slice(&mut data_buff[total_data_received..expected_data])
+                        socket.recv_slice(&mut data_buff[data_received..expected_data])
                     {
-                        total_data_received += bytes_received;
                         debug!(
-                            "rcv got {:?}/{:?} bytes",
-                            total_data_received, expected_data
+                            "recv [{:?}-{:?}]",
+                            data_received,
+                            data_received + bytes_received
                         );
+                        data_received += bytes_received;
                     } else {
                         warn!("recv_slice failed... trying again?");
                     }
@@ -158,10 +166,11 @@ impl Transport for TCPTransport<'_> {
     /// TODO: add timeout?? with error returned if timeout occurs?
     fn client_connect(&mut self) -> Result<(), RPCError> {
         {
-            let mut sockets = self.sockets.borrow_mut();
-            let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
+            let mut iface = self.iface.borrow_mut();
+            let (socket, cx) = iface.get_socket_and_context::<TcpSocket>(self.server_handle);
             socket
                 .connect(
+                    cx,
                     (self.server_ip.unwrap(), self.server_port),
                     self.client_port,
                 )
@@ -175,19 +184,17 @@ impl Transport for TCPTransport<'_> {
 
         // Connect to server
         {
-            let mut sockets = self.sockets.borrow_mut();
             loop {
-                match self
-                    .iface
-                    .borrow_mut()
-                    .poll(&mut sockets, Instant::from_millis(0))
-                {
+                match self.iface.borrow_mut().poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
                     Ok(_) => {}
                     Err(e) => {
                         warn!("poll error: {}", e);
                     }
                 }
-                let socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
+                let mut iface = self.iface.borrow_mut();
+                let socket = iface.get_socket::<TcpSocket>(self.server_handle);
                 // Waiting for send/recv forces the TCP handshake to fully complete
                 if socket.is_active() && (socket.may_send() || socket.may_recv()) {
                     debug!("Connected to server, ready to send/recv data");
@@ -201,19 +208,16 @@ impl Transport for TCPTransport<'_> {
     fn server_accept(&self) -> Result<(), RPCError> {
         // Add to sockets
         {
-            let mut sockets = self.sockets.borrow_mut();
-            let mut socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
+            let mut iface = self.iface.borrow_mut();
+            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
             socket.listen(self.server_port).unwrap();
             debug!("Listening at port {}", self.server_port);
         }
 
-        let mut sockets = self.sockets.borrow_mut();
         loop {
-            match self
-                .iface
-                .borrow_mut()
-                .poll(&mut sockets, Instant::from_millis(0))
-            {
+            match self.iface.borrow_mut().poll(Instant::from_millis(
+                rawtime::duration_since_boot().as_millis() as i64,
+            )) {
                 Ok(_) => {}
                 Err(e) => {
                     warn!("poll error: {}", e);
@@ -221,7 +225,8 @@ impl Transport for TCPTransport<'_> {
             }
 
             // This is equivalent (more or less) to accept
-            let socket = sockets.get::<TcpSocket>(self.server_handle.unwrap());
+            let mut iface = self.iface.borrow_mut();
+            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
             if socket.is_active() && (socket.may_send() || socket.may_recv()) {
                 debug!("Connected to client!");
                 break;

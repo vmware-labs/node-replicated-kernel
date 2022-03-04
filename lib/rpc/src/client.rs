@@ -67,41 +67,21 @@ impl RPCClient for Client {
             hdr.msg_len = data_in_len as u64;
         }
 
-        // Send header
+        // Send request header + data
         {
             let hdr = self.hdr.borrow();
-            let hdr_slice = unsafe { hdr.as_bytes() };
-            self.transport.send(HDR_LEN, &hdr_slice[..]).unwrap();
+            self.transport.send_msg(&hdr, data_in).unwrap();
         }
 
-        // send request data
-        for data in data_in.iter() {
-            self.transport.send(data.len(), data).unwrap();
-        }
-
-        // Receive response header
+        // Receive response header + data
         {
             let mut hdr = self.hdr.borrow_mut();
-            let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            self.transport.recv(HDR_LEN, &mut hdr_slice[..]).unwrap();
+            self.transport.recv_msg(&mut hdr, data_out).unwrap();
         }
 
-        // Read the rest of the data
+        // Make sure all data was received
         let hdr = self.hdr.borrow();
         assert!(hdr.msg_len as usize <= data_out_len);
-        let mut return_bytes = hdr.msg_len as usize;
-        for data in data_out.iter_mut() {
-            // Read entirety of expected data
-            if data.len() <= return_bytes {
-                self.transport.recv(data.len(), data).unwrap();
-                return_bytes -= data.len();
-
-            // Read partial of expected data; no more data to read so break
-            } else {
-                self.transport.recv(return_bytes, data).unwrap();
-                break;
-            }
-        }
 
         // Check request & client IDs, and also length of received data
         if hdr.client_id != self.client_id || hdr.req_id != self.req_id {

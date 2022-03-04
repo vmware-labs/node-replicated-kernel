@@ -47,35 +47,19 @@ impl<'t, 'a> Server<'a> {
         // Receive request header
         {
             let mut hdr = self.hdr.borrow_mut();
-            let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            self.transport.recv(HDR_LEN, &mut hdr_slice[..]).unwrap();
-        }
-
-        // Receive request payload
-        {
-            let msg_len = self.hdr.borrow().msg_len as usize;
             let mut buff = self.buff.borrow_mut();
-            self.transport.recv(msg_len, &mut buff[0..msg_len]).unwrap();
+            self.transport.recv_msg(&mut hdr, &mut [&mut buff]).unwrap();
         }
-
         Ok(self.hdr.borrow().msg_type)
     }
 
     /// replies an RPC call with results
     fn reply(&self) -> Result<(), RPCError> {
-        // Send response header
-        {
-            let hdr = self.hdr.borrow();
-            let hdr_slice = unsafe { hdr.as_bytes() };
-            self.transport.send(HDR_LEN, &hdr_slice[..])?;
-        }
-
-        // Send response data
-        {
-            let msg_len = self.hdr.borrow().msg_len as usize;
-            let buff = self.buff.borrow_mut();
-            self.transport.send(msg_len, &buff[0..msg_len])
-        }
+        // Send response header + data
+        let hdr = self.hdr.borrow();
+        let msg_len = hdr.msg_len as usize;
+        let buff = self.buff.borrow_mut();
+        self.transport.send_msg(&hdr, &[&buff[0..msg_len]])
     }
 }
 

@@ -75,13 +75,17 @@ impl Transport for TCPTransport<'_> {
     }
 
     /// send data to a remote node
-    fn send(&self, expected_data: usize, data_buff: &[u8]) -> Result<(), RPCError> {
+    fn send(&self, data_out: &[&[u8]]) -> Result<(), RPCError> {
         let mut data_sent = 0;
-        assert!(expected_data <= data_buff.len());
-        if expected_data == 0 {
+        let mut list_index = 0;
+        let mut data_index = 0;
+
+        if data_out.len() == 0 {
             return Ok(());
         }
-        debug!("Attempting to send {:?} bytes", expected_data);
+        for d in data_out.iter() {
+            debug!("Attempting to send {:?} bytes", d.len());
+        }
 
         loop {
             {
@@ -96,18 +100,129 @@ impl Transport for TCPTransport<'_> {
                 }
             }
 
-            if data_sent == expected_data {
+            if list_index == data_out.len() {
+                debug!("Send complete");
                 return Ok(());
             } else {
                 let mut iface = self.iface.borrow_mut();
                 let socket = iface.get_socket::<TcpSocket>(self.server_handle);
-                if socket.can_send() && data_sent < expected_data {
-                    if let Ok(bytes_sent) = socket.send_slice(&data_buff[data_sent..expected_data])
+
+                let max_send = socket.send_capacity() - socket.send_queue();
+                let bytes_sent = 1;
+                //debug!("can_send={:?}, max_send={:?}, data_sent={:?}, list_index={:?}, list_len={:?}, bytes_sent={:?}")
+
+                // Send until socket is bad (shouldn't happen), send buffer is full, all data is sent,
+                // or no progress is being made (e.g., send_slice starts returning 0)
+                while socket.can_send()
+                    && (data_sent < max_send)
+                    && list_index < data_out.len()
+                    && bytes_sent != 0
+                {
+                    // Send until end of current data array or until send buffer is full
+                    let end_index = core::cmp::min(
+                        data_out[list_index].len(),
+                        data_index + (max_send - data_sent),
+                    );
+
+                    // Actually attempt to write to out buffer
+                    if let Ok(bytes_sent) =
+                        socket.send_slice(&data_out[list_index][data_index..end_index])
                     {
-                        debug!("sent [{:?}-{:?}]", data_sent, data_sent + bytes_sent,);
+                        debug!(
+                            "sent [{:?}][{:?}-{:?}]",
+                            list_index,
+                            data_index,
+                            data_index + bytes_sent
+                        );
                         data_sent += bytes_sent;
+                        if end_index >= data_out[list_index].len() {
+                            list_index += 1;
+                            data_index = 0;
+                        } else {
+                            data_index += bytes_sent;
+                        }
                     } else {
                         debug!("send_slice failed... trying again?");
+                    }
+                }
+                debug!("Wrote {:?} bytes to the send buffer", data_sent);
+                data_sent = 0;
+            }
+        }
+    }
+
+    /// send data to a remote node
+    fn send_msg(&self, hdr_out: &RPCHeader, data_out: &[&[u8]]) -> Result<(), RPCError> {
+        let mut list_index = 0;
+        let mut data_index = 0;
+        let mut hdr_sent = false;
+
+        let hdr_slice = unsafe { hdr_out.as_bytes() };
+
+        loop {
+            if hdr_sent && list_index == data_out.len() {
+                debug!("Send complete");
+                return Ok(());
+            } else {
+                let mut iface = self.iface.borrow_mut();
+                let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+                let bytes_sent = 1;
+
+                // Send until socket is bad (shouldn't happen), send buffer is full, all data is sent,
+                // or no progress is being made (e.g., send_slice starts returning 0)
+                while socket.can_send()
+                    && (!hdr_sent || list_index < data_out.len())
+                    && bytes_sent != 0
+                {
+                    // Actually attempt to write to out buffer
+                    if !hdr_sent {
+                        if let Ok(bytes_sent) = socket.send_slice(&hdr_slice[data_index..HDR_LEN]) {
+                            debug!("sent hdr {:?}", bytes_sent);
+                            if bytes_sent == HDR_LEN {
+                                hdr_sent = true;
+                                data_index = 0;
+                                debug!("Header sent!");
+                            } else {
+                                data_index += bytes_sent;
+                            }
+                        } else {
+                            debug!("send_slice failed... trying again?");
+                        }
+                    }
+                    if hdr_sent && data_out.len() > 0 {
+                        // Attempt to send until end of current data array
+                        let end_index = data_out[list_index].len();
+
+                        if let Ok(bytes_sent) =
+                            socket.send_slice(&data_out[list_index][data_index..end_index])
+                        {
+                            debug!(
+                                "sent [{:?}][{:?}-{:?}]",
+                                list_index,
+                                data_index,
+                                data_index + bytes_sent
+                            );
+                            data_index += bytes_sent;
+                            if data_index >= data_out[list_index].len() {
+                                list_index += 1;
+                                data_index = 0;
+                            }
+                        } else {
+                            debug!("send_slice failed... trying again?");
+                        }
+                    }
+                }
+            }
+
+            // Poll the interface
+            {
+                let mut iface = self.iface.borrow_mut();
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
                     }
                 }
             }
@@ -115,16 +230,18 @@ impl Transport for TCPTransport<'_> {
     }
 
     /// receive data from a remote node
-    fn recv(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError> {
-        let mut data_received = 0;
+    fn recv(&self, expected_data: usize, data_in: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        let mut list_index = 0;
+        let mut data_index = 0;
+        let mut total_received = 0;
+        let data_arr_len = data_in.len();
 
-        // Check write size - make sure it fits in buffer
-        assert!(expected_data <= data_buff.len());
-
-        if expected_data == 0 {
+        if data_arr_len == 0 {
             return Ok(());
         }
-        debug!("Attempting to receive {:?} bytes", expected_data);
+        for d in data_in.iter() {
+            debug!("Attempting to recv {:?} bytes", d.len());
+        }
 
         loop {
             {
@@ -139,23 +256,127 @@ impl Transport for TCPTransport<'_> {
                 }
             }
 
-            if data_received == expected_data {
-                return Ok(());
-            } else {
+            let mut iface = self.iface.borrow_mut();
+            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+            let bytes_received = 1;
+
+            while socket.can_recv()
+                && list_index < data_arr_len
+                && socket.recv_queue() > 0
+                && bytes_received > 0
+                && total_received < expected_data
+            {
+                let end_index =
+                    core::cmp::min(data_in[list_index].len(), expected_data - total_received);
+                if let Ok(bytes_received) =
+                    socket.recv_slice(&mut data_in[list_index][data_index..end_index])
+                {
+                    debug!(
+                        "recv [{:?}][{:?}-{:?}] {:?}",
+                        list_index,
+                        data_index,
+                        end_index,
+                        data_in[list_index].len()
+                    );
+                    data_index += bytes_received;
+                    total_received += bytes_received;
+                    if data_index == data_in[list_index].len() {
+                        list_index += 1;
+                        data_index = 0;
+                        debug!("Incremented list index: {:?}", list_index);
+                    }
+                    if list_index == data_arr_len || total_received == expected_data {
+                        return Ok(());
+                    }
+                } else {
+                    warn!("recv_slice failed... trying again?");
+                }
+            }
+        }
+    }
+
+    /// receive data from a remote node
+    fn recv_msg(&self, hdr_in: &mut RPCHeader, data_in: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        let mut list_index = 0;
+        let mut data_index = 0;
+        let mut total_received = 0;
+        let mut msg_len = 0;
+        let mut hdr_received = false;
+
+        let hdr_slice = unsafe { hdr_in.as_mut_bytes() };
+
+        loop {
+            {
                 let mut iface = self.iface.borrow_mut();
                 let socket = iface.get_socket::<TcpSocket>(self.server_handle);
-                if socket.can_recv() && data_received < expected_data {
-                    if let Ok(bytes_received) =
-                        socket.recv_slice(&mut data_buff[data_received..expected_data])
-                    {
-                        debug!(
-                            "recv [{:?}-{:?}]",
-                            data_received,
-                            data_received + bytes_received
-                        );
-                        data_received += bytes_received;
-                    } else {
-                        warn!("recv_slice failed... trying again?");
+                let bytes_received = 1;
+
+                while socket.can_recv()
+                    && (!hdr_received || total_received < msg_len)
+                    && bytes_received > 0
+                {
+                    if !hdr_received {
+                        let hdr_slice = unsafe { hdr_in.as_mut_bytes() };
+                        if let Ok(bytes_received) =
+                            socket.recv_slice(&mut hdr_slice[data_index..HDR_LEN])
+                        {
+                            debug!("recv hdr {:?}", bytes_received);
+                            if bytes_received == HDR_LEN {
+                                hdr_received = true;
+                                data_index = 0;
+                                debug!("Header received! msg_len = {:?}", msg_len);
+                            } else {
+                                data_index += bytes_received;
+                            }
+                        } else {
+                            warn!("recv_slice failed... trying again?");
+                        }
+
+                        if hdr_received {
+                            msg_len = hdr_in.msg_len as usize;
+                            if msg_len == 0 {
+                                return Ok(());
+                            }
+                        }
+                    }
+
+                    if hdr_received && msg_len > 0 {
+                        let end_index =
+                            core::cmp::min(data_in[list_index].len(), msg_len - total_received);
+                        if let Ok(bytes_received) =
+                            socket.recv_slice(&mut data_in[list_index][data_index..end_index])
+                        {
+                            debug!(
+                                "recv [{:?}][{:?}-{:?}] {:?}",
+                                list_index,
+                                data_index,
+                                end_index,
+                                data_in[list_index].len()
+                            );
+                            data_index += bytes_received;
+                            total_received += bytes_received;
+                            if data_index == data_in[list_index].len() {
+                                list_index += 1;
+                                data_index = 0;
+                            }
+                            if total_received == msg_len {
+                                return Ok(());
+                            }
+                        } else {
+                            warn!("recv_slice failed... trying again?");
+                        }
+                    }
+                }
+            }
+
+            {
+                let mut iface = self.iface.borrow_mut();
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
                     }
                 }
             }

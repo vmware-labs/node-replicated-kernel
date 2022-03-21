@@ -15,7 +15,7 @@ bootloader_shared = { path = "../lib/bootloader_shared" }
 
 ## External dependencies
 x86 = "0.43"
-elfloader = "0.14"
+elfloader = "0.15"
 log = { version = "0.4", default-features = false }
 arrayvec = { version = "0.7.0", default-features = false }
 uefi = { version = "0.12.0", features = ["exts"] }

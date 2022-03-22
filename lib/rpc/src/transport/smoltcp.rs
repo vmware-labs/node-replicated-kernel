@@ -303,8 +303,6 @@ impl Transport for TCPTransport<'_> {
         let mut msg_len = 0;
         let mut hdr_received = false;
 
-        let hdr_slice = unsafe { hdr_in.as_mut_bytes() };
-
         loop {
             {
                 let mut iface = self.iface.borrow_mut();

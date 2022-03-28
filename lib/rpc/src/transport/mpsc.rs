@@ -30,22 +30,27 @@ impl Transport for MPSCTransport {
     }
 
     /// send data to a remote node
-    fn send(&self, expected_data: usize, data_buff: &[u8]) -> Result<(), RPCError> {
+    fn send(&self, data_out: &[u8]) -> Result<(), RPCError> {
         self.tx
-            .send(data_buff[..expected_data].to_vec())
+            .send(data_out.to_vec())
             .map_err(|_my_err| RPCError::TransportError)
     }
 
     /// receive data from a remote node
-    fn recv(&self, expected_data: usize, data_buff: &mut [u8]) -> Result<(), RPCError> {
+    // Assume won't ever try to reveive partial messages
+    fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
         let mut data_received = 0;
 
+        if data_in.len() == 0 {
+            return Ok(());
+        }
+
         // Read multiple messages until expected_data has been read in
-        // Assume messages haven't been stuck together e.g. will always read an entire message
-        while data_received < expected_data {
-            let mut recv_buff = self.rx.recv().map_err(|_my_err| RPCError::TransportError)?;
-            data_buff[data_received..(data_received + recv_buff.len())]
-                .clone_from_slice(&mut recv_buff);
+        while data_received < data_in.len() {
+            // Receive some data
+            let recv_buff = self.rx.recv().map_err(|_my_err| RPCError::TransportError)?;
+            data_in[data_received..].clone_from_slice(&recv_buff);
+            print!("{:?} {:?}\n", recv_buff, data_in);
             data_received += recv_buff.len();
         }
 
@@ -68,7 +73,7 @@ impl Transport for MPSCTransport {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn transport_init() {
+    fn mpsc_tests() {
         use std::sync::mpsc::sync_channel;
         use std::thread;
 
@@ -85,17 +90,17 @@ mod tests {
         thread::spawn(move || {
             let mut server_data = [0u8; 1024];
             server_transport
-                .recv(send_data.len(), &mut server_data)
+                .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
-            assert_eq!(&send_data, &server_data[..send_data.len()]);
-            server_transport.send(send_data.len(), &send_data).unwrap();
+            assert_eq!(&send_data, &server_data[0..send_data.len()]);
+            server_transport.send(&send_data).unwrap();
         });
 
-        client_transport.send(send_data.len(), &send_data).unwrap();
+        client_transport.send(&send_data).unwrap();
         let mut client_data = [0u8; 1024];
         client_transport
-            .recv(send_data.len(), &mut client_data)
+            .recv(&mut client_data[0..send_data.len()])
             .unwrap();
-        assert_eq!(&send_data, &client_data[..send_data.len()]);
+        assert_eq!(&send_data, &client_data[0..send_data.len()]);
     }
 }

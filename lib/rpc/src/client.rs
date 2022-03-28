@@ -70,13 +70,48 @@ impl RPCClient for Client {
         // Send request header + data
         {
             let hdr = self.hdr.borrow();
-            self.transport.send_msg(&hdr, data_in).unwrap();
+            let hdr_slice = unsafe { hdr.as_bytes() };
+            self.transport.send(hdr_slice)?;
+            for d in data_in.iter() {
+                self.transport.send(d)?;
+            }
         }
 
         // Receive response header + data
         {
-            let mut hdr = self.hdr.borrow_mut();
-            self.transport.recv_msg(&mut hdr, data_out).unwrap();
+            // Receive the header
+            {
+                let mut hdr = self.hdr.borrow_mut();
+                let hdr_slice = unsafe { hdr.as_mut_bytes() };
+                self.transport.recv(hdr_slice)?;
+            }
+
+            // Read header to determine how much message data we're expecting
+            let total_msg_data;
+            {
+                let hdr = self.hdr.borrow();
+                total_msg_data = hdr.msg_len as usize;
+            }
+
+            // Read in all msg data
+            let mut data_received = 0;
+            let mut index = 0;
+            let mut offset = 0;
+            while index < data_out.len() && data_received < total_msg_data {
+                let end_offset = core::cmp::min(
+                    data_out[index].len(),
+                    offset + (total_msg_data - data_received),
+                );
+                self.transport
+                    .recv(&mut data_out[index][offset..end_offset])?;
+                data_received += end_offset - offset;
+                if end_offset == data_out[index].len() {
+                    index += 1;
+                    offset = 0;
+                } else {
+                    offset = end_offset;
+                }
+            }
         }
 
         // Make sure all data was received

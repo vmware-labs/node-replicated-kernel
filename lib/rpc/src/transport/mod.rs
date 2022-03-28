@@ -1,4 +1,4 @@
-#[cfg(not(any(feature = "smoltcp_transport", feature = "mpsc_transport",)))]
+#[cfg(not(any(feature = "smoltcp_transport", feature = "mpsc_transport")))]
 compile_error!(
     "You must enable at exactly one of the following features: smoltcp_transport, mpsc_transport"
 );
@@ -6,7 +6,7 @@ compile_error!(
 /* Doing pairwise checks for duplicate transports is going to get ugly as you add more transports,
  * but I'm not sure if there's a better alternative.
  */
-#[cfg(all(feature = "smoltcp_transport", feature = "mpsc_transport",))]
+#[cfg(all(feature = "smoltcp_transport", feature = "mpsc_transport"))]
 compile_error!(
     "You must enable at exactly one of the following features: smoltcp_transport, mpsc_transport"
 );

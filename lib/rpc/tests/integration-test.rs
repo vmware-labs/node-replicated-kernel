@@ -3,7 +3,7 @@ fn test_client_server() {
     use std::sync::mpsc::sync_channel;
     use std::thread;
 
-    use rpc::api::{RPCHandler, RPCServer, RPCClient, RegistrationHandler};
+    use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
     use rpc::client::Client;
     use rpc::rpc::{NodeId, RPCError, RPCHeader};
     use rpc::server::Server;
@@ -65,12 +65,16 @@ fn test_client_server() {
     let mut recv_data = [0u8; 40];
 
     // Test simple test RPC
-    client.call(0, 1, &[&send_data], &mut[&mut recv_data[..3]]).unwrap();
+    client
+        .call(0, 1, &[&send_data], &mut [&mut recv_data[..3]])
+        .unwrap();
     assert_eq!([0u8, 1u8, 2u8, 3u8], recv_data[..4]);
     print!("Sent test RPC!\n");
 
     // Test echo
-    client.call(0, 2, &[&send_data], &mut[&mut recv_data]).unwrap();
+    client
+        .call(0, 2, &[&send_data], &mut [&mut recv_data])
+        .unwrap();
     assert_eq!(send_data, recv_data);
     print!("Sent echo RPC!\n");
 }

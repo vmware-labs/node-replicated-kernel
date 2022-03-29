@@ -29,7 +29,7 @@ impl Transport for MPSCTransport {
         usize::MAX
     }
 
-    /// send data to a remote node
+    /// Send data to a remote node
     fn send(&self, data_out: &[u8]) -> Result<(), RPCError> {
         if data_out.len() == 0 {
             return Ok(());
@@ -40,8 +40,7 @@ impl Transport for MPSCTransport {
             .map_err(|_my_err| RPCError::TransportError)
     }
 
-    /// receive data from a remote node
-    // Assume won't ever try to reveive partial messages
+    /// Receive data from a remote node
     fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
         let mut data_received = 0;
 
@@ -50,6 +49,7 @@ impl Transport for MPSCTransport {
         }
 
         // Read multiple messages until expected_data has been read in
+        // Assume won't ever try to receive partial messages
         while data_received < data_in.len() {
             // Receive some data
             let recv_buff = self.rx.recv().map_err(|_my_err| RPCError::TransportError)?;
@@ -82,6 +82,7 @@ mod tests {
         use crate::transport::MPSCTransport;
         use crate::transport::Transport;
 
+        // Create transports
         let (ctx, crx) = sync_channel(3);
         let (stx, srx) = sync_channel(3);
         let client_transport = MPSCTransport::new(crx, stx);
@@ -90,6 +91,7 @@ mod tests {
         let send_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         thread::spawn(move || {
+            // In a new server thread, receive then send data
             let mut server_data = [0u8; 1024];
             server_transport
                 .recv(&mut server_data[0..send_data.len()])
@@ -98,6 +100,7 @@ mod tests {
             server_transport.send(&send_data).unwrap();
         });
 
+        // In the original thread, send then receive data
         client_transport.send(&send_data).unwrap();
         let mut client_data = [0u8; 1024];
         client_transport

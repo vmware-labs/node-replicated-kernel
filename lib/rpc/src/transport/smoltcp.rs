@@ -3,7 +3,7 @@
 
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
@@ -52,7 +52,7 @@ impl TCPTransport<'_> {
         // Create wrapper for iface
         let iface_ref = RefCell::new(iface);
 
-        // Add to sockets and remember socket handle
+        // Add socket to interface and record socket handle
         let server_handle = iface_ref.borrow_mut().add_socket(tcp_socket);
 
         TCPTransport {
@@ -74,11 +74,11 @@ impl Transport for TCPTransport<'_> {
         TX_BUF_LEN
     }
 
-    /// send data to a remote node
+    /// Send data to a remote node
     fn send(&self, data_out: &[u8]) -> Result<(), RPCError> {
         let mut data_index = 0;
 
-        debug!("Attempting to send {:?} bytes", data_out.len());
+        trace!("Attempting to send {:?} bytes", data_out.len());
         if data_out.len() == 0 {
             return Ok(());
         }
@@ -93,17 +93,17 @@ impl Transport for TCPTransport<'_> {
             while socket.can_send() && data_index < data_out.len() && bytes_sent != 0 {
                 // Attempt to send until end of data array
                 if let Ok(bytes_sent) = socket.send_slice(&data_out[data_index..]) {
-                    debug!("sent [{:?}-{:?}]", data_index, data_index + bytes_sent);
+                    trace!("sent [{:?}-{:?}]", data_index, data_index + bytes_sent);
                     data_index += bytes_sent;
                     if data_index == data_out.len() {
                         return Ok(());
                     }
                 } else {
-                    debug!("send_slice failed... trying again?");
+                    trace!("send_slice failed... trying again?");
                 }
             }
 
-            // Poll the interface only if we must
+            // Poll the interface only if we must in order to have space in the send buffer
             {
                 let mut iface = self.iface.borrow_mut();
                 match iface.poll(Instant::from_millis(
@@ -118,11 +118,11 @@ impl Transport for TCPTransport<'_> {
         }
     }
 
-    /// receive data from a remote node
+    /// Receive data from a remote node
     fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
         let mut data_index = 0;
 
-        debug!("Attempting to recv {:?} bytes", data_in.len());
+        trace!("Attempting to recv {:?} bytes", data_in.len());
         if data_in.len() == 0 {
             return Ok(());
         }
@@ -134,19 +134,18 @@ impl Transport for TCPTransport<'_> {
             // Receive as much data as possible before polling
             let bytes_received = 1;
             while socket.can_recv()                 // socket in good state to receive
-                && bytes_received > 0               // first iter or read something last iter
+                && bytes_received > 0               // first iter or read something during previous iter
                 && data_index < data_in.len()
-            // not done yet
             {
                 if let Ok(bytes_received) = socket.recv_slice(&mut data_in[data_index..]) {
-                    debug!(
+                    trace!(
                         "recv [{:?}-{:?}] {:?}",
                         data_index,
                         data_in.len(),
                         bytes_received
                     );
 
-                    // Update counts
+                    // Update count
                     data_index += bytes_received;
 
                     // Exit if finished receiving data
@@ -158,7 +157,7 @@ impl Transport for TCPTransport<'_> {
                 }
             }
 
-            // Only poll if we must
+            // Only poll if we must in order to fill receive buffer
             match iface.poll(Instant::from_millis(
                 rawtime::duration_since_boot().as_millis() as i64,
             )) {
@@ -171,11 +170,12 @@ impl Transport for TCPTransport<'_> {
     }
 
     /// Register with controller, analogous to LITE join_cluster()
-    /// TODO: add timeout?? with error returned if timeout occurs?
     fn client_connect(&mut self) -> Result<(), RPCError> {
         {
             let mut iface = self.iface.borrow_mut();
             let (socket, cx) = iface.get_socket_and_context::<TcpSocket>(self.server_handle);
+
+            // TODO: add timeout?? with error returned if timeout occurs?
             socket
                 .connect(
                     cx,
@@ -190,7 +190,7 @@ impl Transport for TCPTransport<'_> {
             );
         }
 
-        // Connect to server
+        // Connect to server, poll until connection is complete
         {
             loop {
                 match self.iface.borrow_mut().poll(Instant::from_millis(
@@ -203,6 +203,7 @@ impl Transport for TCPTransport<'_> {
                 }
                 let mut iface = self.iface.borrow_mut();
                 let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+
                 // Waiting for send/recv forces the TCP handshake to fully complete
                 if socket.is_active() && (socket.may_send() || socket.may_recv()) {
                     debug!("Connected to server, ready to send/recv data");
@@ -214,7 +215,7 @@ impl Transport for TCPTransport<'_> {
     }
 
     fn server_accept(&self) -> Result<(), RPCError> {
-        // Add to sockets
+        // Listen
         {
             let mut iface = self.iface.borrow_mut();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
@@ -222,6 +223,7 @@ impl Transport for TCPTransport<'_> {
             debug!("Listening at port {}", self.server_port);
         }
 
+        // Poll interface until connection is established
         loop {
             match self.iface.borrow_mut().poll(Instant::from_millis(
                 rawtime::duration_since_boot().as_millis() as i64,

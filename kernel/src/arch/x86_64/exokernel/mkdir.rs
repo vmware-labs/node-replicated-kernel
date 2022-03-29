@@ -25,10 +25,16 @@ pub fn rpc_mkdir<T: RPCClient>(
     modes: u64,
 ) -> Result<(u64, u64), RPCError> {
     debug!("MkDir({:?})", pathname);
+
+    // Construct request data
     let req = MkDirReq { modes: modes };
     let mut req_data = [0u8; core::mem::size_of::<MkDirReq>()];
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+
+    // Create result buffer
+    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+
+    // Call RPC
     rpc_client
         .call(
             pid,
@@ -37,6 +43,8 @@ pub fn rpc_mkdir<T: RPCClient>(
             &mut [&mut res_data],
         )
         .unwrap();
+
+    // Parse and return result
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -48,15 +56,16 @@ pub fn rpc_mkdir<T: RPCClient>(
     }
 }
 
+// RPC Handler function for close() RPCs in the controller
 pub fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
-
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
 
+    // Parse request
     let modes = match unsafe { decode::<MkDirReq>(payload) } {
         Some((req, _)) => req.modes,
         None => {
@@ -65,6 +74,7 @@ pub fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCEr
         }
     };
 
+    // Call mkdir function and send result
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
             local_pid,

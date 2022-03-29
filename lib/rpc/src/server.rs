@@ -60,7 +60,7 @@ impl<'t, 'a> Server<'a> {
         Ok(self.hdr.borrow().msg_type)
     }
 
-    /// replies an RPC call with results
+    /// Replies an RPC call with results
     fn reply(&self) -> Result<(), RPCError> {
         // Send response header + data
         let hdr = self.hdr.borrow();
@@ -75,7 +75,7 @@ impl<'t, 'a> Server<'a> {
 
 /// RPC server operations
 impl<'a> RPCServer<'a> for Server<'a> {
-    /// register an RPC func with an ID
+    /// Register an RPC func with an ID
     fn register<'c>(&self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<&Self, RPCError>
     where
         'c: 'a,
@@ -87,6 +87,7 @@ impl<'a> RPCServer<'a> for Server<'a> {
         Ok(self)
     }
 
+    /// Accept a client
     fn add_client<'c>(&self, func: &'c RegistrationHandler) -> Result<(&Self, NodeId), RPCError>
     where
         'c: 'a,

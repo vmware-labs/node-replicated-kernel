@@ -42,7 +42,7 @@ impl RPCClient for Client {
         Ok(self.client_id)
     }
 
-    /// calls a remote RPC function with ID
+    /// Calls a remote RPC function with ID
     fn call(
         &mut self,
         pid: usize,

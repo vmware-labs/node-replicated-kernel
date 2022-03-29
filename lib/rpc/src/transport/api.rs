@@ -7,10 +7,10 @@ pub trait Transport {
     /// Maximum per-send payload size
     fn max_recv(&self) -> usize;
 
-    /// send data to a remote node
+    /// Send data to a remote node
     fn send(&self, data_out: &[u8]) -> Result<(), RPCError>;
 
-    /// receive data from a remote node
+    /// Receive data from a remote node
     fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError>;
 
     /// Controller-side implementation for LITE join_cluster()

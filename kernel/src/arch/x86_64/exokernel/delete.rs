@@ -16,7 +16,11 @@ pub fn rpc_delete<T: RPCClient>(
     pathname: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     debug!("Delete({:?})", pathname);
+
+    // Create buffer for result
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+
+    // Call RPC
     rpc_client
         .call(
             pid,
@@ -25,6 +29,8 @@ pub fn rpc_delete<T: RPCClient>(
             &mut [&mut res_data],
         )
         .unwrap();
+
+    // Decode result - return result if decoding successful
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -36,15 +42,16 @@ pub fn rpc_delete<T: RPCClient>(
     }
 }
 
+// RPC Handler function for delete() RPCs in the controller
 pub fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
-
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
 
+    // Construct and return result
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
             local_pid,

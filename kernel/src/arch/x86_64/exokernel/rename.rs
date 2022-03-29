@@ -25,12 +25,18 @@ pub fn rpc_rename<T: RPCClient>(
     newname: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     debug!("Rename({:?}, {:?})", oldname, newname);
+
+    // Construct request data
     let req = RenameReq {
         oldname_len: oldname.len() as u64,
     };
     let mut req_data = [0u8; core::mem::size_of::<RenameReq>()];
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+
+    // Construct result buffer
+    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+
+    // Call the RPC
     rpc_client
         .call(
             pid,
@@ -39,6 +45,8 @@ pub fn rpc_rename<T: RPCClient>(
             &mut [&mut res_data],
         )
         .unwrap();
+
+    // Parse and return the result
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -51,15 +59,16 @@ pub fn rpc_rename<T: RPCClient>(
     }
 }
 
+// RPC Handler function for rename() RPCs in the controller
 pub fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
-
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
 
+    // Decode request
     let oldname_len = match unsafe { decode::<RenameReq>(payload) } {
         Some((req, _)) => req.oldname_len as usize,
         None => {
@@ -68,6 +77,7 @@ pub fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCE
         }
     };
 
+    // Call rename function
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
             local_pid,
@@ -77,5 +87,7 @@ pub fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCE
             payload[(core::mem::size_of::<RenameReq>() + oldname_len)..].as_ptr() as u64,
         )),
     };
+
+    // Return result
     construct_ret(hdr, payload, res)
 }

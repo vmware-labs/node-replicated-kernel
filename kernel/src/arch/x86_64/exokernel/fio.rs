@@ -68,6 +68,7 @@ impl From<RPCType> for FileIO {
 }
 unsafe_abomonate!(FileIO);
 
+// Struct used to encapulate a system call result
 #[derive(Debug)]
 pub struct FIORes {
     pub ret: Result<(u64, u64), RPCError>,
@@ -75,10 +76,12 @@ pub struct FIORes {
 unsafe_abomonate!(FIORes: ret);
 pub const FIORES_SIZE: u64 = core::mem::size_of::<FIORes>() as u64;
 
+// Mapping between local PIDs and remote (client) PIDs
 lazy_static! {
     static ref PID_MAP: NrLock<HashMap<Pid, Pid>> = NrLock::default();
 }
 
+// Lookup the local pid corresponding to a remote pid
 pub fn get_local_pid(remote_pid: usize) -> Option<usize> {
     let process_lookup = PID_MAP.read();
     let local_pid = process_lookup.get(&remote_pid);
@@ -89,6 +92,7 @@ pub fn get_local_pid(remote_pid: usize) -> Option<usize> {
     Some(*(local_pid.unwrap()))
 }
 
+// Register a remote pid by creating a local pid and creating a remote-local PID mapping
 pub fn register_pid(remote_pid: usize) -> Result<usize, KError> {
     let kcb = super::super::kcb::get_kcb();
     kcb.replica
@@ -121,6 +125,7 @@ pub fn register_pid(remote_pid: usize) -> Result<usize, KError> {
         })
 }
 
+// RPC Handler for client registration
 pub fn register_client(hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<NodeId, RPCError> {
     // use local pid as client ID
     match register_pid(hdr.pid) {
@@ -128,6 +133,8 @@ pub fn register_client(hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<NodeI
         Err(err) => Err(err.into()),
     }
 }
+
+// Below are utility functions for working with FIORes
 
 #[inline(always)]
 pub fn construct_error_ret(

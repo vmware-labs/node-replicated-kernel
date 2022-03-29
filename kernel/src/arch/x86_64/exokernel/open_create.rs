@@ -20,6 +20,7 @@ pub struct OpenReq {
 }
 unsafe_abomonate!(OpenReq: flags, modes);
 
+// This is just a wrapper function for rpc_open_create
 pub fn rpc_create<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
@@ -37,6 +38,7 @@ pub fn rpc_create<T: RPCClient>(
     )
 }
 
+// This is just a wrapper function for rpc_open_create
 pub fn rpc_open<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
@@ -63,16 +65,24 @@ fn rpc_open_create<T: RPCClient>(
     rpc_type: RPCType,
 ) -> Result<(u64, u64), RPCError> {
     debug!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
+
+    // Construct request data
     let req = OpenReq {
         flags: flags,
         modes: modes,
     };
     let mut req_data = [0u8; core::mem::size_of::<OpenReq>()];
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+
+    // Construct result buffer
+    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+
+    // Call the RPC
     rpc_client
         .call(pid, rpc_type, &[&req_data, &pathname], &mut [&mut res_data])
         .unwrap();
+
+    // Decode and return the result
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -84,24 +94,14 @@ fn rpc_open_create<T: RPCClient>(
     }
 }
 
+// RPC Handler function for open() RPCs in the controller
 pub fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
-
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
-
-    /*
-    let pathname = match core::str::from_utf8(&payload[core::mem::size_of::<OpenReq>()..]) {
-        Ok(s) => s,
-        Err(e) => {
-            error!("Invalid pathname utf8 for request: {:?}, error={:?}", hdr, e);
-            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
-        }
-    };
-    */
 
     // Parse body
     let flags;
@@ -122,6 +122,7 @@ pub fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
         return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
     }
 
+    // Create return
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::map_fd(
             local_pid,

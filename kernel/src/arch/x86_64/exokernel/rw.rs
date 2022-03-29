@@ -38,15 +38,20 @@ pub fn rpc_writeat<T: RPCClient>(
     data: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     debug!("Write({:?}, {:?})", fd, offset);
+
+    // Constrcut request data
     let req = RWReq {
         fd: fd,
         len: data.len() as u64,
         offset: offset,
     };
     let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
+    // Create result buffer
+    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+
+    // Call readat() or read() RPCs
     if offset == -1 {
         rpc_client
             .call(
@@ -66,6 +71,8 @@ pub fn rpc_writeat<T: RPCClient>(
             )
             .unwrap();
     }
+
+    // Decode result, return result if decoded successfully
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -77,6 +84,7 @@ pub fn rpc_writeat<T: RPCClient>(
     }
 }
 
+// This function is just a wrapper for rpc_readat
 pub fn rpc_read<T: RPCClient>(
     rpc_client: &mut T,
     pid: usize,
@@ -96,6 +104,8 @@ pub fn rpc_readat<T: RPCClient>(
     buff_ptr: &mut [u8],
 ) -> Result<(u64, u64), RPCError> {
     debug!("Read({:?}, {:?})", len, offset);
+
+    // Construct request data
     let req = RWReq {
         fd: fd,
         len: len,
@@ -103,7 +113,11 @@ pub fn rpc_readat<T: RPCClient>(
     };
     let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+
+    // Create result buffer
     let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+
+    // Call Read() or ReadAt() RPC
     if offset == -1 {
         rpc_client
             .call(
@@ -123,6 +137,8 @@ pub fn rpc_readat<T: RPCClient>(
             )
             .unwrap();
     }
+
+    // Decode result, if successful, return result
     if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -134,10 +150,10 @@ pub fn rpc_readat<T: RPCClient>(
     }
 }
 
+// RPC Handler function for read() RPCs in the controller
 pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
-
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
@@ -174,32 +190,36 @@ pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
         offset,
     );
 
+    // Read in additional data (e.g., the read data payload)
     let mut additional_data = 0;
     if let Ok((bytes_read, _)) = ret {
         additional_data = bytes_read;
     }
 
+    // Construct return
     let res = FIORes {
         ret: convert_return(ret),
     };
     construct_ret_extra_data(hdr, payload, res, additional_data as u64)
 }
 
+// RPC Handler function for write() RPCs in the controller
 pub fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
-
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
 
+    // Decode request
     if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
             "Write(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
             req.fd, req.len, req.offset, local_pid
         );
 
+        // Call Write() or WriteAt()
         let ret = if hdr.msg_type == FileIO::Write as RPCType {
             cnrfs::MlnrKernelNode::file_io(
                 FileOperation::Write,
@@ -220,10 +240,13 @@ pub fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCEr
             )
         };
 
+        // Construct return
         let res = FIORes {
             ret: convert_return(ret),
         };
         construct_ret(hdr, payload, res)
+
+    // Return error if failed to decode request
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, RPCError::MalformedRequest)

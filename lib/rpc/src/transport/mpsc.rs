@@ -31,6 +31,10 @@ impl Transport for MPSCTransport {
 
     /// send data to a remote node
     fn send(&self, data_out: &[u8]) -> Result<(), RPCError> {
+        if data_out.len() == 0 {
+            return Ok(());
+        }
+
         self.tx
             .send(data_out.to_vec())
             .map_err(|_my_err| RPCError::TransportError)
@@ -49,11 +53,9 @@ impl Transport for MPSCTransport {
         while data_received < data_in.len() {
             // Receive some data
             let recv_buff = self.rx.recv().map_err(|_my_err| RPCError::TransportError)?;
-            data_in[data_received..].clone_from_slice(&recv_buff);
-            print!("{:?} {:?}\n", recv_buff, data_in);
+            data_in[data_received..].clone_from_slice(&recv_buff[..]);
             data_received += recv_buff.len();
         }
-
         Ok(())
     }
 

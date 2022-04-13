@@ -584,7 +584,7 @@ fn replica_advance() {
 fn vmxnet_smoltcp() {
     use alloc::borrow::ToOwned;
     use alloc::collections::BTreeMap;
-    use alloc::vec;
+    use alloc::{vec, vec::Vec};
     use core::cell::Cell;
 
     use log::{debug, info};
@@ -593,8 +593,7 @@ fn vmxnet_smoltcp() {
     use vmxnet3::smoltcp::DevQueuePhy;
     use vmxnet3::vmx::VMXNet3;
 
-    use smoltcp::iface::{EthernetInterfaceBuilder, NeighborCache};
-    use smoltcp::socket::SocketSet;
+    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
     use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
     use smoltcp::time::Instant;
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
@@ -642,7 +641,6 @@ fn vmxnet_smoltcp() {
     }
 
     let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
-
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
     let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 4096]);
@@ -652,14 +650,17 @@ fn vmxnet_smoltcp() {
     let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
     let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 10), 24)];
 
-    let builder = EthernetInterfaceBuilder::new(device)
-        .ip_addrs(ip_addrs)
-        .ethernet_addr(ethernet_addr)
-        .neighbor_cache(neighbor_cache);
-    let mut iface = builder.finalize();
+    // Create SocketSet w/ space for 1 socket
+    let mut sock_vec = Vec::new();
+    sock_vec.try_reserve_exact(1).unwrap();
 
-    let mut sockets = SocketSet::new(vec![]);
-    let tcp1_handle = sockets.add(tcp_socket);
+    let mut iface = InterfaceBuilder::new(device, sock_vec)
+        .ip_addrs(ip_addrs)
+        .hardware_addr(ethernet_addr.into())
+        .neighbor_cache(neighbor_cache)
+        .finalize();
+
+    let tcp1_handle = iface.add_socket(tcp_socket);
 
     let mut tcp_6970_active = false;
     let mut done = false;
@@ -668,7 +669,7 @@ fn vmxnet_smoltcp() {
     info!("About to serve sockets!");
 
     while !done && clock.elapsed() < Instant::from_millis(10_000) {
-        match iface.poll(&mut sockets, clock.elapsed()) {
+        match iface.poll(clock.elapsed()) {
             Ok(_) => {}
             Err(e) => {
                 debug!("poll error: {}", e);
@@ -677,7 +678,7 @@ fn vmxnet_smoltcp() {
 
         // tcp:6970: echo with reverse
         {
-            let mut socket = sockets.get::<TcpSocket>(tcp1_handle);
+            let socket = iface.get_socket::<TcpSocket>(tcp1_handle);
             if !socket.is_open() {
                 socket.listen(6970).unwrap()
             }

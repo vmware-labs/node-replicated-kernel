@@ -6,7 +6,6 @@ use core::fmt;
 use core::mem::transmute;
 
 use uefi::table::boot::AllocateType;
-use uefi::ResultExt;
 
 use uefi_services::system_table;
 
@@ -410,7 +409,7 @@ impl<'a> VSpace<'a> {
                     // This weird API will free the top-most page too? (that's why we do -1)
                     // (had a bug where it reused a page from the kernel text as stack)
                     .free_pages(paddr.as_u64(), unaligned_unused_pages_bottom - 1)
-                    .expect_success("Can't free prev. allocated memory");
+                    .expect("Can't free prev. allocated memory");
             }
 
             if unaligned_unused_pages_top > 1 {
@@ -421,7 +420,7 @@ impl<'a> VSpace<'a> {
                         aligned_end.as_u64() + BASE_PAGE_SIZE as u64,
                         unaligned_unused_pages_top - 1,
                     )
-                    .expect_success("Can't free prev. allocated memory");
+                    .expect("Can't free prev. allocated memory");
             }
         }
 
@@ -442,11 +441,11 @@ impl<'a> VSpace<'a> {
             {
                 Ok(num) => {
                     st.as_ref().boot_services().set_mem(
-                        num.unwrap() as *mut u8,
+                        num as *mut u8,
                         how_many * BASE_PAGE_SIZE,
                         0u8,
                     );
-                    PAddr::from(num.unwrap())
+                    PAddr::from(num)
                 }
                 Err(status) => panic!("failed to allocate {:?}", status),
             }

@@ -18,21 +18,26 @@ use x86::bits64::paging::BASE_PAGE_SIZE;
 use crate::kernel::{paddr_to_kernel_vaddr, paddr_to_uefi_vaddr, MODULE};
 use crate::{allocate_pages, round_up, KernelArgs, Module};
 
+const MAX_FILE_NAME_LEN: usize = 255;
+
 /// Trying to get the file handle for the kernel binary.
 fn locate_binary(_st: &SystemTable<Boot>, directory: &mut Directory, name: &str) -> RegularFile {
     // Look for the given binary name in the root folder of our EFI partition
     // in our case this is `target/x86_64-uefi/debug/esp/`
     // whereas the esp dir gets mounted with qemu using
     // `-drive if=none,format=raw,file=fat:rw:$ESP_DIR,id=esp`
+    let mut c16_buf = [0; MAX_FILE_NAME_LEN];
+    let c16_name = CStr16::from_str_with_buf(format!("{}", name).as_str(), &mut c16_buf).unwrap();
+
     let binary_file = directory
         .open(
-            format!("{}", name).as_str(),
+            c16_name,
             FileMode::Read,
             FileAttribute::READ_ONLY,
         )
-        .expect_success(format!("Unable to locate binary '{}'", name).as_str())
+        .expect(format!("Unable to locate binary '{}'", name).as_str())
         .into_type()
-        .expect_success("Can't cast it to a file common type??");
+        .expect("Can't cast it to a file common type??");
 
     let binary_file: RegularFile = match binary_file {
         FileType::Regular(t) => t,
@@ -49,12 +54,12 @@ fn locate_binary(_st: &SystemTable<Boot>, directory: &mut Directory, name: &str)
 /// to seek to infinity and then call get_position on it?
 fn determine_file_size(file: &mut RegularFile) -> usize {
     file.set_position(0xFFFFFFFFFFFFFFFF)
-        .expect_success("Seek to the end of kernel");
+        .expect("Seek to the end of kernel");
     let file_size = file
         .get_position()
-        .expect_success("Couldn't determine binary size") as usize;
+        .expect("Couldn't determine binary size") as usize;
     file.set_position(0)
-        .expect_success("Reset file handle position failed");
+        .expect("Reset file handle position failed");
 
     file_size
 }
@@ -87,7 +92,7 @@ pub fn load_binary_into_memory(
     };
     module_file
         .read(module_blob)
-        .expect_success("Can't read the module file");
+        .expect("Can't read the module file");
 
     Module::new(
         name,
@@ -107,13 +112,13 @@ pub fn load_modules_on_all_sfs(st: &SystemTable<Boot>, _dir_name: &str) -> Vec<(
     let all_handles = st
         .boot_services()
         .find_handles::<SimpleFileSystem>()
-        .expect_success("Can't find any SimpleFileSystems?");
+        .expect("Can't find any SimpleFileSystems?");
     let mut modules: Vec<(String, Module)> = Vec::with_capacity(KernelArgs::MAX_MODULES);
     for handle in all_handles {
         let fhandle = st
             .boot_services()
             .handle_protocol::<SimpleFileSystem>(handle)
-            .expect_success("Don't have SimpleFileSystem support");
+            .expect("Don't have SimpleFileSystem support");
         let fhandle = unsafe { &mut *fhandle.get() };
         modules.extend(load_modules(st, fhandle));
     }
@@ -130,7 +135,7 @@ pub fn load_modules(
     st: &SystemTable<Boot>,
     fhandle: &mut SimpleFileSystem,
 ) -> Vec<(String, Module)> {
-    let mut dir_handle = fhandle.open_volume().expect_success("Can't open volume");
+    let mut dir_handle = fhandle.open_volume().expect("Can't open volume");
 
     // We have capacity for 32 modules if you want to increase this
     // also change `modules` in KernelArgs.
@@ -142,7 +147,7 @@ pub fn load_modules(
 
         match dir_handle.read_entry(&mut buffer) {
             Ok(completion) => {
-                if let Some(file_info) = completion.unwrap() {
+                if let Some(file_info) = completion {
                     let file_name_16 = DCStr16(file_info.file_name().as_ptr());
                     if !file_info.attribute().contains(FileAttribute::DIRECTORY) {
                         let name_string: String = file_name_16.into();

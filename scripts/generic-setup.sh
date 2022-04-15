@@ -40,7 +40,7 @@ function install_run_dependencies()
         $APT install -y qemu qemu-kvm qemu-system-x86 sshpass hwloc libhwloc-dev numactl libevent-dev > /dev/null
 
         # nrk integration-test dependencies
-        $APT install -y isc-dhcp-server socat netcat-openbsd redis-tools net-tools graphviz > /dev/null
+        $APT install -y isc-dhcp-server socat netcat-openbsd redis-tools net-tools graphviz tcpdump > /dev/null
     fi
 }
 

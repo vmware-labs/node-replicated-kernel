@@ -19,7 +19,7 @@ log = "0.4"
 x86 = "0.43"
 slabmalloc = "0.10"
 rawtime = "0.0.4"
-rumpkernel = { version = "0.0.4", optional = true }
+rumpkernel = { version = "0.0.5", optional = true }
 spin = "0.9.2"
 cstr_core = { version = "0.2.3", default-features = false , features = ["alloc"] }
 hashbrown = { version = "0.11.2", optional = true }

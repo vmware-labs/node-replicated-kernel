@@ -41,7 +41,6 @@
 
 #![no_std]
 #![no_main]
-#![feature(llvm_asm, global_asm)]
 
 #[macro_use]
 extern crate log;
@@ -51,6 +50,7 @@ extern crate alloc;
 extern crate elfloader;
 extern crate x86;
 
+use core::arch::global_asm;
 use core::mem::transmute;
 use core::{mem, slice};
 
@@ -103,7 +103,7 @@ pub fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> 
     let num = st
         .boot_services()
         .allocate_pages(AllocateType::AnyPages, typ, pages)
-        .expect_success(format!("Allocation of {} failed for type {:?}", pages, typ).as_str());
+        .expect(format!("Allocation of {} failed for type {:?}", pages, typ).as_str());
 
     // TODO: The UEFI Specification does not say if the pages we get are zeroed or not
     // (UEFI Specification 2.8, EFI_BOOT_SERVICES.AllocatePages())
@@ -138,7 +138,7 @@ fn estimate_memory_map_size(st: &SystemTable<Boot>) -> (usize, usize) {
     // Plan for some 32 more descriptors than originally estimated,
     // due to UEFI API crazyness, round to page-size
     let sz = round_up!(
-        mm_size_estimate + 32 * mem::size_of::<MemoryDescriptor>(),
+        mm_size_estimate.map_size + 32 * mm_size_estimate.entry_size,
         BASE_PAGE_SIZE
     );
     assert_eq!(sz % BASE_PAGE_SIZE, 0, "Not multiple of page-size.");
@@ -157,7 +157,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     let (_key, desc_iter) = st
         .boot_services()
         .memory_map(mm_slice)
-        .expect_success("Failed to retrieve UEFI memory map");
+        .expect("Failed to retrieve UEFI memory map");
 
     for entry in desc_iter {
         if entry.phys_start == 0x0 {
@@ -238,11 +238,9 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
 /// Initialize the screen to the highest possible resolution.
 fn _setup_screen(st: &SystemTable<Boot>) {
     if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
-        let gop = gop.expect("Warnings encountered while opening GOP");
         let gop = unsafe { &mut *gop.get() };
         let _mode = gop
             .modes()
-            .map(|mode| mode.expect("Warnings encountered while querying modes"))
             .max_by(|ref x, ref y| x.info().resolution().cmp(&y.info().resolution()))
             .unwrap();
     } else {
@@ -254,12 +252,11 @@ fn _setup_screen(st: &SystemTable<Boot>) {
 fn _serial_init(st: &SystemTable<Boot>) {
     use uefi::proto::console::serial::{ControlBits, Serial};
     if let Ok(serial) = st.boot_services().locate_protocol::<Serial>() {
-        let serial = serial.expect("Warnings encountered while opening serial protocol");
         let serial = unsafe { &mut *serial.get() };
 
         let _old_ctrl_bits = serial
             .get_control_bits()
-            .expect_success("Failed to get device control bits");
+            .expect("Failed to get device control bits");
 
         let mut ctrl_bits = ControlBits::empty();
         ctrl_bits |= ControlBits::HARDWARE_FLOW_CONTROL_ENABLE;
@@ -267,13 +264,13 @@ fn _serial_init(st: &SystemTable<Boot>) {
 
         serial
             .set_control_bits(ctrl_bits)
-            .expect_success("Failed to set device control bits");
+            .expect("Failed to set device control bits");
 
         const OUTPUT: &[u8] = b"Serial output check";
         const MSG_LEN: usize = OUTPUT.len();
         serial
             .write(OUTPUT)
-            .expect_success("Failed to write to serial port");
+            .expect("Failed to write to serial port");
     } else {
         warn!("No serial device found.");
     }
@@ -335,7 +332,7 @@ fn assert_required_cpu_features() {
 /// The symbol name is defined through `/Entry:uefi_start` in `x86_64-uefi.json`.
 #[no_mangle]
 pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) -> Status {
-    uefi_services::init(&mut st).expect_success("Can't initialize UEFI");
+    uefi_services::init(&mut st).expect("Can't initialize UEFI");
     log::set_max_level(log::LevelFilter::Info);
     //setup_screen(&st);
     //serial_init(&st);
@@ -504,7 +501,6 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         }
 
         if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
-            let gop = gop.expect("Warnings encountered while opening GOP");
             let gop = &mut *gop.get();
 
             let mut frame_buffer = gop.frame_buffer();
@@ -530,7 +526,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         info!("Exiting boot services. About to jump...");
         let (_st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
-            .expect_success("Can't exit the boot service");
+            .expect("Can't exit the boot service");
         // FYI: Print no longer works here... so let's hope we make
         // it to the kernel serial init
 

@@ -2057,9 +2057,9 @@ dependencies = [
 
 [[package]]
 name = "rumpkernel"
-version = "0.0.4"
+version = "0.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db2ea17c58de6a680f7a7b696925c605f4a7d25afbefa9d7f3b3eb327b2f2d28"
+checksum = "b488fc774637ca468cdc52d5d50d07b5c6a910748eb2e36622c8d9615819e320"
 dependencies = [
  "num_cpus",
 ]

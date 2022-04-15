@@ -45,14 +45,24 @@ SCRIPT_PATH = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
 CARGO_DEFAULT_ARGS = ["--color", "always"]
 ARCH = "x86_64"
 
-# TODO: should be generated for enabling parallel builds
-QEMU_TAP_NAME = 'tap0'
-QEMU_TAP_ZONE = '172.31.0.20/24'
-MAC = "56:b4:44:e9:62:dc"
+NETWORK_CONFIG = {
+    'tap0': {
+        'zone': '172.31.0.20/24',
+        'mac': '56:b4:44:e9:62:dc',
+    },
+    'tap2': {
+        'zone': '172.31.0.2/24',
+        'mac': '56:b4:44:e9:62:dd',
+    },
+}
 
-QEMU_TAP_NAME2 = 'tap2'
-QEMU_TAP_ZONE2 = '172.31.0.2/24'
-MAC2 = "56:b4:44:e9:62:dd"
+#QEMU_TAP_NAME = 'tap0'
+#QEMU_TAP_ZONE = '172.31.0.20/24'
+#MAC = "56:b4:44:e9:62:dc"
+
+#QEMU_TAP_NAME2 = 'tap2'
+#QEMU_TAP_ZONE2 = '172.31.0.2/24'
+#MAC2 = "56:b4:44:e9:62:dd"
 
 #
 # Important globals
@@ -117,6 +127,8 @@ parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
 parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio", "vmxnet3"],
                     help='What NIC model to use for emulation', required=False)
+parser.add_argument('--tap', default='tap0', choices=["tap0", "tap2"],
+                    help='Which tap interface to use from the host', required=False)
 parser.add_argument('--kgdb', action="store_true",
                     help="Use the GDB remote debugger to connect to the kernel")
 parser.add_argument('--qemu-ivshmem',
@@ -372,16 +384,13 @@ def run_qemu(args):
         qemu_default_args += ['-device', 'ivshmem-plain,memdev=HMB']
 
     # Enable networking with outside world
+    mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap
     if args.nic != "vmxnet3":
         qemu_default_args += ['-net',
                               'nic,model={},netdev=n0'.format(args.nic)]
         qemu_default_args += ['-netdev',
-                              'tap,id=n0,script=no,ifname={}'.format(QEMU_TAP_NAME)]
+                              'tap,id=n0,script=no,ifname={}'.format(tap)]
     else:
-        if 'exokernel' in args.kfeatures:
-            mac, tap = MAC2, QEMU_TAP_NAME2,
-        else:
-            mac, tap = MAC, QEMU_TAP_NAME,
         qemu_default_args += ['-device',
                               'vmxnet3,netdev=n1,mac={},addr=10.0'.format(mac)]
         qemu_default_args += ['-netdev',
@@ -482,12 +491,8 @@ def run_qemu(args):
     # TODO: Could probably avoid 'sudo' here by doing
     # sudo setcap cap_net_admin .../run.py
     # in the setup.sh script
-    if 'exokernel' in args.kfeatures:
-        sudo[tunctl[['-t', QEMU_TAP_NAME2, '-u', user, '-g', group]]]()
-        sudo[ifconfig[QEMU_TAP_NAME2, QEMU_TAP_ZONE2]]()
-    else:
-        sudo[tunctl[['-t', QEMU_TAP_NAME, '-u', user, '-g', group]]]()
-        sudo[ifconfig[QEMU_TAP_NAME, QEMU_TAP_ZONE]]()
+    sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
+    sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['zone']]]()
 
     # TODO - set up bridge between interfaces
     # sudo ip link add br0 type bridge

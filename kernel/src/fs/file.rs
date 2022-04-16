@@ -1,11 +1,10 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::collections::TryReserveError;
 use alloc::vec::Vec;
 use core::mem::size_of;
 
-use fallible_collections::{FallibleVec, FallibleVecGlobal};
+use fallible_collections::{FallibleVec, TryReserveError, FallibleVecGlobal};
 use kpi::io::*;
 
 use crate::error::KError;

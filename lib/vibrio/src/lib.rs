@@ -7,11 +7,11 @@
 //! the kernel and user-space (clients should only have to rely on this crate).
 #![no_std]
 #![feature(
+    asm_const,
     alloc_error_handler,
     panic_info_message,
     c_variadic,
     ptr_internals,
-    llvm_asm,
     lang_items,
     thread_local
 )]

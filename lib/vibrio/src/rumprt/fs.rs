@@ -4,10 +4,8 @@
 use core::convert::TryInto;
 
 use super::{c_int, c_size_t, c_void, rump_biodone_fn};
-use cstr_core::CStr;
 
 use kpi::io::*;
-use kpi::FileOperation;
 
 use bitflags::*;
 use log::*;
@@ -37,19 +35,19 @@ pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c
     // 'mode' passed by rump are actually the semantic equivalent of flags.
     let mut flags = FileFlags::O_NONE;
     let mode_mode = RumpFileFlags::from_bits_truncate(mode as u64);
-    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDONLY) == RumpFileFlags::RUMPUSER_OPEN_RDONLY) {
+    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDONLY) == RumpFileFlags::RUMPUSER_OPEN_RDONLY {
         flags = flags | FileFlags::O_RDONLY;
     }
-    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_WRONLY) == RumpFileFlags::RUMPUSER_OPEN_WRONLY) {
+    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_WRONLY) == RumpFileFlags::RUMPUSER_OPEN_WRONLY {
         flags = flags | FileFlags::O_WRONLY;
     }
-    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDWR) == RumpFileFlags::RUMPUSER_OPEN_RDWR) {
+    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDWR) == RumpFileFlags::RUMPUSER_OPEN_RDWR {
         flags = flags | FileFlags::O_RDWR;
     }
-    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_CREATE) == RumpFileFlags::RUMPUSER_OPEN_CREATE) {
+    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_CREATE) == RumpFileFlags::RUMPUSER_OPEN_CREATE {
         flags = flags | FileFlags::O_CREAT;
     }
-    if ((mode_mode & RumpFileFlags::RUMPUSER_OPEN_EXCL) == RumpFileFlags::RUMPUSER_OPEN_EXCL) {
+    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_EXCL) == RumpFileFlags::RUMPUSER_OPEN_EXCL {
         error!("NRK does not support O_EXCL\n");
     }
 

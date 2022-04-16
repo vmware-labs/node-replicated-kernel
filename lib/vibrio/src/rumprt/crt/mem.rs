@@ -10,7 +10,7 @@ use crate::rumprt::{c_int, c_size_t, c_void};
 
 use lineup::tls2::Environment;
 
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 const MAP_FAILED: u64 = u64::MAX;
 
 /// Implementes mmap by forwarding it to the rumpkernel and then to
@@ -135,7 +135,7 @@ mod nrk {
                 }
                 Err(e) => {
                     panic!("{:?}", e);
-                    return MAP_FAILED as *mut c_void;
+                    //return MAP_FAILED as *mut c_void;
                 }
             }
         }

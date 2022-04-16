@@ -4,18 +4,16 @@
 //! Runtime support to link with/use libpthread
 
 use alloc::boxed::Box;
-use core::ops::Add;
 use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
-use log::{debug, error, info, trace, warn};
+use log::{debug, trace, warn};
 
 use lineup::threads::ThreadId;
 use lineup::tls2::Environment;
-use rawtime::{Duration, Instant};
 use spin::Mutex;
 
 use super::{c_int, c_long, c_size_t, c_ssize_t, c_void, clockid_t, lwpid_t, time_t};
@@ -338,7 +336,8 @@ pub unsafe extern "C" fn ___lwp_park60(
 
     let retval = if !ts.is_null() {
         unreachable!("___lwp_park60: executing with non-null ts for first time.");
-        const TIMER_ABSTIME: c_int = 0x1;
+        
+        /*const TIMER_ABSTIME: c_int = 0x1;
 
         let sec = (*ts).tv_sec;
         let nanos = (*ts).tv_sec as u64;
@@ -361,7 +360,7 @@ pub unsafe extern "C" fn ___lwp_park60(
             -1
         } else {
             0
-        }
+        }*/
     } else {
         let t = Environment::thread();
         trace!(

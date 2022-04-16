@@ -3,7 +3,7 @@
 
 //! Functions to interact/modify process state
 
-use log::{error, info, trace};
+use log::{error, info};
 
 use crate::rumprt::{c_int, c_void, pid_t};
 

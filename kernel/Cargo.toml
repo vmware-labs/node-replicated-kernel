@@ -9,7 +9,7 @@ description = "Experimental OS kernel"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 build = "build.rs"
-edition = "2018"
+edition = "2021"
 resolver = "2"
 
 
@@ -22,16 +22,16 @@ kpi = { path = "../lib/kpi" }
 rpc = { path = "../lib/rpc" }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-x86 = "0.43"
-klogger = "0.0.8"
-driverkit = "0.13"
+x86 = "0.47"
+klogger = "0.0.11"
+driverkit = "0.14"
 spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"
-backtracer_core = "0.0.4"
-rawtime = "0.0.4"
+backtracer_core = "0.0.5"
+rawtime = "0.0.6"
 libacpica = "0.0.8"
-atopology = "0.0.25"
+atopology = "0.0.26"
 # External libraries we use:
 abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false, optional = true }
 core2 = { version = "0.3", default-features = false, features = [ "alloc" ], optional = true }
@@ -40,7 +40,7 @@ lazy_static = { version = "1.4", features = ["spin_no_std"] }
 logos = { version = "0.12", default-features = false, features = ["export_derive"] }
 hashbrown = { version = "0.11", features = [ "nightly" ] }
 cstr_core = { version = "0.2.3", default-features = false }
-uefi = "0.12.0"
+uefi = "0.15"
 crossbeam-utils = { version = "0.8.0", default-features = false }
 static_assertions = "1.1.0"
 bit_field = "0.10"
@@ -48,9 +48,9 @@ crossbeam-queue = { version = "0.3", default-features = false, features = ["allo
 addr2line = { version = "0.16", default-features = false, features = ["rustc-demangle"], optional = true }
 gimli = { version = "0.26", default-features = false, features = ["read", "endian-reader"] }
 arrayvec = { version = "0.7.0", default-features = false }
-memoffset = { version = "0.6", features = ["unstable_const"] }
+memoffset = { version = "0.6.5", features = ["unstable_const"] }
 smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ] }
-fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "allocator_api", features = ["unstable"] }
+fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "allocator_api", features = ["unstable", "rust_1_57"] }
 gdbstub = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6", default-features = false, features = ["alloc"] }
 gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6" }
 

@@ -34,7 +34,7 @@ use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
-use crate::{xmain, ExitReason};
+use crate::{ExitReason};
 
 use apic::x2apic;
 use apic::ApicDriver;
@@ -573,9 +573,8 @@ fn map_physical_persistent_memory() {
 /// The argc argument is abused as a pointer ot the KernelArgs struct
 /// passed by UEFI.
 #[cfg(target_os = "none")]
-#[lang = "start"]
-#[no_mangle]
 #[start]
+#[no_mangle]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
     use crate::memory::LARGE_PAGE_SIZE;
     use core::slice;
@@ -902,7 +901,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Intialize PCI
     {
         let pci_devices =
-            driverkit::pci::scan_bus().expect("Can't allocate memory for PCI devices");
+            driverkit::pci::scan_bus();
         for device in pci_devices {
             info!("PCI: {}", device);
 
@@ -955,7 +954,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Done with initialization, now we go in
     // the arch-independent part:
-    let _r = xmain();
+    let _r = crate::main();
 
     error!("Returned from main, shutting down...");
     debug::shutdown(ExitReason::ReturnFromMain);

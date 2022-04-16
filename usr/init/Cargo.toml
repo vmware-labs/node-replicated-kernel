@@ -15,11 +15,12 @@ lineup = { path = "../../lib/lineup" }
 vibrio = { path = "../../lib/vibrio" }
 kpi = { path = "../../lib/kpi" }
 arrayvec = { version = "0.7.0", default-features = false }
-proptest = { version = "1.0.0", default-features = false, features = ['alloc', 'hardware-rng'] }
-rawtime = "0.0.4"
-x86 = "0.43"
+proptest = { git = "https://github.com/gz/proptest.git", branch = "x86-asm", default-features = false, features = ['alloc', 'hardware-rng'] }
+rawtime = "0.0.6"
+x86 = "0.47"
 log = "0.4"
-libm = "0.2.1"
+num-traits = { version = "0.2", default-features = false }
+libm = "0.2.2"
 lazy_static =  { version = "1.4", default_features = false }
 cstr_core = { version = "0.2.3", default-features = false }
 spin = { version = "0.5.2", default_features = false }

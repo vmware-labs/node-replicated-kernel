@@ -1,11 +1,9 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#[cfg(feature = "std")]
-use {std::boxed::Box, std::cell::RefCell, std::vec::Vec};
-
-#[cfg(not(feature = "std"))]
-use {alloc::prelude::v1::Box, alloc::vec::Vec, core::cell::RefCell};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use hashbrown::HashMap;
 use log::debug;

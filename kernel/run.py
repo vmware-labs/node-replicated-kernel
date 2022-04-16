@@ -383,20 +383,12 @@ def run_qemu(args):
         ]
         qemu_default_args += ['-device', 'ivshmem-plain,memdev=HMB']
 
-    # Enable networking with outside world
+    # Enable networking:
     mac, tap = NETWORK_CONFIG[args.tap]['mac'], args.tap
-    if args.nic != "vmxnet3":
-        qemu_default_args += ['-net',
-                              'nic,model={},netdev=n0'.format(args.nic)]
-        qemu_default_args += ['-netdev',
-                              'tap,id=n0,script=no,ifname={}'.format(tap)]
-    else:
-        qemu_default_args += ['-device',
-                              'vmxnet3,netdev=n1,mac={},addr=10.0'.format(mac)]
-        qemu_default_args += ['-netdev',
-                              'tap,id=n1,script=no,ifname={}'.format(tap)]
-
-    # qemu_default_args += ['-net', 'none']
+    qemu_default_args += ['-device',
+                          '{},netdev=n1,mac={}'.format(args.nic, mac)]
+    qemu_default_args += ['-netdev',
+                          'tap,id=n1,script=no,ifname={}'.format(tap)]
 
     def numa_nodes_to_list(file):
         nodes = []

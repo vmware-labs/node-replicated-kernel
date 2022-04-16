@@ -14,7 +14,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::{f64, fmt, mem};
 
-use crate::f64 as std_f64;
+//use crate::f64 as std_f64;
+use num_traits::float::FloatCore;
 
 /// A configuration struct for building custom `Histogram`s.
 #[derive(Clone, Copy)]
@@ -730,7 +731,7 @@ impl Histogram {
 
         let stdvar = self.stdvar().unwrap() as f64;
 
-        let stddev = stdvar.sqrt();
+        let stddev = libm::sqrt(stdvar);
 
         Some(stddev.ceil() as u64)
     }

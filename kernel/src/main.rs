@@ -12,33 +12,24 @@
     is_sorted,
     intrinsics,
     core_intrinsics,
-    llvm_asm,
-    asm,
     lang_items,
+    asm_const,
     start,
     box_syntax,
     panic_info_message,
     allocator_api,
-    global_asm,
     linkage,
     c_variadic,
     box_into_pin,
-    maybe_uninit_ref,
     drain_filter,
-    alloc_prelude,
-    try_reserve,
     new_uninit,
     get_mut_unchecked,
-    const_fn_trait_bound,
     const_ptr_offset_from,
-    const_raw_ptr_deref,
-    const_maybe_uninit_as_ptr,
     const_refs_to_cell,
     nonnull_slice_from_raw_parts,
     once_cell
 )]
 #![cfg_attr(not(target_os = "none"), feature(thread_local))]
-
 extern crate alloc;
 
 #[cfg(any(feature = "controller", feature = "exokernel"))]
@@ -73,6 +64,7 @@ mod nrproc;
 mod prelude;
 mod fallible_string;
 mod mpmc;
+mod pci;
 mod process;
 mod scheduler;
 mod stack;
@@ -115,8 +107,7 @@ pub enum ExitReason {
 /// # Notes
 /// This function is executed from each core (which is
 /// different from a traditional main routine).
-#[no_mangle]
-pub fn xmain() {
+pub fn main() {
     #[cfg(feature = "controller")]
     {
         controller_main::run();

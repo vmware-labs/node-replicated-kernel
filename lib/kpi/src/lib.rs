@@ -5,9 +5,6 @@
 //! and associated data-types.
 #![no_std]
 #![feature(
-    llvm_asm,
-    const_maybe_uninit_as_ptr,
-    const_raw_ptr_deref,
     const_ptr_offset_from
 )]
 

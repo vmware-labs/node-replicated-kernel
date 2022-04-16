@@ -28,7 +28,7 @@ use core::{ptr, slice};
 
 use cstr_core::CStr;
 
-use log::{error, info, trace};
+use log::{info, trace};
 
 use lineup::mutex::Mutex;
 

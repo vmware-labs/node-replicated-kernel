@@ -6,13 +6,12 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use cstr_core::{CStr, CString};
 use log::{debug, error, info, Level};
 use x86::current::paging::VAddr;
 
-use super::prt::{lwpctl, rumprun_lwp, RL_MASK_PARK};
 use super::{c_char, c_int};
 
 use crate::syscalls::Fs;
@@ -30,6 +29,7 @@ pub mod unsupported;
 pub const RUMP_RFFDG: c_int = 0x01;
 
 use crate::rumprt::{c_ulong, c_void};
+#[allow(non_camel_case_types)]
 type pthread_t = c_ulong;
 
 /// A pointer to the environment variables.
@@ -124,7 +124,6 @@ pub unsafe fn netbsd_userlevel_init() {
 }
 
 pub fn install_vcpu_area() {
-    use x86::bits64::paging::VAddr;
     let ctl = crate::syscalls::Process::vcpu_control_area().expect("Can't read vcpu control area.");
     ctl.resume_with_upcall =
         VAddr::from(crate::upcalls::upcall_while_enabled as *const fn() as u64);
@@ -212,7 +211,7 @@ unsafe fn setup_process() {
     rump_pub_lwproc_switch(ptr::null_mut());
 
     let mut ptid: pthread_t = 0;
-    if (pthread_create(&mut ptid as *mut pthread_t, ptr::null(), mainstarter, lwp) != 0) {
+    if pthread_create(&mut ptid as *mut pthread_t, ptr::null(), mainstarter, lwp) != 0 {
         panic!("running main fn failed\n");
     }
 }
@@ -406,8 +405,8 @@ pub extern "C" fn main() {
         scheduler.run(&scb);
     }
 
-    core::mem::forget(scheduler);
-    unreachable!("rump main returned?");
+    //core::mem::forget(scheduler);
+    //unreachable!("rump main returned?");
 }
 
 // # TODO

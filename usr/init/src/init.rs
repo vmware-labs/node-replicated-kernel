@@ -4,12 +4,12 @@
 #![no_std]
 #![no_main]
 #![feature(
-    asm,
     thread_local,
     alloc_error_handler,
     panic_info_message,
     lang_items,
-    core_intrinsics
+    core_intrinsics,
+    asm_const
 )]
 #![allow(unused_imports, dead_code)]
 extern crate alloc;
@@ -21,9 +21,10 @@ extern crate vibrio;
 extern crate x86;
 #[macro_use]
 extern crate lazy_static;
-
+extern crate num_traits;
 extern crate lineup;
 
+use core::arch::asm;
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;
@@ -44,7 +45,7 @@ use log::{debug, error, info, Level, Metadata, Record, SetLoggerError};
 #[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
 mod vmops;
 
-mod f64;
+//mod f64;
 mod fs;
 #[cfg(feature = "fxmark")]
 mod fxmark;

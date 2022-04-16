@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use core::cmp::PartialEq;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
+use core::arch::asm;
 
 use crate::error::KError;
 use arrayvec::ArrayVec;

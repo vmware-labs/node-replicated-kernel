@@ -27,5 +27,6 @@ debug = true
 panic = "abort"
 debug = true
 
-#[patch.crates-io]
+[patch.crates-io]
 #driverkit = { path = "lib/rust-driverkit" }
+#rawtime = { path = "lib/rawtime" }

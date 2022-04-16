@@ -124,7 +124,7 @@ pub struct MlnrFS {
     /// every other operation is locked in read mode.
     mnodes: NrLock<HashMap<Mnode, NrLock<MemNode>>>,
     files: RwLock<HashMap<String, Arc<Mnode>>>,
-    root: (String, Mnode),
+    _root: (String, Mnode),
     nextmemnode: AtomicUsize,
 }
 
@@ -166,7 +166,7 @@ impl Default for MlnrFS {
         MlnrFS {
             mnodes,
             files,
-            root,
+            _root: root,
             nextmemnode: AtomicUsize::new(MNODE_OFFSET),
         }
     }

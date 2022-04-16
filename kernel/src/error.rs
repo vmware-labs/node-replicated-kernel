@@ -90,13 +90,13 @@ impl From<CapacityError<crate::memory::Frame>> for KError {
 }
 
 impl From<core::cell::BorrowMutError> for KError {
-    fn from(_err: core::cell::BorrowMutError) -> Self {
+    fn from(_e: core::cell::BorrowMutError) -> Self {
         KError::ManagerAlreadyBorrowed
     }
 }
 
-impl From<fallible_collections::TryReserveError> for KError {
-    fn from(_e: fallible_collections::TryReserveError) -> Self {
+impl From<alloc::collections::TryReserveError> for KError {
+    fn from(_e: alloc::collections::TryReserveError) -> Self {
         KError::OutOfMemory
     }
 }

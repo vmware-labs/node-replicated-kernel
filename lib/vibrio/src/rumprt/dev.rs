@@ -8,7 +8,7 @@ use core::{fmt, ptr};
 
 use hashbrown::HashMap;
 use lineup::tls2::Environment;
-use log::{error, info, trace, warn};
+use log::{error, trace, warn};
 use spin::Mutex;
 use x86::current::paging::{PAddr, VAddr};
 use x86::io;

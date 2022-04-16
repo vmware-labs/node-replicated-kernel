@@ -481,10 +481,18 @@ pub extern "C" fn _putchar(c: u8) {
     sprint!("{}", c as char);
 }
 
+/// Should we do printing in `AcpiOsVprintf`?
+/// 
+/// Note this is a global variable because otherwise the linker is too smart and
+/// realizes we never use `vprintf_` and the other stuff in nrk_asm, which means
+/// it won't make it way into the binary (and since the acpica library also
+/// relies on these functions, it complains with `fwrite` not found).
+static mut TOGGLE_PRINT: bool = false;
+
 #[no_mangle]
 #[linkage = "external"]
 pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, args: VaList) {
-    if false {
+    if TOGGLE_PRINT {
         vprintf_(format, args);
     }
 }

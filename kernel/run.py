@@ -705,6 +705,17 @@ if __name__ == '__main__':
         print("Just use `--kgdb` to make sure `run.py` configures QEMU with the proper serial line.")
         sys.exit(errno.EINVAL)
 
+    try:
+        from plumbum.cmd import sudo
+        r = sudo['-n']['true']()
+    except ProcessExecutionError as e:
+        if e.retcode == 1:
+            print("`sudo` is asking for a password, but for testing to work, `sudo` should not prompt for a password.")
+            print("Add the line `{} ALL=(ALL) NOPASSWD: ALL` with the `sudo visudo` command to fix this.".format(user))
+            sys.exit(errno.EINVAL)
+        else:
+            raise e
+
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")
     if args.verbose:

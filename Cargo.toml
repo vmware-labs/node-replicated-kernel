@@ -16,6 +16,9 @@ members = [
     "lib/rpc",
     "usr/init",
     "usr/rkapps",
+    #"lib/rust-driverkit",
+    #"lib/rust-x86",
+    #"lib/rawtime",
 ]
 
 # disable stack unwinding on panic for now
@@ -29,4 +32,5 @@ debug = true
 
 [patch.crates-io]
 #driverkit = { path = "lib/rust-driverkit" }
+#x86 = { path = "lib/rust-x86" }
 #rawtime = { path = "lib/rawtime" }

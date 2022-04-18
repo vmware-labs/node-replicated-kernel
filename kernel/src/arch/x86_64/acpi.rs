@@ -6,6 +6,7 @@
 use core::alloc::Layout;
 use core::ffi::VaList;
 use core::ptr;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use cstr_core::CStr;
 use klogger::sprint;
@@ -482,17 +483,17 @@ pub extern "C" fn _putchar(c: u8) {
 }
 
 /// Should we do printing in `AcpiOsVprintf`?
-/// 
+///
 /// Note this is a global variable because otherwise the linker is too smart and
 /// realizes we never use `vprintf_` and the other stuff in nrk_asm, which means
 /// it won't make it way into the binary (and since the acpica library also
 /// relies on these functions, it complains with `fwrite` not found).
-static mut TOGGLE_PRINT: bool = false;
+static TOGGLE_PRINT: AtomicBool = AtomicBool::new(false);
 
 #[no_mangle]
 #[linkage = "external"]
 pub unsafe extern "C" fn AcpiOsVprintf(format: *const i8, args: VaList) {
-    if TOGGLE_PRINT {
+    if TOGGLE_PRINT.load(Ordering::Relaxed) {
         vprintf_(format, args);
     }
 }
@@ -674,6 +675,10 @@ pub(crate) fn init() -> Result<(), ACPI_STATUS> {
     // Required for integration test, don't modify without adjusting
     // `acpi_topology` test
     info!("ACPI Initialized");
+
+    // Set this to true in case ACPI wants to tell us something (probably important because we already initialized)
+    // in the future:
+    TOGGLE_PRINT.store(true, Ordering::Relaxed);
 
     Ok(())
 }

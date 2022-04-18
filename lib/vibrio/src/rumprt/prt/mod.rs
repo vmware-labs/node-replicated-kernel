@@ -336,7 +336,7 @@ pub unsafe extern "C" fn ___lwp_park60(
 
     let retval = if !ts.is_null() {
         unreachable!("___lwp_park60: executing with non-null ts for first time.");
-        
+
         /*const TIMER_ABSTIME: c_int = 0x1;
 
         let sec = (*ts).tv_sec;

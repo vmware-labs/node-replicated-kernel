@@ -21,11 +21,11 @@ extern crate vibrio;
 extern crate x86;
 #[macro_use]
 extern crate lazy_static;
-extern crate num_traits;
 extern crate lineup;
+extern crate num_traits;
 
-use core::arch::asm;
 use core::alloc::{GlobalAlloc, Layout};
+use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;

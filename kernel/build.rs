@@ -31,9 +31,6 @@ fn main() {
             .warnings(true)
             //.cargo_metadata(false)
             .compile("nrk_asm");
-    
-        //println!("rustc-link-lib=static:+whole-archive=nrk_asm");
-        //println!("rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
     }
 
     let output = Command::new("git")

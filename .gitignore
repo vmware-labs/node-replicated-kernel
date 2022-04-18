@@ -5,6 +5,7 @@ kernel.bin*
 kernel/nrk
 kernel/kernel
 kernel/uefi.img
+ivshmem-file
 
 # rump
 rump/binutils-2.30.90

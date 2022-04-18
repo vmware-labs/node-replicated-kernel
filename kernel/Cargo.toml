@@ -24,7 +24,7 @@ vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 x86 = "0.47"
 klogger = "0.0.11"
-driverkit = "0.14"
+driverkit = "0.15"
 spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"
@@ -72,7 +72,7 @@ ctor = "0.1.20"
 memfile = "0.2.1"
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
-rexpect = "0.4"
+rexpect = { git = "https://github.com/gz/rexpect.git", branch = "fix-eof" }
 proptest = "1.0.0"
 hwloc2 = "2.2"
 env_logger = "0.9"

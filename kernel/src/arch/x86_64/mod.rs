@@ -34,7 +34,7 @@ use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
-use crate::{ExitReason};
+use crate::ExitReason;
 
 use apic::x2apic;
 use apic::ApicDriver;
@@ -900,8 +900,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Intialize PCI
     {
-        let pci_devices =
-            driverkit::pci::scan_bus();
+        let pci_devices = driverkit::pci::scan_bus();
         for device in pci_devices {
             info!("PCI: {}", device);
 
@@ -930,6 +929,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             .attach_debugger(target)
             .expect("Can't set debug target");
         lazy_static::initialize(&gdb::GDB_STUB);
+        use core::arch::asm;
         unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
     }
 

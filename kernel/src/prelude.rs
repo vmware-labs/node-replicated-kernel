@@ -1,10 +1,10 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-pub use core::prelude::v1::*;
 pub use alloc::boxed::Box;
-pub use alloc::vec::Vec;
 pub use alloc::string::String;
+pub use alloc::vec::Vec;
+pub use core::prelude::v1::*;
 
 pub use crate::error::KError;
 

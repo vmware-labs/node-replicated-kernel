@@ -724,7 +724,7 @@ if __name__ == '__main__':
         # Minimize python exception backtraces
         sys.excepthook = exception_handler
 
-        # Build
+    # Build
     build_bootloader(args)
     build_kernel(args)
     build_user_libraries(args)

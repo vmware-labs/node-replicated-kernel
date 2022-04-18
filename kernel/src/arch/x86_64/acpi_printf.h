@@ -108,6 +108,7 @@ int vprintf_(const char* format, va_list va);
  */
 int fctprintf(void (*out)(char character, void* arg), void* arg, const char* format, ...);
 
+size_t fwrite(const void *ptr, size_t size, size_t nmemb, void *stream);
 
 #ifdef __cplusplus
 }

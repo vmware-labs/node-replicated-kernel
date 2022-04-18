@@ -14,7 +14,7 @@ use x86::current::paging::HUGE_PAGE_SIZE;
 use crate::memory::mcache::TCacheSp;
 use crate::memory::{GlobalMemory, GrowBackend, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
-use crate::{xmain, ExitReason};
+use crate::{main, ExitReason};
 
 pub mod debug;
 pub mod irq;
@@ -110,7 +110,7 @@ pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::BOOT_TIME_ANCHOR
     );
 
-    xmain();
+    main();
 
     ExitReason::ReturnFromMain as isize
 }

@@ -528,7 +528,7 @@ fn test_file_descriptor() {
 fn test_memfs_init() {
     let memfs: MlnrFS = Default::default();
     let root = String::from("/");
-    assert_eq!(memfs.root, (root.to_owned(), 1));
+    assert_eq!(memfs._root, (root.to_owned(), 1));
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 2);
     assert_eq!(memfs.files.read().get(&root), Some(&Arc::new(1)));
     assert_eq!(

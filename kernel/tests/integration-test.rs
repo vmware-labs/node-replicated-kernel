@@ -969,7 +969,7 @@ fn s01_gpfault() {
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline)?;
         p.exp_string("[IRQ] GENERAL PROTECTION FAULT")?;
-        p.exp_regex("frame #5  - 0x[0-9a-fA-F]+ - xmain")?;
+        p.exp_regex("frame #1  - 0x[0-9a-fA-F]+")?;
         output = p.exp_eof()?;
         p.process.exit()
     };

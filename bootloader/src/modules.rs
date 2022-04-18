@@ -30,11 +30,7 @@ fn locate_binary(_st: &SystemTable<Boot>, directory: &mut Directory, name: &str)
     let c16_name = CStr16::from_str_with_buf(format!("{}", name).as_str(), &mut c16_buf).unwrap();
 
     let binary_file = directory
-        .open(
-            c16_name,
-            FileMode::Read,
-            FileAttribute::READ_ONLY,
-        )
+        .open(c16_name, FileMode::Read, FileAttribute::READ_ONLY)
         .expect(format!("Unable to locate binary '{}'", name).as_str())
         .into_type()
         .expect("Can't cast it to a file common type??");
@@ -55,9 +51,7 @@ fn locate_binary(_st: &SystemTable<Boot>, directory: &mut Directory, name: &str)
 fn determine_file_size(file: &mut RegularFile) -> usize {
     file.set_position(0xFFFFFFFFFFFFFFFF)
         .expect("Seek to the end of kernel");
-    let file_size = file
-        .get_position()
-        .expect("Couldn't determine binary size") as usize;
+    let file_size = file.get_position().expect("Couldn't determine binary size") as usize;
     file.set_position(0)
         .expect("Reset file handle position failed");
 

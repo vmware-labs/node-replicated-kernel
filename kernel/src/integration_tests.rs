@@ -54,6 +54,38 @@ pub fn run_test(name: &'static str) -> ! {
 /// Test timestamps in the kernel.
 #[cfg(feature = "integration-test")]
 fn time() {
+    fn determine_cpu_frequency() -> u64 {
+        const MHZ_TO_HZ: u64 = 1000000;
+        const KHZ_TO_HZ: u64 = 1000;
+        let cpuid = x86::cpuid::CpuId::new();
+
+        // Use info from hypervisor if available:
+        if let Some(hv) = cpuid.get_hypervisor_info() {
+            if let Some(tsc_khz) = hv.tsc_frequency() {
+                return tsc_khz as u64 * KHZ_TO_HZ;
+            }
+        }
+
+        // Use CpuId info if available:
+        if let Some(tinfo) = cpuid.get_tsc_info() {
+            if let Some(freq) = tinfo.tsc_frequency() {
+                return freq;
+            } else {
+                if tinfo.numerator() != 0 && tinfo.denominator() != 0 {
+                    // Approximate with the processor frequency:
+                    if let Some(pinfo) = cpuid.get_processor_frequency_info() {
+                        let cpu_base_freq_hz = pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ;
+                        let crystal_hz = cpu_base_freq_hz * tinfo.denominator() as u64
+                            / tinfo.numerator() as u64;
+                        return crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64;
+                    }
+                }
+            }
+        }
+
+        3000 * MHZ_TO_HZ
+    }
+
     use klogger::sprintln;
 
     unsafe {
@@ -67,14 +99,15 @@ fn time() {
         let done = start.elapsed().as_nanos();
         sprintln!("rdtsc overhead: {:?} cycles", tsc2 - tsc);
         sprintln!("Instant overhead: {:?} ns", done);
+        sprintln!("CPU freq: {:?} Hz", determine_cpu_frequency());
 
+        // Note: False negatives if ran on noise machine and
+        // we get unlucky with context switches are possible
         if cfg!(debug_assertions) {
             assert!(tsc2 - tsc <= 150, "rdtsc overhead big?");
-            // TODO: should be less:
             assert!(done <= 300, "Instant overhead big?");
         } else {
             assert!(tsc2 - tsc <= 100);
-            // TODO: should be less:
             assert!(done <= 150);
         }
     }

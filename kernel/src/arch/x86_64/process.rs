@@ -5,10 +5,10 @@ use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::arch::asm;
 use core::cmp::PartialEq;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
-use core::arch::asm;
 
 use crate::error::KError;
 use arrayvec::ArrayVec;

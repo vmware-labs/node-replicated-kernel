@@ -90,9 +90,11 @@ cd nrk/target/x86_64-nrk-none/<release | debug>/build/rkapps-$HASH/out/leveldb
 export PATH=`realpath ../../../rumpkernel-$HASH/out/rumprun/bin`:$PATH
 
 RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make clean
-RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make -j 12
+RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd make -j 12 TARGET_OS=NetBSD
 RUMPBAKE_ENV="-Wl,-allow-multiple-definition" RUMPRUN_TOOLCHAIN_TUPLE=x86_64-rumprun-netbsd rumprun-bake nrk_generic ../../../../dbbench.bin bin/db_bench
 ```
+
+> You might also want to delete the `rm -rf build` and `rm -rf litl` lines in the clean target of the Makefile if you want to call clean to recompile modified sources.
 
 ## Run LevelDB on the rumprun unikernel
 

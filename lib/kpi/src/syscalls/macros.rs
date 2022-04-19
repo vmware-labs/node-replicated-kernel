@@ -360,7 +360,7 @@ pub(crate) unsafe fn syscall_6_2(
         in("rdx") arg3,
         in("r10") arg4,
         in("r8") arg5,
-        in("r9") arg5,
+        in("r9") arg6,
         out("rcx") _, // clobbered by syscall
         out("r11") _, // clobbered by syscall
         lateout("rax") ret,

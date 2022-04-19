@@ -165,9 +165,15 @@ your changes won't take effect.
 After you're done with edits, you can manually invoke the build, and launch the
 OS again.
 
+As a simple example you can search for `rump_init(void)` in
+`target/x86_64-nrk-none/release/build/rumpkernel-$HASH/out` and add a `printf`
+statement there, then the following steps should ensure the print also appears
+on the console:
+
 ```bash
 cd target/x86_64-nrk-none/release/build/rumpkernel-$HASH/out
 ./build-rr.sh -j24 nrk -- -F "CFLAGS=-w"
+# Delete ../target/x86_64-nrk-none/debug/build/init-* to force rebuild of init...
 # Invoke run.py again...
 ```
 

@@ -9,11 +9,13 @@ pub struct ShmemTransport<'a> {
     tx: Sender<'a, Vec<u8>>,
 }
 
+
+#[allow(dead_code)]
 impl<'a> ShmemTransport<'a> {
-    pub fn new() -> ShmemTransport<'a> {
+    pub fn new(name: &str) -> ShmemTransport<'a> {
         ShmemTransport {
-            rx: Receiver::new("queue"),
-            tx: Sender::new("queue")
+            rx: Receiver::new(name),
+            tx: Sender::new(name)
         }
     }
 }
@@ -55,6 +57,7 @@ impl<'a> Transport for ShmemTransport<'a> {
         while data_received < data_in.len() {
             // Receive some data
             let recv_buff = self.rx.recv();
+            data_in[data_received..].clone_from_slice(&recv_buff[..]);
             data_received += recv_buff.len();
         }
         Ok(())
@@ -71,3 +74,36 @@ impl<'a> Transport for ShmemTransport<'a> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn shmem_tests() {
+        use super::*;
+        use std::thread;
+        use std::sync::Arc;
+
+        // Create transport
+        let transport = Arc::new(ShmemTransport::new("queue"));
+        let client_transport = transport.clone();
+        let server_transport = transport.clone();
+
+        let send_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+        thread::spawn(move || {
+            // In a new server thread, receive then send data
+            let mut server_data = [0u8; 1024];
+            server_transport.recv(&mut server_data[0..send_data.len()])
+                .unwrap();
+            assert_eq!(&send_data, &server_data[0..send_data.len()]);
+            server_transport.send(&send_data).unwrap();
+        });
+
+        // In the original thread, send then receive data
+        client_transport.send(&send_data).unwrap();
+        let mut client_data = [0u8; 1024];
+        client_transport
+            .recv(&mut client_data[0..send_data.len()])
+            .unwrap();
+        assert_eq!(&send_data, &client_data[0..send_data.len()]);
+    }
+}

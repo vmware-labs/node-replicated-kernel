@@ -6,7 +6,6 @@
 #[macro_use]
 extern crate abomonation;
 
-#[cfg(not(feature = "std"))]
 extern crate alloc;
 
 #[cfg(feature = "smoltcp_transport")]

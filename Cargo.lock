@@ -643,7 +643,7 @@ dependencies = [
 [[package]]
 name = "fringe"
 version = "1.2.1"
-source = "git+https://github.com/gz/libfringe.git?branch=new-asm-syntax#f6c4ec381a1a1e304562ac8bb625b4ab0d28035a"
+source = "git+https://github.com/gz/libfringe.git?branch=new-asm-syntax#518f6ec4191e65852aaa3ab7877073099e8b5b62"
 dependencies = [
  "backtrace",
  "libc 0.2.107",
@@ -1070,7 +1070,7 @@ dependencies = [
  "abomonation",
  "bit_field",
  "bitflags",
- "env_logger 0.5.13",
+ "env_logger 0.9.0",
  "log",
  "memoffset",
  "serde",
@@ -1121,7 +1121,7 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-utils 0.8.5",
  "either",
- "env_logger 0.5.13",
+ "env_logger 0.9.0",
  "fringe",
  "hashbrown",
  "kpi",

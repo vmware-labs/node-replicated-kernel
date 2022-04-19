@@ -19,6 +19,7 @@ members = [
     #"lib/rust-driverkit",
     #"lib/rust-x86",
     #"lib/rawtime",
+    #"lib/libfringe",
 ]
 
 # disable stack unwinding on panic for now

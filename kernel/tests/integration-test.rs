@@ -524,7 +524,7 @@ impl<'a> RunnerArgs<'a> {
 
     /// Use virtio NIC.
     fn use_virtio(mut self) -> RunnerArgs<'a> {
-        self.nic = "virtio";
+        self.nic = "virtio-net-pci";
         self
     }
 

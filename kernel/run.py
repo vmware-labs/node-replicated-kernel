@@ -125,7 +125,7 @@ parser.add_argument("--pvrdma", action="store_true",
                     help="Add para-virtual RDMA device (for qemu)", default=False)
 parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
-parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio", "vmxnet3"],
+parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio-net-pci", "vmxnet3"],
                     help='What NIC model to use for emulation', required=False)
 parser.add_argument('--tap', default='tap0', choices=["tap0", "tap2"],
                     help='Which tap interface to use from the host', required=False)

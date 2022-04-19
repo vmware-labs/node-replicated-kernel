@@ -189,3 +189,10 @@ pub unsafe fn resume(control: &mut kpi::arch::VirtualCpu) -> ! {
         options(att_syntax, noreturn)
     );
 }
+
+/// Well, let's just hope the assembler continues to put this immediatly after
+/// `resume()` in the binary...
+#[no_mangle]
+pub unsafe fn resume_end() {
+    unreachable!("resume_end")
+}

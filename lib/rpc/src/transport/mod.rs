@@ -18,6 +18,8 @@ mod smoltcp;
 mod mpsc;
 
 mod api;
+
+#[cfg(feature = "shmem_transport")]
 mod shmem;
 
 pub use api::Transport;

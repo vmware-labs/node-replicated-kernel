@@ -2021,6 +2021,7 @@ dependencies = [
  "lazy_static",
  "log",
  "rawtime",
+ "shmem-queue",
  "smoltcp 0.8.0",
  "vmxnet3",
 ]
@@ -2160,6 +2161,16 @@ dependencies = [
  "digest",
  "fake-simd",
  "opaque-debug",
+]
+
+[[package]]
+name = "shmem-queue"
+version = "0.1.0"
+source = "git+https://github.com/ankit-iitb/shmem-queue.git?branch=no-copy#e8dd076573b4896500cf9efe51012dbfe9030309"
+dependencies = [
+ "cstr_core",
+ "libc 0.2.107",
+ "log",
 ]
 
 [[package]]

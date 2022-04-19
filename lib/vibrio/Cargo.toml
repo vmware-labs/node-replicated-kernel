@@ -18,7 +18,7 @@ bitflags = "1.2"
 log = "0.4"
 x86 = "0.43"
 slabmalloc = "0.10"
-rawtime = "0.0.4"
+rawtime = "0.0.6"
 rumpkernel = { version = "0.0.4", optional = true }
 spin = "0.9.2"
 cstr_core = { version = "0.2.3", default-features = false , features = ["alloc"] }

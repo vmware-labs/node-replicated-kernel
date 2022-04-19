@@ -470,9 +470,9 @@ dependencies = [
 
 [[package]]
 name = "driverkit"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4368571525a556a2110592735e0d2220087368dc9d0e17124f52b134294723d"
+checksum = "6851150166225a24b04e695a55216a7b3833ee7103c47cdb942477409dd1ee58"
 dependencies = [
  "bit_field",
  "byteorder",
@@ -1070,7 +1070,7 @@ dependencies = [
  "abomonation",
  "bit_field",
  "bitflags",
- "env_logger 0.9.0",
+ "env_logger 0.5.13",
  "log",
  "memoffset",
  "serde",
@@ -1121,7 +1121,7 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-utils 0.8.5",
  "either",
- "env_logger 0.9.0",
+ "env_logger 0.5.13",
  "fringe",
  "hashbrown",
  "kpi",

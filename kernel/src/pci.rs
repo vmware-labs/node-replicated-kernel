@@ -1,3 +1,8 @@
+// Copyright © 2022 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
+#![allow(unused)]
+
 use arrayvec::ArrayVec;
 use driverkit::pci::{scan_bus, PciDevice};
 use lazy_static::lazy_static;

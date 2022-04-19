@@ -24,7 +24,7 @@ vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 x86 = "0.47"
 klogger = "0.0.11"
-driverkit = "0.15"
+driverkit = "0.16"
 spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"

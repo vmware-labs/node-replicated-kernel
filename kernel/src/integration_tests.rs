@@ -637,9 +637,12 @@ fn vmxnet_smoltcp() {
 
     //arch::irq::ioapic_establish_route(0x0, 0x0);
     //crate::arch::irq::enable();
-    let vmx = {
+    const VMWARE_INC: u16 = 0x15ad;
+    const VMXNET_DEV: u16 = 0x07b0;
+    let vmx = if let Some(vmxnet3_dev) = crate::pci::claim_device(VMWARE_INC, VMXNET_DEV) {
+        let addr = vmxnet3_dev.pci_address();
+        let ba = BarAccess::new(addr.bus.into(), addr.dev.into(), addr.fun.into());
         let kcb = crate::kcb::get_kcb();
-        let ba = BarAccess::new(0x0, 0x10, 0x0);
         for &bar in &[ba.bar0 - KERNEL_BASE, ba.bar1 - KERNEL_BASE] {
             assert!(kcb
                 .arch
@@ -657,6 +660,8 @@ fn vmxnet_smoltcp() {
         assert!(vmx.attach_pre().is_ok());
         vmx.init();
         vmx
+    } else {
+        panic!("vmxnet3 PCI device not found, forgot to pass `--nic vmxnet3`?");
     };
 
     #[derive(Debug)]

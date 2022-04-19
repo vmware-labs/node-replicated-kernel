@@ -899,21 +899,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     // Intialize PCI
-    {
-        let pci_devices = driverkit::pci::scan_bus();
-        for device in pci_devices {
-            info!("PCI: {}", device);
-
-            // TODO(hack): set cross-VM memory region:
-            // (Ideally we have a proper driver + device interface for such things)
-            const RED_HAT_INC: u16 = 0x1af4;
-            const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
-            if device.vendor_id() == RED_HAT_INC && device.device_id() == INTER_VM_SHARED_MEM_DEV {
-                let kcb = kcb::get_kcb();
-                kcb.set_ivshmem_device(device);
-            }
-        }
-    }
+    crate::pci::init();
 
     {
         lazy_static::initialize(&process::PROCESS_TABLE);

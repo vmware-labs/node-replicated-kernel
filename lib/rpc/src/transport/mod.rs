@@ -18,6 +18,7 @@ mod smoltcp;
 mod mpsc;
 
 mod api;
+mod shmem;
 
 pub use api::Transport;
 

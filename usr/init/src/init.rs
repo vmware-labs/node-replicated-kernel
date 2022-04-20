@@ -45,7 +45,6 @@ use log::{debug, error, info, Level, Metadata, Record, SetLoggerError};
 #[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
 mod vmops;
 
-//mod f64;
 mod fs;
 #[cfg(feature = "fxmark")]
 mod fxmark;

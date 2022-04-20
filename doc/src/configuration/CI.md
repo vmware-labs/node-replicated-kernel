@@ -95,8 +95,8 @@ wget https://launchpad.net/libmemcached/1.0/1.0.18/+download/libmemcached-1.0.18
 tar zxvf libmemcached-1.0.18.tar.gz
 
 cd libmemcached-1.0.18/
-LDFLAGS='-lpthread' CXXFLAGS='-fpermissive' CFLAGS='-Wno-errors -fpermissive' ./configure --enable-memaslap --with-pthread=yes
-make -j12
+LDFLAGS='-lpthread' CPPFLAGS='-fcommon -fpermissive' CFLAGS='-fpermissive -fcommon' ./configure --enable-memaslap
+CPPFLAGS='-fcommon' make -j12
 sudo make install
 sudo ldconfig
 

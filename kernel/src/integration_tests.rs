@@ -670,7 +670,9 @@ fn vmxnet_smoltcp() {
 
     impl Clock {
         fn new() -> Clock {
-            Clock(Cell::new(Instant::from_millis(0)))
+            let rt = rawtime::Instant::now().as_nanos();
+            let rt_millis = (rt / 1_000_000) as i64;
+            Clock(Cell::new(Instant::from_millis(rt_millis)))
         }
 
         fn elapsed(&self) -> Instant {

@@ -19,8 +19,8 @@ proptest = { git = "https://github.com/gz/proptest.git", branch = "x86-asm", def
 rawtime = "0.0.6"
 x86 = "0.47"
 log = "0.4"
-num-traits = { version = "0.2", default-features = false }
-libm = "0.2.2"
+#libm = "0.2.2"
+num-traits = { version = "0.2", default-features = false, features = ["libm"] }
 lazy_static =  { version = "1.4", default_features = false }
 cstr_core = { version = "0.2.3", default-features = false }
 spin = { version = "0.5.2", default_features = false }

@@ -40,10 +40,16 @@ const REDIS_PORT: u16 = 6379;
 const REDIS_START_MATCH: &'static str = "# Server initialized";
 
 /// Line we use in dhcpd to match for giving IP to qemu VM.
-const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.11 to 56:b4:44:e9:62:dc (btest) via tap0";
+const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:dc (btest) via tap0";
 
 /// Environment variable that points to machine config (for baremetal booting)
 const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";
+
+/// Binary of the memcached benchmark program
+const MEMASLAP_BINARY: &str = "memaslap";
+
+/// Binary of the redis benchmark program
+const REDIS_BENCHMARK: &str = "redis-benchmark";
 
 /// Different ExitStatus codes as returned by NRK.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
@@ -311,7 +317,15 @@ impl<'a> Default for BuildArgs<'a> {
 
 impl<'a> BuildArgs<'a> {
     fn build(self) -> Built<'a> {
-        let env = TARGET_DIR.lock().unwrap();
+        let env = match TARGET_DIR.lock() {
+            Ok(env) => env,
+            // It's fine to get the environment again if another test failed,
+            // and hence poisoned the lock. That's because the lock doesn't
+            // contain any state and is just to coordinate access to the build
+            // directory (no two builds are using target/ at the same time)
+            Err(pe) => pe.into_inner(),
+        };
+
         self.compile(env)
     }
 
@@ -1303,6 +1317,61 @@ fn s02_gdb() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Tests that basic file-system support is functional.
+///
+/// This tests various file-system systemcalls such as:
+///  * File open, close
+///  * File read, write
+///  * File getinfo
+///  * All the above operations with invalid userspace pointers
+#[test]
+fn s02_test_fs() {
+    let build = BuildArgs::default()
+        .module("init")
+        .user_feature("test-fs")
+        .release()
+        .build();
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build).timeout(20_000);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        p.exp_string("fs_test OK")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
+/// Property tests for file-system support.
+///
+/// This tests various file-system systemcalls such as:
+///  * File open, close
+///  * File read, write
+///  * File getinfo
+#[test]
+fn s02_test_fs_prop() {
+    let build = BuildArgs::default()
+        .module("init")
+        .user_feature("test-fs-prop")
+        .release()
+        .build();
+    let cmdline = RunnerArgs::new_with_build("userspace", &build).timeout(120_000);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        p.exp_string("fs_prop_test OK")?;
+        output = p.exp_eof()?;
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Test that we boot up all cores in the system.
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
@@ -1640,6 +1709,9 @@ fn s02_vspace_debug() {
 //#[test]
 #[allow(unused)]
 fn s05_redis_smoke() {
+    let _r = which::which(REDIS_BENCHMARK)
+        .expect("redis-benchmark not installed on host, test will fail!");
+
     let build = BuildArgs::default()
         .module("rkapps")
         .user_feature("rkapps:redis")
@@ -1688,8 +1760,8 @@ fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::sessio
     fn spawn_bencher(port: u16, requests: usize) -> Result<rexpect::session::PtySession> {
         spawn(
             format!(
-                "redis-benchmark -h 172.31.0.10 -p {} -t ping,get,set -n {} -P 30 --csv",
-                port, requests
+                "{} -h 172.31.0.10 -p {} -t ping,get,set -n {} -P 30 --csv",
+                REDIS_BENCHMARK, port, requests
             )
             .as_str(),
             Some(45000),
@@ -1775,6 +1847,9 @@ fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::sessio
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_redis_benchmark_virtio() {
+    let _r = which::which(REDIS_BENCHMARK)
+        .expect("redis-benchmark not installed on host, test will fail!");
+
     let build = BuildArgs::default()
         .module("rkapps")
         .user_feature("rkapps:redis")
@@ -1810,6 +1885,9 @@ fn s06_redis_benchmark_virtio() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_redis_benchmark_e1000() {
+    let _r = which::which(REDIS_BENCHMARK)
+        .expect("redis-benchmark not installed on host, test will fail!");
+
     let build = BuildArgs::default()
         .module("rkapps")
         .user_feature("rkapps:redis")
@@ -2280,61 +2358,6 @@ fn s06_fxmark_benchmark() {
     }
 }
 
-/// Tests that basic file-system support is functional.
-///
-/// This tests various file-system systemcalls such as:
-///  * File open, close
-///  * File read, write
-///  * File getinfo
-///  * All the above operations with invalid userspace pointers
-#[test]
-fn s06_test_fs() {
-    let build = BuildArgs::default()
-        .module("init")
-        .user_feature("test-fs")
-        .release()
-        .build();
-    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build).timeout(20_000);
-    let mut output = String::new();
-
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline)?;
-
-        p.exp_string("fs_test OK")?;
-        output = p.exp_eof()?;
-        p.process.exit()
-    };
-
-    check_for_successful_exit(&cmdline, qemu_run(), output);
-}
-
-/// Property tests for file-system support.
-///
-/// This tests various file-system systemcalls such as:
-///  * File open, close
-///  * File read, write
-///  * File getinfo
-#[test]
-fn s06_test_fs_prop() {
-    let build = BuildArgs::default()
-        .module("init")
-        .user_feature("test-fs-prop")
-        .release()
-        .build();
-    let cmdline = RunnerArgs::new_with_build("userspace", &build).timeout(120_000);
-    let mut output = String::new();
-
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline)?;
-
-        p.exp_string("fs_prop_test OK")?;
-        output = p.exp_eof()?;
-        p.process.exit()
-    };
-
-    check_for_successful_exit(&cmdline, qemu_run(), output);
-}
-
 fn memcached_benchmark(
     driver: &'static str,
     cores: usize,
@@ -2342,7 +2365,7 @@ fn memcached_benchmark(
 ) -> Result<rexpect::session::PtySession> {
     fn spawn_memaslap(duration: usize) -> Result<rexpect::session::PtySession> {
         spawn(
-            format!("memaslap -s 172.31.0.10 -t {}s -S 10s", duration).as_str(),
+            format!("{} -s 172.31.0.10 -t {}s -S 10s", MEMASLAP_BINARY, duration).as_str(),
             Some(25000),
         )
     }
@@ -2458,6 +2481,9 @@ fn memcached_benchmark(
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_memcached_benchmark() {
+    let _r =
+        which::which(MEMASLAP_BINARY).expect("memaslap not installed on host, test will fail!");
+
     let max_cores = 4;
     let threads = if cfg!(feature = "smoke") {
         vec![1]

@@ -24,17 +24,10 @@ pub fn paddr_to_kernel_vaddr(p: PAddr) -> VAddr {
 }
 
 /// Page allocator based on mmap/munmap system calls for backing slab memory.
+#[derive(Default)]
 pub struct MemoryMapper {
     /// Currently allocated bytes.
     currently_allocated: usize,
-}
-
-impl Default for MemoryMapper {
-    fn default() -> Self {
-        MemoryMapper {
-            currently_allocated: 0,
-        }
-    }
 }
 
 impl MemoryMapper {

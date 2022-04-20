@@ -169,7 +169,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
         &mut self,
         load_headers: elfloader::LoadableHeaders,
     ) -> Result<(), elfloader::ElfLoaderErr> {
-        for header in load_headers.into_iter() {
+        for header in load_headers {
             let base = header.virtual_addr();
             let size = header.mem_size() as usize;
             let flags = header.flags();

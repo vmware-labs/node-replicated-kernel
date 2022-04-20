@@ -37,19 +37,13 @@ impl TlbFlushHandle {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct CoreBitMap {
     pub low: u128,
     pub high: u128,
 }
 // Who needs more than 256 cores anyways?
 static_assertions::const_assert!(crate::arch::MAX_CORES < (u128::BITS as usize) * 2);
-
-impl Default for CoreBitMap {
-    fn default() -> Self {
-        CoreBitMap { low: 0, high: 0 }
-    }
-}
 
 impl CoreBitMap {
     pub fn set_bit(&mut self, bit: usize, value: bool) {

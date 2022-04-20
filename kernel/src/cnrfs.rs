@@ -18,6 +18,7 @@ use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::FileOperation;
 
+#[derive(Default)]
 pub struct MlnrKernelNode {
     /// TODO: RwLock should be okay for read-write operations as those ops
     /// perform read() on lock. Make an array of hashmaps to distribute the
@@ -25,15 +26,6 @@ pub struct MlnrKernelNode {
     process_map: NrLock<HashMap<Pid, FileDesc>>,
     /// MLNR kernel node primarily replicates the in-memory filesystem.
     fs: MlnrFS,
-}
-
-impl Default for MlnrKernelNode {
-    fn default() -> Self {
-        MlnrKernelNode {
-            process_map: NrLock::<HashMap<Pid, FileDesc>>::default(),
-            fs: MlnrFS::default(),
-        }
-    }
 }
 
 #[derive(Hash, Clone, Debug, PartialEq)]

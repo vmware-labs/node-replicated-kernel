@@ -363,6 +363,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn test_putchar() {
         unsafe {
             rumpuser_putchar('a' as i64);

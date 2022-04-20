@@ -44,7 +44,7 @@ jobs:
       #  run: RUST_TEST_THREADS=1 cargo test
       #  working-directory: ./lib/lineup
       - name: vibrio tests
-        run: cargo test
+        run: cargo test --features rumprt
         working-directory: ./lib/vibrio
       - name: vmxnet3 tests
         run: cargo test

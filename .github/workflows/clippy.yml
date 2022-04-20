@@ -25,5 +25,7 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Run clippy manually without annotations
-        run: cargo clippy --package nrk
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --package nrk

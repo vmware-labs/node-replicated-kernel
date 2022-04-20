@@ -40,7 +40,7 @@ const REDIS_PORT: u16 = 6379;
 const REDIS_START_MATCH: &'static str = "# Server initialized";
 
 /// Line we use in dhcpd to match for giving IP to qemu VM.
-const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:dc (btest) via tap0";
+const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.11 to 56:b4:44:e9:62:dc (btest) via tap0";
 
 /// Environment variable that points to machine config (for baremetal booting)
 const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";

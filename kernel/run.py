@@ -47,11 +47,11 @@ ARCH = "x86_64"
 
 NETWORK_CONFIG = {
     'tap0': {
-        'zone': '172.31.0.20/24',
+        'ip_zone': '172.31.0.20/24',
         'mac': '56:b4:44:e9:62:dc',
     },
     'tap2': {
-        'zone': '172.31.0.2/24',
+        'ip_zone': '172.31.0.2/24',
         'mac': '56:b4:44:e9:62:dd',
     },
 }
@@ -484,7 +484,7 @@ def run_qemu(args):
     # sudo setcap cap_net_admin .../run.py
     # in the setup.sh script
     sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
-    sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['zone']]]()
+    sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
 
     # TODO - set up bridge between interfaces
     # sudo ip link add br0 type bridge

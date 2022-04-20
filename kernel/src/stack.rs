@@ -21,12 +21,17 @@ pub struct StackPointer(*mut usize);
 
 /// A trait for objects that hold ownership of a stack.
 ///
-/// To preserve memory safety, an implementation of this trait must fulfill
-/// the following contract:
+/// To preserve memory safety, an implementation of this trait must fulfill the
+/// following contract:
 ///
-///   * The base address of the stack must be aligned to
-///     a [`STACK_ALIGNMENT`][align]-byte boundary.
-///   * Every address between the base and the limit must be readable and writable.
+///   * The base address of the stack must be aligned to a
+///     [`STACK_ALIGNMENT`][align]-byte boundary.
+///   * Every address between the base and the limit must be readable and
+///     writable.
+///
+/// # Safety
+/// Ideally only hardware/CPU writes to this memory, and all we ever do is
+/// program it with `base`?
 pub unsafe trait Stack {
     /// Returns the base address of the stack.
     /// On all modern architectures, the stack grows downwards,

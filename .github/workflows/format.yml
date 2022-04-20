@@ -18,6 +18,14 @@ jobs:
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
           rustup show
-      - uses: Swatinem/rust-cache@v1
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run cargo fmt
         run: cargo fmt -- --check

@@ -13,10 +13,14 @@ use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 
 pub fn init_network<'a>() -> Interface<'a, DevQueuePhy> {
-    const BUS: u32 = 0x0;
-    const DEV: u32 = 0x10;
-    const FUN: u32 = 0x0;
-    let pci = BarAccess::new(BUS, DEV, FUN);
+    const VMWARE_INC: u16 = 0x15ad;
+    const VMXNET_DEV: u16 = 0x07b0;
+    let pci = if let Some(vmxnet3_dev) = crate::pci::claim_device(VMWARE_INC, VMXNET_DEV) {
+        let addr = vmxnet3_dev.pci_address();
+        BarAccess::new(addr.bus.into(), addr.dev.into(), addr.fun.into())
+    } else {
+        panic!("vmxnet3 PCI device not found, forgot to pass `--nic vmxnet3`?");
+    };
 
     // TODO(hack): Map potential vmxnet3 bar addresses XD
     // Do this in kernel space (offset of KERNEL_BASE) so the mapping persists

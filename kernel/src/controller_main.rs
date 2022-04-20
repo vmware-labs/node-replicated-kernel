@@ -1,17 +1,17 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::arch::debug::shutdown;
-use crate::ExitReason;
-use alloc::prelude::v1::Box;
+use alloc::boxed::Box;
 
 use rpc::rpc::RPCType;
 use rpc::server::Server;
 use rpc::transport::TCPTransport;
 use rpc::RPCServer;
 
+use crate::arch::debug::shutdown;
 use crate::arch::exokernel::*;
 use crate::arch::network::init_network;
+use crate::ExitReason;
 
 const PORT: u16 = 6970;
 

@@ -17,6 +17,8 @@
 )]
 extern crate alloc;
 extern crate kpi;
+#[cfg(not(target_os = "nrk"))]
+extern crate std;
 
 pub use kpi::*;
 
@@ -24,6 +26,7 @@ extern crate arrayvec;
 extern crate lazy_static;
 
 pub mod mem;
+#[cfg(target_os = "nrk")]
 pub mod upcalls;
 pub mod vconsole;
 pub mod writer;

@@ -1,21 +1,20 @@
-use shmem_queue::{Sender, Receiver};
+use shmem_queue::{Receiver, Sender};
 
-use alloc::vec::Vec;
 use crate::rpc::*;
 use crate::transport::Transport;
+use alloc::vec::Vec;
 
 pub struct ShmemTransport<'a> {
     rx: Receiver<'a, Vec<u8>>,
     tx: Sender<'a, Vec<u8>>,
 }
 
-
 #[allow(dead_code)]
 impl<'a> ShmemTransport<'a> {
     pub fn new(name: &str) -> ShmemTransport<'a> {
         ShmemTransport {
             rx: Receiver::new(name),
-            tx: Sender::new(name)
+            tx: Sender::new(name),
         }
     }
 }
@@ -37,11 +36,10 @@ impl<'a> Transport for ShmemTransport<'a> {
             return Ok(());
         }
 
-        match self.tx
-            .send(data_out.to_vec()) {
-                true => Ok(()),
-                false => Err(RPCError::TransportError)
-            }
+        match self.tx.send(data_out.to_vec()) {
+            true => Ok(()),
+            false => Err(RPCError::TransportError),
+        }
     }
 
     /// Receive data from a remote node
@@ -79,8 +77,8 @@ mod tests {
     #[test]
     fn shmem_tests() {
         use super::*;
-        use std::thread;
         use std::sync::Arc;
+        use std::thread;
 
         // Create transport
         let transport = Arc::new(ShmemTransport::new("queue"));
@@ -92,7 +90,8 @@ mod tests {
         thread::spawn(move || {
             // In a new server thread, receive then send data
             let mut server_data = [0u8; 1024];
-            server_transport.recv(&mut server_data[0..send_data.len()])
+            server_transport
+                .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
             assert_eq!(&send_data, &server_data[0..send_data.len()]);
             server_transport.send(&send_data).unwrap();

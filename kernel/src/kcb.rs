@@ -477,6 +477,24 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn set_ivshmem_device(&mut self, ivshmem_dev: PciDevice) {
         self.ivshmem_dev = Some(ivshmem_dev);
+
+        if let Some(pci_dev) = self.ivshmem_dev.as_mut() {
+            let mem_region = pci_dev.bar(2).expect("Unable to find the BAR");
+            let base_paddr = mem_region.address;
+            let size = mem_region.size;
+            log::info!(
+                "Found IVSHMEM device with base paddr {:X} and size {}",
+                base_paddr,
+                size
+            );
+
+            // If the PCI dev is not the bus master; make it.
+            if !pci_dev.is_bus_master() {
+                pci_dev.enable_bus_mastering();
+            }
+        } else {
+            log::error!("Unable to find IVSHMEM device");
+        }
     }
 
     pub fn enable_print_buffering(&mut self, buffer: String) {

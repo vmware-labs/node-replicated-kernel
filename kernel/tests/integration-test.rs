@@ -41,11 +41,9 @@ const REDIS_START_MATCH: &'static str = "# Server initialized";
 
 /// Line we use in dhcpd to match for giving IP to Qemu VM.
 ///
-/// Supposedly, DHCPD will always give the same address (.10),
-/// but on Ubuntu 21.04 it suddenly gives `.11`, so the regex
-/// accounts for that :/.
-const DHCP_ACK_MATCH: &'static str =
-    "DHCPACK on 172\\.31\\.0\\.[0-9]+ to 56:b4:44:e9:62:dc \\(btest\\) via tap0";
+/// # Depends on
+/// - `tests/dhcpd.conf`: config file contains match of MAC to IP
+const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:dc via tap0";
 
 /// Environment variable that points to machine config (for baremetal booting)
 const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";
@@ -1607,7 +1605,7 @@ fn s04_userspace_rumprt_net() {
         let mut p = spawn_nrk(&cmdline)?;
 
         // Test that DHCP works:
-        output += dhcp_server.exp_regex(DHCP_ACK_MATCH)?.1.as_str();
+        output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
         // Test that sendto works:
         // Used to swallow just the first packet (see also: https://github.com/rumpkernel/rumprun/issues/131)
@@ -1871,7 +1869,7 @@ fn s06_redis_benchmark_virtio() {
         let mut dhcp_server = spawn_dhcpd()?;
 
         // Test that DHCP works:
-        output += dhcp_server.exp_regex(DHCP_ACK_MATCH)?.1.as_str();
+        output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
         use std::{thread, time};
@@ -2592,7 +2590,7 @@ fn s06_leveldb_benchmark() {
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline)?;
             let mut dhcp_server = spawn_dhcpd()?;
-            output += dhcp_server.exp_regex(DHCP_ACK_MATCH)?.1.as_str();
+            output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
             let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;
             println!("{}", matched);

@@ -108,3 +108,5 @@ test-timer = []
 exokernel = ["core2", "abomonation"]
 # Run as controller
 controller = ["core2", "abomonation"]
+# Run the exokernel on shmem transport
+shmem = [] 

@@ -30,7 +30,6 @@ use crate::nrproc::NrProcess;
 use crate::process::{Pid, Process, MAX_PROCESSES};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
-use driverkit::pci::PciDevice;
 
 pub trait MemManager: PhysicalPageProvider + AllocatorStatistics + GrowBackend {}
 
@@ -331,9 +330,6 @@ where
 
     /// Tokens to access process replicas
     pub process_token: ArrayVec<ReplicaToken, { MAX_PROCESSES }>,
-
-    /// Reference to a shared memory device.
-    pub ivshmem_dev: Option<PciDevice>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -364,7 +360,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             replica: None,
             tlb_time: 0,
             process_token: ArrayVec::new_const(),
-            ivshmem_dev: None,
         }
     }
 
@@ -473,28 +468,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn set_pmem_manager(&mut self, pmanager: TCache) {
         self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
-    }
-
-    pub fn set_ivshmem_device(&mut self, ivshmem_dev: PciDevice) {
-        self.ivshmem_dev = Some(ivshmem_dev);
-
-        if let Some(pci_dev) = self.ivshmem_dev.as_mut() {
-            let mem_region = pci_dev.bar(2).expect("Unable to find the BAR");
-            let base_paddr = mem_region.address;
-            let size = mem_region.size;
-            log::info!(
-                "Found IVSHMEM device with base paddr {:X} and size {}",
-                base_paddr,
-                size
-            );
-
-            // If the PCI dev is not the bus master; make it.
-            if !pci_dev.is_bus_master() {
-                pci_dev.enable_bus_mastering();
-            }
-        } else {
-            log::error!("Unable to find IVSHMEM device");
-        }
     }
 
     pub fn enable_print_buffering(&mut self, buffer: String) {

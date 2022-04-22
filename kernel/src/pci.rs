@@ -46,13 +46,4 @@ pub fn claim_device(vendor_id: u16, device_id: u16) -> Option<PciDevice> {
 
 pub fn init() {
     lazy_static::initialize(&PCI_DEVICES);
-
-    // Set-up inter-shared memory device:
-    // TODO(api): need a proper driver-model / design for kernel devices
-    const RED_HAT_INC: u16 = 0x1af4;
-    const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
-    if let Some(ivshmem_device) = claim_device(RED_HAT_INC, INTER_VM_SHARED_MEM_DEV) {
-        let kcb = kcb::get_kcb();
-        kcb.set_ivshmem_device(ivshmem_device);
-    }
 }

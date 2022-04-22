@@ -7,6 +7,7 @@ use vmxnet3::vmx::VMXNet3;
 
 use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
+use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
 use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
@@ -15,7 +16,7 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 pub fn init_network<'a>() -> Interface<'a, DevQueuePhy> {
     const VMWARE_INC: u16 = 0x15ad;
     const VMXNET_DEV: u16 = 0x07b0;
-    let pci = if let Some(vmxnet3_dev) = crate::pci::claim_device(VMWARE_INC, VMXNET_DEV) {
+    let pci = if let Some(vmxnet3_dev) = claim_device(VMWARE_INC, VMXNET_DEV) {
         let addr = vmxnet3_dev.pci_address();
         BarAccess::new(addr.bus.into(), addr.dev.into(), addr.fun.into())
     } else {
@@ -74,4 +75,43 @@ pub fn init_network<'a>() -> Interface<'a, DevQueuePhy> {
         .neighbor_cache(neighbor_cache)
         .finalize();
     iface
+}
+
+/// Setup inter-vm shared-memory device.
+#[allow(dead_code)]
+fn init_shmem_device() -> Option<(u64, u64)> {
+    const RED_HAT_INC: u16 = 0x1af4;
+    const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
+    if let Some(mut ivshmem_device) = claim_device(RED_HAT_INC, INTER_VM_SHARED_MEM_DEV) {
+        let mem_region = ivshmem_device.bar(2).expect("Unable to find the BAR");
+        let base_paddr = mem_region.address;
+        let size = mem_region.size;
+        log::info!(
+            "Found IVSHMEM device with base paddr {:X} and size {}",
+            base_paddr,
+            size
+        );
+
+        // If the PCI dev is not the bus master; make it.
+        if !ivshmem_device.is_bus_master() {
+            ivshmem_device.enable_bus_mastering();
+        }
+
+        // TODO: Double check if this is mapping we need?
+        let kcb = super::kcb::get_kcb();
+        kcb.arch
+            .init_vspace()
+            .map_identity_with_offset(
+                PAddr::from(KERNEL_BASE),
+                PAddr::from(base_paddr),
+                size as usize,
+                MapAction::ReadWriteKernel,
+            )
+            .expect("Failed to write potential vmxnet3 bar addresses");
+
+        Some((base_paddr, size))
+    } else {
+        log::error!("Unable to find IVSHMEM device");
+        None
+    }
 }

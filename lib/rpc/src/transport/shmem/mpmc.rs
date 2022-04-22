@@ -7,18 +7,21 @@
 
 #![allow(warnings)] // For now...
 
+use alloc::alloc::{alloc, Layout};
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 use core::cell::UnsafeCell;
-use core::sync::atomic::AtomicUsize;
+use core::marker::PhantomData;
+use core::mem::{align_of, size_of};
+use core::slice::from_raw_parts_mut;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use fallible_collections::vec::FallibleVec;
-use fallible_collections::vec::TryCollect;
+use crate::QUEUE_SIZE;
 
-use crate::error::KError;
-use crate::prelude::*;
-
+#[repr(C)]
 struct Node<T> {
     sequence: AtomicUsize,
     value: Option<T>,
@@ -27,23 +30,94 @@ struct Node<T> {
 unsafe impl<T: Send> Send for Node<T> {}
 unsafe impl<T: Sync> Sync for Node<T> {}
 
-struct State<T> {
-    buffer: CachePadded<Vec<UnsafeCell<Node<T>>>>,
+#[repr(C)]
+struct State<'a, T> {
     mask: usize,
-    enqueue_pos: CachePadded<AtomicUsize>,
-    dequeue_pos: CachePadded<AtomicUsize>,
+    enqueue_pos: *const AtomicUsize,
+    dequeue_pos: *const AtomicUsize,
+    buffer: &'a [UnsafeCell<Node<T>>],
 }
 
-unsafe impl<T: Send> Send for State<T> {}
-unsafe impl<T: Sync> Sync for State<T> {}
+unsafe impl<'a, T: Send> Send for State<'a, T> {}
+unsafe impl<'a, T: Sync> Sync for State<'a, T> {}
 
-pub struct Queue<T> {
-    state: Arc<State<T>>,
-}
+impl<'a, T: Send> State<'a, T> {
+    fn with_capacity(capacity: usize) -> Result<Box<State<'a, T>>, ()> {
+        let (num, buf_size) = Self::capacity(capacity);
+        let mem = unsafe {
+            alloc(
+                Layout::from_size_align(buf_size, align_of::<State<T>>())
+                    .expect("Alignment error while allocating the Queue!"),
+            )
+        };
+        if mem.is_null() {
+            panic!("Failed to allocate memory for the Queue!");
+        }
 
-impl<T: Send> State<T> {
-    fn with_capacity(capacity: usize) -> Result<State<T>, KError> {
-        let capacity = if capacity < 2 || (capacity & (capacity - 1)) != 0 {
+        Self::init(true, num, mem)
+    }
+
+    fn with_capacity_in<A: Allocator>(
+        init: bool,
+        capacity: usize,
+        alloc: A,
+    ) -> Result<Box<State<'a, T>>, ()> {
+        let (num, buf_size) = Self::capacity(capacity);
+        let mem = unsafe {
+            alloc
+                .allocate(
+                    Layout::from_size_align(buf_size, align_of::<State<T>>())
+                        .expect("Alignment error while allocating the Queue!"),
+                )
+                .expect("Failed to allocate memory for the Queue!")
+        };
+        let mem = mem.as_ptr() as *mut u8;
+
+        Self::init(init, num, mem)
+    }
+
+    fn init(init: bool, num: usize, mem: *mut u8) -> Result<Box<State<'a, T>>, ()> {
+        let mut state = State {
+            mask: num - 1,
+            enqueue_pos: unsafe { &mut *(mem as *mut AtomicUsize) },
+            dequeue_pos: unsafe {
+                &mut *((mem as *mut u8).add(size_of::<AtomicUsize>()) as *mut AtomicUsize)
+            },
+            buffer: unsafe {
+                from_raw_parts_mut(
+                    (mem as *mut u8).add(size_of::<AtomicUsize>() * 2) as *mut UnsafeCell<Node<T>>,
+                    num,
+                )
+            },
+        };
+
+        if init {
+            let mut buffer = unsafe {
+                let ptr =
+                    (mem as *mut u8).add(size_of::<AtomicUsize>() * 2) as *mut UnsafeCell<Node<T>>;
+                from_raw_parts_mut(ptr, num)
+            };
+
+            unsafe {
+                for (i, e) in buffer.iter_mut().enumerate() {
+                    ::core::ptr::write(
+                        e,
+                        UnsafeCell::new(Node {
+                            sequence: AtomicUsize::new(i),
+                            value: None,
+                        }),
+                    );
+                }
+                (*state.dequeue_pos).store(0, Release);
+                (*state.enqueue_pos).store(0, Release);
+            }
+        }
+
+        Ok(Box::new(state))
+    }
+
+    fn capacity(capacity: usize) -> (usize, usize) {
+        let num = if capacity < 2 || (capacity & (capacity - 1)) != 0 {
             if capacity < 2 {
                 2
             } else {
@@ -54,42 +128,34 @@ impl<T: Send> State<T> {
             capacity
         };
 
-        let buffer = (0..capacity)
-            .map(|i| {
-                UnsafeCell::new(Node {
-                    sequence: AtomicUsize::new(i),
-                    value: None,
-                })
-            })
-            .try_collect::<Vec<_>>()?;
-
-        Ok(State {
-            buffer: CachePadded::new(buffer),
-            mask: capacity - 1,
-            enqueue_pos: CachePadded::new(AtomicUsize::new(0)),
-            dequeue_pos: CachePadded::new(AtomicUsize::new(0)),
-        })
+        (
+            num,
+            2 * size_of::<AtomicUsize>() + num * size_of::<UnsafeCell<Node<T>>>(),
+        )
     }
 
-    fn push(&self, value: T) -> Result<(), T> {
+    fn enqueue_pos(&self, ordering: Ordering) -> usize {
+        unsafe { (*self.enqueue_pos).load(ordering) }
+    }
+
+    fn dequeue_pos(&self, ordering: Ordering) -> usize {
+        unsafe { (*self.dequeue_pos).load(ordering) }
+    }
+
+    unsafe fn push(&self, value: T) -> Result<(), T> {
         let mask = self.mask;
-        let mut pos = self.enqueue_pos.load(Relaxed);
+        let mut pos = self.enqueue_pos(Relaxed);
         loop {
             let node = &self.buffer[pos & mask];
-            let seq = unsafe { (*node.get()).sequence.load(Acquire) };
+            let seq = (*node.get()).sequence.load(Acquire);
             let diff: isize = seq as isize - pos as isize;
 
             if diff == 0 {
-                match self
-                    .enqueue_pos
-                    .compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed)
-                {
+                match (*self.enqueue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed) {
                     Ok(enqueue_pos) => {
                         debug_assert_eq!(enqueue_pos, pos);
-                        unsafe {
-                            (*node.get()).value = Some(value);
-                            (*node.get()).sequence.store(pos + 1, Release);
-                        }
+                        (*node.get()).value = Some(value);
+                        (*node.get()).sequence.store(pos + 1, Release);
                         break;
                     }
                     Err(enqueue_pos) => pos = enqueue_pos,
@@ -97,61 +163,91 @@ impl<T: Send> State<T> {
             } else if diff < 0 {
                 return Err(value);
             } else {
-                pos = self.enqueue_pos.load(Relaxed);
+                pos = self.enqueue_pos(Relaxed);
             }
         }
         Ok(())
     }
 
-    fn pop(&self) -> Option<T> {
+    unsafe fn pop(&self) -> Option<T> {
         let mask = self.mask;
-        let mut pos = self.dequeue_pos.load(Relaxed);
+        let mut pos = self.dequeue_pos(Relaxed);
         loop {
             let node = &self.buffer[pos & mask];
-            let seq = unsafe { (*node.get()).sequence.load(Acquire) };
+            let seq = (*node.get()).sequence.load(Acquire);
             let diff: isize = seq as isize - (pos + 1) as isize;
             if diff == 0 {
-                match self
-                    .dequeue_pos
-                    .compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed)
-                {
+                match (*self.dequeue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed) {
                     Ok(dequeue_pos) => {
                         debug_assert_eq!(dequeue_pos, pos);
-                        unsafe {
-                            let value = (*node.get()).value.take();
-                            (*node.get()).sequence.store(pos + mask + 1, Release);
-                            return value;
-                        }
+                        let value = (*node.get()).value.take();
+                        (*node.get()).sequence.store(pos + mask + 1, Release);
+                        return value;
                     }
                     Err(dequeue_pos) => pos = dequeue_pos,
                 }
             } else if diff < 0 {
                 return None;
             } else {
-                pos = self.dequeue_pos.load(Relaxed);
+                pos = self.dequeue_pos(Relaxed);
             }
+        }
+    }
+
+    unsafe fn len(&self) -> usize {
+        let dequeue = self.dequeue_pos(Relaxed);
+        let enqueue = self.enqueue_pos(Relaxed);
+        if enqueue > dequeue {
+            enqueue - dequeue
+        } else {
+            dequeue - enqueue
         }
     }
 }
 
-impl<T: Send> Queue<T> {
-    pub fn with_capacity(capacity: usize) -> Result<Queue<T>, KError> {
-        Ok(Queue {
-            state: Arc::try_new(State::with_capacity(capacity)?)?,
+// Lock-free MPMC queue.
+pub struct Queue<'a, T> {
+    state: Arc<Box<State<'a, T>>>,
+}
+
+impl<'a, T: Send> Queue<'a, T> {
+    pub fn new() -> Result<Queue<'a, T>, ()> {
+        State::with_capacity(QUEUE_SIZE).map(|state| Queue {
+            state: Arc::new(state),
         })
     }
 
-    pub fn push(&self, value: T) -> Result<(), T> {
-        self.state.push(value)
+    pub fn with_capacity(capacity: usize) -> Result<Queue<'a, T>, ()> {
+        Ok(Queue {
+            state: Arc::new(State::with_capacity(capacity)?),
+        })
     }
 
-    pub fn pop(&self) -> Option<T> {
-        self.state.pop()
+    pub fn with_capacity_in<A: Allocator>(
+        init: bool,
+        capacity: usize,
+        alloc: A,
+    ) -> Result<Queue<'a, T>, ()> {
+        Ok(Queue {
+            state: Arc::new(State::with_capacity_in(init, capacity, alloc)?),
+        })
+    }
+
+    pub fn enqueue(&self, value: T) -> Result<(), T> {
+        unsafe { self.state.push(value) }
+    }
+
+    pub fn dequeue(&self) -> Option<T> {
+        unsafe { self.state.pop() }
+    }
+
+    pub fn len(&self) -> usize {
+        unsafe { self.state.len() }
     }
 }
 
-impl<T: Send> Clone for Queue<T> {
-    fn clone(&self) -> Queue<T> {
+impl<'a, T: Send> Clone for Queue<'a, T> {
+    fn clone(&self) -> Queue<'a, T> {
         Queue {
             state: self.state.clone(),
         }

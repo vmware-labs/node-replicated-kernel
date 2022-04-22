@@ -19,7 +19,7 @@ use core::slice::from_raw_parts_mut;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::QUEUE_SIZE;
+const DEFAULT_QUEUE_SIZE: usize = 1024;
 
 #[repr(C)]
 struct Node<T> {
@@ -212,7 +212,7 @@ pub struct Queue<'a, T> {
 
 impl<'a, T: Send> Queue<'a, T> {
     pub fn new() -> Result<Queue<'a, T>, ()> {
-        State::with_capacity(QUEUE_SIZE).map(|state| Queue {
+        State::with_capacity(DEFAULT_QUEUE_SIZE).map(|state| Queue {
             state: Arc::new(state),
         })
     }
@@ -250,6 +250,212 @@ impl<'a, T: Send> Clone for Queue<'a, T> {
     fn clone(&self) -> Queue<'a, T> {
         Queue {
             state: self.state.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::alloc::Global;
+    use alloc::vec;
+    use core::sync::atomic::Ordering;
+    use std::sync::mpsc::channel;
+    use std::thread;
+
+    #[test]
+    fn test_default_initialization() {
+        let queue = Queue::<i32>::new().unwrap();
+        assert_eq!(queue.len(), 0);
+        assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 0);
+        assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 0);
+        for i in 0..DEFAULT_QUEUE_SIZE {
+            let ele = unsafe { &*queue.state.buffer[i].get() };
+            assert!(ele.value == None);
+            assert!(ele.sequence.load(Ordering::Relaxed) == i);
+        }
+    }
+
+    #[test]
+    fn test_enqueue() {
+        let queue = Queue::<i32>::new().unwrap();
+        assert!(queue.enqueue(1).is_ok());
+        assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_dequeue() {
+        let queue = Queue::<i32>::new().unwrap();
+        assert!(queue.enqueue(1).is_ok());
+        assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
+        assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 0);
+
+        assert_eq!(queue.dequeue(), Some(1));
+        assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
+        assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_equeue_full() {
+        let queue = Queue::<i32>::new().unwrap();
+        for i in 0..DEFAULT_QUEUE_SIZE {
+            assert!(queue.enqueue(i as i32).is_ok());
+        }
+        assert!(queue.state.dequeue_pos(Ordering::Relaxed) == 0);
+        assert!(queue.state.enqueue_pos(Ordering::Relaxed) == DEFAULT_QUEUE_SIZE);
+        assert!(queue.enqueue(DEFAULT_QUEUE_SIZE as i32).is_err());
+    }
+
+    #[test]
+    fn test_dequeue_empty() {
+        let queue = Queue::<i32>::new().unwrap();
+        assert_eq!(queue.dequeue(), None);
+    }
+
+    #[test]
+    fn test_two_clients() {
+        let queue = Queue::<i32>::new().unwrap();
+        let producer = queue.clone();
+        let consumer = queue.clone();
+
+        assert!(producer.enqueue(1).is_ok());
+        assert_eq!(producer.state.enqueue_pos(Ordering::Relaxed), 1);
+        assert_eq!(producer.state.dequeue_pos(Ordering::Relaxed), 0);
+
+        assert_eq!(consumer.dequeue(), Some(1));
+        assert_eq!(consumer.state.enqueue_pos(Ordering::Relaxed), 1);
+        assert_eq!(consumer.state.dequeue_pos(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_parallel_client() {
+        let queue = Queue::<i32>::new().unwrap();
+        let producer = queue.clone();
+        let consumer = queue.clone();
+        let num_iterations = 10 * DEFAULT_QUEUE_SIZE;
+
+        let producer_thread = std::thread::spawn(move || {
+            for i in 0..num_iterations {
+                loop {
+                    if producer.enqueue(i as i32).is_ok() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let consumer_thread = std::thread::spawn(move || {
+            for i in 0..num_iterations {
+                loop {
+                    if let Some(value) = consumer.dequeue() {
+                        assert_eq!(value, i as i32);
+                        break;
+                    }
+                }
+            }
+        });
+
+        producer_thread.join().unwrap();
+        consumer_thread.join().unwrap();
+    }
+
+    #[test]
+    fn len() {
+        // fill and drain N elements from the queue, with N: 1..=1024
+        let q = Queue::<usize>::with_capacity(1024).unwrap();
+        assert_eq!(q.len(), 0);
+        for i in 1..=1024 {
+            for j in 0..i {
+                assert_eq!(q.len(), j);
+                let _ = q.enqueue(j);
+                assert_eq!(q.len(), j + 1);
+            }
+            for j in (0..i).rev() {
+                assert_eq!(q.len(), j + 1);
+                let _ = q.dequeue();
+                assert_eq!(q.len(), j);
+            }
+        }
+
+        // steps through each potential wrap-around by filling to N - 1 and
+        // draining each time
+        let q = Queue::<usize>::with_capacity(1024).unwrap();
+        assert_eq!(q.len(), 0);
+        for _ in 1..=1024 {
+            for j in 0..1023 {
+                assert_eq!(q.len(), j);
+                let _ = q.enqueue(j);
+                assert_eq!(q.len(), j + 1);
+            }
+            for j in (0..1023).rev() {
+                assert_eq!(q.len(), j + 1);
+                let _ = q.dequeue();
+                assert_eq!(q.len(), j);
+            }
+        }
+    }
+
+    #[test]
+    fn test() {
+        let nthreads = 8;
+        let nmsgs = 1000;
+        let q = Queue::with_capacity(nthreads * nmsgs).unwrap();
+        assert_eq!(None, q.dequeue());
+        let (tx, rx) = channel();
+
+        for _ in 0..nthreads {
+            let q = q.clone();
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let q = q;
+                for i in 0..nmsgs {
+                    assert!(q.enqueue(i).is_ok());
+                }
+                tx.send(()).unwrap();
+            });
+        }
+
+        let mut completion_rxs = vec![];
+        for _ in 0..nthreads {
+            let (tx, rx) = channel();
+            completion_rxs.push(rx);
+            let q = q.clone();
+            thread::spawn(move || {
+                let q = q;
+                let mut i = 0;
+                loop {
+                    match q.dequeue() {
+                        None => {}
+                        Some(_) => {
+                            i += 1;
+                            if i == nmsgs {
+                                break;
+                            }
+                        }
+                    }
+                }
+                tx.send(i).unwrap();
+            });
+        }
+
+        for rx in completion_rxs.iter_mut() {
+            assert_eq!(nmsgs, rx.recv().unwrap());
+        }
+        for _ in 0..nthreads {
+            rx.recv().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_custom_allocator() {
+        let q = Queue::<i32>::with_capacity_in(true, DEFAULT_QUEUE_SIZE, Global).unwrap();
+        assert_eq!(q.len(), 0);
+        assert_eq!(q.state.enqueue_pos(Ordering::Relaxed), 0);
+        assert_eq!(q.state.dequeue_pos(Ordering::Relaxed), 0);
+        for i in 0..DEFAULT_QUEUE_SIZE {
+            let ele = unsafe { &*q.state.buffer[i].get() };
+            assert!(ele.value == None);
+            assert!(ele.sequence.load(Ordering::Relaxed) == i);
         }
     }
 }

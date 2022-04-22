@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![feature(allocator_api)]
 
 #[macro_use]
 extern crate abomonation;

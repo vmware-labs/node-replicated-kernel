@@ -78,8 +78,7 @@ pub fn init_network<'a>() -> Interface<'a, DevQueuePhy> {
 }
 
 /// Setup inter-vm shared-memory device.
-#[allow(dead_code)]
-fn init_shmem_device() -> Option<(u64, u64)> {
+pub fn init_shmem_device() -> Option<(u64, u64)> {
     const RED_HAT_INC: u16 = 0x1af4;
     const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
     if let Some(mut ivshmem_device) = claim_device(RED_HAT_INC, INTER_VM_SHARED_MEM_DEV) {

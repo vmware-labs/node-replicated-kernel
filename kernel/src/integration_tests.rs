@@ -749,53 +749,20 @@ fn vmxnet_smoltcp() {
     shutdown(ExitReason::Ok);
 }
 
-#[cfg(all(feature = "integration-test", target_arch = "x86_64",))]
-fn discover_ivshmem_dev() -> (u64, u64) {
-    use crate::memory::vspace::MapAction;
-    use crate::memory::PAddr;
-    use crate::memory::KERNEL_BASE;
-
-    let kcb = crate::kcb::get_kcb();
-
-    if let Some(pci_dev) = kcb.ivshmem_dev.as_mut() {
-        let mem_region = pci_dev.bar(2).expect("Unable to find the BAR");
-        let base_paddr = mem_region.address;
-        let size = mem_region.size;
-
-        // If the PCI dev is not the bus master; make it.
-        if !pci_dev.is_bus_master() {
-            pci_dev.enable_bus_mastering();
-        }
-
-        assert!(kcb
-            .arch
-            .init_vspace()
-            .map_identity_with_offset(
-                PAddr::from(KERNEL_BASE),
-                PAddr::from(base_paddr),
-                size as usize,
-                MapAction::ReadWriteKernel,
-            )
-            .is_ok());
-
-        (base_paddr, size)
-    } else {
-        panic!("VM shared memory PCI device not found");
-    }
-}
-
 /// Write and test the content on a shared-mem device.
 pub const BUFFER_CONTENT: u8 = 0xb;
 
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub fn cxl_write() {
+    use crate::arch::network::init_shmem_device;
     use crate::memory::KERNEL_BASE;
 
-    let (base_paddr, size) = discover_ivshmem_dev();
-    for i in 0..size {
-        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
-        unsafe { core::ptr::write(region, BUFFER_CONTENT) };
+    if let Some((base_paddr, size)) = init_shmem_device() {
+        for i in 0..size {
+            let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+            unsafe { core::ptr::write(region, BUFFER_CONTENT) };
+        }
     }
 
     shutdown(ExitReason::Ok);
@@ -804,14 +771,15 @@ pub fn cxl_write() {
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub fn cxl_read() {
+    use crate::arch::network::init_shmem_device;
     use crate::memory::KERNEL_BASE;
 
-    let (base_paddr, size) = discover_ivshmem_dev();
-
-    for i in 0..size {
-        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
-        let read = unsafe { core::ptr::read(region) };
-        assert_eq!(read, BUFFER_CONTENT);
+    if let Some((base_paddr, size)) = init_shmem_device() {
+        for i in 0..size {
+            let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+            let read = unsafe { core::ptr::read(region) };
+            assert_eq!(read, BUFFER_CONTENT);
+        }
     }
 
     shutdown(ExitReason::Ok);

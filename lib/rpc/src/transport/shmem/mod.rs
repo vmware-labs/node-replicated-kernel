@@ -3,6 +3,7 @@
 
 use alloc::alloc::Allocator;
 
+mod allocator;
 pub mod transport;
 
 mod queue_mpmc;

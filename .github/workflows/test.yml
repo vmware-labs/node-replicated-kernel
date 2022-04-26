@@ -50,6 +50,9 @@ jobs:
       - name: vmxnet3 tests
         run: cargo test
         working-directory: ./lib/vmxnet3
+      - name: RPC tests
+        run: cargo test --features test --no-default-features
+        working-directory: ./lib/rpc
       - name: Build the documentation
         run: mdbook build
         working-directory: ./doc/

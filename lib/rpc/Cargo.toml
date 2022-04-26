@@ -14,7 +14,6 @@ log = "0.4"
 smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp", "medium-ethernet" ], optional = true }
 rawtime = "0.0.6"
 vmxnet3 = { path = "../vmxnet3", optional = true }
-shmem-queue = { git = "https://github.com/ankit-iitb/shmem-queue.git", branch = "no-copy", optional = true }
 
 [features]
 default = ["smoltcp_transport"]
@@ -23,5 +22,5 @@ default = ["smoltcp_transport"]
 test = ["mpsc_transport", "shmem_transport"]
 smoltcp_transport = ["smoltcp", "vmxnet3"]
 mpsc_transport = ["std"]
-shmem_transport = ["shmem-queue"]
+shmem_transport = []
 std = []

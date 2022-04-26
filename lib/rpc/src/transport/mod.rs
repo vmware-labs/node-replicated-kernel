@@ -22,6 +22,9 @@ mod api;
 #[cfg(feature = "shmem_transport")]
 mod shmem;
 
+#[cfg(feature = "shmem_transport")]
+pub use shmem::transport::ShmemTransport;
+
 pub use api::Transport;
 
 #[cfg(feature = "smoltcp_transport")]

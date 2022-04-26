@@ -10,7 +10,7 @@ use crate::memory::PAddr;
 use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
-#[cfg(all(feature = "exokernel", feature = "shmem"))]
+#[cfg(feature = "shmem")]
 use {
     alloc::sync::Arc,
     rpc::transport::shmem::allocator::ShmemAllocator,
@@ -115,7 +115,7 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
                 size as usize,
                 MapAction::ReadWriteKernel,
             )
-            .expect("Failed to write potential vmxnet3 bar addresses");
+            .expect("Failed to write potential shmem bar addresses");
 
         Some((base_paddr, size))
     } else {
@@ -124,7 +124,7 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
     }
 }
 
-#[cfg(all(feature = "exokernel", feature = "shmem"))]
+#[cfg(feature = "shmem")]
 pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
     if let Some((base_addr, size)) = init_shmem_device() {
         let allocator = ShmemAllocator::new(base_addr + KERNEL_BASE, size);
@@ -136,16 +136,18 @@ pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
                 Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
             let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
+            log::debug!("Controller: Created shared-memory transport!");
             Ok(ShmemTransport::new(server_receiver, server_sender))
         }
         #[cfg(not(feature = "controller"))]
         {
             let server_to_client_queue =
-                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+                Arc::new(Queue::<Vec<u8>>::with_capacity_in(false, 1024, &allocator).unwrap());
             let client_to_server_queue =
-                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
-            let client_receiver = Sender::with_shared_queue(server_to_client_queue.clone());
-            let client_sender = Receiver::with_shared_queue(client_to_server_queue.clone());
+                Arc::new(Queue::<Vec<u8>>::with_capacity_in(false, 1024, &allocator).unwrap());
+            let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
+            let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
+            log::debug!("Client: Created shared-memory transport!");
             Ok(ShmemTransport::new(client_receiver, client_sender))
         }
     } else {

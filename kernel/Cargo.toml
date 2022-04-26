@@ -19,7 +19,7 @@ apic = { path = "../lib/apic/" }
 node-replication = "0.1.1"
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
-rpc = { path = "../lib/rpc" }
+rpc = { path = "../lib/rpc", default-features = false, optional = true }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 x86 = "0.47"
@@ -105,8 +105,8 @@ cause-double-fault = []
 # test-timer: print something when we get a timer interrupt
 test-timer = []
 # Run as exokernel
-exokernel = ["core2", "abomonation"]
+exokernel = ["core2", "abomonation", "rpc", "rpc/default"]
 # Run as controller
-controller = ["core2", "abomonation"]
+controller = ["core2", "abomonation", "rpc", "rpc/default"]
 # Run the exokernel on shmem transport
-shmem = [] 
+shmem = ["rpc", "rpc/shmem_transport"]

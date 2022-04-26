@@ -10,6 +10,9 @@ use crate::memory::PAddr;
 use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
+#[cfg(all(feature = "exokernel", feature = "shmem"))]
+use rpc::transport::ShmemTransport;
+
 use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
 
@@ -112,5 +115,16 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
     } else {
         log::error!("Unable to find IVSHMEM device");
         None
+    }
+}
+
+#[cfg(all(feature = "exokernel", feature = "shmem"))]
+pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
+    if let Some((_base_addr, _size)) = init_shmem_device() {
+        log::debug!("Created shared-memory transport");
+        unimplemented!()
+    } else {
+        log::error!("Failed to create shared-memory transport");
+        Err(())
     }
 }

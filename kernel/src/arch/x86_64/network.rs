@@ -11,7 +11,13 @@ use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
 #[cfg(all(feature = "exokernel", feature = "shmem"))]
-use rpc::transport::ShmemTransport;
+use {
+    alloc::sync::Arc,
+    rpc::transport::shmem::allocator::ShmemAllocator,
+    rpc::transport::shmem::Queue,
+    rpc::transport::shmem::{Receiver, Sender},
+    rpc::transport::ShmemTransport,
+};
 
 use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
@@ -120,9 +126,28 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
 
 #[cfg(all(feature = "exokernel", feature = "shmem"))]
 pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
-    if let Some((_base_addr, _size)) = init_shmem_device() {
-        log::debug!("Created shared-memory transport");
-        unimplemented!()
+    if let Some((base_addr, size)) = init_shmem_device() {
+        let allocator = ShmemAllocator::new(base_addr + KERNEL_BASE, size);
+        #[cfg(feature = "controller")]
+        {
+            let server_to_client_queue =
+                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+            let client_to_server_queue =
+                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+            let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
+            let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
+            Ok(ShmemTransport::new(server_receiver, server_sender))
+        }
+        #[cfg(not(feature = "controller"))]
+        {
+            let server_to_client_queue =
+                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+            let client_to_server_queue =
+                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+            let client_receiver = Sender::with_shared_queue(server_to_client_queue.clone());
+            let client_sender = Receiver::with_shared_queue(client_to_server_queue.clone());
+            Ok(ShmemTransport::new(client_receiver, client_sender))
+        }
     } else {
         log::error!("Failed to create shared-memory transport");
         Err(())

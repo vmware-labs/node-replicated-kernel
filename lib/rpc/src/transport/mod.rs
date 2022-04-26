@@ -20,7 +20,7 @@ mod mpsc;
 mod api;
 
 #[cfg(feature = "shmem_transport")]
-mod shmem;
+pub mod shmem;
 
 #[cfg(feature = "shmem_transport")]
 pub use shmem::transport::ShmemTransport;

@@ -4,11 +4,11 @@
 use alloc::alloc::Allocator;
 
 use alloc::sync::Arc;
-mod allocator;
+pub mod allocator;
 pub mod transport;
 
 mod queue_mpmc;
-use queue_mpmc::Queue;
+pub use queue_mpmc::Queue;
 
 #[repr(transparent)]
 pub struct Sender<'a, T>(Arc<Queue<'a, T>>);

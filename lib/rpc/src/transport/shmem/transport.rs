@@ -28,7 +28,7 @@ impl<'a> Transport for ShmemTransport<'a> {
 
     /// Send data to a remote node
     fn send(&self, data_out: &[u8]) -> Result<(), RPCError> {
-        if data_out.len() == 0 {
+        if data_out.is_empty() {
             return Ok(());
         }
 
@@ -42,7 +42,7 @@ impl<'a> Transport for ShmemTransport<'a> {
     fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
         let mut data_received = 0;
 
-        if data_in.len() == 0 {
+        if data_in.is_empty() {
             return Ok(());
         }
 

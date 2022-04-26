@@ -1,5 +1,4 @@
-use shmem_queue::{Receiver, Sender};
-
+use super::{Receiver, Sender};
 use crate::rpc::*;
 use crate::transport::Transport;
 use alloc::vec::Vec;
@@ -11,11 +10,8 @@ pub struct ShmemTransport<'a> {
 
 #[allow(dead_code)]
 impl<'a> ShmemTransport<'a> {
-    pub fn new(name: &str) -> ShmemTransport<'a> {
-        ShmemTransport {
-            rx: Receiver::new(name),
-            tx: Sender::new(name),
-        }
+    pub fn new(rx: Receiver<'a, Vec<u8>>, tx: Sender<'a, Vec<u8>>) -> ShmemTransport<'a> {
+        ShmemTransport { rx, tx }
     }
 }
 
@@ -74,16 +70,69 @@ impl<'a> Transport for ShmemTransport<'a> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn shmem_tests() {
-        use super::*;
-        use std::sync::Arc;
-        use std::thread;
+    use super::*;
+    use crate::transport::shmem::allocator::ShmemAllocator;
+    use crate::transport::shmem::Queue;
+    use std::alloc::{alloc, Layout};
+    use std::sync::Arc;
+    use std::thread;
 
+    #[test]
+    fn shmem_transport_test() {
         // Create transport
-        let transport = Arc::new(ShmemTransport::new("queue"));
-        let client_transport = transport.clone();
-        let server_transport = transport.clone();
+        let server_to_client_queue = Arc::new(Queue::<Vec<u8>>::new().unwrap());
+        let client_to_server_queue = Arc::new(Queue::<Vec<u8>>::new().unwrap());
+
+        let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
+        let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
+        let server_transport = Arc::new(ShmemTransport::new(server_receiver, server_sender));
+
+        let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
+        let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
+        let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
+
+        let send_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+        thread::spawn(move || {
+            // In a new server thread, receive then send data
+            let mut server_data = [0u8; 1024];
+            server_transport
+                .recv(&mut server_data[0..send_data.len()])
+                .unwrap();
+            assert_eq!(&send_data, &server_data[0..send_data.len()]);
+            server_transport.send(&send_data).unwrap();
+        });
+
+        // In the original thread, send then receive data
+        client_transport.send(&send_data).unwrap();
+        let mut client_data = [0u8; 1024];
+        client_transport
+            .recv(&mut client_data[0..send_data.len()])
+            .unwrap();
+        assert_eq!(&send_data, &client_data[0..send_data.len()]);
+    }
+
+    #[test]
+    fn shmem_transport_with_allocator_test() {
+        let alloc_size = 8 * 1024 * 1024;
+        let alloc =
+            (unsafe { alloc(Layout::from_size_align(alloc_size, 1).expect("Layout failed")) }
+                as *mut u8) as u64;
+
+        let allocator = ShmemAllocator::new(alloc, alloc_size as u64);
+        // Create transport
+        let server_to_client_queue =
+            Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+        let client_to_server_queue =
+            Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+
+        let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
+        let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
+        let server_transport = Arc::new(ShmemTransport::new(server_receiver, server_sender));
+
+        let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
+        let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
+        let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
 
         let send_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 

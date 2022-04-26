@@ -5,14 +5,14 @@ use core::ptr::NonNull;
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-struct ShmemAllocator {
+pub struct ShmemAllocator {
     base: u64,
     size: u64,
     next: AtomicU64,
 }
 
 impl ShmemAllocator {
-    fn new(base: u64, size: u64) -> ShmemAllocator {
+    pub fn new(base: u64, size: u64) -> ShmemAllocator {
         ShmemAllocator {
             base,
             size,

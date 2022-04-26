@@ -12,6 +12,7 @@ use core::str::FromStr;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 
+use lazy_static::lazy_static;
 use log::{error, info};
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
 

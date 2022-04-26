@@ -2,7 +2,7 @@
 name = "init"
 version = "0.1.0"
 authors = ["Gerd Zellweger <mail@gerdzellweger.com>"]
-edition = "2018"
+edition = "2021"
 build = "build.rs"
 license = "MIT OR Apache-2.0"
 
@@ -59,3 +59,22 @@ fxmark = []
 smoke = []
 # Do latency measurements in benchmarks
 latency = []
+
+all-tests = [
+    "test-print",
+    "test-map",
+    "test-alloc",
+    "test-upcall",
+    "test-scheduler",
+    "test-scheduler-smp",
+    "test-rump-tmpfs",
+    "test-rump-net",
+    "test-fs",
+    "test-fs-prop",
+    "test-pmem-alloc",
+    "bench-vmops",
+    "bench-vmops-unmaplat",
+    "fs-write",
+    "fxmark",
+    "latency"
+]

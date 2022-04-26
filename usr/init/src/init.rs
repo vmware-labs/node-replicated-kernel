@@ -6,41 +6,25 @@
 #![feature(
     thread_local,
     alloc_error_handler,
-    panic_info_message,
     lang_items,
     core_intrinsics,
     asm_const
 )]
-#![allow(unused_imports, dead_code)]
 extern crate alloc;
-extern crate arrayvec;
-extern crate hashbrown;
-extern crate kpi;
-extern crate spin;
-extern crate vibrio;
-extern crate x86;
-#[macro_use]
-extern crate lazy_static;
-extern crate lineup;
-extern crate num_traits;
 
-use core::alloc::{GlobalAlloc, Layout};
 use core::arch::asm;
-use core::panic::PanicInfo;
 use core::ptr;
 use core::slice::from_raw_parts_mut;
-use core::str::FromStr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use vibrio::io::FileType;
 #[cfg(feature = "rumprt")]
 use vibrio::rumprt;
-use vibrio::{sys_print, sys_println};
+use vibrio::sys_println;
 
 use lineup::tls2::SchedulerControlBlock;
 use x86::bits64::paging::VAddr;
 
-use log::{debug, error, info, Level, Metadata, Record, SetLoggerError};
+use log::{debug, error, info, Level};
 
 #[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
 mod vmops;
@@ -713,20 +697,26 @@ pub extern "C" fn _start() -> ! {
     install_vcpu_area();
 
     let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");
-    #[cfg(not(feature = "fxmark"))]
-    let ncores: Option<usize> = pinfo.cmdline.parse().ok();
 
     #[cfg(feature = "fxmark")]
-    //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd initargs=1xdrbl
-    let (ncores, open_files, benchmark, write_ratio) = match fxmark::ARGs::from_str(pinfo.cmdline) {
-        Ok(args) => (
-            Some(args.cores),
-            args.open_files,
-            args.benchmark,
-            args.write_ratio,
-        ),
-        Err(_) => unreachable!(),
-    };
+    {
+        use core::str::FromStr;
+        //python3 ./run.py --kfeature test-userspace --ufeatures fxmark --qemu-cores 1 --cmd initargs=1xdrbl
+        let (ncores, open_files, benchmark, write_ratio) =
+            match fxmark::ARGs::from_str(pinfo.cmdline) {
+                Ok(args) => (
+                    Some(args.cores),
+                    args.open_files,
+                    args.benchmark,
+                    args.write_ratio,
+                ),
+                Err(_) => unreachable!(),
+            };
+        fxmark::bench(ncores, open_files, benchmark, write_ratio);
+        vibrio::syscalls::Process::exit(0);
+    }
+
+    let ncores: Option<usize> = pinfo.cmdline.parse().ok();
 
     #[cfg(feature = "bench-vmops")]
     vmops::bench(ncores);
@@ -774,9 +764,6 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-fs-prop")]
     fs_prop_test();
-
-    #[cfg(feature = "fxmark")]
-    fxmark::bench(ncores, open_files, benchmark, write_ratio);
 
     #[cfg(feature = "test-pmem-alloc")]
     pmem_alloc(ncores);

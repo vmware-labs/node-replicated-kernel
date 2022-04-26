@@ -14,7 +14,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::{f64, fmt, mem};
 
-use crate::num_traits::Float;
+use num_traits::Float;
 
 /// A configuration struct for building custom `Histogram`s.
 #[derive(Clone, Copy)]

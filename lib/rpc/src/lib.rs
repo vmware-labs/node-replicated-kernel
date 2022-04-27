@@ -17,8 +17,10 @@ extern crate vmxnet3;
 
 pub mod api;
 pub mod client;
+pub mod client_shmem;
 pub mod rpc;
 pub mod server;
+pub mod server_shmem;
 pub mod transport;
 
 pub use api::{RPCClient, RPCServer};

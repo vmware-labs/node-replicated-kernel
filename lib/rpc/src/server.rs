@@ -12,8 +12,6 @@ use crate::api::*;
 use crate::rpc::*;
 use crate::transport::Transport;
 
-const MAX_BUFF_LEN: usize = 8192;
-
 pub struct Server<'a> {
     transport: Box<dyn Transport + 'a>,
     handlers: RefCell<HashMap<RPCType, &'a RPCHandler>>,

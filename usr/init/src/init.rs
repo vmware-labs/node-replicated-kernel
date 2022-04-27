@@ -8,31 +8,32 @@
     alloc_error_handler,
     lang_items,
     core_intrinsics,
-    asm_const
+    asm_const,
+    once_cell
 )]
 extern crate alloc;
 
 use core::arch::asm;
-use core::ptr;
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::{AtomicBool, Ordering};
+use core::{lazy, ptr};
 
+use vibrio::io::FileType;
 #[cfg(feature = "rumprt")]
 use vibrio::rumprt;
 use vibrio::sys_println;
 
 use lineup::tls2::SchedulerControlBlock;
-use x86::bits64::paging::VAddr;
-
 use log::{debug, error, info, Level};
-
-#[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
-mod vmops;
+use x86::bits64::paging::VAddr;
 
 mod fs;
 #[cfg(feature = "fxmark")]
 mod fxmark;
 mod histogram;
+mod tests;
+#[cfg(any(feature = "bench-vmops", feature = "bench-vmops-unmaplat"))]
+mod vmops;
 
 use crate::fs::{run_fio_syscall_proptests, run_fio_syscall_tests};
 
@@ -45,7 +46,7 @@ fn print_test() {
 }
 
 fn map_test() {
-    let base: u64 = 0xff000;
+    let base: u64 = 0x0ef_ff000;
     let size: u64 = 0x1000 * 64;
     unsafe {
         vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");
@@ -484,7 +485,7 @@ fn test_fs_invalid_addresses() {
 
 fn fs_test() {
     use vibrio::io::*;
-    let base: u64 = 0xff000;
+    let base: u64 = 0x1ef_ff000;
     let size: u64 = 0x1000 * 64;
     unsafe {
         // Open a file
@@ -563,7 +564,7 @@ fn fs_prop_test() {
 fn fs_write_test() {
     use vibrio::syscalls::Fs;
 
-    let base: u64 = 0xff000;
+    let base: u64 = 0x2ef_ff000;
     let size: u64 = 0x1000;
     unsafe {
         // Allocate a buffer and write data into it, which is later written to the file.
@@ -604,7 +605,7 @@ fn pmem_alloc(ncores: Option<usize>) {
     fn map() {
         let core_id = Environment::scheduler().core_id as u64;
         let size: u64 = 0x1000;
-        let base: u64 = 0xff000 + core_id * size;
+        let base: u64 = 0x3ef_f000 + core_id * size;
         unsafe {
             // Allocate a buffer and write data into it, which is later written to the file.
             vibrio::syscalls::VSpace::map_pmem(base, size).expect("Map syscall failed");
@@ -724,8 +725,14 @@ pub extern "C" fn _start() -> ! {
     #[cfg(feature = "bench-vmops-unmaplat")]
     vmops::unmaplat::bench(ncores);
 
+    #[cfg(feature = "bench-fs-write")]
+    fs_write_test();
+
     #[cfg(feature = "test-print")]
     print_test();
+
+    #[cfg(feature = "test-syscalls")]
+    tests::syscalls();
 
     #[cfg(feature = "test-rpc")]
     rpc_test();
@@ -739,11 +746,11 @@ pub extern "C" fn _start() -> ! {
     #[cfg(feature = "test-alloc")]
     alloc_test();
 
+    #[cfg(feature = "test-pmem-alloc")]
+    pmem_alloc(ncores);
+
     #[cfg(feature = "test-scheduler")]
     scheduler_test();
-
-    #[cfg(feature = "test-scheduler-smp")]
-    scheduler_smp_test();
 
     #[cfg(feature = "rumprt")]
     {
@@ -759,16 +766,13 @@ pub extern "C" fn _start() -> ! {
     #[cfg(feature = "test-fs")]
     fs_test();
 
-    #[cfg(feature = "fs-write")]
-    fs_write_test();
-
     #[cfg(feature = "test-fs-prop")]
     fs_prop_test();
 
-    #[cfg(feature = "test-pmem-alloc")]
-    pmem_alloc(ncores);
-
     vibrio::vconsole::init();
+
+    #[cfg(feature = "test-scheduler-smp")]
+    scheduler_smp_test();
 
     debug!("Done with init tests, if we came here probably everything is good.");
     vibrio::syscalls::Process::exit(0);

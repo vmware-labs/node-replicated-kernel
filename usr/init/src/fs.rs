@@ -48,7 +48,7 @@ enum ModelOperation {
 
 /// A file descriptor representaion.
 #[derive(Debug, Default)]
-struct Fd {
+pub struct Fd {
     mnode: Mnode,
     flags: FileFlags,
     offset: AtomicUsize,

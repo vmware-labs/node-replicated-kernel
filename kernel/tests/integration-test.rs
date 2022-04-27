@@ -1418,6 +1418,7 @@ fn s03_userspace_smoke() {
             "test-alloc",
             "test-upcall",
             "test-scheduler",
+            "test-syscalls",
         ])
         .build();
     let cmdline = RunnerArgs::new_with_build("userspace", &build);

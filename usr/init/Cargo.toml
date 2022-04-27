@@ -40,6 +40,7 @@ test-alloc = []
 test-upcall = []
 test-scheduler = []
 test-scheduler-smp = []
+test-syscalls = []
 test-rump-tmpfs = [ "rumprt" ]
 test-rump-net = [ "rumprt" ]
 test-fs = []
@@ -49,7 +50,7 @@ test-pmem-alloc = []
 # Simple micro-benchmarks
 bench-vmops = []
 bench-vmops-unmaplat = []
-fs-write = []
+bench-fs-write = []
 fxmark = []
 
 # smoke: A way to tell the micro-benchmarks
@@ -57,6 +58,7 @@ fxmark = []
 # resources, just enough to make sure they work
 # but won't produce valid results
 smoke = []
+
 # Do latency measurements in benchmarks
 latency = []
 
@@ -66,15 +68,11 @@ all-tests = [
     "test-alloc",
     "test-upcall",
     "test-scheduler",
-    "test-scheduler-smp",
+    #"test-scheduler-smp",  # Doesn't return
+    "test-syscalls",
     "test-rump-tmpfs",
     "test-rump-net",
     "test-fs",
-    "test-fs-prop",
-    "test-pmem-alloc",
-    "bench-vmops",
-    "bench-vmops-unmaplat",
-    "fs-write",
-    "fxmark",
-    "latency"
+    #"test-fs-prop", # needs userspace
+    #"test-pmem-alloc", # needs SMP
 ]

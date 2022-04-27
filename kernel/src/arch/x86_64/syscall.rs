@@ -664,6 +664,44 @@ fn handle_fileio(
     }
 }
 
+fn handle_test(
+    nargs: u64,
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+) -> Result<(u64, u64), KError> {
+    match nargs {
+        0 => Ok((1, 2)),
+        1 => Ok((arg1, arg1 + 1)),
+        2 => {
+            if arg1 < arg2 {
+                let res = arg1 * arg2;
+                Ok((res, res + 1))
+            } else {
+                Err(KError::InvalidSyscallTestArg2)
+            }
+        }
+        3 => {
+            if arg1 < arg2 && arg2 < arg3 {
+                let res = arg1 * arg2 * arg3;
+                Ok((res, res + 1))
+            } else {
+                Err(KError::InvalidSyscallTestArg3)
+            }
+        }
+        4 => {
+            let res = arg1 * arg2 * arg3 * arg4;
+            if arg1 < arg2 && arg2 < arg3 && arg3 < arg4 {
+                Ok((res, res + 1))
+            } else {
+                Err(KError::InvalidSyscallTestArg4)
+            }
+        }
+        _ => Err(KError::InvalidSyscallArgument1 { a: nargs }),
+    }
+}
+
 /// TODO: This method makes file-operations slow, improve it to use large page
 /// sizes. Or maintain a list of (low, high) memory limits per process and check
 /// if (base, size) are within the process memory limits.
@@ -735,6 +773,9 @@ fn debug_print_syscall(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64
                 arg5
             );
         }
+        SystemCall::Test => {
+            sprintln!(" {} {} {} {} {} {}", function, arg1, arg2, arg3, arg4, arg5);
+        }
         SystemCall::Unknown => unreachable!(),
     }
 }
@@ -749,11 +790,13 @@ pub extern "C" fn syscall_handle(
     arg4: u64,
     arg5: u64,
 ) -> ! {
+    //debug_print_syscall(function, arg1, arg2, arg3, arg4, arg5);
     let status: Result<(u64, u64), KError> = match SystemCall::new(function) {
         SystemCall::System => handle_system(arg1, arg2, arg3),
         SystemCall::Process => handle_process(arg1, arg2, arg3),
         SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
         SystemCall::FileIO => handle_fileio(arg1, arg2, arg3, arg4, arg5),
+        SystemCall::Test => handle_test(arg1, arg2, arg3, arg4, arg5),
         _ => Err(KError::InvalidSyscallArgument1 { a: function }),
     };
 
@@ -769,7 +812,7 @@ pub extern "C" fn syscall_handle(
                 });
             }
             Err(status) => {
-                error!("System call returned with error: {:?}", status);
+                warn!("System call returned with error: {:?}", status);
                 kcb.arch.save_area.as_mut().map(|sa| {
                     sa.set_syscall_error_code(status.into());
                 });

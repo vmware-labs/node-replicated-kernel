@@ -1,16 +1,16 @@
 use super::{Receiver, Sender};
 use crate::rpc::*;
 use crate::transport::Transport;
-use alloc::vec::Vec;
+use core::convert::TryInto;
 
 pub struct ShmemTransport<'a> {
-    rx: Receiver<'a, Vec<u8>>,
-    tx: Sender<'a, Vec<u8>>,
+    rx: Receiver<'a, PacketBuffer>,
+    tx: Sender<'a, PacketBuffer>,
 }
 
 #[allow(dead_code)]
 impl<'a> ShmemTransport<'a> {
-    pub fn new(rx: Receiver<'a, Vec<u8>>, tx: Sender<'a, Vec<u8>>) -> ShmemTransport<'a> {
+    pub fn new(rx: Receiver<'a, PacketBuffer>, tx: Sender<'a, PacketBuffer>) -> ShmemTransport<'a> {
         ShmemTransport { rx, tx }
     }
 }
@@ -32,7 +32,10 @@ impl<'a> Transport for ShmemTransport<'a> {
             return Ok(());
         }
 
-        match self.tx.send(data_out.to_vec()) {
+        match self
+            .tx
+            .send(data_out.try_into().expect("PacketBuffer is too small"))
+        {
             true => Ok(()),
             false => Err(RPCError::TransportError),
         }
@@ -80,8 +83,8 @@ mod tests {
     #[test]
     fn shmem_transport_test() {
         // Create transport
-        let server_to_client_queue = Arc::new(Queue::<Vec<u8>>::new().unwrap());
-        let client_to_server_queue = Arc::new(Queue::<Vec<u8>>::new().unwrap());
+        let server_to_client_queue = Arc::new(Queue::<PacketBuffer>::new().unwrap());
+        let client_to_server_queue = Arc::new(Queue::<PacketBuffer>::new().unwrap());
 
         let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
         let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
@@ -91,11 +94,11 @@ mod tests {
         let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
         let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
 
-        let send_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let send_data = [0xa; MAX_BUFF_LEN];
 
         thread::spawn(move || {
             // In a new server thread, receive then send data
-            let mut server_data = [0u8; 1024];
+            let mut server_data = [0u8; MAX_BUFF_LEN];
             server_transport
                 .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
@@ -105,7 +108,7 @@ mod tests {
 
         // In the original thread, send then receive data
         client_transport.send(&send_data).unwrap();
-        let mut client_data = [0u8; 1024];
+        let mut client_data = [0u8; MAX_BUFF_LEN];
         client_transport
             .recv(&mut client_data[0..send_data.len()])
             .unwrap();
@@ -122,9 +125,9 @@ mod tests {
         let allocator = ShmemAllocator::new(alloc, alloc_size as u64);
         // Create transport
         let server_to_client_queue =
-            Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+            Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
         let client_to_server_queue =
-            Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+            Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
 
         let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
         let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
@@ -134,11 +137,11 @@ mod tests {
         let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
         let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
 
-        let send_data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let send_data = [0xa; MAX_BUFF_LEN];
 
         thread::spawn(move || {
             // In a new server thread, receive then send data
-            let mut server_data = [0u8; 1024];
+            let mut server_data = [0u8; MAX_BUFF_LEN];
             server_transport
                 .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
@@ -148,7 +151,7 @@ mod tests {
 
         // In the original thread, send then receive data
         client_transport.send(&send_data).unwrap();
-        let mut client_data = [0u8; 1024];
+        let mut client_data = [0u8; MAX_BUFF_LEN];
         client_transport
             .recv(&mut client_data[0..send_data.len()])
             .unwrap();

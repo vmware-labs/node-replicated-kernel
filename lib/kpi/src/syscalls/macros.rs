@@ -19,6 +19,8 @@
 
 use core::arch::asm;
 
+// If you modify this macro, make sure to also update `super::test_calls` function to invoke
+// the new combinations!
 #[macro_export]
 macro_rules! syscall {
     ($arg0:expr, 1) => {
@@ -92,6 +94,9 @@ macro_rules! syscall {
         )
     };
 }
+
+// Note: the functions below are `pub(crate)` but should NOT be invoked directly.
+// Instead use the `syscall!` macro above.
 
 #[inline(always)]
 pub(crate) unsafe fn syscall_1_1(arg0: u64) -> u64 {

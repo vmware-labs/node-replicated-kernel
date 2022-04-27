@@ -322,6 +322,7 @@ pub enum SystemCall {
     Process = 2,
     VSpace = 3,
     FileIO = 4,
+    Test = 5,
     Unknown,
 }
 
@@ -333,6 +334,7 @@ impl SystemCall {
             2 => SystemCall::Process,
             3 => SystemCall::VSpace,
             4 => SystemCall::FileIO,
+            5 => SystemCall::Test,
             _ => SystemCall::Unknown,
         }
     }
@@ -346,6 +348,7 @@ impl From<&str> for SystemCall {
             "Process" => SystemCall::Process,
             "VSpace" => SystemCall::VSpace,
             "FileIO" => SystemCall::FileIO,
+            "Test" => SystemCall::Test,
             _ => SystemCall::Unknown,
         }
     }

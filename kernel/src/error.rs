@@ -29,6 +29,11 @@ pub enum KError {
     InvalidProcessOperation { a: u64 },
     InvalidSystemOperation { a: u64 },
 
+    // Test syscall errors
+    InvalidSyscallTestArg2,
+    InvalidSyscallTestArg3,
+    InvalidSyscallTestArg4,
+
     // Physical memory errors
     InvalidLayout,
     CacheExhausted,
@@ -237,6 +242,9 @@ impl fmt::Display for KError {
             KError::InvalidSyscallArgument1 { a } => {
                 write!(f, "Invalid 1st syscall argument supplied: {}", a)
             }
+            KError::InvalidSyscallTestArg2 => write!(f, "System call arguments (2) received in the wrong order."),
+            KError::InvalidSyscallTestArg3 => write!(f, "System call arguments (3) received in the wrong order."),
+            KError::InvalidSyscallTestArg4 => write!(f, "System call arguments (4) received in the wrong order."),
             KError::InvalidVSpaceOperation { a } => {
                 write!(
                     f,

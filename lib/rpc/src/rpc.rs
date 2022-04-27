@@ -43,7 +43,7 @@ unsafe_abomonate!(RPCError);
 
 pub type RPCType = u8;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RPCHeader {
     pub client_id: u64,
     pub pid: usize,
@@ -51,19 +51,8 @@ pub struct RPCHeader {
     pub msg_type: RPCType,
     pub msg_len: u64,
 }
-pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
 
-impl Default for RPCHeader {
-    fn default() -> Self {
-        RPCHeader {
-            client_id: 0,
-            pid: 0,
-            req_id: 0,
-            msg_type: 0,
-            msg_len: 0,
-        }
-    }
-}
+pub const HDR_LEN: usize = core::mem::size_of::<RPCHeader>();
 
 impl RPCHeader {
     /// # Safety

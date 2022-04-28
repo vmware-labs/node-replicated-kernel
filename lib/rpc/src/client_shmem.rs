@@ -60,7 +60,7 @@ impl RPCClient for ShmemClient {
 
         // Send request header + data
         {
-            let buf = unsafe { &mut (&mut *self.mbuf.get()).data };
+            let buf = unsafe { &mut (*self.mbuf.get()).data };
             let mut copied = 0;
             for d in data_in.iter() {
                 if !(*d).is_empty() {
@@ -73,19 +73,16 @@ impl RPCClient for ShmemClient {
 
         // Receive response header + data
         {
-            unsafe {
-                self.transport
-                    .recv((&mut *self.mbuf.get()).as_mut_bytes())?
-            };
+            unsafe { self.transport.recv((*self.mbuf.get()).as_mut_bytes())? };
         }
 
-        let hdr = unsafe { &mut (&mut *self.mbuf.get()).hdr };
+        let hdr = unsafe { &mut (*self.mbuf.get()).hdr };
         let total_msg_data = hdr.msg_len as usize;
 
         // Read in all msg data
         let mut copied = 0;
         let mut index = 0;
-        let buf = unsafe { &mut (&mut *self.mbuf.get()).data };
+        let buf = unsafe { &mut (*self.mbuf.get()).data };
         while copied < total_msg_data {
             let to_copy = total_msg_data - copied;
             let to_copy = core::cmp::min(to_copy, data_out[index].len());

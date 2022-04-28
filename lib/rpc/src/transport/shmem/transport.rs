@@ -94,11 +94,11 @@ mod tests {
         let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
         let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
 
-        let send_data = [0xa; MAX_BUFF_LEN];
+        let send_data = [0xa; HDR_LEN + MAX_BUFF_LEN];
 
         thread::spawn(move || {
             // In a new server thread, receive then send data
-            let mut server_data = [0u8; MAX_BUFF_LEN];
+            let mut server_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
             server_transport
                 .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
@@ -108,7 +108,7 @@ mod tests {
 
         // In the original thread, send then receive data
         client_transport.send(&send_data).unwrap();
-        let mut client_data = [0u8; MAX_BUFF_LEN];
+        let mut client_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
         client_transport
             .recv(&mut client_data[0..send_data.len()])
             .unwrap();
@@ -137,11 +137,11 @@ mod tests {
         let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
         let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
 
-        let send_data = [0xa; MAX_BUFF_LEN];
+        let send_data = [0xa; HDR_LEN + MAX_BUFF_LEN];
 
         thread::spawn(move || {
             // In a new server thread, receive then send data
-            let mut server_data = [0u8; MAX_BUFF_LEN];
+            let mut server_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
             server_transport
                 .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
@@ -151,7 +151,7 @@ mod tests {
 
         // In the original thread, send then receive data
         client_transport.send(&send_data).unwrap();
-        let mut client_data = [0u8; MAX_BUFF_LEN];
+        let mut client_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
         client_transport
             .recv(&mut client_data[0..send_data.len()])
             .unwrap();

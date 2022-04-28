@@ -61,10 +61,9 @@ impl RPCClient for ShmemClient {
             let mut copied = 0;
             let buf = self.mbuf.get_data_mut();
             for d in data_in.iter() {
-                let data = d.as_ref();
-                if !data.is_empty() {
-                    buf[copied..copied + data.len()].copy_from_slice(data);
-                    copied += data.len();
+                if !(*d).is_empty() {
+                    buf[copied..copied + (*d).len()].copy_from_slice(*d);
+                    copied += (*d).len();
                 }
             }
             self.transport.send(self.mbuf.as_bytes())?;

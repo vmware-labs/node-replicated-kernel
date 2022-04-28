@@ -89,13 +89,16 @@ impl MBuf {
         unsafe { &*(self.0.get() as *const [u8]) }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn as_mut_bytes(&self) -> &mut [u8] {
         unsafe { &mut *(self.0.get() as *mut [u8]) }
     }
+
     pub fn get_hdr(&self) -> &RPCHeader {
         unsafe { &*(self.0.get() as *const RPCHeader) }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn get_hdr_mut(&self) -> &mut RPCHeader {
         unsafe { &mut *(self.0.get() as *mut RPCHeader) }
     }
@@ -104,6 +107,7 @@ impl MBuf {
         unsafe { &*(self.0.get().add(HDR_LEN) as *const [u8]) }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn get_data_mut(&self) -> &mut [u8] {
         unsafe { &mut *(self.0.get().add(HDR_LEN) as *mut [u8]) }
     }

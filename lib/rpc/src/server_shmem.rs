@@ -3,6 +3,7 @@
 
 use alloc::boxed::Box;
 use core::cell::RefCell;
+use core::cell::UnsafeCell;
 
 use hashbrown::HashMap;
 use log::debug;
@@ -14,7 +15,7 @@ use crate::transport::Transport;
 pub struct ShmemServer<'a> {
     transport: Box<dyn Transport + 'a>,
     handlers: RefCell<HashMap<RPCType, &'a RPCHandler>>,
-    mbuf: MBuf,
+    mbuf: UnsafeCell<MBuf>,
 }
 
 impl<'t, 'a> ShmemServer<'a> {
@@ -25,20 +26,21 @@ impl<'t, 'a> ShmemServer<'a> {
         ShmemServer {
             transport,
             handlers: RefCell::new(HashMap::new()),
-            mbuf: MBuf::default(),
+            mbuf: UnsafeCell::new(MBuf::default()),
         }
     }
 
     /// receives next RPC call with RPC ID
     fn receive(&self) -> Result<RPCType, RPCError> {
-        let buffer = self.mbuf.as_mut_bytes();
+        let buffer = unsafe { (&mut *self.mbuf.get()).as_mut_bytes() };
         self.transport.recv(buffer)?;
-        Ok(self.mbuf.get_hdr().msg_type)
+        unsafe { Ok((&*self.mbuf.get()).hdr.msg_type) }
     }
 
     /// Replies an RPC call with results
     fn reply(&self) -> Result<(), RPCError> {
-        self.transport.send(self.mbuf.as_bytes())
+        self.transport
+            .send(unsafe { (&*self.mbuf.get()).as_bytes() })
     }
 }
 
@@ -67,7 +69,12 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
         self.receive()?;
 
         // TODO: registration
-        let client_id = func(self.mbuf.get_hdr_mut(), self.mbuf.get_data_mut())?;
+        let client_id = unsafe {
+            func(
+                &mut (&mut *self.mbuf.get()).hdr,
+                &mut (&mut *self.mbuf.get()).data,
+            )?
+        };
 
         // Send response
         self.reply()?;
@@ -83,7 +90,12 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
             match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
                     {
-                        func(self.mbuf.get_hdr_mut(), self.mbuf.get_data_mut())?;
+                        unsafe {
+                            func(
+                                &mut (&mut *self.mbuf.get()).hdr,
+                                &mut (&mut *self.mbuf.get()).data,
+                            )?
+                        };
                     }
                     self.reply()?;
                 }

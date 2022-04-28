@@ -56,14 +56,6 @@ NETWORK_CONFIG = {
     },
 }
 
-#QEMU_TAP_NAME = 'tap0'
-#QEMU_TAP_ZONE = '172.31.0.20/24'
-#MAC = "56:b4:44:e9:62:dc"
-
-#QEMU_TAP_NAME2 = 'tap2'
-#QEMU_TAP_ZONE2 = '172.31.0.2/24'
-#MAC2 = "56:b4:44:e9:62:dd"
-
 #
 # Important globals
 #
@@ -147,6 +139,16 @@ parser.add_argument('--configure-ipxe', action="store_true", default=False,
                     help='Execute pre-boot setup for bare-metal booting.', required=False)
 parser.add_argument('--no-reboot', action="store_true", default=False,
                     help='Do not initiate a machine reboot.', required=False)
+
+subparser = parser.add_subparsers(help='Advanced network configuration')
+
+# Network setup parser
+parser_net = subparser.add_parser('net', help='Network setup')
+parser_net_mut = parser_net.add_mutually_exclusive_group(required=False)
+parser_net_mut.add_argument('--host-vm', action="store_true", default=True,
+                            help='Setup one VM for integration testing, connect it to host.')
+parser_net_mut.add_argument('--workers', type=int, required=False, default=0,
+                            help='Setup `n` workers connected to one controller.')
 
 NRK_EXIT_CODES = {
     0: "[SUCCESS]",
@@ -420,7 +422,7 @@ def run_qemu(args):
                 large_pages = ",hugetlb=on,hugetlbsize=2M" if args.qemu_large_pages else ""
                 backend = "memory-backend-ram" if not args.qemu_large_pages else "memory-backend-memfd"
                 # This is untested, not sure it works
-                #assert args.pvrdma and not args.qemu_default_args
+                # assert args.pvrdma and not args.qemu_default_args
                 qemu_default_args += ['-object', '{},id=nmem{},merge=off,dump=on,prealloc={},size={}M,host-nodes={},policy=bind{},share=on'.format(
                     backend, node, prealloc, int(mem_per_node), 0 if num_host_numa_nodes == 0 else host_numa_nodes_list[node % num_host_numa_nodes], large_pages)]
 
@@ -683,6 +685,46 @@ def run(args):
         return run_baremetal(args)
 
 
+def configure_network(args):
+    """
+    Configure the host network stack to allow host/cross VM communication.
+    """
+    from plumbum.cmd import sudo, tunctl, ifconfig, ip, brctl
+
+    user = (whoami)().strip()
+    group = (local['id']['-gn'])().strip()
+
+    # TODO: Could probably avoid 'sudo' here by doing
+    # sudo setcap cap_net_admin .../run.py
+    # in the setup.sh script
+    # sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
+    # sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
+
+    # Remove any existing interfaces
+    sudo[brctl[['delbr', 'br0']]](retcode=(0, 1))
+    for tap in NETWORK_CONFIG:
+        sudo[ip[['link', 'set', '{}'.format(tap), 'down']]](retcode=(0, 1))
+        sudo[ip[['link', 'del', '{}'.format(tap)]]](retcode=(0, 1))
+
+    # Need to find out how to set default=True in case workers are >0 in `args`
+    if args.host_vm and args.workers == 0:
+        sudo[ip[['tuntap', 'add', 'dev', args.tap, 'mode', 'tap']]]()
+        sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
+        sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
+    else:
+        sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
+        for wid, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):
+            print(wid)
+            print(ncfg)
+            tap = NETWORK_CONFIG[ncfg]
+            sudo[ip[['tuntap', 'add', 'dev', ncfg, 'mode', 'tap']]]()
+            sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
+            sudo[ifconfig[ncfg, NETWORK_CONFIG[ncfg]['ip_zone']]]()
+
+            sudo[brctl[['addif', 'br0', ncfg]]]()
+        sudo[ip[['link', 'set', 'br0', 'up']]]
+
+
 #
 # Main routine of run.py
 #
@@ -715,6 +757,11 @@ if __name__ == '__main__':
             sys.exit(errno.EINVAL)
         else:
             raise e
+
+    # Setup network
+    if 'host_vm' in args or 'workers' in args:
+        configure_network(args)
+        sys.exit(0)
 
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")

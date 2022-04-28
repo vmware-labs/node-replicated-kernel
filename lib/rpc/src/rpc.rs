@@ -44,6 +44,7 @@ unsafe_abomonate!(RPCError);
 pub type RPCType = u8;
 
 #[derive(Debug, Default)]
+#[repr(C)]
 pub struct RPCHeader {
     pub client_id: u64,
     pub pid: usize,
@@ -73,42 +74,37 @@ impl RPCHeader {
 }
 
 pub const MAX_BUFF_LEN: usize = 8192;
-pub type PacketBuffer = [u8; MAX_BUFF_LEN];
+pub type PacketBuffer = [u8; MAX_BUFF_LEN + HDR_LEN];
 
-#[repr(transparent)]
-pub struct MBuf(pub UnsafeCell<PacketBuffer>);
+#[repr(C)]
+pub struct MBuf {
+    pub hdr: RPCHeader,
+    pub data: [u8; MAX_BUFF_LEN],
+}
 
 impl Default for MBuf {
     fn default() -> Self {
-        MBuf(UnsafeCell::new([0; MAX_BUFF_LEN]))
+        MBuf {
+            hdr: RPCHeader::default(),
+            data: [0; MAX_BUFF_LEN],
+        }
     }
 }
 
 impl MBuf {
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe { &*(self.0.get() as *const [u8]) }
+    /// # Safety
+    /// - `self` must be valid RPCHeader
+    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; HDR_LEN + MAX_BUFF_LEN] {
+        ::core::slice::from_raw_parts_mut((self as *const MBuf) as *mut u8, HDR_LEN + MAX_BUFF_LEN)
+            .try_into()
+            .expect("slice with incorrect length")
     }
 
-    #[allow(clippy::mut_from_ref)]
-    pub fn as_mut_bytes(&self) -> &mut [u8] {
-        unsafe { &mut *(self.0.get() as *mut [u8]) }
-    }
-
-    pub fn get_hdr(&self) -> &RPCHeader {
-        unsafe { &*(self.0.get() as *const RPCHeader) }
-    }
-
-    #[allow(clippy::mut_from_ref)]
-    pub fn get_hdr_mut(&self) -> &mut RPCHeader {
-        unsafe { &mut *(self.0.get() as *mut RPCHeader) }
-    }
-
-    pub fn get_data(&self) -> &[u8] {
-        unsafe { &*(self.0.get().add(HDR_LEN) as *const [u8]) }
-    }
-
-    #[allow(clippy::mut_from_ref)]
-    pub fn get_data_mut(&self) -> &mut [u8] {
-        unsafe { &mut *(self.0.get().add(HDR_LEN) as *mut [u8]) }
+    /// # Safety
+    /// - `self` must be valid RPCHeader
+    pub unsafe fn as_bytes(&self) -> &[u8; HDR_LEN + MAX_BUFF_LEN] {
+        ::core::slice::from_raw_parts((self as *const MBuf) as *const u8, HDR_LEN + MAX_BUFF_LEN)
+            .try_into()
+            .expect("slice with incorrect length")
     }
 }

@@ -1,3 +1,5 @@
+use core::cell::UnsafeCell;
+
 use alloc::boxed::Box;
 
 use log::{debug, warn};
@@ -10,7 +12,7 @@ pub struct ShmemClient {
     transport: Box<dyn Transport>,
     client_id: NodeId,
     req_id: u64,
-    mbuf: MBuf,
+    mbuf: UnsafeCell<MBuf>,
 }
 
 impl ShmemClient {
@@ -19,7 +21,7 @@ impl ShmemClient {
             transport,
             client_id: 0,
             req_id: 0,
-            mbuf: MBuf::default(),
+            mbuf: UnsafeCell::new(MBuf::default()),
         }
     }
 }
@@ -49,38 +51,41 @@ impl RPCClient for ShmemClient {
 
         // Create request header
         {
-            let mut hdr = self.mbuf.get_hdr_mut();
-            hdr.pid = pid;
-            hdr.req_id = self.req_id;
-            hdr.msg_type = rpc_id;
-            hdr.msg_len = data_in_len as u64;
+            let mbuf = unsafe { &mut *self.mbuf.get() };
+            mbuf.hdr.pid = pid;
+            mbuf.hdr.req_id = self.req_id;
+            mbuf.hdr.msg_type = rpc_id;
+            mbuf.hdr.msg_len = data_in_len as u64;
         }
 
         // Send request header + data
         {
+            let buf = unsafe { &mut (&mut *self.mbuf.get()).data };
             let mut copied = 0;
-            let buf = self.mbuf.get_data_mut();
             for d in data_in.iter() {
                 if !(*d).is_empty() {
                     buf[copied..copied + (*d).len()].copy_from_slice(*d);
                     copied += (*d).len();
                 }
             }
-            self.transport.send(self.mbuf.as_bytes())?;
+            unsafe { self.transport.send((&*self.mbuf.get()).as_bytes())? };
         }
 
         // Receive response header + data
         {
-            self.transport.recv(self.mbuf.as_mut_bytes())?;
+            unsafe {
+                self.transport
+                    .recv((&mut *self.mbuf.get()).as_mut_bytes())?
+            };
         }
 
-        let hdr = self.mbuf.get_hdr();
+        let hdr = unsafe { &mut (&mut *self.mbuf.get()).hdr };
         let total_msg_data = hdr.msg_len as usize;
 
         // Read in all msg data
         let mut copied = 0;
         let mut index = 0;
-        let buf = self.mbuf.get_data_mut();
+        let buf = unsafe { &mut (&mut *self.mbuf.get()).data };
         while copied < total_msg_data {
             let to_copy = total_msg_data - copied;
             let to_copy = core::cmp::min(to_copy, data_out[index].len());

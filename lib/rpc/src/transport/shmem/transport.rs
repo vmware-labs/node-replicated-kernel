@@ -18,12 +18,12 @@ impl<'a> ShmemTransport<'a> {
 impl<'a> Transport for ShmemTransport<'a> {
     /// Maximum per-send payload size
     fn max_send(&self) -> usize {
-        usize::MAX
+        MAX_BUFF_LEN
     }
 
     /// Maximum per-send payload size
     fn max_recv(&self) -> usize {
-        usize::MAX
+        MAX_BUFF_LEN
     }
 
     /// Send data to a remote node

@@ -38,10 +38,16 @@ use super::KernelArgs;
 use super::MAX_NUMA_NODES;
 
 #[cfg(feature = "exokernel")]
-use {rpc::client::Client as SmolRPCClient, rpc::RPCClient, spin::Mutex};
+use {rpc::RPCClient, spin::Mutex};
 
 #[cfg(all(feature = "exokernel", not(feature = "shmem")))]
-use {crate::arch::network::init_network, rpc::transport::TCPTransport, smoltcp::wire::IpAddress};
+use {
+    crate::arch::network::init_network, rpc::client::Client as SmolRPCClient,
+    rpc::transport::TCPTransport, smoltcp::wire::IpAddress,
+};
+
+#[cfg(all(feature = "exokernel", feature = "shmem"))]
+use rpc::client_shmem::ShmemClient;
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
@@ -191,8 +197,11 @@ pub struct Arch86Kcb {
     /// A handle to an RPC client
     ///
     /// This is (will be) used to send syscall data.
-    #[cfg(feature = "exokernel")]
+    #[cfg(all(feature = "exokernel", not(feature = "shmem")))]
     pub rpc_client: Mutex<Option<SmolRPCClient>>,
+
+    #[cfg(all(feature = "exokernel", feature = "shmem"))]
+    pub rpc_client: Mutex<Option<ShmemClient>>,
 }
 
 // The `syscall_stack_top` entry must be at offset 0 of KCB (referenced early-on in exec.S)
@@ -262,7 +271,7 @@ impl Arch86Kcb {
                 Box::new(create_shmem_transport().expect("Failed to create shmem transport"));
 
             // Create the client
-            let mut client = SmolRPCClient::new(transport);
+            let mut client = ShmemClient::new(transport);
             client.connect().unwrap();
             *dev = Some(client);
         }

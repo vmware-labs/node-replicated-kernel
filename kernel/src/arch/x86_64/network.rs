@@ -13,6 +13,7 @@ use kpi::KERNEL_BASE;
 #[cfg(feature = "shmem")]
 use {
     alloc::sync::Arc,
+    rpc::rpc::PacketBuffer,
     rpc::transport::shmem::allocator::ShmemAllocator,
     rpc::transport::shmem::Queue,
     rpc::transport::shmem::{Receiver, Sender},
@@ -131,9 +132,9 @@ pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
         #[cfg(feature = "controller")]
         {
             let server_to_client_queue =
-                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+                Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap());
             let client_to_server_queue =
-                Arc::new(Queue::<Vec<u8>>::with_capacity_in(true, 1024, &allocator).unwrap());
+                Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap());
             let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
             log::debug!("Controller: Created shared-memory transport!");
@@ -142,9 +143,9 @@ pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
         #[cfg(not(feature = "controller"))]
         {
             let server_to_client_queue =
-                Arc::new(Queue::<Vec<u8>>::with_capacity_in(false, 1024, &allocator).unwrap());
+                Arc::new(Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap());
             let client_to_server_queue =
-                Arc::new(Queue::<Vec<u8>>::with_capacity_in(false, 1024, &allocator).unwrap());
+                Arc::new(Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap());
             let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
             let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
             log::debug!("Client: Created shared-memory transport!");

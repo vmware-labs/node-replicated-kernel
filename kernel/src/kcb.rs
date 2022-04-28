@@ -52,6 +52,9 @@ enum CmdToken {
     #[token("log")]
     Log,
 
+    #[token("mode")]
+    Mode,
+
     /// Init binary (which is loaded by default)
     #[token("init")]
     InitBinary,
@@ -80,6 +83,24 @@ enum CmdToken {
     Error,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum Mode {
+    Native,
+    Controller,
+    Client,
+}
+
+impl From<&str> for Mode {
+    fn from(s: &str) -> Self {
+        match s {
+            "native" => Mode::Native,
+            "controller" => Mode::Controller,
+            "client" => Mode::Client,
+            _ => panic!("Unknown mode {}", s),
+        }
+    }
+}
+
 /// Arguments parsed from command line string passed from the bootloader to the
 /// kernel.
 ///
@@ -94,6 +115,7 @@ pub struct BootloaderArguments {
     pub test: Option<&'static str>,
     pub bsp_only: bool,
     pub kgdb: bool,
+    pub mode: Mode,
 }
 
 impl Default for BootloaderArguments {
@@ -106,6 +128,7 @@ impl Default for BootloaderArguments {
             bsp_only: false,
             test: None,
             kgdb: false,
+            mode: Mode::Native,
         }
     }
 }
@@ -125,6 +148,7 @@ impl BootloaderArguments {
             bsp_only: false,
             test: None,
             kgdb: false,
+            mode: Mode::Native,
         }
     }
 
@@ -155,6 +179,7 @@ impl BootloaderArguments {
                     parsed_args.bsp_only = true;
                 }
                 CmdToken::Log
+                | CmdToken::Mode
                 | CmdToken::Test
                 | CmdToken::InitBinary
                 | CmdToken::InitArgs
@@ -164,6 +189,10 @@ impl BootloaderArguments {
                 CmdToken::Ident => match prev {
                     CmdToken::Log => {
                         parsed_args.log_filter = slice;
+                        prev = CmdToken::Error;
+                    }
+                    CmdToken::Mode => {
+                        parsed_args.mode = slice.into();
                         prev = CmdToken::Error;
                     }
                     CmdToken::InitBinary => {

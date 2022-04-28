@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::Abomonation;
-use core::{cell::UnsafeCell, convert::TryInto};
+use core::convert::TryInto;
 
 /// Node ID for servers/clients
 pub type NodeId = u64;

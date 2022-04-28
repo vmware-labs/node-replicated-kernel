@@ -32,9 +32,9 @@ impl<'t, 'a> ShmemServer<'a> {
 
     /// receives next RPC call with RPC ID
     fn receive(&self) -> Result<RPCType, RPCError> {
-        let buffer = unsafe { (&mut *self.mbuf.get()).as_mut_bytes() };
+        let buffer = unsafe { (*self.mbuf.get()).as_mut_bytes() };
         self.transport.recv(buffer)?;
-        unsafe { Ok((&*self.mbuf.get()).hdr.msg_type) }
+        unsafe { Ok((*self.mbuf.get()).hdr.msg_type) }
     }
 
     /// Replies an RPC call with results
@@ -69,12 +69,7 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
         self.receive()?;
 
         // TODO: registration
-        let client_id = unsafe {
-            func(
-                &mut (&mut *self.mbuf.get()).hdr,
-                &mut (&mut *self.mbuf.get()).data,
-            )?
-        };
+        let client_id = unsafe { func(&mut (*self.mbuf.get()).hdr, &mut (*self.mbuf.get()).data)? };
 
         // Send response
         self.reply()?;
@@ -90,12 +85,7 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
             match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
                     {
-                        unsafe {
-                            func(
-                                &mut (&mut *self.mbuf.get()).hdr,
-                                &mut (&mut *self.mbuf.get()).data,
-                            )?
-                        };
+                        unsafe { func(&mut (*self.mbuf.get()).hdr, &mut (*self.mbuf.get()).data)? };
                     }
                     self.reply()?;
                 }

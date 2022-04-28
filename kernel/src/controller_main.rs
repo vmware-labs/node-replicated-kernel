@@ -4,16 +4,15 @@
 use alloc::boxed::Box;
 
 #[cfg(feature = "shmem")]
-use crate::arch::network::create_shmem_transport;
+use {crate::arch::network::create_shmem_transport, rpc::server_shmem::ShmemServer};
 
-use rpc::rpc::RPCType;
-use rpc::server::Server;
-use rpc::RPCServer;
 #[cfg(not(feature = "shmem"))]
-use {crate::arch::network::init_network, rpc::transport::TCPTransport};
+use {crate::arch::network::init_network, rpc::server::Server, rpc::transport::TCPTransport};
 
 use crate::arch::debug::shutdown;
 use crate::arch::exokernel::*;
+use rpc::rpc::RPCType;
+use rpc::RPCServer;
 
 use crate::ExitReason;
 
@@ -23,19 +22,20 @@ const PORT: u16 = 6970;
 /// Test TCP RPC-based controller
 #[cfg(target_arch = "x86_64")]
 pub fn run() {
-    let rpc_transport = {
+    let server = {
         #[cfg(not(feature = "shmem"))]
         {
             let iface = init_network();
-            Box::new(TCPTransport::new(None, PORT, iface))
+            let transport = Box::new(TCPTransport::new(None, PORT, iface));
+            Server::new(transport)
         }
         #[cfg(feature = "shmem")]
         {
-            Box::new(create_shmem_transport().expect("Failed to create shmem transport"))
+            let transport =
+                Box::new(create_shmem_transport().expect("Failed to create shmem transport"));
+            ShmemServer::new(transport)
         }
     };
-
-    let server = Server::new(rpc_transport);
 
     let (server, _) = server
         .register(FileIO::Close as RPCType, &CLOSE_HANDLER)

@@ -83,7 +83,7 @@ enum CmdToken {
     Error,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Mode {
     Native,
     Controller,

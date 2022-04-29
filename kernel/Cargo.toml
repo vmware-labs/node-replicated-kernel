@@ -82,7 +82,7 @@ which = "4"
 cc = "1.0"
 
 [features]
-default = ["addr2line", "serde", "serde_cbor", "rpc/default"]
+default = ["addr2line", "serde", "serde_cbor", "core2", "abomonation", "rpc/default"]
 # Enable gdb server code (supply --kgdb to run.py)
 gdb = []
 # Runs an integration test (supplied as commandline `test=` argument) instead of
@@ -104,9 +104,5 @@ cause-gpfault-early = []
 cause-double-fault = []
 # test-timer: print something when we get a timer interrupt
 test-timer = []
-# Run as exokernel
-exokernel = ["core2", "abomonation", "rpc/default"]
-# Run as controller
-controller = ["core2", "abomonation", "rpc/default"]
-# Run the exokernel on shmem transport
+# Run the exokernel controller and client on shmem transport
 shmem = ["rpc/shmem_transport"]

@@ -30,9 +30,10 @@
     once_cell
 )]
 #![cfg_attr(not(target_os = "none"), feature(thread_local))]
+
+use kcb::Mode;
 extern crate alloc;
 
-#[cfg(any(feature = "controller", feature = "exokernel"))]
 #[macro_use]
 extern crate abomonation;
 
@@ -74,7 +75,6 @@ pub mod panic;
 #[cfg(feature = "integration-test")]
 mod integration_tests;
 
-#[cfg(feature = "controller")]
 mod controller_main;
 
 /// A kernel exit status.
@@ -108,10 +108,10 @@ pub enum ExitReason {
 /// This function is executed from each core (which is
 /// different from a traditional main routine).
 pub fn main() {
-    #[cfg(feature = "controller")]
-    {
+    if kcb::get_kcb().cmdline.mode == Mode::Controller {
         controller_main::run();
     }
+
     #[cfg(not(feature = "integration-test"))]
     {
         let ret = arch::process::spawn("init");

@@ -35,7 +35,7 @@ use kcb::Mode;
 extern crate alloc;
 
 /// The x86-64 platform specific code.
-#[cfg(all(target_arch = "x86_64", target_os = "none"))]
+#[cfg(any(test, all(target_arch = "x86_64", target_os = "none")))]
 #[macro_use]
 extern crate abomonation;
 

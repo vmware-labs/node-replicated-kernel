@@ -1569,7 +1569,7 @@ fn s03_shmem_exokernel() {
             .release()
             .build();
 
-        let cmdline_controller = RunnerArgs::new_with_build("exokernel_shmem", &build)
+        let cmdline_controller = RunnerArgs::new_with_build("exokernel-shmem", &build)
             .timeout(120_000)
             .cmd("mode=controller")
             .ivshmem(filelen as usize)
@@ -1594,7 +1594,7 @@ fn s03_shmem_exokernel() {
             .release()
             .build();
 
-        let cmdline_client = RunnerArgs::new_with_build("exokernel_shmem", &build)
+        let cmdline_client = RunnerArgs::new_with_build("exokernel-shmem", &build)
             .timeout(120_000)
             .cmd("mode=client")
             .ivshmem(filelen as usize)

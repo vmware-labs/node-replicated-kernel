@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 use core::mem::transmute;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(all(feature = "exokernel", not(feature = "shmem")))]
+#[cfg(not(feature = "shmem"))]
 use smoltcp::wire::IpAddress;
 
 use crate::cnrfs::{MlnrKernelNode, Modify};
@@ -61,7 +61,6 @@ pub mod acpi;
 pub mod coreboot;
 pub mod debug;
 
-#[cfg(any(feature = "exokernel", feature = "controller"))]
 pub mod exokernel;
 
 pub mod gdt;
@@ -932,13 +931,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
 
     // Create network stack and instantiate RPC Client
-    #[cfg(all(feature = "exokernel", not(feature = "shmem")))]
+    #[cfg(not(feature = "shmem"))]
     {
         let kcb = kcb::get_kcb();
         kcb.arch.init_rpc(IpAddress::v4(172, 31, 0, 11), 6970);
     }
 
-    #[cfg(all(feature = "exokernel", feature = "shmem"))]
+    #[cfg(feature = "shmem")]
     {
         let kcb = kcb::get_kcb();
         kcb.arch.init_rpc();

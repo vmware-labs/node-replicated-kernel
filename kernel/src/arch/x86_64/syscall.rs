@@ -24,7 +24,7 @@ use kpi::{
 
 use crate::error::KError;
 use crate::fs::FileSystem;
-use crate::kcb::ArchSpecificKcb;
+use crate::kcb::{ArchSpecificKcb, Mode};
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::process::{userptr_to_str, Pid, ResumeHandle};
@@ -33,10 +33,7 @@ use crate::{cnrfs, nr, nrproc};
 use super::gdt::GdtTable;
 use super::process::{Ring3Process, UserValue};
 
-#[cfg(feature = "exokernel")]
 use crate::arch::exokernel::*;
-
-#[cfg(feature = "exokernel")]
 use crate::arch::process::UserPtr;
 
 extern "C" {
@@ -393,29 +390,28 @@ fn handle_fileio(
             let flags = arg3;
             let modes = arg4;
             let _r = user_virt_addr_valid(pid, pathname, 0)?;
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    let mut pathname_user_ptr = VAddr::from(pathname);
+                    let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
+                    let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
 
-            #[cfg(feature = "exokernel")]
-            {
-                let mut pathname_user_ptr = VAddr::from(pathname);
-                let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
-                let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
+                    let mut client = kcb.arch.rpc_client.lock();
+                    return match rpc_open(
+                        client.as_mut().unwrap(),
+                        pid,
+                        pathname_cstr.to_bytes_with_nul(),
+                        flags,
+                        modes,
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                }
 
-                let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_open(
-                    client.as_mut().unwrap(),
-                    pid,
-                    pathname_cstr.to_bytes_with_nul(),
-                    flags,
-                    modes,
-                ) {
-                    Ok(a) => Ok(a),
-                    Err(err) => Err(err.into()),
-                };
-            }
-
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes);
+                }
             }
         }
         FileOperation::Read | FileOperation::Write => {
@@ -424,31 +420,37 @@ fn handle_fileio(
             let len = arg4;
             let _r = user_virt_addr_valid(pid, buffer, len)?;
 
-            #[cfg(feature = "exokernel")]
-            {
-                // TODO - chunk writes/reads
-                let mut client = kcb.arch.rpc_client.lock();
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    // TODO - chunk writes/reads
+                    let mut client = kcb.arch.rpc_client.lock();
 
-                if op == FileOperation::Read {
-                    let mut userslice = super::process::UserSlice::new(buffer, len as usize);
-                    return match rpc_read(client.as_mut().unwrap(), pid, fd, len, &mut userslice) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
-                } else {
-                    // write operation
-                    let kernslice = crate::process::KernSlice::new(buffer, len as usize);
-                    let buff_ptr = kernslice.buffer.clone();
-                    return match rpc_write(client.as_mut().unwrap(), pid, fd, &buff_ptr) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
+                    if op == FileOperation::Read {
+                        let mut userslice = super::process::UserSlice::new(buffer, len as usize);
+                        return match rpc_read(
+                            client.as_mut().unwrap(),
+                            pid,
+                            fd,
+                            len,
+                            &mut userslice,
+                        ) {
+                            Ok(a) => Ok(a),
+                            Err(err) => Err(err.into()),
+                        };
+                    } else {
+                        // write operation
+                        let kernslice = crate::process::KernSlice::new(buffer, len as usize);
+                        let buff_ptr = kernslice.buffer.clone();
+                        return match rpc_write(client.as_mut().unwrap(), pid, fd, &buff_ptr) {
+                            Ok(a) => Ok(a),
+                            Err(err) => Err(err.into()),
+                        };
+                    }
                 }
-            }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1);
+                }
             }
         }
         FileOperation::ReadAt | FileOperation::WriteAt => {
@@ -458,55 +460,61 @@ fn handle_fileio(
             let offset = arg5 as i64;
             let _r = user_virt_addr_valid(pid, buffer, len)?;
 
-            #[cfg(feature = "exokernel")]
-            {
-                // TODO - chunk writes/reads
-                let mut client = kcb.arch.rpc_client.lock();
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    // TODO - chunk writes/reads
+                    let mut client = kcb.arch.rpc_client.lock();
 
-                if op == FileOperation::ReadAt {
-                    let mut userslice = super::process::UserSlice::new(buffer, len as usize);
-                    return match rpc_readat(
-                        client.as_mut().unwrap(),
-                        pid,
-                        fd,
-                        len,
-                        offset,
-                        &mut userslice,
-                    ) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
-                } else {
-                    // write_at operation
-                    let kernslice = crate::process::KernSlice::new(buffer, len as usize);
-                    let buff_ptr = kernslice.buffer.clone();
-                    return match rpc_writeat(client.as_mut().unwrap(), pid, fd, offset, &buff_ptr) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
+                    if op == FileOperation::ReadAt {
+                        let mut userslice = super::process::UserSlice::new(buffer, len as usize);
+                        return match rpc_readat(
+                            client.as_mut().unwrap(),
+                            pid,
+                            fd,
+                            len,
+                            offset,
+                            &mut userslice,
+                        ) {
+                            Ok(a) => Ok(a),
+                            Err(err) => Err(err.into()),
+                        };
+                    } else {
+                        // write_at operation
+                        let kernslice = crate::process::KernSlice::new(buffer, len as usize);
+                        let buff_ptr = kernslice.buffer.clone();
+                        return match rpc_writeat(
+                            client.as_mut().unwrap(),
+                            pid,
+                            fd,
+                            offset,
+                            &buff_ptr,
+                        ) {
+                            Ok(a) => Ok(a),
+                            Err(err) => Err(err.into()),
+                        };
+                    }
                 }
-            }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset);
+                }
             }
         }
         FileOperation::Close => {
             let fd = arg2;
 
-            #[cfg(feature = "exokernel")]
-            {
-                let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_close(client.as_mut().unwrap(), pid, fd) {
-                    Ok(a) => Ok(a),
-                    Err(err) => Err(err.into()),
-                };
-            }
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    let mut client = kcb.arch.rpc_client.lock();
+                    return match rpc_close(client.as_mut().unwrap(), pid, fd) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::unmap_fd(pid, fd);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::unmap_fd(pid, fd);
+                }
             }
         }
         FileOperation::GetInfo => {
@@ -514,62 +522,62 @@ fn handle_fileio(
             let info_ptr = arg3;
             let _r = user_virt_addr_valid(pid, name, 0)?;
 
-            #[cfg(feature = "exokernel")]
-            {
-                use crate::arch::process::UserPtr;
-                use kpi::io::FileInfo;
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    use crate::arch::process::UserPtr;
+                    use kpi::io::FileInfo;
 
-                let mut filename_user_ptr = VAddr::from(name);
-                let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
-                let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
+                    let mut filename_user_ptr = VAddr::from(name);
+                    let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
+                    let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
 
-                let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_getinfo(
-                    client.as_mut().unwrap(),
-                    pid,
-                    filename_cstr.to_bytes_with_nul(),
-                ) {
-                    Ok((ftype, fsize)) => {
-                        let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
-                        unsafe {
-                            (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = ftype;
-                            (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = fsize;
+                    let mut client = kcb.arch.rpc_client.lock();
+                    return match rpc_getinfo(
+                        client.as_mut().unwrap(),
+                        pid,
+                        filename_cstr.to_bytes_with_nul(),
+                    ) {
+                        Ok((ftype, fsize)) => {
+                            let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
+                            unsafe {
+                                (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = ftype;
+                                (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = fsize;
+                            }
+                            Ok((0, 0))
                         }
-                        Ok((0, 0))
-                    }
-                    Err(err) => Err(err.into()),
-                };
-            }
+                        Err(err) => Err(err.into()),
+                    };
+                }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr);
+                }
             }
         }
         FileOperation::Delete => {
             let name = arg2;
             let _r = user_virt_addr_valid(pid, name, 0)?;
 
-            #[cfg(feature = "exokernel")]
-            {
-                let mut filename_user_ptr = VAddr::from(name);
-                let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
-                let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    let mut filename_user_ptr = VAddr::from(name);
+                    let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
+                    let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
 
-                let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_delete(
-                    client.as_mut().unwrap(),
-                    pid,
-                    filename_cstr.to_bytes_with_nul(),
-                ) {
-                    Ok(a) => Ok(a),
-                    Err(err) => Err(err.into()),
-                };
-            }
+                    let mut client = kcb.arch.rpc_client.lock();
+                    return match rpc_delete(
+                        client.as_mut().unwrap(),
+                        pid,
+                        filename_cstr.to_bytes_with_nul(),
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::file_delete(pid, name);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::file_delete(pid, name);
+                }
             }
         }
         FileOperation::WriteDirect => {
@@ -579,20 +587,20 @@ fn handle_fileio(
                 offset = 0;
             }
 
-            #[cfg(feature = "exokernel")]
-            {
-                // TODO
-                unreachable!("FileOperation not allowed");
-                return Err(KError::NotSupported);
-            }
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    // TODO
+                    unreachable!("FileOperation not allowed");
+                    return Err(KError::NotSupported);
+                }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
-                let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
-                let cnrfs = super::kcb::get_kcb().arch.cnrfs.as_ref().unwrap();
-                let len = cnrfs.write(2, &mut buffer, offset)?;
-                return Ok((len as u64, 0));
+                Mode::Native | Mode::Controller => {
+                    let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
+                    let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
+                    let cnrfs = super::kcb::get_kcb().arch.cnrfs.as_ref().unwrap();
+                    let len = cnrfs.write(2, &mut buffer, offset)?;
+                    return Ok((len as u64, 0));
+                }
             }
         }
 
@@ -602,31 +610,31 @@ fn handle_fileio(
             let _r = user_virt_addr_valid(pid, oldname, 0)?;
             let _r = user_virt_addr_valid(pid, newname, 0)?;
 
-            #[cfg(feature = "exokernel")]
-            {
-                let mut old_user_ptr = VAddr::from(oldname);
-                let old_str_ptr = UserPtr::new(&mut old_user_ptr);
-                let old_cstr = unsafe { CStr::from_ptr(old_str_ptr.as_ptr()) };
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    let mut old_user_ptr = VAddr::from(oldname);
+                    let old_str_ptr = UserPtr::new(&mut old_user_ptr);
+                    let old_cstr = unsafe { CStr::from_ptr(old_str_ptr.as_ptr()) };
 
-                let mut new_user_ptr = VAddr::from(newname);
-                let new_str_ptr = UserPtr::new(&mut new_user_ptr);
-                let new_cstr = unsafe { CStr::from_ptr(new_str_ptr.as_ptr()) };
+                    let mut new_user_ptr = VAddr::from(newname);
+                    let new_str_ptr = UserPtr::new(&mut new_user_ptr);
+                    let new_cstr = unsafe { CStr::from_ptr(new_str_ptr.as_ptr()) };
 
-                let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_rename(
-                    client.as_mut().unwrap(),
-                    pid,
-                    old_cstr.to_bytes_with_nul(),
-                    new_cstr.to_bytes_with_nul(),
-                ) {
-                    Ok(a) => Ok(a),
-                    Err(err) => Err(err.into()),
-                };
-            }
+                    let mut client = kcb.arch.rpc_client.lock();
+                    return match rpc_rename(
+                        client.as_mut().unwrap(),
+                        pid,
+                        old_cstr.to_bytes_with_nul(),
+                        new_cstr.to_bytes_with_nul(),
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname);
+                }
             }
         }
         FileOperation::MkDir => {
@@ -634,27 +642,27 @@ fn handle_fileio(
             let modes = arg3;
             let _r = user_virt_addr_valid(pid, pathname, 0)?;
 
-            #[cfg(feature = "exokernel")]
-            {
-                let mut pathname_user_ptr = VAddr::from(pathname);
-                let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
-                let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
+            match kcb.cmdline.mode {
+                Mode::Client => {
+                    let mut pathname_user_ptr = VAddr::from(pathname);
+                    let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
+                    let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
 
-                let mut client = kcb.arch.rpc_client.lock();
-                return match rpc_mkdir(
-                    client.as_mut().unwrap(),
-                    pid,
-                    pathname_cstr.to_bytes_with_nul(),
-                    modes,
-                ) {
-                    Ok(a) => Ok(a),
-                    Err(err) => Err(err.into()),
-                };
-            }
+                    let mut client = kcb.arch.rpc_client.lock();
+                    return match rpc_mkdir(
+                        client.as_mut().unwrap(),
+                        pid,
+                        pathname_cstr.to_bytes_with_nul(),
+                        modes,
+                    ) {
+                        Ok(a) => Ok(a),
+                        Err(err) => Err(err.into()),
+                    };
+                }
 
-            #[cfg(not(feature = "exokernel"))]
-            {
-                return cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes);
+                Mode::Native | Mode::Controller => {
+                    return cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes);
+                }
             }
         }
         FileOperation::Unknown => {

@@ -37,16 +37,15 @@ use super::vspace::page_table::PageTable;
 use super::KernelArgs;
 use super::MAX_NUMA_NODES;
 
-#[cfg(feature = "exokernel")]
 use {rpc::RPCClient, spin::Mutex};
 
-#[cfg(all(feature = "exokernel", not(feature = "shmem")))]
+#[cfg(not(feature = "shmem"))]
 use {
     crate::arch::network::init_network, rpc::client::Client as SmolRPCClient,
     rpc::transport::TCPTransport, smoltcp::wire::IpAddress,
 };
 
-#[cfg(all(feature = "exokernel", feature = "shmem"))]
+#[cfg(feature = "shmem")]
 use rpc::client_shmem::ShmemClient;
 
 /// Try to retrieve the KCB by reading the gs register.
@@ -197,10 +196,10 @@ pub struct Arch86Kcb {
     /// A handle to an RPC client
     ///
     /// This is (will be) used to send syscall data.
-    #[cfg(all(feature = "exokernel", not(feature = "shmem")))]
+    #[cfg(not(feature = "shmem"))]
     pub rpc_client: Mutex<Option<SmolRPCClient>>,
 
-    #[cfg(all(feature = "exokernel", feature = "shmem"))]
+    #[cfg(feature = "shmem")]
     pub rpc_client: Mutex<Option<ShmemClient>>,
 }
 
@@ -236,7 +235,6 @@ impl Arch86Kcb {
             max_threads: 0,
             kdebug: None,
 
-            #[cfg(all(feature = "exokernel"))]
             rpc_client: Mutex::new(None),
         }
     }
@@ -249,7 +247,7 @@ impl Arch86Kcb {
         self.init_vspace.borrow_mut()
     }
 
-    #[cfg(all(feature = "exokernel", not(feature = "shmem")))]
+    #[cfg(not(feature = "shmem"))]
     pub fn init_rpc(&mut self, server_ip: IpAddress, server_port: u16) {
         let mut dev = self.rpc_client.lock();
         if dev.is_none() {
@@ -261,7 +259,7 @@ impl Arch86Kcb {
         }
     }
 
-    #[cfg(all(feature = "exokernel", feature = "shmem"))]
+    #[cfg(feature = "shmem")]
     pub fn init_rpc(&mut self) {
         use crate::arch::network::create_shmem_transport;
         let mut dev = self.rpc_client.lock();

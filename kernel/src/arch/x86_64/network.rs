@@ -5,9 +5,9 @@ use vmxnet3::pci::BarAccess;
 use vmxnet3::smoltcp::DevQueuePhy;
 use vmxnet3::vmx::VMXNet3;
 
-use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
 use crate::pci::claim_device;
+use crate::{kcb::Mode, memory::vspace::MapAction};
 use kpi::KERNEL_BASE;
 
 #[cfg(feature = "shmem")]
@@ -57,18 +57,19 @@ pub fn init_network<'a>() -> Interface<'a, DevQueuePhy> {
     let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
-    // TODO: MAC, IP, and default route should be dynamic
-    #[cfg(not(feature = "exokernel"))]
-    let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
-
-    #[cfg(feature = "exokernel")]
-    let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdd]);
-
-    #[cfg(not(feature = "exokernel"))]
-    let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 11), 24)];
-
-    #[cfg(feature = "exokernel")]
-    let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 12), 24)];
+    let (ethernet_addr, ip_addrs) = match kcb.cmdline.mode {
+        Mode::Client => (
+            EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdd]),
+            [IpCidr::new(IpAddress::v4(172, 31, 0, 12), 24)],
+        ),
+        _ => {
+            // TODO: MAC, IP, and default route should be dynamic
+            (
+                EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]),
+                [IpCidr::new(IpAddress::v4(172, 31, 0, 11), 24)],
+            )
+        }
+    };
 
     let mut routes = Routes::new(BTreeMap::new());
     routes
@@ -129,27 +130,38 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
 pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
     if let Some((base_addr, size)) = init_shmem_device() {
         let allocator = ShmemAllocator::new(base_addr + KERNEL_BASE, size);
-        #[cfg(feature = "controller")]
-        {
-            let server_to_client_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap());
-            let client_to_server_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap());
-            let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
-            let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
-            log::debug!("Controller: Created shared-memory transport!");
-            Ok(ShmemTransport::new(server_receiver, server_sender))
-        }
-        #[cfg(not(feature = "controller"))]
-        {
-            let server_to_client_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap());
-            let client_to_server_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap());
-            let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
-            let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
-            log::debug!("Client: Created shared-memory transport!");
-            Ok(ShmemTransport::new(client_receiver, client_sender))
+        let mode = super::kcb::get_kcb().cmdline.mode;
+        match mode {
+            Mode::Controller => {
+                let server_to_client_queue = Arc::new(
+                    Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap(),
+                );
+                let client_to_server_queue = Arc::new(
+                    Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap(),
+                );
+                let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
+                let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
+                log::debug!("Controller: Created shared-memory transport!");
+                Ok(ShmemTransport::new(server_receiver, server_sender))
+            }
+
+            Mode::Client => {
+                let server_to_client_queue = Arc::new(
+                    Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap(),
+                );
+                let client_to_server_queue = Arc::new(
+                    Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap(),
+                );
+                let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
+                let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
+                log::debug!("Client: Created shared-memory transport!");
+                Ok(ShmemTransport::new(client_receiver, client_sender))
+            }
+
+            Mode::Native => {
+                log::error!("Native mode not supported for shmem");
+                Err(())
+            }
         }
     } else {
         log::error!("Failed to create shared-memory transport");

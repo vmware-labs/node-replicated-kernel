@@ -134,10 +134,10 @@ pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
         match mode {
             Mode::Controller => {
                 let server_to_client_queue = Arc::new(
-                    Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap(),
+                    Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap(),
                 );
                 let client_to_server_queue = Arc::new(
-                    Queue::<PacketBuffer>::with_capacity_in(true, 1024, &allocator).unwrap(),
+                    Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap(),
                 );
                 let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
                 let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
@@ -147,10 +147,10 @@ pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
 
             Mode::Client => {
                 let server_to_client_queue = Arc::new(
-                    Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap(),
+                    Queue::<PacketBuffer>::with_capacity_in(false, 32, &allocator).unwrap(),
                 );
                 let client_to_server_queue = Arc::new(
-                    Queue::<PacketBuffer>::with_capacity_in(false, 1024, &allocator).unwrap(),
+                    Queue::<PacketBuffer>::with_capacity_in(false, 32, &allocator).unwrap(),
                 );
                 let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
                 let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());

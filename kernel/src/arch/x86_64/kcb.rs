@@ -37,7 +37,9 @@ use super::vspace::page_table::PageTable;
 use super::KernelArgs;
 use super::MAX_NUMA_NODES;
 
-use {rpc::RPCClient, spin::Mutex};
+use crate::kcb::Mode;
+use rpc::RPCClient;
+use spin::Mutex;
 
 #[cfg(not(feature = "shmem"))]
 use {
@@ -46,7 +48,7 @@ use {
 };
 
 #[cfg(feature = "shmem")]
-use {crate::kcb::Mode, rpc::client_shmem::ShmemClient};
+use rpc::client_shmem::ShmemClient;
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
@@ -250,7 +252,8 @@ impl Arch86Kcb {
     #[cfg(not(feature = "shmem"))]
     pub fn init_rpc(&mut self, server_ip: IpAddress, server_port: u16) {
         let mut dev = self.rpc_client.lock();
-        if dev.is_none() {
+        let mode = super::kcb::get_kcb().cmdline.mode;
+        if dev.is_none() && (mode == Mode::Client || mode == Mode::Controller) {
             let iface = init_network();
             let rpc_transport = Box::new(TCPTransport::new(Some(server_ip), server_port, iface));
             let mut client = SmolRPCClient::new(rpc_transport);

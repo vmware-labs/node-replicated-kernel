@@ -30,11 +30,9 @@ use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::process::{userptr_to_str, Pid, ResumeHandle};
 use crate::{cnrfs, nr, nrproc};
 
+use super::exokernel::*;
 use super::gdt::GdtTable;
-use super::process::{Ring3Process, UserValue};
-
-use crate::arch::exokernel::*;
-use crate::arch::process::UserPtr;
+use super::process::{Ring3Process, UserPtr, UserValue};
 
 extern "C" {
     #[no_mangle]

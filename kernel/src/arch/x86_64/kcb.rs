@@ -41,12 +41,12 @@ use {rpc::RPCClient, spin::Mutex};
 
 #[cfg(not(feature = "shmem"))]
 use {
-    crate::arch::network::init_network, rpc::client::Client as SmolRPCClient,
+    super::network::init_network, rpc::client::Client as SmolRPCClient,
     rpc::transport::TCPTransport, smoltcp::wire::IpAddress,
 };
 
 #[cfg(feature = "shmem")]
-use rpc::client_shmem::ShmemClient;
+use {crate::kcb::Mode, rpc::client_shmem::ShmemClient};
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
@@ -263,7 +263,8 @@ impl Arch86Kcb {
     pub fn init_rpc(&mut self) {
         use crate::arch::network::create_shmem_transport;
         let mut dev = self.rpc_client.lock();
-        if dev.is_none() {
+        let mode = super::kcb::get_kcb().cmdline.mode;
+        if dev.is_none() & (mode == Mode::Client) {
             // Set up the transport
             let transport =
                 Box::new(create_shmem_transport().expect("Failed to create shmem transport"));

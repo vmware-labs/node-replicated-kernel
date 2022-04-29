@@ -290,7 +290,6 @@ lazy_static! {
 ///
 /// Use `BuildArgs::build` to construct (by providing a BuildEnvironment).
 struct Built<'a> {
-    _env: MutexGuard<'static, BuildEnvironment>,
     with_args: BuildArgs<'a>,
 }
 
@@ -356,10 +355,7 @@ impl<'a> BuildArgs<'a> {
             panic!("Building test failed: {:?}", compile_args.join(" "));
         }
 
-        Built {
-            _env,
-            with_args: self,
-        }
+        Built { with_args: self }
     }
 
     /// Converts the RunnerArgs to a run.py command line invocation.
@@ -1555,7 +1551,7 @@ fn s03_ivshmem_write_and_read() {
 #[test]
 fn s03_shmem_exokernel() {
     use memfile::{CreateOptions, MemFile};
-    use std::fs::remove_file;
+    use std::{fs::remove_file, sync::Arc};
 
     let filename = "ivshmem-file";
     let filelen = 2;
@@ -1563,14 +1559,19 @@ fn s03_shmem_exokernel() {
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
 
-    let controller = std::thread::spawn(move || {
-        let build = BuildArgs::default()
+    let build = Arc::new(
+        BuildArgs::default()
             .kernel_feature("shmem")
             .release()
-            .build();
+            .build(),
+    );
 
-        let cmdline_controller = RunnerArgs::new_with_build("exokernel-shmem", &build)
-            .timeout(120_000)
+    let build1 = build.clone();
+    let build2 = build.clone();
+
+    let controller = std::thread::spawn(move || {
+        let cmdline_controller = RunnerArgs::new_with_build("exokernel-shmem", &build1)
+            .timeout(30_000)
             .cmd("mode=controller")
             .ivshmem(filelen as usize)
             .shmem_path(filename);
@@ -1589,13 +1590,8 @@ fn s03_shmem_exokernel() {
     });
 
     let client = std::thread::spawn(move || {
-        let build = BuildArgs::default()
-            .kernel_feature("shmem")
-            .release()
-            .build();
-
-        let cmdline_client = RunnerArgs::new_with_build("exokernel-shmem", &build)
-            .timeout(120_000)
+        let cmdline_client = RunnerArgs::new_with_build("exokernel-shmem", &build2)
+            .timeout(30_000)
             .cmd("mode=client")
             .ivshmem(filelen as usize)
             .shmem_path(filename);

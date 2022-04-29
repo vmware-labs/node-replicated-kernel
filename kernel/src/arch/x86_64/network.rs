@@ -141,7 +141,7 @@ pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
                 );
                 let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
                 let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
-                log::debug!("Controller: Created shared-memory transport!");
+                log::info!("Controller: Created shared-memory transport!");
                 Ok(ShmemTransport::new(server_receiver, server_sender))
             }
 
@@ -154,7 +154,7 @@ pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
                 );
                 let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
                 let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
-                log::debug!("Client: Created shared-memory transport!");
+                log::info!("Client: Created shared-memory transport!");
                 Ok(ShmemTransport::new(client_receiver, client_sender))
             }
 

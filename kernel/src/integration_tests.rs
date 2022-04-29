@@ -12,7 +12,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
+const INTEGRATION_TESTS: [(&'static str, MainFn); 27] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -39,6 +39,7 @@ const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
     ("gdb", gdb),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
+    ("exokernel-shmem", exokernel_shmem),
 ];
 
 #[cfg(feature = "integration-test")]
@@ -782,6 +783,12 @@ pub fn cxl_read() {
         }
     }
 
+    shutdown(ExitReason::Ok);
+}
+
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+pub fn exokernel_shmem() {
+    // TODO: Start the non-blocking client and server.
     shutdown(ExitReason::Ok);
 }
 

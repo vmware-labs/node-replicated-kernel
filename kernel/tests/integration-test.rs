@@ -1551,6 +1551,74 @@ fn s03_ivshmem_write_and_read() {
     let _ignore = remove_file(&filename);
 }
 
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_shmem_exokernel() {
+    use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+
+    let filename = "ivshmem-file";
+    let filelen = 2;
+    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
+    file.set_len(filelen * 1024 * 1024)
+        .expect("Unable to set file length");
+
+    let controller = std::thread::spawn(move || {
+        let build = BuildArgs::default()
+            .kernel_feature("shmem")
+            .release()
+            .build();
+
+        let cmdline_controller = RunnerArgs::new_with_build("exokernel_shmem", &build)
+            .timeout(120_000)
+            .cmd("mode=controller")
+            .ivshmem(filelen as usize)
+            .shmem_path(filename);
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_controller)?;
+            let r = p.exp_regex("Created shared-memory transport!")?;
+            output += r.0.as_str();
+            output += r.1.as_str();
+            p.process.exit()
+        };
+
+        qemu_run().expect("Controller failed");
+        //check_for_successful_exit(&cmdline_controller, qemu_run(), output);
+    });
+
+    let client = std::thread::spawn(move || {
+        let build = BuildArgs::default()
+            .kernel_feature("shmem")
+            .release()
+            .build();
+
+        let cmdline_client = RunnerArgs::new_with_build("exokernel_shmem", &build)
+            .timeout(120_000)
+            .cmd("mode=client")
+            .ivshmem(filelen as usize)
+            .shmem_path(filename);
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            let r = p.exp_regex("Created shared-memory transport!")?;
+            output += r.0.as_str();
+            output += r.1.as_str();
+            p.process.exit()
+        };
+
+        //check_for_successful_exit(&cmdline_client, qemu_run(), output);
+        qemu_run().expect("Client failed");
+    });
+
+    controller.join().unwrap();
+    client.join().unwrap();
+
+    let _ignore = remove_file(&filename);
+}
+
 /// Tests the lineup scheduler multi-core ability.
 ///
 /// Makes sure we can request cores and spawn threads on said cores.

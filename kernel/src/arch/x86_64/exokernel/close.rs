@@ -9,7 +9,7 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::arch::exokernel::fio::*;
+use super::fio::*;
 use crate::cnrfs;
 
 #[derive(Debug)]

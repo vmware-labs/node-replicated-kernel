@@ -17,9 +17,11 @@ use crate::nr::{KernelNode, Op};
 use crate::{main, ExitReason};
 
 pub mod debug;
+pub mod exokernel;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
+pub mod network;
 pub mod process;
 pub mod timer;
 pub mod vspace;

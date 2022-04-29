@@ -8,7 +8,7 @@ use log::debug;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::arch::exokernel::fio::*;
+use super::fio::*;
 use crate::cnrfs;
 
 pub fn rpc_getinfo<T: RPCClient>(

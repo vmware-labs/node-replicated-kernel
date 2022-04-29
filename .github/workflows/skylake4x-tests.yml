@@ -23,7 +23,7 @@ jobs:
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     runs-on: [self-hosted, skylake4x]
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3.0.2
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init
@@ -38,7 +38,7 @@ jobs:
     if: ${{ needs.pre_job.outputs.should_skip != 'true' }}
     runs-on: [self-hosted, skylake4x]
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3.0.2
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init

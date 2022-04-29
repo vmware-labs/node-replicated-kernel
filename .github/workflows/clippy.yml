@@ -11,7 +11,7 @@ jobs:
   clippy_check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2.4.0
+      - uses: actions/checkout@v3.0.2
       - run: |
           sed -i'' -e 's/git@github.com:/https:\/\/github.com\//' .gitmodules
           git submodule update --init

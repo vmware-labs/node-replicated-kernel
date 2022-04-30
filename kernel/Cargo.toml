@@ -34,7 +34,7 @@ libacpica = "0.0.8"
 atopology = "0.0.26"
 # External libraries we use:
 abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false, optional = true }
-core2 = { version = "0.3", default-features = false, features = [ "alloc" ], optional = true }
+core2 = { version = "0.4", default-features = false, features = [ "alloc" ], optional = true }
 log = "0.4"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 logos = { version = "0.12", default-features = false, features = ["export_derive"] }

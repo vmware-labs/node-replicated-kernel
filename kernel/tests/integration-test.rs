@@ -461,6 +461,8 @@ struct RunnerArgs<'a> {
     ivshmem: usize,
     /// Shared memory file path.
     shmem_path: String,
+    /// Tap interface
+    tap: Option<String>,
 }
 
 #[allow(unused)]
@@ -485,6 +487,7 @@ impl<'a> RunnerArgs<'a> {
             kgdb: false,
             ivshmem: 0,
             shmem_path: String::new(),
+            tap: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -514,6 +517,7 @@ impl<'a> RunnerArgs<'a> {
             kgdb: false,
             ivshmem: 0,
             shmem_path: String::new(),
+            tap: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -639,6 +643,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn tap(mut self, tap: &str) -> RunnerArgs<'a> {
+        self.tap = Some(String::from(tap));
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         // Figure out log-level
@@ -688,6 +697,11 @@ impl<'a> RunnerArgs<'a> {
                 if !self.shmem_path.is_empty() {
                     cmd.push(String::from("--qemu-shmem-path"));
                     cmd.push(format!("{}", self.shmem_path));
+                }
+
+                if self.tap.is_some() {
+                    cmd.push(String::from("--tap"));
+                    cmd.push(format!("{}", self.tap.as_ref().unwrap()));
                 }
 
                 if self.setaffinity {
@@ -1551,6 +1565,8 @@ fn s03_ivshmem_write_and_read() {
 #[test]
 fn s03_shmem_exokernel() {
     use memfile::{CreateOptions, MemFile};
+    use std::thread::sleep;
+    use std::time::Duration;
     use std::{fs::remove_file, sync::Arc};
 
     let filename = "ivshmem-file";
@@ -1574,39 +1590,36 @@ fn s03_shmem_exokernel() {
             .timeout(30_000)
             .cmd("mode=controller")
             .ivshmem(filelen as usize)
-            .shmem_path(filename);
+            .shmem_path(filename)
+            .tap("tap0");
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_controller)?;
-            let r = p.exp_regex("Created shared-memory transport!")?;
-            output += r.0.as_str();
-            output += r.1.as_str();
+            output += p.exp_eof()?.as_str();
             p.process.exit()
         };
 
-        qemu_run().expect("Controller failed");
-        //check_for_successful_exit(&cmdline_controller, qemu_run(), output);
+        check_for_successful_exit(&cmdline_controller, qemu_run(), output);
     });
 
     let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(10_000));
         let cmdline_client = RunnerArgs::new_with_build("exokernel-shmem", &build2)
             .timeout(30_000)
             .cmd("mode=client")
             .ivshmem(filelen as usize)
-            .shmem_path(filename);
+            .shmem_path(filename)
+            .tap("tap2");
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
-            let r = p.exp_regex("Created shared-memory transport!")?;
-            output += r.0.as_str();
-            output += r.1.as_str();
+            output += p.exp_eof()?.as_str();
             p.process.exit()
         };
 
-        //check_for_successful_exit(&cmdline_client, qemu_run(), output);
-        qemu_run().expect("Client failed");
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
     });
 
     controller.join().unwrap();

@@ -10,10 +10,8 @@
 use alloc::alloc::{alloc, Layout};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::cell::UnsafeCell;
-use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
@@ -63,21 +61,19 @@ impl<'a, T: Send> State<'a, T> {
         alloc: A,
     ) -> Result<Box<State<'a, T>>, ()> {
         let (num, buf_size) = Self::capacity(capacity);
-        let mem = unsafe {
-            alloc
-                .allocate(
-                    Layout::from_size_align(buf_size, align_of::<State<T>>())
-                        .expect("Alignment error while allocating the Queue!"),
-                )
-                .expect("Failed to allocate memory for the Queue!")
-        };
+        let mem = alloc
+            .allocate(
+                Layout::from_size_align(buf_size, align_of::<State<T>>())
+                    .expect("Alignment error while allocating the Queue!"),
+            )
+            .expect("Failed to allocate memory for the Queue!");
         let mem = mem.as_ptr() as *mut u8;
 
         Self::init(init, num, mem)
     }
 
     fn init(init: bool, num: usize, mem: *mut u8) -> Result<Box<State<'a, T>>, ()> {
-        let mut state = State {
+        let state = State {
             mask: num - 1,
             enqueue_pos: unsafe { &mut *(mem as *mut AtomicUsize) },
             dequeue_pos: unsafe {
@@ -92,7 +88,7 @@ impl<'a, T: Send> State<'a, T> {
         };
 
         if init {
-            let mut buffer = unsafe {
+            let buffer = unsafe {
                 let ptr =
                     (mem as *mut u8).add(size_of::<AtomicUsize>() * 2) as *mut UnsafeCell<Node<T>>;
                 from_raw_parts_mut(ptr, num)

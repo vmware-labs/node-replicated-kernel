@@ -262,6 +262,10 @@ def deploy(args):
     """
     log("Deploy binaries")
 
+    is_client = False
+    if args.cmd:
+        is_client = args.cmd.find("client") != -1
+
     # Clean up / create ESP dir structure
     debug_release = 'release' if args.release else 'debug'
     uefi_build_path = TARGET_PATH / UEFI_TARGET / debug_release
@@ -270,18 +274,19 @@ def deploy(args):
 
     # Clean and create_esp dir:
     esp_path = uefi_build_path / 'esp'
-    if esp_path.exists() and esp_path.is_dir():
-        shutil.rmtree(esp_path, ignore_errors=False)
-    esp_boot_path = esp_path / "EFI" / "Boot"
-    esp_boot_path.mkdir(parents=True, exist_ok=True)
+    if (esp_path.exists() != True) or (esp_path.exists() and is_client != True):
+        if esp_path.exists() and esp_path.is_dir():
+            shutil.rmtree(esp_path, ignore_errors=False)
+        esp_boot_path = esp_path / "EFI" / "Boot"
+        esp_boot_path.mkdir(parents=True, exist_ok=True)
 
-    # Deploy bootloader
-    shutil.copy2(kernel_build_path / 'nrk', os.getcwd())
-    shutil.copy2(kernel_build_path / 'nrk', esp_path / 'kernel')
+        # Deploy bootloader
+        shutil.copy2(kernel_build_path / 'nrk', os.getcwd())
+        shutil.copy2(kernel_build_path / 'nrk', esp_path / 'kernel')
 
-    # Deploy kernel
-    shutil.copy2(uefi_build_path / 'bootloader.efi',
-                 esp_boot_path / 'BootX64.efi')
+        # Deploy kernel
+        shutil.copy2(uefi_build_path / 'bootloader.efi',
+                    esp_boot_path / 'BootX64.efi')
 
     # Write kernel cmd-line file in ESP dir
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:

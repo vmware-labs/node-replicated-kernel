@@ -1577,6 +1577,8 @@ fn s03_shmem_exokernel() {
 
     let build = Arc::new(
         BuildArgs::default()
+            .module("init")
+            .user_feature("test-fs")
             .kernel_feature("shmem")
             .release()
             .build(),
@@ -1586,7 +1588,7 @@ fn s03_shmem_exokernel() {
     let build2 = build.clone();
 
     let controller = std::thread::spawn(move || {
-        let cmdline_controller = RunnerArgs::new_with_build("exokernel-shmem", &build1)
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(30_000)
             .cmd("mode=controller")
             .ivshmem(filelen as usize)
@@ -1600,12 +1602,12 @@ fn s03_shmem_exokernel() {
             p.process.exit()
         };
 
-        check_for_successful_exit(&cmdline_controller, qemu_run(), output);
+        let _ignore = qemu_run();
     });
 
     let client = std::thread::spawn(move || {
         sleep(Duration::from_millis(10_000));
-        let cmdline_client = RunnerArgs::new_with_build("exokernel-shmem", &build2)
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(30_000)
             .cmd("mode=client")
             .ivshmem(filelen as usize)
@@ -1615,6 +1617,7 @@ fn s03_shmem_exokernel() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("fs_test OK")?.as_str();
             output += p.exp_eof()?.as_str();
             p.process.exit()
         };

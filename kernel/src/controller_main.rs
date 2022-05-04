@@ -37,7 +37,7 @@ pub fn run() {
         }
     };
 
-    let (_server, _) = server
+    let (server, _) = server
         .register(FileIO::Close as RPCType, &CLOSE_HANDLER)
         .unwrap()
         .register(FileIO::Delete as RPCType, &DELETE_HANDLER)
@@ -61,11 +61,8 @@ pub fn run() {
         .add_client(&CLIENT_REGISTRAR)
         .unwrap();
 
-    #[cfg(not(feature = "integration-test"))]
-    {
-        log::info!("Starting RPC server!");
-        _server.run_server().unwrap();
-    }
+    log::info!("Starting RPC server!");
+    server.run_server().unwrap();
 
     shutdown(ExitReason::Ok);
 }

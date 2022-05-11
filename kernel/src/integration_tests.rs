@@ -35,8 +35,8 @@ const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
     ("vspace-debug", vspace_debug),
     ("shootdown-simple", shootdown_simple),
     ("replica-advance", replica_advance),
-    ("vmxnet-smoltcp", vmxnet_smoltcp),
     ("gdb", gdb),
+    ("vmxnet-smoltcp", vmxnet_smoltcp),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
 ];
@@ -755,8 +755,8 @@ pub const BUFFER_CONTENT: u8 = 0xb;
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub fn cxl_write() {
-    use crate::arch::network::init_shmem_device;
     use crate::memory::KERNEL_BASE;
+    use crate::transport::shmem::init_shmem_device;
 
     if let Some((base_paddr, size)) = init_shmem_device() {
         for i in 0..size {
@@ -771,8 +771,8 @@ pub fn cxl_write() {
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub fn cxl_read() {
-    use crate::arch::network::init_shmem_device;
     use crate::memory::KERNEL_BASE;
+    use crate::transport::shmem::init_shmem_device;
 
     if let Some((base_paddr, size)) = init_shmem_device() {
         for i in 0..size {

@@ -15,14 +15,12 @@ use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use log::trace;
 use node_replication::Replica;
-
-use x86::current::segmentation::{self};
+use x86::current::segmentation;
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use crate::cnrfs::MlnrKernelNode;
 use crate::error::KError;
-use crate::fs::{FileSystem, MlnrFS};
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::nrproc::NrProcess;
 use crate::process::Pid;
@@ -36,19 +34,6 @@ use super::process::{Ring3Executor, Ring3Process};
 use super::vspace::page_table::PageTable;
 use super::KernelArgs;
 use super::MAX_NUMA_NODES;
-
-use crate::kcb::Mode;
-use rpc::RPCClient;
-use spin::Mutex;
-
-#[cfg(not(feature = "shmem"))]
-use {
-    super::network::init_network, rpc::client::Client as SmolRPCClient,
-    rpc::transport::TCPTransport, smoltcp::wire::IpAddress,
-};
-
-#[cfg(feature = "shmem")]
-use rpc::client_shmem::ShmemClient;
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
@@ -146,10 +131,6 @@ pub struct Arch86Kcb {
     /// A handle to the node-local CNR based kernel replica.
     pub cnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
 
-    /// A dummy in-memory file system to test the memory
-    /// system and file system operations with MLNR.
-    pub cnrfs: Option<MlnrFS>,
-
     /// Global id per hyperthread.
     pub id: atopology::GlobalThreadId,
 
@@ -197,12 +178,9 @@ pub struct Arch86Kcb {
 
     /// A handle to an RPC client
     ///
-    /// This is (will be) used to send syscall data.
-    #[cfg(not(feature = "shmem"))]
-    pub rpc_client: Mutex<Option<SmolRPCClient>>,
-
-    #[cfg(feature = "shmem")]
-    pub rpc_client: Mutex<Option<ShmemClient>>,
+    /// This is used to send requests to a remote control-plane.
+    #[cfg(feature = "rpc")]
+    pub rpc_client: Option<Box<dyn rpc::api::RPCClient>>,
 }
 
 // The `syscall_stack_top` entry must be at offset 0 of KCB (referenced early-on in exec.S)
@@ -231,13 +209,12 @@ impl Arch86Kcb {
             unrecoverable_fault_stack: None,
             debug_stack: None,
             cnr_replica: None,
-            cnrfs: None,
             id: 0,
             node_id: 0,
             max_threads: 0,
             kdebug: None,
-
-            rpc_client: Mutex::new(None),
+            #[cfg(feature = "rpc")]
+            rpc_client: None,
         }
     }
 
@@ -249,33 +226,54 @@ impl Arch86Kcb {
         self.init_vspace.borrow_mut()
     }
 
-    #[cfg(not(feature = "shmem"))]
-    pub fn init_rpc(&mut self, server_ip: IpAddress, server_port: u16) {
-        let mut dev = self.rpc_client.lock();
+    #[cfg(all(feature = "rpc", feature = "ethernet"))]
+    pub fn init_ethernet_rpc(
+        &mut self,
+        server_ip: smoltcp::wire::IpAddress,
+        server_port: u16,
+    ) -> Result<(), KError> {
+        use rpc::client::Client as SmolRPCClient;
+        use rpc::transport::TCPTransport;
+        use rpc::RPCClient;
+
+        use crate::kcb::Mode;
+        use crate::transport::ethernet::init_network;
+
         let mode = super::kcb::get_kcb().cmdline.mode;
-        if dev.is_none() && (mode == Mode::Client || mode == Mode::Controller) {
-            let iface = init_network();
-            let rpc_transport = Box::new(TCPTransport::new(Some(server_ip), server_port, iface));
-            let mut client = SmolRPCClient::new(rpc_transport);
+        if self.rpc_client.is_none() && (mode == Mode::Client || mode == Mode::Controller) {
+            let iface = init_network()?;
+            let rpc_transport =
+                Box::try_new(TCPTransport::new(Some(server_ip), server_port, iface))?;
+            let mut client =
+                Box::try_new(SmolRPCClient::new(rpc_transport)).expect("OOM during init");
             client.connect().unwrap();
-            *dev = Some(client);
+            self.rpc_client = Some(client);
+
+            Ok(())
+        } else {
+            Err(KError::UnableToInitEthernetRPC)
         }
     }
 
-    #[cfg(feature = "shmem")]
-    pub fn init_rpc(&mut self) {
-        use crate::arch::network::create_shmem_transport;
-        let mut dev = self.rpc_client.lock();
+    #[cfg(all(feature = "rpc", feature = "shmem"))]
+    pub fn init_shmem_rpc(&mut self) {
+        use rpc::client_shmem::ShmemClient;
+        use rpc::RPCClient;
+
+        use crate::kcb::Mode;
+        use crate::transport::shmem::create_shmem_transport;
+
         let mode = super::kcb::get_kcb().cmdline.mode;
-        if dev.is_none() & (mode == Mode::Client) {
+        if self.rpc_client.is_none() && (mode == Mode::Client) {
             // Set up the transport
             let transport =
-                Box::new(create_shmem_transport().expect("Failed to create shmem transport"));
+                Box::try_new(create_shmem_transport().expect("Failed to create shmem transport"))
+                    .expect("OOM during init");
 
             // Create the client
-            let mut client = ShmemClient::new(transport);
+            let mut client = Box::try_new(ShmemClient::new(transport)).expect("OOM during init");
             client.connect().unwrap();
-            *dev = Some(client);
+            self.rpc_client = Some(client);
         }
     }
 
@@ -293,12 +291,6 @@ impl Arch86Kcb {
             None => 1,
         };
         self.cnr_replica = Some((replica, idx_token));
-    }
-
-    /// Initialized the dummy file-system to measure the write() system call overhead.
-    pub fn init_cnrfs(&mut self) {
-        self.cnrfs = Some(Default::default());
-        let _result = self.cnrfs.as_ref().unwrap().create("nrk", 0x007);
     }
 
     pub fn id(&self) -> usize {

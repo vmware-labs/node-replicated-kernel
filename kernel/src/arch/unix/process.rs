@@ -70,6 +70,10 @@ lazy_static! {
     };
 }
 
+pub fn user_virt_addr_valid(_pid: Pid, _base: u64, _size: u64) -> Result<(u64, u64), KError> {
+    Ok((0, 0))
+}
+
 /// TODO: This code is same as x86_64 process. Can we remove it?
 pub struct UserPtr<T> {
     value: *mut T,

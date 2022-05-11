@@ -80,7 +80,7 @@ source $HOME/.cargo/env
 
 ## Install a recent qemu
 
-[Follow the steps in the Development chapter.](../development/Building.html#install-qemu-from-sources)
+[Follow the steps in the Environment chapter.](../enviornment/Environment.html#install-qemu-from-sources)
 
 ## Install memaslap
 
@@ -151,16 +151,19 @@ sudo ./svc.sh start
 ```
 
 Check the runner status with:
+
 ```bash
 sudo ./svc.sh status
 ```
 
 Stop the runner with:
+
 ```bash
 sudo ./svc.sh stop
 ```
 
 Uninstall the service with:
+
 ```bash
 sudo ./svc.sh uninstall
 ```

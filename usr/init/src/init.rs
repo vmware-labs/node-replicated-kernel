@@ -561,37 +561,6 @@ fn fs_prop_test() {
     info!("fs_prop_test OK");
 }
 
-fn fs_write_test() {
-    use vibrio::syscalls::Fs;
-
-    let base: u64 = 0x2ef_ff000;
-    let size: u64 = 0x1000;
-    unsafe {
-        // Allocate a buffer and write data into it, which is later written to the file.
-        vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");
-
-        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, size as usize);
-        for i in slice.iter_mut() {
-            *i = 0xb;
-        }
-        assert_eq!(slice[99], 0xb);
-
-        let mut iterations = 10;
-        let mut iops = 0;
-        while iterations > 0 {
-            let start = rawtime::Instant::now();
-            while start.elapsed().as_secs() < 1 {
-                Fs::write_direct(slice.as_ptr() as u64, 4096, 0).expect("Failed");
-                iops += 1;
-            }
-            info!("Direct writes per second {}", iops);
-            iterations -= 1;
-            iops = 0;
-        }
-    }
-    info!("fs_write Ok");
-}
-
 fn pmem_alloc(ncores: Option<usize>) {
     use alloc::vec::Vec;
     use lineup::threads::ThreadId;
@@ -724,9 +693,6 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "bench-vmops-unmaplat")]
     vmops::unmaplat::bench(ncores);
-
-    #[cfg(feature = "bench-fs-write")]
-    fs_write_test();
 
     #[cfg(feature = "test-print")]
     print_test();

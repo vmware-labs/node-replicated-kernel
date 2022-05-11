@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode, Abomonation};
+use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use log::{debug, warn};
@@ -18,8 +18,8 @@ pub struct MkDirReq {
 }
 unsafe_abomonate!(MkDirReq: modes);
 
-pub fn rpc_mkdir<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_mkdir(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: &[u8],
     modes: u64,

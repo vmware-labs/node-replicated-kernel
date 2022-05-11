@@ -4,15 +4,13 @@
 #![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![feature(allocator_api)]
 
+#[cfg(any(test, feature = "std"))]
+extern crate std;
+
 #[macro_use]
 extern crate abomonation;
-
 extern crate alloc;
-
-#[cfg(feature = "smoltcp_transport")]
 extern crate smoltcp;
-
-#[cfg(feature = "smoltcp_transport")]
 extern crate vmxnet3;
 
 pub mod api;

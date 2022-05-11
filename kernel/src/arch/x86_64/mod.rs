@@ -26,9 +26,6 @@ use alloc::vec::Vec;
 use core::mem::transmute;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(not(feature = "shmem"))]
-use smoltcp::wire::IpAddress;
-
 use crate::cnrfs::{MlnrKernelNode, Modify};
 use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
@@ -61,13 +58,13 @@ pub mod acpi;
 pub mod coreboot;
 pub mod debug;
 
-pub mod exokernel;
+#[cfg(feature = "rackscale")]
+pub mod rackscale;
 
 pub mod gdt;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
-pub mod network;
 pub mod process;
 pub mod syscall;
 pub mod timer;
@@ -894,7 +891,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let kcb = kcb::get_kcb();
         kcb.arch.setup_cnr(fs_replica.clone(), local_ridx);
-        kcb.arch.init_cnrfs();
     }
 
     // Intialize PCI
@@ -931,16 +927,22 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     );
 
     // Create network stack and instantiate RPC Client
-    #[cfg(not(feature = "shmem"))]
+    // If we enable both ethernet and shmem transport, shmem takes precedence.
+    #[cfg(all(feature = "rackscale", feature = "shmem"))]
     {
         let kcb = kcb::get_kcb();
-        kcb.arch.init_rpc(IpAddress::v4(172, 31, 0, 11), 6970);
+        kcb.arch.init_shmem_rpc();
     }
-
-    #[cfg(feature = "shmem")]
+    #[cfg(all(feature = "rackscale", feature = "ethernet"))]
     {
         let kcb = kcb::get_kcb();
-        kcb.arch.init_rpc();
+        match kcb
+            .arch
+            .init_ethernet_rpc(smoltcp::wire::IpAddress::v4(172, 31, 0, 11), 6970)
+        {
+            Ok(()) => (),
+            Err(e) => log::warn!("Failed to initialize ethernet RPC: {}", e),
+        }
     }
 
     // Done with initialization, now we go in

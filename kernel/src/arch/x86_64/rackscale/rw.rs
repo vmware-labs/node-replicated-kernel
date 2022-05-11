@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode, Abomonation};
+use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::FileOperation;
@@ -21,8 +21,8 @@ pub struct RWReq {
 }
 unsafe_abomonate!(RWReq: fd, len, offset);
 
-pub fn rpc_write<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_write(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
     data: &[u8],
@@ -30,8 +30,8 @@ pub fn rpc_write<T: RPCClient>(
     rpc_writeat(rpc_client, pid, fd, -1, data)
 }
 
-pub fn rpc_writeat<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_writeat(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
     offset: i64,
@@ -85,8 +85,8 @@ pub fn rpc_writeat<T: RPCClient>(
 }
 
 // This function is just a wrapper for rpc_readat
-pub fn rpc_read<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_read(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
     len: u64,
@@ -95,8 +95,8 @@ pub fn rpc_read<T: RPCClient>(
     rpc_readat(rpc_client, pid, fd, len, -1, buff_ptr)
 }
 
-pub fn rpc_readat<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_readat(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
     len: u64,

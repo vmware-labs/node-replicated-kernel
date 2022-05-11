@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode, Abomonation};
+use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use log::{debug, warn};
@@ -18,8 +18,8 @@ pub struct CloseReq {
 }
 unsafe_abomonate!(CloseReq: fd);
 
-pub fn rpc_close<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_close(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
 ) -> Result<(u64, u64), RPCError> {

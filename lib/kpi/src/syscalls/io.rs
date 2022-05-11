@@ -188,35 +188,6 @@ impl Fs {
         }
     }
 
-    pub fn write_direct(buffer: u64, len: u64, offset: i64) -> Result<u64, SystemCallError> {
-        if len == 0 {
-            return Err(SystemCallError::BadFileDescriptor);
-        }
-        let mut is_offset = true;
-        if offset == -1 {
-            is_offset = false;
-        }
-
-        // If read or write is performed at the specific offset.
-        let (r, len) = unsafe {
-            syscall!(
-                SystemCall::FileIO as u64,
-                FileOperation::WriteDirect as u64,
-                buffer,
-                len,
-                offset as u64,
-                is_offset,
-                2
-            )
-        };
-
-        if r == 0 {
-            Ok(len)
-        } else {
-            Err(SystemCallError::from(r))
-        }
-    }
-
     pub fn rename(old_name: u64, new_name: u64) -> Result<u64, SystemCallError> {
         let r = unsafe {
             syscall!(

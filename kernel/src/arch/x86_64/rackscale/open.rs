@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode, Abomonation};
+use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use log::{debug, warn};
@@ -21,26 +21,8 @@ pub struct OpenReq {
 unsafe_abomonate!(OpenReq: flags, modes);
 
 // This is just a wrapper function for rpc_open_create
-pub fn rpc_create<T: RPCClient>(
-    rpc_client: &mut T,
-    pid: usize,
-    pathname: &[u8],
-    flags: u64,
-    modes: u64,
-) -> Result<(u64, u64), RPCError> {
-    rpc_open_create(
-        rpc_client,
-        pid,
-        pathname,
-        flags,
-        modes,
-        FileIO::Create as RPCType,
-    )
-}
-
-// This is just a wrapper function for rpc_open_create
-pub fn rpc_open<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_open(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: &[u8],
     flags: u64,
@@ -56,8 +38,8 @@ pub fn rpc_open<T: RPCClient>(
     )
 }
 
-fn rpc_open_create<T: RPCClient>(
-    rpc_client: &mut T,
+fn rpc_open_create(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: &[u8],
     flags: u64,

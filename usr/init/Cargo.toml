@@ -50,7 +50,6 @@ test-pmem-alloc = []
 # Simple micro-benchmarks
 bench-vmops = []
 bench-vmops-unmaplat = []
-bench-fs-write = []
 fxmark = []
 
 # smoke: A way to tell the micro-benchmarks

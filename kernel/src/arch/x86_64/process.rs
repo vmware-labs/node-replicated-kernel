@@ -10,7 +10,6 @@ use core::cmp::PartialEq;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
-use crate::error::KError;
 use arrayvec::ArrayVec;
 use fallible_collections::try_vec;
 use fallible_collections::FallibleVec;
@@ -23,6 +22,8 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::{controlregs, Ring};
 
+use crate::arch::memory::KERNEL_BASE;
+use crate::error::KError;
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
 use crate::kcb::ArchSpecificKcb;
 use crate::kcb::{self, Kcb};
@@ -79,6 +80,29 @@ lazy_static! {
 
         numa_cache
     };
+}
+
+/// TODO: This method makes file-operations slow, improve it to use large page
+/// sizes. Or maintain a list of (low, high) memory limits per process and check
+/// if (base, size) are within the process memory limits.
+pub fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KError> {
+    let mut base = base;
+    let upper_addr = base + size;
+
+    if upper_addr < KERNEL_BASE {
+        while base <= upper_addr {
+            // Validate addresses for the buffer end.
+            if upper_addr - base <= BASE_PAGE_SIZE as u64 {
+                let _r = NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
+                return NrProcess::<Ring3Process>::resolve(pid, VAddr::from(upper_addr - 1));
+            }
+
+            let _r = NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
+            base += BASE_PAGE_SIZE as u64;
+        }
+        return Ok((base, size));
+    }
+    Err(KError::BadAddress)
 }
 
 pub struct UserPtr<T> {

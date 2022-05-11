@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use std::sync::mpsc::{Receiver, SyncSender};
+use std::vec::Vec;
 
 use crate::rpc::*;
 use crate::transport::Transport;
@@ -76,11 +77,9 @@ impl Transport for MPSCTransport {
 mod tests {
     #[test]
     fn mpsc_tests() {
+        use super::*;
         use std::sync::mpsc::sync_channel;
         use std::thread;
-
-        use crate::transport::MPSCTransport;
-        use crate::transport::Transport;
 
         // Create transports
         let (ctx, crx) = sync_channel(3);

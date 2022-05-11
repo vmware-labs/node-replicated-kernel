@@ -15,12 +15,12 @@ pub type RegistrationHandler =
 /// RPC server operations
 pub trait RPCServer<'a> {
     /// Register an RPC func with an ID
-    fn register<'c>(&self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<&Self, RPCError>
+    fn register<'c>(&mut self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<(), RPCError>
     where
         'c: 'a;
 
     ///  Accept an RPC client
-    fn add_client<'c>(&self, func: &'c RegistrationHandler) -> Result<(&Self, NodeId), RPCError>
+    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<NodeId, RPCError>
     where
         'c: 'a;
 

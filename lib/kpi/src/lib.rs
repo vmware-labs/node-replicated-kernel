@@ -206,30 +206,26 @@ impl From<&str> for VSpaceOperation {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]
 pub enum FileOperation {
-    /// Create a file
-    Create = 1,
     /// Open a file
-    Open = 2,
+    Open = 1,
     /// Read from a file
-    Read = 3,
+    Read = 2,
     /// Read from a file from the given offset
-    ReadAt = 4,
+    ReadAt = 3,
     /// Write to a file
-    Write = 5,
+    Write = 4,
     /// Write to a file
-    WriteAt = 6,
+    WriteAt = 5,
     /// Close an opened file.
-    Close = 7,
+    Close = 6,
     /// Get the information related to the file.
-    GetInfo = 8,
+    GetInfo = 7,
     /// Delete the file
-    Delete = 9,
-    /// Write to a file without going into NR.
-    WriteDirect = 10,
+    Delete = 8,
     /// Rename a file.
-    FileRename = 11,
+    FileRename = 9,
     /// Create a directory.
-    MkDir = 12,
+    MkDir = 10,
     Unknown,
 }
 
@@ -237,18 +233,16 @@ impl From<u64> for FileOperation {
     /// Construct a SystemCall enum based on a 64-bit value.
     fn from(op: u64) -> FileOperation {
         match op {
-            1 => FileOperation::Create,
-            2 => FileOperation::Open,
-            3 => FileOperation::Read,
-            4 => FileOperation::ReadAt,
-            5 => FileOperation::Write,
-            6 => FileOperation::WriteAt,
-            7 => FileOperation::Close,
-            8 => FileOperation::GetInfo,
-            9 => FileOperation::Delete,
-            10 => FileOperation::WriteDirect,
-            11 => FileOperation::FileRename,
-            12 => FileOperation::MkDir,
+            1 => FileOperation::Open,
+            2 => FileOperation::Read,
+            3 => FileOperation::ReadAt,
+            4 => FileOperation::Write,
+            5 => FileOperation::WriteAt,
+            6 => FileOperation::Close,
+            7 => FileOperation::GetInfo,
+            8 => FileOperation::Delete,
+            9 => FileOperation::FileRename,
+            10 => FileOperation::MkDir,
             _ => FileOperation::Unknown,
         }
     }
@@ -258,7 +252,6 @@ impl From<&str> for FileOperation {
     /// Construct a FileOperation enum based on a str.
     fn from(op: &str) -> FileOperation {
         match op {
-            "Create" => FileOperation::Create,
             "Open" => FileOperation::Open,
             "Read" => FileOperation::Read,
             "ReadAt" => FileOperation::ReadAt,
@@ -267,7 +260,6 @@ impl From<&str> for FileOperation {
             "Close" => FileOperation::Close,
             "GetInfo" => FileOperation::GetInfo,
             "Delete" => FileOperation::Delete,
-            "WriteDirect" => FileOperation::WriteDirect,
             "Rename" => FileOperation::FileRename,
             "MkDir" => FileOperation::MkDir,
             _ => FileOperation::Unknown,

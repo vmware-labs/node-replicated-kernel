@@ -28,710 +28,420 @@ use crate::kcb::{ArchSpecificKcb, Mode};
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::process::{userptr_to_str, Pid, ResumeHandle};
+use crate::syscalls::{ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch};
 use crate::{cnrfs, nr, nrproc};
 
-use super::exokernel::*;
 use super::gdt::GdtTable;
-use super::process::{Ring3Process, UserPtr, UserValue};
+use super::process::{user_virt_addr_valid, Ring3Process, UserPtr, UserValue};
+
+#[cfg(feature = "rackscale")]
+use super::rackscale::*;
 
 extern "C" {
     #[no_mangle]
     fn syscall_enter();
 }
 
-fn handle_system(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
-    let op = SystemOperation::from(arg1);
+/// This is the core logic for handling all system calls on the x86-64
+/// architecture.
+///
+/// The struct implements a few traits:
+/// - `Arch86SystemDispatch` which in turn implements `SystemDispatch`
+/// - `Arch86ProcessDispatch` which in turn implements `ProcessDispatch`
+/// - `Arch86VSpaceDispatch` which in turn implements `VSpaceDispatch`
+/// - `CnrDispatch` which in turn implements `FsDispatch`
+///
+/// The reason for having this 2-level trait system is that the rackscale
+/// sub-architecture implementations currently use parts of the x86
+/// implementation and this makes sharing easier (rackscale just has to opt-in
+/// and out of the `Arch86*` traits to "inherit" implementation).
+pub struct Arch86SystemCall;
 
-    match op {
-        SystemOperation::GetHardwareThreads => {
-            let vaddr_buf = arg2; // buf.as_mut_ptr() as u64
-            let vaddr_buf_len = arg3; // buf.len() as u64
-
-            let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
-            let num_threads = atopology::MACHINE_TOPOLOGY.num_threads();
-
-            let mut return_threads = Vec::try_with_capacity(num_threads)?;
-            for hwthread in hwthreads {
-                return_threads.try_push(kpi::system::CpuThread {
-                    id: hwthread.id as usize,
-                    node_id: hwthread.node_id.unwrap_or(0) as usize,
-                    package_id: hwthread.package_id as usize,
-                    core_id: hwthread.core_id as usize,
-                    thread_id: hwthread.thread_id as usize,
-                })?;
+impl SystemCallDispatch<u64> for Arch86SystemCall {
+    fn test(
+        &self,
+        nargs: u64,
+        arg1: u64,
+        arg2: u64,
+        arg3: u64,
+        arg4: u64,
+    ) -> Result<(u64, u64), KError> {
+        match nargs {
+            0 => Ok((1, 2)),
+            1 => Ok((arg1, arg1 + 1)),
+            2 => {
+                if arg1 < arg2 {
+                    let res = arg1 * arg2;
+                    Ok((res, res + 1))
+                } else {
+                    Err(KError::InvalidSyscallTestArg2)
+                }
             }
-
-            // TODO(dependency): Get rid of serde/serde_cbor, use something sane instead
-            let serialized = serde_cbor::to_vec(&return_threads).unwrap();
-            if serialized.len() <= vaddr_buf_len as usize {
-                let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
-                user_slice.copy_from_slice(serialized.as_slice());
+            3 => {
+                if arg1 < arg2 && arg2 < arg3 {
+                    let res = arg1 * arg2 * arg3;
+                    Ok((res, res + 1))
+                } else {
+                    Err(KError::InvalidSyscallTestArg3)
+                }
             }
-
-            Ok((serialized.len() as u64, 0))
+            4 => {
+                let res = arg1 * arg2 * arg3 * arg4;
+                if arg1 < arg2 && arg2 < arg3 && arg3 < arg4 {
+                    Ok((res, res + 1))
+                } else {
+                    Err(KError::InvalidSyscallTestArg4)
+                }
+            }
+            _ => Err(KError::InvalidSyscallArgument1 { a: nargs }),
         }
-        SystemOperation::Stats => {
-            let kcb = super::kcb::get_kcb();
-            info!("IRQ handler time: {} cycles", kcb.tlb_time);
-            Ok((0, 0))
-        }
-        SystemOperation::GetCoreID => {
-            let kcb = super::kcb::get_kcb();
-            Ok((kcb.arch.id() as u64, 0))
-        }
-        SystemOperation::Unknown => Err(KError::InvalidSystemOperation { a: arg1 }),
     }
 }
 
-/// System call handler for printing
-fn process_print(buf: UserValue<&str>) -> Result<(u64, u64), KError> {
-    let mut kcb = super::kcb::get_kcb();
-    let buffer: &str = *buf;
+impl Arch86SystemDispatch for Arch86SystemCall {}
+impl Arch86ProcessDispatch for Arch86SystemCall {}
+impl Arch86VSpaceDispatch for Arch86SystemCall {}
+impl crate::syscalls::CnrFsDispatch for Arch86SystemCall {}
 
-    // A poor mans line buffer scheme:
-    match &mut kcb.print_buffer {
-        Some(kbuf) => match buffer.find("\n") {
-            Some(idx) => {
-                let (low, high) = buffer.split_at(idx + 1);
-                kbuf.push_str(low);
-                {
-                    let r = klogger::SERIAL_LINE_MUTEX.lock();
-                    sprint!("{}", kbuf);
-                }
-                kbuf.clear();
-                kbuf.push_str(high);
-            }
-            None => {
-                kbuf.push_str(buffer);
-                if kbuf.len() > 2048 {
-                    // Don't let the buffer grow arbitrarily:
+/// Dispatch logic for global system calls.
+pub trait Arch86SystemDispatch {}
+
+impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
+    fn get_hardware_threads(
+        &self,
+        vaddr_buf: u64,
+        vaddr_buf_len: u64,
+    ) -> Result<(u64, u64), KError> {
+        // vaddr_buf = buf.as_mut_ptr() as u64
+        // vaddr_buf_len = buf.len() as u64
+
+        let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
+        let num_threads = atopology::MACHINE_TOPOLOGY.num_threads();
+
+        let mut return_threads = Vec::try_with_capacity(num_threads)?;
+        for hwthread in hwthreads {
+            return_threads.try_push(kpi::system::CpuThread {
+                id: hwthread.id as usize,
+                node_id: hwthread.node_id.unwrap_or(0) as usize,
+                package_id: hwthread.package_id as usize,
+                core_id: hwthread.core_id as usize,
+                thread_id: hwthread.thread_id as usize,
+            })?;
+        }
+
+        // TODO(dependency): Get rid of serde/serde_cbor, use something sane instead
+        let serialized = serde_cbor::to_vec(&return_threads).unwrap();
+        if serialized.len() <= vaddr_buf_len as usize {
+            let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
+            user_slice.copy_from_slice(serialized.as_slice());
+        }
+
+        Ok((serialized.len() as u64, 0))
+    }
+
+    fn get_stats(&self) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        info!("IRQ handler time: {} cycles", kcb.tlb_time);
+        Ok((0, 0))
+    }
+
+    fn get_core_id(&self) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        Ok((kcb.arch.id() as u64, 0))
+    }
+}
+
+/// Dispatch logic for global system calls.
+pub trait Arch86ProcessDispatch {}
+
+impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
+    fn log(&self, buffer_arg: u64, len: u64) -> Result<(u64, u64), KError> {
+        let mut kcb = super::kcb::get_kcb();
+
+        // TODO: some scary unsafe logic here that needs sanitization
+        let buffer: *const u8 = buffer_arg as *const u8;
+        let len: usize = len as usize;
+
+        let user_str = unsafe {
+            let slice = core::slice::from_raw_parts(buffer, len);
+            core::str::from_utf8_unchecked(slice)
+        };
+
+        let user_buffer = UserValue::new(user_str);
+        let buffer: &str = *user_buffer;
+
+        // A poor mans line buffer scheme:
+        match &mut kcb.print_buffer {
+            Some(kbuf) => match buffer.find("\n") {
+                Some(idx) => {
+                    let (low, high) = buffer.split_at(idx + 1);
+                    kbuf.push_str(low);
                     {
                         let r = klogger::SERIAL_LINE_MUTEX.lock();
                         sprint!("{}", kbuf);
                     }
                     kbuf.clear();
+                    kbuf.push_str(high);
                 }
-            }
-        },
-        None => {
-            let r = klogger::SERIAL_LINE_MUTEX.lock();
-            sprint!("{}", buffer);
-        }
-    }
-
-    Ok((0, 0))
-}
-
-/// System call handler for process exit
-fn process_exit(code: u64) -> Result<(u64, u64), KError> {
-    debug!("Process got exit, we are done for now...");
-    // TODO: For now just a dummy version that exits Qemu
-    if code != 0 {
-        // When testing we want to indicate to our integration
-        // test that our user-space test failed with a non-zero exit
-        super::debug::shutdown(crate::ExitReason::UserSpaceError);
-    } else {
-        super::debug::shutdown(crate::ExitReason::Ok);
-    }
-}
-
-fn handle_process(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
-    let op = ProcessOperation::from(arg1);
-
-    match op {
-        ProcessOperation::Log => {
-            let buffer: *const u8 = arg2 as *const u8;
-            let len: usize = arg3 as usize;
-
-            let user_str = unsafe {
-                let slice = core::slice::from_raw_parts(buffer, len);
-                core::str::from_utf8_unchecked(slice)
-            };
-
-            process_print(UserValue::new(user_str))
-        }
-        ProcessOperation::GetVCpuArea => unsafe {
-            let kcb = super::kcb::get_kcb();
-
-            let vcpu_vaddr = kcb.arch.current_executor()?.vcpu_addr().as_u64();
-
-            Ok((vcpu_vaddr, 0))
-        },
-        ProcessOperation::AllocateVector => {
-            // TODO: missing proper IRQ resource allocation...
-            let vector = arg2;
-            let core = arg3;
-            super::irq::ioapic_establish_route(vector, core);
-            Ok((vector, core))
-        }
-        ProcessOperation::Exit => {
-            let exit_code = arg2;
-            process_exit(exit_code)
-        }
-        ProcessOperation::GetProcessInfo => {
-            let vaddr_buf = arg2; // buf.as_mut_ptr() as u64
-            let vaddr_buf_len = arg3; // buf.len() as u64
-            let kcb = super::kcb::get_kcb();
-
-            let pid = kcb.current_pid()?;
-            let mut pinfo = nrproc::NrProcess::<Ring3Process>::pinfo(pid)?;
-            pinfo.cmdline = kcb.cmdline.init_args;
-            pinfo.app_cmdline = kcb.cmdline.app_args;
-
-            let serialized = serde_cbor::to_vec(&pinfo).unwrap();
-            if serialized.len() <= vaddr_buf_len as usize {
-                let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
-                user_slice.copy_from_slice(serialized.as_slice());
-            }
-
-            Ok((serialized.len() as u64, 0))
-        }
-        ProcessOperation::RequestCore => {
-            let gtid: usize = arg2.try_into().unwrap();
-            let entry_point = arg3;
-            let kcb = super::kcb::get_kcb();
-
-            let mut affinity = None;
-            for thread in atopology::MACHINE_TOPOLOGY.threads() {
-                if thread.id == gtid {
-                    affinity = Some(thread.node_id.unwrap_or(0));
-                }
-            }
-            let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
-            let pid = kcb.current_pid()?;
-
-            let gtid = nr::KernelNode::allocate_core_to_process(
-                pid,
-                VAddr::from(entry_point),
-                Some(affinity),
-                Some(gtid),
-            )?;
-
-            Ok((arg2, 0))
-        }
-        ProcessOperation::AllocatePhysical => {
-            let page_size: usize = arg2.try_into().unwrap_or(0);
-            //let affinity: usize = arg3.try_into().unwrap_or(0);
-
-            // Validate input
-            if page_size != BASE_PAGE_SIZE && page_size != LARGE_PAGE_SIZE {
-                return Err(KError::InvalidSyscallArgument1 { a: arg2 });
-            }
-
-            let kcb = super::kcb::get_kcb();
-
-            // Figure out what memory to allocate
-            let (bp, lp) = if page_size == BASE_PAGE_SIZE {
-                (1, 0)
-            } else {
-                (0, 1)
-            };
-            crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::Mem)?;
-
-            // Allocate the page (need to make sure we drop pamanager again
-            // before we go to NR):
-            let frame = {
-                let mut pmanager = kcb.mem_manager();
-                if page_size == BASE_PAGE_SIZE {
-                    pmanager.allocate_base_page()?
-                } else {
-                    pmanager.allocate_large_page()?
-                }
-            };
-
-            // Associate memory with the process
-            let pid = kcb.current_pid()?;
-            let fid = nrproc::NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
-
-            Ok((fid as u64, frame.base.as_u64()))
-        }
-        ProcessOperation::SubscribeEvent => Err(KError::InvalidProcessOperation { a: arg1 }),
-        ProcessOperation::Unknown => Err(KError::InvalidProcessOperation { a: arg1 }),
-    }
-}
-
-/// System call handler for vspace operations
-fn handle_vspace(arg1: u64, arg2: u64, arg3: u64) -> Result<(u64, u64), KError> {
-    let op = VSpaceOperation::from(arg1);
-    let base = VAddr::from(arg2);
-    let region_size = arg3;
-    trace!("handle_vspace {:?} {:#x} {:#x}", op, base, region_size);
-
-    let kcb = super::kcb::get_kcb();
-    let mut p = kcb.arch.current_executor()?;
-
-    match op {
-        VSpaceOperation::MapMem | VSpaceOperation::MapPMem => unsafe {
-            let (bp, lp) = crate::memory::size_to_pages(region_size as usize);
-            let mut frames = Vec::try_with_capacity(bp + lp)?;
-            let mem_type = match op {
-                VSpaceOperation::MapMem => MemType::Mem,
-                VSpaceOperation::MapPMem => MemType::PMem,
-                _ => unreachable!(), // We already checked before coming here.
-            };
-            crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, mem_type)?;
-
-            // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
-            // first frame mapped but if you map multiple Frames, no chance getting that
-            // Better would be a function to request physically consecutive DMA memory
-            // or use IO-MMU translation (see also rumpuser_pci_dmalloc)
-            // also better to just return what NR replies with...
-            let mut paddr = None;
-            let mut total_len = 0;
-            {
-                let mut pmanager = match mem_type {
-                    MemType::Mem => kcb.mem_manager(),
-                    MemType::PMem => kcb.pmem_manager(),
-                    _ => unreachable!(),
-                };
-
-                for _i in 0..lp {
-                    let mut frame = pmanager
-                        .allocate_large_page()
-                        .expect("We refilled so allocation should work.");
-                    total_len += frame.size;
-                    unsafe { frame.zero() };
-                    frames
-                        .try_push(frame)
-                        .expect("Can't fail see `try_with_capacity`");
-                    if paddr.is_none() {
-                        paddr = Some(frame.base);
-                    }
-                }
-                for _i in 0..bp {
-                    let mut frame = pmanager
-                        .allocate_base_page()
-                        .expect("We refilled so allocation should work.");
-                    total_len += frame.size;
-                    unsafe { frame.zero() };
-                    frames
-                        .try_push(frame)
-                        .expect("Can't fail see `try_with_capacity`");
-                    if paddr.is_none() {
-                        paddr = Some(frame.base);
-                    }
-                }
-            }
-
-            nrproc::NrProcess::<Ring3Process>::map_frames(
-                p.pid,
-                base,
-                frames,
-                MapAction::ReadWriteUser,
-            )
-            .expect("Can't map memory");
-
-            Ok((paddr.unwrap().as_u64(), total_len as u64))
-        },
-        VSpaceOperation::MapDevice => unsafe {
-            let paddr = PAddr::from(base.as_u64());
-            let size = region_size as usize;
-
-            let frame = Frame::new(paddr, size, kcb.node);
-
-            nrproc::NrProcess::<Ring3Process>::map_device_frame(
-                p.pid,
-                frame,
-                MapAction::ReadWriteUser,
-            )
-        },
-        VSpaceOperation::MapMemFrame => unsafe {
-            let base = VAddr::from(arg2);
-            let frame_id: FrameId = arg3.try_into().map_err(|_e| KError::InvalidFrameId)?;
-
-            let (paddr, size) = nrproc::NrProcess::<Ring3Process>::map_frame_id(
-                p.pid,
-                frame_id,
-                base,
-                MapAction::ReadWriteUser,
-            )?;
-            Ok((paddr.as_u64(), size as u64))
-        },
-        VSpaceOperation::UnmapMem | VSpaceOperation::UnmapPMem => {
-            let handle = nrproc::NrProcess::<Ring3Process>::unmap(p.pid, base)?;
-            let va: u64 = handle.vaddr.as_u64();
-            let sz: u64 = handle.frame.size as u64;
-            super::tlb::shootdown(handle);
-
-            Ok((va, sz))
-        }
-        VSpaceOperation::Identify => unsafe {
-            trace!("Identify base {:#x}.", base);
-            nrproc::NrProcess::<Ring3Process>::resolve(p.pid, base)
-        },
-        VSpaceOperation::Unknown => {
-            error!("Got an invalid VSpaceOperation code.");
-            Err(KError::InvalidVSpaceOperation { a: arg1 })
-        }
-    }
-}
-
-/// System call handler for file operations
-fn handle_fileio(
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-    arg5: u64,
-) -> Result<(u64, u64), KError> {
-    let op = FileOperation::from(arg1);
-
-    let kcb = super::kcb::get_kcb();
-    let pid = kcb.arch.current_pid()?;
-
-    match op {
-        FileOperation::Create => {
-            unreachable!("Create is changed to Open with O_CREAT flag in vibrio")
-        }
-        FileOperation::Open => {
-            let pathname = arg2;
-            let flags = arg3;
-            let modes = arg4;
-            let _r = user_virt_addr_valid(pid, pathname, 0)?;
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    let mut pathname_user_ptr = VAddr::from(pathname);
-                    let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
-                    let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
-
-                    let mut client = kcb.arch.rpc_client.lock();
-                    return match rpc_open(
-                        client.as_mut().unwrap(),
-                        pid,
-                        pathname_cstr.to_bytes_with_nul(),
-                        flags,
-                        modes,
-                    ) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
-                }
-
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes);
-                }
-            }
-        }
-        FileOperation::Read | FileOperation::Write => {
-            let fd = arg2;
-            let buffer = arg3;
-            let len = arg4;
-            let _r = user_virt_addr_valid(pid, buffer, len)?;
-
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    // TODO - chunk writes/reads
-                    let mut client = kcb.arch.rpc_client.lock();
-
-                    if op == FileOperation::Read {
-                        let mut userslice = super::process::UserSlice::new(buffer, len as usize);
-                        return match rpc_read(
-                            client.as_mut().unwrap(),
-                            pid,
-                            fd,
-                            len,
-                            &mut userslice,
-                        ) {
-                            Ok(a) => Ok(a),
-                            Err(err) => Err(err.into()),
-                        };
-                    } else {
-                        // write operation
-                        let kernslice = crate::process::KernSlice::new(buffer, len as usize);
-                        let buff_ptr = kernslice.buffer.clone();
-                        return match rpc_write(client.as_mut().unwrap(), pid, fd, &buff_ptr) {
-                            Ok(a) => Ok(a),
-                            Err(err) => Err(err.into()),
-                        };
-                    }
-                }
-
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, -1);
-                }
-            }
-        }
-        FileOperation::ReadAt | FileOperation::WriteAt => {
-            let fd = arg2;
-            let buffer = arg3;
-            let len = arg4;
-            let offset = arg5 as i64;
-            let _r = user_virt_addr_valid(pid, buffer, len)?;
-
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    // TODO - chunk writes/reads
-                    let mut client = kcb.arch.rpc_client.lock();
-
-                    if op == FileOperation::ReadAt {
-                        let mut userslice = super::process::UserSlice::new(buffer, len as usize);
-                        return match rpc_readat(
-                            client.as_mut().unwrap(),
-                            pid,
-                            fd,
-                            len,
-                            offset,
-                            &mut userslice,
-                        ) {
-                            Ok(a) => Ok(a),
-                            Err(err) => Err(err.into()),
-                        };
-                    } else {
-                        // write_at operation
-                        let kernslice = crate::process::KernSlice::new(buffer, len as usize);
-                        let buff_ptr = kernslice.buffer.clone();
-                        return match rpc_writeat(
-                            client.as_mut().unwrap(),
-                            pid,
-                            fd,
-                            offset,
-                            &buff_ptr,
-                        ) {
-                            Ok(a) => Ok(a),
-                            Err(err) => Err(err.into()),
-                        };
-                    }
-                }
-
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::file_io(op, pid, fd, buffer, len, offset);
-                }
-            }
-        }
-        FileOperation::Close => {
-            let fd = arg2;
-
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    let mut client = kcb.arch.rpc_client.lock();
-                    return match rpc_close(client.as_mut().unwrap(), pid, fd) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
-                }
-
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::unmap_fd(pid, fd);
-                }
-            }
-        }
-        FileOperation::GetInfo => {
-            let name = arg2;
-            let info_ptr = arg3;
-            let _r = user_virt_addr_valid(pid, name, 0)?;
-
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    use crate::arch::process::UserPtr;
-                    use kpi::io::FileInfo;
-
-                    let mut filename_user_ptr = VAddr::from(name);
-                    let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
-                    let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
-
-                    let mut client = kcb.arch.rpc_client.lock();
-                    return match rpc_getinfo(
-                        client.as_mut().unwrap(),
-                        pid,
-                        filename_cstr.to_bytes_with_nul(),
-                    ) {
-                        Ok((ftype, fsize)) => {
-                            let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
-                            unsafe {
-                                (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = ftype;
-                                (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = fsize;
-                            }
-                            Ok((0, 0))
+                None => {
+                    kbuf.push_str(buffer);
+                    if kbuf.len() > 2048 {
+                        // Don't let the buffer grow arbitrarily:
+                        {
+                            let r = klogger::SERIAL_LINE_MUTEX.lock();
+                            sprint!("{}", kbuf);
                         }
-                        Err(err) => Err(err.into()),
-                    };
+                        kbuf.clear();
+                    }
                 }
-
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr);
-                }
-            }
-        }
-        FileOperation::Delete => {
-            let name = arg2;
-            let _r = user_virt_addr_valid(pid, name, 0)?;
-
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    let mut filename_user_ptr = VAddr::from(name);
-                    let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
-                    let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
-
-                    let mut client = kcb.arch.rpc_client.lock();
-                    return match rpc_delete(
-                        client.as_mut().unwrap(),
-                        pid,
-                        filename_cstr.to_bytes_with_nul(),
-                    ) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
-                }
-
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::file_delete(pid, name);
-                }
-            }
-        }
-        FileOperation::WriteDirect => {
-            let len = arg3;
-            let mut offset = arg4 as usize;
-            if arg5 == 0 {
-                offset = 0;
-            }
-
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    // TODO
-                    unreachable!("FileOperation not allowed");
-                    return Err(KError::NotSupported);
-                }
-
-                Mode::Native | Mode::Controller => {
-                    let mut kernslice = crate::process::KernSlice::new(arg2, len as usize);
-                    let mut buffer = unsafe { Arc::get_mut_unchecked(&mut kernslice.buffer) };
-                    let cnrfs = super::kcb::get_kcb().arch.cnrfs.as_ref().unwrap();
-                    let len = cnrfs.write(2, &mut buffer, offset)?;
-                    return Ok((len as u64, 0));
-                }
+            },
+            None => {
+                let r = klogger::SERIAL_LINE_MUTEX.lock();
+                sprint!("{}", buffer);
             }
         }
 
-        FileOperation::FileRename => {
-            let oldname = arg2;
-            let newname = arg3;
-            let _r = user_virt_addr_valid(pid, oldname, 0)?;
-            let _r = user_virt_addr_valid(pid, newname, 0)?;
+        Ok((0, 0))
+    }
 
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    let mut old_user_ptr = VAddr::from(oldname);
-                    let old_str_ptr = UserPtr::new(&mut old_user_ptr);
-                    let old_cstr = unsafe { CStr::from_ptr(old_str_ptr.as_ptr()) };
+    fn get_vcpu_area(&self) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        let vcpu_vaddr = kcb.arch.current_executor()?.vcpu_addr().as_u64();
+        Ok((vcpu_vaddr, 0))
+    }
 
-                    let mut new_user_ptr = VAddr::from(newname);
-                    let new_str_ptr = UserPtr::new(&mut new_user_ptr);
-                    let new_cstr = unsafe { CStr::from_ptr(new_str_ptr.as_ptr()) };
+    fn allocate_vector(&self, vector: u64, core: u64) -> Result<(u64, u64), KError> {
+        // TODO: missing proper IRQ resource allocation...
+        super::irq::ioapic_establish_route(vector, core);
+        Ok((vector, core))
+    }
 
-                    let mut client = kcb.arch.rpc_client.lock();
-                    return match rpc_rename(
-                        client.as_mut().unwrap(),
-                        pid,
-                        old_cstr.to_bytes_with_nul(),
-                        new_cstr.to_bytes_with_nul(),
-                    ) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
-                }
+    fn get_process_info(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> Result<(u64, u64), KError> {
+        // vaddr_buf = buf.as_mut_ptr() as u64
+        // vaddr_buf_len = buf.len() as u64
+        let kcb = super::kcb::get_kcb();
 
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname);
-                }
+        let pid = kcb.current_pid()?;
+        let mut pinfo = nrproc::NrProcess::<Ring3Process>::pinfo(pid)?;
+        pinfo.cmdline = kcb.cmdline.init_args;
+        pinfo.app_cmdline = kcb.cmdline.app_args;
+
+        let serialized = serde_cbor::to_vec(&pinfo).unwrap();
+        if serialized.len() <= vaddr_buf_len as usize {
+            let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
+            user_slice.copy_from_slice(serialized.as_slice());
+        }
+
+        Ok((serialized.len() as u64, 0))
+    }
+
+    fn request_core(&self, core_id: u64, entry_point: u64) -> Result<(u64, u64), KError> {
+        let gtid: usize = core_id.try_into().unwrap();
+        let kcb = super::kcb::get_kcb();
+
+        let mut affinity = None;
+        for thread in atopology::MACHINE_TOPOLOGY.threads() {
+            if thread.id == gtid {
+                affinity = Some(thread.node_id.unwrap_or(0));
             }
         }
-        FileOperation::MkDir => {
-            let pathname = arg2;
-            let modes = arg3;
-            let _r = user_virt_addr_valid(pid, pathname, 0)?;
+        let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
+        let pid = kcb.current_pid()?;
 
-            match kcb.cmdline.mode {
-                Mode::Client => {
-                    let mut pathname_user_ptr = VAddr::from(pathname);
-                    let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
-                    let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
+        let gtid = nr::KernelNode::allocate_core_to_process(
+            pid,
+            VAddr::from(entry_point),
+            Some(affinity),
+            Some(gtid),
+        )?;
 
-                    let mut client = kcb.arch.rpc_client.lock();
-                    return match rpc_mkdir(
-                        client.as_mut().unwrap(),
-                        pid,
-                        pathname_cstr.to_bytes_with_nul(),
-                        modes,
-                    ) {
-                        Ok(a) => Ok(a),
-                        Err(err) => Err(err.into()),
-                    };
-                }
+        Ok((core_id, 0))
+    }
 
-                Mode::Native | Mode::Controller => {
-                    return cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes);
-                }
-            }
+    fn allocate_physical(&self, page_size: u64, affinity: u64) -> Result<(u64, u64), KError> {
+        let page_size: usize = page_size.try_into().unwrap_or(0);
+        //let affinity: usize = arg3.try_into().unwrap_or(0);
+        // Validate input
+        if page_size != BASE_PAGE_SIZE && page_size != LARGE_PAGE_SIZE {
+            return Err(KError::InvalidSyscallArgument1 {
+                a: page_size as u64,
+            });
         }
-        FileOperation::Unknown => {
-            unreachable!("FileOperation not allowed");
-            Err(KError::NotSupported)
+
+        let kcb = super::kcb::get_kcb();
+        // Figure out what memory to allocate
+        let (bp, lp) = if page_size == BASE_PAGE_SIZE {
+            (1, 0)
+        } else {
+            (0, 1)
+        };
+        crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::Mem)?;
+
+        // Allocate the page (need to make sure we drop pamanager again
+        // before we go to NR):
+        let frame = {
+            let mut pmanager = kcb.mem_manager();
+            if page_size == BASE_PAGE_SIZE {
+                pmanager.allocate_base_page()?
+            } else {
+                pmanager.allocate_large_page()?
+            }
+        };
+
+        // Associate memory with the process
+        let pid = kcb.current_pid()?;
+        let fid = nrproc::NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
+
+        Ok((fid as u64, frame.base.as_u64()))
+    }
+
+    fn exit(&self, code: u64) -> Result<(u64, u64), KError> {
+        debug!("Process got exit, we are done for now...");
+        // TODO: For now just a dummy version that exits Qemu
+        if code != 0 {
+            // When testing we want to indicate to our integration
+            // test that our user-space test failed with a non-zero exit
+            super::debug::shutdown(crate::ExitReason::UserSpaceError);
+        } else {
+            super::debug::shutdown(crate::ExitReason::Ok);
         }
     }
 }
 
-fn handle_test(
-    nargs: u64,
-    arg1: u64,
-    arg2: u64,
-    arg3: u64,
-    arg4: u64,
-) -> Result<(u64, u64), KError> {
-    match nargs {
-        0 => Ok((1, 2)),
-        1 => Ok((arg1, arg1 + 1)),
-        2 => {
-            if arg1 < arg2 {
-                let res = arg1 * arg2;
-                Ok((res, res + 1))
-            } else {
-                Err(KError::InvalidSyscallTestArg2)
+/// Dispatch logic for vspace system calls.
+pub trait Arch86VSpaceDispatch {
+    fn map_generic(&self, mem_type: MemType, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        let base = VAddr::from(base);
+
+        let kcb = super::kcb::get_kcb();
+        let mut p = kcb.arch.current_executor()?;
+
+        let (bp, lp) = crate::memory::size_to_pages(size as usize);
+        let mut frames = Vec::try_with_capacity(bp + lp)?;
+
+        crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, mem_type)?;
+
+        // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
+        // first frame mapped but if you map multiple Frames, no chance getting that
+        // Better would be a function to request physically consecutive DMA memory
+        // or use IO-MMU translation (see also rumpuser_pci_dmalloc)
+        // also better to just return what NR replies with...
+        let mut paddr = None;
+        let mut total_len = 0;
+        {
+            let mut pmanager = match mem_type {
+                MemType::Mem => kcb.mem_manager(),
+                MemType::PMem => kcb.pmem_manager(),
+                _ => unreachable!(),
+            };
+
+            for _i in 0..lp {
+                let mut frame = pmanager
+                    .allocate_large_page()
+                    .expect("We refilled so allocation should work.");
+                total_len += frame.size;
+                unsafe { frame.zero() };
+                frames
+                    .try_push(frame)
+                    .expect("Can't fail see `try_with_capacity`");
+                if paddr.is_none() {
+                    paddr = Some(frame.base);
+                }
+            }
+            for _i in 0..bp {
+                let mut frame = pmanager
+                    .allocate_base_page()
+                    .expect("We refilled so allocation should work.");
+                total_len += frame.size;
+                unsafe { frame.zero() };
+                frames
+                    .try_push(frame)
+                    .expect("Can't fail see `try_with_capacity`");
+                if paddr.is_none() {
+                    paddr = Some(frame.base);
+                }
             }
         }
-        3 => {
-            if arg1 < arg2 && arg2 < arg3 {
-                let res = arg1 * arg2 * arg3;
-                Ok((res, res + 1))
-            } else {
-                Err(KError::InvalidSyscallTestArg3)
-            }
-        }
-        4 => {
-            let res = arg1 * arg2 * arg3 * arg4;
-            if arg1 < arg2 && arg2 < arg3 && arg3 < arg4 {
-                Ok((res, res + 1))
-            } else {
-                Err(KError::InvalidSyscallTestArg4)
-            }
-        }
-        _ => Err(KError::InvalidSyscallArgument1 { a: nargs }),
+
+        nrproc::NrProcess::<Ring3Process>::map_frames(
+            p.pid,
+            base,
+            frames,
+            MapAction::ReadWriteUser,
+        )
+        .expect("Can't map memory");
+
+        Ok((paddr.unwrap().as_u64(), total_len as u64))
+    }
+
+    fn unmap_generic(&self, _mem_type: MemType, base: u64) -> Result<(u64, u64), KError> {
+        let base = VAddr::from(base);
+
+        let kcb = super::kcb::get_kcb();
+        let mut p = kcb.arch.current_executor()?;
+
+        let handle = nrproc::NrProcess::<Ring3Process>::unmap(p.pid, base)?;
+        let va: u64 = handle.vaddr.as_u64();
+        let sz: u64 = handle.frame.size as u64;
+        super::tlb::shootdown(handle);
+
+        Ok((va, sz))
     }
 }
 
-/// TODO: This method makes file-operations slow, improve it to use large page
-/// sizes. Or maintain a list of (low, high) memory limits per process and check
-/// if (base, size) are within the process memory limits.
-fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KError> {
-    let mut base = base;
-    let upper_addr = base + size;
-
-    if upper_addr < KERNEL_BASE {
-        while base <= upper_addr {
-            // Validate addresses for the buffer end.
-            if upper_addr - base <= BASE_PAGE_SIZE as u64 {
-                let _r = nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
-                return nrproc::NrProcess::<Ring3Process>::resolve(
-                    pid,
-                    VAddr::from(upper_addr - 1),
-                );
-            }
-
-            let _r = nrproc::NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
-            base += BASE_PAGE_SIZE as u64;
-        }
-        return Ok((base, size));
+impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
+    fn map_mem(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        self.map_generic(MemType::Mem, base, size)
     }
-    Err(KError::BadAddress)
+
+    fn map_pmem(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        self.map_generic(MemType::PMem, base, size)
+    }
+
+    fn map_device(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        // TODO(safety+api): Terribly unsafe, ideally process should request/register
+        // a PCI device and then it can map device things.
+        let kcb = super::kcb::get_kcb();
+        let p = kcb.arch.current_executor()?;
+
+        let paddr = PAddr::from(base);
+        let size = size.try_into().unwrap();
+        let frame = Frame::new(paddr, size, kcb.node);
+
+        nrproc::NrProcess::<Ring3Process>::map_device_frame(p.pid, frame, MapAction::ReadWriteUser)
+    }
+
+    fn map_frame_id(&self, base: u64, frame_id: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        let p = kcb.arch.current_executor()?;
+
+        let base = VAddr::from(base);
+        let frame_id: FrameId = frame_id.try_into().map_err(|_e| KError::InvalidFrameId)?;
+
+        let (paddr, size) = nrproc::NrProcess::<Ring3Process>::map_frame_id(
+            p.pid,
+            frame_id,
+            base,
+            MapAction::ReadWriteUser,
+        )?;
+        Ok((paddr.as_u64(), size as u64))
+    }
+
+    fn unmap_mem(&self, base: u64) -> Result<(u64, u64), KError> {
+        self.unmap_generic(MemType::Mem, base)
+    }
+
+    fn unmap_pmem(&self, base: u64) -> Result<(u64, u64), KError> {
+        self.unmap_generic(MemType::PMem, base)
+    }
+
+    fn identify(&self, addr: u64) -> Result<(u64, u64), KError> {
+        let kcb = super::kcb::get_kcb();
+        let p = kcb.arch.current_executor()?;
+        let base = VAddr::from(addr);
+        trace!("Identify address: {:#x}.", addr);
+        nrproc::NrProcess::<Ring3Process>::resolve(p.pid, base)
+    }
 }
 
 #[allow(unused)]
@@ -797,18 +507,24 @@ pub extern "C" fn syscall_handle(
     arg5: u64,
 ) -> ! {
     //debug_print_syscall(function, arg1, arg2, arg3, arg4, arg5);
-    let status: Result<(u64, u64), KError> = match SystemCall::new(function) {
-        SystemCall::System => handle_system(arg1, arg2, arg3),
-        SystemCall::Process => handle_process(arg1, arg2, arg3),
-        SystemCall::VSpace => handle_vspace(arg1, arg2, arg3),
-        SystemCall::FileIO => handle_fileio(arg1, arg2, arg3, arg4, arg5),
-        SystemCall::Test => handle_test(arg1, arg2, arg3, arg4, arg5),
-        _ => Err(KError::InvalidSyscallArgument1 { a: function }),
+    let kcb = super::kcb::get_kcb();
+
+    #[cfg(feature = "rackscale")]
+    let status = if kcb.cmdline.mode != Mode::Client {
+        let dispatch = Arch86SystemCall;
+        dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)
+    } else {
+        let dispatch = super::rackscale::syscalls::Arch86LwkSystemCall;
+        dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)
+    };
+
+    #[cfg(not(feature = "rackscale"))]
+    let status = {
+        let dispatch = Arch86SystemCall;
+        dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)
     };
 
     let r = {
-        let kcb = super::kcb::get_kcb();
-
         let _retcode = match status {
             Ok((a1, a2)) => {
                 kcb.arch.save_area.as_mut().map(|sa| {

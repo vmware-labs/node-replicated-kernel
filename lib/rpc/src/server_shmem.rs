@@ -47,7 +47,7 @@ impl<'t, 'a> ShmemServer<'a> {
 /// RPC server operations
 impl<'a> RPCServer<'a> for ShmemServer<'a> {
     /// Register an RPC func with an ID
-    fn register<'c>(&self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<&Self, RPCError>
+    fn register<'c>(&mut self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<(), RPCError>
     where
         'c: 'a,
     {
@@ -55,11 +55,11 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
             return Err(RPCError::DuplicateRPCType);
         }
         self.handlers.borrow_mut().insert(rpc_id, handler);
-        Ok(self)
+        Ok(())
     }
 
     /// Accept a client
-    fn add_client<'c>(&self, func: &'c RegistrationHandler) -> Result<(&Self, NodeId), RPCError>
+    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<NodeId, RPCError>
     where
         'c: 'a,
     {
@@ -75,7 +75,7 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
         self.reply()?;
 
         // Single client server, so all client IDs are 0
-        Ok((self, client_id))
+        Ok(client_id)
     }
 
     /// Run the RPC server

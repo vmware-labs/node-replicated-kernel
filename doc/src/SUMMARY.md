@@ -16,6 +16,7 @@
   - [RKApps](./userspace/rkapps.md)
 - [Development](./Development.md)
   - [Configuration](./development/Configuration.md)
+  - [Styleguide](./development/Styleguide.md)
   - [Building](./development/Building.md)
   - [Running](./development/Running.md)
   - [Debugging](./development/Debugging.md)

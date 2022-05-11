@@ -11,8 +11,8 @@ use rpc::RPCClient;
 use super::fio::*;
 use crate::cnrfs;
 
-pub fn rpc_getinfo<T: RPCClient>(
-    rpc_client: &mut T,
+pub fn rpc_getinfo(
+    rpc_client: &mut dyn RPCClient,
     pid: usize,
     name: &[u8],
 ) -> Result<(u64, u64), RPCError> {

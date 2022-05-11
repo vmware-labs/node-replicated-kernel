@@ -31,13 +31,7 @@
 )]
 #![cfg_attr(not(target_os = "none"), feature(thread_local))]
 
-use kcb::Mode;
 extern crate alloc;
-
-/// The x86-64 platform specific code.
-#[cfg(any(test, all(target_arch = "x86_64", target_os = "none")))]
-#[macro_use]
-extern crate abomonation;
 
 /// The x86-64 platform specific code.
 #[cfg(all(target_arch = "x86_64", target_os = "none"))]
@@ -71,13 +65,13 @@ mod pci;
 mod process;
 mod scheduler;
 mod stack;
+mod syscalls;
+mod transport;
 
 pub mod panic;
 
 #[cfg(feature = "integration-test")]
 mod integration_tests;
-
-mod controller_main;
 
 /// A kernel exit status.
 ///
@@ -110,8 +104,9 @@ pub enum ExitReason {
 /// This function is executed from each core (which is
 /// different from a traditional main routine).
 pub fn main() {
-    if kcb::get_kcb().cmdline.mode == Mode::Controller {
-        controller_main::run();
+    #[cfg(feature = "rackscale")]
+    if kcb::get_kcb().cmdline.mode == kcb::Mode::Controller {
+        arch::rackscale::controller::run();
     }
 
     #[cfg(not(feature = "integration-test"))]

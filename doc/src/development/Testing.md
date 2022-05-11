@@ -42,6 +42,13 @@ debugging.
 > Parallel testing for he kernel is not possible at the moment due to reliance
 > on build flags for testing.
 
+The commitable.sh script automatically runs the unit and integration tests:
+
+```bash
+cd kernel
+bash commitable.sh
+```
+
 ## Writing a unit-test for the kernel
 
 Typically these can just be declared in the code using `#[test]`. Note that

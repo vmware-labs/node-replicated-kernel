@@ -4,7 +4,6 @@ version = "0.0.4"
 authors = [
   "Gerd Zellweger <mail@gerdzellweger.com>",
 ]
-
 description = "Experimental OS kernel"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -19,7 +18,7 @@ apic = { path = "../lib/apic/" }
 node-replication = "0.1.1"
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
-rpc = { path = "../lib/rpc", default-features = false, optional = true }
+rpc = { path = "../lib/rpc", optional = true }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 x86 = "0.47"
@@ -33,8 +32,6 @@ rawtime = "0.0.6"
 libacpica = "0.0.8"
 atopology = "0.0.26"
 # External libraries we use:
-abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false, optional = true }
-core2 = { version = "0.3", default-features = false, features = [ "alloc" ], optional = true }
 log = "0.4"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 logos = { version = "0.12", default-features = false, features = ["export_derive"] }
@@ -45,14 +42,18 @@ crossbeam-utils = { version = "0.8.0", default-features = false }
 static_assertions = "1.1.0"
 bit_field = "0.10"
 crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
-addr2line = { version = "0.16", default-features = false, features = ["rustc-demangle"], optional = true }
-gimli = { version = "0.26", default-features = false, features = ["read", "endian-reader"] }
 arrayvec = { version = "0.7.0", default-features = false }
 memoffset = { version = "0.6.5", features = ["unstable_const"] }
-smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ] }
 fallible_collections = { git = "https://github.com/gz/fallible_collections.git", branch = "allocator_api", features = ["unstable", "rust_1_57"] }
+# Should be optional (but currently aren't, TODO)
+gimli = { version = "0.26", default-features = false, features = ["read", "endian-reader"] }
 gdbstub = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6", default-features = false, features = ["alloc"] }
 gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6" }
+# Optional external libraries:
+addr2line = { version = "0.16", default-features = false, features = ["rustc-demangle"], optional = true }
+abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false, optional = true }
+core2 = { version = "0.3", default-features = false, features = [ "alloc" ], optional = true }
+smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
 
 [[bin]]
 name = "nrk"
@@ -82,27 +83,34 @@ which = "4"
 cc = "1.0"
 
 [features]
-default = ["addr2line", "serde", "serde_cbor", "core2", "abomonation", "rpc/default"]
-# Enable gdb server code (supply --kgdb to run.py)
+default = ["addr2line", "serde", "serde_cbor"]
+# Enable Ethernet based networking.
+ethernet = ["smoltcp"]
+# Enable shared memory based networking.
+shmem = []
+# Enables distributed operation by running a control-plane and light-weight
+# kernels that communicate with the control-plane for coarse-grained policy
+# decisions. Use in combination with `shmem` or `ethernet` feature to control
+# transport.
+rackscale = ["core2", "abomonation", "rpc"]
+# server code (supply --kgdb to run.py).
 gdb = []
 # Runs an integration test (supplied as commandline `test=` argument) instead of
 # standard kernel main function.
-integration-test = []
-# smoke: Shorten long running benchmarks to test just functionality.
+integration-test = ["shmem", "ethernet"]
+# smoke: Shortens long running benchmarks to test just functionality.
 smoke = []
-# baremetal: Compile benchmarks for running on bare-metal
+# baremetal: Compile benchmarks for running on bare-metal.
 baremetal = []
 # pre-alloc guest memory: For benchmark sensitive to VM exits.
 prealloc = []
-# Don't boot entire system. Only initialize one core.
+# Bootstrap core only. Don't boot entire system (just first core).
 bsp-only = []
-# pfault-early: cause a page-fault early during init
+# pfault-early: cause a page-fault early during init.
 cause-pfault-early = []
-# gpfault-early: cause a gp-fault early during init
+# gpfault-early: cause a gp-fault early during init.
 cause-gpfault-early = []
-# double-fault: cause a double-fault early during init
+# double-fault: cause a double-fault early during init.
 cause-double-fault = []
-# test-timer: print something when we get a timer interrupt
+# test-timer: print something on a timer interrupt.
 test-timer = []
-# Run the exokernel controller and client on shmem transport
-shmem = ["rpc/shmem_transport"]

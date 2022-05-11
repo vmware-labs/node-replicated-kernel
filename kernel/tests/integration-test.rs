@@ -1580,13 +1580,12 @@ fn s03_shmem_exokernel_fs_test() {
             .module("init")
             .user_feature("test-fs")
             .kernel_feature("shmem")
+            .kernel_feature("rackscale")
             .release()
             .build(),
     );
 
     let build1 = build.clone();
-    let build2 = build.clone();
-
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(30_000)
@@ -1605,6 +1604,7 @@ fn s03_shmem_exokernel_fs_test() {
         let _ignore = qemu_run();
     });
 
+    let build2 = build.clone();
     let client = std::thread::spawn(move || {
         sleep(Duration::from_millis(10_000));
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
@@ -1649,14 +1649,12 @@ fn s03_shmem_exokernel_fs_test_prop() {
         BuildArgs::default()
             .module("init")
             .user_feature("test-fs-prop")
-            .kernel_feature("shmem")
+            .kernel_feature("rackscale")
             .release()
             .build(),
     );
 
     let build1 = build.clone();
-    let build2 = build.clone();
-
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(180_000)
@@ -1675,6 +1673,7 @@ fn s03_shmem_exokernel_fs_test_prop() {
         let _ignore = qemu_run();
     });
 
+    let build2 = build.clone();
     let client = std::thread::spawn(move || {
         sleep(Duration::from_millis(10_000));
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)

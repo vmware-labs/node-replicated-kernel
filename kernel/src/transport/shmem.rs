@@ -1,92 +1,13 @@
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
+// Copyright © 2022 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use vmxnet3::pci::BarAccess;
-use vmxnet3::smoltcp::DevQueuePhy;
-use vmxnet3::vmx::VMXNet3;
+use kpi::KERNEL_BASE;
+#[cfg(feature = "rpc")]
+use rpc::transport::ShmemTransport;
 
+use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
 use crate::pci::claim_device;
-use crate::{kcb::Mode, memory::vspace::MapAction};
-use kpi::KERNEL_BASE;
-
-#[cfg(feature = "shmem")]
-use {
-    alloc::sync::Arc,
-    rpc::rpc::PacketBuffer,
-    rpc::transport::shmem::allocator::ShmemAllocator,
-    rpc::transport::shmem::Queue,
-    rpc::transport::shmem::{Receiver, Sender},
-    rpc::transport::ShmemTransport,
-};
-
-use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
-
-pub fn init_network<'a>() -> Interface<'a, DevQueuePhy> {
-    const VMWARE_INC: u16 = 0x15ad;
-    const VMXNET_DEV: u16 = 0x07b0;
-    let pci = if let Some(vmxnet3_dev) = claim_device(VMWARE_INC, VMXNET_DEV) {
-        let addr = vmxnet3_dev.pci_address();
-        BarAccess::new(addr.bus.into(), addr.dev.into(), addr.fun.into())
-    } else {
-        panic!("vmxnet3 PCI device not found, forgot to pass `--nic vmxnet3`?");
-    };
-
-    // TODO(hack): Map potential vmxnet3 bar addresses XD
-    // Do this in kernel space (offset of KERNEL_BASE) so the mapping persists
-    let kcb = super::kcb::get_kcb();
-    for &bar in &[pci.bar0 - KERNEL_BASE, pci.bar1 - KERNEL_BASE] {
-        kcb.arch
-            .init_vspace()
-            .map_identity_with_offset(
-                PAddr::from(KERNEL_BASE),
-                PAddr::from(bar),
-                0x1000,
-                MapAction::ReadWriteKernel,
-            )
-            .expect("Failed to write potential vmxnet3 bar addresses")
-    }
-
-    // Create the VMX device
-    let mut vmx = VMXNet3::new(pci, 1, 1).unwrap();
-    vmx.attach_pre().expect("Failed to vmx.attach_pre()");
-    vmx.init();
-
-    // Create the EthernetInterface wrapping the VMX device
-    let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
-    let neighbor_cache = NeighborCache::new(BTreeMap::new());
-
-    let (ethernet_addr, ip_addrs) = match kcb.cmdline.mode {
-        Mode::Client => (
-            EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdd]),
-            [IpCidr::new(IpAddress::v4(172, 31, 0, 12), 24)],
-        ),
-        _ => {
-            // TODO: MAC, IP, and default route should be dynamic
-            (
-                EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]),
-                [IpCidr::new(IpAddress::v4(172, 31, 0, 11), 24)],
-            )
-        }
-    };
-
-    let mut routes = Routes::new(BTreeMap::new());
-    routes
-        .add_default_ipv4_route(Ipv4Address::new(172, 31, 0, 20))
-        .unwrap();
-
-    // Create SocketSet w/ space for 1 socket
-    let mut sock_vec = Vec::new();
-    sock_vec.try_reserve_exact(1).unwrap();
-    let iface = InterfaceBuilder::new(device, sock_vec)
-        .ip_addrs(ip_addrs)
-        .hardware_addr(ethernet_addr.into())
-        .routes(routes)
-        .neighbor_cache(neighbor_cache)
-        .finalize();
-    iface
-}
 
 /// Setup inter-vm shared-memory device.
 pub fn init_shmem_device() -> Option<(u64, u64)> {
@@ -108,7 +29,7 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
         }
 
         // TODO: Double check if this is mapping we need?
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .init_vspace()
             .map_identity_with_offset(
@@ -126,11 +47,18 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
     }
 }
 
-#[cfg(feature = "shmem")]
+#[cfg(feature = "rpc")]
 pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
+    use crate::kcb::Mode;
+    use alloc::sync::Arc;
+    use rpc::rpc::PacketBuffer;
+    use rpc::transport::shmem::allocator::ShmemAllocator;
+    use rpc::transport::shmem::Queue;
+    use rpc::transport::shmem::{Receiver, Sender};
+
     if let Some((base_addr, size)) = init_shmem_device() {
         let allocator = ShmemAllocator::new(base_addr + KERNEL_BASE, size);
-        let mode = super::kcb::get_kcb().cmdline.mode;
+        let mode = crate::kcb::get_kcb().cmdline.mode;
         match mode {
             Mode::Controller => {
                 let server_to_client_queue = Arc::new(

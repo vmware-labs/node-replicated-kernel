@@ -11,16 +11,9 @@ abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-st
 hashbrown = { version = "0.11", features = [ "nightly" ] }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 log = "0.4"
-smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp", "medium-ethernet" ], optional = true }
 rawtime = "0.0.6"
-vmxnet3 = { path = "../vmxnet3", optional = true }
+smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp", "medium-ethernet" ] }
+vmxnet3 = { path = "../vmxnet3" }
 
 [features]
-default = ["smoltcp_transport"]
-
-# cargo test --features test --no-default-features
-test = ["mpsc_transport", "shmem_transport"]
-smoltcp_transport = ["smoltcp", "vmxnet3"]
-mpsc_transport = ["std"]
-shmem_transport = []
 std = []

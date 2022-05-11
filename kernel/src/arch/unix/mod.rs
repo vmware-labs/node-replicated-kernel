@@ -17,10 +17,12 @@ use crate::nr::{KernelNode, Op};
 use crate::{main, ExitReason};
 
 pub mod debug;
+#[cfg(feature = "rackscale")]
 pub mod exokernel;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
+#[cfg(feature = "rackscale")]
 pub mod network;
 pub mod process;
 pub mod timer;

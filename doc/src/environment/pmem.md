@@ -33,7 +33,7 @@ done via the following command-line options:
 * `device nvdimm,id=nvdimm1,memdev=mem1` creates a read/write virtual NVDIMM
   device whose storage is provided by above memory backend device.
 
-### Guest Data Persistence
+## Guest Data Persistence
 
 Though QEMU supports multiple types of vNVDIMM backends on Linux, the only
 backend that can guarantee the guest write persistence is:
@@ -46,7 +46,7 @@ backend, write persistence is guaranteed if the host kernel has support for the
 `MAP_SYNC` flag in the mmap system call and additionally, both 'pmem' and
 'share' flags are set to 'on' on the backend.
 
-### NVDIMM Persistence
+## NVDIMM Persistence
 
 Users can provide a persistence value to a guest via the optional
 `nvdimm-persistence` machine command line option:
@@ -63,7 +63,7 @@ controller to the NVDIMMs in the event of power loss.
 `cpu` - The platform supports flushing dirty data from the CPU cache to the
 NVDIMMs in the event of power loss.
 
-### Emulate PMEM using DRAM
+## Emulate PMEM using DRAM
 
 Linux systems allow emulating DRAM as PMEM. These devices are seen as the
 Persistent Memory Region by the OS. Usually, these devices are faster than
@@ -110,7 +110,7 @@ sudo mount -o dax /dev/pmem0 /mnt/pmem0
 
 Use it as a `mem-path=/mnt/pmem0` as explained [earlier](#use-NVDIMM-in-QEMU).
 
-### Configure and Provision NVDIMMs
+## Configure and Provision NVDIMMs
 
 The NVDIMMs need to be configured and provisioned before using them for the
 applications. Intel `ipmctl` tool can be used to discover and provision the
@@ -128,7 +128,7 @@ To show all the NVDIMMs attached on a socket, run:
 sudo ipmctl show -dimm -socket SocketID
 ```
 
-### Provisioning
+## Provisioning
 
 NVDIMMs can be configured both in volatile (MemoryMode) and non-volatile
 (AppDirect) modes or a mix of two using `ipmctl` tool on Linux.
@@ -167,7 +167,7 @@ The namespace can be created in different modes like raw, sector, fsdax,
 and devdax. The default mode is fsdax.
 
 Reboot the machine after creating the namespaces, and the devices will
-show-up in /dev/* depending on the mode. For example, if the mode is
+show-up in /dev/*depending on the mode. For example, if the mode is
 fsdax, the devices will be named /dev/pmem*.
 
 Mount these devices:
@@ -179,4 +179,4 @@ sudo mount -o dax /dev/pmem0 /mnt/pmem0
 ```
 
 These mount points can be used directly in the userspace applications or
-for Qemu virtual machine as explained [earlier](#use-NVDIMM-in-QEMU).
+for Qemu virtual machine as explained [earlier](#use-nvdimm-in-qemu).

@@ -223,7 +223,7 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
-        return cnrfs::MlnrKernelNode::file_delete(pid, name);
+        cnrfs::MlnrKernelNode::file_delete(pid, name)
     }
 
     fn fs_file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {

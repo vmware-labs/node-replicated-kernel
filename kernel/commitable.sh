@@ -1,19 +1,34 @@
 #!/bin/bash
 set -ex
 
+#
+# Makes sure that tests in CI will pass (hopefully).
+#
+
 # check formatting
 cd ..
 cargo fmt -- --check
 cd kernel
 
-# build
+# build kernel
 RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-nrk
 
-# run
+# run kernel
 python3 run.py
 
-# unix
+# run unix architecture
 cargo run
 
-# test
+# run integration tests
 RUST_TEST_THREADS=1 cargo test  --features smoke -- --nocapture
+
+# Testing stuff under lib/
+cd ../lib/apic && cargo test --all-features
+cd ../bootloader_shared && cargo test --all-features
+cd ../kpi && cargo test --all-features
+cd ../vibrio && cargo test --all-features
+cd  ../vmxnet3 && cargo test --all-features
+cd ../rpc && cargo test --all-features
+
+# Documentation
+cd ../../doc && mdbook build

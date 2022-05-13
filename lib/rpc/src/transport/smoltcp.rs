@@ -27,11 +27,11 @@ pub struct TCPTransport<'a> {
 }
 
 impl TCPTransport<'_> {
-    pub fn new<'a>(
+    pub fn new(
         server_ip: Option<IpAddress>,
         server_port: u16,
-        iface: Interface<'a, DevQueuePhy>,
-    ) -> TCPTransport<'a> {
+        iface: Interface<'_, DevQueuePhy>,
+    ) -> TCPTransport<'_> {
         lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
         lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
 
@@ -79,7 +79,7 @@ impl Transport for TCPTransport<'_> {
         let mut data_index = 0;
 
         trace!("Attempting to send {:?} bytes", data_out.len());
-        if data_out.len() == 0 {
+        if data_out.is_empty() {
             return Ok(());
         }
 
@@ -123,7 +123,7 @@ impl Transport for TCPTransport<'_> {
         let mut data_index = 0;
 
         trace!("Attempting to recv {:?} bytes", data_in.len());
-        if data_in.len() == 0 {
+        if data_in.is_empty() {
             return Ok(());
         }
 

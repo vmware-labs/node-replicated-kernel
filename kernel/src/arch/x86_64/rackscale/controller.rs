@@ -6,9 +6,9 @@ use rpc::api::RPCServer;
 use rpc::rpc::RPCType;
 
 use crate::arch::debug::shutdown;
-use crate::arch::rackscale::*;
-
 use crate::ExitReason;
+
+use super::*;
 
 const PORT: u16 = 6970;
 

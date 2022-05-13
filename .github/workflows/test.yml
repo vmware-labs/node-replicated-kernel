@@ -1,3 +1,4 @@
+# If you modify this file, also ensure that the change/addition is reflected in `commitable.sh`.
 on:
   push:
     paths-ignore:
@@ -32,26 +33,26 @@ jobs:
         run: RUST_TEST_THREADS=1 cargo test --features smoke --bin nrk
         working-directory: ./kernel
       - name: apic tests
-        run: cargo test
+        run: cargo test --all-features
         working-directory: ./lib/apic
       - name: bootloader_shared tests
-        run: cargo test
+        run: cargo test --all-features
         working-directory: ./lib/bootloader_shared
       - name: kpi tests
-        run: cargo test
+        run: cargo test --all-features
         working-directory: ./lib/kpi
-      # Disabled at the moment, fix the flaky tests:
+      # Disabled at the moment, need to fix the flaky tests:
       #- name: lineup tests
       #  run: RUST_TEST_THREADS=1 cargo test
       #  working-directory: ./lib/lineup
       - name: vibrio tests
-        run: cargo test --features rumprt
+        run: cargo test --all-features
         working-directory: ./lib/vibrio
       - name: vmxnet3 tests
-        run: cargo test
+        run: cargo test --all-features
         working-directory: ./lib/vmxnet3
       - name: RPC tests
-        run: cargo test --features std
+        run: cargo test --all-features
         working-directory: ./lib/rpc
       - name: Build the documentation
         run: mdbook build

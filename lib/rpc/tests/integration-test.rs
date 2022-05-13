@@ -20,7 +20,7 @@ fn test_client_server() {
         // Create a server
         let server_transport = MPSCTransport::new(srx, ctx);
         let rpc_server_transport = Box::new(server_transport);
-        let server = Server::new(rpc_server_transport);
+        let mut server = Server::new(rpc_server_transport);
 
         // Register an echo RPC
         fn echo_rpc_handler(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
@@ -91,7 +91,7 @@ fn test_client_server_shmem_transport() {
     thread::spawn(move || {
         // Create a server
         let rpc_server_transport = Box::new(server_transport);
-        let server = ShmemServer::new(rpc_server_transport);
+        let mut server = ShmemServer::new(rpc_server_transport);
 
         // Register an echo RPC
         fn echo_rpc_handler(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {

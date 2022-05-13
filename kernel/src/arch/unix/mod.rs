@@ -16,6 +16,7 @@ use crate::memory::{GlobalMemory, GrowBackend, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 use crate::{main, ExitReason};
 
+pub mod coreboot;
 pub mod debug;
 #[cfg(feature = "rackscale")]
 pub mod exokernel;

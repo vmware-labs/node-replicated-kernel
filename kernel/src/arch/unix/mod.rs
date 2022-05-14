@@ -18,14 +18,14 @@ use crate::{main, ExitReason};
 
 pub mod coreboot;
 pub mod debug;
-#[cfg(feature = "rackscale")]
-pub mod exokernel;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
 #[cfg(feature = "rackscale")]
 pub mod network;
 pub mod process;
+#[cfg(feature = "rackscale")]
+pub mod rackscale;
 pub mod timer;
 pub mod vspace;
 

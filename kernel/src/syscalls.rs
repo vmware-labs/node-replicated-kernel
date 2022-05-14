@@ -8,11 +8,9 @@ use core::fmt::{Debug, LowerHex};
 use kpi::{FileOperation, ProcessOperation, SystemCall, SystemOperation, VSpaceOperation};
 use log::{error, trace};
 
-#[cfg(not(feature = "rackscale-lwk"))]
 use crate::arch::process::user_virt_addr_valid;
 use crate::cnrfs;
 use crate::error::KError;
-#[cfg(not(feature = "rackscale-lwk"))]
 use crate::kcb::ArchSpecificKcb;
 
 /// FileOperation: Arch specific implementations
@@ -58,6 +56,11 @@ pub trait SystemDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn get_core_id(&self) -> Result<(W, W), KError>;
 }
 
+/// [`SystemCall::Test`] stuff.
+pub trait TestDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
+    fn test(&self, nargs: W, arg1: W, arg2: W, arg3: W, arg4: W) -> Result<(W, W), KError>;
+}
+
 /// Generic system call dispatch trait.
 ///
 /// This should be implemented for a specific architecture. The generic `W`
@@ -66,7 +69,7 @@ pub trait SystemDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
 /// call `handle` to dispatch user-space requests to the appropriate handler
 /// functions.
 pub trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>:
-    VSpaceDispatch<W> + FsDispatch<W> + SystemDispatch<W> + ProcessDispatch<W>
+    VSpaceDispatch<W> + FsDispatch<W> + SystemDispatch<W> + ProcessDispatch<W> + TestDispatch<W>
 {
     fn handle(
         &self,
@@ -149,9 +152,47 @@ pub trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>:
             FileOperation::Unknown => Err(KError::NotSupported),
         }
     }
+}
 
-    /// [`SystemCall::Test`] Should be directly implemented as an arch-specific call.
-    fn test(&self, nargs: W, arg1: W, arg2: W, arg3: W, arg4: W) -> Result<(W, W), KError>;
+impl<T> TestDispatch<u64> for T {
+    fn test(
+        &self,
+        nargs: u64,
+        arg1: u64,
+        arg2: u64,
+        arg3: u64,
+        arg4: u64,
+    ) -> Result<(u64, u64), KError> {
+        match nargs {
+            0 => Ok((1, 2)),
+            1 => Ok((arg1, arg1 + 1)),
+            2 => {
+                if arg1 < arg2 {
+                    let res = arg1 * arg2;
+                    Ok((res, res + 1))
+                } else {
+                    Err(KError::InvalidSyscallTestArg2)
+                }
+            }
+            3 => {
+                if arg1 < arg2 && arg2 < arg3 {
+                    let res = arg1 * arg2 * arg3;
+                    Ok((res, res + 1))
+                } else {
+                    Err(KError::InvalidSyscallTestArg3)
+                }
+            }
+            4 => {
+                let res = arg1 * arg2 * arg3 * arg4;
+                if arg1 < arg2 && arg2 < arg3 && arg3 < arg4 {
+                    Ok((res, res + 1))
+                } else {
+                    Err(KError::InvalidSyscallTestArg4)
+                }
+            }
+            _ => Err(KError::InvalidSyscallArgument1 { a: nargs }),
+        }
+    }
 }
 
 /// The canonical system call dispatch handler for architectures that want to

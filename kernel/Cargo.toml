@@ -86,7 +86,7 @@ cc = "1.0"
 default = ["addr2line", "serde", "serde_cbor"]
 # Enable Ethernet based networking.
 ethernet = ["smoltcp"]
-# Enable shared memory based networking.
+# Enable shared memory based communication.
 shmem = []
 # Enables distributed operation by running a control-plane and light-weight
 # kernels that communicate with the control-plane for coarse-grained policy
@@ -95,6 +95,12 @@ shmem = []
 rackscale = ["core2", "abomonation", "rpc"]
 # server code (supply --kgdb to run.py).
 gdb = []
+
+#
+# The following features are used for testing *only* and should not be enabled
+# otherwise:
+#
+
 # Runs an integration test (supplied as commandline `test=` argument) instead of
 # standard kernel main function.
 integration-test = ["shmem", "ethernet"]

@@ -23,6 +23,12 @@ Libraries and binaries only have non-additive / non-conflicting feature flags.
 This helps to spot compilation problems quickly (e.g. with `cargo build
 --all-features`)
 
+## Errors
+
+The `KError` type is used to represent errors in the kernel. Whenever possible,
+each variant should only be used once/in a single location (to be easy to grep
+for) and should have a descriptive name.
+
 ## Formatting Commit Messages
 
 We follow the conventions on [How to Write a Git Commit

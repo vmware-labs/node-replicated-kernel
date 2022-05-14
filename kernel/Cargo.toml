@@ -33,6 +33,7 @@ libacpica = "0.0.8"
 atopology = "0.0.26"
 # External libraries we use:
 log = "0.4"
+displaydoc = { version = "0.2", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 logos = { version = "0.12", default-features = false, features = ["export_derive"] }
 hashbrown = { version = "0.11", features = [ "nightly" ] }

@@ -49,7 +49,6 @@ pub mod arch;
 #[path = "arch/x86_64/mod.rs"]
 pub mod x86_64_arch;
 
-mod cnrfs;
 mod error;
 mod fs;
 mod graphviz;

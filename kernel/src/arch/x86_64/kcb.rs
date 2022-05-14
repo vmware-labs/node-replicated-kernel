@@ -19,8 +19,8 @@ use x86::current::segmentation;
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
-use crate::cnrfs::MlnrKernelNode;
 use crate::error::KError;
+use crate::fs::cnrfs::MlnrKernelNode;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::nrproc::NrProcess;
 use crate::process::Pid;

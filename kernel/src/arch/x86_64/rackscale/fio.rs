@@ -11,9 +11,9 @@ use log::{debug, error};
 use rpc::rpc::*;
 
 use crate::error::KError;
-use crate::fs::NrLock;
+use crate::fs::{cnrfs, NrLock};
+use crate::nr;
 use crate::process::Pid;
-use crate::{cnrfs, nr};
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]

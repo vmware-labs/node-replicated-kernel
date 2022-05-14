@@ -8,7 +8,7 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::fio::*;
-use crate::cnrfs;
+use crate::fs::cnrfs;
 
 pub fn rpc_delete(
     rpc_client: &mut dyn RPCClient,

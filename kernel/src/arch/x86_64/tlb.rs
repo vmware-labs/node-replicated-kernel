@@ -18,9 +18,10 @@ use x86::apic::{
 };
 
 use super::memory::BASE_PAGE_SIZE;
+use crate::fs::cnrfs;
 use crate::kcb;
 use crate::memory::vspace::TlbFlushHandle;
-use crate::{cnrfs, is_page_aligned, nr};
+use crate::{is_page_aligned, nr};
 
 // In the xAPIC mode, the Destination Format Register (DFR) through the MMIO
 // interface determines the choice of a flat logical mode or a clustered logical

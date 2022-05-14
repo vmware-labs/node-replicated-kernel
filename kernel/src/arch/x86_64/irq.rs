@@ -48,12 +48,13 @@ use apic::ApicDriver;
 use klogger::{sprint, sprintln};
 use log::{info, trace, warn};
 
+use crate::fs::cnrfs;
 use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
 use crate::process::{Executor, ResumeHandle};
-use crate::{cnrfs, nr, nrproc, ExitReason};
+use crate::{nr, nrproc, ExitReason};
 
 use super::gdt::GdtTable;
 use super::kcb::{get_kcb, Arch86Kcb};

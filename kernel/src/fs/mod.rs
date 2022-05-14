@@ -16,6 +16,7 @@ use crate::fallible_string::TryString;
 
 pub use rwlock::RwLock as NrLock;
 
+pub mod cnrfs;
 pub mod fd;
 
 mod file;

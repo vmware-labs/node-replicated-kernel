@@ -9,8 +9,8 @@ use kpi::{FileOperation, ProcessOperation, SystemCall, SystemOperation, VSpaceOp
 use log::{error, trace};
 
 use crate::arch::process::user_virt_addr_valid;
-use crate::cnrfs;
 use crate::error::{KError, KResult};
+use crate::fs::cnrfs;
 use crate::kcb::ArchSpecificKcb;
 
 /// FileOperation: Arch specific implementations

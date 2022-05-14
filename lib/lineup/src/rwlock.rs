@@ -21,6 +21,12 @@ pub struct RwLock {
     inner: UnsafeCell<RwLockInner>,
 }
 
+impl Default for RwLock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl Send for RwLock {}
 unsafe impl Sync for RwLock {}
 
@@ -196,7 +202,7 @@ impl RwLockInner {
             }
         } else {
             // Someone is inside this RwLock at the moment
-            return false;
+            false
         }
     }
 

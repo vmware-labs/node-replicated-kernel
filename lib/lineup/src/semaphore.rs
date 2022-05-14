@@ -66,7 +66,7 @@ impl SemaphoreInner {
         if self.count <= 0 {
             self.cv.wait(&self.mutex)
         }
-        self.count = self.count - 1;
+        self.count -= self.count;
         self.mutex.exit();
     }
 }

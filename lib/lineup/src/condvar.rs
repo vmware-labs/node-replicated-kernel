@@ -31,6 +31,12 @@ pub struct CondVar {
 unsafe impl Send for CondVar {}
 unsafe impl Sync for CondVar {}
 
+impl Default for CondVar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CondVar {
     pub fn new() -> CondVar {
         CondVar {
@@ -120,11 +126,11 @@ impl CondVarInner {
         let yielder: &mut ThreadControlBlock = Environment::thread();
 
         if mtx.is_spin() && mtx.is_kmutex() {
-            (yielder.upcalls.schedule)(&rid, Some(mtx));
+            (yielder.upcalls.schedule)(rid, Some(mtx));
             mtx.enter_nowrap();
         } else {
             self.cv_mutex_enter(mtx);
-            (yielder.upcalls.schedule)(&rid, Some(mtx));
+            (yielder.upcalls.schedule)(rid, Some(mtx));
         }
     }
 
@@ -201,7 +207,7 @@ impl CondVarInner {
             // We don't support this at the moment
             debug_assert!(
                 self.dbg_mutex.is_null()
-                    || ((*self.dbg_mutex).owner() == ptr::null()
+                    || ((*self.dbg_mutex).owner().is_null()
                         || (*self.dbg_mutex).owner()
                             == Environment::thread().rump_lwp.load(Ordering::SeqCst))
             );
@@ -215,10 +221,10 @@ impl CondVarInner {
             waking_tid
         );
 
-        waking_tid.map(|tid| {
+        if let Some(tid) = waking_tid {
             let yielder: &mut ThreadControlBlock = Environment::thread();
             yielder.make_runnable(tid);
-        });
+        };
     }
 
     // SMP: not ok!
@@ -230,7 +236,7 @@ impl CondVarInner {
             // We don't support this at the moment
             debug_assert!(
                 self.dbg_mutex.is_null()
-                    || ((*self.dbg_mutex).owner() == ptr::null()
+                    || ((*self.dbg_mutex).owner().is_null()
                         || (*self.dbg_mutex).owner()
                             == Environment::thread().rump_lwp.load(Ordering::SeqCst))
             );

@@ -139,9 +139,9 @@ impl<'a> SmpScheduler<'a> {
 
         self.add_thread(handle, generator).map(|tid| {
             self.mark_runnable(tid, affinity);
-            interrupt_vector.map(|vec| {
+            if let Some(vec) = interrupt_vector {
                 self.irqvec_to_tid.lock().insert(vec, tid);
-            });
+            }
             tid
         })
     }
@@ -167,7 +167,7 @@ impl<'a> SmpScheduler<'a> {
         handle: Thread,
         generator: Generator<'a, YieldResume, YieldRequest, LineupStack>,
     ) -> Option<ThreadId> {
-        let tid = handle.id.clone();
+        let tid = handle.id;
         assert!(
             !self.threads.lock().contains_key(&tid),
             "Thread {} already exists?",
@@ -180,7 +180,7 @@ impl<'a> SmpScheduler<'a> {
             Some(tid)
         } else {
             error!("too many threads");
-            return None;
+            None
         }
     }
 
@@ -301,7 +301,7 @@ impl<'a> SmpScheduler<'a> {
                     let rtid_affinity = self
                         .threads
                         .lock()
-                        .get(&rtid)
+                        .get(rtid)
                         .expect("Can't find thread")
                         .affinity;
                     self.waitlist_remove(*rtid, rtid_affinity);

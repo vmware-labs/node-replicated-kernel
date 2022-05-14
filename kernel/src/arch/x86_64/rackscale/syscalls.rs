@@ -25,7 +25,7 @@ impl Arch86ProcessDispatch for Arch86LwkSystemCall {}
 impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
 
 impl FsDispatch<u64> for Arch86LwkSystemCall {
-    fn fs_open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
@@ -38,7 +38,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_open(client, pid, pathname_cstr.to_bytes_with_nul(), flags, modes).map_err(|e| e.into())
     }
 
-    fn fs_read(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
+    fn read(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
@@ -49,7 +49,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_read(client, pid, fd, len, &mut userslice).map_err(|e| e.into())
     }
 
-    fn fs_write(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
+    fn write(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
@@ -61,13 +61,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_write(client, pid, fd, &buff_ptr).map_err(|e| e.into())
     }
 
-    fn fs_read_at(
-        &self,
-        fd: u64,
-        buffer: u64,
-        len: u64,
-        offset: u64,
-    ) -> Result<(u64, u64), KError> {
+    fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
@@ -77,13 +71,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_readat(client, pid, fd, len, offset as i64, &mut userslice).map_err(|e| e.into())
     }
 
-    fn fs_write_at(
-        &self,
-        fd: u64,
-        buffer: u64,
-        len: u64,
-        offset: u64,
-    ) -> Result<(u64, u64), KError> {
+    fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
@@ -95,14 +83,14 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_writeat(client, pid, fd, offset as i64, &buff_ptr).map_err(|e| e.into())
     }
 
-    fn fs_close(&self, fd: u64) -> Result<(u64, u64), KError> {
+    fn close(&self, fd: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
         rpc_close(client, pid, fd).map_err(|e| e.into())
     }
 
-    fn fs_get_info(&self, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
+    fn get_info(&self, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
@@ -126,7 +114,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
             .map_err(|e| e.into())
     }
 
-    fn fs_delete(&self, name: u64) -> Result<(u64, u64), KError> {
+    fn delete(&self, name: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
@@ -139,7 +127,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_delete(client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
     }
 
-    fn fs_file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
+    fn file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, oldname, 0)?;
@@ -163,7 +151,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         .map_err(|e| e.into())
     }
 
-    fn fs_mkdir(&self, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn mkdir(&self, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;

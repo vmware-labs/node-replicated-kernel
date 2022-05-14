@@ -2,96 +2,141 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use core::convert::From;
-use core::fmt;
-
-use crate::memory::VAddr;
 
 use arrayvec::CapacityError;
 use kpi::SystemCallError;
 
+use crate::memory::VAddr;
+
 /// Shortcut for a Result that returns an error of type KError.
 pub type KResult<T> = Result<T, KError>;
 
-#[derive(PartialEq, Clone, Debug)]
+/// Kernel-wide error type with everything that can potentially go wrong.
+#[derive(displaydoc::Display, PartialEq, Clone, Debug)]
 pub enum KError {
-    // General error
+    /// User-space pointer is not valid
     BadAddress,
+    /// Global memory is not yet available
     GlobalMemoryNotSet,
+    /// The requested core is already allocated by another process
     CoreAlreadyAllocated,
+    /// Ran out of memory while performing an allocation
     OutOfMemory,
+    /// Replica is not set-up in the KCB
     ReplicaNotSet,
+    /// The core has no current process set
     ProcessNotSet,
+    /// The requested operation is not supported/does not exist
     NotSupported,
+    /// Can't spawn more processes (not enough PIDs)
     OutOfPids,
+    /// The core we're looking up has no executor allocated to it
     NoExecutorForCore,
-
-    // Syscall errors
+    /// Invalid 1st syscall argument supplied: {a}
     InvalidSyscallArgument1 { a: u64 },
+    /// Invalid VSpace Operation (2nd syscall argument) supplied: {a}
     InvalidVSpaceOperation { a: u64 },
+    /// Invalid Process Operation (2nd syscall argument) supplied: {a}
     InvalidProcessOperation { a: u64 },
+    /// Invalid System Operation (2nd syscall argument) supplied: {a}
     InvalidSystemOperation { a: u64 },
+    /// Invalid File Operation (2nd syscall argument) supplied: {a}
     InvalidFileOperation { a: u64 },
-
-    // Test syscall errors
+    /// System call arguments (2) received in the wrong order
     InvalidSyscallTestArg2,
+    /// System call arguments (3) received in the wrong order
     InvalidSyscallTestArg3,
+    /// System call arguments (4) received in the wrong order
     InvalidSyscallTestArg4,
-
-    // Physical memory errors
+    /// Invalid layout for allocator provided
     InvalidLayout,
+    /// Couldn't allocate bytes on this cache, need to re-grow first
     CacheExhausted,
+    /// Cache can't hold any more objects
     CacheFull,
+    /// Cache full -- added {count} elements
     CantGrowFurther { count: usize },
+    /// KCB not set, memory allocation won't work at this point
     KcbUnavailable,
+    /// The memory manager was already borrowed (this is a bug)
     ManagerAlreadyBorrowed,
+    /// Specified an invalid NUMA node ID for affinity
     InvalidAffinityId,
+    /// Internal data-structure grew too big
     CapacityOverflow,
-
-    // Process Errors
+    /// Can't spawn more process
     ProcessLoadingFailed,
+    /// Unable to create process
     ProcessCreate,
+    /// No process was associated with the given PID
     NoProcessFoundForPid,
+    /// Couldn't load process (invalid ELF file?)
     UnableToLoad,
+    /// Couldn't parse ELF file (invalid ELF file?)
     UnableToParseElf,
+    /// We never allocated executors for this affinity region and process (need to fill cache)
     NoExecutorAllocated,
+    /// The executor cache for given affinity is empty (need to refill)
     ExecutorCacheExhausted,
+    /// Specified an invalid core
     InvalidGlobalThreadId,
+    /// The excutor was removed from the current core
     ExecutorNoLongerValid,
+    /// The executor on the core was already borrowed (that's a bug)
     ExecutorAlreadyBorrowed,
+    /// Unable to reserve memory for internal process data-structures
     NotEnoughMemory,
+    /// The provided FrameId is not registered with the process
     InvalidFrameId,
+    /// Not enough space in process table (out of PIDs)
     TooManyProcesses,
+    /// Can't register more frames with the process (out of FIDs)
     TooManyRegisteredFrames,
+    /// Supplied file descriptor was invalid
     InvalidFileDescriptor,
+    /// Can't spawn binary {binary}: Not found
     BinaryNotFound { binary: &'static str },
-
-    // Address space errors
+    /// Supplied frame was invalid
     InvalidFrame,
+    /// Address space operation covers existing mapping {base:?}
     AlreadyMapped { base: VAddr },
+    /// Provided virtual base {base:?} is invalid (led to overflow on mappings).
     BaseOverflow { base: u64 },
+    /// The requested mapping is not found
     NotMapped,
+    /// The supplied length is invalid
     InvalidLength,
+    /// The supplied base is invalid (alignment?)
     InvalidBase,
-
-    // File IO
+    /// Supplied file is invalid
     InvalidFile,
+    /// Supplied flags are invalid
     InvalidFlags,
+    /// Supplied offset is invalid
     InvalidOffset,
+    /// File/directory permission mismatch (can't be read or written)
     PermissionError,
+    /// Fd or File already exists
     AlreadyPresent,
+    /// Can't read or write to a directory
     DirectoryError,
+    /// Can't open more files for the process
     OpenFileLimit,
+    /// PID is already stored in scheduler state.
     FileDescForPidAlreadyAdded,
+    /// No file-descriptors found for PID.
     NoFileDescForPid,
-
-    // Debugging
+    /// Debugger is already attached
     DebuggerAlreadyAttached,
+    /// Failure while running the GDB state machine
     DebuggerStmFailure,
+    /// Can't read (debug) register
     DebuggerUnableToReadRegister,
+    /// Can't write (debug) register
     DebuggerUnableToWriteRegister,
-
-    // Network
+    /// Can't find a vmxnet3 device (did you pass `--nic vmxnet3`?)
     VMXNet3DeviceNotFound,
+    /// Unable to initialize Ethernet device for RPC
     UnableToInitEthernetRPC,
 }
 
@@ -161,124 +206,5 @@ impl From<KError> for SystemCallError {
 impl Default for KError {
     fn default() -> KError {
         KError::NotSupported
-    }
-}
-
-impl fmt::Display for KError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            KError::ProcessNotSet => write!(f, "The core has no current process set."),
-            KError::ReplicaNotSet => write!(f, "Replica is not set-up in the KCB."),
-            KError::NoExecutorForCore => {
-                write!(
-                    f,
-                    "The core we're looking up has no executor allocated to it."
-                )
-            }
-            KError::NotSupported => write!(
-                f,
-                "The requested operation is not supported/does not exist."
-            ),
-            KError::BadAddress => write!(f, "User-space pointer is not valid."),
-            KError::GlobalMemoryNotSet => write!(f, "Global memory is not yet available."),
-            KError::CoreAlreadyAllocated => {
-                write!(
-                    f,
-                    "The requested core is already allocated by another process."
-                )
-            }
-            KError::InvalidSyscallArgument1 { a } => {
-                write!(f, "Invalid 1st syscall argument supplied: {}", a)
-            }
-            KError::InvalidSyscallTestArg2 => write!(f, "System call arguments (2) received in the wrong order."),
-            KError::InvalidSyscallTestArg3 => write!(f, "System call arguments (3) received in the wrong order."),
-            KError::InvalidSyscallTestArg4 => write!(f, "System call arguments (4) received in the wrong order."),
-            KError::InvalidVSpaceOperation { a } => {
-                write!(
-                    f,
-                    "Invalid VSpace Operation (2nd syscall argument) supplied: {}",
-                    a
-                )
-            }
-            KError::InvalidProcessOperation { a } => {
-                write!(
-                    f,
-                    "Invalid Process Operation (2nd syscall argument) supplied: {}",
-                    a
-                )
-            }
-            KError::InvalidSystemOperation { a } => {
-                write!(
-                    f,
-                    "Invalid System Operation (2nd syscall argument) supplied: {}",
-                    a
-                )
-            },
-            KError::InvalidFileOperation { a } => {
-                write!(
-                    f,
-                    "Invalid File Operation (2nd syscall argument) supplied: {}",
-                    a
-                )
-            },
-            KError::InvalidAffinityId => {
-                write!(f, "Specified an invalid NUMA node ID for affinity.")
-            }
-            KError::CapacityOverflow => write!(f, "Internal data-structure grew too big"),
-
-            KError::OutOfPids => write!(f, "Can't spawn more processes (out of Pids)"),
-            KError::ProcessLoadingFailed => write!(f, "Can't spawn more processes (out of Pids)"),
-            KError::OutOfMemory => write!(f, "Ran out of memory while performing an allocation"),
-            KError::FileDescForPidAlreadyAdded => {
-                write!(f, "PID is already stored in scheduler state")
-            }
-            KError::NoFileDescForPid => write!(f, "No file-descriptors found for Pid"),
-
-            KError::ProcessCreate  => write!(f, "Unable to create process"),
-            KError::NoProcessFoundForPid => write!(f, "No process was associated with the given Pid."),
-            KError::UnableToLoad => write!(f, "Couldn't load process, invalid ELF file?"),
-            KError::UnableToParseElf => write!(f, "Couldn't parse ELF file, invalid?"),
-            KError::NoExecutorAllocated => write!(f, "We never allocated executors for this affinity region and process (need to fill cache)."),
-            KError::ExecutorCacheExhausted => write!(f, "The executor cache for given affinity is empty (need to refill)"),
-            KError::InvalidGlobalThreadId => write!(f, "Specified an invalid core"),
-            KError::ExecutorNoLongerValid => write!(f, "The excutor was removed from the current core."),
-            KError::ExecutorAlreadyBorrowed => write!(f, "The executor on the core was already borrowed (that's a bug)."),
-            KError::NotEnoughMemory => write!(f, "Unable to reserve memory for internal process data-structures."),
-            KError::InvalidFrameId => write!(f, "The provided FrameId is not registered with the process"),
-            KError::TooManyProcesses => write!(f, "Not enough space in process table (out of PIDs)."),
-            KError::TooManyRegisteredFrames => write!(f, "Can't register more frames with the process (out of FIDs)."),
-            KError::BinaryNotFound { binary } => write!(f, "Can't spawn binary {}: Not found", binary),
-
-            KError::InvalidFrame => write!(f, "Supplied frame was invalid"),
-            KError::AlreadyMapped{base} => write!(f, "Address space operation covers existing mapping {:?}", base),
-            KError::BaseOverflow{base} => write!(f, "Provided virtual base {:#x} was invalid (led to overflow on mappings).", base),
-            KError::NotMapped => write!(f, "The requested mapping was not found"),
-            KError::InvalidLength => write!(f, "The supplied length was invalid"),
-            KError::InvalidBase => write!(f, "The supplied base was invalid (alignment?)"),
-
-            KError::InvalidLayout => write!(f, "Invalid layout for allocator provided."),
-            KError::CacheExhausted => write!(f, "Couldn't allocate bytes on this cache, need to re-grow first."),
-            KError::CacheFull => write!(f, "Cache can't hold any more objects."),
-            KError::CantGrowFurther{count} => write!(f, "Cache full; only added {} elements.", count),
-            KError::KcbUnavailable => write!(f, "KCB not set, memory allocation won't work at this point."),
-            KError::ManagerAlreadyBorrowed => write!(f, "The memory manager was already borrowed (this is a bug)."),
-
-            KError::InvalidFileDescriptor => write!(f, "Supplied file descriptor was invalid"),
-            KError::InvalidFile => write!(f, "Supplied file was invalid"),
-            KError::InvalidFlags => write!(f, "Supplied flags were invalid"),
-            KError::InvalidOffset => write!(f, "Supplied offset was invalid"),
-            KError::PermissionError => write!(f, "File/directory can't be read or written"),
-            KError::AlreadyPresent => write!(f, "Fd/File already exists"),
-            KError::DirectoryError => write!(f, "Can't read or write to a directory"),
-            KError::OpenFileLimit => write!(f, "Maximum files are opened for a process"),
-
-            KError::DebuggerAlreadyAttached => write!(f, "Debugger is already attached"),
-            KError::DebuggerStmFailure => write!(f, "Failure while running the GDB state machine"),
-            KError::DebuggerUnableToReadRegister => write!(f, "Can't read register"),
-            KError::DebuggerUnableToWriteRegister => write!(f, "Can't write register"),
-
-            KError::VMXNet3DeviceNotFound => write!(f, "Can't find a vmxnet3 device (did you pass `--nic vmxnet3`?)"),
-            KError::UnableToInitEthernetRPC => write!(f, "Unable to initialize Ethernet device for RPC"),
-        }
     }
 }

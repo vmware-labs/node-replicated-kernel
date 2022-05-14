@@ -15,16 +15,16 @@ use crate::kcb::ArchSpecificKcb;
 
 /// FileOperation: Arch specific implementations
 pub trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn fs_open(&self, pathname: W, flags: W, modes: W) -> KResult<(W, W)>;
-    fn fs_read(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
-    fn fs_write(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
-    fn fs_read_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
-    fn fs_write_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
-    fn fs_close(&self, fd: W) -> KResult<(W, W)>;
-    fn fs_get_info(&self, name: W, info_ptr: W) -> KResult<(W, W)>;
-    fn fs_delete(&self, name: W) -> KResult<(W, W)>;
-    fn fs_file_rename(&self, oldname: W, newname: W) -> KResult<(W, W)>;
-    fn fs_mkdir(&self, pathname: W, modes: W) -> KResult<(W, W)>;
+    fn open(&self, pathname: W, flags: W, modes: W) -> KResult<(W, W)>;
+    fn read(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
+    fn write(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
+    fn read_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
+    fn write_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
+    fn close(&self, fd: W) -> KResult<(W, W)>;
+    fn get_info(&self, name: W, info_ptr: W) -> KResult<(W, W)>;
+    fn delete(&self, name: W) -> KResult<(W, W)>;
+    fn file_rename(&self, oldname: W, newname: W) -> KResult<(W, W)>;
+    fn mkdir(&self, pathname: W, modes: W) -> KResult<(W, W)>;
 }
 
 /// Parsed and validated arguments of the file system calls.
@@ -254,16 +254,16 @@ pub trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>:
     fn fileio(&self, arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> KResult<(W, W)> {
         use FileOperationArgs::*;
         match FileOperationArgs::validate(arg1, arg2, arg3, arg4, arg5)? {
-            Open(pathname, flags, modes) => self.fs_open(pathname, flags, modes),
-            Read(fd, buffer, len) => self.fs_read(fd, buffer, len),
-            Write(fd, buffer, len) => self.fs_write(fd, buffer, len),
-            ReadAt(fd, buffer, len, offset) => self.fs_read_at(fd, buffer, len, offset),
-            WriteAt(fd, buffer, len, offset) => self.fs_write_at(fd, buffer, len, offset),
-            Close(fd) => self.fs_close(fd),
-            GetInfo(name, info_ptr) => self.fs_get_info(name, info_ptr),
-            Delete(name) => self.fs_delete(name),
-            FileRename(oldname, newname) => self.fs_file_rename(oldname, newname),
-            MkDir(pathname, modes) => self.fs_mkdir(pathname, modes),
+            Open(pathname, flags, modes) => self.open(pathname, flags, modes),
+            Read(fd, buffer, len) => self.read(fd, buffer, len),
+            Write(fd, buffer, len) => self.write(fd, buffer, len),
+            ReadAt(fd, buffer, len, offset) => self.read_at(fd, buffer, len, offset),
+            WriteAt(fd, buffer, len, offset) => self.write_at(fd, buffer, len, offset),
+            Close(fd) => self.close(fd),
+            GetInfo(name, info_ptr) => self.get_info(name, info_ptr),
+            Delete(name) => self.delete(name),
+            FileRename(oldname, newname) => self.file_rename(oldname, newname),
+            MkDir(pathname, modes) => self.mkdir(pathname, modes),
         }
     }
 }
@@ -314,74 +314,62 @@ impl<T> TestDispatch<u64> for T {
 pub trait CnrFsDispatch {}
 
 impl<T: CnrFsDispatch> FsDispatch<u64> for T {
-    fn fs_open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
         cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
     }
 
-    fn fs_read(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
+    fn read(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::Read, pid, fd, buffer, len, -1)
     }
 
-    fn fs_write(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
+    fn write(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::Write, pid, fd, buffer, len, -1)
     }
 
-    fn fs_read_at(
-        &self,
-        fd: u64,
-        buffer: u64,
-        len: u64,
-        offset: u64,
-    ) -> Result<(u64, u64), KError> {
+    fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::ReadAt, pid, fd, buffer, len, offset as i64)
     }
 
-    fn fs_write_at(
-        &self,
-        fd: u64,
-        buffer: u64,
-        len: u64,
-        offset: u64,
-    ) -> Result<(u64, u64), KError> {
+    fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::WriteAt, pid, fd, buffer, len, offset as i64)
     }
 
-    fn fs_close(&self, fd: u64) -> Result<(u64, u64), KError> {
+    fn close(&self, fd: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
     }
 
-    fn fs_get_info(&self, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
+    fn get_info(&self, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
         cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr)
     }
 
-    fn fs_delete(&self, name: u64) -> Result<(u64, u64), KError> {
+    fn delete(&self, name: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
         cnrfs::MlnrKernelNode::file_delete(pid, name)
     }
 
-    fn fs_file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
+    fn file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, oldname, 0)?;
@@ -389,7 +377,7 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
         cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)
     }
 
-    fn fs_mkdir(&self, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn mkdir(&self, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;

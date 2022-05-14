@@ -94,6 +94,13 @@ pub struct ThreadControlBlock<'a> {
 }
 
 impl<'a> ThreadControlBlock<'a> {
+    /// Creates a new thread local storage area.
+    ///
+    /// # Safety
+    /// Does a bunch of unsafe memory operations to lay out the TLS area.
+    ///
+    /// Someone else also need to ensure that the allocated memory is `freed` at
+    /// some point again.
     pub unsafe fn new_tls_area() -> *mut ThreadControlBlock<'a> {
         let ts_template = ThreadControlBlock {
             tcb_myself: ptr::null_mut(),
@@ -115,8 +122,7 @@ impl<'a> ThreadControlBlock<'a> {
 
         // TODO(correctness): This doesn't really respect alignment of ThreadControlBlock :(
         // since we align to the TLS alignment requirements by ELF
-        let tcb =
-            tls_base.offset((tls_layout.size() - mem::size_of::<ThreadControlBlock>()) as isize);
+        let tcb = tls_base.add(tls_layout.size() - mem::size_of::<ThreadControlBlock>());
         *(tcb as *mut ThreadControlBlock) = ts_template;
         // Initialize TCB self
         (*(tcb as *mut ThreadControlBlock)).tcb_myself = tcb as *mut ThreadControlBlock;
@@ -272,6 +278,10 @@ impl SchedulerControlBlock {
 }
 
 impl SchedulerControlBlock {
+    /// Sets the control block for the scheduler.
+    ///
+    /// # Safety
+    /// Ideally this should be called before other stuff relies on it being there.
     pub unsafe fn preinstall(&self) {
         arch::set_scb(self as *const SchedulerControlBlock);
     }

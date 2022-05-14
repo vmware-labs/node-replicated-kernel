@@ -18,6 +18,12 @@ pub struct Mutex {
     inner: MutexInner,
 }
 
+impl Default for Mutex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl Send for Mutex {}
 unsafe impl Sync for Mutex {}
 
@@ -261,7 +267,7 @@ impl Drop for MutexInner {
     fn drop(&mut self) {
         assert!(self.waitlist.is_empty());
         assert!(self.owner.get().is_none());
-        assert!(self.lwp_ptr.get() == ptr::null());
+        assert!(self.lwp_ptr.get().is_null());
     }
 }
 

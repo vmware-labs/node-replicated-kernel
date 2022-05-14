@@ -5,19 +5,17 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use num_cpus;
-
 /// Returns true if all finalized app binaries exist, false otherwise.
 fn apps_built(path: &Path) -> bool {
     let apps = build_plan();
     let mut all_app_binaries_exist = true;
 
     for (app, bake_out, bake_in, _unwind) in apps {
-        let mut bake_out_path: PathBuf = path.clone().into();
+        let mut bake_out_path: PathBuf = path.into();
         bake_out_path.push(app);
         bake_out_path.push(bake_out);
 
-        let mut bake_in_path: PathBuf = path.clone().into();
+        let mut bake_in_path: PathBuf = path.into();
         bake_in_path.push(app);
         bake_in_path.push(bake_in);
 

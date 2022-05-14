@@ -17,15 +17,8 @@ use crate::{CoreId, IrqVector};
 pub(crate) type Runnable<'a> = Generator<'a, YieldResume, YieldRequest, LineupStack>;
 
 /// The id of a thread.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ThreadId(pub usize);
-
-impl Hash for ThreadId {
-    /// For hashing we only rely on the ID as the affinity can change.
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-    }
-}
 
 impl fmt::Display for ThreadId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -77,6 +70,8 @@ impl Hash for Thread {
 }
 
 impl Thread {
+    /// TODO: Use builder pattern to create threads.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn new<'a, F>(
         tid: ThreadId,
         affinity: CoreId,

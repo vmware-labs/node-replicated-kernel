@@ -12,7 +12,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&'static str, MainFn); 26] = [
+const INTEGRATION_TESTS: [(&str, MainFn); 26] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -70,15 +70,13 @@ fn time() {
         if let Some(tinfo) = cpuid.get_tsc_info() {
             if let Some(freq) = tinfo.tsc_frequency() {
                 return freq;
-            } else {
-                if tinfo.numerator() != 0 && tinfo.denominator() != 0 {
-                    // Approximate with the processor frequency:
-                    if let Some(pinfo) = cpuid.get_processor_frequency_info() {
-                        let cpu_base_freq_hz = pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ;
-                        let crystal_hz = cpu_base_freq_hz * tinfo.denominator() as u64
-                            / tinfo.numerator() as u64;
-                        return crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64;
-                    }
+            } else if tinfo.numerator() != 0 && tinfo.denominator() != 0 {
+                // Approximate with the processor frequency:
+                if let Some(pinfo) = cpuid.get_processor_frequency_info() {
+                    let cpu_base_freq_hz = pinfo.processor_base_frequency() as u64 * MHZ_TO_HZ;
+                    let crystal_hz =
+                        cpu_base_freq_hz * tinfo.denominator() as u64 / tinfo.numerator() as u64;
+                    return crystal_hz * tinfo.numerator() as u64 / tinfo.denominator() as u64;
                 }
             }
         }

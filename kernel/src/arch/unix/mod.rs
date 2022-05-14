@@ -26,6 +26,7 @@ pub mod network;
 pub mod process;
 #[cfg(feature = "rackscale")]
 pub mod rackscale;
+pub mod syscalls;
 pub mod timer;
 pub mod vspace;
 

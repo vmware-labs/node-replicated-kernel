@@ -23,11 +23,11 @@ use crate::arch::process::UserPtr;
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
 use crate::error::KError;
 use crate::fallible_string::TryString;
-use crate::fs::Fd;
+use crate::fs::{cnrfs, Fd};
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
 use crate::prelude::overlaps;
-use crate::{cnrfs, kcb, nr, nrproc, round_up};
+use crate::{kcb, nr, nrproc, round_up};
 
 /// How many (concurrent) processes the systems supports.
 pub const MAX_PROCESSES: usize = 12;

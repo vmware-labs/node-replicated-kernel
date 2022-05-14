@@ -706,7 +706,7 @@ fn vmxnet_smoltcp() {
     // Don't change the next line without changing `integration-test.rs`
     info!("About to serve sockets!");
 
-    while !done && clock.elapsed() < Instant::from_millis(10_000) {
+    while !done && clock.elapsed() < Instant::from_millis(25_000) {
         match iface.poll(clock.elapsed()) {
             Ok(_) => {}
             Err(e) => {

@@ -10,7 +10,7 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::fio::*;
-use crate::cnrfs;
+use crate::fs::cnrfs;
 
 #[derive(Debug)]
 pub struct CloseReq {

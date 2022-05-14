@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 use core::mem::transmute;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::cnrfs::{MlnrKernelNode, Modify};
+use crate::fs::cnrfs::{MlnrKernelNode, Modify};
 use crate::kcb::{BootloaderArguments, Kcb};
 use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};

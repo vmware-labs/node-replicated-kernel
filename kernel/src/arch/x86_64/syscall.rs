@@ -23,13 +23,13 @@ use kpi::{
 };
 
 use crate::error::KError;
-use crate::fs::FileSystem;
+use crate::fs::{cnrfs, FileSystem};
 use crate::kcb::{ArchSpecificKcb, Mode};
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::process::{userptr_to_str, Pid, ResumeHandle};
 use crate::syscalls::{ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch};
-use crate::{cnrfs, nr, nrproc};
+use crate::{nr, nrproc};
 
 use super::gdt::GdtTable;
 use super::process::{user_virt_addr_valid, Ring3Process, UserPtr, UserValue};

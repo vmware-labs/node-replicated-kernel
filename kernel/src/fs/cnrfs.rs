@@ -1,22 +1,24 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::sync::Arc;
+
 use crate::arch::process::{UserPtr, UserSlice};
 use crate::error::KError;
-use crate::fs::fd::FileDesc;
-use crate::fs::{
-    Buffer, FileDescriptor, FileSystem, Filename, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset,
-    FD, MNODE_OFFSET,
-};
 use crate::memory::VAddr;
 use crate::prelude::*;
 use crate::process::{userptr_to_str, KernSlice, Pid};
 
-use alloc::sync::Arc;
 use cnr::{Dispatch, LogMapper};
 use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::FileOperation;
+
+use super::fd::FileDesc;
+use super::{
+    Buffer, FileDescriptor, FileSystem, Filename, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset,
+    FD, MNODE_OFFSET,
+};
 
 #[derive(Default)]
 pub struct MlnrKernelNode {
@@ -116,7 +118,7 @@ pub enum MlnrNodeResult {
 /// two and maybe move all the functions to a separate file?
 impl MlnrKernelNode {
     pub fn add_process(pid: usize) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -131,7 +133,7 @@ impl MlnrKernelNode {
     }
 
     pub fn map_fd(pid: Pid, pathname: u64, flags: u64, modes: u64) -> Result<(FD, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -160,7 +162,7 @@ impl MlnrKernelNode {
             Ok((mnode, _)) => mnode,
             Err(_) => return Err(KError::InvalidFileDescriptor),
         };
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch.cnr_replica.as_ref().map_or(
             Err(KError::ReplicaNotSet),
             |(replica, token)| match op {
@@ -197,7 +199,7 @@ impl MlnrKernelNode {
     }
 
     pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -213,7 +215,7 @@ impl MlnrKernelNode {
     }
 
     pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -232,7 +234,7 @@ impl MlnrKernelNode {
     pub fn file_info(pid: Pid, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
         let (mnode, _) = MlnrKernelNode::filename_to_mnode(pid, name)?;
 
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -256,7 +258,7 @@ impl MlnrKernelNode {
     }
 
     pub fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -275,7 +277,7 @@ impl MlnrKernelNode {
     }
 
     pub fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -294,7 +296,7 @@ impl MlnrKernelNode {
 
     #[inline(always)]
     pub fn fd_to_mnode(pid: Pid, fd: FD) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -311,7 +313,7 @@ impl MlnrKernelNode {
 
     #[inline(always)]
     pub fn filename_to_mnode(pid: Pid, filename: Filename) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()
@@ -327,7 +329,7 @@ impl MlnrKernelNode {
     }
 
     pub fn synchronize_log(log_id: usize) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
+        let kcb = crate::kcb::get_kcb();
         kcb.arch
             .cnr_replica
             .as_ref()

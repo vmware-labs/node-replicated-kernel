@@ -18,47 +18,7 @@ use super::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 
 pub struct Arch86LwkSystemCall;
 
-impl SystemCallDispatch<u64> for Arch86LwkSystemCall {
-    fn test(
-        &self,
-        nargs: u64,
-        arg1: u64,
-        arg2: u64,
-        arg3: u64,
-        arg4: u64,
-    ) -> Result<(u64, u64), KError> {
-        match nargs {
-            0 => Ok((1, 2)),
-            1 => Ok((arg1, arg1 + 1)),
-            2 => {
-                if arg1 < arg2 {
-                    let res = arg1 * arg2;
-                    Ok((res, res + 1))
-                } else {
-                    Err(KError::InvalidSyscallTestArg2)
-                }
-            }
-            3 => {
-                if arg1 < arg2 && arg2 < arg3 {
-                    let res = arg1 * arg2 * arg3;
-                    Ok((res, res + 1))
-                } else {
-                    Err(KError::InvalidSyscallTestArg3)
-                }
-            }
-            4 => {
-                let res = arg1 * arg2 * arg3 * arg4;
-                if arg1 < arg2 && arg2 < arg3 && arg3 < arg4 {
-                    Ok((res, res + 1))
-                } else {
-                    Err(KError::InvalidSyscallTestArg4)
-                }
-            }
-            _ => Err(KError::InvalidSyscallArgument1 { a: nargs }),
-        }
-    }
-}
-
+impl SystemCallDispatch<u64> for Arch86LwkSystemCall {}
 // Use x86 syscall processing for not yet implemented systems:
 impl Arch86SystemDispatch for Arch86LwkSystemCall {}
 impl Arch86ProcessDispatch for Arch86LwkSystemCall {}

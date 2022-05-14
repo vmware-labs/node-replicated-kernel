@@ -34,9 +34,6 @@ use crate::{cnrfs, nr, nrproc};
 use super::gdt::GdtTable;
 use super::process::{user_virt_addr_valid, Ring3Process, UserPtr, UserValue};
 
-#[cfg(feature = "rackscale")]
-use super::rackscale::*;
-
 extern "C" {
     #[no_mangle]
     fn syscall_enter();
@@ -57,47 +54,7 @@ extern "C" {
 /// and out of the `Arch86*` traits to "inherit" implementation).
 pub struct Arch86SystemCall;
 
-impl SystemCallDispatch<u64> for Arch86SystemCall {
-    fn test(
-        &self,
-        nargs: u64,
-        arg1: u64,
-        arg2: u64,
-        arg3: u64,
-        arg4: u64,
-    ) -> Result<(u64, u64), KError> {
-        match nargs {
-            0 => Ok((1, 2)),
-            1 => Ok((arg1, arg1 + 1)),
-            2 => {
-                if arg1 < arg2 {
-                    let res = arg1 * arg2;
-                    Ok((res, res + 1))
-                } else {
-                    Err(KError::InvalidSyscallTestArg2)
-                }
-            }
-            3 => {
-                if arg1 < arg2 && arg2 < arg3 {
-                    let res = arg1 * arg2 * arg3;
-                    Ok((res, res + 1))
-                } else {
-                    Err(KError::InvalidSyscallTestArg3)
-                }
-            }
-            4 => {
-                let res = arg1 * arg2 * arg3 * arg4;
-                if arg1 < arg2 && arg2 < arg3 && arg3 < arg4 {
-                    Ok((res, res + 1))
-                } else {
-                    Err(KError::InvalidSyscallTestArg4)
-                }
-            }
-            _ => Err(KError::InvalidSyscallArgument1 { a: nargs }),
-        }
-    }
-}
-
+impl SystemCallDispatch<u64> for Arch86SystemCall {}
 impl Arch86SystemDispatch for Arch86SystemCall {}
 impl Arch86ProcessDispatch for Arch86SystemCall {}
 impl Arch86VSpaceDispatch for Arch86SystemCall {}

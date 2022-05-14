@@ -101,39 +101,21 @@ pub enum ProcessOperation {
     RequestCore = 7,
     /// Allocate a physical memory page as a mem object to the process.
     AllocatePhysical = 8,
-    Unknown,
 }
 
-impl From<u64> for ProcessOperation {
+impl ProcessOperation {
     /// Construct a ProcessOperation enum based on a 64-bit value.
-    fn from(op: u64) -> ProcessOperation {
+    pub fn new(op: u64) -> Option<Self> {
         match op {
-            1 => ProcessOperation::Exit,
-            2 => ProcessOperation::Log,
-            3 => ProcessOperation::GetVCpuArea,
-            4 => ProcessOperation::AllocateVector,
-            5 => ProcessOperation::SubscribeEvent,
-            6 => ProcessOperation::GetProcessInfo,
-            7 => ProcessOperation::RequestCore,
-            8 => ProcessOperation::AllocatePhysical,
-            _ => ProcessOperation::Unknown,
-        }
-    }
-}
-
-impl From<&str> for ProcessOperation {
-    /// Construct a ProcessOperation enum based on a str.
-    fn from(op: &str) -> ProcessOperation {
-        match op {
-            "Exit" => ProcessOperation::Exit,
-            "Log" => ProcessOperation::Log,
-            "GetVCpuArea" => ProcessOperation::GetVCpuArea,
-            "AllocateVector" => ProcessOperation::AllocateVector,
-            "SubscribeEvent" => ProcessOperation::SubscribeEvent,
-            "GetProcessInfo" => ProcessOperation::GetProcessInfo,
-            "RequestCore" => ProcessOperation::RequestCore,
-            "AllocatePhysical" => ProcessOperation::AllocatePhysical,
-            _ => ProcessOperation::Unknown,
+            1 => Some(Self::Exit),
+            2 => Some(Self::Log),
+            3 => Some(Self::GetVCpuArea),
+            4 => Some(Self::AllocateVector),
+            5 => Some(Self::SubscribeEvent),
+            6 => Some(Self::GetProcessInfo),
+            7 => Some(Self::RequestCore),
+            8 => Some(Self::AllocatePhysical),
+            _ => None,
         }
     }
 }
@@ -167,37 +149,20 @@ pub enum VSpaceOperation {
     MapPMem = 6,
     /// Unmap a PMem mapped region
     UnmapPMem = 7,
-    Unknown,
 }
 
-impl From<u64> for VSpaceOperation {
+impl VSpaceOperation {
     /// Construct a SystemCall enum based on a 64-bit value.
-    fn from(op: u64) -> VSpaceOperation {
+    pub fn new(op: u64) -> Option<Self> {
         match op {
-            1 => VSpaceOperation::MapMem,
-            2 => VSpaceOperation::UnmapMem,
-            3 => VSpaceOperation::MapDevice,
-            4 => VSpaceOperation::MapMemFrame,
-            5 => VSpaceOperation::Identify,
-            6 => VSpaceOperation::MapPMem,
-            7 => VSpaceOperation::UnmapPMem,
-            _ => VSpaceOperation::Unknown,
-        }
-    }
-}
-
-impl From<&str> for VSpaceOperation {
-    /// Construct a VSpaceOperation enum based on a str.
-    fn from(op: &str) -> VSpaceOperation {
-        match op {
-            "MapMem" => VSpaceOperation::MapMem,
-            "UnmapMem" => VSpaceOperation::UnmapMem,
-            "MapDevice" => VSpaceOperation::MapDevice,
-            "MapMemFrame" => VSpaceOperation::MapMemFrame,
-            "Identify" => VSpaceOperation::Identify,
-            "MapPMem" => VSpaceOperation::MapPMem,
-            "UnmapPMem" => VSpaceOperation::UnmapPMem,
-            _ => VSpaceOperation::Unknown,
+            1 => Some(Self::MapMem),
+            2 => Some(Self::UnmapMem),
+            3 => Some(Self::MapDevice),
+            4 => Some(Self::MapMemFrame),
+            5 => Some(Self::Identify),
+            6 => Some(Self::MapPMem),
+            7 => Some(Self::UnmapPMem),
+            _ => None,
         }
     }
 }
@@ -226,43 +191,23 @@ pub enum FileOperation {
     FileRename = 9,
     /// Create a directory.
     MkDir = 10,
-    Unknown,
 }
 
-impl From<u64> for FileOperation {
+impl FileOperation {
     /// Construct a SystemCall enum based on a 64-bit value.
-    fn from(op: u64) -> FileOperation {
+    pub fn new(op: u64) -> Option<Self> {
         match op {
-            1 => FileOperation::Open,
-            2 => FileOperation::Read,
-            3 => FileOperation::ReadAt,
-            4 => FileOperation::Write,
-            5 => FileOperation::WriteAt,
-            6 => FileOperation::Close,
-            7 => FileOperation::GetInfo,
-            8 => FileOperation::Delete,
-            9 => FileOperation::FileRename,
-            10 => FileOperation::MkDir,
-            _ => FileOperation::Unknown,
-        }
-    }
-}
-
-impl From<&str> for FileOperation {
-    /// Construct a FileOperation enum based on a str.
-    fn from(op: &str) -> FileOperation {
-        match op {
-            "Open" => FileOperation::Open,
-            "Read" => FileOperation::Read,
-            "ReadAt" => FileOperation::ReadAt,
-            "Write" => FileOperation::Write,
-            "WriteAt" => FileOperation::WriteAt,
-            "Close" => FileOperation::Close,
-            "GetInfo" => FileOperation::GetInfo,
-            "Delete" => FileOperation::Delete,
-            "Rename" => FileOperation::FileRename,
-            "MkDir" => FileOperation::MkDir,
-            _ => FileOperation::Unknown,
+            1 => Some(Self::Open),
+            2 => Some(Self::Read),
+            3 => Some(Self::ReadAt),
+            4 => Some(Self::Write),
+            5 => Some(Self::WriteAt),
+            6 => Some(Self::Close),
+            7 => Some(Self::GetInfo),
+            8 => Some(Self::Delete),
+            9 => Some(Self::FileRename),
+            10 => Some(Self::MkDir),
+            _ => None,
         }
     }
 }
@@ -277,29 +222,16 @@ pub enum SystemOperation {
     Stats = 2,
     /// Get the core id for the current thread.
     GetCoreID = 3,
-    Unknown,
 }
 
-impl From<u64> for SystemOperation {
+impl SystemOperation {
     /// Construct a SystemCall enum based on a 64-bit value.
-    fn from(op: u64) -> SystemOperation {
+    pub fn new(op: u64) -> Option<Self> {
         match op {
-            1 => SystemOperation::GetHardwareThreads,
-            2 => SystemOperation::Stats,
-            3 => SystemOperation::GetCoreID,
-            _ => SystemOperation::Unknown,
-        }
-    }
-}
-
-impl From<&str> for SystemOperation {
-    /// Construct a SystemOperation enum based on a str.
-    fn from(op: &str) -> SystemOperation {
-        match op {
-            "GetHardwareThreads" => SystemOperation::GetHardwareThreads,
-            "Stats" => SystemOperation::Stats,
-            "GetCoreID" => SystemOperation::GetCoreID,
-            _ => SystemOperation::Unknown,
+            1 => Some(SystemOperation::GetHardwareThreads),
+            2 => Some(SystemOperation::Stats),
+            3 => Some(SystemOperation::GetCoreID),
+            _ => None,
         }
     }
 }
@@ -315,33 +247,18 @@ pub enum SystemCall {
     VSpace = 3,
     FileIO = 4,
     Test = 5,
-    Unknown,
 }
 
 impl SystemCall {
     /// Construct a SystemCall enum based on a 64-bit value.
-    pub fn new(domain: u64) -> SystemCall {
+    pub fn new(domain: u64) -> Option<Self> {
         match domain {
-            1 => SystemCall::System,
-            2 => SystemCall::Process,
-            3 => SystemCall::VSpace,
-            4 => SystemCall::FileIO,
-            5 => SystemCall::Test,
-            _ => SystemCall::Unknown,
-        }
-    }
-}
-
-impl From<&str> for SystemCall {
-    /// Construct a SystemCall enum based on a str.
-    fn from(op: &str) -> SystemCall {
-        match op {
-            "System" => SystemCall::System,
-            "Process" => SystemCall::Process,
-            "VSpace" => SystemCall::VSpace,
-            "FileIO" => SystemCall::FileIO,
-            "Test" => SystemCall::Test,
-            _ => SystemCall::Unknown,
+            1 => Some(SystemCall::System),
+            2 => Some(SystemCall::Process),
+            3 => Some(SystemCall::VSpace),
+            4 => Some(SystemCall::FileIO),
+            5 => Some(SystemCall::Test),
+            _ => None,
         }
     }
 }

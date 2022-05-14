@@ -10,55 +10,180 @@ use log::{error, trace};
 
 use crate::arch::process::user_virt_addr_valid;
 use crate::cnrfs;
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::kcb::ArchSpecificKcb;
 
 /// FileOperation: Arch specific implementations
 pub trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn fs_open(&self, pathname: W, flags: W, modes: W) -> Result<(W, W), KError>;
-    fn fs_read(&self, fd: W, buffer: W, len: W) -> Result<(W, W), KError>;
-    fn fs_write(&self, fd: W, buffer: W, len: W) -> Result<(W, W), KError>;
-    fn fs_read_at(&self, fd: W, buffer: W, len: W, offset: W) -> Result<(W, W), KError>;
-    fn fs_write_at(&self, fd: W, buffer: W, len: W, offset: W) -> Result<(W, W), KError>;
-    fn fs_close(&self, fd: W) -> Result<(W, W), KError>;
-    fn fs_get_info(&self, name: W, info_ptr: W) -> Result<(W, W), KError>;
-    fn fs_delete(&self, name: W) -> Result<(W, W), KError>;
-    fn fs_file_rename(&self, oldname: W, newname: W) -> Result<(W, W), KError>;
-    fn fs_mkdir(&self, pathname: W, modes: W) -> Result<(W, W), KError>;
+    fn fs_open(&self, pathname: W, flags: W, modes: W) -> KResult<(W, W)>;
+    fn fs_read(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
+    fn fs_write(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
+    fn fs_read_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
+    fn fs_write_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
+    fn fs_close(&self, fd: W) -> KResult<(W, W)>;
+    fn fs_get_info(&self, name: W, info_ptr: W) -> KResult<(W, W)>;
+    fn fs_delete(&self, name: W) -> KResult<(W, W)>;
+    fn fs_file_rename(&self, oldname: W, newname: W) -> KResult<(W, W)>;
+    fn fs_mkdir(&self, pathname: W, modes: W) -> KResult<(W, W)>;
+}
+
+/// Parsed and validated arguments of the file system calls.
+enum FileOperationArgs<W> {
+    Open(W, W, W),
+    Read(W, W, W),
+    Write(W, W, W),
+    ReadAt(W, W, W, W),
+    WriteAt(W, W, W, W),
+    Close(W),
+    GetInfo(W, W),
+    Delete(W),
+    FileRename(W, W),
+    MkDir(W, W),
+}
+
+impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
+    /// Validate/check the arguments for the FileOperation calls.
+    ///
+    /// Returns an error if the arguments are invalid.
+    fn validate(arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> Result<Self, KError> {
+        let op = FileOperation::new(arg1.into())
+            .ok_or(KError::InvalidFileOperation { a: arg1.into() })?;
+
+        match op {
+            FileOperation::Open => Ok(Self::Open(arg2, arg3, arg4)),
+            FileOperation::Read => Ok(Self::Read(arg2, arg3, arg4)),
+            FileOperation::Write => Ok(Self::Write(arg2, arg3, arg4)),
+            FileOperation::ReadAt => Ok(Self::ReadAt(arg2, arg3, arg4, arg5)),
+            FileOperation::WriteAt => Ok(Self::WriteAt(arg2, arg3, arg4, arg5)),
+            FileOperation::Close => Ok(Self::Close(arg2)),
+            FileOperation::GetInfo => Ok(Self::GetInfo(arg2, arg3)),
+            FileOperation::Delete => Ok(Self::Delete(arg2)),
+            FileOperation::FileRename => Ok(Self::FileRename(arg2, arg3)),
+            FileOperation::MkDir => Ok(Self::MkDir(arg2, arg3)),
+        }
+    }
 }
 
 /// ProcessOperation: Arch specific implementations
 pub trait ProcessDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn log(&self, buffer_arg: W, len: W) -> Result<(W, W), KError>;
-    fn get_vcpu_area(&self) -> Result<(W, W), KError>;
-    fn allocate_vector(&self, vector: W, core: W) -> Result<(W, W), KError>;
-    fn get_process_info(&self, vaddr_buf: W, vaddr_buf_len: W) -> Result<(W, W), KError>;
-    fn request_core(&self, core_id: W, entry_point: W) -> Result<(W, W), KError>;
-    fn allocate_physical(&self, page_size: W, affinity: W) -> Result<(W, W), KError>;
-    fn exit(&self, code: W) -> Result<(W, W), KError>;
+    fn log(&self, buffer_arg: W, len: W) -> KResult<(W, W)>;
+    fn get_vcpu_area(&self) -> KResult<(W, W)>;
+    fn allocate_vector(&self, vector: W, core: W) -> KResult<(W, W)>;
+    fn get_process_info(&self, vaddr_buf: W, vaddr_buf_len: W) -> KResult<(W, W)>;
+    fn request_core(&self, core_id: W, entry_point: W) -> KResult<(W, W)>;
+    fn allocate_physical(&self, page_size: W, affinity: W) -> KResult<(W, W)>;
+    fn exit(&self, code: W) -> KResult<(W, W)>;
+}
+
+/// Parsed and validated arguments of the process system calls.
+enum ProcessOperationArgs<W> {
+    Exit(W),
+    Log(W, W),
+    GetVCpuArea,
+    AllocateVector(W, W),
+    GetProcessInfo(W, W),
+    RequestCore(W, W),
+    AllocatePhysical(W, W),
+}
+
+impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> ProcessOperationArgs<W> {
+    /// Validate/check the arguments for the ProcessOperation calls.
+    ///
+    /// Returns an error if the arguments are invalid.
+    fn validate(arg1: W, arg2: W, arg3: W) -> Result<Self, KError> {
+        match ProcessOperation::new(arg1.into())
+            .ok_or(KError::InvalidProcessOperation { a: arg1.into() })?
+        {
+            ProcessOperation::Log => Ok(Self::Log(arg2, arg3)),
+            ProcessOperation::GetVCpuArea => Ok(Self::GetVCpuArea),
+            ProcessOperation::AllocateVector => Ok(Self::AllocateVector(arg2, arg3)),
+            ProcessOperation::Exit => Ok(Self::Exit(arg2)),
+            ProcessOperation::GetProcessInfo => Ok(Self::GetProcessInfo(arg2, arg3)),
+            ProcessOperation::RequestCore => Ok(Self::RequestCore(arg2, arg3)),
+            ProcessOperation::AllocatePhysical => Ok(Self::AllocatePhysical(arg2, arg3)),
+            ProcessOperation::SubscribeEvent => {
+                error!("SubscribeEvent is not implemented");
+                Err(KError::InvalidProcessOperation { a: arg1.into() })
+            }
+        }
+    }
 }
 
 /// VSpaceOperation: Arch specific implementations
 pub trait VSpaceDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn map_mem(&self, base: W, size: W) -> Result<(W, W), KError>;
-    fn map_pmem(&self, base: W, size: W) -> Result<(W, W), KError>;
-    fn map_device(&self, base: W, size: W) -> Result<(W, W), KError>;
-    fn map_frame_id(&self, base: W, frame_id: W) -> Result<(W, W), KError>;
-    fn unmap_mem(&self, base: W) -> Result<(W, W), KError>;
-    fn unmap_pmem(&self, base: W) -> Result<(W, W), KError>;
-    fn identify(&self, addr: W) -> Result<(W, W), KError>;
+    fn map_mem(&self, base: W, size: W) -> KResult<(W, W)>;
+    fn map_pmem(&self, base: W, size: W) -> KResult<(W, W)>;
+    fn map_device(&self, base: W, size: W) -> KResult<(W, W)>;
+    fn map_frame_id(&self, base: W, frame_id: W) -> KResult<(W, W)>;
+    fn unmap_mem(&self, base: W) -> KResult<(W, W)>;
+    fn unmap_pmem(&self, base: W) -> KResult<(W, W)>;
+    fn identify(&self, addr: W) -> KResult<(W, W)>;
+}
+
+/// Parsed and validated arguments of the vspace system calls.
+enum VSpaceOperationArgs<W> {
+    MapMem(W, W),
+    UnmapMem(W),
+    MapDevice(W, W),
+    MapMemFrame(W, W),
+    Identify(W),
+    MapPMem(W, W),
+    UnmapPMem(W),
+}
+
+impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> VSpaceOperationArgs<W> {
+    /// Validate/check the arguments for the VSpaceOperation calls.
+    ///
+    /// Returns an error if the arguments are invalid.
+    fn validate(arg1: W, arg2: W, arg3: W) -> Result<Self, KError> {
+        let op = VSpaceOperation::new(arg1.into())
+            .ok_or(KError::InvalidVSpaceOperation { a: arg1.into() })?;
+
+        match op {
+            VSpaceOperation::MapMem => Ok(Self::MapMem(arg2, arg3)),
+            VSpaceOperation::MapPMem => Ok(Self::MapPMem(arg2, arg3)),
+            VSpaceOperation::MapDevice => Ok(Self::MapDevice(arg2, arg3)),
+            VSpaceOperation::MapMemFrame => Ok(Self::MapMemFrame(arg2, arg3)),
+            VSpaceOperation::UnmapMem => Ok(Self::UnmapMem(arg2)),
+            VSpaceOperation::UnmapPMem => Ok(Self::UnmapPMem(arg2)),
+            VSpaceOperation::Identify => Ok(Self::Identify(arg2)),
+        }
+    }
 }
 
 /// SystemOperation: Arch specific implementations
 pub trait SystemDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn get_hardware_threads(&self, vbuf_base: W, vbuf_len: W) -> Result<(W, W), KError>;
-    fn get_stats(&self) -> Result<(W, W), KError>;
-    fn get_core_id(&self) -> Result<(W, W), KError>;
+    fn get_hardware_threads(&self, vbuf_base: W, vbuf_len: W) -> KResult<(W, W)>;
+    fn get_stats(&self) -> KResult<(W, W)>;
+    fn get_core_id(&self) -> KResult<(W, W)>;
+}
+
+/// Parsed and validated arguments of the system query system calls.
+enum SystemOperationArgs<W> {
+    GetHardwareThreads(W, W),
+    Stats,
+    GetCoreID,
+}
+
+impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> SystemOperationArgs<W> {
+    /// Validate/check the arguments for the SystemOperation calls.
+    ///
+    /// Returns an error if the arguments are invalid.
+    fn validate(arg1: W, arg2: W, arg3: W) -> Result<Self, KError> {
+        let op = SystemOperation::new(arg1.into())
+            .ok_or(KError::InvalidSystemOperation { a: arg1.into() })?;
+
+        match op {
+            SystemOperation::GetHardwareThreads => Ok(Self::GetHardwareThreads(arg2, arg3)),
+            SystemOperation::Stats => Ok(Self::Stats),
+            SystemOperation::GetCoreID => Ok(Self::GetCoreID),
+        }
+    }
 }
 
 /// [`SystemCall::Test`] stuff.
 pub trait TestDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn test(&self, nargs: W, arg1: W, arg2: W, arg3: W, arg4: W) -> Result<(W, W), KError>;
+    fn test(&self, nargs: W, arg1: W, arg2: W, arg3: W, arg4: W) -> KResult<(W, W)>;
 }
 
 /// Generic system call dispatch trait.
@@ -71,85 +196,74 @@ pub trait TestDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
 pub trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>:
     VSpaceDispatch<W> + FsDispatch<W> + SystemDispatch<W> + ProcessDispatch<W> + TestDispatch<W>
 {
-    fn handle(
-        &self,
-        function: W,
-        arg1: W,
-        arg2: W,
-        arg3: W,
-        arg4: W,
-        arg5: W,
-    ) -> Result<(W, W), KError> {
-        match SystemCall::new(function.into()) {
+    fn handle(&self, function: W, arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> KResult<(W, W)> {
+        match SystemCall::new(function.into())
+            .ok_or(KError::InvalidSyscallArgument1 { a: function.into() })?
+        {
             SystemCall::System => self.system(arg1, arg2, arg3),
             SystemCall::Process => self.process(arg1, arg2, arg3),
             SystemCall::VSpace => self.vspace(arg1, arg2, arg3),
             SystemCall::FileIO => self.fileio(arg1, arg2, arg3, arg4, arg5),
             SystemCall::Test => self.test(arg1, arg2, arg3, arg4, arg5),
-            _ => Err(KError::InvalidSyscallArgument1 { a: function.into() }),
         }
     }
 
-    fn system(&self, arg1: W, arg2: W, arg3: W) -> Result<(W, W), KError> {
-        let op = SystemOperation::from(arg1.into());
-        match op {
-            SystemOperation::GetHardwareThreads => self.get_hardware_threads(arg2, arg3),
-            SystemOperation::Stats => self.get_stats(),
-            SystemOperation::GetCoreID => self.get_core_id(),
-            SystemOperation::Unknown => Err(KError::InvalidSystemOperation { a: arg1.into() }),
-        }
-    }
-
-    fn process(&self, arg1: W, arg2: W, arg3: W) -> Result<(W, W), KError> {
-        let op = ProcessOperation::from(arg1.into());
-        match op {
-            ProcessOperation::Log => self.log(arg2, arg3),
-            ProcessOperation::GetVCpuArea => self.get_vcpu_area(),
-            ProcessOperation::AllocateVector => self.allocate_vector(arg2, arg3),
-            ProcessOperation::Exit => self.exit(arg2),
-            ProcessOperation::GetProcessInfo => self.get_process_info(arg2, arg3),
-            ProcessOperation::RequestCore => self.request_core(arg2, arg3),
-            ProcessOperation::AllocatePhysical => self.allocate_physical(arg2, arg3),
-            ProcessOperation::SubscribeEvent => {
-                error!("SubscribeEvent not implemented");
-                Err(KError::InvalidProcessOperation { a: arg1.into() })
+    fn system(&self, arg1: W, arg2: W, arg3: W) -> KResult<(W, W)> {
+        use SystemOperationArgs::*;
+        match SystemOperationArgs::validate(arg1, arg2, arg3)? {
+            GetHardwareThreads(vbuf_base, vbuf_len) => {
+                self.get_hardware_threads(vbuf_base, vbuf_len)
             }
-            ProcessOperation::Unknown => Err(KError::InvalidProcessOperation { a: arg1.into() }),
+            Stats => self.get_stats(),
+            GetCoreID => self.get_core_id(),
         }
     }
 
-    fn vspace(&self, arg1: W, arg2: W, arg3: W) -> Result<(W, W), KError> {
-        let op = VSpaceOperation::from(arg1.into());
-        trace!("vspace({:?}, {:#x}, {:#x}, {:#x})", op, arg1, arg2, arg3);
-        match op {
-            VSpaceOperation::MapMem => self.map_mem(arg2, arg3),
-            VSpaceOperation::MapPMem => self.map_pmem(arg2, arg3),
-            VSpaceOperation::MapDevice => self.map_device(arg2, arg3),
-            VSpaceOperation::MapMemFrame => self.map_frame_id(arg2, arg3),
-            VSpaceOperation::UnmapMem => self.unmap_mem(arg2),
-            VSpaceOperation::UnmapPMem => self.unmap_pmem(arg2),
-            VSpaceOperation::Identify => self.identify(arg2),
-            VSpaceOperation::Unknown => {
-                error!("Got an invalid VSpaceOperation {:?}.", arg1);
-                Err(KError::InvalidVSpaceOperation { a: arg1.into() })
+    fn process(&self, arg1: W, arg2: W, arg3: W) -> KResult<(W, W)> {
+        use ProcessOperationArgs as Poa;
+
+        match ProcessOperationArgs::validate(arg1, arg2, arg3)? {
+            Poa::Log(buffer_arg, len) => self.log(buffer_arg, len),
+            Poa::GetVCpuArea => self.get_vcpu_area(),
+            Poa::AllocateVector(vector, core) => self.allocate_vector(vector, core),
+            Poa::Exit(code) => self.exit(code),
+            Poa::GetProcessInfo(vaddr_buf, vaddr_len) => {
+                self.get_process_info(vaddr_buf, vaddr_len)
+            }
+            Poa::RequestCore(core_id, entry_point) => self.request_core(core_id, entry_point),
+            Poa::AllocatePhysical(page_size, affinity) => {
+                self.allocate_physical(page_size, affinity)
             }
         }
     }
 
-    fn fileio(&self, arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> Result<(W, W), KError> {
-        let op = FileOperation::from(arg1.into());
-        match op {
-            FileOperation::Open => self.fs_open(arg2, arg3, arg4),
-            FileOperation::Read => self.fs_read(arg2, arg3, arg4),
-            FileOperation::Write => self.fs_write(arg2, arg3, arg4),
-            FileOperation::ReadAt => self.fs_read_at(arg2, arg3, arg4, arg5),
-            FileOperation::WriteAt => self.fs_write_at(arg2, arg3, arg4, arg5),
-            FileOperation::Close => self.fs_close(arg2),
-            FileOperation::GetInfo => self.fs_get_info(arg2, arg3),
-            FileOperation::Delete => self.fs_delete(arg2),
-            FileOperation::FileRename => self.fs_file_rename(arg2, arg3),
-            FileOperation::MkDir => self.fs_mkdir(arg2, arg3),
-            FileOperation::Unknown => Err(KError::NotSupported),
+    fn vspace(&self, arg1: W, arg2: W, arg3: W) -> KResult<(W, W)> {
+        use VSpaceOperationArgs::*;
+        trace!("vspace({:#x}, {:#x}, {:#x})", arg1, arg2, arg3);
+        match VSpaceOperationArgs::validate(arg1, arg2, arg3)? {
+            MapMem(base, size) => self.map_mem(base, size),
+            MapPMem(base, size) => self.map_pmem(base, size),
+            MapDevice(base, size) => self.map_device(base, size),
+            MapMemFrame(base, frame_id) => self.map_frame_id(base, frame_id),
+            UnmapMem(base) => self.unmap_mem(base),
+            UnmapPMem(base) => self.unmap_pmem(base),
+            Identify(base) => self.identify(base),
+        }
+    }
+
+    fn fileio(&self, arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> KResult<(W, W)> {
+        use FileOperationArgs::*;
+        match FileOperationArgs::validate(arg1, arg2, arg3, arg4, arg5)? {
+            Open(pathname, flags, modes) => self.fs_open(pathname, flags, modes),
+            Read(fd, buffer, len) => self.fs_read(fd, buffer, len),
+            Write(fd, buffer, len) => self.fs_write(fd, buffer, len),
+            ReadAt(fd, buffer, len, offset) => self.fs_read_at(fd, buffer, len, offset),
+            WriteAt(fd, buffer, len, offset) => self.fs_write_at(fd, buffer, len, offset),
+            Close(fd) => self.fs_close(fd),
+            GetInfo(name, info_ptr) => self.fs_get_info(name, info_ptr),
+            Delete(name) => self.fs_delete(name),
+            FileRename(oldname, newname) => self.fs_file_rename(oldname, newname),
+            MkDir(pathname, modes) => self.fs_mkdir(pathname, modes),
         }
     }
 }

@@ -4,10 +4,13 @@
 use core::convert::From;
 use core::fmt;
 
+use crate::memory::VAddr;
+
 use arrayvec::CapacityError;
 use kpi::SystemCallError;
 
-use crate::memory::VAddr;
+/// Shortcut for a Result that returns an error of type KError.
+pub type KResult<T> = Result<T, KError>;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum KError {

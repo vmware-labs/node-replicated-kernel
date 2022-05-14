@@ -110,6 +110,15 @@ pub struct UserPtr<T> {
 }
 
 impl<T> UserPtr<T> {
+    // - is *mut T a good type? Maybe should be VAddr?
+    //  - Do we need to check alignment?
+    // - We need to check that it's not some illegal/kernel address
+    //   - Return type should probably be Result<UserPtr>
+    // - We need to check that it's accessible / mapped in the process' address
+    //   space
+    //   - Should the check happen during Deref (more lazy) or upfront in new()
+    //     (what if we might not up accessing it?)
+    //   - Is this enough? what if it's a PCI BAR address would this be bad?
     pub fn new(pointer: *mut T) -> UserPtr<T> {
         UserPtr { value: pointer }
     }
@@ -121,6 +130,13 @@ impl<T> UserPtr<T> {
 
 impl<T> Deref for UserPtr<T> {
     type Target = T;
+    // - We need to check that we're still in the process' address space on
+    //   Deref
+    //   - Maybe we can only deref this in a closure/well defined block?
+    // - We need to enable x86 user-space access stuff
+    // - How do we know this T will have been properly initialized? We don't.
+    //   - Should we treat this as MaybeUninit<T>
+    //   - Should we just have implementations for basic/POD types?
     fn deref(&self) -> &Self::Target {
         unsafe {
             rflags::stac();
@@ -130,6 +146,9 @@ impl<T> Deref for UserPtr<T> {
 }
 
 impl<T> DerefMut for UserPtr<T> {
+    // See Deref Concerns
+    // - If mapped read-only in user-space, we shouldn't try to modify it
+    //   through user-space address but have to go through kernel physical
     fn deref_mut(&mut self) -> &mut T {
         unsafe {
             rflags::stac();
@@ -139,6 +158,8 @@ impl<T> DerefMut for UserPtr<T> {
 }
 
 impl<T> Drop for UserPtr<T> {
+    // - This is also not ideal: enforce security is re-enabled immediately
+    //   after use?
     fn drop(&mut self) {
         unsafe { rflags::clac() };
     }

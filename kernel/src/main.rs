@@ -27,9 +27,9 @@
     const_ptr_offset_from,
     const_refs_to_cell,
     nonnull_slice_from_raw_parts,
-    once_cell
+    once_cell,
+    thread_local
 )]
-#![cfg_attr(not(target_os = "none"), feature(thread_local))]
 
 extern crate alloc;
 

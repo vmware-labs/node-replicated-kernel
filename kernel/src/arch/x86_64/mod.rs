@@ -74,6 +74,9 @@ pub mod vspace;
 mod gdb;
 mod isr;
 
+#[thread_local]
+pub static CURRENT_PID: Option<u64> = None;
+
 pub const MAX_NUMA_NODES: usize = 12;
 pub const MAX_CORES: usize = 192;
 
@@ -944,6 +947,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             Err(e) => log::warn!("Failed to initialize ethernet RPC: {}", e),
         }
     }
+
+    error!("current pid is {:?}", CURRENT_PID);
+    CURRENT_PID.map(|ref mut pid| *pid += 1);
+    error!("current pid is {:?}", CURRENT_PID);
 
     // Done with initialization, now we go in
     // the arch-independent part:

@@ -107,6 +107,16 @@ impl core::fmt::Debug for Module {
     }
 }
 
+/// Information about the TLS region of the kernel binary.
+#[repr(C)]
+#[derive(Debug)]
+pub struct TlsInfo {
+    pub tls_data: u64,
+    pub tls_data_len: u64,
+    pub tls_len_total: u64,
+    pub alignment: u64,
+}
+
 /// Arguments that are passed on to the kernel by the bootloader.
 #[repr(C)]
 #[derive(Debug)]
@@ -143,6 +153,10 @@ pub struct KernelArgs {
     /// The physical address of the ACPIv2 RSDP (Root System Description Pointer)
     pub acpi2_rsdp: x86::bits64::paging::PAddr,
 
+    /// Information from the TLS section of the kernel ELF
+    /// (if it exists)
+    pub tls_info: Option<TlsInfo>,
+
     /// Modules (ELF binaries found in the UEFI partition) passed to the kernel
     /// modules[0] is the kernel binary
     pub modules: arrayvec::ArrayVec<Module, { KernelArgs::MAX_MODULES }>,
@@ -161,6 +175,7 @@ impl KernelArgs {
             kernel_elf_offset: x86::bits64::paging::VAddr(0),
             acpi1_rsdp: x86::bits64::paging::PAddr(0),
             acpi2_rsdp: x86::bits64::paging::PAddr(0),
+            tls_info: None,
             modules: arrayvec::ArrayVec::new_const(),
         }
     }

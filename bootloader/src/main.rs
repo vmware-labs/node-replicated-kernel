@@ -377,6 +377,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         offset: VAddr::from(0usize),
         mapping: Vec::new(),
         vspace: VSpace { pml4: pml4_table },
+        tls: None,
     };
 
     // Parse the ELF file and load it into the new address space
@@ -480,6 +481,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         kernel_args.pml4 = PAddr::from(kernel.vspace.pml4 as *const _ as u64);
         kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
         kernel_args.kernel_elf_offset = kernel.offset;
+        kernel_args.tls_info = kernel.tls;
         kernel_args.modules = arrayvec::ArrayVec::new();
         // Add modules to kernel args, ensure 'kernel' is first:
         for (name, module) in modules.iter() {

@@ -4,6 +4,7 @@
 //! Implements the necessary functionality to load the ELF image in machine memory.
 use crate::alloc::vec::Vec;
 
+use bootloader_shared::TlsInfo;
 use elfloader::{self, ElfLoaderErr};
 use x86::bits64::paging::*;
 
@@ -67,6 +68,7 @@ pub struct Kernel<'a> {
     pub offset: VAddr,
     pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
     pub vspace: VSpace<'a>,
+    pub tls: Option<TlsInfo>,
 }
 
 impl<'a> elfloader::ElfLoader for Kernel<'a> {
@@ -266,6 +268,29 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
 
         // TODO: NYI
         // self.vspace.change_rights(from, to, MapAction::ReadKernel);
+
+        Ok(())
+    }
+
+    fn tls(
+        &mut self,
+        tls_data: u64,
+        tls_data_len: u64,
+        tls_len_total: u64,
+        alignment: u64,
+    ) -> Result<(), ElfLoaderErr> {
+        let tls_end = tls_data + tls_len_total;
+        trace!(
+            "Initial TLS region is at = {:#x} -- {:#x} tls_data_len={:#x} tls_len_total={:#x} alignment={:#x}",
+            tls_data, tls_end, tls_data_len, tls_len_total, alignment
+        );
+
+        self.tls = Some(TlsInfo {
+            tls_data,
+            tls_data_len,
+            tls_len_total,
+            alignment,
+        });
 
         Ok(())
     }

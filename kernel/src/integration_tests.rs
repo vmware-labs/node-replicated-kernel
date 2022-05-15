@@ -12,7 +12,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&str, MainFn); 26] = [
+const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -28,6 +28,7 @@ const INTEGRATION_TESTS: [(&str, MainFn); 26] = [
     ("acpi-topology", acpi_topology),
     ("coreboot-smoke", coreboot_smoke),
     ("coreboot-nrlog", coreboot_nrlog),
+    ("thread-local", thread_local_usage),
     ("nvdimm-discover", nvdimm_discover),
     ("coreboot", coreboot),
     ("userspace", userspace),
@@ -480,6 +481,25 @@ fn coreboot_nrlog() {
         // Don't change this string otherwise the test will fail:
         info!("Core has started");
     }
+
+    shutdown(ExitReason::Ok);
+}
+
+/// Some thread local data for testing.
+#[cfg(feature = "integration-test")]
+#[thread_local]
+pub static TLS_TEST: [core::cell::Cell<&str>; 2] =
+    [core::cell::Cell::new("abcd"), core::cell::Cell::new("efgh")];
+
+/// Tests access to thread local storage from the BSP core.
+#[cfg(feature = "integration-test")]
+fn thread_local_usage() {
+    assert_eq!(TLS_TEST[0].get(), "abcd");
+    assert_eq!(TLS_TEST[1].get(), "efgh");
+
+    TLS_TEST[0].set("xxxx");
+    TLS_TEST[1].set("aaaa");
+    assert_eq!(TLS_TEST[0].get(), "xxxx");
 
     shutdown(ExitReason::Ok);
 }

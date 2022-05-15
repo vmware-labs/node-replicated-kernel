@@ -1209,6 +1209,22 @@ fn s02_coreboot_nrlog() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Test TLS is working on the BSP and other cores
+#[test]
+fn s02_tls() {
+    let build = BuildArgs::default().build();
+    let cmdline = RunnerArgs::new_with_build("thread-local", &build).cores(2);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Test that we can multiple cores and use the node-replication log to communicate.
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]

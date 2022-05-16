@@ -133,6 +133,9 @@ impl<T> Deref for UserPtr<T> {
     // - We need to check that we're still in the process' address space on
     //   Deref
     //   - Maybe we can only deref this in a closure/well defined block?
+    //   - We should prevent concurrent modification/unmap to the region that
+    //     this UserPtr accesses (e.g., reads/and writes must end up going
+    //     trough VSpace NR)
     // - We need to enable x86 user-space access stuff
     // - How do we know this T will have been properly initialized? We don't.
     //   - Should we treat this as MaybeUninit<T>

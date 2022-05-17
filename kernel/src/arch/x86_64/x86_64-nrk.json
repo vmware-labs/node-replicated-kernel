@@ -13,5 +13,6 @@
 	"disable-redzone": true,
 	"features": "+sse",
 	"position-independent-executables": true,
-	"executables": true
+	"executables": true,
+	"has-thread-local": true
 }

@@ -73,6 +73,7 @@ pub mod vspace;
 
 mod gdb;
 mod isr;
+mod tls;
 
 #[thread_local]
 pub static CURRENT_PID: Option<u64> = None;

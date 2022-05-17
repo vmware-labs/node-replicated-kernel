@@ -489,17 +489,18 @@ fn coreboot_nrlog() {
 #[cfg(feature = "integration-test")]
 #[thread_local]
 pub static TLS_TEST: [core::cell::Cell<&str>; 2] =
-    [core::cell::Cell::new("abcd"), core::cell::Cell::new("efgh")];
+    [core::cell::Cell::new("aaaa"), core::cell::Cell::new("efgh")];
 
 /// Tests access to thread local storage from the BSP core.
 #[cfg(feature = "integration-test")]
 fn thread_local_usage() {
-    assert_eq!(TLS_TEST[0].get(), "abcd");
+    assert_eq!(TLS_TEST[0].get(), "aaaa");
     assert_eq!(TLS_TEST[1].get(), "efgh");
 
     TLS_TEST[0].set("xxxx");
-    TLS_TEST[1].set("aaaa");
+
     assert_eq!(TLS_TEST[0].get(), "xxxx");
+    assert_eq!(TLS_TEST[1].get(), "efgh");
 
     shutdown(ExitReason::Ok);
 }

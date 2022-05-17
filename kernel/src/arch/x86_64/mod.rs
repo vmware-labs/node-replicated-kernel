@@ -914,8 +914,24 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             .attach_debugger(target)
             .expect("Can't set debug target");
         lazy_static::initialize(&gdb::GDB_STUB);
+        // Safety:
+        // - IDT is set-up, interrupts are working
+        // - Only a breakpoint to wait for debugger to attach
         use core::arch::asm;
         unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
+    }
+
+    // Install thread-local storage for BSP
+    if let Some(tls_args) = &kernel_args.tls_info {
+        use crate::arch::tls::ThreadControlBlock;
+        let tcb = ThreadControlBlock::new(tls_args);
+        // Safety:
+        // - valid/initialized TCB: yes (ThreadControlBlock::new above)
+        // - only during init: yes
+        // - unique TCB per-core: yes
+        unsafe {
+            ThreadControlBlock::install(tcb);
+        }
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
@@ -948,10 +964,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             Err(e) => log::warn!("Failed to initialize ethernet RPC: {}", e),
         }
     }
-
-    error!("current pid is {:?}", CURRENT_PID);
-    CURRENT_PID.map(|ref mut pid| *pid += 1);
-    error!("current pid is {:?}", CURRENT_PID);
 
     // Done with initialization, now we go in
     // the arch-independent part:

@@ -286,7 +286,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
         );
 
         self.tls = Some(TlsInfo {
-            tls_data,
+            tls_data: self.offset.as_u64() + tls_data,
             tls_data_len,
             tls_len_total,
             alignment,

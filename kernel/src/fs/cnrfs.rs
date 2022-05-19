@@ -3,9 +3,8 @@
 
 use alloc::sync::Arc;
 
-use crate::arch::process::{UserPtr, UserSlice};
+use crate::arch::process::UserSlice;
 use crate::error::KError;
-use crate::memory::VAddr;
 use crate::prelude::*;
 use crate::process::{userptr_to_str, KernSlice, Pid};
 
@@ -71,7 +70,7 @@ impl LogMapper for Modify {
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub enum Access {
     FileRead(Pid, FD, Mnode, Buffer, Len, Offset),
-    FileInfo(Pid, Filename, Mnode, u64),
+    FileInfo(Pid, Filename, Mnode),
     FdToMnode(Pid, FD),
     FileNameToMnode(Pid, Filename),
     Synchronize(usize),
@@ -86,7 +85,7 @@ impl LogMapper for Access {
             Access::FileRead(_pid, _fd, mnode, _buffer, _len, _offser) => {
                 logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
-            Access::FileInfo(_pid, _filename, mnode, _info_ptr) => {
+            Access::FileInfo(_pid, _filename, mnode) => {
                 logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
             // TODO: Assume that all metadata modifying operations go through log 0.
@@ -231,7 +230,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn file_info(pid: Pid, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
+    pub fn file_info(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
         let (mnode, _) = MlnrKernelNode::filename_to_mnode(pid, name)?;
 
         let kcb = crate::kcb::get_kcb();
@@ -239,18 +238,10 @@ impl MlnrKernelNode {
             .cnr_replica
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response =
-                    replica.execute(Access::FileInfo(pid, name, mnode, info_ptr), *token);
+                let response = replica.execute(Access::FileInfo(pid, name, mnode), *token);
 
                 match response {
-                    Ok(MlnrNodeResult::FileInfo(f_info)) => {
-                        let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
-                        unsafe {
-                            (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = f_info.ftype;
-                            (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = f_info.fsize;
-                        }
-                        Ok((0, 0))
-                    }
+                    Ok(MlnrNodeResult::FileInfo(f_info)) => Ok((f_info.ftype, f_info.fsize)),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -388,7 +379,7 @@ impl Dispatch for MlnrKernelNode {
                 }
             }
 
-            Access::FileInfo(pid, name, _mnode, _info_ptr) => {
+            Access::FileInfo(pid, name, _mnode) => {
                 let _p = self
                     .process_map
                     .read()

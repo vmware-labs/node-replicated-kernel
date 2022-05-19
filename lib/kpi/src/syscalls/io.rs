@@ -152,19 +152,17 @@ impl Fs {
 
     /// Retrieve information about a file.
     pub fn getinfo(name: u64) -> Result<FileInfo, SystemCallError> {
-        let fileinfo: FileInfo = Default::default();
-        let r = unsafe {
+        let (r, ftype, fsize) = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
                 FileOperation::GetInfo,
                 name as u64,
-                &fileinfo as *const FileInfo as u64,
-                1
+                3
             )
         };
 
         if r == 0 {
-            Ok(fileinfo)
+            Ok(FileInfo { ftype, fsize })
         } else {
             Err(SystemCallError::from(r))
         }

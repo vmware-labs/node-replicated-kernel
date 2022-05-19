@@ -60,7 +60,7 @@ in_kernel\ex:
     movq %r15, 0*8(%rax)
 
     // Save `ExceptionArguments` in `save_area` too,
-    // not everything is technically needed (except for RIP, RSP) 
+    // not everything is technically needed (except for RIP, RSP)
     // but the rest this is useful during gdb debugging.
     //
     // ExceptionArguments/rsp looks like this:

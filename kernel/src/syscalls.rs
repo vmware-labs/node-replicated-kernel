@@ -21,7 +21,7 @@ pub trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn read_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
     fn write_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
     fn close(&self, fd: W) -> KResult<(W, W)>;
-    fn get_info(&self, name: W, info_ptr: W) -> KResult<(W, W)>;
+    fn get_info(&self, name: W) -> KResult<(W, W)>;
     fn delete(&self, name: W) -> KResult<(W, W)>;
     fn file_rename(&self, oldname: W, newname: W) -> KResult<(W, W)>;
     fn mkdir(&self, pathname: W, modes: W) -> KResult<(W, W)>;
@@ -35,7 +35,7 @@ enum FileOperationArgs<W> {
     ReadAt(W, W, W, W),
     WriteAt(W, W, W, W),
     Close(W),
-    GetInfo(W, W),
+    GetInfo(W),
     Delete(W),
     FileRename(W, W),
     MkDir(W, W),
@@ -56,7 +56,7 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
             FileOperation::ReadAt => Ok(Self::ReadAt(arg2, arg3, arg4, arg5)),
             FileOperation::WriteAt => Ok(Self::WriteAt(arg2, arg3, arg4, arg5)),
             FileOperation::Close => Ok(Self::Close(arg2)),
-            FileOperation::GetInfo => Ok(Self::GetInfo(arg2, arg3)),
+            FileOperation::GetInfo => Ok(Self::GetInfo(arg2)),
             FileOperation::Delete => Ok(Self::Delete(arg2)),
             FileOperation::FileRename => Ok(Self::FileRename(arg2, arg3)),
             FileOperation::MkDir => Ok(Self::MkDir(arg2, arg3)),
@@ -260,7 +260,7 @@ pub trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>:
             ReadAt(fd, buffer, len, offset) => self.read_at(fd, buffer, len, offset),
             WriteAt(fd, buffer, len, offset) => self.write_at(fd, buffer, len, offset),
             Close(fd) => self.close(fd),
-            GetInfo(name, info_ptr) => self.get_info(name, info_ptr),
+            GetInfo(name) => self.get_info(name),
             Delete(name) => self.delete(name),
             FileRename(oldname, newname) => self.file_rename(oldname, newname),
             MkDir(pathname, modes) => self.mkdir(pathname, modes),
@@ -355,11 +355,11 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
         cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
     }
 
-    fn get_info(&self, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
+    fn get_info(&self, name: u64) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
-        cnrfs::MlnrKernelNode::file_info(pid, name, info_ptr)
+        cnrfs::MlnrKernelNode::file_info(pid, name)
     }
 
     fn delete(&self, name: u64) -> Result<(u64, u64), KError> {

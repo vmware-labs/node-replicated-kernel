@@ -61,15 +61,17 @@ impl SingleThreadOps for KernelDebugger {
 
             regs.rip = saved.rip;
             regs.eflags = saved.rflags.try_into().unwrap();
-
             // Segment registers: CS, SS, DS, ES, FS, GS
             regs.segments = gdbstub_arch::x86::reg::X86SegmentRegs {
                 cs: saved.cs.try_into().unwrap(),
                 ss: saved.ss.try_into().unwrap(),
                 ds: 0x0, // Don't bother with ds; should be irrelevant on 64bit
                 es: 0x0, // Don't bother with es; should be irrelevant on 64bit
-                fs: saved.fs.try_into().unwrap(),
-                gs: saved.gs.try_into().unwrap(),
+                // fs should be saved.fs.try_into().unwrap() -- but why is this
+                // gdb type a u32 but with rdfsbase this can be 64bit and so
+                // panics here? maybe I'm not supposed to store fsbase here?
+                fs: 0x0,
+                gs: saved.gs.try_into().unwrap(), // see same as fs
             };
 
             // FPU registers: ST0 through ST7

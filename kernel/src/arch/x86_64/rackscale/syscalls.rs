@@ -90,7 +90,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_close(client, pid, fd).map_err(|e| e.into())
     }
 
-    fn get_info(&self, name: u64, info_ptr: u64) -> Result<(u64, u64), KError> {
+    fn get_info(&self, name: u64) -> Result<(u64, u64), KError> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
@@ -100,18 +100,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
 
         let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_getinfo(client, pid, filename_cstr.to_bytes_with_nul())
-            .map(|(ftype, fsize)| {
-                use kpi::io::FileInfo;
-
-                let user_ptr = UserPtr::new(&mut VAddr::from(info_ptr));
-                unsafe {
-                    (*user_ptr.as_mut_ptr::<FileInfo>()).ftype = ftype;
-                    (*user_ptr.as_mut_ptr::<FileInfo>()).fsize = fsize;
-                }
-                (0, 0)
-            })
-            .map_err(|e| e.into())
+        rpc_getinfo(client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
     }
 
     fn delete(&self, name: u64) -> Result<(u64, u64), KError> {

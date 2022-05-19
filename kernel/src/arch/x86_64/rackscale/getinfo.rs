@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::decode;
-use kpi::io::FileInfo;
 use log::debug;
 
 use rpc::rpc::*;
@@ -51,20 +50,8 @@ pub fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPC
     let local_pid = local_pid.unwrap();
 
     // Call local file_info function
-    let fileinfo: FileInfo = Default::default();
-    let mut ret = cnrfs::MlnrKernelNode::file_info(
-        local_pid,
-        (&payload).as_ptr() as u64,
-        &fileinfo as *const FileInfo as u64,
-    );
-
-    // Construct return data
-    if ret.is_ok() {
-        ret = Ok((fileinfo.ftype, fileinfo.fsize));
-    }
-
+    let ret = cnrfs::MlnrKernelNode::file_info(local_pid, (&payload).as_ptr() as u64);
     // Construct results from return data
-    debug!("GetInfo() returned ret={:?} fileinfo={:?}", ret, fileinfo);
     let res = FIORes {
         ret: convert_return(ret),
     };

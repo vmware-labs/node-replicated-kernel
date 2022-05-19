@@ -906,6 +906,19 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.register_with_process_replicas();
     }
 
+    // Install thread-local storage for BSP
+    if let Some(tls_args) = &kernel_args.tls_info {
+        use crate::arch::tls::ThreadControlBlock;
+        let tcb = ThreadControlBlock::new(tls_args);
+        // Safety:
+        // - valid/initialized TCB: yes (ThreadControlBlock::new above)
+        // - only during init: yes
+        // - unique TCB per-core: yes
+        unsafe {
+            ThreadControlBlock::install(tcb);
+        }
+    }
+
     #[cfg(feature = "gdb")]
     {
         let target = gdb::KernelDebugger::new();
@@ -919,19 +932,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         // - Only a breakpoint to wait for debugger to attach
         use core::arch::asm;
         unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
-    }
-
-    // Install thread-local storage for BSP
-    if let Some(tls_args) = &kernel_args.tls_info {
-        use crate::arch::tls::ThreadControlBlock;
-        let tcb = ThreadControlBlock::new(tls_args);
-        // Safety:
-        // - valid/initialized TCB: yes (ThreadControlBlock::new above)
-        // - only during init: yes
-        // - unique TCB per-core: yes
-        unsafe {
-            ThreadControlBlock::install(tcb);
-        }
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)

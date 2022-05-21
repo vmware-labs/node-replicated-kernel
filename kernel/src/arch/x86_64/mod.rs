@@ -272,6 +272,22 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         String::try_with_capacity(128).expect("Not enough memory to initialize system"),
     );
     static_kcb.install();
+    // Install thread-local storage for BSP
+    if let Some(tls_args) = &args.kernel_args.tls_info {
+        use tls::ThreadControlBlock;
+        unsafe {
+            // Safety for `ThreadControlBlock::init`:
+            // - we called `enable_fsgsbase()`: yes see above
+            // - TLS is uninitialized:
+            assert!(
+                x86::bits64::segmentation::rdfsbase() == 0x0,
+                "BIOS/UEFI initializes `fs` with 0x0"
+            );
+            let tcb =
+                ThreadControlBlock::init(tls_args).expect("Unable to initialize TLS during init");
+            kcb.arch.tls_base = tcb;
+        }
+    }
     core::mem::forget(kcb);
 
     {
@@ -908,14 +924,18 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Install thread-local storage for BSP
     if let Some(tls_args) = &kernel_args.tls_info {
-        use crate::arch::tls::ThreadControlBlock;
-        let tcb = ThreadControlBlock::new(tls_args);
-        // Safety:
-        // - valid/initialized TCB: yes (ThreadControlBlock::new above)
-        // - only during init: yes
-        // - unique TCB per-core: yes
+        use tls::ThreadControlBlock;
         unsafe {
-            ThreadControlBlock::install(tcb);
+            // Safety for `ThreadControlBlock::init`:
+            // - we called `enable_fsgsbase()`: yes see above
+            // - TLS is uninitialized:
+            assert!(
+                x86::bits64::segmentation::rdfsbase() == 0x0,
+                "BIOS/UEFI initializes `fs` with 0x0"
+            );
+            let tcb =
+                ThreadControlBlock::init(tls_args).expect("Unable to initialize TLS during init");
+            kcb::get_kcb().arch.tls_base = tcb;
         }
     }
 

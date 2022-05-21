@@ -138,6 +138,8 @@ pub enum KError {
     VMXNet3DeviceNotFound,
     /// Unable to initialize Ethernet device for RPC
     UnableToInitEthernetRPC,
+    /// Thread-local storage was already initialized for the core
+    TLSAlreadyInitialized,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {

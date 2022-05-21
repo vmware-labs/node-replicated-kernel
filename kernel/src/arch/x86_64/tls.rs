@@ -1,12 +1,18 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+//! Kernel TLS variant 2 implementation (for static linking only). Ensures
+//! #[thread_local] stuff works after we call `ThreadControlBlock::init()`.
+
 use alloc::alloc::Layout;
 use core::mem;
 use core::ptr;
 
 use bootloader_shared::TlsInfo;
 use log::trace;
+use x86::bits64::segmentation;
+
+use crate::error::{KError, KResult};
 
 fn get_tls_region(info: &TlsInfo) -> (&'static [u8], Layout) {
     let tls_layout = Layout::from_size_align(info.tls_len_total as usize, info.alignment as usize)
@@ -49,15 +55,32 @@ pub struct ThreadControlBlock {
     /// This is how the compiler looks up TLS things.
     tcb_myself: *mut ThreadControlBlock,
 
-    /// For dynamic loading -- unused but added for compatibility (we don't do
-    /// dynamic linking).
+    /// For dynamic loading (unused but added for future compatibility (we don't
+    /// do dynamic linking/modules)).
     tcb_dtv: *const *const u8,
-
-    /// Some silly variable to test stuff.
-    pub some_var: u64,
 }
 
 impl ThreadControlBlock {
+    /// Initialize TLS for the current core.
+    ///
+    /// # Returns
+    /// The memory location that `fs` points to. This is used by the kernel to
+    /// restore the register to the correct kernel value on entry.
+    ///
+    /// # Safety
+    /// - `enable_fsgsbase` has already been called on the core (sets bit in
+    ///   Cr4)
+    /// - Assume that BIOS/UEFI initializes fs with 0x0
+    pub(super) unsafe fn init(info: &TlsInfo) -> KResult<*const ThreadControlBlock> {
+        let tcb = ThreadControlBlock::new(info);
+        if segmentation::rdfsbase() == 0x0 {
+            ThreadControlBlock::install(tcb);
+            Ok(tcb)
+        } else {
+            Err(KError::TLSAlreadyInitialized)
+        }
+    }
+
     /// Creates a new thread local storage area.
     ///
     /// Note that the returned pointer points somewhere in the middle/end of the
@@ -71,11 +94,10 @@ impl ThreadControlBlock {
     /// Currently leaks the memory, someone else needs to ensure that the
     /// allocated memory is `freed` at some point again if we ever shutdown
     /// cores.
-    pub fn new(info: &TlsInfo) -> *const ThreadControlBlock {
+    fn new(info: &TlsInfo) -> *const ThreadControlBlock {
         const TCB_INITIAL: ThreadControlBlock = ThreadControlBlock {
             tcb_myself: ptr::null_mut(),
             tcb_dtv: ptr::null(),
-            some_var: 0xdad,
         };
 
         let (initial_tdata, tls_data_layout) = get_tls_region(info);
@@ -159,8 +181,7 @@ impl ThreadControlBlock {
     ///   this function (as long as we don't change `ptr` after init (and we
     ///   shouldn't)). `fs` save/restore is handled in the assembly code for
     ///   syscalls/interrupts.
-    pub(super) unsafe fn install(ptr: *const ThreadControlBlock) {
-        use x86::bits64::segmentation;
+    unsafe fn install(ptr: *const ThreadControlBlock) {
         segmentation::wrfsbase(ptr as u64)
     }
 }

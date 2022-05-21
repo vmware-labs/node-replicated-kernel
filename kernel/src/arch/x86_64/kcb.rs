@@ -92,17 +92,21 @@ pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut Kcb<A>) {
 /// `repr(C)` because assembly code references entries of this struct.
 #[repr(C)]
 pub struct Arch86Kcb {
-    /// Pointer to the syscall stack (this is )
-    /// and should therefore always be at offset 0 of the Kcb struct!
+    /// Pointer to the syscall stack (this is referenced in assembly) and should
+    /// therefore always remain at offset 0 of the Kcb struct!
     pub(crate) syscall_stack_top: *mut u8,
 
     /// Pointer to the save area of the core, this is referenced on trap/syscall
-    /// entries to save the CPU state into it.
+    /// entries to save the CPU state into it and therefore has to remain at
+    /// offset 0x8 in this struct.
     ///
     /// State from the save_area may be copied into the `current_executor` save
     /// area to handle upcalls (in the general state it is stored/resumed from
     /// here).
     pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
+
+    /// The memory location of the TLS (`fs` base) region.
+    pub(super) tls_base: *const super::tls::ThreadControlBlock,
 
     /// A handle to the core-local interrupt driver.
     pub(crate) apic: RefCell<X2APICDriver>,
@@ -201,6 +205,7 @@ impl Arch86Kcb {
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
             idt: Default::default(),
+            tls_base: ptr::null(),
             current_executor: None, // We don't have an executor to schedule initially
             save_area: None,
             init_vspace: RefCell::new(init_vspace),

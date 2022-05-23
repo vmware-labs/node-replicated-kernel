@@ -191,6 +191,8 @@ pub struct Arch86Kcb {
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, syscall_stack_top), 0);
 // The `save_area` entry must be at offset 8 of KCB (for assembly code)
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, save_area), 8);
+// The `tls_area` entry must be at offset 16 of KCB (for assembly code)
+static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, tls_base), 16);
 
 impl Arch86Kcb {
     pub(crate) fn new(

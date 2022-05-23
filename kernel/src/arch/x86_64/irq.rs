@@ -476,6 +476,7 @@ unsafe fn bkp_handler(a: &ExceptionArguments) {
         drop(plock);
         resumer.resume()
     } else {
+        #[cfg(feature = "gdb")]
         gdb::event_loop(gdb::KCoreStopReason::BreakpointInterrupt);
         let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
         r.resume()

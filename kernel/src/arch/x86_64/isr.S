@@ -33,8 +33,7 @@ isr_handler\ex:
 
 in_kernel\ex:
     // Get the pointer to the kcb.save_area
-    rdgsbase %rax
-    movq 0x8(%rax), %rax
+    movq %gs:0x8, %rax
 
     // Save process register context
     // We don't save %rax yet since we use it to
@@ -104,6 +103,11 @@ in_kernel\ex:
     // Saves the fs register
     rdfsbase %r15
     movq %r15, 19*8(%rax)
+
+    // Write the fs register of the current core
+    // (the TLS area is the first member of the KCB and it lives at 0x10(%gs))
+    movq %gs:0x10, %r15
+    wrfsbase %r15
 
     // Save vector registers
     fxsave 28*8(%rax)

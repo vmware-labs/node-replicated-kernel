@@ -31,6 +31,7 @@ use breakpoints::*;
 use serial::*;
 
 /// Indicates the reason for interruption (e.g. a breakpoint was hit).
+#[allow(unused)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum KCoreStopReason {
     /// DebugInterrupt was received.

@@ -58,6 +58,7 @@ mod nr;
 mod nrproc;
 #[macro_use]
 mod prelude;
+mod cmdline;
 mod fallible_string;
 mod mpmc;
 mod pci;

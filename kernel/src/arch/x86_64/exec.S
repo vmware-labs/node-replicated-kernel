@@ -17,8 +17,7 @@ syscall_enter:
     swapgs
 
     // Get the pointer to the kcb.save_area
-    rdgsbase %rax
-    movq 0x8(%rax), %rax
+    movq %gs:0x8, %rax
 
     // Save process context:
     // We don't save %rax since we use it to reference the save_area location
@@ -48,11 +47,14 @@ syscall_enter:
     rdfsbase %r15
     movq %r15, 19*8(%rax)
 
+    // Write the fs register of the current core
+    // (the TLS area is the first member of the KCB and it lives at 0x10(%gs))
+    movq %gs:0x10, %r15
+    wrfsbase %r15
+
     // Find the syscall stack of the core (the stack top is the first member
     // of the KCB and it lives at 0x0(%gs)),
-    // TODO: we could try to avoid calling rdgsbase twice (see above)?
-    rdgsbase %rsp
-    movq (%rsp), %rsp
+    movq %gs:0x0, %rsp
     movq %rsp, %rbp
 
     // The syscall instruction saved the user-space RIP

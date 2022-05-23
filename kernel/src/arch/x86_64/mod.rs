@@ -26,8 +26,9 @@ use alloc::vec::Vec;
 use core::mem::transmute;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use crate::cmdline::BootloaderArguments;
 use crate::fs::cnrfs::{MlnrKernelNode, Modify};
-use crate::kcb::{BootloaderArguments, Kcb};
+use crate::kcb::Kcb;
 use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
@@ -74,9 +75,6 @@ pub mod vspace;
 mod gdb;
 mod isr;
 mod tls;
-
-#[thread_local]
-pub static CURRENT_PID: Option<u64> = None;
 
 pub const MAX_NUMA_NODES: usize = 12;
 pub const MAX_CORES: usize = 192;

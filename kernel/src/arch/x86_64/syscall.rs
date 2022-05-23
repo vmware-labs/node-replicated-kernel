@@ -22,9 +22,10 @@ use kpi::{
     VSpaceOperation,
 };
 
+use crate::cmdline::Mode;
 use crate::error::KError;
 use crate::fs::{cnrfs, FileSystem};
-use crate::kcb::{ArchSpecificKcb, Mode};
+use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::process::{userptr_to_str, Pid, ResumeHandle};

@@ -5,24 +5,21 @@
 
 use alloc::sync::Arc;
 use core::any::Any;
-use core::cell::{RefCell, RefMut};
 
 use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::{Replica, ReplicaToken};
 
+use crate::cmdline::BootloaderArguments;
 use crate::error::KError;
 use crate::fs::cnrfs::MlnrKernelNode;
+use crate::kcb::{ArchSpecificKcb, Kcb};
+use crate::memory::mcache::TCacheSp;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
 use crate::process::{Pid, MAX_PROCESSES};
-use crate::{
-    kcb::{ArchSpecificKcb, BootloaderArguments, Kcb},
-    memory::mcache::TCacheSp,
-};
 
 use super::process::{UnixProcess, UnixThread};
-use super::vspace::VSpace;
 use super::{KernelArgs, MAX_NUMA_NODES};
 
 static KERNEL_ARGS: KernelArgs = KernelArgs::new();
@@ -55,7 +52,6 @@ pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut _kcb: &'static mut Kcb<A>) 
 
 #[repr(C)]
 pub struct ArchKcb {
-    init_vspace: Option<RefCell<VSpace>>,
     /// Arguments passed to the kernel by the bootloader.
     kernel_args: &'static KernelArgs,
     pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
@@ -67,16 +63,10 @@ impl ArchKcb {
     pub const fn new(kernel_args: &'static KernelArgs) -> ArchKcb {
         ArchKcb {
             kernel_args,
-            init_vspace: None,
             replica: None,
             cnr_replica: None,
             current_executor: None,
         }
-    }
-
-    pub fn init_vspace(&self) -> RefMut<VSpace> {
-        let ivp = self.init_vspace.as_ref().unwrap();
-        ivp.borrow_mut()
     }
 
     pub fn kernel_args(&self) -> &'static KernelArgs {

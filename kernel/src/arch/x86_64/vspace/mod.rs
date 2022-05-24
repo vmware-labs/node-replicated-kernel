@@ -1,9 +1,12 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::boxed::Box;
 use core::ops::Bound::*;
 
 use fallible_collections::btree::BTreeMap;
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 mod debug;
 pub mod page_table; /* TODO(encapsulation): This should be a private module but we break encapsulation in a few places */
@@ -15,6 +18,69 @@ use crate::memory::{detmem::DA, vspace::*};
 use crate::memory::{Frame, PAddr, VAddr};
 
 use page_table::PageTable;
+
+lazy_static! {
+    /// A handle to the initial kernel address space (created for us by the
+    /// bootloader) It contains a 1:1 mapping of
+    ///  * all physical memory (above `KERNEL_BASE`)
+    ///  * IO APIC and local APIC memory (after initialization has completed)
+    pub static ref INITIAL_VSPACE: Mutex<PageTable> = {
+        /// Return a struct to the currently installed page-tables so we can
+        /// manipulate them (for example to map the APIC registers).
+        ///
+        /// This function is called during initialization. It will read the cr3
+        /// register to find the physical address of the currently loaded PML4
+        /// table which is constructed by the bootloader.
+        ///
+        /// # Safety
+        /// - Will use the `cr3` register to find the page-table that is
+        /// currently active in the MMU, so this will easily create aliased
+        /// memory if not handled with care. The only time it makes sense to
+        /// call this is to find the PageTable that the bootloader set up for
+        /// us.
+        unsafe fn find_current_ptable() -> PageTable {
+            use x86::controlregs;
+            use x86::current::paging::PML4;
+            use crate::memory::paddr_to_kernel_vaddr;
+
+            // The cr3 register holds a physical address
+            let pml4: PAddr = PAddr::from(controlregs::cr3());
+
+            // Safety `core::mem::transmute`:
+            // - We know we can access this at kernel vaddr and it's a correctly
+            // aligned+initialized PML4 pointer because of the informal contract
+            // we have with the bootloader
+            let pml4_table = core::mem::transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
+
+            // Safety `Box::from_raw`:
+            // - This is a bit tricky since it technically got allocated by the
+            //   bootloader
+            // - However it should never get dropped anyways since we don't
+            //   currently de-allocate the initial address space
+            // - Only called once for the initial page-table (we loosely ensure
+            //   this with lazy-static+putting this function inside of the
+            //   lazy_static block)
+            // - Memory layout: This is fine because with the wrong layout
+            //   paging wouldn't work
+            // - *Unsafety here*: if we ever drop this we'll be in trouble
+            //   because it lead to some meta-data update with `slabmalloc`
+            //   (free bits) which won't exist because this memory was never
+            //   allocated with slabmalloc (maybe we can have a no_drop variant
+            //   of PageTable?)
+            PageTable {
+                pml4: Box::into_pin(Box::from_raw(pml4_table)),
+                da: None,
+            }
+        }
+
+        // Safety `find_current_ptable`:
+        // - See comments above
+        // - this global is initialized eagerly with `lazy_static::initialize`
+        //   in `arch::_start` so we're sure we're "finding" the correct/initial
+        //   page-table that was set-up by the bootloader.
+        spin::Mutex::new(unsafe { find_current_ptable() })
+    };
+}
 
 pub struct VSpace {
     pub mappings: BTreeMap<VAddr, MappingInfo>,

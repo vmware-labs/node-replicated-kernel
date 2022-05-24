@@ -105,7 +105,7 @@ pub enum ExitReason {
 /// different from a traditional main routine).
 pub fn main() {
     #[cfg(feature = "rackscale")]
-    if kcb::get_kcb().cmdline.mode == kcb::Mode::Controller {
+    if kcb::get_kcb().cmdline.mode == cmdline::Mode::Controller {
         arch::rackscale::controller::run();
     }
 

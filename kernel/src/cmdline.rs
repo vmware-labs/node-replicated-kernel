@@ -86,9 +86,6 @@ impl From<&str> for Mode {
 
 /// Arguments parsed from command line string passed from the bootloader to the
 /// kernel.
-///
-/// # Note
-/// If you move or rename this, you may also need to update the `s02_gdb` test.
 #[derive(Copy, Clone, Debug)]
 pub struct BootloaderArguments {
     pub log_filter: &'static str,
@@ -100,6 +97,8 @@ pub struct BootloaderArguments {
     pub kgdb: bool,
     pub mode: Mode,
 }
+// If you move or rename `BootlaoderArguments`, you may also need to update the `s02_gdb` test.
+static_assertions::assert_type_eq_all!(BootloaderArguments, crate::cmdline::BootloaderArguments);
 
 impl Default for BootloaderArguments {
     fn default() -> BootloaderArguments {

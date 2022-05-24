@@ -11,10 +11,11 @@ use vmxnet3::pci::BarAccess;
 use vmxnet3::smoltcp::DevQueuePhy;
 use vmxnet3::vmx::VMXNet3;
 
+use crate::cmdline::Mode;
 use crate::error::KError;
+use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
 use crate::pci::claim_device;
-use crate::{kcb::Mode, memory::vspace::MapAction};
 use kpi::KERNEL_BASE;
 
 #[allow(unused)]
@@ -26,18 +27,18 @@ pub fn init_network<'a>() -> Result<Interface<'a, DevQueuePhy>, KError> {
         let pci = BarAccess::new(addr.bus.into(), addr.dev.into(), addr.fun.into());
 
         // TODO(hack): Map potential vmxnet3 bar addresses XD
-        // Do this in kernel space (offset of KERNEL_BASE) so the mapping persists
-        let kcb = crate::kcb::get_kcb();
-        for &bar in &[pci.bar0 - KERNEL_BASE, pci.bar1 - KERNEL_BASE] {
-            kcb.arch
-                .init_vspace()
-                .map_identity_with_offset(
-                    PAddr::from(KERNEL_BASE),
-                    PAddr::from(bar),
-                    0x1000,
-                    MapAction::ReadWriteKernel,
-                )
-                .expect("Failed to write potential vmxnet3 bar addresses")
+        {
+            let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
+            for &bar in &[pci.bar0 - KERNEL_BASE, pci.bar1 - KERNEL_BASE] {
+                kvspace
+                    .map_identity_with_offset(
+                        PAddr::from(KERNEL_BASE),
+                        PAddr::from(bar),
+                        0x1000,
+                        MapAction::ReadWriteKernel,
+                    )
+                    .expect("Failed to write potential vmxnet3 bar addresses")
+            }
         }
 
         // Create the VMX device
@@ -49,6 +50,7 @@ pub fn init_network<'a>() -> Result<Interface<'a, DevQueuePhy>, KError> {
         let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
         let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
+        let kcb = crate::kcb::get_kcb();
         let (ethernet_addr, ip_addrs) = match kcb.cmdline.mode {
             Mode::Client => (
                 EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdd]),

@@ -215,17 +215,15 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
     let adjusted_len = (p - p.align_down_to_base_page().as_usize()) + len;
 
     use crate::round_up;
-    super::kcb::try_get_kcb().map(|k: &mut Kcb<Arch86Kcb>| {
-        let mut vspace = k.arch.init_vspace();
-        vspace
-            .map_identity_with_offset(
-                PAddr::from(super::memory::KERNEL_BASE),
-                p.align_down_to_base_page(),
-                round_up!(adjusted_len.as_usize(), x86::bits64::paging::BASE_PAGE_SIZE),
-                MapAction::ReadWriteKernel,
-            )
-            .expect("Can't map ACPI memory");
-    });
+    let mut vspace = super::vspace::INITIAL_VSPACE.lock();
+    vspace
+        .map_identity_with_offset(
+            PAddr::from(super::memory::KERNEL_BASE),
+            p.align_down_to_base_page(),
+            round_up!(adjusted_len.as_usize(), x86::bits64::paging::BASE_PAGE_SIZE),
+            MapAction::ReadWriteKernel,
+        )
+        .expect("Can't map ACPI memory");
 
     let vaddr = paddr_to_kernel_vaddr(p);
     vaddr.as_mut_ptr::<c_void>()

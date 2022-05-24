@@ -172,8 +172,7 @@ pub fn eager_advance_fs_replica() {
 }
 
 pub fn send_ipi_to_apic(apic_id: ApicId) {
-    let kcb = super::kcb::get_kcb();
-    let mut apic = kcb.arch.apic();
+    let mut apic = super::irq::LOCAL_APIC.borrow_mut();
 
     let icr = Icr::for_x2apic(
         super::irq::MLNR_GC_INIT,
@@ -190,8 +189,7 @@ pub fn send_ipi_to_apic(apic_id: ApicId) {
 }
 
 fn send_ipi_multicast(ldr: u32) {
-    let kcb = super::kcb::get_kcb();
-    let mut apic = kcb.arch.apic();
+    let mut apic = super::irq::LOCAL_APIC.borrow_mut();
 
     let icr = Icr::for_x2apic(
         super::irq::TLB_WORK_PENDING,

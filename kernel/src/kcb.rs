@@ -3,7 +3,6 @@
 
 //! KCB is the local kernel control that stores all core local state.
 
-use alloc::string::String;
 use alloc::sync::Arc;
 use core::cell::{RefCell, RefMut};
 use core::fmt::Debug;
@@ -102,8 +101,6 @@ where
     /// TODO(redundant): use kcb.arch.node_id
     pub node: atopology::NodeId,
 
-    pub print_buffer: Option<String>,
-
     /// Contains a bunch of memory arenas, can be one for every NUMA node
     /// but we intialize it lazily upon calling `set_mem_affinity`.
     pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
@@ -146,7 +143,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             // memory allocations (emanager):
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),
             pmem_memory: PhysicalMemoryArena::uninit_with_node(node),
-            print_buffer: None,
             replica: None,
             tlb_time: 0,
             process_token: ArrayVec::new_const(),
@@ -258,10 +254,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     pub fn set_pmem_manager(&mut self, pmanager: TCache) {
         self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
-    }
-
-    pub fn enable_print_buffering(&mut self, buffer: String) {
-        self.print_buffer = Some(buffer);
     }
 
     /// Get a reference to the early memory manager.

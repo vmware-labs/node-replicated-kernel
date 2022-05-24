@@ -26,6 +26,16 @@ impl Default for X2APICDriver {
     }
 }
 
+impl X2APICDriver {
+    pub const fn new() -> Self {
+        Self {
+            timer_vector: crate::TSC_TIMER_VECTOR,
+            state: DriverState::Uninitialized,
+            inner: X2APIC::new(),
+        }
+    }
+}
+
 impl crate::ApicDriver for X2APICDriver {
     /// Is a bootstrap processor?
     fn bsp(&self) -> bool {

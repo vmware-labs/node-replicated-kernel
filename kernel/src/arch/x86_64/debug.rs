@@ -155,7 +155,6 @@ pub fn cause_gpfault() {
 #[cfg(feature = "integration-test")]
 pub fn cause_double_fault() {
     unsafe {
-        use core::arch::asm;
         x86::int!(x86::irq::DOUBLE_FAULT_VECTOR);
     }
 }

@@ -163,7 +163,7 @@ impl KernelAllocator {
 
                 let base_ptr = unsafe { ptr::NonNull::new_unchecked(start_at as *mut u8) };
 
-                let mut kvspace = kcb.arch.init_vspace();
+                let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
                 for _ in 0..large {
                     let mut pmanager = kcb.try_mem_manager()?;
                     let f = pmanager

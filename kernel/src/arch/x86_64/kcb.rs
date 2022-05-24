@@ -6,11 +6,9 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::cell::{RefCell, RefMut};
 use core::pin::Pin;
 use core::ptr;
 
-use apic::x2apic::X2APICDriver;
 use arrayvec::ArrayVec;
 use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use log::trace;
@@ -31,7 +29,6 @@ use super::gdb::KernelDebugger;
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
 use super::process::{Ring3Executor, Ring3Process};
-use super::vspace::page_table::PageTable;
 use super::KernelArgs;
 use super::MAX_NUMA_NODES;
 
@@ -108,9 +105,6 @@ pub struct Arch86Kcb {
     /// The memory location of the TLS (`fs` base) region.
     pub(super) tls_base: *const super::tls::ThreadControlBlock,
 
-    /// A handle to the core-local interrupt driver.
-    pub(crate) apic: RefCell<X2APICDriver>,
-
     /// A per-core GdtTable
     pub(crate) gdt: GdtTable,
 
@@ -125,12 +119,6 @@ pub struct Arch86Kcb {
 
     /// A handle to the currently active (scheduled) process.
     current_executor: Option<Box<Ring3Executor>>,
-
-    /// A handle to the initial kernel address space (created for us by the
-    /// bootloader) It contains a 1:1 mapping of
-    ///  * all physical memory (above `KERNEL_BASE`)
-    ///  * IO APIC and local APIC memory (after initialization has completed)
-    init_vspace: RefCell<PageTable>,
 
     /// A handle to the node-local CNR based kernel replica.
     pub cnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
@@ -186,31 +174,24 @@ pub struct Arch86Kcb {
     #[cfg(feature = "rpc")]
     pub rpc_client: Option<Box<dyn rpc::api::RPCClient>>,
 }
-
-// The `syscall_stack_top` entry must be at offset 0 of KCB (referenced early-on in exec.S)
+// The `syscall_stack_top` entry must be at offset 0 of KCB (for assembly code in exec.S, isr.S & process.rs)
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, syscall_stack_top), 0);
-// The `save_area` entry must be at offset 8 of KCB (for assembly code)
+// The `save_area` entry must be at offset 8 of KCB (for assembly code in exec.S, isr.S & process.rs)
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, save_area), 8);
-// The `tls_area` entry must be at offset 16 of KCB (for assembly code)
+// The `tls_area` entry must be at offset 16 of KCB (for assembly code in exec.S, isr.S & process.rs)
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, tls_base), 16);
 
 impl Arch86Kcb {
-    pub(crate) fn new(
-        kernel_args: &'static KernelArgs,
-        apic: X2APICDriver,
-        init_vspace: PageTable,
-    ) -> Arch86Kcb {
+    pub(crate) fn new(kernel_args: &'static KernelArgs) -> Arch86Kcb {
         Arch86Kcb {
             kernel_args,
             syscall_stack_top: ptr::null_mut(),
-            apic: RefCell::new(apic),
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
             idt: Default::default(),
             tls_base: ptr::null(),
             current_executor: None, // We don't have an executor to schedule initially
             save_area: None,
-            init_vspace: RefCell::new(init_vspace),
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
@@ -225,14 +206,6 @@ impl Arch86Kcb {
         }
     }
 
-    pub fn apic(&self) -> RefMut<X2APICDriver> {
-        self.apic.borrow_mut()
-    }
-
-    pub fn init_vspace(&self) -> RefMut<PageTable> {
-        self.init_vspace.borrow_mut()
-    }
-
     #[cfg(all(feature = "rpc", feature = "ethernet"))]
     pub fn init_ethernet_rpc(
         &mut self,
@@ -243,7 +216,7 @@ impl Arch86Kcb {
         use rpc::transport::TCPTransport;
         use rpc::RPCClient;
 
-        use crate::kcb::Mode;
+        use crate::cmdline::Mode;
         use crate::transport::ethernet::init_network;
 
         let mode = super::kcb::get_kcb().cmdline.mode;
@@ -267,7 +240,7 @@ impl Arch86Kcb {
         use rpc::client_shmem::ShmemClient;
         use rpc::RPCClient;
 
-        use crate::kcb::Mode;
+        use crate::cmdline::Mode;
         use crate::transport::shmem::create_shmem_transport;
 
         let mode = super::kcb::get_kcb().cmdline.mode;
@@ -368,13 +341,6 @@ impl Arch86Kcb {
         self.syscall_stack_top = stack.base();
         trace!("Syscall stack top set to: {:p}", self.syscall_stack_top);
         self.syscall_stack = Some(stack);
-
-        // TODO: Would profit from a static assert and offsetof...
-        debug_assert_eq!(
-            (&self.syscall_stack_top as *const _ as usize) - (self as *const _ as usize),
-            0,
-            "syscall_stack_top should be at offset 0 (for assembly)"
-        );
     }
 
     /// Install a CPU register save-area.

@@ -10,6 +10,7 @@ use crate::memory::PAddr;
 use crate::pci::claim_device;
 
 /// Setup inter-vm shared-memory device.
+#[allow(unused)]
 pub fn init_shmem_device() -> Option<(u64, u64)> {
     const RED_HAT_INC: u16 = 0x1af4;
     const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
@@ -29,9 +30,8 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
         }
 
         // TODO: Double check if this is mapping we need?
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .init_vspace()
+        let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
+        kvspace
             .map_identity_with_offset(
                 PAddr::from(KERNEL_BASE),
                 PAddr::from(base_paddr),
@@ -49,7 +49,7 @@ pub fn init_shmem_device() -> Option<(u64, u64)> {
 
 #[cfg(feature = "rpc")]
 pub fn create_shmem_transport() -> Result<ShmemTransport<'static>, ()> {
-    use crate::kcb::Mode;
+    use crate::cmdline::Mode;
     use alloc::sync::Arc;
     use rpc::rpc::PacketBuffer;
     use rpc::transport::shmem::allocator::ShmemAllocator;

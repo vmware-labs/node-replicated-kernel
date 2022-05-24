@@ -125,8 +125,7 @@ fn timer() {
         let tsc = x86::time::rdtsc();
 
         {
-            let kcb = crate::kcb::get_kcb();
-            let mut apic = kcb.arch.apic();
+            let mut apic = crate::arch::irq::LOCAL_APIC.borrow_mut();
             apic.tsc_enable();
             apic.tsc_set(tsc + 1_000_000_000);
         }
@@ -566,9 +565,8 @@ fn sse() {
 /// Test VSpace debugging.
 #[cfg(feature = "integration-test")]
 fn vspace_debug() {
-    let kcb = kcb::get_kcb();
     crate::graphviz::render_opts(
-        &*kcb.arch.init_vspace(),
+        &*crate::arch::vspace::INITIAL_VSPACE.lock(),
         &[crate::graphviz::RenderOption::RankDirectionLR],
     );
 
@@ -661,11 +659,9 @@ fn vmxnet_smoltcp() {
     let vmx = if let Some(vmxnet3_dev) = crate::pci::claim_device(VMWARE_INC, VMXNET_DEV) {
         let addr = vmxnet3_dev.pci_address();
         let ba = BarAccess::new(addr.bus.into(), addr.dev.into(), addr.fun.into());
-        let kcb = crate::kcb::get_kcb();
+        let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
         for &bar in &[ba.bar0 - KERNEL_BASE, ba.bar1 - KERNEL_BASE] {
-            assert!(kcb
-                .arch
-                .init_vspace()
+            assert!(kvspace
                 .map_identity_with_offset(
                     PAddr::from(KERNEL_BASE),
                     PAddr::from(bar),
@@ -844,9 +840,7 @@ fn shootdown_simple() {
         }
 
         {
-            let kcb = crate::kcb::get_kcb();
-            let mut apic = kcb.arch.apic();
-
+            let mut apic = crate::arch::irq::LOCAL_APIC.borrow_mut();
             let vector = 251;
             let icr = Icr::for_x2apic(
                 vector,

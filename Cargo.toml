@@ -20,6 +20,7 @@ members = [
     #"lib/rust-x86",
     #"lib/rawtime",
     #"lib/libfringe",
+    #"lib/rust-topology"
 ]
 
 # disable stack unwinding on panic for now
@@ -35,3 +36,4 @@ debug = true
 #driverkit = { path = "lib/rust-driverkit" }
 #x86 = { path = "lib/rust-x86" }
 #rawtime = { path = "lib/rawtime" }
+#atopology = { path = "lib/rust-topology" }

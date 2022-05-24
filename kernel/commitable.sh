@@ -13,6 +13,8 @@ cd kernel
 # build kernel
 RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-nrk
 
+# Try to compile with all/most of the code enabled
+python3 run.py --kfeatures ethernet shmem rackscale integration-test --norun
 # run kernel
 python3 run.py
 

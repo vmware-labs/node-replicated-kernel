@@ -4,15 +4,21 @@
 //! A dummy vspace implementation for the unix platform.
 
 use alloc::boxed::Box;
+
 use core::fmt;
 use core::pin::Pin;
 use hashbrown::HashMap;
+use lazy_static::lazy_static;
+use spin::Mutex;
+use x86::bits64::paging::*;
 
 use crate::error::KError;
 use crate::memory::vspace::{AddressSpace, MapAction, MappingInfo, TlbFlushHandle};
 use crate::memory::Frame;
 
-use x86::bits64::paging::*;
+lazy_static! {
+    pub static ref INITIAL_VSPACE: Mutex<VSpace> = Mutex::new(VSpace::new());
+}
 
 pub struct VSpace {
     pub mappings: HashMap<core::ops::Range<usize>, MappingInfo>,

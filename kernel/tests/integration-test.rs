@@ -1300,7 +1300,9 @@ fn s02_gdb() {
         // Test symbol resolution (`SectionOffsets`) and reads from memory
         output += gdb.wait_for_prompt()?.as_str();
         gdb.send_line("print cmdline")?;
-        output += gdb.exp_string("nrk::kcb::BootloaderArguments")?.as_str();
+        output += gdb
+            .exp_string("nrk::cmdline::BootloaderArguments")?
+            .as_str();
 
         // Test hardware breakpoints: `hbreak`, `continue`
         output += gdb.wait_for_prompt()?.as_str();

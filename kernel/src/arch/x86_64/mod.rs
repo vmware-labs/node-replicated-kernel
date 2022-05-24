@@ -34,7 +34,6 @@ use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::ExitReason;
 
-use apic::x2apic;
 use apic::ApicDriver;
 use arrayvec::ArrayVec;
 use cnr::{Log as MlnrLog, Replica as MlnrReplica};
@@ -43,7 +42,7 @@ use fallible_collections::{FallibleVecGlobal, TryClone};
 use klogger::sprint;
 use log::{debug, error, info, trace};
 use node_replication::{Log, Replica};
-use x86::bits64::paging::{PAddr, VAddr, PML4};
+use x86::bits64::paging::PAddr;
 use x86::{controlregs, cpuid};
 
 pub use bootloader_shared::*;
@@ -51,9 +50,7 @@ pub use bootloader_shared::*;
 use crate::fallible_string::FallibleString;
 use crate::memory::vspace::MapAction;
 use crate::memory::MAX_PHYSICAL_REGIONS;
-use memory::paddr_to_kernel_vaddr;
 use uefi::table::boot::MemoryType;
-use vspace::page_table::PageTable;
 
 pub mod acpi;
 pub mod coreboot;
@@ -74,6 +71,7 @@ pub mod vspace;
 
 mod gdb;
 mod isr;
+mod serial;
 mod tls;
 
 pub const MAX_NUMA_NODES: usize = 12;
@@ -163,31 +161,11 @@ pub fn halt() -> ! {
     }
 }
 
-/// Return a struct to the currently installed page-tables so we
-/// can manipulate them (for example to map the APIC registers).
-///
-/// This function is called during initialization.
-/// It will read the cr3 register to find the physical address of
-/// the currently loaded PML4 table which is constructed
-/// by the bootloader.
-///
-/// # Safety
-/// This should only be called once during init to retrieve the
-/// initial VSpace.
-unsafe fn find_current_ptables() -> PageTable {
-    let cr_three: u64 = controlregs::cr3();
-    let pml4: PAddr = PAddr::from(cr_three);
-    let pml4_table = transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
-    PageTable {
-        pml4: Box::into_pin(Box::from_raw(pml4_table)),
-        da: None,
-    }
-}
-
 /// Construct the driver object to manipulate the interrupt controller (XAPIC)
-fn init_apic() -> x2apic::X2APICDriver {
-    let mut apic = x2apic::X2APICDriver::default();
+fn init_apic() {
+    let mut apic = irq::LOCAL_APIC.borrow_mut();
     // Attach the driver to take control of the APIC:
+    info!("before attach");
     apic.attach();
 
     info!(
@@ -197,8 +175,6 @@ fn init_apic() -> x2apic::X2APICDriver {
         apic.version(),
         apic.bsp()
     );
-
-    apic
 }
 
 #[cfg(not(feature = "bsp-only"))]
@@ -236,9 +212,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let start = rawtime::Instant::now();
 
     let emanager = mcache::TCacheSp::new(args.node);
-    let init_ptable = unsafe { find_current_ptables() }; // Safe, done once during init
-
-    let arch = kcb::Arch86Kcb::new(args.kernel_args, init_apic(), init_ptable);
+    let arch = kcb::Arch86Kcb::new(args.kernel_args);
     let mut kcb =
         Kcb::<kcb::Arch86Kcb>::new(args.kernel_binary, args.cmdline, emanager, arch, args.node);
 
@@ -266,9 +240,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
-    static_kcb.enable_print_buffering(
-        String::try_with_capacity(128).expect("Not enough memory to initialize system"),
-    );
     static_kcb.install();
     // Install thread-local storage for BSP
     if let Some(tls_args) = &args.kernel_args.tls_info {
@@ -276,6 +247,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         unsafe {
             // Safety for `ThreadControlBlock::init`:
             // - we called `enable_fsgsbase()`: yes see above
+            // - after static_kcb.install(): yes (otherwise fs is reset)
             // - TLS is uninitialized:
             assert!(
                 x86::bits64::segmentation::rdfsbase() == 0x0,
@@ -286,6 +258,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
             kcb.arch.tls_base = tcb;
         }
     }
+    init_apic();
+    serial::SerialControl::set_print_buffer(
+        String::try_with_capacity(128).expect("Not enough memory to initialize system"),
+    );
     core::mem::forget(kcb);
 
     {
@@ -537,7 +513,6 @@ fn identify_numa_affinity(
 fn map_physical_persistent_memory() {
     use atopology::MemoryType;
     let desc_iter = atopology::MACHINE_TOPOLOGY.persistent_memory();
-    let kcb = kcb::get_kcb();
     for entry in desc_iter {
         if entry.phys_start == 0x0 {
             debug!("Don't map memory entry at physical zero? {:#?}", entry);
@@ -568,13 +543,13 @@ fn map_physical_persistent_memory() {
             rights, phys_range_start, phys_range_end
         );
         if rights != MapAction::None && entry.ty == MemoryType::PERSISTENT_MEMORY {
-            kcb.arch
-                .init_vspace()
+            vspace::INITIAL_VSPACE
+                .lock()
                 .map_identity(phys_range_start, size, rights)
                 .expect("Unable to add PMem address to user-space");
 
-            kcb.arch
-                .init_vspace()
+            vspace::INITIAL_VSPACE
+                .lock()
                 .map_identity_with_offset(PAddr::from(KERNEL_BASE), phys_range_start, size, rights)
                 .expect("Unable to add PMem address to Kernel-space");
         }
@@ -699,11 +674,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
     let emanager = emanager
         .expect("Couldn't build an early physical memory manager, increase system main memory?");
-
-    let init_ptable = unsafe { find_current_ptables() }; // Safe, done once during init
-    trace!("vspace found");
-
-    let arch = kcb::Arch86Kcb::new(kernel_args, init_apic(), init_ptable);
+    // Needs to be done before we switch address space
+    lazy_static::initialize(&vspace::INITIAL_VSPACE);
+    let arch = kcb::Arch86Kcb::new(kernel_args);
 
     // Construct the Kcb so we can access these things later on in the code
     let mut kcb = Kcb::new(kernel_binary, cmdline, emanager, arch, 0);
@@ -725,10 +698,29 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     static_kcb
         .arch
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
-    static_kcb.enable_print_buffering(
+    static_kcb.install();
+
+    // Install thread-local storage for BSP
+    if let Some(tls_args) = &kernel_args.tls_info {
+        use tls::ThreadControlBlock;
+        unsafe {
+            // Safety for `ThreadControlBlock::init`:
+            // - we called `enable_fsgsbase()`: yes see above
+            // - after static_kcb.install(): yes (otherwise fs is reset)
+            // - TLS is uninitialized:
+            assert!(
+                x86::bits64::segmentation::rdfsbase() == 0x0,
+                "BIOS/UEFI initializes `fs` with 0x0"
+            );
+            let tcb =
+                ThreadControlBlock::init(tls_args).expect("Unable to initialize TLS during init");
+            kcb::get_kcb().arch.tls_base = tcb;
+        }
+    }
+    serial::SerialControl::set_print_buffer(
         String::try_with_capacity(128).expect("Not enough memory to initialize system"),
     );
-    static_kcb.install();
+    init_apic();
 
     // Make sure we don't drop the KCB and anything in it,
     // the kcb is on the init stack and remains allocated on it,
@@ -920,23 +912,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.register_with_process_replicas();
     }
 
-    // Install thread-local storage for BSP
-    if let Some(tls_args) = &kernel_args.tls_info {
-        use tls::ThreadControlBlock;
-        unsafe {
-            // Safety for `ThreadControlBlock::init`:
-            // - we called `enable_fsgsbase()`: yes see above
-            // - TLS is uninitialized:
-            assert!(
-                x86::bits64::segmentation::rdfsbase() == 0x0,
-                "BIOS/UEFI initializes `fs` with 0x0"
-            );
-            let tcb =
-                ThreadControlBlock::init(tls_args).expect("Unable to initialize TLS during init");
-            kcb::get_kcb().arch.tls_base = tcb;
-        }
-    }
-
     #[cfg(feature = "gdb")]
     {
         let target = gdb::KernelDebugger::new();
@@ -948,7 +923,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         // Safety:
         // - IDT is set-up, interrupts are working
         // - Only a breakpoint to wait for debugger to attach
-        use core::arch::asm;
         unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
     }
 

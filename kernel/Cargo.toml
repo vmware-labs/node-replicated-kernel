@@ -21,20 +21,21 @@ kpi = { path = "../lib/kpi" }
 rpc = { path = "../lib/rpc", optional = true }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-x86 = "0.47"
+x86 = "0.48"
 klogger = "0.0.11"
-driverkit = "0.16"
+driverkit = "0.17"
 spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"
 backtracer_core = "0.0.5"
-rawtime = "0.0.6"
+rawtime = "0.0.7"
 libacpica = "0.0.8"
-atopology = "0.0.26"
+atopology = "0.0.27"
 # External libraries we use:
 log = "0.4"
 displaydoc = { version = "0.2", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
+once_cell = { version = "1.12.0", features = [ "alloc" ], default-features = false }
 logos = { version = "0.12", default-features = false, features = ["export_derive"] }
 hashbrown = { version = "0.11", features = [ "nightly" ] }
 cstr_core = { version = "0.2.3", default-features = false }

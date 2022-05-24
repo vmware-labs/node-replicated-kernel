@@ -33,20 +33,20 @@
 
 #![allow(warnings)]
 
+use alloc::boxed::Box;
+use core::cell::RefCell;
 use core::fmt;
 
-use alloc::boxed::Box;
-
+use apic::x2apic::X2APICDriver;
+use apic::ApicDriver;
+use klogger::{sprint, sprintln};
+use log::{info, trace, warn};
 use x86::bits64::segmentation::Descriptor64;
 use x86::irq::*;
 use x86::segmentation::{
     BuildDescriptor, DescriptorBuilder, GateDescriptorBuilder, SegmentSelector,
 };
 use x86::{dtables, Ring};
-
-use apic::ApicDriver;
-use klogger::{sprint, sprintln};
-use log::{info, trace, warn};
 
 use crate::fs::cnrfs;
 use crate::kcb::ArchSpecificKcb;
@@ -61,6 +61,10 @@ use super::kcb::{get_kcb, Arch86Kcb};
 use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring0Resumer, Ring3Process, Ring3Resumer};
 use super::{debug, gdb, timer};
+
+/// The x2APIC driver of the current core.
+#[thread_local]
+pub static LOCAL_APIC: RefCell<X2APICDriver> = RefCell::new(X2APICDriver::new());
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -787,8 +791,9 @@ pub fn ioapic_initialize() {
         let paddr = PAddr::from(io_apic.address as u64);
         let ioapic_frame = Frame::new(paddr, BASE_PAGE_SIZE, 0);
         let vbase = PAddr::from(KERNEL_BASE);
-        kcb.arch
-            .init_vspace()
+
+        let mut kvspace = super::vspace::INITIAL_VSPACE.lock();
+        kvspace
             .map_identity_with_offset(
                 vbase,
                 ioapic_frame.base,
@@ -836,9 +841,7 @@ pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
 }
 
 fn acknowledge() {
-    let kcb = get_kcb();
-    let mut apic = kcb.arch.apic();
-    apic.eoi();
+    LOCAL_APIC.borrow_mut().eoi();
 }
 
 pub fn enable() {

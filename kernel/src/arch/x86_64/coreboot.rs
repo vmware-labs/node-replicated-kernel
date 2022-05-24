@@ -18,7 +18,6 @@ use crate::memory::vspace::MapAction;
 use crate::round_up;
 use crate::stack::Stack;
 
-use super::kcb;
 use super::memory::BASE_PAGE_SIZE;
 
 /// The 16-bit segement where our bootstrap code is.
@@ -82,9 +81,8 @@ unsafe fn copy_bootstrap_code() {
     let ap_bootstrap_code: &'static [u8] = get_orignal_bootstrap_code();
     let real_mode_destination: &'static mut [u8] = get_boostrap_code_region();
 
-    let kcb = kcb::get_kcb();
-    kcb.arch
-        .init_vspace()
+    let mut vspace = super::vspace::INITIAL_VSPACE.lock();
+    vspace
         .map_identity(
             PAddr::from(REAL_MODE_BASE as u64),
             round_up!(boot_code_size, BASE_PAGE_SIZE),
@@ -110,7 +108,7 @@ unsafe fn copy_bootstrap_code() {
 ///
 /// `arg` is read on the new core so we have to ensure whatever they point to
 /// lives long enough.
-unsafe fn setup_boostrap_code<A>(
+unsafe fn setup_bootstrap_code<A>(
     entry_fn: u64,
     arg: Arc<A>,
     initialized: &AtomicBool,
@@ -245,16 +243,16 @@ unsafe fn get_boostrap_code_region() -> &'static mut [u8] {
 /// # Safety
 /// Can easily reset the wrong core (bad for memory safety).
 unsafe fn wakeup_core(core_id: ApicId) {
-    let kcb = kcb::get_kcb();
+    let mut apic = super::irq::LOCAL_APIC.borrow_mut();
 
     // x86 core boot protocol, without sleeping:
-    kcb.arch.apic().ipi_init(core_id);
-    kcb.arch.apic().ipi_init_deassert();
+    apic.ipi_init(core_id);
+    apic.ipi_init_deassert();
 
     let start = rawtime::Instant::now();
     while start.elapsed().as_millis() > 10 {}
 
-    kcb.arch.apic().ipi_startup(core_id, REAL_MODE_PAGE);
+    apic.ipi_startup(core_id, REAL_MODE_PAGE);
 }
 
 /// Starts up the core identified by `core_id`, after initialization it begins
@@ -274,12 +272,12 @@ pub unsafe fn initialize<A>(
     copy_bootstrap_code();
 
     // Initialize bootstrap assembly with correct parameters
-    let kcb = super::kcb::get_kcb();
-    setup_boostrap_code(
+    let vspace = super::vspace::INITIAL_VSPACE.lock();
+    setup_bootstrap_code(
         init_function as u64,
         args,
         initialized,
-        kcb.arch.init_vspace().pml4_address().into(),
+        vspace.pml4_address().into(),
         stack.base() as u64,
     );
 

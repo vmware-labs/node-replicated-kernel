@@ -29,16 +29,17 @@ static mut EARLY_IRQ_STACK: StaticStack = StaticStack([0; 32 * 4096]);
 
 /// A GDT table that is in use during system initialization only.
 ///
-/// During init, each core sets their own GDT that is stored in their respective KCBs.
-/// However, before that they can use the `EARLY_GDT` as a simple way to get a
-/// Gdt that mostly works without having the Kcb fully initialized.
+/// During init, each core sets their own `GDT` that is stored in their
+/// respective TLS area. However, before that they can use the `EARLY_GDT` as a
+/// simple way to get a Gdt that mostly works without having the Kcb fully
+/// initialized.
 ///
 /// # Note
-/// This is the 2nd initial Gdt we have, there are two more: One as set-up by UEFI
-/// and used early-on in the bootstrap core, and another that is used by
-/// the app cores and lives in `start_ap.S`. So technically we could just use those
-/// but having a visible Gdt we modify from rust code makes it clearer what's going
-/// on.
+/// This is the 2nd initial Gdt we have, there are two more: One as set-up by
+/// UEFI and used early-on in the bootstrap core, and another that is used by
+/// the app cores and lives in `start_ap.S`. So technically we could just use
+/// those but having a visible Gdt we modify from rust code makes it clearer
+/// what's going on.
 static mut EARLY_GDT: GdtTable = GdtTable {
     null: Descriptor::NULL,
     code_kernel: Descriptor::NULL,
@@ -50,10 +51,10 @@ static mut EARLY_GDT: GdtTable = GdtTable {
 
 /// A TSS that is in use during system initialization only.
 ///
-/// During init, each core sets their own TSS that is stored inside their respective KCBs.
-/// However, before that cores use the `EARLY_TSS` (through `EARLY_GDT`)
-/// and therefore the `EARLY_IRQ_STACK` as a stack for interrupts in case something goes
-/// wrong.
+/// During init, each core sets their own `TSS` that is stored inside their
+/// respective TLS area. However, before that cores use the `EARLY_TSS` (through
+/// `EARLY_GDT`) and therefore the `EARLY_IRQ_STACK` as a stack for interrupts
+/// in case something goes wrong.
 static mut EARLY_TSS: TaskStateSegment = TaskStateSegment::new();
 
 #[repr(C, packed)]

@@ -34,6 +34,7 @@ use crate::{nr, nrproc};
 
 use super::gdt::GdtTable;
 use super::process::{user_virt_addr_valid, Ring3Process, UserPtr, UserValue};
+use super::serial::SerialControl;
 
 extern "C" {
     #[no_mangle]
@@ -127,37 +128,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 
         let user_buffer = UserValue::new(user_str);
         let buffer: &str = *user_buffer;
-
-        // A poor mans line buffer scheme:
-        match &mut kcb.print_buffer {
-            Some(kbuf) => match buffer.find("\n") {
-                Some(idx) => {
-                    let (low, high) = buffer.split_at(idx + 1);
-                    kbuf.push_str(low);
-                    {
-                        let r = klogger::SERIAL_LINE_MUTEX.lock();
-                        sprint!("{}", kbuf);
-                    }
-                    kbuf.clear();
-                    kbuf.push_str(high);
-                }
-                None => {
-                    kbuf.push_str(buffer);
-                    if kbuf.len() > 2048 {
-                        // Don't let the buffer grow arbitrarily:
-                        {
-                            let r = klogger::SERIAL_LINE_MUTEX.lock();
-                            sprint!("{}", kbuf);
-                        }
-                        kbuf.clear();
-                    }
-                }
-            },
-            None => {
-                let r = klogger::SERIAL_LINE_MUTEX.lock();
-                sprint!("{}", buffer);
-            }
-        }
+        SerialControl::buffered_print(buffer);
 
         Ok((0, 0))
     }

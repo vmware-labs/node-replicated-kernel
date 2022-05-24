@@ -25,8 +25,7 @@ use x86::{controlregs, Ring};
 use crate::arch::memory::KERNEL_BASE;
 use crate::error::KError;
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
-use crate::kcb::ArchSpecificKcb;
-use crate::kcb::{self, Kcb};
+use crate::kcb::{self, ArchSpecificKcb};
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, MemType, PAddr, VAddr};
@@ -38,7 +37,6 @@ use crate::process::{
 use crate::round_up;
 
 use super::gdt::GdtTable;
-use super::kcb::Arch86Kcb;
 use super::vspace::*;
 use super::Module;
 use super::MAX_NUMA_NODES;
@@ -1266,13 +1264,12 @@ impl Process for Ring3Process {
         // TODO(efficiency): These should probably be global mappings
         // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
         // TODO(ugly): Find a better way to express this mess
-        super::kcb::try_get_kcb().map(|kcb: &mut Kcb<Arch86Kcb>| {
-            for i in 128..=135 {
-                let kernel_pml_entry = kcb.arch.init_vspace().pml4[i];
-                trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
-                self.vspace.page_table.pml4[i] = kernel_pml_entry;
-            }
-        });
+        let kvspace = super::vspace::INITIAL_VSPACE.lock();
+        for i in 128..=135 {
+            let kernel_pml_entry = kvspace.pml4[i];
+            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+            self.vspace.page_table.pml4[i] = kernel_pml_entry;
+        }
 
         Ok(())
     }

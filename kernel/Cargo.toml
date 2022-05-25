@@ -30,7 +30,7 @@ slabmalloc = "0.10"
 backtracer_core = "0.0.5"
 rawtime = "0.0.6"
 libacpica = "0.0.8"
-atopology = "0.0.26"
+atopology = "0.0.27"
 # External libraries we use:
 log = "0.4"
 displaydoc = { version = "0.2", default-features = false }

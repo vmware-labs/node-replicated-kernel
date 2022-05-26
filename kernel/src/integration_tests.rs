@@ -773,11 +773,10 @@ pub fn cxl_write() {
     use crate::memory::KERNEL_BASE;
     use crate::transport::shmem::init_shmem_device;
 
-    if let Some((base_paddr, size)) = init_shmem_device() {
-        for i in 0..size {
-            let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
-            unsafe { core::ptr::write(region, BUFFER_CONTENT) };
-        }
+    let (base_paddr, size) = init_shmem_device().expect("Can't init shmem device");
+    for i in 0..size {
+        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+        unsafe { core::ptr::write(region, BUFFER_CONTENT) };
     }
 
     shutdown(ExitReason::Ok);
@@ -789,12 +788,11 @@ pub fn cxl_read() {
     use crate::memory::KERNEL_BASE;
     use crate::transport::shmem::init_shmem_device;
 
-    if let Some((base_paddr, size)) = init_shmem_device() {
-        for i in 0..size {
-            let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
-            let read = unsafe { core::ptr::read(region) };
-            assert_eq!(read, BUFFER_CONTENT);
-        }
+    let (base_paddr, size) = init_shmem_device().expect("Can't init shmem device");
+    for i in 0..size {
+        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+        let read = unsafe { core::ptr::read(region) };
+        assert_eq!(read, BUFFER_CONTENT);
     }
 
     shutdown(ExitReason::Ok);

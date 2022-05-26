@@ -140,6 +140,10 @@ pub enum KError {
     UnableToInitEthernetRPC,
     /// Thread-local storage was already initialized for the core
     TLSAlreadyInitialized,
+    /// Unable to find IVSHMEM device on the PCI bus (did you pass `--qemu-ivshmem` and `--qemu-shmem-path`?)
+    IvShmemDeviceNotFound,
+    /// Specified Native mode on the kernel command line but kernel initialized a RPC connection?
+    InvalidNativeMode,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {

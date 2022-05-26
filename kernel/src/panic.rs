@@ -8,7 +8,6 @@ use core::panic::PanicInfo;
 
 #[cfg(target_os = "none")]
 use crate::arch;
-use crate::kcb;
 #[cfg(target_os = "none")]
 use crate::ExitReason;
 use addr2line::{gimli, Context};
@@ -107,10 +106,15 @@ fn backtrace_format(
 
 #[inline(always)]
 pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
-    let kernel_info = kcb::try_get_kcb().map(|k| {
+    let kernel_info = crate::KERNEL_ARGS.get().map(|k| {
         (
-            k.kernel_binary(),
-            k.arch.kernel_args().kernel_elf_offset.as_u64(),
+            // Safety: `kernel_binary`
+            // - We know we've not touched this mapping setup by the bootloader
+            //   in the kernel
+            // - This is the original struct passed to us by the bootloader it
+            //   has a kernel binary
+            unsafe { k.kernel_binary() },
+            k.kernel_elf_offset.as_u64(),
         )
     });
 
@@ -143,10 +147,15 @@ pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
 
 #[inline(always)]
 pub fn backtrace() {
-    let kernel_info = kcb::try_get_kcb().map(|k| {
+    let kernel_info = crate::KERNEL_ARGS.get().map(|k| {
         (
-            k.kernel_binary(),
-            k.arch.kernel_args().kernel_elf_offset.as_u64(),
+            // Safety: `kernel_binary`
+            // - We know we've not touched this mapping setup by the bootloader
+            //   in the kernel
+            // - This is the original struct passed to us by the bootloader it
+            //   has a kernel binary
+            unsafe { k.kernel_binary() },
+            k.kernel_elf_offset.as_u64(),
         )
     });
 
@@ -174,8 +183,9 @@ pub fn backtrace() {
 #[inline(always)]
 pub fn backtrace_no_context() {
     sprintln!("Backtrace:");
-    let relocation_offset =
-        kcb::try_get_kcb().map_or(0x0, |k| k.arch.kernel_args().kernel_elf_offset.as_u64());
+    let relocation_offset = crate::KERNEL_ARGS
+        .get()
+        .map_or(0x0, |args| args.kernel_elf_offset.as_u64());
 
     let mut count = 0;
     backtracer_core::trace(|frame| {
@@ -203,7 +213,7 @@ pub fn panic_impl(info: &PanicInfo) -> ! {
     }
 
     // We need memory allocation for a backtrace, can't do that without a KCB
-    kcb::try_get_kcb().map(|k| {
+    crate::kcb::try_get_kcb().map(|k| {
         // If we're already panicking, it usually doesn't help to panic more
         if !k.in_panic_mode {
             // Make sure we use the e{early, emergency} memory allocator for backtracing

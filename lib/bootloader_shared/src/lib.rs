@@ -179,6 +179,26 @@ impl KernelArgs {
             modules: arrayvec::ArrayVec::new_const(),
         }
     }
+
+    /// Get a slice to the kernel ELF binary.
+    ///
+    /// The binary is useful for symbol name lookups when printing backtraces in
+    /// case things go wrong (see panic.rs).
+    ///
+    /// # Safety
+    /// - The kernel binary / module[0] must be mapped in the kernel address
+    ///   space at the same address as we passed along in the bootloader.
+    /// - There must be at least one module present (this is guaranteed when
+    ///   using the struct that's passed to the kernel by the bootloader but not
+    ///   for arbitrary new KernelArgs)
+    #[allow(unused)]
+    pub unsafe fn kernel_binary(&self) -> &'static [u8] {
+        use core::slice;
+        slice::from_raw_parts(
+            self.modules[0].base().as_u64() as *const u8,
+            self.modules[0].size(),
+        )
+    }
 }
 
 impl Default for KernelArgs {

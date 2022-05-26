@@ -6,11 +6,14 @@ use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use arrayvec::ArrayVec;
+use cnr::Replica as MlnrReplica;
 use ctor::ctor;
+use fallible_collections::TryClone;
 use log::{debug, info};
 use node_replication::{Log, Replica};
 use x86::current::paging::HUGE_PAGE_SIZE;
 
+use crate::fs::cnrfs::MlnrKernelNode;
 use crate::memory::mcache::TCacheSp;
 use crate::memory::{GlobalMemory, GrowBackend, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
@@ -26,6 +29,7 @@ pub mod network;
 pub mod process;
 #[cfg(feature = "rackscale")]
 pub mod rackscale;
+pub mod signals;
 pub mod syscalls;
 pub mod timer;
 pub mod vspace;
@@ -104,6 +108,16 @@ fn init_setup() {
         let kcb = kcb::get_kcb();
         kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
+
+    // Starting to initialize file-system
+    let fs_logs = crate::fs::cnrfs::allocate_logs();
+    // Construct the first replica
+    let fs_replica = MlnrReplica::<MlnrKernelNode>::new(
+        fs_logs
+            .try_clone()
+            .expect("Not enough memory to initialize system"),
+    );
+    crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
 }
 
 #[start]

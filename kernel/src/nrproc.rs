@@ -71,7 +71,7 @@ pub enum NodeResult<E: Executor> {
 /// Advances the replica of all the processes on the current NUMA node.
 pub fn advance_all() {
     let kcb = super::kcb::get_kcb();
-    let node = kcb.arch.node();
+    let node = *crate::kcb::NODE_ID;
 
     for pid in 0..MAX_PROCESSES {
         let _r = PROCESS_TABLE[node][pid].sync(kcb.process_token[pid]);
@@ -104,7 +104,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::Load(pid, module, writeable_sections),
@@ -122,7 +122,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(base.as_u64() < kpi::KERNEL_BASE, "Invalid base");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response =
             PROCESS_TABLE[node][pid].execute(ReadOps::MemResolve(base), kcb.process_token[pid]);
@@ -136,7 +136,7 @@ impl<P: Process> NrProcess<P> {
     pub fn synchronize(pid: Pid) {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         PROCESS_TABLE[node][pid].sync(kcb.process_token[pid]);
     }
@@ -149,7 +149,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid]
             .execute_mut(Op::MemMapDevice(frame, action), kcb.process_token[pid]);
@@ -164,7 +164,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response =
             PROCESS_TABLE[node][pid].execute_mut(Op::MemUnmap(base), kcb.process_token[pid]);
@@ -184,7 +184,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::MemMapFrameId(base, frame_id, action),
@@ -206,7 +206,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let mut virtual_offset = 0;
         for frame in frames {
@@ -235,7 +235,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response =
             PROCESS_TABLE[node][pid].execute(ReadOps::ProcessInfo, kcb.process_token[pid]);
@@ -253,8 +253,8 @@ impl<P: Process> NrProcess<P> {
     {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let gtid = kcb.arch.hwthread_id();
-        let node = kcb.arch.node();
+        let gtid = *crate::kcb::CORE_ID;
+        let node = *crate::kcb::NODE_ID;
 
         let response = kcb.arch.process_table()[node][pid]
             .execute_mut(Op::AssignExecutor(gtid, node), kcb.process_token[pid]);
@@ -269,7 +269,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid]
             .execute_mut(Op::AllocateFrameToProcess(frame), kcb.process_token[pid]);
@@ -284,7 +284,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let kcb = super::kcb::get_kcb();
-        let node = kcb.arch.node();
+        let node = *crate::kcb::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid]
             .execute_mut(Op::DispatcherAllocation(frame), kcb.process_token[pid]);

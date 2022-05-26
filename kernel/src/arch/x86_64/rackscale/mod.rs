@@ -1,7 +1,9 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use rpc::api::{RPCHandler, RegistrationHandler};
+use alloc::boxed::Box;
+use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
+use spin::{Lazy, Mutex};
 
 mod error;
 mod fio;
@@ -15,6 +17,31 @@ mod open;
 mod rename;
 mod rw;
 pub mod syscalls;
+
+/// A handle to an RPC client
+///
+/// This is used to send requests to a remote control-plane.
+#[thread_local]
+pub static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
+    // Create network stack and instantiate RPC Client
+    // If we enable both ethernet and shmem transport, shmem takes precedence.
+    #[cfg(feature = "shmem")]
+    {
+        Mutex::new(
+            crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC"),
+        )
+    }
+    #[cfg(all(feature = "ethernet", not(feature = "shmem")))]
+    {
+        Mutex::new(
+            crate::transport::ethernet::init_ethernet_rpc(
+                smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
+                6970,
+            )
+            .expect("Failed to initialize ethernet RPC"),
+        )
+    }
+});
 
 pub use fio::FileIO;
 

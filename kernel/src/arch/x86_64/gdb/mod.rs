@@ -52,14 +52,11 @@ lazy_static! {
     /// The GDB connection state machine.
     ///
     /// This is a state machine that handles the communication with the GDB.
-    pub static ref GDB_STUB: Mutex<Option<GdbStubStateMachine<'static, KernelDebugger, GdbSerial>>> = {
+    pub static ref GDB_STUB: Mutex<Option<(GdbStubStateMachine<'static, KernelDebugger, GdbSerial>, KernelDebugger)>> = {
         let connection = wait_for_gdb_connection(GDB_REMOTE_PORT).expect("Can't connect to GDB");
-        let target = super::kcb::get_kcb()
-            .arch
-            .kdebug
-            .as_mut()
-            .expect("Need a target");
-        Mutex::new(Some(gdbstub::GdbStub::new(connection).run_state_machine(target).expect("Can't start GDB session")))
+        let mut target = KernelDebugger::new();
+        let gdb_stm = gdbstub::GdbStub::new(connection).run_state_machine(&mut target).expect("Can't start GDB session");
+        Mutex::new(Some((gdb_stm, target)))
     };
 }
 
@@ -94,13 +91,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
     if GDB_STUB.is_locked() {
         panic!("re-entrant into event_loop!");
     }
-
-    let mut gdb_stm = GDB_STUB.lock().take().unwrap();
-    let target = super::kcb::get_kcb()
-        .arch
-        .kdebug
-        .as_mut()
-        .expect("Need a target");
+    let (mut gdb_stm, mut target) = GDB_STUB.lock().take().unwrap();
 
     let mut stop_reason = target.determine_stop_reason(reason);
     debug!("event_loop stop_reason {:?}", stop_reason);
@@ -115,7 +106,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 conn.disable_irq();
                 let byte = conn.read()?;
 
-                match gdb_stm_inner.incoming_data(target, byte) {
+                match gdb_stm_inner.incoming_data(&mut target, byte) {
                     Ok(gdb) => gdb,
                     Err(GdbStubError::TargetError(e)) => {
                         error!("Debugger raised a fatal error {:?}", e);
@@ -128,7 +119,8 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 }
             }
             GdbStubStateMachine::CtrlCInterrupt(gdb_stm_inner) => {
-                match gdb_stm_inner.interrupt_handled(target, Some(ThreadStopReason::DoneStep)) {
+                match gdb_stm_inner.interrupt_handled(&mut target, Some(ThreadStopReason::DoneStep))
+                {
                     Ok(gdb) => gdb,
                     Err(e) => {
                         error!("gdbstub error {:?}", e);
@@ -152,7 +144,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
 
                 if data_to_read {
                     let byte = gdb_stm_inner.borrow_conn().read().unwrap();
-                    match gdb_stm_inner.incoming_data(target, byte) {
+                    match gdb_stm_inner.incoming_data(&mut target, byte) {
                         Ok(pumped_stm) => pumped_stm,
                         Err(GdbStubError::TargetError(e)) => {
                             error!("Target raised a fatal error: {:?}", e);
@@ -164,7 +156,7 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if let Some(reason) = stop_reason.take() {
-                    match gdb_stm_inner.report_stop(target, reason) {
+                    match gdb_stm_inner.report_stop(&mut target, reason) {
                         Ok(gdb_stm_new) => gdb_stm_new,
                         Err(GdbStubError::TargetError(e)) => {
                             error!("Target raised a fatal error {:?}", e);
@@ -179,10 +171,32 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                     // We don't have a `stop_reason` and we don't have something
                     // to read on the line. This probably means we're done and
                     // we should run again.
+                    match target.resume_with.take() {
+                        Some(ExecMode::Continue) => {
+                            //trace!("Resume execution.");
+                            let kcb = super::kcb::get_kcb();
+                            // If we were stepping, we need to remove the TF bit again for resuming
+                            if let Some(saved) = &mut kcb.arch.save_area {
+                                let mut rflags = RFlags::from_bits_truncate(saved.rflags);
+                                rflags.remove(x86::bits64::rflags::RFlags::FLAGS_TF);
+                                saved.rflags = rflags.bits();
+                            }
+                        }
+                        Some(ExecMode::SingleStep) => {
+                            trace!("Step execution, set TF flag.");
+                            let kcb = super::kcb::get_kcb();
+                            if let Some(saved) = &mut kcb.arch.save_area {
+                                saved.rflags |= RFlags::FLAGS_TF.bits();
+                            }
+                        }
+                        _ => {
+                            unimplemented!("Resume strategy not handled...");
+                        }
+                    }
                     conn.enable_irq();
                     let r = GDB_STUB
                         .lock()
-                        .replace(GdbStubStateMachine::Running(gdb_stm_inner));
+                        .replace((GdbStubStateMachine::Running(gdb_stm_inner), target));
                     assert!(
                         r.is_none(),
                         "Put something in GDB_STUB which we shouldn't have..."
@@ -192,29 +206,6 @@ pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                     unreachable!("Can't happen?");
                 }
             }
-        }
-    }
-
-    match target.resume_with.take() {
-        Some(ExecMode::Continue) => {
-            //trace!("Resume execution.");
-            let kcb = super::kcb::get_kcb();
-            // If we were stepping, we need to remove the TF bit again for resuming
-            if let Some(saved) = &mut kcb.arch.save_area {
-                let mut rflags = RFlags::from_bits_truncate(saved.rflags);
-                rflags.remove(x86::bits64::rflags::RFlags::FLAGS_TF);
-                saved.rflags = rflags.bits();
-            }
-        }
-        Some(ExecMode::SingleStep) => {
-            trace!("Step execution, set TF flag.");
-            let kcb = super::kcb::get_kcb();
-            if let Some(saved) = &mut kcb.arch.save_area {
-                saved.rflags |= RFlags::FLAGS_TF.bits();
-            }
-        }
-        _ => {
-            unimplemented!("Resume strategy not handled...");
         }
     }
 

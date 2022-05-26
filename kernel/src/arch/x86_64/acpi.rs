@@ -3,6 +3,7 @@
 
 #![allow(bad_style, dead_code, unused_variables)]
 
+use alloc::alloc;
 use core::alloc::Layout;
 use core::ffi::VaList;
 use core::ptr;
@@ -12,15 +13,10 @@ use cstr_core::CStr;
 use klogger::sprint;
 use libacpica::*;
 use log::{debug, error, info, trace};
-
-use crate::alloc::alloc;
-use crate::kcb::Kcb;
-use crate::memory::vspace::MapAction;
-
-use super::kcb::{try_get_kcb, Arch86Kcb};
-use super::memory::{paddr_to_kernel_vaddr, PAddr};
-
 use x86::io;
+
+use super::memory::{paddr_to_kernel_vaddr, PAddr};
+use crate::memory::vspace::MapAction;
 
 const ACPI_FULL_PATHNAME: u32 = 0;
 const ACPI_TYPE_INTEGER: u32 = 0x01;
@@ -42,8 +38,7 @@ pub extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
 pub extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
     let root_ptr: ACPI_PHYSICAL_ADDRESS = 0x0;
 
-    let (rsdp1_root, rsdp2_root) = try_get_kcb().map_or((None, None), |k: &mut Kcb<Arch86Kcb>| {
-        let args = k.arch.kernel_args();
+    let (rsdp1_root, rsdp2_root) = crate::KERNEL_ARGS.get().map_or((None, None), |args| {
         (Some(args.acpi1_rsdp), Some(args.acpi2_rsdp))
     });
 

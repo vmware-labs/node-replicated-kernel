@@ -347,7 +347,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
                 // code doesn't really do anything...
                 trace!(
                     "Spurious page-fault, after resolve page-table is up to date {} {} -> {:#x} {:#b} on {}",
-                    pid, faulting_address_va, paddr, rights, kcb.arch.hwthread_id()
+                    pid, faulting_address_va, paddr, rights, *crate::kcb::CORE_ID
                 );
                 let r = kcb_iret_handle(kcb);
                 r.resume()
@@ -358,7 +358,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
         }
     }
 
-    sprintln!("[IRQ] Page Fault on {}", kcb.arch.id());
+    sprintln!("[IRQ] Page Fault on {}", *crate::kcb::CORE_ID);
     sprintln!("{}", err);
 
     // Enable user-space access
@@ -390,12 +390,9 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     // Print the RIP that triggered the fault:
     sprint!("Instruction Pointer: {:#x}", a.rip);
     if !err.contains(PageFaultError::US) {
-        kcb::try_get_kcb().map(|k| {
-            sprintln!(
-                " (in ELF: {:#x})",
-                a.rip - k.arch.kernel_args().kernel_elf_offset.as_u64()
-            )
-        });
+        crate::KERNEL_ARGS
+            .get()
+            .map(|args| sprintln!(" (in ELF: {:#x})", a.rip - args.kernel_elf_offset.as_u64()));
     } else {
         sprintln!("");
     }
@@ -667,6 +664,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         assert!(a.vector < 256);
         //trace!("handle_generic_exception {:?}", a);
         acknowledge();
+        let core_id = *crate::kcb::CORE_ID;
 
         let kcb = get_kcb();
 
@@ -721,8 +719,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             gdb_serial_handler(&a);
         } else if a.vector == TLB_WORK_PENDING.into() {
             let kcb = get_kcb();
-            trace!("got an interrupt {:?}", kcb.arch.id());
-            super::tlb::dequeue(kcb.arch.id());
+            trace!("got an interrupt {:?}", core_id);
+            super::tlb::dequeue(core_id);
 
             if kcb.arch.has_executor() {
                 // Return immediately
@@ -734,7 +732,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             }
         } else if a.vector == MLNR_GC_INIT.into() {
             // nr::KernelNode::synchronize(); /* TODO: Do we need this?
-            super::tlb::dequeue(kcb.arch.id());
+            super::tlb::dequeue(core_id);
 
             let kcb = get_kcb();
             if kcb.arch.has_executor() {

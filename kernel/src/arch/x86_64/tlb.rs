@@ -19,7 +19,6 @@ use x86::apic::{
 
 use super::memory::BASE_PAGE_SIZE;
 use crate::fs::cnrfs;
-use crate::kcb;
 use crate::memory::vspace::TlbFlushHandle;
 use crate::{is_page_aligned, nr};
 
@@ -142,8 +141,7 @@ fn advance_log(log_id: usize) {
 }
 
 pub fn eager_advance_fs_replica() {
-    let kcb = kcb::get_kcb();
-    let core_id = kcb.arch.id();
+    let core_id = *crate::kcb::CORE_ID;
 
     match IPI_WORKQUEUE[core_id].pop() {
         Some(msg) => {
@@ -156,8 +154,8 @@ pub fn eager_advance_fs_replica() {
             }
         }
         None => {
-            let kcb = super::kcb::get_kcb();
-            match kcb.arch.cnr_replica.as_ref() {
+            let cnrfs = crate::fs::cnrfs::CNRFS.borrow();
+            match cnrfs.as_ref() {
                 Some(replica) => {
                     let log_id = replica.1.id();
                     // Synchronize NR-replica
@@ -165,7 +163,7 @@ pub fn eager_advance_fs_replica() {
                     // Synchronize Mlnr-replica.
                     advance_log(log_id);
                 }
-                None => unreachable!("eager_advance_fs_replica: KCB does not have cnr_replica!"),
+                None => unreachable!("eager_advance_fs_replica: CNRFS not yet initialized!"),
             };
         }
     }
@@ -212,7 +210,7 @@ fn send_ipi_multicast(ldr: u32) {
 /// It divides IPIs into clusters to avoid overhead of sending IPIs individually.
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
 pub fn shootdown(handle: TlbFlushHandle) {
-    let my_gtid = super::kcb::get_kcb().arch.id();
+    let my_gtid = *crate::kcb::CORE_ID;
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
     // Cluster ID (LDR[31:16]) is the address of the destination cluster

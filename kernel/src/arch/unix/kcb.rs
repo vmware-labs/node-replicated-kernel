@@ -7,12 +7,10 @@ use alloc::sync::Arc;
 use core::any::Any;
 
 use arrayvec::ArrayVec;
-use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use node_replication::{Replica, ReplicaToken};
 
 use crate::cmdline::BootloaderArguments;
 use crate::error::KError;
-use crate::fs::cnrfs::MlnrKernelNode;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::memory::mcache::TCacheSp;
 use crate::nr::KernelNode;
@@ -20,17 +18,14 @@ use crate::nrproc::NrProcess;
 use crate::process::{Pid, MAX_PROCESSES};
 
 use super::process::{UnixProcess, UnixThread};
-use super::{KernelArgs, MAX_NUMA_NODES};
-
-static KERNEL_ARGS: KernelArgs = KernelArgs::new();
+use super::MAX_NUMA_NODES;
 
 #[thread_local]
 static mut KCB: Kcb<ArchKcb> = {
     Kcb::new(
-        &[],
         BootloaderArguments::new("info", "init", "init", "init"),
         TCacheSp::new(0),
-        ArchKcb::new(&KERNEL_ARGS),
+        ArchKcb::new(),
         0,
     )
 };
@@ -53,31 +48,19 @@ pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut _kcb: &'static mut Kcb<A>) 
 #[repr(C)]
 pub struct ArchKcb {
     /// Arguments passed to the kernel by the bootloader.
-    kernel_args: &'static KernelArgs,
     pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
-    pub cnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
     pub current_executor: Option<Box<UnixThread>>,
 }
 
 impl ArchKcb {
-    pub const fn new(kernel_args: &'static KernelArgs) -> ArchKcb {
+    pub const fn new() -> ArchKcb {
         ArchKcb {
-            kernel_args,
             replica: None,
-            cnr_replica: None,
             current_executor: None,
         }
     }
 
-    pub fn kernel_args(&self) -> &'static KernelArgs {
-        self.kernel_args
-    }
-
     pub fn id(&self) -> usize {
-        0
-    }
-
-    pub fn max_threads(&self) -> usize {
         0
     }
 
@@ -106,17 +89,6 @@ impl ArchSpecificKcb for ArchKcb {
     type Process = UnixProcess;
 
     fn install(&mut self) {}
-
-    fn hwthread_id(&self) -> usize {
-        0
-    }
-
-    fn node(&self) -> usize {
-        atopology::MACHINE_TOPOLOGY
-            .current_thread()
-            .node_id
-            .unwrap_or(0) as usize
-    }
 
     fn current_pid(&self) -> Result<Pid, KError> {
         Err(KError::ProcessNotSet)

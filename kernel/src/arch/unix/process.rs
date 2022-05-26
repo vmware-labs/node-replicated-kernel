@@ -17,7 +17,7 @@ use node_replication::{Dispatch, Log, Replica};
 
 use crate::error::KError;
 use crate::fs::Fd;
-use crate::kcb::{self, ArchSpecificKcb};
+use crate::kcb;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::vspace::MapAction;
@@ -61,7 +61,7 @@ lazy_static! {
 
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
 
-                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
+                debug_assert_eq!(*crate::kcb::NODE_ID, 0, "Expect initialization to happen on node 0.");
                 assert!(kcb.set_mem_affinity(0).is_ok());
             }
         }

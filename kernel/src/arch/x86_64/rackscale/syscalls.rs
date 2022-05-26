@@ -1,7 +1,7 @@
 use cstr_core::CStr;
 
 use crate::arch::process::{user_virt_addr_valid, UserPtr, UserSlice};
-use crate::error::KError;
+use crate::error::KResult;
 use crate::kcb::ArchSpecificKcb;
 use crate::memory::VAddr;
 use crate::syscalls::FsDispatch;
@@ -25,7 +25,7 @@ impl Arch86ProcessDispatch for Arch86LwkSystemCall {}
 impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
 
 impl FsDispatch<u64> for Arch86LwkSystemCall {
-    fn open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn open(&self, pathname: u64, flags: u64, modes: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
@@ -34,22 +34,29 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
         let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_open(client, pid, pathname_cstr.to_bytes_with_nul(), flags, modes).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_open(
+            &mut **client,
+            pid,
+            pathname_cstr.to_bytes_with_nul(),
+            flags,
+            modes,
+        )
+        .map_err(|e| e.into())
     }
 
-    fn read(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
+    fn read(&self, fd: u64, buffer: u64, len: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
 
         let mut userslice = UserSlice::new(buffer, len as usize);
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_read(client, pid, fd, len, &mut userslice).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_read(&mut **client, pid, fd, len, &mut userslice).map_err(|e| e.into())
     }
 
-    fn write(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
+    fn write(&self, fd: u64, buffer: u64, len: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
@@ -57,21 +64,21 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let kernslice = crate::process::KernSlice::new(buffer, len as usize);
         let buff_ptr = kernslice.buffer.clone();
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_write(client, pid, fd, &buff_ptr).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_write(&mut **client, pid, fd, &buff_ptr).map_err(|e| e.into())
     }
 
-    fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
+    fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         let mut userslice = UserSlice::new(buffer, len as usize);
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_readat(client, pid, fd, len, offset as i64, &mut userslice).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_readat(&mut **client, pid, fd, len, offset as i64, &mut userslice).map_err(|e| e.into())
     }
 
-    fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
+    fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
@@ -79,18 +86,18 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let kernslice = crate::process::KernSlice::new(buffer, len as usize);
         let buff_ptr = kernslice.buffer.clone();
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_writeat(client, pid, fd, offset as i64, &buff_ptr).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_writeat(&mut **client, pid, fd, offset as i64, &buff_ptr).map_err(|e| e.into())
     }
 
-    fn close(&self, fd: u64) -> Result<(u64, u64), KError> {
+    fn close(&self, fd: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_close(client, pid, fd).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
     }
 
-    fn get_info(&self, name: u64) -> Result<(u64, u64), KError> {
+    fn get_info(&self, name: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
@@ -99,11 +106,11 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
         let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_getinfo(client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_getinfo(&mut **client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
     }
 
-    fn delete(&self, name: u64) -> Result<(u64, u64), KError> {
+    fn delete(&self, name: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
@@ -112,11 +119,11 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
         let filename_cstr = unsafe { CStr::from_ptr(filename_str_ptr.as_ptr()) };
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_delete(client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_delete(&mut **client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
     }
 
-    fn file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
+    fn file_rename(&self, oldname: u64, newname: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, oldname, 0)?;
@@ -130,9 +137,9 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let new_str_ptr = UserPtr::new(&mut new_user_ptr);
         let new_cstr = unsafe { CStr::from_ptr(new_str_ptr.as_ptr()) };
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
+        let mut client = super::RPC_CLIENT.lock();
         rpc_rename(
-            client,
+            &mut **client,
             pid,
             old_cstr.to_bytes_with_nul(),
             new_cstr.to_bytes_with_nul(),
@@ -140,7 +147,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         .map_err(|e| e.into())
     }
 
-    fn mkdir(&self, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn mkdir(&self, pathname: u64, modes: u64) -> KResult<(u64, u64)> {
         let kcb = crate::arch::kcb::get_kcb();
         let pid = kcb.arch.current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
@@ -149,7 +156,8 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
         let pathname_cstr = unsafe { CStr::from_ptr(pathname_str_ptr.as_ptr()) };
 
-        let client = kcb.arch.rpc_client.as_deref_mut().unwrap();
-        rpc_mkdir(client, pid, pathname_cstr.to_bytes_with_nul(), modes).map_err(|e| e.into())
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_mkdir(&mut **client, pid, pathname_cstr.to_bytes_with_nul(), modes)
+            .map_err(|e| e.into())
     }
 }

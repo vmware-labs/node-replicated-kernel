@@ -70,6 +70,10 @@ mod transport;
 
 pub mod panic;
 
+use spin::Once;
+
+pub static KERNEL_ARGS: Once<&'static crate::arch::KernelArgs> = Once::new();
+
 #[cfg(feature = "integration-test")]
 mod integration_tests;
 

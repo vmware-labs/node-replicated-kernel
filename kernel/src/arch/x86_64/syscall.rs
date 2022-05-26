@@ -106,7 +106,7 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
 
     fn get_core_id(&self) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        Ok((kcb.arch.id() as u64, 0))
+        Ok((*crate::kcb::CORE_ID as u64, *crate::kcb::NODE_ID as u64))
     }
 }
 

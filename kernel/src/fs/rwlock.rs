@@ -109,7 +109,7 @@ where
     /// Locks the underlying data-structure for writes. The caller can retrieve
     /// a mutable reference from the returned `WriteGuard`.
     pub fn write(&self) -> WriteGuard<T> {
-        let n: usize = crate::kcb::get_kcb().arch.max_threads();
+        let n: usize = *crate::kcb::CORES_PER_NUMA_NODE;
         // First, wait until we can acquire the writer lock.
         //while self.wlock.compare_and_swap(false, true, Ordering::Acquire) {
         loop {
@@ -141,7 +141,7 @@ where
     /// Locks the underlying data-structure for reads. Allows multiple readers to acquire the lock.
     /// Blocks until there aren't any active writers.
     pub fn read(&self) -> ReadGuard<T> {
-        let tid: usize = crate::kcb::get_kcb().arch.id();
+        let tid: usize = *crate::kcb::CORE_ID;
         // We perform a small optimization. Before attempting to acquire a read lock, we issue
         // naked reads to the write lock and wait until it is free. For that, we retrieve a
         // raw pointer to the write lock over here.

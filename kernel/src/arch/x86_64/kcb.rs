@@ -10,7 +10,6 @@ use core::pin::Pin;
 use core::ptr;
 
 use arrayvec::ArrayVec;
-use cnr::{Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
 use log::trace;
 use node_replication::Replica;
 use x86::current::segmentation;
@@ -18,18 +17,15 @@ use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
 use crate::error::KError;
-use crate::fs::cnrfs::MlnrKernelNode;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::nrproc::NrProcess;
 use crate::process::Pid;
 use crate::process::MAX_PROCESSES;
 use crate::stack::{OwnedStack, Stack};
 
-use super::gdb::KernelDebugger;
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
 use super::process::{Ring3Executor, Ring3Process};
-use super::KernelArgs;
 use super::MAX_NUMA_NODES;
 
 /// Try to retrieve the KCB by reading the gs register.
@@ -91,7 +87,7 @@ pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut Kcb<A>) {
 pub struct Arch86Kcb {
     /// Pointer to the syscall stack (this is referenced in assembly) and should
     /// therefore always remain at offset 0 of the Kcb struct!
-    pub(crate) syscall_stack_top: *mut u8,
+    pub(super) syscall_stack_top: *mut u8,
 
     /// Pointer to the save area of the core, this is referenced on trap/syscall
     /// entries to save the CPU state into it and therefore has to remain at
@@ -100,42 +96,22 @@ pub struct Arch86Kcb {
     /// State from the save_area may be copied into the `current_executor` save
     /// area to handle upcalls (in the general state it is stored/resumed from
     /// here).
-    pub save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
+    pub(super) save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
 
     /// The memory location of the TLS (`fs` base) region.
     pub(super) tls_base: *const super::tls::ThreadControlBlock,
 
     /// A per-core GdtTable
-    pub(crate) gdt: GdtTable,
+    pub(super) gdt: GdtTable,
 
     /// A per-core TSS (task-state)
-    pub(crate) tss: TaskStateSegment,
+    pub(super) tss: TaskStateSegment,
 
     /// A per-core IDT (interrupt table)
-    pub(crate) idt: IdtTable,
-
-    /// Arguments passed to the kernel by the bootloader.
-    kernel_args: &'static KernelArgs,
+    pub(super) idt: IdtTable,
 
     /// A handle to the currently active (scheduled) process.
     current_executor: Option<Box<Ring3Executor>>,
-
-    /// A handle to the node-local CNR based kernel replica.
-    pub cnr_replica: Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
-
-    /// Global id per hyperthread.
-    pub id: atopology::GlobalThreadId,
-
-    /// Global id of the NUMA node.
-    ///
-    /// Will be zero in case system doesn't have NUMA.
-    pub node_id: atopology::NodeId,
-
-    /// Debugger interface that communicates with external GDB instance.
-    pub kdebug: Option<KernelDebugger>,
-
-    /// Max number of hyperthreads on the current socket.
-    max_threads: usize,
 
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
@@ -167,12 +143,6 @@ pub struct Arch86Kcb {
     /// We switch rsp/rbp to this stack in `exec.S`.
     /// This member should probably not be touched from normal code.
     syscall_stack: Option<OwnedStack>,
-
-    /// A handle to an RPC client
-    ///
-    /// This is used to send requests to a remote control-plane.
-    #[cfg(feature = "rpc")]
-    pub rpc_client: Option<Box<dyn rpc::api::RPCClient>>,
 }
 // The `syscall_stack_top` entry must be at offset 0 of KCB (for assembly code in exec.S, isr.S & process.rs)
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, syscall_stack_top), 0);
@@ -182,9 +152,8 @@ static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, save_area),
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, tls_base), 16);
 
 impl Arch86Kcb {
-    pub(crate) fn new(kernel_args: &'static KernelArgs) -> Arch86Kcb {
+    pub(crate) fn new() -> Arch86Kcb {
         Arch86Kcb {
-            kernel_args,
             syscall_stack_top: ptr::null_mut(),
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
@@ -196,89 +165,7 @@ impl Arch86Kcb {
             syscall_stack: None,
             unrecoverable_fault_stack: None,
             debug_stack: None,
-            cnr_replica: None,
-            id: 0,
-            node_id: 0,
-            max_threads: 0,
-            kdebug: None,
-            #[cfg(feature = "rpc")]
-            rpc_client: None,
         }
-    }
-
-    #[cfg(all(feature = "rpc", feature = "ethernet"))]
-    pub fn init_ethernet_rpc(
-        &mut self,
-        server_ip: smoltcp::wire::IpAddress,
-        server_port: u16,
-    ) -> Result<(), KError> {
-        use rpc::client::Client as SmolRPCClient;
-        use rpc::transport::TCPTransport;
-        use rpc::RPCClient;
-
-        use crate::cmdline::Mode;
-        use crate::transport::ethernet::init_network;
-
-        let mode = super::kcb::get_kcb().cmdline.mode;
-        if self.rpc_client.is_none() && (mode == Mode::Client || mode == Mode::Controller) {
-            let iface = init_network()?;
-            let rpc_transport =
-                Box::try_new(TCPTransport::new(Some(server_ip), server_port, iface))?;
-            let mut client =
-                Box::try_new(SmolRPCClient::new(rpc_transport)).expect("OOM during init");
-            client.connect().unwrap();
-            self.rpc_client = Some(client);
-
-            Ok(())
-        } else {
-            Err(KError::UnableToInitEthernetRPC)
-        }
-    }
-
-    #[cfg(all(feature = "rpc", feature = "shmem"))]
-    pub fn init_shmem_rpc(&mut self) {
-        use rpc::client_shmem::ShmemClient;
-        use rpc::RPCClient;
-
-        use crate::cmdline::Mode;
-        use crate::transport::shmem::create_shmem_transport;
-
-        let mode = super::kcb::get_kcb().cmdline.mode;
-        if self.rpc_client.is_none() && (mode == Mode::Client) {
-            // Set up the transport
-            let transport =
-                Box::try_new(create_shmem_transport().expect("Failed to create shmem transport"))
-                    .expect("OOM during init");
-
-            // Create the client
-            let mut client = Box::try_new(ShmemClient::new(transport)).expect("OOM during init");
-            client.connect().unwrap();
-            self.rpc_client = Some(client);
-        }
-    }
-
-    pub fn setup_cnr(
-        &mut self,
-        replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
-        idx_token: MlnrReplicaToken,
-    ) {
-        let thread = atopology::MACHINE_TOPOLOGY.current_thread();
-        self.id = thread.id as usize;
-        self.node_id = thread.node_id.unwrap_or(0);
-
-        self.max_threads = match atopology::MACHINE_TOPOLOGY.nodes().nth(0) {
-            Some(node) => node.threads().count(),
-            None => 1,
-        };
-        self.cnr_replica = Some((replica, idx_token));
-    }
-
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
-    pub fn max_threads(&self) -> usize {
-        self.max_threads
     }
 
     /// Swaps out current process with a new process. Returns the old process.
@@ -361,19 +248,6 @@ impl Arch86Kcb {
         }
     }
 
-    pub fn kernel_args(&self) -> &'static KernelArgs {
-        self.kernel_args
-    }
-
-    pub fn attach_debugger(&mut self, debugger: KernelDebugger) -> Result<(), KError> {
-        if self.kdebug.is_none() {
-            self.kdebug = Some(debugger);
-            Ok(())
-        } else {
-            Err(KError::DebuggerAlreadyAttached)
-        }
-    }
-
     #[cfg(feature = "integration-test")]
     pub fn fault_stack_range(&self) -> (u64, u64) {
         (
@@ -396,14 +270,6 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
             self.gdt.install();
             self.idt.install();
         }
-    }
-
-    fn hwthread_id(&self) -> usize {
-        self.id
-    }
-
-    fn node(&self) -> usize {
-        self.node_id
     }
 
     fn current_pid(&self) -> Result<Pid, KError> {

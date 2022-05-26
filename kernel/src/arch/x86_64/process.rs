@@ -25,7 +25,7 @@ use x86::{controlregs, Ring};
 use crate::arch::memory::KERNEL_BASE;
 use crate::error::KError;
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
-use crate::kcb::{self, ArchSpecificKcb};
+use crate::kcb;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, MemType, PAddr, VAddr};
@@ -71,7 +71,7 @@ lazy_static! {
 
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&log, nrp));
 
-                debug_assert_eq!(kcb.arch.node(), 0, "Expect initialization to happen on node 0.");
+                debug_assert_eq!(*crate::kcb::NODE_ID, 0, "Expect initialization to happen on node 0.");
                 kcb.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
             }
         }
@@ -854,8 +854,11 @@ impl Executor for Ring3Executor {
 
     /// Start the process (run it for the first time).
     fn start(&self) -> Self::Resumer {
-        let kcb = kcb::get_kcb();
-        assert_eq!(kcb.arch.node(), self.affinity, "Run on remote replica?");
+        assert_eq!(
+            *crate::kcb::NODE_ID,
+            self.affinity,
+            "Run on remote replica?"
+        );
 
         self.maybe_switch_vspace();
         let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
@@ -876,7 +879,7 @@ impl Executor for Ring3Executor {
                 self.stack_top(),
                 cpu_ctl,
                 kpi::upcall::NEW_CORE,
-                kcb.arch.id() as u64,
+                *crate::kcb::CORE_ID as u64,
             )
         }
     }
@@ -1449,13 +1452,11 @@ pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
     allocate_dispatchers::<Ring3Process>(pid)?;
 
     // Set current thread to run executor from our process (on the current core)
-    let kcb = kcb::get_kcb();
-
     let _gtid = nr::KernelNode::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
-        Some(kcb.arch.node_id),
-        Some(kcb.arch.id),
+        Some(*crate::kcb::NODE_ID),
+        Some(*crate::kcb::CORE_ID),
     )?;
 
     Ok(pid)

@@ -22,12 +22,17 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
+#[cfg(not(feature = "bsp-only"))]
 use alloc::vec::Vec;
 use core::mem::transmute;
-use core::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(feature = "bsp-only"))]
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
 
 use crate::cmdline::BootloaderArguments;
-use crate::fs::cnrfs::{MlnrKernelNode, Modify};
+use crate::fs::cnrfs::MlnrKernelNode;
+#[cfg(not(feature = "bsp-only"))]
+use crate::fs::cnrfs::Modify;
 use crate::kcb::Kcb;
 use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};
@@ -36,9 +41,13 @@ use crate::ExitReason;
 
 use apic::ApicDriver;
 use arrayvec::ArrayVec;
-use cnr::{Log as MlnrLog, Replica as MlnrReplica};
+#[cfg(not(feature = "bsp-only"))]
+use cnr::Log as MlnrLog;
+use cnr::Replica as MlnrReplica;
 use driverkit::DriverControl;
-use fallible_collections::{FallibleVecGlobal, TryClone};
+#[cfg(not(feature = "bsp-only"))]
+use fallible_collections::FallibleVecGlobal;
+use fallible_collections::TryClone;
 use klogger::sprint;
 use log::{debug, error, info, trace};
 use node_replication::{Log, Replica};
@@ -64,6 +73,7 @@ pub mod irq;
 pub mod kcb;
 pub mod memory;
 pub mod process;
+pub mod signals;
 pub mod syscall;
 pub mod timer;
 pub mod tlb;
@@ -182,8 +192,6 @@ struct AppCoreArgs {
     _mem_region: Frame,
     _pmem_region: Option<Frame>,
     cmdline: BootloaderArguments,
-    kernel_binary: &'static [u8],
-    kernel_args: &'static KernelArgs,
     global_memory: &'static GlobalMemory,
     global_pmem: &'static GlobalMemory,
     thread: atopology::ThreadId,
@@ -212,9 +220,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let start = rawtime::Instant::now();
 
     let emanager = mcache::TCacheSp::new(args.node);
-    let arch = kcb::Arch86Kcb::new(args.kernel_args);
-    let mut kcb =
-        Kcb::<kcb::Arch86Kcb>::new(args.kernel_binary, args.cmdline, emanager, arch, args.node);
+    let arch = kcb::Arch86Kcb::new();
+    let mut kcb = Kcb::<kcb::Arch86Kcb>::new(args.cmdline, emanager, arch, args.node);
 
     kcb.set_global_mem(args.global_memory);
     kcb.set_mem_manager(mcache::TCache::new(args.node));
@@ -242,7 +249,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     static_kcb.install();
     // Install thread-local storage for BSP
-    if let Some(tls_args) = &args.kernel_args.tls_info {
+
+    if let Some(tls_args) = crate::KERNEL_ARGS.get().and_then(|k| k.tls_info.as_ref()) {
         use tls::ThreadControlBlock;
         unsafe {
             // Safety for `ThreadControlBlock::init`:
@@ -268,10 +276,8 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         let kcb = kcb::get_kcb();
         let local_ridx = args.replica.register().unwrap();
         kcb.setup_node_replication(args.replica.clone(), local_ridx);
-
-        let fs_replica = args.fs_replica.register().unwrap();
-        kcb.arch.setup_cnr(args.fs_replica.clone(), fs_replica);
         kcb.register_with_process_replicas();
+        crate::fs::cnrfs::init_cnrfs_on_thread(args.fs_replica.clone());
 
         // Don't modify this line without adjusting `coreboot` integration test:
         info!(
@@ -305,8 +311,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 #[cfg(not(feature = "bsp-only"))]
 fn boot_app_cores(
     cmdline: BootloaderArguments,
-    kernel_binary: &'static [u8],
-    kernel_args: &'static KernelArgs,
     log: Arc<Log<'static, Op>>,
     bsp_replica: Arc<Replica<'static, KernelNode>>,
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
@@ -395,8 +399,6 @@ fn boot_app_cores(
             _mem_region: mem_region,
             _pmem_region: pmem_region,
             cmdline,
-            kernel_binary,
-            kernel_args,
             node,
             global_memory,
             global_pmem,
@@ -566,7 +568,6 @@ fn map_physical_persistent_memory() {
 #[no_mangle]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
     use crate::memory::LARGE_PAGE_SIZE;
-    use core::slice;
 
     sprint!("\r\n");
     enable_sse();
@@ -613,17 +614,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Initializes the serial console.
     // (this is already done in a very basic form by klogger/init_logging())
     debug::init();
-
-    // Get the kernel binary (to later store it in the KCB)
-    // The binary is useful for symbol name lookups when printing stacktraces
-    // in case things go wrong (see panic.rs).
-    info!("Kernel binary: {:?}", kernel_args.modules[0]);
-    let kernel_binary: &'static [u8] = unsafe {
-        slice::from_raw_parts(
-            kernel_args.modules[0].base().as_u64() as *const u8,
-            kernel_args.modules[0].size(),
-        )
-    };
 
     // Set up early memory management
     //
@@ -672,14 +662,17 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
     }
+    // Initialize kernel arguments as global
+    crate::KERNEL_ARGS.call_once(|| kernel_args);
+
     let emanager = emanager
         .expect("Couldn't build an early physical memory manager, increase system main memory?");
     // Needs to be done before we switch address space
     lazy_static::initialize(&vspace::INITIAL_VSPACE);
-    let arch = kcb::Arch86Kcb::new(kernel_args);
+    let arch = kcb::Arch86Kcb::new();
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = Kcb::new(kernel_binary, cmdline, emanager, arch, 0);
+    let mut kcb = Kcb::new(cmdline, emanager, arch, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
     let static_kcb = unsafe {
@@ -837,8 +830,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
-    // Create the global operation log and first replica
-    // and store it in the BSP kcb
+    // Create the global operation log and first replica and store it in the BSP
+    // kcb
     let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
         .expect("Not enough memory to initialize system");
     let bsp_replica = Replica::<KernelNode>::new(&log);
@@ -848,60 +841,15 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
     }
 
-    let num_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
-    let func = move |rid: &[AtomicBool; cnr::MAX_REPLICAS_PER_LOG], idx: usize| {
-        assert_eq!(rid.len(), cnr::MAX_REPLICAS_PER_LOG);
-        for replica in 0..num_nodes {
-            if rid[replica].load(Ordering::Relaxed) == true {
-                let mut cores = atopology::MACHINE_TOPOLOGY
-                    .nodes()
-                    .nth(replica)
-                    .unwrap()
-                    .threads();
-                let core_id = cores.nth(idx - 1).unwrap().id;
-                trace!(
-                    "Replica {} needs to make progress on Log {}; use core_id {:?}",
-                    replica + 1,
-                    idx,
-                    core_id
-                );
-                crate::arch::tlb::advance_replica(core_id, idx);
-                rid[replica].store(false, Ordering::Relaxed);
-            }
-        }
-    };
-
-    let cores_per_node = atopology::MACHINE_TOPOLOGY
-        .nodes()
-        .nth(0)
-        .map(|node| node.threads().count())
-        .unwrap_or(1);
-
-    let mut fs_logs: Vec<Arc<MlnrLog<Modify>>> =
-        Vec::try_with_capacity(cores_per_node).expect("Not enough memory to initialize system");
-    for i in 0..cores_per_node {
-        // Log idx in range [1, cores_per_node+1]
-        let mut log = Arc::try_new(MlnrLog::<Modify>::new(LARGE_PAGE_SIZE, i + 1))
-            .expect("Not enough memory to initialize system");
-
-        // TODO(api): `func` should be passed as part of constructor:
-        unsafe { Arc::get_mut_unchecked(&mut log).update_closure(func) };
-
-        debug_assert!(fs_logs.capacity() > i, "No re-allocation for fs_logs.");
-        fs_logs.push(log);
-    }
-
-    // Construct first replica
+    // Starting to initialize file-system
+    let fs_logs = crate::fs::cnrfs::allocate_logs();
+    // Construct the first replica
     let fs_replica = MlnrReplica::<MlnrKernelNode>::new(
         fs_logs
             .try_clone()
             .expect("Not enough memory to initialize system"),
     );
-    let local_ridx = fs_replica.register().unwrap();
-    {
-        let kcb = kcb::get_kcb();
-        kcb.arch.setup_cnr(fs_replica.clone(), local_ridx);
-    }
+    crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
 
     // Intialize PCI
     crate::pci::init();
@@ -914,11 +862,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     #[cfg(feature = "gdb")]
     {
-        let target = gdb::KernelDebugger::new();
-        let kcb = kcb::get_kcb();
-        kcb.arch
-            .attach_debugger(target)
-            .expect("Can't set debug target");
         lazy_static::initialize(&gdb::GDB_STUB);
         // Safety:
         // - IDT is set-up, interrupts are working
@@ -926,36 +869,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
     }
 
+    #[cfg(feature = "rackscale")]
+    if cmdline.mode == crate::cmdline::Mode::Client {
+        let _ = spin::lazy::Lazy::force(&rackscale::RPC_CLIENT);
+    }
+
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]
-    boot_app_cores(
-        cmdline,
-        kernel_binary,
-        kernel_args,
-        log.clone(),
-        bsp_replica,
-        fs_logs,
-        fs_replica,
-    );
-
-    // Create network stack and instantiate RPC Client
-    // If we enable both ethernet and shmem transport, shmem takes precedence.
-    #[cfg(all(feature = "rackscale", feature = "shmem"))]
-    {
-        let kcb = kcb::get_kcb();
-        kcb.arch.init_shmem_rpc();
-    }
-    #[cfg(all(feature = "rackscale", feature = "ethernet"))]
-    {
-        let kcb = kcb::get_kcb();
-        match kcb
-            .arch
-            .init_ethernet_rpc(smoltcp::wire::IpAddress::v4(172, 31, 0, 11), 6970)
-        {
-            Ok(()) => (),
-            Err(e) => log::warn!("Failed to initialize ethernet RPC: {}", e),
-        }
-    }
+    boot_app_cores(cmdline, log.clone(), bsp_replica, fs_logs, fs_replica);
 
     // Done with initialization, now we go in
     // the arch-independent part:

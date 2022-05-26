@@ -343,9 +343,11 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
 
     // Lookup binary of the process
     let mut mod_file = None;
-    for module in &kcb.arch.kernel_args().modules {
-        if module.name() == binary {
-            mod_file = Some(module);
+    if let Some(modules) = crate::KERNEL_ARGS.get().map(|args| &args.modules) {
+        for module in modules {
+            if module.name() == binary {
+                mod_file = Some(module);
+            }
         }
     }
 

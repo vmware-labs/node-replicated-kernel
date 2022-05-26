@@ -6,7 +6,7 @@
 use core::intrinsics::unlikely;
 
 use crate::error::KError;
-use crate::kcb::{self, ArchSpecificKcb};
+use crate::kcb;
 use crate::nr;
 use crate::nrproc::NrProcess;
 use crate::process::{Executor, ResumeHandle};
@@ -39,7 +39,7 @@ pub fn schedule() -> ! {
         if let Some((replica, token)) = kcb.replica.as_ref() {
             loop {
                 let response =
-                    replica.execute(nr::ReadOps::CurrentProcess(kcb.arch.hwthread_id()), *token);
+                    replica.execute(nr::ReadOps::CurrentProcess(*crate::kcb::CORE_ID), *token);
 
                 match response {
                     Ok(nr::NodeResult::CoreInfo(ci)) => {

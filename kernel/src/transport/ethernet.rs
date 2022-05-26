@@ -12,14 +12,14 @@ use vmxnet3::smoltcp::DevQueuePhy;
 use vmxnet3::vmx::VMXNet3;
 
 use crate::cmdline::Mode;
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
 use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
 #[allow(unused)]
-pub fn init_network<'a>() -> Result<Interface<'a, DevQueuePhy>, KError> {
+pub fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
     const VMWARE_INC: u16 = 0x15ad;
     const VMXNET_DEV: u16 = 0x07b0;
     if let Some(vmxnet3_dev) = claim_device(VMWARE_INC, VMXNET_DEV) {
@@ -82,4 +82,22 @@ pub fn init_network<'a>() -> Result<Interface<'a, DevQueuePhy>, KError> {
     } else {
         Err(KError::VMXNet3DeviceNotFound)
     }
+}
+
+#[cfg(feature = "rpc")]
+#[allow(unused)]
+pub fn init_ethernet_rpc(
+    server_ip: smoltcp::wire::IpAddress,
+    server_port: u16,
+) -> KResult<alloc::boxed::Box<rpc::client::Client>> {
+    use alloc::boxed::Box;
+    use rpc::client::Client;
+    use rpc::transport::TCPTransport;
+    use rpc::RPCClient;
+
+    let iface = init_network()?;
+    let rpc_transport = Box::try_new(TCPTransport::new(Some(server_ip), server_port, iface))?;
+    let mut client = Box::try_new(Client::new(rpc_transport))?;
+    client.connect()?;
+    Ok(client)
 }

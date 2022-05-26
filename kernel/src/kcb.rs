@@ -10,6 +10,7 @@ use core::fmt::Debug;
 use arrayvec::ArrayVec;
 use node_replication::{Replica, ReplicaToken};
 use slabmalloc::ZoneAllocator;
+use spin::Lazy;
 
 use crate::arch::kcb::init_kcb;
 use crate::arch::process::PROCESS_TABLE;
@@ -25,6 +26,27 @@ use crate::nrproc::NrProcess;
 use crate::process::{Pid, Process, MAX_PROCESSES};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
+
+/// The core id of the current core (hardware thread).
+#[thread_local]
+pub static CORE_ID: Lazy<usize> =
+    Lazy::new(|| atopology::MACHINE_TOPOLOGY.current_thread().id as usize);
+
+/// The NUMA node id of the current core (hardware thread).
+#[thread_local]
+pub static NODE_ID: Lazy<usize> = Lazy::new(|| {
+    atopology::MACHINE_TOPOLOGY
+        .current_thread()
+        .node_id
+        .unwrap_or(0)
+});
+
+/// How many cores (hardware threads) we have per NUMA node.
+pub static CORES_PER_NUMA_NODE: Lazy<usize> =
+    Lazy::new(|| match atopology::MACHINE_TOPOLOGY.nodes().next() {
+        Some(node) => node.threads().count(),
+        None => 1,
+    });
 
 pub trait MemManager: PhysicalPageProvider + AllocatorStatistics + GrowBackend {}
 
@@ -81,9 +103,6 @@ where
 
     pub cmdline: BootloaderArguments,
 
-    /// A pointer to the memory location of the kernel (ELF binary).
-    kernel_binary: &'static [u8],
-
     /// A handle to the early page-allocator.
     pub emanager: RefCell<TCacheSp>,
 
@@ -121,7 +140,6 @@ where
 
 impl<A: ArchSpecificKcb> Kcb<A> {
     pub const fn new(
-        kernel_binary: &'static [u8],
         cmdline: BootloaderArguments,
         emanager: TCacheSp,
         arch: A,
@@ -133,7 +151,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             arch,
             cmdline,
             in_panic_mode: false,
-            kernel_binary,
             emanager: RefCell::new(emanager),
             ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
             node,
@@ -158,7 +175,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     }
 
     pub fn register_with_process_replicas(&mut self) {
-        let node = self.arch.node();
+        let node = *NODE_ID;
         debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
 
         for pid in 0..MAX_PROCESSES {
@@ -314,10 +331,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
 
-    pub fn kernel_binary(&self) -> &'static [u8] {
-        self.kernel_binary
-    }
-
     pub fn current_pid(&self) -> Result<Pid, KError> {
         self.arch.current_pid()
     }
@@ -326,8 +339,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 pub trait ArchSpecificKcb {
     type Process: Process + Sync;
 
-    fn node(&self) -> usize;
-    fn hwthread_id(&self) -> usize;
     fn install(&mut self);
     fn current_pid(&self) -> Result<Pid, KError>;
 

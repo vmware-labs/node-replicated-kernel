@@ -49,12 +49,16 @@ impl KernelDebugger {
         addr: u64,
         _kind: usize,
     ) -> TargetResult<bool, Self> {
-        let kcb = super::super::kcb::get_kcb();
+        let kernel_elf_offset = crate::KERNEL_ARGS
+            .get()
+            .map_or(0x0, |args| args.kernel_elf_offset.as_u64());
         trace!(
-            "add_breakpoint {:#x} (in ELF: {:#x}",
+            "add_breakpoint {:#x} (in ELF: {:#x})",
             addr,
-            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
+            addr - kernel_elf_offset,
         );
+
+        let kcb = super::super::kcb::get_kcb();
         let sa = kcb
             .arch
             .save_area
@@ -102,12 +106,16 @@ impl KernelDebugger {
         addr: u64,
         _kind: usize,
     ) -> TargetResult<bool, Self> {
-        let kcb = super::super::kcb::get_kcb();
+        let kernel_elf_offset = crate::KERNEL_ARGS
+            .get()
+            .map_or(0x0, |args| args.kernel_elf_offset.as_u64());
         trace!(
             "remove_breakpoint {:#x} (in ELF: {:#x}",
             addr,
-            addr - kcb.arch.kernel_args().kernel_elf_offset.as_u64(),
+            addr - kernel_elf_offset,
         );
+
+        let kcb = super::super::kcb::get_kcb();
         let sa = kcb
             .arch
             .save_area

@@ -2,22 +2,88 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::sync::Arc;
+use core::cell::RefCell;
 
-use crate::arch::process::UserSlice;
-use crate::error::KError;
-use crate::prelude::*;
-use crate::process::{userptr_to_str, KernSlice, Pid};
-
-use cnr::{Dispatch, LogMapper};
+use cnr::{Dispatch, Log, LogMapper, Replica as MlnrReplica, ReplicaToken as MlnrReplicaToken};
+use fallible_collections::FallibleVecGlobal;
 use hashbrown::HashMap;
 use kpi::io::*;
 use kpi::FileOperation;
+use log::trace;
+
+use crate::arch::process::UserSlice;
+use crate::error::KError;
+use crate::memory::LARGE_PAGE_SIZE;
+use crate::prelude::*;
+use crate::process::{userptr_to_str, KernSlice, Pid};
 
 use super::fd::FileDesc;
 use super::{
     Buffer, FileDescriptor, FileSystem, Filename, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset,
     FD, MNODE_OFFSET,
 };
+
+/// A handle to the node-local CNR based kernel replica.
+#[thread_local]
+pub static CNRFS: RefCell<Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>> =
+    RefCell::new(None);
+
+/// Initializes the CNRFS thread local variable.
+///
+/// Function should only be called during initialization and must be called on
+/// every thread/core.
+pub fn init_cnrfs_on_thread(replica: Arc<MlnrReplica<'static, MlnrKernelNode>>) {
+    let ridx = replica.register().unwrap();
+    CNRFS.borrow_mut().replace((replica, ridx));
+}
+
+/// Allocates the necessary amount (#cores per NUMA node) of logs for CNRFS.
+pub fn allocate_logs() -> Vec<Arc<Log<'static, Modify>>> {
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    let cores_per_node = atopology::MACHINE_TOPOLOGY
+        .nodes()
+        .next()
+        .map(|node| node.threads().count())
+        .unwrap_or(1);
+    let num_nodes = atopology::MACHINE_TOPOLOGY.num_nodes();
+
+    let gc_poke = move |rid: &[AtomicBool; cnr::MAX_REPLICAS_PER_LOG], idx: usize| {
+        assert_eq!(rid.len(), cnr::MAX_REPLICAS_PER_LOG);
+        for (replica, replica_signal) in rid.iter().enumerate().take(num_nodes) {
+            if replica_signal.load(Ordering::Relaxed) {
+                let mut cores = atopology::MACHINE_TOPOLOGY
+                    .nodes()
+                    .nth(replica)
+                    .unwrap()
+                    .threads();
+                let core_id = cores.nth(idx - 1).unwrap().id;
+                trace!(
+                    "Replica {} needs to make progress on Log {}; use core_id {:?}",
+                    replica + 1,
+                    idx,
+                    core_id
+                );
+                crate::arch::signals::advance_replica(core_id, idx);
+                replica_signal.store(false, Ordering::Relaxed);
+            }
+        }
+    };
+
+    let mut fs_logs: Vec<Arc<Log<Modify>>> =
+        Vec::try_with_capacity(cores_per_node).expect("Not enough memory to initialize system");
+    for i in 0..cores_per_node {
+        // Log idx in range [1, cores_per_node+1]
+        let mut log = Log::<Modify>::new(LARGE_PAGE_SIZE, i + 1);
+        log.update_closure(gc_poke);
+        let arc_log = Arc::try_new(log).expect("Not enough memory to initialize system");
+
+        debug_assert!(fs_logs.capacity() > i, "No re-allocation for fs_logs.");
+        fs_logs.push(arc_log);
+    }
+
+    fs_logs
+}
 
 #[derive(Default)]
 pub struct MlnrKernelNode {
@@ -32,7 +98,7 @@ pub struct MlnrKernelNode {
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub enum Modify {
     ProcessAdd(Pid),
-    ProcessRemove(Pid),
+    //ProcessRemove(Pid),
     FileOpen(Pid, String, Flags, Modes),
     FileWrite(Pid, FD, Mnode, Arc<[u8]>, Len, Offset),
     FileClose(Pid, FD),
@@ -48,7 +114,7 @@ impl LogMapper for Modify {
         logs.clear();
         match self {
             Modify::ProcessAdd(_pid) => push_to_all(nlogs, logs),
-            Modify::ProcessRemove(_pid) => push_to_all(nlogs, logs),
+            //Modify::ProcessRemove(_pid) => push_to_all(nlogs, logs),
             Modify::FileOpen(_pid, _filename, _flags, _modes) => push_to_all(nlogs, logs),
             Modify::FileWrite(_pid, _fd, mnode, _kernslice, _len, _offset) => {
                 logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
@@ -101,7 +167,7 @@ impl LogMapper for Access {
 #[derive(Clone, Debug)]
 pub enum MlnrNodeResult {
     ProcessAdded(Pid),
-    ProcessRemoved(Pid),
+    //ProcessRemoved(Pid),
     FileOpened(FD),
     FileAccessed(Len),
     FileClosed(u64),
@@ -117,9 +183,8 @@ pub enum MlnrNodeResult {
 /// two and maybe move all the functions to a separate file?
 impl MlnrKernelNode {
     pub fn add_process(pid: usize) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut_scan(Modify::ProcessAdd(pid), *token);
@@ -132,9 +197,8 @@ impl MlnrKernelNode {
     }
 
     pub fn map_fd(pid: Pid, pathname: u64, flags: u64, modes: u64) -> Result<(FD, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename = userptr_to_str(pathname)?;
@@ -161,10 +225,10 @@ impl MlnrKernelNode {
             Ok((mnode, _)) => mnode,
             Err(_) => return Err(KError::InvalidFileDescriptor),
         };
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch.cnr_replica.as_ref().map_or(
-            Err(KError::ReplicaNotSet),
-            |(replica, token)| match op {
+        let cnrfs = CNRFS.borrow();
+        cnrfs
+            .as_ref()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| match op {
                 FileOperation::Write | FileOperation::WriteAt => {
                     let kernslice = KernSlice::new(buffer, len as usize);
 
@@ -193,14 +257,12 @@ impl MlnrKernelNode {
                     }
                 }
                 _ => unreachable!(),
-            },
-        )
+            })
     }
 
     pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut_scan(Modify::FileClose(pid, fd), *token);
@@ -214,9 +276,8 @@ impl MlnrKernelNode {
     }
 
     pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename = userptr_to_str(name)?;
@@ -232,10 +293,8 @@ impl MlnrKernelNode {
 
     pub fn file_info(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
         let (mnode, _) = MlnrKernelNode::filename_to_mnode(pid, name)?;
-
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::FileInfo(pid, name, mnode), *token);
@@ -249,9 +308,8 @@ impl MlnrKernelNode {
     }
 
     pub fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let oldfilename = userptr_to_str(oldname)?;
@@ -268,9 +326,8 @@ impl MlnrKernelNode {
     }
 
     pub fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let filename = userptr_to_str(pathname)?;
@@ -287,9 +344,8 @@ impl MlnrKernelNode {
 
     #[inline(always)]
     pub fn fd_to_mnode(pid: Pid, fd: FD) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::FdToMnode(pid, fd), *token);
@@ -304,9 +360,8 @@ impl MlnrKernelNode {
 
     #[inline(always)]
     pub fn filename_to_mnode(pid: Pid, filename: Filename) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::FileNameToMnode(pid, filename), *token);
@@ -320,9 +375,8 @@ impl MlnrKernelNode {
     }
 
     pub fn synchronize_log(log_id: usize) -> Result<(u64, u64), KError> {
-        let kcb = crate::kcb::get_kcb();
-        kcb.arch
-            .cnr_replica
+        let cnrfs = CNRFS.borrow();
+        cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute(Access::Synchronize(log_id), *token);
@@ -437,12 +491,11 @@ impl Dispatch for MlnrKernelNode {
                 Ok(MlnrNodeResult::ProcessAdded(pid))
             }
 
-            Modify::ProcessRemove(pid) => {
-                let mut pmap = self.process_map.write();
-                let _file_desc = pmap.remove(&pid).ok_or(KError::NoFileDescForPid)?;
-                Ok(MlnrNodeResult::ProcessRemoved(pid))
-            }
-
+            //            Modify::ProcessRemove(pid) => {
+            //                let mut pmap = self.process_map.write();
+            //                let _file_desc = pmap.remove(&pid).ok_or(KError::NoFileDescForPid)?;
+            //                Ok(MlnrNodeResult::ProcessRemoved(pid))
+            //            }
             Modify::FileOpen(pid, filename, flags, modes) => {
                 let flags = FileFlags::from(flags);
                 let mnode = self.fs.lookup(&filename);

@@ -15,7 +15,7 @@ use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::memory::mcache::TCacheSp;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
-use crate::process::{Pid, MAX_PROCESSES};
+use crate::process::MAX_PROCESSES;
 
 use super::process::{UnixProcess, UnixThread};
 use super::MAX_NUMA_NODES;
@@ -64,14 +64,6 @@ impl ArchKcb {
         0
     }
 
-    #[allow(clippy::boxed_local)]
-    pub fn swap_current_executor(
-        &mut self,
-        _current_executor: Box<UnixThread>,
-    ) -> Option<Box<UnixThread>> {
-        None
-    }
-
     pub fn has_executor(&self) -> bool {
         self.current_executor.is_some()
     }
@@ -89,10 +81,6 @@ impl ArchSpecificKcb for ArchKcb {
     type Process = UnixProcess;
 
     fn install(&mut self) {}
-
-    fn current_pid(&self) -> Result<Pid, KError> {
-        Err(KError::ProcessNotSet)
-    }
 
     #[allow(clippy::type_complexity)] // fix this once `associated_type_defaults` works
     fn process_table(

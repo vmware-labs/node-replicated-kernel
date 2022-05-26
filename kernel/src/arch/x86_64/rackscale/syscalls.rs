@@ -2,7 +2,6 @@ use cstr_core::CStr;
 
 use crate::arch::process::{user_virt_addr_valid, UserPtr, UserSlice};
 use crate::error::KResult;
-use crate::kcb::ArchSpecificKcb;
 use crate::memory::VAddr;
 use crate::syscalls::FsDispatch;
 use crate::syscalls::SystemCallDispatch;
@@ -26,8 +25,7 @@ impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
 
 impl FsDispatch<u64> for Arch86LwkSystemCall {
     fn open(&self, pathname: u64, flags: u64, modes: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
 
         let mut pathname_user_ptr = VAddr::from(pathname);
@@ -46,8 +44,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn read(&self, fd: u64, buffer: u64, len: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
 
         let mut userslice = UserSlice::new(buffer, len as usize);
@@ -57,8 +54,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn write(&self, fd: u64, buffer: u64, len: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
 
         let kernslice = crate::process::KernSlice::new(buffer, len as usize);
@@ -69,8 +65,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         let mut userslice = UserSlice::new(buffer, len as usize);
 
@@ -79,8 +74,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
 
         let kernslice = crate::process::KernSlice::new(buffer, len as usize);
@@ -91,15 +85,13 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn close(&self, fd: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let mut client = super::RPC_CLIENT.lock();
         rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
     }
 
     fn get_info(&self, name: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
 
         let mut filename_user_ptr = VAddr::from(name);
@@ -111,8 +103,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn delete(&self, name: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
 
         let mut filename_user_ptr = VAddr::from(name);
@@ -124,8 +115,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn file_rename(&self, oldname: u64, newname: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, oldname, 0)?;
         let _r = user_virt_addr_valid(pid, newname, 0)?;
 
@@ -148,8 +138,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn mkdir(&self, pathname: u64, modes: u64) -> KResult<(u64, u64)> {
-        let kcb = crate::arch::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
 
         let mut pathname_user_ptr = VAddr::from(pathname);

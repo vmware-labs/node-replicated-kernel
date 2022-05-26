@@ -11,7 +11,6 @@ use log::{error, trace};
 use crate::arch::process::user_virt_addr_valid;
 use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
-use crate::kcb::ArchSpecificKcb;
 
 /// FileOperation: Arch specific implementations
 pub trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
@@ -315,71 +314,61 @@ pub trait CnrFsDispatch {}
 
 impl<T: CnrFsDispatch> FsDispatch<u64> for T {
     fn open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
         cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
     }
 
     fn read(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::Read, pid, fd, buffer, len, -1)
     }
 
     fn write(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::Write, pid, fd, buffer, len, -1)
     }
 
     fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::ReadAt, pid, fd, buffer, len, offset as i64)
     }
 
     fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, buffer, len)?;
         cnrfs::MlnrKernelNode::file_io(FileOperation::WriteAt, pid, fd, buffer, len, offset as i64)
     }
 
     fn close(&self, fd: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
     }
 
     fn get_info(&self, name: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
         cnrfs::MlnrKernelNode::file_info(pid, name)
     }
 
     fn delete(&self, name: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, name, 0)?;
         cnrfs::MlnrKernelNode::file_delete(pid, name)
     }
 
     fn file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, oldname, 0)?;
         let _r = user_virt_addr_valid(pid, newname, 0)?;
         cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)
     }
 
     fn mkdir(&self, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let pid = kcb.arch.current_pid()?;
+        let pid = crate::arch::process::current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, 0)?;
         cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes)
     }

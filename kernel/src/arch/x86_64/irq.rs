@@ -332,8 +332,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     // page-fault by not having a replica in-sync with others
     if err.contains(PageFaultError::US) {
         let faulting_address_va = VAddr::from(faulting_address);
-        let pid = kcb
-            .current_pid()
+        let pid = super::process::current_pid()
             .expect("A pid must be set in this if branch (US bit set in page-fault error)");
 
         match nrproc::NrProcess::<Ring3Process>::resolve(pid, faulting_address_va) {
@@ -423,7 +422,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
     let desc = &EXCEPTIONS[a.vector as usize];
 
     let kcb = get_kcb();
-    if kcb.arch.has_executor() {
+    if super::process::has_executor() {
         let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
         r.resume()
     } else {
@@ -443,11 +442,11 @@ unsafe fn bkp_handler(a: &ExceptionArguments) {
     warn!("Got breakpoint interrupt {}", desc.source);
 
     let kcb = get_kcb();
-    if kcb.arch.has_executor() {
+    if super::process::has_executor() {
         // breakpoints lead to upcalls here since we use int!(3) in user-space
         // to test upcall. In the future we probably wan't to use gdb here and
         // do something better to test upcalls than this...
-        let mut plock = kcb.arch.current_executor();
+        let mut plock = super::process::CURRENT_EXECUTOR.borrow_mut();
         let p = plock.as_mut().unwrap();
 
         let resumer = {
@@ -504,7 +503,7 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
         nrproc::NrProcess::<Ring3Process>::synchronize(pid);
     }
 
-    if kcb.arch.has_executor() {
+    if super::process::has_executor() {
         // TODO(process-mgmt): Ensures that we still periodically
         // check and advance replicas even on cores that have a core.
         // Only a single idle core per replica should probably do that,
@@ -674,9 +673,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         if a.vector > 30 && a.vector < 250 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
             trace!("handle_generic_exception {:?}", a);
 
-            let mut plock = kcb.arch.current_executor();
-            let p = plock.as_mut().unwrap();
-
+            let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
+            let mut p = pborrow.as_mut().unwrap();
             let resumer = {
                 let was_disabled = {
                     trace!("vcpu state is: pc_disabled {:?}", p.vcpu().pc_disabled);
@@ -701,7 +699,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             };
 
             trace!("resuming now...");
-            drop(plock);
+            drop(p);
+            drop(pborrow);
 
             resumer.resume()
         } // make sure we drop the KCB object here
@@ -722,7 +721,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             trace!("got an interrupt {:?}", core_id);
             super::tlb::dequeue(core_id);
 
-            if kcb.arch.has_executor() {
+            if super::process::has_executor() {
                 // Return immediately
                 kcb.tlb_time += x86::time::rdtsc() - start;
                 kcb_iret_handle(kcb).resume()
@@ -735,7 +734,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             super::tlb::dequeue(core_id);
 
             let kcb = get_kcb();
-            if kcb.arch.has_executor() {
+            if super::process::has_executor() {
                 kcb_iret_handle(kcb).resume()
             } else {
                 loop {

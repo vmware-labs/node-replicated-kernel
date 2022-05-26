@@ -4,13 +4,20 @@
 
 We rely on [rustfmt](https://github.com/rust-lang/rustfmt) to automatically format our code.
 
-## Code imports
+## Code organization
 
 We organize/separate imports into three blocks (all separated by one newline):
 
 - 1st block for core language things: `core`, `alloc`, `std` etc.
 - 2nd block for libraries: `vibrio`, `x86`, `lazy_static` etc.
 - 3rd block for internal imports: `crate::*`, `super::*` etc.
+
+Afterwards a `.rs` file should (roughly) have the following structure:
+
+- 1st `type` declarations
+- 2nd `const` declarations
+- 3rd `static` declarations
+- 4th `struct`, `fn`, `impl` etc. declarations
 
 ## Assembly
 

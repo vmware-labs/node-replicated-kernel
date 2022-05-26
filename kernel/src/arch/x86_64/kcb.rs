@@ -16,21 +16,19 @@ use x86::current::segmentation;
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
-use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::nrproc::NrProcess;
-use crate::process::Pid;
 use crate::process::MAX_PROCESSES;
 use crate::stack::{OwnedStack, Stack};
 
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
-use super::process::{Ring3Executor, Ring3Process};
+use super::process::Ring3Process;
 use super::MAX_NUMA_NODES;
 
 /// Try to retrieve the KCB by reading the gs register.
 ///
-/// This may return None if they KCB is not yet set
+/// This may return None if the KCB is not yet set
 /// (i.e., during initialization).
 pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<Arch86Kcb>> {
     unsafe {
@@ -110,9 +108,6 @@ pub struct Arch86Kcb {
     /// A per-core IDT (interrupt table)
     pub(super) idt: IdtTable,
 
-    /// A handle to the currently active (scheduled) process.
-    current_executor: Option<Box<Ring3Executor>>,
-
     /// The interrupt stack (that is used by the CPU on interrupts/traps/faults)
     ///
     /// The CPU switches to this stack automatically for normal interrupts
@@ -159,33 +154,12 @@ impl Arch86Kcb {
             tss: TaskStateSegment::new(),
             idt: Default::default(),
             tls_base: ptr::null(),
-            current_executor: None, // We don't have an executor to schedule initially
             save_area: None,
             interrupt_stack: None,
             syscall_stack: None,
             unrecoverable_fault_stack: None,
             debug_stack: None,
         }
-    }
-
-    /// Swaps out current process with a new process. Returns the old process.
-    pub fn swap_current_executor(
-        &mut self,
-        new_executor: Box<Ring3Executor>,
-    ) -> Option<Box<Ring3Executor>> {
-        self.current_executor.replace(new_executor)
-    }
-
-    pub fn has_executor(&self) -> bool {
-        self.current_executor.is_some()
-    }
-
-    pub fn current_executor(&self) -> Result<&Box<Ring3Executor>, KError> {
-        let p = self
-            .current_executor
-            .as_ref()
-            .ok_or(KError::ProcessNotSet)?;
-        Ok(p)
     }
 
     pub fn set_interrupt_stacks(
@@ -270,10 +244,6 @@ impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
             self.gdt.install();
             self.idt.install();
         }
-    }
-
-    fn current_pid(&self) -> Result<Pid, KError> {
-        Ok(self.current_executor()?.pid)
     }
 
     fn process_table(

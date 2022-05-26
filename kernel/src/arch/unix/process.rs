@@ -6,6 +6,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bootloader_shared::Module;
+use core::cell::RefCell;
 use core::ops::{Deref, DerefMut};
 use x86::current::paging::PAddr;
 
@@ -15,7 +16,7 @@ use lazy_static::lazy_static;
 
 use node_replication::{Dispatch, Log, Replica};
 
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fs::Fd;
 use crate::kcb;
 use crate::memory::detmem::DA;
@@ -30,6 +31,23 @@ use crate::process::{
 use super::debug;
 use super::vspace::VSpace;
 use super::MAX_NUMA_NODES;
+
+/// A handle to the currently active (scheduled on the core) process.
+#[thread_local]
+pub static CURRENT_EXECUTOR: RefCell<Option<Box<UnixThread>>> = RefCell::new(None);
+
+pub fn has_executor() -> bool {
+    CURRENT_EXECUTOR.borrow().is_some()
+}
+
+pub fn current_pid() -> KResult<Pid> {
+    Err(KError::ProcessNotSet)
+}
+
+#[allow(clippy::boxed_local)]
+pub fn swap_current_executor(_current_executor: Box<UnixThread>) -> Option<Box<UnixThread>> {
+    None
+}
 
 lazy_static! {
     pub static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<UnixProcess>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {

@@ -23,7 +23,7 @@ use crate::memory::mcache::TCacheSp;
 use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PhysicalPageProvider};
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
-use crate::process::{Pid, Process, MAX_PROCESSES};
+use crate::process::{Process, MAX_PROCESSES};
 
 pub use crate::arch::kcb::{get_kcb, try_get_kcb};
 
@@ -330,17 +330,12 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             .as_ref()
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
-
-    pub fn current_pid(&self) -> Result<Pid, KError> {
-        self.arch.current_pid()
-    }
 }
 
 pub trait ArchSpecificKcb {
     type Process: Process + Sync;
 
     fn install(&mut self);
-    fn current_pid(&self) -> Result<Pid, KError>;
 
     #[allow(clippy::type_complexity)] // fix this once `associated_type_defaults` works
     fn process_table(

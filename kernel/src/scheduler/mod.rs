@@ -35,7 +35,7 @@ pub fn schedule() -> ! {
     let is_replica_main_thread = false;
 
     // No process assigned to core? Figure out if there is one now:
-    if unlikely(kcb.arch.current_executor().is_err()) {
+    if unlikely(!crate::arch::process::has_executor()) {
         if let Some((replica, token)) = kcb.replica.as_ref() {
             loop {
                 let response =
@@ -50,7 +50,7 @@ pub fn schedule() -> ! {
                         }
 
                         // info!("Start execution of {} on gtid {}", executor.eid, gtid);
-                        let no = kcb::get_kcb().arch.swap_current_executor(executor);
+                        let no = crate::arch::process::swap_current_executor(executor);
                         assert!(no.is_none(), "Handle the case where we replace a process.");
                         if is_replica_main_thread {
                             // Make sure we periodically try and advance the replica on main-thread
@@ -94,13 +94,17 @@ pub fn schedule() -> ! {
         }
     }
     debug_assert!(
-        kcb.arch.current_executor().is_ok(),
+        crate::arch::process::has_executor(),
         "Require executor next."
     );
 
     // If we come here, we have a new process, dispatch it:
     unsafe {
-        let rh = kcb::get_kcb().arch.current_executor().map(|p| p.start());
-        rh.unwrap().resume()
+        let pe = crate::arch::process::CURRENT_EXECUTOR.borrow();
+        let rh = pe.as_ref().expect("Can't borrow current executor").start();
+        // Ensure we drop the borrow to `pe` before we resume so we can
+        // re-borrow upon syscall/irq entry
+        drop(pe);
+        rh.resume()
     }
 }

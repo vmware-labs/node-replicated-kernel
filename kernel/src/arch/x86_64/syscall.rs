@@ -25,7 +25,6 @@ use kpi::{
 use crate::cmdline::Mode;
 use crate::error::KError;
 use crate::fs::{cnrfs, FileSystem};
-use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
 use crate::process::{userptr_to_str, Pid, ResumeHandle};
@@ -134,8 +133,12 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
     }
 
     fn get_vcpu_area(&self) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let vcpu_vaddr = kcb.arch.current_executor()?.vcpu_addr().as_u64();
+        let p = super::process::CURRENT_EXECUTOR.borrow();
+        let vcpu_vaddr = p
+            .as_ref()
+            .ok_or(KError::NoExecutorForCore)?
+            .vcpu_addr()
+            .as_u64();
         Ok((vcpu_vaddr, 0))
     }
 
@@ -150,7 +153,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         // vaddr_buf_len = buf.len() as u64
         let kcb = super::kcb::get_kcb();
 
-        let pid = kcb.current_pid()?;
+        let pid = super::process::current_pid()?;
         let mut pinfo = nrproc::NrProcess::<Ring3Process>::pinfo(pid)?;
         pinfo.cmdline = kcb.cmdline.init_args;
         pinfo.app_cmdline = kcb.cmdline.app_args;
@@ -175,7 +178,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
             }
         }
         let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
-        let pid = kcb.current_pid()?;
+        let pid = super::process::current_pid()?;
 
         let gtid = nr::KernelNode::allocate_core_to_process(
             pid,
@@ -218,7 +221,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         };
 
         // Associate memory with the process
-        let pid = kcb.current_pid()?;
+        let pid = super::process::current_pid()?;
         let fid = nrproc::NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
         Ok((fid as u64, frame.base.as_u64()))
@@ -243,11 +246,9 @@ pub trait Arch86VSpaceDispatch {
         let base = VAddr::from(base);
 
         let kcb = super::kcb::get_kcb();
-        let mut p = kcb.arch.current_executor()?;
 
         let (bp, lp) = crate::memory::size_to_pages(size as usize);
         let mut frames = Vec::try_with_capacity(bp + lp)?;
-
         crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, mem_type)?;
 
         // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
@@ -293,7 +294,7 @@ pub trait Arch86VSpaceDispatch {
         }
 
         nrproc::NrProcess::<Ring3Process>::map_frames(
-            p.pid,
+            crate::arch::process::current_pid()?,
             base,
             frames,
             MapAction::ReadWriteUser,
@@ -305,11 +306,9 @@ pub trait Arch86VSpaceDispatch {
 
     fn unmap_generic(&self, _mem_type: MemType, base: u64) -> Result<(u64, u64), KError> {
         let base = VAddr::from(base);
+        let pid = super::process::current_pid()?;
 
-        let kcb = super::kcb::get_kcb();
-        let mut p = kcb.arch.current_executor()?;
-
-        let handle = nrproc::NrProcess::<Ring3Process>::unmap(p.pid, base)?;
+        let handle = nrproc::NrProcess::<Ring3Process>::unmap(pid, base)?;
         let va: u64 = handle.vaddr.as_u64();
         let sz: u64 = handle.frame.size as u64;
         super::tlb::shootdown(handle);
@@ -331,24 +330,23 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
         // TODO(safety+api): Terribly unsafe, ideally process should request/register
         // a PCI device and then it can map device things.
         let kcb = super::kcb::get_kcb();
-        let p = kcb.arch.current_executor()?;
+        let pid = super::process::current_pid()?;
 
         let paddr = PAddr::from(base);
         let size = size.try_into().unwrap();
         let frame = Frame::new(paddr, size, kcb.node);
 
-        nrproc::NrProcess::<Ring3Process>::map_device_frame(p.pid, frame, MapAction::ReadWriteUser)
+        nrproc::NrProcess::<Ring3Process>::map_device_frame(pid, frame, MapAction::ReadWriteUser)
     }
 
     fn map_frame_id(&self, base: u64, frame_id: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let p = kcb.arch.current_executor()?;
+        let pid = super::process::current_pid()?;
 
         let base = VAddr::from(base);
         let frame_id: FrameId = frame_id.try_into().map_err(|_e| KError::InvalidFrameId)?;
 
         let (paddr, size) = nrproc::NrProcess::<Ring3Process>::map_frame_id(
-            p.pid,
+            pid,
             frame_id,
             base,
             MapAction::ReadWriteUser,
@@ -365,11 +363,10 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
     }
 
     fn identify(&self, addr: u64) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
-        let p = kcb.arch.current_executor()?;
+        let pid = super::process::current_pid()?;
         let base = VAddr::from(addr);
         trace!("Identify address: {:#x}.", addr);
-        nrproc::NrProcess::<Ring3Process>::resolve(p.pid, base)
+        nrproc::NrProcess::<Ring3Process>::resolve(pid, base)
     }
 }
 

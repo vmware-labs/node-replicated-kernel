@@ -29,6 +29,12 @@ use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
 use crate::prelude::overlaps;
 use crate::{kcb, nr, nrproc, round_up};
 
+/// Process ID.
+pub type Pid = usize;
+
+/// Executor ID.
+pub type Eid = usize;
+
 /// How many (concurrent) processes the systems supports.
 pub const MAX_PROCESSES: usize = 12;
 
@@ -74,12 +80,6 @@ pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
         }
     }
 }
-
-/// Process ID.
-pub type Pid = usize;
-
-/// Executor ID.
-pub type Eid = usize;
 
 /// Abstract definition of a process.
 pub trait Process {

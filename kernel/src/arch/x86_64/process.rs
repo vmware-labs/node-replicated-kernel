@@ -6,6 +6,7 @@ use alloc::collections::TryReserveError;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
+use core::cell::RefCell;
 use core::cmp::PartialEq;
 use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
@@ -23,7 +24,7 @@ use x86::bits64::rflags;
 use x86::{controlregs, Ring};
 
 use crate::arch::memory::KERNEL_BASE;
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
 use crate::kcb;
 use crate::memory::detmem::DA;
@@ -42,6 +43,27 @@ use super::Module;
 use super::MAX_NUMA_NODES;
 
 const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
+
+/// A handle to the currently active (scheduled on the core) process.
+#[thread_local]
+pub static CURRENT_EXECUTOR: RefCell<Option<Box<Ring3Executor>>> = RefCell::new(None);
+
+/// Swaps out current process with a new process. Returns the old process.
+pub fn swap_current_executor(new_executor: Box<Ring3Executor>) -> Option<Box<Ring3Executor>> {
+    CURRENT_EXECUTOR.borrow_mut().replace(new_executor)
+}
+
+pub fn has_executor() -> bool {
+    CURRENT_EXECUTOR.borrow().is_some()
+}
+
+pub fn current_pid() -> KResult<Pid> {
+    Ok(CURRENT_EXECUTOR
+        .borrow()
+        .as_ref()
+        .ok_or(KError::ProcessNotSet)?
+        .pid)
+}
 
 lazy_static! {
     pub static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {

@@ -22,7 +22,7 @@ use kpi::{
     VSpaceOperation,
 };
 
-use crate::cmdline::Mode;
+use crate::cmdline::{CommandLineArguments, Mode};
 use crate::error::KError;
 use crate::fs::{cnrfs, FileSystem};
 use crate::memory::vspace::MapAction;
@@ -99,7 +99,7 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
 
     fn get_stats(&self) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        info!("IRQ handler time: {} cycles", kcb.tlb_time);
+        info!("IRQ handler time: {} cycles", super::irq::TLB_TIME.get());
         Ok((0, 0))
     }
 
@@ -155,8 +155,14 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 
         let pid = super::process::current_pid()?;
         let mut pinfo = nrproc::NrProcess::<Ring3Process>::pinfo(pid)?;
-        pinfo.cmdline = kcb.cmdline.init_args;
-        pinfo.app_cmdline = kcb.cmdline.app_args;
+        pinfo.cmdline = crate::CMDLINE
+            .get()
+            .unwrap_or(&CommandLineArguments::default())
+            .init_args;
+        pinfo.app_cmdline = crate::CMDLINE
+            .get()
+            .unwrap_or(&CommandLineArguments::default())
+            .app_args;
 
         let serialized = serde_cbor::to_vec(&pinfo).unwrap();
         if serialized.len() <= vaddr_buf_len as usize {
@@ -329,12 +335,11 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
     fn map_device(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
         // TODO(safety+api): Terribly unsafe, ideally process should request/register
         // a PCI device and then it can map device things.
-        let kcb = super::kcb::get_kcb();
         let pid = super::process::current_pid()?;
 
         let paddr = PAddr::from(base);
         let size = size.try_into().unwrap();
-        let frame = Frame::new(paddr, size, kcb.node);
+        let frame = Frame::new(paddr, size, *crate::kcb::NODE_ID);
 
         nrproc::NrProcess::<Ring3Process>::map_device_frame(pid, frame, MapAction::ReadWriteUser)
     }

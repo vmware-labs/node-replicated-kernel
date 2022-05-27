@@ -27,7 +27,7 @@
     const_ptr_offset_from,
     const_refs_to_cell,
     nonnull_slice_from_raw_parts,
-    once_cell,
+    cell_update,
     thread_local
 )]
 
@@ -72,7 +72,11 @@ pub mod panic;
 
 use spin::Once;
 
+/// Arguments passed form the bootloader to the kernel.
 pub static KERNEL_ARGS: Once<&'static crate::arch::KernelArgs> = Once::new();
+
+/// Parsed arguments passed from the user to the kernel (via command line args).
+pub static CMDLINE: Once<cmdline::CommandLineArguments> = Once::new();
 
 #[cfg(feature = "integration-test")]
 mod integration_tests;

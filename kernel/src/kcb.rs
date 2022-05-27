@@ -15,7 +15,6 @@ use spin::Lazy;
 use crate::arch::kcb::init_kcb;
 use crate::arch::process::PROCESS_TABLE;
 use crate::arch::MAX_NUMA_NODES;
-use crate::cmdline::BootloaderArguments;
 use crate::error::KError;
 use crate::memory::emem::EmergencyAllocator;
 use crate::memory::mcache::TCache;
@@ -97,11 +96,14 @@ where
 
     /// Are we in panic mode? Hopfully not.
     ///
+    /// This can't be made a thread-local because we need it before we setup TLS
+    /// (in dynamic memory allocation).
+    ///
     /// # See also
     /// - `panic.rs`
+    /// - `irq.rs`
+    /// - `memory/mod.rs`
     pub in_panic_mode: bool,
-
-    pub cmdline: BootloaderArguments,
 
     /// A handle to the early page-allocator.
     pub emanager: RefCell<TCacheSp>,
@@ -115,11 +117,6 @@ where
     /// Related meta-data to manage persistent memory for a given NUMA node.
     pub pmem_memory: PhysicalMemoryArena,
 
-    /// Which NUMA node this KCB / core belongs to
-    ///
-    /// TODO(redundant): use kcb.arch.node_id
-    pub node: atopology::NodeId,
-
     /// Contains a bunch of memory arenas, can be one for every NUMA node
     /// but we intialize it lazily upon calling `set_mem_affinity`.
     pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
@@ -131,29 +128,18 @@ where
     /// A handle to the node-local kernel replica.
     pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
 
-    /// Measures cycles spent in TLB shootdown handler for responder.
-    pub tlb_time: u64,
-
     /// Tokens to access process replicas
     pub process_token: ArrayVec<ReplicaToken, { MAX_PROCESSES }>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
-    pub const fn new(
-        cmdline: BootloaderArguments,
-        emanager: TCacheSp,
-        arch: A,
-        node: atopology::NodeId,
-    ) -> Kcb<A> {
+    pub const fn new(emanager: TCacheSp, arch: A, node: atopology::NodeId) -> Kcb<A> {
         const DEFAULT_PHYSICAL_MEMORY_ARENA: Option<PhysicalMemoryArena> = None;
-
         Kcb {
             arch,
-            cmdline,
             in_panic_mode: false,
             emanager: RefCell::new(emanager),
             ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
-            node,
             memory_arenas: [DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES],
             pmem_arenas: [DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES],
             // Can't initialize these yet, we need basic Kcb first for
@@ -161,7 +147,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),
             pmem_memory: PhysicalMemoryArena::uninit_with_node(node),
             replica: None,
-            tlb_time: 0,
             process_token: ArrayVec::new_const(),
         }
     }

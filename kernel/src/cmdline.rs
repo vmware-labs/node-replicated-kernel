@@ -87,7 +87,7 @@ impl From<&str> for Mode {
 /// Arguments parsed from command line string passed from the bootloader to the
 /// kernel.
 #[derive(Copy, Clone, Debug)]
-pub struct BootloaderArguments {
+pub struct CommandLineArguments {
     pub log_filter: &'static str,
     pub init_binary: &'static str,
     pub init_args: &'static str,
@@ -97,12 +97,12 @@ pub struct BootloaderArguments {
     pub kgdb: bool,
     pub mode: Mode,
 }
-// If you move or rename `BootlaoderArguments`, you may also need to update the `s02_gdb` test.
-static_assertions::assert_type_eq_all!(BootloaderArguments, crate::cmdline::BootloaderArguments);
+// If you move or rename `CommandLineArguments`, you may also need to update the `s02_gdb` test.
+static_assertions::assert_type_eq_all!(CommandLineArguments, crate::cmdline::CommandLineArguments);
 
-impl Default for BootloaderArguments {
-    fn default() -> BootloaderArguments {
-        BootloaderArguments {
+impl Default for CommandLineArguments {
+    fn default() -> Self {
+        Self {
             log_filter: "info",
             init_binary: "init",
             init_args: "",
@@ -115,14 +115,14 @@ impl Default for BootloaderArguments {
     }
 }
 
-impl BootloaderArguments {
+impl CommandLineArguments {
     pub const fn new(
         log_filter: &'static str,
         init_binary: &'static str,
         init_args: &'static str,
         app_args: &'static str,
     ) -> Self {
-        BootloaderArguments {
+        Self {
             log_filter,
             init_binary,
             init_args,
@@ -137,7 +137,7 @@ impl BootloaderArguments {
     /// Parse command line argument and initialize the logging infrastructure.
     ///
     /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
-    pub fn from_str(args: &'static str) -> BootloaderArguments {
+    pub fn from_str(args: &'static str) -> Self {
         // The args argument will be a physical address slice that
         // goes away once we switch to a process address space
         // make sure we translate it into a kernel virtual address:
@@ -147,7 +147,7 @@ impl BootloaderArguments {
         let args_kslice = unsafe { from_raw_parts(args_kaddr.as_ptr(), args.len()) };
         let args = core::str::from_utf8(args_kslice).expect("Can't read args in kernel space?");
 
-        let mut parsed_args: BootloaderArguments = Default::default();
+        let mut parsed_args: CommandLineArguments = Default::default();
         let mut lexer = CmdToken::lexer(args);
         let mut prev = CmdToken::Error;
         while let Some(token) = lexer.next() {
@@ -252,11 +252,11 @@ impl BootloaderArguments {
 
 #[cfg(test)]
 mod test {
-    use super::BootloaderArguments;
+    use super::CommandLineArguments;
 
     #[test]
     fn parse_args_empty() {
-        let ba = BootloaderArguments::from_str("");
+        let ba = CommandLineArguments::from_str("");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -264,7 +264,7 @@ mod test {
 
     #[test]
     fn parse_args_nrk() {
-        let ba = BootloaderArguments::from_str("./nrk");
+        let ba = CommandLineArguments::from_str("./nrk");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -272,7 +272,7 @@ mod test {
 
     #[test]
     fn parse_args_basic() {
-        let ba = BootloaderArguments::from_str("./kernel");
+        let ba = CommandLineArguments::from_str("./kernel");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -280,7 +280,7 @@ mod test {
 
     #[test]
     fn parse_args_log() {
-        let ba = BootloaderArguments::from_str("./kernel log=error");
+        let ba = CommandLineArguments::from_str("./kernel log=error");
         assert_eq!(ba.log_filter, "error");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "");
@@ -288,7 +288,7 @@ mod test {
 
     #[test]
     fn parse_args_init() {
-        let ba = BootloaderArguments::from_str("./kernel init=file log=trace");
+        let ba = CommandLineArguments::from_str("./kernel init=file log=trace");
         assert_eq!(ba.log_filter, "trace");
         assert_eq!(ba.init_binary, "file");
         assert_eq!(ba.init_args, "");
@@ -296,7 +296,7 @@ mod test {
 
     #[test]
     fn parse_args_initargs() {
-        let ba = BootloaderArguments::from_str("./kernel initargs=0");
+        let ba = CommandLineArguments::from_str("./kernel initargs=0");
         assert_eq!(ba.log_filter, "info");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "0");
@@ -306,7 +306,7 @@ mod test {
     fn parse_args_leveldb() {
         let args = "./kernel log=warn init=dbbench.bin initargs=3 appcmd='--threads=1 --benchmarks=fillseq,readrandom --reads=100000 --num=50000 --value_size=65535'";
 
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "warn");
         assert_eq!(ba.init_binary, "dbbench.bin");
         assert_eq!(ba.init_args, "3");
@@ -316,7 +316,7 @@ mod test {
     #[test]
     fn parse_args_fxmark() {
         let args = "log=debug initargs=1X1XmixX0";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_binary, "init");
         assert_eq!(ba.init_args, "1X1XmixX0");
@@ -325,7 +325,7 @@ mod test {
     #[test]
     fn parse_args_empty_literal_quotes() {
         let args = "./kernel initargs='\"\"' log=debug";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "\"\"");
     }
@@ -333,7 +333,7 @@ mod test {
     #[test]
     fn parse_args_empty_literal() {
         let args = "./kernel initargs='' log=debug";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "");
     }
@@ -341,7 +341,7 @@ mod test {
     #[test]
     fn parse_args_invalid() {
         let args = "./kernel initg='asdf' log=debug";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "");
     }
@@ -349,7 +349,7 @@ mod test {
     #[test]
     fn parse_args_invalid2() {
         let args = "./sadf init='asdf' log=debug";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "");
     }
@@ -357,7 +357,7 @@ mod test {
     #[test]
     fn parse_args_invalid3() {
         let args = "./kernel init=---  as-s- log=debug";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "debug");
         assert_eq!(ba.init_args, "");
     }
@@ -365,14 +365,14 @@ mod test {
     #[test]
     fn parse_log_level_complex() {
         let args = "./kernel log='gdbstub=trace,nrk::arch::gdb=trace'";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.log_filter, "gdbstub=trace,nrk::arch::gdb=trace");
     }
 
     #[test]
     fn parse_test() {
         let args = "./kernel test=userspace";
-        let ba = BootloaderArguments::from_str(args);
+        let ba = CommandLineArguments::from_str(args);
         assert_eq!(ba.test, Some("userspace"));
     }
 }

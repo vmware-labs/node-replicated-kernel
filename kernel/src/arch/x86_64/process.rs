@@ -907,14 +907,22 @@ impl Executor for Ring3Executor {
     }
 
     fn resume(&self) -> Self::Resumer {
-        assert_eq!(kcb::get_kcb().node, self.affinity, "Run on remote replica?");
+        assert_eq!(
+            *crate::kcb::NODE_ID,
+            self.affinity,
+            "Run on remote replica?"
+        );
 
         self.maybe_switch_vspace();
         Ring3Resumer::new_restore(&self.save_area as *const kpi::arch::SaveArea)
     }
 
     fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer {
-        assert_eq!(kcb::get_kcb().node, self.affinity, "Run on remote replica?");
+        assert_eq!(
+            *crate::kcb::NODE_ID,
+            self.affinity,
+            "Run on remote replica?"
+        );
 
         self.maybe_switch_vspace();
         let entry_point = self.vcpu().resume_with_upcall;

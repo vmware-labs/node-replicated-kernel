@@ -1301,7 +1301,7 @@ fn s02_gdb() {
         output += gdb.wait_for_prompt()?.as_str();
         gdb.send_line("print cmdline")?;
         output += gdb
-            .exp_string("nrk::cmdline::BootloaderArguments")?
+            .exp_string("nrk::cmdline::CommandLineArguments")?
             .as_str();
 
         // Test hardware breakpoints: `hbreak`, `continue`

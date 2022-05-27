@@ -21,6 +21,7 @@ use log::{debug, info, trace};
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
+use crate::cmdline::CommandLineArguments;
 use crate::error::KError;
 use crate::fallible_string::TryString;
 use crate::fs::{cnrfs, Fd};
@@ -354,7 +355,12 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     let mod_file = mod_file.ok_or(KError::BinaryNotFound { binary })?;
     info!(
         "binary={} cmdline={} module={:?}",
-        binary, kcb.cmdline.init_args, mod_file
+        binary,
+        crate::CMDLINE
+            .get()
+            .unwrap_or(&CommandLineArguments::default())
+            .init_args,
+        mod_file
     );
 
     let elf_module = unsafe {

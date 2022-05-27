@@ -9,7 +9,7 @@ use core::any::Any;
 use arrayvec::ArrayVec;
 use node_replication::{Replica, ReplicaToken};
 
-use crate::cmdline::BootloaderArguments;
+use crate::cmdline::CommandLineArguments;
 use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::memory::mcache::TCacheSp;
@@ -23,7 +23,7 @@ use super::MAX_NUMA_NODES;
 #[thread_local]
 static mut KCB: Kcb<ArchKcb> = {
     Kcb::new(
-        BootloaderArguments::new("info", "init", "init", "init"),
+        CommandLineArguments::new("info", "init", "init", "init"),
         TCacheSp::new(0),
         ArchKcb::new(),
         0,

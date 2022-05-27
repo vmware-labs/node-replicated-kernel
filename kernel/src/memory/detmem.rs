@@ -73,9 +73,8 @@ impl DeterministicAlloc {
     }
 
     pub fn alloc(&self, l: Layout) -> *mut u8 {
-        // Current NUMA node id (hack approximate with the thread id):
         let kcb = kcb::get_kcb();
-        let nid = kcb.node;
+        let nid = *crate::kcb::NODE_ID;
 
         if let Some((rl, ptr)) = self.qs[nid].pop() {
             // Queue wasn't empty; the leading replica already allocated on our
@@ -176,6 +175,7 @@ mod test {
     use core::alloc::Allocator;
     use core::alloc::Layout;
 
+    use core::borrow::BorrowMut;
     use std::thread;
 
     use rand::rngs::SmallRng;
@@ -196,8 +196,12 @@ mod test {
         for i in 0..MAX_REPLICAS {
             let memalloc = memalloc.clone();
             threads.push(thread::spawn(move || {
-                crate::arch::kcb::get_kcb().node = i % MAX_REPLICAS;
-
+                {
+                    let nid = crate::kcb::NODE_ID.as_mut_ptr();
+                    // Safety: Just for testing set a dummy node-id; we have
+                    // exclusive access
+                    unsafe { *nid = i % MAX_REPLICAS };
+                }
                 let mut order: Vec<(Layout, u64)> = Vec::with_capacity(ITERATIONS);
 
                 // Use same RNG on all thread for deterministic allocation (as would

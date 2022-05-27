@@ -29,16 +29,6 @@ use core::mem::transmute;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
-use crate::cmdline::BootloaderArguments;
-use crate::fs::cnrfs::MlnrKernelNode;
-#[cfg(not(feature = "bsp-only"))]
-use crate::fs::cnrfs::Modify;
-use crate::kcb::Kcb;
-use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
-use crate::nr::{KernelNode, Op};
-use crate::stack::OwnedStack;
-use crate::ExitReason;
-
 use apic::ApicDriver;
 use arrayvec::ArrayVec;
 #[cfg(not(feature = "bsp-only"))]
@@ -54,30 +44,37 @@ use node_replication::{Log, Replica};
 use x86::bits64::paging::PAddr;
 use x86::{controlregs, cpuid};
 
-pub use bootloader_shared::*;
-
+use crate::cmdline::CommandLineArguments;
 use crate::fallible_string::FallibleString;
+use crate::fs::cnrfs::MlnrKernelNode;
+#[cfg(not(feature = "bsp-only"))]
+use crate::fs::cnrfs::Modify;
+use crate::kcb::Kcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::MAX_PHYSICAL_REGIONS;
+use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
+use crate::nr::{KernelNode, Op};
+use crate::stack::OwnedStack;
+use crate::ExitReason;
 use uefi::table::boot::MemoryType;
 
 pub mod acpi;
 pub mod coreboot;
 pub mod debug;
-
-#[cfg(feature = "rackscale")]
-pub mod rackscale;
-
 pub mod gdt;
 pub mod irq;
 pub mod kcb;
 pub mod memory;
 pub mod process;
+#[cfg(feature = "rackscale")]
+pub mod rackscale;
 pub mod signals;
 pub mod syscall;
 pub mod timer;
 pub mod tlb;
 pub mod vspace;
+
+pub use bootloader_shared::*;
 
 mod gdb;
 mod isr;
@@ -191,7 +188,6 @@ fn init_apic() {
 struct AppCoreArgs {
     _mem_region: Frame,
     _pmem_region: Option<Frame>,
-    cmdline: BootloaderArguments,
     global_memory: &'static GlobalMemory,
     global_pmem: &'static GlobalMemory,
     thread: atopology::ThreadId,
@@ -221,7 +217,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     let emanager = mcache::TCacheSp::new(args.node);
     let arch = kcb::Arch86Kcb::new();
-    let mut kcb = Kcb::<kcb::Arch86Kcb>::new(args.cmdline, emanager, arch, args.node);
+    let mut kcb = Kcb::<kcb::Arch86Kcb>::new(emanager, arch, args.node);
 
     kcb.set_global_mem(args.global_memory);
     kcb.set_mem_manager(mcache::TCache::new(args.node));
@@ -310,7 +306,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 ///  - Local APIC driver
 #[cfg(not(feature = "bsp-only"))]
 fn boot_app_cores(
-    cmdline: BootloaderArguments,
     log: Arc<Log<'static, Op>>,
     bsp_replica: Arc<Replica<'static, KernelNode>>,
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
@@ -320,7 +315,7 @@ fn boot_app_cores(
 
     let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();
-    debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
+    debug_assert_eq!(*crate::kcb::NODE_ID, 0, "The BSP core is not on node 0?");
 
     // Let's go with one replica per NUMA node for now:
     let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
@@ -331,7 +326,6 @@ fn boot_app_cores(
         Vec::try_with_capacity(numa_nodes).expect("Not enough memory to initialize system");
 
     // Push the replica for node 0
-    debug_assert_eq!(kcb.node, 0, "The BSP core is not on node 0?");
     debug_assert!(replicas.capacity() >= 1, "No re-allocation.");
     replicas.push(bsp_replica);
     debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
@@ -398,7 +392,6 @@ fn boot_app_cores(
         let arg: Arc<AppCoreArgs> = Arc::try_new(AppCoreArgs {
             _mem_region: mem_region,
             _pmem_region: pmem_region,
-            cmdline,
             node,
             global_memory,
             global_pmem,
@@ -587,9 +580,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         unsafe { transmute::<u64, &'static mut KernelArgs>(argc as u64) };
 
     // Parse the command line arguments
-    let cmdline = BootloaderArguments::from_str(kernel_args.command_line);
+    let cmdline = CommandLineArguments::from_str(kernel_args.command_line);
+    // Initialize cmdline arguments as global
+    crate::CMDLINE.call_once(|| cmdline);
+
     klogger::init(
-        cmdline.log_filter,
+        crate::CMDLINE.get().map(|c| c.log_filter).unwrap_or("info"),
         debug::SERIAL_PRINT_PORT.load(Ordering::Relaxed),
     )
     .expect("Can't set-up logging");
@@ -672,7 +668,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let arch = kcb::Arch86Kcb::new();
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = Kcb::new(cmdline, emanager, arch, 0);
+    let mut kcb = Kcb::new(emanager, arch, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
     let static_kcb = unsafe {
@@ -870,13 +866,16 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     }
 
     #[cfg(feature = "rackscale")]
-    if cmdline.mode == crate::cmdline::Mode::Client {
+    if crate::CMDLINE
+        .get()
+        .map_or_else(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
         let _ = spin::lazy::Lazy::force(&rackscale::RPC_CLIENT);
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     #[cfg(not(feature = "bsp-only"))]
-    boot_app_cores(cmdline, log.clone(), bsp_replica, fs_logs, fs_replica);
+    boot_app_cores(log.clone(), bsp_replica, fs_logs, fs_replica);
 
     // Done with initialization, now we go in
     // the arch-independent part:

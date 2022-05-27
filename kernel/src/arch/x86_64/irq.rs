@@ -34,7 +34,7 @@
 #![allow(warnings)]
 
 use alloc::boxed::Box;
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::fmt;
 
 use apic::x2apic::X2APICDriver;
@@ -65,6 +65,10 @@ use super::{debug, gdb, timer};
 /// The x2APIC driver of the current core.
 #[thread_local]
 pub static LOCAL_APIC: RefCell<X2APICDriver> = RefCell::new(X2APICDriver::new());
+
+/// TLB time (a silly way to measure it)
+#[thread_local]
+pub static TLB_TIME: Cell<u64> = Cell::new(0);
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -723,7 +727,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
 
             if super::process::has_executor() {
                 // Return immediately
-                kcb.tlb_time += x86::time::rdtsc() - start;
+                TLB_TIME.update(|t| t + x86::time::rdtsc() - start);
                 kcb_iret_handle(kcb).resume()
             } else {
                 // Go to scheduler instead

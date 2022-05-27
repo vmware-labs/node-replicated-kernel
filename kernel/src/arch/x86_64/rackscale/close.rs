@@ -13,12 +13,12 @@ use super::fio::*;
 use crate::fs::cnrfs;
 
 #[derive(Debug)]
-pub struct CloseReq {
+pub(crate) struct CloseReq {
     pub fd: u64,
 }
 unsafe_abomonate!(CloseReq: fd);
 
-pub fn rpc_close(
+pub(crate) fn rpc_close(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
@@ -58,7 +58,7 @@ pub fn rpc_close(
 }
 
 // RPC Handler function for close() RPCs in the controller
-pub fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {

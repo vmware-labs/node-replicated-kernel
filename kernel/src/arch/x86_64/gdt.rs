@@ -58,7 +58,7 @@ static mut EARLY_GDT: GdtTable = GdtTable {
 static mut EARLY_TSS: TaskStateSegment = TaskStateSegment::new();
 
 #[repr(C, packed)]
-pub struct GdtTable {
+pub(crate) struct GdtTable {
     null: Descriptor,
     /// 64 bit code
     code_kernel: Descriptor,
@@ -72,18 +72,18 @@ pub struct GdtTable {
 
 impl GdtTable {
     #[allow(dead_code)]
-    pub const NULL_INDEX: u16 = 0;
-    pub const CS_KERNEL_INDEX: u16 = 1;
-    pub const SS_KERNEL_INDEX: u16 = 2;
-    pub const CS_USER_INDEX: u16 = kpi::arch::CS_USER_GDT_INDEX;
-    pub const SS_USER_INDEX: u16 = kpi::arch::SS_USER_GDT_INDEX;
-    pub const TSS_INDEX: u16 = 5;
+    pub(crate) const NULL_INDEX: u16 = 0;
+    pub(crate) const CS_KERNEL_INDEX: u16 = 1;
+    pub(crate) const SS_KERNEL_INDEX: u16 = 2;
+    //pub(crate) const CS_USER_INDEX: u16 = kpi::arch::CS_USER_GDT_INDEX;
+    //pub(crate) const SS_USER_INDEX: u16 = kpi::arch::SS_USER_GDT_INDEX;
+    pub(crate) const TSS_INDEX: u16 = 5;
 
     /// Creates a new GdtTable with a provided TaskStateSegment.
     ///
     /// The other values will be set to x86-64 default values and
     /// should not change.
-    pub fn new(tss: &TaskStateSegment) -> GdtTable {
+    pub(crate) fn new(tss: &TaskStateSegment) -> GdtTable {
         GdtTable {
             tss_segment: GdtTable::tss_descriptor(tss),
             ..Default::default()
@@ -140,22 +140,22 @@ impl GdtTable {
     }
 
     /// Return the selector for the kernel cs (code segment).
-    pub const fn kernel_cs_selector() -> SegmentSelector {
+    pub(crate) const fn kernel_cs_selector() -> SegmentSelector {
         SegmentSelector::new(GdtTable::CS_KERNEL_INDEX as u16, Ring::Ring0)
     }
 
     /// Return the selector for the kernel ss (stack segment).
-    pub const fn kernel_ss_selector() -> SegmentSelector {
+    pub(crate) const fn kernel_ss_selector() -> SegmentSelector {
         SegmentSelector::new(GdtTable::SS_KERNEL_INDEX as u16, Ring::Ring0)
     }
 
     /// Return the selector for the kernel ss (stack segment).
-    pub const fn user_cs_selector() -> SegmentSelector {
+    pub(crate) const fn user_cs_selector() -> SegmentSelector {
         kpi::arch::CS_SELECTOR
     }
 
     /// Return the selector for the kernel ss (stack segment).
-    pub const fn user_ss_selector() -> SegmentSelector {
+    pub(crate) const fn user_ss_selector() -> SegmentSelector {
         kpi::arch::SS_SELECTOR
     }
 

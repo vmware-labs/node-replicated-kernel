@@ -9,29 +9,29 @@ pub use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, CACHE_LINE_SIZE, LAR
 use crate::memory::Frame;
 
 /// Maximum amount of addressable physical memory in kernel (32 TiB).
-pub const KERNEL_BASE: u64 = 0x0;
+pub(crate) const KERNEL_BASE: u64 = 0x0;
 
 /// Translate a kernel 'virtual' address to the physical address of the memory.
-pub fn kernel_vaddr_to_paddr(v: VAddr) -> PAddr {
+pub(crate) fn kernel_vaddr_to_paddr(v: VAddr) -> PAddr {
     let vaddr_val: usize = v.into();
     PAddr::from(vaddr_val as u64 - KERNEL_BASE)
 }
 
 /// Translate a physical memory address into a kernel addressable location.
-pub fn paddr_to_kernel_vaddr(p: PAddr) -> VAddr {
+pub(crate) fn paddr_to_kernel_vaddr(p: PAddr) -> VAddr {
     let paddr_val: u64 = p.into();
     VAddr::from((paddr_val + KERNEL_BASE) as usize)
 }
 
 /// Page allocator based on mmap/munmap system calls for backing slab memory.
 #[derive(Default)]
-pub struct MemoryMapper {
+pub(crate) struct MemoryMapper {
     /// Currently allocated bytes.
     currently_allocated: usize,
 }
 
 impl MemoryMapper {
-    pub fn currently_allocated(&self) -> usize {
+    pub(crate) fn currently_allocated(&self) -> usize {
         self.currently_allocated
     }
 

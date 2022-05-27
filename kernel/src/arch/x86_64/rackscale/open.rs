@@ -14,14 +14,14 @@ use super::fio::*;
 use crate::fs::cnrfs;
 
 #[derive(Debug)]
-pub struct OpenReq {
+pub(crate) struct OpenReq {
     pub flags: u64,
     pub modes: u64,
 }
 unsafe_abomonate!(OpenReq: flags, modes);
 
 // This is just a wrapper function for rpc_open_create
-pub fn rpc_open(
+pub(crate) fn rpc_open(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: &[u8],
@@ -77,7 +77,7 @@ fn rpc_open_create(
 }
 
 // RPC Handler function for open() RPCs in the controller
-pub fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {

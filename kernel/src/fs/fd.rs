@@ -4,7 +4,7 @@
 use super::{Fd, MAX_FILES_PER_PROCESS};
 use crate::error::KError;
 
-pub struct FileDesc {
+pub(crate) struct FileDesc {
     fds: arrayvec::ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS>,
 }
 
@@ -18,7 +18,7 @@ impl Default for FileDesc {
 }
 
 impl FileDesc {
-    pub fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
+    pub(crate) fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
         if let Some(fid) = self.fds.iter().position(|fd| fd.is_none()) {
             self.fds[fid] = Some(Default::default());
             Some((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
@@ -27,7 +27,7 @@ impl FileDesc {
         }
     }
 
-    pub fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError> {
+    pub(crate) fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError> {
         match self.fds.get_mut(fd) {
             Some(fdinfo) => match fdinfo {
                 Some(_info) => {
@@ -40,7 +40,7 @@ impl FileDesc {
         }
     }
 
-    pub fn get_fd(&self, index: usize) -> Option<&Fd> {
+    pub(crate) fn get_fd(&self, index: usize) -> Option<&Fd> {
         self.fds[index].as_ref()
     }
 }

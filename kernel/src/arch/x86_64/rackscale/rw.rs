@@ -14,14 +14,14 @@ use super::fio::*;
 use crate::fs::cnrfs;
 
 #[derive(Debug)]
-pub struct RWReq {
+pub(crate) struct RWReq {
     pub fd: u64,
     pub len: u64,
     pub offset: i64,
 }
 unsafe_abomonate!(RWReq: fd, len, offset);
 
-pub fn rpc_write(
+pub(crate) fn rpc_write(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
@@ -30,7 +30,7 @@ pub fn rpc_write(
     rpc_writeat(rpc_client, pid, fd, -1, data)
 }
 
-pub fn rpc_writeat(
+pub(crate) fn rpc_writeat(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
@@ -85,7 +85,7 @@ pub fn rpc_writeat(
 }
 
 // This function is just a wrapper for rpc_readat
-pub fn rpc_read(
+pub(crate) fn rpc_read(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
@@ -95,7 +95,7 @@ pub fn rpc_read(
     rpc_readat(rpc_client, pid, fd, len, -1, buff_ptr)
 }
 
-pub fn rpc_readat(
+pub(crate) fn rpc_readat(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
@@ -151,7 +151,7 @@ pub fn rpc_readat(
 }
 
 // RPC Handler function for read() RPCs in the controller
-pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
@@ -204,7 +204,7 @@ pub fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCErr
 }
 
 // RPC Handler function for write() RPCs in the controller
-pub fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {

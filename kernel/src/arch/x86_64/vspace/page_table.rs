@@ -32,7 +32,7 @@ enum Modify {
 }
 
 /// The actual page-table. We allocate the PML4 upfront.
-pub struct PageTable {
+pub(crate) struct PageTable {
     pub pml4: Pin<Box<PML4>>,
     pub da: Option<DA>,
 }
@@ -173,7 +173,7 @@ impl PageTable {
     /// Create a new address-space.
     ///
     /// Allocate an initial PML4 table for it.
-    pub fn new(da: DA) -> Result<PageTable, KError> {
+    pub(crate) fn new(da: DA) -> Result<PageTable, KError> {
         let pml4 = Box::try_new(
             [PML4Entry::new(PAddr::from(0x0u64), PML4Flags::empty()); PAGE_SIZE_ENTRIES],
         )?;
@@ -184,7 +184,7 @@ impl PageTable {
         })
     }
 
-    pub fn pml4_address(&self) -> PAddr {
+    pub(crate) fn pml4_address(&self) -> PAddr {
         let pml4_vaddr = VAddr::from(&*self.pml4 as *const _ as u64);
         kernel_vaddr_to_paddr(pml4_vaddr)
     }
@@ -879,7 +879,7 @@ impl PageTable {
     }
 }
 
-pub struct ReadOnlyPageTable<'a> {
+pub(crate) struct ReadOnlyPageTable<'a> {
     pml4: &'a PML4,
 }
 

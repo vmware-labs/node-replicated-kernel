@@ -158,7 +158,7 @@ pub extern "C" fn AcpiOsSignalSemaphore(Handle: *mut c_void, Units: UINT32) -> A
     AE_OK
 }
 
-pub const HEADER_SIZE: usize = 16;
+pub(crate) const HEADER_SIZE: usize = 16;
 
 /// Implementes malloc using the `alloc::alloc` interface.
 ///

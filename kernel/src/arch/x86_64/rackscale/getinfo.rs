@@ -10,7 +10,7 @@ use rpc::RPCClient;
 use super::fio::*;
 use crate::fs::cnrfs;
 
-pub fn rpc_getinfo(
+pub(crate) fn rpc_getinfo(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     name: &[u8],
@@ -41,7 +41,7 @@ pub fn rpc_getinfo(
 }
 
 // RPC Handler function for getinfo() RPCs in the controller
-pub fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {

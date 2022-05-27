@@ -36,14 +36,14 @@ pub mod vspace;
 
 pub use bootloader_shared::*;
 
-pub const MAX_NUMA_NODES: usize = 12;
-pub const MAX_CORES: usize = 192;
+pub(crate) const MAX_NUMA_NODES: usize = 12;
+pub(crate) const MAX_CORES: usize = 192;
 
-pub fn halt() -> ! {
+pub(crate) fn halt() -> ! {
     unsafe { libc::exit(0) };
 }
 
-pub fn advance_fs_replica() {
+pub(crate) fn advance_fs_replica() {
     unimplemented!("eager_advance_fs_replica not implemented for unix");
 }
 
@@ -122,7 +122,7 @@ fn init_setup() {
 }
 
 #[start]
-pub fn start(_argc: isize, _argv: *const *const u8) -> isize {
+pub(crate) fn start(_argc: isize, _argv: *const *const u8) -> isize {
     init_setup();
 
     info!(

@@ -14,7 +14,7 @@ use addr2line::{gimli, Context};
 use alloc::rc::Rc;
 use klogger::{sprint, sprintln};
 
-//pub type EndianRcSlice<gimli::Endian> = gimli::EndianReader<gimli::Endian, Rc<[u8]>>;
+//pub(crate) type EndianRcSlice<gimli::Endian> = gimli::EndianReader<gimli::Endian, Rc<[u8]>>;
 
 fn new_ctxt(
     file: &elfloader::ElfBinary,
@@ -105,7 +105,7 @@ fn backtrace_format(
 }
 
 #[inline(always)]
-pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
+pub(crate) fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
     let kernel_info = crate::KERNEL_ARGS.get().map(|k| {
         (
             // Safety: `kernel_binary`
@@ -146,7 +146,7 @@ pub fn backtrace_from(rbp: u64, rsp: u64, rip: u64) {
 }
 
 #[inline(always)]
-pub fn backtrace() {
+pub(crate) fn backtrace() {
     let kernel_info = crate::KERNEL_ARGS.get().map(|k| {
         (
             // Safety: `kernel_binary`
@@ -181,7 +181,7 @@ pub fn backtrace() {
 
 #[allow(unused)]
 #[inline(always)]
-pub fn backtrace_no_context() {
+pub(crate) fn backtrace_no_context() {
     sprintln!("Backtrace:");
     let relocation_offset = crate::KERNEL_ARGS
         .get()
@@ -197,7 +197,7 @@ pub fn backtrace_no_context() {
 #[cfg(target_os = "none")]
 #[cfg_attr(target_os = "none", panic_handler)]
 #[no_mangle]
-pub fn panic_impl(info: &PanicInfo) -> ! {
+pub(crate) fn panic_impl(info: &PanicInfo) -> ! {
     sprint!(
         "System panic encountered (On H/W thread {})",
         atopology::MACHINE_TOPOLOGY.current_thread().id
@@ -232,7 +232,7 @@ pub fn panic_impl(info: &PanicInfo) -> ! {
 #[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub enum _Unwind_Reason_Code {
+pub(crate) enum _Unwind_Reason_Code {
     _URC_NO_REASON = 0,
     _URC_FOREIGN_EXCEPTION_CAUGHT = 1,
     _URC_FATAL_PHASE2_ERROR = 2,
@@ -246,11 +246,11 @@ pub enum _Unwind_Reason_Code {
 
 #[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
-pub struct _Unwind_Context;
+pub(crate) struct _Unwind_Context;
 
 #[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
-pub type _Unwind_Action = u32;
+pub(crate) type _Unwind_Action = u32;
 
 #[cfg(target_os = "none")]
 static _UA_SEARCH_PHASE: _Unwind_Action = 1;
@@ -258,7 +258,7 @@ static _UA_SEARCH_PHASE: _Unwind_Action = 1;
 #[cfg(target_os = "none")]
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct _Unwind_Exception {
+pub(crate) struct _Unwind_Exception {
     exception_class: u64,
     exception_cleanup: fn(_Unwind_Reason_Code, *const _Unwind_Exception),
     private: [u64; 2],
@@ -267,7 +267,7 @@ pub struct _Unwind_Exception {
 #[cfg(target_os = "none")]
 #[cfg_attr(target_os = "none", lang = "eh_personality")]
 #[no_mangle]
-pub fn rust_eh_personality(
+pub(crate) fn rust_eh_personality(
     _version: isize,
     _actions: _Unwind_Action,
     _exception_class: u64,
@@ -280,7 +280,7 @@ pub fn rust_eh_personality(
 #[cfg(target_os = "none")]
 #[no_mangle]
 #[cfg_attr(target_os = "none", lang = "oom")]
-pub fn oom(layout: Layout) -> ! {
+pub(crate) fn oom(layout: Layout) -> ! {
     sprintln!(
         "OOM: Unable to satisfy allocation request for size {} with alignment {}.",
         layout.size(),
@@ -296,6 +296,6 @@ pub fn oom(layout: Layout) -> ! {
 #[cfg(target_os = "none")]
 #[no_mangle]
 #[allow(non_snake_case)]
-pub fn _Unwind_Resume() {
+pub(crate) fn _Unwind_Resume() {
     loop {}
 }

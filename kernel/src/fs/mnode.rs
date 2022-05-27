@@ -15,7 +15,7 @@ use super::{Mnode, Modes};
 
 /// Memnode representation, similar to Inode for a memory-fs.
 #[derive(Debug)]
-pub struct MemNode {
+pub(crate) struct MemNode {
     mnode_num: Mnode,
     name: String,
     node_type: FileType,
@@ -46,7 +46,7 @@ impl Default for MemNode {
 
 impl MemNode {
     /// Initialize a memory-node for a directory or a file.
-    pub fn new(
+    pub(crate) fn new(
         mnode_num: Mnode,
         pathname: &str,
         modes: Modes,
@@ -69,7 +69,7 @@ impl MemNode {
     }
 
     /// Write to an in-memory file.
-    pub fn write(&mut self, buffer: &[u8], offset: usize) -> Result<usize, KError> {
+    pub(crate) fn write(&mut self, buffer: &[u8], offset: usize) -> Result<usize, KError> {
         // Return if the user doesn't have write permissions for the file.
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
@@ -81,7 +81,7 @@ impl MemNode {
     }
 
     /// Read from an in-memory file.
-    pub fn read(&self, buffer: &mut UserSlice, offset: usize) -> Result<usize, KError> {
+    pub(crate) fn read(&self, buffer: &mut UserSlice, offset: usize) -> Result<usize, KError> {
         // Return if the user doesn't have read permissions for the file.
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
         {
@@ -114,17 +114,17 @@ impl MemNode {
     }
 
     /// Get the file size
-    pub fn get_file_size(&self) -> usize {
+    pub(crate) fn get_file_size(&self) -> usize {
         self.file.as_ref().unwrap().get_size()
     }
 
     /// Get the type of mnode; Directory or file.
-    pub fn get_mnode_type(&self) -> FileType {
+    pub(crate) fn get_mnode_type(&self) -> FileType {
         self.node_type
     }
 
     /// Truncate the file in reasponse of O_TRUNC flag.
-    pub fn file_truncate(&mut self) -> Result<(), KError> {
+    pub(crate) fn file_truncate(&mut self) -> Result<(), KError> {
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_writable()
         {
             return Err(KError::PermissionError);

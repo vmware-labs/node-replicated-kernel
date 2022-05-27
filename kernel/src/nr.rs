@@ -17,15 +17,15 @@ use crate::process::{Pid, MAX_PROCESSES};
 
 /// Kernel scheduler / process mgmt. replica
 #[thread_local]
-pub static NR_REPLICA: Once<(Arc<Replica<'static, KernelNode>>, ReplicaToken)> = Once::new();
+pub(crate) static NR_REPLICA: Once<(Arc<Replica<'static, KernelNode>>, ReplicaToken)> = Once::new();
 
 #[derive(PartialEq, Clone, Copy, Debug)]
-pub enum ReadOps {
+pub(crate) enum ReadOps {
     CurrentProcess(atopology::GlobalThreadId),
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub enum Op {
+pub(crate) enum Op {
     /// Allocate a new process (Pid)
     AllocatePid,
     /// Destroy a process
@@ -41,7 +41,7 @@ pub enum Op {
 }
 
 #[derive(Debug, Clone)]
-pub enum NodeResult {
+pub(crate) enum NodeResult {
     PidAllocated(Pid),
     PidReturned,
     CoreInfo(CoreInfo),
@@ -49,12 +49,12 @@ pub enum NodeResult {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CoreInfo {
+pub(crate) struct CoreInfo {
     pub pid: Pid,
     pub entry_point: VAddr,
 }
 
-pub struct KernelNode {
+pub(crate) struct KernelNode {
     process_map: HashMap<Pid, ()>,
     scheduler_map: HashMap<atopology::GlobalThreadId, CoreInfo>,
 }
@@ -69,7 +69,7 @@ impl Default for KernelNode {
 }
 
 impl KernelNode {
-    pub fn synchronize() -> Result<(), KError> {
+    pub(crate) fn synchronize() -> Result<(), KError> {
         NR_REPLICA
             .get()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
@@ -78,7 +78,7 @@ impl KernelNode {
             })
     }
 
-    pub fn allocate_core_to_process(
+    pub(crate) fn allocate_core_to_process(
         pid: Pid,
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,

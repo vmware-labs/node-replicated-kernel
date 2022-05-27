@@ -21,28 +21,15 @@ use super::DataSize;
 /// In our case a frame can be a multiple of a page -- it may be more fitting
 /// to call it a memory-block.
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub struct Frame {
+pub(crate) struct Frame {
     pub base: PAddr,
     pub size: usize,
     pub affinity: atopology::NodeId,
 }
 
 impl Frame {
-    /// Make a new Frame at `base` with `size`
-    pub const fn const_new(base: PAddr, size: usize, node: atopology::NodeId) -> Frame {
-        //assert_ne!(base, PAddr::zero());
-        //assert_eq!(base % BASE_PAGE_SIZE, 0);
-        //assert!(node < MAX_TOPOLOGIES);
-
-        Frame {
-            base,
-            size,
-            affinity: node,
-        }
-    }
-
     /// Create a new Frame given a PAddr range (from, to)
-    pub fn from_range(range: (PAddr, PAddr), node: atopology::NodeId) -> Frame {
+    pub(crate) fn from_range(range: (PAddr, PAddr), node: atopology::NodeId) -> Frame {
         assert_eq!(range.0 % BASE_PAGE_SIZE, 0);
         assert_eq!(range.1 % BASE_PAGE_SIZE, 0);
         assert!(range.0 < range.1);
@@ -55,7 +42,7 @@ impl Frame {
     }
 
     /// Make a new Frame at `base` with `size` with affinity `node`.
-    pub fn new(base: PAddr, size: usize, node: atopology::NodeId) -> Frame {
+    pub(crate) fn new(base: PAddr, size: usize, node: atopology::NodeId) -> Frame {
         assert_eq!(base % BASE_PAGE_SIZE, 0);
         assert_eq!(size % BASE_PAGE_SIZE, 0);
 
@@ -67,7 +54,7 @@ impl Frame {
     }
 
     /// Construct an empty, zero-length Frame.
-    pub const fn empty() -> Frame {
+    pub(crate) const fn empty() -> Frame {
         Frame {
             base: PAddr::zero(),
             size: 0,
@@ -96,7 +83,7 @@ impl Frame {
     ///    the frame can not be aligned to a large-page within its size.
     /// - `low` will be everything below alignment or Frame::empty() if `self`
     ///    is already aligned to `LARGE_PAGE_SIZE`
-    pub fn split_at_nearest_large_page_boundary(self) -> (Frame, Frame) {
+    pub(crate) fn split_at_nearest_large_page_boundary(self) -> (Frame, Frame) {
         if self.base % LARGE_PAGE_SIZE == 0 {
             (Frame::empty(), self)
         } else {
@@ -115,7 +102,7 @@ impl Frame {
     ///
     /// # Panics
     /// Panics if size is not a multiple of base page-size.
-    pub fn split_at(self, size: usize) -> (Frame, Frame) {
+    pub(crate) fn split_at(self, size: usize) -> (Frame, Frame) {
         assert_eq!(size % BASE_PAGE_SIZE, 0);
 
         if size >= self.size() {
@@ -166,20 +153,21 @@ impl Frame {
     }
 
     /// Size of the region (in 4K pages).
-    pub fn base_pages(&self) -> usize {
+    pub(crate) fn base_pages(&self) -> usize {
         self.size / BASE_PAGE_SIZE
     }
 
-    pub fn is_large_page_aligned(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_large_page_aligned(&self) -> bool {
         self.base % LARGE_PAGE_SIZE == 0
     }
 
     /// Size of the region (in bytes).
-    pub fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         self.size
     }
 
-    pub fn end(&self) -> PAddr {
+    pub(crate) fn end(&self) -> PAddr {
         self.base + self.size
     }
 
@@ -189,12 +177,12 @@ impl Frame {
     }
 
     /// The kernel virtual address for this region.
-    pub fn kernel_vaddr(&self) -> VAddr {
+    pub(crate) fn kernel_vaddr(&self) -> VAddr {
         paddr_to_kernel_vaddr(self.base)
     }
 }
 
-pub struct IntoBasePageIter {
+pub(crate) struct IntoBasePageIter {
     frame: Frame,
 }
 

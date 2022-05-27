@@ -25,20 +25,21 @@ use super::{
 
 /// A handle to the node-local CNR based kernel replica.
 #[thread_local]
-pub static CNRFS: RefCell<Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>> =
-    RefCell::new(None);
+pub(crate) static CNRFS: RefCell<
+    Option<(Arc<MlnrReplica<'static, MlnrKernelNode>>, MlnrReplicaToken)>,
+> = RefCell::new(None);
 
 /// Initializes the CNRFS thread local variable.
 ///
 /// Function should only be called during initialization and must be called on
 /// every thread/core.
-pub fn init_cnrfs_on_thread(replica: Arc<MlnrReplica<'static, MlnrKernelNode>>) {
+pub(crate) fn init_cnrfs_on_thread(replica: Arc<MlnrReplica<'static, MlnrKernelNode>>) {
     let ridx = replica.register().unwrap();
     CNRFS.borrow_mut().replace((replica, ridx));
 }
 
 /// Allocates the necessary amount (#cores per NUMA node) of logs for CNRFS.
-pub fn allocate_logs() -> Vec<Arc<Log<'static, Modify>>> {
+pub(crate) fn allocate_logs() -> Vec<Arc<Log<'static, Modify>>> {
     use core::sync::atomic::{AtomicBool, Ordering};
 
     let cores_per_node = atopology::MACHINE_TOPOLOGY
@@ -86,7 +87,7 @@ pub fn allocate_logs() -> Vec<Arc<Log<'static, Modify>>> {
 }
 
 #[derive(Default)]
-pub struct MlnrKernelNode {
+pub(crate) struct MlnrKernelNode {
     /// TODO: RwLock should be okay for read-write operations as those ops
     /// perform read() on lock. Make an array of hashmaps to distribute the
     /// load evenly for file-open benchmarks.
@@ -96,7 +97,7 @@ pub struct MlnrKernelNode {
 }
 
 #[derive(Hash, Clone, Debug, PartialEq)]
-pub enum Modify {
+pub(crate) enum Modify {
     ProcessAdd(Pid),
     //ProcessRemove(Pid),
     FileOpen(Pid, String, Flags, Modes),
@@ -134,7 +135,7 @@ impl LogMapper for Modify {
 }
 
 #[derive(Hash, Clone, Debug, PartialEq)]
-pub enum Access {
+pub(crate) enum Access {
     FileRead(Pid, FD, Mnode, Buffer, Len, Offset),
     FileInfo(Pid, Filename, Mnode),
     FdToMnode(Pid, FD),
@@ -165,7 +166,7 @@ impl LogMapper for Access {
 }
 
 #[derive(Clone, Debug)]
-pub enum MlnrNodeResult {
+pub(crate) enum MlnrNodeResult {
     ProcessAdded(Pid),
     //ProcessRemoved(Pid),
     FileOpened(FD),
@@ -182,7 +183,7 @@ pub enum MlnrNodeResult {
 /// TODO: Most of the functions looks same as in nr.rs. Merge the
 /// two and maybe move all the functions to a separate file?
 impl MlnrKernelNode {
-    pub fn add_process(pid: usize) -> Result<(u64, u64), KError> {
+    pub(crate) fn add_process(pid: usize) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -196,7 +197,12 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn map_fd(pid: Pid, pathname: u64, flags: u64, modes: u64) -> Result<(FD, u64), KError> {
+    pub(crate) fn map_fd(
+        pid: Pid,
+        pathname: u64,
+        flags: u64,
+        modes: u64,
+    ) -> Result<(FD, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -213,7 +219,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn file_io(
+    pub(crate) fn file_io(
         op: FileOperation,
         pid: Pid,
         fd: u64,
@@ -260,7 +266,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -275,7 +281,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -291,7 +297,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn file_info(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn file_info(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
         let (mnode, _) = MlnrKernelNode::filename_to_mnode(pid, name)?;
         let cnrfs = CNRFS.borrow();
         cnrfs
@@ -307,7 +313,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -325,7 +331,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -343,7 +349,7 @@ impl MlnrKernelNode {
     }
 
     #[inline(always)]
-    pub fn fd_to_mnode(pid: Pid, fd: FD) -> Result<(u64, u64), KError> {
+    pub(crate) fn fd_to_mnode(pid: Pid, fd: FD) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -359,7 +365,7 @@ impl MlnrKernelNode {
     }
 
     #[inline(always)]
-    pub fn filename_to_mnode(pid: Pid, filename: Filename) -> Result<(u64, u64), KError> {
+    pub(crate) fn filename_to_mnode(pid: Pid, filename: Filename) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -374,7 +380,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub fn synchronize_log(log_id: usize) -> Result<(u64, u64), KError> {
+    pub(crate) fn synchronize_log(log_id: usize) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()

@@ -112,8 +112,6 @@ smoke = []
 baremetal = []
 # pre-alloc guest memory: For benchmark sensitive to VM exits.
 prealloc = []
-# Bootstrap core only. Don't boot entire system (just first core).
-bsp-only = []
 # pfault-early: cause a page-fault early during init.
 cause-pfault-early = []
 # gpfault-early: cause a gp-fault early during init.

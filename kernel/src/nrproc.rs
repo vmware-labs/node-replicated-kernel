@@ -24,12 +24,12 @@ use crate::kcb::{ArchSpecificKcb, Kcb};
 
 /// The tokens per core to access the process replicas.
 #[thread_local]
-pub static PROCESS_TOKEN: Once<ArrayVec<ReplicaToken, { MAX_PROCESSES }>> = Once::new();
+pub(crate) static PROCESS_TOKEN: Once<ArrayVec<ReplicaToken, { MAX_PROCESSES }>> = Once::new();
 
 /// Initializes `PROCESS_TOKEN`.
 ///
 /// Should be called on each core.
-pub fn register_thread_with_process_replicas() {
+pub(crate) fn register_thread_with_process_replicas() {
     let node = *crate::kcb::NODE_ID;
     debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
 
@@ -48,21 +48,18 @@ pub fn register_thread_with_process_replicas() {
 
 /// Immutable operations on the NrProcess.
 #[derive(PartialEq, Clone, Copy, Debug)]
-pub enum ReadOps {
+pub(crate) enum ReadOps {
     ProcessInfo,
     MemResolve(VAddr),
 }
 
 /// Mutable operations on the NrProcess.
 #[derive(PartialEq, Clone, Debug)]
-pub enum Op {
-    ProcRaiseIrq,
+pub(crate) enum Op {
     Load(Pid, &'static Module, Vec<Frame>),
 
     /// Assign a core to a process.
     AssignExecutor(atopology::NodeId, atopology::GlobalThreadId),
-
-    Destroy,
 
     /// Assign a physical frame to a process (returns a FrameId).
     AllocateFrameToProcess(Frame),
@@ -72,29 +69,25 @@ pub enum Op {
     MemMapFrame(VAddr, Frame, MapAction),
     MemMapDevice(Frame, MapAction),
     MemMapFrameId(VAddr, FrameId, MapAction),
-    MemAdjust,
     MemUnmap(VAddr),
 }
 
 /// Possible return values from the NrProcess.
 #[derive(Debug, Clone)]
-pub enum NodeResult<E: Executor> {
+pub(crate) enum NodeResult<E: Executor> {
     Loaded,
-    Destroyed,
     ProcessInfo(ProcessInfo),
     Executor(Box<E>),
-    VectorAllocated(u64),
     ExecutorsCreated(usize),
     Mapped,
     MappedFrameId(PAddr, usize),
-    Adjusted,
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FrameId(usize),
 }
 
 /// Advances the replica of all the processes on the current NUMA node.
-pub fn advance_all() {
+pub(crate) fn advance_all() {
     let node = *crate::kcb::NODE_ID;
 
     for pid in 0..MAX_PROCESSES {
@@ -103,7 +96,7 @@ pub fn advance_all() {
 }
 
 /// A node-replicated process.
-pub struct NrProcess<P: Process, M: Allocator + Clone = alloc::alloc::Global> {
+pub(crate) struct NrProcess<P: Process, M: Allocator + Clone = alloc::alloc::Global> {
     /// A list of all cores where the current process is running.
     active_cores: Vec<(atopology::GlobalThreadId, Eid), M>,
     /// The process struct itself.
@@ -111,7 +104,7 @@ pub struct NrProcess<P: Process, M: Allocator + Clone = alloc::alloc::Global> {
 }
 
 impl<P: Process> NrProcess<P> {
-    pub fn new(process: Box<P>, _da: DA) -> NrProcess<P> {
+    pub(crate) fn new(process: Box<P>, _da: DA) -> NrProcess<P> {
         NrProcess {
             active_cores: Vec::new(),
             process,
@@ -120,7 +113,7 @@ impl<P: Process> NrProcess<P> {
 }
 
 impl<P: Process> NrProcess<P> {
-    pub fn load(
+    pub(crate) fn load(
         pid: Pid,
         module: &'static Module,
         writeable_sections: Vec<Frame>,
@@ -140,7 +133,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
+    pub(crate) fn resolve(pid: Pid, base: VAddr) -> Result<(u64, u64), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         debug_assert!(base.as_u64() < kpi::KERNEL_BASE, "Invalid base");
 
@@ -155,7 +148,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn synchronize(pid: Pid) {
+    pub(crate) fn synchronize(pid: Pid) {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let node = *crate::kcb::NODE_ID;
@@ -163,7 +156,7 @@ impl<P: Process> NrProcess<P> {
         PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
     }
 
-    pub fn map_device_frame(
+    pub(crate) fn map_device_frame(
         pid: Pid,
         frame: Frame,
         action: MapAction,
@@ -183,7 +176,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
+    pub(crate) fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let node = *crate::kcb::NODE_ID;
@@ -197,7 +190,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn map_frame_id(
+    pub(crate) fn map_frame_id(
         pid: Pid,
         frame_id: FrameId,
         base: VAddr,
@@ -218,7 +211,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn map_frames(
+    pub(crate) fn map_frames(
         pid: Pid,
         base: VAddr,
         frames: Vec<Frame>,
@@ -251,7 +244,7 @@ impl<P: Process> NrProcess<P> {
         Ok((base.as_u64(), virtual_offset as u64))
     }
 
-    pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
+    pub(crate) fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let node = *crate::kcb::NODE_ID;
@@ -265,7 +258,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn allocate_executor<A>(kcb: &Kcb<A>, pid: Pid) -> Result<Box<P::E>, KError>
+    pub(crate) fn allocate_executor<A>(kcb: &Kcb<A>, pid: Pid) -> Result<Box<P::E>, KError>
     where
         A: ArchSpecificKcb<Process = P>,
         P: Process + core::marker::Sync + 'static,
@@ -286,7 +279,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
+    pub(crate) fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let node = *crate::kcb::NODE_ID;
@@ -302,7 +295,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
+    pub(crate) fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let node = *crate::kcb::NODE_ID;
@@ -342,10 +335,6 @@ where
 
     fn dispatch_mut(&mut self, op: Self::WriteOperation) -> Self::Response {
         match op {
-            Op::Destroy => unimplemented!("Destrroy"),
-            Op::ProcRaiseIrq => unimplemented!("ProcRaiseIrq"),
-            Op::MemAdjust => unimplemented!("MemAdjust"),
-
             Op::Load(pid, module, writeable_sections) => {
                 self.process.load(pid, module, writeable_sections)?;
                 Ok(NodeResult::Loaded)

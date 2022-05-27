@@ -22,14 +22,14 @@ struct Buffer {
 impl Buffer {
     /// This function tries to allocate a vector of BASE_PAGE_SIZE long
     /// and returns a buffer in case of the success; error otherwise.
-    pub fn try_alloc_buffer() -> Result<Buffer, TryReserveError> {
+    pub(crate) fn try_alloc_buffer() -> Result<Buffer, TryReserveError> {
         Vec::try_with_capacity(BASE_PAGE_SIZE).map(|data| Buffer { data })
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
 /// File type has a list of buffers and modes to access the file
-pub struct File {
+pub(crate) struct File {
     mcache: Vec<Buffer>,
     modes: FileModes,
     // TODO: Add more file related attributes
@@ -37,7 +37,7 @@ pub struct File {
 
 impl File {
     /// Initialize a file. Pre-intialize the buffer list with 64 size.
-    pub fn new(modes: Modes) -> Result<File, KError> {
+    pub(crate) fn new(modes: Modes) -> Result<File, KError> {
         let modes = FileModes::from(modes);
         let mcache = Vec::try_with_capacity(64 * size_of::<Buffer>())?;
         Ok(File { mcache, modes })
@@ -46,7 +46,7 @@ impl File {
     /// This method returns the current-size of the file. This method follows
     /// the same convention as a vector length. So, size of the file is equal
     /// to the data in it and not the max-allocated buffer-size.
-    pub fn get_size(&self) -> usize {
+    pub(crate) fn get_size(&self) -> usize {
         let buffer_num = self.mcache.len();
         match buffer_num {
             0 => 0,
@@ -73,13 +73,13 @@ impl File {
     }
 
     /// This method returns the mode in which file is created.
-    pub fn get_mode(&self) -> FileModes {
+    pub(crate) fn get_mode(&self) -> FileModes {
         self.modes
     }
 
     /// This method is internally used by write_file() method. The additional
     /// length is initialzed to zero.
-    pub fn increase_file_size(
+    pub(crate) fn increase_file_size(
         &mut self,
         curr_file_len: usize,
         new_len: usize,
@@ -146,7 +146,7 @@ impl File {
     /// This method is internally call on a read() system-call. It reads the content of the
     /// file and copies it in a user provided slice. The data is read from start_offset till
     /// end_offset(not inclusive).
-    pub fn read_file(
+    pub(crate) fn read_file(
         &self,
         user_slice: &mut [u8],
         start_offset: usize,
@@ -188,7 +188,7 @@ impl File {
     /// data in a user-slice and the method copies that data into the file buffers. Beside
     /// the slice the user also provides the length of the data and it can also specify an
     /// arbitrary offset in the file to write the data.
-    pub fn write_file(
+    pub(crate) fn write_file(
         &mut self,
         user_slice: &[u8],
         len: usize,
@@ -238,7 +238,7 @@ impl File {
     }
 
     /// Truncate the file in reasponse of O_TRUNC flag.
-    pub fn file_truncate(&mut self) {
+    pub(crate) fn file_truncate(&mut self) {
         self.mcache.clear();
     }
 }

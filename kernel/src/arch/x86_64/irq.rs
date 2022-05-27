@@ -64,11 +64,11 @@ use super::{debug, gdb, timer};
 
 /// The x2APIC driver of the current core.
 #[thread_local]
-pub static LOCAL_APIC: RefCell<X2APICDriver> = RefCell::new(X2APICDriver::new());
+pub(crate) static LOCAL_APIC: RefCell<X2APICDriver> = RefCell::new(X2APICDriver::new());
 
 /// TLB time (a silly way to measure it)
 #[thread_local]
-pub static TLB_TIME: Cell<u64> = Cell::new(0);
+pub(crate) static TLB_TIME: Cell<u64> = Cell::new(0);
 
 /// A macro to initialize an entry in an IDT table.
 ///
@@ -113,12 +113,12 @@ macro_rules! idt_set {
 }
 
 /// The IDT entry for handling the TLB work-queue
-pub const TLB_WORK_PENDING: u8 = 251;
+pub(crate) const TLB_WORK_PENDING: u8 = 251;
 /// The IDT entry for handling GC in cnr.
-pub const MLNR_GC_INIT: u8 = 250;
+pub(crate) const MLNR_GC_INIT: u8 = 250;
 
 /// The IDT table can hold a maximum of 256 entries.
-pub const IDT_SIZE: usize = 256;
+pub(crate) const IDT_SIZE: usize = 256;
 
 /// The IDT table that is installed early on during initialization.
 ///
@@ -128,7 +128,7 @@ pub const IDT_SIZE: usize = 256;
 static mut DEFAULT_IDT: IdtTable = IdtTable([Descriptor64::NULL; IDT_SIZE]);
 
 /// A wrapper type to represent the array of IDT entries
-pub struct IdtTable([Descriptor64; IDT_SIZE]);
+pub(crate) struct IdtTable([Descriptor64; IDT_SIZE]);
 
 /// The default for an IdtTable.
 impl Default for IdtTable {
@@ -779,7 +779,7 @@ pub unsafe fn register_handler(
 /// Initialize IO APICs by enumerating them
 /// and making sure the device registers are mapped
 /// in the kernel-space.
-pub fn ioapic_initialize() {
+pub(crate) fn ioapic_initialize() {
     let ioapic_len = atopology::MACHINE_TOPOLOGY.io_apics().count();
     /*crate::memory::KernelAllocator::try_refill_tcache(4 * ioapic_len, 0)
     .expect("Refill didn't work");*/
@@ -811,7 +811,7 @@ pub fn ioapic_initialize() {
 /// Currently this just enables everything and routes it to
 /// core 0. This is because, we should probably just support MSI(X)
 /// and don't invest a lot in legacy interrupts...
-pub fn ioapic_establish_route(_gsi: u64, _core: u64) {
+pub(crate) fn ioapic_establish_route(_gsi: u64, _core: u64) {
     use crate::memory::vspace::MapAction;
     use crate::memory::{paddr_to_kernel_vaddr, PAddr};
 
@@ -845,13 +845,13 @@ fn acknowledge() {
     LOCAL_APIC.borrow_mut().eoi();
 }
 
-pub fn enable() {
+pub(crate) fn enable() {
     unsafe {
         x86::irq::enable();
     }
 }
 
-pub fn disable() {
+pub(crate) fn disable() {
     unsafe {
         x86::irq::disable();
     }

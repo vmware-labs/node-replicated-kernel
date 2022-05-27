@@ -6,7 +6,7 @@ pub use alloc::string::String;
 pub use alloc::vec::Vec;
 pub use core::prelude::v1::*;
 
-pub use crate::error::KError;
+pub(crate) use crate::error::KError;
 
 use core::fmt;
 use core::ops::{Deref, DerefMut};
@@ -32,7 +32,7 @@ macro_rules! is_large_page_aligned {
     };
 }
 
-pub trait PowersOf2 {
+pub(crate) trait PowersOf2 {
     fn log2(self) -> u8;
 }
 
@@ -69,7 +69,7 @@ impl PowersOf2 for u8 {
 #[derive(Clone, Copy, Default, Hash, PartialEq, Eq)]
 #[cfg_attr(target_arch = "x86_64", repr(align(128)))]
 #[cfg_attr(not(target_arch = "x86_64"), repr(align(64)))]
-pub struct CachePadded<T> {
+pub(crate) struct CachePadded<T> {
     value: T,
 }
 
@@ -86,7 +86,7 @@ impl<T> CachePadded<T> {
     ///
     /// let padded_value = CachePadded::new(1);
     /// ```
-    pub fn new(t: T) -> CachePadded<T> {
+    pub(crate) fn new(t: T) -> CachePadded<T> {
         CachePadded::<T> { value: t }
     }
 }
@@ -121,6 +121,6 @@ impl<T> From<T> for CachePadded<T> {
 
 /// Checks if there is an overlap between two ranges
 #[allow(unused)] // Currently only used in integration_main.rs
-pub fn overlaps<T: PartialOrd>(a: &core::ops::Range<T>, b: &core::ops::Range<T>) -> bool {
+pub(crate) fn overlaps<T: PartialOrd>(a: &core::ops::Range<T>, b: &core::ops::Range<T>) -> bool {
     a.start < b.end && b.start < a.end
 }

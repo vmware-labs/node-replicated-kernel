@@ -19,7 +19,7 @@ use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
 #[allow(unused)]
-pub fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
+pub(crate) fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
     const VMWARE_INC: u16 = 0x15ad;
     const VMXNET_DEV: u16 = 0x07b0;
     if let Some(vmxnet3_dev) = claim_device(VMWARE_INC, VMXNET_DEV) {
@@ -51,7 +51,8 @@ pub fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
         let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
         let kcb = crate::kcb::get_kcb();
-        let (ethernet_addr, ip_addrs) = match kcb.cmdline.mode {
+        let (ethernet_addr, ip_addrs) = match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode)
+        {
             Mode::Client => (
                 EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdd]),
                 [IpCidr::new(IpAddress::v4(172, 31, 0, 12), 24)],
@@ -86,7 +87,7 @@ pub fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
 
 #[cfg(feature = "rpc")]
 #[allow(unused)]
-pub fn init_ethernet_rpc(
+pub(crate) fn init_ethernet_rpc(
     server_ip: smoltcp::wire::IpAddress,
     server_port: u16,
 ) -> KResult<alloc::boxed::Box<rpc::client::Client>> {

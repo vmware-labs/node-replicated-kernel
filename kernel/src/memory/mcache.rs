@@ -23,17 +23,17 @@ use static_assertions as sa;
 use super::*;
 
 /// A big cache of base and large pages, fits on a 2 MiB page.
-pub type NCache = MCache<131071, 131070>;
+pub(crate) type NCache = MCache<131071, 131070>;
 sa::assert_eq_size!(NCache, [u8; LARGE_PAGE_SIZE]);
 sa::const_assert!(core::mem::align_of::<NCache>() <= super::BASE_PAGE_SIZE);
 
 /// A small cache of 4 KiB and 2 MiB pages, fits on a 4K page.
-pub type TCache = MCache<381, 128>;
+pub(crate) type TCache = MCache<381, 128>;
 sa::assert_eq_size!(TCache, [u8; BASE_PAGE_SIZE]);
 sa::const_assert!(core::mem::align_of::<TCache>() <= super::BASE_PAGE_SIZE);
 
 /// A slightly bigger cache of 4KiB and 2MiB pages, fits on a 2 MiB page.
-pub type TCacheSp = MCache<2048, 12>;
+pub(crate) type TCacheSp = MCache<2048, 12>;
 sa::const_assert!(core::mem::size_of::<TCacheSp>() <= super::LARGE_PAGE_SIZE);
 sa::const_assert!(core::mem::align_of::<TCacheSp>() <= super::LARGE_PAGE_SIZE);
 
@@ -41,7 +41,7 @@ sa::const_assert!(core::mem::align_of::<TCacheSp>() <= super::LARGE_PAGE_SIZE);
 ///
 /// Holds two stacks of pages for O(1) allocation/deallocation.
 /// Implements the `GrowBackend` to hand pages out.
-pub struct MCache<const BP: usize, const LP: usize> {
+pub(crate) struct MCache<const BP: usize, const LP: usize> {
     /// Which node the memory in this cache is from.
     node: atopology::NodeId,
     /// A vector of free, cached base-page addresses
@@ -53,7 +53,7 @@ pub struct MCache<const BP: usize, const LP: usize> {
 impl<const BP: usize, const LP: usize> crate::kcb::MemManager for MCache<BP, LP> {}
 
 impl<const BP: usize, const LP: usize> MCache<BP, LP> {
-    pub const fn new(node: atopology::NodeId) -> MCache<BP, LP> {
+    pub(crate) const fn new(node: atopology::NodeId) -> MCache<BP, LP> {
         MCache {
             node,
             base_page_addresses: arrayvec::ArrayVec::new_const(),
@@ -61,7 +61,7 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
         }
     }
 
-    pub fn new_with_frame<const B: usize, const L: usize>(
+    pub(crate) fn new_with_frame<const B: usize, const L: usize>(
         node: atopology::NodeId,
         mem: Frame,
     ) -> MCache<B, L> {
@@ -74,7 +74,7 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
     ///
     /// This works by repeatedly splitting the `frame`
     /// into smaller pages.
-    pub fn populate_4k_first(&mut self, frame: Frame) {
+    pub(crate) fn populate_4k_first(&mut self, frame: Frame) {
         let how_many_large_pages = if frame.base_pages() > self.base_page_addresses.capacity() {
             let bytes_left_after_base_full =
                 (frame.base_pages() - self.base_page_addresses.capacity()) * BASE_PAGE_SIZE;
@@ -92,7 +92,7 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
     ///
     /// The Frame can be a multiple of page-size, the policy is
     /// to divide it into ~13% base-pages and 87% large-pages.
-    pub fn populate_2m_first(&mut self, frame: Frame) {
+    pub(crate) fn populate_2m_first(&mut self, frame: Frame) {
         let how_many_large_pages = (frame.size() / LARGE_PAGE_SIZE) * 87 / 100;
         self.populate(frame, how_many_large_pages)
     }
@@ -160,7 +160,7 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
     }
 
     /// Initialize an uninitialized MCache and return it.
-    pub fn init(
+    pub(crate) fn init(
         ncache: &mut MaybeUninit<MCache<BP, LP>>,
         node: atopology::NodeId,
     ) -> &mut MCache<BP, LP> {

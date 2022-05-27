@@ -9,7 +9,7 @@ use kpi::SystemCallError;
 use crate::memory::VAddr;
 
 /// Shortcut for a Result that returns an error of type KError.
-pub type KResult<T> = Result<T, KError>;
+pub(crate) type KResult<T> = Result<T, KError>;
 
 /// Kernel-wide error type with everything that can potentially go wrong.
 #[derive(displaydoc::Display, PartialEq, Clone, Debug)]

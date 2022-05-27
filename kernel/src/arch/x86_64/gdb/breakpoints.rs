@@ -20,7 +20,7 @@ use super::KernelDebugger;
 /// the right gdb error code when we hit a BP so we keep track of what GDB
 /// requested.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum BreakRequest {
+pub(crate) enum BreakRequest {
     /// GDB requested a hardware breakpoint.
     Hardware,
     /// GDB requested a software breakpoint.
@@ -31,7 +31,7 @@ pub enum BreakRequest {
 ///
 /// Watch memory location or instruction pointer.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum BreakType {
+pub(crate) enum BreakType {
     /// For instructions
     Breakpoint,
     /// For data access/writes
@@ -40,7 +40,7 @@ pub enum BreakType {
 
 /// Keeps information about any breakpoints we've set.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct BreakState(pub VAddr, pub BreakType, pub BreakRequest);
+pub(crate) struct BreakState(pub VAddr, pub BreakType, pub BreakRequest);
 
 impl KernelDebugger {
     pub(super) fn add_breakpoint(

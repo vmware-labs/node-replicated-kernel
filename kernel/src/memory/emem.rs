@@ -28,18 +28,9 @@ use crate::round_up;
 /// (running ZoneAllocator's deallocate method on it mechanism
 /// would surely lead to memory unsafety).
 #[derive(Debug)]
-pub struct EmergencyAllocator {
+pub(crate) struct EmergencyAllocator {
     pub index: usize,
     region: Frame,
-}
-
-impl EmergencyAllocator {
-    pub const fn empty() -> Self {
-        Self {
-            index: 0,
-            region: Frame::empty(),
-        }
-    }
 }
 
 impl Default for EmergencyAllocator {
@@ -49,12 +40,11 @@ impl Default for EmergencyAllocator {
 }
 
 impl EmergencyAllocator {
-    /// Creates a new instance with a given frame.
-    pub fn new(region: Frame) -> EmergencyAllocator {
-        assert!(region.base.as_u64() > 0);
-        assert!(region.size % BASE_PAGE_SIZE == 0);
-
-        EmergencyAllocator { index: 0, region }
+    pub(crate) const fn empty() -> Self {
+        Self {
+            index: 0,
+            region: Frame::empty(),
+        }
     }
 
     unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, KError> {

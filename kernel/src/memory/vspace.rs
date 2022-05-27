@@ -13,14 +13,14 @@ use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 use super::{Frame, PAddr, VAddr};
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct TlbFlushHandle {
+pub(crate) struct TlbFlushHandle {
     pub vaddr: VAddr,
     pub frame: Frame,
     pub core_map: CoreBitMap,
 }
 
 impl TlbFlushHandle {
-    pub fn new(vaddr: VAddr, frame: Frame) -> TlbFlushHandle {
+    pub(crate) fn new(vaddr: VAddr, frame: Frame) -> TlbFlushHandle {
         TlbFlushHandle {
             vaddr,
             frame,
@@ -28,17 +28,17 @@ impl TlbFlushHandle {
         }
     }
 
-    pub fn add_core(&mut self, gtid: atopology::GlobalThreadId) {
+    pub(crate) fn add_core(&mut self, gtid: atopology::GlobalThreadId) {
         self.core_map.set_bit(gtid as usize, true)
     }
 
-    pub fn cores(&self) -> CoreBitMapIter {
+    pub(crate) fn cores(&self) -> CoreBitMapIter {
         CoreBitMapIter(self.core_map)
     }
 }
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-pub struct CoreBitMap {
+pub(crate) struct CoreBitMap {
     pub low: u128,
     pub high: u128,
 }
@@ -46,7 +46,7 @@ pub struct CoreBitMap {
 static_assertions::const_assert!(crate::arch::MAX_CORES < (u128::BITS as usize) * 2);
 
 impl CoreBitMap {
-    pub fn set_bit(&mut self, bit: usize, value: bool) {
+    pub(crate) fn set_bit(&mut self, bit: usize, value: bool) {
         if bit <= 127 {
             self.low.set_bit(bit, value);
         } else {
@@ -56,7 +56,7 @@ impl CoreBitMap {
     }
 }
 
-pub struct CoreBitMapIter(CoreBitMap);
+pub(crate) struct CoreBitMapIter(CoreBitMap);
 
 impl Iterator for CoreBitMapIter {
     type Item = usize;
@@ -81,21 +81,21 @@ impl Iterator for CoreBitMapIter {
 
 #[cfg_attr(not(target_os = "none"), allow(dead_code))]
 #[derive(Debug, PartialEq)]
-pub enum MappingType {
+pub(crate) enum MappingType {
     _ElfText,
     _ElfData,
     _Executor,
     Heap,
 }
 
-pub struct MappingInfo {
+pub(crate) struct MappingInfo {
     pub frame: Frame,
     pub rights: MapAction,
     pub typ: MappingType,
 }
 
 impl MappingInfo {
-    pub fn new(frame: Frame, rights: MapAction) -> Self {
+    pub(crate) fn new(frame: Frame, rights: MapAction) -> Self {
         MappingInfo {
             frame,
             rights,
@@ -104,7 +104,7 @@ impl MappingInfo {
     }
 
     /// Return range of the region if it would start at `base`
-    pub fn vrange(&self, base: VAddr) -> core::ops::Range<usize> {
+    pub(crate) fn vrange(&self, base: VAddr) -> core::ops::Range<usize> {
         base.as_usize()..base.as_usize() + self.frame.size
     }
 }
@@ -120,7 +120,7 @@ impl fmt::Debug for MappingInfo {
 }
 
 /// Generic address space functionality.
-pub trait AddressSpace {
+pub(crate) trait AddressSpace {
     /// Maps a list of `frames` at `base` in the address space
     /// with the access rights defined by `action`.
     fn map_frames(&mut self, base: VAddr, frames: &[(Frame, MapAction)]) -> Result<(), KError> {
@@ -175,7 +175,7 @@ pub trait AddressSpace {
 /// Mapping rights to give to address translation.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[allow(unused)]
-pub enum MapAction {
+pub(crate) enum MapAction {
     /// Don't map
     None,
     /// Map region read-only.
@@ -200,7 +200,7 @@ pub enum MapAction {
 
 impl MapAction {
     /// Transform MapAction into rights for 1 GiB page.
-    pub fn to_pdpt_rights(self) -> PDPTFlags {
+    pub(crate) fn to_pdpt_rights(self) -> PDPTFlags {
         use MapAction::*;
         match self {
             None => PDPTFlags::empty(),
@@ -216,11 +216,11 @@ impl MapAction {
         }
     }
 
-    pub fn is_readable(&self) -> bool {
+    pub(crate) fn is_readable(&self) -> bool {
         *self != MapAction::None
     }
 
-    pub fn is_writable(&self) -> bool {
+    pub(crate) fn is_writable(&self) -> bool {
         use MapAction::*;
         matches!(
             self,
@@ -232,7 +232,7 @@ impl MapAction {
         )
     }
 
-    pub fn is_executable(&self) -> bool {
+    pub(crate) fn is_executable(&self) -> bool {
         use MapAction::*;
         matches!(
             self,
@@ -241,7 +241,7 @@ impl MapAction {
     }
 
     /// Transform MapAction into rights for 2 MiB page.
-    pub fn to_pd_rights(self) -> PDFlags {
+    pub(crate) fn to_pd_rights(self) -> PDFlags {
         use MapAction::*;
         match self {
             None => PDFlags::empty(),
@@ -258,7 +258,7 @@ impl MapAction {
     }
 
     /// Transform MapAction into rights for 4KiB page.
-    pub fn to_pt_rights(self) -> PTFlags {
+    pub(crate) fn to_pt_rights(self) -> PTFlags {
         use MapAction::*;
         match self {
             None => PTFlags::empty(),

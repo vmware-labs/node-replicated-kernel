@@ -22,16 +22,16 @@ use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PhysicalPage
 use crate::nrproc::NrProcess;
 use crate::process::{Process, MAX_PROCESSES};
 
-pub use crate::arch::kcb::{get_kcb, try_get_kcb};
+pub(crate) use crate::arch::kcb::{get_kcb, try_get_kcb};
 
 /// The core id of the current core (hardware thread).
 #[thread_local]
-pub static CORE_ID: Lazy<usize> =
+pub(crate) static CORE_ID: Lazy<usize> =
     Lazy::new(|| atopology::MACHINE_TOPOLOGY.current_thread().id as usize);
 
 /// The NUMA node id of the current core (hardware thread).
 #[thread_local]
-pub static NODE_ID: Lazy<usize> = Lazy::new(|| {
+pub(crate) static NODE_ID: Lazy<usize> = Lazy::new(|| {
     atopology::MACHINE_TOPOLOGY
         .current_thread()
         .node_id
@@ -39,17 +39,20 @@ pub static NODE_ID: Lazy<usize> = Lazy::new(|| {
 });
 
 /// How many cores (hardware threads) we have per NUMA node.
-pub static CORES_PER_NUMA_NODE: Lazy<usize> =
+pub(crate) static CORES_PER_NUMA_NODE: Lazy<usize> =
     Lazy::new(|| match atopology::MACHINE_TOPOLOGY.nodes().next() {
         Some(node) => node.threads().count(),
         None => 1,
     });
 
-pub trait MemManager: PhysicalPageProvider + AllocatorStatistics + GrowBackend {}
+pub(crate) trait MemManager:
+    PhysicalPageProvider + AllocatorStatistics + GrowBackend
+{
+}
 
 /// State which allows to do memory management for a particular
 /// NUMA node on a given core.
-pub struct PhysicalMemoryArena {
+pub(crate) struct PhysicalMemoryArena {
     pub affinity: atopology::NodeId,
 
     /// A handle to the global memory manager.
@@ -84,7 +87,7 @@ impl PhysicalMemoryArena {
 
 /// The Kernel Control Block for a given core.
 /// It contains all core-local state of the kernel.
-pub struct Kcb<A>
+pub(crate) struct Kcb<A>
 where
     A: ArchSpecificKcb,
     <<A as ArchSpecificKcb>::Process as crate::process::Process>::E: Debug + 'static,
@@ -125,7 +128,7 @@ where
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
-    pub const fn new(emanager: TCacheSp, arch: A, node: atopology::NodeId) -> Kcb<A> {
+    pub(crate) const fn new(emanager: TCacheSp, arch: A, node: atopology::NodeId) -> Kcb<A> {
         const DEFAULT_PHYSICAL_MEMORY_ARENA: Option<PhysicalMemoryArena> = None;
         Kcb {
             arch,
@@ -141,12 +144,12 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         }
     }
 
-    pub fn set_panic_mode(&mut self) {
+    pub(crate) fn set_panic_mode(&mut self) {
         self.in_panic_mode = true;
     }
 
     /// Ties this KCB to the local CPU by setting the KCB's GDT and IDT.
-    pub fn install(&'static mut self) {
+    pub(crate) fn install(&'static mut self) {
         self.arch.install();
 
         // Reloading gdt means we lost the content in `gs` so we
@@ -154,11 +157,11 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         init_kcb(self);
     }
 
-    pub fn set_global_mem(&mut self, gm: &'static GlobalMemory) {
+    pub(crate) fn set_global_mem(&mut self, gm: &'static GlobalMemory) {
         self.physical_memory.gmanager = Some(gm);
     }
 
-    pub fn set_global_pmem(&mut self, gm: &'static GlobalMemory) {
+    pub(crate) fn set_global_pmem(&mut self, gm: &'static GlobalMemory) {
         self.pmem_memory.gmanager = Some(gm);
     }
 
@@ -188,7 +191,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         }
     }
 
-    pub fn set_mem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
+    pub(crate) fn set_mem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
         if node == self.physical_memory.affinity {
             // Allocation affinity is already set to correct NUMA node
             return Ok(());
@@ -206,7 +209,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         )
     }
 
-    pub fn set_pmem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
+    pub(crate) fn set_pmem_affinity(&mut self, node: atopology::NodeId) -> Result<(), KError> {
         if node == self.pmem_memory.affinity {
             // Allocation affinity is already set to correct NUMA node
             return Ok(());
@@ -219,16 +222,16 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         Kcb::<A>::swap_manager(gmanager, &mut self.pmem_memory, &mut self.pmem_arenas, node)
     }
 
-    pub fn set_mem_manager(&mut self, pmanager: TCache) {
+    pub(crate) fn set_mem_manager(&mut self, pmanager: TCache) {
         self.physical_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
-    pub fn set_pmem_manager(&mut self, pmanager: TCache) {
+    pub(crate) fn set_pmem_manager(&mut self, pmanager: TCache) {
         self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
     /// Get a reference to the early memory manager.
-    pub fn emanager(&self) -> RefMut<TCacheSp> {
+    pub(crate) fn emanager(&self) -> RefMut<TCacheSp> {
         self.emanager.borrow_mut()
     }
 
@@ -239,13 +242,13 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             .map(|rmt| RefMut::map(rmt, |t| t as &mut dyn MemManager))
     }
 
-    pub fn ezone_allocator(
+    pub(crate) fn ezone_allocator(
         &self,
     ) -> Result<RefMut<impl slabmalloc::Allocator<'static>>, core::cell::BorrowMutError> {
         self.ezone_allocator.try_borrow_mut()
     }
 
-    pub fn zone_allocator(
+    pub(crate) fn zone_allocator(
         &self,
     ) -> Result<RefMut<impl slabmalloc::Allocator<'static>>, core::cell::BorrowMutError> {
         self.physical_memory.zone_allocator.try_borrow_mut()
@@ -253,7 +256,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
 
     /// Returns a reference to the core-local physical memory manager if set,
     /// otherwise returns the early physical memory manager.
-    pub fn mem_manager(&self) -> RefMut<dyn MemManager> {
+    pub(crate) fn mem_manager(&self) -> RefMut<dyn MemManager> {
         if core::intrinsics::unlikely(self.in_panic_mode) {
             return self.emanager();
         }
@@ -264,7 +267,9 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             .map_or(self.emanager(), |pmem| pmem.borrow_mut())
     }
 
-    pub fn try_mem_manager(&self) -> Result<RefMut<dyn MemManager>, core::cell::BorrowMutError> {
+    pub(crate) fn try_mem_manager(
+        &self,
+    ) -> Result<RefMut<dyn MemManager>, core::cell::BorrowMutError> {
         if core::intrinsics::unlikely(self.in_panic_mode) {
             return Ok(self.emanager());
         }
@@ -278,7 +283,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         )
     }
 
-    pub fn pmem_manager(&self) -> RefMut<dyn MemManager> {
+    pub(crate) fn pmem_manager(&self) -> RefMut<dyn MemManager> {
         self.pmem_memory
             .pmanager
             .as_ref()
@@ -286,7 +291,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     }
 }
 
-pub trait ArchSpecificKcb {
+pub(crate) trait ArchSpecificKcb {
     type Process: Process + Sync;
 
     fn install(&mut self);

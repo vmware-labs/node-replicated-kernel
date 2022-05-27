@@ -22,20 +22,16 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
-#[cfg(not(feature = "bsp-only"))]
 use alloc::vec::Vec;
 use core::mem::transmute;
-#[cfg(not(feature = "bsp-only"))]
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 
 use apic::ApicDriver;
 use arrayvec::ArrayVec;
-#[cfg(not(feature = "bsp-only"))]
 use cnr::Log as MlnrLog;
 use cnr::Replica as MlnrReplica;
 use driverkit::DriverControl;
-#[cfg(not(feature = "bsp-only"))]
 use fallible_collections::FallibleVecGlobal;
 use fallible_collections::TryClone;
 use klogger::sprint;
@@ -47,7 +43,6 @@ use x86::{controlregs, cpuid};
 use crate::cmdline::CommandLineArguments;
 use crate::fallible_string::FallibleString;
 use crate::fs::cnrfs::MlnrKernelNode;
-#[cfg(not(feature = "bsp-only"))]
 use crate::fs::cnrfs::Modify;
 use crate::kcb::Kcb;
 use crate::memory::vspace::MapAction;
@@ -81,8 +76,8 @@ mod isr;
 mod serial;
 mod tls;
 
-pub const MAX_NUMA_NODES: usize = 12;
-pub const MAX_CORES: usize = 192;
+pub(crate) const MAX_NUMA_NODES: usize = 12;
+pub(crate) const MAX_CORES: usize = 192;
 
 /// Make sure the machine supports what we require.
 fn assert_required_cpu_features() {
@@ -121,7 +116,7 @@ fn assert_required_cpu_features() {
 ///
 /// # TODO
 /// This is public because of the integration tests (and ideally shouldn't be).
-pub fn enable_sse() {
+pub(crate) fn enable_sse() {
     // Follow the protocol described in Intel SDM, 13.1.3 Initialization of the SSE Extensions
     unsafe {
         let mut cr4 = controlregs::cr4();
@@ -148,7 +143,7 @@ pub fn enable_sse() {
 ///
 /// # TODO
 /// This is public because of the integration tests (and ideally shouldn't be).
-pub fn enable_fsgsbase() {
+pub(crate) fn enable_fsgsbase() {
     unsafe {
         let mut cr4: controlregs::Cr4 = controlregs::cr4();
         cr4 |= controlregs::Cr4::CR4_ENABLE_FSGSBASE;
@@ -159,7 +154,7 @@ pub fn enable_fsgsbase() {
 /// Goes to sleep / halts the core.
 ///
 /// Interrupts are enabled before going to sleep.
-pub fn halt() -> ! {
+pub(crate) fn halt() -> ! {
     unsafe {
         irq::enable();
         loop {
@@ -184,7 +179,6 @@ fn init_apic() {
     );
 }
 
-#[cfg(not(feature = "bsp-only"))]
 struct AppCoreArgs {
     _mem_region: Frame,
     _pmem_region: Option<Frame>,
@@ -201,7 +195,6 @@ struct AppCoreArgs {
 ///
 /// This is almost identical to `_start` which is initializing the BSP core
 /// (and called from UEFI instead).
-#[cfg(not(feature = "bsp-only"))]
 fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     enable_sse();
     enable_fsgsbase();
@@ -303,7 +296,6 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 ///  - Initialized ACPI
 ///  - Initialized topology
 ///  - Local APIC driver
-#[cfg(not(feature = "bsp-only"))]
 fn boot_app_cores(
     log: Arc<Log<'static, Op>>,
     bsp_replica: Arc<Replica<'static, KernelNode>>,
@@ -716,7 +708,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // return to _start.
     core::mem::forget(kcb);
 
-    #[cfg(feature = "cause-double-fault")]
+    #[cfg(all(
+        feature = "integration-test",
+        any(feature = "test-double-fault", feature = "cause-double-fault")
+    ))]
     debug::cause_double_fault();
 
     // Initialize the ACPI sub-system (needs alloc)
@@ -862,13 +857,12 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     #[cfg(feature = "rackscale")]
     if crate::CMDLINE
         .get()
-        .map_or_else(false, |c| c.mode == crate::cmdline::Mode::Client)
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
     {
         let _ = spin::lazy::Lazy::force(&rackscale::RPC_CLIENT);
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
-    #[cfg(not(feature = "bsp-only"))]
     boot_app_cores(log.clone(), bsp_replica, fs_logs, fs_replica);
 
     // Done with initialization, now we go in
@@ -880,6 +874,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 }
 
 /// For cores that advances the replica eagerly. This avoids additional IPI costs.
-pub fn advance_fs_replica() {
+pub(crate) fn advance_fs_replica() {
     tlb::eager_advance_fs_replica();
 }

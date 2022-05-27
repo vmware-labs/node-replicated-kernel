@@ -14,7 +14,7 @@ use crate::arch::process::UserSlice;
 use crate::error::KError;
 use crate::fallible_string::TryString;
 
-pub use rwlock::RwLock as NrLock;
+pub(crate) use rwlock::RwLock as NrLock;
 
 pub mod cnrfs;
 pub mod fd;
@@ -28,27 +28,27 @@ mod test;
 use mnode::MemNode;
 
 /// The maximum number of open files for a process.
-pub const MAX_FILES_PER_PROCESS: usize = 4096;
+pub(crate) const MAX_FILES_PER_PROCESS: usize = 4096;
 
 /// Mnode number.
-pub type Mnode = u64;
+pub(crate) type Mnode = u64;
 /// Flags for fs calls.
-pub type Flags = u64;
+pub(crate) type Flags = u64;
 /// Modes for fs calls
-pub type Modes = u64;
+pub(crate) type Modes = u64;
 /// File descriptor.
-pub type FD = u64;
+pub(crate) type FD = u64;
 /// Userspace buffer pointer to read or write a file.
-pub type Buffer = u64;
+pub(crate) type Buffer = u64;
 /// Number of bytes to read or write a file.
-pub type Len = u64;
+pub(crate) type Len = u64;
 /// Userspace-pointer to filename.
-pub type Filename = u64;
+pub(crate) type Filename = u64;
 /// File offset
-pub type Offset = i64;
+pub(crate) type Offset = i64;
 
 /// Abstract definition of file-system interface operations.
-pub trait FileSystem {
+pub(crate) trait FileSystem {
     fn create(&self, pathname: &str, modes: Modes) -> Result<u64, KError>;
     fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError>;
     fn read(
@@ -66,7 +66,7 @@ pub trait FileSystem {
 }
 
 /// Abstract definition of a file descriptor.
-pub trait FileDescriptor {
+pub(crate) trait FileDescriptor {
     fn init_fd() -> Fd;
     fn update_fd(&mut self, mnode: Mnode, flags: FileFlags);
     fn get_mnode(&self) -> Mnode;
@@ -77,7 +77,7 @@ pub trait FileDescriptor {
 
 /// A file descriptor representaion.
 #[derive(Debug, Default)]
-pub struct Fd {
+pub(crate) struct Fd {
     mnode: Mnode,
     flags: FileFlags,
     offset: AtomicUsize,
@@ -116,11 +116,11 @@ impl FileDescriptor for Fd {
 }
 
 /// The mnode number assigned to the first file.
-pub const MNODE_OFFSET: usize = 2;
+pub(crate) const MNODE_OFFSET: usize = 2;
 
 /// The in-memory file-system representation.
 #[derive(Debug)]
-pub struct MlnrFS {
+pub(crate) struct MlnrFS {
     /// Only create file will lock the hashmap in write mode,
     /// every other operation is locked in read mode.
     mnodes: NrLock<HashMap<Mnode, NrLock<MemNode>>>,

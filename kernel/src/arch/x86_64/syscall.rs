@@ -53,7 +53,7 @@ extern "C" {
 /// sub-architecture implementations currently use parts of the x86
 /// implementation and this makes sharing easier (rackscale just has to opt-in
 /// and out of the `Arch86*` traits to "inherit" implementation).
-pub struct Arch86SystemCall;
+pub(crate) struct Arch86SystemCall;
 
 impl SystemCallDispatch<u64> for Arch86SystemCall {}
 impl Arch86SystemDispatch for Arch86SystemCall {}
@@ -62,7 +62,7 @@ impl Arch86VSpaceDispatch for Arch86SystemCall {}
 impl crate::syscalls::CnrFsDispatch for Arch86SystemCall {}
 
 /// Dispatch logic for global system calls.
-pub trait Arch86SystemDispatch {}
+pub(crate) trait Arch86SystemDispatch {}
 
 impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
     fn get_hardware_threads(
@@ -110,7 +110,7 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
 }
 
 /// Dispatch logic for global system calls.
-pub trait Arch86ProcessDispatch {}
+pub(crate) trait Arch86ProcessDispatch {}
 
 impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
     fn log(&self, buffer_arg: u64, len: u64) -> Result<(u64, u64), KError> {
@@ -247,7 +247,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 }
 
 /// Dispatch logic for vspace system calls.
-pub trait Arch86VSpaceDispatch {
+pub(crate) trait Arch86VSpaceDispatch {
     fn map_generic(&self, mem_type: MemType, base: u64, size: u64) -> Result<(u64, u64), KError> {
         let base = VAddr::from(base);
 
@@ -443,7 +443,10 @@ pub extern "C" fn syscall_handle(
     let kcb = super::kcb::get_kcb();
 
     #[cfg(feature = "rackscale")]
-    let status = if kcb.cmdline.mode != Mode::Client {
+    let status = if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode != Mode::Client)
+    {
         let dispatch = Arch86SystemCall;
         dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)
     } else {
@@ -481,7 +484,7 @@ pub extern "C" fn syscall_handle(
 }
 
 /// Enables syscall/sysret functionality.
-pub fn enable_fast_syscalls() {
+pub(crate) fn enable_fast_syscalls() {
     let cs_selector = GdtTable::kernel_cs_selector();
     let ss_selector = GdtTable::kernel_ss_selector();
 

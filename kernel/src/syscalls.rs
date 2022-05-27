@@ -13,7 +13,7 @@ use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 
 /// FileOperation: Arch specific implementations
-pub trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
+pub(crate) trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn open(&self, pathname: W, flags: W, modes: W) -> KResult<(W, W)>;
     fn read(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
     fn write(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
@@ -64,7 +64,7 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
 }
 
 /// ProcessOperation: Arch specific implementations
-pub trait ProcessDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
+pub(crate) trait ProcessDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn log(&self, buffer_arg: W, len: W) -> KResult<(W, W)>;
     fn get_vcpu_area(&self) -> KResult<(W, W)>;
     fn allocate_vector(&self, vector: W, core: W) -> KResult<(W, W)>;
@@ -109,7 +109,7 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> ProcessOperationArgs<W> {
 }
 
 /// VSpaceOperation: Arch specific implementations
-pub trait VSpaceDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
+pub(crate) trait VSpaceDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn map_mem(&self, base: W, size: W) -> KResult<(W, W)>;
     fn map_pmem(&self, base: W, size: W) -> KResult<(W, W)>;
     fn map_device(&self, base: W, size: W) -> KResult<(W, W)>;
@@ -151,7 +151,7 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> VSpaceOperationArgs<W> {
 }
 
 /// SystemOperation: Arch specific implementations
-pub trait SystemDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
+pub(crate) trait SystemDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn get_hardware_threads(&self, vbuf_base: W, vbuf_len: W) -> KResult<(W, W)>;
     fn get_stats(&self) -> KResult<(W, W)>;
     fn get_core_id(&self) -> KResult<(W, W)>;
@@ -181,7 +181,7 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> SystemOperationArgs<W> {
 }
 
 /// [`SystemCall::Test`] stuff.
-pub trait TestDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
+pub(crate) trait TestDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn test(&self, nargs: W, arg1: W, arg2: W, arg3: W, arg4: W) -> KResult<(W, W)>;
 }
 
@@ -192,7 +192,7 @@ pub trait TestDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
 /// syscall. The arch specific code that handles incoming system calls should
 /// call `handle` to dispatch user-space requests to the appropriate handler
 /// functions.
-pub trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>:
+pub(crate) trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>:
     VSpaceDispatch<W> + FsDispatch<W> + SystemDispatch<W> + ProcessDispatch<W> + TestDispatch<W>
 {
     fn handle(&self, function: W, arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> KResult<(W, W)> {
@@ -310,7 +310,7 @@ impl<T> TestDispatch<u64> for T {
 
 /// The canonical system call dispatch handler for architectures that want to
 /// use the CNR based FS.
-pub trait CnrFsDispatch {}
+pub(crate) trait CnrFsDispatch {}
 
 impl<T: CnrFsDispatch> FsDispatch<u64> for T {
     fn open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {

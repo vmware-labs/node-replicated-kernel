@@ -27,7 +27,7 @@ use klogger::{sprint, sprintln};
 use LabelText::*;
 
 /// The text for a graphviz label on a node or edge.
-pub enum LabelText<'a> {
+pub(crate) enum LabelText<'a> {
     /// This kind of label preserves the text directly as is.
     ///
     /// Occurrences of backslashes (`\`) are escaped, and thus appear
@@ -58,7 +58,7 @@ pub enum LabelText<'a> {
 /// See <http://www.graphviz.org/doc/info/attrs.html#k:style> for descriptions.
 /// Note that some of these are not valid for edges.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Style {
+pub(crate) enum Style {
     None,
     Solid,
     Dashed,
@@ -72,7 +72,7 @@ pub enum Style {
 }
 
 impl Style {
-    pub fn as_slice(self) -> &'static str {
+    pub(crate) fn as_slice(self) -> &'static str {
         match self {
             Style::None => "",
             Style::Solid => "solid",
@@ -121,7 +121,7 @@ impl Style {
 // So in the end I decided to use the third approach described above.
 
 /// `Id` is a Graphviz `ID`.
-pub struct Id<'a> {
+pub(crate) struct Id<'a> {
     name: Cow<'a, str>,
 }
 
@@ -140,7 +140,7 @@ impl<'a> Id<'a> {
     ///
     /// Passing an invalid string (containing spaces, brackets,
     /// quotes, ...) will return an empty `Err` value.
-    pub fn new<Name: Into<Cow<'a, str>>>(name: Name) -> Result<Id<'a>, ()> {
+    pub(crate) fn new<Name: Into<Cow<'a, str>>>(name: Name) -> Result<Id<'a>, ()> {
         let name = name.into();
         /*match name.chars().next() {
             Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
@@ -153,11 +153,11 @@ impl<'a> Id<'a> {
         Ok(Id { name })
     }
 
-    pub fn as_slice(&'a self) -> &'a str {
+    pub(crate) fn as_slice(&'a self) -> &'a str {
         &*self.name
     }
 
-    pub fn name(self) -> Cow<'a, str> {
+    pub(crate) fn name(self) -> Cow<'a, str> {
         self.name
     }
 }
@@ -171,7 +171,7 @@ impl<'a> Id<'a> {
 /// The graph instance is responsible for providing the DOT compatible
 /// identifiers for the nodes and (optionally) rendered labels for the nodes and
 /// edges, as well as an identifier for the graph itself.
-pub trait Labeller<'a> {
+pub(crate) trait Labeller<'a> {
     type Node;
     type Edge;
 
@@ -218,7 +218,7 @@ pub trait Labeller<'a> {
 
 /// Escape tags in such a way that it is suitable for inclusion in a
 /// Graphviz HTML label.
-pub fn escape_html(s: &str) -> String {
+pub(crate) fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('"', "&quot;")
         .replace('<', "&lt;")
@@ -226,15 +226,15 @@ pub fn escape_html(s: &str) -> String {
 }
 
 impl<'a> LabelText<'a> {
-    pub fn label<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
+    pub(crate) fn label<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
         Label(s.into())
     }
 
-    pub fn escaped<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
+    pub(crate) fn escaped<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
         Esc(s.into())
     }
 
-    pub fn html<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
+    pub(crate) fn html<S: Into<Cow<'a, str>>>(s: S) -> LabelText<'a> {
         Html(s.into())
     }
 
@@ -263,7 +263,7 @@ impl<'a> LabelText<'a> {
 
     /// Renders text as string suitable for a label in a .dot file.
     /// This includes quotes or suitable delimiters.
-    pub fn to_dot_string(&self) -> String {
+    pub(crate) fn to_dot_string(&self) -> String {
         match *self {
             Label(ref s) => format!("\"{}\"", s.escape_default()),
             Esc(ref s) => format!("\"{}\"", LabelText::escape_str(s)),
@@ -290,12 +290,12 @@ impl<'a> LabelText<'a> {
     }
 
     /// Puts `prefix` on a line above this label, with a blank line separator.
-    pub fn prefix_line(self, prefix: LabelText<'_>) -> LabelText<'static> {
+    pub(crate) fn prefix_line(self, prefix: LabelText<'_>) -> LabelText<'static> {
         prefix.suffix_line(self)
     }
 
     /// Puts `suffix` on a line below this label, with a blank line separator.
-    pub fn suffix_line(self, suffix: LabelText<'_>) -> LabelText<'static> {
+    pub(crate) fn suffix_line(self, suffix: LabelText<'_>) -> LabelText<'static> {
         let mut prefix = self.pre_escaped_content().into_owned();
         let suffix = suffix.pre_escaped_content();
         prefix.push_str(r"\n\n");
@@ -304,8 +304,8 @@ impl<'a> LabelText<'a> {
     }
 }
 
-pub type Nodes<'a, N> = Cow<'a, [N]>;
-pub type Edges<'a, E> = Cow<'a, [E]>;
+pub(crate) type Nodes<'a, N> = Cow<'a, [N]>;
+pub(crate) type Edges<'a, E> = Cow<'a, [E]>;
 
 // (The type parameters in GraphWalk should be associated items,
 // when/if Rust supports such.)
@@ -323,7 +323,7 @@ pub type Edges<'a, E> = Cow<'a, [E]>;
 /// `Cow<[T]>` to leave implementors the freedom to create
 /// entirely new vectors or to pass back slices into internally owned
 /// vectors.
-pub trait GraphWalk<'a> {
+pub(crate) trait GraphWalk<'a> {
     type Node: Clone;
     type Edge: Clone;
 
@@ -338,7 +338,7 @@ pub trait GraphWalk<'a> {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum RenderOption {
+pub(crate) enum RenderOption {
     NoEdgeLabels,
     NoNodeLabels,
     NoEdgeStyles,
@@ -348,7 +348,7 @@ pub enum RenderOption {
 
 /// Renders directed graph `g` in DOT syntax.
 /// (Simple wrapper around `render_opts` that passes a default set of options.)
-pub fn render<'a, N, E, G>(g: &'a G)
+pub(crate) fn render<'a, N, E, G>(g: &'a G)
 where
     N: Clone + 'a,
     E: Clone + 'a,
@@ -359,7 +359,7 @@ where
 
 /// Renders directed graph `g` in DOT syntax.
 /// (Main entry point for the library.)
-pub fn render_opts<'a, N, E, G>(g: &'a G, options: &[RenderOption])
+pub(crate) fn render_opts<'a, N, E, G>(g: &'a G, options: &[RenderOption])
 where
     N: Clone + 'a,
     E: Clone + 'a,

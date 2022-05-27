@@ -10,7 +10,7 @@ use rpc::RPCClient;
 use super::fio::*;
 use crate::fs::cnrfs;
 
-pub fn rpc_delete(
+pub(crate) fn rpc_delete(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: &[u8],
@@ -43,7 +43,7 @@ pub fn rpc_delete(
 }
 
 // RPC Handler function for delete() RPCs in the controller
-pub fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {

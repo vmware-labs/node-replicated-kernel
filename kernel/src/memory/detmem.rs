@@ -28,7 +28,7 @@ use crate::mpmc::Queue;
 
 /// Makes allocation failures are deterministic (across all replicas) when used
 /// within a replica.
-pub struct DeterministicAlloc {
+pub(crate) struct DeterministicAlloc {
     /// Queues that store allocations results (allocated by the leading replica
     /// -- the replica that's most ahead in processing the log) until the
     /// replicas that are behind pick them up.
@@ -43,11 +43,11 @@ pub struct DeterministicAlloc {
 }
 
 impl DeterministicAlloc {
-    pub fn new() -> Result<Self, KError> {
+    pub(crate) fn new() -> Result<Self, KError> {
         DeterministicAlloc::new_with_nodes(atopology::MACHINE_TOPOLOGY.num_nodes())
     }
 
-    pub fn new_with_nodes(nodes: usize) -> Result<Self, KError> {
+    pub(crate) fn new_with_nodes(nodes: usize) -> Result<Self, KError> {
         assert!(
             nodes < MAX_NUMA_NODES,
             "Can't have more nodes than MAX_NUMA_NODES"
@@ -72,7 +72,7 @@ impl DeterministicAlloc {
         })
     }
 
-    pub fn alloc(&self, l: Layout) -> *mut u8 {
+    pub(crate) fn alloc(&self, l: Layout) -> *mut u8 {
         let kcb = kcb::get_kcb();
         let nid = *crate::kcb::NODE_ID;
 
@@ -136,17 +136,17 @@ impl DeterministicAlloc {
         }
     }
 
-    pub fn dealloc(ptr: *mut u8, l: Layout) {
+    pub(crate) fn dealloc(ptr: *mut u8, l: Layout) {
         // dealloc just goes to the underlying allocator
         unsafe { dealloc(ptr, l) }
     }
 }
 
 #[derive(Clone)]
-pub struct DA(Arc<DeterministicAlloc>);
+pub(crate) struct DA(Arc<DeterministicAlloc>);
 
 impl DA {
-    pub fn new() -> Result<Self, KError> {
+    pub(crate) fn new() -> Result<Self, KError> {
         Ok(DA(Arc::try_new(DeterministicAlloc::new()?)?))
     }
 }

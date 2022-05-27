@@ -1,7 +1,7 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Kenrel command line parser.
+//! Kernel command line parser.
 
 use core::fmt::Debug;
 use core::slice::from_raw_parts;
@@ -18,10 +18,6 @@ enum CmdToken {
     /// Kernel binary name
     #[regex("./[a-zA-Z]+")]
     KernelBinary,
-
-    /// Don't boot the other cores
-    #[token("bsp-only")]
-    BspOnly,
 
     /// Run kernel test
     #[token("test")]
@@ -64,7 +60,7 @@ enum CmdToken {
 
 /// Mode the kernel operates in (for rackscale execution).
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Mode {
+pub(crate) enum Mode {
     /// Normal mode.
     Native,
     /// Controller mode (control many kernels).
@@ -87,14 +83,12 @@ impl From<&str> for Mode {
 /// Arguments parsed from command line string passed from the bootloader to the
 /// kernel.
 #[derive(Copy, Clone, Debug)]
-pub struct CommandLineArguments {
+pub(crate) struct CommandLineArguments {
     pub log_filter: &'static str,
     pub init_binary: &'static str,
     pub init_args: &'static str,
     pub app_args: &'static str,
     pub test: Option<&'static str>,
-    pub bsp_only: bool,
-    pub kgdb: bool,
     pub mode: Mode,
 }
 // If you move or rename `CommandLineArguments`, you may also need to update the `s02_gdb` test.
@@ -107,37 +101,17 @@ impl Default for CommandLineArguments {
             init_binary: "init",
             init_args: "",
             app_args: "",
-            bsp_only: false,
             test: None,
-            kgdb: false,
             mode: Mode::Native,
         }
     }
 }
 
 impl CommandLineArguments {
-    pub const fn new(
-        log_filter: &'static str,
-        init_binary: &'static str,
-        init_args: &'static str,
-        app_args: &'static str,
-    ) -> Self {
-        Self {
-            log_filter,
-            init_binary,
-            init_args,
-            app_args,
-            bsp_only: false,
-            test: None,
-            kgdb: false,
-            mode: Mode::Native,
-        }
-    }
-
     /// Parse command line argument and initialize the logging infrastructure.
     ///
     /// Example: If args is './kernel log=trace' -> sets level to Level::Trace
-    pub fn from_str(args: &'static str) -> Self {
+    pub(crate) fn from_str(args: &'static str) -> Self {
         // The args argument will be a physical address slice that
         // goes away once we switch to a process address space
         // make sure we translate it into a kernel virtual address:
@@ -156,9 +130,6 @@ impl CommandLineArguments {
             match token {
                 CmdToken::KernelBinary => {
                     //assert_eq!(slice, "./kernel");
-                }
-                CmdToken::BspOnly => {
-                    parsed_args.bsp_only = true;
                 }
                 CmdToken::Log
                 | CmdToken::Mode

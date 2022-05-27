@@ -1,6 +1,6 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-pub fn enable() {}
+pub(crate) fn enable() {}
 
-pub fn disable() {}
+pub(crate) fn disable() {}

@@ -24,7 +24,7 @@ lazy_static! {
     /// bootloader) It contains a 1:1 mapping of
     ///  * all physical memory (above `KERNEL_BASE`)
     ///  * IO APIC and local APIC memory (after initialization has completed)
-    pub static ref INITIAL_VSPACE: Mutex<PageTable> = {
+    pub(crate) static ref INITIAL_VSPACE: Mutex<PageTable> = {
         /// Return a struct to the currently installed page-tables so we can
         /// manipulate them (for example to map the APIC registers).
         ///
@@ -82,7 +82,7 @@ lazy_static! {
     };
 }
 
-pub struct VSpace {
+pub(crate) struct VSpace {
     pub mappings: BTreeMap<VAddr, MappingInfo>,
     pub page_table: PageTable,
 }
@@ -184,16 +184,7 @@ impl VSpace {
         })
     }
 
-    pub fn map_identity(
-        &mut self,
-        base: PAddr,
-        size: usize,
-        rights: MapAction,
-    ) -> Result<(), KError> {
-        self.page_table.map_identity(base, size, rights)
-    }
-
-    pub fn pml4_address(&self) -> PAddr {
+    pub(crate) fn pml4_address(&self) -> PAddr {
         self.page_table.pml4_address()
     }
 }

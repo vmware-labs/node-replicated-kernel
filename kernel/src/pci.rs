@@ -19,7 +19,7 @@ const MAX_PCI_DEVICES: usize = 24;
 
 lazy_static! {
     /// All PCI devices found on the machine.
-    pub static ref PCI_DEVICES: ArrayVec<Mutex<Option<PciDevice>>, MAX_PCI_DEVICES> = {
+    pub(crate) static ref PCI_DEVICES: ArrayVec<Mutex<Option<PciDevice>>, MAX_PCI_DEVICES> = {
         let mut devices = ArrayVec::new();
         let bus_iter = scan_bus();
         for device in bus_iter {
@@ -32,7 +32,7 @@ lazy_static! {
 }
 
 /// Takes a device (for use in a driver).
-pub fn claim_device(vendor_id: u16, device_id: u16) -> Option<PciDevice> {
+pub(crate) fn claim_device(vendor_id: u16, device_id: u16) -> Option<PciDevice> {
     for device in PCI_DEVICES.iter() {
         let device = &mut *device.lock();
         if let Some(locked_device) = device {
@@ -44,6 +44,6 @@ pub fn claim_device(vendor_id: u16, device_id: u16) -> Option<PciDevice> {
     None
 }
 
-pub fn init() {
+pub(crate) fn init() {
     lazy_static::initialize(&PCI_DEVICES);
 }

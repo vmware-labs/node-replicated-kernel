@@ -5,7 +5,7 @@ use super::ExitReason;
 use klogger::sprintln;
 
 /// Shutdown the process.
-pub fn shutdown(val: ExitReason) -> ! {
+pub(crate) fn shutdown(val: ExitReason) -> ! {
     sprintln!("Shutdown {:?}", val);
 
     unsafe {

@@ -23,7 +23,7 @@ const PORT2_IRQ: u8 = 32 + 3;
 /// Standard serial print port.
 ///
 /// Might be changed through command line option, hence the atomic.
-pub static SERIAL_PRINT_PORT: AtomicU16 = AtomicU16::new(PORT1);
+pub(crate) static SERIAL_PRINT_PORT: AtomicU16 = AtomicU16::new(PORT1);
 
 /// QEMU debug exit device.
 ///
@@ -33,12 +33,12 @@ const QEMU_DEBUG_EXIT_PORT: u16 = 0xf4;
 /// GDB remote communication line.
 ///
 /// If you change this line, you must also adjust `run.py`.
-pub const GDB_REMOTE_PORT: u16 = PORT2;
+pub(crate) const GDB_REMOTE_PORT: u16 = PORT2;
 
 /// GDB remote IRQ port (e.g., IRQ associated with `PORT2`).
-pub const GDB_REMOTE_IRQ_VECTOR: u8 = PORT2_IRQ;
+pub(crate) const GDB_REMOTE_IRQ_VECTOR: u8 = PORT2_IRQ;
 
-pub fn init() {
+pub(crate) fn init() {
     //const DATA_REGISTER: u16 = 0;
     const INTERRUPT_ENABLE_REGISTER: u16 = 1;
     // IRQ line bits:
@@ -96,7 +96,7 @@ pub unsafe fn putb(b: u8) {
 ///
 /// Currently we only support the debug exit method from qemu, which conveniently
 /// allows us to supply an exit code for testing purposes.
-pub fn shutdown(val: ExitReason) -> ! {
+pub(crate) fn shutdown(val: ExitReason) -> ! {
     unsafe {
         // For QEMU with debug-exit,iobase=0xf4,iosize=0x04
         // qemu will call: exit((val << 1) | 1);
@@ -116,7 +116,7 @@ pub fn shutdown(val: ExitReason) -> ! {
 }
 
 /// Disables all hardware breakpoints.
-pub fn disable_all_breakpoints() {
+pub(crate) fn disable_all_breakpoints() {
     for reg in x86::debugregs::BREAKPOINT_REGS.iter() {
         // Safety: We're in CPL0 and have debug registers available. Disabling,
         // -- as opposed to enable -- doesn't have as much potential to mess
@@ -129,7 +129,7 @@ pub fn disable_all_breakpoints() {
 
 #[cfg(feature = "integration-test")]
 #[inline(never)]
-pub fn cause_pfault() {
+pub(crate) fn cause_pfault() {
     use super::memory::{paddr_to_kernel_vaddr, PAddr};
 
     unsafe {
@@ -143,7 +143,7 @@ pub fn cause_pfault() {
 }
 
 #[cfg(feature = "integration-test")]
-pub fn cause_gpfault() {
+pub(crate) fn cause_gpfault() {
     // Note that int!(13) doesn't work in qemu. It doesn't push an error code properly for it.
     // So we cause a GP by loading garbage in the ss segment register.
     use x86::segmentation::{load_ss, SegmentSelector};
@@ -152,8 +152,11 @@ pub fn cause_gpfault() {
     }
 }
 
-#[cfg(feature = "integration-test")]
-pub fn cause_double_fault() {
+#[cfg(all(
+    feature = "integration-test",
+    any(feature = "test-double-fault", feature = "cause-double-fault")
+))]
+pub(crate) fn cause_double_fault() {
     unsafe {
         x86::int!(x86::irq::DOUBLE_FAULT_VECTOR);
     }
@@ -161,8 +164,8 @@ pub fn cause_double_fault() {
 
 /// Verify that we're actually using the fault-stack
 /// as part of the test
-#[cfg(feature = "integration-test")]
-pub fn assert_being_on_fault_stack() {
+#[cfg(all(feature = "integration-test", feature = "test-double-fault"))]
+pub(crate) fn assert_being_on_fault_stack() {
     let (low, high) = super::kcb::get_kcb().arch.fault_stack_range();
     let rsp = x86::current::registers::rsp();
     debug_assert!(

@@ -14,7 +14,7 @@ use crate::nrproc::NrProcess;
 use crate::process::{Executor, ResumeHandle};
 
 /// Runs the process allocated to the given core.
-pub fn schedule() -> ! {
+pub(crate) fn schedule() -> ! {
     let kcb = kcb::get_kcb();
 
     // Are we the master/first thread in that replica?

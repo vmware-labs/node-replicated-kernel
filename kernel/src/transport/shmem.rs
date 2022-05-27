@@ -12,7 +12,7 @@ use crate::pci::claim_device;
 
 /// Setup inter-vm shared-memory device.
 #[allow(unused)]
-pub fn init_shmem_device() -> KResult<(u64, u64)> {
+pub(crate) fn init_shmem_device() -> KResult<(u64, u64)> {
     const RED_HAT_INC: u16 = 0x1af4;
     const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
     if let Some(mut ivshmem_device) = claim_device(RED_HAT_INC, INTER_VM_SHARED_MEM_DEV) {
@@ -49,7 +49,7 @@ pub fn init_shmem_device() -> KResult<(u64, u64)> {
 }
 
 #[cfg(feature = "rpc")]
-pub fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
+pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
     use crate::cmdline::Mode;
     use alloc::sync::Arc;
     use rpc::rpc::PacketBuffer;
@@ -59,8 +59,7 @@ pub fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
 
     let (base_addr, size) = init_shmem_device()?;
     let allocator = ShmemAllocator::new(base_addr + KERNEL_BASE, size);
-    let mode = crate::kcb::get_kcb().cmdline.mode;
-    match mode {
+    match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
             let server_to_client_queue =
                 Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
@@ -89,7 +88,7 @@ pub fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
 }
 
 #[cfg(feature = "rpc")]
-pub fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client_shmem::ShmemClient>> {
+pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client_shmem::ShmemClient>> {
     use alloc::boxed::Box;
     use rpc::client_shmem::ShmemClient;
     use rpc::RPCClient;

@@ -6,7 +6,7 @@ use alloc::collections::TryReserveError;
 use alloc::string::String;
 
 /// trait implementing all fallible methods on vec
-pub trait FallibleString {
+pub(crate) trait FallibleString {
     /// see with_capacity
     fn try_with_capacity(capacity: usize) -> Result<String, TryReserveError>;
     /// see push
@@ -43,7 +43,7 @@ impl FallibleString for String {
 ///
 /// See the crate documentation for more.
 #[derive(PartialEq)]
-pub struct TryString {
+pub(crate) struct TryString {
     inner: String,
 }
 

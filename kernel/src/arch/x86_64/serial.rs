@@ -16,10 +16,10 @@ use klogger::sprint;
 /// buffering until `set_print_buffer()` is called to replace the buffer (once
 /// we have dynamic memory allocation).
 #[thread_local]
-pub static PRINT_BUFFER: RefCell<String> = RefCell::new(String::new());
+pub(crate) static PRINT_BUFFER: RefCell<String> = RefCell::new(String::new());
 
 /// Controls interaction with the serial line from a single core.
-pub struct SerialControl;
+pub(crate) struct SerialControl;
 
 impl SerialControl {
     /// Stores a print buffer in the thread local storage.
@@ -28,7 +28,7 @@ impl SerialControl {
     /// will panic. The easiest way to ensure this is to call `set_print_buffer`
     /// only once during init. If at some point we need to replace this
     /// dynamically we need to add a flush method to the `SerialControl` struct.
-    pub fn set_print_buffer(buffer: String) {
+    pub(crate) fn set_print_buffer(buffer: String) {
         assert_eq!(PRINT_BUFFER.borrow().len(), 0, "print buffer not empty");
         PRINT_BUFFER.replace(buffer);
     }
@@ -37,7 +37,7 @@ impl SerialControl {
     ///
     /// Buffers things until there is a newline in the `buffer` OR we've
     /// exhausted the available `PRINT_BUFFER` space, then print everything out.
-    pub fn buffered_print(buffer: &str) {
+    pub(crate) fn buffered_print(buffer: &str) {
         // A poor mans line buffer scheme:
         match PRINT_BUFFER.try_borrow_mut() {
             Ok(mut kbuf) => match buffer.find("\n") {

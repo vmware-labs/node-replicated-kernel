@@ -17,7 +17,7 @@ use crate::process::Pid;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
-pub enum FileIO {
+pub(crate) enum FileIO {
     /// Create a file
     Create = 0,
     /// Open a file
@@ -70,11 +70,11 @@ unsafe_abomonate!(FileIO);
 
 // Struct used to encapulate a system call result
 #[derive(Debug)]
-pub struct FIORes {
+pub(crate) struct FIORes {
     pub ret: Result<(u64, u64), RPCError>,
 }
 unsafe_abomonate!(FIORes: ret);
-pub const FIORES_SIZE: u64 = core::mem::size_of::<FIORes>() as u64;
+pub(crate) const FIORES_SIZE: u64 = core::mem::size_of::<FIORes>() as u64;
 
 // Mapping between local PIDs and remote (client) PIDs
 lazy_static! {
@@ -82,7 +82,7 @@ lazy_static! {
 }
 
 // Lookup the local pid corresponding to a remote pid
-pub fn get_local_pid(remote_pid: usize) -> Option<usize> {
+pub(crate) fn get_local_pid(remote_pid: usize) -> Option<usize> {
     let process_lookup = PID_MAP.read();
     let local_pid = process_lookup.get(&remote_pid);
     if let None = local_pid {
@@ -93,10 +93,9 @@ pub fn get_local_pid(remote_pid: usize) -> Option<usize> {
 }
 
 // Register a remote pid by creating a local pid and creating a remote-local PID mapping
-pub fn register_pid(remote_pid: usize) -> Result<usize, KError> {
-    let kcb = super::super::kcb::get_kcb();
-    kcb.replica
-        .as_ref()
+pub(crate) fn register_pid(remote_pid: usize) -> Result<usize, KError> {
+    crate::nr::NR_REPLICA
+        .get()
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
             let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
             if let nr::NodeResult::PidAllocated(local_pid) = response {
@@ -126,7 +125,10 @@ pub fn register_pid(remote_pid: usize) -> Result<usize, KError> {
 }
 
 // RPC Handler for client registration
-pub fn register_client(hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<NodeId, RPCError> {
+pub(crate) fn register_client(
+    hdr: &mut RPCHeader,
+    _payload: &mut [u8],
+) -> Result<NodeId, RPCError> {
     // use local pid as client ID
     match register_pid(hdr.pid) {
         Ok(client_id) => Ok(client_id as NodeId),
@@ -137,7 +139,7 @@ pub fn register_client(hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<NodeI
 // Below are utility functions for working with FIORes
 
 #[inline(always)]
-pub fn construct_error_ret(
+pub(crate) fn construct_error_ret(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
     err: RPCError,
@@ -147,12 +149,16 @@ pub fn construct_error_ret(
 }
 
 #[inline(always)]
-pub fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: FIORes) -> Result<(), RPCError> {
+pub(crate) fn construct_ret(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    res: FIORes,
+) -> Result<(), RPCError> {
     construct_ret_extra_data(hdr, payload, res, 0)
 }
 
 #[inline(always)]
-pub fn construct_ret_extra_data(
+pub(crate) fn construct_ret_extra_data(
     hdr: &mut RPCHeader,
     mut payload: &mut [u8],
     res: FIORes,
@@ -167,7 +173,9 @@ pub fn construct_ret_extra_data(
 }
 
 #[inline(always)]
-pub fn convert_return(cnrfs_ret: Result<(u64, u64), KError>) -> Result<(u64, u64), RPCError> {
+pub(crate) fn convert_return(
+    cnrfs_ret: Result<(u64, u64), KError>,
+) -> Result<(u64, u64), RPCError> {
     match cnrfs_ret {
         Ok(ret) => Ok(ret),
         Err(err) => Err(err.into()),

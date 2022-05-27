@@ -15,7 +15,7 @@ use super::open::rpc_open;
 use super::rename::rpc_rename;
 use super::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 
-pub struct Arch86LwkSystemCall;
+pub(crate) struct Arch86LwkSystemCall;
 
 impl SystemCallDispatch<u64> for Arch86LwkSystemCall {}
 // Use x86 syscall processing for not yet implemented systems:

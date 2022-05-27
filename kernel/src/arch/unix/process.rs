@@ -34,23 +34,23 @@ use super::MAX_NUMA_NODES;
 
 /// A handle to the currently active (scheduled on the core) process.
 #[thread_local]
-pub static CURRENT_EXECUTOR: RefCell<Option<Box<UnixThread>>> = RefCell::new(None);
+pub(crate) static CURRENT_EXECUTOR: RefCell<Option<Box<UnixThread>>> = RefCell::new(None);
 
-pub fn has_executor() -> bool {
+pub(crate) fn has_executor() -> bool {
     CURRENT_EXECUTOR.borrow().is_some()
 }
 
-pub fn current_pid() -> KResult<Pid> {
+pub(crate) fn current_pid() -> KResult<Pid> {
     Err(KError::ProcessNotSet)
 }
 
 #[allow(clippy::boxed_local)]
-pub fn swap_current_executor(_current_executor: Box<UnixThread>) -> Option<Box<UnixThread>> {
+pub(crate) fn swap_current_executor(_current_executor: Box<UnixThread>) -> Option<Box<UnixThread>> {
     None
 }
 
 lazy_static! {
-    pub static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<UnixProcess>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
+    pub(crate) static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<UnixProcess>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
         // Want at least one replica...
         let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
 
@@ -88,21 +88,25 @@ lazy_static! {
     };
 }
 
-pub fn user_virt_addr_valid(_pid: Pid, _base: u64, _size: u64) -> Result<(u64, u64), KError> {
+pub(crate) fn user_virt_addr_valid(
+    _pid: Pid,
+    _base: u64,
+    _size: u64,
+) -> Result<(u64, u64), KError> {
     Ok((0, 0))
 }
 
 /// TODO: This code is same as x86_64 process. Can we remove it?
-pub struct UserPtr<T> {
+pub(crate) struct UserPtr<T> {
     value: *mut T,
 }
 
 impl<T> UserPtr<T> {
-    pub fn new(pointer: *mut T) -> UserPtr<T> {
+    pub(crate) fn new(pointer: *mut T) -> UserPtr<T> {
         UserPtr { value: pointer }
     }
 
-    pub fn vaddr(&self) -> VAddr {
+    pub(crate) fn vaddr(&self) -> VAddr {
         VAddr::from(self.value as u64)
     }
 }
@@ -120,16 +124,16 @@ impl<T> DerefMut for UserPtr<T> {
     }
 }
 
-pub struct UserValue<T> {
+pub(crate) struct UserValue<T> {
     value: T,
 }
 
 impl<T> UserValue<T> {
-    pub fn new(pointer: T) -> UserValue<T> {
+    pub(crate) fn new(pointer: T) -> UserValue<T> {
         UserValue { value: pointer }
     }
 
-    pub fn as_mut_ptr(&mut self) -> *mut T {
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
         unsafe { core::mem::transmute(&self.value) }
     }
 }
@@ -148,16 +152,16 @@ impl<T> DerefMut for UserValue<T> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct UserSlice<'a> {
+pub(crate) struct UserSlice<'a> {
     pub buffer: &'a mut [u8],
 }
 
 impl<'a> UserSlice<'a> {
-    pub fn from_slice(buffer: &'a mut [u8]) -> Self {
+    pub(crate) fn from_slice(buffer: &'a mut [u8]) -> Self {
         UserSlice { buffer }
     }
 
-    pub fn new(base: u64, len: usize) -> UserSlice<'a> {
+    pub(crate) fn new(base: u64, len: usize) -> UserSlice<'a> {
         let mut user_ptr = VAddr::from(base);
         let slice_ptr = UserPtr::new(&mut user_ptr);
         let user_slice: &mut [u8] =
@@ -180,7 +184,7 @@ impl<'a> DerefMut for UserSlice<'a> {
 }
 
 #[derive(Debug, Default)]
-pub struct UnixProcess {
+pub(crate) struct UnixProcess {
     vspace: VSpace,
     fd: Fd,
     pinfo: kpi::process::ProcessInfo,
@@ -198,7 +202,7 @@ impl UnixProcess {
 }
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct UnixThread {
+pub(crate) struct UnixThread {
     pub eid: Eid,
     pub pid: Pid,
 }
@@ -208,7 +212,7 @@ impl PartialEq<UnixThread> for UnixThread {
         self.pid == other.pid && self.eid == other.eid
     }
 }
-pub struct UnixResumeHandle {}
+pub(crate) struct UnixResumeHandle {}
 
 impl ResumeHandle for UnixResumeHandle {
     unsafe fn resume(self) -> ! {
@@ -316,7 +320,7 @@ impl Process for UnixProcess {
     }
 }
 
-pub fn spawn(binary: &'static str) -> Result<Pid, KError> {
+pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     let pid = crate::process::make_process::<UnixProcess>(binary)?;
     crate::process::allocate_dispatchers::<UnixProcess>(pid)?;
     Ok(0)

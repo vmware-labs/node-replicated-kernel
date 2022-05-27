@@ -8,6 +8,7 @@
 
 #![cfg_attr(target_os = "none", no_std)]
 #![deny(warnings)]
+#![cfg_attr(target_family = "unix", allow(unused))]
 #![feature(
     is_sorted,
     intrinsics,
@@ -73,10 +74,10 @@ pub mod panic;
 use spin::Once;
 
 /// Arguments passed form the bootloader to the kernel.
-pub static KERNEL_ARGS: Once<&'static crate::arch::KernelArgs> = Once::new();
+pub(crate) static KERNEL_ARGS: Once<&'static crate::arch::KernelArgs> = Once::new();
 
 /// Parsed arguments passed from the user to the kernel (via command line args).
-pub static CMDLINE: Once<cmdline::CommandLineArguments> = Once::new();
+pub(crate) static CMDLINE: Once<cmdline::CommandLineArguments> = Once::new();
 
 #[cfg(feature = "integration-test")]
 mod integration_tests;
@@ -93,7 +94,7 @@ mod integration_tests;
 /// If this type is modified, update the `run.py` script and `tests/integration-test.rs` as well.
 #[derive(Copy, Clone, Debug)]
 #[repr(u8)]
-pub enum ExitReason {
+pub(crate) enum ExitReason {
     Ok = 0,
     ReturnFromMain = 1,
     KernelPanic = 2,
@@ -111,9 +112,12 @@ pub enum ExitReason {
 /// # Notes
 /// This function is executed from each core (which is
 /// different from a traditional main routine).
-pub fn main() {
+pub(crate) fn main() {
     #[cfg(feature = "rackscale")]
-    if kcb::get_kcb().cmdline.mode == cmdline::Mode::Controller {
+    if CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == cmdline::Mode::Controller)
+    {
         arch::rackscale::controller::run();
     }
 
@@ -127,8 +131,8 @@ pub fn main() {
     }
     #[cfg(feature = "integration-test")]
     {
-        log::debug!("About to run '{:?}'", kcb::get_kcb().cmdline.test);
-        if let Some(test) = kcb::get_kcb().cmdline.test {
+        log::debug!("About to run '{:?}'", CMDLINE.get().map(|c| c.test));
+        if let Some(test) = CMDLINE.get().and_then(|c| c.test) {
             integration_tests::run_test(test)
         } else {
             log::error!("No test selected, exiting...");

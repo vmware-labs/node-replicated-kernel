@@ -17,13 +17,13 @@ fn register(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<NodeId, RPCErro
     Err(RPCError::NotSupported)
 }
 
-pub const CLOSE_HANDLER: RPCHandler = default;
-pub const DELETE_HANDLER: RPCHandler = default;
-pub const GETINFO_HANDLER: RPCHandler = default;
-pub const MKDIR_HANDLER: RPCHandler = default;
-pub const OPEN_HANDLER: RPCHandler = default;
-pub const RENAME_HANDLER: RPCHandler = default;
-pub const READ_HANDLER: RPCHandler = default;
-pub const WRITE_HANDLER: RPCHandler = default;
+pub(crate) const CLOSE_HANDLER: RPCHandler = default;
+pub(crate) const DELETE_HANDLER: RPCHandler = default;
+pub(crate) const GETINFO_HANDLER: RPCHandler = default;
+pub(crate) const MKDIR_HANDLER: RPCHandler = default;
+pub(crate) const OPEN_HANDLER: RPCHandler = default;
+pub(crate) const RENAME_HANDLER: RPCHandler = default;
+pub(crate) const READ_HANDLER: RPCHandler = default;
+pub(crate) const WRITE_HANDLER: RPCHandler = default;
 
-pub const CLIENT_REGISTRAR: RegistrationHandler = register;
+pub(crate) const CLIENT_REGISTRAR: RegistrationHandler = register;

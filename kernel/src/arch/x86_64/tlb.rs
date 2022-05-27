@@ -55,20 +55,20 @@ lazy_static! {
 }
 
 #[derive(Debug)]
-pub enum WorkItem {
+pub(crate) enum WorkItem {
     Shootdown(Arc<Shootdown>),
     AdvanceReplica(usize),
 }
 
 #[derive(Debug)]
-pub struct Shootdown {
+pub(crate) struct Shootdown {
     vregion: Range<u64>,
     ack: AtomicBool,
 }
 
 impl Shootdown {
     /// Create a new shootdown request.
-    pub fn new(vregion: Range<u64>) -> Self {
+    pub(crate) fn new(vregion: Range<u64>) -> Self {
         debug_assert!(is_page_aligned!(vregion.start));
         debug_assert!(is_page_aligned!(vregion.end));
         Shootdown {
@@ -83,7 +83,7 @@ impl Shootdown {
     }
 
     /// Check if receiver has acknowledged the shootdown.
-    pub fn is_acknowledged(&self) -> bool {
+    pub(crate) fn is_acknowledged(&self) -> bool {
         self.ack.load(Ordering::Relaxed)
     }
 
@@ -107,12 +107,12 @@ impl Shootdown {
     }
 }
 
-pub fn enqueue(gtid: atopology::GlobalThreadId, s: WorkItem) {
+pub(crate) fn enqueue(gtid: atopology::GlobalThreadId, s: WorkItem) {
     trace!("TLB enqueue shootdown msg {:?}", s);
     let _ignore = IPI_WORKQUEUE[gtid as usize].push(s);
 }
 
-pub fn dequeue(gtid: atopology::GlobalThreadId) {
+pub(crate) fn dequeue(gtid: atopology::GlobalThreadId) {
     match IPI_WORKQUEUE[gtid as usize].pop() {
         Some(msg) => match msg {
             WorkItem::Shootdown(s) => {
@@ -140,7 +140,7 @@ fn advance_log(log_id: usize) {
     }
 }
 
-pub fn eager_advance_fs_replica() {
+pub(crate) fn eager_advance_fs_replica() {
     let core_id = *crate::kcb::CORE_ID;
 
     match IPI_WORKQUEUE[core_id].pop() {
@@ -169,7 +169,7 @@ pub fn eager_advance_fs_replica() {
     }
 }
 
-pub fn send_ipi_to_apic(apic_id: ApicId) {
+pub(crate) fn send_ipi_to_apic(apic_id: ApicId) {
     let mut apic = super::irq::LOCAL_APIC.borrow_mut();
 
     let icr = Icr::for_x2apic(
@@ -209,7 +209,7 @@ fn send_ipi_multicast(ldr: u32) {
 /// Takes the `TlbFlushHandle` and figures out what cores it needs to send an IPI to.
 /// It divides IPIs into clusters to avoid overhead of sending IPIs individually.
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
-pub fn shootdown(handle: TlbFlushHandle) {
+pub(crate) fn shootdown(handle: TlbFlushHandle) {
     let my_gtid = *crate::kcb::CORE_ID;
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
@@ -285,7 +285,7 @@ pub fn shootdown(handle: TlbFlushHandle) {
     trace!("done with all shootdowns");
 }
 
-pub fn advance_replica(gtid: atopology::GlobalThreadId, log_id: usize) {
+pub(crate) fn advance_replica(gtid: atopology::GlobalThreadId, log_id: usize) {
     trace!("Send AdvanceReplica IPI for {} to {}", log_id, gtid);
     let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid as usize].apic_id();
 

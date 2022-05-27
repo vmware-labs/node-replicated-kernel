@@ -33,7 +33,7 @@ use serial::*;
 /// Indicates the reason for interruption (e.g. a breakpoint was hit).
 #[allow(unused)]
 #[derive(Debug, PartialEq, Eq)]
-pub enum KCoreStopReason {
+pub(crate) enum KCoreStopReason {
     /// DebugInterrupt was received.
     ///
     /// This normally means we hit a hardware breakpoint, watchpoint, rflags
@@ -52,7 +52,7 @@ lazy_static! {
     /// The GDB connection state machine.
     ///
     /// This is a state machine that handles the communication with the GDB.
-    pub static ref GDB_STUB: Mutex<Option<(GdbStubStateMachine<'static, KernelDebugger, GdbSerial>, KernelDebugger)>> = {
+    pub(crate) static ref GDB_STUB: Mutex<Option<(GdbStubStateMachine<'static, KernelDebugger, GdbSerial>, KernelDebugger)>> = {
         let connection = wait_for_gdb_connection(GDB_REMOTE_PORT).expect("Can't connect to GDB");
         let mut target = KernelDebugger::new();
         let gdb_stm = gdbstub::GdbStub::new(connection).run_state_machine(&mut target).expect("Can't start GDB session");
@@ -87,7 +87,7 @@ fn wait_for_gdb_connection(port: u16) -> Result<GdbSerial, KError> {
 /// # Arguments
 /// - `resume_with`: Should probably always be Some(reason) except the first
 ///   time after connecting.
-pub fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
+pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
     if GDB_STUB.is_locked() {
         panic!("re-entrant into event_loop!");
     }
@@ -221,7 +221,7 @@ enum ExecMode {
 
 /// A kernel level debug implementation that can interface with GDB over remote
 /// serial protocol.
-pub struct KernelDebugger {
+pub(crate) struct KernelDebugger {
     /// Maintains meta-data about our hardware breakpoint registers.
     hw_break_points: [Option<BreakState>; 4],
     /// Resume program with this signal (if needed).
@@ -231,7 +231,7 @@ pub struct KernelDebugger {
 }
 
 impl KernelDebugger {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             hw_break_points: [None; 4],
             resume_with: None,

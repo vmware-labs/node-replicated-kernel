@@ -13,12 +13,12 @@ use super::fio::*;
 use crate::fs::cnrfs;
 
 #[derive(Debug)]
-pub struct RenameReq {
+pub(crate) struct RenameReq {
     pub oldname_len: u64,
 }
 unsafe_abomonate!(RenameReq: oldname_len);
 
-pub fn rpc_rename(
+pub(crate) fn rpc_rename(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     oldname: &[u8],
@@ -60,7 +60,7 @@ pub fn rpc_rename(
 }
 
 // RPC Handler function for rename() RPCs in the controller
-pub fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {

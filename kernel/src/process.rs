@@ -31,29 +31,29 @@ use crate::prelude::overlaps;
 use crate::{nr, nrproc, round_up};
 
 /// Process ID.
-pub type Pid = usize;
+pub(crate) type Pid = usize;
 
 /// Executor ID.
-pub type Eid = usize;
+pub(crate) type Eid = usize;
 
 /// How many (concurrent) processes the systems supports.
-pub const MAX_PROCESSES: usize = 12;
+pub(crate) const MAX_PROCESSES: usize = 12;
 
 /// How many registered "named" frames a process can have.
-pub const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
+pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
 
 /// How many writable sections a process can have (part of the ELF file).
-pub const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
+pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
 
 /// This struct is used to copy the user buffer into kernel space, so that the
 /// user-application doesn't have any reference to any log operation in kernel space.
 #[derive(PartialEq, Clone, Debug)]
-pub struct KernSlice {
+pub(crate) struct KernSlice {
     pub buffer: Arc<[u8]>,
 }
 
 impl KernSlice {
-    pub fn new(base: u64, len: usize) -> KernSlice {
+    pub(crate) fn new(base: u64, len: usize) -> KernSlice {
         let buffer = Arc::<[u8]>::new_uninit_slice(len);
         let mut buffer = unsafe { buffer.assume_init() };
 
@@ -66,7 +66,7 @@ impl KernSlice {
     }
 }
 
-pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
+pub(crate) fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
     let mut user_ptr = VAddr::from(useraddr);
     let str_ptr = UserPtr::new(&mut user_ptr);
     unsafe {
@@ -83,7 +83,7 @@ pub fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
 }
 
 /// Abstract definition of a process.
-pub trait Process {
+pub(crate) trait Process {
     type E: Executor + Copy + Sync + Send + Debug + PartialEq;
     type A: AddressSpace;
 
@@ -124,7 +124,7 @@ pub trait Process {
 
 /// ResumeHandle is the HW specific logic that switches the CPU
 /// to the a new entry point by initializing the registers etc.
-pub trait ResumeHandle {
+pub(crate) trait ResumeHandle {
     unsafe fn resume(self) -> !;
 }
 
@@ -137,7 +137,7 @@ pub trait ResumeHandle {
 /// Some operating-systems (K42, Nemesis, Barrelfish etc.) would call this
 /// a dispatcher, we avoid the term because it overlaps with the node-replication
 /// dispatch trait.
-pub trait Executor {
+pub(crate) trait Executor {
     type Resumer: ResumeHandle;
     fn id(&self) -> Eid;
     fn pid(&self) -> Pid;
@@ -338,7 +338,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
 ///
 /// Parse & relocate ELF
 /// Create an initial VSpace
-pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
+pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     KernelAllocator::try_refill_tcache(7, 1, MemType::Mem)?;
 
     // Lookup binary of the process
@@ -406,7 +406,7 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
 /// Create dispatchers for a given Pid to run on all cores.
 ///
 /// Also make sure they are all using NUMA local memory
-pub fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
+pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
     trace!("Allocate dispatchers");
 
     let mut create_per_region: ArrayVec<(atopology::NodeId, usize), MAX_NUMA_NODES> =

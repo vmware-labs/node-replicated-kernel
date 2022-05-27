@@ -37,7 +37,7 @@ struct State<T> {
 unsafe impl<T: Send> Send for State<T> {}
 unsafe impl<T: Sync> Sync for State<T> {}
 
-pub struct Queue<T> {
+pub(crate) struct Queue<T> {
     state: Arc<State<T>>,
 }
 
@@ -135,17 +135,17 @@ impl<T: Send> State<T> {
 }
 
 impl<T: Send> Queue<T> {
-    pub fn with_capacity(capacity: usize) -> Result<Queue<T>, KError> {
+    pub(crate) fn with_capacity(capacity: usize) -> Result<Queue<T>, KError> {
         Ok(Queue {
             state: Arc::try_new(State::with_capacity(capacity)?)?,
         })
     }
 
-    pub fn push(&self, value: T) -> Result<(), T> {
+    pub(crate) fn push(&self, value: T) -> Result<(), T> {
         self.state.push(value)
     }
 
-    pub fn pop(&self) -> Option<T> {
+    pub(crate) fn pop(&self) -> Option<T> {
         self.state.pop()
     }
 }

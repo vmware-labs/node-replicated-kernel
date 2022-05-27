@@ -49,7 +49,7 @@ fn get_tls_region(info: &TlsInfo) -> (&'static [u8], Layout) {
 /// - This struct is `repr(C)` because TLS spec depends on the order of the
 /// first two elements.
 #[repr(C)]
-pub struct ThreadControlBlock {
+pub(crate) struct ThreadControlBlock {
     /// Points to `self` (makes sure mov %fs:0x0 works)
     ///
     /// This is how the compiler looks up TLS things.

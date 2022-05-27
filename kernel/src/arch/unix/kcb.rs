@@ -22,11 +22,11 @@ use super::MAX_NUMA_NODES;
 #[thread_local]
 static mut KCB: Kcb<ArchKcb> = Kcb::new(TCacheSp::new(0), ArchKcb::new(), 0);
 
-pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<ArchKcb>> {
+pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut Kcb<ArchKcb>> {
     unsafe { Some(&mut KCB) }
 }
 
-pub fn get_kcb<'a>() -> &'a mut Kcb<ArchKcb> {
+pub(crate) fn get_kcb<'a>() -> &'a mut Kcb<ArchKcb> {
     unsafe { &mut KCB }
 }
 
@@ -38,29 +38,29 @@ pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut _kcb: &'static mut Kcb<A>) 
 }
 
 #[repr(C)]
-pub struct ArchKcb {
+pub(crate) struct ArchKcb {
     /// Arguments passed to the kernel by the bootloader.
     pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
     pub current_executor: Option<Box<UnixThread>>,
 }
 
 impl ArchKcb {
-    pub const fn new() -> ArchKcb {
+    pub(crate) const fn new() -> ArchKcb {
         ArchKcb {
             replica: None,
             current_executor: None,
         }
     }
 
-    pub fn id(&self) -> usize {
+    pub(crate) fn id(&self) -> usize {
         0
     }
 
-    pub fn has_executor(&self) -> bool {
+    pub(crate) fn has_executor(&self) -> bool {
         self.current_executor.is_some()
     }
 
-    pub fn current_executor(&self) -> Result<&UnixThread, KError> {
+    pub(crate) fn current_executor(&self) -> Result<&UnixThread, KError> {
         let p = self
             .current_executor
             .as_ref()

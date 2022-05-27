@@ -11,6 +11,8 @@ We organize/separate imports into three blocks (all separated by one newline):
 - 1st block for core language things: `core`, `alloc`, `std` etc.
 - 2nd block for libraries: `vibrio`, `x86`, `lazy_static` etc.
 - 3rd block for internal imports: `crate::*`, `super::*` etc.
+- 4th block for re-exports: `pub(crate) use::*` etc.
+- 5th block for modules: `mod foo;` etc.
 
 Afterwards a `.rs` file should (roughly) have the following structure:
 
@@ -18,6 +20,11 @@ Afterwards a `.rs` file should (roughly) have the following structure:
 - 2nd `const` declarations
 - 3rd `static` declarations
 - 4th `struct`, `fn`, `impl` etc. declarations
+
+## Visibility
+
+Avoid the use of `pub` in the kernel. Use `pub(crate)`, `pub(super)` etc. This
+helps with dead code elimination.
 
 ## Assembly
 

@@ -14,10 +14,10 @@ use core::slice;
 
 use x86::bits64::paging::BASE_PAGE_SIZE;
 
-pub const STACK_ALIGNMENT: usize = 16;
+pub(crate) const STACK_ALIGNMENT: usize = 16;
 
 #[derive(Debug, Clone, Copy)]
-pub struct StackPointer(*mut usize);
+pub(crate) struct StackPointer(*mut usize);
 
 /// A trait for objects that hold ownership of a stack.
 ///
@@ -46,7 +46,7 @@ pub unsafe trait Stack {
 /// StaticStack that holds a non-guarded stack of 32 pages.
 ///
 /// Useful during early initialization where memory allocation is not yet available.
-pub struct StaticStack(pub [u8; 32 * BASE_PAGE_SIZE]);
+pub(crate) struct StaticStack(pub [u8; 32 * BASE_PAGE_SIZE]);
 
 unsafe impl Stack for StaticStack {
     #[inline(always)]
@@ -73,7 +73,7 @@ unsafe impl Stack for StaticStack {
 
 /// SliceStack holds a non-guarded stack allocated elsewhere and provided as a mutable slice.
 #[derive(Debug)]
-pub struct SliceStack<'a>(&'a mut [u8]);
+pub(crate) struct SliceStack<'a>(&'a mut [u8]);
 
 impl<'a> SliceStack<'a> {
     /// Creates a `SliceStack` from an existing slice.
@@ -82,7 +82,7 @@ impl<'a> SliceStack<'a> {
     /// use as a stack. However this function may panic if the slice is smaller
     /// than `STACK_ALIGNMENT`.
     #[allow(unused)]
-    pub fn new(slice: &'a mut [u8]) -> SliceStack<'a> {
+    pub(crate) fn new(slice: &'a mut [u8]) -> SliceStack<'a> {
         // Align the given slice so that it matches platform requirements
         let ptr = slice.as_ptr() as usize;
         let adjusted_ptr = (ptr + STACK_ALIGNMENT - 1) & !(STACK_ALIGNMENT - 1);
@@ -113,12 +113,12 @@ unsafe impl<'a> Stack for SliceStack<'a> {
 
 /// OwnedStack holds a non-guarded, heap-allocated stack.
 #[derive(Debug)]
-pub struct OwnedStack(Box<[u8]>);
+pub(crate) struct OwnedStack(Box<[u8]>);
 
 impl OwnedStack {
     /// Allocates a new stack with exactly `size` accessible bytes and alignment appropriate
     /// for the current platform using the default Rust allocator.
-    pub fn new(size: usize) -> OwnedStack {
+    pub(crate) fn new(size: usize) -> OwnedStack {
         unsafe {
             let aligned_size = size & !(STACK_ALIGNMENT - 1);
             let ptr = alloc(Layout::from_size_align_unchecked(

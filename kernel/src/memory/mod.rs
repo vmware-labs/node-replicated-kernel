@@ -28,12 +28,12 @@ use crate::arch::MAX_NUMA_NODES;
 use crate::kcb;
 use crate::prelude::*;
 
-pub use frame::Frame;
-pub use kpi::MemType;
+pub(crate) use frame::Frame;
+pub(crate) use kpi::MemType;
 use vspace::MapAction;
 
 /// Re-export arch specific memory definitions
-pub use crate::arch::memory::{
+pub(crate) use crate::arch::memory::{
     kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE,
     LARGE_PAGE_SIZE,
 };
@@ -47,7 +47,7 @@ pub mod vspace;
 pub mod vspace_model;
 
 /// How many initial physical memory regions we support.
-pub const MAX_PHYSICAL_REGIONS: usize = 64;
+pub(crate) const MAX_PHYSICAL_REGIONS: usize = 64;
 
 /// The global allocator in the kernel.
 //#[cfg(not(any(test, fuzzing)))]
@@ -71,7 +71,7 @@ enum AllocatorType {
 }
 
 /// Implements the kernel memory allocation strategy.
-pub struct KernelAllocator {
+pub(crate) struct KernelAllocator {
     big_objects_sbrk: AtomicU64,
 }
 
@@ -80,7 +80,7 @@ pub struct KernelAllocator {
 /// # Returns
 /// A tuple containing (base-pages, large-pages).
 /// base-pages will never exceed LARGE_PAGE_SIZE / BASE_PAGE_SIZE.
-pub fn size_to_pages(size: usize) -> (usize, usize) {
+pub(crate) fn size_to_pages(size: usize) -> (usize, usize) {
     let bytes_not_in_large = size % LARGE_PAGE_SIZE;
 
     let div = bytes_not_in_large / BASE_PAGE_SIZE;
@@ -279,7 +279,7 @@ impl KernelAllocator {
     }
 
     /// Try to refill our core-local tcache.
-    pub fn try_refill_tcache(
+    pub(crate) fn try_refill_tcache(
         needed_base_pages: usize,
         needed_large_pages: usize,
         mem_type: MemType,
@@ -592,7 +592,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
 /// # Notes
 /// Use for pretty printing and debugging only.
 #[derive(PartialEq)]
-pub enum DataSize {
+pub(crate) enum DataSize {
     Bytes(f64),
     KiB(f64),
     MiB(f64),
@@ -602,7 +602,7 @@ pub enum DataSize {
 impl DataSize {
     /// Construct a new DataSize passing the amount of `bytes`
     /// we want to convert
-    pub fn from_bytes(bytes: usize) -> DataSize {
+    pub(crate) fn from_bytes(bytes: usize) -> DataSize {
         if bytes < 1024 {
             DataSize::Bytes(bytes as f64)
         } else if bytes < (1024 * 1024) {
@@ -643,7 +643,7 @@ impl fmt::Display for DataSize {
 /// by a simple spin-lock (for reclamation and allocation).
 /// TODO(perf): This may need a more elaborate scheme in the future.
 #[derive(Default)]
-pub struct GlobalMemory {
+pub(crate) struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
@@ -780,7 +780,7 @@ impl fmt::Debug for GlobalMemory {
 }
 
 /// A trait to allocate and release physical pages from an allocator.
-pub trait PhysicalPageProvider {
+pub(crate) trait PhysicalPageProvider {
     /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.
     fn allocate_base_page(&mut self) -> Result<Frame, KError>;
     /// Release a `BASE_PAGE_SIZE` for the given architecture back to the allocator.
@@ -794,7 +794,7 @@ pub trait PhysicalPageProvider {
 
 /// The backend implementation necessary to implement if we want a client to be
 /// able to grow our allocator by providing a list of frames.
-pub trait GrowBackend {
+pub(crate) trait GrowBackend {
     /// How much capacity we have left to add base pages.
     fn spare_base_page_capacity(&self) -> usize;
 
@@ -811,7 +811,7 @@ pub trait GrowBackend {
 /// The backend implementation necessary to implement if we want
 /// a system manager to take away be able to take away memory
 /// from our allocator.
-pub trait ReapBackend {
+pub(crate) trait ReapBackend {
     /// Ask to give base-pages back.
     ///
     /// An implementation should put the pages in the `free_list` and remove
@@ -826,7 +826,7 @@ pub trait ReapBackend {
 }
 
 /// Provides information about the allocator.
-pub trait AllocatorStatistics {
+pub(crate) trait AllocatorStatistics {
     /// Current free memory (in bytes) this allocator has.
     fn free(&self) -> usize {
         self.size() - self.allocated()
@@ -861,7 +861,7 @@ pub trait AllocatorStatistics {
     }
 }
 
-pub trait PageTableProvider<'a> {
+pub(crate) trait PageTableProvider<'a> {
     fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4>;
     fn new_pdpt(&mut self) -> Option<paging::PML4Entry>;
     fn new_pd(&mut self) -> Option<paging::PDPTEntry>;

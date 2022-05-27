@@ -6,7 +6,7 @@
 use crate::error::KResult;
 use crate::syscalls::{ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch};
 
-pub struct UnixSystemCalls;
+pub(crate) struct UnixSystemCalls;
 impl crate::syscalls::CnrFsDispatch for UnixSystemCalls {}
 
 impl SystemCallDispatch<u64> for UnixSystemCalls {}
@@ -86,9 +86,9 @@ impl VSpaceDispatch<u64> for UnixSystemCalls {
 }
 
 /// Dispatch logic for global system calls.
-pub trait Arch86SystemDispatch {}
+pub(crate) trait Arch86SystemDispatch {}
 
-pub fn syscall_handle(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) {
+pub(crate) fn syscall_handle(function: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64, arg5: u64) {
     let status = {
         let dispatch = UnixSystemCalls;
         dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)

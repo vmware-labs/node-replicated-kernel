@@ -17,10 +17,10 @@ use crate::memory::vspace::{AddressSpace, MapAction, MappingInfo, TlbFlushHandle
 use crate::memory::Frame;
 
 lazy_static! {
-    pub static ref INITIAL_VSPACE: Mutex<VSpace> = Mutex::new(VSpace::new());
+    pub(crate) static ref INITIAL_VSPACE: Mutex<VSpace> = Mutex::new(VSpace::new());
 }
 
-pub struct VSpace {
+pub(crate) struct VSpace {
     pub mappings: HashMap<core::ops::Range<usize>, MappingInfo>,
     pub pml4: Pin<Box<PML4>>,
 }
@@ -38,7 +38,7 @@ impl fmt::Debug for VSpace {
 }
 
 impl VSpace {
-    pub fn new() -> VSpace {
+    pub(crate) fn new() -> VSpace {
         VSpace {
             mappings: HashMap::new(),
             pml4: Box::pin(
@@ -47,7 +47,7 @@ impl VSpace {
         }
     }
 
-    pub fn map_generic(
+    pub(crate) fn map_generic(
         &mut self,
         _vbase: VAddr,
         _pregion: (PAddr, usize),

@@ -13,7 +13,7 @@ use super::*;
 const PORT: u16 = 6970;
 
 /// Test TCP RPC-based controller
-pub fn run() {
+pub(crate) fn run() {
     let mut server: Box<dyn RPCServer> = if cfg!(feature = "shmem") {
         use {crate::transport::shmem::create_shmem_transport, rpc::server_shmem::ShmemServer};
         let transport =

@@ -34,7 +34,7 @@ const DEFAULT_RLOCK: CachePadded<AtomicUsize> = CachePadded::new(AtomicUsize::ne
 /// `T` represents the underlying type protected by the lock.
 /// Calling `read()` returns a read-guard that can be used to safely read `T`.
 /// Calling `write()` returns a write-guard that can be used to safely mutate `T`.
-pub struct RwLock<T>
+pub(crate) struct RwLock<T>
 where
     T: Sized + Sync,
 {
@@ -50,7 +50,7 @@ where
 
 /// A read-guard that can be used to read the underlying data structure. Writes on
 /// the data structure will be blocked as long as one of these is lying around.
-pub struct ReadGuard<'a, T: ?Sized + Default + Sync + 'a> {
+pub(crate) struct ReadGuard<'a, T: ?Sized + Default + Sync + 'a> {
     /// Id of the thread that acquired this guard. Required at drop time so that
     /// we can release the appropriate read lock.
     tid: usize,
@@ -61,7 +61,7 @@ pub struct ReadGuard<'a, T: ?Sized + Default + Sync + 'a> {
 
 /// A write-guard that can be used to write to the underlying data structure. All
 /// reads will be blocked until this is dropped.
-pub struct WriteGuard<'a, T: ?Sized + Default + Sync + 'a> {
+pub(crate) struct WriteGuard<'a, T: ?Sized + Default + Sync + 'a> {
     /// A reference to the Rwlock wrapping the data-structure.
     lock: &'a RwLock<T>,
 }
@@ -93,7 +93,7 @@ where
     T: Sized + Sync,
 {
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    pub fn new(t: T) -> RwLock<T> {
+    pub(crate) fn new(t: T) -> RwLock<T> {
         RwLock {
             wlock: CachePadded::new(AtomicBool::new(false)),
             rlock: [DEFAULT_RLOCK; MAX_READER_THREADS],
@@ -108,7 +108,7 @@ where
 {
     /// Locks the underlying data-structure for writes. The caller can retrieve
     /// a mutable reference from the returned `WriteGuard`.
-    pub fn write(&self) -> WriteGuard<T> {
+    pub(crate) fn write(&self) -> WriteGuard<T> {
         let n: usize = *crate::kcb::CORES_PER_NUMA_NODE;
         // First, wait until we can acquire the writer lock.
         //while self.wlock.compare_and_swap(false, true, Ordering::Acquire) {
@@ -140,7 +140,7 @@ where
 
     /// Locks the underlying data-structure for reads. Allows multiple readers to acquire the lock.
     /// Blocks until there aren't any active writers.
-    pub fn read(&self) -> ReadGuard<T> {
+    pub(crate) fn read(&self) -> ReadGuard<T> {
         let tid: usize = *crate::kcb::CORE_ID;
         // We perform a small optimization. Before attempting to acquire a read lock, we issue
         // naked reads to the write lock and wait until it is free. For that, we retrieve a

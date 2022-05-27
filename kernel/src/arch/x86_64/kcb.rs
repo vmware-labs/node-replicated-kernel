@@ -30,7 +30,7 @@ use super::MAX_NUMA_NODES;
 ///
 /// This may return None if the KCB is not yet set
 /// (i.e., during initialization).
-pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<Arch86Kcb>> {
+pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut Kcb<Arch86Kcb>> {
     unsafe {
         let kcb = segmentation::rdgsbase() as *mut Kcb<Arch86Kcb>;
         if kcb != ptr::null_mut() {
@@ -47,7 +47,7 @@ pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<Arch86Kcb>> {
 /// # Panic
 /// This will fail in case the KCB is not yet set (i.e., early on during
 /// initialization).
-pub fn get_kcb<'a>() -> &'a mut Kcb<Arch86Kcb> {
+pub(crate) fn get_kcb<'a>() -> &'a mut Kcb<Arch86Kcb> {
     unsafe {
         let kcb = segmentation::rdgsbase() as *mut Kcb<Arch86Kcb>;
         assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
@@ -82,7 +82,7 @@ pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut Kcb<A>) {
 ///
 /// `repr(C)` because assembly code references entries of this struct.
 #[repr(C)]
-pub struct Arch86Kcb {
+pub(crate) struct Arch86Kcb {
     /// Pointer to the syscall stack (this is referenced in assembly) and should
     /// therefore always remain at offset 0 of the Kcb struct!
     pub(super) syscall_stack_top: *mut u8,
@@ -162,7 +162,7 @@ impl Arch86Kcb {
         }
     }
 
-    pub fn set_interrupt_stacks(
+    pub(crate) fn set_interrupt_stacks(
         &mut self,
         ex_stack: OwnedStack,
         fault_stack: OwnedStack,
@@ -198,7 +198,7 @@ impl Arch86Kcb {
         self.unrecoverable_fault_stack = Some(fault_stack);
     }
 
-    pub fn set_syscall_stack(&mut self, stack: OwnedStack) {
+    pub(crate) fn set_syscall_stack(&mut self, stack: OwnedStack) {
         self.syscall_stack_top = stack.base();
         trace!("Syscall stack top set to: {:p}", self.syscall_stack_top);
         self.syscall_stack = Some(stack);
@@ -207,12 +207,12 @@ impl Arch86Kcb {
     /// Install a CPU register save-area.
     ///
     /// Register are store here in case we get an interrupt/sytem call
-    pub fn set_save_area(&mut self, save_area: Pin<Box<kpi::arch::SaveArea>>) {
+    pub(crate) fn set_save_area(&mut self, save_area: Pin<Box<kpi::arch::SaveArea>>) {
         self.save_area = Some(save_area);
     }
 
     /// Get a pointer to the cores save-area.
-    pub fn get_save_area_ptr(&self) -> *const kpi::arch::SaveArea {
+    pub(crate) fn get_save_area_ptr(&self) -> *const kpi::arch::SaveArea {
         // TODO(unsafe): this probably doesn't need an unsafe, but I couldn't figure
         // out how to get that pointer out of the Option<Pin<Box>>>
         unsafe {
@@ -222,8 +222,8 @@ impl Arch86Kcb {
         }
     }
 
-    #[cfg(feature = "integration-test")]
-    pub fn fault_stack_range(&self) -> (u64, u64) {
+    #[cfg(all(feature = "integration-test", feature = "test-double-fault"))]
+    pub(crate) fn fault_stack_range(&self) -> (u64, u64) {
         (
             self.unrecoverable_fault_stack
                 .as_ref()

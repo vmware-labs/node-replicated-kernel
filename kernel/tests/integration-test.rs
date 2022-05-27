@@ -894,7 +894,7 @@ fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
 /// and communicate if our tests passed or failed.
 #[test]
 fn s00_exit() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("exit", &build);
     let mut output = String::new();
 
@@ -915,7 +915,6 @@ fn s00_exit() {
 #[test]
 fn s00_pfault_early() {
     let build = BuildArgs::default()
-        .kernel_feature("bsp-only")
         .kernel_feature("cause-pfault-early")
         .build();
     let cmdline = RunnerArgs::new_with_build("pfault-early", &build).qemu_arg("-d int,cpu_reset");
@@ -941,7 +940,7 @@ fn s00_pfault_early() {
 /// In essence a trap should be raised and we should get a backtrace.
 #[test]
 fn s01_pfault() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("pfault", &build);
     let mut output = String::new();
 
@@ -963,7 +962,6 @@ fn s01_pfault() {
 #[test]
 fn s00_gpfault_early() {
     let build = BuildArgs::default()
-        .kernel_feature("bsp-only")
         .kernel_feature("cause-gpfault-early")
         .build();
     let cmdline = RunnerArgs::new_with_build("gpfault-early", &build).qemu_arg("-d int,cpu_reset");
@@ -989,7 +987,7 @@ fn s00_gpfault_early() {
 /// Again we'd expect a trap and a backtrace.
 #[test]
 fn s01_gpfault() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("gpfault", &build);
     let mut output = String::new();
 
@@ -1016,7 +1014,6 @@ fn s01_gpfault() {
 #[test]
 fn s01_double_fault() {
     let build = BuildArgs::default()
-        .kernel_feature("bsp-only")
         .kernel_feature("cause-double-fault")
         .build();
     let cmdline = RunnerArgs::new_with_build("double-fault", &build).qemu_arg("-d int,cpu_reset");
@@ -1038,7 +1035,7 @@ fn s01_double_fault() {
 /// and the global allocator integration.
 #[test]
 fn s01_alloc() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("alloc", &build);
     let mut output = String::new();
 
@@ -1059,7 +1056,7 @@ fn s01_alloc() {
 /// point.
 #[test]
 fn s01_sse() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("sse", &build);
     let mut output = String::new();
 
@@ -1077,10 +1074,7 @@ fn s01_sse() {
 #[test]
 fn s01_time() {
     eprintln!("Doing a release build, this might take a while...");
-    let build = BuildArgs::default()
-        .kernel_feature("bsp-only")
-        .release()
-        .build();
+    let build = BuildArgs::default().release().build();
     let cmdline = RunnerArgs::new_with_build("time", &build);
     let mut output = String::new();
 
@@ -1095,10 +1089,7 @@ fn s01_time() {
 
 #[test]
 fn s01_timer() {
-    let build = BuildArgs::default()
-        .kernel_feature("bsp-only")
-        .kernel_feature("test-timer")
-        .build();
+    let build = BuildArgs::default().kernel_feature("test-timer").build();
     let cmdline = RunnerArgs::new_with_build("timer", &build);
     let mut output = String::new();
 
@@ -1117,7 +1108,7 @@ fn s01_timer() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_topology() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = &RunnerArgs::new_with_build("acpi-topology", &build)
         .cores(80)
         .nodes(8)
@@ -1141,7 +1132,7 @@ fn s02_acpi_topology() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_smoke() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = &RunnerArgs::new_with_build("acpi-smoke", &build)
         .cores(2)
         .memory(1024);
@@ -1165,7 +1156,7 @@ fn s02_acpi_smoke() {
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_coreboot_smoke() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("coreboot-smoke", &build)
         .cores(2)
         // Adding this to qemu will print register state on CPU rests (triple-faults)
@@ -1189,7 +1180,7 @@ fn s02_coreboot_smoke() {
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_coreboot_nrlog() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("coreboot-nrlog", &build)
         .cores(4)
         // Adding this to qemu will print register state on CPU rests (triple-faults)
@@ -1229,7 +1220,7 @@ fn s02_tls() {
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]
 fn s02_nvdimm_discover() {
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = RunnerArgs::new_with_build("nvdimm-discover", &build)
         .nodes(2)
         .cores(2)
@@ -1265,10 +1256,7 @@ fn s02_gdb() {
         })
     }
 
-    let build = BuildArgs::default()
-        .kernel_feature("gdb")
-        .kernel_feature("bsp-only")
-        .build();
+    let build = BuildArgs::default().kernel_feature("gdb").build();
     let cmdline = RunnerArgs::new_with_build("gdb", &build).kgdb().cores(1);
     let mut output = String::new();
 
@@ -1439,7 +1427,6 @@ fn s03_coreboot() {
 #[test]
 fn s03_userspace_smoke() {
     let build = BuildArgs::default()
-        .kernel_feature("bsp-only")
         .user_features(&[
             "test-print",
             "test-map",
@@ -1845,7 +1832,7 @@ fn s02_vspace_debug() {
         Ok(())
     }
 
-    let build = BuildArgs::default().kernel_feature("bsp-only").build();
+    let build = BuildArgs::default().build();
     let cmdline = &RunnerArgs::new_with_build("vspace-debug", &build)
         .timeout(45_000)
         .memory(2048);

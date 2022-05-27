@@ -10,11 +10,11 @@ use x86::io;
 use crate::error::KError;
 
 #[derive(Debug)]
-pub struct GdbSerialErr;
+pub(crate) struct GdbSerialErr;
 
 /// Wrapper to communicate with GDB over the serial line.
 #[derive(Debug, Eq, PartialEq)]
-pub struct GdbSerial {
+pub(crate) struct GdbSerial {
     port: u16,
     peeked: Option<u8>,
 }
@@ -25,12 +25,12 @@ impl GdbSerial {
     const LINE_STATUS_REGISTER: u16 = 5;
 
     /// Create a new GdbSerial connection.
-    pub fn new(port: u16) -> Self {
+    pub(crate) fn new(port: u16) -> Self {
         GdbSerial { port, peeked: None }
     }
 
     /// Determines if something is available to read.
-    pub fn can_read(&self) -> bool {
+    pub(crate) fn can_read(&self) -> bool {
         const DATA_READY_BIT: usize = 0;
         let line_status = unsafe { io::inb(self.port + GdbSerial::LINE_STATUS_REGISTER) };
         line_status.get_bit(DATA_READY_BIT)
@@ -55,19 +55,19 @@ impl GdbSerial {
         unsafe { io::outb(self.port, byte) }
     }
 
-    pub fn _iir(&self) -> u8 {
+    pub(crate) fn _iir(&self) -> u8 {
         unsafe { io::inb(self.port + GdbSerial::_IRQ_IDENTIFICATION_REGISTER) }
     }
 
     /// Enable receive interrupt.
-    pub fn enable_irq(&self) {
+    pub(crate) fn enable_irq(&self) {
         unsafe {
             io::outb(self.port + GdbSerial::INTERRUPT_ENABLE_REGISTER, 1);
         }
     }
 
     /// Disable all interrupts.
-    pub fn disable_irq(&self) {
+    pub(crate) fn disable_irq(&self) {
         unsafe {
             io::outb(self.port + GdbSerial::INTERRUPT_ENABLE_REGISTER, 0x00);
         }

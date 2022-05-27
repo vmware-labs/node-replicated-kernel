@@ -6,7 +6,6 @@
 // counterpart.
 
 use crate::arch::debug::shutdown;
-use crate::kcb;
 use crate::ExitReason;
 
 type MainFn = fn();
@@ -43,7 +42,7 @@ const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
 ];
 
 #[cfg(feature = "integration-test")]
-pub fn run_test(name: &'static str) -> ! {
+pub(crate) fn run_test(name: &'static str) -> ! {
     for (test, fun) in INTEGRATION_TESTS {
         if name == test {
             fun();
@@ -487,7 +486,7 @@ fn coreboot_nrlog() {
 /// Some thread local data for testing.
 #[cfg(feature = "integration-test")]
 #[thread_local]
-pub static TLS_TEST: [core::cell::Cell<&str>; 2] =
+pub(crate) static TLS_TEST: [core::cell::Cell<&str>; 2] =
     [core::cell::Cell::new("aaaa"), core::cell::Cell::new("efgh")];
 
 /// Tests access to thread local storage from the BSP core.
@@ -548,8 +547,8 @@ fn coreboot() {
 /// Test process loading / user-space.
 #[cfg(feature = "integration-test")]
 fn userspace() {
-    let kcb = kcb::get_kcb();
-    assert!(crate::arch::process::spawn(kcb.cmdline.init_binary).is_ok());
+    let binary = crate::CMDLINE.get().map_or("init", |c| c.init_binary);
+    assert!(crate::arch::process::spawn(binary).is_ok());
     crate::scheduler::schedule()
 }
 
@@ -681,7 +680,7 @@ fn vmxnet_smoltcp() {
 
     #[derive(Debug)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub struct Clock(Cell<Instant>);
+    pub(crate) struct Clock(Cell<Instant>);
 
     impl Clock {
         fn new() -> Clock {
@@ -765,11 +764,11 @@ fn vmxnet_smoltcp() {
 }
 
 /// Write and test the content on a shared-mem device.
-pub const BUFFER_CONTENT: u8 = 0xb;
+pub(crate) const BUFFER_CONTENT: u8 = 0xb;
 
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
-pub fn cxl_write() {
+pub(crate) fn cxl_write() {
     use crate::memory::KERNEL_BASE;
     use crate::transport::shmem::init_shmem_device;
 
@@ -784,7 +783,7 @@ pub fn cxl_write() {
 
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
-pub fn cxl_read() {
+pub(crate) fn cxl_read() {
     use crate::memory::KERNEL_BASE;
     use crate::transport::shmem::init_shmem_device;
 

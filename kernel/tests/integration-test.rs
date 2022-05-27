@@ -1112,7 +1112,7 @@ fn s02_acpi_topology() {
     let cmdline = &RunnerArgs::new_with_build("acpi-topology", &build)
         .cores(80)
         .nodes(8)
-        .memory(4096)
+        .memory(6144)
         .pmem(1024);
     let mut output = String::new();
 

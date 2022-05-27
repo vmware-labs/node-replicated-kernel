@@ -4,14 +4,20 @@
 use crate::prelude::*;
 use core::fmt::Debug;
 
+use alloc::sync::Arc;
 use hashbrown::HashMap;
 use log::{error, trace};
-use node_replication::Dispatch;
+use node_replication::{Dispatch, Replica, ReplicaToken};
+use spin::Once;
 
 use crate::arch::MAX_CORES;
 use crate::error::KError;
 use crate::memory::VAddr;
 use crate::process::{Pid, MAX_PROCESSES};
+
+/// Kernel scheduler / process mgmt. replica
+#[thread_local]
+pub static NR_REPLICA: Once<(Arc<Replica<'static, KernelNode>>, ReplicaToken)> = Once::new();
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum ReadOps {
@@ -23,6 +29,7 @@ pub enum Op {
     /// Allocate a new process (Pid)
     AllocatePid,
     /// Destroy a process
+    #[allow(unused)] // TODO
     FreePid(Pid),
     /// Assign a core to a process
     SchedAllocateCore(
@@ -63,9 +70,8 @@ impl Default for KernelNode {
 
 impl KernelNode {
     pub fn synchronize() -> Result<(), KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
+        NR_REPLICA
+            .get()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 replica.sync(*token);
                 Ok(())
@@ -78,9 +84,8 @@ impl KernelNode {
         affinity: Option<atopology::NodeId>,
         gtid: Option<atopology::GlobalThreadId>,
     ) -> Result<atopology::GlobalThreadId, KError> {
-        let kcb = super::kcb::get_kcb();
-        kcb.replica
-            .as_ref()
+        NR_REPLICA
+            .get()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
                 let response = replica.execute_mut(op, *token);

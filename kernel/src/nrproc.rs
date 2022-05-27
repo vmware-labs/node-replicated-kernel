@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::prelude::*;
-
-use alloc::vec::Vec;
 use core::alloc::Allocator;
 
+use alloc::vec::Vec;
+use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVec;
 use kpi::process::{FrameId, ProcessInfo};
 use kpi::MemType;
-use node_replication::Dispatch;
+use node_replication::{Dispatch, ReplicaToken};
+use spin::Once;
 
 use crate::arch::process::PROCESS_TABLE;
 use crate::arch::Module;
@@ -20,6 +21,30 @@ use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
 
 use crate::kcb::{ArchSpecificKcb, Kcb};
+
+/// The tokens per core to access the process replicas.
+#[thread_local]
+pub static PROCESS_TOKEN: Once<ArrayVec<ReplicaToken, { MAX_PROCESSES }>> = Once::new();
+
+/// Initializes `PROCESS_TOKEN`.
+///
+/// Should be called on each core.
+pub fn register_thread_with_process_replicas() {
+    let node = *crate::kcb::NODE_ID;
+    debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
+
+    PROCESS_TOKEN.call_once(|| {
+        let mut tokens = ArrayVec::new();
+        for pid in 0..MAX_PROCESSES {
+            debug_assert!(PROCESS_TABLE[node].len() > pid, "Invalid PID");
+
+            let token = PROCESS_TABLE[node][pid].register();
+            tokens.push(token.expect("Need to be able to register"));
+        }
+
+        tokens
+    });
+}
 
 /// Immutable operations on the NrProcess.
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -70,11 +95,10 @@ pub enum NodeResult<E: Executor> {
 
 /// Advances the replica of all the processes on the current NUMA node.
 pub fn advance_all() {
-    let kcb = super::kcb::get_kcb();
     let node = *crate::kcb::NODE_ID;
 
     for pid in 0..MAX_PROCESSES {
-        let _r = PROCESS_TABLE[node][pid].sync(kcb.process_token[pid]);
+        let _r = PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
     }
 }
 
@@ -103,12 +127,11 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::Load(pid, module, writeable_sections),
-            kcb.process_token[pid],
+            PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
             Ok(NodeResult::Loaded) => Ok(()),
@@ -121,11 +144,10 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         debug_assert!(base.as_u64() < kpi::KERNEL_BASE, "Invalid base");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
-        let response =
-            PROCESS_TABLE[node][pid].execute(ReadOps::MemResolve(base), kcb.process_token[pid]);
+        let response = PROCESS_TABLE[node][pid]
+            .execute(ReadOps::MemResolve(base), PROCESS_TOKEN.get().unwrap()[pid]);
         match response {
             Ok(NodeResult::Resolved(paddr, _rights)) => Ok((paddr.as_u64(), 0x0)),
             Err(e) => Err(e),
@@ -135,10 +157,10 @@ impl<P: Process> NrProcess<P> {
 
     pub fn synchronize(pid: Pid) {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        let kcb = super::kcb::get_kcb();
+
         let node = *crate::kcb::NODE_ID;
 
-        PROCESS_TABLE[node][pid].sync(kcb.process_token[pid]);
+        PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
     }
 
     pub fn map_device_frame(
@@ -148,11 +170,12 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(u64, u64), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
-        let response = PROCESS_TABLE[node][pid]
-            .execute_mut(Op::MemMapDevice(frame, action), kcb.process_token[pid]);
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            Op::MemMapDevice(frame, action),
+            PROCESS_TOKEN.get().unwrap()[pid],
+        );
         match response {
             Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
             Err(e) => Err(e),
@@ -163,11 +186,10 @@ impl<P: Process> NrProcess<P> {
     pub fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
-        let response =
-            PROCESS_TABLE[node][pid].execute_mut(Op::MemUnmap(base), kcb.process_token[pid]);
+        let response = PROCESS_TABLE[node][pid]
+            .execute_mut(Op::MemUnmap(base), PROCESS_TOKEN.get().unwrap()[pid]);
         match response {
             Ok(NodeResult::Unmapped(handle)) => Ok(handle),
             Err(e) => Err(e),
@@ -183,12 +205,11 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(PAddr, usize), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::MemMapFrameId(base, frame_id, action),
-            kcb.process_token[pid],
+            PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
             Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
@@ -205,14 +226,13 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(u64, u64), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
         let mut virtual_offset = 0;
         for frame in frames {
             let response = PROCESS_TABLE[node][pid].execute_mut(
                 Op::MemMapFrame(base + virtual_offset, frame, action),
-                kcb.process_token[pid],
+                PROCESS_TOKEN.get().unwrap()[pid],
             );
             match response {
                 Ok(NodeResult::Mapped) => {}
@@ -234,11 +254,10 @@ impl<P: Process> NrProcess<P> {
     pub fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
-        let response =
-            PROCESS_TABLE[node][pid].execute(ReadOps::ProcessInfo, kcb.process_token[pid]);
+        let response = PROCESS_TABLE[node][pid]
+            .execute(ReadOps::ProcessInfo, PROCESS_TOKEN.get().unwrap()[pid]);
         match response {
             Ok(NodeResult::ProcessInfo(pinfo)) => Ok(pinfo),
             Err(e) => Err(e),
@@ -256,8 +275,10 @@ impl<P: Process> NrProcess<P> {
         let gtid = *crate::kcb::CORE_ID;
         let node = *crate::kcb::NODE_ID;
 
-        let response = kcb.arch.process_table()[node][pid]
-            .execute_mut(Op::AssignExecutor(gtid, node), kcb.process_token[pid]);
+        let response = kcb.arch.process_table()[node][pid].execute_mut(
+            Op::AssignExecutor(gtid, node),
+            PROCESS_TOKEN.get().unwrap()[pid],
+        );
         match response {
             Ok(NodeResult::Executor(executor)) => Ok(executor),
             Err(e) => Err(e),
@@ -268,11 +289,12 @@ impl<P: Process> NrProcess<P> {
     pub fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
-        let response = PROCESS_TABLE[node][pid]
-            .execute_mut(Op::AllocateFrameToProcess(frame), kcb.process_token[pid]);
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            Op::AllocateFrameToProcess(frame),
+            PROCESS_TOKEN.get().unwrap()[pid],
+        );
         match response {
             Ok(NodeResult::FrameId(fid)) => Ok(fid),
             Err(e) => Err(e),
@@ -283,11 +305,12 @@ impl<P: Process> NrProcess<P> {
     pub fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let kcb = super::kcb::get_kcb();
         let node = *crate::kcb::NODE_ID;
 
-        let response = PROCESS_TABLE[node][pid]
-            .execute_mut(Op::DispatcherAllocation(frame), kcb.process_token[pid]);
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            Op::DispatcherAllocation(frame),
+            PROCESS_TOKEN.get().unwrap()[pid],
+        );
 
         match response {
             Ok(NodeResult::ExecutorsCreated(how_many)) => Ok(how_many),

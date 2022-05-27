@@ -5,13 +5,13 @@
 
 use core::intrinsics::unlikely;
 
+use crate::arch::timer;
 use crate::error::KError;
 use crate::kcb;
 use crate::nr;
+use crate::nr::NR_REPLICA;
 use crate::nrproc::NrProcess;
 use crate::process::{Executor, ResumeHandle};
-
-use crate::arch::timer;
 
 /// Runs the process allocated to the given core.
 pub fn schedule() -> ! {
@@ -36,7 +36,7 @@ pub fn schedule() -> ! {
 
     // No process assigned to core? Figure out if there is one now:
     if unlikely(!crate::arch::process::has_executor()) {
-        if let Some((replica, token)) = kcb.replica.as_ref() {
+        if let Some((replica, token)) = NR_REPLICA.get() {
             loop {
                 let response =
                     replica.execute(nr::ReadOps::CurrentProcess(*crate::kcb::CORE_ID), *token);

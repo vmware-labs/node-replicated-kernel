@@ -8,19 +8,17 @@ use core::cell::{RefCell, RefMut};
 use core::fmt::Debug;
 
 use arrayvec::ArrayVec;
-use node_replication::{Replica, ReplicaToken};
+use node_replication::Replica;
 use slabmalloc::ZoneAllocator;
 use spin::Lazy;
 
 use crate::arch::kcb::init_kcb;
-use crate::arch::process::PROCESS_TABLE;
 use crate::arch::MAX_NUMA_NODES;
 use crate::error::KError;
 use crate::memory::emem::EmergencyAllocator;
 use crate::memory::mcache::TCache;
 use crate::memory::mcache::TCacheSp;
 use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PhysicalPageProvider};
-use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
 use crate::process::{Process, MAX_PROCESSES};
 
@@ -124,12 +122,6 @@ where
     /// Contains a bunch of pmem arenas, can be one for every NUMA node
     /// but we intialize it lazily upon calling `set_pmem_affinity`.
     pub pmem_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
-
-    /// A handle to the node-local kernel replica.
-    pub replica: Option<(Arc<Replica<'static, KernelNode>>, ReplicaToken)>,
-
-    /// Tokens to access process replicas
-    pub process_token: ArrayVec<ReplicaToken, { MAX_PROCESSES }>,
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
@@ -146,29 +138,6 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             // memory allocations (emanager):
             physical_memory: PhysicalMemoryArena::uninit_with_node(node),
             pmem_memory: PhysicalMemoryArena::uninit_with_node(node),
-            replica: None,
-            process_token: ArrayVec::new_const(),
-        }
-    }
-
-    pub fn setup_node_replication(
-        &mut self,
-        replica: Arc<Replica<'static, KernelNode>>,
-        idx_token: ReplicaToken,
-    ) {
-        self.replica = Some((replica, idx_token));
-    }
-
-    pub fn register_with_process_replicas(&mut self) {
-        let node = *NODE_ID;
-        debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
-
-        for pid in 0..MAX_PROCESSES {
-            debug_assert!(PROCESS_TABLE[node].len() > pid, "Invalid PID");
-
-            let token = PROCESS_TABLE[node][pid].register();
-            self.process_token
-                .push(token.expect("Need to be able to register"));
         }
     }
 

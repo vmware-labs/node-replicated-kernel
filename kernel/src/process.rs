@@ -28,7 +28,7 @@ use crate::fs::{cnrfs, Fd};
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
 use crate::prelude::overlaps;
-use crate::{kcb, nr, nrproc, round_up};
+use crate::{nr, nrproc, round_up};
 
 /// Process ID.
 pub type Pid = usize;
@@ -340,7 +340,6 @@ impl elfloader::ElfLoader for DataSecAllocator {
 /// Create an initial VSpace
 pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     KernelAllocator::try_refill_tcache(7, 1, MemType::Mem)?;
-    let kcb = kcb::get_kcb();
 
     // Lookup binary of the process
     let mut mod_file = None;
@@ -388,8 +387,8 @@ pub fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
     );
 
     // Allocate a new process
-    kcb.replica
-        .as_ref()
+    nr::NR_REPLICA
+        .get()
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
             let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
             if let nr::NodeResult::PidAllocated(pid) = response {

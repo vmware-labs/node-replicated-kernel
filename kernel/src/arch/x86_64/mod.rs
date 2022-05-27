@@ -269,10 +269,9 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     core::mem::forget(kcb);
 
     {
-        let kcb = kcb::get_kcb();
         let local_ridx = args.replica.register().unwrap();
-        kcb.setup_node_replication(args.replica.clone(), local_ridx);
-        kcb.register_with_process_replicas();
+        crate::nr::NR_REPLICA.call_once(|| (args.replica.clone(), local_ridx));
+        crate::nrproc::register_thread_with_process_replicas();
         crate::fs::cnrfs::init_cnrfs_on_thread(args.fs_replica.clone());
 
         // Don't modify this line without adjusting `coreboot` integration test:
@@ -826,16 +825,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 
-    // Create the global operation log and first replica and store it in the BSP
-    // kcb
+    // Create the global operation log and first replica and store it (needs
+    // TLS)
     let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
         .expect("Not enough memory to initialize system");
     let bsp_replica = Replica::<KernelNode>::new(&log);
     let local_ridx = bsp_replica.register().unwrap();
-    {
-        let kcb = kcb::get_kcb();
-        kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
-    }
+    crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
 
     // Starting to initialize file-system
     let fs_logs = crate::fs::cnrfs::allocate_logs();
@@ -850,10 +846,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Intialize PCI
     crate::pci::init();
 
+    // Initialize processes
     {
         lazy_static::initialize(&process::PROCESS_TABLE);
-        let kcb = kcb::get_kcb();
-        kcb.register_with_process_replicas();
+        crate::nrproc::register_thread_with_process_replicas();
     }
 
     #[cfg(feature = "gdb")]

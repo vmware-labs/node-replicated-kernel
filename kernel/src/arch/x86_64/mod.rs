@@ -847,10 +847,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     crate::pci::init();
 
     // Initialize processes
-    {
-        lazy_static::initialize(&process::PROCESS_TABLE);
-        crate::nrproc::register_thread_with_process_replicas();
-    }
+    lazy_static::initialize(&process::PROCESS_TABLE);
+    crate::nrproc::register_thread_with_process_replicas();
 
     #[cfg(feature = "gdb")]
     {

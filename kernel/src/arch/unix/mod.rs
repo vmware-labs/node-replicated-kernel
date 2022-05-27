@@ -104,10 +104,7 @@ fn init_setup() {
     let local_ridx = bsp_replica
         .register()
         .expect("Failed to register with Replica.");
-    {
-        let kcb = kcb::get_kcb();
-        kcb.setup_node_replication(bsp_replica.clone(), local_ridx);
-    }
+    crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
 
     // Starting to initialize file-system
     let fs_logs = crate::fs::cnrfs::allocate_logs();
@@ -118,6 +115,10 @@ fn init_setup() {
             .expect("Not enough memory to initialize system"),
     );
     crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+
+    // Initialize processes
+    lazy_static::initialize(&process::PROCESS_TABLE);
+    crate::nrproc::register_thread_with_process_replicas();
 }
 
 #[start]

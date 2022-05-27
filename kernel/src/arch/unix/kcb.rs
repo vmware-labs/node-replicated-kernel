@@ -9,7 +9,6 @@ use core::any::Any;
 use arrayvec::ArrayVec;
 use node_replication::{Replica, ReplicaToken};
 
-use crate::cmdline::CommandLineArguments;
 use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
 use crate::memory::mcache::TCacheSp;
@@ -21,14 +20,7 @@ use super::process::{UnixProcess, UnixThread};
 use super::MAX_NUMA_NODES;
 
 #[thread_local]
-static mut KCB: Kcb<ArchKcb> = {
-    Kcb::new(
-        CommandLineArguments::new("info", "init", "init", "init"),
-        TCacheSp::new(0),
-        ArchKcb::new(),
-        0,
-    )
-};
+static mut KCB: Kcb<ArchKcb> = Kcb::new(TCacheSp::new(0), ArchKcb::new(), 0);
 
 pub fn try_get_kcb<'a>() -> Option<&'a mut Kcb<ArchKcb>> {
     unsafe { Some(&mut KCB) }

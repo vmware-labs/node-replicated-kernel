@@ -81,9 +81,3 @@ impl AddressSpace for VSpace {
         unimplemented!("unmap");
     }
 }
-
-impl Drop for VSpace {
-    fn drop(&mut self) {
-        panic!("Drop for VSpace!");
-    }
-}

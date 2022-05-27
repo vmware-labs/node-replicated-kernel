@@ -290,15 +290,15 @@ fn acpi_topology() {
         if nid > 0 {
             assert_eq!(
                 bytes_per_node,
-                1024 * 1024 * 512,
-                "Node#{} has 512 MiB of RAM",
+                1024 * 1024 * 1024,
+                "Node#{} has 1 GiB of RAM",
                 nid
             );
         } else {
             // First node has a bit less...
             assert!(
-                bytes_per_node >= 1024 * 1024 * 511,
-                "Node#0 has almost 512 MiB of RAM"
+                bytes_per_node >= 1024 * 1024 * 1020,
+                "Node#0 has almost 1 GiB of RAM"
             );
         }
     }

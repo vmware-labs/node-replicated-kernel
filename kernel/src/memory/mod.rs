@@ -15,19 +15,16 @@
 //!  * The KernelAllocator: Which implements GlobalAlloc.
 use core::alloc::{GlobalAlloc, Layout};
 use core::intrinsics::likely;
+use core::ptr;
 use core::sync::atomic::AtomicU64;
-use core::{fmt, ptr};
 
-use arrayvec::ArrayVec;
 use log::{debug, error, trace, warn};
 use slabmalloc::{Allocator, ZoneAllocator};
-use spin::Mutex;
-use x86::bits64::paging;
 
-use crate::arch::MAX_NUMA_NODES;
 use crate::kcb;
 use crate::prelude::*;
 
+use backends::PhysicalPageProvider;
 pub(crate) use frame::Frame;
 pub(crate) use kpi::MemType;
 use vspace::MapAction;
@@ -38,16 +35,16 @@ pub(crate) use crate::arch::memory::{
     LARGE_PAGE_SIZE,
 };
 
+pub mod backends;
 pub mod detmem;
 pub mod emem;
 pub mod frame;
+pub mod global;
 pub mod mcache;
+pub mod utils;
 pub mod vspace;
 #[cfg(test)]
 pub mod vspace_model;
-
-/// How many initial physical memory regions we support.
-pub(crate) const MAX_PHYSICAL_REGIONS: usize = 64;
 
 /// The global allocator in the kernel.
 //#[cfg(not(any(test, fuzzing)))]
@@ -73,26 +70,6 @@ enum AllocatorType {
 /// Implements the kernel memory allocation strategy.
 pub(crate) struct KernelAllocator {
     big_objects_sbrk: AtomicU64,
-}
-
-/// Calculate how many base and large pages we need to fit a given size.
-///
-/// # Returns
-/// A tuple containing (base-pages, large-pages).
-/// base-pages will never exceed LARGE_PAGE_SIZE / BASE_PAGE_SIZE.
-pub(crate) fn size_to_pages(size: usize) -> (usize, usize) {
-    let bytes_not_in_large = size % LARGE_PAGE_SIZE;
-
-    let div = bytes_not_in_large / BASE_PAGE_SIZE;
-    let rem = bytes_not_in_large % BASE_PAGE_SIZE;
-    let base_pages = if rem > 0 { div + 1 } else { div };
-
-    let remaining_size = size - bytes_not_in_large;
-    let div = remaining_size / LARGE_PAGE_SIZE;
-    let rem = remaining_size % LARGE_PAGE_SIZE;
-    let large_pages = if rem > 0 { div + 1 } else { div };
-
-    (base_pages, large_pages)
 }
 
 impl KernelAllocator {
@@ -253,7 +230,7 @@ impl KernelAllocator {
 
     /// Calculate how many base and large pages we need to fit a Layout.
     fn layout_to_pages(layout: Layout) -> (usize, usize) {
-        size_to_pages(layout.size())
+        utils::size_to_pages(layout.size())
     }
 
     /// Determine for a Layout how many pages we need taking into
@@ -587,306 +564,9 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 }
 
-/// Human-readable representation of a data-size.
-///
-/// # Notes
-/// Use for pretty printing and debugging only.
-#[derive(PartialEq)]
-pub(crate) enum DataSize {
-    Bytes(f64),
-    KiB(f64),
-    MiB(f64),
-    GiB(f64),
-}
-
-impl DataSize {
-    /// Construct a new DataSize passing the amount of `bytes`
-    /// we want to convert
-    pub(crate) fn from_bytes(bytes: usize) -> DataSize {
-        if bytes < 1024 {
-            DataSize::Bytes(bytes as f64)
-        } else if bytes < (1024 * 1024) {
-            DataSize::KiB(bytes as f64 / 1024.0)
-        } else if bytes < (1024 * 1024 * 1024) {
-            DataSize::MiB(bytes as f64 / (1024 * 1024) as f64)
-        } else {
-            DataSize::GiB(bytes as f64 / (1024 * 1024 * 1024) as f64)
-        }
-    }
-
-    /// Write rounded size and SI unit to `f`
-    fn format(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            DataSize::Bytes(n) => write!(f, "{:.2} B", n),
-            DataSize::KiB(n) => write!(f, "{:.2} KiB", n),
-            DataSize::MiB(n) => write!(f, "{:.2} MiB", n),
-            DataSize::GiB(n) => write!(f, "{:.2} GiB", n),
-        }
-    }
-}
-
-impl fmt::Debug for DataSize {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.format(f)
-    }
-}
-
-impl fmt::Display for DataSize {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.format(f)
-    }
-}
-
-/// Represents the global memory system in the kernel.
-///
-/// `node_caches` and and `emem` can be accessed concurrently and are protected
-/// by a simple spin-lock (for reclamation and allocation).
-/// TODO(perf): This may need a more elaborate scheme in the future.
-#[derive(Default)]
-pub(crate) struct GlobalMemory {
-    /// Holds a small amount of memory for every NUMA node.
-    ///
-    /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<Mutex<mcache::TCache>, MAX_NUMA_NODES>,
-
-    /// All node-caches in the system (one for every NUMA node).
-    pub(crate) node_caches:
-        ArrayVec<CachePadded<Mutex<&'static mut mcache::NCache>>, MAX_NUMA_NODES>,
-}
-
-impl GlobalMemory {
-    /// Construct a new global memory object from a range of initial memory frames.
-    /// This is typically invoked quite early (we're setting up support for memory allocation).
-    ///
-    /// We first chop off a small amount of memory from the frames to construct an early
-    /// TCache (for every NUMA node). Then we construct the big node-caches (NCache) and
-    /// populate them with remaining (hopefully a lot) memory.
-    ///
-    /// When this completes we have a bunch of global NUMA aware memory allocators that
-    /// are protected by spin-locks. `GlobalMemory` together with the core-local allocators
-    /// forms the tracking for our memory allocation system.
-    ///
-    /// # Safety
-    /// Pretty unsafe as we do lot of conjuring objects from frames to allocate memory
-    /// for our allocators.
-    /// A client needs to ensure that our frames are valid memory, and not yet
-    /// being used anywhere yet.
-    /// The good news is that we only invoke this once during bootstrap.
-    pub unsafe fn new(
-        mut memory: ArrayVec<Frame, MAX_PHYSICAL_REGIONS>,
-    ) -> Result<GlobalMemory, KError> {
-        assert!(memory.is_sorted_by(|a, b| a.affinity.partial_cmp(&b.affinity)));
-
-        debug_assert!(!memory.is_empty());
-        let mut gm = GlobalMemory::default();
-
-        // How many NUMA nodes are there in the system
-        let max_affinity: usize = memory
-            .iter()
-            .map(|f| f.affinity as usize)
-            .max()
-            .expect("Need at least some frames")
-            + 1;
-
-        // Construct the `emem`'s for all NUMA nodes:
-        let mut cur_affinity = 0;
-        // Top of the frames that we didn't end up using for the `emem` construction
-        let mut leftovers: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
-        for frame in memory.iter_mut() {
-            const EMEM_SIZE: usize = 2 * LARGE_PAGE_SIZE + 64 * BASE_PAGE_SIZE;
-            if frame.affinity == cur_affinity && frame.size() > EMEM_SIZE {
-                // Let's make sure we have a frame that starts at a 2 MiB boundary which makes it easier
-                // to populate the TCache
-                let (low, large_page_aligned_frame) = frame.split_at_nearest_large_page_boundary();
-                *frame = low;
-
-                // Cut-away the top memory if the frame we got is too big
-                let (emem, leftover_mem) = large_page_aligned_frame.split_at(EMEM_SIZE);
-                if leftover_mem != Frame::empty() {
-                    // And safe it for later processing
-                    leftovers.push(leftover_mem);
-                }
-
-                gm.emem.push(Mutex::new(mcache::TCache::new_with_frame(
-                    cur_affinity,
-                    emem,
-                )));
-
-                cur_affinity += 1;
-            }
-        }
-        // If this fails, memory is really fragmented or some nodes have no/little memory
-        assert_eq!(
-            gm.emem.len(),
-            max_affinity,
-            "Added early managers for all NUMA nodes"
-        );
-
-        // Construct an NCache for all nodes
-        for affinity in 0..max_affinity {
-            let mut ncache_memory = gm.emem[affinity].lock().allocate_large_page()?;
-            let ncache_memory_addr: PAddr = ncache_memory.base;
-            assert!(ncache_memory_addr != PAddr::zero());
-            ncache_memory.zero(); // TODO(perf) this happens twice atm?
-
-            let ncache_ptr = ncache_memory.uninitialized::<mcache::NCache>();
-
-            let ncache: &'static mut mcache::NCache = mcache::NCache::init(ncache_ptr, affinity);
-            debug_assert_eq!(
-                &*ncache as *const _ as u64,
-                paddr_to_kernel_vaddr(ncache_memory_addr).as_u64()
-            );
-
-            gm.node_caches.push(CachePadded::new(Mutex::new(ncache)));
-        }
-
-        // Populate the NCaches with all remaining memory
-        // Ideally we fully exhaust all frames and put everything in the NCache
-        for (ncache_affinity, ncache) in gm.node_caches.iter().enumerate() {
-            let mut ncache_locked = ncache.lock();
-            for frame in memory.iter() {
-                if frame.affinity == ncache_affinity {
-                    trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
-                    ncache_locked.populate_2m_first(*frame);
-                }
-            }
-            for frame in leftovers.iter() {
-                if frame.affinity == ncache_affinity {
-                    trace!("Trying to add {:?} frame to {:?}", frame, ncache_locked);
-                    ncache_locked.populate_2m_first(*frame);
-                }
-            }
-        }
-
-        Ok(gm)
-    }
-}
-
-impl fmt::Debug for GlobalMemory {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut f = f.debug_struct("GlobalMemory");
-
-        for idx in 0..self.node_caches.len() {
-            // TODO(correctness): rather than maybe run into a deadlock here
-            // (e.g., if we are trying to print GlobalMemory when in a panic),
-            // the relevant fields for printing Debug should probably
-            // just be atomics
-            let ncache = self.node_caches[idx].lock();
-            f.field("NCache", &ncache);
-        }
-
-        f.finish()
-    }
-}
-
-/// A trait to allocate and release physical pages from an allocator.
-pub(crate) trait PhysicalPageProvider {
-    /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.
-    fn allocate_base_page(&mut self) -> Result<Frame, KError>;
-    /// Release a `BASE_PAGE_SIZE` for the given architecture back to the allocator.
-    fn release_base_page(&mut self, f: Frame) -> Result<(), KError>;
-
-    /// Allocate a `LARGE_PAGE_SIZE` for the given architecture from the allocator.
-    fn allocate_large_page(&mut self) -> Result<Frame, KError>;
-    /// Release a `LARGE_PAGE_SIZE` for the given architecture back to the allocator.
-    fn release_large_page(&mut self, f: Frame) -> Result<(), KError>;
-}
-
-/// The backend implementation necessary to implement if we want a client to be
-/// able to grow our allocator by providing a list of frames.
-pub(crate) trait GrowBackend {
-    /// How much capacity we have left to add base pages.
-    fn spare_base_page_capacity(&self) -> usize;
-
-    /// Add a slice of base-pages to `self`.
-    fn grow_base_pages(&mut self, free_list: &[Frame]) -> Result<(), KError>;
-
-    /// How much capacity we have left to add large pages.
-    fn spare_large_page_capacity(&self) -> usize;
-
-    /// Add a slice of large-pages to `self`.
-    fn grow_large_pages(&mut self, free_list: &[Frame]) -> Result<(), KError>;
-}
-
-/// The backend implementation necessary to implement if we want
-/// a system manager to take away be able to take away memory
-/// from our allocator.
-pub(crate) trait ReapBackend {
-    /// Ask to give base-pages back.
-    ///
-    /// An implementation should put the pages in the `free_list` and remove
-    /// them from the local allocator.
-    fn reap_base_pages(&mut self, free_list: &mut [Option<Frame>]);
-
-    /// Ask to give large-pages back.
-    ///
-    /// An implementation should put the pages in the `free_list` and remove
-    /// them from the local allocator.
-    fn reap_large_pages(&mut self, free_list: &mut [Option<Frame>]);
-}
-
-/// Provides information about the allocator.
-pub(crate) trait AllocatorStatistics {
-    /// Current free memory (in bytes) this allocator has.
-    fn free(&self) -> usize {
-        self.size() - self.allocated()
-    }
-
-    /// Memory (in bytes) that was handed out by this allocator
-    /// and has not yet been reclaimed (memory currently in use).
-    fn allocated(&self) -> usize;
-
-    /// Total memory (in bytes) that is maintained by this allocator.
-    fn size(&self) -> usize;
-
-    /// Potential capacity (in bytes) that the allocator can maintain.
-    ///
-    /// Some allocator may have unlimited capacity, in that case
-    /// they can return usize::max.
-    ///
-    /// e.g. this should hold `capacity() >= free() + allocated()`
-    fn capacity(&self) -> usize;
-
-    /// Internal fragmentation produced by this allocator (in bytes).
-    ///
-    /// In some cases an allocator may not be able to calculate it.
-    fn internal_fragmentation(&self) -> usize;
-
-    fn free_base_pages(&self) -> usize {
-        0
-    }
-
-    fn free_large_pages(&self) -> usize {
-        0
-    }
-}
-
-pub(crate) trait PageTableProvider<'a> {
-    fn allocate_pml4<'b>(&mut self) -> Option<&'b mut paging::PML4>;
-    fn new_pdpt(&mut self) -> Option<paging::PML4Entry>;
-    fn new_pd(&mut self) -> Option<paging::PDPTEntry>;
-    fn new_pt(&mut self) -> Option<paging::PDEntry>;
-    fn new_page(&mut self) -> Option<paging::PTEntry>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn size_formatting() {
-        let ds = DataSize::from_bytes(LARGE_PAGE_SIZE);
-        assert_eq!(ds, DataSize::MiB(2.0));
-
-        let ds = DataSize::from_bytes(BASE_PAGE_SIZE);
-        assert_eq!(ds, DataSize::KiB(4.0));
-
-        let ds = DataSize::from_bytes(1024 * LARGE_PAGE_SIZE);
-        assert_eq!(ds, DataSize::GiB(2.0));
-
-        let ds = DataSize::from_bytes(usize::MIN);
-        assert_eq!(ds, DataSize::Bytes(0.0));
-    }
 
     #[test]
     fn layout_to_pages() {

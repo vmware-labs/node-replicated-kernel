@@ -45,9 +45,9 @@ use crate::fallible_string::FallibleString;
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::fs::cnrfs::Modify;
 use crate::kcb::Kcb;
+use crate::memory::global::{GlobalMemory, MAX_PHYSICAL_REGIONS};
 use crate::memory::vspace::MapAction;
-use crate::memory::MAX_PHYSICAL_REGIONS;
-use crate::memory::{mcache, Frame, GlobalMemory, BASE_PAGE_SIZE, KERNEL_BASE};
+use crate::memory::{mcache, Frame, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};
 use crate::stack::OwnedStack;
 use crate::ExitReason;
@@ -302,7 +302,7 @@ fn boot_app_cores(
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 ) {
-    use crate::memory::PhysicalPageProvider;
+    use crate::memory::backends::PhysicalPageProvider;
 
     let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
     let kcb = kcb::get_kcb();

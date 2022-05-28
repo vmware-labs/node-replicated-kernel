@@ -10,8 +10,10 @@ use core::ptr::NonNull;
 use slabmalloc::{self, LargeObjectPage, ObjectPage};
 
 use crate::error::KError;
-use crate::memory::{Frame, PAddr, PhysicalPageProvider, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::round_up;
+
+use super::backends::PhysicalPageProvider;
+use super::{Frame, PAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 /// A very simple allocator that only allocates and doesn't allow
 /// deallocations (bump-style allocator).

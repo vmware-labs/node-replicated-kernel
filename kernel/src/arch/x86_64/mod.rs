@@ -208,16 +208,16 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     };
     let start = rawtime::Instant::now();
 
-    let emanager = mcache::TCacheSp::new(args.node);
+    let emanager = mcache::FrameCacheEarly::new(args.node);
     let arch = kcb::Arch86Kcb::new();
     let mut kcb = Kcb::<kcb::Arch86Kcb>::new(emanager, arch, args.node);
 
     kcb.set_global_mem(args.global_memory);
-    kcb.set_mem_manager(mcache::TCache::new(args.node));
+    kcb.set_mem_manager(mcache::FrameCacheSmall::new(args.node));
 
     if args.global_pmem.node_caches.len() > 0 {
         kcb.set_global_pmem(args.global_pmem);
-        kcb.set_pmem_manager(mcache::TCache::new(args.node));
+        kcb.set_pmem_manager(mcache::FrameCacheSmall::new(args.node));
     }
 
     let static_kcb = unsafe {
@@ -607,10 +607,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // We walk the memory regions given to us by uefi, since this consumes
     // the UEFI iterator we copy the frames into a `ArrayVec`.
     //
-    // Ideally, if this works, we should end up with an early TCache
+    // Ideally, if this works, we should end up with an early FrameCacheSmall
     // that has a small amount of space we can allocate from, and a list of (yet) unmaintained
     // regions of memory.
-    let mut emanager: Option<mcache::TCacheSp> = None;
+    let mut emanager: Option<mcache::FrameCacheEarly> = None;
     let mut memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS> = ArrayVec::new();
     for region in &mut kernel_args.mm_iter {
         if region.ty == MemoryType::CONVENTIONAL {
@@ -630,7 +630,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                     // Ideally `mem_iter` is ordered by physical address which would increase
                     // our chances, but the UEFI spec doesn't guarantee anything :S
                     let (early_frame, high) = f.split_at(EARLY_MEMORY_CAPACITY);
-                    emanager = Some(mcache::TCacheSp::new_with_frame(0, early_frame));
+                    emanager = Some(mcache::FrameCacheEarly::new_with_frame(0, early_frame));
 
                     if high != Frame::empty() {
                         assert!(!memory_regions.is_full());
@@ -756,7 +756,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Initialize memory allocators (needs annotated memory regions, KCB)
     // the memory for those allocators needs to be local to the region.
     //  - Each `annotated_region` should be backed at the lowest level by a buddy allocator
-    //  - For every node we should have one NCache
+    //  - For every node we should have one FrameCacheLarge
     // all this work is done in GlobalMemory.
     //
     // This call is safe here because we assume that our `annotated_regions` is correct.
@@ -770,7 +770,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let kcb = kcb::get_kcb();
         kcb.set_global_mem(&global_memory_static);
-        let tcache = mcache::TCache::new(0);
+        let tcache = mcache::FrameCacheSmall::new(0);
         kcb.set_mem_manager(tcache);
     }
 
@@ -813,7 +813,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let kcb = kcb::get_kcb();
         kcb.set_global_pmem(&global_memory_static);
-        let tcache = mcache::TCache::new(0);
+        let tcache = mcache::FrameCacheSmall::new(0);
         kcb.set_pmem_manager(tcache);
     }
 

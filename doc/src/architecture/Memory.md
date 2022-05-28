@@ -31,18 +31,18 @@ state were replicated, each allocation operation would be repeated on each
 replica, breaking this.
 
 At boot time, the affinity for memory regions is  identified, and memory is
-divided into per-NUMA node caches (NCache). The NCache statically partitions
+divided into per-NUMA node caches (FrameCacheLarge). The FrameCacheLarge statically partitions
 memory further into two classes of 4 KiB and 2 MiB frames. Every core has a
-local TCache of 4 KiB and 2 MiB frames for fast, no-contention allocation when
+local FrameCacheSmall of 4 KiB and 2 MiB frames for fast, no-contention allocation when
 it contains the requested frame size. If it is empty, it refills from its local
-NCache. Similar to slab allocators, NRK' TCache and NCache implement a cache
+FrameCacheLarge. Similar to slab allocators, NRK' FrameCacheSmall and FrameCacheLarge implement a cache
 frontend and backend that controls the flow between TCaches and NCaches.
 
 <figure>
-  <img src="../diagrams/NCache-TCache.png" alt="NCache and TCache physical frame allocators"/>
+  <img src="../diagrams/FrameCacheLarge-FrameCacheSmall.png" alt="FrameCacheLarge and FrameCacheSmall physical frame allocators"/>
   <figcaption>
-    Shows a global per-NUMA NCache and a per-core TCache. Cores allocate 4K or 2M
-    pages directly from the TCache which may refill from the NCache when empty (grow).
+    Shows a global per-NUMA FrameCacheLarge and a per-core FrameCacheSmall. Cores allocate 4K or 2M
+    pages directly from the FrameCacheSmall which may refill from the FrameCacheLarge when empty (grow).
     TCaches and NCaches both hold frames in stacks to allows for quick allocation
     and deallocation of frames.
   </figcaption>

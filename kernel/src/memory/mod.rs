@@ -5,14 +5,7 @@
 //!
 //! Defines some core data-types and implements
 //! a bunch of different allocators for use in the system.
-//!
-//! From a high level the four most interesting types in here are:
-//!  * The Frame: Which is represents a block of physical memory, it's always
-//!    aligned to, and a multiple of a base-page. Ideally Rust affine types
-//!    should ensure we always only have one Frame covering a block of memory.
-//!  * The NCache: A big stack of base and large-pages.
-//!  * The TCache: A smaller stack of base and large-pages.
-//!  * The KernelAllocator: Which implements GlobalAlloc.
+
 use core::alloc::{GlobalAlloc, Layout};
 use core::intrinsics::likely;
 use core::ptr;
@@ -101,17 +94,17 @@ impl KernelAllocator {
                 // * TODO(smp): Needs a spin-lock for multi-core
                 // * TODO(checks): we want this case to be rare so if we end up with more than ~20
                 //   big objects we should print ag warning (and start rethinking this)
-                // * TODO(limitation): We can't really allocate more than what fits in a TCache
+                // * TODO(limitation): We can't really allocate more than what fits in a FrameCacheSmall
 
                 // Figure out how much we need to map:
                 let (mut base, mut large) = KernelAllocator::layout_to_pages(layout);
 
-                // TODO(hack): Fetching more than 254 base pages would exhaust our TCache so might
+                // TODO(hack): Fetching more than 254 base pages would exhaust our FrameCacheSmall so might
                 // as well get a large-page instead:
                 // Slightly better: Should at least have well defined constants for `254`
-                // A bit better: TCache should probably have more space base pages (like 2MiB of base pages?)
-                // More better: If we need more pages than what fits in the TCache, we should get it directly
-                // from the NCache?
+                // A bit better: FrameCacheSmall should probably have more space base pages (like 2MiB of base pages?)
+                // More better: If we need more pages than what fits in the FrameCacheSmall, we should get it directly
+                // from the FrameCacheLarge?
                 // Even Better: Find a good way to express this API, and maybe the whole GlobalAllocator
                 // infrastructure that doesn't require estimating the pages upfront?
                 if base > 254 {
@@ -284,7 +277,7 @@ impl KernelAllocator {
             _ => unreachable!(),
         };
         let mut ncache = gmanager.node_caches[affinity].lock();
-        // Make sure we don't overflow the TCache
+        // Make sure we don't overflow the FrameCacheSmall
         let needed_base_pages =
             core::cmp::min(mem_manager.spare_base_page_capacity(), needed_base_pages);
         let needed_large_pages =
@@ -294,20 +287,20 @@ impl KernelAllocator {
             let frame = ncache.allocate_base_page()?;
             mem_manager
                 .grow_base_pages(&[frame])
-                .expect("We ensure to not overfill the TCache above.");
+                .expect("We ensure to not overfill the FrameCacheSmall above.");
         }
 
         for _i in 0..needed_large_pages {
             let frame = ncache.allocate_large_page()?;
             mem_manager
                 .grow_large_pages(&[frame])
-                .expect("We ensure to not overfill the TCache above.");
+                .expect("We ensure to not overfill the FrameCacheSmall above.");
         }
 
         Ok(())
     }
 
-    /// Refill TCache only if the layout will exhaust the cache's current
+    /// Refill FrameCacheSmall only if the layout will exhaust the cache's current
     /// stored memory
     ///
     /// `let (needed_base_pages, needed_large_pages) = KernelAllocator::refill_amount(layout);`
@@ -327,7 +320,7 @@ impl KernelAllocator {
 
         if needed_base_pages > free_bp || needed_large_pages > free_lp {
             debug!(
-                "Refilling the TCache: needed_bp {} needed_lp {} free_bp {} free_lp {}",
+                "Refilling the FrameCacheSmall: needed_bp {} needed_lp {} free_bp {} free_lp {}",
                 needed_base_pages, needed_large_pages, free_bp, free_lp
             );
             KernelAllocator::try_refill_tcache(needed_base_pages, needed_large_pages, MemType::Mem)
@@ -489,7 +482,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             // TODO(numa-correctness): This is not necessarily correct as free can happen
                             // while `physical_memory` changes to different affinities
                             // we try to avoid this at the moment by being careful about freeing things
-                            // during changes to allocation affinity (the NCache or TCache would panic)
+                            // during changes to allocation affinity (the FrameCacheLarge or FrameCacheSmall would panic)
                             kcb.physical_memory.affinity,
                         );
 
@@ -515,7 +508,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             // TODO(numa-correctness): This is not necessarily correct as free can happen
                             // while `physical_memory` changes to different affinities
                             // we try to avoid this at the moment by being careful about freeing things
-                            // during changes to allocation affinity (the NCache or TCache would panic)
+                            // during changes to allocation affinity (the FrameCacheLarge or FrameCacheSmall would panic)
                             kcb.physical_memory.affinity,
                         );
 

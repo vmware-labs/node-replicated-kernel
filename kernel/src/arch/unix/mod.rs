@@ -16,7 +16,7 @@ use x86::current::paging::HUGE_PAGE_SIZE;
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::memory::backends::GrowBackend;
 use crate::memory::global::GlobalMemory;
-use crate::memory::mcache::TCacheSp;
+use crate::memory::mcache::FrameCacheEarly;
 use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 use crate::{main, ExitReason};
@@ -68,7 +68,7 @@ fn init_setup() {
     lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
 
     // Allocate 32 MiB and add it to our heap
-    let mut tc = TCacheSp::new(0);
+    let mut tc = FrameCacheEarly::new(0);
     let mut mm = memory::MemoryMapper::default();
 
     // avoids unused code warnings

@@ -14,8 +14,10 @@ use node_replication::{Log, Replica};
 use x86::current::paging::HUGE_PAGE_SIZE;
 
 use crate::fs::cnrfs::MlnrKernelNode;
+use crate::memory::backends::GrowBackend;
+use crate::memory::global::GlobalMemory;
 use crate::memory::mcache::TCacheSp;
-use crate::memory::{GlobalMemory, GrowBackend, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 use crate::{main, ExitReason};
 

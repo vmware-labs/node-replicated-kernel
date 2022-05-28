@@ -47,7 +47,6 @@ pub mod vspace;
 pub mod vspace_model;
 
 /// The global allocator in the kernel.
-//#[cfg(not(any(test, fuzzing)))]
 #[cfg(target_os = "none")]
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator {

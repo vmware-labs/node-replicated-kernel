@@ -25,8 +25,9 @@ use kpi::{
 use crate::cmdline::{CommandLineArguments, Mode};
 use crate::error::KError;
 use crate::fs::{cnrfs, FileSystem};
+use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::MapAction;
-use crate::memory::{Frame, PhysicalPageProvider, KERNEL_BASE};
+use crate::memory::{Frame, KERNEL_BASE};
 use crate::process::{userptr_to_str, Pid, ResumeHandle};
 use crate::syscalls::{ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch};
 use crate::{nr, nrproc};
@@ -253,7 +254,7 @@ pub(crate) trait Arch86VSpaceDispatch {
 
         let kcb = super::kcb::get_kcb();
 
-        let (bp, lp) = crate::memory::size_to_pages(size as usize);
+        let (bp, lp) = crate::memory::utils::size_to_pages(size as usize);
         let mut frames = Vec::try_with_capacity(bp + lp)?;
         crate::memory::KernelAllocator::try_refill_tcache(20 + bp, lp, mem_type)?;
 

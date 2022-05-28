@@ -20,6 +20,8 @@ use core::mem::MaybeUninit;
 use log::{debug, warn};
 use static_assertions as sa;
 
+use super::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider, ReapBackend};
+use super::utils::DataSize;
 use super::*;
 
 /// A big cache of base and large pages, fits on a 2 MiB page.
@@ -145,7 +147,7 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
         if lost_pages > 0 || lost_large_pages > 0 {
             warn!(
                 "MCache population lost {} of memory.",
-                super::DataSize::from_bytes(
+                DataSize::from_bytes(
                     lost_pages * BASE_PAGE_SIZE + lost_large_pages * LARGE_PAGE_SIZE
                 )
             );
@@ -198,9 +200,9 @@ impl<const BP: usize, const LP: usize> fmt::Debug for MCache<BP, LP> {
         write!(
             f,
             "MCache {{ free_total: {} (free_4kib: {}), capacity: {}, affinity: {} }}",
-            super::DataSize::from_bytes(self.free()),
-            super::DataSize::from_bytes(self.base_page_addresses.len() * BASE_PAGE_SIZE),
-            super::DataSize::from_bytes(self.capacity()),
+            DataSize::from_bytes(self.free()),
+            DataSize::from_bytes(self.base_page_addresses.len() * BASE_PAGE_SIZE),
+            DataSize::from_bytes(self.capacity()),
             self.node
         )
     }

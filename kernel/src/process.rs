@@ -25,8 +25,9 @@ use crate::cmdline::CommandLineArguments;
 use crate::error::KError;
 use crate::fallible_string::TryString;
 use crate::fs::{cnrfs, Fd};
+use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
-use crate::memory::{Frame, KernelAllocator, PhysicalPageProvider, VAddr};
+use crate::memory::{Frame, KernelAllocator, VAddr};
 use crate::prelude::overlaps;
 use crate::{nr, nrproc, round_up};
 

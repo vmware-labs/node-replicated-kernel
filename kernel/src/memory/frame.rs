@@ -9,7 +9,7 @@ use core::iter;
 use crate::arch::memory::{paddr_to_kernel_vaddr, PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::round_up;
 
-use super::DataSize;
+use super::utils::DataSize;
 
 /// Physical region of memory.
 ///

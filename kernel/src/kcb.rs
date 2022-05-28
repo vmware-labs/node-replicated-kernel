@@ -15,10 +15,11 @@ use spin::Lazy;
 use crate::arch::kcb::init_kcb;
 use crate::arch::MAX_NUMA_NODES;
 use crate::error::KError;
+use crate::memory::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider};
 use crate::memory::emem::EmergencyAllocator;
+use crate::memory::global::GlobalMemory;
 use crate::memory::mcache::TCache;
 use crate::memory::mcache::TCacheSp;
-use crate::memory::{AllocatorStatistics, GlobalMemory, GrowBackend, PhysicalPageProvider};
 use crate::nrproc::NrProcess;
 use crate::process::{Process, MAX_PROCESSES};
 

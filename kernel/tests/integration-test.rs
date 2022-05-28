@@ -1718,7 +1718,7 @@ fn s04_userspace_multicore() {
         .build();
     let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .cores(num_cores)
-        .memory(2048)
+        .memory(4096)
         .timeout(28_000);
 
     let mut output = String::new();

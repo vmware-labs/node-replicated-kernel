@@ -33,11 +33,11 @@ pub(crate) struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<Mutex<mcache::TCache>, MAX_NUMA_NODES>,
+    pub(crate) emem: ArrayVec<Mutex<mcache::FrameCacheSmall>, MAX_NUMA_NODES>,
 
     /// All node-caches in the system (one for every NUMA node).
     pub(crate) node_caches:
-        ArrayVec<CachePadded<Mutex<&'static mut mcache::NCache>>, MAX_NUMA_NODES>,
+        ArrayVec<CachePadded<Mutex<&'static mut mcache::FrameCacheLarge>>, MAX_NUMA_NODES>,
 }
 
 impl GlobalMemory {
@@ -45,7 +45,7 @@ impl GlobalMemory {
     /// This is typically invoked quite early (we're setting up support for memory allocation).
     ///
     /// We first chop off a small amount of memory from the frames to construct an early
-    /// TCache (for every NUMA node). Then we construct the big node-caches (NCache) and
+    /// FrameCacheSmall (for every NUMA node). Then we construct the big node-caches (FrameCacheLarge) and
     /// populate them with remaining (hopefully a lot) memory.
     ///
     /// When this completes we have a bunch of global NUMA aware memory allocators that
@@ -82,7 +82,7 @@ impl GlobalMemory {
             const EMEM_SIZE: usize = 2 * LARGE_PAGE_SIZE + 64 * BASE_PAGE_SIZE;
             if frame.affinity == cur_affinity && frame.size() > EMEM_SIZE {
                 // Let's make sure we have a frame that starts at a 2 MiB boundary which makes it easier
-                // to populate the TCache
+                // to populate the FrameCacheSmall
                 let (low, large_page_aligned_frame) = frame.split_at_nearest_large_page_boundary();
                 *frame = low;
 
@@ -93,10 +93,11 @@ impl GlobalMemory {
                     leftovers.push(leftover_mem);
                 }
 
-                gm.emem.push(Mutex::new(mcache::TCache::new_with_frame(
-                    cur_affinity,
-                    emem,
-                )));
+                gm.emem
+                    .push(Mutex::new(mcache::FrameCacheSmall::new_with_frame(
+                        cur_affinity,
+                        emem,
+                    )));
 
                 cur_affinity += 1;
             }
@@ -108,16 +109,17 @@ impl GlobalMemory {
             "Added early managers for all NUMA nodes"
         );
 
-        // Construct an NCache for all nodes
+        // Construct an FrameCacheLarge for all nodes
         for affinity in 0..max_affinity {
             let mut ncache_memory = gm.emem[affinity].lock().allocate_large_page()?;
             let ncache_memory_addr: PAddr = ncache_memory.base;
             assert!(ncache_memory_addr != PAddr::zero());
             ncache_memory.zero(); // TODO(perf) this happens twice atm?
 
-            let ncache_ptr = ncache_memory.uninitialized::<mcache::NCache>();
+            let ncache_ptr = ncache_memory.uninitialized::<mcache::FrameCacheLarge>();
 
-            let ncache: &'static mut mcache::NCache = mcache::NCache::init(ncache_ptr, affinity);
+            let ncache: &'static mut mcache::FrameCacheLarge =
+                mcache::FrameCacheLarge::init(ncache_ptr, affinity);
             debug_assert_eq!(
                 &*ncache as *const _ as u64,
                 paddr_to_kernel_vaddr(ncache_memory_addr).as_u64()
@@ -127,7 +129,7 @@ impl GlobalMemory {
         }
 
         // Populate the NCaches with all remaining memory
-        // Ideally we fully exhaust all frames and put everything in the NCache
+        // Ideally we fully exhaust all frames and put everything in the FrameCacheLarge
         for (ncache_affinity, ncache) in gm.node_caches.iter().enumerate() {
             let mut ncache_locked = ncache.lock();
             for frame in memory.iter() {
@@ -158,7 +160,7 @@ impl fmt::Debug for GlobalMemory {
             // the relevant fields for printing Debug should probably
             // just be atomics
             let ncache = self.node_caches[idx].lock();
-            f.field("NCache", &ncache);
+            f.field("FrameCacheLarge", &ncache);
         }
 
         f.finish()

@@ -24,20 +24,27 @@ use super::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider, Re
 use super::utils::DataSize;
 use super::*;
 
-/// A big cache of base and large pages, fits on a 2 MiB page.
-pub(crate) type NCache = MCache<131071, 131070>;
-sa::assert_eq_size!(NCache, [u8; LARGE_PAGE_SIZE]);
-sa::const_assert!(core::mem::align_of::<NCache>() <= super::BASE_PAGE_SIZE);
+/// A big cache of base and large pages for a NUMA node, fits on a 2 MiB page.
+///
+/// Stores 256 GiB of large pages and 512 MiB of base pages.
+pub(crate) type FrameCacheLarge = MCache<131071, 131070>;
+sa::assert_eq_size!(FrameCacheLarge, [u8; LARGE_PAGE_SIZE]);
+sa::const_assert!(core::mem::align_of::<FrameCacheLarge>() <= super::BASE_PAGE_SIZE);
 
 /// A small cache of 4 KiB and 2 MiB pages, fits on a 4K page.
-pub(crate) type TCache = MCache<381, 128>;
-sa::assert_eq_size!(TCache, [u8; BASE_PAGE_SIZE]);
-sa::const_assert!(core::mem::align_of::<TCache>() <= super::BASE_PAGE_SIZE);
+///
+/// Used for example for per-core caches.
+pub(crate) type FrameCacheSmall = MCache<381, 128>;
+sa::assert_eq_size!(FrameCacheSmall, [u8; BASE_PAGE_SIZE]);
+sa::const_assert!(core::mem::align_of::<FrameCacheSmall>() <= super::BASE_PAGE_SIZE);
 
-/// A slightly bigger cache of 4KiB and 2MiB pages, fits on a 2 MiB page.
-pub(crate) type TCacheSp = MCache<2048, 12>;
-sa::const_assert!(core::mem::size_of::<TCacheSp>() <= super::LARGE_PAGE_SIZE);
-sa::const_assert!(core::mem::align_of::<TCacheSp>() <= super::LARGE_PAGE_SIZE);
+/// A slightly bigger cache of 4KiB and less 2MiB pages (than
+/// `FrameCacheSmall`), fits on a 2 MiB page.
+///
+/// Used to allocate early during initialization.
+pub(crate) type FrameCacheEarly = MCache<2048, 12>;
+sa::const_assert!(core::mem::size_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
 
 /// A simple page-cache for a NUMA node.
 ///
@@ -72,7 +79,7 @@ impl<const BP: usize, const LP: usize> MCache<BP, LP> {
         cache
     }
 
-    /// Populates a TCache with the memory from `frame`
+    /// Populates a FrameCacheSmall with the memory from `frame`
     ///
     /// This works by repeatedly splitting the `frame`
     /// into smaller pages.
@@ -499,15 +506,15 @@ mod test {
             .expect_err("Can't allocate more than we gave it");
     }
 
-    /// TCache should be fit exactly within a base-page.
+    /// FrameCacheSmall should be fit exactly within a base-page.
     #[test]
     fn tcache_populate() {
-        let tcache: TCache =
-            TCache::new_with_frame(4, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
+        let tcache: FrameCacheSmall =
+            FrameCacheSmall::new_with_frame(4, Frame::new(PAddr::from(0x2000), 10 * 0x1000, 4));
         assert_eq!(tcache.base_page_addresses.len(), 10);
         assert_eq!(tcache.large_page_addresses.len(), 0);
 
-        let tcache: TCache = TCache::new_with_frame(
+        let tcache: FrameCacheSmall = FrameCacheSmall::new_with_frame(
             2,
             Frame::new(
                 PAddr::from((2 * 1024 * 1024) - 5 * 4096),
@@ -523,7 +530,7 @@ mod test {
     #[test]
     #[should_panic]
     fn tcache_invalid_base_frame_size() {
-        let mut tcache = TCache::new(4);
+        let mut tcache = FrameCacheSmall::new(4);
         tcache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1001, 4))
             .expect("release");
@@ -533,7 +540,7 @@ mod test {
     #[test]
     #[should_panic]
     fn tcache_invalid_base_frame_align() {
-        let mut tcache = TCache::new(4);
+        let mut tcache = FrameCacheSmall::new(4);
         tcache
             .release_base_page(Frame::new(PAddr::from(0x2001), 0x1000, 4))
             .expect("release");
@@ -543,16 +550,16 @@ mod test {
     #[test]
     #[should_panic]
     fn tcache_invalid_affinity() {
-        let mut tcache = TCache::new(1);
+        let mut tcache = FrameCacheSmall::new(1);
         tcache
             .release_base_page(Frame::new(PAddr::from(0x2000), 0x1000, 4))
             .expect("release");
     }
 
-    /// Test that reap interface of the TCache.
+    /// Test that reap interface of the FrameCacheSmall.
     #[test]
     fn tcache_reap() {
-        let mut tcache = TCache::new(4);
+        let mut tcache = FrameCacheSmall::new(4);
 
         // Insert some pages
         tcache
@@ -601,7 +608,7 @@ mod test {
     /// Also verify free memory reporting along the way.
     #[test]
     fn tcache_release_allocate() {
-        let mut tcache = TCache::new(2);
+        let mut tcache = FrameCacheSmall::new(2);
 
         // Insert some pages
         tcache

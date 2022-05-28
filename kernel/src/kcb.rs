@@ -18,8 +18,8 @@ use crate::error::KError;
 use crate::memory::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider};
 use crate::memory::emem::EmergencyAllocator;
 use crate::memory::global::GlobalMemory;
-use crate::memory::mcache::TCache;
-use crate::memory::mcache::TCacheSp;
+use crate::memory::mcache::FrameCacheEarly;
+use crate::memory::mcache::FrameCacheSmall;
 use crate::nrproc::NrProcess;
 use crate::process::{Process, MAX_PROCESSES};
 
@@ -60,7 +60,7 @@ pub(crate) struct PhysicalMemoryArena {
     pub gmanager: Option<&'static GlobalMemory>,
 
     /// A handle to the per-core page-allocator.
-    pub pmanager: Option<RefCell<TCache>>,
+    pub pmanager: Option<RefCell<FrameCacheSmall>>,
 
     /// A handle to the per-core ZoneAllocator.
     pub zone_allocator: RefCell<ZoneAllocator<'static>>,
@@ -71,7 +71,7 @@ impl PhysicalMemoryArena {
         PhysicalMemoryArena {
             affinity: node,
             gmanager: Some(global_memory),
-            pmanager: Some(RefCell::new(TCache::new(node))),
+            pmanager: Some(RefCell::new(FrameCacheSmall::new(node))),
             zone_allocator: RefCell::new(ZoneAllocator::new()),
         }
     }
@@ -108,7 +108,7 @@ where
     pub in_panic_mode: bool,
 
     /// A handle to the early page-allocator.
-    pub emanager: RefCell<TCacheSp>,
+    pub emanager: RefCell<FrameCacheEarly>,
 
     /// A handle to a bump-style emergency Allocator.
     pub ezone_allocator: RefCell<EmergencyAllocator>,
@@ -129,7 +129,7 @@ where
 }
 
 impl<A: ArchSpecificKcb> Kcb<A> {
-    pub(crate) const fn new(emanager: TCacheSp, arch: A, node: atopology::NodeId) -> Kcb<A> {
+    pub(crate) const fn new(emanager: FrameCacheEarly, arch: A, node: atopology::NodeId) -> Kcb<A> {
         const DEFAULT_PHYSICAL_MEMORY_ARENA: Option<PhysicalMemoryArena> = None;
         Kcb {
             arch,
@@ -223,16 +223,16 @@ impl<A: ArchSpecificKcb> Kcb<A> {
         Kcb::<A>::swap_manager(gmanager, &mut self.pmem_memory, &mut self.pmem_arenas, node)
     }
 
-    pub(crate) fn set_mem_manager(&mut self, pmanager: TCache) {
+    pub(crate) fn set_mem_manager(&mut self, pmanager: FrameCacheSmall) {
         self.physical_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
-    pub(crate) fn set_pmem_manager(&mut self, pmanager: TCache) {
+    pub(crate) fn set_pmem_manager(&mut self, pmanager: FrameCacheSmall) {
         self.pmem_memory.pmanager = Some(RefCell::new(pmanager));
     }
 
     /// Get a reference to the early memory manager.
-    pub(crate) fn emanager(&self) -> RefMut<TCacheSp> {
+    pub(crate) fn emanager(&self) -> RefMut<FrameCacheEarly> {
         self.emanager.borrow_mut()
     }
 

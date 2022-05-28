@@ -11,7 +11,7 @@ use node_replication::{Replica, ReplicaToken};
 
 use crate::error::KError;
 use crate::kcb::{ArchSpecificKcb, Kcb};
-use crate::memory::mcache::TCacheSp;
+use crate::memory::mcache::FrameCacheEarly;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
@@ -20,7 +20,7 @@ use super::process::{UnixProcess, UnixThread};
 use super::MAX_NUMA_NODES;
 
 #[thread_local]
-static mut KCB: Kcb<ArchKcb> = Kcb::new(TCacheSp::new(0), ArchKcb::new(), 0);
+static mut KCB: Kcb<ArchKcb> = Kcb::new(FrameCacheEarly::new(0), ArchKcb::new(), 0);
 
 pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut Kcb<ArchKcb>> {
     unsafe { Some(&mut KCB) }

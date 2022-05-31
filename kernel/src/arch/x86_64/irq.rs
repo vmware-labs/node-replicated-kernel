@@ -587,11 +587,11 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
 
-fn kcb_resume_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
+fn kcb_resume_handle(kcb: &crate::kcb::PerCoreMemory<Arch86Kcb>) -> Ring3Resumer {
     Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr())
 }
 
-fn kcb_iret_handle(kcb: &crate::kcb::Kcb<Arch86Kcb>) -> Ring3Resumer {
+fn kcb_iret_handle(kcb: &crate::kcb::PerCoreMemory<Arch86Kcb>) -> Ring3Resumer {
     Ring3Resumer::new_iret(kcb.arch.get_save_area_ptr())
 }
 

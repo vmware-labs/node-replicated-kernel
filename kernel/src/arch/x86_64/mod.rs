@@ -44,7 +44,7 @@ use crate::cmdline::CommandLineArguments;
 use crate::fallible_string::FallibleString;
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::fs::cnrfs::Modify;
-use crate::kcb::Kcb;
+use crate::kcb::PerCoreMemory;
 use crate::memory::global::{GlobalMemory, MAX_PHYSICAL_REGIONS};
 use crate::memory::vspace::MapAction;
 use crate::memory::{mcache, Frame, BASE_PAGE_SIZE, KERNEL_BASE};
@@ -210,7 +210,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 
     let emanager = mcache::FrameCacheEarly::new(args.node);
     let arch = kcb::Arch86Kcb::new();
-    let mut kcb = Kcb::<kcb::Arch86Kcb>::new(emanager, arch, args.node);
+    let mut kcb = PerCoreMemory::<kcb::Arch86Kcb>::new(emanager, arch, args.node);
 
     kcb.set_global_mem(args.global_memory);
     kcb.set_mem_manager(mcache::FrameCacheSmall::new(args.node));
@@ -221,7 +221,10 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     }
 
     let static_kcb = unsafe {
-        core::mem::transmute::<&mut Kcb<kcb::Arch86Kcb>, &'static mut Kcb<kcb::Arch86Kcb>>(&mut kcb)
+        core::mem::transmute::<
+            &mut PerCoreMemory<kcb::Arch86Kcb>,
+            &'static mut PerCoreMemory<kcb::Arch86Kcb>,
+        >(&mut kcb)
     };
     kcb::init_kcb(static_kcb);
 
@@ -659,11 +662,14 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let arch = kcb::Arch86Kcb::new();
 
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = Kcb::new(emanager, arch, 0);
+    let mut kcb = PerCoreMemory::new(emanager, arch, 0);
     kcb::init_kcb(&mut kcb);
     debug!("Memory allocation should work at this point...");
     let static_kcb = unsafe {
-        core::mem::transmute::<&mut Kcb<kcb::Arch86Kcb>, &'static mut Kcb<kcb::Arch86Kcb>>(&mut kcb)
+        core::mem::transmute::<
+            &mut PerCoreMemory<kcb::Arch86Kcb>,
+            &'static mut PerCoreMemory<kcb::Arch86Kcb>,
+        >(&mut kcb)
     };
 
     // Let's finish KCB initialization (easier as we have alloc now):

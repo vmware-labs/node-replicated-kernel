@@ -10,7 +10,7 @@ use arrayvec::ArrayVec;
 use node_replication::{Replica, ReplicaToken};
 
 use crate::error::KError;
-use crate::kcb::{ArchSpecificKcb, Kcb};
+use crate::kcb::{ArchSpecificKcb, PerCoreMemory};
 use crate::memory::mcache::FrameCacheEarly;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
@@ -20,20 +20,21 @@ use super::process::{UnixProcess, UnixThread};
 use super::MAX_NUMA_NODES;
 
 #[thread_local]
-static mut KCB: Kcb<ArchKcb> = Kcb::new(FrameCacheEarly::new(0), ArchKcb::new(), 0);
+static mut KCB: PerCoreMemory<ArchKcb> =
+    PerCoreMemory::new(FrameCacheEarly::new(0), ArchKcb::new(), 0);
 
-pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut Kcb<ArchKcb>> {
+pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut PerCoreMemory<ArchKcb>> {
     unsafe { Some(&mut KCB) }
 }
 
-pub(crate) fn get_kcb<'a>() -> &'a mut Kcb<ArchKcb> {
+pub(crate) fn get_kcb<'a>() -> &'a mut PerCoreMemory<ArchKcb> {
     unsafe { &mut KCB }
 }
 
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut _kcb: &'static mut Kcb<A>) {
+pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut _kcb: &'static mut PerCoreMemory<A>) {
     //unreachable!("init_kcb.");
 }
 

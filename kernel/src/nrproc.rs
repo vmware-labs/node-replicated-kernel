@@ -20,7 +20,7 @@ use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
 
-use crate::kcb::{ArchSpecificKcb, Kcb};
+use crate::kcb::{ArchSpecificKcb, PerCoreMemory};
 
 /// The tokens per core to access the process replicas.
 #[thread_local]
@@ -258,7 +258,10 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn allocate_executor<A>(kcb: &Kcb<A>, pid: Pid) -> Result<Box<P::E>, KError>
+    pub(crate) fn allocate_executor<A>(
+        kcb: &PerCoreMemory<A>,
+        pid: Pid,
+    ) -> Result<Box<P::E>, KError>
     where
         A: ArchSpecificKcb<Process = P>,
         P: Process + core::marker::Sync + 'static,

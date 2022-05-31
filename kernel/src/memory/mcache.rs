@@ -59,7 +59,7 @@ pub(crate) struct MCache<const BP: usize, const LP: usize> {
     large_page_addresses: arrayvec::ArrayVec<PAddr, LP>,
 }
 
-impl<const BP: usize, const LP: usize> crate::kcb::MemManager for MCache<BP, LP> {}
+impl<const BP: usize, const LP: usize> super::backends::MemManager for MCache<BP, LP> {}
 
 impl<const BP: usize, const LP: usize> MCache<BP, LP> {
     pub(crate) const fn new(node: atopology::NodeId) -> MCache<BP, LP> {

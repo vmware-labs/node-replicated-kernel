@@ -8,6 +8,13 @@ use crate::error::KResult;
 
 use super::frame::Frame;
 
+/// Composite of trait that needs to be implemented by anything that wants to
+/// manage memory.
+pub(crate) trait MemManager:
+    PhysicalPageProvider + AllocatorStatistics + GrowBackend
+{
+}
+
 /// A trait to allocate and release physical pages from an allocator.
 pub(crate) trait PhysicalPageProvider {
     /// Allocate a `BASE_PAGE_SIZE` for the given architecture from the allocator.

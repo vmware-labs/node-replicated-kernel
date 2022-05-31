@@ -15,7 +15,7 @@ use spin::Lazy;
 use crate::arch::kcb::init_kcb;
 use crate::arch::MAX_NUMA_NODES;
 use crate::error::KError;
-use crate::memory::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider};
+use crate::memory::backends::MemManager;
 use crate::memory::emem::EmergencyAllocator;
 use crate::memory::global::GlobalMemory;
 use crate::memory::mcache::FrameCacheEarly;
@@ -46,14 +46,9 @@ pub(crate) static CORES_PER_NUMA_NODE: Lazy<usize> =
         None => 1,
     });
 
-pub(crate) trait MemManager:
-    PhysicalPageProvider + AllocatorStatistics + GrowBackend
-{
-}
-
-/// State which allows to do memory management for a particular
-/// NUMA node on a given core.
-pub(crate) struct PhysicalMemoryArena {
+/// State with all "the right" memory managers needed for handling allocations
+/// on a given core during normal operations.
+pub(crate) struct PerCoreAllocatorState {
     pub affinity: atopology::NodeId,
 
     /// A handle to the global memory manager.
@@ -66,9 +61,9 @@ pub(crate) struct PhysicalMemoryArena {
     pub zone_allocator: RefCell<ZoneAllocator<'static>>,
 }
 
-impl PhysicalMemoryArena {
+impl PerCoreAllocatorState {
     fn new(node: atopology::NodeId, global_memory: &'static GlobalMemory) -> Self {
-        PhysicalMemoryArena {
+        PerCoreAllocatorState {
             affinity: node,
             gmanager: Some(global_memory),
             pmanager: Some(RefCell::new(FrameCacheSmall::new(node))),
@@ -77,7 +72,7 @@ impl PhysicalMemoryArena {
     }
 
     const fn uninit_with_node(node: atopology::NodeId) -> Self {
-        PhysicalMemoryArena {
+        PerCoreAllocatorState {
             affinity: node,
             gmanager: None,
             pmanager: None,
@@ -86,9 +81,8 @@ impl PhysicalMemoryArena {
     }
 }
 
-/// The Kernel Control Block for a given core.
-/// It contains all core-local state of the kernel.
-pub(crate) struct Kcb<A>
+/// The kernel state for dynamic memory allocation on a given core.
+pub(crate) struct PerCoreMemory<A>
 where
     A: ArchSpecificKcb,
     <<A as ArchSpecificKcb>::Process as crate::process::Process>::E: Debug + 'static,
@@ -113,25 +107,32 @@ where
     /// A handle to a bump-style emergency Allocator.
     pub ezone_allocator: RefCell<EmergencyAllocator>,
 
-    /// Related meta-data to manage physical memory for a given NUMA node.
-    pub physical_memory: PhysicalMemoryArena,
+    /// Related meta-data to manage physical memory for a given core.
+    pub physical_memory: PerCoreAllocatorState,
 
-    /// Related meta-data to manage persistent memory for a given NUMA node.
-    pub pmem_memory: PhysicalMemoryArena,
+    /// Related meta-data to manage persistent memory for a given core.
+    pub pmem_memory: PerCoreAllocatorState,
 
-    /// Contains a bunch of memory arenas, can be one for every NUMA node
-    /// but we intialize it lazily upon calling `set_mem_affinity`.
-    pub memory_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
+    /// Contains a bunch of memory arenas with different affinities, in case a
+    /// core needs to allocate memory from another NUMA node. Can have one for
+    /// every NUMA node but we intialize it lazily upon calling
+    /// `set_mem_affinity`.
+    pub memory_arenas: [Option<PerCoreAllocatorState>; crate::arch::MAX_NUMA_NODES],
 
-    /// Contains a bunch of pmem arenas, can be one for every NUMA node
-    /// but we intialize it lazily upon calling `set_pmem_affinity`.
-    pub pmem_arenas: [Option<PhysicalMemoryArena>; crate::arch::MAX_NUMA_NODES],
+    /// Contains a bunch of pmem arenas, in case a core needs to allocate mmeory
+    /// from another NUMA node. Can have one for every NUMA node but we
+    /// intialize it lazily upon calling `set_pmem_affinity`.
+    pub pmem_arenas: [Option<PerCoreAllocatorState>; crate::arch::MAX_NUMA_NODES],
 }
 
-impl<A: ArchSpecificKcb> Kcb<A> {
-    pub(crate) const fn new(emanager: FrameCacheEarly, arch: A, node: atopology::NodeId) -> Kcb<A> {
-        const DEFAULT_PHYSICAL_MEMORY_ARENA: Option<PhysicalMemoryArena> = None;
-        Kcb {
+impl<A: ArchSpecificKcb> PerCoreMemory<A> {
+    pub(crate) const fn new(
+        emanager: FrameCacheEarly,
+        arch: A,
+        node: atopology::NodeId,
+    ) -> PerCoreMemory<A> {
+        const DEFAULT_PHYSICAL_MEMORY_ARENA: Option<PerCoreAllocatorState> = None;
+        PerCoreMemory {
             arch,
             in_panic_mode: false,
             emanager: RefCell::new(emanager),
@@ -140,8 +141,8 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             pmem_arenas: [DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES],
             // Can't initialize these yet, we need basic Kcb first for
             // memory allocations (emanager):
-            physical_memory: PhysicalMemoryArena::uninit_with_node(node),
-            pmem_memory: PhysicalMemoryArena::uninit_with_node(node),
+            physical_memory: PerCoreAllocatorState::uninit_with_node(node),
+            pmem_memory: PerCoreAllocatorState::uninit_with_node(node),
         }
     }
 
@@ -171,13 +172,13 @@ impl<A: ArchSpecificKcb> Kcb<A> {
     // arena for the current `node` exists, we create a new arena.
     fn swap_manager(
         gmanager: &'static GlobalMemory,
-        current_arena: &mut PhysicalMemoryArena,
-        arenas: &mut [Option<PhysicalMemoryArena>],
+        current_arena: &mut PerCoreAllocatorState,
+        arenas: &mut [Option<PerCoreAllocatorState>],
         node: atopology::NodeId,
     ) -> Result<(), KError> {
         if node < arenas.len() && node < atopology::MACHINE_TOPOLOGY.num_nodes() {
             if arenas[node].is_none() {
-                arenas[node] = Some(PhysicalMemoryArena::new(node, gmanager));
+                arenas[node] = Some(PerCoreAllocatorState::new(node, gmanager));
             }
             debug_assert!(arenas[node].is_some());
             let mut arena = arenas[node].take().unwrap();
@@ -202,7 +203,7 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             .gmanager
             .ok_or(KError::GlobalMemoryNotSet)?;
 
-        Kcb::<A>::swap_manager(
+        PerCoreMemory::<A>::swap_manager(
             gmanager,
             &mut self.physical_memory,
             &mut self.memory_arenas,
@@ -220,7 +221,12 @@ impl<A: ArchSpecificKcb> Kcb<A> {
             .gmanager
             .ok_or(KError::GlobalMemoryNotSet)?;
 
-        Kcb::<A>::swap_manager(gmanager, &mut self.pmem_memory, &mut self.pmem_arenas, node)
+        PerCoreMemory::<A>::swap_manager(
+            gmanager,
+            &mut self.pmem_memory,
+            &mut self.pmem_arenas,
+            node,
+        )
     }
 
     pub(crate) fn set_mem_manager(&mut self, pmanager: FrameCacheSmall) {

@@ -16,7 +16,7 @@ use x86::current::segmentation;
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
-use crate::kcb::{ArchSpecificKcb, Kcb};
+use crate::kcb::{ArchSpecificKcb, PerCoreMemory};
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
 use crate::stack::{OwnedStack, Stack};
@@ -30,9 +30,9 @@ use super::MAX_NUMA_NODES;
 ///
 /// This may return None if the KCB is not yet set
 /// (i.e., during initialization).
-pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut Kcb<Arch86Kcb>> {
+pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut PerCoreMemory<Arch86Kcb>> {
     unsafe {
-        let kcb = segmentation::rdgsbase() as *mut Kcb<Arch86Kcb>;
+        let kcb = segmentation::rdgsbase() as *mut PerCoreMemory<Arch86Kcb>;
         if kcb != ptr::null_mut() {
             let kptr = ptr::NonNull::new_unchecked(kcb);
             Some(&mut *kptr.as_ptr())
@@ -47,9 +47,9 @@ pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut Kcb<Arch86Kcb>> {
 /// # Panic
 /// This will fail in case the KCB is not yet set (i.e., early on during
 /// initialization).
-pub(crate) fn get_kcb<'a>() -> &'a mut Kcb<Arch86Kcb> {
+pub(crate) fn get_kcb<'a>() -> &'a mut PerCoreMemory<Arch86Kcb> {
     unsafe {
-        let kcb = segmentation::rdgsbase() as *mut Kcb<Arch86Kcb>;
+        let kcb = segmentation::rdgsbase() as *mut PerCoreMemory<Arch86Kcb>;
         assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
         let kptr = ptr::NonNull::new_unchecked(kcb);
         &mut *kptr.as_ptr()
@@ -63,7 +63,7 @@ pub(crate) fn get_kcb<'a>() -> &'a mut Kcb<Arch86Kcb> {
 /// when we call `swapgs` on a syscall entry, we restore the pointer
 /// to the KCB (user-space may change the `gs` register for
 /// TLS etc.).
-unsafe fn set_kcb<A: ArchSpecificKcb>(kcb: ptr::NonNull<Kcb<A>>) {
+unsafe fn set_kcb<A: ArchSpecificKcb>(kcb: ptr::NonNull<PerCoreMemory<A>>) {
     // Set up the GS register to point to the KCB
     segmentation::wrgsbase(kcb.as_ptr() as u64);
     // Set up swapgs instruction to reset the gs register to the KCB on irq, trap or syscall
@@ -73,8 +73,8 @@ unsafe fn set_kcb<A: ArchSpecificKcb>(kcb: ptr::NonNull<Kcb<A>>) {
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut Kcb<A>) {
-    let kptr: ptr::NonNull<Kcb<A>> = ptr::NonNull::from(kcb);
+pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut PerCoreMemory<A>) {
+    let kptr: ptr::NonNull<PerCoreMemory<A>> = ptr::NonNull::from(kcb);
     unsafe { set_kcb(kptr) };
 }
 

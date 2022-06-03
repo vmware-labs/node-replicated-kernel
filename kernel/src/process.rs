@@ -18,6 +18,7 @@ use kpi::process::{FrameId, ELF_OFFSET};
 use kpi::MemType;
 use log::{debug, info, trace};
 
+use crate::arch::kcb::per_core_mem;
 use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
 use crate::arch::process::UserPtr;
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
@@ -197,8 +198,8 @@ impl elfloader::ElfLoader for DataSecAllocator {
                 KernelAllocator::try_refill_tcache(0, large_pages, MemType::Mem)
                     .expect("Refill didn't work");
 
-                let kcb = crate::kcb::get_kcb();
-                let mut pmanager = kcb.mem_manager();
+                let pcm = per_core_mem();
+                let mut pmanager = pcm.mem_manager();
                 for i in 0..large_pages {
                     let frame = pmanager
                         .allocate_large_page()
@@ -429,8 +430,8 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
         while dispatchers_created < to_create {
             KernelAllocator::try_refill_tcache(20, 1, MemType::Mem)?;
             let mut frame = {
-                let kcb = crate::kcb::get_kcb();
-                kcb.physical_memory.gmanager.unwrap().node_caches[affinity as usize]
+                let pcm = crate::arch::kcb::per_core_mem();
+                pcm.gmanager.unwrap().node_caches[affinity as usize]
                     .lock()
                     .allocate_large_page()?
             };

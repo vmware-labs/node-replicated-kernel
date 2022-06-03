@@ -44,8 +44,9 @@ use crate::cmdline::CommandLineArguments;
 use crate::fallible_string::FallibleString;
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::fs::cnrfs::Modify;
-use crate::kcb::PerCoreMemory;
+use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::global::{GlobalMemory, MAX_PHYSICAL_REGIONS};
+use crate::memory::per_core::PerCoreMemory;
 use crate::memory::vspace::MapAction;
 use crate::memory::{mcache, Frame, BASE_PAGE_SIZE, KERNEL_BASE};
 use crate::nr::{KernelNode, Op};
@@ -209,36 +210,29 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     let start = rawtime::Instant::now();
 
     let emanager = mcache::FrameCacheEarly::new(args.node);
-    let arch = kcb::Arch86Kcb::new();
-    let mut kcb = PerCoreMemory::<kcb::Arch86Kcb>::new(emanager, arch, args.node);
-
-    kcb.set_global_mem(args.global_memory);
-    kcb.set_mem_manager(mcache::FrameCacheSmall::new(args.node));
-
+    let mut dyn_mem = PerCoreMemory::new(emanager, args.node);
+    dyn_mem.set_global_mem(args.global_memory);
+    dyn_mem.set_mem_manager(mcache::FrameCacheSmall::new(args.node));
     if args.global_pmem.node_caches.len() > 0 {
-        kcb.set_global_pmem(args.global_pmem);
-        kcb.set_pmem_manager(mcache::FrameCacheSmall::new(args.node));
+        dyn_mem.set_global_pmem(args.global_pmem);
+        dyn_mem.set_pmem_manager(mcache::FrameCacheSmall::new(args.node));
     }
+    let static_dyn_mem =
+        unsafe { core::mem::transmute::<&PerCoreMemory, &'static PerCoreMemory>(&mut dyn_mem) };
 
+    let mut kcb = kcb::Arch86Kcb::new(&static_dyn_mem);
     let static_kcb = unsafe {
-        core::mem::transmute::<
-            &mut PerCoreMemory<kcb::Arch86Kcb>,
-            &'static mut PerCoreMemory<kcb::Arch86Kcb>,
-        >(&mut kcb)
+        core::mem::transmute::<&mut kcb::Arch86Kcb, &'static mut kcb::Arch86Kcb>(&mut kcb)
     };
-    kcb::init_kcb(static_kcb);
+    unsafe { static_kcb.initialize_gs() };
 
-    static_kcb.arch.set_interrupt_stacks(
+    static_kcb.set_interrupt_stacks(
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
     );
-    static_kcb
-        .arch
-        .set_syscall_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
-    static_kcb
-        .arch
-        .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    static_kcb.set_syscall_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
+    static_kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     static_kcb.install();
     // Install thread-local storage for BSP
 
@@ -255,7 +249,7 @@ fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
             );
             let tcb =
                 ThreadControlBlock::init(tls_args).expect("Unable to initialize TLS during init");
-            kcb.arch.tls_base = tcb;
+            kcb.tls_base = tcb;
         }
     }
     init_apic();
@@ -305,10 +299,7 @@ fn boot_app_cores(
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
     fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
 ) {
-    use crate::memory::backends::PhysicalPageProvider;
-
     let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
-    let kcb = kcb::get_kcb();
     debug_assert_eq!(*crate::kcb::NODE_ID, 0, "The BSP core is not on node 0?");
 
     // Let's go with one replica per NUMA node for now:
@@ -325,8 +316,9 @@ fn boot_app_cores(
     debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
     fs_replicas.push(fs_replica);
 
+    let pcm = kcb::per_core_mem();
     for node in 1..numa_nodes {
-        kcb.set_mem_affinity(node as atopology::NodeId)
+        pcm.set_mem_affinity(node as atopology::NodeId)
             .expect("Can't set affinity");
 
         debug_assert!(replicas.capacity() > node, "No re-allocation.");
@@ -339,17 +331,12 @@ fn boot_app_cores(
                 .expect("Not enough memory to initialize system"),
         ));
 
-        kcb.set_mem_affinity(0).expect("Can't set affinity");
+        pcm.set_mem_affinity(0).expect("Can't set affinity");
     }
 
-    let global_memory = kcb
-        .physical_memory
-        .gmanager
-        .expect("boot_app_cores requires kcb.gmanager");
-
-    let global_pmem = kcb
-        .pmem_memory
-        .gmanager
+    let global_memory = pcm.gmanager.expect("boot_app_cores requires kcb.gmanager");
+    let global_pmem = pcm
+        .pgmanager
         .expect("boot_app_cores requires kcb.pmem_memory.gmanager");
 
     // For now just boot everything, except ourselves
@@ -361,7 +348,7 @@ fn boot_app_cores(
     for thread in threads_to_boot {
         let node = thread.node_id.unwrap_or(0);
         trace!("Booting {:?} on node {}", thread, node);
-        kcb.set_mem_affinity(node).expect("Can't set affinity");
+        pcm.set_mem_affinity(node).expect("Can't set affinity");
 
         // A simple stack for the app core (non bootstrap core)
         let coreboot_stack: OwnedStack = OwnedStack::new(BASE_PAGE_SIZE * 512);
@@ -371,7 +358,7 @@ fn boot_app_cores(
             .expect("Can't allocate large page");
         let pmem_region = match global_pmem.node_caches.len() == numa_nodes {
             true => {
-                kcb.set_pmem_affinity(node).expect("Can't set affinity");
+                pcm.set_pmem_affinity(node).expect("Can't set affinity");
                 Some(
                     global_pmem.node_caches[node as usize]
                         .lock()
@@ -429,7 +416,7 @@ fn boot_app_cores(
 
         assert!(initialized.load(Ordering::SeqCst));
         debug!("Core {:?} has started", thread.apic_id());
-        kcb.set_mem_affinity(0).expect("Can't set affinity");
+        pcm.set_mem_affinity(0).expect("Can't set affinity");
     }
 
     core::mem::forget(replicas);
@@ -652,38 +639,39 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             }
         }
     }
+    // Needs to be done before we switch address space
+    lazy_static::initialize(&vspace::INITIAL_VSPACE);
+
     // Initialize kernel arguments as global
     crate::KERNEL_ARGS.call_once(|| kernel_args);
 
+    // Initialize memory management
     let emanager = emanager
         .expect("Couldn't build an early physical memory manager, increase system main memory?");
-    // Needs to be done before we switch address space
-    lazy_static::initialize(&vspace::INITIAL_VSPACE);
-    let arch = kcb::Arch86Kcb::new();
-
     // Construct the Kcb so we can access these things later on in the code
-    let mut kcb = PerCoreMemory::new(emanager, arch, 0);
-    kcb::init_kcb(&mut kcb);
+    let mut dyn_mem = PerCoreMemory::new(emanager, 0);
+    let static_dyn_mem =
+        // Safety: 
+        // - The initial stack of the core will never get deallocated (hence 'static)
+        // - TODO: alias reasoning
+        unsafe { core::mem::transmute::<&PerCoreMemory, &'static PerCoreMemory>(&dyn_mem) };
+    let mut arch = kcb::Arch86Kcb::new(static_dyn_mem);
+    let static_kcb =
+        // Safety: 
+        // - The initial stack of the core will never get deallocated (hence 'static)
+        // - TODO: alias reasoning
+        unsafe { core::mem::transmute::<&mut kcb::Arch86Kcb, &'static mut kcb::Arch86Kcb>(&mut arch) };
+    unsafe { static_kcb.initialize_gs() };
     debug!("Memory allocation should work at this point...");
-    let static_kcb = unsafe {
-        core::mem::transmute::<
-            &mut PerCoreMemory<kcb::Arch86Kcb>,
-            &'static mut PerCoreMemory<kcb::Arch86Kcb>,
-        >(&mut kcb)
-    };
 
     // Let's finish KCB initialization (easier as we have alloc now):
-    static_kcb.arch.set_interrupt_stacks(
+    static_kcb.set_interrupt_stacks(
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
         OwnedStack::new(128 * BASE_PAGE_SIZE),
     );
-    static_kcb
-        .arch
-        .set_syscall_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
-    static_kcb
-        .arch
-        .set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+    static_kcb.set_syscall_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
+    static_kcb.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
     static_kcb.install();
 
     // Install thread-local storage for BSP
@@ -700,19 +688,13 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             );
             let tcb =
                 ThreadControlBlock::init(tls_args).expect("Unable to initialize TLS during init");
-            kcb::get_kcb().arch.tls_base = tcb;
+            kcb::get_kcb().tls_base = tcb;
         }
     }
     serial::SerialControl::set_print_buffer(
         String::try_with_capacity(128).expect("Not enough memory to initialize system"),
     );
     init_apic();
-
-    // Make sure we don't drop the KCB and anything in it,
-    // the kcb is on the init stack and remains allocated on it,
-    // this is (probably) fine as we never reclaim this stack or
-    // return to _start.
-    core::mem::forget(kcb);
 
     #[cfg(all(
         feature = "integration-test",
@@ -774,11 +756,15 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Make sure our BSP core has a reference to GlobalMemory
     {
-        let kcb = kcb::get_kcb();
-        kcb.set_global_mem(&global_memory_static);
+        dyn_mem.set_global_mem(&global_memory_static);
         let tcache = mcache::FrameCacheSmall::new(0);
-        kcb.set_mem_manager(tcache);
+        dyn_mem.set_mem_manager(tcache);
     }
+
+    // Make sure we don't drop arch, dyn_mem and anything in it, they are on the
+    // init stack which remains allocated, we can not reclaim this stack or
+    // return from _start.
+    core::mem::forget(arch);
 
     // 1. Discover persistent memory using topology information.
     // 2. Identity map the persistent memoy regions to user and kernel space.
@@ -817,10 +803,10 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Make sure our BSP core has a reference to GlobalMemory
     {
-        let kcb = kcb::get_kcb();
-        kcb.set_global_pmem(&global_memory_static);
+        dyn_mem.set_global_pmem(&global_memory_static);
         let tcache = mcache::FrameCacheSmall::new(0);
-        kcb.set_pmem_manager(tcache);
+        dyn_mem.set_pmem_manager(tcache);
+        core::mem::forget(dyn_mem);
     }
 
     // Set-up interrupt routing drivers (I/O APIC controllers)

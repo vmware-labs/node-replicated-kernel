@@ -5,40 +5,73 @@
 //! kernel control block.
 
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use core::pin::Pin;
 use core::ptr;
 
-use arrayvec::ArrayVec;
 use log::trace;
-use node_replication::Replica;
 use x86::current::segmentation;
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
 
-use crate::kcb::{ArchSpecificKcb, PerCoreMemory};
-use crate::nrproc::NrProcess;
-use crate::process::MAX_PROCESSES;
+use crate::memory::per_core::PerCoreMemory;
 use crate::stack::{OwnedStack, Stack};
 
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
-use super::process::Ring3Process;
-use super::MAX_NUMA_NODES;
 
+/// "Dereferences" the fs register at `offset`.
+///
+/// # Safety
+/// - Offset needs to be within valid memory for whatever the gs register points
+///   to.
+macro_rules! gs_deref {
+    ($offset:expr) => {{
+        let gs: u64;
+        core::arch::asm!("movq %gs:{offset}, {result}",
+                offset = const ($offset),
+                result = out(reg) gs,
+                options(att_syntax)
+        );
+        gs
+    }};
+}
+
+/*
 /// Try to retrieve the KCB by reading the gs register.
 ///
 /// This may return None if the KCB is not yet set
 /// (i.e., during initialization).
-pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut PerCoreMemory<Arch86Kcb>> {
+pub(crate) fn try_get_kcb() -> Option<&'static mut Arch86Kcb> {
     unsafe {
-        let kcb = segmentation::rdgsbase() as *mut PerCoreMemory<Arch86Kcb>;
+        let kcb = segmentation::rdgsbase() as *mut Arch86Kcb;
         if kcb != ptr::null_mut() {
             let kptr = ptr::NonNull::new_unchecked(kcb);
             Some(&mut *kptr.as_ptr())
         } else {
             None
         }
+    }
+} */
+
+pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
+    unsafe {
+        if segmentation::rdgsbase() != 0x0 {
+            let pcm = gs_deref!(memoffset::offset_of!(Arch86Kcb, mem)) as *const PerCoreMemory;
+            if pcm != ptr::null_mut() {
+                let static_pcm = &*pcm as &'static PerCoreMemory;
+                //log::info!("Found per-core memory at {:?}", static_pcm);
+                return Some(static_pcm);
+            }
+        }
+    }
+    None
+}
+
+/// Stands for per-core memory
+pub(crate) fn per_core_mem() -> &'static PerCoreMemory {
+    unsafe {
+        (&*(gs_deref!(memoffset::offset_of!(Arch86Kcb, mem)) as *const PerCoreMemory))
+            as &'static PerCoreMemory
     }
 }
 
@@ -47,35 +80,13 @@ pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut PerCoreMemory<Arch86Kcb>> {
 /// # Panic
 /// This will fail in case the KCB is not yet set (i.e., early on during
 /// initialization).
-pub(crate) fn get_kcb<'a>() -> &'a mut PerCoreMemory<Arch86Kcb> {
+pub(crate) fn get_kcb<'a>() -> &'a mut Arch86Kcb {
     unsafe {
-        let kcb = segmentation::rdgsbase() as *mut PerCoreMemory<Arch86Kcb>;
+        let kcb = segmentation::rdgsbase() as *mut Arch86Kcb;
         assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
         let kptr = ptr::NonNull::new_unchecked(kcb);
         &mut *kptr.as_ptr()
     }
-}
-
-/// Installs the KCB by setting storing a pointer to it in the `gs`
-/// register.
-///
-/// We also set IA32_KERNEL_GSBASE to the pointer to make sure
-/// when we call `swapgs` on a syscall entry, we restore the pointer
-/// to the KCB (user-space may change the `gs` register for
-/// TLS etc.).
-unsafe fn set_kcb<A: ArchSpecificKcb>(kcb: ptr::NonNull<PerCoreMemory<A>>) {
-    // Set up the GS register to point to the KCB
-    segmentation::wrgsbase(kcb.as_ptr() as u64);
-    // Set up swapgs instruction to reset the gs register to the KCB on irq, trap or syscall
-    wrmsr(IA32_KERNEL_GSBASE, kcb.as_ptr() as u64);
-}
-
-/// Initialize the KCB in the system.
-///
-/// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb<A: ArchSpecificKcb>(kcb: &mut PerCoreMemory<A>) {
-    let kptr: ptr::NonNull<PerCoreMemory<A>> = ptr::NonNull::from(kcb);
-    unsafe { set_kcb(kptr) };
 }
 
 /// Contains the arch-specific contents of the KCB.
@@ -98,6 +109,9 @@ pub(crate) struct Arch86Kcb {
 
     /// The memory location of the TLS (`fs` base) region.
     pub(super) tls_base: *const super::tls::ThreadControlBlock,
+
+    /// The state of the memory allocator on this core.
+    pub(crate) mem: &'static PerCoreMemory,
 
     /// A per-core GdtTable
     pub(super) gdt: GdtTable,
@@ -147,13 +161,14 @@ static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, save_area),
 static_assertions::const_assert_eq!(memoffset::offset_of!(Arch86Kcb, tls_base), 16);
 
 impl Arch86Kcb {
-    pub(crate) fn new() -> Arch86Kcb {
+    pub(crate) fn new(mem: &'static PerCoreMemory) -> Arch86Kcb {
         Arch86Kcb {
             syscall_stack_top: ptr::null_mut(),
+            tls_base: ptr::null(),
+            mem,
             gdt: Default::default(),
             tss: TaskStateSegment::new(),
             idt: Default::default(),
-            tls_base: ptr::null(),
             save_area: None,
             interrupt_stack: None,
             syscall_stack: None,
@@ -233,25 +248,45 @@ impl Arch86Kcb {
                 .map_or(0, |s| s.base() as u64),
         )
     }
-}
 
-impl crate::kcb::ArchSpecificKcb for Arch86Kcb {
-    type Process = Ring3Process;
-
-    fn install(&mut self) {
+    pub(super) fn install(&mut self) {
         unsafe {
             // Switch to our new, core-local Gdt and Idt:
             self.gdt.install();
             self.idt.install();
+            // gdt install will reload/reset gs/fs segments.
+            self.initialize_gs();
         }
     }
 
-    fn process_table(
-        &self,
-    ) -> &'static ArrayVec<
-        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
-        MAX_NUMA_NODES,
-    > {
-        &*super::process::PROCESS_TABLE
+    /// Initialize the KCB by making sure the `gs` register points to it.
+    ///
+    /// # Safety
+    /// - This will overwrite the `gs` register which should point to the
+    ///   valid-core local data.
+    /// - Ideally this function should only be called twice on each core:
+    ///   1. Early on once we have a not quite fully initialized KCB (to get
+    ///      basic memory allocation working
+    ///   2. Later on, once we have a fully initialized KCB and want to change
+    ///      the GDT/IDT tables and therefore we have to reload the `gs`
+    ///      register. This is taken care of by the [`ArchX86Kcb::install`]
+    ///      function.
+    pub(super) unsafe fn initialize_gs(&mut self) {
+        /// Installs the KCB by setting storing a pointer to it in the `gs`
+        /// register.
+        ///
+        /// We also set IA32_KERNEL_GSBASE to the pointer to make sure
+        /// when we call `swapgs` on a syscall entry, we restore the pointer
+        /// to the KCB (user-space may change the `gs` register for
+        /// TLS etc.).
+        unsafe fn set_kcb(kcb: ptr::NonNull<Arch86Kcb>) {
+            // Set up the GS register to point to the KCB
+            segmentation::wrgsbase(kcb.as_ptr() as u64);
+            // Set up swapgs instruction to reset the gs register to the KCB on irq, trap or syscall
+            wrmsr(IA32_KERNEL_GSBASE, kcb.as_ptr() as u64);
+        }
+
+        let kptr: ptr::NonNull<Arch86Kcb> = ptr::NonNull::from(self);
+        set_kcb(kptr)
     }
 }

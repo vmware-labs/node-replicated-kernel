@@ -6,6 +6,8 @@
 //! Defines some core data-types and implements
 //! a bunch of different allocators for use in the system.
 
+use crate::prelude::*;
+
 use core::alloc::{GlobalAlloc, Layout};
 use core::intrinsics::likely;
 use core::ptr;
@@ -14,10 +16,9 @@ use core::sync::atomic::AtomicU64;
 use log::{debug, error, trace, warn};
 use slabmalloc::{Allocator, ZoneAllocator};
 
-use crate::kcb;
-use crate::prelude::*;
-
+use crate::arch::kcb::try_per_core_mem;
 use backends::PhysicalPageProvider;
+
 pub(crate) use frame::Frame;
 pub(crate) use kpi::MemType;
 use vspace::MapAction;
@@ -34,6 +35,7 @@ pub mod emem;
 pub mod frame;
 pub mod global;
 pub mod mcache;
+pub mod per_core;
 pub mod utils;
 pub mod vspace;
 #[cfg(test)]
@@ -67,20 +69,20 @@ pub(crate) struct KernelAllocator {
 impl KernelAllocator {
     /// Try to allocate a piece of memory.
     fn try_alloc(&self, layout: Layout) -> Result<ptr::NonNull<u8>, KError> {
-        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
+        let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
         match KernelAllocator::allocator_for(layout) {
             AllocatorType::Zone if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE => {
                 // TODO(rust): Silly code duplication follows if/else
-                if core::intrinsics::unlikely(kcb.in_panic_mode) {
-                    let mut zone_allocator = kcb.ezone_allocator()?;
+                if core::intrinsics::unlikely(pcm.use_emergency_allocator()) {
+                    let mut zone_allocator = pcm.ezone_allocator()?;
                     zone_allocator.allocate(layout).map_err(|e| e.into())
                 } else {
-                    let mut zone_allocator = kcb.zone_allocator()?;
+                    let mut zone_allocator = pcm.zone_allocator()?;
                     zone_allocator.allocate(layout).map_err(|e| e.into())
                 }
             }
             AllocatorType::MemManager if layout.size() <= LARGE_PAGE_SIZE => {
-                let mut pmanager = kcb.try_mem_manager()?;
+                let mut pmanager = pcm.try_mem_manager()?;
                 let f = pmanager.allocate_large_page()?;
                 unsafe { Ok(ptr::NonNull::new_unchecked(f.kernel_vaddr().as_mut_ptr())) }
             }
@@ -135,7 +137,7 @@ impl KernelAllocator {
 
                 let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
                 for _ in 0..large {
-                    let mut pmanager = kcb.try_mem_manager()?;
+                    let mut pmanager = pcm.try_mem_manager()?;
                     let f = pmanager
                         .allocate_large_page()
                         .expect("Can't run out of memory");
@@ -154,7 +156,7 @@ impl KernelAllocator {
                 }
 
                 for _ in 0..base {
-                    let mut pmanager = kcb.try_mem_manager()?;
+                    let mut pmanager = pcm.try_mem_manager()?;
                     let f = pmanager
                         .allocate_base_page()
                         .expect("Can't run out of memory");
@@ -253,28 +255,31 @@ impl KernelAllocator {
         needed_large_pages: usize,
         mem_type: MemType,
     ) -> Result<(), KError> {
-        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
-        if mem_type == MemType::Mem && kcb.physical_memory.gmanager.is_none() {
-            // No gmanager, can't refill then, let's hope it works anyways...
-            return Ok(());
-        }
-        if mem_type == MemType::PMem && kcb.pmem_memory.gmanager.is_none() {
+        let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+        if (mem_type == MemType::Mem && pcm.gmanager.is_none())
+            || (mem_type == MemType::PMem && pcm.pgmanager.is_none())
+        {
             // No gmanager, can't refill then, let's hope it works anyways...
             return Ok(());
         }
 
         let (gmanager, mut mem_manager, affinity) = match mem_type {
-            MemType::Mem => (
-                kcb.physical_memory.gmanager.unwrap(),
-                kcb.try_mem_manager()?,
-                kcb.physical_memory.affinity as usize,
-            ),
-            MemType::PMem => (
-                kcb.pmem_memory.gmanager.unwrap(),
-                kcb.pmem_manager(),
-                kcb.pmem_memory.affinity as usize,
-            ),
-            _ => unreachable!(),
+            MemType::Mem => {
+                let affinity = { pcm.physical_memory.borrow().affinity };
+                (
+                    pcm.gmanager.unwrap(),
+                    pcm.try_mem_manager()?,
+                    affinity as usize,
+                )
+            }
+            MemType::PMem => {
+                let affinity = { pcm.physical_memory.borrow().affinity };
+                (
+                    pcm.pgmanager.unwrap(),
+                    pcm.pmem_manager(),
+                    affinity as usize,
+                )
+            }
         };
         let mut ncache = gmanager.node_caches[affinity].lock();
         // Make sure we don't overflow the FrameCacheSmall
@@ -309,8 +314,8 @@ impl KernelAllocator {
         needed_base_pages: usize,
         needed_large_pages: usize,
     ) -> Result<(), KError> {
-        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
-        let mem_manager = kcb.try_mem_manager()?;
+        let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+        let mem_manager = pcm.try_mem_manager()?;
 
         let free_bp = mem_manager.free_base_pages();
         let free_lp = mem_manager.free_large_pages();
@@ -336,13 +341,12 @@ impl KernelAllocator {
 
     /// Try refill zone
     fn try_refill_zone(&self, layout: Layout) -> Result<(), KError> {
-        let kcb = kcb::try_get_kcb().ok_or(KError::KcbUnavailable)?;
+        let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
         let needs_a_base_page = layout.size() <= slabmalloc::ZoneAllocator::MAX_BASE_ALLOC_SIZE;
-
-        let mut mem_manager = kcb.try_mem_manager()?;
         // TODO(rust): Silly code duplication follows if/else
-        if core::intrinsics::unlikely(kcb.in_panic_mode) {
-            let mut zone = kcb.ezone_allocator()?;
+        if core::intrinsics::unlikely(pcm.use_emergency_allocator()) {
+            let mut mem_manager = pcm.try_mem_manager()?;
+            let mut zone = pcm.ezone_allocator()?;
             if needs_a_base_page {
                 let frame = mem_manager.allocate_base_page()?;
                 unsafe {
@@ -363,27 +367,30 @@ impl KernelAllocator {
                 }
             }
         } else {
-            let mut zone = kcb.zone_allocator()?;
+            let mut cas = pcm.try_allocator_state()?;
             if needs_a_base_page {
-                let frame = mem_manager.allocate_base_page()?;
+                let frame = cas.pmanager.as_mut().unwrap().allocate_base_page()?;
                 unsafe {
                     let base_page_ptr: *mut slabmalloc::ObjectPage =
                         frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
-                    zone.refill(layout, &mut *base_page_ptr)
+                    cas.zone_allocator
+                        .refill(layout, &mut *base_page_ptr)
                         .expect("This should always succeed");
                 }
             } else {
                 // Needs a large page
-                let frame = mem_manager.allocate_large_page()?;
+                let frame = cas.pmanager.as_mut().unwrap().allocate_large_page()?;
                 unsafe {
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()
                         .as_mut_ptr();
-                    zone.refill_large(layout, &mut *large_page_ptr)
+                    cas.zone_allocator
+                        .refill_large(layout, &mut *large_page_ptr)
                         .expect("This should always succeed");
                 }
             }
         }
+
         Ok(())
     }
 }
@@ -441,15 +448,15 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        crate::kcb::try_get_kcb().map_or_else(
+        try_per_core_mem().map_or_else(
             || {
                 unreachable!("Trying to deallocate {:p} {:?} without a KCB.", ptr, layout);
             },
-            |kcb| {
+            |pcm| {
                 if layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE {
                     // TODO(rust): Silly code duplication follows if/else
-                    if core::intrinsics::unlikely(kcb.in_panic_mode) {
-                        let mut zone_allocator = kcb
+                    if core::intrinsics::unlikely(pcm.use_emergency_allocator()) {
+                        let mut zone_allocator = pcm
                             .ezone_allocator()
                             .expect("Can't borrow ezone_allocator?");
                         if likely(!ptr.is_null()) {
@@ -461,7 +468,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                         }
                     } else {
                         let mut zone_allocator =
-                            kcb.zone_allocator().expect("Can't borrow zone_allocator?");
+                            pcm.zone_allocator().expect("Can't borrow zone_allocator?");
                         if likely(!ptr.is_null()) {
                             zone_allocator
                                 .deallocate(ptr::NonNull::new_unchecked(ptr), layout)
@@ -471,8 +478,8 @@ unsafe impl GlobalAlloc for KernelAllocator {
                         }
                     }
                 } else {
-                    let kcb = kcb::get_kcb();
-                    let mut fmanager = kcb.mem_manager();
+                    let node = pcm.physical_memory.borrow().affinity;
+                    let mut fmanager = pcm.mem_manager();
 
                     if layout.size() <= BASE_PAGE_SIZE {
                         assert!(layout.align() <= BASE_PAGE_SIZE);
@@ -483,12 +490,12 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             // while `physical_memory` changes to different affinities
                             // we try to avoid this at the moment by being careful about freeing things
                             // during changes to allocation affinity (the FrameCacheLarge or FrameCacheSmall would panic)
-                            kcb.physical_memory.affinity,
+                            node,
                         );
 
                         match fmanager.release_base_page(frame) {
                             Ok(_) => { /* Frame addition to tcache as successful.*/ }
-                            Err(_e) => match kcb.physical_memory.gmanager {
+                            Err(_e) => match pcm.gmanager {
                                 // Try adding frame to ncache.
                                 Some(gmanager) => {
                                     let mut ncache =
@@ -509,7 +516,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             // while `physical_memory` changes to different affinities
                             // we try to avoid this at the moment by being careful about freeing things
                             // during changes to allocation affinity (the FrameCacheLarge or FrameCacheSmall would panic)
-                            kcb.physical_memory.affinity,
+                            node,
                         );
 
                         fmanager
@@ -524,12 +531,12 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        crate::kcb::try_get_kcb().map_or_else(
+        try_per_core_mem().map_or_else(
             || {
                 unreachable!("Trying to reallocate {:p} {:?} without a KCB.", ptr, layout);
             },
-            |kcb| {
-                if !kcb.in_panic_mode
+            |pcm| {
+                if !pcm.use_emergency_allocator()
                     && layout.size() <= ZoneAllocator::MAX_ALLOC_SIZE
                     && layout.size() != BASE_PAGE_SIZE
                     && new_size <= ZoneAllocator::get_max_size(layout.size()).unwrap_or(0x0)

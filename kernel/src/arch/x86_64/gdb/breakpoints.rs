@@ -59,11 +59,7 @@ impl KernelDebugger {
         );
 
         let kcb = super::super::kcb::get_kcb();
-        let sa = kcb
-            .arch
-            .save_area
-            .as_mut()
-            .expect("Need to have a save area");
+        let sa = kcb.save_area.as_mut().expect("Need to have a save area");
 
         for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
@@ -116,11 +112,7 @@ impl KernelDebugger {
         );
 
         let kcb = super::super::kcb::get_kcb();
-        let sa = kcb
-            .arch
-            .save_area
-            .as_mut()
-            .expect("Need to have a save area");
+        let sa = kcb.save_area.as_mut().expect("Need to have a save area");
 
         for (idx, (reg, entry)) in debugregs::BREAKPOINT_REGS
             .iter()
@@ -204,7 +196,6 @@ impl HwWatchpoint for KernelDebugger {
     ) -> TargetResult<bool, Self> {
         trace!("add_hw_watchpoint {:#x} {} {:?}", addr, len, kind);
         let sa = super::super::kcb::get_kcb()
-            .arch
             .save_area
             .as_mut()
             .expect("Need to have a save area");
@@ -260,7 +251,6 @@ impl HwWatchpoint for KernelDebugger {
     ) -> TargetResult<bool, Self> {
         trace!("remove_hw_watchpoint {:#x} {} {:?}", addr, _len, kind);
         let sa = super::super::kcb::get_kcb()
-            .arch
             .save_area
             .as_mut()
             .expect("Need to have a save area");

@@ -49,7 +49,6 @@ use x86::segmentation::{
 use x86::{dtables, Ring};
 
 use crate::fs::cnrfs;
-use crate::kcb::ArchSpecificKcb;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
@@ -57,7 +56,7 @@ use crate::process::{Executor, ResumeHandle};
 use crate::{nr, nrproc, ExitReason};
 
 use super::gdt::GdtTable;
-use super::kcb::{get_kcb, Arch86Kcb};
+use super::kcb::{get_kcb, per_core_mem, Arch86Kcb};
 use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring0Resumer, Ring3Process, Ring3Resumer};
 use super::{debug, gdb, timer};
@@ -310,10 +309,11 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
     backtrace();
 
     let kcb = get_kcb();
-    sprintln!("Register State:\n{:?}", kcb.arch.save_area);
+    sprintln!("Register State:\n{:?}", kcb.save_area);
 
-    if !kcb.in_panic_mode {
-        kcb.arch.save_area.as_ref().map(|sa| {
+    let pcm = per_core_mem();
+    if !pcm.in_panic_mode() {
+        kcb.save_area.as_ref().map(|sa| {
             backtrace_from(sa.rbp, sa.rsp, sa.rip);
         });
     }
@@ -402,9 +402,11 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 
     sprintln!("{:?}", a);
     let kcb = get_kcb();
-    sprintln!("Register State:\n{:?}", kcb.arch.save_area);
-    if !kcb.in_panic_mode {
-        kcb.arch.save_area.as_ref().map(|sa| {
+    sprintln!("Register State:\n{:?}", kcb.save_area);
+
+    let pcm = per_core_mem();
+    if !pcm.in_panic_mode() {
+        kcb.save_area.as_ref().map(|sa| {
             backtrace_from(sa.rbp, sa.rsp, sa.rip);
         });
     }
@@ -417,7 +419,7 @@ unsafe fn gdb_serial_handler(a: &ExceptionArguments) {
     let kcb = get_kcb();
     debug::disable_all_breakpoints();
     gdb::event_loop(gdb::KCoreStopReason::ConnectionInterrupt);
-    let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
+    let r = Ring0Resumer::new_iret(kcb.get_save_area_ptr());
     r.resume()
 }
 
@@ -427,12 +429,12 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
 
     let kcb = get_kcb();
     if super::process::has_executor() {
-        let r = Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr());
+        let r = Ring3Resumer::new_restore(kcb.get_save_area_ptr());
         r.resume()
     } else {
         debug::disable_all_breakpoints();
         gdb::event_loop(gdb::KCoreStopReason::DebugInterrupt);
-        let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
+        let r = Ring0Resumer::new_iret(kcb.get_save_area_ptr());
         r.resume()
     }
 }
@@ -468,7 +470,7 @@ unsafe fn bkp_handler(a: &ExceptionArguments) {
             } else {
                 // Copy CURRENT_SAVE_AREA to process enabled save area
                 // then resume in the upcall handler
-                kcb.arch.save_area.as_ref().map(|sa| {
+                kcb.save_area.as_ref().map(|sa| {
                     p.vcpu().enabled_state = **sa;
                 });
 
@@ -482,7 +484,7 @@ unsafe fn bkp_handler(a: &ExceptionArguments) {
     } else {
         #[cfg(feature = "gdb")]
         gdb::event_loop(gdb::KCoreStopReason::BreakpointInterrupt);
-        let r = Ring0Resumer::new_iret(kcb.arch.get_save_area_ptr());
+        let r = Ring0Resumer::new_iret(kcb.get_save_area_ptr());
         r.resume()
     }
 }
@@ -533,7 +535,7 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
         r.resume()
     } else {
         // Go to scheduler instead
-        //warn!("got a timer on core {}", kcb.arch.id());
+        //warn!("got a timer on core {}", *crate::kcb::CORE_ID);
         crate::scheduler::schedule()
     }
 }
@@ -571,15 +573,16 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
 
     sprintln!("{:?}", a);
     let kcb = get_kcb();
-    sprintln!("Register State:\n{:?}", kcb.arch.save_area);
+    sprintln!("Register State:\n{:?}", kcb.save_area);
 
     for i in 0..12 {
         let ptr = (a.rsp as *const u64).offset(i);
         sprintln!("stack[{}] = {:#x}", i, *ptr);
     }
 
-    if !kcb.in_panic_mode {
-        kcb.arch.save_area.as_ref().map(|sa| {
+    let pcm = per_core_mem();
+    if !pcm.in_panic_mode() {
+        kcb.save_area.as_ref().map(|sa| {
             backtrace_from(sa.rbp, sa.rsp, sa.rip);
         });
     }
@@ -587,12 +590,12 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
     debug::shutdown(ExitReason::GeneralProtectionFault);
 }
 
-fn kcb_resume_handle(kcb: &crate::kcb::PerCoreMemory<Arch86Kcb>) -> Ring3Resumer {
-    Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr())
+fn kcb_resume_handle(arch: &Arch86Kcb) -> Ring3Resumer {
+    Ring3Resumer::new_restore(arch.get_save_area_ptr())
 }
 
-fn kcb_iret_handle(kcb: &crate::kcb::PerCoreMemory<Arch86Kcb>) -> Ring3Resumer {
-    Ring3Resumer::new_iret(kcb.arch.get_save_area_ptr())
+fn kcb_iret_handle(arch: &Arch86Kcb) -> Ring3Resumer {
+    Ring3Resumer::new_iret(arch.get_save_area_ptr())
 }
 
 /// Handler for all exceptions that happen early during the initialization
@@ -694,7 +697,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 } else {
                     // Copy CURRENT_SAVE_AREA to process enabled save area
                     // then resume in the upcall handler
-                    kcb.arch.save_area.as_ref().map(|sa| {
+                    kcb.save_area.as_ref().map(|sa| {
                         p.vcpu().enabled_state = **sa;
                     });
 

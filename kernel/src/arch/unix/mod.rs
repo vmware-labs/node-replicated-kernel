@@ -97,7 +97,7 @@ fn init_setup() {
     let global_memory_static: &'static GlobalMemory = Box::leak(global_memory);
 
     // Construct the Kcb so we can access these things later on in the code
-    kcb::get_kcb().set_global_mem(global_memory_static);
+    unsafe { kcb::PER_CORE_MEMORY.set_global_mem(global_memory_static) };
     debug!("Memory allocation should work at this point...");
 
     let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))

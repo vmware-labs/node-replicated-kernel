@@ -50,7 +50,6 @@ pub(crate) fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
         let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
         let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
-        let kcb = crate::kcb::get_kcb();
         let (ethernet_addr, ip_addrs) = match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode)
         {
             Mode::Client => (

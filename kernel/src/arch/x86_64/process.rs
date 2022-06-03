@@ -23,10 +23,10 @@ use x86::bits64::paging::*;
 use x86::bits64::rflags;
 use x86::{controlregs, Ring};
 
+use crate::arch::kcb::per_core_mem;
 use crate::arch::memory::KERNEL_BASE;
 use crate::error::{KError, KResult};
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
-use crate::kcb;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, MemType, PAddr, VAddr};
@@ -86,8 +86,8 @@ lazy_static! {
 
             let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
-                let kcb = kcb::get_kcb();
-                kcb.set_mem_affinity(node as atopology::NodeId).expect("Can't change affinity");
+                let pcm = per_core_mem();
+                pcm.set_mem_affinity(node as atopology::NodeId).expect("Can't change affinity");
                 debug_assert!(!numa_cache[node].is_full());
 
                 let p = Box::try_new(Ring3Process::new(pid, da.clone()).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
@@ -96,12 +96,27 @@ lazy_static! {
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&log, nrp));
 
                 debug_assert_eq!(*crate::kcb::NODE_ID, 0, "Expect initialization to happen on node 0.");
-                kcb.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
+                pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
             }
         }
 
         numa_cache
     };
+}
+
+pub(crate) struct ArchProcessManagement;
+
+impl crate::nrproc::ProcessManager for ArchProcessManagement {
+    type Process = Ring3Process;
+
+    fn process_table(
+        &self,
+    ) -> &'static ArrayVec<
+        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
+        MAX_NUMA_NODES,
+    > {
+        &*super::process::PROCESS_TABLE
+    }
 }
 
 /// TODO: This method makes file-operations slow, improve it to use large page
@@ -1068,7 +1083,7 @@ impl elfloader::ElfLoader for Ring3Process {
             KernelAllocator::try_refill_tcache(20, large_pages, MemType::Mem)
                 .expect("Refill didn't work");
 
-            let kcb = crate::kcb::get_kcb();
+            let pcm = crate::arch::kcb::per_core_mem();
 
             // TODO(correctness): Will this work (we round-up and map large-pages?)
             // TODO(efficiency): What about wasted memory
@@ -1098,7 +1113,7 @@ impl elfloader::ElfLoader for Ring3Process {
                         map_action == MapAction::ReadUser
                             || map_action == MapAction::ReadExecuteUser
                     );
-                    let mut pmanager = kcb.mem_manager();
+                    let mut pmanager = pcm.mem_manager();
                     pmanager
                         .allocate_large_page()
                         .expect("We refilled so allocation should work.")

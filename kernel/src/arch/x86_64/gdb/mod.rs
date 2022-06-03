@@ -176,7 +176,7 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                             //trace!("Resume execution.");
                             let kcb = super::kcb::get_kcb();
                             // If we were stepping, we need to remove the TF bit again for resuming
-                            if let Some(saved) = &mut kcb.arch.save_area {
+                            if let Some(saved) = &mut kcb.save_area {
                                 let mut rflags = RFlags::from_bits_truncate(saved.rflags);
                                 rflags.remove(x86::bits64::rflags::RFlags::FLAGS_TF);
                                 saved.rflags = rflags.bits();
@@ -185,7 +185,7 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         Some(ExecMode::SingleStep) => {
                             trace!("Step execution, set TF flag.");
                             let kcb = super::kcb::get_kcb();
-                            if let Some(saved) = &mut kcb.arch.save_area {
+                            if let Some(saved) = &mut kcb.save_area {
                                 saved.rflags |= RFlags::FLAGS_TF.bits();
                             }
                         }

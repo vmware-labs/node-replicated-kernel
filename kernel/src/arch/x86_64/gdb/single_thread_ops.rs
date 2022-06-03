@@ -40,7 +40,7 @@ impl SingleThreadOps for KernelDebugger {
         regs: &mut gdbstub_arch::x86::reg::X86_64CoreRegs,
     ) -> TargetResult<(), Self> {
         let kcb = super::super::kcb::get_kcb();
-        if let Some(saved) = &kcb.arch.save_area {
+        if let Some(saved) = &kcb.save_area {
             // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
             regs.regs[00] = saved.rax;
             regs.regs[01] = saved.rbx;
@@ -106,7 +106,7 @@ impl SingleThreadOps for KernelDebugger {
     ) -> TargetResult<(), Self> {
         trace!("write_registers {:?}", regs);
         let kcb = super::super::kcb::get_kcb();
-        if let Some(saved) = &mut kcb.arch.save_area {
+        if let Some(saved) = &mut kcb.save_area {
             // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
             saved.rax = regs.regs[00];
             saved.rbx = regs.regs[01];

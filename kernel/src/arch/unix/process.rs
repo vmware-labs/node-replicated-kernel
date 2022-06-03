@@ -88,6 +88,21 @@ lazy_static! {
     };
 }
 
+pub(crate) struct ArchProcessManagement;
+
+impl crate::nrproc::ProcessManager for ArchProcessManagement {
+    type Process = UnixThread;
+
+    fn process_table(
+        &self,
+    ) -> &'static ArrayVec<
+        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
+        MAX_NUMA_NODES,
+    > {
+        &*super::process::PROCESS_TABLE
+    }
+}
+
 pub(crate) fn user_virt_addr_valid(
     _pid: Pid,
     _base: u64,

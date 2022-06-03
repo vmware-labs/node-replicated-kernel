@@ -10,7 +10,7 @@ use arrayvec::ArrayVec;
 use node_replication::{Replica, ReplicaToken};
 
 use crate::error::KError;
-use crate::kcb::{ArchSpecificKcb, PerCoreMemory};
+use crate::kcb::PerCoreMemory;
 use crate::memory::mcache::FrameCacheEarly;
 use crate::nr::KernelNode;
 use crate::nrproc::NrProcess;
@@ -31,10 +31,19 @@ pub(crate) fn get_kcb<'a>() -> &'a mut PerCoreMemory<ArchKcb> {
     unsafe { &mut KCB }
 }
 
+pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
+    unreachable!("per_core_mem.");
+}
+
+/// Stands for per-core memory
+pub(crate) fn per_core_mem() -> &'static PerCoreMemory {
+    unreachable!("per_core_mem.");
+}
+
 /// Initialize the KCB in the system.
 ///
 /// Should be called during set-up. Afterwards we can use `get_kcb` safely.
-pub(crate) fn init_kcb<A: ArchSpecificKcb + Any>(mut _kcb: &'static mut PerCoreMemory<A>) {
+pub(crate) fn init_kcb(mut _kcb: &'static mut PerCoreMemory) {
     //unreachable!("init_kcb.");
 }
 

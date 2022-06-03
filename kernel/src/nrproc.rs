@@ -2,25 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::prelude::*;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::alloc::Allocator;
 
-use alloc::vec::Vec;
 use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVec;
 use kpi::process::{FrameId, ProcessInfo};
 use kpi::MemType;
-use node_replication::{Dispatch, ReplicaToken};
+use node_replication::{Dispatch, Replica, ReplicaToken};
 use spin::Once;
 
 use crate::arch::process::PROCESS_TABLE;
-use crate::arch::Module;
+use crate::arch::{Module, MAX_NUMA_NODES};
 use crate::error::KError;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
-
-use crate::kcb::{ArchSpecificKcb, PerCoreMemory};
 
 /// The tokens per core to access the process replicas.
 #[thread_local]
@@ -93,6 +92,18 @@ pub(crate) fn advance_all() {
     for pid in 0..MAX_PROCESSES {
         let _r = PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
     }
+}
+
+pub(crate) trait ProcessManager {
+    type Process: Process + Sync;
+
+    #[allow(clippy::type_complexity)] // fix this once `associated_type_defaults` works
+    fn process_table(
+        &self,
+    ) -> &'static ArrayVec<
+        ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
+        MAX_NUMA_NODES,
+    >;
 }
 
 /// A node-replicated process.
@@ -258,12 +269,9 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn allocate_executor<A>(
-        kcb: &PerCoreMemory<A>,
-        pid: Pid,
-    ) -> Result<Box<P::E>, KError>
+    pub(crate) fn allocate_executor<A>(pm: &A, pid: Pid) -> Result<Box<P::E>, KError>
     where
-        A: ArchSpecificKcb<Process = P>,
+        A: ProcessManager<Process = P>,
         P: Process + core::marker::Sync + 'static,
     {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
@@ -271,7 +279,7 @@ impl<P: Process> NrProcess<P> {
         let gtid = *crate::kcb::CORE_ID;
         let node = *crate::kcb::NODE_ID;
 
-        let response = kcb.arch.process_table()[node][pid].execute_mut(
+        let response = pm.process_table()[node][pid].execute_mut(
             Op::AssignExecutor(gtid, node),
             PROCESS_TOKEN.get().unwrap()[pid],
         );

@@ -128,7 +128,6 @@ pub enum MemType {
     Mem = 1,
     /// The allocations will be done from PMEM.
     PMem = 2,
-    Invalid,
 }
 
 /// Flags for the map system call

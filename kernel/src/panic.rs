@@ -213,13 +213,13 @@ pub(crate) fn panic_impl(info: &PanicInfo) -> ! {
     }
 
     // We need memory allocation for a backtrace, can't do that without a KCB
-    crate::kcb::try_get_kcb().map(|k| {
+    crate::arch::kcb::try_per_core_mem().map(|pcm| {
         // If we're already panicking, it usually doesn't help to panic more
-        if !k.in_panic_mode {
+        if !pcm.in_panic_mode() {
             // Make sure we use the e{early, emergency} memory allocator for backtracing
             // (if we have a panic with the memory manager already borrowed
             // we can't use it because it will just trigger another panic)
-            k.set_panic_mode();
+            pcm.set_panic_mode();
             backtrace();
         } else {
             sprintln!("Encountered a recursive panic, exit immediately!")

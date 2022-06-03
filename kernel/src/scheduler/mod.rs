@@ -5,9 +5,9 @@
 
 use core::intrinsics::unlikely;
 
+use crate::arch::process::ArchProcessManagement;
 use crate::arch::timer;
 use crate::error::KError;
-use crate::kcb;
 use crate::nr;
 use crate::nr::NR_REPLICA;
 use crate::nrproc::NrProcess;
@@ -15,7 +15,7 @@ use crate::process::{Executor, ResumeHandle};
 
 /// Runs the process allocated to the given core.
 pub(crate) fn schedule() -> ! {
-    let kcb = kcb::get_kcb();
+    let apm = ArchProcessManagement;
 
     // Are we the master/first thread in that replica?
     // Then we should set timer to periodically advance the state
@@ -44,7 +44,7 @@ pub(crate) fn schedule() -> ! {
                 match response {
                     Ok(nr::NodeResult::CoreInfo(ci)) => {
                         let executor =
-                            NrProcess::allocate_executor(kcb, ci.pid).expect("This should work");
+                            NrProcess::allocate_executor(&apm, ci.pid).expect("This should work");
                         unsafe {
                             (*executor.vcpu_kernel()).resume_with_upcall = ci.entry_point;
                         }

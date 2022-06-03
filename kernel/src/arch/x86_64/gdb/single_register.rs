@@ -20,7 +20,7 @@ impl SingleRegisterAccess<()> for KernelDebugger {
         trace!("read_register {:?}", reg_id);
         let kcb = super::super::kcb::get_kcb();
 
-        if let Some(saved) = &mut kcb.arch.save_area {
+        if let Some(saved) = &mut kcb.save_area {
             fn copy_out(dst: &mut [u8], src: &[u8]) -> TargetResult<usize, KernelDebugger> {
                 dst.copy_from_slice(src);
                 Ok(src.len())
@@ -93,7 +93,7 @@ impl SingleRegisterAccess<()> for KernelDebugger {
         trace!("write_register {:?} {:?}", reg_id, val);
         let kcb = super::super::kcb::get_kcb();
 
-        if let Some(saved) = &mut kcb.arch.save_area {
+        if let Some(saved) = &mut kcb.save_area {
             match reg_id {
                 X86_64CoreRegId::Gpr(00) => {
                     saved.rax =

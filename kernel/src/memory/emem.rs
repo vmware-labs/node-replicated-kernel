@@ -13,22 +13,20 @@ use crate::error::KError;
 use crate::round_up;
 
 use super::backends::PhysicalPageProvider;
-use super::{Frame, PAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+use super::{Frame, PAddr, BASE_PAGE_SIZE, KERNEL_BASE, LARGE_PAGE_SIZE};
 
-/// A very simple allocator that only allocates and doesn't allow
-/// deallocations (bump-style allocator).
+/// A very simple allocator that only allocates and doesn't allow deallocations
+/// (bump-style allocator).
 ///
-/// It doesn't have to free because the memory allocated from it
-/// typically lives forever. It's currently used only
-/// when the system is in a panic state and we can't recover
-/// from that.
+/// It doesn't have to free because the memory allocated from it typically lives
+/// forever. It's currently used only when the system is in a panic state and we
+/// can't recover from that.
 ///
-/// TODO(panic-recovery): If we will eventually be able to partially
-/// recover from panic using this in it's current form would be problematic
-/// since we need to make sure that all the memory allocated from it
-/// does not end up deallocated with e.g. the ZoneAllocator
-/// (running ZoneAllocator's deallocate method on it mechanism
-/// would surely lead to memory unsafety).
+/// TODO(panic-recovery): If we will eventually be able to partially recover
+/// from panic using this in it's current form would be problematic since we
+/// need to make sure that all the memory allocated from it does not end up
+/// deallocated with e.g. the ZoneAllocator (running ZoneAllocator's deallocate
+/// method on it mechanism would surely lead to memory unsafety).
 #[derive(Debug)]
 pub(crate) struct EmergencyAllocator {
     pub index: usize,
@@ -52,12 +50,10 @@ impl EmergencyAllocator {
     unsafe fn allocate_layout(&mut self, layout: Layout) -> Result<Frame, KError> {
         assert!(layout.align() <= BASE_PAGE_SIZE, "Alignment mismatch.");
         let size = round_up!(layout.size(), BASE_PAGE_SIZE);
-
         if size <= self.region.size() {
             // Create a new frame
             let (mut low, high) = self.region.split_at(size);
             low.zero();
-
             self.region = high;
 
             debug_assert_eq!(low.base % layout.align(), 0);
@@ -102,7 +98,7 @@ unsafe impl<'a> slabmalloc::Allocator<'a> for EmergencyAllocator {
         new_page: &'a mut ObjectPage<'a>,
     ) -> Result<(), slabmalloc::AllocationError> {
         self.region = Frame::new(
-            PAddr::from(new_page as *const _ as u64),
+            PAddr::from(new_page as *const _ as u64 - KERNEL_BASE),
             BASE_PAGE_SIZE,
             0, /* should be local to us but really doesn't matter anyways anymore */
         );
@@ -117,7 +113,7 @@ unsafe impl<'a> slabmalloc::Allocator<'a> for EmergencyAllocator {
         new_page: &'a mut LargeObjectPage<'a>,
     ) -> Result<(), slabmalloc::AllocationError> {
         self.region = Frame::new(
-            PAddr::from(new_page as *const _ as u64),
+            PAddr::from(new_page as *const _ as u64 - KERNEL_BASE),
             LARGE_PAGE_SIZE,
             0, /* should be local to us but really doesn't matter anyways anymore */
         );

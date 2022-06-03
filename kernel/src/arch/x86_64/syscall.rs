@@ -207,7 +207,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
             });
         }
 
-        let kcb = super::kcb::get_kcb();
+        let pcm = super::kcb::per_core_mem();
         // Figure out what memory to allocate
         let (bp, lp) = if page_size == BASE_PAGE_SIZE {
             (1, 0)
@@ -216,10 +216,10 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         };
         crate::memory::KernelAllocator::try_refill_tcache(bp, lp, MemType::Mem)?;
 
-        // Allocate the page (need to make sure we drop pamanager again
+        // Allocate the page (need to make sure we drop pmanager again
         // before we go to NR):
         let frame = {
-            let mut pmanager = kcb.mem_manager();
+            let mut pmanager = pcm.mem_manager();
             if page_size == BASE_PAGE_SIZE {
                 pmanager.allocate_base_page()?
             } else {
@@ -252,7 +252,7 @@ pub(crate) trait Arch86VSpaceDispatch {
     fn map_generic(&self, mem_type: MemType, base: u64, size: u64) -> Result<(u64, u64), KError> {
         let base = VAddr::from(base);
 
-        let kcb = super::kcb::get_kcb();
+        let pcm = super::kcb::per_core_mem();
 
         let (bp, lp) = crate::memory::utils::size_to_pages(size as usize);
         let mut frames = Vec::try_with_capacity(bp + lp)?;
@@ -267,8 +267,8 @@ pub(crate) trait Arch86VSpaceDispatch {
         let mut total_len = 0;
         {
             let mut pmanager = match mem_type {
-                MemType::Mem => kcb.mem_manager(),
-                MemType::PMem => kcb.pmem_manager(),
+                MemType::Mem => pcm.mem_manager(),
+                MemType::PMem => pcm.pmem_manager(),
                 _ => unreachable!(),
             };
 
@@ -464,7 +464,7 @@ pub extern "C" fn syscall_handle(
     let r = {
         let _retcode = match status {
             Ok((a1, a2)) => {
-                kcb.arch.save_area.as_mut().map(|sa| {
+                kcb.save_area.as_mut().map(|sa| {
                     sa.set_syscall_ret1(a1);
                     sa.set_syscall_ret2(a2);
                     sa.set_syscall_error_code(SystemCallError::Ok);
@@ -472,13 +472,13 @@ pub extern "C" fn syscall_handle(
             }
             Err(status) => {
                 warn!("System call returned with error: {:?}", status);
-                kcb.arch.save_area.as_mut().map(|sa| {
+                kcb.save_area.as_mut().map(|sa| {
                     sa.set_syscall_error_code(status.into());
                 });
             }
         };
 
-        super::process::Ring3Resumer::new_restore(kcb.arch.get_save_area_ptr())
+        super::process::Ring3Resumer::new_restore(kcb.get_save_area_ptr())
     };
 
     unsafe { r.resume() }

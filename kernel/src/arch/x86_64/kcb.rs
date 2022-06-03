@@ -36,23 +36,16 @@ macro_rules! gs_deref {
     }};
 }
 
-/*
-/// Try to retrieve the KCB by reading the gs register.
+/// Try to retrieve the per-core memory allocator by reading the gs register.
 ///
-/// This may return None if the KCB is not yet set
-/// (i.e., during initialization).
-pub(crate) fn try_get_kcb() -> Option<&'static mut Arch86Kcb> {
-    unsafe {
-        let kcb = segmentation::rdgsbase() as *mut Arch86Kcb;
-        if kcb != ptr::null_mut() {
-            let kptr = ptr::NonNull::new_unchecked(kcb);
-            Some(&mut *kptr.as_ptr())
-        } else {
-            None
-        }
-    }
-} */
-
+/// This may return None if the memory allocators is not yet set (i.e., during
+/// initialization).
+///
+/// # Safety
+/// - The fsgsbase bit must be enabled.
+/// - This gets a handle to PerCoreMemory (ideally, we should ensure that there
+///   is no outstanding mut alias to it e.g., during initialization see comments
+///   in mod.rs)
 pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
     unsafe {
         if segmentation::rdgsbase() != 0x0 {
@@ -67,20 +60,39 @@ pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
     None
 }
 
-/// Stands for per-core memory
+/// Reference to per-core memory state.
+///
+/// Must only call this after initialization has completed. So basically ok to
+/// call in everywhere in the kernel except care must be taken in `arch`,
+/// `crate::memory` and some places in `arch::irq`.
+///
+/// # Panics
+/// - If the per-core memory is not yet initialized (only in debug mode).
 pub(crate) fn per_core_mem() -> &'static PerCoreMemory {
+    // Safety:
+    // - Either this will be initialized with PerCoreMemory or panic.
+    // - rdgsbase is ok because we enabled the instruction during core init
+    // - [`Arch86Kcb::initialize_gs`] made sure that the gs has the right object
+    //   / layout for the cast
+    // - There should be no mut alias to the per-core memory after init is
+    //   complete (this would basically be a #[thread_local] in a regular
+    //   program)
+    // - And we check/panic that the gs register is not null
     unsafe {
+        debug_assert!(segmentation::rdgsbase() != 0x0, "gs not yet initialized");
         (&*(gs_deref!(memoffset::offset_of!(Arch86Kcb, mem)) as *const PerCoreMemory))
             as &'static PerCoreMemory
     }
 }
 
-/// Retrieve the KCB by reading the gs register.
+/// Retrieve the Arch86Kcb by reading the gs register.
 ///
 /// # Panic
 /// This will fail in case the KCB is not yet set (i.e., early on during
 /// initialization).
 pub(crate) fn get_kcb<'a>() -> &'a mut Arch86Kcb {
+    // TODO(safety): not safe should return a non-mut reference with mutable
+    // stuff wrapped in RefCell or similar (treat the same as a thread-local)
     unsafe {
         let kcb = segmentation::rdgsbase() as *mut Arch86Kcb;
         assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
@@ -89,8 +101,9 @@ pub(crate) fn get_kcb<'a>() -> &'a mut Arch86Kcb {
     }
 }
 
-/// Contains the arch-specific contents of the KCB.
+/// Architecture specific core control block.
 ///
+/// Contains the arch-specific hardware state of a given x86 core.
 /// `repr(C)` because assembly code references entries of this struct.
 #[repr(C)]
 pub(crate) struct Arch86Kcb {

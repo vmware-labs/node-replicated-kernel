@@ -16,9 +16,9 @@ use lazy_static::lazy_static;
 
 use node_replication::{Dispatch, Log, Replica};
 
+use crate::arch::kcb::get_kcb;
 use crate::error::{KError, KResult};
 use crate::fs::Fd;
-use crate::kcb;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::vspace::MapAction;
@@ -68,8 +68,8 @@ lazy_static! {
 
             let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
-                let kcb = kcb::get_kcb();
-                assert!(kcb.set_mem_affinity(node as atopology::NodeId).is_ok());
+                let pcm = super::kcb::per_core_mem();
+                assert!(pcm.set_mem_affinity(node as atopology::NodeId).is_ok());
 
                 debug_assert!(!numa_cache[node].is_full(), "Ensured by loop range");
 
@@ -80,7 +80,7 @@ lazy_static! {
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
 
                 debug_assert_eq!(*crate::kcb::NODE_ID, 0, "Expect initialization to happen on node 0.");
-                assert!(kcb.set_mem_affinity(0).is_ok());
+                assert!(pcm.set_mem_affinity(0).is_ok());
             }
         }
 
@@ -91,7 +91,7 @@ lazy_static! {
 pub(crate) struct ArchProcessManagement;
 
 impl crate::nrproc::ProcessManager for ArchProcessManagement {
-    type Process = UnixThread;
+    type Process = UnixProcess;
 
     fn process_table(
         &self,

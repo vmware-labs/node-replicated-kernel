@@ -2798,13 +2798,15 @@ fn s06_leveldb_benchmark() {
 #[test]
 fn s06_pmem_alloc() {
     let machine = Machine::determine();
+    // Have at least 2 numa nodes, ensures we test more code-logic
+    let nodes = std::cmp::max(2, machine.max_numa_nodes());
     let build = BuildArgs::default()
         .module("init")
         .user_feature("test-pmem-alloc")
         .release()
         .build();
     let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
-        .nodes(machine.max_numa_nodes())
+        .nodes(nodes)
         .cores(machine.max_cores())
         .memory(8192)
         .pmem(2048)

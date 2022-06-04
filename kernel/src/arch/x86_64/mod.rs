@@ -168,7 +168,6 @@ pub(crate) fn halt() -> ! {
 fn init_apic() {
     let mut apic = irq::LOCAL_APIC.borrow_mut();
     // Attach the driver to take control of the APIC:
-    info!("before attach");
     apic.attach();
 
     info!(
@@ -337,7 +336,7 @@ fn boot_app_cores(
     let global_memory = pcm.gmanager.expect("boot_app_cores requires kcb.gmanager");
     let global_pmem = pcm
         .pgmanager
-        .expect("boot_app_cores requires kcb.pmem_memory.gmanager");
+        .expect("boot_app_cores requires persistent_memory gmanager");
 
     // For now just boot everything, except ourselves
     // Create a single log and one replica...

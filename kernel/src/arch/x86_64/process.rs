@@ -95,7 +95,7 @@ lazy_static! {
 
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&log, nrp));
 
-                debug_assert_eq!(*crate::kcb::NODE_ID, 0, "Expect initialization to happen on node 0.");
+                debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
                 pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
             }
         }
@@ -890,7 +890,7 @@ impl Executor for Ring3Executor {
     /// Start the process (run it for the first time).
     fn start(&self) -> Self::Resumer {
         assert_eq!(
-            *crate::kcb::NODE_ID,
+            *crate::environment::NODE_ID,
             self.affinity,
             "Run on remote replica?"
         );
@@ -914,14 +914,14 @@ impl Executor for Ring3Executor {
                 self.stack_top(),
                 cpu_ctl,
                 kpi::upcall::NEW_CORE,
-                *crate::kcb::CORE_ID as u64,
+                *crate::environment::CORE_ID as u64,
             )
         }
     }
 
     fn resume(&self) -> Self::Resumer {
         assert_eq!(
-            *crate::kcb::NODE_ID,
+            *crate::environment::NODE_ID,
             self.affinity,
             "Run on remote replica?"
         );
@@ -932,7 +932,7 @@ impl Executor for Ring3Executor {
 
     fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer {
         assert_eq!(
-            *crate::kcb::NODE_ID,
+            *crate::environment::NODE_ID,
             self.affinity,
             "Run on remote replica?"
         );
@@ -1498,8 +1498,8 @@ pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     let _gtid = nr::KernelNode::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
-        Some(*crate::kcb::NODE_ID),
-        Some(*crate::kcb::CORE_ID),
+        Some(*crate::environment::NODE_ID),
+        Some(*crate::environment::CORE_ID),
     )?;
 
     Ok(pid)

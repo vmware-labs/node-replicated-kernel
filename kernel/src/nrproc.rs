@@ -29,7 +29,7 @@ pub(crate) static PROCESS_TOKEN: Once<ArrayVec<ReplicaToken, { MAX_PROCESSES }>>
 ///
 /// Should be called on each core.
 pub(crate) fn register_thread_with_process_replicas() {
-    let node = *crate::kcb::NODE_ID;
+    let node = *crate::environment::NODE_ID;
     debug_assert!(PROCESS_TABLE.len() > node, "Invalid Node ID");
 
     PROCESS_TOKEN.call_once(|| {
@@ -87,7 +87,7 @@ pub(crate) enum NodeResult<E: Executor> {
 
 /// Advances the replica of all the processes on the current NUMA node.
 pub(crate) fn advance_all() {
-    let node = *crate::kcb::NODE_ID;
+    let node = *crate::environment::NODE_ID;
 
     for pid in 0..MAX_PROCESSES {
         let _r = PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
@@ -131,7 +131,7 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::Load(pid, module, writeable_sections),
@@ -148,7 +148,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         debug_assert!(base.as_u64() < kpi::KERNEL_BASE, "Invalid base");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid]
             .execute(ReadOps::MemResolve(base), PROCESS_TOKEN.get().unwrap()[pid]);
@@ -162,7 +162,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn synchronize(pid: Pid) {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
     }
@@ -174,7 +174,7 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(u64, u64), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::MemMapDevice(frame, action),
@@ -190,7 +190,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid]
             .execute_mut(Op::MemUnmap(base), PROCESS_TOKEN.get().unwrap()[pid]);
@@ -209,7 +209,7 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(PAddr, usize), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::MemMapFrameId(base, frame_id, action),
@@ -230,7 +230,7 @@ impl<P: Process> NrProcess<P> {
     ) -> Result<(u64, u64), KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let mut virtual_offset = 0;
         for frame in frames {
@@ -258,7 +258,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn pinfo(pid: Pid) -> Result<ProcessInfo, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid]
             .execute(ReadOps::ProcessInfo, PROCESS_TOKEN.get().unwrap()[pid]);
@@ -276,8 +276,8 @@ impl<P: Process> NrProcess<P> {
     {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let gtid = *crate::kcb::CORE_ID;
-        let node = *crate::kcb::NODE_ID;
+        let gtid = *crate::environment::CORE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = pm.process_table()[node][pid].execute_mut(
             Op::AssignExecutor(gtid, node),
@@ -293,7 +293,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn allocate_frame_to_process(pid: Pid, frame: Frame) -> Result<FrameId, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::AllocateFrameToProcess(frame),
@@ -309,7 +309,7 @@ impl<P: Process> NrProcess<P> {
     pub(crate) fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
-        let node = *crate::kcb::NODE_ID;
+        let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             Op::DispatcherAllocation(frame),

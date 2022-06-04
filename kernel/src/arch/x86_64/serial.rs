@@ -8,6 +8,8 @@ use core::cell::RefCell;
 
 use klogger::sprint;
 
+use crate::fallible_string::FallibleString;
+
 /// A thread local print buffer that stores characters temporarily (until they
 /// are sent out on the wire).
 ///
@@ -17,6 +19,13 @@ use klogger::sprint;
 /// we have dynamic memory allocation).
 #[thread_local]
 pub(crate) static PRINT_BUFFER: RefCell<String> = RefCell::new(String::new());
+
+/// Initializes the `PRINT_BUFFER` with a memory buffer.
+pub(super) fn init() {
+    SerialControl::set_print_buffer(
+        String::try_with_capacity(128).expect("Not enough memory to initialize system"),
+    );
+}
 
 /// Controls interaction with the serial line from a single core.
 pub(crate) struct SerialControl;
@@ -28,7 +37,7 @@ impl SerialControl {
     /// will panic. The easiest way to ensure this is to call `set_print_buffer`
     /// only once during init. If at some point we need to replace this
     /// dynamically we need to add a flush method to the `SerialControl` struct.
-    pub(crate) fn set_print_buffer(buffer: String) {
+    fn set_print_buffer(buffer: String) {
         assert_eq!(PRINT_BUFFER.borrow().len(), 0, "print buffer not empty");
         PRINT_BUFFER.replace(buffer);
     }

@@ -79,7 +79,7 @@ lazy_static! {
 
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
 
-                debug_assert_eq!(*crate::kcb::NODE_ID, 0, "Expect initialization to happen on node 0.");
+                debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
                 assert!(pcm.set_mem_affinity(0).is_ok());
             }
         }

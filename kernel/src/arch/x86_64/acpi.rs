@@ -1,6 +1,8 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+//! Very basic ACPI integration -- enough to parse topology etc.
+
 #![allow(bad_style, dead_code, unused_variables)]
 
 use alloc::alloc;

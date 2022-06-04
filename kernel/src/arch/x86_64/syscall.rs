@@ -106,7 +106,10 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
 
     fn get_core_id(&self) -> Result<(u64, u64), KError> {
         let kcb = super::kcb::get_kcb();
-        Ok((*crate::kcb::CORE_ID as u64, *crate::kcb::NODE_ID as u64))
+        Ok((
+            *crate::environment::CORE_ID as u64,
+            *crate::environment::NODE_ID as u64,
+        ))
     }
 }
 
@@ -340,7 +343,7 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
 
         let paddr = PAddr::from(base);
         let size = size.try_into().unwrap();
-        let frame = Frame::new(paddr, size, *crate::kcb::NODE_ID);
+        let frame = Frame::new(paddr, size, *crate::environment::NODE_ID);
 
         nrproc::NrProcess::<Ring3Process>::map_device_frame(pid, frame, MapAction::ReadWriteUser)
     }

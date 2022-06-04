@@ -79,7 +79,7 @@ pub(crate) struct PerCoreMemory {
     pub physical_memory: RefCell<PerCoreAllocatorState>,
 
     /// Related meta-data to manage persistent memory for a given core.
-    pub pmem_memory: RefCell<PerCoreAllocatorState>,
+    pub persistent_memory: RefCell<PerCoreAllocatorState>,
 
     /// Contains a bunch of memory arenas with different affinities, in case a
     /// core needs to allocate memory from another NUMA node. Can have one for
@@ -107,7 +107,7 @@ impl PerCoreMemory {
             // Can't initialize these yet, we need basic Kcb first for
             // memory allocations (emanager):
             physical_memory: RefCell::new(PerCoreAllocatorState::empty_for_node(node)),
-            pmem_memory: RefCell::new(PerCoreAllocatorState::empty_for_node(node)),
+            persistent_memory: RefCell::new(PerCoreAllocatorState::empty_for_node(node)),
         }
     }
 
@@ -170,12 +170,12 @@ impl PerCoreMemory {
     }
 
     pub(crate) fn set_pmem_affinity(&self, node: atopology::NodeId) -> Result<(), KError> {
-        if node == self.pmem_memory.borrow().affinity {
+        if node == self.persistent_memory.borrow().affinity {
             // Allocation affinity is already set to correct NUMA node
             return Ok(());
         }
         PerCoreMemory::swap_manager(
-            &mut self.pmem_memory.borrow_mut(),
+            &mut self.persistent_memory.borrow_mut(),
             &mut *self.pmem_arenas.borrow_mut(),
             node,
         )
@@ -186,7 +186,7 @@ impl PerCoreMemory {
     }
 
     pub(crate) fn set_pmem_manager(&self, pmanager: FrameCacheSmall) {
-        self.pmem_memory.borrow_mut().pmanager = Some(pmanager);
+        self.persistent_memory.borrow_mut().pmanager = Some(pmanager);
     }
 
     /// Get a reference to the early memory manager.
@@ -249,7 +249,7 @@ impl PerCoreMemory {
     }
 
     pub(crate) fn pmem_manager(&self) -> RefMut<dyn MemManager> {
-        RefMut::map(self.pmem_memory.borrow_mut(), |pm| {
+        RefMut::map(self.persistent_memory.borrow_mut(), |pm| {
             pm.pmanager.as_mut().unwrap()
         })
     }
@@ -259,7 +259,7 @@ impl fmt::Debug for PerCoreMemory {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("PerCoreMemory")
             //.field("physical_memory", &self.physical_memory)
-            //.field("pmem_memory", &self.pmem_memory)
+            //.field("persistent_memory", &self.persistent_memory)
             //.field("memory_arenas", &self.memory_arenas)
             //.field("pmem_arenas", &self.pmem_arenas)
             .field("emanager", &self.emanager)

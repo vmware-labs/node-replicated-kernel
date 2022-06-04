@@ -273,7 +273,7 @@ impl KernelAllocator {
                 )
             }
             MemType::PMem => {
-                let affinity = { pcm.physical_memory.borrow().affinity };
+                let affinity = { pcm.persistent_memory.borrow().affinity };
                 (
                     pcm.pgmanager.unwrap(),
                     pcm.pmem_manager(),

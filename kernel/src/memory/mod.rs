@@ -369,7 +369,7 @@ impl KernelAllocator {
         } else {
             let mut cas = pcm.try_allocator_state()?;
             if needs_a_base_page {
-                let frame = cas.pmanager.as_mut().unwrap().allocate_base_page()?;
+                let frame = cas.pmanager.allocate_base_page()?;
                 unsafe {
                     let base_page_ptr: *mut slabmalloc::ObjectPage =
                         frame.uninitialized::<slabmalloc::ObjectPage>().as_mut_ptr();
@@ -379,7 +379,7 @@ impl KernelAllocator {
                 }
             } else {
                 // Needs a large page
-                let frame = cas.pmanager.as_mut().unwrap().allocate_large_page()?;
+                let frame = cas.pmanager.allocate_large_page()?;
                 unsafe {
                     let large_page_ptr: *mut slabmalloc::LargeObjectPage = frame
                         .uninitialized::<slabmalloc::LargeObjectPage>()

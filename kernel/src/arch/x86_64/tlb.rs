@@ -141,7 +141,7 @@ fn advance_log(log_id: usize) {
 }
 
 pub(crate) fn eager_advance_fs_replica() {
-    let core_id = *crate::kcb::CORE_ID;
+    let core_id = *crate::environment::CORE_ID;
 
     match IPI_WORKQUEUE[core_id].pop() {
         Some(msg) => {
@@ -210,7 +210,7 @@ fn send_ipi_multicast(ldr: u32) {
 /// It divides IPIs into clusters to avoid overhead of sending IPIs individually.
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
 pub(crate) fn shootdown(handle: TlbFlushHandle) {
-    let my_gtid = *crate::kcb::CORE_ID;
+    let my_gtid = *crate::environment::CORE_ID;
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
     // Cluster ID (LDR[31:16]) is the address of the destination cluster

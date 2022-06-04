@@ -23,8 +23,8 @@ use spin::Mutex;
 
 use crate::arch::kcb::per_core_mem;
 use crate::arch::MAX_NUMA_NODES;
+use crate::environment;
 use crate::error::KError;
-use crate::kcb;
 use crate::mpmc::Queue;
 
 /// Makes allocation failures are deterministic (across all replicas) when used
@@ -75,7 +75,7 @@ impl DeterministicAlloc {
 
     pub(crate) fn alloc(&self, l: Layout) -> *mut u8 {
         let pcm = per_core_mem();
-        let nid = *crate::kcb::NODE_ID;
+        let nid = *crate::environment::NODE_ID;
 
         if let Some((rl, ptr)) = self.qs[nid].pop() {
             // Queue wasn't empty; the leading replica already allocated on our
@@ -198,7 +198,7 @@ mod test {
             let memalloc = memalloc.clone();
             threads.push(thread::spawn(move || {
                 {
-                    let nid = crate::kcb::NODE_ID.as_mut_ptr();
+                    let nid = crate::environment::NODE_ID.as_mut_ptr();
                     // Safety: Just for testing set a dummy node-id; we have
                     // exclusive access
                     unsafe { *nid = i % MAX_REPLICAS };

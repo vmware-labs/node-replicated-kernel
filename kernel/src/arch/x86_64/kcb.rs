@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 use core::pin::Pin;
 use core::ptr;
 
-use log::trace;
+use log::{debug, trace};
 use x86::current::segmentation;
 use x86::current::task::TaskStateSegment;
 use x86::msr::{wrmsr, IA32_KERNEL_GSBASE};
@@ -18,12 +18,14 @@ use crate::stack::{OwnedStack, Stack};
 
 use super::gdt::GdtTable;
 use super::irq::IdtTable;
+use super::memory::BASE_PAGE_SIZE;
 
-/// "Dereferences" the fs register at `offset`.
+/// "Dereferences" the gs register at `offset`.
+/// TODO: use the x86 crate version once we update to >=0.49
 ///
 /// # Safety
-/// - Offset needs to be within valid memory for whatever the gs register points
-///   to.
+/// - Offset needs to be within valid memory relative to what the gs register
+///   points to.
 macro_rules! gs_deref {
     ($offset:expr) => {{
         let gs: u64;
@@ -87,13 +89,16 @@ pub(crate) fn per_core_mem() -> &'static PerCoreMemory {
 
 /// Retrieve the Arch86Kcb by reading the gs register.
 ///
+///
 /// # Panic
 /// This will fail in case the KCB is not yet set (i.e., early on during
 /// initialization).
 pub(crate) fn get_kcb<'a>() -> &'a mut Arch86Kcb {
-    // TODO(safety): not safe should return a non-mut reference with mutable
-    // stuff wrapped in RefCell or similar (treat the same as a thread-local)
     unsafe {
+        // Safety:
+        // - TODO(safety+soundness): not safe, should return a non-mut reference
+        //   with mutable stuff (it's just save_area that's left) wrapped in
+        //   RefCell or similar (treat the same as a thread-local)
         let kcb = segmentation::rdgsbase() as *mut Arch86Kcb;
         assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
         let kptr = ptr::NonNull::new_unchecked(kcb);
@@ -109,6 +114,9 @@ pub(crate) fn get_kcb<'a>() -> &'a mut Arch86Kcb {
 pub(crate) struct Arch86Kcb {
     /// Pointer to the syscall stack (this is referenced in assembly) and should
     /// therefore always remain at offset 0 of the Kcb struct!
+    ///
+    /// The memory it points to shouldn't be accessed/modified at any point in
+    /// the code (through this pointer).
     pub(super) syscall_stack_top: *mut u8,
 
     /// Pointer to the save area of the core, this is referenced on trap/syscall
@@ -190,7 +198,7 @@ impl Arch86Kcb {
         }
     }
 
-    pub(crate) fn set_interrupt_stacks(
+    fn set_interrupt_stacks(
         &mut self,
         ex_stack: OwnedStack,
         fault_stack: OwnedStack,
@@ -226,7 +234,7 @@ impl Arch86Kcb {
         self.unrecoverable_fault_stack = Some(fault_stack);
     }
 
-    pub(crate) fn set_syscall_stack(&mut self, stack: OwnedStack) {
+    fn set_syscall_stack(&mut self, stack: OwnedStack) {
         self.syscall_stack_top = stack.base();
         trace!("Syscall stack top set to: {:p}", self.syscall_stack_top);
         self.syscall_stack = Some(stack);
@@ -235,7 +243,7 @@ impl Arch86Kcb {
     /// Install a CPU register save-area.
     ///
     /// Register are store here in case we get an interrupt/sytem call
-    pub(crate) fn set_save_area(&mut self, save_area: Pin<Box<kpi::arch::SaveArea>>) {
+    fn set_save_area(&mut self, save_area: Pin<Box<kpi::arch::SaveArea>>) {
         self.save_area = Some(save_area);
     }
 
@@ -263,12 +271,45 @@ impl Arch86Kcb {
     }
 
     pub(super) fn install(&mut self) {
+        unsafe { self.initialize_gs() };
+        debug!("Basic memory allocation should work at this point...");
+
+        // We can finish KCB initialization (easier as we have a working alloc
+        // interface now):
+        self.set_interrupt_stacks(
+            OwnedStack::new(128 * BASE_PAGE_SIZE),
+            OwnedStack::new(128 * BASE_PAGE_SIZE),
+            OwnedStack::new(128 * BASE_PAGE_SIZE),
+        );
+        self.set_syscall_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
+        self.set_save_area(Box::pin(kpi::x86_64::SaveArea::empty()));
+
         unsafe {
             // Switch to our new, core-local Gdt and Idt:
             self.gdt.install();
             self.idt.install();
-            // gdt install will reload/reset gs/fs segments.
+            // gdt install will reload/reset gs/fs segments so initialize the gs
+            // reg again with self
             self.initialize_gs();
+        }
+
+        // Install thread-local storage for (this sets up the fs register)
+        if let Some(tls_args) = crate::KERNEL_ARGS.get().and_then(|k| k.tls_info.as_ref()) {
+            use super::tls::ThreadControlBlock;
+            unsafe {
+                // Safety for `ThreadControlBlock::init`:
+                // - we have called `enable_fsgsbase()`: yes, see x86_64/mod.rs
+                // - We have the final GDT installed (otherwise fs is reset):
+                //   yes, see above
+                // - TLS has not yet been initialized:
+                assert!(
+                    x86::bits64::segmentation::rdfsbase() == 0x0,
+                    "BIOS/UEFI initializes `fs` with 0x0"
+                );
+                let tcb = ThreadControlBlock::init(tls_args)
+                    .expect("Unable to initialize TLS during init");
+                self.tls_base = tcb;
+            }
         }
     }
 
@@ -282,9 +323,9 @@ impl Arch86Kcb {
     ///      basic memory allocation working
     ///   2. Later on, once we have a fully initialized KCB and want to change
     ///      the GDT/IDT tables and therefore we have to reload the `gs`
-    ///      register. This is taken care of by the [`ArchX86Kcb::install`]
-    ///      function.
-    pub(super) unsafe fn initialize_gs(&mut self) {
+    ///      register.
+    /// - This is taken care of by only calling this in [`ArchX86Kcb::install`].
+    unsafe fn initialize_gs(&mut self) {
         /// Installs the KCB by setting storing a pointer to it in the `gs`
         /// register.
         ///

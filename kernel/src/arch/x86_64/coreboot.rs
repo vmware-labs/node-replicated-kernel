@@ -7,15 +7,31 @@
 //! make sure these two files are and stay in sync.
 
 use alloc::sync::Arc;
-use core::sync::atomic::AtomicBool;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use apic::ApicDriver;
+use cnr::Log as MlnrLog;
+use cnr::Replica as MlnrReplica;
+use fallible_collections::FallibleVecGlobal;
+use fallible_collections::TryClone;
+use log::debug;
 use log::trace;
+use node_replication::{Log, Replica};
 use x86::apic::ApicId;
 use x86::current::paging::PAddr;
 
+use crate::arch::kcb;
+use crate::fs::cnrfs::MlnrKernelNode;
+use crate::fs::cnrfs::Modify;
+use crate::memory::backends::PhysicalPageProvider;
+use crate::memory::global::GlobalMemory;
 use crate::memory::vspace::MapAction;
+use crate::memory::Frame;
+use crate::nr::KernelNode;
+use crate::nr::Op;
 use crate::round_up;
+use crate::stack::OwnedStack;
 use crate::stack::Stack;
 
 use super::memory::BASE_PAGE_SIZE;
@@ -31,6 +47,20 @@ const REAL_MODE_LINEAR_OFFSET: u16 = X86_64_REAL_MODE_SEGMENT << 4;
 
 /// The corresponding 64-bit address (0 + offset in our case).
 const REAL_MODE_BASE: usize = REAL_MODE_LINEAR_OFFSET as usize;
+
+/// Arguments that are passed from the BSP core to the new AP core
+/// during core-booting.
+pub(crate) struct AppCoreArgs {
+    pub(super) _mem_region: Frame,
+    pub(super) _pmem_region: Option<Frame>,
+    pub(super) global_memory: &'static GlobalMemory,
+    pub(super) global_pmem: &'static GlobalMemory,
+    pub(super) thread: atopology::ThreadId,
+    pub(super) node: atopology::NodeId,
+    pub(super) _log: Arc<Log<'static, Op>>,
+    pub(super) replica: Arc<Replica<'static, KernelNode>>,
+    pub(super) fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+}
 
 /// Return the address range of `start_ap.S` as (start, end)
 ///
@@ -258,10 +288,13 @@ unsafe fn wakeup_core(core_id: ApicId) {
 /// Starts up the core identified by `core_id`, after initialization it begins
 /// to executing in `init_function` and uses `stack` as a stack.
 ///
+/// # Visibility
+/// Should ideally not be `pub`, but it's used for testing.
+///
 /// # Safety
-/// You're waking up a core that goes off and does random things
-/// (if not being careful), so this can be pretty bad for memory safety.
-pub unsafe fn initialize<A>(
+/// You're waking up a core that goes off and does random things (if not being
+/// careful), so this can be pretty bad for memory safety.
+pub(crate) unsafe fn initialize<A>(
     core_id: x86::apic::ApicId,
     init_function: fn(Arc<A>, &AtomicBool),
     args: Arc<A>,
@@ -283,4 +316,151 @@ pub unsafe fn initialize<A>(
 
     // Send IPIs
     wakeup_core(core_id);
+}
+
+/// Initialize the rest of the cores in the system.
+///
+/// # Arguments
+/// - `kernel_binary` - A slice of the kernel binary.
+/// - `kernel_args` - Intial arguments as passed by UEFI to the kernel.
+/// - `global_memory` - Memory allocator collection.
+/// - `log` - A reference to the operation log.
+/// - `bsp_replica` - Replica that the BSP core created and is registered to.
+///
+/// # Notes
+/// Dependencies for calling this function are:
+///  - Initialized ACPI
+///  - Initialized topology
+///  - Local APIC driver
+pub(super) fn boot_app_cores(
+    log: Arc<Log<'static, Op>>,
+    bsp_replica: Arc<Replica<'static, KernelNode>>,
+    fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
+    fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+) {
+    let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
+    debug_assert_eq!(
+        *crate::environment::NODE_ID,
+        0,
+        "The BSP core is not on node 0?"
+    );
+
+    // Let's go with one replica per NUMA node for now:
+    let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+
+    let mut replicas: Vec<Arc<Replica<'static, KernelNode>>> =
+        Vec::try_with_capacity(numa_nodes).expect("Not enough memory to initialize system");
+    let mut fs_replicas: Vec<Arc<MlnrReplica<'static, MlnrKernelNode>>> =
+        Vec::try_with_capacity(numa_nodes).expect("Not enough memory to initialize system");
+
+    // Push the replica for node 0
+    debug_assert!(replicas.capacity() >= 1, "No re-allocation.");
+    replicas.push(bsp_replica);
+    debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
+    fs_replicas.push(fs_replica);
+
+    let pcm = kcb::per_core_mem();
+    for node in 1..numa_nodes {
+        pcm.set_mem_affinity(node as atopology::NodeId)
+            .expect("Can't set affinity");
+
+        debug_assert!(replicas.capacity() > node, "No re-allocation.");
+        replicas.push(Replica::<'static, KernelNode>::new(&log));
+
+        debug_assert!(fs_replicas.capacity() > node, "No re-allocation.");
+        fs_replicas.push(MlnrReplica::new(
+            fs_logs
+                .try_clone()
+                .expect("Not enough memory to initialize system"),
+        ));
+
+        pcm.set_mem_affinity(0).expect("Can't set affinity");
+    }
+
+    let global_memory = pcm.gmanager.expect("boot_app_cores requires kcb.gmanager");
+    let global_pmem = pcm
+        .pgmanager
+        .expect("boot_app_cores requires persistent_memory gmanager");
+
+    // For now just boot everything, except ourselves
+    // Create a single log and one replica...
+    let threads_to_boot = atopology::MACHINE_TOPOLOGY
+        .threads()
+        .filter(|t| t != &bsp_thread);
+
+    for thread in threads_to_boot {
+        let node = thread.node_id.unwrap_or(0);
+        trace!("Booting {:?} on node {}", thread, node);
+        pcm.set_mem_affinity(node).expect("Can't set affinity");
+
+        // A simple stack for the app core (non bootstrap core)
+        let coreboot_stack: OwnedStack = OwnedStack::new(BASE_PAGE_SIZE * 512);
+        let mem_region = global_memory.node_caches[node as usize]
+            .lock()
+            .allocate_large_page()
+            .expect("Can't allocate large page");
+        let pmem_region = match global_pmem.node_caches.len() == numa_nodes {
+            true => {
+                pcm.set_pmem_affinity(node).expect("Can't set affinity");
+                Some(
+                    global_pmem.node_caches[node as usize]
+                        .lock()
+                        .allocate_large_page()
+                        .expect("Can't allocate large page"),
+                )
+            }
+            false => None,
+        };
+
+        let initialized: AtomicBool = AtomicBool::new(false);
+        let arg: Arc<AppCoreArgs> = Arc::try_new(AppCoreArgs {
+            _mem_region: mem_region,
+            _pmem_region: pmem_region,
+            node,
+            global_memory,
+            global_pmem,
+            thread: thread.id,
+            _log: log.clone(),
+            replica: replicas[node as usize]
+                .try_clone()
+                .expect("Not enough memory to initialize system"),
+            fs_replica: fs_replicas[node as usize]
+                .try_clone()
+                .expect("Not enough memory to initialize system"),
+        })
+        .expect("Not enough memory to initialize system");
+
+        unsafe {
+            initialize(
+                thread.apic_id(),
+                super::start_app_core,
+                arg.clone(),
+                &initialized,
+                &coreboot_stack,
+            );
+
+            // Wait until core is up or we time out
+            let start = rawtime::Instant::now();
+            loop {
+                // Did the core signal us initialization completed?
+                if initialized.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                // Have we waited long enough?
+                if start.elapsed().as_secs() > 1 {
+                    panic!("Core {:?} didn't boot properly...", thread.apic_id());
+                }
+
+                core::hint::spin_loop();
+            }
+        }
+        core::mem::forget(coreboot_stack);
+
+        assert!(initialized.load(Ordering::SeqCst));
+        debug!("Core {:?} has started", thread.apic_id());
+        pcm.set_mem_affinity(0).expect("Can't set affinity");
+    }
+
+    core::mem::forget(replicas);
 }

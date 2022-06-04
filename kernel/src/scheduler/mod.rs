@@ -38,8 +38,10 @@ pub(crate) fn schedule() -> ! {
     if unlikely(!crate::arch::process::has_executor()) {
         if let Some((replica, token)) = NR_REPLICA.get() {
             loop {
-                let response =
-                    replica.execute(nr::ReadOps::CurrentProcess(*crate::kcb::CORE_ID), *token);
+                let response = replica.execute(
+                    nr::ReadOps::CurrentProcess(*crate::environment::CORE_ID),
+                    *token,
+                );
 
                 match response {
                     Ok(nr::NodeResult::CoreInfo(ci)) => {

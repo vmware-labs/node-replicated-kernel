@@ -24,7 +24,7 @@ pub(crate) struct PerCoreAllocatorState {
     pub affinity: atopology::NodeId,
 
     /// A handle to the per-core page-allocator.
-    pub pmanager: Option<FrameCacheSmall>,
+    pub pmanager: FrameCacheSmall,
 
     /// A handle to the per-core ZoneAllocator.
     pub zone_allocator: ZoneAllocator<'static>,
@@ -32,19 +32,10 @@ pub(crate) struct PerCoreAllocatorState {
 
 impl PerCoreAllocatorState {
     /// Create a new `PerCoreAllocatorState` for the given `affinity`.
-    fn new(node: atopology::NodeId) -> Self {
+    const fn new(node: atopology::NodeId) -> Self {
         PerCoreAllocatorState {
             affinity: node,
-            pmanager: Some(FrameCacheSmall::new(node)),
-            zone_allocator: ZoneAllocator::new(),
-        }
-    }
-
-    /// Does not create allocators, just sets affinity.
-    const fn empty_for_node(node: atopology::NodeId) -> Self {
-        PerCoreAllocatorState {
-            affinity: node,
-            pmanager: None,
+            pmanager: FrameCacheSmall::new(node),
             zone_allocator: ZoneAllocator::new(),
         }
     }
@@ -104,16 +95,13 @@ impl PerCoreMemory {
             ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
             memory_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES]),
             pmem_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES]),
-            // Can't initialize these yet, we need basic Kcb first for
-            // memory allocations (emanager):
-            physical_memory: RefCell::new(PerCoreAllocatorState::empty_for_node(node)),
-            persistent_memory: RefCell::new(PerCoreAllocatorState::empty_for_node(node)),
+            physical_memory: RefCell::new(PerCoreAllocatorState::new(node)),
+            persistent_memory: RefCell::new(PerCoreAllocatorState::new(node)),
         }
     }
 
     pub(super) fn use_emergency_allocator(&self) -> bool {
-        let no_pmanager = self.physical_memory.borrow().pmanager.is_none();
-        self.in_panic_mode() || self.gmanager.is_none() || no_pmanager
+        self.in_panic_mode() || self.gmanager.is_none()
     }
 
     pub(crate) fn in_panic_mode(&self) -> bool {
@@ -181,14 +169,6 @@ impl PerCoreMemory {
         )
     }
 
-    pub(crate) fn set_mem_manager(&self, pmanager: FrameCacheSmall) {
-        self.physical_memory.borrow_mut().pmanager = Some(pmanager);
-    }
-
-    pub(crate) fn set_pmem_manager(&self, pmanager: FrameCacheSmall) {
-        self.persistent_memory.borrow_mut().pmanager = Some(pmanager);
-    }
-
     /// Get a reference to the early memory manager.
     pub(crate) fn emanager(&self) -> RefMut<FrameCacheEarly> {
         self.emanager.borrow_mut()
@@ -219,26 +199,22 @@ impl PerCoreMemory {
     /// Returns a reference to the core-local physical memory manager if set,
     /// otherwise returns the early physical memory manager.
     pub(crate) fn mem_manager(&self) -> RefMut<dyn MemManager> {
-        let has_pmanager = { self.physical_memory.borrow().pmanager.is_some() };
-        if core::intrinsics::unlikely(self.in_panic_mode()) || !has_pmanager {
+        if core::intrinsics::unlikely(self.use_emergency_allocator()) {
             return self.emanager();
         }
 
-        RefMut::map(self.physical_memory.borrow_mut(), |pm| {
-            pm.pmanager.as_mut().unwrap()
-        })
+        RefMut::map(self.physical_memory.borrow_mut(), |pm| &mut pm.pmanager)
     }
 
     pub(crate) fn try_mem_manager(
         &self,
     ) -> Result<RefMut<dyn MemManager>, core::cell::BorrowMutError> {
-        let has_pmanager = { self.physical_memory.borrow().pmanager.is_some() };
-        if core::intrinsics::unlikely(self.in_panic_mode()) || !has_pmanager {
+        if core::intrinsics::unlikely(self.use_emergency_allocator()) {
             return Ok(self.emanager());
         }
 
         Ok(RefMut::map(self.physical_memory.try_borrow_mut()?, |pm| {
-            pm.pmanager.as_mut().unwrap()
+            &mut pm.pmanager
         }))
     }
 
@@ -249,9 +225,7 @@ impl PerCoreMemory {
     }
 
     pub(crate) fn pmem_manager(&self) -> RefMut<dyn MemManager> {
-        RefMut::map(self.persistent_memory.borrow_mut(), |pm| {
-            pm.pmanager.as_mut().unwrap()
-        })
+        RefMut::map(self.persistent_memory.borrow_mut(), |pm| &mut pm.pmanager)
     }
 }
 

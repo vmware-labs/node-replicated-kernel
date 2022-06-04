@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use log::info;
 use spin::Mutex;
 
-use crate::kcb;
+use crate::environment;
 
 /// The maximum number of PCI devices we support on the machine.
 ///

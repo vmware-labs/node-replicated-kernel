@@ -350,7 +350,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
                 // code doesn't really do anything...
                 trace!(
                     "Spurious page-fault, after resolve page-table is up to date {} {} -> {:#x} {:#b} on {}",
-                    pid, faulting_address_va, paddr, rights, *crate::kcb::CORE_ID
+                    pid, faulting_address_va, paddr, rights, *crate::environment::CORE_ID
                 );
                 let r = kcb_iret_handle(kcb);
                 r.resume()
@@ -361,7 +361,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
         }
     }
 
-    sprintln!("[IRQ] Page Fault on {}", *crate::kcb::CORE_ID);
+    sprintln!("[IRQ] Page Fault on {}", *crate::environment::CORE_ID);
     sprintln!("{}", err);
 
     // Enable user-space access
@@ -670,7 +670,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         assert!(a.vector < 256);
         //trace!("handle_generic_exception {:?}", a);
         acknowledge();
-        let core_id = *crate::kcb::CORE_ID;
+        let core_id = *crate::environment::CORE_ID;
 
         let kcb = get_kcb();
 
@@ -846,6 +846,22 @@ pub(crate) fn ioapic_establish_route(_gsi: u64, _core: u64) {
 
 fn acknowledge() {
     LOCAL_APIC.borrow_mut().eoi();
+}
+
+/// Construct the driver object to manipulate the interrupt controller (XAPIC)
+pub(super) fn init_apic() {
+    use driverkit::DriverControl;
+    let mut apic = LOCAL_APIC.borrow_mut();
+    // Attach the driver to take control of the APIC:
+    apic.attach();
+
+    info!(
+        "x2APIC id: {}, logical_id: {}, version: {:#x}, is bsp: {}",
+        apic.id(),
+        apic.logical_id(),
+        apic.version(),
+        apic.bsp()
+    );
 }
 
 pub(crate) fn enable() {

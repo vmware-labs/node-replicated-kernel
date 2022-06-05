@@ -3,20 +3,16 @@
 
 //! Test file-system syscall implementation using unit-tests.
 use alloc::string::{String, ToString};
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::cmp::{max, min, Eq, PartialEq};
-use core::slice::{from_raw_parts, from_raw_parts_mut};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use cstr_core::CStr;
 use hashbrown::HashMap;
 
-use crate::alloc::borrow::ToOwned;
-
 use vibrio::io::*;
 use vibrio::SystemCallError;
-use x86::bits64::paging::{PAddr, VAddr};
+use x86::bits64::paging::VAddr;
 
 use log::trace;
 use proptest::prelude::*;
@@ -369,22 +365,16 @@ impl ModelFIO {
         }
     }
 
-    pub fn write(&self, fid: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        self.write_at(fid, buffer, len, -1)
+    pub fn write(&self, fid: u64, buffer: &[u8]) -> Result<u64, SystemCallError> {
+        self.write_at(fid, buffer, -1)
     }
 
     /// Write just logs the write to the oplog.
     ///
     /// Our model assumes that the buffer repeats the first byte for its entire length.
-    pub fn write_at(
-        &self,
-        fid: u64,
-        buffer: u64,
-        len: u64,
-        offset: i64,
-    ) -> Result<u64, SystemCallError> {
+    pub fn write_at(&self, fid: u64, buffer: &[u8], offset: i64) -> Result<u64, SystemCallError> {
         // TODO: this seems wrong... should be InternalError??
-        if len == 0 {
+        if buffer.len() == 0 {
             return Err(SystemCallError::BadFileDescriptor);
         }
 
@@ -425,28 +415,30 @@ impl ModelFIO {
                 }
             }
 
-            if len > 0 {
+            if buffer.len() > 0 {
                 // Model assumes that buffer is filled with the same pattern all the way
-                let slice = unsafe { from_raw_parts(buffer as *const u8, 1) };
-                let pattern = slice[0] as char;
-                self.oplog
-                    .borrow_mut()
-                    .push(ModelOperation::Write(mnode, my_offset, pattern, len));
+                let pattern = buffer[0] as char;
+                self.oplog.borrow_mut().push(ModelOperation::Write(
+                    mnode,
+                    my_offset,
+                    pattern,
+                    buffer.len() as u64,
+                ));
 
                 if offset == -1 {
-                    fd.update_offset(my_offset as usize + len as usize);
+                    fd.update_offset(my_offset as usize + buffer.len());
                 }
             }
 
-            Ok(len)
+            Ok(buffer.len() as u64)
         } else {
             trace!("write_at() - Failed to find mnode for fid {:?}", fid);
             Err(SystemCallError::InternalError)
         }
     }
 
-    pub fn read(&self, fid: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        self.read_at(fid, buffer, len, -1)
+    pub fn read(&self, fid: u64, buffer: &mut [u8]) -> Result<u64, SystemCallError> {
+        self.read_at(fid, buffer, -1)
     }
 
     /// read loops through the oplog and tries to fill up the buffer by looking
@@ -456,12 +448,11 @@ impl ModelFIO {
     pub fn read_at(
         &self,
         fid: u64,
-        buffer: u64,
-        len: u64,
+        buffer: &mut [u8],
         offset: i64,
     ) -> Result<u64, SystemCallError> {
         // TODO: this seems wrong, should be internal Error??
-        if len == 0 {
+        if buffer.len() == 0 {
             return Err(SystemCallError::BadFileDescriptor);
         }
 
@@ -504,7 +495,7 @@ impl ModelFIO {
             }
 
             // Calculate how many bytes we expect to read
-            let expected_bytes = min(size - my_offset, len as i64);
+            let expected_bytes = min(size - my_offset, buffer.len() as i64);
             if expected_bytes == 0 {
                 return Ok(0);
             }
@@ -559,8 +550,6 @@ impl ModelFIO {
             let _iter = buffer_gatherer.iter().enumerate().rev();
             let mut drop_top = true;
             let mut bytes_read = 0;
-            let mut slice =
-                unsafe { from_raw_parts_mut(buffer as *mut u8, expected_bytes as usize) };
             for (idx, val) in buffer_gatherer.iter().enumerate().rev() {
                 if drop_top {
                     if val.is_some() {
@@ -574,8 +563,8 @@ impl ModelFIO {
                     bytes_read += 1;
                 }
 
-                slice[idx] = val.unwrap_or(0);
-                trace!("buffer = {:?}", slice);
+                buffer[idx] = val.unwrap_or(0);
+                trace!("buffer = {:?}", buffer);
             }
 
             if offset == -1 {
@@ -594,20 +583,20 @@ impl ModelFIO {
     }
 
     /// Delete finds and removes a path from the oplog again.
-    pub fn delete(&self, path: &str) -> Result<bool, SystemCallError> {
+    pub fn delete(&self, path: &str) -> Result<(), SystemCallError> {
         // TODO: Check to see if there are any open fds to this mnode.
         if let Some(mnode) = self.lookup(path) {
             self.remove_entries(mnode, true, true);
-            Ok(true)
+            Ok(())
         } else {
             trace!("delete() - Failed to find mnode for path {:?}", path);
             Err(SystemCallError::InternalError)
         }
     }
 
-    pub fn close(&mut self, fid: u64) -> Result<u64, SystemCallError> {
+    pub fn close(&mut self, fid: u64) -> Result<(), SystemCallError> {
         self.fds.deallocate_fd(fid)?;
-        Ok(0)
+        Ok(())
     }
 }
 
@@ -624,20 +613,20 @@ fn model_read() {
         .unwrap();
 
     let mut wdata1: [u8; 2] = [1, 1];
-    let r = mfs.write_at(fd, wdata1.as_ptr() as u64, 2, 0);
+    let r = mfs.write_at(fd, &wdata1, 0);
     assert_eq!(r, Ok(2));
 
     let mut wdata: [u8; 2] = [2, 2];
-    let r = mfs.write_at(fd, wdata.as_ptr() as u64, 2, 2);
+    let r = mfs.write_at(fd, &wdata, 2);
     assert_eq!(r, Ok(2));
 
     let mut rdata: [u8; 2] = [0, 0];
 
-    let r = mfs.read_at(fd, rdata.as_ptr() as u64, 2, 0);
+    let r = mfs.read_at(fd, &mut rdata, 0);
     assert_eq!(rdata, [1, 1]);
     assert_eq!(r, Ok(2));
 
-    let r = mfs.read_at(fd, rdata.as_ptr() as u64, 2, 2);
+    let r = mfs.read_at(fd, &mut rdata, 2);
     assert_eq!(rdata, [2, 2]);
     assert_eq!(r, Ok(2));
 }
@@ -657,14 +646,14 @@ fn model_overlapping_writes() {
         .unwrap();
 
     let mut data: [u8; 3] = [1, 1, 1];
-    let r = mfs.write(fd, data.as_ptr() as u64, 3);
+    let r = mfs.write(fd, &data);
     assert_eq!(r, Ok(3));
 
     let mut wdata: [u8; 3] = [2, 2, 2];
-    let r = mfs.write_at(fd, wdata.as_ptr() as u64, 3, 2);
+    let r = mfs.write_at(fd, &wdata, 2);
 
     let mut rdata: [u8; 6] = [0, 0, 0, 0, 0, 0];
-    let r = mfs.read_at(fd, rdata.as_ptr() as u64, 5, 0);
+    let r = mfs.read_at(fd, &mut rdata[..5], 0);
     assert_eq!(r, Ok(5));
     assert_eq!(rdata, [1, 1, 2, 2, 2, 0]);
 }
@@ -675,10 +664,10 @@ fn model_overlapping_writes() {
 /// necessary arguments to construct an operation for said function.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum TestAction {
-    Read(u64, u64),
-    Write(u64, char, u64),
-    ReadAt(u64, u64, i64),
-    WriteAt(u64, char, u64, i64),
+    Read(u64, usize),
+    Write(u64, char, usize),
+    ReadAt(u64, usize, i64),
+    WriteAt(u64, char, usize, i64),
     Open(Vec<String>, FileFlags, FileModes),
     Delete(Vec<String>),
     Close(u64),
@@ -746,7 +735,7 @@ prop_compose! {
 
 // Generates a random (read/write)-request size.
 prop_compose! {
-    fn size_gen(max: u64)(size in 0..max) -> u64 { size }
+    fn size_gen(max: usize)(size in 0..max) -> usize { size }
 }
 
 /// Generates a random path entry.
@@ -786,9 +775,8 @@ fn model_equivalence(ops: Vec<TestAction>) {
 
                 let mut buffer1 = [0u8; 128];
                 let mut buffer2 = [0u8; 128];
-                let rmodel = model.read(fd, buffer1.as_mut_ptr() as u64, len);
-                let rtotest =
-                    vibrio::syscalls::Fs::read(rtotest_fd, buffer2.as_mut_ptr() as u64, len);
+                let rmodel = model.read(fd, &mut buffer1[..len]);
+                let rtotest = vibrio::syscalls::Fs::read(rtotest_fd, &mut buffer2[..len as usize]);
                 assert_eq!(rmodel, rtotest);
                 assert_eq!(buffer1, buffer2);
             }
@@ -802,9 +790,8 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 for _i in 0..len {
                     buffer.push(pattern as u8);
                 }
-                let rmodel = model.write(fd, buffer.as_mut_ptr() as u64, len);
-                let rtotest =
-                    vibrio::syscalls::Fs::write(rtotest_fd, buffer.as_mut_ptr() as u64, len);
+                let rmodel = model.write(fd, &buffer[..len]);
+                let rtotest = vibrio::syscalls::Fs::write(rtotest_fd, &buffer[..len]);
                 assert_eq!(rmodel, rtotest);
             }
             ReadAt(fd, len, offset) => {
@@ -815,13 +802,9 @@ fn model_equivalence(ops: Vec<TestAction>) {
 
                 let mut buffer1 = [0u8; 128];
                 let mut buffer2 = [0u8; 128];
-                let rmodel = model.read_at(fd, buffer1.as_mut_ptr() as u64, len, offset);
-                let rtotest = vibrio::syscalls::Fs::read_at(
-                    rtotest_fd,
-                    buffer2.as_mut_ptr() as u64,
-                    len,
-                    offset,
-                );
+                let rmodel = model.read_at(fd, &mut buffer1[..len], offset);
+                let rtotest =
+                    vibrio::syscalls::Fs::read_at(rtotest_fd, &mut buffer2[..len], offset);
                 assert_eq!(rmodel, rtotest);
                 assert_eq!(buffer1, buffer2);
             }
@@ -835,13 +818,8 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 for _i in 0..len {
                     buffer.push(pattern as u8);
                 }
-                let rmodel = model.write_at(fd, buffer.as_mut_ptr() as u64, len, offset);
-                let rtotest = vibrio::syscalls::Fs::write_at(
-                    rtotest_fd,
-                    buffer.as_mut_ptr() as u64,
-                    len,
-                    offset,
-                );
+                let rmodel = model.write_at(fd, &buffer[..len], offset);
+                let rtotest = vibrio::syscalls::Fs::write_at(rtotest_fd, &buffer[..len], offset);
                 assert_eq!(rmodel, rtotest);
             }
             Open(path, flags, mode) => {
@@ -916,7 +894,7 @@ fn test_file_read_permission_error() {
     .unwrap();
     let mut rdata = [0u8; 6];
     assert_eq!(
-        vibrio::syscalls::Fs::read(fd, rdata.as_mut_ptr() as u64, 6),
+        vibrio::syscalls::Fs::read(fd, &mut rdata),
         Err(SystemCallError::InternalError)
     );
     vibrio::syscalls::Fs::close(fd).unwrap();
@@ -930,9 +908,9 @@ fn test_file_write_permission_error() {
         FileModes::S_IRWXU,
     )
     .unwrap();
-    let mut wdata = [0u8; 6];
+    let wdata = [0u8; 6];
     assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_mut_ptr() as u64, 6),
+        vibrio::syscalls::Fs::write(fd, &wdata),
         Err(SystemCallError::InternalError)
     );
     vibrio::syscalls::Fs::close(fd).unwrap();
@@ -947,10 +925,7 @@ fn test_file_write() {
     )
     .unwrap();
     let wdata = [0u8; 10];
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
-        Ok(10)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd, &wdata), Ok(10));
     vibrio::syscalls::Fs::close(fd).unwrap();
 }
 
@@ -966,14 +941,8 @@ fn test_file_read() {
     let wdata = [1u8; 10];
     let mut rdata = [0u8; 10];
 
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
-        Ok(10)
-    );
-    assert_eq!(
-        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 10, 0),
-        Ok(10)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd, &wdata), Ok(10));
+    assert_eq!(vibrio::syscalls::Fs::read_at(fd, &mut rdata, 0), Ok(10));
     assert_eq!(rdata[0], 1);
     assert_eq!(rdata[5], 1);
     assert_eq!(rdata[9], 1);
@@ -1021,7 +990,7 @@ fn test_file_duplicate_close() {
         FileModes::S_IRWXU,
     )
     .unwrap();
-    assert_eq!(vibrio::syscalls::Fs::close(fd), Ok(0));
+    assert_eq!(vibrio::syscalls::Fs::close(fd), Ok(()));
     assert_eq!(
         vibrio::syscalls::Fs::close(fd),
         Err(SystemCallError::InternalError)
@@ -1046,18 +1015,12 @@ fn test_file_multiple_fd() {
 
     // Write to file with fd2 & close fd2
     let wdata = [1u8; 10];
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd2, wdata.as_ptr() as u64, 10),
-        Ok(10)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd2, &wdata), Ok(10));
     vibrio::syscalls::Fs::close(fd2).unwrap();
 
     // Read from file with fd1 & close fd1
     let mut rdata = [0u8; 10];
-    assert_eq!(
-        vibrio::syscalls::Fs::read_at(fd1, rdata.as_mut_ptr() as u64, 10, 0),
-        Ok(10)
-    );
+    assert_eq!(vibrio::syscalls::Fs::read_at(fd1, &mut rdata, 0), Ok(10));
     assert_eq!(rdata[0], 1);
     assert_eq!(rdata[5], 1);
     assert_eq!(rdata[9], 1);
@@ -1093,7 +1056,7 @@ fn test_file_delete() {
 
     // Delete file
     let ret = vibrio::syscalls::Fs::delete("test_file_info.txt");
-    assert_eq!(ret, Ok(true));
+    assert!(ret.is_ok());
 
     // Attempt to open deleted file
     let ret =
@@ -1160,10 +1123,7 @@ fn test_file_rename_and_read() {
 
     // Write and close
     let wdata = [1u8; 9];
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 9),
-        Ok(9)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd, &wdata), Ok(9));
     vibrio::syscalls::Fs::close(fd).unwrap();
 
     // Rename
@@ -1171,7 +1131,7 @@ fn test_file_rename_and_read() {
         "test_file_rename_and_read_old.txt",
         "test_file_rename_and_read_new.txt",
     );
-    assert_eq!(ret, Ok(0));
+    assert!(ret.is_ok());
 
     // Open new
     let fd = vibrio::syscalls::Fs::open(
@@ -1183,10 +1143,7 @@ fn test_file_rename_and_read() {
 
     // Read
     let mut rdata = [0u8; 9];
-    assert_eq!(
-        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 9, 0),
-        Ok(9)
-    );
+    assert_eq!(vibrio::syscalls::Fs::read_at(fd, &mut rdata, 0), Ok(9));
     assert_eq!(rdata[0], 1);
     assert_eq!(rdata[5], 1);
     assert_eq!(rdata[8], 1);
@@ -1210,7 +1167,7 @@ fn test_file_rename_and_write() {
         "test_file_rename_and_write_old.txt",
         "test_file_rename_and_write_new.txt",
     );
-    assert_eq!(ret, Ok(0));
+    assert!(ret.is_ok());
 
     // Open new
     let fd = vibrio::syscalls::Fs::open(
@@ -1222,17 +1179,11 @@ fn test_file_rename_and_write() {
 
     // Write
     let wdata = [1u8; 9];
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 9),
-        Ok(9)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd, &wdata), Ok(9));
 
     // Read
     let mut rdata = [0u8; 9];
-    assert_eq!(
-        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 9, 0),
-        Ok(9)
-    );
+    assert_eq!(vibrio::syscalls::Fs::read_at(fd, &mut rdata, 0), Ok(9));
     assert_eq!(rdata[0], 1);
     assert_eq!(rdata[5], 1);
     assert_eq!(rdata[8], 1);
@@ -1257,10 +1208,7 @@ fn test_file_rename_to_existent_file() {
     )
     .unwrap();
     let wdata = [1u8; 10];
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
-        Ok(10)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd, &wdata), Ok(10));
     vibrio::syscalls::Fs::close(fd).unwrap();
 
     // Create the old file & write some data to it & close the fd
@@ -1271,10 +1219,7 @@ fn test_file_rename_to_existent_file() {
     )
     .unwrap();
     let wdata = [2u8; 10];
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
-        Ok(10)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd, &wdata), Ok(10));
     vibrio::syscalls::Fs::close(fd).unwrap();
 
     // Rename old file to existing file
@@ -1282,7 +1227,7 @@ fn test_file_rename_to_existent_file() {
         "test_file_rename_to_existent_file_old.txt",
         "test_file_rename_to_existent_file_existing.txt",
     );
-    assert_eq!(ret, Ok(0));
+    assert!(ret.is_ok());
 
     // Open existing file, check it has old file's data
     let fd = vibrio::syscalls::Fs::open(
@@ -1291,11 +1236,8 @@ fn test_file_rename_to_existent_file() {
         FileModes::S_IRWXU,
     )
     .unwrap();
-    let mut rdata = [2u8; 10];
-    assert_eq!(
-        vibrio::syscalls::Fs::read(fd, rdata.as_mut_ptr() as u64, 10),
-        Ok(10)
-    );
+    let mut rdata = [0u8; 10];
+    assert_eq!(vibrio::syscalls::Fs::read(fd, &mut rdata), Ok(10));
     assert_eq!(rdata[0], 2);
     assert_eq!(rdata[5], 2);
     assert_eq!(rdata[9], 2);
@@ -1315,18 +1257,9 @@ fn test_file_position() {
     let wdata2 = [2u8; 10];
     let mut rdata = [0u8; 10];
 
-    assert_eq!(
-        vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
-        Ok(10)
-    );
-    assert_eq!(
-        vibrio::syscalls::Fs::write_at(fd, wdata2.as_ptr() as u64, 10, 5),
-        Ok(10)
-    );
-    assert_eq!(
-        vibrio::syscalls::Fs::read_at(fd, rdata.as_mut_ptr() as u64, 10, 2),
-        Ok(10)
-    );
+    assert_eq!(vibrio::syscalls::Fs::write(fd, &wdata), Ok(10));
+    assert_eq!(vibrio::syscalls::Fs::write_at(fd, &wdata2, 5), Ok(10));
+    assert_eq!(vibrio::syscalls::Fs::read_at(fd, &mut rdata, 2), Ok(10));
     assert_eq!(rdata[0], 1);
     assert_eq!(rdata[2], 1);
     assert_eq!(rdata[3], 2);

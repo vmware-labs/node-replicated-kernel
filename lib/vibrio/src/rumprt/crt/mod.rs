@@ -316,11 +316,8 @@ pub extern "C" fn main() {
                     rump_pub_etfs_register(key2.unwrap().as_ptr(), hostpath.unwrap().as_ptr(), 4);
                 error!("result of pub_etfs_register? {}\n", etfs_ret);
                 assert_eq!(etfs_ret, 0);
-                assert_eq!(
-                    Fs::mkdir_simple("//dbbench", FileModes::S_IRWXU)
-                        .expect("Unable to create directory"),
-                    0
-                );
+                Fs::mkdir_simple("//dbbench", FileModes::S_IRWXU)
+                    .expect("Unable to create directory");
             } else {
                 const TMPFS_ARGS_VERSION: u64 = 1;
 

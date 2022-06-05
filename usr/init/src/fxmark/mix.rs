@@ -45,12 +45,11 @@ impl Bench for MIX {
         *self.cores.borrow_mut() = cores.len();
         *self.open_files.borrow_mut() = open_files;
         for file_num in 0..open_files {
-            let file_name = format!("file{}.txt\0", file_num);
             unsafe {
                 let fd = vibrio::syscalls::Fs::open(
-                    file_name.as_ptr() as u64,
-                    u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-                    u64::from(FileModes::S_IRWXU),
+                    format!("file{}.txt", file_num),
+                    FileFlags::O_RDWR | FileFlags::O_CREAT,
+                    FileModes::S_IRWXU,
                 )
                 .expect("FileOpen syscall failed");
 

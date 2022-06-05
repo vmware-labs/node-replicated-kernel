@@ -317,7 +317,7 @@ pub extern "C" fn main() {
                 error!("result of pub_etfs_register? {}\n", etfs_ret);
                 assert_eq!(etfs_ret, 0);
                 assert_eq!(
-                    Fs::mkdir_simple("//dbbench\0".as_ptr() as u64, FileModes::S_IRWXU.into())
+                    Fs::mkdir_simple("//dbbench", FileModes::S_IRWXU)
                         .expect("Unable to create directory"),
                     0
                 );

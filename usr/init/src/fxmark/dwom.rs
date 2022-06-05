@@ -34,9 +34,9 @@ impl Bench for DWOM {
     fn init(&self, cores: Vec<usize>, _open_files: usize) {
         unsafe {
             let fd = vibrio::syscalls::Fs::open(
-                "file.txt\0".as_ptr() as u64,
-                u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-                u64::from(FileModes::S_IRWXU),
+                "file.txt",
+                FileFlags::O_RDWR | FileFlags::O_CREAT,
+                FileModes::S_IRWXU,
             )
             .expect("FileOpen syscall failed");
 
@@ -66,9 +66,9 @@ impl Bench for DWOM {
         use vibrio::syscalls::*;
         let mut iops_per_second = Vec::with_capacity(duration as usize);
         let fd = vibrio::syscalls::Fs::open(
-            "file.txt\0".as_ptr() as u64,
-            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-            u64::from(FileModes::S_IRWXU),
+            "file.txt",
+            FileFlags::O_RDWR | FileFlags::O_CREAT,
+            FileModes::S_IRWXU,
         )
         .expect("FileOpen syscall failed");
         if fd == u64::MAX {

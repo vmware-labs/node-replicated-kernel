@@ -17,11 +17,10 @@ impl Bench for MWRL {
     fn init(&self, cores: Vec<usize>, _open_files: usize) {
         unsafe {
             for core in cores {
-                let file_name = format!("/{}/file-0.txt\0", core);
                 let fd = vibrio::syscalls::Fs::open(
-                    file_name.as_ptr() as u64,
-                    u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-                    u64::from(FileModes::S_IRWXU),
+                    format!("/{}/file-0.txt", core),
+                    FileFlags::O_RDWR | FileFlags::O_CREAT,
+                    FileModes::S_IRWXU,
                 )
                 .expect("FileOpen syscall failed");
 

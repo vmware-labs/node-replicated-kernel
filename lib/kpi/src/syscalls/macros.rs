@@ -83,6 +83,17 @@ macro_rules! syscall {
         )
     };
 
+    ($arg0:expr, $arg1:expr, $arg2:expr, $arg3:expr, $arg4:expr, $arg5:expr, 1) => {
+        crate::syscalls::macros::syscall_6_1(
+            $arg0 as u64,
+            $arg1 as u64,
+            $arg2 as u64,
+            $arg3 as u64,
+            $arg4 as u64,
+            $arg5 as u64,
+        )
+    };
+
     ($arg0:expr, $arg1:expr, $arg2:expr, $arg3:expr, $arg4:expr, $arg5:expr, 2) => {
         crate::syscalls::macros::syscall_6_2(
             $arg0 as u64,
@@ -344,6 +355,33 @@ pub(crate) unsafe fn syscall_5_2(
     );
 
     (ret, ret2)
+}
+
+#[inline(always)]
+pub(crate) unsafe fn syscall_6_1(
+    arg1: u64,
+    arg2: u64,
+    arg3: u64,
+    arg4: u64,
+    arg5: u64,
+    arg6: u64,
+) -> u64 {
+    let ret: u64;
+
+    asm!(
+        "syscall",
+        in("rdi") arg1,
+        in("rsi") arg2,
+        in("rdx") arg3,
+        in("r10") arg4,
+        in("r8") arg5,
+        in("r9") arg6,
+        out("rcx") _, // clobbered by syscall
+        out("r11") _, // clobbered by syscall
+        lateout("rax") ret,
+    );
+
+    ret
 }
 
 #[inline(always)]

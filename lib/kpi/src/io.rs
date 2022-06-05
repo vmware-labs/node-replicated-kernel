@@ -33,7 +33,7 @@ impl From<FileType> for u64 {
 
 bitflags! {
     /// File flags to open the file
-    pub struct FileFlags:u64 {
+    pub struct FileFlags: u64 {
         const O_NONE = 0x0000;
         const O_RDONLY = 0x0001; /* open for reading only */
         const O_WRONLY = 0x0002; /* open for writing only */

@@ -303,8 +303,13 @@ impl ModelFIO {
     }
 
     // Create just puts the file in the oplop and increases mnode counter.
-    pub fn open(&mut self, pathname: u64, flags: u64, modes: u64) -> Result<u64, SystemCallError> {
-        let path = userptr_to_str(pathname)?;
+    pub fn open<T: AsRef<str>>(
+        &mut self,
+        path: T,
+        flags: FileFlags,
+        modes: FileModes,
+    ) -> Result<u64, SystemCallError> {
+        let path_str = path.as_ref().to_string();
         let flags = FileFlags::from(flags);
         let mut modes = FileModes::from(modes);
 
@@ -314,14 +319,14 @@ impl ModelFIO {
         }
 
         // If file exists, only create new fd
-        if let Some(mnode) = self.lookup(&path) {
+        if let Some(mnode) = self.lookup(path.as_ref()) {
             if flags.is_create() {
                 trace!("open() - create flag specified for file that already exists");
                 //Err(SystemCallError::InternalError)
             }
 
             let size = self.file_size(mnode);
-            let idx = self.path_to_idx(&path).unwrap();
+            let idx = self.path_to_idx(&path_str).unwrap();
             if let ModelOperation::Created(_path, old_modes, _mnode) =
                 self.oplog.borrow().get(idx).unwrap()
             {
@@ -354,7 +359,7 @@ impl ModelFIO {
             *self.mnode_counter.borrow_mut() += 1;
             let mnode = *self.mnode_counter.borrow();
             self.oplog.borrow_mut().push(ModelOperation::Created(
-                path,
+                path_str,
                 FileModes::from(modes),
                 mnode,
             ));
@@ -589,11 +594,9 @@ impl ModelFIO {
     }
 
     /// Delete finds and removes a path from the oplog again.
-    pub fn delete(&self, name: u64) -> Result<bool, SystemCallError> {
-        let path = userptr_to_str(name)?;
+    pub fn delete(&self, path: &str) -> Result<bool, SystemCallError> {
         // TODO: Check to see if there are any open fds to this mnode.
-
-        if let Some(mnode) = self.lookup(&path) {
+        if let Some(mnode) = self.lookup(path) {
             self.remove_entries(mnode, true, true);
             Ok(true)
         } else {
@@ -614,9 +617,9 @@ fn model_read() {
     let mut mfs: ModelFIO = Default::default();
     let fd = mfs
         .open(
-            "/bla".as_ptr() as u64,
-            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-            FileModes::S_IRWXU.into(),
+            "/bla",
+            FileFlags::O_RDWR | FileFlags::O_CREAT,
+            FileModes::S_IRWXU,
         )
         .unwrap();
 
@@ -647,9 +650,9 @@ fn model_overlapping_writes() {
     let mut mfs: ModelFIO = Default::default();
     let fd = mfs
         .open(
-            "/bla".as_ptr() as u64,
-            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-            FileModes::S_IRWXU.into(),
+            "/bla",
+            FileFlags::O_RDWR | FileFlags::O_CREAT,
+            FileModes::S_IRWXU,
         )
         .unwrap();
 
@@ -676,7 +679,7 @@ enum TestAction {
     Write(u64, char, u64),
     ReadAt(u64, u64, i64),
     WriteAt(u64, char, u64, i64),
-    Open(Vec<String>, u64, u64),
+    Open(Vec<String>, FileFlags, FileModes),
     Delete(Vec<String>),
     Close(u64),
 }
@@ -691,7 +694,11 @@ fn action() -> impl Strategy<Value = TestAction> {
             .prop_map(|(a, b, c)| TestAction::ReadAt(a, b, c)),
         (fd_gen(0xA), fill_pattern(), size_gen(64), offset_gen(128),)
             .prop_map(|(a, b, c, d)| TestAction::WriteAt(a, b, c, d)),
-        (path(), flag_gen(0xfff), mode_gen(0xfff)).prop_map(|(a, b, c)| TestAction::Open(a, b, c)),
+        (path(), flag_gen(0xfff), mode_gen(0xfff)).prop_map(|(a, b, c)| TestAction::Open(
+            a,
+            FileFlags::from(b),
+            FileModes::from(c)
+        )),
         path().prop_map(TestAction::Delete),
         fd_gen(0xA).prop_map(TestAction::Close),
     ]
@@ -838,11 +845,9 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 assert_eq!(rmodel, rtotest);
             }
             Open(path, flags, mode) => {
-                let mut path_str = path.join("/");
-                path_str.push('\0');
-
-                let rmodel = model.open(path_str.as_ptr() as u64, flags, mode);
-                let rtotest = vibrio::syscalls::Fs::open(path_str.as_ptr() as u64, flags, mode);
+                let path_str = path.join("/");
+                let rmodel = model.open(path_str.clone(), flags, mode);
+                let rtotest = vibrio::syscalls::Fs::open(path_str, flags, mode);
                 assert_eq!(rmodel.is_ok(), rtotest.is_ok());
 
                 // Add mapping from rmodel_fd -> rtotest_fd
@@ -851,11 +856,9 @@ fn model_equivalence(ops: Vec<TestAction>) {
                 }
             }
             Delete(path) => {
-                let mut path_str = path.join("/");
-                path_str.push('\0');
-
-                let rmodel = model.delete(path_str.as_ptr() as u64);
-                let rtotest = vibrio::syscalls::Fs::delete(path_str.as_ptr() as u64);
+                let path_str = path.join("/");
+                let rmodel = model.delete(path_str.as_str());
+                let rtotest = vibrio::syscalls::Fs::delete(path_str);
                 assert_eq!(rmodel, rtotest);
             }
             Close(fd) => {
@@ -884,13 +887,9 @@ fn model_equivalence(ops: Vec<TestAction>) {
         match x {
             ModelOperation::Created(path, _modes, mnode) => {
                 // mnode=1 is the root ("/") which we can't/shouldn't delete.
-                let mut my_path = path.clone();
-                my_path.push('\0');
+                let my_path = path.clone();
                 if *mnode != 1 {
-                    assert_eq!(
-                        vibrio::syscalls::Fs::delete(my_path.as_ptr() as u64).is_ok(),
-                        true
-                    );
+                    assert_eq!(vibrio::syscalls::Fs::delete(my_path).is_ok(), true);
                 }
             }
             _ => { /* we don't care about write entries */ }
@@ -910,9 +909,9 @@ pub fn run_fio_syscall_proptests() {
 /// Create a file with non-read permission and try to read it.
 fn test_file_read_permission_error() {
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_read_permission_error.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_WRONLY | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_read_permission_error.txt",
+        FileFlags::O_WRONLY | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     let mut rdata = [0u8; 6];
@@ -926,9 +925,9 @@ fn test_file_read_permission_error() {
 /// Create a file with non-write permission and try to write it.
 fn test_file_write_permission_error() {
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_write_permission_error.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDONLY | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_write_permission_error.txt",
+        FileFlags::O_RDONLY | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     let mut wdata = [0u8; 6];
@@ -942,12 +941,12 @@ fn test_file_write_permission_error() {
 /// Create a file and write to it.
 fn test_file_write() {
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_write.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_write.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
-    let mut wdata = [0u8; 10];
+    let wdata = [0u8; 10];
     assert_eq!(
         vibrio::syscalls::Fs::write(fd, wdata.as_ptr() as u64, 10),
         Ok(10)
@@ -958,9 +957,9 @@ fn test_file_write() {
 /// Create a file, write to it and then later read. Verify the content.
 fn test_file_read() {
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_read.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_read.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
 
@@ -984,15 +983,15 @@ fn test_file_read() {
 /// Create a file and open again without create permission
 fn test_file_duplicate_open() {
     let fd1 = vibrio::syscalls::Fs::open(
-        "test_file_duplicate_open.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_duplicate_open.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     let fd2 = vibrio::syscalls::Fs::open(
-        "test_file_duplicate_open.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
+        "test_file_duplicate_open.txt",
+        FileFlags::O_RDWR,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     assert_ne!(fd1, fd2);
@@ -1003,9 +1002,9 @@ fn test_file_duplicate_open() {
 /// Attempt to open file that is not present
 fn test_file_fake_open() {
     let ret = vibrio::syscalls::Fs::open(
-        "test_file_fake_open.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
+        "test_file_fake_open.txt",
+        FileFlags::O_RDWR,
+        FileModes::S_IRWXU,
     );
     assert_eq!(ret, Err(SystemCallError::InternalError));
 }
@@ -1017,9 +1016,9 @@ fn test_file_fake_close() {
 
 fn test_file_duplicate_close() {
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_duplicate_close.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_duplicate_close.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     assert_eq!(vibrio::syscalls::Fs::close(fd), Ok(0));
@@ -1033,15 +1032,15 @@ fn test_file_duplicate_close() {
 fn test_file_multiple_fd() {
     // Open the same file twice
     let fd1 = vibrio::syscalls::Fs::open(
-        "test_file_multiple_fd.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_multiple_fd.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     let fd2 = vibrio::syscalls::Fs::open(
-        "test_file_multiple_fd.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
+        "test_file_multiple_fd.txt",
+        FileFlags::O_RDWR,
+        FileModes::S_IRWXU,
     )
     .unwrap();
 
@@ -1069,15 +1068,15 @@ fn test_file_multiple_fd() {
 fn test_file_info() {
     // Create file
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_info.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_info.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     vibrio::syscalls::Fs::close(fd).unwrap();
 
     // Get file info
-    let ret = vibrio::syscalls::Fs::getinfo("test_file_info.txt\0".as_ptr() as u64);
+    let ret = vibrio::syscalls::Fs::getinfo("test_file_info.txt");
     assert_eq!(ret, Ok(FileInfo { ftype: 2, fsize: 0 }));
 }
 
@@ -1085,37 +1084,34 @@ fn test_file_info() {
 fn test_file_delete() {
     // Create file
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_info.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_info.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     vibrio::syscalls::Fs::close(fd).unwrap();
 
     // Delete file
-    let ret = vibrio::syscalls::Fs::delete("test_file_info.txt\0".as_ptr() as u64);
+    let ret = vibrio::syscalls::Fs::delete("test_file_info.txt");
     assert_eq!(ret, Ok(true));
 
     // Attempt to open deleted file
-    let ret = vibrio::syscalls::Fs::open(
-        "test_file_info.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
-    );
+    let ret =
+        vibrio::syscalls::Fs::open("test_file_info.txt", FileFlags::O_RDWR, FileModes::S_IRWXU);
     assert_eq!(ret, Err(SystemCallError::InternalError));
 }
 
 fn test_file_delete_open() {
     // Create file
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_info.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_info.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
 
     // Delete file
-    let ret = vibrio::syscalls::Fs::delete("test_file_info.txt\0".as_ptr() as u64);
+    let ret = vibrio::syscalls::Fs::delete("test_file_info.txt");
     assert_eq!(ret, Err(SystemCallError::InternalError));
 
     vibrio::syscalls::Fs::close(fd).unwrap();
@@ -1124,33 +1120,30 @@ fn test_file_delete_open() {
 fn test_file_rename() {
     // Create old
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_old.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_old.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     vibrio::syscalls::Fs::close(fd).unwrap();
 
     // Rename
-    let ret = vibrio::syscalls::Fs::rename(
-        "test_file_rename_old.txt\0".as_ptr() as u64,
-        "test_file_rename_new.txt\0".as_ptr() as u64,
-    );
+    let ret = vibrio::syscalls::Fs::rename("test_file_rename_old.txt", "test_file_rename_new.txt");
     assert_eq!(ret.is_ok(), true);
 
     // Attempt to open old
     let ret = vibrio::syscalls::Fs::open(
-        "test_file_rename_old.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_old.txt",
+        FileFlags::O_RDWR,
+        FileModes::S_IRWXU,
     );
     assert_eq!(ret, Err(SystemCallError::InternalError));
 
     // Attempt to open new
     let ret = vibrio::syscalls::Fs::open(
-        "test_file_rename_new.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_new.txt",
+        FileFlags::O_RDWR,
+        FileModes::S_IRWXU,
     );
     assert_eq!(ret.is_ok(), true);
     vibrio::syscalls::Fs::close(fd).unwrap();
@@ -1159,9 +1152,9 @@ fn test_file_rename() {
 fn test_file_rename_and_read() {
     // Create old
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_and_read_old.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_and_read_old.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
 
@@ -1175,16 +1168,16 @@ fn test_file_rename_and_read() {
 
     // Rename
     let ret = vibrio::syscalls::Fs::rename(
-        "test_file_rename_and_read_old.txt\0".as_ptr() as u64,
-        "test_file_rename_and_read_new.txt\0".as_ptr() as u64,
+        "test_file_rename_and_read_old.txt",
+        "test_file_rename_and_read_new.txt",
     );
     assert_eq!(ret, Ok(0));
 
     // Open new
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_and_read_new.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_and_read_new.txt",
+        FileFlags::O_RDWR,
+        FileModes::S_IRWXU,
     )
     .unwrap();
 
@@ -1205,25 +1198,25 @@ fn test_file_rename_and_read() {
 fn test_file_rename_and_write() {
     // Create old
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_and_write_old.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_and_write_old.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     vibrio::syscalls::Fs::close(fd).unwrap();
 
     // Rename
     let ret = vibrio::syscalls::Fs::rename(
-        "test_file_rename_and_write_old.txt\0".as_ptr() as u64,
-        "test_file_rename_and_write_new.txt\0".as_ptr() as u64,
+        "test_file_rename_and_write_old.txt",
+        "test_file_rename_and_write_new.txt",
     );
     assert_eq!(ret, Ok(0));
 
     // Open new
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_and_write_old.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_and_write_old.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
 
@@ -1249,8 +1242,8 @@ fn test_file_rename_and_write() {
 
 fn test_file_rename_nonexistent_file() {
     let ret = vibrio::syscalls::Fs::rename(
-        "test_file_rename_nonexistent_file_old.txt\0".as_ptr() as u64,
-        "test_file_rename_nonexistent_file_new.txt\0".as_ptr() as u64,
+        "test_file_rename_nonexistent_file_old.txt",
+        "test_file_rename_nonexistent_file_new.txt",
     );
     assert_eq!(ret, Err(SystemCallError::InternalError));
 }
@@ -1258,9 +1251,9 @@ fn test_file_rename_nonexistent_file() {
 fn test_file_rename_to_existent_file() {
     // Create existing file & write some data to it & close the fd
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_to_existent_file_existing.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_to_existent_file_existing.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     let wdata = [1u8; 10];
@@ -1272,9 +1265,9 @@ fn test_file_rename_to_existent_file() {
 
     // Create the old file & write some data to it & close the fd
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_to_existent_file_old.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_to_existent_file_old.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     let wdata = [2u8; 10];
@@ -1286,16 +1279,16 @@ fn test_file_rename_to_existent_file() {
 
     // Rename old file to existing file
     let ret = vibrio::syscalls::Fs::rename(
-        "test_file_rename_to_existent_file_old.txt\0".as_ptr() as u64,
-        "test_file_rename_to_existent_file_existing.txt\0".as_ptr() as u64,
+        "test_file_rename_to_existent_file_old.txt",
+        "test_file_rename_to_existent_file_existing.txt",
     );
     assert_eq!(ret, Ok(0));
 
     // Open existing file, check it has old file's data
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_rename_to_existent_file_existing.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR),
-        FileModes::S_IRWXU.into(),
+        "test_file_rename_to_existent_file_existing.txt",
+        FileFlags::O_RDWR,
+        FileModes::S_IRWXU,
     )
     .unwrap();
     let mut rdata = [2u8; 10];
@@ -1312,9 +1305,9 @@ fn test_file_rename_to_existent_file() {
 /// Tests read_at and write_at
 fn test_file_position() {
     let fd = vibrio::syscalls::Fs::open(
-        "test_file_position.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        FileModes::S_IRWXU.into(),
+        "test_file_position.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .unwrap();
 

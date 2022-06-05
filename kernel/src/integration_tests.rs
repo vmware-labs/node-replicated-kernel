@@ -590,8 +590,8 @@ fn gdb() {
     info!("step");
 
     // Test ctrl+c
-    arch::irq::ioapic_establish_route(0x0, 0x0); // TODO(api): enables serial irq
-    arch::irq::enable();
+    crate::arch::irq::ioapic_establish_route(0x0, 0x0); // TODO(api): enables serial irq
+    crate::arch::irq::enable();
     let mut cond = true;
     while cond {}
     cond = false; // make sure cond is mut

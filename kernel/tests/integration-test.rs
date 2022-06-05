@@ -1246,7 +1246,7 @@ fn s02_gdb() {
     /// Spawn the gdb debugger
     pub fn spawn_gdb(binary: &str) -> Result<PtyReplSession> {
         // The `-nx` ignores any potential .gdbinit files that may mess with the test
-        spawn(format!("gdb -nx {}", binary).as_str(), Some(3_000)).and_then(|p| {
+        spawn(format!("gdb -nx {}", binary).as_str(), Some(5_000)).and_then(|p| {
             Ok(PtyReplSession {
                 prompt: "(gdb) ".to_string(),
                 pty_session: p,

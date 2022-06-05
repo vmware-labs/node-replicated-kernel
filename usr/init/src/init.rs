@@ -417,23 +417,23 @@ fn test_fs_invalid_addresses() {
     use vibrio::io::*;
 
     let fd = vibrio::syscalls::Fs::open(
-        0x0,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        u64::from(FileModes::S_IRWXU),
+        "",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .expect_err("Should not get Ok value");
 
     // Open a file to read and write on invalid addresses.
     let fd = vibrio::syscalls::Fs::open(
-        "file1.txt\0".as_ptr() as u64,
-        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-        u64::from(FileModes::S_IRWXU),
+        "file1.txt",
+        FileFlags::O_RDWR | FileFlags::O_CREAT,
+        FileModes::S_IRWXU,
     )
     .expect("FileOpen syscall failed");
     assert_eq!(fd, 0);
 
     let ret = vibrio::syscalls::Fs::write(fd, 0x0, 256).expect_err("FileWrite syscall should fail");
-    let fileinfo = vibrio::syscalls::Fs::getinfo(0x0).expect_err("FileOpen syscall should fail");
+    let fileinfo = vibrio::syscalls::Fs::getinfo("").expect_err("getinfo syscall should fail");
     let ret = vibrio::syscalls::Fs::read(fd, 0x0, 256).expect_err("FileWrite syscall failed");
 
     // Test address validity small pages.
@@ -489,18 +489,14 @@ fn fs_test() {
     let size: u64 = 0x1000 * 64;
     unsafe {
         // Create a directory
-        let ret = vibrio::syscalls::Fs::mkdir_simple(
-            "mydir\0".as_ptr() as u64,
-            u64::from(FileModes::S_IRWXU),
-        )
-        .expect("MkDir syscall failed");
-        assert_eq!(ret, 0);
+        let _ret = vibrio::syscalls::Fs::mkdir_simple("mydir", FileModes::S_IRWXU)
+            .expect("MkDir syscall failed");
 
         // Open a file
         let fd = vibrio::syscalls::Fs::open(
-            "mydir/file.txt\0".as_ptr() as u64,
-            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-            u64::from(FileModes::S_IRWXU),
+            "file.txt",
+            FileFlags::O_RDWR | FileFlags::O_CREAT,
+            FileModes::S_IRWXU,
         )
         .expect("FileOpen syscall failed");
         assert_eq!(fd, 0);
@@ -519,8 +515,8 @@ fn fs_test() {
             .expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
 
-        let fileinfo = vibrio::syscalls::Fs::getinfo("mydir/file.txt\0".as_ptr() as u64)
-            .expect("GetInfo syscall failed");
+        let fileinfo =
+            vibrio::syscalls::Fs::getinfo("mydir/file.txt").expect("GetInfo syscall failed");
         assert_eq!(fileinfo.fsize, 256);
         assert_eq!(fileinfo.ftype, FileType::File.into());
 
@@ -544,20 +540,16 @@ fn fs_test() {
         assert_eq!(ret, 0);
 
         // Rename the file
-        let ret = vibrio::syscalls::Fs::rename(
-            "mydir/file.txt\0".as_ptr() as u64,
-            "filenew.txt\0".as_ptr() as u64,
-        )
-        .expect("FileRename syscall failed");
+        let ret = vibrio::syscalls::Fs::rename("mydir/file.txt", "filenew.txt")
+            .expect("FileRename syscall failed");
         assert_eq!(ret, 0);
 
         // Delete the file.
-        let ret = vibrio::syscalls::Fs::delete("filenew.txt\0".as_ptr() as u64)
-            .expect("FileDelete syscall failed");
+        let ret = vibrio::syscalls::Fs::delete("filenew.txt").expect("FileDelete syscall failed");
         assert_eq!(ret, true);
 
-        let ret = vibrio::syscalls::Fs::delete("mydir\0".as_ptr() as u64)
-            .expect("FileDelete syscall on directory failed");
+        let ret =
+            vibrio::syscalls::Fs::delete("mydir").expect("FileDelete syscall on directory failed");
         assert_eq!(ret, true);
 
         // Test fs with invalid userspace pointers

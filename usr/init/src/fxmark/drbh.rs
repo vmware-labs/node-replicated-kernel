@@ -26,9 +26,9 @@ impl Bench for DRBH {
         unsafe {
             // Open a shared file for each core.
             let fd = vibrio::syscalls::Fs::open(
-                "file.txt\0".as_ptr() as u64,
-                u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-                u64::from(FileModes::S_IRWXU),
+                "file.txt",
+                FileFlags::O_RDWR | FileFlags::O_CREAT,
+                FileModes::S_IRWXU,
             )
             .expect("FileOpen syscall failed");
 
@@ -55,9 +55,9 @@ impl Bench for DRBH {
 
         // Load fd from a shared struct.
         let fd = vibrio::syscalls::Fs::open(
-            "file.txt\0".as_ptr() as u64,
-            u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-            u64::from(FileModes::S_IRWXU),
+            "file.txt",
+            FileFlags::O_RDWR | FileFlags::O_CREAT,
+            FileModes::S_IRWXU,
         )
         .expect("FileOpen syscall failed");
         let page: &mut [i8; PAGE_SIZE as usize] = &mut [0; PAGE_SIZE as usize];

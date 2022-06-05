@@ -38,11 +38,10 @@ impl Bench for MWRM {
         unsafe {
             for core in cores {
                 for iter in 0..files_per_core {
-                    let file_name = format!("/{}/file-{}-{}.txt\0", core, core, iter);
                     let fd = vibrio::syscalls::Fs::open(
-                        file_name.as_ptr() as u64,
-                        u64::from(FileFlags::O_RDWR | FileFlags::O_CREAT),
-                        u64::from(FileModes::S_IRWXU),
+                        format!("/{}/file-{}-{}.txt", core, core, iter),
+                        FileFlags::O_RDWR | FileFlags::O_CREAT,
+                        FileModes::S_IRWXU,
                     )
                     .expect("FileOpen syscall failed");
 

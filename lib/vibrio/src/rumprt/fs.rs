@@ -3,6 +3,8 @@
 
 use core::convert::TryInto;
 
+use cstr_core::CStr;
+
 use super::{c_int, c_size_t, c_void, rump_biodone_fn};
 
 use kpi::io::*;
@@ -32,37 +34,53 @@ bitflags! {
 /// int rumpuser_open(const char *name, int mode, int *fdp)
 #[no_mangle]
 pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c_int) -> c_int {
-    // 'mode' passed by rump are actually the semantic equivalent of flags.
+    // 'mode' passed by rump are the semantic equivalent of flags.
     let mut flags = FileFlags::O_NONE;
     let mode_mode = RumpFileFlags::from_bits_truncate(mode as u64);
-    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDONLY) == RumpFileFlags::RUMPUSER_OPEN_RDONLY {
+
+    if mode_mode.contains(RumpFileFlags::RUMPUSER_OPEN_RDONLY) {
         flags = flags | FileFlags::O_RDONLY;
     }
-    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_WRONLY) == RumpFileFlags::RUMPUSER_OPEN_WRONLY {
+    if mode_mode.contains(RumpFileFlags::RUMPUSER_OPEN_WRONLY) {
         flags = flags | FileFlags::O_WRONLY;
     }
-    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_RDWR) == RumpFileFlags::RUMPUSER_OPEN_RDWR {
+    if mode_mode.contains(RumpFileFlags::RUMPUSER_OPEN_RDWR) {
         flags = flags | FileFlags::O_RDWR;
     }
-    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_CREATE) == RumpFileFlags::RUMPUSER_OPEN_CREATE {
+    if mode_mode.contains(RumpFileFlags::RUMPUSER_OPEN_CREATE) {
         flags = flags | FileFlags::O_CREAT;
     }
-    if (mode_mode & RumpFileFlags::RUMPUSER_OPEN_EXCL) == RumpFileFlags::RUMPUSER_OPEN_EXCL {
+    if mode_mode.contains(RumpFileFlags::RUMPUSER_OPEN_EXCL) {
         error!("NRK does not support O_EXCL\n");
     }
 
-    // Rump documentation says the 'hypervisor' sets the permissions of all opened files.
-    // As a default, we set all files to RW
-    match Fs::open(
-        name as u64,
-        u64::from(flags),
-        u64::from(FileModes::S_IRUSR | FileModes::S_IWUSR),
-    ) {
-        Ok(fd) => {
-            *fdp = fd as c_int;
-            0
+    let cstr_name = 
+        // Safety:
+        // - validity of ptr: OK rump API semantics
+        // - Lifetime is not guaranteed to be the actual lifetime of ptr: OK
+        //   `name` will outlive this call, `cstr_name` doesn't outlive this
+        //   call
+        // - nul terminator byte at the end of the string: OK rump API semantics
+        // - guarantee that the memory pointed by ptr won't change before the
+        //   CStr has been destroyed: OK: rump API semantics
+        CStr::from_ptr(name);
+
+    if let Ok(name_str) = cstr_name.to_str() {
+        // Rump documentation says the 'hypervisor' sets the permissions of all
+        // opened files. We set all files to read-write.
+        match Fs::open(
+            name_str,
+            flags,
+            FileModes::S_IRUSR | FileModes::S_IWUSR,
+        ) {
+            Ok(fd) => {
+                *fdp = fd as c_int;
+                0
+            }
+            Err(_) => super::errno::EINVAL as c_int,
         }
-        Err(_) => super::errno::EINVAL as c_int,
+    } else {
+        super::errno::EINVAL as c_int
     }
 }
 
@@ -82,13 +100,29 @@ pub unsafe extern "C" fn rumpuser_getfileinfo(
     size: *mut u64,
     typ: *mut c_int,
 ) -> c_int {
-    match Fs::getinfo(name as u64) {
-        Ok(fileinfo) => {
-            *size = fileinfo.fsize;
-            *typ = fileinfo.ftype as i32;
-            0
+    let cstr_name = 
+        // Safety:
+        // - validity of ptr: OK rump API semantics
+        // - Lifetime is not guaranteed to be the actual lifetime of ptr: OK
+        //   `name` will outlive this call, `cstr_name` doesn't outlive this
+        //   call
+        // - nul terminator byte at the end of the string: OK rump API semantics
+        // - guarantee that the memory pointed by ptr won't change before the
+        //   CStr has been destroyed: OK: rump API semantics
+        CStr::from_ptr(name);
+
+    if let Ok(name_str) = cstr_name.to_str() {
+        match Fs::getinfo(name_str) {
+            Ok(fileinfo) => {
+                *size = fileinfo.fsize;
+                *typ = fileinfo.ftype as i32;
+                0
+            }
+            Err(_) => super::errno::ENOENT as c_int,
         }
-        Err(_) => super::errno::ENOENT as c_int,
+    }
+    else {
+        super::errno::EINVAL as c_int
     }
 }
 

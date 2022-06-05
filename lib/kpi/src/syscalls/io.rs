@@ -39,22 +39,20 @@ impl Irq {
 pub struct Fs;
 
 impl Fs {
-    /// Create a file. The function internally calls file_open with O_CREAT flag.
-    pub fn create(pathname: u64, modes: u64) -> Result<u64, SystemCallError> {
-        let flags: u64 = u64::from(FileFlags::O_WRONLY | FileFlags::O_CREAT);
-        assert_eq!(flags, 0x202);
-        Fs::open(pathname, flags, modes)
-    }
-
-    /// Open a file. Return `fd` if successful; error otherwise.
-    pub fn open(pathname: u64, flags: u64, modes: u64) -> Result<u64, SystemCallError> {
+    /// Opens a file. Returns `fd` if successful; error otherwise.
+    pub fn open<T: AsRef<str>>(
+        path: T,
+        flags: FileFlags,
+        modes: FileModes,
+    ) -> Result<u64, SystemCallError> {
         let (r, fd) = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
                 FileOperation::Open as u64,
-                pathname,
-                flags,
-                modes,
+                path.as_ref().as_ptr(),
+                path.as_ref().len(),
+                u64::from(flags),
+                u64::from(modes),
                 2
             )
         };
@@ -151,12 +149,13 @@ impl Fs {
     }
 
     /// Retrieve information about a file.
-    pub fn getinfo(name: u64) -> Result<FileInfo, SystemCallError> {
+    pub fn getinfo<T: AsRef<str>>(path: T) -> Result<FileInfo, SystemCallError> {
         let (r, ftype, fsize) = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
                 FileOperation::GetInfo,
-                name as u64,
+                path.as_ref().as_ptr(),
+                path.as_ref().len(),
                 3
             )
         };
@@ -169,12 +168,13 @@ impl Fs {
     }
 
     /// Delete a file given by `name`.
-    pub fn delete(name: u64) -> Result<bool, SystemCallError> {
+    pub fn delete<T: AsRef<str>>(path: T) -> Result<bool, SystemCallError> {
         let (r, is_deleted) = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
                 FileOperation::Delete as u64,
-                name,
+                path.as_ref().as_ptr(),
+                path.as_ref().len(),
                 2
             )
         };
@@ -186,13 +186,15 @@ impl Fs {
         }
     }
 
-    pub fn rename(old_name: u64, new_name: u64) -> Result<u64, SystemCallError> {
+    pub fn rename<T: AsRef<str>>(old_name: T, new_name: T) -> Result<u64, SystemCallError> {
         let r = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
                 FileOperation::FileRename,
-                old_name,
-                new_name,
+                old_name.as_ref().as_ptr(),
+                old_name.as_ref().len(),
+                new_name.as_ref().as_ptr(),
+                new_name.as_ref().len(),
                 1
             )
         };
@@ -204,13 +206,14 @@ impl Fs {
         }
     }
 
-    pub fn mkdir_simple(pathname: u64, modes: u64) -> Result<u64, SystemCallError> {
+    pub fn mkdir_simple<T: AsRef<str>>(path: T, modes: FileModes) -> Result<u64, SystemCallError> {
         let r = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
                 FileOperation::MkDir,
-                pathname,
-                modes,
+                path.as_ref().as_ptr(),
+                path.as_ref().len(),
+                u64::from(modes),
                 1
             )
         };

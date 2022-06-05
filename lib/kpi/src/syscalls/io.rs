@@ -3,6 +3,8 @@
 
 //! Abstraction for system calls to access the global file-system and control interrupts.
 
+use core::convert::TryInto;
+
 use crate::io::*;
 use crate::*;
 
@@ -64,24 +66,34 @@ impl Fs {
         }
     }
 
-    /// Close a file. This function will remove the file descriptor from the process.
-    /// It doesn't do anything to the file.
-    pub fn close(fd: u64) -> Result<u64, SystemCallError> {
+    /// Close a file. This function will remove the file descriptor from the
+    /// process. It doesn't do anything to the file.
+    pub fn close(fd: u64) -> Result<(), SystemCallError> {
         let r = unsafe { syscall!(SystemCall::FileIO as u64, FileOperation::Close, fd, 1) };
 
         if r == 0 {
-            Ok(r)
+            Ok(())
         } else {
             Err(SystemCallError::from(r))
         }
     }
 
-    pub fn read(fd: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        Fs::fileio(FileOperation::Read, fd, buffer, len)
+    pub fn read(fd: u64, buffer: &mut [u8]) -> Result<u64, SystemCallError> {
+        Fs::fileio(
+            FileOperation::Read,
+            fd,
+            buffer.as_mut_ptr() as u64,
+            buffer.len().try_into().unwrap(),
+        )
     }
 
-    pub fn write(fd: u64, buffer: u64, len: u64) -> Result<u64, SystemCallError> {
-        Fs::fileio(FileOperation::Write, fd, buffer, len)
+    pub fn write(fd: u64, buffer: &[u8]) -> Result<u64, SystemCallError> {
+        Fs::fileio(
+            FileOperation::Write,
+            fd,
+            buffer.as_ptr() as u64,
+            buffer.len().try_into().unwrap(),
+        )
     }
 
     /// Read or write an opened file. `fd` is the file descriptor for the opened file.
@@ -100,12 +112,24 @@ impl Fs {
         }
     }
 
-    pub fn read_at(fd: u64, buffer: u64, len: u64, offset: i64) -> Result<u64, SystemCallError> {
-        Fs::fileio_at(FileOperation::ReadAt, fd, buffer, len, offset)
+    pub fn read_at(fd: u64, buffer: &mut [u8], offset: i64) -> Result<u64, SystemCallError> {
+        Fs::fileio_at(
+            FileOperation::ReadAt,
+            fd,
+            buffer.as_mut_ptr() as u64,
+            buffer.len().try_into().unwrap(),
+            offset,
+        )
     }
 
-    pub fn write_at(fd: u64, buffer: u64, len: u64, offset: i64) -> Result<u64, SystemCallError> {
-        Fs::fileio_at(FileOperation::WriteAt, fd, buffer, len, offset)
+    pub fn write_at(fd: u64, buffer: &[u8], offset: i64) -> Result<u64, SystemCallError> {
+        Fs::fileio_at(
+            FileOperation::WriteAt,
+            fd,
+            buffer.as_ptr() as u64,
+            buffer.len().try_into().unwrap(),
+            offset,
+        )
     }
 
     /// Read or write an opened file starting at the offset.
@@ -124,7 +148,7 @@ impl Fs {
             match op {
                 FileOperation::ReadAt => return Err(SystemCallError::OffsetError),
                 FileOperation::WriteAt => return Fs::fileio(FileOperation::Write, fd, buffer, len),
-                _ => unreachable!("write_at received non *-At op"),
+                _ => unreachable!("write_at received non *-at op"),
             }
         }
 
@@ -168,7 +192,7 @@ impl Fs {
     }
 
     /// Delete a file given by `name`.
-    pub fn delete<T: AsRef<str>>(path: T) -> Result<bool, SystemCallError> {
+    pub fn delete<T: AsRef<str>>(path: T) -> Result<(), SystemCallError> {
         let (r, is_deleted) = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
@@ -180,13 +204,13 @@ impl Fs {
         };
 
         if r == 0 && is_deleted == 0 {
-            Ok(true)
+            Ok(())
         } else {
             Err(SystemCallError::from(r))
         }
     }
 
-    pub fn rename<T: AsRef<str>>(old_name: T, new_name: T) -> Result<u64, SystemCallError> {
+    pub fn rename<T: AsRef<str>>(old_name: T, new_name: T) -> Result<(), SystemCallError> {
         let r = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
@@ -200,13 +224,13 @@ impl Fs {
         };
 
         if r == 0 {
-            Ok(0)
+            Ok(())
         } else {
             Err(SystemCallError::from(r))
         }
     }
 
-    pub fn mkdir_simple<T: AsRef<str>>(path: T, modes: FileModes) -> Result<u64, SystemCallError> {
+    pub fn mkdir_simple<T: AsRef<str>>(path: T, modes: FileModes) -> Result<(), SystemCallError> {
         let r = unsafe {
             syscall!(
                 SystemCall::FileIO as u64,
@@ -219,7 +243,7 @@ impl Fs {
         };
 
         if r == 0 {
-            Ok(0)
+            Ok(())
         } else {
             Err(SystemCallError::from(r))
         }

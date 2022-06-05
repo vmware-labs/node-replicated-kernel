@@ -13,10 +13,9 @@
 )]
 extern crate alloc;
 
-use core::arch::asm;
+use core::ptr;
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::{AtomicBool, Ordering};
-use core::{lazy, ptr};
 
 use vibrio::io::FileType;
 #[cfg(feature = "rumprt")]
@@ -432,9 +431,12 @@ fn test_fs_invalid_addresses() {
     .expect("FileOpen syscall failed");
     assert_eq!(fd, 0);
 
-    let ret = vibrio::syscalls::Fs::write(fd, 0x0, 256).expect_err("FileWrite syscall should fail");
+    let mut invalid_slice = unsafe { core::slice::from_raw_parts_mut(ptr::null_mut(), 256) };
+    let ret =
+        vibrio::syscalls::Fs::write(fd, &invalid_slice).expect_err("FileWrite syscall should fail");
     let fileinfo = vibrio::syscalls::Fs::getinfo("").expect_err("getinfo syscall should fail");
-    let ret = vibrio::syscalls::Fs::read(fd, 0x0, 256).expect_err("FileWrite syscall failed");
+    let ret =
+        vibrio::syscalls::Fs::read(fd, &mut invalid_slice).expect_err("FileWrite syscall failed");
 
     // Test address validity small pages.
     let base_small: u64 = 0x10000;
@@ -448,14 +450,16 @@ fn test_fs_invalid_addresses() {
         *i = 0xb;
     }
 
-    let _ret = vibrio::syscalls::Fs::write(fd, base_small + size_small + 1, 256)
-        .expect_err("FileWrite syscall should fail");
-    let _ret = vibrio::syscalls::Fs::write(fd, base_small + size_small - 1, 256)
-        .expect_err("FileWrite syscall should fail");
-    let _ret = vibrio::syscalls::Fs::write(fd, base_small, size_small + 1)
-        .expect_err("FileWrite syscall should fail");
-    let _ret = vibrio::syscalls::Fs::write(fd, base_small - 1, 256)
-        .expect_err("FileWrite syscall should fail");
+    for (ptr, len) in [
+        ((base_small + size_small + 1), 256),
+        ((base_small + size_small - 1), 256),
+        (base_small, size_small as usize + 1),
+        ((base_small - 1), 256),
+    ] {
+        let invalid_slice = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
+        let _ret = vibrio::syscalls::Fs::write(fd, invalid_slice)
+            .expect_err("FileWrite syscall should fail");
+    }
 
     // Test address validity large pages.
     let base_large: u64 = 0x8000000;
@@ -469,18 +473,19 @@ fn test_fs_invalid_addresses() {
         *i = 0xb;
     }
 
-    let _ret = vibrio::syscalls::Fs::write(fd, base_large + size_large + 1, 256)
-        .expect_err("FileWrite syscall should fail");
-    let _ret = vibrio::syscalls::Fs::write(fd, base_large + size_large - 1, 256)
-        .expect_err("FileWrite syscall should fail");
-    let _ret = vibrio::syscalls::Fs::write(fd, base_large, size_large + 1)
-        .expect_err("FileWrite syscall should fail");
-    let _ret = vibrio::syscalls::Fs::write(fd, base_large - 1, 256)
-        .expect_err("FileWrite syscall should fail");
+    for (ptr, len) in [
+        ((base_large + size_large + 1), 256),
+        ((base_large + size_large - 1), 256),
+        (base_large, size_large as usize + 1),
+        ((base_large - 1), 256),
+    ] {
+        let invalid_slice = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
+        let _ret = vibrio::syscalls::Fs::write(fd, invalid_slice)
+            .expect_err("FileWrite syscall should fail");
+    }
 
     // Close the opened file.
-    let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
-    assert_eq!(ret, 0);
+    let _ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
 }
 
 fn fs_test() {
@@ -511,7 +516,7 @@ fn fs_test() {
         assert_eq!(slice[99], 0xb);
 
         // Write the slice content to the created file.
-        let ret = vibrio::syscalls::Fs::write_at(fd, slice.as_ptr() as u64, 256, 0)
+        let ret = vibrio::syscalls::Fs::write_at(fd, &slice[0..256], 0)
             .expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
 
@@ -525,32 +530,28 @@ fn fs_test() {
         for i in slice.iter_mut() {
             *i = 0;
         }
-        let ret = vibrio::syscalls::Fs::read(fd, slice.as_ptr() as u64, 256)
-            .expect("FileWrite syscall failed");
+        let ret =
+            vibrio::syscalls::Fs::read(fd, &mut slice[0..256]).expect("FileWrite syscall failed");
         assert_eq!(ret, 256);
         assert_eq!(slice[255], 0xb);
         assert_eq!(slice[256], 0);
 
         // This call is to tests nrk memory deallocator for large allocations.
-        let ret = vibrio::syscalls::Fs::write_at(fd, slice.as_ptr() as u64, 256, 4096 * 255)
+        let ret = vibrio::syscalls::Fs::write_at(fd, &slice[0..256], 4096 * 255)
             .expect("FileWriteAt syscall failed");
 
         // Close the file.
-        let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
-        assert_eq!(ret, 0);
+        vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
 
         // Rename the file
         let ret = vibrio::syscalls::Fs::rename("mydir/file.txt", "filenew.txt")
             .expect("FileRename syscall failed");
-        assert_eq!(ret, 0);
 
         // Delete the file.
-        let ret = vibrio::syscalls::Fs::delete("filenew.txt").expect("FileDelete syscall failed");
-        assert_eq!(ret, true);
+        vibrio::syscalls::Fs::delete("filenew.txt").expect("FileDelete syscall failed");
 
         let ret =
             vibrio::syscalls::Fs::delete("mydir").expect("FileDelete syscall on directory failed");
-        assert_eq!(ret, true);
 
         // Test fs with invalid userspace pointers
         test_fs_invalid_addresses();
@@ -568,7 +569,7 @@ fn fs_prop_test() {
 fn pmem_alloc(ncores: Option<usize>) {
     use alloc::vec::Vec;
     use lineup::threads::ThreadId;
-    use lineup::tls2::{Environment, SchedulerControlBlock};
+    use lineup::tls2::Environment;
 
     unsafe extern "C" fn bencher_trampoline(_arg1: *mut u8) -> *mut u8 {
         map();

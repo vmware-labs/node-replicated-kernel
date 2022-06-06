@@ -10,7 +10,7 @@ license = "BSD-2-Clause"
 log = "0.4"
 kpi = { path = "../kpi" }
 static_assertions = "1.1.0"
-x86 = "0.48"
+x86 = "0.49"
 arrayvec = { version = "0.7.0", default-features = false }
 custom_error = { version = "1.9", default-features = false, features = ["unstable"] }
 driverkit = "0.17"

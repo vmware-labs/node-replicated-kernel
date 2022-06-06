@@ -21,7 +21,7 @@ kpi = { path = "../lib/kpi" }
 rpc = { path = "../lib/rpc", optional = true }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-x86 = "0.48"
+x86 = "0.49"
 klogger = "0.0.11"
 driverkit = "0.17"
 spin = "0.9.1"

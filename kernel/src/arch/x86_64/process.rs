@@ -237,6 +237,9 @@ impl<T> Drop for UserValue<T> {
     }
 }
 
+/// Runs a closure `f` while the current core has access to user-space enabled.
+///
+/// Access is disabled again after `f` returns.
 pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,

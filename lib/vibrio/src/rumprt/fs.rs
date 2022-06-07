@@ -54,7 +54,7 @@ pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c
         error!("NRK does not support O_EXCL\n");
     }
 
-    let cstr_name = 
+    let cstr_name =
         // Safety:
         // - validity of ptr: OK rump API semantics
         // - Lifetime is not guaranteed to be the actual lifetime of ptr: OK
@@ -68,11 +68,7 @@ pub unsafe extern "C" fn rumpuser_open(name: *const i8, mode: c_int, fdp: *mut c
     if let Ok(name_str) = cstr_name.to_str() {
         // Rump documentation says the 'hypervisor' sets the permissions of all
         // opened files. We set all files to read-write.
-        match Fs::open(
-            name_str,
-            flags,
-            FileModes::S_IRUSR | FileModes::S_IWUSR,
-        ) {
+        match Fs::open(name_str, flags, FileModes::S_IRUSR | FileModes::S_IWUSR) {
             Ok(fd) => {
                 *fdp = fd as c_int;
                 0
@@ -100,7 +96,7 @@ pub unsafe extern "C" fn rumpuser_getfileinfo(
     size: *mut u64,
     typ: *mut c_int,
 ) -> c_int {
-    let cstr_name = 
+    let cstr_name =
         // Safety:
         // - validity of ptr: OK rump API semantics
         // - Lifetime is not guaranteed to be the actual lifetime of ptr: OK
@@ -120,8 +116,7 @@ pub unsafe extern "C" fn rumpuser_getfileinfo(
             }
             Err(_) => super::errno::ENOENT as c_int,
         }
-    }
-    else {
+    } else {
         super::errno::EINVAL as c_int
     }
 }
@@ -152,9 +147,7 @@ pub unsafe extern "C" fn rumpuser_iovread(
     assert!(iovlen == 1, "very good vector support");
     let buffer = core::slice::from_raw_parts_mut((*ruiov).iov_base as *mut u8, (*ruiov).iov_len);
 
-    match Fs::read_at(
-        fd as u64, buffer, off
-    ) {
+    match Fs::read_at(fd as u64, buffer, off) {
         Ok(len) => {
             *retv = len.try_into().unwrap();
             0
@@ -175,9 +168,7 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
     assert!(iovlen == 1, "very good vector support");
     let buffer = core::slice::from_raw_parts((*ruiov).iov_base as *mut u8, (*ruiov).iov_len);
 
-    match Fs::write_at(
-        fd as u64, buffer, off,
-    ) {
+    match Fs::write_at(fd as u64, buffer, off) {
         Ok(len) => {
             *retv = len.try_into().unwrap();
             0

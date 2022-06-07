@@ -38,8 +38,6 @@ pub(crate) type Flags = u64;
 pub(crate) type Modes = u64;
 /// File descriptor.
 pub(crate) type FD = u64;
-/// Userspace buffer pointer to read or write a file.
-pub(crate) type Buffer = u64;
 /// Number of bytes to read or write a file.
 pub(crate) type Len = u64;
 /// Userspace-pointer to filename.

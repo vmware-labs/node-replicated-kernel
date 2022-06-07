@@ -1,8 +1,9 @@
 use cstr_core::CStr;
 
-use crate::arch::process::{user_virt_addr_valid, UserPtr, UserSlice};
+use crate::arch::process::{user_virt_addr_valid, UserPtr};
 use crate::error::KResult;
 use crate::memory::VAddr;
+use crate::process::UserSlice;
 use crate::syscalls::FsDispatch;
 use crate::syscalls::SystemCallDispatch;
 
@@ -43,41 +44,30 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         .map_err(|e| e.into())
     }
 
-    fn read(&self, fd: u64, buffer: u64, len: u64) -> KResult<(u64, u64)> {
-        let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
-
-        let mut userslice = UserSlice::new(buffer, len as usize);
-
+    fn read(&self, fd: u64, uslice: UserSlice) -> KResult<(u64, u64)> {
         let mut client = super::RPC_CLIENT.lock();
-        rpc_read(&mut **client, pid, fd, len, &mut userslice).map_err(|e| e.into())
+        rpc_read(&mut **client, pid, fd, len, &mut uslice).map_err(|e| e.into())
     }
 
-    fn write(&self, fd: u64, buffer: u64, len: u64) -> KResult<(u64, u64)> {
+    fn write(&self, fd: u64, uslice: UserSlice) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
 
-        let kernslice = crate::process::KernSlice::new(buffer, len as usize);
+        let kernslice = crate::process::KernSlice::try_from(uslice)?;
         let buff_ptr = kernslice.buffer.clone();
 
         let mut client = super::RPC_CLIENT.lock();
         rpc_write(&mut **client, pid, fd, &buff_ptr).map_err(|e| e.into())
     }
 
-    fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> KResult<(u64, u64)> {
+    fn read_at(&self, fd: u64, uslice: UserSlice, offset: u64) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
-        let mut userslice = UserSlice::new(buffer, len as usize);
-
         let mut client = super::RPC_CLIENT.lock();
-        rpc_readat(&mut **client, pid, fd, len, offset as i64, &mut userslice).map_err(|e| e.into())
+        rpc_readat(&mut **client, pid, fd, len, offset as i64, &mut uslice).map_err(|e| e.into())
     }
 
-    fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> KResult<(u64, u64)> {
+    fn write_at(&self, fd: u64, uslice: UserSlice, offset: u64) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
-
-        let kernslice = crate::process::KernSlice::new(buffer, len as usize);
+        let kernslice = crate::process::KernSlice::try_from(uslice)?;
         let buff_ptr = kernslice.buffer.clone();
 
         let mut client = super::RPC_CLIENT.lock();

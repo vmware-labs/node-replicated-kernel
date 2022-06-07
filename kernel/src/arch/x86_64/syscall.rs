@@ -434,7 +434,7 @@ pub extern "C" fn syscall_handle(
     #[cfg(feature = "rackscale")]
     let status = if crate::CMDLINE
         .get()
-        .map_or(false, |c| c.mode != Mode::Client)
+        .map_or(false, |c| c.mode != crate::cmdline::Mode::Client)
     {
         let dispatch = Arch86SystemCall;
         dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)

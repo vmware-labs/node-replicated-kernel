@@ -5,10 +5,10 @@ use crate::prelude::*;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
+use core::mem::MaybeUninit;
 
 use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVec;
-use fallible_collections::FallibleVecGlobal;
 use kpi::process::{FrameId, ProcessInfo};
 use kpi::MemType;
 use node_replication::{Dispatch, Replica, ReplicaToken};
@@ -85,7 +85,7 @@ pub(crate) enum ProcessResult<E: Executor> {
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FrameId(usize),
-    Read(Vec<u8>),
+    Read(Arc<[u8]>),
 }
 
 /// Advances the replica of all the processes on the current NUMA node.
@@ -330,8 +330,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    #[allow(unused)]
-    pub(crate) fn read_from_userspace(from: UserSlice) -> Result<Vec<u8>, KError> {
+    pub(crate) fn read_from_userspace(from: UserSlice) -> Result<Arc<[u8]>, KError> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][from.pid].execute(
@@ -379,10 +378,19 @@ where
             }
             ProcessOp::ReadSlice(uslice) => {
                 // We're going to copy what we read into this thing
-                let mut kbuf: Vec<u8> = Vec::try_with_capacity(uslice.len())?;
-                // Reading the data from the process' memory
-                uslice.with_slice(&*self.process, |ubuf| kbuf.extend_from_slice(ubuf))?;
-                Ok(ProcessResult::Read(kbuf))
+                // TODO(panic+oom): need `try_new_uninit_slice` https://github.com/rust-lang/rust/issues/63291
+                let mut buffer = Arc::<[u8]>::new_uninit_slice(uslice.len());
+                let data = Arc::get_mut(&mut buffer).unwrap();
+                uslice.with_slice(&*self.process, |ubuf| MaybeUninit::write_slice(data, ubuf))?;
+                let buffer = unsafe {
+                    // Safety: `assume_init`
+                    // - Plain-old-data, that we just copied into `buffer` above
+                    // - uslice and buffer have the same length (buffer
+                    //   initialized with uslice.len())
+                    buffer.assume_init()
+                };
+
+                Ok(ProcessResult::Read(buffer))
             }
             ProcessOp::WriteSlice(uslice, kbuf) => {
                 if uslice.len() != kbuf.len() {

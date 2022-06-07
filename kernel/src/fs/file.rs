@@ -7,6 +7,7 @@ use core::mem::size_of;
 use fallible_collections::{FallibleVec, FallibleVecGlobal, TryReserveError};
 use kpi::io::*;
 
+use crate::arch::process::ArchProcess;
 use crate::error::KError;
 use crate::memory::BASE_PAGE_SIZE;
 use crate::process::UserSlice;
@@ -176,8 +177,7 @@ impl File {
                 copied += remaining;
             }
             let uslice = user_slice.subslice(dst_start..dst_end);
-            use crate::arch::process::Ring3Process;
-            crate::nrproc::NrProcess::<Ring3Process>::write_to_userspace(
+            crate::nrproc::NrProcess::<ArchProcess>::write_to_userspace(
                 uslice,
                 &self.mcache[buffer_num].data[src_start..src_end],
             )?;

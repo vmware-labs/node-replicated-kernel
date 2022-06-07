@@ -8,17 +8,18 @@ use core::fmt::{Debug, LowerHex};
 use kpi::{FileOperation, ProcessOperation, SystemCall, SystemOperation, VSpaceOperation};
 use log::{error, trace};
 
-use crate::arch::process::user_virt_addr_valid;
+use crate::arch::process::{current_pid, user_virt_addr_valid};
 use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
+use crate::process::UserSlice;
 
 /// FileOperation: Arch specific implementations
 pub(crate) trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
     fn open(&self, path: W, len: W, flags: W, modes: W) -> KResult<(W, W)>;
-    fn read(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
-    fn write(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
-    fn read_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
-    fn write_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
+    fn read(&self, fd: W, buffer: UserSlice) -> KResult<(W, W)>;
+    fn write(&self, fd: W, buffer: UserSlice) -> KResult<(W, W)>;
+    fn read_at(&self, fd: W, buffer: UserSlice, offset: i64) -> KResult<(W, W)>;
+    fn write_at(&self, fd: W, buffer: UserSlice, offset: i64) -> KResult<(W, W)>;
     fn close(&self, fd: W) -> KResult<(W, W)>;
     fn get_info(&self, name: W, len: W) -> KResult<(W, W)>;
     fn delete(&self, name: W, len: W) -> KResult<(W, W)>;
@@ -29,10 +30,10 @@ pub(crate) trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
 /// Parsed and validated arguments of the file system calls.
 enum FileOperationArgs<W> {
     Open(W, W, W, W),
-    Read(W, W, W),
-    Write(W, W, W),
-    ReadAt(W, W, W, W),
-    WriteAt(W, W, W, W),
+    Read(W, UserSlice),
+    Write(W, UserSlice),
+    ReadAt(W, UserSlice, i64),
+    WriteAt(W, UserSlice, i64),
     Close(W),
     GetInfo(W, W),
     Delete(W, W),
@@ -50,10 +51,24 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
 
         match op {
             FileOperation::Open => Ok(Self::Open(arg2, arg3, arg4, arg5)),
-            FileOperation::Read => Ok(Self::Read(arg2, arg3, arg4)),
-            FileOperation::Write => Ok(Self::Write(arg2, arg3, arg4)),
-            FileOperation::ReadAt => Ok(Self::ReadAt(arg2, arg3, arg4, arg5)),
-            FileOperation::WriteAt => Ok(Self::WriteAt(arg2, arg3, arg4, arg5)),
+            FileOperation::Read => Ok(Self::Read(
+                arg2,
+                UserSlice::for_current_proc(arg3.into(), arg4.into())?,
+            )),
+            FileOperation::Write => Ok(Self::Write(
+                arg2,
+                UserSlice::for_current_proc(arg3.into(), arg4.into())?,
+            )),
+            FileOperation::ReadAt => Ok(Self::ReadAt(
+                arg2,
+                UserSlice::for_current_proc(arg3.into(), arg4.into())?,
+                arg5.into().try_into()?,
+            )),
+            FileOperation::WriteAt => Ok(Self::WriteAt(
+                arg2,
+                UserSlice::for_current_proc(arg3.into(), arg4.into())?,
+                arg5.into().try_into()?,
+            )),
             FileOperation::Close => Ok(Self::Close(arg2)),
             FileOperation::GetInfo => Ok(Self::GetInfo(arg2, arg3)),
             FileOperation::Delete => Ok(Self::Delete(arg2, arg3)),
@@ -254,10 +269,10 @@ pub(crate) trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clo
         use FileOperationArgs::*;
         match FileOperationArgs::validate(arg1, arg2, arg3, arg4, arg5)? {
             Open(path, len, flags, modes) => self.open(path, len, flags, modes),
-            Read(fd, buffer, len) => self.read(fd, buffer, len),
-            Write(fd, buffer, len) => self.write(fd, buffer, len),
-            ReadAt(fd, buffer, len, offset) => self.read_at(fd, buffer, len, offset),
-            WriteAt(fd, buffer, len, offset) => self.write_at(fd, buffer, len, offset),
+            Read(fd, buffer) => self.read(fd, buffer),
+            Write(fd, buffer) => self.write(fd, buffer),
+            ReadAt(fd, buffer, offset) => self.read_at(fd, buffer, offset),
+            WriteAt(fd, buffer, offset) => self.write_at(fd, buffer, offset),
             Close(fd) => self.close(fd),
             GetInfo(name, len) => self.get_info(name, len),
             Delete(name, len) => self.delete(name, len),
@@ -316,48 +331,40 @@ pub(crate) trait CnrFsDispatch {}
 
 impl<T: CnrFsDispatch> FsDispatch<u64> for T {
     fn open(&self, pathname: u64, len: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, len)?;
         cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
     }
 
-    fn read(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
-        cnrfs::MlnrKernelNode::file_io(FileOperation::Read, pid, fd, buffer, len, -1)
+    fn read(&self, fd: u64, buffer: UserSlice) -> Result<(u64, u64), KError> {
+        cnrfs::MlnrKernelNode::file_io(FileOperation::Read, fd, buffer, -1)
     }
 
-    fn write(&self, fd: u64, buffer: u64, len: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
-        cnrfs::MlnrKernelNode::file_io(FileOperation::Write, pid, fd, buffer, len, -1)
+    fn write(&self, fd: u64, buffer: UserSlice) -> Result<(u64, u64), KError> {
+        cnrfs::MlnrKernelNode::file_io(FileOperation::Write, fd, buffer, -1)
     }
 
-    fn read_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
-        cnrfs::MlnrKernelNode::file_io(FileOperation::ReadAt, pid, fd, buffer, len, offset as i64)
+    fn read_at(&self, fd: u64, buffer: UserSlice, offset: i64) -> Result<(u64, u64), KError> {
+        cnrfs::MlnrKernelNode::file_io(FileOperation::ReadAt, fd, buffer, offset)
     }
 
-    fn write_at(&self, fd: u64, buffer: u64, len: u64, offset: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, buffer, len)?;
-        cnrfs::MlnrKernelNode::file_io(FileOperation::WriteAt, pid, fd, buffer, len, offset as i64)
+    fn write_at(&self, fd: u64, buffer: UserSlice, offset: i64) -> Result<(u64, u64), KError> {
+        cnrfs::MlnrKernelNode::file_io(FileOperation::WriteAt, fd, buffer, offset)
     }
 
     fn close(&self, fd: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
     }
 
     fn get_info(&self, name: u64, len: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         let _r = user_virt_addr_valid(pid, name, len)?;
         cnrfs::MlnrKernelNode::file_info(pid, name)
     }
 
     fn delete(&self, name: u64, len: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         let _r = user_virt_addr_valid(pid, name, len)?;
         cnrfs::MlnrKernelNode::file_delete(pid, name)
     }
@@ -369,14 +376,14 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
         newname: u64,
         newlen: u64,
     ) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         let _r = user_virt_addr_valid(pid, oldname, oldlen)?;
         let _r = user_virt_addr_valid(pid, newname, newlen)?;
         cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)
     }
 
     fn mkdir(&self, pathname: u64, len: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         let _r = user_virt_addr_valid(pid, pathname, len)?;
         cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes)
     }

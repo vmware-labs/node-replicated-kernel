@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::string::FromUtf8Error;
-use core::convert::From;
+use core::{convert::From, num::TryFromIntError};
 
 use arrayvec::CapacityError;
 use kpi::SystemCallError;
@@ -163,6 +163,10 @@ pub enum KError {
     PidMismatchInProcessArgument,
     /// The supplied buffers for `SliceWrite` have different lengths.
     SliceLengthMismatchForWriting,
+    /// Tried to create a user-space buffer that's too big (> 2GiB)
+    UserBufferTooLarge,
+    /// Trying to cast a integer to another integer failed.
+    TryFromIntError,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {
@@ -204,6 +208,12 @@ impl From<core::alloc::AllocError> for KError {
 impl From<FromUtf8Error> for KError {
     fn from(_e: FromUtf8Error) -> Self {
         KError::NotAValidUtf8String
+    }
+}
+
+impl From<TryFromIntError> for KError {
+    fn from(_e: TryFromIntError) -> Self {
+        KError::TryFromIntError
     }
 }
 

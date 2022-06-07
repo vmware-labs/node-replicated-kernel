@@ -1,45 +1,33 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![allow(warnings)]
-
-use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryInto;
-use cstr_core::CStr;
 
 use fallible_collections::{FallibleVec, FallibleVecGlobal};
-use klogger::{sprint, sprintln};
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use x86::bits64::rflags;
 use x86::msr::{rdmsr, wrmsr, IA32_EFER, IA32_FMASK, IA32_LSTAR, IA32_STAR};
 
 use kpi::process::FrameId;
-use kpi::{
-    FileOperation, MemType, ProcessOperation, SystemCall, SystemCallError, SystemOperation,
-    VSpaceOperation,
-};
+use kpi::{MemType, SystemCallError};
 
 use crate::arch::process::current_pid;
-use crate::cmdline::{CommandLineArguments, Mode};
+use crate::cmdline::CommandLineArguments;
 use crate::error::KError;
-use crate::fs::{cnrfs, FileSystem};
-use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::MapAction;
-use crate::memory::{Frame, KERNEL_BASE};
+use crate::memory::Frame;
+use crate::nr;
 use crate::nrproc::NrProcess;
-use crate::process::{userptr_to_str, Pid, ResumeHandle, UVAddr, UserSlice};
+use crate::process::{ResumeHandle, UVAddr, UserSlice};
 use crate::syscalls::{ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch};
-use crate::{nr, nrproc};
 
 use super::gdt::GdtTable;
-use super::process::{user_virt_addr_valid, Ring3Process, UserPtr, UserValue};
+use super::process::{Ring3Process, UserValue};
 use super::serial::SerialControl;
 
 extern "C" {
-    #[no_mangle]
     fn syscall_enter();
 }
 
@@ -105,13 +93,11 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
     }
 
     fn get_stats(&self) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
         info!("IRQ handler time: {} cycles", super::irq::TLB_TIME.get());
         Ok((0, 0))
     }
 
     fn get_core_id(&self) -> Result<(u64, u64), KError> {
-        let kcb = super::kcb::get_kcb();
         Ok((
             *crate::environment::CORE_ID as u64,
             *crate::environment::NODE_ID as u64,
@@ -124,8 +110,6 @@ pub(crate) trait Arch86ProcessDispatch {}
 
 impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
     fn log(&self, buffer_arg: u64, len: u64) -> Result<(u64, u64), KError> {
-        let mut kcb = super::kcb::get_kcb();
-
         // TODO: some scary unsafe logic here that needs sanitization
         let buffer: *const u8 = buffer_arg as *const u8;
         let len: usize = len as usize;
@@ -161,8 +145,6 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
     fn get_process_info(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> Result<(u64, u64), KError> {
         // vaddr_buf = buf.as_mut_ptr() as u64
         // vaddr_buf_len = buf.len() as u64
-        let kcb = super::kcb::get_kcb();
-
         let pid = current_pid()?;
         let mut pinfo = NrProcess::<Ring3Process>::pinfo(pid)?;
         pinfo.cmdline = crate::CMDLINE
@@ -189,8 +171,6 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 
     fn request_core(&self, core_id: u64, entry_point: u64) -> Result<(u64, u64), KError> {
         let gtid: usize = core_id.try_into().unwrap();
-        let kcb = super::kcb::get_kcb();
-
         let mut affinity = None;
         for thread in atopology::MACHINE_TOPOLOGY.threads() {
             if thread.id == gtid {
@@ -200,7 +180,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
         let pid = current_pid()?;
 
-        let gtid = nr::KernelNode::allocate_core_to_process(
+        let _gtid = nr::KernelNode::allocate_core_to_process(
             pid,
             VAddr::from(entry_point),
             Some(affinity),
@@ -210,7 +190,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         Ok((core_id, 0))
     }
 
-    fn allocate_physical(&self, page_size: u64, affinity: u64) -> Result<(u64, u64), KError> {
+    fn allocate_physical(&self, page_size: u64, _affinity: u64) -> Result<(u64, u64), KError> {
         let page_size: usize = page_size.try_into().unwrap_or(0);
         //let affinity: usize = arg3.try_into().unwrap_or(0);
         // Validate input
@@ -282,7 +262,6 @@ pub(crate) trait Arch86VSpaceDispatch {
             let mut pmanager = match mem_type {
                 MemType::Mem => pcm.mem_manager(),
                 MemType::PMem => pcm.pmem_manager(),
-                _ => unreachable!(),
             };
 
             for _i in 0..lp {

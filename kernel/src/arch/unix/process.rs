@@ -32,6 +32,9 @@ use super::debug;
 use super::vspace::VSpace;
 use super::MAX_NUMA_NODES;
 
+/// The process model of the current architecture.
+pub(crate) type ArchProcess = UnixProcess;
+
 /// A handle to the currently active (scheduled on the core) process.
 #[thread_local]
 pub(crate) static CURRENT_EXECUTOR: RefCell<Option<Box<UnixThread>>> = RefCell::new(None);

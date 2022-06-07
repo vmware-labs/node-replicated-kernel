@@ -31,7 +31,8 @@
     cell_update,
     thread_local,
     let_chains,
-    generic_associated_types
+    generic_associated_types,
+    maybe_uninit_write_slice
 )]
 
 extern crate alloc;

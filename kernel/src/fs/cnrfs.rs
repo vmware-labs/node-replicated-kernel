@@ -14,12 +14,12 @@ use log::trace;
 use crate::error::KError;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::prelude::*;
-use crate::process::{userptr_to_str, KernSlice, Pid, UVAddr, UserSlice};
+use crate::process::{userptr_to_str, KernSlice, Pid, UserSlice};
 
 use super::fd::FileDesc;
 use super::{
-    Buffer, FileDescriptor, FileSystem, Filename, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset,
-    FD, MNODE_OFFSET,
+    FileDescriptor, FileSystem, Filename, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset, FD,
+    MNODE_OFFSET,
 };
 
 /// A handle to the node-local CNR based kernel replica.
@@ -100,7 +100,7 @@ pub(crate) enum Modify {
     ProcessAdd(Pid),
     //ProcessRemove(Pid),
     FileOpen(Pid, String, Flags, Modes),
-    FileWrite(Pid, FD, Mnode, Arc<[u8]>, Len, Offset),
+    FileWrite(Pid, FD, Mnode, Arc<[u8]>, Offset),
     FileClose(Pid, FD),
     FileDelete(Pid, String),
     FileRename(Pid, String, String),
@@ -116,7 +116,7 @@ impl LogMapper for Modify {
             Modify::ProcessAdd(_pid) => push_to_all(nlogs, logs),
             //Modify::ProcessRemove(_pid) => push_to_all(nlogs, logs),
             Modify::FileOpen(_pid, _filename, _flags, _modes) => push_to_all(nlogs, logs),
-            Modify::FileWrite(_pid, _fd, mnode, _kernslice, _len, _offset) => {
+            Modify::FileWrite(_pid, _fd, mnode, _kernslice, _offset) => {
                 logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
             Modify::FileClose(_pid, _fd) => push_to_all(nlogs, logs),
@@ -135,7 +135,7 @@ impl LogMapper for Modify {
 
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub(crate) enum Access {
-    FileRead(Pid, FD, Mnode, Buffer, Len, Offset),
+    FileRead(Pid, FD, Mnode, UserSlice, Offset),
     FileInfo(Pid, Filename, Mnode),
     FdToMnode(Pid, FD),
     FileNameToMnode(Pid, Filename),
@@ -148,7 +148,7 @@ impl LogMapper for Access {
         debug_assert!(logs.capacity() >= nlogs, "Push can't fail.");
         logs.clear();
         match self {
-            Access::FileRead(_pid, _fd, mnode, _buffer, _len, _offser) => {
+            Access::FileRead(_pid, _fd, mnode, _buffer, _offset) => {
                 logs.push((*mnode as usize - MNODE_OFFSET) % nlogs)
             }
             Access::FileInfo(_pid, _filename, mnode) => {
@@ -220,13 +220,11 @@ impl MlnrKernelNode {
 
     pub(crate) fn file_io(
         op: FileOperation,
-        pid: Pid,
         fd: u64,
-        buffer: u64,
-        len: u64,
+        buffer: UserSlice,
         offset: i64,
     ) -> Result<(Len, u64), KError> {
-        let mnode = match MlnrKernelNode::fd_to_mnode(pid, fd) {
+        let mnode = match MlnrKernelNode::fd_to_mnode(buffer.pid, fd) {
             Ok((mnode, _)) => mnode,
             Err(_) => return Err(KError::InvalidFileDescriptor),
         };
@@ -235,13 +233,11 @@ impl MlnrKernelNode {
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| match op {
                 FileOperation::Write | FileOperation::WriteAt => {
-                    let kernslice = KernSlice::new(buffer, len as usize);
-
+                    let kernslice = KernSlice::try_from(buffer)?;
                     let response = replica.execute_mut(
-                        Modify::FileWrite(pid, fd, mnode, kernslice.buffer, len, offset),
+                        Modify::FileWrite(buffer.pid, fd, mnode, kernslice.buffer, offset),
                         *token,
                     );
-
                     match response {
                         Ok(MlnrNodeResult::FileAccessed(len)) => Ok((len, 0)),
                         Err(e) => Err(e),
@@ -251,7 +247,7 @@ impl MlnrKernelNode {
 
                 FileOperation::Read | FileOperation::ReadAt => {
                     let response = replica.execute(
-                        Access::FileRead(pid, fd, mnode, buffer, len, offset),
+                        Access::FileRead(buffer.pid, fd, mnode, buffer, offset),
                         *token,
                     );
 
@@ -401,9 +397,7 @@ impl Dispatch for MlnrKernelNode {
 
     fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
-            Access::FileRead(pid, fd, _mnode, buffer, len, offset) => {
-                let userslice = UserSlice::new(pid, UVAddr::try_from(buffer)?, len as usize)?;
-
+            Access::FileRead(pid, fd, _mnode, userslice, offset) => {
                 let process_lookup = self.process_map.read();
                 let p = process_lookup
                     .get(&pid)
@@ -541,7 +535,7 @@ impl Dispatch for MlnrKernelNode {
                 Ok(MlnrNodeResult::FileOpened(fid))
             }
 
-            Modify::FileWrite(pid, fd, _mnode, kernslice, _len, offset) => {
+            Modify::FileWrite(pid, fd, _mnode, kernslice, offset) => {
                 let process_lookup = self.process_map.read();
                 let p = process_lookup
                     .get(&pid)

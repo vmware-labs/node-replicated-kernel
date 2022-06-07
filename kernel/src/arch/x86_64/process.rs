@@ -44,6 +44,9 @@ use super::MAX_NUMA_NODES;
 
 const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
 
+/// The process model of the current architecture.
+pub(crate) type ArchProcess = Ring3Process;
+
 /// A handle to the currently active (scheduled on the core) process.
 #[thread_local]
 pub(crate) static CURRENT_EXECUTOR: RefCell<Option<Box<Ring3Executor>>> = RefCell::new(None);

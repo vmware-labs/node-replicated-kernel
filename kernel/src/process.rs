@@ -20,7 +20,7 @@ use log::{debug, info, trace};
 
 use crate::arch::kcb::per_core_mem;
 use crate::arch::memory::{paddr_to_kernel_vaddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
-use crate::arch::process::{with_user_space_access_enabled, UserPtr};
+use crate::arch::process::{with_user_space_access_enabled, UserPtr, current_pid, ArchProcess};
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
@@ -47,24 +47,28 @@ pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
 /// How many writable sections a process can have (part of the ELF file).
 pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
 
-/// This struct is used to copy the user buffer into kernel space, so that the
-/// user-application doesn't have any reference to any log operation in kernel space.
+/// Data copied from a user buffer into a kernel space buffer (`KernSlice`), so
+/// to make sure the user-application doesn't have any reference anymore.
+/// 
+/// 
+/// This is important sometimes due to replication, for example when writing a
+/// file with multiple replicas we don't want user-space to change the memory
+/// while we copy the data in the file (and hence end up with inconsistent
+/// replicas).
+/// 
+/// e.g., Any buffer that goes in the NR/CNR logs should be KernSlice.
 #[derive(PartialEq, Clone, Debug)]
 pub(crate) struct KernSlice {
     pub buffer: Arc<[u8]>,
 }
 
-impl KernSlice {
-    pub(crate) fn new(base: u64, len: usize) -> KernSlice {
-        let buffer = Arc::<[u8]>::new_uninit_slice(len);
-        let mut buffer = unsafe { buffer.assume_init() };
+impl TryFrom<UserSlice> for KernSlice {
+    type Error = KError;
 
-        let mut user_ptr = VAddr::from(base);
-        let slice_ptr = UserPtr::new(&mut user_ptr);
-        let user_slice: &mut [u8] =
-            unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
-        unsafe { Arc::get_mut_unchecked(&mut buffer).copy_from_slice(&user_slice[0..len]) };
-        KernSlice { buffer }
+    /// Converts a user-slice to a kernel slice.
+    fn try_from(user_slice: UserSlice) -> KResult<Self> {
+        let buffer = nrproc::NrProcess::<ArchProcess>::read_from_userspace(user_slice)?;
+        Ok(Self { buffer })
     }
 }
 
@@ -457,7 +461,7 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
 
 /// A virtual address that's guaranteed to point somewhere in user-space (e.g.,
 /// is below KERNEL_BASE).
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug, Hash)]
 pub(crate) struct UVAddr {
     inner: VAddr,
 }
@@ -511,7 +515,7 @@ impl TryFrom<usize> for UVAddr {
 /// # Note on performance
 /// Creating the user-slice is cheap, doing the actual read/write does many
 /// checks upfront that can add overheads. The checks are not cached.
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug, Hash)]
 pub(crate) struct UserSlice {
     pub pid: Pid,
     base: UVAddr,
@@ -525,12 +529,30 @@ impl UserSlice {
     /// Returns an error if slice addresses potential kernel memory or null.
     pub(crate) fn new(pid: Pid, base: UVAddr, len: usize) -> KResult<Self> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-        if let Some(end) = base.as_usize().checked_add(len) {
-            if base.as_usize() >= BASE_PAGE_SIZE && end < (KERNEL_BASE as usize) {
+        if len > i32::MAX as usize {
+            // Don't allow buffers > 2GB, this is pretty arbitrary and probably
+            // still too big but at least sets some "bound" on syscall duration
+            // in the kernel
+            return Err(KError::UserBufferTooLarge);
+        }
+        if let Some(end) = base.as_usize().checked_add(len) 
+            && base.as_usize() >= BASE_PAGE_SIZE && end < (KERNEL_BASE as usize) {
                 return Ok(UserSlice { pid, base, len });
-            }
         }
         Err(KError::InvalidUserBufferArgs)
+    }
+
+    /// Like [`UserSlice::new`] but use `u64` for base and `len`, and assume we
+    /// want to use `current_pid` for the process.
+    /// 
+    /// Helpful when creating a UserSlice from syscall arguments.
+    pub(crate) fn for_current_proc(base: u64, len: u64) -> KResult<Self> {
+        let pid = current_pid()?;
+        let base = UVAddr::try_from(base)?;
+        static_assertions::assert_eq_size!(u64, usize); // If this fails, think about this cast:
+        let len = len.try_into().unwrap();
+        
+        Ok(Self::new(pid, base, len)?)
     }
 
     /// Tries to interpret the memory of the user-slice as slice of UTF-8 bytes.
@@ -588,7 +610,7 @@ impl UserSlice {
         if self.pid != process.pid() {
             return Err(KError::PidMismatchInProcessArgument);
         }
-        if let Ok(pid) = crate::arch::process::current_pid() && pid != process.pid() {
+        if let Ok(pid) = current_pid() && pid != process.pid() {
             return Err(KError::NotInRightAddressSpaceForReading);
         }
         self.is_accessible(process, false)?;
@@ -611,7 +633,7 @@ impl UserSlice {
         if self.pid != process.pid() {
             return Err(KError::PidMismatchInProcessArgument);
         }
-        if let Ok(pid) = crate::arch::process::current_pid() && pid != process.pid() {
+        if let Ok(pid) = current_pid() && pid != process.pid() {
             return Err(KError::NotInRightAddressSpaceForReading);
         }
         self.is_accessible(process, false)?;

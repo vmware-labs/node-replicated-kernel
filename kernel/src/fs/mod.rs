@@ -10,9 +10,9 @@ use hashbrown::HashMap;
 use kpi::io::*;
 use spin::RwLock;
 
-use crate::arch::process::UserSlice;
 use crate::error::KError;
 use crate::fallible_string::TryString;
+use crate::process::UserSlice;
 
 pub(crate) use rwlock::RwLock as NrLock;
 
@@ -51,12 +51,7 @@ pub(crate) type Offset = i64;
 pub(crate) trait FileSystem {
     fn create(&self, pathname: &str, modes: Modes) -> Result<u64, KError>;
     fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError>;
-    fn read(
-        &self,
-        mnode_num: Mnode,
-        buffer: &mut UserSlice,
-        offset: usize,
-    ) -> Result<usize, KError>;
+    fn read(&self, mnode_num: Mnode, buffer: UserSlice, offset: usize) -> Result<usize, KError>;
     fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
     fn file_info(&self, mnode: Mnode) -> FileInfo;
     fn delete(&self, pathname: &str) -> Result<(), KError>;
@@ -212,12 +207,7 @@ impl FileSystem for MlnrFS {
         }
     }
 
-    fn read(
-        &self,
-        mnode_num: Mnode,
-        buffer: &mut UserSlice,
-        offset: usize,
-    ) -> Result<usize, KError> {
+    fn read(&self, mnode_num: Mnode, buffer: UserSlice, offset: usize) -> Result<usize, KError> {
         match self.mnodes.read().get(&mnode_num) {
             Some(mnode) => mnode.read().read(buffer, offset),
             None => Err(KError::InvalidFile),

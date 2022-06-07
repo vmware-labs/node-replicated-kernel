@@ -8,6 +8,7 @@ use core::alloc::Allocator;
 
 use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVec;
+use fallible_collections::FallibleVecGlobal;
 use kpi::process::{FrameId, ProcessInfo};
 use kpi::MemType;
 use node_replication::{Dispatch, Replica, ReplicaToken};
@@ -19,7 +20,7 @@ use crate::error::KError;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
-use crate::process::{Eid, Executor, Pid, Process, MAX_PROCESSES};
+use crate::process::{Eid, Executor, Pid, Process, UserSlice, MAX_PROCESSES};
 
 /// The tokens per core to access the process replicas.
 #[thread_local]
@@ -46,15 +47,17 @@ pub(crate) fn register_thread_with_process_replicas() {
 }
 
 /// Immutable operations on the NrProcess.
-#[derive(PartialEq, Clone, Copy, Debug)]
-pub(crate) enum ReadOps {
+#[derive(PartialEq, Debug)]
+pub(crate) enum ProcessOp<'buf> {
     ProcessInfo,
     MemResolve(VAddr),
+    ReadSlice(UserSlice),
+    WriteSlice(UserSlice, &'buf [u8]),
 }
 
 /// Mutable operations on the NrProcess.
 #[derive(PartialEq, Clone, Debug)]
-pub(crate) enum Op {
+pub(crate) enum ProcessOpMut {
     Load(Pid, &'static Module, Vec<Frame>),
 
     /// Assign a core to a process.
@@ -73,16 +76,16 @@ pub(crate) enum Op {
 
 /// Possible return values from the NrProcess.
 #[derive(Debug, Clone)]
-pub(crate) enum NodeResult<E: Executor> {
-    Loaded,
+pub(crate) enum ProcessResult<E: Executor> {
+    Ok,
     ProcessInfo(ProcessInfo),
     Executor(Box<E>),
     ExecutorsCreated(usize),
-    Mapped,
     MappedFrameId(PAddr, usize),
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FrameId(usize),
+    Read(Vec<u8>),
 }
 
 /// Advances the replica of all the processes on the current NUMA node.
@@ -134,11 +137,11 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
-            Op::Load(pid, module, writeable_sections),
+            ProcessOpMut::Load(pid, module, writeable_sections),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
-            Ok(NodeResult::Loaded) => Ok(()),
+            Ok(ProcessResult::Ok) => Ok(()),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -150,10 +153,12 @@ impl<P: Process> NrProcess<P> {
 
         let node = *crate::environment::NODE_ID;
 
-        let response = PROCESS_TABLE[node][pid]
-            .execute(ReadOps::MemResolve(base), PROCESS_TOKEN.get().unwrap()[pid]);
+        let response = PROCESS_TABLE[node][pid].execute(
+            ProcessOp::MemResolve(base),
+            PROCESS_TOKEN.get().unwrap()[pid],
+        );
         match response {
-            Ok(NodeResult::Resolved(paddr, _rights)) => Ok((paddr.as_u64(), 0x0)),
+            Ok(ProcessResult::Resolved(paddr, _rights)) => Ok((paddr.as_u64(), 0x0)),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -177,11 +182,11 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
-            Op::MemMapDevice(frame, action),
+            ProcessOpMut::MemMapDevice(frame, action),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
-            Ok(NodeResult::Mapped) => Ok((frame.base.as_u64(), frame.size() as u64)),
+            Ok(ProcessResult::Ok) => Ok((frame.base.as_u64(), frame.size() as u64)),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -192,10 +197,12 @@ impl<P: Process> NrProcess<P> {
 
         let node = *crate::environment::NODE_ID;
 
-        let response = PROCESS_TABLE[node][pid]
-            .execute_mut(Op::MemUnmap(base), PROCESS_TOKEN.get().unwrap()[pid]);
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            ProcessOpMut::MemUnmap(base),
+            PROCESS_TOKEN.get().unwrap()[pid],
+        );
         match response {
-            Ok(NodeResult::Unmapped(handle)) => Ok(handle),
+            Ok(ProcessResult::Unmapped(handle)) => Ok(handle),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -212,11 +219,11 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
-            Op::MemMapFrameId(base, frame_id, action),
+            ProcessOpMut::MemMapFrameId(base, frame_id, action),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
-            Ok(NodeResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
+            Ok(ProcessResult::MappedFrameId(paddr, size)) => Ok((paddr, size)),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -235,11 +242,11 @@ impl<P: Process> NrProcess<P> {
         let mut virtual_offset = 0;
         for frame in frames {
             let response = PROCESS_TABLE[node][pid].execute_mut(
-                Op::MemMapFrame(base + virtual_offset, frame, action),
+                ProcessOpMut::MemMapFrame(base + virtual_offset, frame, action),
                 PROCESS_TOKEN.get().unwrap()[pid],
             );
             match response {
-                Ok(NodeResult::Mapped) => {}
+                Ok(ProcessResult::Ok) => {}
                 e => unreachable!(
                     "Got unexpected response MemMapFrame {:?} {:?} {:?} {:?}",
                     e,
@@ -261,9 +268,9 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid]
-            .execute(ReadOps::ProcessInfo, PROCESS_TOKEN.get().unwrap()[pid]);
+            .execute(ProcessOp::ProcessInfo, PROCESS_TOKEN.get().unwrap()[pid]);
         match response {
-            Ok(NodeResult::ProcessInfo(pinfo)) => Ok(pinfo),
+            Ok(ProcessResult::ProcessInfo(pinfo)) => Ok(pinfo),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -280,11 +287,11 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = pm.process_table()[node][pid].execute_mut(
-            Op::AssignExecutor(gtid, node),
+            ProcessOpMut::AssignExecutor(gtid, node),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
-            Ok(NodeResult::Executor(executor)) => Ok(executor),
+            Ok(ProcessResult::Executor(executor)) => Ok(executor),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -296,11 +303,11 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
-            Op::AllocateFrameToProcess(frame),
+            ProcessOpMut::AllocateFrameToProcess(frame),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
-            Ok(NodeResult::FrameId(fid)) => Ok(fid),
+            Ok(ProcessResult::FrameId(fid)) => Ok(fid),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -312,12 +319,41 @@ impl<P: Process> NrProcess<P> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
-            Op::DispatcherAllocation(frame),
+            ProcessOpMut::DispatcherAllocation(frame),
             PROCESS_TOKEN.get().unwrap()[pid],
         );
 
         match response {
-            Ok(NodeResult::ExecutorsCreated(how_many)) => Ok(how_many),
+            Ok(ProcessResult::ExecutorsCreated(how_many)) => Ok(how_many),
+            Err(e) => Err(e),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn read_from_userspace(from: UserSlice) -> Result<Vec<u8>, KError> {
+        let node = *crate::environment::NODE_ID;
+
+        let response = PROCESS_TABLE[node][from.pid].execute(
+            ProcessOp::ReadSlice(from),
+            PROCESS_TOKEN.get().unwrap()[from.pid],
+        );
+        match response {
+            Ok(ProcessResult::Read(v)) => Ok(v),
+            Err(e) => Err(e),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
+    pub(crate) fn write_to_userspace(to: UserSlice, kbuf: &[u8]) -> Result<(), KError> {
+        let node = *crate::environment::NODE_ID;
+
+        let response = PROCESS_TABLE[node][to.pid].execute(
+            ProcessOp::WriteSlice(to, kbuf),
+            PROCESS_TOKEN.get().unwrap()[to.pid],
+        );
+        match response {
+            Ok(ProcessResult::Ok) => Ok(()),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -330,54 +366,71 @@ where
     P::E: Copy,
     M: Allocator + Clone,
 {
-    type WriteOperation = Op;
-    type ReadOperation = ReadOps;
-    type Response = Result<NodeResult<P::E>, KError>;
+    type ReadOperation<'buf> = ProcessOp<'buf>;
+    type WriteOperation = ProcessOpMut;
+    type Response = Result<ProcessResult<P::E>, KError>;
 
-    fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
+    fn dispatch<'buf>(&self, op: Self::ReadOperation<'buf>) -> Self::Response {
         match op {
-            ReadOps::ProcessInfo => Ok(NodeResult::ProcessInfo(*self.process.pinfo())),
-            ReadOps::MemResolve(base) => {
+            ProcessOp::ProcessInfo => Ok(ProcessResult::ProcessInfo(*self.process.pinfo())),
+            ProcessOp::MemResolve(base) => {
                 let (paddr, rights) = self.process.vspace().resolve(base)?;
-                Ok(NodeResult::Resolved(paddr, rights))
+                Ok(ProcessResult::Resolved(paddr, rights))
+            }
+            ProcessOp::ReadSlice(uslice) => {
+                // We're going to copy what we read into this thing
+                let mut kbuf: Vec<u8> = Vec::try_with_capacity(uslice.len())?;
+                // Reading the data from the process' memory
+                uslice.with_slice(&*self.process, |ubuf| kbuf.extend_from_slice(ubuf))?;
+                Ok(ProcessResult::Read(kbuf))
+            }
+            ProcessOp::WriteSlice(uslice, kbuf) => {
+                if uslice.len() != kbuf.len() {
+                    return Err(KError::SliceLengthMismatchForWriting);
+                }
+                // Writing the data to the process' memory
+                uslice.with_slice_mut(&*self.process, |ubuf| {
+                    ubuf.copy_from_slice(kbuf);
+                })?;
+                Ok(ProcessResult::Ok)
             }
         }
     }
 
     fn dispatch_mut(&mut self, op: Self::WriteOperation) -> Self::Response {
         match op {
-            Op::Load(pid, module, writeable_sections) => {
+            ProcessOpMut::Load(pid, module, writeable_sections) => {
                 self.process.load(pid, module, writeable_sections)?;
-                Ok(NodeResult::Loaded)
+                Ok(ProcessResult::Ok)
             }
 
-            Op::DispatcherAllocation(frame) => {
+            ProcessOpMut::DispatcherAllocation(frame) => {
                 let how_many = self.process.allocate_executors(frame)?;
-                Ok(NodeResult::ExecutorsCreated(how_many))
+                Ok(ProcessResult::ExecutorsCreated(how_many))
             }
 
-            Op::MemMapFrame(base, frame, action) => {
+            ProcessOpMut::MemMapFrame(base, frame, action) => {
                 crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
                 self.process.vspace_mut().map_frame(base, frame, action)?;
-                Ok(NodeResult::Mapped)
+                Ok(ProcessResult::Ok)
             }
 
             // Can be MapFrame with base supplied ...
-            Op::MemMapDevice(frame, action) => {
+            ProcessOpMut::MemMapDevice(frame, action) => {
                 let base = VAddr::from(frame.base.as_u64());
                 self.process.vspace_mut().map_frame(base, frame, action)?;
-                Ok(NodeResult::Mapped)
+                Ok(ProcessResult::Ok)
             }
 
-            Op::MemMapFrameId(base, frame_id, action) => {
+            ProcessOpMut::MemMapFrameId(base, frame_id, action) => {
                 let frame = self.process.get_frame(frame_id)?;
                 crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
 
                 self.process.vspace_mut().map_frame(base, frame, action)?;
-                Ok(NodeResult::MappedFrameId(frame.base, frame.size))
+                Ok(ProcessResult::MappedFrameId(frame.base, frame.size))
             }
 
-            Op::MemUnmap(vaddr) => {
+            ProcessOpMut::MemUnmap(vaddr) => {
                 let mut shootdown_handle = self.process.vspace_mut().unmap(vaddr)?;
                 // Figure out which cores are running our current process
                 // (this is where we send IPIs later)
@@ -385,19 +438,19 @@ where
                     shootdown_handle.add_core(*gtid);
                 }
 
-                Ok(NodeResult::Unmapped(shootdown_handle))
+                Ok(ProcessResult::Unmapped(shootdown_handle))
             }
 
-            Op::AssignExecutor(gtid, region) => {
+            ProcessOpMut::AssignExecutor(gtid, region) => {
                 let executor = self.process.get_executor(region)?;
                 let eid = executor.id();
                 self.active_cores.try_push((gtid, eid))?;
-                Ok(NodeResult::Executor(executor))
+                Ok(ProcessResult::Executor(executor))
             }
 
-            Op::AllocateFrameToProcess(frame) => {
+            ProcessOpMut::AllocateFrameToProcess(frame) => {
                 let fid = self.process.add_frame(frame)?;
-                Ok(NodeResult::FrameId(fid))
+                Ok(ProcessResult::FrameId(fid))
             }
         }
     }

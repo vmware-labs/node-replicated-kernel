@@ -24,9 +24,9 @@ impl Arch86ProcessDispatch for Arch86LwkSystemCall {}
 impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
 
 impl FsDispatch<u64> for Arch86LwkSystemCall {
-    fn open(&self, pathname: u64, flags: u64, modes: u64) -> KResult<(u64, u64)> {
+    fn open(&self, pathname: u64, len: u64, flags: u64, modes: u64) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, pathname, 0)?;
+        let _r = user_virt_addr_valid(pid, pathname, len)?;
 
         let mut pathname_user_ptr = VAddr::from(pathname);
         let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);
@@ -90,9 +90,9 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
     }
 
-    fn get_info(&self, name: u64) -> KResult<(u64, u64)> {
+    fn get_info(&self, name: u64, len: u64) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, name, 0)?;
+        let _r = user_virt_addr_valid(pid, name, len)?;
 
         let mut filename_user_ptr = VAddr::from(name);
         let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
@@ -102,9 +102,9 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_getinfo(&mut **client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
     }
 
-    fn delete(&self, name: u64) -> KResult<(u64, u64)> {
+    fn delete(&self, name: u64, len: u64) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, name, 0)?;
+        let _r = user_virt_addr_valid(pid, name, len)?;
 
         let mut filename_user_ptr = VAddr::from(name);
         let filename_str_ptr = UserPtr::new(&mut filename_user_ptr);
@@ -114,10 +114,16 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         rpc_delete(&mut **client, pid, filename_cstr.to_bytes_with_nul()).map_err(|e| e.into())
     }
 
-    fn file_rename(&self, oldname: u64, newname: u64) -> KResult<(u64, u64)> {
+    fn file_rename(
+        &self,
+        oldname: u64,
+        oldlen: u64,
+        newname: u64,
+        newlen: u64,
+    ) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, oldname, 0)?;
-        let _r = user_virt_addr_valid(pid, newname, 0)?;
+        let _r = user_virt_addr_valid(pid, oldname, oldlen)?;
+        let _r = user_virt_addr_valid(pid, newname, newlen)?;
 
         let mut old_user_ptr = VAddr::from(oldname);
         let old_str_ptr = UserPtr::new(&mut old_user_ptr);
@@ -137,9 +143,9 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         .map_err(|e| e.into())
     }
 
-    fn mkdir(&self, pathname: u64, modes: u64) -> KResult<(u64, u64)> {
+    fn mkdir(&self, pathname: u64, len: u64, modes: u64) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, pathname, 0)?;
+        let _r = user_virt_addr_valid(pid, pathname, len)?;
 
         let mut pathname_user_ptr = VAddr::from(pathname);
         let pathname_str_ptr = UserPtr::new(&mut pathname_user_ptr);

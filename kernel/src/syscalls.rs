@@ -14,30 +14,30 @@ use crate::fs::cnrfs;
 
 /// FileOperation: Arch specific implementations
 pub(crate) trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn open(&self, pathname: W, flags: W, modes: W) -> KResult<(W, W)>;
+    fn open(&self, path: W, len: W, flags: W, modes: W) -> KResult<(W, W)>;
     fn read(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
     fn write(&self, fd: W, buffer: W, len: W) -> KResult<(W, W)>;
     fn read_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
     fn write_at(&self, fd: W, buffer: W, len: W, offset: W) -> KResult<(W, W)>;
     fn close(&self, fd: W) -> KResult<(W, W)>;
-    fn get_info(&self, name: W) -> KResult<(W, W)>;
-    fn delete(&self, name: W) -> KResult<(W, W)>;
-    fn file_rename(&self, oldname: W, newname: W) -> KResult<(W, W)>;
-    fn mkdir(&self, pathname: W, modes: W) -> KResult<(W, W)>;
+    fn get_info(&self, name: W, len: W) -> KResult<(W, W)>;
+    fn delete(&self, name: W, len: W) -> KResult<(W, W)>;
+    fn file_rename(&self, oldname: W, oldlen: W, newname: W, newlen: W) -> KResult<(W, W)>;
+    fn mkdir(&self, pathname: W, len: W, modes: W) -> KResult<(W, W)>;
 }
 
 /// Parsed and validated arguments of the file system calls.
 enum FileOperationArgs<W> {
-    Open(W, W, W),
+    Open(W, W, W, W),
     Read(W, W, W),
     Write(W, W, W),
     ReadAt(W, W, W, W),
     WriteAt(W, W, W, W),
     Close(W),
-    GetInfo(W),
-    Delete(W),
-    FileRename(W, W),
-    MkDir(W, W),
+    GetInfo(W, W),
+    Delete(W, W),
+    FileRename(W, W, W, W),
+    MkDir(W, W, W),
 }
 
 impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
@@ -49,16 +49,16 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
             .ok_or(KError::InvalidFileOperation { a: arg1.into() })?;
 
         match op {
-            FileOperation::Open => Ok(Self::Open(arg2, arg3, arg4)),
+            FileOperation::Open => Ok(Self::Open(arg2, arg3, arg4, arg5)),
             FileOperation::Read => Ok(Self::Read(arg2, arg3, arg4)),
             FileOperation::Write => Ok(Self::Write(arg2, arg3, arg4)),
             FileOperation::ReadAt => Ok(Self::ReadAt(arg2, arg3, arg4, arg5)),
             FileOperation::WriteAt => Ok(Self::WriteAt(arg2, arg3, arg4, arg5)),
             FileOperation::Close => Ok(Self::Close(arg2)),
-            FileOperation::GetInfo => Ok(Self::GetInfo(arg2)),
-            FileOperation::Delete => Ok(Self::Delete(arg2)),
-            FileOperation::FileRename => Ok(Self::FileRename(arg2, arg3)),
-            FileOperation::MkDir => Ok(Self::MkDir(arg2, arg3)),
+            FileOperation::GetInfo => Ok(Self::GetInfo(arg2, arg3)),
+            FileOperation::Delete => Ok(Self::Delete(arg2, arg3)),
+            FileOperation::FileRename => Ok(Self::FileRename(arg2, arg3, arg4, arg5)),
+            FileOperation::MkDir => Ok(Self::MkDir(arg2, arg3, arg4)),
         }
     }
 }
@@ -253,16 +253,18 @@ pub(crate) trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clo
     fn fileio(&self, arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> KResult<(W, W)> {
         use FileOperationArgs::*;
         match FileOperationArgs::validate(arg1, arg2, arg3, arg4, arg5)? {
-            Open(pathname, flags, modes) => self.open(pathname, flags, modes),
+            Open(path, len, flags, modes) => self.open(path, len, flags, modes),
             Read(fd, buffer, len) => self.read(fd, buffer, len),
             Write(fd, buffer, len) => self.write(fd, buffer, len),
             ReadAt(fd, buffer, len, offset) => self.read_at(fd, buffer, len, offset),
             WriteAt(fd, buffer, len, offset) => self.write_at(fd, buffer, len, offset),
             Close(fd) => self.close(fd),
-            GetInfo(name) => self.get_info(name),
-            Delete(name) => self.delete(name),
-            FileRename(oldname, newname) => self.file_rename(oldname, newname),
-            MkDir(pathname, modes) => self.mkdir(pathname, modes),
+            GetInfo(name, len) => self.get_info(name, len),
+            Delete(name, len) => self.delete(name, len),
+            FileRename(oldname, oldlen, newname, newlen) => {
+                self.file_rename(oldname, oldlen, newname, newlen)
+            }
+            MkDir(pathname, len, modes) => self.mkdir(pathname, len, modes),
         }
     }
 }
@@ -313,9 +315,9 @@ impl<T> TestDispatch<u64> for T {
 pub(crate) trait CnrFsDispatch {}
 
 impl<T: CnrFsDispatch> FsDispatch<u64> for T {
-    fn open(&self, pathname: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn open(&self, pathname: u64, len: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, pathname, 0)?;
+        let _r = user_virt_addr_valid(pid, pathname, len)?;
         cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
     }
 
@@ -348,28 +350,34 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
         cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
     }
 
-    fn get_info(&self, name: u64) -> Result<(u64, u64), KError> {
+    fn get_info(&self, name: u64, len: u64) -> Result<(u64, u64), KError> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, name, 0)?;
+        let _r = user_virt_addr_valid(pid, name, len)?;
         cnrfs::MlnrKernelNode::file_info(pid, name)
     }
 
-    fn delete(&self, name: u64) -> Result<(u64, u64), KError> {
+    fn delete(&self, name: u64, len: u64) -> Result<(u64, u64), KError> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, name, 0)?;
+        let _r = user_virt_addr_valid(pid, name, len)?;
         cnrfs::MlnrKernelNode::file_delete(pid, name)
     }
 
-    fn file_rename(&self, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
+    fn file_rename(
+        &self,
+        oldname: u64,
+        oldlen: u64,
+        newname: u64,
+        newlen: u64,
+    ) -> Result<(u64, u64), KError> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, oldname, 0)?;
-        let _r = user_virt_addr_valid(pid, newname, 0)?;
+        let _r = user_virt_addr_valid(pid, oldname, oldlen)?;
+        let _r = user_virt_addr_valid(pid, newname, newlen)?;
         cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)
     }
 
-    fn mkdir(&self, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+    fn mkdir(&self, pathname: u64, len: u64, modes: u64) -> Result<(u64, u64), KError> {
         let pid = crate::arch::process::current_pid()?;
-        let _r = user_virt_addr_valid(pid, pathname, 0)?;
+        let _r = user_virt_addr_valid(pid, pathname, len)?;
         cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes)
     }
 }

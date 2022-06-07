@@ -149,6 +149,7 @@ pub unsafe extern "C" fn rumpuser_iovread(
     off: i64,
     retv: *mut c_size_t,
 ) -> c_int {
+    assert!(iovlen == 1, "very good vector support");
     let buffer = core::slice::from_raw_parts_mut((*ruiov).iov_base as *mut u8, (*ruiov).iov_len);
 
     match Fs::read_at(
@@ -171,6 +172,7 @@ pub unsafe extern "C" fn rumpuser_iovwrite(
     off: i64,
     retv: *mut c_size_t,
 ) -> c_int {
+    assert!(iovlen == 1, "very good vector support");
     let buffer = core::slice::from_raw_parts((*ruiov).iov_base as *mut u8, (*ruiov).iov_len);
 
     match Fs::write_at(

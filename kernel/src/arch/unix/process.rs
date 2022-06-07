@@ -44,6 +44,13 @@ pub(crate) fn current_pid() -> KResult<Pid> {
     Err(KError::ProcessNotSet)
 }
 
+pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    f()
+}
+
 #[allow(clippy::boxed_local)]
 pub(crate) fn swap_current_executor(_current_executor: Box<UnixThread>) -> Option<Box<UnixThread>> {
     None

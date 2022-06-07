@@ -19,16 +19,16 @@ use kpi::MemType;
 use log::{debug, info, trace};
 
 use crate::arch::kcb::per_core_mem;
-use crate::arch::memory::{paddr_to_kernel_vaddr, LARGE_PAGE_SIZE};
-use crate::arch::process::UserPtr;
+use crate::arch::memory::{paddr_to_kernel_vaddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+use crate::arch::process::{with_user_space_access_enabled, UserPtr};
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
 use crate::cmdline::CommandLineArguments;
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::{cnrfs, Fd};
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
-use crate::memory::{Frame, KernelAllocator, VAddr};
+use crate::memory::{Frame, KernelAllocator, VAddr, KERNEL_BASE};
 use crate::prelude::overlaps;
 use crate::{nr, nrproc, round_up};
 
@@ -88,6 +88,8 @@ pub(crate) fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
 pub(crate) trait Process {
     type E: Executor + Copy + Sync + Send + Debug + PartialEq;
     type A: AddressSpace;
+
+    fn pid(&self) -> Pid;
 
     fn load(
         &mut self,
@@ -451,4 +453,229 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
 
     debug!("Allocated dispatchers");
     Ok(())
+}
+
+/// A virtual address that's guaranteed to point somewhere in user-space (e.g.,
+/// is below KERNEL_BASE).
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub(crate) struct UVAddr {
+    inner: VAddr,
+}
+
+impl UVAddr {
+    pub(crate) fn as_usize(&self) -> usize {
+        self.inner.as_usize()
+    }
+
+    pub(crate) fn vaddr(&self) -> VAddr {
+        self.inner
+    }
+}
+
+impl TryFrom<VAddr> for UVAddr {
+    type Error = KError;
+    fn try_from(va: VAddr) -> Result<Self, Self::Error> {
+        if va.as_u64() < KERNEL_BASE {
+            Ok(Self { inner: va })
+        } else {
+            Err(KError::NotAUserVAddr)
+        }
+    }
+}
+
+impl TryFrom<u64> for UVAddr {
+    type Error = KError;
+    fn try_from(va: u64) -> Result<Self, Self::Error> {
+        if va < KERNEL_BASE {
+            Ok(Self { inner: VAddr(va) })
+        } else {
+            Err(KError::NotAUserVAddr)
+        }
+    }
+}
+
+impl TryFrom<usize> for UVAddr {
+    type Error = KError;
+    fn try_from(va: usize) -> Result<Self, Self::Error> {
+        let va64 = va.try_into().unwrap();
+        if va64 < KERNEL_BASE {
+            Ok(Self { inner: VAddr(va64) })
+        } else {
+            Err(KError::NotAUserVAddr)
+        }
+    }
+}
+
+/// A slice of memory in a process' user-space.
+///
+/// # Note on performance
+/// Creating the user-slice is cheap, doing the actual read/write does many
+/// checks upfront that can add overheads. The checks are not cached.
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub(crate) struct UserSlice {
+    pub pid: Pid,
+    base: UVAddr,
+    len: usize,
+}
+
+impl UserSlice {
+    /// Creates a new user-space slice if it references memory that can
+    /// potentially belong to the process.
+    ///
+    /// Returns an error if slice addresses potential kernel memory or null.
+    pub(crate) fn new(pid: Pid, base: UVAddr, len: usize) -> KResult<Self> {
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        if let Some(end) = base.as_usize().checked_add(len) {
+            if base.as_usize() >= BASE_PAGE_SIZE && end < (KERNEL_BASE as usize) {
+                return Ok(UserSlice { pid, base, len });
+            }
+        }
+        Err(KError::InvalidUserBufferArgs)
+    }
+
+    /// Tries to interpret the memory of the user-slice as slice of UTF-8 bytes.
+    ///
+    /// If it succeeds, copies the slice from user-space into a kernel-space
+    /// String and returns that.
+    #[allow(unused)]
+    fn try_interpret_as_string<'a, P: Process>(&self, process: &'a P) -> KResult<String> {
+        let mut kbuf = Vec::try_with_capacity(self.len)?;
+        self.with_slice(process, |slice| {
+            kbuf.extend_from_slice(slice);
+        });
+        Ok(String::from_utf8(kbuf)?)
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Checks if the user-slice is accessible given the mappings installed in
+    /// the page-tables of the user-space process.
+    ///
+    /// # Arguments
+    /// - `writeable`: If true check that the user-space program has write
+    ///   permission to the region covered by the UserSlice, otherwise check for
+    ///   read permission.
+    fn is_accessible<'a, P: Process>(&self, process: &'a P, writeable: bool) -> KResult<()> {
+        let start = self.base.as_usize();
+        let end = start + self.len;
+
+        // TODO(performance): The step_by iterator should increment, by
+        // whatever resolve() is telling us we can safely increment (it
+        // currently doesn't)
+        for tocheck in (start..end).step_by(BASE_PAGE_SIZE) {
+            // Make sure we're still in user-space address range:
+            let addr_to_check: UVAddr = tocheck.try_into()?;
+            // Check that this memory is mapped and readable by user-space:
+            let (_paddr, rights) = process.vspace().resolve(addr_to_check.vaddr())?;
+            if writeable && !rights.is_writable() {
+                return Err(KError::UserPtMissingWriteAccess);
+            } else if !writeable && !rights.is_readable() {
+                return Err(KError::UserPtMissingReadAccess);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Run a function `f` that gets a safe-to-access reference of the slice
+    /// which points to user-space memory.
+    pub(crate) fn with_slice<'a, P: Process, F, R>(&self, process: &'a P, f: F) -> KResult<R>
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        if self.pid != process.pid() {
+            return Err(KError::PidMismatchInProcessArgument);
+        }
+        if let Ok(pid) = crate::arch::process::current_pid() && pid != process.pid() {
+            return Err(KError::NotInRightAddressSpaceForReading);
+        }
+        self.is_accessible(process, false)?;
+
+        let user_slice = unsafe {
+            // Safety:
+            // - see `with_slice_mut` for safety arguments
+            core::slice::from_raw_parts(self.base.vaddr().as_ptr::<u8>(), self.len)
+        };
+
+        Ok(with_user_space_access_enabled(|| f(user_slice)))
+    }
+
+    /// Runs a function `f` that gets a safe-to-access mutable reference of the
+    /// slice which points to user-space memory.
+    pub fn with_slice_mut<'a, P: Process, F, R>(&self, process: &'a P, f: F) -> KResult<R>
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        if self.pid != process.pid() {
+            return Err(KError::PidMismatchInProcessArgument);
+        }
+        if let Ok(pid) = crate::arch::process::current_pid() && pid != process.pid() {
+            return Err(KError::NotInRightAddressSpaceForReading);
+        }
+        self.is_accessible(process, false)?;
+
+        let user_slice = unsafe {
+            // Safety: `from_raw_parts_mut`
+            //
+            // - The entire memory range of this slice must be contained within
+            //   a single allocated object! Slices can never span across
+            //   multiple allocated objects: This is something that's tricky to
+            //   uphold here since this is an arbitrary slice out of a process'
+            //   address-space, if this ends up being a problem we'll have to
+            //   use raw pointers.
+            //
+            // - data must be non-null and aligned even for zero-length slices.
+            //   -> this is fine, we only deal with [u8] slice, UVAddr checks
+            //   for null.
+            //
+            // - data must point to len consecutive properly initialized values
+            //   of type T -> ok, we interpret as plain-old-data `u8`
+            //
+            // - The memory referenced by the returned slice must not be
+            //   accessed through any other pointer (not derived from the return
+            //   value) for the duration of lifetime 'a. Both read and write
+            //   accesses are forbidden. -> Again a bit tricky, (and let's not
+            //   worry about user-space for now), we can create an alias in the
+            //   kernel if we write to the same memory from different cores, as
+            //   `with_slice_mut` happens inside of an immutable NR operation. I
+            //   guess what we've going for us here is that we never care about
+            //   this memory for anything in the kernel.
+            //
+            // - The total size len * mem::size_of::<T>() of the slice must be
+            //   no larger than isize::MAX. -> TODO(sanity): we should probably
+            //   limit `len`
+            //
+            // In addition:
+            // - We are in an immutable NR operation because we have an
+            //   immutable reference to the process' address space. This ensures
+            //   that no-one modfies the page-tables of the process.
+            //
+            // - We check that all memory is writable by querying the
+            //   page-tables. (see check above)
+            //
+            // - The CPU is inside of the same address-space as the process
+            //   we're trying to read-from. (see check above)
+            core::slice::from_raw_parts_mut(self.base.vaddr().as_mut_ptr::<u8>(), self.len)
+        };
+
+        Ok(with_user_space_access_enabled(|| f(user_slice)))
+    }
+
+    /// Create a subslice from an existing slice.
+    ///
+    /// # Panics
+    /// If the range of the new slice is out of bounds of the existing slice.
+    pub fn subslice(&self, index: core::ops::Range<usize>) -> UserSlice {
+        if index.start > self.len || index.end > self.len {
+            panic!("UserSlice::subslice: index out of bounds");
+        }
+
+        UserSlice {
+            base: UVAddr::try_from(self.base.as_usize() + index.start).unwrap(),
+            len: index.end - index.start,
+            pid: self.pid,
+        }
+    }
 }

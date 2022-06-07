@@ -237,43 +237,27 @@ impl<T> Drop for UserValue<T> {
     }
 }
 
-pub(crate) struct UserSlice<'a> {
-    pub buffer: &'a mut [u8],
-}
+pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    unsafe {
+        // Safety:
+        //  - SMAP/SMEP is enabled by the bootloader
+        //  - We are in Ring0
+        rflags::stac();
+    };
 
-impl<'a> UserSlice<'a> {
-    pub(crate) fn new(base: u64, len: usize) -> UserSlice<'a> {
-        let mut user_ptr = VAddr::from(base);
-        let slice_ptr = UserPtr::new(&mut user_ptr);
-        let user_slice: &mut [u8] =
-            unsafe { core::slice::from_raw_parts_mut(slice_ptr.as_mut_ptr(), len) };
-        UserSlice { buffer: user_slice }
-    }
-}
+    let r = f();
 
-impl<'a> Deref for UserSlice<'a> {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        unsafe {
-            rflags::stac();
-            &*self.buffer
-        }
+    unsafe {
+        // Safety:
+        //  - SMAP/SMEP is enabled by the bootloader
+        //  - We are in Ring0
+        rflags::clac();
     }
-}
 
-impl<'a> DerefMut for UserSlice<'a> {
-    fn deref_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            rflags::stac();
-            self.buffer
-        }
-    }
-}
-
-impl<'a> Drop for UserSlice<'a> {
-    fn drop(&mut self) {
-        unsafe { rflags::clac() };
-    }
+    r
 }
 
 /// Resume the state saved in `SaveArea` using the `iretq` instruction.
@@ -1278,6 +1262,11 @@ impl elfloader::ElfLoader for Ring3Process {
 impl Process for Ring3Process {
     type E = Ring3Executor;
     type A = VSpace;
+
+    /// Return the process ID.
+    fn pid(&self) -> Pid {
+        self.pid
+    }
 
     /// Create a process from a module
     fn load(

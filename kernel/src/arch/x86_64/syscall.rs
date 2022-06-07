@@ -22,13 +22,15 @@ use kpi::{
     VSpaceOperation,
 };
 
+use crate::arch::process::current_pid;
 use crate::cmdline::{CommandLineArguments, Mode};
 use crate::error::KError;
 use crate::fs::{cnrfs, FileSystem};
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, KERNEL_BASE};
-use crate::process::{userptr_to_str, Pid, ResumeHandle};
+use crate::nrproc::NrProcess;
+use crate::process::{userptr_to_str, Pid, ResumeHandle, UVAddr, UserSlice};
 use crate::syscalls::{ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch};
 use crate::{nr, nrproc};
 
@@ -91,8 +93,12 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
         // TODO(dependency): Get rid of serde/serde_cbor, use something sane instead
         let serialized = serde_cbor::to_vec(&return_threads).unwrap();
         if serialized.len() <= vaddr_buf_len as usize {
-            let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
-            user_slice.copy_from_slice(serialized.as_slice());
+            let user_slice = UserSlice::new(
+                current_pid()?,
+                UVAddr::try_from(vaddr_buf)?,
+                serialized.len(),
+            )?;
+            NrProcess::<Ring3Process>::write_to_userspace(user_slice, &serialized)?;
         }
 
         Ok((serialized.len() as u64, 0))
@@ -157,8 +163,8 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         // vaddr_buf_len = buf.len() as u64
         let kcb = super::kcb::get_kcb();
 
-        let pid = super::process::current_pid()?;
-        let mut pinfo = nrproc::NrProcess::<Ring3Process>::pinfo(pid)?;
+        let pid = current_pid()?;
+        let mut pinfo = NrProcess::<Ring3Process>::pinfo(pid)?;
         pinfo.cmdline = crate::CMDLINE
             .get()
             .unwrap_or(&CommandLineArguments::default())
@@ -170,8 +176,12 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 
         let serialized = serde_cbor::to_vec(&pinfo).unwrap();
         if serialized.len() <= vaddr_buf_len as usize {
-            let mut user_slice = super::process::UserSlice::new(vaddr_buf, serialized.len());
-            user_slice.copy_from_slice(serialized.as_slice());
+            let user_slice = UserSlice::new(
+                current_pid()?,
+                UVAddr::try_from(vaddr_buf)?,
+                serialized.len(),
+            )?;
+            NrProcess::<Ring3Process>::write_to_userspace(user_slice, &serialized)?;
         }
 
         Ok((serialized.len() as u64, 0))
@@ -188,7 +198,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
             }
         }
         let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
-        let pid = super::process::current_pid()?;
+        let pid = current_pid()?;
 
         let gtid = nr::KernelNode::allocate_core_to_process(
             pid,
@@ -231,8 +241,8 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         };
 
         // Associate memory with the process
-        let pid = super::process::current_pid()?;
-        let fid = nrproc::NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
+        let pid = current_pid()?;
+        let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
         Ok((fid as u64, frame.base.as_u64()))
     }
@@ -303,8 +313,8 @@ pub(crate) trait Arch86VSpaceDispatch {
             }
         }
 
-        nrproc::NrProcess::<Ring3Process>::map_frames(
-            crate::arch::process::current_pid()?,
+        NrProcess::<Ring3Process>::map_frames(
+            current_pid()?,
             base,
             frames,
             MapAction::ReadWriteUser,
@@ -316,9 +326,9 @@ pub(crate) trait Arch86VSpaceDispatch {
 
     fn unmap_generic(&self, _mem_type: MemType, base: u64) -> Result<(u64, u64), KError> {
         let base = VAddr::from(base);
-        let pid = super::process::current_pid()?;
+        let pid = current_pid()?;
 
-        let handle = nrproc::NrProcess::<Ring3Process>::unmap(pid, base)?;
+        let handle = NrProcess::<Ring3Process>::unmap(pid, base)?;
         let va: u64 = handle.vaddr.as_u64();
         let sz: u64 = handle.frame.size as u64;
         super::tlb::shootdown(handle);
@@ -339,27 +349,23 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
     fn map_device(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
         // TODO(safety+api): Terribly unsafe, ideally process should request/register
         // a PCI device and then it can map device things.
-        let pid = super::process::current_pid()?;
+        let pid = current_pid()?;
 
         let paddr = PAddr::from(base);
         let size = size.try_into().unwrap();
         let frame = Frame::new(paddr, size, *crate::environment::NODE_ID);
 
-        nrproc::NrProcess::<Ring3Process>::map_device_frame(pid, frame, MapAction::ReadWriteUser)
+        NrProcess::<Ring3Process>::map_device_frame(pid, frame, MapAction::ReadWriteUser)
     }
 
     fn map_frame_id(&self, base: u64, frame_id: u64) -> Result<(u64, u64), KError> {
-        let pid = super::process::current_pid()?;
+        let pid = current_pid()?;
 
         let base = VAddr::from(base);
         let frame_id: FrameId = frame_id.try_into().map_err(|_e| KError::InvalidFrameId)?;
 
-        let (paddr, size) = nrproc::NrProcess::<Ring3Process>::map_frame_id(
-            pid,
-            frame_id,
-            base,
-            MapAction::ReadWriteUser,
-        )?;
+        let (paddr, size) =
+            NrProcess::<Ring3Process>::map_frame_id(pid, frame_id, base, MapAction::ReadWriteUser)?;
         Ok((paddr.as_u64(), size as u64))
     }
 
@@ -372,10 +378,10 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
     }
 
     fn identify(&self, addr: u64) -> Result<(u64, u64), KError> {
-        let pid = super::process::current_pid()?;
+        let pid = current_pid()?;
         let base = VAddr::from(addr);
         trace!("Identify address: {:#x}.", addr);
-        nrproc::NrProcess::<Ring3Process>::resolve(pid, base)
+        NrProcess::<Ring3Process>::resolve(pid, base)
     }
 }
 

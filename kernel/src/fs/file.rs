@@ -9,6 +9,7 @@ use kpi::io::*;
 
 use crate::error::KError;
 use crate::memory::BASE_PAGE_SIZE;
+use crate::process::UserSlice;
 
 use super::Modes;
 
@@ -145,10 +146,10 @@ impl File {
 
     /// This method is internally call on a read() system-call. It reads the content of the
     /// file and copies it in a user provided slice. The data is read from start_offset till
-    /// end_offset(not inclusive).
+    /// end_offset (not inclusive).
     pub(crate) fn read_file(
         &self,
-        user_slice: &mut [u8],
+        user_slice: UserSlice,
         start_offset: usize,
         end_offset: usize,
     ) -> Result<usize, KError> {
@@ -174,8 +175,12 @@ impl File {
                 src_end = src_start + remaining;
                 copied += remaining;
             }
-            user_slice[dst_start..dst_end]
-                .copy_from_slice(&self.mcache[buffer_num].data[src_start..src_end]);
+            let uslice = user_slice.subslice(dst_start..dst_end);
+            use crate::arch::process::Ring3Process;
+            crate::nrproc::NrProcess::<Ring3Process>::write_to_userspace(
+                uslice,
+                &self.mcache[buffer_num].data[src_start..src_end],
+            )?;
             buffer_num += 1;
             dst_start = dst_end;
             offset_in_buffer = 0;

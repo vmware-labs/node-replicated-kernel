@@ -415,8 +415,14 @@ pub fn test_rump_net() {
 fn test_fs_invalid_addresses() {
     use vibrio::io::*;
 
+    let invalid_str: &str = unsafe {
+        core::str::from_utf8_unchecked(core::slice::from_raw_parts::<u8>(
+            0x2222fee0 as *const u8,
+            12,
+        ))
+    };
     let fd = vibrio::syscalls::Fs::open(
-        "",
+        invalid_str,
         FileFlags::O_RDWR | FileFlags::O_CREAT,
         FileModes::S_IRWXU,
     )
@@ -431,7 +437,7 @@ fn test_fs_invalid_addresses() {
     .expect("FileOpen syscall failed");
     assert_eq!(fd, 0);
 
-    let mut invalid_slice = unsafe { core::slice::from_raw_parts_mut(ptr::null_mut(), 256) };
+    let mut invalid_slice = unsafe { core::slice::from_raw_parts_mut(0x2222fee0 as *mut u8, 256) };
     let ret =
         vibrio::syscalls::Fs::write(fd, &invalid_slice).expect_err("FileWrite syscall should fail");
     let fileinfo = vibrio::syscalls::Fs::getinfo("").expect_err("getinfo syscall should fail");

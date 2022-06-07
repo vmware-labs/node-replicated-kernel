@@ -11,11 +11,10 @@ use kpi::io::*;
 use kpi::FileOperation;
 use log::trace;
 
-use crate::arch::process::UserSlice;
 use crate::error::KError;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::prelude::*;
-use crate::process::{userptr_to_str, KernSlice, Pid};
+use crate::process::{userptr_to_str, KernSlice, Pid, UVAddr, UserSlice};
 
 use super::fd::FileDesc;
 use super::{
@@ -403,7 +402,8 @@ impl Dispatch for MlnrKernelNode {
     fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
         match op {
             Access::FileRead(pid, fd, _mnode, buffer, len, offset) => {
-                let mut userslice = UserSlice::new(buffer, len as usize);
+                let userslice = UserSlice::new(pid, UVAddr::try_from(buffer)?, len as usize)?;
+
                 let process_lookup = self.process_map.read();
                 let p = process_lookup
                     .get(&pid)
@@ -426,7 +426,7 @@ impl Dispatch for MlnrKernelNode {
                     curr_offset = fd.get_offset();
                 }
 
-                match self.fs.read(mnode_num, &mut userslice, curr_offset) {
+                match self.fs.read(mnode_num, userslice, curr_offset) {
                     Ok(len) => {
                         // Update the FD associated offset only when the
                         // offset wasn't given in the arguments.

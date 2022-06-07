@@ -100,11 +100,11 @@ impl KernelNode {
 }
 
 impl Dispatch for KernelNode {
-    type ReadOperation = ReadOps;
+    type ReadOperation<'rop> = ReadOps;
     type WriteOperation = Op;
     type Response = Result<NodeResult, KError>;
 
-    fn dispatch(&self, op: Self::ReadOperation) -> Self::Response {
+    fn dispatch<'rop>(&self, op: Self::ReadOperation<'rop>) -> Self::Response {
         match op {
             ReadOps::CurrentProcess(gtid) => {
                 let core_info = self

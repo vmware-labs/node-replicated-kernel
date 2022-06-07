@@ -15,7 +15,7 @@ resolver = "2"
 [dependencies]
 # Our own dependencies:
 apic = { path = "../lib/apic/" }
-node-replication = "0.1.1"
+node-replication = { path = "../lib/node-replication/nr" } #"0.1.1"
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 rpc = { path = "../lib/rpc", optional = true }

@@ -1,6 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::string::FromUtf8Error;
 use core::convert::From;
 
 use arrayvec::CapacityError;
@@ -144,6 +145,24 @@ pub enum KError {
     IvShmemDeviceNotFound,
     /// Specified Native mode on the kernel command line but kernel initialized a RPC connection?
     InvalidNativeMode,
+    /// The provided user-space buffer address goes above `KERNEL_BASE`.
+    InvalidUserBufferArgs,
+    /// Trying to create a user-space virtual address above `KERNEL_BASE`.
+    NotAUserVAddr,
+    /// Kernel tried read user-memory that wasn't mapped readable in process' address space.
+    UserPtMissingReadAccess,
+    /// Kernel tried write user-memory that wasn't mapped writeable in process' address space.
+    UserPtMissingWriteAccess,
+    /// We tried to read from user-memory but we weren't in the process' address space.
+    NotInRightAddressSpaceForReading,
+    /// We tried to write to user-memory but we weren't in the process' address space.
+    NotInRightAddressSpaceForWriting,
+    /// The string we tried to create from user-memory was not valid UTF-8
+    NotAValidUtf8String,
+    /// The PID in the supplied argument does not match the PID of the UserSlice.
+    PidMismatchInProcessArgument,
+    /// The supplied buffers for `SliceWrite` have different lengths.
+    SliceLengthMismatchForWriting,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {
@@ -179,6 +198,12 @@ impl From<elfloader::ElfLoaderErr> for KError {
 impl From<core::alloc::AllocError> for KError {
     fn from(_e: core::alloc::AllocError) -> Self {
         KError::OutOfMemory
+    }
+}
+
+impl From<FromUtf8Error> for KError {
+    fn from(_e: FromUtf8Error) -> Self {
+        KError::NotAValidUtf8String
     }
 }
 

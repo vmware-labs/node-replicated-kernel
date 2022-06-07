@@ -6,9 +6,9 @@ use core::convert::TryFrom;
 
 use kpi::io::FileType;
 
-use crate::arch::process::UserSlice;
 use crate::error::KError;
 use crate::fallible_string::TryString;
+use crate::process::UserSlice;
 
 use super::file::*;
 use super::{Mnode, Modes};
@@ -81,7 +81,7 @@ impl MemNode {
     }
 
     /// Read from an in-memory file.
-    pub(crate) fn read(&self, buffer: &mut UserSlice, offset: usize) -> Result<usize, KError> {
+    pub(crate) fn read(&self, buffer: UserSlice, offset: usize) -> Result<usize, KError> {
         // Return if the user doesn't have read permissions for the file.
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
         {
@@ -110,7 +110,7 @@ impl MemNode {
         self.file
             .as_ref()
             .unwrap()
-            .read_file(&mut *buffer, offset, new_offset)
+            .read_file(buffer, offset, new_offset)
     }
 
     /// Get the file size

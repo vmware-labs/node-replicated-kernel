@@ -29,7 +29,9 @@
     const_refs_to_cell,
     nonnull_slice_from_raw_parts,
     cell_update,
-    thread_local
+    thread_local,
+    let_chains,
+    generic_associated_types
 )]
 
 extern crate alloc;

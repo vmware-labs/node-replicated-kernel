@@ -18,7 +18,7 @@ use node_replication::{Dispatch, Log, Replica};
 
 use crate::arch::kcb::get_kcb;
 use crate::error::{KError, KResult};
-use crate::fs::Fd;
+use crate::fs::FileDescriptorEntry;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::vspace::MapAction;
@@ -212,7 +212,7 @@ impl<'a> DerefMut for UserSlice<'a> {
 pub(crate) struct UnixProcess {
     pid: Pid,
     vspace: VSpace,
-    fd: Fd,
+    fd: FileDescriptorEntry,
     pinfo: kpi::process::ProcessInfo,
     /// Physical frame objects registered to the process.
     pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
@@ -322,7 +322,7 @@ impl Process for UnixProcess {
         Ok(Box::new(UnixThread::default()))
     }
 
-    fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
+    fn allocate_fd(&mut self) -> Option<(u64, &mut FileDescriptorEntry)> {
         Some((1, &mut self.fd))
     }
 
@@ -330,7 +330,7 @@ impl Process for UnixProcess {
         Err(KError::InvalidFileDescriptor)
     }
 
-    fn get_fd(&self, _index: usize) -> &Fd {
+    fn get_fd(&self, _index: usize) -> &FileDescriptorEntry {
         &self.fd
     }
 

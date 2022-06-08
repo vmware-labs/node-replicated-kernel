@@ -16,10 +16,8 @@ use crate::memory::LARGE_PAGE_SIZE;
 use crate::prelude::*;
 use crate::process::{KernSlice, Pid, UserSlice};
 
-use super::fd::FileDesc;
-use super::{
-    FileDescriptor, FileSystem, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset, FD, MNODE_OFFSET,
-};
+use super::fd::{FileDescriptor, FileDescriptorTable};
+use super::{FileSystem, MlnrFS, MnodeNum, NrLock, MNODE_OFFSET};
 
 /// A handle to the node-local CNR based kernel replica.
 #[thread_local]
@@ -89,7 +87,7 @@ pub(crate) struct MlnrKernelNode {
     /// TODO: RwLock should be okay for read-write operations as those ops
     /// perform read() on lock. Make an array of hashmaps to distribute the
     /// load evenly for file-open benchmarks.
-    process_map: NrLock<HashMap<Pid, FileDesc>>,
+    process_map: NrLock<HashMap<Pid, FileDescriptorTable>>,
     /// MLNR kernel node primarily replicates the in-memory filesystem.
     fs: MlnrFS,
 }
@@ -98,12 +96,12 @@ pub(crate) struct MlnrKernelNode {
 pub(crate) enum Modify {
     ProcessAdd(Pid),
     //ProcessRemove(Pid),
-    FileOpen(Pid, String, Flags, Modes),
-    FileWrite(Pid, FD, Mnode, Arc<[u8]>, Offset),
-    FileClose(Pid, FD),
+    FileOpen(Pid, String, FileFlags, FileModes),
+    FileWrite(Pid, FileDescriptor, MnodeNum, Arc<[u8]>, i64),
+    FileClose(Pid, FileDescriptor),
     FileDelete(Pid, String),
     FileRename(Pid, String, String),
-    MkDir(Pid, String, Modes),
+    MkDir(Pid, String, FileModes),
 }
 
 // TODO: Stateless op to log mapping. Maintain some state for correct redirection.
@@ -134,9 +132,9 @@ impl LogMapper for Modify {
 
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub(crate) enum Access {
-    FileRead(Pid, FD, Mnode, UserSlice, Offset),
-    FileInfo(Pid, String, Mnode),
-    FdToMnode(Pid, FD),
+    FileRead(Pid, FileDescriptor, MnodeNum, UserSlice, i64),
+    FileInfo(Pid, String, MnodeNum),
+    FdToMnode(Pid, FileDescriptor),
     FileNameToMnode(Pid, String),
     Synchronize(usize),
 }
@@ -167,9 +165,9 @@ impl LogMapper for Access {
 pub(crate) enum MlnrNodeResult {
     ProcessAdded(Pid),
     //ProcessRemoved(Pid),
-    FileOpened(FD),
-    FileAccessed(Len),
-    FileClosed(u64),
+    FileOpened(FileDescriptor),
+    FileAccessed(u64),
+    FileClosed(FileDescriptor),
     FileDeleted,
     FileInfo(FileInfo),
     FileRenamed,
@@ -198,9 +196,9 @@ impl MlnrKernelNode {
     pub(crate) fn map_fd(
         pid: Pid,
         path: String,
-        flags: u64,
-        modes: u64,
-    ) -> Result<(FD, u64), KError> {
+        flags: FileFlags,
+        modes: FileModes,
+    ) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -209,7 +207,7 @@ impl MlnrKernelNode {
                     replica.execute_mut_scan(Modify::FileOpen(pid, path, flags, modes), *token);
 
                 match response {
-                    Ok(MlnrNodeResult::FileOpened(fd)) => Ok((fd, 0)),
+                    Ok(MlnrNodeResult::FileOpened(fd)) => Ok((fd.into(), 0)),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -218,10 +216,10 @@ impl MlnrKernelNode {
 
     pub(crate) fn file_io(
         op: FileOperation,
-        fd: u64,
+        fd: FileDescriptor,
         buffer: UserSlice,
         offset: i64,
-    ) -> Result<(Len, u64), KError> {
+    ) -> Result<(u64, u64), KError> {
         let mnode = match MlnrKernelNode::fd_to_mnode(buffer.pid, fd) {
             Ok((mnode, _)) => mnode,
             Err(_) => return Err(KError::InvalidFileDescriptor),
@@ -259,7 +257,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub(crate) fn unmap_fd(pid: Pid, fd: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn unmap_fd(pid: Pid, fd: FileDescriptor) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -326,7 +324,7 @@ impl MlnrKernelNode {
             })
     }
 
-    pub(crate) fn mkdir(pid: Pid, path: String, modes: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn mkdir(pid: Pid, path: String, modes: FileModes) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -342,7 +340,7 @@ impl MlnrKernelNode {
     }
 
     #[inline(always)]
-    pub(crate) fn fd_to_mnode(pid: Pid, fd: FD) -> Result<(u64, u64), KError> {
+    pub(crate) fn fd_to_mnode(pid: Pid, fd: FileDescriptor) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -401,10 +399,10 @@ impl Dispatch for MlnrKernelNode {
                     .get(&pid)
                     .ok_or(KError::NoProcessFoundForPid)?;
 
-                let fd = p.get_fd(fd as usize).ok_or(KError::PermissionError)?;
+                let fd = p.get_fd(fd).ok_or(KError::PermissionError)?;
 
-                let mnode_num = fd.get_mnode();
-                let flags = fd.get_flags();
+                let mnode_num = fd.mnode();
+                let flags = fd.flags();
 
                 // Check if the file has read-only or read-write permissions before reading it.
                 if !flags.is_read() {
@@ -415,7 +413,7 @@ impl Dispatch for MlnrKernelNode {
                 // then use the offset associated with the FD.
                 let mut curr_offset: usize = offset as usize;
                 if offset == -1 {
-                    curr_offset = fd.get_offset();
+                    curr_offset = fd.offset();
                 }
 
                 match self.fs.read(mnode_num, userslice, curr_offset) {
@@ -448,8 +446,8 @@ impl Dispatch for MlnrKernelNode {
                     .get(&pid)
                     .ok_or(KError::NoProcessFoundForPid)?;
 
-                let fd = p.get_fd(fd as usize).ok_or(KError::PermissionError)?;
-                let mnode_num = fd.get_mnode();
+                let fd = p.get_fd(fd).ok_or(KError::PermissionError)?;
+                let mnode_num = fd.mnode();
                 Ok(MlnrNodeResult::MappedFileToMnode(mnode_num))
             }
 
@@ -479,7 +477,7 @@ impl Dispatch for MlnrKernelNode {
             Modify::ProcessAdd(pid) => {
                 let mut pmap = self.process_map.write();
                 pmap.try_reserve(1)?;
-                pmap.try_insert(pid, FileDesc::default())
+                pmap.try_insert(pid, FileDescriptorTable::default())
                     .map_err(|_e| KError::FileDescForPidAlreadyAdded)?;
                 Ok(MlnrNodeResult::ProcessAdded(pid))
             }
@@ -507,8 +505,7 @@ impl Dispatch for MlnrKernelNode {
                     // File exists and FileOpen is called with O_TRUNC flag.
                     if flags.is_truncate() {
                         if let Err(e) = self.fs.truncate(&filename) {
-                            let fdesc = fid as usize;
-                            pmap.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
+                            pmap.get_mut(&pid).unwrap().deallocate_fd(fid)?;
                             return Err(e);
                         }
                     }
@@ -517,14 +514,13 @@ impl Dispatch for MlnrKernelNode {
                     match self.fs.create(&filename, modes) {
                         Ok(m_num) => mnode_num = m_num,
                         Err(e) => {
-                            let fdesc = fid as usize;
-                            pmap.get_mut(&pid).unwrap().deallocate_fd(fdesc)?;
+                            pmap.get_mut(&pid).unwrap().deallocate_fd(fid)?;
                             return Err(e);
                         }
                     }
                 }
 
-                fd.update_fd(mnode_num, flags);
+                fd.update(mnode_num, flags);
                 Ok(MlnrNodeResult::FileOpened(fid))
             }
 
@@ -533,10 +529,10 @@ impl Dispatch for MlnrKernelNode {
                 let p = process_lookup
                     .get(&pid)
                     .expect("TODO: FileWrite process lookup failed");
-                let fd = p.get_fd(fd as usize).ok_or(KError::PermissionError)?;
+                let fd = p.get_fd(fd).ok_or(KError::PermissionError)?;
 
-                let mnode_num = fd.get_mnode();
-                let flags = fd.get_flags();
+                let mnode_num = fd.mnode();
+                let flags = fd.flags();
 
                 // Check if the file has write-only or read-write permissions before reading it.
                 if !flags.is_write() {
@@ -551,7 +547,7 @@ impl Dispatch for MlnrKernelNode {
                         curr_offset = finfo.fsize as usize;
                     } else {
                         // If offset value is not provided and file is doesn't have O_APPEND flag.
-                        curr_offset = fd.get_offset();
+                        curr_offset = fd.offset();
                     }
                 }
 
@@ -572,7 +568,7 @@ impl Dispatch for MlnrKernelNode {
                 let p = process_lookup
                     .get_mut(&pid)
                     .expect("TODO: FileClose process lookup failed");
-                p.deallocate_fd(fd as usize)?;
+                p.deallocate_fd(fd)?;
                 Ok(MlnrNodeResult::FileClosed(fd))
             }
 

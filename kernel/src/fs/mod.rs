@@ -31,79 +31,19 @@ use mnode::MemNode;
 pub(crate) const MAX_FILES_PER_PROCESS: usize = 4096;
 
 /// Mnode number.
-pub(crate) type Mnode = u64;
-/// Flags for fs calls.
-pub(crate) type Flags = u64;
-/// Modes for fs calls
-pub(crate) type Modes = u64;
-/// File descriptor.
-pub(crate) type FD = u64;
-/// Number of bytes to read or write a file.
-pub(crate) type Len = u64;
-/// File offset
-pub(crate) type Offset = i64;
+pub(crate) type MnodeNum = u64;
 
 /// Abstract definition of file-system interface operations.
 pub(crate) trait FileSystem {
-    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, KError>;
-    fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError>;
-    fn read(&self, mnode_num: Mnode, buffer: UserSlice, offset: usize) -> Result<usize, KError>;
-    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>>;
-    fn file_info(&self, mnode: Mnode) -> FileInfo;
+    fn create(&self, pathname: &str, modes: FileModes) -> Result<u64, KError>;
+    fn write(&self, mnode_num: MnodeNum, buffer: &[u8], offset: usize) -> Result<usize, KError>;
+    fn read(&self, mnode_num: MnodeNum, buffer: UserSlice, offset: usize) -> Result<usize, KError>;
+    fn lookup(&self, pathname: &str) -> Option<Arc<MnodeNum>>;
+    fn file_info(&self, mnode: MnodeNum) -> FileInfo;
     fn delete(&self, pathname: &str) -> Result<(), KError>;
     fn truncate(&self, pathname: &str) -> Result<(), KError>;
     fn rename(&self, oldname: &str, newname: &str) -> Result<(), KError>;
-    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), KError>;
-}
-
-/// Abstract definition of a file descriptor.
-pub(crate) trait FileDescriptor {
-    fn init_fd() -> Fd;
-    fn update_fd(&mut self, mnode: Mnode, flags: FileFlags);
-    fn get_mnode(&self) -> Mnode;
-    fn get_flags(&self) -> FileFlags;
-    fn get_offset(&self) -> usize;
-    fn update_offset(&self, new_offset: usize);
-}
-
-/// A file descriptor representaion.
-#[derive(Debug, Default)]
-pub(crate) struct Fd {
-    mnode: Mnode,
-    flags: FileFlags,
-    offset: AtomicUsize,
-}
-
-impl FileDescriptor for Fd {
-    fn init_fd() -> Fd {
-        Fd {
-            // Intial values are just the place-holders and shouldn't be used.
-            mnode: u64::MAX,
-            flags: Default::default(),
-            offset: AtomicUsize::new(0),
-        }
-    }
-
-    fn update_fd(&mut self, mnode: Mnode, flags: FileFlags) {
-        self.mnode = mnode;
-        self.flags = flags;
-    }
-
-    fn get_mnode(&self) -> Mnode {
-        self.mnode
-    }
-
-    fn get_flags(&self) -> FileFlags {
-        self.flags
-    }
-
-    fn get_offset(&self) -> usize {
-        self.offset.load(Ordering::Relaxed)
-    }
-
-    fn update_offset(&self, new_offset: usize) {
-        self.offset.store(new_offset, Ordering::Release);
-    }
+    fn mkdir(&self, pathname: &str, modes: FileModes) -> Result<(), KError>;
 }
 
 /// The mnode number assigned to the first file.
@@ -114,9 +54,9 @@ pub(crate) const MNODE_OFFSET: usize = 2;
 pub(crate) struct MlnrFS {
     /// Only create file will lock the hashmap in write mode,
     /// every other operation is locked in read mode.
-    mnodes: NrLock<HashMap<Mnode, NrLock<MemNode>>>,
-    files: RwLock<HashMap<String, Arc<Mnode>>>,
-    _root: (String, Mnode),
+    mnodes: NrLock<HashMap<MnodeNum, NrLock<MemNode>>>,
+    files: RwLock<HashMap<String, Arc<MnodeNum>>>,
+    _root: (String, MnodeNum),
     nextmemnode: AtomicUsize,
 }
 
@@ -128,7 +68,7 @@ impl Default for MlnrFS {
         let rootdir = "/";
         let rootmnode = 1;
 
-        let mnodes = NrLock::<HashMap<Mnode, NrLock<MemNode>>>::default();
+        let mnodes = NrLock::<HashMap<MnodeNum, NrLock<MemNode>>>::default();
         mnodes.write().insert(
             rootmnode,
             NrLock::new(
@@ -172,7 +112,7 @@ impl MlnrFS {
 }
 
 impl FileSystem for MlnrFS {
-    fn create(&self, pathname: &str, modes: Modes) -> Result<u64, KError> {
+    fn create(&self, pathname: &str, modes: FileModes) -> Result<u64, KError> {
         // Check if the file with the same name already exists.
         if self.files.read().get(pathname).is_some() {
             return Err(KError::AlreadyPresent);
@@ -196,25 +136,25 @@ impl FileSystem for MlnrFS {
         Ok(mnode_num)
     }
 
-    fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError> {
+    fn write(&self, mnode_num: MnodeNum, buffer: &[u8], offset: usize) -> Result<usize, KError> {
         match self.mnodes.read().get(&mnode_num) {
             Some(mnode) => mnode.write().write(buffer, offset),
             None => Err(KError::InvalidFile),
         }
     }
 
-    fn read(&self, mnode_num: Mnode, buffer: UserSlice, offset: usize) -> Result<usize, KError> {
+    fn read(&self, mnode_num: MnodeNum, buffer: UserSlice, offset: usize) -> Result<usize, KError> {
         match self.mnodes.read().get(&mnode_num) {
             Some(mnode) => mnode.read().read(buffer, offset),
             None => Err(KError::InvalidFile),
         }
     }
 
-    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
+    fn lookup(&self, pathname: &str) -> Option<Arc<MnodeNum>> {
         self.files.read().get(pathname).cloned()
     }
 
-    fn file_info(&self, mnode: Mnode) -> FileInfo {
+    fn file_info(&self, mnode: MnodeNum) -> FileInfo {
         match self.mnodes.read().get(&mnode) {
             Some(mnode) => match mnode.read().get_mnode_type() {
                 FileType::Directory => FileInfo {
@@ -281,7 +221,7 @@ impl FileSystem for MlnrFS {
 
     /// Create a directory. The implementation is quite simplistic for now, and only used
     /// by leveldb benchmark.
-    fn mkdir(&self, pathname: &str, modes: Modes) -> Result<(), KError> {
+    fn mkdir(&self, pathname: &str, modes: FileModes) -> Result<(), KError> {
         // Check if the file with the same name already exists.
         if self.files.read().get(pathname).is_some() {
             return Err(KError::AlreadyPresent);

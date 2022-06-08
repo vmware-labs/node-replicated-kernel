@@ -167,6 +167,8 @@ pub enum KError {
     UserBufferTooLarge,
     /// Trying to cast a integer to another integer failed.
     TryFromIntError,
+    /// The provided file-descriptor value was too big (>= MAX_FILES_PER_PROCESS)
+    FileDescriptorTooLarge,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {

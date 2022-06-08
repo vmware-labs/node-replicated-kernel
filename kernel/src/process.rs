@@ -10,7 +10,6 @@ use core::convert::{TryFrom, TryInto};
 use core::fmt::Debug;
 
 use arrayvec::ArrayVec;
-use cstr_core::CStr;
 use fallible_collections::vec::FallibleVecGlobal;
 use fallible_collections::vec::TryCollect;
 use fallible_collections::TryReserveError;
@@ -20,11 +19,10 @@ use log::{debug, info, trace};
 
 use crate::arch::kcb::per_core_mem;
 use crate::arch::memory::{paddr_to_kernel_vaddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
-use crate::arch::process::{with_user_space_access_enabled, UserPtr, current_pid, ArchProcess};
+use crate::arch::process::{current_pid, with_user_space_access_enabled, ArchProcess};
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
-use crate::fallible_string::TryString;
 use crate::fs::{cnrfs, Fd};
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
@@ -49,13 +47,13 @@ pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
 
 /// Data copied from a user buffer into a kernel space buffer (`KernSlice`), so
 /// to make sure the user-application doesn't have any reference anymore.
-/// 
-/// 
+///
+///
 /// This is important sometimes due to replication, for example when writing a
 /// file with multiple replicas we don't want user-space to change the memory
 /// while we copy the data in the file (and hence end up with inconsistent
 /// replicas).
-/// 
+///
 /// e.g., Any buffer that goes in the NR/CNR logs should be KernSlice.
 #[derive(PartialEq, Clone, Debug)]
 pub(crate) struct KernSlice {
@@ -67,24 +65,8 @@ impl TryFrom<UserSlice> for KernSlice {
 
     /// Converts a user-slice to a kernel slice.
     fn try_from(user_slice: UserSlice) -> KResult<Self> {
-        let buffer = nrproc::NrProcess::<ArchProcess>::read_from_userspace(user_slice)?;
+        let buffer = nrproc::NrProcess::<ArchProcess>::read_slice_from_userspace(user_slice)?;
         Ok(Self { buffer })
-    }
-}
-
-pub(crate) fn userptr_to_str(useraddr: u64) -> Result<String, KError> {
-    let mut user_ptr = VAddr::from(useraddr);
-    let str_ptr = UserPtr::new(&mut user_ptr);
-    unsafe {
-        match CStr::from_ptr(str_ptr.as_ptr()).to_str() {
-            Ok(path) => {
-                if !path.is_ascii() || path.is_empty() {
-                    return Err(KError::NotSupported);
-                }
-                Ok(TryString::try_from(path)?.into())
-            }
-            Err(_) => Err(KError::NotSupported),
-        }
     }
 }
 
@@ -535,7 +517,7 @@ impl UserSlice {
             // in the kernel
             return Err(KError::UserBufferTooLarge);
         }
-        if let Some(end) = base.as_usize().checked_add(len) 
+        if let Some(end) = base.as_usize().checked_add(len)
             && base.as_usize() >= BASE_PAGE_SIZE && end < (KERNEL_BASE as usize) {
                 return Ok(UserSlice { pid, base, len });
         }
@@ -544,28 +526,15 @@ impl UserSlice {
 
     /// Like [`UserSlice::new`] but use `u64` for base and `len`, and assume we
     /// want to use `current_pid` for the process.
-    /// 
+    ///
     /// Helpful when creating a UserSlice from syscall arguments.
     pub(crate) fn for_current_proc(base: u64, len: u64) -> KResult<Self> {
         let pid = current_pid()?;
         let base = UVAddr::try_from(base)?;
         static_assertions::assert_eq_size!(u64, usize); // If this fails, think about this cast:
         let len = len.try_into().unwrap();
-        
-        Ok(Self::new(pid, base, len)?)
-    }
 
-    /// Tries to interpret the memory of the user-slice as slice of UTF-8 bytes.
-    ///
-    /// If it succeeds, copies the slice from user-space into a kernel-space
-    /// String and returns that.
-    #[allow(unused)]
-    fn try_interpret_as_string<'a, P: Process>(&self, process: &'a P) -> KResult<String> {
-        let mut kbuf = Vec::try_with_capacity(self.len)?;
-        self.with_slice(process, |slice| {
-            kbuf.extend_from_slice(slice);
-        });
-        Ok(String::from_utf8(kbuf)?)
+        Ok(Self::new(pid, base, len)?)
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -580,6 +549,23 @@ impl UserSlice {
     ///   permission to the region covered by the UserSlice, otherwise check for
     ///   read permission.
     fn is_accessible<'a, P: Process>(&self, process: &'a P, writeable: bool) -> KResult<()> {
+        if self.pid != process.pid() {
+            // The pid of the user slice should match the pid of the provided
+            // process
+            return Err(KError::PidMismatchInProcessArgument);
+        }
+        if let Ok(pid) = current_pid() && pid != process.pid() {
+            // We need to be in the process' address space to copy/write from/to
+            // user-space 
+            //
+            // TODO(improvment): An arbitrary limitation as we could just read
+            // from the physical identity mappings, though then we'd have to
+            // slightly change the function interface: we would probably have to
+            // call the closure `f` multiple times for non-consecutive regions
+            // (in kernel-physical space), or build a fancy slice-iterator thing
+            return Err(KError::NotInRightAddressSpaceForReading);
+        }
+
         let start = self.base.as_usize();
         let end = start + self.len;
 
@@ -603,16 +589,10 @@ impl UserSlice {
 
     /// Run a function `f` that gets a safe-to-access reference of the slice
     /// which points to user-space memory.
-    pub(crate) fn with_slice<'a, P: Process, F, R>(&self, process: &'a P, f: F) -> KResult<R>
+    pub(crate) fn with_slice<'a, 'b, P: Process, F, R>(&'a self, process: &'a P, f: F) -> KResult<R>
     where
-        F: FnOnce(&[u8]) -> R,
+        F: FnOnce(&'b [u8]) -> KResult<R>,
     {
-        if self.pid != process.pid() {
-            return Err(KError::PidMismatchInProcessArgument);
-        }
-        if let Ok(pid) = current_pid() && pid != process.pid() {
-            return Err(KError::NotInRightAddressSpaceForReading);
-        }
         self.is_accessible(process, false)?;
 
         let user_slice = unsafe {
@@ -621,21 +601,15 @@ impl UserSlice {
             core::slice::from_raw_parts(self.base.vaddr().as_ptr::<u8>(), self.len)
         };
 
-        Ok(with_user_space_access_enabled(|| f(user_slice)))
+        with_user_space_access_enabled(|| f(user_slice))
     }
 
     /// Runs a function `f` that gets a safe-to-access mutable reference of the
     /// slice which points to user-space memory.
-    pub fn with_slice_mut<'a, P: Process, F, R>(&self, process: &'a P, f: F) -> KResult<R>
+    pub fn with_slice_mut<'a, 'b, P: Process, F, R>(&'a self, process: &'a P, f: F) -> KResult<R>
     where
-        F: FnOnce(&mut [u8]) -> R,
+        F: FnOnce(&'b mut [u8]) -> KResult<R>,
     {
-        if self.pid != process.pid() {
-            return Err(KError::PidMismatchInProcessArgument);
-        }
-        if let Ok(pid) = current_pid() && pid != process.pid() {
-            return Err(KError::NotInRightAddressSpaceForReading);
-        }
         self.is_accessible(process, false)?;
 
         let user_slice = unsafe {
@@ -682,7 +656,7 @@ impl UserSlice {
             core::slice::from_raw_parts_mut(self.base.vaddr().as_mut_ptr::<u8>(), self.len)
         };
 
-        Ok(with_user_space_access_enabled(|| f(user_slice)))
+        with_user_space_access_enabled(|| f(user_slice))
     }
 
     /// Create a subslice from an existing slice.
@@ -699,5 +673,13 @@ impl UserSlice {
             len: index.end - index.start,
             pid: self.pid,
         }
+    }
+}
+
+impl TryInto<String> for UserSlice {
+    type Error = KError;
+
+    fn try_into(self) -> Result<String, KError> {
+        nrproc::NrProcess::<ArchProcess>::read_string_from_userspace(self)
     }
 }

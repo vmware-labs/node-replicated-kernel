@@ -89,26 +89,24 @@ pub(crate) fn rpc_read(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
-    len: u64,
     buff_ptr: &mut [u8],
 ) -> Result<(u64, u64), RPCError> {
-    rpc_readat(rpc_client, pid, fd, len, -1, buff_ptr)
+    rpc_readat(rpc_client, pid, fd, buff_ptr, -1)
 }
 
 pub(crate) fn rpc_readat(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: u64,
-    len: u64,
-    offset: i64,
     buff_ptr: &mut [u8],
+    offset: i64,
 ) -> Result<(u64, u64), RPCError> {
-    debug!("Read({:?}, {:?})", len, offset);
+    debug!("Read({:?}, {:?})", buff_ptr.len(), offset);
 
     // Construct request data
     let req = RWReq {
         fd: fd,
-        len: len,
+        len: buff_ptr.len() as u64,
         offset: offset,
     };
     let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
@@ -152,7 +150,7 @@ pub(crate) fn rpc_readat(
 
 // RPC Handler function for read() RPCs in the controller
 pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
+    /*    // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
@@ -201,10 +199,13 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         ret: convert_return(ret),
     };
     construct_ret_extra_data(hdr, payload, res, additional_data as u64)
+    */
+    Ok(())
 }
 
 // RPC Handler function for write() RPCs in the controller
 pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+    /*
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
@@ -251,4 +252,6 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         warn!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, RPCError::MalformedRequest)
     }
+    */
+    Ok(())
 }

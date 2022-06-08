@@ -1,38 +1,86 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{Fd, MAX_FILES_PER_PROCESS};
 use crate::error::KError;
 
-pub(crate) struct FileDesc {
-    fds: arrayvec::ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS>,
+use super::{FileFlags, MnodeNum, MAX_FILES_PER_PROCESS};
+
+/// A user-space file descriptor.
+///
+/// This type ensures that it's value is never above `MAX_FILES_PER_PROCESS`.
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+pub(crate) struct FileDescriptor(usize);
+
+impl FileDescriptor {
+    /// Creates a new FileDescriptor.
+    ///
+    /// # Panics
+    /// If argument is above `MAX_FILES_PER_PROCESS`.
+    fn new(id: usize) -> Self {
+        assert!(id < MAX_FILES_PER_PROCESS);
+        Self(id)
+    }
 }
 
-impl Default for FileDesc {
-    fn default() -> Self {
-        const NONE_FD: Option<Fd> = None;
-        FileDesc {
-            fds: arrayvec::ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]),
+impl TryFrom<u64> for FileDescriptor {
+    type Error = KError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        static_assertions::assert_eq_size!(u64, usize); // If fail, handle below:
+        if (value as usize) < MAX_FILES_PER_PROCESS {
+            Ok(Self(value as usize))
+        } else {
+            Err(KError::FileDescriptorTooLarge)
         }
     }
 }
 
-impl FileDesc {
-    pub(crate) fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
-        if let Some(fid) = self.fds.iter().position(|fd| fd.is_none()) {
-            self.fds[fid] = Some(Default::default());
-            Some((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
+impl Into<u64> for FileDescriptor {
+    fn into(self) -> u64 {
+        self.0 as u64
+    }
+}
+
+impl Into<usize> for FileDescriptor {
+    fn into(self) -> usize {
+        self.0 as usize
+    }
+}
+
+pub(super) struct FileDescriptorTable {
+    table: arrayvec::ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS>,
+}
+
+impl Default for FileDescriptorTable {
+    fn default() -> Self {
+        const NONE_FD: Option<FileDescriptorEntry> = None;
+        FileDescriptorTable {
+            table: arrayvec::ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]),
+        }
+    }
+}
+
+impl FileDescriptorTable {
+    pub(crate) fn allocate_fd(&mut self) -> Option<(FileDescriptor, &mut FileDescriptorEntry)> {
+        if let Some(fid) = self.table.iter().position(|fd| fd.is_none()) {
+            self.table[fid] = Some(Default::default());
+            Some((
+                FileDescriptor::new(fid),
+                self.table[fid as usize].as_mut().unwrap(),
+            ))
         } else {
             None
         }
     }
 
-    pub(crate) fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError> {
-        match self.fds.get_mut(fd) {
+    pub(crate) fn deallocate_fd(&mut self, fd: FileDescriptor) -> Result<usize, KError> {
+        let idx: usize = fd.into();
+        match self.table.get_mut(idx) {
             Some(fdinfo) => match fdinfo {
                 Some(_info) => {
                     *fdinfo = None;
-                    Ok(fd)
+                    Ok(idx)
                 }
                 None => Err(KError::InvalidFileDescriptor),
             },
@@ -40,7 +88,39 @@ impl FileDesc {
         }
     }
 
-    pub(crate) fn get_fd(&self, index: usize) -> Option<&Fd> {
-        self.fds[index].as_ref()
+    pub(crate) fn get_fd(&self, fd: FileDescriptor) -> Option<&FileDescriptorEntry> {
+        let idx: usize = fd.into();
+        self.table[idx].as_ref()
+    }
+}
+
+/// A file descriptor representaion.
+#[derive(Debug, Default)]
+pub(crate) struct FileDescriptorEntry {
+    mnode: MnodeNum,
+    flags: FileFlags,
+    offset: AtomicUsize,
+}
+
+impl FileDescriptorEntry {
+    pub(super) fn update(&mut self, mnode: MnodeNum, flags: FileFlags) {
+        self.mnode = mnode;
+        self.flags = flags;
+    }
+
+    pub(super) fn mnode(&self) -> MnodeNum {
+        self.mnode
+    }
+
+    pub(super) fn flags(&self) -> FileFlags {
+        self.flags
+    }
+
+    pub(super) fn offset(&self) -> usize {
+        self.offset.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn update_offset(&self, new_offset: usize) {
+        self.offset.store(new_offset, Ordering::Release);
     }
 }

@@ -23,7 +23,7 @@ use crate::arch::process::{current_pid, with_user_space_access_enabled, ArchProc
 use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
-use crate::fs::{cnrfs, Fd};
+use crate::fs::{cnrfs, fd::FileDescriptorEntry};
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, VAddr, KERNEL_BASE};
@@ -99,11 +99,11 @@ pub(crate) trait Process {
 
     fn get_executor(&mut self, for_region: atopology::NodeId) -> Result<Box<Self::E>, KError>;
 
-    fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)>;
+    fn allocate_fd(&mut self) -> Option<(u64, &mut FileDescriptorEntry)>;
 
     fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError>;
 
-    fn get_fd(&self, index: usize) -> &Fd;
+    fn get_fd(&self, index: usize) -> &FileDescriptorEntry;
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo;
 

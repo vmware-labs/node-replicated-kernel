@@ -23,9 +23,9 @@ use crate::*;
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ModelOperation {
     /// Stores a write to an mnode, at given offset, pattern, length.
-    Write(Mnode, usize, char, usize),
+    Write(MnodeNum, usize, char, usize),
     /// Stores info about created files.
-    Created(String, Modes, Mnode),
+    Created(String, Modes, MnodeNum),
 }
 
 /// The FS model that we strive to implement.
@@ -51,7 +51,7 @@ impl Default for ModelFS {
 
 impl ModelFS {
     /// Find mnode of a path.
-    fn path_to_mnode(&self, path: &String) -> Option<Mnode> {
+    fn path_to_mnode(&self, path: &String) -> Option<MnodeNum> {
         for x in self.oplog.borrow().iter().rev() {
             match x {
                 ModelOperation::Created(name, _mode, mnode) => {
@@ -88,7 +88,7 @@ impl ModelFS {
     }
 
     /// Check if a mnode exists.
-    fn mnode_exists(&self, look_for: Mnode) -> bool {
+    fn mnode_exists(&self, look_for: MnodeNum) -> bool {
         for x in self.oplog.borrow().iter().rev() {
             match x {
                 ModelOperation::Created(_name, _mode, mnode) => {
@@ -150,7 +150,7 @@ impl FileSystem for ModelFS {
     /// Write just logs the write to the oplog.
     ///
     /// Our model assumes that the buffer repeats the first byte for its entire length.
-    fn write(&self, mnode_num: Mnode, buffer: &[u8], offset: usize) -> Result<usize, KError> {
+    fn write(&self, mnode_num: MnodeNum, buffer: &[u8], offset: usize) -> Result<usize, KError> {
         if self.mnode_exists(mnode_num) {
             for x in self.oplog.borrow().iter().rev() {
                 trace!("seen {:?}", x);
@@ -187,7 +187,7 @@ impl FileSystem for ModelFS {
     /// This is the hardest operation to represent in the model.
     fn read(
         &self,
-        mnode_num: Mnode,
+        mnode_num: MnodeNum,
         buffer: &mut UserSlice,
         offset: usize,
     ) -> Result<usize, KError> {
@@ -272,7 +272,7 @@ impl FileSystem for ModelFS {
     }
 
     /// Lookup just returns the mnode.
-    fn lookup(&self, pathname: &str) -> Option<Arc<Mnode>> {
+    fn lookup(&self, pathname: &str) -> Option<Arc<MnodeNum>> {
         self.path_to_mnode(&String::from(pathname)).map(Arc::from)
     }
 
@@ -289,7 +289,7 @@ impl FileSystem for ModelFS {
     }
 
     /// Returns a `dummy` file-info.
-    fn file_info(&self, _mnode: Mnode) -> FileInfo {
+    fn file_info(&self, _mnode: MnodeNum) -> FileInfo {
         FileInfo { ftype: 0, fsize: 0 }
     }
 
@@ -369,8 +369,8 @@ fn model_overlapping_writes() {
 /// necessary arguments to construct an operation for said function.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum TestAction {
-    Read(Mnode, usize, usize),
-    Write(Mnode, usize, char, usize),
+    Read(MnodeNum, usize, usize),
+    Write(MnodeNum, usize, char, usize),
     Create(Vec<String>, Modes),
     Delete(Vec<String>),
     Lookup(Vec<String>),
@@ -513,14 +513,14 @@ proptest! {
 /// Initialize and update file descriptor mnode number and permission flags.
 #[test]
 fn test_file_descriptor() {
-    use crate::fs::{Fd, FileDescriptor};
-    let mut fd = Fd::init_fd();
-    assert_eq!(fd.get_mnode(), u64::MAX);
-    assert_eq!(fd.get_flags(), FileFlags::O_NONE);
+    use crate::fs::fd::FileDescriptorEntry;
+    let mut fd = FileDescriptorEntry::default();
+    assert_eq!(fd.mnode(), 0x0);
+    assert_eq!(fd.flags(), FileFlags::O_NONE);
 
-    fd.update_fd(1, FileFlags::O_RDWR);
-    assert_eq!(fd.get_mnode(), 1);
-    assert_eq!(fd.get_flags(), FileFlags::O_RDWR);
+    fd.update(1, FileFlags::O_RDWR);
+    assert_eq!(fd.mnode(), 1);
+    assert_eq!(fd.flags(), FileFlags::O_RDWR);
 }
 
 /// Initialize memfs for root and verify the values.

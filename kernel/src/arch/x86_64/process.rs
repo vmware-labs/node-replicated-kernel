@@ -25,7 +25,7 @@ use x86::{controlregs, Ring};
 
 use crate::arch::kcb::per_core_mem;
 use crate::error::{KError, KResult};
-use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
+use crate::fs::{fd::FileDescriptorEntry, MAX_FILES_PER_PROCESS};
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, MemType, PAddr, VAddr};
@@ -946,7 +946,7 @@ pub(crate) struct Ring3Process {
     /// Offset where executor memory is located in user-space.
     pub executor_offset: VAddr,
     /// File descriptors for the opened file.
-    pub fds: ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS>,
+    pub fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS>,
     /// Physical frame objects registered to the process.
     pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
     /// Frames of the writeable ELF data section (shared across all replicated Process structs)
@@ -964,8 +964,8 @@ impl Ring3Process {
         let executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES> =
             ArrayVec::from([NONE_EXECUTOR; MAX_NUMA_NODES]);
 
-        const NONE_FD: Option<Fd> = None;
-        let fds: ArrayVec<Option<Fd>, MAX_FILES_PER_PROCESS> =
+        const NONE_FD: Option<FileDescriptorEntry> = None;
+        let fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS> =
             ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]);
 
         let frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS> =
@@ -1388,7 +1388,7 @@ impl Process for Ring3Process {
         Ok(executors_to_create)
     }
 
-    fn allocate_fd(&mut self) -> Option<(u64, &mut Fd)> {
+    fn allocate_fd(&mut self) -> Option<(u64, &mut FileDescriptorEntry)> {
         if let Some(fid) = self.fds.iter().position(|fd| fd.is_none()) {
             self.fds[fid] = Some(Default::default());
             Some((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
@@ -1411,7 +1411,7 @@ impl Process for Ring3Process {
         }
     }
 
-    fn get_fd(&self, index: usize) -> &Fd {
+    fn get_fd(&self, index: usize) -> &FileDescriptorEntry {
         self.fds[index].as_ref().unwrap()
     }
 

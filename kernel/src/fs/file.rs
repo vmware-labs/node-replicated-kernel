@@ -12,8 +12,6 @@ use crate::error::KError;
 use crate::memory::BASE_PAGE_SIZE;
 use crate::process::UserSlice;
 
-use super::Modes;
-
 #[derive(Debug, Eq, PartialEq)]
 /// The buffer is used by the file. Each buffer is BASE_PAGE_SIZE
 /// long and a file consists of many such buffers.
@@ -39,8 +37,7 @@ pub(crate) struct File {
 
 impl File {
     /// Initialize a file. Pre-intialize the buffer list with 64 size.
-    pub(crate) fn new(modes: Modes) -> Result<File, KError> {
-        let modes = FileModes::from(modes);
+    pub(crate) fn new(modes: FileModes) -> Result<File, KError> {
         let mcache = Vec::try_with_capacity(64 * size_of::<Buffer>())?;
         Ok(File { mcache, modes })
     }

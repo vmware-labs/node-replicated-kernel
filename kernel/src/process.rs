@@ -640,9 +640,9 @@ impl UserSlice {
             //   this memory for anything in the kernel.
             //
             // - The total size len * mem::size_of::<T>() of the slice must be
-            //   no larger than isize::MAX. -> TODO(sanity): we should probably
-            //   limit `len`
-            //
+            //   no larger than isize::MAX. -> `u8` is 1 byte, `len` is limited
+            //   to `i32::MAX` in constructor
+            debug_assert!(self.len <= isize::MAX as usize);
             // In addition:
             // - We are in an immutable NR operation because we have an
             //   immutable reference to the process' address space. This ensures

@@ -31,7 +31,7 @@
 //! # See also
 //!  - 6.10 INTERRUPT DESCRIPTOR TABLE (IDT) in the Intel SDM vol. 3
 
-#![allow(warnings)]
+#![allow(warnings)] // TODO(fix) the unaligned accesses...
 
 use alloc::boxed::Box;
 use core::cell::{Cell, RefCell};
@@ -48,7 +48,6 @@ use x86::segmentation::{
 };
 use x86::{dtables, Ring};
 
-use crate::fs::cnrfs;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::panic::{backtrace, backtrace_from};
@@ -87,7 +86,6 @@ pub(crate) static TLB_TIME: Cell<u64> = Cell::new(0);
 macro_rules! idt_set {
     ($idt_table:expr, $num:expr, $f:ident, $ist:expr) => {{
         extern "C" {
-            #[no_mangle]
             fn $f();
         }
 
@@ -283,13 +281,11 @@ pub struct ExceptionArguments {
 
 impl fmt::Debug for ExceptionArguments {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            write!(
+        write!(
                 f,
                 "ExceptionArguments {{ vec = 0x{:x} exception = 0x{:x} rip = 0x{:x}, cs = 0x{:x} rflags = 0x{:x} rsp = 0x{:x} ss = 0x{:x} }}",
                 self.vector, self.exception, self.rip, self.cs, self.rflags, self.rsp, self.ss
             )
-        }
     }
 }
 
@@ -326,8 +322,6 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
 /// TODO: Right now we terminate kernel.
 /// Should abort process and resume.
 unsafe fn pf_handler(a: &ExceptionArguments) {
-    use crate::arch::kcb;
-
     let err = PageFaultError::from_bits_truncate(a.exception as u32);
     let faulting_address = x86::controlregs::cr2();
     let kcb = get_kcb();
@@ -415,17 +409,17 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
 }
 
 /// Handler for incoming gdb serial line interrupt.
-unsafe fn gdb_serial_handler(a: &ExceptionArguments) {
+unsafe fn gdb_serial_handler(_a: &ExceptionArguments) {
     let kcb = get_kcb();
     debug::disable_all_breakpoints();
-    gdb::event_loop(gdb::KCoreStopReason::ConnectionInterrupt);
+    let _ret = gdb::event_loop(gdb::KCoreStopReason::ConnectionInterrupt);
     let r = Ring0Resumer::new_iret(kcb.get_save_area_ptr());
     r.resume()
 }
 
 /// Handler for a debug exception.
 unsafe fn dbg_handler(a: &ExceptionArguments) {
-    let desc = &EXCEPTIONS[a.vector as usize];
+    let _desc = &EXCEPTIONS[a.vector as usize];
 
     let kcb = get_kcb();
     if super::process::has_executor() {
@@ -433,7 +427,7 @@ unsafe fn dbg_handler(a: &ExceptionArguments) {
         r.resume()
     } else {
         debug::disable_all_breakpoints();
-        gdb::event_loop(gdb::KCoreStopReason::DebugInterrupt);
+        let _ret = gdb::event_loop(gdb::KCoreStopReason::DebugInterrupt);
         let r = Ring0Resumer::new_iret(kcb.get_save_area_ptr());
         r.resume()
     }
@@ -493,7 +487,7 @@ unsafe fn bkp_handler(a: &ExceptionArguments) {
 ///
 /// We currently use it to periodically make sure that a replica
 /// makes forward progress to avoid liveness issues.
-unsafe fn timer_handler(a: &ExceptionArguments) {
+unsafe fn timer_handler(_a: &ExceptionArguments) {
     #[cfg(feature = "test-timer")]
     {
         // Don't change this print stmt. without changing
@@ -503,7 +497,7 @@ unsafe fn timer_handler(a: &ExceptionArguments) {
     }
 
     // Periodically advance replica state, then resume immediately
-    nr::KernelNode::synchronize();
+    nr::KernelNode::synchronize().expect("Synchronized failed?");
     let kcb = get_kcb();
     for pid in 0..crate::process::MAX_PROCESSES {
         nrproc::NrProcess::<Ring3Process>::synchronize(pid);
@@ -681,7 +675,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             trace!("handle_generic_exception {:?}", a);
 
             let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
-            let mut p = pborrow.as_mut().unwrap();
+            let p = pborrow.as_mut().unwrap();
             let resumer = {
                 let was_disabled = {
                     trace!("vcpu state is: pc_disabled {:?}", p.vcpu().pc_disabled);
@@ -750,7 +744,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                     // Reset a timer and sleep for some time
                     timer::set(timer::DEFAULT_TIMER_DEADLINE);
                     for _i in 0..1200 {
-                        core::sync::atomic::spin_loop_hint();
+                        core::hint::spin_loop();
                     }
                 }
             }
@@ -783,12 +777,6 @@ pub unsafe fn register_handler(
 /// and making sure the device registers are mapped
 /// in the kernel-space.
 pub(crate) fn ioapic_initialize() {
-    let ioapic_len = atopology::MACHINE_TOPOLOGY.io_apics().count();
-    /*crate::memory::KernelAllocator::try_refill_tcache(4 * ioapic_len, 0)
-    .expect("Refill didn't work");*/
-
-    let kcb = get_kcb();
-
     for io_apic in atopology::MACHINE_TOPOLOGY.io_apics() {
         info!("Initialize IO APIC {:?}", io_apic);
 
@@ -815,8 +803,7 @@ pub(crate) fn ioapic_initialize() {
 /// core 0. This is because, we should probably just support MSI(X)
 /// and don't invest a lot in legacy interrupts...
 pub(crate) fn ioapic_establish_route(_gsi: u64, _core: u64) {
-    use crate::memory::vspace::MapAction;
-    use crate::memory::{paddr_to_kernel_vaddr, PAddr};
+    use crate::memory::paddr_to_kernel_vaddr;
 
     for io_apic in atopology::MACHINE_TOPOLOGY.io_apics() {
         let addr = PAddr::from(io_apic.address as u64);

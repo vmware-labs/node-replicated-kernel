@@ -14,12 +14,11 @@ use log::trace;
 use crate::error::KError;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::prelude::*;
-use crate::process::{userptr_to_str, KernSlice, Pid, UserSlice};
+use crate::process::{KernSlice, Pid, UserSlice};
 
 use super::fd::FileDesc;
 use super::{
-    FileDescriptor, FileSystem, Filename, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset, FD,
-    MNODE_OFFSET,
+    FileDescriptor, FileSystem, Flags, Len, MlnrFS, Mnode, Modes, NrLock, Offset, FD, MNODE_OFFSET,
 };
 
 /// A handle to the node-local CNR based kernel replica.
@@ -136,9 +135,9 @@ impl LogMapper for Modify {
 #[derive(Hash, Clone, Debug, PartialEq)]
 pub(crate) enum Access {
     FileRead(Pid, FD, Mnode, UserSlice, Offset),
-    FileInfo(Pid, Filename, Mnode),
+    FileInfo(Pid, String, Mnode),
     FdToMnode(Pid, FD),
-    FileNameToMnode(Pid, Filename),
+    FileNameToMnode(Pid, String),
     Synchronize(usize),
 }
 
@@ -198,7 +197,7 @@ impl MlnrKernelNode {
 
     pub(crate) fn map_fd(
         pid: Pid,
-        pathname: u64,
+        path: String,
         flags: u64,
         modes: u64,
     ) -> Result<(FD, u64), KError> {
@@ -206,9 +205,8 @@ impl MlnrKernelNode {
         cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename = userptr_to_str(pathname)?;
                 let response =
-                    replica.execute_mut_scan(Modify::FileOpen(pid, filename, flags, modes), *token);
+                    replica.execute_mut_scan(Modify::FileOpen(pid, path, flags, modes), *token);
 
                 match response {
                     Ok(MlnrNodeResult::FileOpened(fd)) => Ok((fd, 0)),
@@ -276,13 +274,12 @@ impl MlnrKernelNode {
             })
     }
 
-    pub(crate) fn file_delete(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn file_delete(pid: Pid, name: String) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename = userptr_to_str(name)?;
-                let response = replica.execute_mut_scan(Modify::FileDelete(pid, filename), *token);
+                let response = replica.execute_mut_scan(Modify::FileDelete(pid, name), *token);
 
                 match response {
                     Ok(MlnrNodeResult::FileDeleted) => Ok((0, 0)),
@@ -292,13 +289,14 @@ impl MlnrKernelNode {
             })
     }
 
-    pub(crate) fn file_info(pid: Pid, name: u64) -> Result<(u64, u64), KError> {
-        let (mnode, _) = MlnrKernelNode::filename_to_mnode(pid, name)?;
+    pub(crate) fn file_info(pid: Pid, path: String) -> Result<(u64, u64), KError> {
+        // TODO(performance): `path.clone()` here isn't optimal and could probably be avoided.
+        let (mnode, _) = MlnrKernelNode::filename_to_mnode(pid, path.clone())?;
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let response = replica.execute(Access::FileInfo(pid, name, mnode), *token);
+                let response = replica.execute(Access::FileInfo(pid, path, mnode), *token);
 
                 match response {
                     Ok(MlnrNodeResult::FileInfo(f_info)) => Ok((f_info.ftype, f_info.fsize)),
@@ -308,16 +306,18 @@ impl MlnrKernelNode {
             })
     }
 
-    pub(crate) fn file_rename(pid: Pid, oldname: u64, newname: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn file_rename(
+        pid: Pid,
+        oldname: String,
+        newname: String,
+    ) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let oldfilename = userptr_to_str(oldname)?;
-                let newfilename = userptr_to_str(newname)?;
+                let response =
+                    replica.execute_mut_scan(Modify::FileRename(pid, oldname, newname), *token);
 
-                let response = replica
-                    .execute_mut_scan(Modify::FileRename(pid, oldfilename, newfilename), *token);
                 match response {
                     Ok(MlnrNodeResult::FileRenamed) => Ok((0, 0)),
                     Err(e) => Err(e),
@@ -326,14 +326,12 @@ impl MlnrKernelNode {
             })
     }
 
-    pub(crate) fn mkdir(pid: Pid, pathname: u64, modes: u64) -> Result<(u64, u64), KError> {
+    pub(crate) fn mkdir(pid: Pid, path: String, modes: u64) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let filename = userptr_to_str(pathname)?;
-                let response =
-                    replica.execute_mut_scan(Modify::MkDir(pid, filename, modes), *token);
+                let response = replica.execute_mut_scan(Modify::MkDir(pid, path, modes), *token);
 
                 match response {
                     Ok(MlnrNodeResult::DirCreated) => Ok((0, 0)),
@@ -360,7 +358,7 @@ impl MlnrKernelNode {
     }
 
     #[inline(always)]
-    pub(crate) fn filename_to_mnode(pid: Pid, filename: Filename) -> Result<(u64, u64), KError> {
+    pub(crate) fn filename_to_mnode(pid: Pid, filename: String) -> Result<(u64, u64), KError> {
         let cnrfs = CNRFS.borrow();
         cnrfs
             .as_ref()
@@ -439,10 +437,7 @@ impl Dispatch for MlnrKernelNode {
                     .read()
                     .get(&pid)
                     .ok_or(KError::NoProcessFoundForPid)?;
-
-                let filename = userptr_to_str(name)?;
-                let mnode = self.fs.lookup(&filename).ok_or(KError::InvalidFile)?;
-
+                let mnode = self.fs.lookup(&name).ok_or(KError::InvalidFile)?;
                 let f_info = self.fs.file_info(*mnode);
                 Ok(MlnrNodeResult::FileInfo(f_info))
             }
@@ -458,14 +453,12 @@ impl Dispatch for MlnrKernelNode {
                 Ok(MlnrNodeResult::MappedFileToMnode(mnode_num))
             }
 
-            Access::FileNameToMnode(pid, name) => {
+            Access::FileNameToMnode(pid, filename) => {
                 let _p = self
                     .process_map
                     .read()
                     .get(&pid)
                     .ok_or(KError::NoProcessFoundForPid)?;
-
-                let filename = userptr_to_str(name)?;
 
                 match self.fs.lookup(&filename) {
                     // match on (file_exists, mnode_number)

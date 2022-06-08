@@ -6,6 +6,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
+use fallible_collections::FallibleVecGlobal;
 
 use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVec;
@@ -16,7 +17,7 @@ use spin::Once;
 
 use crate::arch::process::PROCESS_TABLE;
 use crate::arch::{Module, MAX_NUMA_NODES};
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
@@ -47,12 +48,17 @@ pub(crate) fn register_thread_with_process_replicas() {
 }
 
 /// Immutable operations on the NrProcess.
-#[derive(PartialEq, Debug)]
 pub(crate) enum ProcessOp<'buf> {
     ProcessInfo,
     MemResolve(VAddr),
     ReadSlice(UserSlice),
+    ReadString(UserSlice),
     WriteSlice(UserSlice, &'buf [u8]),
+    ExecSliceMut(
+        UserSlice,
+        Box<dyn Fn(&'buf mut [u8]) -> KResult<(u64, u64)>>,
+    ),
+    ExecSlice(UserSlice, Box<dyn Fn(&'buf [u8]) -> KResult<(u64, u64)>>),
 }
 
 /// Mutable operations on the NrProcess.
@@ -78,6 +84,7 @@ pub(crate) enum ProcessOpMut {
 #[derive(Debug, Clone)]
 pub(crate) enum ProcessResult<E: Executor> {
     Ok,
+    SysRetOk((u64, u64)),
     ProcessInfo(ProcessInfo),
     Executor(Box<E>),
     ExecutorsCreated(usize),
@@ -85,7 +92,8 @@ pub(crate) enum ProcessResult<E: Executor> {
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FrameId(usize),
-    Read(Arc<[u8]>),
+    ReadSlice(Arc<[u8]>),
+    ReadString(String),
 }
 
 /// Advances the replica of all the processes on the current NUMA node.
@@ -330,7 +338,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn read_from_userspace(from: UserSlice) -> Result<Arc<[u8]>, KError> {
+    pub(crate) fn read_slice_from_userspace(from: UserSlice) -> Result<Arc<[u8]>, KError> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][from.pid].execute(
@@ -338,7 +346,21 @@ impl<P: Process> NrProcess<P> {
             PROCESS_TOKEN.get().unwrap()[from.pid],
         );
         match response {
-            Ok(ProcessResult::Read(v)) => Ok(v),
+            Ok(ProcessResult::ReadSlice(v)) => Ok(v),
+            Err(e) => Err(e),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
+    pub(crate) fn read_string_from_userspace(from: UserSlice) -> Result<String, KError> {
+        let node = *crate::environment::NODE_ID;
+
+        let response = PROCESS_TABLE[node][from.pid].execute(
+            ProcessOp::ReadString(from),
+            PROCESS_TOKEN.get().unwrap()[from.pid],
+        );
+        match response {
+            Ok(ProcessResult::ReadString(s)) => Ok(s),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -353,6 +375,42 @@ impl<P: Process> NrProcess<P> {
         );
         match response {
             Ok(ProcessResult::Ok) => Ok(()),
+            Err(e) => Err(e),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn userspace_map_mut(
+        on: UserSlice,
+        f: Box<dyn Fn(&mut [u8]) -> KResult<(u64, u64)>>,
+    ) -> Result<(u64, u64), KError> {
+        let node = *crate::environment::NODE_ID;
+
+        let response = PROCESS_TABLE[node][on.pid].execute(
+            ProcessOp::ExecSliceMut(on, f),
+            PROCESS_TOKEN.get().unwrap()[on.pid],
+        );
+        match response {
+            Ok(ProcessResult::SysRetOk((a, b))) => Ok((a, b)),
+            Err(e) => Err(e),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn userspace_map(
+        on: UserSlice,
+        f: Box<dyn Fn(&[u8]) -> KResult<(u64, u64)>>,
+    ) -> Result<(u64, u64), KError> {
+        let node = *crate::environment::NODE_ID;
+
+        let response = PROCESS_TABLE[node][on.pid].execute(
+            ProcessOp::ExecSlice(on, f),
+            PROCESS_TOKEN.get().unwrap()[on.pid],
+        );
+        match response {
+            Ok(ProcessResult::SysRetOk((a, b))) => Ok((a, b)),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -381,7 +439,10 @@ where
                 // TODO(panic+oom): need `try_new_uninit_slice` https://github.com/rust-lang/rust/issues/63291
                 let mut buffer = Arc::<[u8]>::new_uninit_slice(uslice.len());
                 let data = Arc::get_mut(&mut buffer).unwrap();
-                uslice.with_slice(&*self.process, |ubuf| MaybeUninit::write_slice(data, ubuf))?;
+                uslice.with_slice(&*self.process, |ubuf| {
+                    MaybeUninit::write_slice(data, ubuf);
+                    Ok(())
+                })?;
                 let buffer = unsafe {
                     // Safety: `assume_init`
                     // - Plain-old-data, that we just copied into `buffer` above
@@ -390,7 +451,15 @@ where
                     buffer.assume_init()
                 };
 
-                Ok(ProcessResult::Read(buffer))
+                Ok(ProcessResult::ReadSlice(buffer))
+            }
+            ProcessOp::ReadString(uslice) => {
+                let mut kbuf = Vec::try_with_capacity(uslice.len())?;
+                uslice.with_slice(&*self.process, |ubuf| {
+                    kbuf.extend_from_slice(ubuf);
+                    Ok(())
+                })?;
+                Ok(ProcessResult::ReadString(String::from_utf8(kbuf)?))
             }
             ProcessOp::WriteSlice(uslice, kbuf) => {
                 if uslice.len() != kbuf.len() {
@@ -399,8 +468,17 @@ where
                 // Writing the data to the process' memory
                 uslice.with_slice_mut(&*self.process, |ubuf| {
                     ubuf.copy_from_slice(kbuf);
+                    Ok(())
                 })?;
                 Ok(ProcessResult::Ok)
+            }
+            ProcessOp::ExecSliceMut(uslice, closure) => {
+                let (a, b) = uslice.with_slice_mut(&*self.process, |ubuf| closure(ubuf))?;
+                Ok(ProcessResult::SysRetOk((a, b)))
+            }
+            ProcessOp::ExecSlice(uslice, closure) => {
+                let (a, b) = uslice.with_slice(&*self.process, |ubuf| closure(ubuf))?;
+                Ok(ProcessResult::SysRetOk((a, b)))
             }
         }
     }

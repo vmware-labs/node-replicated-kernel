@@ -1,8 +1,11 @@
+use alloc::boxed::Box;
+
 use cstr_core::CStr;
 
-use crate::arch::process::{user_virt_addr_valid, UserPtr};
+use crate::arch::process::{user_virt_addr_valid, Ring3Process, UserPtr};
 use crate::error::KResult;
 use crate::memory::VAddr;
+use crate::nrproc;
 use crate::process::UserSlice;
 use crate::syscalls::FsDispatch;
 use crate::syscalls::SystemCallDispatch;
@@ -45,33 +48,35 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn read(&self, fd: u64, uslice: UserSlice) -> KResult<(u64, u64)> {
-        let mut client = super::RPC_CLIENT.lock();
-        rpc_read(&mut **client, pid, fd, len, &mut uslice).map_err(|e| e.into())
+        nrproc::NrProcess::<Ring3Process>::userspace_map_mut(
+            uslice,
+            Box::try_new(move |ubuf: &mut [u8]| {
+                let mut client = super::RPC_CLIENT.lock();
+                rpc_read(&mut **client, uslice.pid, fd, ubuf).map_err(|e| e.into())
+            })?,
+        )
     }
 
     fn write(&self, fd: u64, uslice: UserSlice) -> KResult<(u64, u64)> {
-        let pid = crate::arch::process::current_pid()?;
-
         let kernslice = crate::process::KernSlice::try_from(uslice)?;
-        let buff_ptr = kernslice.buffer.clone();
-
         let mut client = super::RPC_CLIENT.lock();
-        rpc_write(&mut **client, pid, fd, &buff_ptr).map_err(|e| e.into())
+        rpc_write(&mut **client, uslice.pid, fd, &*kernslice.buffer).map_err(|e| e.into())
     }
 
-    fn read_at(&self, fd: u64, uslice: UserSlice, offset: u64) -> KResult<(u64, u64)> {
-        let pid = crate::arch::process::current_pid()?;
-        let mut client = super::RPC_CLIENT.lock();
-        rpc_readat(&mut **client, pid, fd, len, offset as i64, &mut uslice).map_err(|e| e.into())
+    fn read_at(&self, fd: u64, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
+        nrproc::NrProcess::<Ring3Process>::userspace_map_mut(
+            uslice,
+            Box::try_new(move |ubuf: &mut [u8]| {
+                let mut client = super::RPC_CLIENT.lock();
+                rpc_readat(&mut **client, uslice.pid, fd, ubuf, offset).map_err(|e| e.into())
+            })?,
+        )
     }
 
-    fn write_at(&self, fd: u64, uslice: UserSlice, offset: u64) -> KResult<(u64, u64)> {
-        let pid = crate::arch::process::current_pid()?;
+    fn write_at(&self, fd: u64, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
         let kernslice = crate::process::KernSlice::try_from(uslice)?;
-        let buff_ptr = kernslice.buffer.clone();
-
         let mut client = super::RPC_CLIENT.lock();
-        rpc_writeat(&mut **client, pid, fd, offset as i64, &buff_ptr).map_err(|e| e.into())
+        rpc_writeat(&mut **client, uslice.pid, fd, offset, &*kernslice.buffer).map_err(|e| e.into())
     }
 
     fn close(&self, fd: u64) -> KResult<(u64, u64)> {

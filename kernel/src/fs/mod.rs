@@ -40,8 +40,6 @@ pub(crate) type Modes = u64;
 pub(crate) type FD = u64;
 /// Number of bytes to read or write a file.
 pub(crate) type Len = u64;
-/// Userspace-pointer to filename.
-pub(crate) type Filename = u64;
 /// File offset
 pub(crate) type Offset = i64;
 

@@ -47,9 +47,9 @@ pub(crate) fn current_pid() -> KResult<Pid> {
     Err(KError::ProcessNotSet)
 }
 
-pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> R
+pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> KResult<R>
 where
-    F: FnOnce() -> R,
+    F: FnOnce() -> KResult<R>,
 {
     f()
 }
@@ -186,7 +186,7 @@ impl<'a> UserSlice<'a> {
         UserSlice { buffer }
     }
 
-    pub(crate) fn new(base: u64, len: usize) -> UserSlice<'a> {
+    pub(crate) fn new(_pid: Pid, base: u64, len: usize) -> UserSlice<'a> {
         let mut user_ptr = VAddr::from(base);
         let slice_ptr = UserPtr::new(&mut user_ptr);
         let user_slice: &mut [u8] =
@@ -210,6 +210,7 @@ impl<'a> DerefMut for UserSlice<'a> {
 
 #[derive(Debug, Default)]
 pub(crate) struct UnixProcess {
+    pid: Pid,
     vspace: VSpace,
     fd: Fd,
     pinfo: kpi::process::ProcessInfo,
@@ -218,8 +219,9 @@ pub(crate) struct UnixProcess {
 }
 
 impl UnixProcess {
-    fn new(_pid: Pid, _da: DA) -> Result<Self, KError> {
+    fn new(pid: Pid, _da: DA) -> Result<Self, KError> {
         Ok(UnixProcess {
+            pid,
             vspace: VSpace::new(),
             ..Default::default()
         })
@@ -290,6 +292,10 @@ impl Process for UnixProcess {
             Frame::new(PAddr::zero(), 0x0, 0x0),
             MapAction::None,
         )
+    }
+
+    fn pid(&self) -> Pid {
+        self.pid
     }
 
     fn try_reserve_executors(

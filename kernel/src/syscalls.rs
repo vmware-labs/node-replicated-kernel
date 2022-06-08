@@ -3,42 +3,43 @@
 
 //! Generic system call abstraction
 
+use alloc::string::String;
 use core::fmt::{Debug, LowerHex};
 
 use kpi::{FileOperation, ProcessOperation, SystemCall, SystemOperation, VSpaceOperation};
 use log::{error, trace};
 
-use crate::arch::process::{current_pid, user_virt_addr_valid};
+use crate::arch::process::current_pid;
 use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::process::UserSlice;
 
 /// FileOperation: Arch specific implementations
 pub(crate) trait FsDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn open(&self, path: W, len: W, flags: W, modes: W) -> KResult<(W, W)>;
+    fn open(&self, path: UserSlice, flags: W, modes: W) -> KResult<(W, W)>;
     fn read(&self, fd: W, buffer: UserSlice) -> KResult<(W, W)>;
     fn write(&self, fd: W, buffer: UserSlice) -> KResult<(W, W)>;
     fn read_at(&self, fd: W, buffer: UserSlice, offset: i64) -> KResult<(W, W)>;
     fn write_at(&self, fd: W, buffer: UserSlice, offset: i64) -> KResult<(W, W)>;
     fn close(&self, fd: W) -> KResult<(W, W)>;
-    fn get_info(&self, name: W, len: W) -> KResult<(W, W)>;
-    fn delete(&self, name: W, len: W) -> KResult<(W, W)>;
-    fn file_rename(&self, oldname: W, oldlen: W, newname: W, newlen: W) -> KResult<(W, W)>;
-    fn mkdir(&self, pathname: W, len: W, modes: W) -> KResult<(W, W)>;
+    fn get_info(&self, path: UserSlice) -> KResult<(W, W)>;
+    fn delete(&self, path: UserSlice) -> KResult<(W, W)>;
+    fn file_rename(&self, oldpath: UserSlice, newpath: UserSlice) -> KResult<(W, W)>;
+    fn mkdir(&self, path: UserSlice, modes: W) -> KResult<(W, W)>;
 }
 
 /// Parsed and validated arguments of the file system calls.
 enum FileOperationArgs<W> {
-    Open(W, W, W, W),
+    Open(UserSlice, W, W),
     Read(W, UserSlice),
     Write(W, UserSlice),
     ReadAt(W, UserSlice, i64),
     WriteAt(W, UserSlice, i64),
     Close(W),
-    GetInfo(W, W),
-    Delete(W, W),
-    FileRename(W, W, W, W),
-    MkDir(W, W, W),
+    GetInfo(UserSlice),
+    Delete(UserSlice),
+    FileRename(UserSlice, UserSlice),
+    MkDir(UserSlice, W),
 }
 
 impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
@@ -50,7 +51,11 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
             .ok_or(KError::InvalidFileOperation { a: arg1.into() })?;
 
         match op {
-            FileOperation::Open => Ok(Self::Open(arg2, arg3, arg4, arg5)),
+            FileOperation::Open => Ok(Self::Open(
+                UserSlice::for_current_proc(arg2.into(), arg3.into())?,
+                arg4,
+                arg5,
+            )),
             FileOperation::Read => Ok(Self::Read(
                 arg2,
                 UserSlice::for_current_proc(arg3.into(), arg4.into())?,
@@ -70,10 +75,22 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> FileOperationArgs<W> {
                 arg5.into().try_into()?,
             )),
             FileOperation::Close => Ok(Self::Close(arg2)),
-            FileOperation::GetInfo => Ok(Self::GetInfo(arg2, arg3)),
-            FileOperation::Delete => Ok(Self::Delete(arg2, arg3)),
-            FileOperation::FileRename => Ok(Self::FileRename(arg2, arg3, arg4, arg5)),
-            FileOperation::MkDir => Ok(Self::MkDir(arg2, arg3, arg4)),
+            FileOperation::GetInfo => Ok(Self::GetInfo(UserSlice::for_current_proc(
+                arg2.into(),
+                arg3.into(),
+            )?)),
+            FileOperation::Delete => Ok(Self::Delete(UserSlice::for_current_proc(
+                arg2.into(),
+                arg3.into(),
+            )?)),
+            FileOperation::FileRename => Ok(Self::FileRename(
+                UserSlice::for_current_proc(arg2.into(), arg3.into())?,
+                UserSlice::for_current_proc(arg4.into(), arg5.into())?,
+            )),
+            FileOperation::MkDir => Ok(Self::MkDir(
+                UserSlice::for_current_proc(arg2.into(), arg3.into())?,
+                arg4,
+            )),
         }
     }
 }
@@ -268,31 +285,22 @@ pub(crate) trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clo
     fn fileio(&self, arg1: W, arg2: W, arg3: W, arg4: W, arg5: W) -> KResult<(W, W)> {
         use FileOperationArgs::*;
         match FileOperationArgs::validate(arg1, arg2, arg3, arg4, arg5)? {
-            Open(path, len, flags, modes) => self.open(path, len, flags, modes),
+            Open(path, flags, modes) => self.open(path, flags, modes),
             Read(fd, buffer) => self.read(fd, buffer),
             Write(fd, buffer) => self.write(fd, buffer),
             ReadAt(fd, buffer, offset) => self.read_at(fd, buffer, offset),
             WriteAt(fd, buffer, offset) => self.write_at(fd, buffer, offset),
             Close(fd) => self.close(fd),
-            GetInfo(name, len) => self.get_info(name, len),
-            Delete(name, len) => self.delete(name, len),
-            FileRename(oldname, oldlen, newname, newlen) => {
-                self.file_rename(oldname, oldlen, newname, newlen)
-            }
-            MkDir(pathname, len, modes) => self.mkdir(pathname, len, modes),
+            GetInfo(name) => self.get_info(name),
+            Delete(name) => self.delete(name),
+            FileRename(oldname, newname) => self.file_rename(oldname, newname),
+            MkDir(pathname, modes) => self.mkdir(pathname, modes),
         }
     }
 }
 
 impl<T> TestDispatch<u64> for T {
-    fn test(
-        &self,
-        nargs: u64,
-        arg1: u64,
-        arg2: u64,
-        arg3: u64,
-        arg4: u64,
-    ) -> Result<(u64, u64), KError> {
+    fn test(&self, nargs: u64, arg1: u64, arg2: u64, arg3: u64, arg4: u64) -> KResult<(u64, u64)> {
         match nargs {
             0 => Ok((1, 2)),
             1 => Ok((arg1, arg1 + 1)),
@@ -330,61 +338,59 @@ impl<T> TestDispatch<u64> for T {
 pub(crate) trait CnrFsDispatch {}
 
 impl<T: CnrFsDispatch> FsDispatch<u64> for T {
-    fn open(&self, pathname: u64, len: u64, flags: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let pid = current_pid()?;
-        let _r = user_virt_addr_valid(pid, pathname, len)?;
-        cnrfs::MlnrKernelNode::map_fd(pid, pathname, flags, modes)
+    fn open(&self, path: UserSlice, flags: u64, modes: u64) -> KResult<(u64, u64)> {
+        let pid = path.pid;
+        let pathstring = path.try_into()?;
+        cnrfs::MlnrKernelNode::map_fd(pid, pathstring, flags, modes)
     }
 
-    fn read(&self, fd: u64, buffer: UserSlice) -> Result<(u64, u64), KError> {
+    fn read(&self, fd: u64, buffer: UserSlice) -> KResult<(u64, u64)> {
         cnrfs::MlnrKernelNode::file_io(FileOperation::Read, fd, buffer, -1)
     }
 
-    fn write(&self, fd: u64, buffer: UserSlice) -> Result<(u64, u64), KError> {
+    fn write(&self, fd: u64, buffer: UserSlice) -> KResult<(u64, u64)> {
         cnrfs::MlnrKernelNode::file_io(FileOperation::Write, fd, buffer, -1)
     }
 
-    fn read_at(&self, fd: u64, buffer: UserSlice, offset: i64) -> Result<(u64, u64), KError> {
+    fn read_at(&self, fd: u64, buffer: UserSlice, offset: i64) -> KResult<(u64, u64)> {
         cnrfs::MlnrKernelNode::file_io(FileOperation::ReadAt, fd, buffer, offset)
     }
 
-    fn write_at(&self, fd: u64, buffer: UserSlice, offset: i64) -> Result<(u64, u64), KError> {
+    fn write_at(&self, fd: u64, buffer: UserSlice, offset: i64) -> KResult<(u64, u64)> {
         cnrfs::MlnrKernelNode::file_io(FileOperation::WriteAt, fd, buffer, offset)
     }
 
-    fn close(&self, fd: u64) -> Result<(u64, u64), KError> {
+    fn close(&self, fd: u64) -> KResult<(u64, u64)> {
         let pid = current_pid()?;
         cnrfs::MlnrKernelNode::unmap_fd(pid, fd)
     }
 
-    fn get_info(&self, name: u64, len: u64) -> Result<(u64, u64), KError> {
-        let pid = current_pid()?;
-        let _r = user_virt_addr_valid(pid, name, len)?;
-        cnrfs::MlnrKernelNode::file_info(pid, name)
+    fn get_info(&self, path: UserSlice) -> KResult<(u64, u64)> {
+        let pid = path.pid;
+        let pathstring = path.try_into()?;
+        cnrfs::MlnrKernelNode::file_info(pid, pathstring)
     }
 
-    fn delete(&self, name: u64, len: u64) -> Result<(u64, u64), KError> {
-        let pid = current_pid()?;
-        let _r = user_virt_addr_valid(pid, name, len)?;
-        cnrfs::MlnrKernelNode::file_delete(pid, name)
+    fn delete(&self, path: UserSlice) -> KResult<(u64, u64)> {
+        let pid = path.pid;
+        let pathstring: String = path.try_into()?;
+        cnrfs::MlnrKernelNode::file_delete(pid, pathstring)
     }
 
-    fn file_rename(
-        &self,
-        oldname: u64,
-        oldlen: u64,
-        newname: u64,
-        newlen: u64,
-    ) -> Result<(u64, u64), KError> {
-        let pid = current_pid()?;
-        let _r = user_virt_addr_valid(pid, oldname, oldlen)?;
-        let _r = user_virt_addr_valid(pid, newname, newlen)?;
-        cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)
+    fn file_rename(&self, oldpath: UserSlice, newpath: UserSlice) -> KResult<(u64, u64)> {
+        debug_assert_eq!(
+            oldpath.pid, newpath.pid,
+            "Rename across processes not supported"
+        );
+        let pid = oldpath.pid;
+        let oldpath = oldpath.try_into()?;
+        let newpath = newpath.try_into()?;
+        cnrfs::MlnrKernelNode::file_rename(pid, oldpath, newpath)
     }
 
-    fn mkdir(&self, pathname: u64, len: u64, modes: u64) -> Result<(u64, u64), KError> {
-        let pid = current_pid()?;
-        let _r = user_virt_addr_valid(pid, pathname, len)?;
-        cnrfs::MlnrKernelNode::mkdir(pid, pathname, modes)
+    fn mkdir(&self, path: UserSlice, modes: u64) -> KResult<(u64, u64)> {
+        let pid = path.pid;
+        let pathstring: String = path.try_into()?;
+        cnrfs::MlnrKernelNode::mkdir(pid, pathstring, modes)
     }
 }

@@ -24,7 +24,6 @@ use x86::bits64::rflags;
 use x86::{controlregs, Ring};
 
 use crate::arch::kcb::per_core_mem;
-use crate::arch::memory::KERNEL_BASE;
 use crate::error::{KError, KResult};
 use crate::fs::{Fd, MAX_FILES_PER_PROCESS};
 use crate::memory::detmem::DA;
@@ -120,29 +119,6 @@ impl crate::nrproc::ProcessManager for ArchProcessManagement {
     > {
         &*super::process::PROCESS_TABLE
     }
-}
-
-/// TODO: This method makes file-operations slow, improve it to use large page
-/// sizes. Or maintain a list of (low, high) memory limits per process and check
-/// if (base, size) are within the process memory limits.
-pub(crate) fn user_virt_addr_valid(pid: Pid, base: u64, size: u64) -> Result<(u64, u64), KError> {
-    let mut base = base;
-    let upper_addr = base + size;
-
-    if upper_addr < KERNEL_BASE {
-        while base <= upper_addr {
-            // Validate addresses for the buffer end.
-            if upper_addr - base <= BASE_PAGE_SIZE as u64 {
-                let _r = NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
-                return NrProcess::<Ring3Process>::resolve(pid, VAddr::from(upper_addr - 1));
-            }
-
-            let _r = NrProcess::<Ring3Process>::resolve(pid, VAddr::from(base))?;
-            base += BASE_PAGE_SIZE as u64;
-        }
-        return Ok((base, size));
-    }
-    Err(KError::BadAddress)
 }
 
 pub(crate) struct UserPtr<T> {
@@ -243,9 +219,9 @@ impl<T> Drop for UserValue<T> {
 /// Runs a closure `f` while the current core has access to user-space enabled.
 ///
 /// Access is disabled again after `f` returns.
-pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> R
+pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> KResult<R>
 where
-    F: FnOnce() -> R,
+    F: FnOnce() -> KResult<R>,
 {
     unsafe {
         // Safety:

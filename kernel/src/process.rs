@@ -512,8 +512,8 @@ impl UserSlice {
     pub(crate) fn new(pid: Pid, base: UVAddr, len: usize) -> KResult<Self> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         if len > i32::MAX as usize {
-            // Don't allow buffers > 2GB, this is pretty arbitrary and probably
-            // still too big but at least sets some "bound" on syscall duration
+            // Don't allow buffers > 2GB, this is pretty arbitrary (and probably
+            // still too big) but at least sets some "bound" on syscall duration
             // in the kernel
             return Err(KError::UserBufferTooLarge);
         }
@@ -676,6 +676,11 @@ impl UserSlice {
     }
 }
 
+/// We can turn a [`UserSlice`] into a [`String`].
+///
+/// This will safely dereference the slice and copy it into a kernel String.
+/// Note that we (currently) need to be in the process' address space to do
+/// this, if not this will return an error.
 impl TryInto<String> for UserSlice {
     type Error = KError;
 

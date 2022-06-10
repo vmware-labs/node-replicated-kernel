@@ -5,8 +5,6 @@
 // http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue
 // This queue is copy pasted from old rust stdlib.
 
-#![allow(warnings)] // For now...
-
 use alloc::alloc::{alloc, Layout};
 use alloc::boxed::Box;
 use alloc::sync::Arc;

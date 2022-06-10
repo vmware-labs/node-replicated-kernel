@@ -1,6 +1,4 @@
 // Shmem Transport
-#![allow(dead_code)]
-
 use alloc::alloc::Allocator;
 
 use alloc::sync::Arc;

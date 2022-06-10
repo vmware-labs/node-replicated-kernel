@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #[test]
-fn test_client_server() {
+#[cfg(feature = "std")]
+fn test_client_server_mpsc() {
     use std::sync::mpsc::sync_channel;
     use std::thread;
 

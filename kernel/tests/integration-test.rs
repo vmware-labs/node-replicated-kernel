@@ -2516,6 +2516,142 @@ fn s06_fxmark_benchmark() {
     }
 }
 
+#[test]
+#[cfg(not(feature = "baremetal"))]
+fn s06_shmem_exokernel_fxmark_benchmark() {
+    use memfile::{CreateOptions, MemFile};
+    use std::thread::sleep;
+    use std::time::Duration;
+    use std::{fs::remove_file, sync::Arc};
+
+    // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
+    let benchmarks = vec!["mixX0", "mixX10", "mixX100"];
+    //let benchmarks = vec!["mixX10"];
+
+    let file_name = "shmem_exokernel_fxmark_benchmark.csv";
+    let _ignore = remove_file(file_name);
+
+    // Create build for both controller and client
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("fxmark")
+            .kernel_feature("shmem")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    fn open_files(benchmark: &str, max_cores: usize, nodes: usize) -> Vec<usize> {
+        if benchmark.contains("mix") {
+            vec![1, max_cores / nodes]
+        } else {
+            vec![0]
+        }
+    }
+
+    let cores = 1;
+    for benchmark in benchmarks {
+        let open_files: Vec<usize> = open_files(benchmark, 1, 1);
+        for &of in open_files.iter() {
+            // Set up file for shmem
+            let shmem_file_name = "ivshmem-file";
+            let filelen = 2;
+            let file = MemFile::create(shmem_file_name, CreateOptions::new())
+                .expect("Unable to create memfile");
+            file.set_len(filelen * 1024 * 1024)
+                .expect("Unable to set file length");
+
+            let kernel_cmdline = format!("mode=client initargs={}X{}X{}", cores, of, benchmark);
+
+            // Create controller
+            let build1 = build.clone();
+            let controller = std::thread::spawn(move || {
+                let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+                    .timeout(30_000)
+                    .cmd("mode=controller")
+                    .ivshmem(filelen as usize)
+                    .shmem_path(shmem_file_name)
+                    .tap("tap0");
+
+                let mut output = String::new();
+                let mut qemu_run = || -> Result<WaitStatus> {
+                    let mut p = spawn_nrk(&cmdline_controller)?;
+                    output += p.exp_eof()?.as_str();
+                    p.process.exit()
+                };
+
+                let _ignore = qemu_run();
+            });
+
+            let build2 = build.clone();
+            let client = std::thread::spawn(move || {
+                sleep(Duration::from_millis(10_000));
+                let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+                    .timeout(180_000)
+                    .ivshmem(filelen as usize)
+                    .shmem_path(shmem_file_name)
+                    .tap("tap2")
+                    .cmd(kernel_cmdline.as_str());
+
+                cmdline_client = cmdline_client.memory(core::cmp::max(49152, cores * 512));
+                cmdline_client = cmdline_client.nodes(0);
+
+                // Run the client and parse results
+                let mut output = String::new();
+
+                let mut qemu_run = |_with_cores: usize| -> Result<WaitStatus> {
+                    let mut p = spawn_nrk(&cmdline_client)?;
+
+                    // Parse lines like
+                    // `init::fxmark: 1,fxmark,2,2048,10000,4000,1863272`
+                    // write them to a CSV file
+                    let expected_lines = cores * 10;
+
+                    for _i in 0..expected_lines {
+                        let (prev, matched) = p.exp_regex(
+                            r#"init::fxmark: (\d+),(.*),(\d+),(\d+),(\d+),(\d+),(\d+),(\d+)"#,
+                        )?;
+                        output += prev.as_str();
+                        output += matched.as_str();
+
+                        // Append parsed results to a CSV file
+                        let write_headers = !Path::new(file_name).exists();
+                        let mut csv_file = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(file_name)
+                            .expect("Can't open file");
+                        if write_headers {
+                            let row =
+                            "git_rev,thread_id,benchmark,ncores,write_ratio,open_files,duration_total,duration,operations\n";
+                            let r = csv_file.write(row.as_bytes());
+                            assert!(r.is_ok());
+                        }
+
+                        let parts: Vec<&str> = matched.split("init::fxmark: ").collect();
+                        let r = csv_file.write(format!("{},", env!("GIT_HASH")).as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write(parts[1].as_bytes());
+                        assert!(r.is_ok());
+                        let r = csv_file.write("\n".as_bytes());
+                        assert!(r.is_ok());
+                    }
+
+                    output += p.exp_eof()?.as_str();
+                    p.process.exit()
+                };
+                check_for_successful_exit(&cmdline_client, qemu_run(cores), output);
+            });
+
+            controller.join().unwrap();
+            client.join().unwrap();
+
+            let _ignore = remove_file(&shmem_file_name);
+        }
+    }
+}
+
 fn memcached_benchmark(
     driver: &'static str,
     cores: usize,

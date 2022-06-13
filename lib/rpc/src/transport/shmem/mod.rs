@@ -52,15 +52,16 @@ impl<'a> Receiver<'a> {
         Receiver(q.clone())
     }
 
-    pub fn recv(&self, data_out: &mut [u8]) -> bool {
+    pub fn recv(&self, data_out: &mut [u8]) -> usize {
         loop {
-            if self.0.dequeue(data_out) {
-                return true;
+            let ret = self.0.dequeue(data_out);
+            if ret.is_ok() {
+                return ret.unwrap();
             }
         }
     }
 
-    pub fn try_recv(&self, data_out: &mut [u8]) -> bool {
+    pub fn try_recv(&self, data_out: &mut [u8]) -> Result<usize, ()> {
         self.0.dequeue(data_out)
     }
 }
@@ -79,7 +80,7 @@ mod tests {
         sender.send(&send_data);
 
         let mut rx_data = [0u8; 10];
-        assert!(receiver.recv(&mut rx_data));
+        assert_eq!(receiver.recv(&mut rx_data), 10);
         assert_eq!(&send_data, &rx_data[0..send_data.len()]);
     }
 }

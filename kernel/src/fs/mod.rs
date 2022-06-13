@@ -12,7 +12,7 @@ use spin::RwLock;
 
 use crate::error::KError;
 use crate::fallible_string::TryString;
-use crate::process::UserSlice;
+use crate::process::SliceAccess;
 
 pub(crate) use rwlock::RwLock as NrLock;
 
@@ -35,15 +35,20 @@ pub(crate) type MnodeNum = u64;
 
 /// Abstract definition of file-system interface operations.
 pub(crate) trait FileSystem {
-    fn create(&self, pathname: &str, modes: FileModes) -> Result<u64, KError>;
+    fn create(&self, pathname: String, modes: FileModes) -> Result<u64, KError>;
     fn write(&self, mnode_num: MnodeNum, buffer: &[u8], offset: usize) -> Result<usize, KError>;
-    fn read(&self, mnode_num: MnodeNum, buffer: UserSlice, offset: usize) -> Result<usize, KError>;
+    fn read(
+        &self,
+        mnode_num: MnodeNum,
+        buffer: &mut dyn SliceAccess,
+        offset: usize,
+    ) -> Result<usize, KError>;
     fn lookup(&self, pathname: &str) -> Option<Arc<MnodeNum>>;
     fn file_info(&self, mnode: MnodeNum) -> FileInfo;
     fn delete(&self, pathname: &str) -> Result<(), KError>;
     fn truncate(&self, pathname: &str) -> Result<(), KError>;
-    fn rename(&self, oldname: &str, newname: &str) -> Result<(), KError>;
-    fn mkdir(&self, pathname: &str, modes: FileModes) -> Result<(), KError>;
+    fn rename(&self, oldname: &str, newname: String) -> Result<(), KError>;
+    fn mkdir(&self, pathname: String, modes: FileModes) -> Result<(), KError>;
 }
 
 /// The mnode number assigned to the first file.
@@ -112,12 +117,11 @@ impl MlnrFS {
 }
 
 impl FileSystem for MlnrFS {
-    fn create(&self, pathname: &str, modes: FileModes) -> Result<u64, KError> {
+    fn create(&self, pathname: String, modes: FileModes) -> Result<u64, KError> {
         // Check if the file with the same name already exists.
-        if self.files.read().get(pathname).is_some() {
+        if self.files.read().get(&pathname).is_some() {
             return Err(KError::AlreadyPresent);
         }
-        let pathname_string = TryString::try_from(pathname)?.into();
 
         let mnode_num = self.get_next_mno() as u64;
         // TODO(error-handling): can we ignore or should we decrease mnode_num
@@ -128,9 +132,9 @@ impl FileSystem for MlnrFS {
 
         // TODO: For now all newly created mnode are for file. How to differentiate
         // between a file and a directory. Take input from the user?
-        let memnode = MemNode::new(mnode_num, pathname, modes, FileType::File)?;
+        let memnode = MemNode::new(mnode_num, &pathname, modes, FileType::File)?;
 
-        self.files.write().insert(pathname_string, arc_mnode_num);
+        self.files.write().insert(pathname, arc_mnode_num);
         mnodes.insert(mnode_num, NrLock::new(memnode));
 
         Ok(mnode_num)
@@ -143,7 +147,12 @@ impl FileSystem for MlnrFS {
         }
     }
 
-    fn read(&self, mnode_num: MnodeNum, buffer: UserSlice, offset: usize) -> Result<usize, KError> {
+    fn read(
+        &self,
+        mnode_num: MnodeNum,
+        buffer: &mut dyn SliceAccess,
+        offset: usize,
+    ) -> Result<usize, KError> {
         match self.mnodes.read().get(&mnode_num) {
             Some(mnode) => mnode.read().read(buffer, offset),
             None => Err(KError::InvalidFile),
@@ -197,21 +206,20 @@ impl FileSystem for MlnrFS {
         }
     }
 
-    fn rename(&self, oldname: &str, newname: &str) -> Result<(), KError> {
+    fn rename(&self, oldname: &str, newname: String) -> Result<(), KError> {
         if self.files.read().get(oldname).is_none() {
             return Err(KError::InvalidFile);
         }
-        let newname_key = TryString::try_from(newname)?.into();
 
         // If the newfile exists then overwrite it with the oldfile.
-        if self.files.read().get(newname).is_some() {
-            self.delete(newname).unwrap();
+        if self.files.read().get(&newname).is_some() {
+            self.delete(&newname).unwrap();
         }
 
         // TODO: Can we optimize it somehow?
         let mut lock_at_root = self.files.write();
         match lock_at_root.remove_entry(oldname) {
-            Some((_key, oldnmode)) => match lock_at_root.insert(newname_key, oldnmode) {
+            Some((_key, oldnmode)) => match lock_at_root.insert(newname, oldnmode) {
                 None => Ok(()),
                 Some(_) => Err(KError::PermissionError),
             },
@@ -221,26 +229,22 @@ impl FileSystem for MlnrFS {
 
     /// Create a directory. The implementation is quite simplistic for now, and only used
     /// by leveldb benchmark.
-    fn mkdir(&self, pathname: &str, modes: FileModes) -> Result<(), KError> {
+    fn mkdir(&self, pathname: String, modes: FileModes) -> Result<(), KError> {
         // Check if the file with the same name already exists.
-        if self.files.read().get(pathname).is_some() {
+        if self.files.read().get(&pathname).is_some() {
             return Err(KError::AlreadyPresent);
+        } else {
+            let mnode_num = self.get_next_mno() as u64;
+            // TODO(error-handling): Should we decrease mnode-num or ignore?
+            let arc_mnode_num = Arc::try_new(mnode_num)?;
+            let mut mnodes = self.mnodes.write();
+            mnodes.try_reserve(1)?;
+            let memnode = MemNode::new(mnode_num, &pathname, modes, FileType::Directory)?;
+
+            self.files.write().insert(pathname, arc_mnode_num);
+            mnodes.insert(mnode_num, NrLock::new(memnode));
+
+            Ok(())
         }
-
-        let pathname_key = TryString::try_from(pathname)?.into();
-        let mnode_num = self.get_next_mno() as u64;
-        // TODO(error-handling): Should we decrease mnode-num or ignore?
-        let arc_mnode_num = Arc::try_new(mnode_num)?;
-        let mut mnodes = self.mnodes.write();
-        mnodes.try_reserve(1)?;
-
-        let memnode = match MemNode::new(mnode_num, pathname, modes, FileType::Directory) {
-            Ok(memnode) => memnode,
-            Err(e) => return Err(e),
-        };
-        self.files.write().insert(pathname_key, arc_mnode_num);
-        mnodes.insert(mnode_num, NrLock::new(memnode));
-
-        Ok(())
     }
 }

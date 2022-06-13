@@ -353,19 +353,19 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
     }
 
     fn read(&self, fd: FileDescriptor, buffer: UserSlice) -> KResult<(u64, u64)> {
-        cnrfs::MlnrKernelNode::file_io(FileOperation::Read, fd, buffer, -1)
+        cnrfs::MlnrKernelNode::file_read(buffer.pid, fd, &mut buffer, -1)
     }
 
     fn write(&self, fd: FileDescriptor, buffer: UserSlice) -> KResult<(u64, u64)> {
-        cnrfs::MlnrKernelNode::file_io(FileOperation::Write, fd, buffer, -1)
+        cnrfs::MlnrKernelNode::file_write(buffer.pid, fd, buffer.try_into()?, -1)
     }
 
     fn read_at(&self, fd: FileDescriptor, buffer: UserSlice, offset: i64) -> KResult<(u64, u64)> {
-        cnrfs::MlnrKernelNode::file_io(FileOperation::ReadAt, fd, buffer, offset)
+        cnrfs::MlnrKernelNode::file_read(buffer.pid, fd, &mut buffer, offset)
     }
 
     fn write_at(&self, fd: FileDescriptor, buffer: UserSlice, offset: i64) -> KResult<(u64, u64)> {
-        cnrfs::MlnrKernelNode::file_io(FileOperation::WriteAt, fd, buffer, offset)
+        cnrfs::MlnrKernelNode::file_write(buffer.pid, fd, buffer.try_into()?, offset)
     }
 
     fn close(&self, fd: FileDescriptor) -> KResult<(u64, u64)> {

@@ -10,7 +10,7 @@ use kpi::io::*;
 use crate::arch::process::ArchProcess;
 use crate::error::KError;
 use crate::memory::BASE_PAGE_SIZE;
-use crate::process::UserSlice;
+use crate::process::SliceAccess;
 
 #[derive(Debug, Eq, PartialEq)]
 /// The buffer is used by the file. Each buffer is BASE_PAGE_SIZE
@@ -147,7 +147,7 @@ impl File {
     /// end_offset (not inclusive).
     pub(crate) fn read_file(
         &self,
-        user_slice: UserSlice,
+        user_slice: &mut dyn SliceAccess,
         start_offset: usize,
         end_offset: usize,
     ) -> Result<usize, KError> {
@@ -175,7 +175,7 @@ impl File {
             }
             let uslice = user_slice.subslice(dst_start..dst_end);
             crate::nrproc::NrProcess::<ArchProcess>::write_to_userspace(
-                uslice,
+                &mut uslice,
                 &self.mcache[buffer_num].data[src_start..src_end],
             )?;
             buffer_num += 1;

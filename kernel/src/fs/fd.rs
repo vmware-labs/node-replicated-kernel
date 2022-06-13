@@ -1,5 +1,6 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
+use abomonation::{unsafe_abomonate, Abomonation};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::KError;
@@ -11,6 +12,8 @@ use super::{FileFlags, MnodeNum, MAX_FILES_PER_PROCESS};
 /// This type ensures that it's value is never above `MAX_FILES_PER_PROCESS`.
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub(crate) struct FileDescriptor(usize);
+
+unsafe_abomonate!(FileDescriptor);
 
 impl FileDescriptor {
     /// Creates a new FileDescriptor.

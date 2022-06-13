@@ -21,7 +21,7 @@ use crate::error::{KError, KResult};
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
-use crate::process::{Eid, Executor, Pid, Process, UserSlice, MAX_PROCESSES};
+use crate::process::{Eid, Executor, Pid, Process, SliceAccess, UserSlice, MAX_PROCESSES};
 
 /// The tokens per core to access the process replicas.
 #[thread_local]
@@ -53,12 +53,12 @@ pub(crate) enum ProcessOp<'buf> {
     MemResolve(VAddr),
     ReadSlice(UserSlice),
     ReadString(UserSlice),
-    WriteSlice(UserSlice, &'buf [u8]),
+    WriteSlice(&'buf mut UserSlice, &'buf [u8]),
     ExecSliceMut(
         UserSlice,
         Box<dyn Fn(&'buf mut [u8]) -> KResult<(u64, u64)>>,
     ),
-    ExecSlice(UserSlice, Box<dyn Fn(&'buf [u8]) -> KResult<(u64, u64)>>),
+    ExecSlice(&'buf UserSlice, Box<dyn Fn(&'buf [u8]) -> KResult<()>>),
 }
 
 /// Mutable operations on the NrProcess.
@@ -338,7 +338,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn read_slice_from_userspace(from: UserSlice) -> Result<Arc<[u8]>, KError> {
+    pub(crate) fn userslice_to_arc_slice(from: UserSlice) -> Result<Arc<[u8]>, KError> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][from.pid].execute(
@@ -366,7 +366,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn write_to_userspace(to: UserSlice, kbuf: &[u8]) -> Result<(), KError> {
+    pub(crate) fn write_to_userspace(to: &mut UserSlice, kbuf: &[u8]) -> Result<(), KError> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][to.pid].execute(
@@ -380,8 +380,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn userspace_map_mut(
+    pub(crate) fn userspace_exec_slice_mut(
         on: UserSlice,
         f: Box<dyn Fn(&mut [u8]) -> KResult<(u64, u64)>>,
     ) -> Result<(u64, u64), KError> {
@@ -398,11 +397,10 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn userspace_map(
-        on: UserSlice,
-        f: Box<dyn Fn(&[u8]) -> KResult<(u64, u64)>>,
-    ) -> Result<(u64, u64), KError> {
+    pub(crate) fn userspace_exec_slice(
+        on: &UserSlice,
+        f: Box<dyn Fn(&[u8]) -> KResult<()>>,
+    ) -> Result<(), KError> {
         let node = *crate::environment::NODE_ID;
 
         let response = PROCESS_TABLE[node][on.pid].execute(
@@ -410,7 +408,7 @@ impl<P: Process> NrProcess<P> {
             PROCESS_TOKEN.get().unwrap()[on.pid],
         );
         match response {
-            Ok(ProcessResult::SysRetOk((a, b))) => Ok((a, b)),
+            Ok(ProcessResult::Ok) => Ok(()),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -477,8 +475,8 @@ where
                 Ok(ProcessResult::SysRetOk((a, b)))
             }
             ProcessOp::ExecSlice(uslice, closure) => {
-                let (a, b) = uslice.with_slice(&*self.process, |ubuf| closure(ubuf))?;
-                Ok(ProcessResult::SysRetOk((a, b)))
+                uslice.with_slice(&*self.process, |ubuf| closure(ubuf))?;
+                Ok(ProcessResult::Ok)
             }
         }
     }

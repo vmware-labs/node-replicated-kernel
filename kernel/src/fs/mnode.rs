@@ -8,7 +8,7 @@ use kpi::io::{FileModes, FileType};
 
 use crate::error::KError;
 use crate::fallible_string::TryString;
-use crate::process::UserSlice;
+use crate::process::SliceAccess;
 
 use super::file::*;
 use super::MnodeNum;
@@ -81,7 +81,11 @@ impl MemNode {
     }
 
     /// Read from an in-memory file.
-    pub(crate) fn read(&self, buffer: UserSlice, offset: usize) -> Result<usize, KError> {
+    pub(crate) fn read(
+        &self,
+        buffer: &mut dyn SliceAccess,
+        offset: usize,
+    ) -> Result<usize, KError> {
         // Return if the user doesn't have read permissions for the file.
         if self.node_type != FileType::File || !self.file.as_ref().unwrap().get_mode().is_readable()
         {

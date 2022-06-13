@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::Abomonation;
-use core::convert::TryInto;
+use core::{convert::TryInto, str::Utf8Error};
 
 /// Node ID for servers/clients
 pub type NodeId = u64;
@@ -30,16 +30,41 @@ pub enum RPCError {
     NoFileDescForPid,
 
     // Syscall Errors
-    InvalidSyscallArgument1 { a: u64 },
-    InvalidVSpaceOperation { a: u64 },
-    InvalidProcessOperation { a: u64 },
-    InvalidSystemOperation { a: u64 },
+    InvalidSyscallArgument1 {
+        a: u64,
+    },
+    InvalidVSpaceOperation {
+        a: u64,
+    },
+    InvalidProcessOperation {
+        a: u64,
+    },
+    InvalidSystemOperation {
+        a: u64,
+    },
 
     // General Errors
     BadAddress,
     NotSupported,
+
+    /// Can't convert some arg to string
+    Utf8Error,
+    /// Out of memory during request
+    OutOfMemory,
 }
 unsafe_abomonate!(RPCError);
+
+impl core::convert::From<Utf8Error> for RPCError {
+    fn from(_e: Utf8Error) -> Self {
+        RPCError::Utf8Error
+    }
+}
+
+impl core::convert::From<alloc::collections::TryReserveError> for RPCError {
+    fn from(_: alloc::collections::TryReserveError) -> Self {
+        RPCError::OutOfMemory
+    }
+}
 
 pub type RPCType = u8;
 

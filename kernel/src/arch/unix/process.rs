@@ -18,7 +18,8 @@ use node_replication::{Dispatch, Log, Replica};
 
 use crate::arch::kcb::get_kcb;
 use crate::error::{KError, KResult};
-use crate::fs::FileDescriptorEntry;
+use crate::fs::fd::FileDescriptorEntry;
+use crate::fs::MAX_FILES_PER_PROCESS;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::vspace::MapAction;
@@ -212,7 +213,8 @@ impl<'a> DerefMut for UserSlice<'a> {
 pub(crate) struct UnixProcess {
     pid: Pid,
     vspace: VSpace,
-    fd: FileDescriptorEntry,
+    /// File descriptors for the opened file.
+    fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS>,
     pinfo: kpi::process::ProcessInfo,
     /// Physical frame objects registered to the process.
     pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
@@ -323,15 +325,30 @@ impl Process for UnixProcess {
     }
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut FileDescriptorEntry)> {
-        Some((1, &mut self.fd))
+        if let Some(fid) = self.fds.iter().position(|fd| fd.is_none()) {
+            self.fds[fid] = Some(Default::default());
+            Some((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
+        } else {
+            None
+        }
     }
 
-    fn deallocate_fd(&mut self, _fd: usize) -> Result<usize, KError> {
-        Err(KError::InvalidFileDescriptor)
+    fn deallocate_fd(&mut self, fd: usize) -> Result<usize, KError> {
+        match self.fds.get_mut(fd) {
+            Some(fdinfo) => match fdinfo {
+                Some(info) => {
+                    log::debug!("deallocating: {:?}", info);
+                    *fdinfo = None;
+                    Ok(fd)
+                }
+                None => Err(KError::InvalidFileDescriptor),
+            },
+            None => Err(KError::InvalidFileDescriptor),
+        }
     }
 
-    fn get_fd(&self, _index: usize) -> &FileDescriptorEntry {
-        &self.fd
+    fn get_fd(&self, index: usize) -> &FileDescriptorEntry {
+        self.fds[index].as_ref().unwrap()
     }
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo {

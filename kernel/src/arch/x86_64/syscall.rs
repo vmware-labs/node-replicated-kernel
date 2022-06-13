@@ -81,7 +81,7 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
         // TODO(dependency): Get rid of serde/serde_cbor, use something sane instead
         let serialized = serde_cbor::to_vec(&return_threads).unwrap();
         if serialized.len() <= vaddr_buf_len as usize {
-            let user_slice = UserSlice::new(
+            let mut user_slice = UserSlice::new(
                 current_pid()?,
                 UVAddr::try_from(vaddr_buf)?,
                 serialized.len(),
@@ -158,7 +158,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 
         let serialized = serde_cbor::to_vec(&pinfo).unwrap();
         if serialized.len() <= vaddr_buf_len as usize {
-            let user_slice = UserSlice::new(
+            let mut user_slice = UserSlice::new(
                 current_pid()?,
                 UVAddr::try_from(vaddr_buf)?,
                 serialized.len(),

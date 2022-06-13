@@ -1,5 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
+
+#[cfg(feature = "rackscale")]
 use abomonation::{unsafe_abomonate, Abomonation};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -13,6 +15,7 @@ use super::{FileFlags, MnodeNum, MAX_FILES_PER_PROCESS};
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub(crate) struct FileDescriptor(usize);
 
+#[cfg(feature = "rackscale")]
 unsafe_abomonate!(FileDescriptor);
 
 impl FileDescriptor {

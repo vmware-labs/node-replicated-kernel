@@ -8,6 +8,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::{TryFrom, TryInto};
 use core::fmt::Debug;
+use core::mem::MaybeUninit;
 
 use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVecGlobal;
@@ -512,8 +513,12 @@ impl SliceAccess for &mut [u8] {
         Ok(())
     }
 
+    fn write_subslice(&mut self, _buffer: &[u8], _offset: usize) -> KResult<()> {
+        unimplemented!()
+    }
+
     fn len(&self) -> usize {
-        self.len()
+        <[u8]>::len(self)
     }
 }
 
@@ -542,17 +547,37 @@ impl TryFrom<UserSlice> for KernSlice {
     }
 }
 
+impl TryFrom<&[u8]> for KernSlice {
+    type Error = KError;
+
+    /// Converts a user-slice to a kernel slice.
+    fn try_from(slice: &[u8]) -> KResult<Self> {
+        // TODO: Panics on OOM, need a `try_new_uninit_slice()` https://github.com/rust-lang/rust/issues/63291
+        let mut buffer = Arc::<[u8]>::new_uninit_slice(slice.len());
+        let data = Arc::get_mut(&mut buffer).unwrap(); // not shared yet, no panic!
+        MaybeUninit::write_slice(data, slice);
+
+        let buffer = unsafe {
+            // Safety:
+            // - Length == slice.len(): see above
+            // - All initialized: plain-old-data, wrote all of slice, see above
+            buffer.assume_init()
+        };
+        Ok(Self { buffer })
+    }
+}
+
 impl SliceAccess for KernSlice {
     fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
         f(&self.buffer)
     }
 
-    fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
-        if buffer.len() != self.buffer.len() {
-            return Err(KError::InvalidLength);
-        }
-        self.buffer.copy_from_slice(buffer);
-        Ok(())
+    fn write_slice(&mut self, _buffer: &[u8]) -> KResult<()> {
+        unimplemented!()
+    }
+
+    fn write_subslice(&mut self, _buffer: &[u8], _offset: usize) -> KResult<()> {
+        unimplemented!()
     }
 
     fn len(&self) -> usize {
@@ -620,7 +645,7 @@ impl UserSlice {
         }
         if let Ok(pid) = current_pid() && pid != process.pid() {
             // We need to be in the process' address space to copy/write from/to
-            // user-space 
+            // user-space
             //
             // TODO(improvment): An arbitrary limitation as we could just read
             // from the physical identity mappings, though then we'd have to
@@ -748,6 +773,15 @@ impl SliceAccess for UserSlice {
     fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
         nrproc::NrProcess::<ArchProcess>::write_to_userspace(self, buffer.as_ref())?;
         Ok(())
+    }
+
+    fn write_subslice(&mut self, buffer: &[u8], offset: usize) -> KResult<()> {
+        if self.len() < (offset + buffer.len()) {
+            return Err(KError::InvalidOffset);
+        }
+
+        self.subslice(offset..(offset + buffer.len()))
+            .write_slice(buffer)
     }
 
     fn len(&self) -> usize {

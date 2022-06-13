@@ -54,6 +54,7 @@ pub(crate) enum ProcessOp<'buf> {
     ReadSlice(UserSlice),
     ReadString(UserSlice),
     WriteSlice(&'buf mut UserSlice, &'buf [u8]),
+    #[allow(unused)]
     ExecSliceMut(
         UserSlice,
         Box<dyn Fn(&'buf mut [u8]) -> KResult<(u64, u64)>>,
@@ -368,10 +369,11 @@ impl<P: Process> NrProcess<P> {
 
     pub(crate) fn write_to_userspace(to: &mut UserSlice, kbuf: &[u8]) -> Result<(), KError> {
         let node = *crate::environment::NODE_ID;
+        let pid = to.pid;
 
-        let response = PROCESS_TABLE[node][to.pid].execute(
+        let response = PROCESS_TABLE[node][pid].execute(
             ProcessOp::WriteSlice(to, kbuf),
-            PROCESS_TOKEN.get().unwrap()[to.pid],
+            PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
             Ok(ProcessResult::Ok) => Ok(()),
@@ -380,6 +382,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
+    #[cfg(feature = "rackscale")]
     pub(crate) fn userspace_exec_slice_mut(
         on: UserSlice,
         f: Box<dyn Fn(&mut [u8]) -> KResult<(u64, u64)>>,

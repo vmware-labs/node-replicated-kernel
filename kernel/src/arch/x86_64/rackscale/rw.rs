@@ -225,7 +225,8 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         };
 
         todo!("needs a user-slice...");
-        let ret = cnrfs::MlnrKernelNode::file_write(local_pid, req.fd, remaining, offset);
+        let data = (&*remaining).try_into()?;
+        let ret = cnrfs::MlnrKernelNode::file_write(local_pid, req.fd, data, offset);
 
         // Construct return
         let res = FIORes {

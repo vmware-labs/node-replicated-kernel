@@ -132,8 +132,7 @@ impl ModelFS {
 
 impl FileSystem for ModelFS {
     // Create just puts the file in the oplop and increases mnode counter.
-    fn create(&self, pathname: &str, mode: Modes) -> Result<u64, KError> {
-        let path = String::from(pathname);
+    fn create(&self, path: String, mode: Modes) -> Result<u64, KError> {
         if self.file_exists(&path) {
             Err(KError::AlreadyPresent)
         } else {
@@ -299,7 +298,7 @@ impl FileSystem for ModelFS {
     }
 
     /// Return a `dummy` response for rename operation
-    fn rename(&self, _oldname: &str, _newname: &str) -> Result<(), KError> {
+    fn rename(&self, _oldname: &str, _newname: String) -> Result<(), KError> {
         Ok(())
     }
 
@@ -313,7 +312,7 @@ impl FileSystem for ModelFS {
 #[test]
 fn model_read() {
     let mfs: ModelFS = Default::default();
-    assert!(mfs.create("/bla", FileModes::S_IRWXU.into()).is_ok());
+    assert!(mfs.create("/bla".into(), FileModes::S_IRWXU.into()).is_ok());
     let mnode = mfs.lookup("/bla").unwrap();
 
     let mut wdata1 = [1, 1];
@@ -345,7 +344,7 @@ fn model_read() {
 #[test]
 fn model_overlapping_writes() {
     let mfs: ModelFS = Default::default();
-    assert!(mfs.create("/bla", FileModes::S_IRWXU.into()).is_ok());
+    assert!(mfs.create("/bla".into(), FileModes::S_IRWXU.into()).is_ok());
     let mnode = mfs.lookup("/bla").unwrap();
 
     let mut data = [1, 1, 1];
@@ -487,8 +486,8 @@ proptest! {
                 Create(path, mode) => {
                     let path_str = path.join("/");
 
-                    let rmodel = model.create(path_str.as_str(), mode);
-                    let rtotest = totest.create(path_str.as_str(), mode);
+                    let rmodel = model.create(path_str.clone(), mode);
+                    let rtotest = totest.create(path_str, mode);
                     assert_eq!(rmodel, rtotest);
                 }
                 Delete(path) => {
@@ -542,7 +541,9 @@ fn test_memfs_init() {
 fn test_file_create() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRUSR.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -558,7 +559,9 @@ fn test_file_read_permission_error() {
     let buffer = &[0; 10];
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IWUSR.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IWUSR.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -580,7 +583,9 @@ fn test_file_write_permission_error() {
     let buffer = &[0; 10];
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRUSR.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRUSR.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -600,7 +605,9 @@ fn test_file_write() {
     let buffer = &[0; 10];
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -624,7 +631,9 @@ fn test_file_read() {
 
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -652,7 +661,9 @@ fn test_file_read() {
 fn test_file_lookup() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -668,7 +679,9 @@ fn test_file_lookup() {
 fn test_file_fake_lookup() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -684,7 +697,9 @@ fn test_file_fake_lookup() {
 fn test_file_duplicate_create() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -692,7 +707,7 @@ fn test_file_duplicate_create() {
         Some(&Arc::new(2))
     );
     assert_eq!(
-        memfs.create(filename, FileModes::S_IRWXU.into()),
+        memfs.create(filename.into(), FileModes::S_IRWXU.into()),
         Err(KError::AlreadyPresent)
     );
 }
@@ -702,7 +717,9 @@ fn test_file_duplicate_create() {
 fn test_file_info() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.nextmemnode.load(Ordering::Relaxed), 3);
     assert_eq!(
@@ -719,7 +736,9 @@ fn test_file_delete() {
     let filename = "file.txt";
     let buffer: &mut [u8; 10] = &mut [0xb; 10];
 
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_eq!(mnode, 2);
     assert_eq!(memfs.delete(filename), Ok(()));
     assert_eq!(memfs.delete(filename).is_err(), true);
@@ -739,8 +758,10 @@ fn test_file_rename() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let newname = "filenew.txt";
-    let oldmnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert!(memfs.rename(filename, newname).is_ok());
+    let oldmnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
+    assert!(memfs.rename(filename, newname.into()).is_ok());
     let mnode = memfs.lookup(newname).unwrap();
     assert_eq!(oldmnode, *mnode);
 }
@@ -750,7 +771,9 @@ fn test_file_rename_and_read() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let newname = "filenew.txt";
-    let mnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
+    let mnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
 
     let buffer: &mut [u8; 10] = &mut [0xb; 10];
     assert_eq!(
@@ -759,7 +782,7 @@ fn test_file_rename_and_read() {
     );
 
     let rbuffer: &mut [u8; 10] = &mut [0x0; 10];
-    assert!(memfs.rename(filename, newname).is_ok());
+    assert!(memfs.rename(filename, newname.into()).is_ok());
     let mnode = memfs.lookup(newname).unwrap();
     assert_eq!(
         memfs.read(*mnode, &mut UserSlice::new(rbuffer.as_ptr() as u64, 10), 0),
@@ -774,8 +797,10 @@ fn test_file_rename_and_write() {
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let newname = "filenew.txt";
-    let oldmnode = memfs.create(filename, FileModes::S_IRWXU.into()).unwrap();
-    assert!(memfs.rename(filename, newname).is_ok());
+    let oldmnode = memfs
+        .create(filename.into(), FileModes::S_IRWXU.into())
+        .unwrap();
+    assert!(memfs.rename(filename, newname.into()).is_ok());
     let mnode = memfs.lookup(newname).unwrap();
     assert_eq!(oldmnode, *mnode);
 
@@ -795,7 +820,10 @@ fn test_file_rename_nonexistent_file() {
     let memfs: MlnrFS = Default::default();
     let oldname = "file.txt";
     let newname = "filenew.txt";
-    assert_eq!(memfs.rename(oldname, newname), Err(KError::InvalidFile));
+    assert_eq!(
+        memfs.rename(oldname, newname.into()),
+        Err(KError::InvalidFile)
+    );
 }
 
 #[test]
@@ -803,10 +831,14 @@ fn test_file_rename_to_existent_file() {
     let memfs: MlnrFS = Default::default();
     let oldname = "file.txt";
     let newname = "filenew.txt";
-    let oldmnode = memfs.create(oldname, FileModes::S_IRWXU.into()).unwrap();
-    let newmnode = memfs.create(newname, FileModes::S_IRWXU.into()).unwrap();
+    let oldmnode = memfs
+        .create(oldname.into(), FileModes::S_IRWXU.into())
+        .unwrap();
+    let newmnode = memfs
+        .create(newname.into(), FileModes::S_IRWXU.into())
+        .unwrap();
     assert_ne!(oldmnode, newmnode);
-    assert_eq!(memfs.rename(oldname, newname), Ok(()));
+    assert_eq!(memfs.rename(oldname, newname.into()), Ok(()));
 
     // Old file is removed.
     assert_eq!(memfs.lookup(oldname), None);

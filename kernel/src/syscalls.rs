@@ -352,7 +352,7 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
         cnrfs::MlnrKernelNode::map_fd(pid, pathstring, flags, modes)
     }
 
-    fn read(&self, fd: FileDescriptor, buffer: UserSlice) -> KResult<(u64, u64)> {
+    fn read(&self, fd: FileDescriptor, mut buffer: UserSlice) -> KResult<(u64, u64)> {
         cnrfs::MlnrKernelNode::file_read(buffer.pid, fd, &mut buffer, -1)
     }
 
@@ -360,7 +360,12 @@ impl<T: CnrFsDispatch> FsDispatch<u64> for T {
         cnrfs::MlnrKernelNode::file_write(buffer.pid, fd, buffer.try_into()?, -1)
     }
 
-    fn read_at(&self, fd: FileDescriptor, buffer: UserSlice, offset: i64) -> KResult<(u64, u64)> {
+    fn read_at(
+        &self,
+        fd: FileDescriptor,
+        mut buffer: UserSlice,
+        offset: i64,
+    ) -> KResult<(u64, u64)> {
         cnrfs::MlnrKernelNode::file_read(buffer.pid, fd, &mut buffer, offset)
     }
 

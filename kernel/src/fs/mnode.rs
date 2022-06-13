@@ -216,15 +216,10 @@ pub mod test {
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
         assert_eq!(memnode.node_type, FileType::File);
-        let buffer: &mut [u8; 10] = &mut [0xb; 10];
-        assert_eq!(memnode.write(buffer, 0).unwrap(), 10);
-        let buffer: &mut [u8; 10] = &mut [0; 10];
-        assert_eq!(
-            memnode
-                .read(&mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
-                .unwrap(),
-            10
-        );
+        let buffer: [u8; 10] = [0xb; 10];
+        assert_eq!(memnode.write(&buffer, 0).unwrap(), 10);
+        let mut buffer: [u8; 10] = [0; 10];
+        assert_eq!(memnode.read(&mut &mut buffer[..], 0).unwrap(), 10);
         assert_eq!(buffer[0], 0xb);
         assert_eq!(buffer[9], 0xb);
     }
@@ -238,9 +233,9 @@ pub mod test {
         assert_eq!(memnode.mnode_num, 1);
         assert_eq!(memnode.name, filename.to_string());
         assert_eq!(memnode.node_type, FileType::File);
-        let buffer: &[u8; 10] = &[0xb; 10];
+        let mut buffer: [u8; 10] = [0xb; 10];
         assert_eq!(
-            memnode.read(&mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
+            memnode.read(&mut &mut buffer[..], 0),
             Err(KError::PermissionError)
         );
     }

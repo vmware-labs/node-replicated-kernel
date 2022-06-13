@@ -1,19 +1,22 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use core::fmt::Debug;
+
 use abomonation::decode;
 use log::debug;
-
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::fio::*;
+use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-pub(crate) fn rpc_getinfo(
+use super::fio::*;
+
+pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    name: &[u8],
+    name: P,
 ) -> Result<(u64, u64), RPCError> {
     debug!("GetInfo({:?})", name);
 
@@ -23,7 +26,7 @@ pub(crate) fn rpc_getinfo(
         .call(
             pid,
             FileIO::GetInfo as RPCType,
-            &[&name],
+            &[name.as_ref()],
             &mut [&mut res_data],
         )
         .unwrap();
@@ -48,9 +51,10 @@ pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
+    let path = TryString::try_from(core::str::from_utf8(payload)?)?.into(); // TODO(alloc): fixme unnecessary
 
     // Call local file_info function
-    let ret = cnrfs::MlnrKernelNode::file_info(local_pid, (&payload).as_ptr() as u64);
+    let ret = cnrfs::MlnrKernelNode::file_info(local_pid, path);
     // Construct results from return data
     let res = FIORes {
         ret: convert_return(ret),

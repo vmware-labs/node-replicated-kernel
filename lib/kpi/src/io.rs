@@ -43,6 +43,7 @@ bitflags! {
         const O_APPEND = 0x02000; /* append at the EOF */
     }
 }
+unsafe_abomonate!(FileFlags);
 
 /// Needed to implement default for memnode.
 impl Default for FileFlags {
@@ -99,6 +100,7 @@ bitflags! {
         const S_IXUSR = 0x001; /* X for user */
     }
 }
+unsafe_abomonate!(FileModes);
 
 /// Convert u64 to FileModes.
 impl From<u64> for FileModes {

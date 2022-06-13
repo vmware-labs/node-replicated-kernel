@@ -1,33 +1,38 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::string::String;
+use core::fmt::Debug;
+
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use kpi::io::FileModes;
 use log::{debug, warn};
 
 use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::fio::*;
+use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
 #[derive(Debug)]
 pub(crate) struct MkDirReq {
-    pub modes: u64,
+    pub modes: FileModes,
 }
 unsafe_abomonate!(MkDirReq: modes);
 
-pub(crate) fn rpc_mkdir(
+pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    pathname: &[u8],
-    modes: u64,
+    pathname: P,
+    modes: FileModes,
 ) -> Result<(u64, u64), RPCError> {
     debug!("MkDir({:?})", pathname);
 
     // Construct request data
-    let req = MkDirReq { modes: modes };
+    let req = MkDirReq { modes };
     let mut req_data = [0u8; core::mem::size_of::<MkDirReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
@@ -39,7 +44,7 @@ pub(crate) fn rpc_mkdir(
         .call(
             pid,
             FileIO::MkDir as RPCType,
-            &[&req_data, &pathname],
+            &[&req_data, pathname.as_ref()],
             &mut [&mut res_data],
         )
         .unwrap();
@@ -74,13 +79,13 @@ pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         }
     };
 
+    let path = core::str::from_utf8(&payload[core::mem::size_of::<MkDirReq>()..])?;
+    let path_string: String = TryString::try_from(path)?.into();
+    let mkdir_req = cnrfs::MlnrKernelNode::mkdir(local_pid, path_string, modes);
+
     // Call mkdir function and send result
     let res = FIORes {
-        ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
-            local_pid,
-            (&payload[core::mem::size_of::<MkDirReq>()..]).as_ptr() as u64,
-            modes,
-        )),
+        ret: convert_return(mkdir_req),
     };
     construct_ret(hdr, payload, res)
 }

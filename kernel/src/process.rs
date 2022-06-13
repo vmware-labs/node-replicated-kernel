@@ -45,31 +45,6 @@ pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
 /// How many writable sections a process can have (part of the ELF file).
 pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
 
-/// Data copied from a user buffer into a kernel space buffer (`KernSlice`), so
-/// to make sure the user-application doesn't have any reference anymore.
-///
-///
-/// This is important sometimes due to replication, for example when writing a
-/// file with multiple replicas we don't want user-space to change the memory
-/// while we copy the data in the file (and hence end up with inconsistent
-/// replicas).
-///
-/// e.g., Any buffer that goes in the NR/CNR logs should be KernSlice.
-#[derive(PartialEq, Clone, Debug)]
-pub(crate) struct KernSlice {
-    pub buffer: Arc<[u8]>,
-}
-
-impl TryFrom<UserSlice> for KernSlice {
-    type Error = KError;
-
-    /// Converts a user-slice to a kernel slice.
-    fn try_from(user_slice: UserSlice) -> KResult<Self> {
-        let buffer = nrproc::NrProcess::<ArchProcess>::read_slice_from_userspace(user_slice)?;
-        Ok(Self { buffer })
-    }
-}
-
 /// Abstract definition of a process.
 pub(crate) trait Process {
     type E: Executor + Copy + Sync + Send + Debug + PartialEq;
@@ -492,6 +467,99 @@ impl TryFrom<usize> for UVAddr {
     }
 }
 
+/// Generic trait to access things that are (potentially) in user-space memory.
+///
+/// We need a trait because we sometimes write logic that takes slices which are
+/// in user-space or kernel-space memory (e.g., rackscale (kernel buffers) and a
+/// regular process (user-space buffers) reading from the file-system is one
+/// example where typically both ways are needed).
+pub trait SliceAccess {
+    /// Execute a function `f` passing it a "safe-to-access" reference of the
+    /// slice represented by `self`.
+    ///
+    /// - The implementation should return the Result of `f` if it was
+    ///   successful.
+    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()>;
+
+    /// Write `buffer` into self.
+    ///
+    /// - Implementation should return [`KError::InvalidLength`] if
+    ///   `buffer.len()` is not equal to `self.len()`.
+    fn write_slice(&mut self, buffer: &[u8]) -> KResult<()>;
+
+    /// Write `buffer` into `self` at `offset`.
+    ///
+    /// - `offset` + `buffer.len()` must be smaller or equal to `self.len()`.
+    ///
+    /// - Implementation should return an error if the write is out-of-bounds.
+    ///   of the buffer represented by `self`.
+    fn write_subslice(&mut self, buffer: &[u8], offset: usize) -> KResult<()>;
+
+    /// Returns the length of the buffer represented by `self`.
+    fn len(&self) -> usize;
+}
+
+impl SliceAccess for &mut [u8] {
+    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
+        f(self)
+    }
+
+    fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
+        if buffer.len() != self.len() {
+            return Err(KError::InvalidLength);
+        }
+        self.copy_from_slice(buffer);
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+/// Data copied from a user buffer into a kernel space buffer (`KernSlice`), so
+/// to make sure the user-application doesn't have any reference anymore.
+///
+///
+/// This is important sometimes due to replication, for example when writing a
+/// file with multiple replicas we don't want user-space to change the memory
+/// while we copy the data in the file (and hence end up with inconsistent
+/// replicas).
+///
+/// e.g., Any buffer that goes in the NR/CNR logs should be KernSlice.
+#[derive(PartialEq, Clone, Debug)]
+pub(crate) struct KernSlice {
+    pub buffer: Arc<[u8]>,
+}
+
+impl TryFrom<UserSlice> for KernSlice {
+    type Error = KError;
+
+    /// Converts a user-slice to a kernel slice.
+    fn try_from(user_slice: UserSlice) -> KResult<Self> {
+        let buffer = nrproc::NrProcess::<ArchProcess>::userslice_to_arc_slice(user_slice)?;
+        Ok(Self { buffer })
+    }
+}
+
+impl SliceAccess for KernSlice {
+    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
+        f(&self.buffer)
+    }
+
+    fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
+        if buffer.len() != self.buffer.len() {
+            return Err(KError::InvalidLength);
+        }
+        self.buffer.copy_from_slice(buffer);
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+}
+
 /// A slice of memory in a process' user-space.
 ///
 /// # Note on performance
@@ -535,10 +603,6 @@ impl UserSlice {
         let len = len.try_into().unwrap();
 
         Ok(Self::new(pid, base, len)?)
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.len
     }
 
     /// Checks if the user-slice is accessible given the mappings installed in
@@ -673,6 +737,21 @@ impl UserSlice {
             len: index.end - index.start,
             pid: self.pid,
         }
+    }
+}
+
+impl SliceAccess for UserSlice {
+    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
+        nrproc::NrProcess::<ArchProcess>::userspace_exec_slice(self, f)
+    }
+
+    fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
+        nrproc::NrProcess::<ArchProcess>::write_to_userspace(self, buffer.as_ref())?;
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        self.len
     }
 }
 

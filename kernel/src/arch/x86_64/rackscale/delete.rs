@@ -1,19 +1,22 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::string::String;
+
 use abomonation::decode;
 use log::debug;
-
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::fio::*;
+use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
+
+use super::fio::*;
 
 pub(crate) fn rpc_delete(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    pathname: &[u8],
+    pathname: String,
 ) -> Result<(u64, u64), RPCError> {
     debug!("Delete({:?})", pathname);
 
@@ -25,7 +28,7 @@ pub(crate) fn rpc_delete(
         .call(
             pid,
             FileIO::Delete as RPCType,
-            &[&pathname],
+            &[&pathname.as_bytes()],
             &mut [&mut res_data],
         )
         .unwrap();
@@ -50,12 +53,13 @@ pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
+    let path = core::str::from_utf8(payload)?;
 
     // Construct and return result
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
             local_pid,
-            (&payload).as_ptr() as u64,
+            TryString::try_from(path)?.into(), // TODO(fixme): unnecessary allocation
         )),
     };
     construct_ret(hdr, payload, res)

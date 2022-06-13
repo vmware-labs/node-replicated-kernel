@@ -86,7 +86,7 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
                 UVAddr::try_from(vaddr_buf)?,
                 serialized.len(),
             )?;
-            NrProcess::<Ring3Process>::write_to_userspace(user_slice, &serialized)?;
+            NrProcess::<Ring3Process>::write_to_userspace(&mut user_slice, &serialized)?;
         }
 
         Ok((serialized.len() as u64, 0))
@@ -163,7 +163,7 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
                 UVAddr::try_from(vaddr_buf)?,
                 serialized.len(),
             )?;
-            NrProcess::<Ring3Process>::write_to_userspace(user_slice, &serialized)?;
+            NrProcess::<Ring3Process>::write_to_userspace(&mut user_slice, &serialized)?;
         }
 
         Ok((serialized.len() as u64, 0))

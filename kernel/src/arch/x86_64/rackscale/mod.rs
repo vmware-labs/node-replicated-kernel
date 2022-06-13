@@ -1,6 +1,8 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+#![allow(warnings)]
+
 use alloc::boxed::Box;
 use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
 use spin::{Lazy, Mutex};

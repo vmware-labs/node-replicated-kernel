@@ -9,19 +9,21 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::fio::*;
 use crate::fs::cnrfs;
+use crate::fs::fd::FileDescriptor;
+
+use super::fio::*;
 
 #[derive(Debug)]
 pub(crate) struct CloseReq {
-    pub fd: u64,
+    pub fd: FileDescriptor,
 }
 unsafe_abomonate!(CloseReq: fd);
 
 pub(crate) fn rpc_close(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    fd: u64,
+    fd: FileDescriptor,
 ) -> Result<(u64, u64), RPCError> {
     // Setup request data
     let req = CloseReq { fd: fd };

@@ -6,16 +6,17 @@ use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::FileOperation;
 use log::{debug, warn};
-
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::fio::*;
 use crate::fs::cnrfs;
+use crate::fs::fd::FileDescriptor;
+
+use super::fio::*;
 
 #[derive(Debug)]
 pub(crate) struct RWReq {
-    pub fd: u64,
+    pub fd: FileDescriptor,
     pub len: u64,
     pub offset: i64,
 }
@@ -24,7 +25,7 @@ unsafe_abomonate!(RWReq: fd, len, offset);
 pub(crate) fn rpc_write(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    fd: u64,
+    fd: FileDescriptor,
     data: &[u8],
 ) -> Result<(u64, u64), RPCError> {
     rpc_writeat(rpc_client, pid, fd, -1, data)
@@ -33,7 +34,7 @@ pub(crate) fn rpc_write(
 pub(crate) fn rpc_writeat(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    fd: u64,
+    fd: FileDescriptor,
     offset: i64,
     data: &[u8],
 ) -> Result<(u64, u64), RPCError> {
@@ -88,7 +89,7 @@ pub(crate) fn rpc_writeat(
 pub(crate) fn rpc_read(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    fd: u64,
+    fd: FileDescriptor,
     buff_ptr: &mut [u8],
 ) -> Result<(u64, u64), RPCError> {
     rpc_readat(rpc_client, pid, fd, buff_ptr, -1)
@@ -97,7 +98,7 @@ pub(crate) fn rpc_read(
 pub(crate) fn rpc_readat(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    fd: u64,
+    fd: FileDescriptor,
     buff_ptr: &mut [u8],
     offset: i64,
 ) -> Result<(u64, u64), RPCError> {
@@ -150,7 +151,7 @@ pub(crate) fn rpc_readat(
 
 // RPC Handler function for read() RPCs in the controller
 pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    /*    // Lookup local pid
+    // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
@@ -179,12 +180,11 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     }
 
     // Read directly into payload buffer, at offset after result field & header
-    let ret = cnrfs::MlnrKernelNode::file_io(
-        operation,
+    todo!("should be user slice");
+    let ret = cnrfs::MlnrKernelNode::file_read(
         local_pid,
         fd,
-        payload[FIORES_SIZE as usize..].as_mut_ptr() as u64,
-        len,
+        &mut &mut payload[FIORES_SIZE as usize..],
         offset,
     );
 
@@ -199,13 +199,10 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         ret: convert_return(ret),
     };
     construct_ret_extra_data(hdr, payload, res, additional_data as u64)
-    */
-    Ok(())
 }
 
 // RPC Handler function for write() RPCs in the controller
 pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    /*
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
@@ -221,25 +218,14 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         );
 
         // Call Write() or WriteAt()
-        let ret = if hdr.msg_type == FileIO::Write as RPCType {
-            cnrfs::MlnrKernelNode::file_io(
-                FileOperation::Write,
-                local_pid,
-                req.fd,
-                remaining.as_mut_ptr() as u64,
-                req.len,
-                -1,
-            )
+        let offset = if hdr.msg_type == FileIO::Write as RPCType {
+            -1
         } else {
-            cnrfs::MlnrKernelNode::file_io(
-                FileOperation::WriteAt,
-                local_pid,
-                req.fd,
-                remaining.as_mut_ptr() as u64,
-                req.len,
-                req.offset,
-            )
+            req.offset
         };
+
+        todo!("needs a user-slice...");
+        let ret = cnrfs::MlnrKernelNode::file_write(local_pid, req.fd, remaining, offset);
 
         // Construct return
         let res = FIORes {
@@ -252,6 +238,4 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         warn!("Invalid payload for request: {:?}", hdr);
         construct_error_ret(hdr, payload, RPCError::MalformedRequest)
     }
-    */
-    Ok(())
 }

@@ -1,6 +1,9 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::string::String;
+use core::fmt::Debug;
+
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
@@ -10,6 +13,7 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::fio::*;
+use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
 #[derive(Debug)]
@@ -18,17 +22,17 @@ pub(crate) struct RenameReq {
 }
 unsafe_abomonate!(RenameReq: oldname_len);
 
-pub(crate) fn rpc_rename(
+pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    oldname: &[u8],
-    newname: &[u8],
+    oldname: P,
+    newname: P,
 ) -> Result<(u64, u64), RPCError> {
     debug!("Rename({:?}, {:?})", oldname, newname);
 
     // Construct request data
     let req = RenameReq {
-        oldname_len: oldname.len() as u64,
+        oldname_len: oldname.as_ref().len() as u64,
     };
     let mut req_data = [0u8; core::mem::size_of::<RenameReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
@@ -41,7 +45,7 @@ pub(crate) fn rpc_rename(
         .call(
             pid,
             FileIO::FileRename as RPCType,
-            &[&req_data, &oldname, &newname],
+            &[&req_data, oldname.as_ref(), newname.as_ref()],
             &mut [&mut res_data],
         )
         .unwrap();
@@ -77,14 +81,20 @@ pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
         }
     };
 
+    let oldname_str = core::str::from_utf8(
+        &payload
+            [core::mem::size_of::<RenameReq>()..(core::mem::size_of::<RenameReq>() + oldname_len)],
+    )?;
+    let oldname = TryString::try_from(oldname_str)?.into();
+
+    let newname_str =
+        core::str::from_utf8(&payload[(core::mem::size_of::<RenameReq>() + oldname_len)..])?;
+    let newname = TryString::try_from(newname_str)?.into();
+
     // Call rename function
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
-            local_pid,
-            payload[core::mem::size_of::<RenameReq>()
-                ..(core::mem::size_of::<RenameReq>() + oldname_len)]
-                .as_ptr() as u64,
-            payload[(core::mem::size_of::<RenameReq>() + oldname_len)..].as_ptr() as u64,
+            local_pid, oldname, newname,
         )),
     };
 

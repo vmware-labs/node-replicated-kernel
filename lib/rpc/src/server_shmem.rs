@@ -39,8 +39,9 @@ impl<'t, 'a> ShmemServer<'a> {
 
     /// Replies an RPC call with results
     fn reply(&self) -> Result<(), RPCError> {
+        let msg_len = unsafe { (*self.mbuf.get()).hdr.msg_len } as usize;
         self.transport
-            .send(unsafe { (&*self.mbuf.get()).as_bytes() })
+            .send(unsafe { &(*self.mbuf.get()).as_bytes()[..HDR_LEN + msg_len] })
     }
 }
 

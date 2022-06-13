@@ -68,7 +68,10 @@ impl RPCClient for ShmemClient {
                     copied += (*d).len();
                 }
             }
-            unsafe { self.transport.send((&*self.mbuf.get()).as_bytes())? };
+            unsafe {
+                self.transport
+                    .send(&(*self.mbuf.get()).as_bytes()[..data_in_len + HDR_LEN])?
+            };
         }
 
         // Receive response header + data

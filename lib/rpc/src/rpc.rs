@@ -99,19 +99,18 @@ impl RPCHeader {
 }
 
 pub const MAX_BUFF_LEN: usize = 8192;
-pub type PacketBuffer = [u8; MAX_BUFF_LEN + HDR_LEN];
 
 #[repr(C)]
 pub struct MBuf {
     pub hdr: RPCHeader,
-    pub data: [u8; MAX_BUFF_LEN],
+    pub data: [u8; MAX_BUFF_LEN - HDR_LEN],
 }
 
 impl Default for MBuf {
     fn default() -> Self {
         MBuf {
             hdr: RPCHeader::default(),
-            data: [0; MAX_BUFF_LEN],
+            data: [0; MAX_BUFF_LEN - HDR_LEN],
         }
     }
 }
@@ -119,16 +118,16 @@ impl Default for MBuf {
 impl MBuf {
     /// # Safety
     /// - `self` must be valid RPCHeader
-    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; HDR_LEN + MAX_BUFF_LEN] {
-        ::core::slice::from_raw_parts_mut((self as *const MBuf) as *mut u8, HDR_LEN + MAX_BUFF_LEN)
+    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; MAX_BUFF_LEN] {
+        ::core::slice::from_raw_parts_mut((self as *const MBuf) as *mut u8, MAX_BUFF_LEN)
             .try_into()
             .expect("slice with incorrect length")
     }
 
     /// # Safety
     /// - `self` must be valid RPCHeader
-    pub unsafe fn as_bytes(&self) -> &[u8; HDR_LEN + MAX_BUFF_LEN] {
-        ::core::slice::from_raw_parts((self as *const MBuf) as *const u8, HDR_LEN + MAX_BUFF_LEN)
+    pub unsafe fn as_bytes(&self) -> &[u8; MAX_BUFF_LEN] {
+        ::core::slice::from_raw_parts((self as *const MBuf) as *const u8, MAX_BUFF_LEN)
             .try_into()
             .expect("slice with incorrect length")
     }

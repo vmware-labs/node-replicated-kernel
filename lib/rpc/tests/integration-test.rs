@@ -68,7 +68,7 @@ fn test_client_server_shmem_transport() {
 
     use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
     use rpc::client_shmem::ShmemClient;
-    use rpc::rpc::{NodeId, PacketBuffer, RPCError, RPCHeader};
+    use rpc::rpc::{NodeId, RPCError, RPCHeader};
     use rpc::server_shmem::ShmemServer;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::{Queue, Receiver, Sender};
@@ -81,9 +81,9 @@ fn test_client_server_shmem_transport() {
     let allocator = ShmemAllocator::new(alloc, alloc_size as u64);
     // Create transport
     let server_to_client_queue =
-        Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
+        Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
     let client_to_server_queue =
-        Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
+        Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
 
     let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
     let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());

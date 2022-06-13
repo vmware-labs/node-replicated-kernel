@@ -33,10 +33,7 @@ impl<'a> Transport for ShmemTransport<'a> {
             return Ok(());
         }
 
-        match self
-            .tx
-            .send(&data_out)
-        {
+        match self.tx.send(&data_out) {
             true => Ok(()),
             false => Err(RPCError::TransportError),
         }

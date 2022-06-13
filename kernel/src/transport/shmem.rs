@@ -52,7 +52,6 @@ pub(crate) fn init_shmem_device() -> KResult<(u64, u64)> {
 pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
     use crate::cmdline::Mode;
     use alloc::sync::Arc;
-    use rpc::rpc::PacketBuffer;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
@@ -62,9 +61,9 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
             let server_to_client_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
             let client_to_server_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
             let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
             log::info!("Controller: Created shared-memory transport!");
@@ -72,9 +71,9 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
         }
         Mode::Client => {
             let server_to_client_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(false, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(false, 32, &allocator).unwrap());
             let client_to_server_queue =
-                Arc::new(Queue::<PacketBuffer>::with_capacity_in(false, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(false, 32, &allocator).unwrap());
             let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
             let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
             log::info!("Client: Created shared-memory transport!");

@@ -21,6 +21,7 @@ pub const QUEUE_ENTRY_SIZE: usize = 8192;
 #[repr(C)]
 struct Node {
     sequence: AtomicUsize,
+    data_len: u16,
     value: [u8; QUEUE_ENTRY_SIZE],
 }
 
@@ -99,6 +100,7 @@ impl<'a> State<'a> {
                         e,
                         UnsafeCell::new(Node {
                             sequence: AtomicUsize::new(i),
+                            data_len: 0,
                             value: [0u8; QUEUE_ENTRY_SIZE],
                         }),
                     );
@@ -138,6 +140,7 @@ impl<'a> State<'a> {
     }
 
     unsafe fn push(&self, value: &[u8]) -> bool {
+        assert!(value.len() <= QUEUE_ENTRY_SIZE);
         let mask = self.mask;
         let mut pos = self.enqueue_pos(Relaxed);
         loop {
@@ -149,6 +152,7 @@ impl<'a> State<'a> {
                 match (*self.enqueue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed) {
                     Ok(enqueue_pos) => {
                         debug_assert_eq!(enqueue_pos, pos);
+                        (*node.get()).data_len = value.len() as u16;
                         (*node.get()).value[..value.len()].copy_from_slice(value);
                         (*node.get()).sequence.store(pos + 1, Release);
                         break;
@@ -164,8 +168,7 @@ impl<'a> State<'a> {
         true
     }
 
-    unsafe fn pop(&self, value: &mut [u8]) -> bool {
-        assert!(value.len() <= QUEUE_ENTRY_SIZE);
+    unsafe fn pop(&self, value: &mut [u8]) -> Result<usize, ()> {
         let mask = self.mask;
         let mut pos = self.dequeue_pos(Relaxed);
         loop {
@@ -176,14 +179,16 @@ impl<'a> State<'a> {
                 match (*self.dequeue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed) {
                     Ok(dequeue_pos) => {
                         debug_assert_eq!(dequeue_pos, pos);
-                        value.copy_from_slice(&(*node.get()).value[..value.len()]);
+                        let data_len = usize::from((*node.get()).data_len);
+                        assert!(data_len <= value.len());
+                        value[..data_len].copy_from_slice(&(*node.get()).value[..data_len]);
                         (*node.get()).sequence.store(pos + mask + 1, Release);
-                        return true;
+                        return Ok(data_len);
                     }
                     Err(dequeue_pos) => pos = dequeue_pos,
                 }
             } else if diff < 0 {
-                return false;
+                return Err(());
             } else {
                 pos = self.dequeue_pos(Relaxed);
             }
@@ -233,7 +238,7 @@ impl<'a> Queue<'a> {
         unsafe { self.state.push(value) }
     }
 
-    pub fn dequeue(&self, value: &mut [u8]) -> bool {
+    pub fn dequeue(&self, value: &mut [u8]) -> Result<usize, ()> {
         unsafe { self.state.pop(value) }
     }
 
@@ -287,7 +292,7 @@ mod tests {
         assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 0);
 
         let mut entry = [0u8; 1];
-        assert!(queue.dequeue(&mut entry));
+        assert_eq!(queue.dequeue(&mut entry), Ok(1));
         assert_eq!(entry[0], 1);
         assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
         assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 1);
@@ -308,7 +313,7 @@ mod tests {
     fn test_dequeue_empty() {
         let queue = Queue::new().unwrap();
         let mut entry = [0];
-        assert!(!queue.dequeue(&mut entry));
+        assert!(queue.dequeue(&mut entry).is_err());
     }
 
     #[test]
@@ -322,7 +327,7 @@ mod tests {
         assert_eq!(producer.state.dequeue_pos(Ordering::Relaxed), 0);
 
         let mut entry = [0];
-        assert!(consumer.dequeue(&mut entry));
+        assert_eq!(consumer.dequeue(&mut entry), Ok(1));
         assert_eq!(entry[0], 1);
         assert_eq!(consumer.state.enqueue_pos(Ordering::Relaxed), 1);
         assert_eq!(consumer.state.dequeue_pos(Ordering::Relaxed), 1);
@@ -349,7 +354,7 @@ mod tests {
             let mut entry = [0u8; 4];
             for i in 0..num_iterations {
                 loop {
-                    if consumer.dequeue(&mut entry) {
+                    if consumer.dequeue(&mut entry).is_ok() {
                         assert_eq!(i32::from_be_bytes(entry), i as i32);
                         break;
                     }
@@ -404,7 +409,7 @@ mod tests {
         let nmsgs = 1000;
         let mut entry = [0u8; 4];
         let q = Queue::with_capacity(nthreads * nmsgs).unwrap();
-        assert!(!q.dequeue(&mut entry));
+        assert!(q.dequeue(&mut entry).is_err());
         let (tx, rx) = channel();
 
         for _ in 0..nthreads {
@@ -429,8 +434,8 @@ mod tests {
                 let mut i = 0;
                 loop {
                     match q.dequeue(&mut entry) {
-                        false => {}
-                        true => {
+                        Err(_) => {}
+                        Ok(_) => {
                             i += 1;
                             if i == nmsgs {
                                 break;

@@ -1,16 +1,17 @@
 use super::{Receiver, Sender};
 use crate::rpc::*;
 use crate::transport::Transport;
-use core::convert::TryInto;
+
+use super::queue_mpmc::QUEUE_ENTRY_SIZE;
 
 pub struct ShmemTransport<'a> {
-    rx: Receiver<'a, PacketBuffer>,
-    tx: Sender<'a, PacketBuffer>,
+    rx: Receiver<'a>,
+    tx: Sender<'a>,
 }
 
 #[allow(dead_code)]
 impl<'a> ShmemTransport<'a> {
-    pub fn new(rx: Receiver<'a, PacketBuffer>, tx: Sender<'a, PacketBuffer>) -> ShmemTransport<'a> {
+    pub fn new(rx: Receiver<'a>, tx: Sender<'a>) -> ShmemTransport<'a> {
         ShmemTransport { rx, tx }
     }
 }
@@ -18,12 +19,12 @@ impl<'a> ShmemTransport<'a> {
 impl<'a> Transport for ShmemTransport<'a> {
     /// Maximum per-send payload size
     fn max_send(&self) -> usize {
-        MAX_BUFF_LEN
+        QUEUE_ENTRY_SIZE
     }
 
     /// Maximum per-send payload size
     fn max_recv(&self) -> usize {
-        MAX_BUFF_LEN
+        QUEUE_ENTRY_SIZE
     }
 
     /// Send data to a remote node
@@ -34,7 +35,7 @@ impl<'a> Transport for ShmemTransport<'a> {
 
         match self
             .tx
-            .send(data_out.try_into().expect("PacketBuffer is too small"))
+            .send(&data_out)
         {
             true => Ok(()),
             false => Err(RPCError::TransportError),
@@ -43,20 +44,12 @@ impl<'a> Transport for ShmemTransport<'a> {
 
     /// Receive data from a remote node
     fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
-        let mut data_received = 0;
-
         if data_in.is_empty() {
             return Ok(());
         }
 
-        // Read multiple messages until expected_data has been read in
-        // Assume won't ever try to receive partial messages
-        while data_received < data_in.len() {
-            // Receive some data
-            let recv_buff = self.rx.recv();
-            data_in[data_received..].clone_from_slice(&recv_buff[..]);
-            data_received += recv_buff.len();
-        }
+        // TODO: how to handle didn't all fit in one entry?
+        self.rx.recv(data_in);
         Ok(())
     }
 
@@ -83,8 +76,8 @@ mod tests {
     #[test]
     fn shmem_transport_test() {
         // Create transport
-        let server_to_client_queue = Arc::new(Queue::<PacketBuffer>::new().unwrap());
-        let client_to_server_queue = Arc::new(Queue::<PacketBuffer>::new().unwrap());
+        let server_to_client_queue = Arc::new(Queue::new().unwrap());
+        let client_to_server_queue = Arc::new(Queue::new().unwrap());
 
         let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
         let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
@@ -94,11 +87,11 @@ mod tests {
         let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
         let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
 
-        let send_data = [0xa; HDR_LEN + MAX_BUFF_LEN];
+        let send_data = [0xa; QUEUE_ENTRY_SIZE];
 
         thread::spawn(move || {
             // In a new server thread, receive then send data
-            let mut server_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
+            let mut server_data = [0u8; QUEUE_ENTRY_SIZE];
             server_transport
                 .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
@@ -108,7 +101,7 @@ mod tests {
 
         // In the original thread, send then receive data
         client_transport.send(&send_data).unwrap();
-        let mut client_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
+        let mut client_data = [0u8; QUEUE_ENTRY_SIZE];
         client_transport
             .recv(&mut client_data[0..send_data.len()])
             .unwrap();
@@ -125,9 +118,9 @@ mod tests {
         let allocator = ShmemAllocator::new(alloc, alloc_size as u64);
         // Create transport
         let server_to_client_queue =
-            Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
+            Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
         let client_to_server_queue =
-            Arc::new(Queue::<PacketBuffer>::with_capacity_in(true, 32, &allocator).unwrap());
+            Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
 
         let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
         let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
@@ -137,11 +130,11 @@ mod tests {
         let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
         let client_transport = Arc::new(ShmemTransport::new(client_receiver, client_sender));
 
-        let send_data = [0xa; HDR_LEN + MAX_BUFF_LEN];
+        let send_data = [0xa; QUEUE_ENTRY_SIZE];
 
         thread::spawn(move || {
             // In a new server thread, receive then send data
-            let mut server_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
+            let mut server_data = [0u8; QUEUE_ENTRY_SIZE];
             server_transport
                 .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
@@ -151,7 +144,7 @@ mod tests {
 
         // In the original thread, send then receive data
         client_transport.send(&send_data).unwrap();
-        let mut client_data = [0u8; HDR_LEN + MAX_BUFF_LEN];
+        let mut client_data = [0u8; QUEUE_ENTRY_SIZE];
         client_transport
             .recv(&mut client_data[0..send_data.len()])
             .unwrap();

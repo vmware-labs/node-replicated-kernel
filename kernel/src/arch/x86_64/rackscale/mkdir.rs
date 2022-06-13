@@ -78,7 +78,7 @@ pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
     let res = FIORes {
         ret: convert_return(cnrfs::MlnrKernelNode::mkdir(
             local_pid,
-            (&payload[..core::mem::size_of::<MkDirReq>()]).as_ptr() as u64,
+            (&payload[core::mem::size_of::<MkDirReq>()..]).as_ptr() as u64,
             modes,
         )),
     };

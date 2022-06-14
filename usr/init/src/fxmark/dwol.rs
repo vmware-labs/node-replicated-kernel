@@ -7,7 +7,6 @@ use alloc::{format, vec};
 use core::cell::RefCell;
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use log::info;
 use vibrio::io::*;
 
 #[derive(Clone)]
@@ -38,34 +37,29 @@ impl Default for DWOL {
 
 impl Bench for DWOL {
     fn init(&self, cores: Vec<usize>, _open_files: usize) {
-        unsafe {
-            *self.cores.borrow_mut() = cores.len();
-            for core in cores {
-                let fd = vibrio::syscalls::Fs::open(
-                    format!("file{}.txt", core),
-                    FileFlags::O_RDWR | FileFlags::O_CREAT,
-                    FileModes::S_IRWXU,
-                )
-                .expect("FileOpen syscall failed");
+        *self.cores.borrow_mut() = cores.len();
+        for core in cores {
+            let fd = vibrio::syscalls::Fs::open(
+                format!("file{}.txt", core),
+                FileFlags::O_RDWR | FileFlags::O_CREAT,
+                FileModes::S_IRWXU,
+            )
+            .expect("FileOpen syscall failed");
 
-                let ret =
-                    vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, PAGE_SIZE, 0)
-                        .expect("FileWriteAt syscall failed");
-                assert_eq!(ret, PAGE_SIZE as u64);
-                self.fds.borrow_mut()[core as usize] = fd;
-            }
+            let ret = vibrio::syscalls::Fs::write_at(fd, &self.page, 0)
+                .expect("FileWriteAt syscall failed");
+            assert_eq!(ret, PAGE_SIZE as u64);
+            self.fds.borrow_mut()[core as usize] = fd;
         }
     }
 
     fn run(
         &self,
-        POOR_MANS_BARRIER: &AtomicUsize,
+        poor_mans_barrier: &AtomicUsize,
         duration: u64,
         core: usize,
         _write_ratio: usize,
     ) -> Vec<usize> {
-        use vibrio::io::*;
-        use vibrio::syscalls::*;
         let mut iops_per_second = Vec::with_capacity(duration as usize);
         let fd = self.fds.borrow()[core as usize];
         if fd == u64::MAX {
@@ -74,15 +68,15 @@ impl Bench for DWOL {
         let size: u64 = 0x1000;
         let base: u64 = 0xff0000 + (size * core as u64);
         // Allocate a buffer and write data into it, which is later written to the file.
-        let mut page: &mut [u8] = unsafe {
+        let page: &mut [u8] = unsafe {
             vibrio::syscalls::VSpace::map(base, size).expect("Map syscall failed");
             from_raw_parts_mut(base as *mut u8, size as usize)
         };
 
         // Synchronize with all cores
-        POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
-        while POOR_MANS_BARRIER.load(Ordering::Acquire) != 0 {
-            core::sync::atomic::spin_loop_hint();
+        poor_mans_barrier.fetch_sub(1, Ordering::Release);
+        while poor_mans_barrier.load(Ordering::Acquire) != 0 {
+            core::hint::spin_loop();
         }
 
         let mut iops = 0;
@@ -90,8 +84,8 @@ impl Bench for DWOL {
         while iterations <= duration {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
-                for i in 0..64 {
-                    if vibrio::syscalls::Fs::write_at(fd, page.as_ptr() as u64, PAGE_SIZE, 0)
+                for _i in 0..64 {
+                    if vibrio::syscalls::Fs::write_at(fd, page, 0)
                         .expect("FileWriteAt syscall failed")
                         != PAGE_SIZE
                     {
@@ -105,11 +99,11 @@ impl Bench for DWOL {
             iops = 0;
         }
 
-        POOR_MANS_BARRIER.fetch_add(1, Ordering::Release);
+        poor_mans_barrier.fetch_add(1, Ordering::Release);
         let num_cores = *self.cores.borrow();
         // To avoid explicit GC in mlnr.
-        while POOR_MANS_BARRIER.load(Ordering::Acquire) != num_cores {
-            vibrio::syscalls::Fs::read_at(fd, page.as_ptr() as u64, 1, 0);
+        while poor_mans_barrier.load(Ordering::Acquire) != num_cores {
+            vibrio::syscalls::Fs::read_at(fd, &mut page[0..1], 0).expect("can't read_at");
         }
 
         iops_per_second.clone()

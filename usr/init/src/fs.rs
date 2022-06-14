@@ -7,12 +7,10 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::cmp::{max, min, Eq, PartialEq};
 use core::sync::atomic::{AtomicUsize, Ordering};
-use cstr_core::CStr;
 use hashbrown::HashMap;
 
 use vibrio::io::*;
 use vibrio::SystemCallError;
-use x86::bits64::paging::VAddr;
 
 use log::trace;
 use proptest::prelude::*;
@@ -20,16 +18,6 @@ use proptest::prelude::*;
 pub type Mnode = u64;
 
 const MAX_FILES_PER_PROCESS: usize = 4096;
-
-pub fn userptr_to_str(useraddr: u64) -> Result<String, SystemCallError> {
-    let user_ptr = VAddr::from(useraddr);
-    unsafe {
-        match CStr::from_ptr(user_ptr.as_ptr()).to_str() {
-            Ok(path) => Ok(path.to_string()),
-            Err(_) => Err(SystemCallError::InternalError),
-        }
-    }
-}
 
 /// What operations that the model needs to keep track of.
 ///
@@ -51,15 +39,6 @@ pub struct Fd {
 }
 
 impl Fd {
-    fn init_fd() -> Fd {
-        Fd {
-            // Intial values are just the place-holders and shouldn't be used.
-            mnode: u64::MAX,
-            flags: Default::default(),
-            offset: AtomicUsize::new(0),
-        }
-    }
-
     fn update_fd(&mut self, mnode: Mnode, flags: FileFlags) {
         self.mnode = mnode;
         self.flags = flags;
@@ -134,21 +113,6 @@ impl FileDesc {
             Err(SystemCallError::InternalError)
         }
     }
-
-    pub fn find_fd(&self, mnode: Mnode) -> Option<u64> {
-        if let Some(fid) = self.fds.iter().position(|fd_pos| {
-            if let Some(fd) = &&fd_pos {
-                fd.get_mnode() == mnode
-            } else {
-                false
-            }
-        }) {
-            Some(fid as u64)
-        } else {
-            trace!("find_fd: Failed to find fd for mnode {:?}", mnode);
-            None
-        }
-    }
 }
 
 /// The FS model that we strive to implement.
@@ -208,11 +172,6 @@ impl ModelFIO {
         None
     }
 
-    /// Check if a given path exists.
-    fn file_exists(&self, path: &String) -> bool {
-        self.path_to_mnode(path).is_some()
-    }
-
     /// Check if a mnode exists.
     fn mnode_exists(&self, look_for: Mnode) -> bool {
         for x in self.oplog.borrow().iter().rev() {
@@ -232,7 +191,7 @@ impl ModelFIO {
         let mut len = 0;
         for x in self.oplog.borrow().iter().rev() {
             match x {
-                ModelOperation::Write(mnode, foffset, fpattern, flength) => {
+                ModelOperation::Write(mnode, foffset, _fpattern, flength) => {
                     if look_for == *mnode {
                         len = max(foffset + *flength as i64, len);
                     }
@@ -243,7 +202,6 @@ impl ModelFIO {
                         return len;
                     }
                 }
-                _ => {}
             }
         }
         len
@@ -268,7 +226,7 @@ impl ModelFIO {
 
         let mut oplog = self.oplog.borrow_mut();
         for idx in my_idxs.iter() {
-            let removed = oplog.remove(*idx);
+            let _removed = oplog.remove(*idx);
         }
     }
 
@@ -378,7 +336,7 @@ impl ModelFIO {
             return Err(SystemCallError::BadFileDescriptor);
         }
 
-        let mut fd = self.fds.get_fd(fid as usize)?;
+        let fd = self.fds.get_fd(fid as usize)?;
         let flags = fd.get_flags();
 
         // check for write permissions
@@ -549,18 +507,18 @@ impl ModelFIO {
             // Something like [1, None, 3, 4, None] -> Should lead to [1, 0, 3] with Ok(4), I guess?
             let _iter = buffer_gatherer.iter().enumerate().rev();
             let mut drop_top = true;
-            let mut bytes_read = 0;
+            let mut _bytes_read = 0;
             for (idx, val) in buffer_gatherer.iter().enumerate().rev() {
                 if drop_top {
                     if val.is_some() {
-                        bytes_read += 1;
+                        _bytes_read += 1;
                         drop_top = false;
                     } else {
                         // All None's at the end (rev() above) don't count towards
                         // total bytes read since the file wasn't that big
                     }
                 } else {
-                    bytes_read += 1;
+                    _bytes_read += 1;
                 }
 
                 buffer[idx] = val.unwrap_or(0);
@@ -598,64 +556,6 @@ impl ModelFIO {
         self.fds.deallocate_fd(fid)?;
         Ok(())
     }
-}
-
-/// Two writes/reads at different offsets should return
-/// the correct result.
-fn model_read() {
-    let mut mfs: ModelFIO = Default::default();
-    let fd = mfs
-        .open(
-            "/bla",
-            FileFlags::O_RDWR | FileFlags::O_CREAT,
-            FileModes::S_IRWXU,
-        )
-        .unwrap();
-
-    let mut wdata1: [u8; 2] = [1, 1];
-    let r = mfs.write_at(fd, &wdata1, 0);
-    assert_eq!(r, Ok(2));
-
-    let mut wdata: [u8; 2] = [2, 2];
-    let r = mfs.write_at(fd, &wdata, 2);
-    assert_eq!(r, Ok(2));
-
-    let mut rdata: [u8; 2] = [0, 0];
-
-    let r = mfs.read_at(fd, &mut rdata, 0);
-    assert_eq!(rdata, [1, 1]);
-    assert_eq!(r, Ok(2));
-
-    let r = mfs.read_at(fd, &mut rdata, 2);
-    assert_eq!(rdata, [2, 2]);
-    assert_eq!(r, Ok(2));
-}
-
-/// Two writes that overlap with each other should return
-/// the last write.
-///
-/// Also providing a larger buffer returns 0 in those entries.
-fn model_overlapping_writes() {
-    let mut mfs: ModelFIO = Default::default();
-    let fd = mfs
-        .open(
-            "/bla",
-            FileFlags::O_RDWR | FileFlags::O_CREAT,
-            FileModes::S_IRWXU,
-        )
-        .unwrap();
-
-    let mut data: [u8; 3] = [1, 1, 1];
-    let r = mfs.write(fd, &data);
-    assert_eq!(r, Ok(3));
-
-    let mut wdata: [u8; 3] = [2, 2, 2];
-    let r = mfs.write_at(fd, &wdata, 2);
-
-    let mut rdata: [u8; 6] = [0, 0, 0, 0, 0, 0];
-    let r = mfs.read_at(fd, &mut rdata[..5], 0);
-    assert_eq!(r, Ok(5));
-    assert_eq!(rdata, [1, 1, 2, 2, 2, 0]);
 }
 
 /// Actions that we can perform against the model and the implementation.
@@ -876,8 +776,6 @@ fn model_equivalence(ops: Vec<TestAction>) {
 }
 
 pub fn run_fio_syscall_proptests() {
-    //model_read();
-    //model_overlapping_writes();
     // Reduce the number of tests so we don't use up all the cache
     proptest!(ProptestConfig::with_cases(100), |(ops in actions())| {
         model_equivalence(ops);
@@ -1064,7 +962,7 @@ fn test_file_delete() {
     assert_eq!(ret, Err(SystemCallError::InternalError));
 }
 
-fn test_file_delete_open() {
+fn _test_file_delete_open() {
     // Create file
     let fd = vibrio::syscalls::Fs::open(
         "test_file_info.txt",

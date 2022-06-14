@@ -11,13 +11,15 @@
     asm_const,
     once_cell
 )]
+#![deny(warnings)]
+#![allow(unreachable_code)]
+
 extern crate alloc;
 
 use core::ptr;
 use core::slice::from_raw_parts_mut;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use vibrio::io::FileType;
 #[cfg(feature = "rumprt")]
 use vibrio::rumprt;
 use vibrio::sys_println;
@@ -74,8 +76,6 @@ fn alloc_test() {
 }
 
 fn scheduler_smp_test() {
-    use lineup::threads::ThreadId;
-    use lineup::tls2::Environment;
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
@@ -92,7 +92,6 @@ fn scheduler_smp_test() {
                 }
                 Err(_e) => {
                     panic!("Failed to spawn to core {}", thread.id);
-                    continue;
                 }
             }
         }
@@ -122,7 +121,7 @@ fn scheduler_smp_test() {
 
 fn scheduler_test() {
     use lineup::threads::ThreadId;
-    let mut s: lineup::scheduler::SmpScheduler = Default::default();
+    let s: lineup::scheduler::SmpScheduler = Default::default();
 
     s.spawn(
         32 * 4096,
@@ -167,6 +166,7 @@ fn scheduler_test() {
     info!("scheduler_test OK");
 }
 
+#[allow(unused)] // it's used, but we do some feature hacking
 #[cfg(feature = "rumprt")]
 fn test_rump_tmpfs() {
     use cstr_core::CStr;
@@ -185,7 +185,7 @@ fn test_rump_tmpfs() {
 
     extern "C" {
         fn rump_boot_setsigmodel(sig: usize);
-        fn rump_init() -> u64;
+        fn rump_init(fnptr: extern "C" fn()) -> u64;
         fn mount(typ: *const i8, path: *const i8, n: u64, args: *const tmpfs_args, argsize: usize);
         fn open(path: *const i8, opt: u64) -> i64;
         fn read(fd: i64, buf: *mut i8, bytes: u64) -> i64;
@@ -205,7 +205,7 @@ fn test_rump_tmpfs() {
         |_yielder| unsafe {
             let start = rawtime::Instant::now();
             rump_boot_setsigmodel(0);
-            let ri = rump_init();
+            let ri = rump_init(ready);
             assert_eq!(ri, 0);
             info!("rump_init({}) done in {:?}", ri, start.elapsed());
 
@@ -302,8 +302,6 @@ pub fn test_rump_net() {
             addr: *const sockaddr_in,
             len: usize,
         ) -> i64;
-        fn send(fd: i64, buf: *const i8, len: usize, flags: i64) -> i64;
-        fn connect(fd: i64, addr: *const sockaddr_in, len: usize) -> i64;
         fn close(sock: i64) -> i64;
         fn nanosleep(rqtp: *const timespec_t, rmtp: *mut timespec_t) -> i64;
     }
@@ -315,7 +313,7 @@ pub fn test_rump_net() {
         context_switch: rumprt::prt::context_switch,
     };
 
-    let mut scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
+    let scheduler = lineup::scheduler::SmpScheduler::with_upcalls(up);
     scheduler.spawn(
         32 * 4096,
         |_yielder| unsafe {
@@ -324,7 +322,6 @@ pub fn test_rump_net() {
             let ri = rump_init(ready);
             assert_eq!(ri, 0);
             info!("rump_init({}) done in {:?}", ri, start.elapsed());
-            let s = lineup::tls2::Environment::scheduler();
             while !READY_FLAG.load(Ordering::Relaxed) {
                 let _r = lineup::tls2::Environment::thread().relinquish();
             }
@@ -346,12 +343,9 @@ pub fn test_rump_net() {
 
             const AF_INET: i64 = 2;
             const SOCK_DGRAM: i64 = 2;
-            const SOCK_STREAM: i64 = 2;
 
             const IPPROTO_UDP: i64 = 17;
-            const IPPROTO_TCP: i64 = 6;
 
-            const MSG_NOSIGNAL: i64 = 0x0400;
             const MSG_DONTWAIT: i64 = 0x0080;
 
             let sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -421,7 +415,7 @@ fn test_fs_invalid_addresses() {
             12,
         ))
     };
-    let fd = vibrio::syscalls::Fs::open(
+    let _ = vibrio::syscalls::Fs::open(
         invalid_str,
         FileFlags::O_RDWR | FileFlags::O_CREAT,
         FileModes::S_IRWXU,
@@ -438,10 +432,10 @@ fn test_fs_invalid_addresses() {
     assert_eq!(fd, 0);
 
     let mut invalid_slice = unsafe { core::slice::from_raw_parts_mut(0x2222fee0 as *mut u8, 256) };
-    let ret =
+    let _r =
         vibrio::syscalls::Fs::write(fd, &invalid_slice).expect_err("FileWrite syscall should fail");
-    let fileinfo = vibrio::syscalls::Fs::getinfo("").expect_err("getinfo syscall should fail");
-    let ret =
+    let _r = vibrio::syscalls::Fs::getinfo("").expect_err("getinfo syscall should fail");
+    let _r =
         vibrio::syscalls::Fs::read(fd, &mut invalid_slice).expect_err("FileWrite syscall failed");
 
     // Test address validity small pages.
@@ -543,7 +537,7 @@ fn fs_test() {
         assert_eq!(slice[256], 0);
 
         // This call is to tests nrk memory deallocator for large allocations.
-        let ret = vibrio::syscalls::Fs::write_at(fd, &slice[0..256], 4096 * 255)
+        let _r = vibrio::syscalls::Fs::write_at(fd, &slice[0..256], 4096 * 255)
             .expect("FileWriteAt syscall failed");
 
         // Close the file.
@@ -574,7 +568,6 @@ fn fs_prop_test() {
 
 fn pmem_alloc(ncores: Option<usize>) {
     use alloc::vec::Vec;
-    use lineup::threads::ThreadId;
     use lineup::tls2::Environment;
 
     unsafe extern "C" fn bencher_trampoline(_arg1: *mut u8) -> *mut u8 {

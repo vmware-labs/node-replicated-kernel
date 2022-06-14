@@ -5,6 +5,8 @@
 // Original Source: https://github.com/longshorej/conqueue (MIT License)
 // Adjusted to work with no-std, removed tests
 
+#![allow(unused)]
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicPtr, Ordering};

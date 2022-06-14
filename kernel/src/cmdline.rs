@@ -30,6 +30,9 @@ enum CmdToken {
     #[token("mode")]
     Mode,
 
+    #[token("transport")]
+    Transport,
+
     /// Init binary (which is loaded by default)
     #[token("init")]
     InitBinary,
@@ -80,6 +83,25 @@ impl From<&str> for Mode {
     }
 }
 
+/// Transport used for RPCs (for rackscale execution).
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) enum Transport {
+    /// Shared memory transport.
+    Shmem,
+    /// Smoltcp-based TCP transport.
+    Smoltcp,
+}
+
+impl From<&str> for Transport {
+    fn from(s: &str) -> Self {
+        match s {
+            "smoltcp" => Transport::Smoltcp,
+            "shmem" => Transport::Shmem,
+            _ => Transport::Shmem,
+        }
+    }
+}
+
 /// Arguments parsed from command line string passed from the bootloader to the
 /// kernel.
 #[derive(Copy, Clone, Debug)]
@@ -90,6 +112,7 @@ pub(crate) struct CommandLineArguments {
     pub app_args: &'static str,
     pub test: Option<&'static str>,
     pub mode: Mode,
+    pub transport: Transport,
 }
 // If you move or rename `CommandLineArguments`, you may also need to update the `s02_gdb` test.
 static_assertions::assert_type_eq_all!(CommandLineArguments, crate::cmdline::CommandLineArguments);
@@ -103,6 +126,7 @@ impl Default for CommandLineArguments {
             app_args: "",
             test: None,
             mode: Mode::Native,
+            transport: Transport::Shmem,
         }
     }
 }
@@ -133,6 +157,7 @@ impl CommandLineArguments {
                 }
                 CmdToken::Log
                 | CmdToken::Mode
+                | CmdToken::Transport
                 | CmdToken::Test
                 | CmdToken::InitBinary
                 | CmdToken::InitArgs
@@ -146,6 +171,10 @@ impl CommandLineArguments {
                     }
                     CmdToken::Mode => {
                         parsed_args.mode = slice.into();
+                        prev = CmdToken::Error;
+                    }
+                    CmdToken::Transport => {
+                        parsed_args.transport = slice.into();
                         prev = CmdToken::Error;
                     }
                     CmdToken::InitBinary => {

@@ -1594,7 +1594,7 @@ fn s03_shmem_exokernel_fs_test() {
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(30_000)
-            .cmd("mode=controller")
+            .cmd("mode=controller transport=shmem")
             .ivshmem(filelen as usize)
             .shmem_path(filename)
             .tap("tap0");
@@ -1614,7 +1614,7 @@ fn s03_shmem_exokernel_fs_test() {
         sleep(Duration::from_millis(10_000));
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(30_000)
-            .cmd("mode=client")
+            .cmd("mode=client transport=shmem")
             .ivshmem(filelen as usize)
             .shmem_path(filename)
             .tap("tap2");
@@ -1634,6 +1634,65 @@ fn s03_shmem_exokernel_fs_test() {
     client.join().unwrap();
 
     let _ignore = remove_file(&filename);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_smoltcp_exokernel_fs_test() {
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-fs")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    let build1 = build.clone();
+    let controller = std::thread::spawn(move || {
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+            .timeout(30_000)
+            .cmd("mode=controller transport=smoltcp")
+            .tap("tap0")
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_controller)?;
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+
+    let build2 = build.clone();
+    let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(10_000));
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+            .timeout(30_000)
+            .cmd("mode=client transport=smoltcp")
+            .tap("tap2")
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("fs_test OK")?.as_str();
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+    });
+
+    controller.join().unwrap();
+    client.join().unwrap();
 }
 
 #[cfg(not(feature = "baremetal"))]

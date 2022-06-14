@@ -726,6 +726,8 @@ def configure_network(args):
             sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
             sudo[ifconfig[ncfg, NETWORK_CONFIG[ncfg]['ip_zone']]]()
 
+            sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
+
             sudo[brctl[['addif', 'br0', ncfg]]]()
         sudo[ip[['link', 'set', 'br0', 'up']]]
 

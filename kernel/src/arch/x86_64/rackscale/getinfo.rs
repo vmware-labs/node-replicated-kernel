@@ -51,7 +51,8 @@ pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
-    let path = TryString::try_from(core::str::from_utf8(payload)?)?.into(); // TODO(alloc): fixme unnecessary
+    let path_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
+    let path = TryString::try_from(path_str)?.into(); // TODO(alloc): fixme unnecessary
 
     // Call local file_info function
     let ret = cnrfs::MlnrKernelNode::file_info(local_pid, path);

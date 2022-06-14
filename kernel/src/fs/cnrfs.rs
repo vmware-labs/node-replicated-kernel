@@ -14,7 +14,7 @@ use crate::error::KError;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::prelude::*;
 use crate::process::SliceAccess;
-use crate::process::{KernSlice, Pid};
+use crate::process::{KernArcBuffer, Pid};
 
 use super::fd::{FileDescriptor, FileDescriptorTable};
 use super::{FileSystem, MlnrFS, MnodeNum, NrLock, MNODE_OFFSET};
@@ -222,7 +222,7 @@ impl MlnrKernelNode {
     pub(crate) fn file_write(
         pid: Pid,
         fd: FileDescriptor,
-        kernslice: KernSlice,
+        kernslice: KernArcBuffer,
         offset: i64,
     ) -> Result<(u64, u64), KError> {
         let mnode = match MlnrKernelNode::fd_to_mnode(pid, fd) {

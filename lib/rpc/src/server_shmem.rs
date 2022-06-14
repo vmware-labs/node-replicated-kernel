@@ -84,9 +84,7 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
             let rpc_id = self.receive()?;
             match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
-                    {
-                        unsafe { func(&mut (*self.mbuf.get()).hdr, &mut (*self.mbuf.get()).data)? };
-                    }
+                    unsafe { func(&mut (*self.mbuf.get()).hdr, &mut (*self.mbuf.get()).data)? };
                     self.reply()?;
                 }
                 None => debug!("Invalid RPCType({}), ignoring", rpc_id),

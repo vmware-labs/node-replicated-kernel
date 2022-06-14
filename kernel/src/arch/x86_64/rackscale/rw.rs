@@ -180,13 +180,10 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     }
 
     // Read directly into payload buffer, at offset after result field & header
-    todo!("should be user slice");
-    let ret = cnrfs::MlnrKernelNode::file_read(
-        local_pid,
-        fd,
-        &mut &mut payload[FIORES_SIZE as usize..],
-        offset,
-    );
+    let start = FIORES_SIZE as usize;
+    let end = start + len as usize;
+    let ret =
+        cnrfs::MlnrKernelNode::file_read(local_pid, fd, &mut &mut payload[start..end], offset);
 
     // Read in additional data (e.g., the read data payload)
     let mut additional_data = 0;
@@ -224,8 +221,7 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
             req.offset
         };
 
-        todo!("needs a user-slice...");
-        let data = (&*remaining).try_into()?;
+        let data = (remaining[..req.len as usize]).try_into()?;
         let ret = cnrfs::MlnrKernelNode::file_write(local_pid, req.fd, data, offset);
 
         // Construct return

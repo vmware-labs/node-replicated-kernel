@@ -500,7 +500,7 @@ pub trait SliceAccess {
     fn len(&self) -> usize;
 }
 
-impl SliceAccess for &mut [u8] {
+impl<const N: usize> SliceAccess for [u8; N] {
     fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
         f(self)
     }
@@ -513,12 +513,40 @@ impl SliceAccess for &mut [u8] {
         Ok(())
     }
 
-    fn write_subslice(&mut self, _buffer: &[u8], _offset: usize) -> KResult<()> {
-        unimplemented!()
+    fn write_subslice(&mut self, buffer: &[u8], offset: usize) -> KResult<()> {
+        self[offset..(offset + buffer.len())].copy_from_slice(buffer);
+        Ok(())
     }
 
     fn len(&self) -> usize {
         <[u8]>::len(self)
+    }
+}
+
+impl SliceAccess for &mut [u8] {
+    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
+        f(self.as_ref())
+    }
+
+    fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
+        if buffer.len() != self.len() {
+            return Err(KError::InvalidLength);
+        }
+        self.copy_from_slice(buffer);
+        Ok(())
+    }
+
+    fn write_subslice(&mut self, buffer: &[u8], offset: usize) -> KResult<()> {
+        if self.len() < (offset + buffer.len()) {
+            return Err(KError::InvalidOffset);
+        }
+
+        self[offset..(offset + buffer.len())].copy_from_slice(buffer);
+        Ok(())
+    }
+
+    fn len(&self) -> usize {
+        <[u8]>::len(self.as_ref())
     }
 }
 
@@ -564,24 +592,6 @@ impl TryFrom<&[u8]> for KernSlice {
             buffer.assume_init()
         };
         Ok(Self { buffer })
-    }
-}
-
-impl SliceAccess for KernSlice {
-    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
-        f(&self.buffer)
-    }
-
-    fn write_slice(&mut self, _buffer: &[u8]) -> KResult<()> {
-        unimplemented!()
-    }
-
-    fn write_subslice(&mut self, _buffer: &[u8], _offset: usize) -> KResult<()> {
-        unimplemented!()
-    }
-
-    fn len(&self) -> usize {
-        self.buffer.len()
     }
 }
 

@@ -10,13 +10,11 @@ use core::num::ParseIntError;
 use core::ptr;
 use core::str::FromStr;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::time::Duration;
 
 use lazy_static::lazy_static;
 use log::{error, info};
-use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
+use x86::bits64::paging::VAddr;
 
-use lineup::threads::ThreadId;
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
 mod drbh;
@@ -39,7 +37,7 @@ const PAGE_SIZE: u64 = 1008;
 static POOR_MANS_BARRIER: AtomicUsize = AtomicUsize::new(0);
 
 lazy_static! {
-    pub static ref MAX_OPEN_FILES: AtomicUsize = { AtomicUsize::new(max_open_files()) };
+    pub static ref MAX_OPEN_FILES: AtomicUsize = AtomicUsize::new(max_open_files());
 }
 
 /// This struct is used for passing the core and benchmark type from

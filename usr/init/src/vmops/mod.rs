@@ -8,10 +8,8 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use core::time::Duration;
 
 use log::{error, info};
-use spin::Mutex;
-use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, PML4_SLOT_SIZE};
+use x86::bits64::paging::{VAddr, BASE_PAGE_SIZE, PML4_SLOT_SIZE};
 
-use lineup::threads::ThreadId;
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
 use crate::histogram;
@@ -28,17 +26,15 @@ unsafe extern "C" fn maponly_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
     ptr::null_mut()
 }
 
-fn maponly_bencher(cores: usize) {
-    use vibrio::io::*;
+fn maponly_bencher(_cores: usize) {
     use vibrio::syscalls::*;
     info!("Trying to allocate a frame");
-    let (frame_id, paddr) =
+    let (frame_id, _paddr) =
         PhysicalMemory::allocate_base_page().expect("Can't allocate a memory obj");
     info!("Got frame_id {:#?}", frame_id);
 
     let vspace_offset = lineup::tls2::Environment::tid().0 + 1;
     let mut base: u64 = (PML4_SLOT_SIZE + (PML4_SLOT_SIZE * vspace_offset)) as u64;
-    let size: u64 = BASE_PAGE_SIZE as u64;
     info!("start mapping at {:#x}", base);
 
     #[cfg(feature = "latency")]
@@ -49,7 +45,7 @@ fn maponly_bencher(cores: usize) {
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
     while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
-        core::sync::atomic::spin_loop_hint();
+        core::hint::spin_loop();
     }
 
     let mut vops = 0;
@@ -79,7 +75,6 @@ fn maponly_bencher(cores: usize) {
                     }
                 }
             }
-
             vops += 1;
             base += BASE_PAGE_SIZE as u64;
         }
@@ -96,13 +91,15 @@ fn maponly_bencher(cores: usize) {
         vops = 0;
         iteration += 1;
     }
+    debug_assert!(vops > 0);
 
     #[cfg(feature = "latency")]
     {
         let mut hlock = LATENCY_HISTOGRAM.lock();
-        for (idx, duration) in latency.iter().enumerate() {
-            let mut h = hlock.as_mut().unwrap();
-            h.increment(duration.as_nanos().try_into().unwrap());
+        for (_idx, duration) in latency.iter().enumerate() {
+            let h = hlock.as_mut().unwrap();
+            h.increment(duration.as_nanos().try_into().unwrap())
+                .expect("increment histogram fail");
         }
     }
 

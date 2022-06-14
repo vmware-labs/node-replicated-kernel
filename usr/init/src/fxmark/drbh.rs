@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use crate::fxmark::{Bench, PAGE_SIZE};
+use alloc::vec;
 use alloc::vec::Vec;
-use alloc::{format, vec};
-use core::cell::RefCell;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use log::info;
 use vibrio::io::*;
 
 #[derive(Clone)]
@@ -23,34 +21,30 @@ impl Default for DRBH {
 
 impl Bench for DRBH {
     fn init(&self, _cores: Vec<usize>, _open_files: usize) {
-        unsafe {
-            // Open a shared file for each core.
-            let fd = vibrio::syscalls::Fs::open(
-                "file.txt",
-                FileFlags::O_RDWR | FileFlags::O_CREAT,
-                FileModes::S_IRWXU,
-            )
-            .expect("FileOpen syscall failed");
+        // Open a shared file for each core.
+        let fd = vibrio::syscalls::Fs::open(
+            "file.txt",
+            FileFlags::O_RDWR | FileFlags::O_CREAT,
+            FileModes::S_IRWXU,
+        )
+        .expect("FileOpen syscall failed");
 
-            // Write a single page to the file at offset 0.
-            let ret = vibrio::syscalls::Fs::write_at(fd, self.page.as_ptr() as u64, PAGE_SIZE, 0)
-                .expect("FileWriteAt syscall failed");
-            assert_eq!(ret, PAGE_SIZE as u64);
+        // Write a single page to the file at offset 0.
+        let ret =
+            vibrio::syscalls::Fs::write_at(fd, &self.page, 0).expect("FileWriteAt syscall failed");
+        assert_eq!(ret, PAGE_SIZE as u64);
 
-            let ret = vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
-            assert_eq!(ret, 0);
-        }
+        vibrio::syscalls::Fs::close(fd).expect("FileClose syscall failed");
     }
 
     fn run(
         &self,
-        POOR_MANS_BARRIER: &AtomicUsize,
+        poor_mans_barrier: &AtomicUsize,
         duration: u64,
-        core: usize,
+        _core: usize,
         _write_ratio: usize,
     ) -> Vec<usize> {
         use vibrio::io::*;
-        use vibrio::syscalls::*;
         let mut iops_per_second = Vec::with_capacity(duration as usize);
 
         // Load fd from a shared struct.
@@ -60,12 +54,12 @@ impl Bench for DRBH {
             FileModes::S_IRWXU,
         )
         .expect("FileOpen syscall failed");
-        let page: &mut [i8; PAGE_SIZE as usize] = &mut [0; PAGE_SIZE as usize];
+        let page: &mut [u8; PAGE_SIZE as usize] = &mut [0; PAGE_SIZE as usize];
 
         // Synchronize with all cores
-        POOR_MANS_BARRIER.fetch_sub(1, Ordering::Release);
-        while POOR_MANS_BARRIER.load(Ordering::Acquire) != 0 {
-            core::sync::atomic::spin_loop_hint();
+        poor_mans_barrier.fetch_sub(1, Ordering::Release);
+        while poor_mans_barrier.load(Ordering::Acquire) != 0 {
+            core::hint::spin_loop();
         }
 
         let mut iops = 0;
@@ -73,9 +67,9 @@ impl Bench for DRBH {
         while iterations <= duration {
             let start = rawtime::Instant::now();
             while start.elapsed().as_secs() < 1 {
-                for i in 0..64 {
+                for _i in 0..64 {
                     // Read a page from the shared file at offset 0.
-                    if vibrio::syscalls::Fs::read_at(fd, page.as_ptr() as u64, PAGE_SIZE, 0)
+                    if vibrio::syscalls::Fs::read_at(fd, page, 0)
                         .expect("FileReadAt syscall failed")
                         != PAGE_SIZE
                     {
@@ -89,7 +83,7 @@ impl Bench for DRBH {
             iops = 0;
         }
 
-        POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);
+        poor_mans_barrier.fetch_add(1, Ordering::Relaxed);
         iops_per_second.clone()
     }
 }

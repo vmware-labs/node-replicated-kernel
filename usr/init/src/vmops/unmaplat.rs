@@ -3,21 +3,16 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-use core::convert::TryInto;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use core::time::Duration;
 
 use lazy_static::lazy_static;
-use log::{error, info, trace};
-use spin::Mutex;
-use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE};
+use log::{error, info};
+use x86::bits64::paging::{VAddr, BASE_PAGE_SIZE};
 
-use lineup::rwlock::{RwLock, RwLockIntent};
-use lineup::threads::ThreadId;
 use lineup::tls2::{Environment, SchedulerControlBlock};
 
-use super::queue::{Queue, QueueReceiver, QueueSender};
+use super::queue::{Queue, QueueSender};
 
 use crate::histogram;
 
@@ -26,11 +21,7 @@ static EXIT: AtomicBool = AtomicBool::new(false);
 static LATENCY_HISTOGRAM: spin::Mutex<Option<histogram::Histogram>> = spin::Mutex::new(None);
 
 #[derive(Debug)]
-enum Cmd {
-    Access,
-    Accessed,
-    Exit,
-}
+enum Cmd {}
 
 lazy_static! {
     static ref TX_CHANNELS: spin::Mutex<Vec<Option<QueueSender<Cmd>>>> = {
@@ -45,13 +36,11 @@ unsafe extern "C" fn unmap_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
     ptr::null_mut()
 }
 
-fn unmap_bencher(cores: usize) {
-    use vibrio::io::*;
+fn unmap_bencher(_cores: usize) {
     use vibrio::syscalls::*;
 
     let thread_id = lineup::tls2::Environment::tid().0;
     let base: u64 = 0x0510_0000_0000;
-    let size: u64 = BASE_PAGE_SIZE as u64;
 
     let frame_id = if thread_id == 1 {
         let (frame_id, paddr) =
@@ -64,17 +53,15 @@ fn unmap_bencher(cores: usize) {
 
     pub const LATENCY_MEASUREMENTS: usize = 100_000;
     let mut initiator_latency: Vec<u64> = Vec::with_capacity(LATENCY_MEASUREMENTS);
-    let mut responder_latency: Vec<u64> = Vec::with_capacity(LATENCY_MEASUREMENTS);
+    let _responder_latency: Vec<u64> = Vec::with_capacity(LATENCY_MEASUREMENTS);
 
-    let mut rx_cmd = {
-        let (tx, mut rx) = Queue::unbounded();
+    let _rx_cmd = {
+        let (tx, rx) = Queue::unbounded();
         TX_CHANNELS.lock()[thread_id].replace(tx);
         rx
     };
 
-    let mut vops = 0;
-    let mut iteration = 0;
-    let bench_duration_secs = if cfg!(feature = "smoke") && !cfg!(feature = "latency") {
+    let _bench_duration_secs = if cfg!(feature = "smoke") && !cfg!(feature = "latency") {
         1
     } else if cfg!(feature = "smoke") && cfg!(feature = "latency") {
         // dont measure that long for latency
@@ -87,9 +74,9 @@ fn unmap_bencher(cores: usize) {
     // Synchronize with all cores
     POOR_MANS_BARRIER.fetch_sub(1, Ordering::Relaxed);
     while POOR_MANS_BARRIER.load(Ordering::Relaxed) != 0 {
-        core::sync::atomic::spin_loop_hint();
+        core::hint::spin_loop();
     }
-    let mut tx_master = TX_CHANNELS.lock()[1].as_ref().unwrap().clone();
+    let _tx_master = TX_CHANNELS.lock()[1].as_ref().unwrap().clone();
 
     for _idx in 0..LATENCY_MEASUREMENTS {
         if thread_id == 1 {
@@ -103,9 +90,9 @@ fn unmap_bencher(cores: usize) {
 
         if thread_id == 1 {
             unsafe {
-                let unmap_start = unsafe { x86::time::rdtsc() };
+                let unmap_start = x86::time::rdtsc();
                 VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed");
-                let unmap_end = unsafe { x86::time::rdtsc() };
+                let unmap_end = x86::time::rdtsc();
                 initiator_latency.push(unmap_end - unmap_start);
             }
         } else {
@@ -117,12 +104,12 @@ fn unmap_bencher(cores: usize) {
         EXIT.store(true, Ordering::Relaxed);
 
         let mut hlock = LATENCY_HISTOGRAM.lock();
-        for (idx, duration) in initiator_latency.iter().enumerate() {
-            let mut h = hlock.as_mut().unwrap();
-            h.increment(*duration);
+        for (_idx, duration) in initiator_latency.iter().enumerate() {
+            let h = hlock.as_mut().unwrap();
+            h.increment(*duration).expect("can't increment histogram");
         }
     } else {
-        vibrio::syscalls::System::stats();
+        vibrio::syscalls::System::stats().expect("can't get stats");
     }
 
     POOR_MANS_BARRIER.fetch_add(1, Ordering::Relaxed);

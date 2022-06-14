@@ -7,7 +7,7 @@ use crate::arch::process::Ring3Process;
 use crate::error::KResult;
 use crate::fs::fd::FileDescriptor;
 use crate::nrproc;
-use crate::process::UserSlice;
+use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::FsDispatch;
 use crate::syscalls::SystemCallDispatch;
 
@@ -48,7 +48,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn write(&self, fd: FileDescriptor, uslice: UserSlice) -> KResult<(u64, u64)> {
-        let kernslice = crate::process::KernSlice::try_from(uslice)?;
+        let kernslice = KernArcBuffer::try_from(uslice)?;
         let mut client = super::RPC_CLIENT.lock();
         rpc_write(&mut **client, uslice.pid, fd, &*kernslice.buffer).map_err(|e| e.into())
     }
@@ -64,7 +64,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn write_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
-        let kernslice = crate::process::KernSlice::try_from(uslice)?;
+        let kernslice = KernArcBuffer::try_from(uslice)?;
         let mut client = super::RPC_CLIENT.lock();
         rpc_writeat(&mut **client, uslice.pid, fd, offset, &*kernslice.buffer).map_err(|e| e.into())
     }

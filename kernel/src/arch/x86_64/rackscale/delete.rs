@@ -53,7 +53,7 @@ pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
-    let path = core::str::from_utf8(payload)?;
+    let path = core::str::from_utf8(&payload[..hdr.msg_len as usize])?;
 
     // Construct and return result
     let res = FIORes {

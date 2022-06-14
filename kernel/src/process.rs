@@ -550,8 +550,8 @@ impl SliceAccess for &mut [u8] {
     }
 }
 
-/// Data copied from a user buffer into a kernel space buffer (`KernSlice`), so
-/// to make sure the user-application doesn't have any reference anymore.
+/// Data copied from a user buffer into a kernel space buffer [`KernArcBuffer`],
+/// so to make sure the user-application doesn't have any reference anymore.
 ///
 ///
 /// This is important sometimes due to replication, for example when writing a
@@ -559,13 +559,13 @@ impl SliceAccess for &mut [u8] {
 /// while we copy the data in the file (and hence end up with inconsistent
 /// replicas).
 ///
-/// e.g., Any buffer that goes in the NR/CNR logs should be KernSlice.
+/// e.g., Any buffer that goes in the NR/CNR logs should be [`KernArcBuffer`].
 #[derive(PartialEq, Clone, Debug)]
-pub(crate) struct KernSlice {
+pub(crate) struct KernArcBuffer {
     pub buffer: Arc<[u8]>,
 }
 
-impl TryFrom<UserSlice> for KernSlice {
+impl TryFrom<UserSlice> for KernArcBuffer {
     type Error = KError;
 
     /// Converts a user-slice to a kernel slice.
@@ -575,7 +575,7 @@ impl TryFrom<UserSlice> for KernSlice {
     }
 }
 
-impl TryFrom<&[u8]> for KernSlice {
+impl TryFrom<&[u8]> for KernArcBuffer {
     type Error = KError;
 
     /// Converts a user-slice to a kernel slice.
@@ -665,8 +665,8 @@ impl UserSlice {
             return Err(KError::NotInRightAddressSpaceForReading);
         }
 
-        let start = self.base.as_usize();
-        let end = start + self.len;
+        let start = self.base.as_usize() & !(BASE_PAGE_SIZE - 1);
+        let end = self.base.as_usize() + self.len;
 
         // TODO(performance): The step_by iterator should increment, by
         // whatever resolve() is telling us we can safely increment (it

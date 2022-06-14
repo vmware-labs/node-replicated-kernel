@@ -109,7 +109,8 @@ pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
     }
 
-    let path = core::str::from_utf8(&payload[core::mem::size_of::<OpenReq>()..])?;
+    let path =
+        core::str::from_utf8(&payload[core::mem::size_of::<OpenReq>()..hdr.msg_len as usize])?;
     let path_string = TryString::try_from(path)?.into();
 
     let cnr_ret = cnrfs::MlnrKernelNode::map_fd(local_pid, path_string, flags, modes);

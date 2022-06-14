@@ -87,8 +87,9 @@ pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
     )?;
     let oldname = TryString::try_from(oldname_str)?.into();
 
-    let newname_str =
-        core::str::from_utf8(&payload[(core::mem::size_of::<RenameReq>() + oldname_len)..])?;
+    let newname_str = core::str::from_utf8(
+        &payload[(core::mem::size_of::<RenameReq>() + oldname_len)..hdr.msg_len as usize],
+    )?;
     let newname = TryString::try_from(newname_str)?.into();
 
     // Call rename function

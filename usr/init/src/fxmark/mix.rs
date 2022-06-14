@@ -22,7 +22,7 @@ pub struct MIX {
 impl Default for MIX {
     fn default() -> MIX {
         // Allocate a buffer and write data into it, which is later written to the file.
-        let page = alloc::vec![0xb; 4096];
+        let page = alloc::vec![0xb; PAGE_SIZE as usize];
         let fd = vec![u64::MAX; 512];
 
         MIX {

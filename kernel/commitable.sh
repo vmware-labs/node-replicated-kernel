@@ -21,6 +21,11 @@ python3 run.py
 # run unix architecture
 cargo run
 
+# compile init binary
+cd ../usr/init
+RUST_TARGET_PATH=`pwd`/../ xargo build --target x86_64-nrk-none --color always --release --all-features\
+cd ../../kernel
+
 # run integration tests
 RUST_TEST_THREADS=1 cargo test  --features smoke -- --nocapture
 

@@ -355,14 +355,15 @@ pub mod test {
         assert_eq!(file.mcache.len(), 0);
         assert_eq!(file.mcache.capacity(), 64 * size_of::<Buffer>());
 
-        let wbuffer: &mut [u8] = &mut [0xb; 10000];
-        let rbuffer: &mut [u8] = &mut [0; 10000];
+        let wbuffer = [0xb; 10_000];
+        let mut rbuffer: [u8; 10_000] = [0; 10_000];
 
-        assert_eq!(file.write_file(wbuffer, 10000, 0), Ok(10000));
+        assert_eq!(file.write_file(&wbuffer, 10000, 0), Ok(10000));
         assert_eq!(file.get_size(), 10000);
 
         for i in 0..10000 {
-            file.read_file(&mut rbuffer[i..i + 1], i, i + 1).unwrap();
+            let mut subs = &mut rbuffer[i..i + 1];
+            file.read_file(&mut subs, i, i + 1).unwrap();
             assert_eq!(rbuffer[i], 0xb);
         }
     }

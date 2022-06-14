@@ -25,7 +25,7 @@ enum ModelOperation {
     /// Stores a write to an mnode, at given offset, pattern, length.
     Write(MnodeNum, usize, char, usize),
     /// Stores info about created files.
-    Created(String, Modes, MnodeNum),
+    Created(String, FileModes, MnodeNum),
 }
 
 /// The FS model that we strive to implement.
@@ -39,9 +39,11 @@ struct ModelFS {
 impl Default for ModelFS {
     fn default() -> Self {
         let oplog = RefCell::new(Vec::with_capacity(64));
-        oplog
-            .borrow_mut()
-            .push(ModelOperation::Created("/".to_string(), 0, 1));
+        oplog.borrow_mut().push(ModelOperation::Created(
+            "/".to_string(),
+            FileModes::from_bits_truncate(0),
+            1,
+        ));
         ModelFS {
             oplog,
             mnode_counter: RefCell::new(1),
@@ -132,7 +134,7 @@ impl ModelFS {
 
 impl FileSystem for ModelFS {
     // Create just puts the file in the oplop and increases mnode counter.
-    fn create(&self, path: String, mode: Modes) -> Result<u64, KError> {
+    fn create(&self, path: String, mode: FileModes) -> Result<u64, KError> {
         if self.file_exists(&path) {
             Err(KError::AlreadyPresent)
         } else {
@@ -187,7 +189,7 @@ impl FileSystem for ModelFS {
     fn read(
         &self,
         mnode_num: MnodeNum,
-        buffer: &mut UserSlice,
+        buffer: &mut dyn SliceAccess,
         offset: usize,
     ) -> Result<usize, KError> {
         let _len = buffer.len();
@@ -260,8 +262,7 @@ impl FileSystem for ModelFS {
                 } else {
                     bytes_read += 1;
                 }
-                buffer[idx] = val.unwrap_or(0);
-                trace!("buffer = {:?}", buffer);
+                buffer.write_subslice(&[val.unwrap_or(0)], idx);
             }
 
             Ok(bytes_read)
@@ -302,7 +303,7 @@ impl FileSystem for ModelFS {
         Ok(())
     }
 
-    fn mkdir(&self, _pathname: &str, _mode: Modes) -> Result<(), KError> {
+    fn mkdir(&self, _pathname: String, _mode: FileModes) -> Result<(), KError> {
         Ok(())
     }
 }
@@ -315,25 +316,21 @@ fn model_read() {
     assert!(mfs.create("/bla".into(), FileModes::S_IRWXU.into()).is_ok());
     let mnode = mfs.lookup("/bla").unwrap();
 
-    let mut wdata1 = [1, 1];
-    let mut buffer = UserSlice::from_slice(&mut wdata1);
-    assert!(mfs.write(*mnode, &mut buffer, 0).is_ok());
+    let wdata1 = &[1, 1];
+    assert!(mfs.write(*mnode, wdata1, 0).is_ok());
 
-    let mut wdata = [2, 2];
-    let mut wbuffer = UserSlice::from_slice(&mut wdata);
-    let r = mfs.write(*mnode, &mut wbuffer, 4);
+    let wdata = &[2, 2];
+    let r = mfs.write(*mnode, wdata, 4);
     assert_eq!(r, Ok(2));
 
-    let mut rdata = [0, 0];
+    let mut rdata = &mut [0, 0];
 
-    let mut rbuffer = UserSlice::from_slice(&mut rdata);
-    let r = mfs.read(*mnode, &mut rbuffer, 0);
-    assert_eq!(rdata, [1, 1]);
+    let r = mfs.read(*mnode, rdata, 0);
+    assert_eq!(rdata, &[1, 1]);
     assert_eq!(r, Ok(2));
 
-    let mut rbuffer = UserSlice::from_slice(&mut rdata);
-    let r = mfs.read(*mnode, &mut rbuffer, 4);
-    assert_eq!(rdata, [2, 2]);
+    let r = mfs.read(*mnode, rdata, 4);
+    assert_eq!(rdata, &[2, 2]);
     assert_eq!(r, Ok(2));
 }
 
@@ -347,19 +344,16 @@ fn model_overlapping_writes() {
     assert!(mfs.create("/bla".into(), FileModes::S_IRWXU.into()).is_ok());
     let mnode = mfs.lookup("/bla").unwrap();
 
-    let mut data = [1, 1, 1];
-    let mut buffer = UserSlice::from_slice(&mut data);
-    assert!(mfs.write(*mnode, &mut buffer, 0).is_ok());
+    let data = &[1, 1, 1];
+    assert!(mfs.write(*mnode, data, 0).is_ok());
 
-    let mut wdata = [2, 2, 2];
-    let mut wbuffer = UserSlice::from_slice(&mut wdata);
-    assert!(mfs.write(*mnode, &mut wbuffer, 2).is_ok());
+    let wdata = &[2, 2, 2];
+    assert!(mfs.write(*mnode, wdata, 2).is_ok());
 
-    let mut rdata = [0, 0, 0, 0, 0, 0];
-    let mut rbuffer = UserSlice::from_slice(&mut rdata);
-    let r = mfs.read(*mnode, &mut rbuffer, 0);
+    let rdata = &mut [0, 0, 0, 0, 0, 0];
+    let r = mfs.read(*mnode, rdata, 0);
     assert_eq!(r, Ok(5));
-    assert_eq!(rdata, [1, 1, 2, 2, 2, 0]);
+    assert_eq!(rdata, &[1, 1, 2, 2, 2, 0]);
 }
 
 /// Actions that we can perform against the model and the implementation.
@@ -370,7 +364,7 @@ fn model_overlapping_writes() {
 enum TestAction {
     Read(MnodeNum, usize, usize),
     Write(MnodeNum, usize, char, usize),
-    Create(Vec<String>, Modes),
+    Create(Vec<String>, FileModes),
     Delete(Vec<String>),
     Lookup(Vec<String>),
 }
@@ -424,7 +418,7 @@ prop_compose! {
 
 // Generates a random mode.
 prop_compose! {
-    fn mode_gen(max: u64)(mode in 0..max) -> u64 { mode }
+    fn mode_gen(max: u64)(mode in 0..max) -> FileModes { FileModes::from_bits_truncate(mode) }
 }
 
 // Generates a random (read/write)-request size.
@@ -468,8 +462,8 @@ proptest! {
                     let mut buffer1: Vec<u8> = Vec::with_capacity(len);
                     let mut buffer2: Vec<u8> = Vec::with_capacity(len);
 
-                    let rmodel = model.read(mnode, &mut UserSlice::from_slice(buffer1.as_mut_slice()), offset);
-                    let rtotest = totest.read(mnode, &mut UserSlice::from_slice(buffer2.as_mut_slice()), offset);
+                    let rmodel = model.read(mnode, &mut buffer1.as_mut_slice(), offset);
+                    let rtotest = totest.read(mnode, &mut buffer2.as_mut_slice(), offset);
                     assert_eq!(rmodel, rtotest);
                     assert_eq!(buffer1, buffer2);
                 }
@@ -479,8 +473,8 @@ proptest! {
                         buffer.push(pattern as u8);
                     }
 
-                    let rmodel = model.write(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
-                    let rtotest = totest.write(mnode, &mut UserSlice::from_slice(buffer.as_mut_slice()), offset);
+                    let rmodel = model.write(mnode, &mut buffer, offset);
+                    let rtotest = totest.write(mnode, &mut buffer, offset);
                     assert_eq!(rmodel, rtotest);
                 }
                 Create(path, mode) => {
@@ -556,7 +550,7 @@ fn test_file_create() {
 #[test]
 
 fn test_file_read_permission_error() {
-    let buffer = &[0; 10];
+    let buffer = &mut [0; 10];
     let memfs: MlnrFS = Default::default();
     let filename = "file.txt";
     let mnode = memfs
@@ -569,12 +563,7 @@ fn test_file_read_permission_error() {
         Some(&Arc::new(2))
     );
     // On error read returns 0.
-    assert_eq!(
-        memfs
-            .read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
-            .is_err(),
-        true
-    );
+    assert_eq!(memfs.read(2, buffer, 0).is_err(), true);
 }
 
 /// Create a file with non-write permission and try to write it.
@@ -593,10 +582,7 @@ fn test_file_write_permission_error() {
         Some(&Arc::new(2))
     );
     // On error read returns 0.
-    assert_eq!(
-        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(KError::PermissionError)
-    );
+    assert_eq!(memfs.write(2, buffer, 0), Err(KError::PermissionError));
 }
 
 /// Create a file and write to it.
@@ -614,12 +600,7 @@ fn test_file_write() {
         memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
-    assert_eq!(
-        memfs
-            .write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0)
-            .unwrap(),
-        10
-    );
+    assert_eq!(memfs.write(2, buffer, 0).unwrap(), 10);
 }
 
 /// Create a file, write to it and then later read. Verify the content.
@@ -640,18 +621,8 @@ fn test_file_read() {
         memfs.files.read().get(&String::from("file.txt")),
         Some(&Arc::new(2))
     );
-    assert_eq!(
-        memfs
-            .write(2, &mut UserSlice::new(wbuffer.as_ptr() as u64, len), 0)
-            .unwrap(),
-        len
-    );
-    assert_eq!(
-        memfs
-            .read(2, &mut UserSlice::new(rbuffer.as_ptr() as u64, len), 0)
-            .unwrap(),
-        len
-    );
+    assert_eq!(memfs.write(2, wbuffer, 0).unwrap(), len);
+    assert_eq!(memfs.read(2, rbuffer, 0).unwrap(), len);
     assert_eq!(rbuffer[0], 0xb);
     assert_eq!(rbuffer[9], 0xb);
 }
@@ -743,14 +714,8 @@ fn test_file_delete() {
     assert_eq!(memfs.delete(filename), Ok(()));
     assert_eq!(memfs.delete(filename).is_err(), true);
     assert_eq!(memfs.lookup(filename), None);
-    assert_eq!(
-        memfs.write(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(KError::InvalidFile)
-    );
-    assert_eq!(
-        memfs.read(2, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Err(KError::InvalidFile)
-    );
+    assert_eq!(memfs.write(2, buffer, 0), Err(KError::InvalidFile));
+    assert_eq!(memfs.read(2, buffer, 0), Err(KError::InvalidFile));
 }
 
 #[test]
@@ -776,18 +741,12 @@ fn test_file_rename_and_read() {
         .unwrap();
 
     let buffer: &mut [u8; 10] = &mut [0xb; 10];
-    assert_eq!(
-        memfs.write(mnode, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Ok(10)
-    );
+    assert_eq!(memfs.write(mnode, buffer, 0), Ok(10));
 
     let rbuffer: &mut [u8; 10] = &mut [0x0; 10];
     assert!(memfs.rename(filename, newname.into()).is_ok());
     let mnode = memfs.lookup(newname).unwrap();
-    assert_eq!(
-        memfs.read(*mnode, &mut UserSlice::new(rbuffer.as_ptr() as u64, 10), 0),
-        Ok(10)
-    );
+    assert_eq!(memfs.read(*mnode, rbuffer, 0), Ok(10));
     assert_eq!(rbuffer[0], 0xb);
     assert_eq!(rbuffer[9], 0xb);
 }
@@ -807,10 +766,7 @@ fn test_file_rename_and_write() {
     let finfo = memfs.file_info(*mnode);
     assert_eq!(finfo.fsize, 0);
     let buffer: &mut [u8; 10] = &mut [0xb; 10];
-    assert_eq!(
-        memfs.write(*mnode, &mut UserSlice::new(buffer.as_ptr() as u64, 10), 0),
-        Ok(10)
-    );
+    assert_eq!(memfs.write(*mnode, buffer, 0), Ok(10));
     let finfo = memfs.file_info(*mnode);
     assert_eq!(finfo.fsize, 10);
 }

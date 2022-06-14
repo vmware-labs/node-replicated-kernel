@@ -20,29 +20,31 @@ mod rename;
 mod rw;
 pub(crate) mod syscalls;
 
+use crate::cmdline::Transport;
+
 /// A handle to an RPC client
 ///
 /// This is used to send requests to a remote control-plane.
 #[thread_local]
 pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
     // Create network stack and instantiate RPC Client
-    // If we enable both ethernet and shmem transport, shmem takes precedence.
-    #[cfg(feature = "shmem")]
-    {
-        Mutex::new(
-            crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC"),
-        )
-    }
-    #[cfg(all(feature = "ethernet", not(feature = "shmem")))]
+    return if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.transport == Transport::Smoltcp)
     {
         Mutex::new(
             crate::transport::ethernet::init_ethernet_rpc(
                 smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
                 6970,
             )
-            .expect("Failed to initialize ethernet RPC"),
+            .expect("Failed to initialize smoltcp RPC"),
         )
-    }
+    } else {
+        // Default is Shmem, even if transport unspecified
+        Mutex::new(
+            crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC"),
+        )
+    };
 });
 
 pub(crate) use fio::FileIO;

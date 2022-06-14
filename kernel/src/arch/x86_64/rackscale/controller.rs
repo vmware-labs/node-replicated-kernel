@@ -14,13 +14,10 @@ const PORT: u16 = 6970;
 
 /// Test TCP RPC-based controller
 pub(crate) fn run() {
-    let mut server: Box<dyn RPCServer> = if cfg!(feature = "shmem") {
-        use {crate::transport::shmem::create_shmem_transport, rpc::server_shmem::ShmemServer};
-        let transport =
-            Box::try_new(create_shmem_transport().expect("Failed to create shmem transport"))
-                .expect("Out of memory during init");
-        Box::try_new(ShmemServer::new(transport)).expect("Out of memory during init")
-    } else if cfg!(feature = "ethernet") {
+    let mut server: Box<dyn RPCServer> = if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.transport == Transport::Smoltcp)
+    {
         use {
             crate::transport::ethernet::init_network, rpc::server::Server,
             rpc::transport::TCPTransport,
@@ -29,8 +26,17 @@ pub(crate) fn run() {
         let transport =
             Box::try_new(TCPTransport::new(None, PORT, iface)).expect("Out of memory during init");
         Box::try_new(Server::new(transport)).expect("Out of memory during init")
+    } else if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.transport == Transport::Shmem)
+    {
+        use {crate::transport::shmem::create_shmem_transport, rpc::server_shmem::ShmemServer};
+        let transport =
+            Box::try_new(create_shmem_transport().expect("Failed to create shmem transport"))
+                .expect("Out of memory during init");
+        Box::try_new(ShmemServer::new(transport)).expect("Out of memory during init")
     } else {
-        unreachable!("No supported transport layer compiled in the kernel");
+        unreachable!("No supported transport layer specified in kernel argument");
     };
 
     server

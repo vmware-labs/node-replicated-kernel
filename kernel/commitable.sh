@@ -23,7 +23,7 @@ cargo run
 
 # compile init binary
 cd ../usr/init
-RUST_TARGET_PATH=`pwd`/../ xargo build --target x86_64-nrk-none --color always --release --all-features\
+RUST_TARGET_PATH=`pwd`/../ xargo build --target x86_64-nrk-none --color always --release --all-features
 cd ../../kernel
 
 # run integration tests

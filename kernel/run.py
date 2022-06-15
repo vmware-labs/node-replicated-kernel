@@ -483,22 +483,6 @@ def run_qemu(args):
     if args.qemu_settings:
         qemu_args += args.qemu_settings.split()
 
-    # Create a tap interface to communicate with guest and give it an IP
-    user = (whoami)().strip()
-    group = (local['id']['-gn'])().strip()
-
-    # TODO: Could probably avoid 'sudo' here by doing
-    # sudo setcap cap_net_admin .../run.py
-    # in the setup.sh script
-    sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
-    sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
-
-    # TODO - set up bridge between interfaces
-    # sudo ip link add br0 type bridge
-    # sudo brctl addif br0 tap0
-    # sudo brctl addif br0 tap2
-    # sudo ip link set br0 up
-
     # Run a QEMU instance
     cmd = ['/usr/bin/env'] + qemu_args
     if args.verbose:
@@ -706,30 +690,26 @@ def configure_network(args):
     # sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
 
     # Remove any existing interfaces
+    sudo[ip[['link', 'set', 'br0', 'down']]](retcode=(0, 1))
     sudo[brctl[['delbr', 'br0']]](retcode=(0, 1))
     for tap in NETWORK_CONFIG:
         sudo[ip[['link', 'set', '{}'.format(tap), 'down']]](retcode=(0, 1))
         sudo[ip[['link', 'del', '{}'.format(tap)]]](retcode=(0, 1))
 
     # Need to find out how to set default=True in case workers are >0 in `args`
-    if args.host_vm and args.workers == 0:
-        sudo[ip[['tuntap', 'add', 'dev', args.tap, 'mode', 'tap']]]()
+    if (not 'host_vm' in args) or (('host_vm' in args and args.host_vm) and ('workers' in args and args.workers == 0)):
         sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
         sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
+        sudo[ip[['link', 'set', args.tap, 'up']]](retcode=(0, 1))
+        sleep(5)
     else:
         sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
-        for wid, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):
-            print(wid)
-            print(ncfg)
-            tap = NETWORK_CONFIG[ncfg]
-            sudo[ip[['tuntap', 'add', 'dev', ncfg, 'mode', 'tap']]]()
+        for _, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):
             sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
             sudo[ifconfig[ncfg, NETWORK_CONFIG[ncfg]['ip_zone']]]()
-
             sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
-
             sudo[brctl[['addif', 'br0', ncfg]]]()
-        sudo[ip[['link', 'set', 'br0', 'up']]]
+        sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
 
 
 #
@@ -766,9 +746,11 @@ if __name__ == '__main__':
             raise e
 
     # Setup network
-    if 'host_vm' in args or 'workers' in args:
+    is_client = False
+    if args.cmd:
+        is_client = args.cmd.find("client") != -1
+    if not is_client:
         configure_network(args)
-        sys.exit(0)
 
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")

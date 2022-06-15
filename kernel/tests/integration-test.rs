@@ -463,6 +463,8 @@ struct RunnerArgs<'a> {
     shmem_path: String,
     /// Tap interface
     tap: Option<String>,
+    /// Number of workers
+    workers: Option<usize>,
 }
 
 #[allow(unused)]
@@ -488,6 +490,7 @@ impl<'a> RunnerArgs<'a> {
             ivshmem: 0,
             shmem_path: String::new(),
             tap: None,
+            workers: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -518,6 +521,7 @@ impl<'a> RunnerArgs<'a> {
             ivshmem: 0,
             shmem_path: String::new(),
             tap: None,
+            workers: None,
         };
 
         if cfg!(feature = "prealloc") {
@@ -648,6 +652,11 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn workers(mut self, workers: usize) -> RunnerArgs<'a> {
+        self.workers = Some(workers);
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         // Figure out log-level
@@ -662,6 +671,7 @@ impl<'a> RunnerArgs<'a> {
 
         // Start with cmdline from build
         let mut cmd = self.build_args.as_cmd();
+        let mut net_cmd = Vec::<String>::new();
 
         cmd.push(String::from("--cmd"));
         cmd.push(format!(
@@ -727,6 +737,15 @@ impl<'a> RunnerArgs<'a> {
                 if !qemu_args.is_empty() {
                     cmd.push(format!("--qemu-settings={}", qemu_args.join(" ")));
                 }
+
+                // TODO: this is a bit broken, because no regular arguments can come after a
+                // command to a python argparse subparser. To make sure parsing order doesn't matter,
+                // create as a separate 'net_cmd' variable, and add it to the end later (even though it is qemu specific)
+                if self.workers.is_some() {
+                    net_cmd.push(String::from("net"));
+                    net_cmd.push(String::from("--workers"));
+                    net_cmd.push(format!("{}", self.workers.unwrap()));
+                }
             }
             Machine::Baremetal(mname) => {
                 cmd.push(format!("--machine={}", mname));
@@ -740,6 +759,10 @@ impl<'a> RunnerArgs<'a> {
         // Don't run qemu, just build?
         if self.norun {
             cmd.push(String::from("--norun"));
+        }
+
+        if net_cmd.len() > 0 {
+            cmd.append(&mut net_cmd);
         }
 
         cmd
@@ -1569,6 +1592,17 @@ fn s03_ivshmem_write_and_read() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_shmem_exokernel_fs_test() {
+    exokernel_fs_test(true);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_smoltcp_exokernel_fs_test() {
+    exokernel_fs_test(false);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn exokernel_fs_test(is_shmem: bool) {
     use memfile::{CreateOptions, MemFile};
     use std::thread::sleep;
     use std::time::Duration;
@@ -1585,6 +1619,7 @@ fn s03_shmem_exokernel_fs_test() {
             .module("init")
             .user_feature("test-fs")
             .kernel_feature("shmem")
+            .kernel_feature("ethernet")
             .kernel_feature("rackscale")
             .release()
             .build(),
@@ -1592,12 +1627,19 @@ fn s03_shmem_exokernel_fs_test() {
 
     let build1 = build.clone();
     let controller = std::thread::spawn(move || {
+        let controller_cmd = if is_shmem {
+            "mode=controller transport=shmem"
+        } else {
+            "mode=controller transport=smoltcp"
+        };
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(30_000)
-            .cmd("mode=controller transport=shmem")
+            .cmd(controller_cmd)
             .ivshmem(filelen as usize)
             .shmem_path(filename)
-            .tap("tap0");
+            .tap("tap0")
+            .workers(2)
+            .use_vmxnet3();
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
@@ -1612,12 +1654,18 @@ fn s03_shmem_exokernel_fs_test() {
     let build2 = build.clone();
     let client = std::thread::spawn(move || {
         sleep(Duration::from_millis(10_000));
+        let client_cmd = if is_shmem {
+            "mode=client transport=shmem"
+        } else {
+            "mode=client transport=smoltcp"
+        };
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(30_000)
-            .cmd("mode=client transport=shmem")
+            .cmd(client_cmd)
             .ivshmem(filelen as usize)
             .shmem_path(filename)
-            .tap("tap2");
+            .tap("tap2")
+            .use_vmxnet3();
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
@@ -1638,66 +1686,7 @@ fn s03_shmem_exokernel_fs_test() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s03_smoltcp_exokernel_fs_test() {
-    use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
-
-    let build = Arc::new(
-        BuildArgs::default()
-            .module("init")
-            .user_feature("test-fs")
-            .kernel_feature("ethernet")
-            .kernel_feature("rackscale")
-            .release()
-            .build(),
-    );
-
-    let build1 = build.clone();
-    let controller = std::thread::spawn(move || {
-        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(30_000)
-            .cmd("mode=controller transport=smoltcp")
-            .tap("tap0")
-            .use_vmxnet3();
-
-        let mut output = String::new();
-        let mut qemu_run = || -> Result<WaitStatus> {
-            let mut p = spawn_nrk(&cmdline_controller)?;
-            output += p.exp_eof()?.as_str();
-            p.process.exit()
-        };
-
-        let _ignore = qemu_run();
-    });
-
-    let build2 = build.clone();
-    let client = std::thread::spawn(move || {
-        sleep(Duration::from_millis(10_000));
-        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-            .timeout(30_000)
-            .cmd("mode=client transport=smoltcp")
-            .tap("tap2")
-            .use_vmxnet3();
-
-        let mut output = String::new();
-        let mut qemu_run = || -> Result<WaitStatus> {
-            let mut p = spawn_nrk(&cmdline_client)?;
-            output += p.exp_string("fs_test OK")?.as_str();
-            output += p.exp_eof()?.as_str();
-            p.process.exit()
-        };
-
-        check_for_successful_exit(&cmdline_client, qemu_run(), output);
-    });
-
-    controller.join().unwrap();
-    client.join().unwrap();
-}
-
-#[cfg(not(feature = "baremetal"))]
-#[test]
-fn s03_shmem_exokernel_fs_test_prop() {
+fn s03_shmem_exokernel_fs_prop_test() {
     use memfile::{CreateOptions, MemFile};
     use std::thread::sleep;
     use std::time::Duration;
@@ -1725,6 +1714,7 @@ fn s03_shmem_exokernel_fs_test_prop() {
             .cmd("mode=controller")
             .ivshmem(filelen as usize)
             .shmem_path(filename)
+            .workers(2)
             .tap("tap0");
 
         let mut output = String::new();
@@ -1813,10 +1803,15 @@ fn s04_userspace_rumprt_net() {
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
+        // need to spawn nrk first to set up tap interface
+        let mut p = spawn_nrk(&cmdline)?;
+
+        // wait to give tap time to come up
+        use std::{thread, time};
+        thread::sleep(time::Duration::from_secs(5));
+
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
-
-        let mut p = spawn_nrk(&cmdline)?;
 
         // Test that DHCP works:
         output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
@@ -2080,13 +2075,16 @@ fn s06_redis_benchmark_virtio() {
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline)?;
+
+        use std::{thread, time};
+        thread::sleep(time::Duration::from_secs(3));
+
         let mut dhcp_server = spawn_dhcpd()?;
 
         // Test that DHCP works:
         output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
-        use std::{thread, time};
         thread::sleep(time::Duration::from_secs(9));
 
         let mut redis_client = redis_benchmark("virtio", 2_000_000)?;
@@ -2117,13 +2115,17 @@ fn s06_redis_benchmark_e1000() {
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline)?;
+
+        // wait to give tap time to come up
+        use std::{thread, time};
+        thread::sleep(time::Duration::from_secs(3));
+
         let mut dhcp_server = spawn_dhcpd()?;
 
         // Test that DHCP works:
         dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
-        use std::{thread, time};
         thread::sleep(time::Duration::from_secs(9));
 
         let mut redis_client = redis_benchmark("e1000", 2_000_000)?;
@@ -2578,6 +2580,17 @@ fn s06_fxmark_benchmark() {
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s06_shmem_exokernel_fxmark_benchmark() {
+    exokernel_fxmark_benchmark(true);
+}
+
+#[test]
+#[cfg(not(feature = "baremetal"))]
+fn s06_smoltcp_exokernel_fxmark_benchmark() {
+    exokernel_fxmark_benchmark(false);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn exokernel_fxmark_benchmark(is_shmem: bool) {
     use memfile::{CreateOptions, MemFile};
     use std::thread::sleep;
     use std::time::Duration;
@@ -2587,7 +2600,11 @@ fn s06_shmem_exokernel_fxmark_benchmark() {
     let benchmarks = vec!["mixX0", "mixX10", "mixX100"];
     //let benchmarks = vec!["mixX10"];
 
-    let file_name = "shmem_exokernel_fxmark_benchmark.csv";
+    let file_name = if is_shmem {
+        "shmem_exokernel_fxmark_benchmark.csv"
+    } else {
+        "smoltcp_exokernel_fxmark_benchmark.csv"
+    };
     let _ignore = remove_file(file_name);
 
     // Create build for both controller and client
@@ -2596,6 +2613,7 @@ fn s06_shmem_exokernel_fxmark_benchmark() {
             .module("init")
             .user_feature("fxmark")
             .kernel_feature("shmem")
+            .kernel_feature("smoltcp")
             .kernel_feature("rackscale")
             .release()
             .build(),
@@ -2621,17 +2639,33 @@ fn s06_shmem_exokernel_fxmark_benchmark() {
             file.set_len(filelen * 1024 * 1024)
                 .expect("Unable to set file length");
 
-            let kernel_cmdline = format!("mode=client initargs={}X{}X{}", cores, of, benchmark);
+            let kernel_cmdline = format!(
+                "mode=client transport={} initargs={}X{}X{}",
+                if is_shmem { "shmem" } else { "smoltcp" },
+                cores,
+                of,
+                benchmark
+            );
+
+            let controller_cmdline = format!(
+                "mode=controller transport={}",
+                if is_shmem { "shmem" } else { "smoltcp" }
+            );
 
             // Create controller
             let build1 = build.clone();
             let controller = std::thread::spawn(move || {
-                let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+                let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                     .timeout(30_000)
-                    .cmd("mode=controller")
+                    .cmd(&controller_cmdline)
                     .ivshmem(filelen as usize)
                     .shmem_path(shmem_file_name)
-                    .tap("tap0");
+                    .tap("tap0")
+                    .workers(2)
+                    .use_vmxnet3();
+
+                cmdline_controller = cmdline_controller.memory(core::cmp::max(49152, cores * 512));
+                cmdline_controller = cmdline_controller.nodes(0);
 
                 let mut output = String::new();
                 let mut qemu_run = || -> Result<WaitStatus> {
@@ -2651,6 +2685,7 @@ fn s06_shmem_exokernel_fxmark_benchmark() {
                     .ivshmem(filelen as usize)
                     .shmem_path(shmem_file_name)
                     .tap("tap2")
+                    .use_vmxnet3()
                     .cmd(kernel_cmdline.as_str());
 
                 cmdline_client = cmdline_client.memory(core::cmp::max(49152, cores * 512));
@@ -2872,6 +2907,9 @@ fn s06_memcached_benchmark() {
             let output = String::new();
             let qemu_run = || -> Result<WaitStatus> {
                 let mut p = spawn_nrk(&cmdline)?;
+
+                std::thread::sleep(std::time::Duration::from_secs(3));
+
                 let mut dhcp_server = spawn_dhcpd()?;
                 dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
 
@@ -2939,6 +2977,8 @@ fn s06_leveldb_benchmark() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline)?;
+            std::thread::sleep(std::time::Duration::from_secs(3));
+
             let mut dhcp_server = spawn_dhcpd()?;
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 

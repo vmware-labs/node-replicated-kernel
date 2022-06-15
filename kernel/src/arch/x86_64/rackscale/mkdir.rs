@@ -79,7 +79,8 @@ pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         }
     };
 
-    let path = core::str::from_utf8(&payload[core::mem::size_of::<MkDirReq>()..])?;
+    let path =
+        core::str::from_utf8(&payload[core::mem::size_of::<MkDirReq>()..hdr.msg_len as usize])?;
     let path_string: String = TryString::try_from(path)?.into();
     let mkdir_req = cnrfs::MlnrKernelNode::mkdir(local_pid, path_string, modes);
 

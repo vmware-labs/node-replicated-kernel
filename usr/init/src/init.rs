@@ -512,7 +512,7 @@ fn fs_test() {
 
         // Open a file
         let fd = vibrio::syscalls::Fs::open(
-            "file.txt",
+            "mydir/file.txt",
             FileFlags::O_RDWR | FileFlags::O_CREAT,
             FileModes::S_IRWXU,
         )

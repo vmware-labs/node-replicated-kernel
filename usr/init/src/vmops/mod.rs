@@ -26,7 +26,7 @@ unsafe extern "C" fn maponly_bencher_trampoline(arg1: *mut u8) -> *mut u8 {
     ptr::null_mut()
 }
 
-fn maponly_bencher(_cores: usize) {
+fn maponly_bencher(cores: usize) {
     use vibrio::syscalls::*;
     info!("Trying to allocate a frame");
     let (frame_id, _paddr) =

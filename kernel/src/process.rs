@@ -437,6 +437,7 @@ impl UVAddr {
 impl TryFrom<VAddr> for UVAddr {
     type Error = KError;
     fn try_from(va: VAddr) -> Result<Self, Self::Error> {
+        #[allow(clippy::absurd_extreme_comparisons)]
         if va.as_u64() < KERNEL_BASE {
             Ok(Self { inner: va })
         } else {
@@ -448,6 +449,7 @@ impl TryFrom<VAddr> for UVAddr {
 impl TryFrom<u64> for UVAddr {
     type Error = KError;
     fn try_from(va: u64) -> Result<Self, Self::Error> {
+        #[allow(clippy::absurd_extreme_comparisons)]
         if va < KERNEL_BASE {
             Ok(Self { inner: VAddr(va) })
         } else {
@@ -460,6 +462,7 @@ impl TryFrom<usize> for UVAddr {
     type Error = KError;
     fn try_from(va: usize) -> Result<Self, Self::Error> {
         let va64 = va.try_into().unwrap();
+        #[allow(clippy::absurd_extreme_comparisons)]
         if va64 < KERNEL_BASE {
             Ok(Self { inner: VAddr(va64) })
         } else {
@@ -525,7 +528,7 @@ impl<const N: usize> SliceAccess for [u8; N] {
 
 impl SliceAccess for &mut [u8] {
     fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
-        f(self.as_ref())
+        f(self)
     }
 
     fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
@@ -546,7 +549,7 @@ impl SliceAccess for &mut [u8] {
     }
 
     fn len(&self) -> usize {
-        <[u8]>::len(self.as_ref())
+        <[u8]>::len(self)
     }
 }
 
@@ -637,7 +640,7 @@ impl UserSlice {
         static_assertions::assert_eq_size!(u64, usize); // If this fails, think about this cast:
         let len = len.try_into().unwrap();
 
-        Ok(Self::new(pid, base, len)?)
+        Self::new(pid, base, len)
     }
 
     /// Checks if the user-slice is accessible given the mappings installed in
@@ -647,7 +650,7 @@ impl UserSlice {
     /// - `writeable`: If true check that the user-space program has write
     ///   permission to the region covered by the UserSlice, otherwise check for
     ///   read permission.
-    fn is_accessible<'a, P: Process>(&self, process: &'a P, writeable: bool) -> KResult<()> {
+    fn is_accessible<P: Process>(&self, process: &P, writeable: bool) -> KResult<()> {
         if self.pid != process.pid() {
             // The pid of the user slice should match the pid of the provided
             // process
@@ -781,7 +784,7 @@ impl SliceAccess for UserSlice {
     }
 
     fn write_slice(&mut self, buffer: &[u8]) -> KResult<()> {
-        nrproc::NrProcess::<ArchProcess>::write_to_userspace(self, buffer.as_ref())?;
+        nrproc::NrProcess::<ArchProcess>::write_to_userspace(self, buffer)?;
         Ok(())
     }
 

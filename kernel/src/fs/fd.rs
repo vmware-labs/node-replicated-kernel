@@ -42,15 +42,15 @@ impl TryFrom<u64> for FileDescriptor {
     }
 }
 
-impl Into<u64> for FileDescriptor {
-    fn into(self) -> u64 {
-        self.0 as u64
+impl From<FileDescriptor> for u64 {
+    fn from(fd: FileDescriptor) -> Self {
+        fd.0 as u64
     }
 }
 
-impl Into<usize> for FileDescriptor {
-    fn into(self) -> usize {
-        self.0 as usize
+impl From<FileDescriptor> for usize {
+    fn from(fd: FileDescriptor) -> Self {
+        fd.0
     }
 }
 

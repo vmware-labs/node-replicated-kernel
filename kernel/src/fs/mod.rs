@@ -77,13 +77,7 @@ impl Default for MlnrFS {
         mnodes.write().insert(
             rootmnode,
             NrLock::new(
-                MemNode::new(
-                    rootmnode,
-                    rootdir,
-                    FileModes::S_IRWXU.into(),
-                    FileType::Directory,
-                )
-                .unwrap(),
+                MemNode::new(rootmnode, rootdir, FileModes::S_IRWXU, FileType::Directory).unwrap(),
             ),
         );
         let files = RwLock::new(HashMap::new());
@@ -232,7 +226,7 @@ impl FileSystem for MlnrFS {
     fn mkdir(&self, pathname: String, modes: FileModes) -> Result<(), KError> {
         // Check if the file with the same name already exists.
         if self.files.read().get(&pathname).is_some() {
-            return Err(KError::AlreadyPresent);
+            Err(KError::AlreadyPresent)
         } else {
             let mnode_num = self.get_next_mno() as u64;
             // TODO(error-handling): Should we decrease mnode-num or ignore?

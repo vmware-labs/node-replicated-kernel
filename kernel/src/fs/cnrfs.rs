@@ -404,7 +404,7 @@ impl Dispatch for MlnrKernelNode {
     type WriteOperation = Modify;
     type Response = Result<MlnrNodeResult, KError>;
 
-    fn dispatch<'rop>(&self, op: Self::ReadOperation<'rop>) -> Self::Response {
+    fn dispatch<'rop>(&self, op: Self::ReadOperation<'_>) -> Self::Response {
         match op {
             Access::FileRead(pid, fd, _mnode, userslice, offset) => {
                 let process_lookup = self.process_map.read();
@@ -501,7 +501,6 @@ impl Dispatch for MlnrKernelNode {
             //                Ok(MlnrNodeResult::ProcessRemoved(pid))
             //            }
             Modify::FileOpen(pid, filename, flags, modes) => {
-                let flags = FileFlags::from(flags);
                 let mnode = self.fs.lookup(&filename);
                 if mnode.is_none() && !flags.is_create() {
                     return Err(KError::PermissionError);

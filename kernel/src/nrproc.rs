@@ -47,6 +47,17 @@ pub(crate) fn register_thread_with_process_replicas() {
     });
 }
 
+/// A function we can "apply" on mutable slices of user-space memory.
+///
+/// This returns a (u64, u64) as opposed to the `SliceExecFn` which returns
+/// nothing. This is because we call this from RPC handlers which eventually
+/// need to return (u64, u64) to the process. Ideally the return type could just
+/// be generic in some fun future?
+type SliceExecMutFn<'buf> = Box<dyn Fn(&'buf mut [u8]) -> KResult<(u64, u64)>>;
+
+/// A function we can "apply" on a non-mutable slice of user-space memory.
+type SliceExecFn<'buf> = Box<dyn Fn(&'buf [u8]) -> KResult<()>>;
+
 /// Immutable operations on the NrProcess.
 pub(crate) enum ProcessOp<'buf> {
     ProcessInfo,
@@ -55,11 +66,8 @@ pub(crate) enum ProcessOp<'buf> {
     ReadString(UserSlice),
     WriteSlice(&'buf mut UserSlice, &'buf [u8]),
     #[allow(unused)]
-    ExecSliceMut(
-        UserSlice,
-        Box<dyn Fn(&'buf mut [u8]) -> KResult<(u64, u64)>>,
-    ),
-    ExecSlice(&'buf UserSlice, Box<dyn Fn(&'buf [u8]) -> KResult<()>>),
+    ExecSliceMut(UserSlice, SliceExecMutFn<'buf>),
+    ExecSlice(&'buf UserSlice, SliceExecFn<'buf>),
 }
 
 /// Mutable operations on the NrProcess.
@@ -428,7 +436,7 @@ where
     type WriteOperation = ProcessOpMut;
     type Response = Result<ProcessResult<P::E>, KError>;
 
-    fn dispatch<'buf>(&self, op: Self::ReadOperation<'buf>) -> Self::Response {
+    fn dispatch<'buf>(&self, op: Self::ReadOperation<'_>) -> Self::Response {
         match op {
             ProcessOp::ProcessInfo => Ok(ProcessResult::ProcessInfo(*self.process.pinfo())),
             ProcessOp::MemResolve(base) => {
@@ -474,11 +482,11 @@ where
                 Ok(ProcessResult::Ok)
             }
             ProcessOp::ExecSliceMut(uslice, closure) => {
-                let (a, b) = uslice.with_slice_mut(&*self.process, |ubuf| closure(ubuf))?;
+                let (a, b) = uslice.with_slice_mut(&*self.process, closure)?;
                 Ok(ProcessResult::SysRetOk((a, b)))
             }
             ProcessOp::ExecSlice(uslice, closure) => {
-                uslice.with_slice(&*self.process, |ubuf| closure(ubuf))?;
+                uslice.with_slice(&*self.process, closure)?;
                 Ok(ProcessResult::Ok)
             }
         }

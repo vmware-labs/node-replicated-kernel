@@ -16,7 +16,7 @@ const PORT: u16 = 6970;
 pub(crate) fn run() {
     let mut server: Box<dyn RPCServer> = if crate::CMDLINE
         .get()
-        .map_or(false, |c| c.transport == Transport::Smoltcp)
+        .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         use {
             crate::transport::ethernet::init_network, rpc::server::Server,

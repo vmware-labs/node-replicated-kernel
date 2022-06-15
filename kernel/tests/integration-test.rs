@@ -1597,7 +1597,7 @@ fn s03_shmem_exokernel_fs_test() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s03_smoltcp_exokernel_fs_test() {
+fn s03_ethernet_exokernel_fs_test() {
     exokernel_fs_test(false);
 }
 
@@ -1630,7 +1630,7 @@ fn exokernel_fs_test(is_shmem: bool) {
         let controller_cmd = if is_shmem {
             "mode=controller transport=shmem"
         } else {
-            "mode=controller transport=smoltcp"
+            "mode=controller transport=ethernet"
         };
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(30_000)
@@ -1657,7 +1657,7 @@ fn exokernel_fs_test(is_shmem: bool) {
         let client_cmd = if is_shmem {
             "mode=client transport=shmem"
         } else {
-            "mode=client transport=smoltcp"
+            "mode=client transport=ethernet"
         };
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(30_000)
@@ -2585,7 +2585,7 @@ fn s06_shmem_exokernel_fxmark_benchmark() {
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
-fn s06_smoltcp_exokernel_fxmark_benchmark() {
+fn s06_ethernet_exokernel_fxmark_benchmark() {
     exokernel_fxmark_benchmark(false);
 }
 
@@ -2603,7 +2603,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
     let file_name = if is_shmem {
         "shmem_exokernel_fxmark_benchmark.csv"
     } else {
-        "smoltcp_exokernel_fxmark_benchmark.csv"
+        "ethernet_exokernel_fxmark_benchmark.csv"
     };
     let _ignore = remove_file(file_name);
 
@@ -2613,7 +2613,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
             .module("init")
             .user_feature("fxmark")
             .kernel_feature("shmem")
-            .kernel_feature("smoltcp")
+            .kernel_feature("ethernet")
             .kernel_feature("rackscale")
             .release()
             .build(),
@@ -2641,7 +2641,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 
             let kernel_cmdline = format!(
                 "mode=client transport={} initargs={}X{}X{}",
-                if is_shmem { "shmem" } else { "smoltcp" },
+                if is_shmem { "shmem" } else { "ethernet" },
                 cores,
                 of,
                 benchmark
@@ -2649,7 +2649,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 
             let controller_cmdline = format!(
                 "mode=controller transport={}",
-                if is_shmem { "shmem" } else { "smoltcp" }
+                if is_shmem { "shmem" } else { "ethernet" }
             );
 
             // Create controller

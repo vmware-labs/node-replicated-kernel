@@ -30,14 +30,14 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
     // Create network stack and instantiate RPC Client
     return if crate::CMDLINE
         .get()
-        .map_or(false, |c| c.transport == Transport::Smoltcp)
+        .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         Mutex::new(
             crate::transport::ethernet::init_ethernet_rpc(
                 smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
                 6970,
             )
-            .expect("Failed to initialize smoltcp RPC"),
+            .expect("Failed to initialize ethernet RPC"),
         )
     } else {
         // Default is Shmem, even if transport unspecified

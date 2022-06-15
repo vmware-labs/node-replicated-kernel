@@ -89,13 +89,13 @@ pub(crate) enum Transport {
     /// Shared memory transport.
     Shmem,
     /// Smoltcp-based TCP transport.
-    Smoltcp,
+    Ethernet,
 }
 
 impl From<&str> for Transport {
     fn from(s: &str) -> Self {
         match s {
-            "smoltcp" => Transport::Smoltcp,
+            "ethernet" => Transport::Ethernet,
             "shmem" => Transport::Shmem,
             _ => Transport::Shmem,
         }
@@ -243,6 +243,22 @@ impl CommandLineArguments {
                     error!("Ignored '{}' while parsing cmd args: {}", slice, args);
                     continue;
                 }
+            }
+        }
+
+        #[cfg(not(feature = "shmem"))]
+        {
+            if parsed_args.mode != Mode::Native && parsed_args.transport == Transport::Shmem {
+                panic!("kernel feature 'shmem' must be present to use shmem as an RPC transport");
+            }
+        }
+
+        #[cfg(not(feature = "ethernet"))]
+        {
+            if parsed_args.mode != Mode::Native && parsed_args.transport == Transport::Ethernet {
+                panic!(
+                    "kernel feature 'ethernet' must be present to use ethernet as an RPC transport"
+                );
             }
         }
 

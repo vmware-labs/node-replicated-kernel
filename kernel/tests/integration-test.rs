@@ -1547,6 +1547,73 @@ fn s03_vmxnet3_smoltcp() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
+/// Tests that the vmxnet3 driver is functional together with the smoltcp
+/// network stack.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_vmxnet3_smoltcp_udp() {
+    fn spawn_socat(port: u16) -> Result<rexpect::session::PtySession> {
+        spawn(
+            format!("socat - UDP:172.31.0.10:{}", port).as_str(),
+            Some(30_000),
+        )
+    }
+
+    const RANDOM_PAYLOAD: &'static str = std::concat!(
+        "wpztnynnlbpcileyvhokhihlbjtbvqlsntqoykjynunjhvjzfgtlukphzgj",
+        "arcrclwthsijhtqmutxtnzxxlsvmgnueuaqyvbpsnqsmrhaxcfqlqvzaihv",
+        "lkrnfasemjbbcfiwuokjzhhmmraaqilcndvgwqluyxrieudytmrkahhcreb",
+        "gwzngglsjsgeyrkywecqgizoklabiifiwjithcdcjvoptaufmiwixnqtmiw",
+        "gxqmrtbyugzdmtseqhoijelahbgxaszccughowltxqdnjmgymmvprbgrwlk",
+        "swzvirynhhinlausdwcjakofikgqucmhhdkmywxsfarslewqfnrjerumecn",
+        "riyliktztgtfouqcznjkwnzbivwqsflhoatumzlylgzvoxxtygkkrkbdusj",
+        "ckclfjgxjuaduhdhivhfctabrfqlsgorxueylsmanilqatqagdfjuukhdrm",
+        "cfeegpjiylcslveptgmefcpewdxgepgczzzobjiwwncsnambylfavwyabhc",
+        "rtdxmiudcdoplgogsczgszmjrvgztxpmrtphwmtezcnpcbzdwknipneyfjy",
+        "oessmgegwyohcsyjztgeukfqlvylhpbdoxhoqfbgnuxlyofvizveqtcfvwv",
+        "mwowrgxvdhzkhwnbdtgwosmlonepecpmctfqkbhmgzejzwkxizfybtekmkp",
+        "mnqworreythicapveoflicgwrlotxquslmwmjckldhoztqlapvtnwdexucs",
+        "ytcxngqijnusozjpbkpbemhsjzsvsoyaeghhyhpeykdurcccqqogbuzerdp",
+        "xzqihxzfeteoajcccvnxjweqkmdtnrwhbwoxiwhslzzzkochjbzzuwlwajo",
+        "cvmgmlliqlegzjtjogdxxzibkxxmycgrqbfvfpojprcrdyqhrejshsilrwb",
+        "ptoqenjyuyetcexfmbcajokkaltrhutakohielaupybbycmrjncytbqchgr",
+        "ioajegrgemttbadockfiukinstblpsvttltjzecxyahfqybxfabwglxhfvh",
+        "qlsxnotbzwtwvcneboxnvzfwxpwasroziyllaecgejabxptlqlwoyuvnhcc",
+        "ghrfkrizvpczcwbpcxopepjzfaqdchruyiufzpijjkynbfoaymwntxrrmef",
+        "kcgsujicncmmbdibuzwxwfeoyvvoiskrznegkcmauvlcnwtusqyreyteqey",
+        "ijzczjmflhvxsasitlppxsbbwwqkbudvbdqbxfltgmusnctctuzgsvwcehm",
+        "ypxvqdowwvaozrlexefmmklmhqmonvxwwfwolbrpfvcwrwmpswjaaihzfvh",
+        "avhojmnmnvblakpiplsbsouhyrdnmxnluqtqsrzqirgwpnizhrrarpqlaoo",
+        "jeabltkqwxfashocdieiomhmhxwcofdlizkrdktkkzaeplthvfvshfwzvhm",
+        "vsyzhowinicutacsoqlvnbwukivmrmtkwtxedjehhpbxegwfxtneiprwnns",
+        "euzwvaicwxgzbfsaygfublcsugoljmipgawnvwzdficcqmrbtqnbiyfmdwq",
+    );
+
+    let build = BuildArgs::default().build();
+    let cmdline = RunnerArgs::new_with_build("vmxnet-smoltcp", &build)
+        .timeout(30_000)
+        .use_vmxnet3();
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        output += p.exp_string("About to serve sockets!")?.as_str();
+
+        let mut client = spawn_socat(6970)?;
+        for i in 0..12 {
+            println!("sending pkt = {}", i);
+            client.send_line(RANDOM_PAYLOAD)?;
+            output += client.exp_string(RANDOM_PAYLOAD)?.as_str();
+        }
+        client.process.exit()?;
+        output += p.exp_eof()?.as_str();
+
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}
+
 /// Test that the shared memory device is functional by running NRK twice: once
 /// to produce data, and one to consume it.
 #[cfg(not(feature = "baremetal"))]

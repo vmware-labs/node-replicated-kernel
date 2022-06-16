@@ -864,7 +864,10 @@ fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     } else {
         args.timeout
     };
-    spawn_command(o, timeout)
+    let ret = spawn_command(o, timeout);
+    // sleep to ensure run.py has time to destroy/create network interfaces before returning
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    ret
 }
 
 /// Spawns a DHCP server on our host
@@ -1805,7 +1808,6 @@ fn s04_userspace_rumprt_net() {
     let mut qemu_run = || -> Result<WaitStatus> {
         // need to spawn nrk first to set up tap interface
         let mut p = spawn_nrk(&cmdline)?;
-        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
@@ -1931,9 +1933,10 @@ fn s05_redis_smoke() {
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        let mut dhcp_server = spawn_dhcpd()?;
-
+        // need to start nrk first to set up network interfaces
         let mut p = spawn_nrk(&cmdline)?;
+
+        let mut dhcp_server = spawn_dhcpd()?;
 
         // Test that DHCP works:
         dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
@@ -2071,10 +2074,8 @@ fn s06_redis_benchmark_virtio() {
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
+        // need to start nrk first to set up network interfaces
         let mut p = spawn_nrk(&cmdline)?;
-
-        use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(2));
 
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -2082,7 +2083,7 @@ fn s06_redis_benchmark_virtio() {
         output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
-        thread::sleep(time::Duration::from_secs(9));
+        std::thread::sleep(std::time::Duration::from_secs(9));
 
         let mut redis_client = redis_benchmark("virtio", 2_000_000)?;
 
@@ -2111,10 +2112,8 @@ fn s06_redis_benchmark_e1000() {
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
+        // need to start nrk first to set up network interfaces
         let mut p = spawn_nrk(&cmdline)?;
-
-        use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(2));
 
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -2122,6 +2121,7 @@ fn s06_redis_benchmark_e1000() {
         dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
         output += p.exp_string(REDIS_START_MATCH)?.as_str();
 
+        use std::{thread, time};
         thread::sleep(time::Duration::from_secs(9));
 
         let mut redis_client = redis_benchmark("e1000", 2_000_000)?;
@@ -2902,8 +2902,8 @@ fn s06_memcached_benchmark() {
 
             let output = String::new();
             let qemu_run = || -> Result<WaitStatus> {
+                // need to start nrk first to set up network interfaces
                 let mut p = spawn_nrk(&cmdline)?;
-                std::thread::sleep(std::time::Duration::from_secs(2));
 
                 let mut dhcp_server = spawn_dhcpd()?;
                 dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
@@ -2971,8 +2971,8 @@ fn s06_leveldb_benchmark() {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
+            // need to start nrk first to set up network interfaces
             let mut p = spawn_nrk(&cmdline)?;
-            std::thread::sleep(std::time::Duration::from_secs(2));
 
             let mut dhcp_server = spawn_dhcpd()?;
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();

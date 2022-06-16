@@ -701,7 +701,6 @@ def configure_network(args):
         sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
         sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
         sudo[ip[['link', 'set', args.tap, 'up']]](retcode=(0, 1))
-        sleep(5)
     else:
         sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
         for _, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):

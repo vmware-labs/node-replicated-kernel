@@ -1805,10 +1805,7 @@ fn s04_userspace_rumprt_net() {
     let mut qemu_run = || -> Result<WaitStatus> {
         // need to spawn nrk first to set up tap interface
         let mut p = spawn_nrk(&cmdline)?;
-
-        // wait to give tap time to come up
-        use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_secs(2));
 
         let mut dhcp_server = spawn_dhcpd()?;
         let mut receiver = spawn_receiver()?;
@@ -2077,7 +2074,7 @@ fn s06_redis_benchmark_virtio() {
         let mut p = spawn_nrk(&cmdline)?;
 
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(3));
+        thread::sleep(time::Duration::from_secs(2));
 
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -2116,9 +2113,8 @@ fn s06_redis_benchmark_e1000() {
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline)?;
 
-        // wait to give tap time to come up
         use std::{thread, time};
-        thread::sleep(time::Duration::from_secs(3));
+        thread::sleep(time::Duration::from_secs(2));
 
         let mut dhcp_server = spawn_dhcpd()?;
 
@@ -2907,8 +2903,7 @@ fn s06_memcached_benchmark() {
             let output = String::new();
             let qemu_run = || -> Result<WaitStatus> {
                 let mut p = spawn_nrk(&cmdline)?;
-
-                std::thread::sleep(std::time::Duration::from_secs(3));
+                std::thread::sleep(std::time::Duration::from_secs(2));
 
                 let mut dhcp_server = spawn_dhcpd()?;
                 dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
@@ -2977,7 +2972,7 @@ fn s06_leveldb_benchmark() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline)?;
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            std::thread::sleep(std::time::Duration::from_secs(2));
 
             let mut dhcp_server = spawn_dhcpd()?;
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();

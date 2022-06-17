@@ -336,7 +336,7 @@ dependencies = [
  "arr_macro",
  "chashmap",
  "crossbeam-queue",
- "crossbeam-utils 0.6.6",
+ "crossbeam-utils",
  "env_logger 0.8.4",
  "log",
  "static_assertions",
@@ -383,23 +383,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b10ddc024425c88c2ad148c1b0fd53f4c6d38db9697c9f1588381212fa657c9"
 dependencies = [
  "cfg-if 1.0.0",
- "crossbeam-utils 0.8.5",
+ "crossbeam-utils",
 ]
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.6.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04973fa96e96579258a5091af6003abde64af786b860f18622b82e026cca60e6"
-dependencies = [
- "cfg-if 0.1.10",
-]
-
-[[package]]
-name = "crossbeam-utils"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d82cfc11ce7f2c3faef78d8a684447b40d503d9681acebed6cb728d45940c4db"
+checksum = "b5e5bed1f1c269533fa816a0a5492b3545209a205ca1a54842be180eb63a16a6"
 dependencies = [
  "cfg-if 1.0.0",
  "lazy_static",
@@ -1129,7 +1120,7 @@ dependencies = [
  "arr_macro",
  "backtracer_core",
  "crossbeam-queue",
- "crossbeam-utils 0.8.5",
+ "crossbeam-utils",
  "either",
  "env_logger 0.9.0",
  "fringe",
@@ -1322,7 +1313,7 @@ version = "0.1.0"
 dependencies = [
  "arr_macro",
  "chashmap",
- "crossbeam-utils 0.6.6",
+ "crossbeam-utils",
  "log",
  "rand 0.7.3",
  "static_assertions",
@@ -1344,7 +1335,7 @@ dependencies = [
  "cnr",
  "core2",
  "crossbeam-queue",
- "crossbeam-utils 0.8.5",
+ "crossbeam-utils",
  "cstr_core",
  "csv",
  "ctor",
@@ -2514,7 +2505,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "bitflags",
- "crossbeam-utils 0.8.5",
+ "crossbeam-utils",
  "cstr_core",
  "hashbrown",
  "kpi",

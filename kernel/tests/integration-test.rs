@@ -1547,73 +1547,6 @@ fn s03_vmxnet3_smoltcp() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Tests that the vmxnet3 driver is functional together with the smoltcp
-/// network stack.
-#[cfg(not(feature = "baremetal"))]
-#[test]
-fn s03_vmxnet3_smoltcp_udp() {
-    fn spawn_socat(port: u16) -> Result<rexpect::session::PtySession> {
-        spawn(
-            format!("socat - UDP:172.31.0.10:{}", port).as_str(),
-            Some(30_000),
-        )
-    }
-
-    const RANDOM_PAYLOAD: &'static str = std::concat!(
-        "wpztnynnlbpcileyvhokhihlbjtbvqlsntqoykjynunjhvjzfgtlukphzgj",
-        "arcrclwthsijhtqmutxtnzxxlsvmgnueuaqyvbpsnqsmrhaxcfqlqvzaihv",
-        "lkrnfasemjbbcfiwuokjzhhmmraaqilcndvgwqluyxrieudytmrkahhcreb",
-        "gwzngglsjsgeyrkywecqgizoklabiifiwjithcdcjvoptaufmiwixnqtmiw",
-        "gxqmrtbyugzdmtseqhoijelahbgxaszccughowltxqdnjmgymmvprbgrwlk",
-        "swzvirynhhinlausdwcjakofikgqucmhhdkmywxsfarslewqfnrjerumecn",
-        "riyliktztgtfouqcznjkwnzbivwqsflhoatumzlylgzvoxxtygkkrkbdusj",
-        "ckclfjgxjuaduhdhivhfctabrfqlsgorxueylsmanilqatqagdfjuukhdrm",
-        "cfeegpjiylcslveptgmefcpewdxgepgczzzobjiwwncsnambylfavwyabhc",
-        "rtdxmiudcdoplgogsczgszmjrvgztxpmrtphwmtezcnpcbzdwknipneyfjy",
-        "oessmgegwyohcsyjztgeukfqlvylhpbdoxhoqfbgnuxlyofvizveqtcfvwv",
-        "mwowrgxvdhzkhwnbdtgwosmlonepecpmctfqkbhmgzejzwkxizfybtekmkp",
-        "mnqworreythicapveoflicgwrlotxquslmwmjckldhoztqlapvtnwdexucs",
-        "ytcxngqijnusozjpbkpbemhsjzsvsoyaeghhyhpeykdurcccqqogbuzerdp",
-        "xzqihxzfeteoajcccvnxjweqkmdtnrwhbwoxiwhslzzzkochjbzzuwlwajo",
-        "cvmgmlliqlegzjtjogdxxzibkxxmycgrqbfvfpojprcrdyqhrejshsilrwb",
-        "ptoqenjyuyetcexfmbcajokkaltrhutakohielaupybbycmrjncytbqchgr",
-        "ioajegrgemttbadockfiukinstblpsvttltjzecxyahfqybxfabwglxhfvh",
-        "qlsxnotbzwtwvcneboxnvzfwxpwasroziyllaecgejabxptlqlwoyuvnhcc",
-        "ghrfkrizvpczcwbpcxopepjzfaqdchruyiufzpijjkynbfoaymwntxrrmef",
-        "kcgsujicncmmbdibuzwxwfeoyvvoiskrznegkcmauvlcnwtusqyreyteqey",
-        "ijzczjmflhvxsasitlppxsbbwwqkbudvbdqbxfltgmusnctctuzgsvwcehm",
-        "ypxvqdowwvaozrlexefmmklmhqmonvxwwfwolbrpfvcwrwmpswjaaihzfvh",
-        "avhojmnmnvblakpiplsbsouhyrdnmxnluqtqsrzqirgwpnizhrrarpqlaoo",
-        "jeabltkqwxfashocdieiomhmhxwcofdlizkrdktkkzaeplthvfvshfwzvhm",
-        "vsyzhowinicutacsoqlvnbwukivmrmtkwtxedjehhpbxegwfxtneiprwnns",
-        "euzwvaicwxgzbfsaygfublcsugoljmipgawnvwzdficcqmrbtqnbiyfmdwq",
-    );
-
-    let build = BuildArgs::default().build();
-    let cmdline = RunnerArgs::new_with_build("vmxnet-smoltcp", &build)
-        .timeout(30_000)
-        .use_vmxnet3();
-
-    let mut output = String::new();
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut p = spawn_nrk(&cmdline)?;
-        output += p.exp_string("About to serve sockets!")?.as_str();
-
-        let mut client = spawn_socat(6970)?;
-        for i in 0..12 {
-            println!("sending pkt = {}", i);
-            client.send_line(RANDOM_PAYLOAD)?;
-            output += client.exp_string(RANDOM_PAYLOAD)?.as_str();
-        }
-        client.process.exit()?;
-        output += p.exp_eof()?.as_str();
-
-        p.process.exit()
-    };
-
-    check_for_successful_exit(&cmdline, qemu_run(), output);
-}
-
 /// Test that the shared memory device is functional by running NRK twice: once
 /// to produce data, and one to consume it.
 #[cfg(not(feature = "baremetal"))]
@@ -2816,6 +2749,52 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
             let _ignore = remove_file(&shmem_file_name);
         }
     }
+}
+
+/// Tests that the vmxnet3 driver is functional together with the smoltcp
+/// network stack.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_dcm() {
+    use std::fs::remove_file;
+
+    // Remove DCM log file
+    let file_name = "/home/hunhoffe/nrk2/kernel/dcm_output.txt";
+    let _ignore = remove_file(file_name);
+
+    // Spawn DCM
+    let spawn_dcm = || -> rexpect::session::PtyReplSession {
+        // TODO: this assumes DCM is already an aliased command
+        let mut b = spawn_bash(Some(45_000)).unwrap();
+        b.send_line(
+            format!("java -jar -Dlog4j.configurationFile=/home/hunhoffe/bespin-dcm/src/main/resources/log4j2.xml /home/hunhoffe/bespin-dcm/target/scheduler-1.0-SNAPSHOT-jar-with-dependencies.jar > {}", file_name).as_str()
+        ).unwrap();
+        b
+    };
+
+    let build = BuildArgs::default()
+        .kernel_feature("ethernet")
+        .kernel_feature("rackscale")
+        .build();
+    let cmdline = RunnerArgs::new_with_build("dcm", &build)
+        .timeout(30_000)
+        .use_vmxnet3();
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+        let mut dcm = spawn_dcm();
+
+        output += p.exp_string("About to start RPC client")?.as_str();
+        output += p.exp_string("Started RPC Client!")?.as_str();
+
+        // TODO: actually do something
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
+        p.process.exit();
+        dcm.process.exit().unwrap();
+    };
+    check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
 fn memcached_benchmark(

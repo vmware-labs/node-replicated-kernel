@@ -11,7 +11,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
+const INTEGRATION_TESTS: [(&str, MainFn); 28] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -37,6 +37,7 @@ const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
     ("replica-advance", replica_advance),
     ("gdb", gdb),
     ("vmxnet-smoltcp", vmxnet_smoltcp),
+    ("dcm", dcm),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
 ];
@@ -763,133 +764,22 @@ fn vmxnet_smoltcp() {
     shutdown(ExitReason::Ok);
 }
 
-/// Test vmxnet3 integrated with smoltcp.
-#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
-fn vmxnet_smoltcp_udp() {
-    use alloc::collections::BTreeMap;
-    use alloc::{vec, vec::Vec};
-    use core::cell::Cell;
+/// Test vmxnet3 integrated with smoltcp.s
+#[cfg(all(
+    feature = "rackscale",
+    feature = "ethernet",
+    feature = "integration-test",
+    target_arch = "x86_64"
+))]
+fn dcm() {
+    use crate::transport::ethernet::init_ethernet_rpc;
+    use log::info;
+    use smoltcp::wire::IpAddress;
 
-    use log::{debug, info};
-
-    use vmxnet3::pci::BarAccess;
-    use vmxnet3::smoltcp::DevQueuePhy;
-    use vmxnet3::vmx::VMXNet3;
-
-    use smoltcp::iface::{InterfaceBuilder, NeighborCache};
-    use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
-    use smoltcp::time::Instant;
-    use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr};
-
-    use crate::memory::vspace::MapAction;
-    use crate::memory::PAddr;
-    use crate::memory::KERNEL_BASE;
-
-    //arch::irq::ioapic_establish_route(0x0, 0x0);
-    //crate::arch::irq::enable();
-    const VMWARE_INC: u16 = 0x15ad;
-    const VMXNET_DEV: u16 = 0x07b0;
-    let vmx = if let Some(vmxnet3_dev) = crate::pci::claim_device(VMWARE_INC, VMXNET_DEV) {
-        let addr = vmxnet3_dev.pci_address();
-        let ba = BarAccess::new(addr.bus.into(), addr.dev.into(), addr.fun.into());
-        let mut kvspace = crate::arch::vspace::INITIAL_VSPACE.lock();
-        for &bar in &[ba.bar0 - KERNEL_BASE, ba.bar1 - KERNEL_BASE] {
-            assert!(kvspace
-                .map_identity_with_offset(
-                    PAddr::from(KERNEL_BASE),
-                    PAddr::from(bar),
-                    0x1000,
-                    MapAction::ReadWriteKernel,
-                )
-                .is_ok());
-        }
-
-        let mut vmx = VMXNet3::new(ba, 2, 2).unwrap();
-        assert!(vmx.attach_pre().is_ok());
-        vmx.init();
-        vmx
-    } else {
-        panic!("vmxnet3 PCI device not found, forgot to pass `--nic vmxnet3`?");
-    };
-
-    #[derive(Debug)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct Clock(Cell<Instant>);
-
-    impl Clock {
-        fn new() -> Clock {
-            let rt = rawtime::Instant::now().as_nanos();
-            let rt_millis = (rt / 1_000_000) as i64;
-            Clock(Cell::new(Instant::from_millis(rt_millis)))
-        }
-
-        fn elapsed(&self) -> Instant {
-            self.0.get()
-        }
-    }
-
-    let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
-    let neighbor_cache = NeighborCache::new(BTreeMap::new());
-
-    let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 64]);
-    let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 128]);
-    let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
-
-    let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
-    let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 10), 24)];
-
-    // Create SocketSet w/ space for 1 socket
-    let mut sock_vec = Vec::new();
-    sock_vec.try_reserve_exact(1).unwrap();
-
-    let mut iface = InterfaceBuilder::new(device, sock_vec)
-        .ip_addrs(ip_addrs)
-        .hardware_addr(ethernet_addr.into())
-        .neighbor_cache(neighbor_cache)
-        .finalize();
-
-    let udp1_handle = iface.add_socket(udp_socket);
-
-    let mut done = false;
-    let clock = Clock::new();
-    // Don't change the next line without changing `integration-test.rs`
-    info!("About to serve sockets!");
-
-    while !done && clock.elapsed() < Instant::from_millis(25_000) {
-        match iface.poll(clock.elapsed()) {
-            Ok(_) => {}
-            Err(e) => {
-                debug!("poll error: {}", e);
-            }
-        }
-
-        // udp:6970: echo with reverse
-        let socket = iface.get_socket::<UdpSocket>(udp1_handle);
-        let recvd_data = {
-            if !socket.is_open() {
-                socket.bind(6970).unwrap()
-            }
-
-            let recv_data = if socket.can_recv() {
-                Some(socket.recv().unwrap())
-            } else {
-                None
-            };
-            recv_data
-        };
-
-
-        if recvd_data.is_some() {
-            let (data, endpoint) = recvd_data.unwrap();
-            socket.send_slice(&data[..], endpoint).unwrap();
-        } else {
-            if socket.can_send() {
-                info!("udp:6970 close");
-                socket.close();
-                done = true;
-            }
-        }
-    }
+    info!("About to start RPC client");
+    let mut _client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970)
+        .expect("Failed to create ethernet RPC client");
+    info!("Started RPC client!");
 
     shutdown(ExitReason::Ok);
 }

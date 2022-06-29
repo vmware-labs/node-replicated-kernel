@@ -12,6 +12,7 @@ mod fio;
 
 mod close;
 pub(crate) mod controller;
+pub(crate) mod dcm;
 mod delete;
 mod getinfo;
 mod mkdir;

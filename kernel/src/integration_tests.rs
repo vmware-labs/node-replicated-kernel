@@ -772,14 +772,32 @@ fn vmxnet_smoltcp() {
     target_arch = "x86_64"
 ))]
 fn dcm() {
+    use crate::arch::rackscale::dcm::*;
     use crate::transport::ethernet::init_ethernet_rpc;
     use log::info;
+    use rpc::RPCClient;
     use smoltcp::wire::IpAddress;
 
     info!("About to start RPC client");
-    let mut _client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970)
+    let mut client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970)
         .expect("Failed to create ethernet RPC client");
     info!("Started RPC client!");
+
+    let req = AllocRequest {
+        application: 1,
+        cores: 1,
+        memslices: 0,
+    };
+    let mut res = AllocResponse { uuid1: 0, uuid2: 0 };
+
+    for i in 1..50 {
+        info!("Sending request: {:?}", i);
+        client
+            .call(100, 1, unsafe { &[req.as_bytes()] }, unsafe {
+                &mut [res.as_mut_bytes()]
+            })
+            .expect("Failed to send alloc request");
+    }
 
     shutdown(ExitReason::Ok);
 }

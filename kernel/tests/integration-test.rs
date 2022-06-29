@@ -2791,8 +2791,9 @@ fn s06_dcm() {
         // TODO: actually do something
         std::thread::sleep(std::time::Duration::from_secs(6));
 
-        p.process.exit();
+        let ret = p.process.exit();
         dcm.process.exit().unwrap();
+        ret
     };
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }

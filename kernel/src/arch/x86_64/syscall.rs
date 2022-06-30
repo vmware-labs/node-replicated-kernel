@@ -1,6 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::convert::TryInto;
 
@@ -20,11 +21,11 @@ use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::nr;
 use crate::nrproc::NrProcess;
-use crate::process::{ResumeHandle, UVAddr, UserSlice};
+use crate::process::{ResumeHandle, SliceAccess, UVAddr, UserSlice};
 use crate::syscalls::{ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch};
 
 use super::gdt::GdtTable;
-use super::process::{Ring3Process, UserValue};
+use super::process::Ring3Process;
 use super::serial::SerialControl;
 
 extern "C" {
@@ -109,19 +110,16 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
 pub(crate) trait Arch86ProcessDispatch {}
 
 impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
-    fn log(&self, buffer_arg: u64, len: u64) -> Result<(u64, u64), KError> {
-        // TODO: some scary unsafe logic here that needs sanitization
-        let buffer: *const u8 = buffer_arg as *const u8;
-        let len: usize = len as usize;
+    fn log(&self, buffer: UserSlice) -> Result<(u64, u64), KError> {
+        buffer.read_slice(Box::try_new(|uslice| {
+            if let Ok(s) = core::str::from_utf8(uslice) {
+                SerialControl::buffered_print(s);
+            } else {
+                warn!("log: invalid UTF-8 string: {:?}", uslice);
+            }
 
-        let user_str = unsafe {
-            let slice = core::slice::from_raw_parts(buffer, len);
-            core::str::from_utf8_unchecked(slice)
-        };
-
-        let user_buffer = UserValue::new(user_str);
-        let buffer: &str = *user_buffer;
-        SerialControl::buffered_print(buffer);
+            Ok(())
+        })?)?;
 
         Ok((0, 0))
     }

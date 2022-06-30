@@ -8,7 +8,6 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use core::cell::RefCell;
 use core::cmp::PartialEq;
-use core::ops::{Deref, DerefMut};
 use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
@@ -118,101 +117,6 @@ impl crate::nrproc::ProcessManager for ArchProcessManagement {
         MAX_NUMA_NODES,
     > {
         &*super::process::PROCESS_TABLE
-    }
-}
-
-pub(crate) struct UserPtr<T> {
-    value: *mut T,
-}
-
-impl<T> UserPtr<T> {
-    // - is *mut T a good type? Maybe should be VAddr?
-    //  - Do we need to check alignment?
-    // - We need to check that it's not some illegal/kernel address
-    //   - Return type should probably be Result<UserPtr>
-    // - We need to check that it's accessible / mapped in the process' address
-    //   space
-    //   - Should the check happen during Deref (more lazy) or upfront in new()
-    //     (what if we might not up accessing it?)
-    //   - Is this enough? what if it's a PCI BAR address would this be bad?
-    pub(crate) fn new(pointer: *mut T) -> UserPtr<T> {
-        UserPtr { value: pointer }
-    }
-
-    pub(crate) fn vaddr(&self) -> VAddr {
-        VAddr::from(self.value as u64)
-    }
-}
-
-impl<T> Deref for UserPtr<T> {
-    type Target = T;
-    // - We need to check that we're still in the process' address space on
-    //   Deref
-    //   - Maybe we can only deref this in a closure/well defined block?
-    // - We need to enable x86 user-space access stuff
-    // - How do we know this T will have been properly initialized? We don't.
-    //   - Should we treat this as MaybeUninit<T>
-    //   - Should we just have implementations for basic/POD types?
-    fn deref(&self) -> &Self::Target {
-        unsafe {
-            rflags::stac();
-            &*self.value
-        }
-    }
-}
-
-impl<T> DerefMut for UserPtr<T> {
-    // See Deref Concerns
-    // - If mapped read-only in user-space, we shouldn't try to modify it
-    //   through user-space address but have to go through kernel physical
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe {
-            rflags::stac();
-            &mut *self.value
-        }
-    }
-}
-
-impl<T> Drop for UserPtr<T> {
-    // - This is also not ideal: enforce security is re-enabled immediately
-    //   after use?
-    fn drop(&mut self) {
-        unsafe { rflags::clac() };
-    }
-}
-
-pub(crate) struct UserValue<T> {
-    value: T,
-}
-
-impl<T> UserValue<T> {
-    pub(crate) fn new(pointer: T) -> UserValue<T> {
-        UserValue { value: pointer }
-    }
-}
-
-impl<T> Deref for UserValue<T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        unsafe {
-            rflags::stac();
-            &self.value
-        }
-    }
-}
-
-impl<T> DerefMut for UserValue<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {
-            rflags::stac();
-            &mut self.value
-        }
-    }
-}
-
-impl<T> Drop for UserValue<T> {
-    fn drop(&mut self) {
-        unsafe { rflags::clac() };
     }
 }
 
@@ -813,8 +717,14 @@ impl Ring3Executor {
         }
     }
 
-    pub(crate) fn vcpu(&self) -> UserPtr<kpi::arch::VirtualCpu> {
-        UserPtr::new(self.vcpu_ctl.as_mut_ptr())
+    /// Get access to the executors' vcpu area.
+    ///
+    /// # Safety
+    /// - Caller needs to ensure it doesn't accidentially create two mutable
+    ///   aliasable pointers to the same memory.
+    /// - TODO(api): A safer API for this might be appreciated.
+    pub(crate) fn vcpu(&self) -> &mut kpi::arch::VirtualCpu {
+        unsafe { &mut *self.vcpu_ctl_kernel.as_mut_ptr() }
     }
 
     pub(crate) fn vcpu_addr(&self) -> VAddr {
@@ -873,7 +783,7 @@ impl Executor for Ring3Executor {
 
             let entry_point = unsafe { (*self.vcpu_kernel()).resume_with_upcall };
             trace!("Added core entry point is at {:#x}", entry_point);
-            let cpu_ctl = self.vcpu().vaddr().as_u64();
+            let cpu_ctl = self.vcpu_addr().as_u64();
 
             Ring3Resumer::new_upcall(
                 entry_point,
@@ -905,7 +815,7 @@ impl Executor for Ring3Executor {
 
         self.maybe_switch_vspace();
         let entry_point = self.vcpu().resume_with_upcall;
-        let cpu_ctl = self.vcpu().vaddr().as_u64();
+        let cpu_ctl = self.vcpu_addr().as_u64();
 
         Ring3Resumer::new_upcall(
             entry_point,

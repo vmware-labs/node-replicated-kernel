@@ -483,7 +483,7 @@ pub trait SliceAccess {
     ///
     /// - The implementation should return the Result of `f` if it was
     ///   successful.
-    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()>;
+    fn read_slice<'a>(&'a self, f: Box<dyn Fn(&'a [u8]) -> KResult<()>>) -> KResult<()>;
 
     /// Write `buffer` into self.
     ///
@@ -504,7 +504,7 @@ pub trait SliceAccess {
 }
 
 impl<const N: usize> SliceAccess for [u8; N] {
-    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
+    fn read_slice<'a>(&'a self, f: Box<dyn Fn(&'a [u8]) -> KResult<()>>) -> KResult<()> {
         f(self)
     }
 
@@ -527,7 +527,7 @@ impl<const N: usize> SliceAccess for [u8; N] {
 }
 
 impl SliceAccess for &mut [u8] {
-    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
+    fn read_slice<'a>(&'a self, f: Box<dyn Fn(&'a [u8]) -> KResult<()>>) -> KResult<()> {
         f(self)
     }
 
@@ -779,7 +779,7 @@ impl UserSlice {
 }
 
 impl SliceAccess for UserSlice {
-    fn read_slice(&self, f: Box<dyn Fn(&[u8]) -> KResult<()>>) -> KResult<()> {
+    fn read_slice<'a>(&'a self, f: Box<dyn Fn(&'a [u8]) -> KResult<()>>) -> KResult<()> {
         nrproc::NrProcess::<ArchProcess>::userspace_exec_slice(self, f)
     }
 

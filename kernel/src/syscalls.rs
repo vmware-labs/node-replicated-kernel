@@ -105,7 +105,7 @@ impl FileOperationArgs {
 
 /// ProcessOperation: Arch specific implementations
 pub(crate) trait ProcessDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone> {
-    fn log(&self, buffer_arg: W, len: W) -> KResult<(W, W)>;
+    fn log(&self, buffer: UserSlice) -> KResult<(W, W)>;
     fn get_vcpu_area(&self) -> KResult<(W, W)>;
     fn allocate_vector(&self, vector: W, core: W) -> KResult<(W, W)>;
     fn get_process_info(&self, vaddr_buf: W, vaddr_buf_len: W) -> KResult<(W, W)>;
@@ -117,7 +117,7 @@ pub(crate) trait ProcessDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clone>
 /// Parsed and validated arguments of the process system calls.
 enum ProcessOperationArgs<W> {
     Exit(W),
-    Log(W, W),
+    Log(UserSlice),
     GetVCpuArea,
     AllocateVector(W, W),
     GetProcessInfo(W, W),
@@ -133,7 +133,10 @@ impl<W: Into<u64> + LowerHex + Debug + Copy + Clone> ProcessOperationArgs<W> {
         match ProcessOperation::new(arg1.into())
             .ok_or(KError::InvalidProcessOperation { a: arg1.into() })?
         {
-            ProcessOperation::Log => Ok(Self::Log(arg2, arg3)),
+            ProcessOperation::Log => Ok(Self::Log(UserSlice::for_current_proc(
+                arg2.into(),
+                arg3.into(),
+            )?)),
             ProcessOperation::GetVCpuArea => Ok(Self::GetVCpuArea),
             ProcessOperation::AllocateVector => Ok(Self::AllocateVector(arg2, arg3)),
             ProcessOperation::Exit => Ok(Self::Exit(arg2)),
@@ -262,7 +265,7 @@ pub(crate) trait SystemCallDispatch<W: Into<u64> + LowerHex + Debug + Copy + Clo
         use ProcessOperationArgs as Poa;
 
         match ProcessOperationArgs::validate(arg1, arg2, arg3)? {
-            Poa::Log(buffer_arg, len) => self.log(buffer_arg, len),
+            Poa::Log(buffer) => self.log(buffer),
             Poa::GetVCpuArea => self.get_vcpu_area(),
             Poa::AllocateVector(vector, core) => self.allocate_vector(vector, core),
             Poa::Exit(code) => self.exit(code),

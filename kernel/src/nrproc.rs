@@ -408,9 +408,9 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn userspace_exec_slice(
-        on: &UserSlice,
-        f: Box<dyn Fn(&[u8]) -> KResult<()>>,
+    pub(crate) fn userspace_exec_slice<'a>(
+        on: &'a UserSlice,
+        f: Box<dyn Fn(&'a [u8]) -> KResult<()>>,
     ) -> Result<(), KError> {
         let node = *crate::environment::NODE_ID;
 

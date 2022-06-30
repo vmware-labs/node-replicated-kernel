@@ -6,7 +6,7 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-x86 = "0.48"
+x86 = "0.50"
 abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false }
 bitflags = "1.2"
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }

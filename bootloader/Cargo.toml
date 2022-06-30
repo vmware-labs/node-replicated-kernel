@@ -14,7 +14,7 @@ default = []
 bootloader_shared = { path = "../lib/bootloader_shared" }
 
 ## External dependencies
-x86 = "0.48"
+x86 = "0.50"
 elfloader = "0.14"
 log = { version = "0.4", default-features = false }
 arrayvec = { version = "0.7.0", default-features = false }

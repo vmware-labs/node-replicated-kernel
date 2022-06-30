@@ -305,7 +305,7 @@ impl Environment {
     #[cfg(target_os = "nrk")]
     pub fn tid() -> ThreadId {
         unsafe {
-            let tcb = x86::current::segmentation::fs_deref() as *const ThreadControlBlock;
+            let tcb = x86::current::segmentation::fs_deref!() as *const ThreadControlBlock;
             assert!(!tcb.is_null(), "Don't have TCB available?");
             (*tcb).tid
         }
@@ -324,7 +324,7 @@ impl Environment {
     #[cfg(target_os = "nrk")]
     pub fn thread<'a>() -> &'a mut ThreadControlBlock<'static> {
         unsafe {
-            let tcb = x86::current::segmentation::fs_deref() as *mut ThreadControlBlock;
+            let tcb = x86::current::segmentation::fs_deref!() as *mut ThreadControlBlock;
             assert!(!tcb.is_null(), "Don't have TCB available?");
             &mut *tcb
         }

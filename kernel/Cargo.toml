@@ -30,7 +30,7 @@ slabmalloc = "0.10"
 backtracer_core = "0.0.5"
 rawtime = "0.0.8"
 libacpica = "0.0.8"
-atopology = "0.0.30"
+atopology = "0.0.31"
 # External libraries we use:
 log = "0.4"
 displaydoc = { version = "0.2", default-features = false }
@@ -75,7 +75,7 @@ ctor = "0.1.20"
 memfile = "0.2.1"
 
 [target.'cfg(not(target_os = "none"))'.dev-dependencies]
-rexpect = { git = "https://github.com/gz/rexpect.git", branch = "fix-eof" }
+rexpect = { git = "https://github.com/gz/rexpect.git", branch = "eof-nix" }
 proptest = "1.0.0"
 hwloc2 = "2.2"
 env_logger = "0.9"

@@ -2660,7 +2660,12 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                     .workers(2)
                     .use_vmxnet3();
 
-                cmdline_controller = cmdline_controller.memory(core::cmp::max(49152, cores * 512));
+                if cfg!(feature = "smoke") {
+                    cmdline_controller = cmdline_controller.memory(8192);
+                } else {
+                    cmdline_controller =
+                        cmdline_controller.memory(core::cmp::max(49152, cores * 512));
+                }
                 cmdline_controller = cmdline_controller.nodes(0);
 
                 let mut output = String::new();
@@ -2684,7 +2689,11 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                     .use_vmxnet3()
                     .cmd(kernel_cmdline.as_str());
 
-                cmdline_client = cmdline_client.memory(core::cmp::max(49152, cores * 512));
+                if cfg!(feature = "smoke") {
+                    cmdline_client = cmdline_client.memory(8192);
+                } else {
+                    cmdline_client = cmdline_client.memory(core::cmp::max(49152, cores * 512));
+                }
                 cmdline_client = cmdline_client.nodes(0);
 
                 // Run the client and parse results

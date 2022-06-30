@@ -24,11 +24,8 @@ Run `bash setup.sh`, this will install required dependencies on Linux to build a
 1. `cd kernel`
 1. `python3 ./run.py`
 
-If you just want to compile the code you can also execute the build command with [xargo](https://github.com/japaric/xargo):
-
-1. ```RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build --target=x86_64-nrk```
-
-in the kernel directory (run.py will do that on your behalf).
+If you just want to compile the code you can also execute `run.py` with the
+`--norun` flag.
 
 ## Development
 

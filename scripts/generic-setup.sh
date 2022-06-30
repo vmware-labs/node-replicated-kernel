@@ -67,11 +67,6 @@ function install_rust_build_dependencies()
 {
     echo "rust build dependencies"
 
-    # Install xargo (used by build)
-    if [ ! -x "$(command -v xargo)" ]; then
-        cargo install xargo
-    fi
-
     # Install mdbook (used by docs/)
     if [ ! -x "$(command -v mdbook)" ]; then
         MDBOOK_FLAGS=""

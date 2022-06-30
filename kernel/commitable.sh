@@ -11,7 +11,7 @@ cargo fmt -- --check
 cd kernel
 
 # build kernel
-RUST_TARGET_PATH=`pwd`/src/arch/x86_64 xargo build -v --target=x86_64-nrk
+RUST_TARGET_PATH=`pwd`/src/arch/x86_64 cargo build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -v --target=x86_64-nrk
 
 # Try to compile with all/most of the code enabled
 python3 run.py --kfeatures ethernet shmem rackscale integration-test gdb --kgdb --norun
@@ -23,7 +23,7 @@ cargo run
 
 # compile init binary
 cd ../usr/init
-RUST_TARGET_PATH=`pwd`/../ xargo build --target x86_64-nrk-none --color always --release --all-features
+RUST_TARGET_PATH=`pwd`/../ cargo build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target x86_64-nrk-none --color always --release --all-features
 cd ../../kernel
 
 # run integration tests

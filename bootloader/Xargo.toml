@@ -1,7 +1,0 @@
-[dependencies]
-alloc = {}
-core = {}
-
-[dependencies.compiler_builtins]
-features = ["mem"]
-stage = 0

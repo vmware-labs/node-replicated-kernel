@@ -22,17 +22,7 @@ import tempfile
 from plumbum import colors, local, SshMachine
 from plumbum.commands import ProcessExecutionError
 
-from plumbum.cmd import whoami, python3, cat, getent, whoami
-try:
-    from plumbum.cmd import xargo
-except ImportError as e:
-    print("Unable to find the `xargo` binary in your $PATH")
-    print("")
-    print("Make sure to invoke `setup.sh` to install it.")
-    print("If you did that already, make sure the rust toolchain is on your path:")
-    print("Invoke `source $HOME/.cargo/env`")
-    sys.exit(errno.ENOENT)
-
+from plumbum.cmd import whoami, python3, cat, getent, whoami, cargo
 
 def exception_handler(exception_type, exception, traceback):
     print("%s: %s" % (exception_type.__name__, exception))
@@ -43,6 +33,7 @@ def exception_handler(exception_type, exception, traceback):
 #
 SCRIPT_PATH = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
 CARGO_DEFAULT_ARGS = ["--color", "always"]
+CARGO_NOSTD_BUILD_ARGS = ["-Z", "build-std=core,alloc", "-Z", "build-std-features=compiler-builtins-mem"]
 ARCH = "x86_64"
 
 NETWORK_CONFIG = {
@@ -175,14 +166,15 @@ def build_bootloader(args):
     uefi_build_args = ['build', '--target', UEFI_TARGET]
     uefi_build_args += ['--package', 'bootloader']
     uefi_build_args += CARGO_DEFAULT_ARGS
+    uefi_build_args += CARGO_NOSTD_BUILD_ARGS
 
     with local.cwd(BOOTLOADER_PATH):
         with local.env(RUST_TARGET_PATH=BOOTLOADER_PATH.absolute()):
             if args.verbose:
                 print("cd {}".format(BOOTLOADER_PATH))
-                print("RUST_TARGET_PATH={} xargo ".format(
+                print("RUST_TARGET_PATH={} cargo ".format(
                     BOOTLOADER_PATH.absolute()) + " ".join(uefi_build_args))
-            xargo(*uefi_build_args)
+            cargo(*uefi_build_args)
 
 
 def build_kernel(args):
@@ -198,11 +190,12 @@ def build_kernel(args):
             for feature in args.kfeatures:
                 build_args += ['--features', feature]
             build_args += CARGO_DEFAULT_ARGS
+            build_args += CARGO_NOSTD_BUILD_ARGS
             if args.verbose:
                 print("cd {}".format(KERNEL_PATH))
-                print("RUST_TARGET_PATH={} xargo ".format(
+                print("RUST_TARGET_PATH={} cargo ".format(
                     KERNEL_PATH / 'src' / 'arch' / ARCH) + " ".join(build_args))
-            xargo(*build_args)
+            cargo(*build_args)
 
 
 def build_user_libraries(args):
@@ -214,6 +207,7 @@ def build_user_libraries(args):
         build_args += ["--features", "virtio"]
     # else: use e1000 / wm0
     build_args += CARGO_DEFAULT_ARGS
+    build_args += CARGO_NOSTD_BUILD_ARGS
 
     # Make sure we build a static (.a) vibrio library
     # For linking with rumpkernel
@@ -222,15 +216,16 @@ def build_user_libraries(args):
             with local.env(RUST_TARGET_PATH=USR_PATH.absolute()):
                 if args.verbose:
                     print("cd {}".format(LIBS_PATH / "vibrio"))
-                    print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(USER_RUSTFLAGS,
+                    print("RUSTFLAGS={} RUST_TARGET_PATH={} cargo ".format(USER_RUSTFLAGS,
                                                                            USR_PATH.absolute()) + " ".join(build_args))
-                xargo(*build_args)
+                cargo(*build_args)
 
 
 def build_userspace(args):
     "Builds user-space programs"
     build_args_default = ['build', '--target', USER_TARGET]
     build_args_default += CARGO_DEFAULT_ARGS
+    build_args_default += CARGO_NOSTD_BUILD_ARGS
 
     for module in args.mods:
         if not (USR_PATH / module).exists():
@@ -250,9 +245,9 @@ def build_userspace(args):
                     log("Build user-module {}".format(module))
                     if args.verbose:
                         print("cd {}".format(USR_PATH / module))
-                        print("RUSTFLAGS={} RUST_TARGET_PATH={} xargo ".format(
+                        print("RUSTFLAGS={} RUST_TARGET_PATH={} cargo ".format(
                             USER_RUSTFLAGS, USR_PATH.absolute()) + " ".join(build_args))
-                    xargo(*build_args)
+                    cargo(*build_args)
 
 
 def deploy(args):

@@ -444,9 +444,9 @@ dependencies = [
 
 [[package]]
 name = "driverkit"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e618cc749610aab6ce16b1ef6b5b7b5b3b468e923e12629038fb52ffac79895b"
+checksum = "97a8b0f354736f2488766f0c10ba13656eee4e71ea26e09fc49cd849027d2b2c"
 dependencies = [
  "bit_field",
  "byteorder",
@@ -1188,9 +1188,9 @@ checksum = "0c520e05135d6e763148b6426a837e239041653ba7becd2e538c076c738025fc"
 
 [[package]]
 name = "pciid-parser"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69ec9d0b5e5494c978cf39ea0af8ce0f76ee32b9829078386dd35f2d7316a194"
+checksum = "27f5cd1f399d6fb6ac558ca476b30a2db496c2771ccfe759b62acd3236ae0aea"
 dependencies = [
  "tracing",
 ]

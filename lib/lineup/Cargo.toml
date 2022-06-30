@@ -12,9 +12,9 @@ crossbeam-queue = { version = "0.3", default-features = false, features = ["allo
 either = { version = "1.5", default-features = false }
 fringe = { git = "https://github.com/gz/libfringe.git", default-features = false, features = ["alloc"], branch = "new-asm-syntax" }
 hashbrown = { version = "0.11.2", features = [ "nightly" ] }
-rawtime = "0.0.7"
+rawtime = "0.0.8"
 backtracer_core = "0.0.5"
-x86 = "0.48"
+x86 = "0.50"
 log = "0.4.6"
 spin = "0.9"
 arr_macro = "0.1"

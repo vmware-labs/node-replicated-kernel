@@ -16,8 +16,8 @@ vibrio = { path = "../../lib/vibrio" }
 kpi = { path = "../../lib/kpi" }
 arrayvec = { version = "0.7.0", default-features = false }
 proptest = { git = "https://github.com/gz/proptest.git", branch = "x86-asm", default-features = false, features = ['alloc', 'hardware-rng'] }
-rawtime = "0.0.7"
-x86 = "0.48"
+rawtime = "0.0.8"
+x86 = "0.50"
 log = "0.4"
 #libm = "0.2.2"
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }

@@ -11,7 +11,7 @@ abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-st
 hashbrown = { version = "0.11", features = [ "nightly" ] }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 log = "0.4"
-rawtime = "0.0.7"
+rawtime = "0.0.8"
 smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "socket-tcp", "medium-ethernet" ] }
 vmxnet3 = { path = "../vmxnet3" }
 

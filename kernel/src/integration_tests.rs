@@ -778,7 +778,6 @@ fn dcm() {
     use rpc::RPCClient;
     use smoltcp::wire::IpAddress;
 
-    info!("About to start RPC client");
     let mut client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970)
         .expect("Failed to create ethernet RPC client");
     info!("Started RPC client!");
@@ -788,17 +787,19 @@ fn dcm() {
         cores: 1,
         memslices: 0,
     };
-    let mut res = AllocResponse { uuid1: 0, uuid2: 0 };
+    let mut res = AllocResponse { alloc_id: 0 };
 
     for i in 1..50 {
-        info!("Sending request: {:?}", i);
         client
             .call(100, 1, unsafe { &[req.as_bytes()] }, unsafe {
                 &mut [res.as_mut_bytes()]
             })
             .expect("Failed to send alloc request");
-    }
 
+        let alloc_id = res.alloc_id;
+        info!("Request {:?} sent, assigned ID is: {:?}", i, alloc_id);
+    }
+    info!("Finished sending requests!");
     shutdown(ExitReason::Ok);
 }
 

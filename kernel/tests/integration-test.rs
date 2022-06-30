@@ -2781,20 +2781,19 @@ fn s06_dcm() {
         .use_vmxnet3();
 
     let mut output = String::new();
+
     let mut qemu_run = || -> Result<WaitStatus> {
         let mut p = spawn_nrk(&cmdline)?;
         let mut dcm = spawn_dcm();
 
-        output += p.exp_string("About to start RPC client")?.as_str();
-        output += p.exp_string("Started RPC Client!")?.as_str();
+        output += p.exp_string("Started RPC client!")?.as_str();
+        output += p.exp_string("Finished sending requests!")?.as_str();
+        output += p.exp_eof()?.as_str();
 
-        // TODO: actually do something
-        std::thread::sleep(std::time::Duration::from_secs(6));
-
-        let ret = p.process.exit();
-        dcm.process.exit().unwrap();
-        ret
+        dcm.send_control('c')?;
+        p.process.exit()
     };
+
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 

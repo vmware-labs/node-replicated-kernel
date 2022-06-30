@@ -28,8 +28,7 @@ impl AllocRequest {
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct AllocResponse {
-    pub uuid1: u64,
-    pub uuid2: u64,
+    pub alloc_id: u64,
 }
 pub const RES_SIZE: usize = core::mem::size_of::<AllocResponse>();
 

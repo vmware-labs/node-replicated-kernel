@@ -2759,7 +2759,7 @@ fn s06_dcm() {
     use std::fs::remove_file;
 
     // Remove DCM log file
-    let file_name = "/home/hunhoffe/nrk2/kernel/dcm_output.txt";
+    let file_name = "dcm.log";
     let _ignore = remove_file(file_name);
 
     // Spawn DCM
@@ -2767,7 +2767,7 @@ fn s06_dcm() {
         // TODO: this assumes DCM is already an aliased command
         let mut b = spawn_bash(Some(45_000)).unwrap();
         b.send_line(
-            format!("java -jar -Dlog4j.configurationFile=/home/hunhoffe/bespin-dcm/src/main/resources/log4j2.xml /home/hunhoffe/bespin-dcm/target/scheduler-1.0-SNAPSHOT-jar-with-dependencies.jar > {}", file_name).as_str()
+            format!("java -jar ../nrk-dcm-scheduler/target/scheduler-1.0-SNAPSHOT-jar-with-dependencies.jar > {}", file_name).as_str()
         ).unwrap();
         b
     };

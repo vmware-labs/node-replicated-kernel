@@ -2777,7 +2777,7 @@ fn s06_dcm() {
         .kernel_feature("rackscale")
         .build();
     let cmdline = RunnerArgs::new_with_build("dcm", &build)
-        .timeout(30_000)
+        .timeout(45_000)
         .use_vmxnet3();
 
     let mut output = String::new();

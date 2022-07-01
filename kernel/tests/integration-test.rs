@@ -2786,6 +2786,7 @@ fn s06_dcm() {
         let mut p = spawn_nrk(&cmdline)?;
         let mut dcm = spawn_dcm();
 
+        output += p.exp_string("Created UDP socket!")?.as_str();
         output += p.exp_string("Started RPC client!")?.as_str();
         output += p.exp_string("Finished sending requests!")?.as_str();
         output += p.exp_eof()?.as_str();

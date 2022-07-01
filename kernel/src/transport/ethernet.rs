@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use fallible_collections::FallibleVecGlobal;
 use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
@@ -19,7 +21,7 @@ use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
 #[allow(unused)]
-pub(crate) fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
+pub(crate) fn init_network<'a>() -> KResult<Arc<RefCell<Interface<'a, DevQueuePhy>>>> {
     const VMWARE_INC: u16 = 0x15ad;
     const VMXNET_DEV: u16 = 0x07b0;
     if let Some(vmxnet3_dev) = claim_device(VMWARE_INC, VMXNET_DEV) {
@@ -78,7 +80,7 @@ pub(crate) fn init_network<'a>() -> KResult<Interface<'a, DevQueuePhy>> {
             .routes(routes)
             .neighbor_cache(neighbor_cache)
             .finalize();
-        Ok(iface)
+        Ok(Arc::new(RefCell::new(iface)))
     } else {
         Err(KError::VMXNet3DeviceNotFound)
     }

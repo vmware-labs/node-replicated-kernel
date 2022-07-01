@@ -105,7 +105,7 @@ gdb = []
 
 # Runs an integration test (supplied as commandline `test=` argument) instead of
 # standard kernel main function.
-integration-test = ["shmem", "ethernet"]
+integration-test = ["shmem", "ethernet", "rackscale"]
 # smoke: Shortens long running benchmarks to test just functionality.
 smoke = []
 # baremetal: Compile benchmarks for running on bare-metal.

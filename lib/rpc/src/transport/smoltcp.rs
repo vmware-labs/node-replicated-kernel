@@ -1,6 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use log::{debug, trace, warn};
@@ -19,7 +20,7 @@ const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
 
 pub struct TCPTransport<'a> {
-    iface: RefCell<Interface<'a, DevQueuePhy>>,
+    iface: Arc<RefCell<Interface<'a, DevQueuePhy>>>,
     server_handle: SocketHandle,
     server_ip: Option<IpAddress>,
     server_port: u16,
@@ -30,7 +31,7 @@ impl TCPTransport<'_> {
     pub fn new(
         server_ip: Option<IpAddress>,
         server_port: u16,
-        iface: Interface<'_, DevQueuePhy>,
+        iface: Arc<RefCell<Interface<'_, DevQueuePhy>>>,
     ) -> TCPTransport<'_> {
         lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
         lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
@@ -49,14 +50,11 @@ impl TCPTransport<'_> {
         let mut tcp_socket = TcpSocket::new(socket_rx_buffer, socket_tx_buffer);
         tcp_socket.set_ack_delay(None);
 
-        // Create wrapper for iface
-        let iface_ref = RefCell::new(iface);
-
         // Add socket to interface and record socket handle
-        let server_handle = iface_ref.borrow_mut().add_socket(tcp_socket);
+        let server_handle = iface.borrow_mut().add_socket(tcp_socket);
 
         TCPTransport {
-            iface: iface_ref,
+            iface: iface,
             server_handle,
             server_ip,
             server_port,

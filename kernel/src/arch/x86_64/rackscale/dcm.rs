@@ -53,25 +53,24 @@ impl AllocResponse {
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct AllocAssignment {
-    pub uuid1: u64,
-    pub uuid2: u64,
-    pub node: u8,
+    pub alloc_id: u64,
+    pub node: u64,
 }
-pub const HDR_LEN: usize = core::mem::size_of::<AllocAssignment>();
+pub const ALLOC_LEN: usize = core::mem::size_of::<AllocAssignment>();
 
 impl AllocAssignment {
     /// # Safety
     /// - `self` must be valid AllocAssignment
-    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; HDR_LEN] {
-        ::core::slice::from_raw_parts_mut((self as *const AllocAssignment) as *mut u8, HDR_LEN)
+    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; ALLOC_LEN] {
+        ::core::slice::from_raw_parts_mut((self as *const AllocAssignment) as *mut u8, ALLOC_LEN)
             .try_into()
             .expect("slice with incorrect length")
     }
 
     /// # Safety
     /// - `self` must be valid AllocAssignment
-    pub unsafe fn as_bytes(&self) -> &[u8; HDR_LEN] {
-        ::core::slice::from_raw_parts((self as *const AllocAssignment) as *const u8, HDR_LEN)
+    pub unsafe fn as_bytes(&self) -> &[u8; ALLOC_LEN] {
+        ::core::slice::from_raw_parts((self as *const AllocAssignment) as *const u8, ALLOC_LEN)
             .try_into()
             .expect("slice with incorrect length")
     }

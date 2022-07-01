@@ -5,3 +5,4 @@
 [submodule "nrk-dcm-scheduler"]
 	path = nrk-dcm-scheduler
 	url = git@github.com:hunhoffe/nrk-dcm-scheduler.git
+	branch = scheduler

@@ -765,142 +765,140 @@ fn vmxnet_smoltcp() {
 }
 
 /// Test vmxnet3 integrated with smoltcp.s
-#[cfg(all(
-    feature = "rackscale",
-    feature = "ethernet",
-    feature = "integration-test",
-    target_arch = "x86_64"
-))]
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 fn dcm() {
-    use crate::arch::rackscale::dcm::*;
-    use crate::transport::ethernet::init_network;
+    #[cfg(feature = "rackscale")]
+    {
+        use crate::arch::rackscale::dcm::*;
+        use crate::transport::ethernet::init_network;
 
-    use alloc::boxed::Box;
-    use alloc::sync::Arc;
-    use alloc::vec;
-    use core::cell::Cell;
-    use hashbrown::HashMap;
-    use log::{debug, info};
-    use rpc::client::Client;
-    use rpc::transport::TCPTransport;
-    use rpc::RPCClient;
-    use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
-    use smoltcp::time::Instant;
-    use smoltcp::wire::IpAddress;
+        use alloc::boxed::Box;
+        use alloc::sync::Arc;
+        use alloc::vec;
+        use core::cell::Cell;
+        use hashbrown::HashMap;
+        use log::{debug, info};
+        use rpc::client::Client;
+        use rpc::transport::TCPTransport;
+        use rpc::RPCClient;
+        use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
+        use smoltcp::time::Instant;
+        use smoltcp::wire::IpAddress;
 
-    // Create network interface
-    let iface = init_network().expect("Failed to initialize network interface");
+        // Create network interface
+        let iface = init_network().expect("Failed to initialize network interface");
 
-    // Create UDP socket & clock
-    let udp_rx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; ALLOC_LEN]);
-    let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 1]);
-    let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
-    let udp1_handle = iface.borrow_mut().add_socket(udp_socket);
+        // Create UDP socket & clock
+        let udp_rx_buffer =
+            UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; ALLOC_LEN]);
+        let udp_tx_buffer = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 1]);
+        let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+        let udp1_handle = iface.borrow_mut().add_socket(udp_socket);
 
-    #[derive(Debug)]
-    #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-    pub(crate) struct Clock(Cell<Instant>);
+        #[derive(Debug)]
+        #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+        pub(crate) struct Clock(Cell<Instant>);
 
-    impl Clock {
-        fn new() -> Clock {
-            let rt = rawtime::Instant::now().as_nanos();
-            let rt_millis = (rt / 1_000_000) as i64;
-            Clock(Cell::new(Instant::from_millis(rt_millis)))
-        }
-
-        fn elapsed(&self) -> Instant {
-            self.0.get()
-        }
-    }
-    let clock = Clock::new();
-    info!("Created UDP socket!");
-
-    // Create and connect RPC Client
-    let rpc_transport = Box::try_new(TCPTransport::new(
-        Some(IpAddress::v4(172, 31, 0, 20)),
-        6970,
-        Arc::clone(&iface),
-    ))
-    .expect("Failed to initialize TCP transport");
-    let mut client =
-        Box::try_new(Client::new(rpc_transport)).expect("Failed to create ethernet RPC client");
-    client.connect().expect("Failed to connect RPC client");
-    info!("Started RPC client!");
-
-    let req = AllocRequest {
-        application: 1,
-        cores: 1,
-        memslices: 0,
-    };
-    let mut res = AllocResponse { alloc_id: 0 };
-    let mut assignment = AllocAssignment {
-        alloc_id: 0,
-        node: 0,
-    };
-
-    const NUM_REQUESTS: usize = 50;
-    let mut map: HashMap<u64, u64> = HashMap::new();
-    let mut requests_sent = 0;
-    let mut allocs_received = 0;
-    while allocs_received < NUM_REQUESTS {
-        // Check for requests fulfilled (e.g., assigned)
-        let mut has_received = true;
-        while has_received {
-            match iface.borrow_mut().poll(clock.elapsed()) {
-                Ok(_) => {}
-                Err(e) => {
-                    debug!("poll error: {}", e);
-                }
+        impl Clock {
+            fn new() -> Clock {
+                let rt = rawtime::Instant::now().as_nanos();
+                let rt_millis = (rt / 1_000_000) as i64;
+                Clock(Cell::new(Instant::from_millis(rt_millis)))
             }
 
-            {
-                has_received = false;
-                let mut my_iface = iface.borrow_mut();
-                let socket = my_iface.get_socket::<UdpSocket>(udp1_handle);
-                if !socket.is_open() {
-                    socket.bind(6971).unwrap()
+            fn elapsed(&self) -> Instant {
+                self.0.get()
+            }
+        }
+        let clock = Clock::new();
+        info!("Created UDP socket!");
+
+        // Create and connect RPC Client
+        let rpc_transport = Box::try_new(TCPTransport::new(
+            Some(IpAddress::v4(172, 31, 0, 20)),
+            6970,
+            Arc::clone(&iface),
+        ))
+        .expect("Failed to initialize TCP transport");
+        let mut client =
+            Box::try_new(Client::new(rpc_transport)).expect("Failed to create ethernet RPC client");
+        client.connect().expect("Failed to connect RPC client");
+        info!("Started RPC client!");
+
+        let req = AllocRequest {
+            application: 1,
+            cores: 1,
+            memslices: 0,
+        };
+        let mut res = AllocResponse { alloc_id: 0 };
+        let mut assignment = AllocAssignment {
+            alloc_id: 0,
+            node: 0,
+        };
+
+        const NUM_REQUESTS: usize = 50;
+        let mut map: HashMap<u64, u64> = HashMap::new();
+        let mut requests_sent = 0;
+        let mut allocs_received = 0;
+        while allocs_received < NUM_REQUESTS {
+            // Check for requests fulfilled (e.g., assigned)
+            let mut has_received = true;
+            while has_received {
+                match iface.borrow_mut().poll(clock.elapsed()) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        debug!("poll error: {}", e);
+                    }
                 }
 
-                if socket.can_recv() {
-                    match socket.recv_slice(unsafe { assignment.as_mut_bytes() }) {
-                        Ok((_, endpoint)) => {
-                            map.insert(assignment.alloc_id, assignment.node);
-                            allocs_received += 1;
-                            info!(
-                                "Received assignment: {:?} to node {:?}, total received: {:?}",
-                                assignment.alloc_id, assignment.node, allocs_received
-                            );
-                            has_received = true;
-                            socket.send_slice(&[1u8], endpoint).unwrap();
-                        }
-                        Err(e) => {
-                            debug!("Received nothing? {:?}", e);
+                {
+                    has_received = false;
+                    let mut my_iface = iface.borrow_mut();
+                    let socket = my_iface.get_socket::<UdpSocket>(udp1_handle);
+                    if !socket.is_open() {
+                        socket.bind(6971).unwrap()
+                    }
+
+                    if socket.can_recv() {
+                        match socket.recv_slice(unsafe { assignment.as_mut_bytes() }) {
+                            Ok((_, endpoint)) => {
+                                map.insert(assignment.alloc_id, assignment.node);
+                                allocs_received += 1;
+                                info!(
+                                    "Received assignment: {:?} to node {:?}, total received: {:?}",
+                                    assignment.alloc_id, assignment.node, allocs_received
+                                );
+                                has_received = true;
+                                socket.send_slice(&[1u8], endpoint).unwrap();
+                            }
+                            Err(e) => {
+                                debug!("Received nothing? {:?}", e);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // If there are requests left to send, do so.
-        if requests_sent < NUM_REQUESTS {
-            client
-                .call(100, 1, unsafe { &[req.as_bytes()] }, unsafe {
-                    &mut [res.as_mut_bytes()]
-                })
-                .expect("Failed to send alloc request");
+            // If there are requests left to send, do so.
+            if requests_sent < NUM_REQUESTS {
+                client
+                    .call(100, 1, unsafe { &[req.as_bytes()] }, unsafe {
+                        &mut [res.as_mut_bytes()]
+                    })
+                    .expect("Failed to send alloc request");
 
-            map.insert(res.alloc_id, u64::MAX);
-            info!(
-                "Request {:?} sent, assigned ID is: {:?}",
-                requests_sent, res.alloc_id
-            );
-            requests_sent += 1;
+                map.insert(res.alloc_id, u64::MAX);
+                info!(
+                    "Request {:?} sent, assigned ID is: {:?}",
+                    requests_sent, res.alloc_id
+                );
+                requests_sent += 1;
+            }
         }
+        info!("Finished sending requests!");
+
+        // TODO: double check map
     }
-    info!("Finished sending requests!");
-
-    // TODO: double check map
-
     shutdown(ExitReason::Ok);
 }
 

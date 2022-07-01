@@ -2,7 +2,3 @@
 	path = lib/node-replication
 	url = git@github.com:vmware/node-replication.git
 	branch = mut_scan_vec
-[submodule "nrk-dcm-scheduler"]
-	path = nrk-dcm-scheduler
-	url = git@github.com:hunhoffe/nrk-dcm-scheduler.git
-	branch = scheduler

@@ -6,7 +6,6 @@
 // This queue is copy pasted from old rust stdlib.
 
 use alloc::alloc::{alloc, Layout};
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::alloc::Allocator;
 use core::cell::UnsafeCell;
@@ -17,6 +16,12 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 const DEFAULT_QUEUE_SIZE: usize = 32;
 pub const QUEUE_ENTRY_SIZE: usize = 8192;
+
+#[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
+pub enum QueueError {
+    AllocError,
+    NoData,
+}
 
 #[repr(C)]
 struct Node {
@@ -40,12 +45,14 @@ unsafe impl<'a> Send for State<'a> {}
 unsafe impl<'a> Sync for State<'a> {}
 
 impl<'a> State<'a> {
-    fn with_capacity(capacity: usize) -> Result<Box<State<'a>>, ()> {
+    fn with_capacity(capacity: usize) -> Result<Arc<State<'a>>, QueueError> {
         let (num, buf_size) = Self::capacity(capacity);
         let mem = unsafe {
             alloc(
-                Layout::from_size_align(buf_size, align_of::<State>())
-                    .expect("Alignment error while allocating the Queue!"),
+                match Layout::from_size_align(buf_size, align_of::<State>()) {
+                    Ok(layout) => layout,
+                    Err(_) => return Err(QueueError::AllocError),
+                },
             )
         };
         if mem.is_null() {
@@ -59,12 +66,14 @@ impl<'a> State<'a> {
         init: bool,
         capacity: usize,
         alloc: A,
-    ) -> Result<Box<State<'a>>, ()> {
+    ) -> Result<Arc<State<'a>>, QueueError> {
         let (num, buf_size) = Self::capacity(capacity);
         let mem = alloc
             .allocate(
-                Layout::from_size_align(buf_size, align_of::<State>())
-                    .expect("Alignment error while allocating the Queue!"),
+                match Layout::from_size_align(buf_size, align_of::<State>()) {
+                    Ok(layout) => layout,
+                    Err(_) => return Err(QueueError::AllocError),
+                },
             )
             .expect("Failed to allocate memory for the Queue!");
         let mem = mem.as_ptr() as *mut u8;
@@ -72,7 +81,7 @@ impl<'a> State<'a> {
         Self::init(init, num, mem)
     }
 
-    fn init(init: bool, num: usize, mem: *mut u8) -> Result<Box<State<'a>>, ()> {
+    fn init(init: bool, num: usize, mem: *mut u8) -> Result<Arc<State<'a>>, QueueError> {
         let state = State {
             mask: num - 1,
             enqueue_pos: unsafe { &mut *(mem as *mut AtomicUsize) },
@@ -110,7 +119,7 @@ impl<'a> State<'a> {
             }
         }
 
-        Ok(Box::new(state))
+        Ok(Arc::new(state))
     }
 
     fn capacity(capacity: usize) -> (usize, usize) {
@@ -148,49 +157,51 @@ impl<'a> State<'a> {
             let seq = (*node.get()).sequence.load(Acquire);
             let diff: isize = seq as isize - pos as isize;
 
-            if diff == 0 {
-                match (*self.enqueue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed) {
-                    Ok(enqueue_pos) => {
-                        debug_assert_eq!(enqueue_pos, pos);
-                        (*node.get()).data_len = value.len() as u16;
-                        (*node.get()).value[..value.len()].copy_from_slice(value);
-                        (*node.get()).sequence.store(pos + 1, Release);
-                        break;
+            match diff {
+                0 => {
+                    match (*self.enqueue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed)
+                    {
+                        Ok(enqueue_pos) => {
+                            debug_assert_eq!(enqueue_pos, pos);
+                            (*node.get()).data_len = value.len() as u16;
+                            (*node.get()).value[..value.len()].copy_from_slice(value);
+                            (*node.get()).sequence.store(pos + 1, Release);
+                            break;
+                        }
+                        Err(enqueue_pos) => pos = enqueue_pos,
                     }
-                    Err(enqueue_pos) => pos = enqueue_pos,
                 }
-            } else if diff < 0 {
-                return false;
-            } else {
-                pos = self.enqueue_pos(Relaxed);
+                n if n < 0 => return false,
+                _ => pos = self.enqueue_pos(Relaxed),
             }
         }
         true
     }
 
-    unsafe fn pop(&self, value: &mut [u8]) -> Result<usize, ()> {
+    unsafe fn pop(&self, value: &mut [u8]) -> Result<usize, QueueError> {
         let mask = self.mask;
         let mut pos = self.dequeue_pos(Relaxed);
         loop {
             let node = &self.buffer[pos & mask];
             let seq = (*node.get()).sequence.load(Acquire);
             let diff: isize = seq as isize - (pos + 1) as isize;
-            if diff == 0 {
-                match (*self.dequeue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed) {
-                    Ok(dequeue_pos) => {
-                        debug_assert_eq!(dequeue_pos, pos);
-                        let data_len = usize::from((*node.get()).data_len);
-                        assert!(data_len <= value.len());
-                        value[..data_len].copy_from_slice(&(*node.get()).value[..data_len]);
-                        (*node.get()).sequence.store(pos + mask + 1, Release);
-                        return Ok(data_len);
+            match diff {
+                0 => {
+                    match (*self.dequeue_pos).compare_exchange_weak(pos, pos + 1, Relaxed, Relaxed)
+                    {
+                        Ok(dequeue_pos) => {
+                            debug_assert_eq!(dequeue_pos, pos);
+                            let data_len = usize::from((*node.get()).data_len);
+                            assert!(data_len <= value.len());
+                            value[..data_len].copy_from_slice(&(*node.get()).value[..data_len]);
+                            (*node.get()).sequence.store(pos + mask + 1, Release);
+                            return Ok(data_len);
+                        }
+                        Err(dequeue_pos) => pos = dequeue_pos,
                     }
-                    Err(dequeue_pos) => pos = dequeue_pos,
                 }
-            } else if diff < 0 {
-                return Err(());
-            } else {
-                pos = self.dequeue_pos(Relaxed);
+                n if n < 0 => return Err(QueueError::NoData),
+                _ => pos = self.dequeue_pos(Relaxed),
             }
         }
     }
@@ -208,19 +219,17 @@ impl<'a> State<'a> {
 
 // Lock-free MPMC queue.
 pub struct Queue<'a> {
-    state: Arc<Box<State<'a>>>,
+    state: Arc<State<'a>>,
 }
 
 impl<'a> Queue<'a> {
-    pub fn new() -> Result<Queue<'a>, ()> {
-        State::with_capacity(DEFAULT_QUEUE_SIZE).map(|state| Queue {
-            state: Arc::new(state),
-        })
+    pub fn new() -> Result<Queue<'a>, QueueError> {
+        State::with_capacity(DEFAULT_QUEUE_SIZE).map(|state| Queue { state })
     }
 
-    pub fn with_capacity(capacity: usize) -> Result<Queue<'a>, ()> {
+    pub fn with_capacity(capacity: usize) -> Result<Queue<'a>, QueueError> {
         Ok(Queue {
-            state: Arc::new(State::with_capacity(capacity)?),
+            state: State::with_capacity(capacity)?,
         })
     }
 
@@ -228,9 +237,9 @@ impl<'a> Queue<'a> {
         init: bool,
         capacity: usize,
         alloc: A,
-    ) -> Result<Queue<'a>, ()> {
+    ) -> Result<Queue<'a>, QueueError> {
         Ok(Queue {
-            state: Arc::new(State::with_capacity_in(init, capacity, alloc)?),
+            state: State::with_capacity_in(init, capacity, alloc)?,
         })
     }
 
@@ -238,12 +247,16 @@ impl<'a> Queue<'a> {
         unsafe { self.state.push(value) }
     }
 
-    pub fn dequeue(&self, value: &mut [u8]) -> Result<usize, ()> {
+    pub fn dequeue(&self, value: &mut [u8]) -> Result<usize, QueueError> {
         unsafe { self.state.pop(value) }
     }
 
     pub fn len(&self) -> usize {
         unsafe { self.state.len() }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        unsafe { self.state.len() == 0 }
     }
 }
 

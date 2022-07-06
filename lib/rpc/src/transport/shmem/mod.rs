@@ -6,7 +6,7 @@ pub mod allocator;
 pub mod transport;
 
 mod queue_mpmc;
-pub use queue_mpmc::Queue;
+pub use queue_mpmc::{Queue, QueueError};
 
 #[repr(transparent)]
 pub struct Sender<'a>(Arc<Queue<'a>>);
@@ -55,13 +55,13 @@ impl<'a> Receiver<'a> {
     pub fn recv(&self, data_out: &mut [u8]) -> usize {
         loop {
             let ret = self.0.dequeue(data_out);
-            if ret.is_ok() {
-                return ret.unwrap();
+            if let Ok(bytes_received) = ret {
+                return bytes_received;
             }
         }
     }
 
-    pub fn try_recv(&self, data_out: &mut [u8]) -> Result<usize, ()> {
+    pub fn try_recv(&self, data_out: &mut [u8]) -> Result<usize, QueueError> {
         self.0.dequeue(data_out)
     }
 }

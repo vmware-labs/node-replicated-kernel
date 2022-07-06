@@ -56,6 +56,28 @@ impl<'t, 'a> Server<'a> {
         Ok(self.hdr.borrow().msg_type)
     }
 
+    /// receives next RPC call with RPC ID
+    fn try_receive(&self) -> Result<Option<RPCType>, RPCError> {
+        // Attempt to receive request header
+        {
+            let mut hdr = self.hdr.borrow_mut();
+            let hdr_slice = unsafe { hdr.as_mut_bytes() };
+            match self.transport.try_recv(hdr_slice)? {
+                true => {}
+                false => return Ok(None),
+            }
+        }
+
+        // If header was received, receive the rest
+        {
+            let hdr = self.hdr.borrow();
+            let total_msg_data = hdr.msg_len as usize;
+            let mut buff = self.buff.borrow_mut();
+            self.transport.recv(&mut buff[..total_msg_data]).unwrap();
+        }
+        Ok(Some(self.hdr.borrow().msg_type))
+    }
+
     /// Replies an RPC call with results
     fn reply(&self) -> Result<(), RPCError> {
         // Send response header + data
@@ -103,21 +125,49 @@ impl<'a> RPCServer<'a> for Server<'a> {
         Ok(client_id)
     }
 
-    /// Run the RPC server
-    fn run_server(&self) -> Result<(), RPCError> {
-        loop {
-            let rpc_id = self.receive()?;
-            match self.handlers.borrow().get(&rpc_id) {
+    /// Handle 1 RPC per client
+    fn handle(&self) -> Result<(), RPCError> {
+        let rpc_id = self.receive()?;
+        match self.handlers.borrow().get(&rpc_id) {
+            Some(func) => {
+                {
+                    let mut hdr = self.hdr.borrow_mut();
+                    func(&mut hdr, &mut self.buff.borrow_mut())?;
+                }
+                self.reply()
+            }
+            None => {
+                debug!("Invalid RPCType({}), ignoring", rpc_id);
+                Ok(())
+            }
+        }
+    }
+
+    /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
+    fn try_handle(&self) -> Result<bool, RPCError> {
+        match self.try_receive()? {
+            Some(rpc_id) => match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
                     {
                         let mut hdr = self.hdr.borrow_mut();
                         func(&mut hdr, &mut self.buff.borrow_mut())?;
                     }
                     self.reply()?;
+                    Ok(true)
                 }
-                None => debug!("Invalid RPCType({}), ignoring", rpc_id),
-            }
-            debug!("Finished handling RPC");
+                None => {
+                    debug!("Invalid RPCType({}), ignoring", rpc_id);
+                    Ok(false)
+                }
+            },
+            None => Ok(false),
+        }
+    }
+
+    /// Run the RPC server
+    fn run_server(&self) -> Result<(), RPCError> {
+        loop {
+            let _ = self.handle()?;
         }
     }
 }

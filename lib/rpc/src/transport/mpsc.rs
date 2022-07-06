@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::vec::Vec;
 
 use crate::rpc::*;
@@ -39,6 +39,28 @@ impl Transport for MPSCTransport {
         self.tx
             .send(data_out.to_vec())
             .map_err(|_my_err| RPCError::TransportError)
+    }
+
+    /// Non-blocking, receive data from a remote node - will not receive partial data
+    fn try_recv(&self, data_in: &mut [u8]) -> Result<bool, RPCError> {
+        if data_in.is_empty() {
+            return Ok(true);
+        }
+
+        // Receive some data
+        return match self.rx.try_recv() {
+            Ok(recv_buff) => {
+                data_in[..recv_buff.len()].clone_from_slice(&recv_buff[..]);
+                if data_in.len() == recv_buff.len() {
+                    Ok(true)
+                } else {
+                    self.recv(&mut data_in[recv_buff.len()..])?;
+                    Ok(true)
+                }
+            }
+            Err(TryRecvError::Empty) => Ok(false),
+            Err(TryRecvError::Disconnected) => Err(RPCError::TransportError),
+        };
     }
 
     /// Receive data from a remote node
@@ -92,11 +114,20 @@ mod tests {
         thread::spawn(move || {
             // In a new server thread, receive then send data
             let mut server_data = [0u8; 1024];
-            server_transport
-                .recv(&mut server_data[0..send_data.len()])
-                .unwrap();
+            assert_eq!(
+                true,
+                server_transport
+                    .try_recv(&mut server_data[0..send_data.len()])
+                    .unwrap()
+            );
             assert_eq!(&send_data, &server_data[0..send_data.len()]);
             server_transport.send(&send_data).unwrap();
+            assert_eq!(
+                false,
+                server_transport
+                    .try_recv(&mut server_data[0..send_data.len()])
+                    .unwrap()
+            );
         });
 
         // In the original thread, send then receive data

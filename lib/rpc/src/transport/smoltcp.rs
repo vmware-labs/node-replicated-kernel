@@ -54,7 +54,7 @@ impl TCPTransport<'_> {
         let server_handle = iface.borrow_mut().add_socket(tcp_socket);
 
         TCPTransport {
-            iface: iface,
+            iface,
             server_handle,
             server_ip,
             server_port,
@@ -113,6 +113,43 @@ impl Transport for TCPTransport<'_> {
                     }
                 }
             }
+        }
+    }
+
+    fn try_recv(&self, data_in: &mut [u8]) -> Result<bool, RPCError> {
+        trace!("Attempting to try_recv {:?} bytes", data_in.len());
+        if data_in.is_empty() {
+            return Ok(true);
+        }
+
+        let bytes_received = {
+            let mut iface = self.iface.borrow_mut();
+            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+
+            match socket.recv_slice(&mut data_in[..]) {
+                Ok(bytes_received) => {
+                    trace!(
+                        "try_recv [{:?}-{:?}] {:?}",
+                        0,
+                        data_in.len(),
+                        bytes_received
+                    );
+                    bytes_received
+                }
+                Err(_) => 0,
+            }
+        };
+
+        if bytes_received == data_in.len() {
+            // Exit if finished receiving data
+            Ok(true)
+        } else if bytes_received == 0 {
+            // Exit if no data to receive
+            Ok(false)
+        } else {
+            // Partial data was received, blocking receive the rest
+            let _ = self.recv(&mut data_in[bytes_received..])?;
+            Ok(true)
         }
     }
 

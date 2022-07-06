@@ -31,6 +31,15 @@ impl<'t, 'a> ShmemServer<'a> {
     }
 
     /// receives next RPC call with RPC ID
+    fn try_receive(&self) -> Result<Option<RPCType>, RPCError> {
+        let buffer = unsafe { (*self.mbuf.get()).as_mut_bytes() };
+        match self.transport.try_recv(buffer)? {
+            true => unsafe { Ok(Some((*self.mbuf.get()).hdr.msg_type)) },
+            false => Ok(None),
+        }
+    }
+
+    /// receives next RPC call with RPC ID
     fn receive(&self) -> Result<RPCType, RPCError> {
         let buffer = unsafe { (*self.mbuf.get()).as_mut_bytes() };
         self.transport.recv(buffer)?;
@@ -79,18 +88,43 @@ impl<'a> RPCServer<'a> for ShmemServer<'a> {
         Ok(client_id)
     }
 
-    /// Run the RPC server
-    fn run_server(&self) -> Result<(), RPCError> {
-        loop {
-            let rpc_id = self.receive()?;
-            match self.handlers.borrow().get(&rpc_id) {
+    /// Handle 1 RPC per client
+    fn handle(&self) -> Result<(), RPCError> {
+        let rpc_id = self.receive()?;
+        match self.handlers.borrow().get(&rpc_id) {
+            Some(func) => {
+                unsafe { func(&mut (*self.mbuf.get()).hdr, &mut (*self.mbuf.get()).data)? };
+                self.reply()
+            }
+            None => {
+                debug!("Invalid RPCType({}), ignoring", rpc_id);
+                Ok(())
+            }
+        }
+    }
+
+    /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
+    fn try_handle(&self) -> Result<bool, RPCError> {
+        match self.try_receive()? {
+            Some(rpc_id) => match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
                     unsafe { func(&mut (*self.mbuf.get()).hdr, &mut (*self.mbuf.get()).data)? };
                     self.reply()?;
+                    Ok(true)
                 }
-                None => debug!("Invalid RPCType({}), ignoring", rpc_id),
-            }
-            debug!("Finished handling RPC");
+                None => {
+                    debug!("Invalid RPCType({}), ignoring", rpc_id);
+                    Ok(false)
+                }
+            },
+            None => Ok(false),
+        }
+    }
+
+    /// Run the RPC server
+    fn run_server(&self) -> Result<(), RPCError> {
+        loop {
+            let _ = self.handle()?;
         }
     }
 }

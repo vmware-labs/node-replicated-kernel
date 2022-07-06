@@ -13,6 +13,9 @@ pub trait Transport {
     /// Receive data from a remote node
     fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError>;
 
+    /// Non-blocking, receive data from a remote node - will not receive partial data
+    fn try_recv(&self, data_in: &mut [u8]) -> Result<bool, RPCError>;
+
     /// Controller-side implementation for LITE join_cluster()
     fn client_connect(&mut self) -> Result<(), RPCError>;
 

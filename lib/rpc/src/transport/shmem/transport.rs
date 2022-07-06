@@ -39,6 +39,18 @@ impl<'a> Transport for ShmemTransport<'a> {
         }
     }
 
+    fn try_recv(&self, data_in: &mut [u8]) -> Result<bool, RPCError> {
+        if data_in.is_empty() {
+            return Ok(true);
+        }
+
+        // TODO: how to handle didn't all fit in one entry?
+        match self.rx.try_recv(data_in) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
     /// Receive data from a remote node
     fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
         if data_in.is_empty() {
@@ -89,10 +101,20 @@ mod tests {
         thread::spawn(move || {
             // In a new server thread, receive then send data
             let mut server_data = [0u8; QUEUE_ENTRY_SIZE];
-            server_transport
-                .recv(&mut server_data[0..send_data.len()])
-                .unwrap();
+            assert_eq!(
+                true,
+                server_transport
+                    .try_recv(&mut server_data[0..send_data.len()])
+                    .unwrap()
+            );
             assert_eq!(&send_data, &server_data[0..send_data.len()]);
+            server_transport.send(&send_data).unwrap();
+            assert_eq!(
+                false,
+                server_transport
+                    .try_recv(&mut server_data[0..send_data.len()])
+                    .unwrap()
+            );
             server_transport.send(&send_data).unwrap();
         });
 
@@ -102,6 +124,13 @@ mod tests {
         client_transport
             .recv(&mut client_data[0..send_data.len()])
             .unwrap();
+        assert_eq!(&send_data, &client_data[0..send_data.len()]);
+        assert_eq!(
+            true,
+            client_transport
+                .try_recv(&mut client_data[0..send_data.len()])
+                .unwrap()
+        );
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
     }
 

@@ -19,10 +19,16 @@ pub trait RPCServer<'a> {
     where
         'c: 'a;
 
-    ///  Accept an RPC client
+    /// Accept an RPC client
     fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<NodeId, RPCError>
     where
         'c: 'a;
+
+    /// Handle 1 RPC per client
+    fn handle(&self) -> Result<(), RPCError>;
+
+    /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
+    fn try_handle(&self) -> Result<bool, RPCError>;
 
     /// Run the RPC server
     fn run_server(&self) -> Result<(), RPCError>;

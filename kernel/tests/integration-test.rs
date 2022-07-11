@@ -870,6 +870,21 @@ fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     ret
 }
 
+// Spawn DCM
+fn spawn_dcm() -> Result<rexpect::session::PtyReplSession> {
+    use std::fs::remove_file;
+
+    // Remove existing DCM log file
+    let file_name = "dcm.log";
+    let _ignore = remove_file(file_name);
+
+    // Start DCM
+    let mut b = spawn_bash(Some(45_000))?;
+    b.send_line(format!("java -jar ../target/dcm-scheduler.jar > {}", file_name).as_str())
+        .unwrap();
+    Ok(b)
+}
+
 /// Spawns a DHCP server on our host
 ///
 /// It uses our dhcpd config and listens on the tap0 interface
@@ -2756,22 +2771,6 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_dcm() {
-    use std::fs::remove_file;
-
-    // Remove DCM log file
-    let file_name = "dcm.log";
-    let _ignore = remove_file(file_name);
-
-    // Spawn DCM
-    let spawn_dcm = || -> rexpect::session::PtyReplSession {
-        // TODO: this assumes DCM is already an aliased command
-        let mut b = spawn_bash(Some(45_000)).unwrap();
-        b.send_line(
-            format!("java -jar ../nrk-dcm-scheduler/target/scheduler-1.0-SNAPSHOT-jar-with-dependencies.jar > {}", file_name).as_str()
-        ).unwrap();
-        b
-    };
-
     let build = BuildArgs::default()
         .kernel_feature("ethernet")
         .kernel_feature("rackscale")
@@ -2783,8 +2782,8 @@ fn s06_dcm() {
     let mut output = String::new();
 
     let mut qemu_run = || -> Result<WaitStatus> {
+        let mut dcm = spawn_dcm()?;
         let mut p = spawn_nrk(&cmdline)?;
-        let mut dcm = spawn_dcm();
 
         output += p.exp_string("Created UDP socket!")?.as_str();
         output += p.exp_string("Started RPC client!")?.as_str();

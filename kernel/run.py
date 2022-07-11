@@ -47,6 +47,8 @@ NETWORK_CONFIG = {
     },
 }
 
+DCM_SCHEDULER_VERSION = "1.0.3"
+
 #
 # Important globals
 #
@@ -84,6 +86,11 @@ parser.add_argument("--cmd", type=str,
                     help="Command line arguments passed to the kernel.")
 parser.add_argument("--machine",
                     help='Which machine to run on (defaults to qemu)', required=False, default='qemu')
+
+
+# DCM Scheduler arguments
+parser.add_argument("--dcm-path",
+                    help='Path of DCM jar to use (defaults to latest release)', required=False, default=None)
 
 # QEMU related arguments
 parser.add_argument("--qemu-nodes", type=int,
@@ -705,6 +712,28 @@ def configure_network(args):
             sudo[brctl[['addif', 'br0', ncfg]]]()
         sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
 
+def configure_dcm_scheduler(args):
+    jar_dir = "../target"
+    jar_name = "dcm-scheduler.jar"
+    symlink_jar_path = os.path.join(jar_dir, jar_name)
+
+    # Use set jar path (allows for local development) if given in argument
+    dcm_path = args.dcm_path
+
+    # If not given in argument, use specific version of DCM jar
+    if args.dcm_path == None:
+        dcm_jar = "scheduler-{}-jar-with-dependencies.jar".format(DCM_SCHEDULER_VERSION)
+        dcm_path = os.path.join(jar_dir, dcm_jar)
+
+        # Download jar if necessary
+        if not os.path.exists(dcm_path):
+            subprocess.run("wget https://github.com/hunhoffe/nrk-dcm-scheduler/releases/download/release-{}/{} -P {}".format(
+                DCM_SCHEDULER_VERSION, dcm_jar, jar_dir), shell=True, check=True, timeout=10)
+
+    # Create consistent symlink location for the DCM scheduler jar
+    if os.path.exists(symlink_jar_path) or os.path.islink(symlink_jar_path):
+        os.unlink(symlink_jar_path)
+    os.symlink(dcm_path, symlink_jar_path)
 
 #
 # Main routine of run.py
@@ -745,6 +774,9 @@ if __name__ == '__main__':
         is_client = args.cmd.find("client") != -1
     if not is_client:
         configure_network(args)
+
+    # Setup DCM scheduler jar
+    configure_dcm_scheduler(args)
 
     if args.release:
         CARGO_DEFAULT_ARGS.append("--release")

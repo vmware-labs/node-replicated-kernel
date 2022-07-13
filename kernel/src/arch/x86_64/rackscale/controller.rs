@@ -50,8 +50,8 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         use rpc::{server::Server, transport::TCPTransport};
-        let transport =
-            Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&iface))).expect("Out of memory during init");
+        let transport = Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&iface)))
+            .expect("Out of memory during init");
         Box::try_new(Server::new(transport)).expect("Out of memory during init")
     } else if crate::CMDLINE
         .get()
@@ -71,7 +71,9 @@ pub(crate) fn run() {
     // Start running the RPC server
     log::info!("Starting RPC server!");
     loop {
-        match iface.borrow_mut().poll(Instant::from_millis(rawtime::duration_since_boot().as_millis() as i64,)) {
+        match iface.borrow_mut().poll(Instant::from_millis(
+            rawtime::duration_since_boot().as_millis() as i64,
+        )) {
             Ok(_) => {}
             Err(e) => {
                 log::warn!("poll error: {}", e);

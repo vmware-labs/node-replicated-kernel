@@ -335,6 +335,8 @@ impl<'a> BuildArgs<'a> {
     fn compile(self, _env: MutexGuard<'static, BuildEnvironment>) -> Built<'a> {
         let mut compile_args = self.as_cmd();
         compile_args.push("--norun".to_string());
+        compile_args.push("net".to_string());
+        compile_args.push("--no-network-setup".to_string());
 
         let o = process::Command::new("python3")
             .args(compile_args.clone())
@@ -465,6 +467,10 @@ struct RunnerArgs<'a> {
     tap: Option<String>,
     /// Number of workers
     workers: Option<usize>,
+    /// Configure network only
+    network_only: bool,
+    /// Do not configure the network
+    no_network_setup: bool,
 }
 
 #[allow(unused)]
@@ -491,6 +497,8 @@ impl<'a> RunnerArgs<'a> {
             shmem_path: String::new(),
             tap: None,
             workers: None,
+            network_only: false,
+            no_network_setup: false,
         };
 
         if cfg!(feature = "prealloc") {
@@ -522,6 +530,8 @@ impl<'a> RunnerArgs<'a> {
             shmem_path: String::new(),
             tap: None,
             workers: None,
+            network_only: false,
+            no_network_setup: false,
         };
 
         if cfg!(feature = "prealloc") {
@@ -657,6 +667,16 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
+    fn network_only(mut self) -> RunnerArgs<'a> {
+        self.network_only = true;
+        self
+    }
+
+    fn no_network_setup(mut self) -> RunnerArgs<'a> {
+        self.no_network_setup = true;
+        self
+    }
+
     /// Converts the RunnerArgs to a run.py command line invocation.
     fn as_cmd(&'a self) -> Vec<String> {
         // Figure out log-level
@@ -671,7 +691,10 @@ impl<'a> RunnerArgs<'a> {
 
         // Start with cmdline from build
         let mut cmd = self.build_args.as_cmd();
+
+        // Add net subcommand, will only use if needed
         let mut net_cmd = Vec::<String>::new();
+        net_cmd.push(String::from("net"));
 
         cmd.push(String::from("--cmd"));
         cmd.push(format!(
@@ -742,9 +765,16 @@ impl<'a> RunnerArgs<'a> {
                 // command to a python argparse subparser. To make sure parsing order doesn't matter,
                 // create as a separate 'net_cmd' variable, and add it to the end later (even though it is qemu specific)
                 if self.workers.is_some() {
-                    net_cmd.push(String::from("net"));
                     net_cmd.push(String::from("--workers"));
                     net_cmd.push(format!("{}", self.workers.unwrap()));
+                }
+
+                if self.network_only {
+                    net_cmd.push(String::from("--network-only"));
+                }
+
+                if self.no_network_setup {
+                    net_cmd.push(String::from("--no-network-setup"));
                 }
             }
             Machine::Baremetal(mname) => {
@@ -761,7 +791,8 @@ impl<'a> RunnerArgs<'a> {
             cmd.push(String::from("--norun"));
         }
 
-        if net_cmd.len() > 0 {
+        // Considered empty if only subcommand start ('net') is only thing in array
+        if net_cmd.len() > 1 {
             cmd.append(&mut net_cmd);
         }
 
@@ -843,6 +874,26 @@ fn wait_for_sigterm(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
     };
 }
 
+/// Sets up network interfaces and bridge for rackscale mode
+///
+/// num_nodes includes the controller in the count. Internally this
+/// invokes run.py in 'network-only' mode.
+fn init_rackscale_network(num_nodes: usize) {
+    // Setup network
+    let net_build = BuildArgs::default().build();
+    let network_setup = RunnerArgs::new_with_build("network_only", &net_build)
+        .workers(num_nodes)
+        .network_only();
+
+    let mut output = String::new();
+    let mut network_setup = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&network_setup)?;
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+    network_setup().unwrap();
+}
+
 /// Builds the kernel and spawns a qemu instance of it.
 ///
 /// For kernel-code it gets compiled with kernel features `integration-test`
@@ -865,12 +916,12 @@ fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
         args.timeout
     };
     let ret = spawn_command(o, timeout);
-    // sleep to ensure run.py has time to destroy/create network interfaces before returning
-    std::thread::sleep(std::time::Duration::from_secs(3));
     ret
 }
 
-// Spawn DCM
+/// Spawns a DCM solver
+///
+/// Uses target/dcm-scheduler.jar that is set up by run.py
 fn spawn_dcm() -> Result<rexpect::session::PtyReplSession> {
     use std::fs::remove_file;
 
@@ -1622,16 +1673,21 @@ fn s03_ethernet_exokernel_fs_test() {
 #[cfg(not(feature = "baremetal"))]
 fn exokernel_fs_test(is_shmem: bool) {
     use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+    use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
-    use std::{fs::remove_file, sync::Arc};
 
+    // Setup ivshmem file
     let filename = "ivshmem-file";
     let filelen = 2;
     let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
 
+    init_rackscale_network(2);
+
+    // Create build for both controller and client
     let build = Arc::new(
         BuildArgs::default()
             .module("init")
@@ -1643,6 +1699,7 @@ fn exokernel_fs_test(is_shmem: bool) {
             .build(),
     );
 
+    // Run DCM and controller in separate thread
     let build1 = build.clone();
     let controller = std::thread::spawn(move || {
         let controller_cmd = if is_shmem {
@@ -1656,22 +1713,30 @@ fn exokernel_fs_test(is_shmem: bool) {
             .ivshmem(filelen as usize)
             .shmem_path(filename)
             .tap("tap0")
-            .workers(2)
+            .no_network_setup()
             .use_vmxnet3();
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm()?;
             let mut p = spawn_nrk(&cmdline_controller)?;
+
+            output += p.exp_string("Created UDP socket!")?.as_str();
+            output += p.exp_string("Started RPC client!")?.as_str();
+            //output += p.exp_string("Finished sending requests!")?.as_str();
             output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
             p.process.exit()
         };
 
         let _ignore = qemu_run();
     });
 
+    // Run client in separate thead. Wait a bit to make sure DCM and controller started
     let build2 = build.clone();
     let client = std::thread::spawn(move || {
-        sleep(Duration::from_millis(10_000));
+        sleep(Duration::from_millis(5_000));
         let client_cmd = if is_shmem {
             "mode=client transport=shmem"
         } else {
@@ -1683,6 +1748,7 @@ fn exokernel_fs_test(is_shmem: bool) {
             .ivshmem(filelen as usize)
             .shmem_path(filename)
             .tap("tap2")
+            .no_network_setup()
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -1706,15 +1772,19 @@ fn exokernel_fs_test(is_shmem: bool) {
 #[test]
 fn s03_shmem_exokernel_fs_prop_test() {
     use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+    use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
-    use std::{fs::remove_file, sync::Arc};
 
+    // Setup ivshmem file
     let filename = "ivshmem-file";
     let filelen = 2;
     let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
+
+    init_rackscale_network(2);
 
     let build = Arc::new(
         BuildArgs::default()
@@ -1728,17 +1798,24 @@ fn s03_shmem_exokernel_fs_prop_test() {
     let build1 = build.clone();
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(180_000)
+            .timeout(240_000)
             .cmd("mode=controller")
             .ivshmem(filelen as usize)
             .shmem_path(filename)
-            .workers(2)
+            .no_network_setup()
             .tap("tap0");
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm()?;
             let mut p = spawn_nrk(&cmdline_controller)?;
+
+            output += p.exp_string("Created UDP socket!")?.as_str();
+            output += p.exp_string("Started RPC client!")?.as_str();
+            //output += p.exp_string("Finished sending requests!")?.as_str();
             output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
             p.process.exit()
         };
 
@@ -1749,10 +1826,11 @@ fn s03_shmem_exokernel_fs_prop_test() {
     let client = std::thread::spawn(move || {
         sleep(Duration::from_millis(10_000));
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-            .timeout(180_000)
+            .timeout(240_000)
             .cmd("mode=client")
             .ivshmem(filelen as usize)
             .shmem_path(filename)
+            .no_network_setup()
             .tap("tap2");
 
         let mut output = String::new();
@@ -2618,6 +2696,8 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
     };
     let _ignore = remove_file(file_name);
 
+    init_rackscale_network(2);
+
     // Create build for both controller and client
     let build = Arc::new(
         BuildArgs::default()
@@ -2672,7 +2752,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                     .ivshmem(filelen as usize)
                     .shmem_path(shmem_file_name)
                     .tap("tap0")
-                    .workers(2)
+                    .no_network_setup()
                     .use_vmxnet3();
 
                 if cfg!(feature = "smoke") {
@@ -2685,8 +2765,15 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 
                 let mut output = String::new();
                 let mut qemu_run = || -> Result<WaitStatus> {
+                    let mut dcm = spawn_dcm()?;
                     let mut p = spawn_nrk(&cmdline_controller)?;
+
+                    output += p.exp_string("Created UDP socket!")?.as_str();
+                    output += p.exp_string("Started RPC client!")?.as_str();
+                    //output += p.exp_string("Finished sending requests!")?.as_str();
                     output += p.exp_eof()?.as_str();
+
+                    dcm.send_control('c')?;
                     p.process.exit()
                 };
 
@@ -2701,6 +2788,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                     .ivshmem(filelen as usize)
                     .shmem_path(shmem_file_name)
                     .tap("tap2")
+                    .no_network_setup()
                     .use_vmxnet3()
                     .cmd(kernel_cmdline.as_str());
 
@@ -2771,30 +2859,90 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_dcm() {
-    let build = BuildArgs::default()
-        .kernel_feature("ethernet")
-        .kernel_feature("rackscale")
-        .build();
-    let cmdline = RunnerArgs::new_with_build("dcm", &build)
-        .timeout(45_000)
-        .use_vmxnet3();
+    use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
 
-    let mut output = String::new();
+    // Setup ivshmem file
+    let filename = "ivshmem-file";
+    let filelen = 2;
+    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
+    file.set_len(filelen * 1024 * 1024)
+        .expect("Unable to set file length");
 
-    let mut qemu_run = || -> Result<WaitStatus> {
-        let mut dcm = spawn_dcm()?;
-        let mut p = spawn_nrk(&cmdline)?;
+    init_rackscale_network(2);
 
-        output += p.exp_string("Created UDP socket!")?.as_str();
-        output += p.exp_string("Started RPC client!")?.as_str();
-        output += p.exp_string("Finished sending requests!")?.as_str();
-        output += p.exp_eof()?.as_str();
+    // Create build for both controller and client
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-fs")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
 
-        dcm.send_control('c')?;
-        p.process.exit()
-    };
+    // Run DCM and controller in separate thread
+    let build1 = build.clone();
+    let controller = std::thread::spawn(move || {
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+            .timeout(45_000)
+            .cmd("mode=controller transport=shmem")
+            .ivshmem(filelen as usize)
+            .shmem_path(filename)
+            .tap("tap0")
+            .no_network_setup()
+            .use_vmxnet3();
 
-    check_for_successful_exit(&cmdline, qemu_run(), output);
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm()?;
+            let mut p = spawn_nrk(&cmdline_controller)?;
+
+            output += p.exp_string("Created UDP socket!")?.as_str();
+            output += p.exp_string("Started RPC client!")?.as_str();
+            //output += p.exp_string("Finished sending requests!")?.as_str();
+            output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+
+    // Run client in separate thead. Wait a bit to make sure DCM and controller started
+    let build2 = build.clone();
+    let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(5_000));
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+            .timeout(30_000)
+            .cmd("mode=client transport=shmem")
+            .ivshmem(filelen as usize)
+            .shmem_path(filename)
+            .tap("tap2")
+            .no_network_setup()
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("fs_test OK")?.as_str();
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+    });
+
+    controller.join().unwrap();
+    client.join().unwrap();
+
+    let _ignore = remove_file(&filename);
 }
 
 fn memcached_benchmark(

@@ -22,6 +22,7 @@ use super::debug::GDB_REMOTE_PORT;
 use crate::error::KError;
 
 mod breakpoints;
+mod multi_thread_ops;
 mod section_offsets;
 mod serial;
 mod single_register;
@@ -99,7 +100,6 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
         gdb_stm = match gdb_stm {
             GdbStubStateMachine::Idle(mut gdb_stm_inner) => {
                 //trace!("GdbStubStateMachine::Idle");
-
                 // This means we expect stuff on the serial line (from GDB)
                 // Let's read and react to it:
                 let conn = gdb_stm_inner.borrow_conn();
@@ -119,7 +119,18 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 }
             }
             GdbStubStateMachine::CtrlCInterrupt(gdb_stm_inner) => {
-                match gdb_stm_inner.interrupt_handled(&mut target, Some(ThreadStopReason::DoneStep))
+                trace!("GdbStubStateMachine::CtrlCInterrupt");
+                let _reason = stop_reason.take();
+                // Ideally, this would hold: assert_eq!(reason,
+                // Some(ThreadStopReason::Signal(Signal::SIGINT)));
+                //
+                // But, turns out `reason` can be `StepDone` too if we are
+                // single-stepping through things and the ctrl+c packet arrives
+                // while we're in this file.
+                //
+                // So we just consume `reason` and report SIGINT unconditionally.
+                match gdb_stm_inner
+                    .interrupt_handled(&mut target, Some(ThreadStopReason::Signal(Signal::SIGINT)))
                 {
                     Ok(gdb) => gdb,
                     Err(e) => {
@@ -129,11 +140,11 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 }
             }
             GdbStubStateMachine::Disconnected(_gdb_stm_inner) => {
-                error!("GdbStubStateMachine::Disconnected byebye");
+                error!("GdbStubStateMachine::Disconnected");
                 break;
             }
             GdbStubStateMachine::Running(mut gdb_stm_inner) => {
-                //trace!("GdbStubStateMachine::DeferredStopReason");
+                trace!("GdbStubStateMachine::Running");
 
                 // If we're here we were running but have stopped now (either
                 // because we hit Ctrl+c in gdb and hence got a serial interrupt
@@ -143,6 +154,8 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 let data_to_read = conn.peek().unwrap().is_some();
 
                 if data_to_read {
+                    trace!("GdbStubStateMachine::Running data_to_read");
+
                     let byte = gdb_stm_inner.borrow_conn().read().unwrap();
                     match gdb_stm_inner.incoming_data(&mut target, byte) {
                         Ok(pumped_stm) => pumped_stm,
@@ -156,6 +169,8 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if let Some(reason) = stop_reason.take() {
+                    trace!("GdbStubStateMachine::Running stop_reason");
+
                     match gdb_stm_inner.report_stop(&mut target, reason) {
                         Ok(gdb_stm_new) => gdb_stm_new,
                         Err(GdbStubError::TargetError(e)) => {
@@ -168,6 +183,8 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                         }
                     }
                 } else if target.resume_with.is_some() {
+                    trace!("GdbStubStateMachine::Running target.resume_with.is_some");
+
                     // We don't have a `stop_reason` and we don't have something
                     // to read on the line. This probably means we're done and
                     // we should run again.
@@ -245,7 +262,7 @@ impl KernelDebugger {
     // Also does some additional stuff like re-enabling the breakpoints.
     fn determine_stop_reason(&mut self, reason: KCoreStopReason) -> Option<ThreadStopReason<u64>> {
         match reason {
-            KCoreStopReason::ConnectionInterrupt => Some(ThreadStopReason::Signal(Signal::SIGTRAP)),
+            KCoreStopReason::ConnectionInterrupt => Some(ThreadStopReason::Signal(Signal::SIGINT)),
             KCoreStopReason::BreakpointInterrupt => {
                 unimplemented!("Breakpoint interrupt not implemented");
                 //Some(ThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
@@ -338,7 +355,11 @@ impl Target for KernelDebugger {
     type Arch = X86_64_SSE;
 
     fn base_ops(&mut self) -> BaseOps<Self::Arch, Self::Error> {
-        BaseOps::SingleThread(self)
+        if cfg!(feature = "bsp-only") {
+            BaseOps::SingleThread(self)
+        } else {
+            BaseOps::MultiThread(self)
+        }
     }
 
     fn support_section_offsets(&mut self) -> Option<SectionOffsetsOps<Self>> {

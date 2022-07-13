@@ -144,18 +144,14 @@ subparser = parser.add_subparsers(help='Advanced network configuration')
 
 # Network setup parser
 parser_net = subparser.add_parser('net', help='Network setup')
+parser_net.add_argument('--workers', type=int, required=False, default=0,
+                            help='Setup `n` workers connected to one controller.')
 
 parser_net_mut = parser_net.add_mutually_exclusive_group(required=False)
 parser_net_mut.add_argument("--network-only", action="store_true", default=False,
                     help="Setup network only.")
 parser_net_mut.add_argument("--no-network-setup", action="store_true", default=False,
                     help="Setup network.")
-
-parser_net_mut2 = parser_net.add_mutually_exclusive_group(required=False)
-parser_net_mut2.add_argument('--host-vm', action="store_true", default=True,
-                            help='Setup one VM for integration testing, connect it to host.')
-parser_net_mut2.add_argument('--workers', type=int, required=False, default=0,
-                            help='Setup `n` workers connected to one controller.')
 
 NRK_EXIT_CODES = {
     0: "[SUCCESS]",
@@ -707,7 +703,7 @@ def configure_network(args):
         sudo[ip[['link', 'del', '{}'.format(tap)]]](retcode=(0, 1))
 
     # Need to find out how to set default=True in case workers are >0 in `args`
-    if (not 'host_vm' in args) or (('host_vm' in args and args.host_vm) and ('workers' in args and args.workers == 0)):
+    if (not 'workers' in args) or ('workers' in args and args.workers <= 1):
         sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
         sudo[ifconfig[args.tap, NETWORK_INFRA_IP]]()
         sudo[ip[['link', 'set', args.tap, 'up']]](retcode=(0, 1))
@@ -721,6 +717,9 @@ def configure_network(args):
         sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
 
 def configure_dcm_scheduler(args):
+    """
+    Set up the DCM jar, fetch if configured version isn't present
+    """
     jar_dir = "../target"
     jar_name = "dcm-scheduler.jar"
     symlink_jar_path = os.path.join(jar_dir, jar_name)

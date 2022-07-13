@@ -878,7 +878,7 @@ fn wait_for_sigterm(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
 ///
 /// num_nodes includes the controller in the count. Internally this
 /// invokes run.py in 'network-only' mode.
-fn init_rackscale_network(num_nodes: usize) {
+fn setup_network(num_nodes: usize) {
     // Setup network
     let net_build = BuildArgs::default().build();
     let network_setup = RunnerArgs::new_with_build("network_only", &net_build)
@@ -1685,7 +1685,7 @@ fn exokernel_fs_test(is_shmem: bool) {
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
 
-    init_rackscale_network(2);
+    setup_network(2);
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -1784,7 +1784,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
 
-    init_rackscale_network(2);
+    setup_network(2);
 
     let build = Arc::new(
         BuildArgs::default()
@@ -1798,12 +1798,13 @@ fn s03_shmem_exokernel_fs_prop_test() {
     let build1 = build.clone();
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(240_000)
+            .timeout(180_000)
             .cmd("mode=controller")
             .ivshmem(filelen as usize)
             .shmem_path(filename)
+            .tap("tap0")
             .no_network_setup()
-            .tap("tap0");
+            .use_vmxnet3();
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
@@ -1824,14 +1825,15 @@ fn s03_shmem_exokernel_fs_prop_test() {
 
     let build2 = build.clone();
     let client = std::thread::spawn(move || {
-        sleep(Duration::from_millis(10_000));
+        sleep(Duration::from_millis(5_000));
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-            .timeout(240_000)
+            .timeout(180_000)
             .cmd("mode=client")
             .ivshmem(filelen as usize)
             .shmem_path(filename)
+            .tap("tap2")
             .no_network_setup()
-            .tap("tap2");
+            .use_vmxnet3();
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
@@ -1891,18 +1893,20 @@ fn s04_userspace_multicore() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s04_userspace_rumprt_net() {
+    setup_network(1);
+
     let build = BuildArgs::default()
         .user_feature("test-rump-net")
         .user_feature("rumprt")
         .build();
-    let cmdline = RunnerArgs::new_with_build("userspace", &build).timeout(20_000);
+    let cmdline = RunnerArgs::new_with_build("userspace", &build)
+        .timeout(20_000)
+        .no_network_setup();
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        // need to spawn nrk first to set up tap interface
-        let mut p = spawn_nrk(&cmdline)?;
-
         let mut dhcp_server = spawn_dhcpd()?;
+        let mut p = spawn_nrk(&cmdline)?;
         let mut receiver = spawn_receiver()?;
 
         // Test that DHCP works:
@@ -2016,6 +2020,8 @@ fn s05_redis_smoke() {
     let _r = which::which(REDIS_BENCHMARK)
         .expect("redis-benchmark not installed on host, test will fail!");
 
+    setup_network(1);
+
     let build = BuildArgs::default()
         .module("rkapps")
         .user_feature("rkapps:redis")
@@ -2026,10 +2032,8 @@ fn s05_redis_smoke() {
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        // need to start nrk first to set up network interfaces
-        let mut p = spawn_nrk(&cmdline)?;
-
         let mut dhcp_server = spawn_dhcpd()?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         // Test that DHCP works:
         dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
@@ -2155,6 +2159,8 @@ fn s06_redis_benchmark_virtio() {
     let _r = which::which(REDIS_BENCHMARK)
         .expect("redis-benchmark not installed on host, test will fail!");
 
+    setup_network(1);
+
     let build = BuildArgs::default()
         .module("rkapps")
         .user_feature("rkapps:redis")
@@ -2163,14 +2169,13 @@ fn s06_redis_benchmark_virtio() {
     let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .cmd("init=redis.bin")
         .use_virtio()
-        .timeout(45_000);
+        .timeout(45_000)
+        .no_network_setup();
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        // need to start nrk first to set up network interfaces
-        let mut p = spawn_nrk(&cmdline)?;
-
         let mut dhcp_server = spawn_dhcpd()?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         // Test that DHCP works:
         output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
@@ -2191,6 +2196,8 @@ fn s06_redis_benchmark_virtio() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_redis_benchmark_e1000() {
+    setup_network(1);
+
     let _r = which::which(REDIS_BENCHMARK)
         .expect("redis-benchmark not installed on host, test will fail!");
 
@@ -2201,14 +2208,13 @@ fn s06_redis_benchmark_e1000() {
         .build();
     let cmdline = RunnerArgs::new_with_build("userspace", &build)
         .cmd("init=redis.bin")
-        .timeout(45_000);
+        .timeout(45_000)
+        .no_network_setup();
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
-        // need to start nrk first to set up network interfaces
-        let mut p = spawn_nrk(&cmdline)?;
-
         let mut dhcp_server = spawn_dhcpd()?;
+        let mut p = spawn_nrk(&cmdline)?;
 
         // Test that DHCP works:
         dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
@@ -2696,7 +2702,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
     };
     let _ignore = remove_file(file_name);
 
-    init_rackscale_network(2);
+    setup_network(2);
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -2872,7 +2878,7 @@ fn s06_dcm() {
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
 
-    init_rackscale_network(2);
+    setup_network(2);
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -3078,6 +3084,8 @@ fn s06_memcached_benchmark() {
         vec![1, 2, 4]
     };
 
+    setup_network(1);
+
     let file_name = "memcached_benchmark.csv";
     let _r = std::fs::remove_file(file_name);
     let build = BuildArgs::default()
@@ -3095,6 +3103,7 @@ fn s06_memcached_benchmark() {
                 .cores(max_cores)
                 .nodes(1)
                 .setaffinity()
+                .no_network_setup()
                 .cmd(kernel_cmdline.as_str());
 
             let cmdline = match *nic {
@@ -3105,10 +3114,9 @@ fn s06_memcached_benchmark() {
 
             let output = String::new();
             let qemu_run = || -> Result<WaitStatus> {
-                // need to start nrk first to set up network interfaces
+                let mut dhcp_server = spawn_dhcpd()?;
                 let mut p = spawn_nrk(&cmdline)?;
 
-                let mut dhcp_server = spawn_dhcpd()?;
                 dhcp_server.exp_regex(DHCP_ACK_MATCH)?;
 
                 std::thread::sleep(std::time::Duration::from_secs(6));
@@ -3127,6 +3135,8 @@ fn s06_memcached_benchmark() {
 
 #[test]
 fn s06_leveldb_benchmark() {
+    setup_network(1);
+
     let machine = Machine::determine();
     let build = BuildArgs::default()
         .module("rkapps")
@@ -3164,7 +3174,8 @@ fn s06_leveldb_benchmark() {
             .nodes(2)
             .use_virtio()
             .setaffinity()
-            .cmd(kernel_cmdline.as_str());
+            .cmd(kernel_cmdline.as_str())
+            .no_network_setup();
 
         if cfg!(feature = "smoke") {
             cmdline = cmdline.memory(8192);
@@ -3174,10 +3185,9 @@ fn s06_leveldb_benchmark() {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            // need to start nrk first to set up network interfaces
+            let mut dhcp_server = spawn_dhcpd()?;
             let mut p = spawn_nrk(&cmdline)?;
 
-            let mut dhcp_server = spawn_dhcpd()?;
             output += dhcp_server.exp_string(DHCP_ACK_MATCH)?.as_str();
 
             let (prev, matched) = p.exp_regex(r#"readrandom(.*)"#)?;

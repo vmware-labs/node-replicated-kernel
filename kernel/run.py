@@ -5,6 +5,7 @@
 
 import argparse
 import os
+from pickletools import ArgumentDescriptor
 import sys
 import pathlib
 import shutil
@@ -38,14 +39,13 @@ ARCH = "x86_64"
 
 NETWORK_CONFIG = {
     'tap0': {
-        'ip_zone': '172.31.0.20/24',
         'mac': '56:b4:44:e9:62:dc',
     },
     'tap2': {
-        'ip_zone': '172.31.0.2/24',
         'mac': '56:b4:44:e9:62:dd',
     },
 }
+NETWORK_INFRA_IP = '172.31.0.20/24'
 
 DCM_SCHEDULER_VERSION = "1.0.3"
 
@@ -142,10 +142,17 @@ subparser = parser.add_subparsers(help='Advanced network configuration')
 
 # Network setup parser
 parser_net = subparser.add_parser('net', help='Network setup')
+
 parser_net_mut = parser_net.add_mutually_exclusive_group(required=False)
-parser_net_mut.add_argument('--host-vm', action="store_true", default=True,
+parser_net_mut.add_argument("--network-only", action="store_true", default=False,
+                    help="Setup network only.")
+parser_net_mut.add_argument("--no-network-setup", action="store_true", default=False,
+                    help="Setup network.")
+
+parser_net_mut2 = parser_net.add_mutually_exclusive_group(required=False)
+parser_net_mut2.add_argument('--host-vm', action="store_true", default=True,
                             help='Setup one VM for integration testing, connect it to host.')
-parser_net_mut.add_argument('--workers', type=int, required=False, default=0,
+parser_net_mut2.add_argument('--workers', type=int, required=False, default=0,
                             help='Setup `n` workers connected to one controller.')
 
 NRK_EXIT_CODES = {
@@ -688,8 +695,6 @@ def configure_network(args):
     # TODO: Could probably avoid 'sudo' here by doing
     # sudo setcap cap_net_admin .../run.py
     # in the setup.sh script
-    # sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
-    # sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
 
     # Remove any existing interfaces
     sudo[ip[['link', 'set', 'br0', 'down']]](retcode=(0, 1))
@@ -701,13 +706,13 @@ def configure_network(args):
     # Need to find out how to set default=True in case workers are >0 in `args`
     if (not 'host_vm' in args) or (('host_vm' in args and args.host_vm) and ('workers' in args and args.workers == 0)):
         sudo[tunctl[['-t', args.tap, '-u', user, '-g', group]]]()
-        sudo[ifconfig[args.tap, NETWORK_CONFIG[args.tap]['ip_zone']]]()
+        sudo[ifconfig[args.tap, NETWORK_INFRA_IP]]()
         sudo[ip[['link', 'set', args.tap, 'up']]](retcode=(0, 1))
     else:
         sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
+        sudo[ip[['addr', 'add', NETWORK_INFRA_IP, 'brd', '+', 'dev', 'br0']]]()
         for _, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):
             sudo[tunctl[['-t', ncfg, '-u', user, '-g', group]]]()
-            sudo[ifconfig[ncfg, NETWORK_CONFIG[ncfg]['ip_zone']]]()
             sudo[ip[['link', 'set', ncfg, 'up']]](retcode=(0, 1))
             sudo[brctl[['addif', 'br0', ncfg]]]()
         sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
@@ -742,6 +747,13 @@ if __name__ == '__main__':
     "Execution pipeline for building and launching nrk"
     args = parser.parse_args()
 
+    # Setup network
+    if not ('no_network_setup' in args and args.no_network_setup):
+        configure_network(args)
+
+    if 'network_only' in args and args.network_only:
+        sys.exit(0)
+
     user = whoami().strip()
     kvm_members = getent['group', 'kvm']().strip().split(":")[-1].split(',')
     if not user in kvm_members and not args.norun:
@@ -767,13 +779,6 @@ if __name__ == '__main__':
             sys.exit(errno.EINVAL)
         else:
             raise e
-
-    # Setup network
-    is_client = False
-    if args.cmd:
-        is_client = args.cmd.find("client") != -1
-    if not is_client:
-        configure_network(args)
 
     # Setup DCM scheduler jar
     configure_dcm_scheduler(args)

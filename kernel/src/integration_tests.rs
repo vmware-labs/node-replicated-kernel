@@ -11,7 +11,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&str, MainFn); 28] = [
+const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -37,7 +37,6 @@ const INTEGRATION_TESTS: [(&str, MainFn); 28] = [
     ("replica-advance", replica_advance),
     ("gdb", gdb),
     ("vmxnet-smoltcp", vmxnet_smoltcp),
-    ("dcm", dcm),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
 ];
@@ -764,6 +763,7 @@ fn vmxnet_smoltcp() {
     shutdown(ExitReason::Ok);
 }
 
+/*
 /// Test vmxnet3 integrated with smoltcp.s
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 fn dcm() {
@@ -779,9 +779,7 @@ fn dcm() {
     use rpc::client::Client;
     use rpc::transport::TCPTransport;
     use rpc::RPCClient;
-    use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
     use smoltcp::time::Instant;
-    use smoltcp::wire::IpAddress;
 
     // Create network interface
     let iface = init_network().expect("Failed to initialize network interface");
@@ -897,6 +895,7 @@ fn dcm() {
     // TODO: double check map
     shutdown(ExitReason::Ok);
 }
+*/
 
 /// Write and test the content on a shared-mem device.
 pub(crate) const BUFFER_CONTENT: u8 = 0xb;

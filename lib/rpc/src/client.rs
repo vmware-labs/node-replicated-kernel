@@ -68,10 +68,8 @@ impl RPCClient for Client {
         {
             let hdr = self.hdr.borrow();
             let hdr_slice = unsafe { hdr.as_bytes() };
-            self.transport.send(hdr_slice)?;
-            for d in data_in.iter() {
-                self.transport.send(d)?;
-            }
+            self.transport.send(&[hdr_slice])?;
+            self.transport.send(data_in)?;
         }
 
         // Receive response header + data
@@ -80,7 +78,7 @@ impl RPCClient for Client {
             {
                 let mut hdr = self.hdr.borrow_mut();
                 let hdr_slice = unsafe { hdr.as_mut_bytes() };
-                self.transport.recv(hdr_slice)?;
+                self.transport.recv(&mut [hdr_slice])?;
             }
 
             // Read header to determine how much message data we're expecting
@@ -100,7 +98,7 @@ impl RPCClient for Client {
                     offset + (total_msg_data - data_received),
                 );
                 self.transport
-                    .recv(&mut data_out[index][offset..end_offset])?;
+                    .recv(&mut [&mut data_out[index][offset..end_offset]])?;
                 data_received += end_offset - offset;
                 if end_offset == data_out[index].len() {
                     index += 1;

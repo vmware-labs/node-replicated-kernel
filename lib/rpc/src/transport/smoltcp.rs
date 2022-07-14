@@ -72,15 +72,20 @@ impl Transport for TCPTransport<'_> {
         TX_BUF_LEN
     }
 
-    /// Send data to a remote node
-    fn send(&self, data_out: &[u8]) -> Result<(), RPCError> {
-        let mut data_index = 0;
+    fn send(&self, send_bufs: &[&[u8]]) -> Result<(), RPCError> {
+        // Calculate and check total data to receive
+        let send_data_len = send_bufs.iter().fold(0, |acc, x| acc + x.len());
+        assert!(send_data_len <= self.max_send());
 
-        trace!("Attempting to send {:?} bytes", data_out.len());
-        if data_out.is_empty() {
+        trace!("Attempting to send {:?} bytes", send_data_len);
+        if send_data_len == 0 {
             return Ok(());
         }
 
+        // Read in all msg data
+        let mut data_sent = 0;
+        let mut index = 0;
+        let mut offset = 0;
         loop {
             let mut iface = self.iface.borrow_mut();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
@@ -88,13 +93,24 @@ impl Transport for TCPTransport<'_> {
             // Send until socket state is bad (shouldn't happen), send buffer is full, all data is sent,
             // or no progress is being made (e.g., send_slice starts returning 0)
             let bytes_sent = 1;
-            while socket.can_send() && data_index < data_out.len() && bytes_sent != 0 {
+            while socket.can_send() && data_sent < send_data_len && bytes_sent != 0 {
                 // Attempt to send until end of data array
-                if let Ok(bytes_sent) = socket.send_slice(&data_out[data_index..]) {
-                    trace!("sent [{:?}-{:?}]", data_index, data_index + bytes_sent);
-                    data_index += bytes_sent;
-                    if data_index == data_out.len() {
+                if let Ok(bytes_sent) = socket.send_slice(&send_bufs[index][offset..]) {
+                    // Try to send remaining in current send_buf
+                    trace!("sent [{:?}][{:?}-{:?}]", index, offset, offset + bytes_sent);
+                    data_sent += bytes_sent;
+
+                    // Check if done
+                    if data_sent == send_data_len {
                         return Ok(());
+                    }
+
+                    // Update index if reached end of send_buf
+                    if offset + bytes_sent == send_bufs[index].len() {
+                        index += 1;
+                        offset = 0;
+                    } else {
+                        offset += bytes_sent;
                     }
                 } else {
                     trace!("send_slice failed... trying again?");
@@ -103,7 +119,6 @@ impl Transport for TCPTransport<'_> {
 
             // Poll the interface only if we must in order to have space in the send buffer
             {
-                let mut iface = self.iface.borrow_mut();
                 match iface.poll(Instant::from_millis(
                     rawtime::duration_since_boot().as_millis() as i64,
                 )) {
@@ -116,95 +131,241 @@ impl Transport for TCPTransport<'_> {
         }
     }
 
-    fn try_recv(&self, data_in: &mut [u8]) -> Result<bool, RPCError> {
-        trace!("Attempting to try_recv {:?} bytes", data_in.len());
-        if data_in.is_empty() {
+    fn try_send(&self, send_bufs: &[&[u8]]) -> Result<bool, RPCError> {
+        // Calculate and check total data to receive
+        let send_data_len = send_bufs.iter().fold(0, |acc, x| acc + x.len());
+        assert!(send_data_len <= self.max_send());
+
+        trace!("Attempting to try_send {:?} bytes", send_data_len);
+        if send_data_len == 0 {
             return Ok(true);
         }
 
-        let bytes_received = {
-            let mut iface = self.iface.borrow_mut();
-            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+        let mut iface = self.iface.borrow_mut();
+        let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
-            match socket.recv_slice(&mut data_in[..]) {
-                Ok(bytes_received) => {
-                    trace!(
-                        "try_recv [{:?}-{:?}] {:?}",
-                        0,
-                        data_in.len(),
-                        bytes_received
-                    );
-                    bytes_received
+        // Attempt to write from first buffer into the socket send buffer
+        let bytes_sent = match socket.can_send() {
+            true => match socket.send_slice(&send_bufs[0]) {
+                Ok(bytes_sent) => {
+                    trace!("try_send [{:?}][{:?}-{:?}]", 0, 0, bytes_sent);
+                    bytes_sent
                 }
                 Err(_) => 0,
-            }
+            },
+            false => 0,
         };
 
-        if bytes_received == data_in.len() {
-            // Exit if finished receiving data
-            Ok(true)
-        } else if bytes_received == 0 {
-            // Exit if no data to receive
-            Ok(false)
-        } else {
-            // Partial data was received, blocking receive the rest
-            let _ = self.recv(&mut data_in[bytes_received..])?;
-            Ok(true)
-        }
-    }
+        // Can't send now
+        if bytes_sent == 0 {
+            return Ok(false);
 
-    /// Receive data from a remote node
-    fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
-        let mut data_index = 0;
-
-        trace!("Attempting to recv {:?} bytes", data_in.len());
-        if data_in.is_empty() {
-            return Ok(());
+        // If we started sending, send (with blocking) remaining data
+        } else if bytes_sent == send_bufs[0].len() {
+            if send_bufs.len() > 1 {
+                self.send(&send_bufs[1..])?;
+            }
+            return Ok(true);
         }
 
+        // For highest efficiency, if we only sent part of the buffer,
+        // We don't want to split up into two sends so do send code here
+        let mut data_sent = bytes_sent;
+        let mut index = 0;
+        let mut offset = 0;
         loop {
             let mut iface = self.iface.borrow_mut();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
-            // Receive as much data as possible before polling
-            let bytes_received = 1;
-            while socket.can_recv()                 // socket in good state to receive
-                && bytes_received > 0               // first iter or read something during previous iter
-                && data_index < data_in.len()
-            {
-                if let Ok(bytes_received) = socket.recv_slice(&mut data_in[data_index..]) {
-                    trace!(
-                        "recv [{:?}-{:?}] {:?}",
-                        data_index,
-                        data_in.len(),
-                        bytes_received
-                    );
+            // Send until socket state is bad (shouldn't happen), send buffer is full, all data is sent,
+            // or no progress is being made (e.g., send_slice starts returning 0)
+            let bytes_sent = 1;
+            while socket.can_send() && data_sent < send_data_len && bytes_sent != 0 {
+                // Attempt to send until end of data array
+                if let Ok(bytes_sent) = socket.send_slice(&send_bufs[index][offset..]) {
+                    // Try to send remaining in current send_buf
+                    trace!("sent [{:?}][{:?}-{:?}]", index, offset, offset + bytes_sent);
+                    data_sent += bytes_sent;
 
-                    // Update count
-                    data_index += bytes_received;
+                    // Check if done
+                    if data_sent == send_data_len {
+                        return Ok(true);
+                    }
 
-                    // Exit if finished receiving data
-                    if data_index == data_in.len() {
-                        return Ok(());
+                    // Update index if reached end of send_buf
+                    if offset + bytes_sent == send_bufs[index].len() {
+                        index += 1;
+                        offset = 0;
+                    } else {
+                        offset += bytes_sent;
                     }
                 } else {
-                    warn!("recv_slice failed... trying again?");
+                    trace!("send_slice failed... trying again?");
                 }
             }
 
-            // Only poll if we must in order to fill receive buffer
-            match iface.poll(Instant::from_millis(
-                rawtime::duration_since_boot().as_millis() as i64,
-            )) {
-                Ok(_) => {}
-                Err(e) => {
-                    warn!("poll error: {}", e);
+            // Poll the interface only if we must in order to have space in the send buffer
+            {
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
+                    }
                 }
             }
         }
     }
 
-    /// Register with controller, analogous to LITE join_cluster()
+    /// Receive data from a remote node
+    fn recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        // Calculate and check total data to receive
+        let recv_data_len = recv_bufs.iter().fold(0, |acc, x| acc + x.len());
+        assert!(recv_data_len <= self.max_recv());
+
+        trace!("Attempting to recv {:?} bytes", recv_data_len);
+        if recv_data_len == 0 {
+            return Ok(());
+        }
+
+        // Recv all data
+        let mut data_recv = 0;
+        let mut index = 0;
+        let mut offset = 0;
+        loop {
+            let mut iface = self.iface.borrow_mut();
+            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+
+            // Recv until socket state is bad (shouldn't happen), all data is received,
+            // or no progress is being made (e.g., recv_slice starts returning 0)
+            let bytes_recv = 1;
+            while socket.can_recv() && data_recv < recv_data_len && bytes_recv != 0 {
+                // Attempt to recv until end of data array
+                if let Ok(bytes_recv) = socket.recv_slice(&mut recv_bufs[index][offset..]) {
+                    // Try to recv remaining in current recv_buf
+                    trace!("recv [{:?}][{:?}-{:?}]", index, offset, offset + bytes_recv);
+                    data_recv += bytes_recv;
+
+                    // Check if done
+                    if data_recv == recv_data_len {
+                        return Ok(());
+                    }
+
+                    // Update index if reached end of recv_buf
+                    if offset + bytes_recv == recv_bufs[index].len() {
+                        index += 1;
+                        offset = 0;
+                    } else {
+                        offset += bytes_recv;
+                    }
+                } else {
+                    trace!("recv_slice failed... trying again?");
+                }
+            }
+
+            // Poll the interface only if we must in order to have space in the send buffer
+            {
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    fn try_recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<bool, RPCError> {
+        // Calculate and check total data to receive
+        let recv_data_len = recv_bufs.iter().fold(0, |acc, x| acc + x.len());
+        assert!(recv_data_len <= self.max_recv());
+
+        trace!("Attempting to try_recv {:?} bytes", recv_data_len);
+        if recv_data_len == 0 {
+            return Ok(true);
+        }
+
+        let mut iface = self.iface.borrow_mut();
+        let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+
+        // Attempt to write to the first buffer from the socket receive buffer
+        let bytes_recv = match socket.can_recv() {
+            true => {
+                if let Ok(bytes_recv) = socket.recv_slice(&mut recv_bufs[0]) {
+                    trace!("try_recv [{:?}][{:?}-{:?}]", 0, 0, bytes_recv);
+                    bytes_recv
+                } else {
+                    0
+                }
+            }
+            false => 0,
+        };
+
+        // Can't receive now
+        if bytes_recv == 0 {
+            return Ok(false);
+
+        // If we started receiving, receive (with blocking) remaining data
+        } else if bytes_recv == recv_bufs[0].len() {
+            if recv_bufs.len() > 1 {
+                self.recv(&mut recv_bufs[1..])?;
+            }
+            return Ok(true);
+        }
+
+        // For highest efficiency, if we only received part of the buffer,
+        // We don't want to split up into two receives so do remaining receive code here
+        let mut data_recv = bytes_recv;
+        let mut index = 0;
+        let mut offset = 0;
+        loop {
+            let mut iface = self.iface.borrow_mut();
+            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+
+            // Receive until socket state is bad (shouldn't happen), all data is received,
+            // or no progress is being made (e.g., recv_slice starts returning 0)
+            let bytes_recv = 1;
+            while socket.can_recv() && data_recv < recv_data_len && bytes_recv != 0 {
+                // Attempt to recv until end of data array
+                if let Ok(bytes_recv) = socket.recv_slice(&mut recv_bufs[index][offset..]) {
+                    // Try to recv remaining in current recv_buf
+                    trace!("recv [{:?}][{:?}-{:?}]", index, offset, offset + bytes_recv);
+                    data_recv += bytes_recv;
+
+                    // Check if done
+                    if data_recv == recv_data_len {
+                        return Ok(true);
+                    }
+
+                    // Update index if reached end of recv_buf
+                    if offset + bytes_recv == recv_bufs[index].len() {
+                        index += 1;
+                        offset = 0;
+                    } else {
+                        offset += bytes_recv;
+                    }
+                } else {
+                    trace!("recv _slice failed... trying again?");
+                }
+            }
+
+            // Poll the interface only if we must in order to have space in the recv buffer
+            {
+                match iface.poll(Instant::from_millis(
+                    rawtime::duration_since_boot().as_millis() as i64,
+                )) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("poll error: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
     fn client_connect(&mut self) -> Result<(), RPCError> {
         {
             let mut iface = self.iface.borrow_mut();

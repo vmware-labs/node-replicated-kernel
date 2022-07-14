@@ -60,44 +60,42 @@ impl RPCClient for ShmemClient {
 
         // Send request header + data
         {
-            let buf = unsafe { &mut (*self.mbuf.get()).data };
-            let mut copied = 0;
-            for d in data_in.iter() {
-                if !(*d).is_empty() {
-                    buf[copied..copied + (*d).len()].copy_from_slice(*d);
-                    copied += (*d).len();
-                }
+            let mut pointers: [&[u8]; 7] = [&[1]; 7];
+            pointers[0] = unsafe { &((*self.mbuf.get()).hdr).as_bytes()[..] };
+            let mut index = 1;
+            for d in data_in {
+                pointers[index] = d;
+                index += 1;
             }
             unsafe {
-                self.transport
-                    .send(&[&(*self.mbuf.get()).as_bytes()[..data_in_len + HDR_LEN]])?
-            };
+                self.transport.send(&pointers[..data_in.len() + 1])?;
+            }
         }
 
         // Receive response header + data
         {
+            let mut pointers: [&mut [u8]; 7] = [
+                &mut [1],
+                &mut [1],
+                &mut [1],
+                &mut [1],
+                &mut [1],
+                &mut [1],
+                &mut [1],
+            ];
+            pointers[0] = unsafe { &mut ((*self.mbuf.get()).hdr).as_mut_bytes()[..] };
+            let mut index = 1;
+            let num_out = data_out.len() + 1;
+            for d in data_out {
+                pointers[index] = d;
+                index += 1;
+            }
             unsafe {
-                self.transport
-                    .recv(&mut [(*self.mbuf.get()).as_mut_bytes()])?
+                self.transport.recv(&mut pointers[..num_out])?;
             };
         }
 
         let hdr = unsafe { &mut (*self.mbuf.get()).hdr };
-        let total_msg_data = hdr.msg_len as usize;
-
-        // Read in all msg data
-        let mut copied = 0;
-        let mut index = 0;
-        let buf = unsafe { &mut (*self.mbuf.get()).data };
-        while copied < total_msg_data {
-            let to_copy = total_msg_data - copied;
-            let to_copy = core::cmp::min(to_copy, data_out[index].len());
-
-            data_out[index][..to_copy].copy_from_slice(&buf[copied..copied + to_copy]);
-
-            copied += to_copy;
-            index += 1;
-        }
 
         // Check request & client IDs, and also length of received data
         if hdr.client_id != self.client_id || hdr.req_id != self.req_id {

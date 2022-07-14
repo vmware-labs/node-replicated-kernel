@@ -87,33 +87,34 @@ impl RPCClient for Client {
                 let hdr = self.hdr.borrow();
                 total_msg_data = hdr.msg_len as usize;
             }
+            assert!(total_msg_data <= data_out_len);
 
-            // Read in all msg data
-            let mut data_received = 0;
-            let mut index = 0;
-            let mut offset = 0;
-            while index < data_out.len() && data_received < total_msg_data {
-                let end_offset = core::cmp::min(
-                    data_out[index].len(),
-                    offset + (total_msg_data - data_received),
-                );
-                self.transport
-                    .recv(&mut [&mut data_out[index][offset..end_offset]])?;
-                data_received += end_offset - offset;
-                if end_offset == data_out[index].len() {
-                    index += 1;
-                    offset = 0;
-                } else {
-                    offset = end_offset;
+            // Fill all data
+            if total_msg_data == data_out_len {
+                self.transport.recv(data_out)?;
+
+            // Partial fill
+            } else {
+                let mut recv_space = 0;
+                let mut index = 0;
+                loop {
+                    if data_out[index].len() <= total_msg_data - recv_space {
+                        recv_space += data_out[index].len();
+                        index += 1;
+                    } else {
+                        break;
+                    }
+                }
+                self.transport.recv(&mut data_out[..index])?;
+                if recv_space < total_msg_data {
+                    self.transport
+                        .recv(&mut [&mut data_out[index][..(total_msg_data - recv_space)]])?;
                 }
             }
         }
 
-        // Make sure all data was received
-        let hdr = self.hdr.borrow();
-        assert!(hdr.msg_len as usize <= data_out_len);
-
         // Check request & client IDs, and also length of received data
+        let hdr = self.hdr.borrow();
         if hdr.client_id != self.client_id || hdr.req_id != self.req_id {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",

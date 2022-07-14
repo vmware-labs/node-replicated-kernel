@@ -88,10 +88,8 @@ impl<'t, 'a> Server<'a> {
         let hdr = self.hdr.borrow();
         let msg_len = hdr.msg_len as usize;
         let hdr_slice = unsafe { hdr.as_bytes() };
-        self.transport.send(&[hdr_slice])?;
-
         let buff = self.buff.borrow_mut();
-        self.transport.send(&[&buff[0..msg_len]])
+        self.transport.send(&[hdr_slice, &buff[0..msg_len]])
     }
 }
 

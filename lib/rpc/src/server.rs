@@ -44,14 +44,16 @@ impl<'t, 'a> Server<'a> {
         {
             let mut hdr = self.hdr.borrow_mut();
             let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            self.transport.recv(hdr_slice)?;
+            self.transport.recv(&mut [hdr_slice])?;
         }
 
         {
             let hdr = self.hdr.borrow();
             let total_msg_data = hdr.msg_len as usize;
             let mut buff = self.buff.borrow_mut();
-            self.transport.recv(&mut buff[..total_msg_data]).unwrap();
+            self.transport
+                .recv(&mut [&mut buff[..total_msg_data]])
+                .unwrap();
         }
         Ok(self.hdr.borrow().msg_type)
     }
@@ -62,7 +64,7 @@ impl<'t, 'a> Server<'a> {
         {
             let mut hdr = self.hdr.borrow_mut();
             let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            match self.transport.try_recv(hdr_slice)? {
+            match self.transport.try_recv(&mut [hdr_slice])? {
                 true => {}
                 false => return Ok(None),
             }
@@ -73,7 +75,9 @@ impl<'t, 'a> Server<'a> {
             let hdr = self.hdr.borrow();
             let total_msg_data = hdr.msg_len as usize;
             let mut buff = self.buff.borrow_mut();
-            self.transport.recv(&mut buff[..total_msg_data]).unwrap();
+            self.transport
+                .recv(&mut [&mut buff[..total_msg_data]])
+                .unwrap();
         }
         Ok(Some(self.hdr.borrow().msg_type))
     }
@@ -84,10 +88,10 @@ impl<'t, 'a> Server<'a> {
         let hdr = self.hdr.borrow();
         let msg_len = hdr.msg_len as usize;
         let hdr_slice = unsafe { hdr.as_bytes() };
-        self.transport.send(hdr_slice)?;
+        self.transport.send(&[hdr_slice])?;
 
         let buff = self.buff.borrow_mut();
-        self.transport.send(&buff[0..msg_len])
+        self.transport.send(&[&buff[0..msg_len]])
     }
 }
 

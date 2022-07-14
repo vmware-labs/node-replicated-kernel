@@ -28,38 +28,28 @@ impl<'a> Transport for ShmemTransport<'a> {
     }
 
     /// Send data to a remote node
-    fn send(&self, data_out: &[u8]) -> Result<(), RPCError> {
-        if data_out.is_empty() {
-            return Ok(());
-        }
-
-        match self.tx.send(data_out) {
+    fn send(&self, send_bufs: &[&[u8]]) -> Result<(), RPCError> {
+        match self.tx.send(send_bufs) {
             true => Ok(()),
             false => Err(RPCError::TransportError),
         }
     }
 
-    fn try_recv(&self, data_in: &mut [u8]) -> Result<bool, RPCError> {
-        if data_in.is_empty() {
-            return Ok(true);
-        }
+    /// Send data to a remote node
+    fn try_send(&self, send_bufs: &[&[u8]]) -> Result<bool, RPCError> {
+        Ok(self.tx.try_send(send_bufs))
+    }
 
-        // TODO: how to handle didn't all fit in one entry?
-        match self.rx.try_recv(data_in) {
+    fn recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        self.rx.recv(recv_bufs);
+        Ok(())
+    }
+
+    fn try_recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<bool, RPCError> {
+        match self.rx.try_recv(recv_bufs) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
-    }
-
-    /// Receive data from a remote node
-    fn recv(&self, data_in: &mut [u8]) -> Result<(), RPCError> {
-        if data_in.is_empty() {
-            return Ok(());
-        }
-
-        // TODO: how to handle didn't all fit in one entry?
-        self.rx.recv(data_in);
-        Ok(())
     }
 
     /// Controller-side implementation for LITE join_cluster()
@@ -104,31 +94,31 @@ mod tests {
             assert_eq!(
                 true,
                 server_transport
-                    .try_recv(&mut server_data[0..send_data.len()])
+                    .try_recv(&mut [&mut server_data[0..send_data.len()]])
                     .unwrap()
             );
             assert_eq!(&send_data, &server_data[0..send_data.len()]);
-            server_transport.send(&send_data).unwrap();
+            server_transport.send(&[&send_data]).unwrap();
             assert_eq!(
                 false,
                 server_transport
-                    .try_recv(&mut server_data[0..send_data.len()])
+                    .try_recv(&mut [&mut server_data[0..send_data.len()]])
                     .unwrap()
             );
-            server_transport.send(&send_data).unwrap();
+            server_transport.send(&[&send_data]).unwrap();
         });
 
         // In the original thread, send then receive data
-        client_transport.send(&send_data).unwrap();
+        client_transport.send(&[&send_data]).unwrap();
         let mut client_data = [0u8; QUEUE_ENTRY_SIZE];
         client_transport
-            .recv(&mut client_data[0..send_data.len()])
+            .recv(&mut [&mut client_data[0..send_data.len()]])
             .unwrap();
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
         assert_eq!(
             true,
             client_transport
-                .try_recv(&mut client_data[0..send_data.len()])
+                .try_recv(&mut [&mut client_data[0..send_data.len()]])
                 .unwrap()
         );
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
@@ -162,17 +152,17 @@ mod tests {
             // In a new server thread, receive then send data
             let mut server_data = [0u8; QUEUE_ENTRY_SIZE];
             server_transport
-                .recv(&mut server_data[0..send_data.len()])
+                .recv(&mut [&mut server_data[0..send_data.len()]])
                 .unwrap();
             assert_eq!(&send_data, &server_data[0..send_data.len()]);
-            server_transport.send(&send_data).unwrap();
+            server_transport.send(&[&send_data]).unwrap();
         });
 
         // In the original thread, send then receive data
-        client_transport.send(&send_data).unwrap();
+        client_transport.send(&[&send_data]).unwrap();
         let mut client_data = [0u8; QUEUE_ENTRY_SIZE];
         client_transport
-            .recv(&mut client_data[0..send_data.len()])
+            .recv(&mut [&mut client_data[0..send_data.len()]])
             .unwrap();
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
     }

@@ -148,8 +148,15 @@ impl<'a> State<'a> {
         unsafe { (*self.dequeue_pos).load(ordering) }
     }
 
-    unsafe fn push(&self, value: &[u8]) -> bool {
-        assert!(value.len() <= QUEUE_ENTRY_SIZE);
+    unsafe fn push(&self, values: &[&[u8]]) -> bool {
+        // Calculate and check total data to push
+        let push_data_len = values.iter().fold(0, |acc, x| acc + x.len());
+        assert!(push_data_len <= QUEUE_ENTRY_SIZE);
+
+        if push_data_len == 0 {
+            return true;
+        }
+
         let mask = self.mask;
         let mut pos = self.enqueue_pos(Relaxed);
         loop {
@@ -163,8 +170,15 @@ impl<'a> State<'a> {
                     {
                         Ok(enqueue_pos) => {
                             debug_assert_eq!(enqueue_pos, pos);
-                            (*node.get()).data_len = value.len() as u16;
-                            (*node.get()).value[..value.len()].copy_from_slice(value);
+                            (*node.get()).data_len = push_data_len as u16;
+
+                            // Copy each value into the queue
+                            let mut offset = 0;
+                            for d in values.iter() {
+                                (*node.get()).value[offset..offset + d.len()].copy_from_slice(d);
+                                offset += d.len();
+                            }
+
                             (*node.get()).sequence.store(pos + 1, Release);
                             break;
                         }
@@ -178,7 +192,13 @@ impl<'a> State<'a> {
         true
     }
 
-    unsafe fn pop(&self, value: &mut [u8]) -> Result<usize, QueueError> {
+    unsafe fn pop(&self, values: &mut [&mut [u8]]) -> Result<usize, QueueError> {
+        // Calculate maximum total data to receive
+        let pop_data_len = values.iter().fold(0, |acc, x| acc + x.len());
+        if pop_data_len == 0 {
+            return Ok(0);
+        }
+
         let mask = self.mask;
         let mut pos = self.dequeue_pos(Relaxed);
         loop {
@@ -192,8 +212,31 @@ impl<'a> State<'a> {
                         Ok(dequeue_pos) => {
                             debug_assert_eq!(dequeue_pos, pos);
                             let data_len = usize::from((*node.get()).data_len);
-                            assert!(data_len <= value.len());
-                            value[..data_len].copy_from_slice(&(*node.get()).value[..data_len]);
+                            assert!(data_len <= pop_data_len);
+
+                            let mut value_index = 0;
+                            let mut offset = 0;
+                            let mut total_offset = 0;
+                            while total_offset < data_len {
+                                let data_to_copy = core::cmp::min(
+                                    values[value_index].len(), // size of current value
+                                    data_len - total_offset,   // data left
+                                );
+                                values[value_index][offset..offset + data_to_copy].copy_from_slice(
+                                    &(*node.get()).value[total_offset..total_offset + data_to_copy],
+                                );
+
+                                // Update
+                                total_offset += data_to_copy;
+                                offset += data_to_copy;
+
+                                // Move to next value if current is full
+                                if offset == values[value_index].len() {
+                                    offset = 0;
+                                    value_index += 1;
+                                }
+                            }
+
                             (*node.get()).sequence.store(pos + mask + 1, Release);
                             return Ok(data_len);
                         }
@@ -243,12 +286,12 @@ impl<'a> Queue<'a> {
         })
     }
 
-    pub fn enqueue(&self, value: &[u8]) -> bool {
-        unsafe { self.state.push(value) }
+    pub fn enqueue(&self, values: &[&[u8]]) -> bool {
+        unsafe { self.state.push(values) }
     }
 
-    pub fn dequeue(&self, value: &mut [u8]) -> Result<usize, QueueError> {
-        unsafe { self.state.pop(value) }
+    pub fn dequeue(&self, values: &mut [&mut [u8]]) -> Result<usize, QueueError> {
+        unsafe { self.state.pop(values) }
     }
 
     pub fn len(&self) -> usize {
@@ -293,19 +336,19 @@ mod tests {
     #[test]
     fn test_enqueue() {
         let queue = Queue::new().unwrap();
-        assert_eq!(queue.enqueue(&[1u8]), true);
+        assert_eq!(queue.enqueue(&[&[1u8]]), true);
         assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
     }
 
     #[test]
     fn test_dequeue() {
         let queue = Queue::new().unwrap();
-        assert!(queue.enqueue(&[1u8]));
+        assert!(queue.enqueue(&[&[1u8]]));
         assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
         assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 0);
 
         let mut entry = [0u8; 1];
-        assert_eq!(queue.dequeue(&mut entry), Ok(1));
+        assert_eq!(queue.dequeue(&mut [&mut entry]), Ok(1));
         assert_eq!(entry[0], 1);
         assert_eq!(queue.state.enqueue_pos(Ordering::Relaxed), 1);
         assert_eq!(queue.state.dequeue_pos(Ordering::Relaxed), 1);
@@ -315,18 +358,18 @@ mod tests {
     fn test_enqueue_full() {
         let queue = Queue::new().unwrap();
         for i in 0..DEFAULT_QUEUE_SIZE {
-            assert_eq!(queue.enqueue(&i.to_be_bytes()), true);
+            assert_eq!(queue.enqueue(&[&i.to_be_bytes()]), true);
         }
         assert!(queue.state.dequeue_pos(Ordering::Relaxed) == 0);
         assert!(queue.state.enqueue_pos(Ordering::Relaxed) == DEFAULT_QUEUE_SIZE);
-        assert_eq!(queue.enqueue(&DEFAULT_QUEUE_SIZE.to_be_bytes()), false);
+        assert_eq!(queue.enqueue(&[&DEFAULT_QUEUE_SIZE.to_be_bytes()]), false);
     }
 
     #[test]
     fn test_dequeue_empty() {
         let queue = Queue::new().unwrap();
         let mut entry = [0];
-        assert!(queue.dequeue(&mut entry).is_err());
+        assert!(queue.dequeue(&mut [&mut entry]).is_err());
     }
 
     #[test]
@@ -335,12 +378,12 @@ mod tests {
         let producer = queue.clone();
         let consumer = queue.clone();
 
-        assert!(producer.enqueue(&[1u8]));
+        assert!(producer.enqueue(&[&[1u8]]));
         assert_eq!(producer.state.enqueue_pos(Ordering::Relaxed), 1);
         assert_eq!(producer.state.dequeue_pos(Ordering::Relaxed), 0);
 
         let mut entry = [0];
-        assert_eq!(consumer.dequeue(&mut entry), Ok(1));
+        assert_eq!(consumer.dequeue(&mut [&mut entry]), Ok(1));
         assert_eq!(entry[0], 1);
         assert_eq!(consumer.state.enqueue_pos(Ordering::Relaxed), 1);
         assert_eq!(consumer.state.dequeue_pos(Ordering::Relaxed), 1);
@@ -356,7 +399,7 @@ mod tests {
         let producer_thread = std::thread::spawn(move || {
             for i in 0..num_iterations {
                 loop {
-                    if producer.enqueue(&(i as i32).to_be_bytes()) {
+                    if producer.enqueue(&[&(i as i32).to_be_bytes()]) {
                         break;
                     }
                 }
@@ -367,7 +410,7 @@ mod tests {
             let mut entry = [0u8; 4];
             for i in 0..num_iterations {
                 loop {
-                    if consumer.dequeue(&mut entry).is_ok() {
+                    if consumer.dequeue(&mut [&mut entry]).is_ok() {
                         assert_eq!(i32::from_be_bytes(entry), i as i32);
                         break;
                     }
@@ -388,12 +431,12 @@ mod tests {
         for i in 1..=1024 {
             for j in 0..i {
                 assert_eq!(q.len(), j);
-                let _ = q.enqueue(&(j as i32).to_be_bytes());
+                let _ = q.enqueue(&[&(j as i32).to_be_bytes()]);
                 assert_eq!(q.len(), j + 1);
             }
             for j in (0..i).rev() {
                 assert_eq!(q.len(), j + 1);
-                let _ = q.dequeue(&mut entry);
+                let _ = q.dequeue(&mut [&mut entry]);
                 assert_eq!(q.len(), j);
             }
         }
@@ -405,12 +448,12 @@ mod tests {
         for _ in 1..=1024 {
             for j in 0..1023 {
                 assert_eq!(q.len(), j);
-                let _ = q.enqueue(&(j as i32).to_be_bytes());
+                let _ = q.enqueue(&[&(j as i32).to_be_bytes()]);
                 assert_eq!(q.len(), j + 1);
             }
             for j in (0..1023).rev() {
                 assert_eq!(q.len(), j + 1);
-                let _ = q.dequeue(&mut entry);
+                let _ = q.dequeue(&mut [&mut entry]);
                 assert_eq!(q.len(), j);
             }
         }
@@ -422,7 +465,7 @@ mod tests {
         let nmsgs = 1000;
         let mut entry = [0u8; 4];
         let q = Queue::with_capacity(nthreads * nmsgs).unwrap();
-        assert!(q.dequeue(&mut entry).is_err());
+        assert!(q.dequeue(&mut [&mut entry]).is_err());
         let (tx, rx) = channel();
 
         for _ in 0..nthreads {
@@ -431,7 +474,7 @@ mod tests {
             thread::spawn(move || {
                 let q = q;
                 for i in 0..nmsgs {
-                    assert!(q.enqueue(&(i as i32).to_be_bytes()));
+                    assert!(q.enqueue(&[&(i as i32).to_be_bytes()]));
                 }
                 tx.send(()).unwrap();
             });
@@ -446,7 +489,7 @@ mod tests {
                 let q = q;
                 let mut i = 0;
                 loop {
-                    match q.dequeue(&mut entry) {
+                    match q.dequeue(&mut [&mut entry]) {
                         Err(_) => {}
                         Ok(_) => {
                             i += 1;

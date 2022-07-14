@@ -70,13 +70,16 @@ impl RPCClient for ShmemClient {
             }
             unsafe {
                 self.transport
-                    .send(&(*self.mbuf.get()).as_bytes()[..data_in_len + HDR_LEN])?
+                    .send(&[&(*self.mbuf.get()).as_bytes()[..data_in_len + HDR_LEN]])?
             };
         }
 
         // Receive response header + data
         {
-            unsafe { self.transport.recv((*self.mbuf.get()).as_mut_bytes())? };
+            unsafe {
+                self.transport
+                    .recv(&mut [(*self.mbuf.get()).as_mut_bytes()])?
+            };
         }
 
         let hdr = unsafe { &mut (*self.mbuf.get()).hdr };

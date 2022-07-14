@@ -33,7 +33,7 @@ impl<'t, 'a> ShmemServer<'a> {
     /// receives next RPC call with RPC ID
     fn try_receive(&self) -> Result<Option<RPCType>, RPCError> {
         let buffer = unsafe { (*self.mbuf.get()).as_mut_bytes() };
-        match self.transport.try_recv(buffer)? {
+        match self.transport.try_recv(&mut [&mut buffer[..]])? {
             true => unsafe { Ok(Some((*self.mbuf.get()).hdr.msg_type)) },
             false => Ok(None),
         }
@@ -42,7 +42,7 @@ impl<'t, 'a> ShmemServer<'a> {
     /// receives next RPC call with RPC ID
     fn receive(&self) -> Result<RPCType, RPCError> {
         let buffer = unsafe { (*self.mbuf.get()).as_mut_bytes() };
-        self.transport.recv(buffer)?;
+        self.transport.recv(&mut [&mut buffer[..]])?;
         unsafe { Ok((*self.mbuf.get()).hdr.msg_type) }
     }
 
@@ -50,7 +50,7 @@ impl<'t, 'a> ShmemServer<'a> {
     fn reply(&self) -> Result<(), RPCError> {
         let msg_len = unsafe { (*self.mbuf.get()).hdr.msg_len } as usize;
         self.transport
-            .send(unsafe { &(*self.mbuf.get()).as_bytes()[..HDR_LEN + msg_len] })
+            .send(&[unsafe { &(*self.mbuf.get()).as_bytes()[..HDR_LEN + msg_len] }])
     }
 }
 

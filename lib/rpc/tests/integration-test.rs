@@ -67,9 +67,9 @@ fn test_client_server_shmem_transport() {
     use std::thread;
 
     use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
-    use rpc::client_shmem::ShmemClient;
+    use rpc::client::Client;
     use rpc::rpc::{NodeId, RPCError, RPCHeader};
-    use rpc::server_shmem::ShmemServer;
+    use rpc::server::Server;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::{Queue, Receiver, Sender};
     use rpc::transport::ShmemTransport;
@@ -90,7 +90,7 @@ fn test_client_server_shmem_transport() {
     thread::spawn(move || {
         // Create a server
         let rpc_server_transport = Box::new(server_transport);
-        let mut server = ShmemServer::new(rpc_server_transport);
+        let mut server = Server::new(rpc_server_transport);
 
         // Register an echo RPC
         fn echo_rpc_handler(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
@@ -115,7 +115,7 @@ fn test_client_server_shmem_transport() {
     let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
     let client_transport = ShmemTransport::new(client_receiver, client_sender);
     let rpc_client_transport = Box::new(client_transport);
-    let mut client = ShmemClient::new(rpc_client_transport);
+    let mut client = Client::new(rpc_client_transport);
 
     // Connect to server
     client.connect().unwrap();

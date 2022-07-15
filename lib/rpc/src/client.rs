@@ -55,62 +55,20 @@ impl RPCClient for Client {
         assert!(data_out_len + HDR_LEN <= self.transport.max_send());
         assert!(data_in_len + HDR_LEN <= self.transport.max_recv());
 
-        // Create request header
+        // Create request header and send message
         {
             let mut hdr = self.hdr.borrow_mut();
             hdr.pid = pid;
             hdr.req_id = self.req_id;
             hdr.msg_type = rpc_id;
             hdr.msg_len = data_in_len as u64;
+            self.transport.send_msg(&hdr, data_in)?;
         }
 
-        // Send request header + data
+        // Receive the header
         {
-            let hdr = self.hdr.borrow();
-            let hdr_slice = unsafe { hdr.as_bytes() };
-            self.transport.send(&[hdr_slice])?;
-            self.transport.send(data_in)?;
-        }
-
-        // Receive response header + data
-        {
-            // Receive the header
-            {
-                let mut hdr = self.hdr.borrow_mut();
-                let hdr_slice = unsafe { hdr.as_mut_bytes() };
-                self.transport.recv(&mut [hdr_slice])?;
-            }
-
-            // Read header to determine how much message data we're expecting
-            let total_msg_data;
-            {
-                let hdr = self.hdr.borrow();
-                total_msg_data = hdr.msg_len as usize;
-            }
-            assert!(total_msg_data <= data_out_len);
-
-            // Fill all data
-            if total_msg_data == data_out_len {
-                self.transport.recv(data_out)?;
-
-            // Partial fill
-            } else {
-                let mut recv_space = 0;
-                let mut index = 0;
-                loop {
-                    if data_out[index].len() <= total_msg_data - recv_space {
-                        recv_space += data_out[index].len();
-                        index += 1;
-                    } else {
-                        break;
-                    }
-                }
-                self.transport.recv(&mut data_out[..index])?;
-                if recv_space < total_msg_data {
-                    self.transport
-                        .recv(&mut [&mut data_out[index][..(total_msg_data - recv_space)]])?;
-                }
-            }
+            let mut hdr = self.hdr.borrow_mut();
+            self.transport.recv_msg(&mut hdr, data_out)?;
         }
 
         // Check request & client IDs, and also length of received data

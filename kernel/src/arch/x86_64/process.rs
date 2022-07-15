@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use core::cell::RefCell;
 use core::cmp::PartialEq;
+use core::iter::Iterator;
 use core::{fmt, ptr};
 
 use arrayvec::ArrayVec;
@@ -1238,53 +1239,57 @@ impl Process for Ring3Process {
         let executors_to_create = memory.size() / executor_space_requirement;
 
         KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
+        self.vspace
+            .map_frame(self.executor_offset, memory, MapAction::ReadWriteUser)
+            .expect("Can't map user-space executor memory.");
+        info!(
+            "executor space base expanded {:#x} size: {} end {:#x}",
+            self.executor_offset,
+            memory.size(),
+            self.executor_offset + memory.size()
+        );
+
+        let executor_space = executor_space_requirement * executors_to_create;
+        let prange = memory.base..memory.base + executor_space;
+        let vrange = self.executor_offset..self.executor_offset + executor_space;
+
+        for (executor_pmem_start, executor_vmem_start) in prange
+            .step_by(executor_space_requirement)
+            .zip(vrange.step_by(executor_space_requirement))
         {
-            self.vspace
-                .map_frame(self.executor_offset, memory, MapAction::ReadWriteUser)
-                .expect("Can't map user-space executor memory.");
-
-            info!(
-                "executor space base expanded {:#x} size: {} end {:#x}",
-                self.executor_offset,
-                memory.size(),
-                self.executor_offset + memory.size()
-            );
-        }
-
-        let cur_paddr_offset = memory.base;
-        let mut cur_offset = self.executor_offset;
-        for _cnt in 0..executors_to_create {
-            let executor_vmem_start = cur_offset;
-            let executor_pmem_start = cur_paddr_offset;
-
             let executor_vmem_end = executor_vmem_start + executor_space_requirement;
-            let _executor_pmem_end = executor_pmem_start + executor_space_requirement;
-
-            let _upcall_stack_base = cur_offset + Ring3Executor::INIT_STACK_SIZE;
-            let _vcpu_ctl =
-                cur_offset + Ring3Executor::INIT_STACK_SIZE + Ring3Executor::UPCALL_STACK_SIZE;
-            let vcpu_ctl_paddr = cur_paddr_offset
+            let vcpu_ctl = executor_vmem_start
                 + Ring3Executor::INIT_STACK_SIZE
                 + Ring3Executor::UPCALL_STACK_SIZE;
+            let vcpu_ctl_paddr = executor_pmem_start
+                + Ring3Executor::INIT_STACK_SIZE
+                + Ring3Executor::UPCALL_STACK_SIZE;
+            let vcpu_ctl_kernel = crate::memory::paddr_to_kernel_vaddr(PAddr::from(vcpu_ctl_paddr));
+            trace!(
+                "vcpu_ctl vaddr {:#x} vcpu_ctl paddr {:#x} vcpu_ctl_kernel {:#x}",
+                vcpu_ctl,
+                vcpu_ctl_paddr,
+                vcpu_ctl_kernel
+            );
 
             let executor = Box::try_new(Ring3Executor::new(
                 &self,
                 self.current_eid,
-                crate::memory::paddr_to_kernel_vaddr(PAddr::from(vcpu_ctl_paddr)),
+                vcpu_ctl_kernel,
                 (executor_vmem_start, executor_vmem_end),
                 memory.affinity,
             ))?;
 
             debug!("Created {} affinity {}", executor, memory.affinity);
 
-            // TODO(error-handling): Check that this properly unwinds on alloc errors...
+            // TODO(error-handling): Needs to properly unwind on alloc errors
+            // (e.g., have something that frees vcpu mem etc. on drop())
             match &mut self.executor_cache[memory.affinity as usize] {
                 Some(ref mut vector) => vector.try_push(executor)?,
                 None => self.executor_cache[memory.affinity as usize] = Some(try_vec![executor]?),
             }
 
             self.current_eid += 1;
-            cur_offset += executor_space_requirement;
         }
 
         debug!(

@@ -154,6 +154,40 @@ impl Transport for MPSCTransport {
         };
     }
 
+    fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
+        self.send(&[&unsafe { hdr.as_bytes() }[..]])?;
+        self.send(payload)
+    }
+
+    fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError> {
+        match self.try_send(&[&unsafe { hdr.as_bytes() }[..]])? {
+            true => {
+                self.send(payload)?;
+                Ok(true)
+            }
+            false => Ok(false),
+        }
+    }
+
+    fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        self.recv(&mut [&mut unsafe { hdr.as_mut_bytes() }[..]])?;
+        self.recv(payload)
+    }
+
+    fn try_recv_msg(
+        &self,
+        hdr: &mut RPCHeader,
+        payload: &mut [&mut [u8]],
+    ) -> Result<bool, RPCError> {
+        match self.try_recv(&mut [&mut unsafe { hdr.as_mut_bytes() }[..]])? {
+            true => {
+                self.recv(payload)?;
+                Ok(true)
+            }
+            false => Ok(false),
+        }
+    }
+
     fn client_connect(&mut self) -> Result<(), RPCError> {
         // MPSC channels are already connected when transport is initialized so nothing to do here
         Ok(())

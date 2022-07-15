@@ -1,3 +1,6 @@
+// Copyright © 2022 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use super::{Receiver, Sender};
 use crate::rpc::*;
 use crate::transport::Transport;
@@ -52,12 +55,76 @@ impl<'a> Transport for ShmemTransport<'a> {
         }
     }
 
-    /// Controller-side implementation for LITE join_cluster()
+    fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
+        let mut pointers: [&[u8]; 7] = [&[1]; 7];
+        pointers[0] = unsafe { &hdr.as_bytes()[..] };
+        let mut index = 1;
+        for d in payload {
+            pointers[index] = d;
+            index += 1;
+        }
+        self.send(&pointers[..payload.len() + 1])
+    }
+
+    fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError> {
+        let mut pointers: [&[u8]; 7] = [&[1]; 7];
+        pointers[0] = unsafe { &hdr.as_bytes()[..] };
+        let mut index = 1;
+        for d in payload {
+            pointers[index] = d;
+            index += 1;
+        }
+        self.try_send(&pointers[..payload.len() + 1])
+    }
+
+    fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        let mut pointers: [&mut [u8]; 7] = [
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+        ];
+        pointers[0] = unsafe { &mut hdr.as_mut_bytes()[..] };
+        let mut index = 1;
+        let num_out = payload.len() + 1;
+        for p in payload {
+            pointers[index] = p;
+            index += 1;
+        }
+        self.recv(&mut pointers[..num_out])
+    }
+
+    fn try_recv_msg(
+        &self,
+        hdr: &mut RPCHeader,
+        payload: &mut [&mut [u8]],
+    ) -> Result<bool, RPCError> {
+        let mut pointers: [&mut [u8]; 7] = [
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+            &mut [1],
+        ];
+        pointers[0] = unsafe { &mut hdr.as_mut_bytes()[..] };
+        let mut index = 1;
+        let num_out = payload.len() + 1;
+        for p in payload {
+            pointers[index] = p;
+            index += 1;
+        }
+        self.try_recv(&mut pointers[..num_out])
+    }
+
     fn client_connect(&mut self) -> Result<(), RPCError> {
         Ok(())
     }
 
-    /// Client-side implementation for LITE join_cluster()
     fn server_accept(&self) -> Result<(), RPCError> {
         Ok(())
     }

@@ -26,8 +26,8 @@ impl<'t, 'a> Server<'a> {
     {
         // Allocate space for server buffers
         let mut buff = Vec::new();
-        buff.try_reserve(MAX_BUFF_LEN).unwrap();
-        buff.resize(MAX_BUFF_LEN, 0);
+        buff.try_reserve(MAX_BUFF_LEN - HDR_LEN).unwrap();
+        buff.resize(MAX_BUFF_LEN - HDR_LEN, 0);
 
         // Initialize the server struct
         Server {
@@ -43,41 +43,21 @@ impl<'t, 'a> Server<'a> {
         // Receive request header
         {
             let mut hdr = self.hdr.borrow_mut();
-            let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            self.transport.recv(&mut [hdr_slice])?;
-        }
-
-        {
-            let hdr = self.hdr.borrow();
-            let total_msg_data = hdr.msg_len as usize;
             let mut buff = self.buff.borrow_mut();
-            self.transport
-                .recv(&mut [&mut buff[..total_msg_data]])
-                .unwrap();
+            self.transport.recv_msg(&mut hdr, &mut [&mut buff])?;
         }
         Ok(self.hdr.borrow().msg_type)
     }
 
     /// receives next RPC call with RPC ID
     fn try_receive(&self) -> Result<Option<RPCType>, RPCError> {
-        // Attempt to receive request header
+        // Receive request header
         {
             let mut hdr = self.hdr.borrow_mut();
-            let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            match self.transport.try_recv(&mut [hdr_slice])? {
-                true => {}
-                false => return Ok(None),
-            }
-        }
-
-        // If header was received, receive the rest
-        {
-            let hdr = self.hdr.borrow();
-            let total_msg_data = hdr.msg_len as usize;
             let mut buff = self.buff.borrow_mut();
-            self.transport
-                .recv(&mut [&mut buff[..total_msg_data]])
-                .unwrap();
+            if !self.transport.try_recv_msg(&mut hdr, &mut [&mut buff])? {
+                return Ok(None);
+            }
         }
         Ok(Some(self.hdr.borrow().msg_type))
     }
@@ -86,10 +66,9 @@ impl<'t, 'a> Server<'a> {
     fn reply(&self) -> Result<(), RPCError> {
         // Send response header + data
         let hdr = self.hdr.borrow();
-        let msg_len = hdr.msg_len as usize;
-        let hdr_slice = unsafe { hdr.as_bytes() };
         let buff = self.buff.borrow_mut();
-        self.transport.send(&[hdr_slice, &buff[0..msg_len]])
+        self.transport
+            .send_msg(&hdr, &[&buff[0..hdr.msg_len as usize]])
     }
 }
 

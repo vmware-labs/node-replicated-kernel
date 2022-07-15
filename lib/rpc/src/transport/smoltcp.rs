@@ -146,7 +146,7 @@ impl Transport for TCPTransport<'_> {
 
         // Attempt to write from first buffer into the socket send buffer
         let bytes_sent = match socket.can_send() {
-            true => match socket.send_slice(&send_bufs[0]) {
+            true => match socket.send_slice(send_bufs[0]) {
                 Ok(bytes_sent) => {
                     trace!("try_send [{:?}][{:?}-{:?}]", 0, 0, bytes_sent);
                     bytes_sent
@@ -294,7 +294,7 @@ impl Transport for TCPTransport<'_> {
         // Attempt to write to the first buffer from the socket receive buffer
         let bytes_recv = match socket.can_recv() {
             true => {
-                if let Ok(bytes_recv) = socket.recv_slice(&mut recv_bufs[0]) {
+                if let Ok(bytes_recv) = socket.recv_slice(recv_bufs[0]) {
                     trace!("try_recv [{:?}][{:?}-{:?}]", 0, 0, bytes_recv);
                     bytes_recv
                 } else {

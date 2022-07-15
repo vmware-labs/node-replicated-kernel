@@ -366,6 +366,107 @@ impl Transport for TCPTransport<'_> {
         }
     }
 
+    fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
+        // TODO: send all at once for small performance increase
+        self.send(&[&unsafe { hdr.as_bytes() }[..]])?;
+        self.send(payload)
+    }
+
+    fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError> {
+        // TODO: send all at once for small performance increase
+        match self.try_send(&[&unsafe { hdr.as_bytes() }[..]])? {
+            true => {
+                self.send(payload)?;
+                Ok(true)
+            }
+            false => Ok(false),
+        }
+    }
+
+    fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        // Calculate and check total data_out len
+        let data_out_len = payload.iter().fold(0, |acc, x| acc + x.len());
+        assert!(data_out_len + HDR_LEN <= self.max_send());
+
+        // Receive the header
+        {
+            let hdr_slice = unsafe { hdr.as_mut_bytes() };
+            self.recv(&mut [hdr_slice])?;
+        }
+
+        // Read header to determine how much message data we're expecting
+        let total_msg_data = hdr.msg_len as usize;
+        assert!(total_msg_data <= data_out_len);
+
+        // Fill all data
+        if total_msg_data == data_out_len {
+            self.recv(payload)?;
+
+        // Partial fill
+        } else {
+            let mut recv_space = 0;
+            let mut index = 0;
+            loop {
+                if payload[index].len() <= total_msg_data - recv_space {
+                    recv_space += payload[index].len();
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            self.recv(&mut payload[..index])?;
+            if recv_space < total_msg_data {
+                self.recv(&mut [&mut payload[index][..(total_msg_data - recv_space)]])?;
+            }
+        }
+        Ok(())
+    }
+
+    fn try_recv_msg(
+        &self,
+        hdr: &mut RPCHeader,
+        payload: &mut [&mut [u8]],
+    ) -> Result<bool, RPCError> {
+        // Calculate and check total data_out len
+        let data_out_len = payload.iter().fold(0, |acc, x| acc + x.len());
+        assert!(data_out_len + HDR_LEN <= self.max_send());
+
+        // Try to receive the header
+        {
+            let hdr_slice = unsafe { hdr.as_mut_bytes() };
+            if !self.try_recv(&mut [hdr_slice])? {
+                return Ok(false);
+            }
+        }
+
+        // Read header to determine how much message data we're expecting
+        let total_msg_data = hdr.msg_len as usize;
+        assert!(total_msg_data <= data_out_len);
+
+        // Fill all data
+        if total_msg_data == data_out_len {
+            self.recv(payload)?;
+
+        // Partial fill
+        } else {
+            let mut recv_space = 0;
+            let mut index = 0;
+            loop {
+                if payload[index].len() <= total_msg_data - recv_space {
+                    recv_space += payload[index].len();
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            self.recv(&mut payload[..index])?;
+            if recv_space < total_msg_data {
+                self.recv(&mut [&mut payload[index][..(total_msg_data - recv_space)]])?;
+            }
+        }
+        Ok(true)
+    }
+
     fn client_connect(&mut self) -> Result<(), RPCError> {
         {
             let mut iface = self.iface.borrow_mut();

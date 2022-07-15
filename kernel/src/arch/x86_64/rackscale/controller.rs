@@ -4,6 +4,8 @@ use alloc::boxed::Box;
 
 use rpc::api::RPCServer;
 use rpc::rpc::RPCType;
+use rpc::server::Server;
+use rpc::transport::Transport as RPCTransport;
 
 use crate::arch::debug::shutdown;
 use crate::ExitReason;
@@ -18,10 +20,7 @@ pub(crate) fn run() {
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
-        use {
-            crate::transport::ethernet::init_network, rpc::server::Server,
-            rpc::transport::TCPTransport,
-        };
+        use {crate::transport::ethernet::init_network, rpc::transport::TCPTransport};
         let iface = init_network().expect("Unable to initialize vmxnet3");
         let transport =
             Box::try_new(TCPTransport::new(None, PORT, iface)).expect("Out of memory during init");
@@ -30,11 +29,11 @@ pub(crate) fn run() {
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
-        use {crate::transport::shmem::create_shmem_transport, rpc::server_shmem::ShmemServer};
+        use crate::transport::shmem::create_shmem_transport;
         let transport =
             Box::try_new(create_shmem_transport().expect("Failed to create shmem transport"))
                 .expect("Out of memory during init");
-        Box::try_new(ShmemServer::new(transport)).expect("Out of memory during init")
+        Box::try_new(Server::new(transport)).expect("Out of memory during init")
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
     };

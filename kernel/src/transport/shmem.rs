@@ -87,16 +87,16 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
 }
 
 #[cfg(feature = "rpc")]
-pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client_shmem::ShmemClient>> {
+pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client::Client>> {
     use alloc::boxed::Box;
-    use rpc::client_shmem::ShmemClient;
+    use rpc::client::Client;
     use rpc::RPCClient;
 
     // Set up the transport
     let transport = Box::try_new(create_shmem_transport()?)?;
 
     // Create the client
-    let mut client = Box::try_new(ShmemClient::new(transport))?;
+    let mut client = Box::try_new(Client::new(transport))?;
     client.connect()?;
     Ok(client)
 }

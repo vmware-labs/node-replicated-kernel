@@ -8,10 +8,9 @@ use crate::error::KResult;
 use crate::fs::fd::FileDescriptor;
 use crate::nrproc;
 use crate::process::{KernArcBuffer, UserSlice};
-use crate::syscalls::FsDispatch;
-use crate::syscalls::SystemCallDispatch;
+use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch};
 
-use super::super::syscall::{Arch86ProcessDispatch, Arch86SystemDispatch, Arch86VSpaceDispatch};
+use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
 use super::close::rpc_close;
 use super::delete::rpc_delete;
 use super::getinfo::rpc_getinfo;
@@ -20,12 +19,13 @@ use super::open::rpc_open;
 use super::rename::rpc_rename;
 use super::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 
-pub(crate) struct Arch86LwkSystemCall;
+pub(crate) struct Arch86LwkSystemCall {
+    pub(crate) local: Arch86SystemCall,
+}
 
 impl SystemCallDispatch<u64> for Arch86LwkSystemCall {}
 // Use x86 syscall processing for not yet implemented systems:
 impl Arch86SystemDispatch for Arch86LwkSystemCall {}
-impl Arch86ProcessDispatch for Arch86LwkSystemCall {}
 impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
 
 impl FsDispatch<u64> for Arch86LwkSystemCall {
@@ -110,5 +110,35 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
 
         let mut client = super::RPC_CLIENT.lock();
         rpc_mkdir(&mut **client, pid, pathstring, modes).map_err(|e| e.into())
+    }
+}
+
+impl ProcessDispatch<u64> for Arch86LwkSystemCall {
+    fn log(&self, buffer_arg: u64, len: u64) -> KResult<(u64, u64)> {
+        self.local.log(buffer_arg, len)
+    }
+
+    fn get_vcpu_area(&self) -> KResult<(u64, u64)> {
+        self.local.get_vcpu_area()
+    }
+
+    fn allocate_vector(&self, vector: u64, core: u64) -> KResult<(u64, u64)> {
+        self.local.allocate_vector(vector, core)
+    }
+
+    fn get_process_info(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> KResult<(u64, u64)> {
+        self.local.get_process_info(vaddr_buf, vaddr_buf_len)
+    }
+
+    fn request_core(&self, core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
+        self.local.request_core(core_id, entry_point)
+    }
+
+    fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
+        self.local.allocate_physical(page_size, affinity)
+    }
+
+    fn exit(&self, code: u64) -> KResult<(u64, u64)> {
+        self.local.exit(code)
     }
 }

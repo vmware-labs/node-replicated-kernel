@@ -437,7 +437,9 @@ pub extern "C" fn syscall_handle(
         let dispatch = Arch86SystemCall;
         dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)
     } else {
-        let dispatch = super::rackscale::syscalls::Arch86LwkSystemCall;
+        let dispatch = super::rackscale::syscalls::Arch86LwkSystemCall {
+            local: Arch86SystemCall,
+        };
         dispatch.handle(function, arg1, arg2, arg3, arg4, arg5)
     };
 

@@ -152,6 +152,7 @@ impl<'a> State<'a> {
         // Calculate and check total data to push
         let push_data_len = values.iter().fold(0, |acc, x| acc + x.len());
         assert!(push_data_len <= QUEUE_ENTRY_SIZE);
+        log::debug!("Attempt to push {:?} bytes", push_data_len);
 
         if push_data_len == 0 {
             return true;
@@ -212,6 +213,11 @@ impl<'a> State<'a> {
                         Ok(dequeue_pos) => {
                             debug_assert_eq!(dequeue_pos, pos);
                             let data_len = usize::from((*node.get()).data_len);
+                            log::debug!(
+                                "Attempt to pop into {:?} bytes, found {:?} bytes",
+                                pop_data_len,
+                                data_len
+                            );
                             assert!(data_len <= pop_data_len);
 
                             let mut value_index = 0;

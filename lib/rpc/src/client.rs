@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use core::cell::RefCell;
+use core::cell::UnsafeCell;
 
 use log::{debug, warn};
 
@@ -14,7 +14,7 @@ pub struct Client {
     transport: Box<dyn Transport>,
     client_id: NodeId,
     req_id: u64,
-    hdr: RefCell<RPCHeader>,
+    hdr: UnsafeCell<RPCHeader>,
 }
 
 impl Client {
@@ -23,7 +23,7 @@ impl Client {
             transport,
             client_id: 0,
             req_id: 0,
-            hdr: RefCell::new(RPCHeader::default()),
+            hdr: UnsafeCell::new(RPCHeader::default()),
         }
     }
 }
@@ -48,31 +48,20 @@ impl RPCClient for Client {
         data_out: &mut [&mut [u8]],
     ) -> Result<(), RPCError> {
         // Calculate total data_out len
-        let data_out_len = data_out.iter().fold(0, |acc, x| acc + x.len());
         let data_in_len = data_in.iter().fold(0, |acc, x| acc + x.len());
 
-        // Check lengths
-        assert!(data_out_len + HDR_LEN <= self.transport.max_send());
-        assert!(data_in_len + HDR_LEN <= self.transport.max_recv());
-
         // Create request header and send message
-        {
-            let mut hdr = self.hdr.borrow_mut();
-            hdr.pid = pid;
-            hdr.req_id = self.req_id;
-            hdr.msg_type = rpc_id;
-            hdr.msg_len = data_in_len as u64;
-            self.transport.send_msg(&hdr, data_in)?;
-        }
+        let mut hdr = unsafe { &mut *self.hdr.get() };
+        hdr.pid = pid;
+        hdr.req_id = self.req_id;
+        hdr.msg_type = rpc_id;
+        hdr.msg_len = data_in_len as u64;
+        self.transport.send_msg(hdr, data_in)?;
 
-        // Receive the header
-        {
-            let mut hdr = self.hdr.borrow_mut();
-            self.transport.recv_msg(&mut hdr, data_out)?;
-        }
+        // Receive the response
+        self.transport.recv_msg(hdr, data_out)?;
 
         // Check request & client IDs, and also length of received data
-        let hdr = self.hdr.borrow();
         if hdr.client_id != self.client_id || hdr.req_id != self.req_id {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",

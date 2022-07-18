@@ -1,8 +1,3 @@
-#[cfg(any(test, feature = "std"))]
-pub(crate) mod mpsc;
-#[cfg(any(test, feature = "std"))]
-pub use mpsc::MPSCTransport;
-
 mod api;
 pub mod shmem;
 mod smoltcp;

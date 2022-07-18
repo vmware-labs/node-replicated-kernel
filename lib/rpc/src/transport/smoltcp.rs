@@ -4,7 +4,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::RefCell;
-use log::{debug, trace, warn};
+use log::{debug, warn};
 
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
@@ -61,146 +61,57 @@ impl TCPTransport<'_> {
             client_port: 10110,
         }
     }
-}
 
-impl Transport for TCPTransport<'_> {
-    fn max_send(&self) -> usize {
-        RX_BUF_LEN
-    }
-
-    fn max_recv(&self) -> usize {
-        TX_BUF_LEN
-    }
-
-    fn send(&self, send_bufs: &[&[u8]]) -> Result<(), RPCError> {
-        // Calculate and check total data to receive
-        let send_data_len = send_bufs.iter().fold(0, |acc, x| acc + x.len());
-        assert!(send_data_len <= self.max_send());
-
-        trace!("Attempting to send {:?} bytes", send_data_len);
-        if send_data_len == 0 {
-            return Ok(());
-        }
-
-        // Read in all msg data
-        let mut data_sent = 0;
-        let mut index = 0;
+    fn send(&self, send_buf: &[u8], is_try: bool) -> Result<bool, RPCError> {
+        debug!("send {:?} bytes, try={:?}", send_buf.len(), is_try);
         let mut offset = 0;
-        loop {
-            let mut iface = self.iface.borrow_mut();
-            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
-            // Send until socket state is bad (shouldn't happen), send buffer is full, all data is sent,
-            // or no progress is being made (e.g., send_slice starts returning 0)
-            let bytes_sent = 1;
-            while socket.can_send() && data_sent < send_data_len && bytes_sent != 0 {
-                // Attempt to send until end of data array
-                if let Ok(bytes_sent) = socket.send_slice(&send_bufs[index][offset..]) {
-                    // Try to send remaining in current send_buf
-                    trace!("sent [{:?}][{:?}-{:?}]", index, offset, offset + bytes_sent);
-                    data_sent += bytes_sent;
-
-                    // Check if done
-                    if data_sent == send_data_len {
-                        return Ok(());
-                    }
-
-                    // Update index if reached end of send_buf
-                    if offset + bytes_sent == send_bufs[index].len() {
-                        index += 1;
-                        offset = 0;
-                    } else {
-                        offset += bytes_sent;
-                    }
-                } else {
-                    trace!("send_slice failed... trying again?");
-                }
-            }
-
-            // Poll the interface only if we must in order to have space in the send buffer
-            {
-                match iface.poll(Instant::from_millis(
-                    rawtime::duration_since_boot().as_millis() as i64,
-                )) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        warn!("poll error: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn try_send(&self, send_bufs: &[&[u8]]) -> Result<bool, RPCError> {
-        // Calculate and check total data to receive
-        let send_data_len = send_bufs.iter().fold(0, |acc, x| acc + x.len());
-        assert!(send_data_len <= self.max_send());
-
-        trace!("Attempting to try_send {:?} bytes", send_data_len);
-        if send_data_len == 0 {
+        if send_buf.is_empty() {
             return Ok(true);
         }
 
-        let mut iface = self.iface.borrow_mut();
-        let socket = iface.get_socket::<TcpSocket>(self.server_handle);
+        {
+            let mut iface = self.iface.borrow_mut();
+            let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
-        // Attempt to write from first buffer into the socket send buffer
-        let bytes_sent = match socket.can_send() {
-            true => match socket.send_slice(send_bufs[0]) {
-                Ok(bytes_sent) => {
-                    trace!("try_send [{:?}][{:?}-{:?}]", 0, 0, bytes_sent);
-                    bytes_sent
+            // Attempt to write from first buffer into the socket send buffer
+            if socket.can_send() {
+                if let Ok(bytes_sent) = socket.send_slice(send_buf) {
+                    debug!("send [{:?}-{:?}]", 0, bytes_sent);
+                    offset = bytes_sent;
                 }
-                Err(_) => 0,
-            },
-            false => 0,
-        };
+            }
+        }
 
         // Can't send now
-        if bytes_sent == 0 {
+        if is_try && offset == 0 {
             return Ok(false);
 
-        // If we started sending, send (with blocking) remaining data
-        } else if bytes_sent == send_bufs[0].len() {
-            if send_bufs.len() > 1 {
-                self.send(&send_bufs[1..])?;
-            }
+        // All sent
+        } else if offset == send_buf.len() {
             return Ok(true);
         }
 
-        // For highest efficiency, if we only sent part of the buffer,
-        // We don't want to split up into two sends so do send code here
-        let mut data_sent = bytes_sent;
-        let mut index = 0;
-        let mut offset = 0;
+        // Send rest of the data
         loop {
             let mut iface = self.iface.borrow_mut();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
-
             // Send until socket state is bad (shouldn't happen), send buffer is full, all data is sent,
             // or no progress is being made (e.g., send_slice starts returning 0)
             let bytes_sent = 1;
-            while socket.can_send() && data_sent < send_data_len && bytes_sent != 0 {
+            while socket.can_send() && bytes_sent != 0 {
                 // Attempt to send until end of data array
-                if let Ok(bytes_sent) = socket.send_slice(&send_bufs[index][offset..]) {
+                if let Ok(bytes_sent) = socket.send_slice(&send_buf[offset..]) {
                     // Try to send remaining in current send_buf
-                    trace!("sent [{:?}][{:?}-{:?}]", index, offset, offset + bytes_sent);
-                    data_sent += bytes_sent;
-
-                    // Check if done
-                    if data_sent == send_data_len {
-                        return Ok(true);
-                    }
+                    debug!("sent [{:?}-{:?}]", offset, offset + bytes_sent);
 
                     // Update index if reached end of send_buf
-                    if offset + bytes_sent == send_bufs[index].len() {
-                        index += 1;
-                        offset = 0;
-                    } else {
-                        offset += bytes_sent;
+                    offset += bytes_sent;
+                    if offset == send_buf.len() {
+                        return Ok(true);
                     }
                 } else {
-                    trace!("send_slice failed... trying again?");
+                    debug!("send_slice failed... trying again?");
                 }
             }
 
@@ -219,48 +130,34 @@ impl Transport for TCPTransport<'_> {
     }
 
     /// Receive data from a remote node
-    fn recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<(), RPCError> {
-        // Calculate and check total data to receive
-        let recv_data_len = recv_bufs.iter().fold(0, |acc, x| acc + x.len());
-        assert!(recv_data_len <= self.max_recv());
+    fn recv(&self, recv_buf: &mut [u8]) -> Result<(), RPCError> {
+        debug!("recv {:?} bytes", recv_buf.len());
+        let mut offset = 0;
 
-        trace!("Attempting to recv {:?} bytes", recv_data_len);
-        if recv_data_len == 0 {
+        if recv_buf.is_empty() {
             return Ok(());
         }
 
-        // Recv all data
-        let mut data_recv = 0;
-        let mut index = 0;
-        let mut offset = 0;
         loop {
+            // Recv until socket state is bad (shouldn't happen), all data is received,
+            // or no progress is being made (e.g., recv_slice starts returning 0)
             let mut iface = self.iface.borrow_mut();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
-            // Recv until socket state is bad (shouldn't happen), all data is received,
-            // or no progress is being made (e.g., recv_slice starts returning 0)
             let bytes_recv = 1;
-            while socket.can_recv() && data_recv < recv_data_len && bytes_recv != 0 {
+            while socket.can_recv() && bytes_recv != 0 {
                 // Attempt to recv until end of data array
-                if let Ok(bytes_recv) = socket.recv_slice(&mut recv_bufs[index][offset..]) {
+                if let Ok(bytes_recv) = socket.recv_slice(&mut recv_buf[offset..]) {
                     // Try to recv remaining in current recv_buf
-                    trace!("recv [{:?}][{:?}-{:?}]", index, offset, offset + bytes_recv);
-                    data_recv += bytes_recv;
-
-                    // Check if done
-                    if data_recv == recv_data_len {
-                        return Ok(());
-                    }
+                    debug!("recv [{:?}-{:?}]", offset, offset + bytes_recv);
 
                     // Update index if reached end of recv_buf
-                    if offset + bytes_recv == recv_bufs[index].len() {
-                        index += 1;
-                        offset = 0;
-                    } else {
-                        offset += bytes_recv;
+                    offset += bytes_recv;
+                    if offset == recv_buf.len() {
+                        return Ok(());
                     }
                 } else {
-                    trace!("recv_slice failed... trying again?");
+                    debug!("recv_slice failed... trying again?");
                 }
             }
 
@@ -278,147 +175,132 @@ impl Transport for TCPTransport<'_> {
         }
     }
 
-    fn try_recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<bool, RPCError> {
-        // Calculate and check total data to receive
-        let recv_data_len = recv_bufs.iter().fold(0, |acc, x| acc + x.len());
-        assert!(recv_data_len <= self.max_recv());
-
-        trace!("Attempting to try_recv {:?} bytes", recv_data_len);
-        if recv_data_len == 0 {
-            return Ok(true);
-        }
-
-        let mut iface = self.iface.borrow_mut();
-        let socket = iface.get_socket::<TcpSocket>(self.server_handle);
-
-        // Attempt to write to the first buffer from the socket receive buffer
-        let bytes_recv = match socket.can_recv() {
-            true => {
-                if let Ok(bytes_recv) = socket.recv_slice(recv_bufs[0]) {
-                    trace!("try_recv [{:?}][{:?}-{:?}]", 0, 0, bytes_recv);
-                    bytes_recv
-                } else {
-                    0
-                }
-            }
-            false => 0,
-        };
-
-        // Can't receive now
-        if bytes_recv == 0 {
-            return Ok(false);
-
-        // If we started receiving, receive (with blocking) remaining data
-        } else if bytes_recv == recv_bufs[0].len() {
-            if recv_bufs.len() > 1 {
-                self.recv(&mut recv_bufs[1..])?;
-            }
-            return Ok(true);
-        }
-
-        // For highest efficiency, if we only received part of the buffer,
-        // We don't want to split up into two receives so do remaining receive code here
-        let mut data_recv = bytes_recv;
-        let mut index = 0;
+    fn recv_msg(
+        &self,
+        hdr: &mut RPCHeader,
+        payload: &mut [&mut [u8]],
+        is_try: bool,
+    ) -> Result<bool, RPCError> {
+        // Try to receive the header, bail if try and data was not received here. Otherwise, proceed
+        // to finish receiving
+        debug!("recv_msg, try = {:?}", is_try);
         let mut offset = 0;
-        loop {
+        {
             let mut iface = self.iface.borrow_mut();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
-
-            // Receive until socket state is bad (shouldn't happen), all data is received,
-            // or no progress is being made (e.g., recv_slice starts returning 0)
-            let bytes_recv = 1;
-            while socket.can_recv() && data_recv < recv_data_len && bytes_recv != 0 {
-                // Attempt to recv until end of data array
-                if let Ok(bytes_recv) = socket.recv_slice(&mut recv_bufs[index][offset..]) {
-                    // Try to recv remaining in current recv_buf
-                    trace!("recv [{:?}][{:?}-{:?}]", index, offset, offset + bytes_recv);
-                    data_recv += bytes_recv;
-
-                    // Check if done
-                    if data_recv == recv_data_len {
-                        return Ok(true);
+            if socket.can_recv() {
+                let hdr_slice = unsafe { hdr.as_mut_bytes() };
+                if let Ok(bytes_recv) = socket.recv_slice(hdr_slice) {
+                    debug!("recv_msg [{:?}-{:?}]", 0, bytes_recv);
+                    if is_try && bytes_recv == 0 {
+                        return Ok(false);
                     }
-
-                    // Update index if reached end of recv_buf
-                    if offset + bytes_recv == recv_bufs[index].len() {
-                        index += 1;
-                        offset = 0;
-                    } else {
-                        offset += bytes_recv;
-                    }
-                } else {
-                    trace!("recv _slice failed... trying again?");
+                    offset = bytes_recv;
                 }
-            }
-
-            // Poll the interface only if we must in order to have space in the recv buffer
-            {
-                match iface.poll(Instant::from_millis(
-                    rawtime::duration_since_boot().as_millis() as i64,
-                )) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        warn!("poll error: {}", e);
-                    }
-                }
+            } else if is_try {
+                return Ok(false);
             }
         }
+
+        let hdr_slice = unsafe { hdr.as_mut_bytes() };
+        self.recv(&mut hdr_slice[offset..])?;
+
+        // At this point, if try failed, we've already bailed. We've also received all of the header
+        // So we are ready to read in all payload data. First, do a bit of validation before entering loop
+        let expected_data = hdr.msg_len as usize;
+        let max_recv_data = payload.iter().fold(0, |acc, x| acc + x.len());
+        if expected_data > max_recv_data {
+            // Not enough space to store all message data
+            Err(RPCError::InternalError)
+        } else if expected_data == 0 {
+            Ok(true)
+        } else {
+            // Receive until expected data is fully received
+            let mut recv_count = 0;
+            for p in payload.iter_mut() {
+                if recv_count + p.len() > expected_data {
+                    debug!(
+                        "recv_msg recv payload buf[{:?}-{:?}]",
+                        0,
+                        expected_data - recv_count
+                    );
+                    self.recv(&mut p[..(expected_data - recv_count)])?;
+                    return Ok(true);
+                } else {
+                    debug!("recv_msg recv payload buf[{:?}-{:?}]", 0, p.len());
+                    recv_count += p.len();
+                    self.recv(p)?;
+                }
+            }
+            Ok(true)
+        }
+    }
+}
+
+impl Transport for TCPTransport<'_> {
+    fn max_send(&self) -> usize {
+        RX_BUF_LEN
+    }
+
+    fn max_recv(&self) -> usize {
+        TX_BUF_LEN
     }
 
     fn send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<(), RPCError> {
-        // TODO: send all at once for small performance increase
-        self.send(&[&unsafe { hdr.as_bytes() }[..]])?;
-        self.send(payload)
+        debug!("send_msg - sending header");
+        self.send(&unsafe { hdr.as_bytes() }[..], false)?;
+        for p in payload {
+            debug!("send_msg - sending payload");
+            self.send(p, false)?;
+        }
+        Ok(())
     }
 
     fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError> {
-        // TODO: send all at once for small performance increase
-        match self.try_send(&[&unsafe { hdr.as_bytes() }[..]])? {
+        debug!("try_send_msg - sending header");
+        match self.send(&unsafe { hdr.as_bytes() }[..], true)? {
             true => {
-                self.send(payload)?;
+                for p in payload {
+                    debug!("send_msg - sending payload");
+                    self.send(p, false)?;
+                }
                 Ok(true)
             }
             false => Ok(false),
         }
     }
 
+    fn send_mbuf(&self, mbuf: &MBuf) -> Result<(), RPCError> {
+        debug!("try_send_mbuf");
+        self.send(
+            &unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize],
+            false,
+        )?;
+        Ok(())
+    }
+
+    fn try_send_mbuf(&self, mbuf: &MBuf) -> Result<bool, RPCError> {
+        debug!("try_send_mbuf");
+        self.send(
+            &unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize],
+            true,
+        )
+    }
+
+    fn recv_mbuf(&self, mbuf: &mut MBuf) -> Result<(), RPCError> {
+        debug!("recv_mbuf");
+        self.recv_msg(&mut mbuf.hdr, &mut [&mut mbuf.data], false)?;
+        Ok(())
+    }
+
+    fn try_recv_mbuf(&self, mbuf: &mut MBuf) -> Result<bool, RPCError> {
+        debug!("try_recv_mbuf");
+        self.recv_msg(&mut mbuf.hdr, &mut [&mut mbuf.data], true)
+    }
+
     fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
-        // Calculate and check total data_out len
-        let data_out_len = payload.iter().fold(0, |acc, x| acc + x.len());
-        assert!(data_out_len + HDR_LEN <= self.max_send());
-
-        // Receive the header
-        {
-            let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            self.recv(&mut [hdr_slice])?;
-        }
-
-        // Read header to determine how much message data we're expecting
-        let total_msg_data = hdr.msg_len as usize;
-        assert!(total_msg_data <= data_out_len);
-
-        // Fill all data
-        if total_msg_data == data_out_len {
-            self.recv(payload)?;
-
-        // Partial fill
-        } else {
-            let mut recv_space = 0;
-            let mut index = 0;
-            loop {
-                if payload[index].len() <= total_msg_data - recv_space {
-                    recv_space += payload[index].len();
-                    index += 1;
-                } else {
-                    break;
-                }
-            }
-            self.recv(&mut payload[..index])?;
-            if recv_space < total_msg_data {
-                self.recv(&mut [&mut payload[index][..(total_msg_data - recv_space)]])?;
-            }
-        }
+        debug!("recv_msg");
+        self.recv_msg(hdr, payload, false)?;
         Ok(())
     }
 
@@ -427,44 +309,8 @@ impl Transport for TCPTransport<'_> {
         hdr: &mut RPCHeader,
         payload: &mut [&mut [u8]],
     ) -> Result<bool, RPCError> {
-        // Calculate and check total data_out len
-        let data_out_len = payload.iter().fold(0, |acc, x| acc + x.len());
-        assert!(data_out_len + HDR_LEN <= self.max_send());
-
-        // Try to receive the header
-        {
-            let hdr_slice = unsafe { hdr.as_mut_bytes() };
-            if !self.try_recv(&mut [hdr_slice])? {
-                return Ok(false);
-            }
-        }
-
-        // Read header to determine how much message data we're expecting
-        let total_msg_data = hdr.msg_len as usize;
-        assert!(total_msg_data <= data_out_len);
-
-        // Fill all data
-        if total_msg_data == data_out_len {
-            self.recv(payload)?;
-
-        // Partial fill
-        } else {
-            let mut recv_space = 0;
-            let mut index = 0;
-            loop {
-                if payload[index].len() <= total_msg_data - recv_space {
-                    recv_space += payload[index].len();
-                    index += 1;
-                } else {
-                    break;
-                }
-            }
-            self.recv(&mut payload[..index])?;
-            if recv_space < total_msg_data {
-                self.recv(&mut [&mut payload[index][..(total_msg_data - recv_space)]])?;
-            }
-        }
-        Ok(true)
+        debug!("try_recv_msg");
+        self.recv_msg(hdr, payload, true)
     }
 
     fn client_connect(&mut self) -> Result<(), RPCError> {
@@ -531,7 +377,6 @@ impl Transport for TCPTransport<'_> {
                 }
             }
 
-            // This is equivalent (more or less) to accept
             let mut iface = self.iface.borrow_mut();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
             if socket.is_active() && (socket.may_send() || socket.may_recv()) {

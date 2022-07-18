@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
-use core::cell::RefCell;
+use core::cell::{RefCell, UnsafeCell};
 
 use hashbrown::HashMap;
 use log::debug;
@@ -15,8 +14,7 @@ use crate::transport::Transport;
 pub struct Server<'a> {
     transport: Box<dyn Transport + 'a>,
     handlers: RefCell<HashMap<RPCType, &'a RPCHandler>>,
-    hdr: RefCell<RPCHeader>,
-    buff: RefCell<Vec<u8>>,
+    mbuf: UnsafeCell<MBuf>,
 }
 
 impl<'t, 'a> Server<'a> {
@@ -24,51 +22,39 @@ impl<'t, 'a> Server<'a> {
     where
         't: 'a,
     {
-        // Allocate space for server buffers
-        let mut buff = Vec::new();
-        buff.try_reserve(MAX_BUFF_LEN - HDR_LEN).unwrap();
-        buff.resize(MAX_BUFF_LEN - HDR_LEN, 0);
-
         // Initialize the server struct
         Server {
             transport,
             handlers: RefCell::new(HashMap::new()),
-            hdr: RefCell::new(RPCHeader::default()),
-            buff: RefCell::new(buff),
+            mbuf: UnsafeCell::new(MBuf {
+                hdr: RPCHeader::default(),
+                data: [0u8; MAX_BUFF_LEN - HDR_LEN],
+            }),
         }
     }
 
     /// receives next RPC call with RPC ID
     fn receive(&self) -> Result<RPCType, RPCError> {
         // Receive request header
-        {
-            let mut hdr = self.hdr.borrow_mut();
-            let mut buff = self.buff.borrow_mut();
-            self.transport.recv_msg(&mut hdr, &mut [&mut buff])?;
-        }
-        Ok(self.hdr.borrow().msg_type)
+        self.transport.recv_mbuf(unsafe { &mut *self.mbuf.get() })?;
+        Ok(unsafe { (*self.mbuf.get()).hdr.msg_type })
     }
 
     /// receives next RPC call with RPC ID
     fn try_receive(&self) -> Result<Option<RPCType>, RPCError> {
         // Receive request header
+        if !self
+            .transport
+            .try_recv_mbuf(unsafe { &mut *self.mbuf.get() })?
         {
-            let mut hdr = self.hdr.borrow_mut();
-            let mut buff = self.buff.borrow_mut();
-            if !self.transport.try_recv_msg(&mut hdr, &mut [&mut buff])? {
-                return Ok(None);
-            }
+            return Ok(None);
         }
-        Ok(Some(self.hdr.borrow().msg_type))
+        Ok(Some(unsafe { (*self.mbuf.get()).hdr.msg_type }))
     }
 
     /// Replies an RPC call with results
     fn reply(&self) -> Result<(), RPCError> {
-        // Send response header + data
-        let hdr = self.hdr.borrow();
-        let buff = self.buff.borrow_mut();
-        self.transport
-            .send_msg(&hdr, &[&buff[0..hdr.msg_len as usize]])
+        self.transport.send_mbuf(unsafe { &mut *self.mbuf.get() })
     }
 }
 
@@ -97,7 +83,9 @@ impl<'a> RPCServer<'a> for Server<'a> {
         self.receive()?;
 
         // TODO: registration
-        let client_id = func(&mut self.hdr.borrow_mut(), &mut self.buff.borrow_mut())?;
+        let client_id = func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
+            &mut (*self.mbuf.get()).data
+        })?;
 
         // Send response
         self.reply()?;
@@ -112,8 +100,9 @@ impl<'a> RPCServer<'a> for Server<'a> {
         match self.handlers.borrow().get(&rpc_id) {
             Some(func) => {
                 {
-                    let mut hdr = self.hdr.borrow_mut();
-                    func(&mut hdr, &mut self.buff.borrow_mut())?;
+                    func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
+                        &mut (*self.mbuf.get()).data
+                    })?;
                 }
                 self.reply()
             }
@@ -130,8 +119,9 @@ impl<'a> RPCServer<'a> for Server<'a> {
             Some(rpc_id) => match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
                     {
-                        let mut hdr = self.hdr.borrow_mut();
-                        func(&mut hdr, &mut self.buff.borrow_mut())?;
+                        func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
+                            &mut (*self.mbuf.get()).data
+                        })?;
                     }
                     self.reply()?;
                     Ok(true)

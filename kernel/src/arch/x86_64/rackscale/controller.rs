@@ -67,6 +67,7 @@ pub(crate) fn run() {
     };
 
     register_rpcs(&mut server);
+    server.add_client(&CLIENT_REGISTRAR).unwrap();
 
     // Start running the RPC server
     log::info!("Starting RPC server!");
@@ -82,8 +83,6 @@ pub(crate) fn run() {
 
         // Try to handle an RPC request
         let _ = server.try_handle().unwrap();
-
-        // Check DCM UDP messages
     }
 
     // Shutdown
@@ -128,5 +127,7 @@ fn register_rpcs(server: &mut Box<dyn RPCServer>) {
     server
         .register(KernelRpc::AllocPhysical as RPCType, &ALLOC_HANDLER)
         .unwrap();
-    server.add_client(&CLIENT_REGISTRAR).unwrap();
+    server
+        .register(KernelRpc::RequestCore as RPCType, &CORE_HANDLER)
+        .unwrap();
 }

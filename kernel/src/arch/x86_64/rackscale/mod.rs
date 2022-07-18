@@ -130,4 +130,5 @@ pub(crate) const READ_HANDLER: RPCHandler = fileops::rw::handle_read;
 pub(crate) const WRITE_HANDLER: RPCHandler = fileops::rw::handle_write;
 
 // Re-export handdlers: process operations
+pub(crate) const CORE_HANDLER: RPCHandler = processops::core::handle_request_core;
 pub(crate) const ALLOC_HANDLER: RPCHandler = processops::mem::handle_phys_alloc;

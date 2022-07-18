@@ -48,6 +48,8 @@ pub(crate) enum KernelRpc {
     Log = 12,
     /// Allocate physical memory for a process.
     AllocPhysical = 13,
+    /// Allocate a core for a process
+    RequestCore = 14,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -70,6 +72,7 @@ impl TryFrom<RPCType> for KernelRpc {
             11 => Ok(KernelRpc::MkDir),
             12 => Ok(KernelRpc::Log),
             13 => Ok(KernelRpc::AllocPhysical),
+            14 => Ok(KernelRpc::RequestCore),
             _ => Err(KError::InvalidRpcType),
         }
     }

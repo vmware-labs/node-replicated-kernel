@@ -11,7 +11,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
+const INTEGRATION_TESTS: [(&str, MainFn); 28] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -37,6 +37,7 @@ const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
     ("replica-advance", replica_advance),
     ("gdb", gdb),
     ("vmxnet-smoltcp", vmxnet_smoltcp),
+    ("dcm", dcm),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
 ];
@@ -763,10 +764,31 @@ fn vmxnet_smoltcp() {
     shutdown(ExitReason::Ok);
 }
 
-/*
 /// Test vmxnet3 integrated with smoltcp.s
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 fn dcm() {
+    use crate::arch::rackscale::processops::core::rpc_request_core;
+    use crate::arch::rackscale::processops::mem::rpc_alloc_physical;
+    use crate::arch::rackscale::RPC_CLIENT;
+    use log::info;
+
+    let pid = 0; // Using dummy pid for now
+    let affinity = 1; // Using dummy affinity for now
+    let page_size = 2; // Using dummy page_size for now
+    let core_id = 3; // Using dummy core_id for now
+    let entry_point = 4; // Using dummy entry_point for now
+
+    info!("About to send resource requests!");
+    for _ in 0..5 {
+        let mut client = RPC_CLIENT.lock();
+        let _mem_ret = rpc_alloc_physical(&mut **client, pid, page_size, affinity).unwrap();
+        let _core_ret = rpc_request_core(&mut **client, pid, core_id, entry_point).unwrap();
+    }
+
+    info!("Finished sending resource requests!");
+    shutdown(ExitReason::Ok);
+
+    /*
     use crate::arch::rackscale::dcm::*;
     use crate::transport::ethernet::init_network;
 
@@ -894,8 +916,8 @@ fn dcm() {
 
     // TODO: double check map
     shutdown(ExitReason::Ok);
+    */
 }
-*/
 
 /// Write and test the content on a shared-mem device.
 pub(crate) const BUFFER_CONTENT: u8 = 0xb;

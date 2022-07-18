@@ -17,6 +17,7 @@ mod delete;
 mod getinfo;
 mod mkdir;
 mod open;
+mod print;
 mod rename;
 mod rw;
 pub(crate) mod syscalls;
@@ -48,7 +49,7 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
     };
 });
 
-pub(crate) use fio::FileIO;
+pub(crate) use fio::LwkRpc;
 
 // Re-export client registration
 use self::fio::register_client;

@@ -43,7 +43,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     rpc_client
         .call(
             pid,
-            FileIO::MkDir as RPCType,
+            LwkRpc::MkDir as RPCType,
             &[&req_data, pathname.as_ref()],
             &mut [&mut res_data],
         )

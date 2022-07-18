@@ -17,7 +17,7 @@ use crate::process::Pid;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
-pub(crate) enum FileIO {
+pub(crate) enum LwkRpc {
     /// Create a file
     Create = 0,
     /// Open a file
@@ -42,31 +42,34 @@ pub(crate) enum FileIO {
     FileRename = 10,
     /// Create a directory.
     MkDir = 11,
-
-    Unknown = 12,
+    /// Log (print) message of a process.
+    Log = 12,
+    /// Allocate physical memory for a process
+    AllocPhysical = 13,
+    Unknown,
 }
 
-impl From<RPCType> for FileIO {
+impl From<RPCType> for LwkRpc {
     /// Construct a RPCType enum based on a 8-bit value.
-    fn from(op: RPCType) -> FileIO {
+    fn from(op: RPCType) -> LwkRpc {
         match op {
-            0 => FileIO::Create,
-            1 => FileIO::Open,
-            2 => FileIO::Read,
-            3 => FileIO::ReadAt,
-            4 => FileIO::Write,
-            5 => FileIO::WriteAt,
-            6 => FileIO::Close,
-            7 => FileIO::GetInfo,
-            8 => FileIO::Delete,
-            9 => FileIO::WriteDirect,
-            10 => FileIO::FileRename,
-            11 => FileIO::MkDir,
-            _ => FileIO::Unknown,
+            0 => LwkRpc::Create,
+            1 => LwkRpc::Open,
+            2 => LwkRpc::Read,
+            3 => LwkRpc::ReadAt,
+            4 => LwkRpc::Write,
+            5 => LwkRpc::WriteAt,
+            6 => LwkRpc::Close,
+            7 => LwkRpc::GetInfo,
+            8 => LwkRpc::Delete,
+            9 => LwkRpc::WriteDirect,
+            10 => LwkRpc::FileRename,
+            11 => LwkRpc::MkDir,
+            _ => LwkRpc::Unknown,
         }
     }
 }
-unsafe_abomonate!(FileIO);
+unsafe_abomonate!(LwkRpc);
 
 // Struct used to encapulate a system call result
 #[derive(Debug)]

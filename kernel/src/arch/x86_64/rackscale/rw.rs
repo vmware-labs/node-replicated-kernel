@@ -57,7 +57,7 @@ pub(crate) fn rpc_writeat(
         rpc_client
             .call(
                 pid,
-                FileIO::Write as RPCType,
+                LwkRpc::Write as RPCType,
                 &[&req_data, &data],
                 &mut [&mut res_data],
             )
@@ -66,7 +66,7 @@ pub(crate) fn rpc_writeat(
         rpc_client
             .call(
                 pid,
-                FileIO::WriteAt as RPCType,
+                LwkRpc::WriteAt as RPCType,
                 &[&req_data, &data],
                 &mut [&mut res_data],
             )
@@ -121,7 +121,7 @@ pub(crate) fn rpc_readat(
         rpc_client
             .call(
                 pid,
-                FileIO::Read as RPCType,
+                LwkRpc::Read as RPCType,
                 &[&req_data],
                 &mut [&mut res_data, buff_ptr],
             )
@@ -130,7 +130,7 @@ pub(crate) fn rpc_readat(
         rpc_client
             .call(
                 pid,
-                FileIO::ReadAt as RPCType,
+                LwkRpc::ReadAt as RPCType,
                 &[&req_data],
                 &mut [&mut res_data, buff_ptr],
             )
@@ -170,7 +170,7 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         );
         fd = req.fd;
         len = req.len;
-        if hdr.msg_type == FileIO::ReadAt as RPCType {
+        if hdr.msg_type == LwkRpc::ReadAt as RPCType {
             offset = req.offset;
             operation = FileOperation::ReadAt;
         }
@@ -215,7 +215,7 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         );
 
         // Call Write() or WriteAt()
-        let offset = if hdr.msg_type == FileIO::Write as RPCType {
+        let offset = if hdr.msg_type == LwkRpc::Write as RPCType {
             -1
         } else {
             req.offset

@@ -37,7 +37,7 @@ pub(crate) fn rpc_open<P: AsRef<[u8]> + Debug>(
         pathname,
         flags,
         modes,
-        FileIO::Open as RPCType,
+        LwkRpc::Open as RPCType,
     )
 }
 

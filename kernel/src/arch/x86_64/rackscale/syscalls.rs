@@ -16,6 +16,7 @@ use super::delete::rpc_delete;
 use super::getinfo::rpc_getinfo;
 use super::mkdir::rpc_mkdir;
 use super::open::rpc_open;
+use super::print::rpc_log;
 use super::rename::rpc_rename;
 use super::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 
@@ -114,8 +115,11 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
 }
 
 impl ProcessDispatch<u64> for Arch86LwkSystemCall {
-    fn log(&self, buffer_arg: u64, len: u64) -> KResult<(u64, u64)> {
-        self.local.log(buffer_arg, len)
+    fn log(&self, uslice: UserSlice) -> KResult<(u64, u64)> {
+        self.local.log(uslice)?;
+        let msg: String = uslice.try_into()?;
+        let mut client = super::RPC_CLIENT.lock();
+        rpc_log(&mut **client, uslice.pid, msg).map_err(|e| e.into())
     }
 
     fn get_vcpu_area(&self) -> KResult<(u64, u64)> {

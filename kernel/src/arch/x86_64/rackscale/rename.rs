@@ -44,7 +44,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     rpc_client
         .call(
             pid,
-            FileIO::FileRename as RPCType,
+            LwkRpc::FileRename as RPCType,
             &[&req_data, oldname.as_ref(), newname.as_ref()],
             &mut [&mut res_data],
         )

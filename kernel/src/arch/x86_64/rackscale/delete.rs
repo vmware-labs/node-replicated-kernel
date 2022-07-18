@@ -27,7 +27,7 @@ pub(crate) fn rpc_delete(
     rpc_client
         .call(
             pid,
-            FileIO::Delete as RPCType,
+            LwkRpc::Delete as RPCType,
             &[&pathname.as_bytes()],
             &mut [&mut res_data],
         )

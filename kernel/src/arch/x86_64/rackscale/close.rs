@@ -37,7 +37,7 @@ pub(crate) fn rpc_close(
     rpc_client
         .call(
             pid,
-            FileIO::Close as RPCType,
+            LwkRpc::Close as RPCType,
             &[&req_data],
             &mut [&mut res_data],
         )

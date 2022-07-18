@@ -40,34 +40,34 @@ pub(crate) fn run() {
     };
 
     server
-        .register(FileIO::Close as RPCType, &CLOSE_HANDLER)
+        .register(LwkRpc::Close as RPCType, &CLOSE_HANDLER)
         .unwrap();
     server
-        .register(FileIO::Delete as RPCType, &DELETE_HANDLER)
+        .register(LwkRpc::Delete as RPCType, &DELETE_HANDLER)
         .unwrap();
     server
-        .register(FileIO::GetInfo as RPCType, &GETINFO_HANDLER)
+        .register(LwkRpc::GetInfo as RPCType, &GETINFO_HANDLER)
         .unwrap();
     server
-        .register(FileIO::MkDir as RPCType, &MKDIR_HANDLER)
+        .register(LwkRpc::MkDir as RPCType, &MKDIR_HANDLER)
         .unwrap();
     server
-        .register(FileIO::Open as RPCType, &OPEN_HANDLER)
+        .register(LwkRpc::Open as RPCType, &OPEN_HANDLER)
         .unwrap();
     server
-        .register(FileIO::FileRename as RPCType, &RENAME_HANDLER)
+        .register(LwkRpc::FileRename as RPCType, &RENAME_HANDLER)
         .unwrap();
     server
-        .register(FileIO::Write as RPCType, &WRITE_HANDLER)
+        .register(LwkRpc::Write as RPCType, &WRITE_HANDLER)
         .unwrap();
     server
-        .register(FileIO::WriteAt as RPCType, &WRITE_HANDLER)
+        .register(LwkRpc::WriteAt as RPCType, &WRITE_HANDLER)
         .unwrap();
     server
-        .register(FileIO::Read as RPCType, &READ_HANDLER)
+        .register(LwkRpc::Read as RPCType, &READ_HANDLER)
         .unwrap();
     server
-        .register(FileIO::ReadAt as RPCType, &READ_HANDLER)
+        .register(LwkRpc::ReadAt as RPCType, &READ_HANDLER)
         .unwrap();
     server.add_client(&CLIENT_REGISTRAR).unwrap();
 

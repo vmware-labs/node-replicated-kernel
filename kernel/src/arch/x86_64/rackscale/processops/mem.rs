@@ -12,7 +12,7 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
-use super::fio::*;
+use super::super::kernelrpc::*;
 
 #[derive(Debug)]
 pub(crate) struct MemReq {

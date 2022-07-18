@@ -11,7 +11,9 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-use super::fio::*;
+use super::super::get_local_pid;
+use super::super::syscall_res::*;
+use super::FileIO;
 
 pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
@@ -21,7 +23,7 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
     debug!("GetInfo({:?})", name);
 
     // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<SyscallRes>()];
     rpc_client
         .call(
             pid,
@@ -32,7 +34,7 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
         .unwrap();
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<SyscallRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -57,7 +59,7 @@ pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<
     // Call local file_info function
     let ret = cnrfs::MlnrKernelNode::file_info(local_pid, path);
     // Construct results from return data
-    let res = FIORes {
+    let res = SyscallRes {
         ret: convert_return(ret),
     };
     construct_ret(hdr, payload, res)

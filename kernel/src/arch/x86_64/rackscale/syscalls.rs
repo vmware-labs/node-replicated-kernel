@@ -12,13 +12,13 @@ use crate::syscalls::FsDispatch;
 use crate::syscalls::SystemCallDispatch;
 
 use super::super::syscall::{Arch86ProcessDispatch, Arch86SystemDispatch, Arch86VSpaceDispatch};
-use super::close::rpc_close;
-use super::delete::rpc_delete;
-use super::getinfo::rpc_getinfo;
-use super::mkdir::rpc_mkdir;
-use super::open::rpc_open;
-use super::rename::rpc_rename;
-use super::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
+use super::fio::close::rpc_close;
+use super::fio::delete::rpc_delete;
+use super::fio::getinfo::rpc_getinfo;
+use super::fio::mkdir::rpc_mkdir;
+use super::fio::open::rpc_open;
+use super::fio::rename::rpc_rename;
+use super::fio::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 
 pub(crate) struct Arch86LwkSystemCall;
 

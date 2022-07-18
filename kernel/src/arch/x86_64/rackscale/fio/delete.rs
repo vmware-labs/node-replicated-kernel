@@ -11,7 +11,9 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-use super::fio::*;
+use super::super::syscall_res::*;
+use super::FileIO;
+use crate::arch::rackscale::get_local_pid;
 
 pub(crate) fn rpc_delete(
     rpc_client: &mut dyn RPCClient,
@@ -21,7 +23,7 @@ pub(crate) fn rpc_delete(
     debug!("Delete({:?})", pathname);
 
     // Create buffer for result
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<SyscallRes>()];
 
     // Call RPC
     rpc_client
@@ -34,7 +36,7 @@ pub(crate) fn rpc_delete(
         .unwrap();
 
     // Decode result - return result if decoding successful
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<SyscallRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -56,7 +58,7 @@ pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
     let path = core::str::from_utf8(&payload[..hdr.msg_len as usize])?;
 
     // Construct and return result
-    let res = FIORes {
+    let res = SyscallRes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
             local_pid,
             TryString::try_from(path)?.into(), // TODO(fixme): unnecessary allocation

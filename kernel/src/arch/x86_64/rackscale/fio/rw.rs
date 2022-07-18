@@ -12,7 +12,9 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
-use super::fio::*;
+use super::super::syscall_res::*;
+use super::FileIO;
+use crate::arch::rackscale::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct RWReq {
@@ -50,7 +52,7 @@ pub(crate) fn rpc_writeat(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<SyscallRes>()];
 
     // Call readat() or read() RPCs
     if offset == -1 {
@@ -74,7 +76,7 @@ pub(crate) fn rpc_writeat(
     }
 
     // Decode result, return result if decoded successfully
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<SyscallRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -114,7 +116,7 @@ pub(crate) fn rpc_readat(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<SyscallRes>()];
 
     // Call Read() or ReadAt() RPC
     if offset == -1 {
@@ -138,7 +140,7 @@ pub(crate) fn rpc_readat(
     }
 
     // Decode result, if successful, return result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<SyscallRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -180,7 +182,7 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     }
 
     // Read directly into payload buffer, at offset after result field & header
-    let start = FIORES_SIZE as usize;
+    let start = SYSCALL_RES_SIZE as usize;
     let end = start + len as usize;
     let ret =
         cnrfs::MlnrKernelNode::file_read(local_pid, fd, &mut &mut payload[start..end], offset);
@@ -192,7 +194,7 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     }
 
     // Construct return
-    let res = FIORes {
+    let res = SyscallRes {
         ret: convert_return(ret),
     };
     construct_ret_extra_data(hdr, payload, res, additional_data as u64)
@@ -225,7 +227,7 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         let ret = cnrfs::MlnrKernelNode::file_write(local_pid, req.fd, data, offset);
 
         // Construct return
-        let res = FIORes {
+        let res = SyscallRes {
             ret: convert_return(ret),
         };
         construct_ret(hdr, payload, res)

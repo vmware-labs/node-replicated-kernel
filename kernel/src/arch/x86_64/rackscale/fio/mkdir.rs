@@ -13,7 +13,9 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::fio::*;
+use super::super::syscall_res::*;
+use super::FileIO;
+use crate::arch::rackscale::get_local_pid;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
@@ -37,7 +39,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<SyscallRes>()];
 
     // Call RPC
     rpc_client
@@ -50,7 +52,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
         .unwrap();
 
     // Parse and return result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<SyscallRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -85,7 +87,7 @@ pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
     let mkdir_req = cnrfs::MlnrKernelNode::mkdir(local_pid, path_string, modes);
 
     // Call mkdir function and send result
-    let res = FIORes {
+    let res = SyscallRes {
         ret: convert_return(mkdir_req),
     };
     construct_ret(hdr, payload, res)

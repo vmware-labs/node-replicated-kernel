@@ -12,7 +12,9 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
-use super::fio::*;
+use super::super::get_local_pid;
+use super::super::syscall_res::*;
+use super::FileIO;
 
 #[derive(Debug)]
 pub(crate) struct CloseReq {
@@ -31,7 +33,7 @@ pub(crate) fn rpc_close(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Setup result
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<SyscallRes>()];
 
     // Call Close() RPC
     rpc_client
@@ -44,7 +46,7 @@ pub(crate) fn rpc_close(
         .unwrap();
 
     // Decode and return result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<SyscallRes>(&mut res_data) } {
         // Check for extra data
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -73,7 +75,7 @@ pub(crate) fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         debug!("Close(fd={:?}), local_pid={:?}", req.fd, local_pid);
 
         // Call close (unmap_fd) and return result
-        let res = FIORes {
+        let res = SyscallRes {
             ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(local_pid, req.fd)),
         };
         construct_ret(hdr, payload, res)

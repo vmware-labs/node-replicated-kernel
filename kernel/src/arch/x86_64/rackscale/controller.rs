@@ -80,8 +80,10 @@ pub(crate) fn run() {
             }
         }
 
-        // Try to handle RPC requests
+        // Try to handle an RPC request
         let _ = server.try_handle().unwrap();
+
+        // Check DCM UDP messages
     }
 
     // Shutdown

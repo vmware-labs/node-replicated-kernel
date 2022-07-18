@@ -12,7 +12,9 @@ use log::{debug, error, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::fio::*;
+use super::super::syscall_res::*;
+use super::FileIO;
+use crate::arch::rackscale::get_local_pid;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
@@ -38,7 +40,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Construct result buffer
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<SyscallRes>()];
 
     // Call the RPC
     rpc_client
@@ -51,7 +53,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
         .unwrap();
 
     // Parse and return the result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<SyscallRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -93,7 +95,7 @@ pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
     let newname = TryString::try_from(newname_str)?.into();
 
     // Call rename function
-    let res = FIORes {
+    let res = SyscallRes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
             local_pid, oldname, newname,
         )),

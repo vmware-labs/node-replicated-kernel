@@ -62,6 +62,7 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
+        warn!("Pid lookup failed");
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();

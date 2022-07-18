@@ -52,3 +52,14 @@ Be sure to include any related GitHub issue references in the commit message.
 See [GFM
 syntax](https://guides.github.com/features/mastering-markdown/#GitHub-flavored-markdown)
 for referencing issues and commits.
+
+## Github pull requests & history
+
+Since github doesn't do fast-forward merges through the UI, after PR passes
+test, merge it on the command line to keep the same commit hashes of the branch
+in master:
+
+```bash
+git checkout master
+git merge --ff-only feature-branch-name
+```

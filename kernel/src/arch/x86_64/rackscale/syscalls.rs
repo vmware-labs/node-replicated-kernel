@@ -11,15 +11,15 @@ use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch};
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
-use super::close::rpc_close;
-use super::delete::rpc_delete;
-use super::getinfo::rpc_getinfo;
-use super::mem::rpc_alloc_physical;
-use super::mkdir::rpc_mkdir;
-use super::open::rpc_open;
+use super::fileops::close::rpc_close;
+use super::fileops::delete::rpc_delete;
+use super::fileops::getinfo::rpc_getinfo;
+use super::fileops::mkdir::rpc_mkdir;
+use super::fileops::open::rpc_open;
+use super::fileops::rename::rpc_rename;
+use super::fileops::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 use super::print::rpc_log;
-use super::rename::rpc_rename;
-use super::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
+use super::processops::mem::rpc_alloc_physical;
 
 pub(crate) struct Arch86LwkSystemCall {
     pub(crate) local: Arch86SystemCall,

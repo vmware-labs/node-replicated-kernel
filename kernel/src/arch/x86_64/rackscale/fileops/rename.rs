@@ -12,7 +12,9 @@ use log::{debug, error, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::fio::*;
+use super::super::kernelrpc::*;
+use super::FileIO;
+use crate::arch::rackscale::get_local_pid;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 

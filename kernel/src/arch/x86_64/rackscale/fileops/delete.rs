@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use core::fmt::Debug;
+use alloc::string::String;
 
 use abomonation::decode;
 use log::debug;
@@ -11,54 +11,58 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-use super::fio::*;
+use super::super::kernelrpc::*;
+use super::FileIO;
+use crate::arch::rackscale::get_local_pid;
 
-pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
+pub(crate) fn rpc_delete(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
-    name: P,
+    pathname: String,
 ) -> Result<(u64, u64), RPCError> {
-    debug!("GetInfo({:?})", name);
+    debug!("Delete({:?})", pathname);
 
-    // Construct result buffer and call RPC
+    // Create buffer for result
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+
+    // Call RPC
     rpc_client
         .call(
             pid,
-            KernelRpc::GetInfo as RPCType,
-            &[name.as_ref()],
+            KernelRpc::Delete as RPCType,
+            &[&pathname.as_bytes()],
             &mut [&mut res_data],
         )
         .unwrap();
 
-    // Decode and return the result
+    // Decode result - return result if decoding successful
     if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
-        debug!("GetInfo() {:?}", res);
+        debug!("Delete() {:?}", res);
         return res.ret;
     } else {
         return Err(RPCError::MalformedResponse);
     }
 }
 
-// RPC Handler function for getinfo() RPCs in the controller
-pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+// RPC Handler function for delete() RPCs in the controller
+pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
-    let path_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
-    let path = TryString::try_from(path_str)?.into(); // TODO(alloc): fixme unnecessary
+    let path = core::str::from_utf8(&payload[..hdr.msg_len as usize])?;
 
-    // Call local file_info function
-    let ret = cnrfs::MlnrKernelNode::file_info(local_pid, path);
-    // Construct results from return data
+    // Construct and return result
     let res = KernelRpcRes {
-        ret: convert_return(ret),
+        ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
+            local_pid,
+            TryString::try_from(path)?.into(), // TODO(fixme): unnecessary allocation
+        )),
     };
     construct_ret(hdr, payload, res)
 }

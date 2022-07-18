@@ -14,7 +14,9 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-use super::fio::*;
+use super::super::kernelrpc::*;
+use super::FileIO;
+use crate::arch::rackscale::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct OpenReq {

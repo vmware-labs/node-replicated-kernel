@@ -12,10 +12,32 @@ pub struct ShmemTransport<'a> {
     tx: Sender<'a>,
 }
 
-#[allow(dead_code)]
 impl<'a> ShmemTransport<'a> {
     pub fn new(rx: Receiver<'a>, tx: Sender<'a>) -> ShmemTransport<'a> {
         ShmemTransport { rx, tx }
+    }
+
+    fn send(&self, buf: &[u8]) -> Result<(), RPCError> {
+        match self.tx.send(&[buf]) {
+            true => Ok(()),
+            false => Err(RPCError::TransportError),
+        }
+    }
+
+    fn try_send(&self, buf: &[u8]) -> Result<bool, RPCError> {
+        Ok(self.tx.try_send(&[buf]))
+    }
+
+    fn recv(&self, buf: &mut [u8]) -> Result<(), RPCError> {
+        self.rx.recv(&mut [buf]);
+        Ok(())
+    }
+
+    fn try_recv(&self, buf: &mut [u8]) -> Result<bool, RPCError> {
+        match self.rx.try_recv(&mut [buf]) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
 }
 
@@ -30,26 +52,32 @@ impl<'a> Transport for ShmemTransport<'a> {
         QUEUE_ENTRY_SIZE
     }
 
-    /// Send data to a remote node
-    fn send(&self, send_bufs: &[&[u8]]) -> Result<(), RPCError> {
-        match self.tx.send(send_bufs) {
+    fn send_mbuf(&self, mbuf: &MBuf) -> Result<(), RPCError> {
+        match self
+            .tx
+            .send(&[&unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize]])
+        {
             true => Ok(()),
             false => Err(RPCError::TransportError),
         }
     }
 
-    /// Send data to a remote node
-    fn try_send(&self, send_bufs: &[&[u8]]) -> Result<bool, RPCError> {
-        Ok(self.tx.try_send(send_bufs))
+    fn try_send_mbuf(&self, mbuf: &MBuf) -> Result<bool, RPCError> {
+        Ok(self
+            .tx
+            .try_send(&[&unsafe { mbuf.as_bytes() }[..HDR_LEN + mbuf.hdr.msg_len as usize]]))
     }
 
-    fn recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<(), RPCError> {
-        self.rx.recv(recv_bufs);
+    fn recv_mbuf(&self, mbuf: &mut MBuf) -> Result<(), RPCError> {
+        self.rx.recv(&mut [&mut unsafe { mbuf.as_mut_bytes() }[..]]);
         Ok(())
     }
 
-    fn try_recv(&self, recv_bufs: &mut [&mut [u8]]) -> Result<bool, RPCError> {
-        match self.rx.try_recv(recv_bufs) {
+    fn try_recv_mbuf(&self, mbuf: &mut MBuf) -> Result<bool, RPCError> {
+        match self
+            .rx
+            .try_recv(&mut [&mut unsafe { mbuf.as_mut_bytes() }[..]])
+        {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),
         }
@@ -63,7 +91,8 @@ impl<'a> Transport for ShmemTransport<'a> {
             pointers[index] = d;
             index += 1;
         }
-        self.send(&pointers[..payload.len() + 1])
+        self.tx.send(&pointers[..payload.len() + 1]);
+        Ok(())
     }
 
     fn try_send_msg(&self, hdr: &RPCHeader, payload: &[&[u8]]) -> Result<bool, RPCError> {
@@ -74,10 +103,14 @@ impl<'a> Transport for ShmemTransport<'a> {
             pointers[index] = d;
             index += 1;
         }
-        self.try_send(&pointers[..payload.len() + 1])
+        Ok(self.tx.try_send(&pointers[..payload.len() + 1]))
     }
 
     fn recv_msg(&self, hdr: &mut RPCHeader, payload: &mut [&mut [u8]]) -> Result<(), RPCError> {
+        if payload.is_empty() {
+            self.rx.recv(&mut [unsafe { &mut hdr.as_mut_bytes()[..] }]);
+            return Ok(());
+        }
         let mut pointers: [&mut [u8]; 7] = [
             &mut [1],
             &mut [1],
@@ -94,7 +127,8 @@ impl<'a> Transport for ShmemTransport<'a> {
             pointers[index] = p;
             index += 1;
         }
-        self.recv(&mut pointers[..num_out])
+        self.rx.recv(&mut pointers[..num_out]);
+        Ok(())
     }
 
     fn try_recv_msg(
@@ -118,7 +152,10 @@ impl<'a> Transport for ShmemTransport<'a> {
             pointers[index] = p;
             index += 1;
         }
-        self.try_recv(&mut pointers[..num_out])
+        match self.rx.try_recv(&mut pointers[..num_out]) {
+            Ok(_) => Ok(true),
+            Err(_) => Ok(false),
+        }
     }
 
     fn client_connect(&mut self) -> Result<(), RPCError> {
@@ -161,31 +198,31 @@ mod tests {
             assert_eq!(
                 true,
                 server_transport
-                    .try_recv(&mut [&mut server_data[0..send_data.len()]])
+                    .try_recv(&mut server_data[0..send_data.len()])
                     .unwrap()
             );
             assert_eq!(&send_data, &server_data[0..send_data.len()]);
-            server_transport.send(&[&send_data]).unwrap();
+            server_transport.send(&send_data).unwrap();
             assert_eq!(
                 false,
                 server_transport
-                    .try_recv(&mut [&mut server_data[0..send_data.len()]])
+                    .try_recv(&mut server_data[0..send_data.len()])
                     .unwrap()
             );
-            server_transport.send(&[&send_data]).unwrap();
+            server_transport.send(&send_data).unwrap();
         });
 
         // In the original thread, send then receive data
-        client_transport.send(&[&send_data]).unwrap();
+        client_transport.send(&send_data).unwrap();
         let mut client_data = [0u8; QUEUE_ENTRY_SIZE];
         client_transport
-            .recv(&mut [&mut client_data[0..send_data.len()]])
+            .recv(&mut client_data[0..send_data.len()])
             .unwrap();
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
         assert_eq!(
             true,
             client_transport
-                .try_recv(&mut [&mut client_data[0..send_data.len()]])
+                .try_recv(&mut client_data[0..send_data.len()])
                 .unwrap()
         );
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
@@ -219,17 +256,17 @@ mod tests {
             // In a new server thread, receive then send data
             let mut server_data = [0u8; QUEUE_ENTRY_SIZE];
             server_transport
-                .recv(&mut [&mut server_data[0..send_data.len()]])
+                .recv(&mut server_data[0..send_data.len()])
                 .unwrap();
             assert_eq!(&send_data, &server_data[0..send_data.len()]);
-            server_transport.send(&[&send_data]).unwrap();
+            server_transport.send(&send_data).unwrap();
         });
 
         // In the original thread, send then receive data
-        client_transport.send(&[&send_data]).unwrap();
+        client_transport.send(&send_data).unwrap();
         let mut client_data = [0u8; QUEUE_ENTRY_SIZE];
         client_transport
-            .recv(&mut [&mut client_data[0..send_data.len()]])
+            .recv(&mut client_data[0..send_data.len()])
             .unwrap();
         assert_eq!(&send_data, &client_data[0..send_data.len()]);
     }

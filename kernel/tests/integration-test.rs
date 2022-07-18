@@ -1770,6 +1770,118 @@ fn exokernel_fs_test(is_shmem: bool) {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
+fn s03_shmem_exokernel_dcm_test() {
+    exokernel_dcm_test(true);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_ethernet_exokernel_dcm_test() {
+    exokernel_dcm_test(false);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn exokernel_dcm_test(is_shmem: bool) {
+    use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    // Setup ivshmem file
+    let filename = "ivshmem-file";
+    let filelen = 2;
+    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
+    file.set_len(filelen * 1024 * 1024)
+        .expect("Unable to set file length");
+
+    setup_network(2);
+
+    // Create build for both controller and client
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-fs")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    // Run DCM and controller in separate thread
+    let build1 = build.clone();
+    let controller = std::thread::spawn(move || {
+        let controller_cmd = if is_shmem {
+            "mode=controller transport=shmem"
+        } else {
+            "mode=controller transport=ethernet"
+        };
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+            .timeout(30_000)
+            .cmd(controller_cmd)
+            .ivshmem(filelen as usize)
+            .shmem_path(filename)
+            .tap("tap0")
+            .no_network_setup()
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm()?;
+            let mut p = spawn_nrk(&cmdline_controller)?;
+
+            output += p.exp_string("Created UDP socket!")?.as_str();
+            output += p.exp_string("Started RPC client!")?.as_str();
+            output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+
+    // Run client in separate thead. Wait a bit to make sure DCM and controller started
+    let build2 = build.clone();
+    let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(5_000));
+        let client_cmd = if is_shmem {
+            "mode=client transport=shmem"
+        } else {
+            "mode=client transport=ethernet"
+        };
+        let cmdline_client = RunnerArgs::new_with_build("dcm", &build2)
+            .timeout(30_000)
+            .cmd(client_cmd)
+            .ivshmem(filelen as usize)
+            .shmem_path(filename)
+            .tap("tap2")
+            .no_network_setup()
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("About to send resource requests")?.as_str();
+            output += p
+                .exp_string("Finished sending resource requests!")?
+                .as_str();
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+    });
+
+    controller.join().unwrap();
+    client.join().unwrap();
+
+    let _ignore = remove_file(&filename);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
 fn s03_shmem_exokernel_fs_prop_test() {
     use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;

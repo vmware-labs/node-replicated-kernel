@@ -137,6 +137,6 @@ pub(crate) const WRITE_HANDLER: RPCHandler = handle_write;
 // Resource requests funneled to DCM.
 // TODO: these should be part of a proper syscall subsystem
 use dcm::allocate_physical::handle_allocate_physical;
-pub(crate) const ALLOCATE_PHYSICAL_HANDLER: RPCHandler = handle_read;
+pub(crate) const ALLOCATE_PHYSICAL_HANDLER: RPCHandler = handle_allocate_physical;
 use dcm::request_core::handle_request_core;
-pub(crate) const REQUEST_CORE_HANDLER: RPCHandler = handle_write;
+pub(crate) const REQUEST_CORE_HANDLER: RPCHandler = handle_request_core;

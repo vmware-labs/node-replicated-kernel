@@ -46,8 +46,8 @@ impl From<RPCType> for ResourceRequest {
     /// Construct a RPCType enum based on a 8-bit value.
     fn from(op: RPCType) -> ResourceRequest {
         match op {
-            0 => ResourceRequest::Memory,
-            1 => ResourceRequest::Core,
+            14 => ResourceRequest::Memory,
+            15 => ResourceRequest::Core,
             _ => ResourceRequest::Unknown,
         }
     }

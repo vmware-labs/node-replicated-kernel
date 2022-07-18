@@ -18,7 +18,7 @@ pub(crate) struct AllocatePhysicalRequest {
 }
 unsafe_abomonate!(AllocatePhysicalRequest: page_size, affinity);
 
-pub(crate) fn rpc_allocate_phsyical(
+pub(crate) fn rpc_allocate_physical(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     page_size: u64,
@@ -65,6 +65,7 @@ pub(crate) fn handle_allocate_physical(
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
+        warn!("Pid lookup failed");
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();

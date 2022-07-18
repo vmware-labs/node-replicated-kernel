@@ -110,6 +110,7 @@ pub(crate) fn register_pid(remote_pid: usize) -> Result<usize, KError> {
 }
 
 // Re-export syscall subtypes
+pub(crate) use dcm::ResourceRequest;
 pub(crate) use fio::FileIO;
 
 // Re-export client registration
@@ -132,3 +133,10 @@ use fio::rw::handle_read;
 pub(crate) const READ_HANDLER: RPCHandler = handle_read;
 use fio::rw::handle_write;
 pub(crate) const WRITE_HANDLER: RPCHandler = handle_write;
+
+// Resource requests funneled to DCM.
+// TODO: these should be part of a proper syscall subsystem
+use dcm::allocate_physical::handle_allocate_physical;
+pub(crate) const ALLOCATE_PHYSICAL_HANDLER: RPCHandler = handle_read;
+use dcm::request_core::handle_request_core;
+pub(crate) const REQUEST_CORE_HANDLER: RPCHandler = handle_write;

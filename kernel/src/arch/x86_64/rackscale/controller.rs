@@ -82,8 +82,6 @@ pub(crate) fn run() {
 
         // Try to handle an RPC request
         let _ = server.try_handle().unwrap();
-
-        // Check DCM UDP messages
     }
 
     // Shutdown
@@ -123,4 +121,16 @@ fn register_rpcs(server: &mut Box<dyn RPCServer>) {
         .register(FileIO::ReadAt as RPCType, &READ_HANDLER)
         .unwrap();
     server.add_client(&CLIENT_REGISTRAR).unwrap();
+
+    // DCM functions
+    // TODO: replace these with proper syscalls later
+    server
+        .register(
+            ResourceRequest::Memory as RPCType,
+            &ALLOCATE_PHYSICAL_HANDLER,
+        )
+        .unwrap();
+    server
+        .register(ResourceRequest::Core as RPCType, &REQUEST_CORE_HANDLER)
+        .unwrap();
 }

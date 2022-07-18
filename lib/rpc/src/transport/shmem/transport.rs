@@ -12,6 +12,8 @@ pub struct ShmemTransport<'a> {
     tx: Sender<'a>,
 }
 
+// Allow dead code because these functions are used in unit testing
+#[allow(dead_code)]
 impl<'a> ShmemTransport<'a> {
     pub fn new(rx: Receiver<'a>, tx: Sender<'a>) -> ShmemTransport<'a> {
         ShmemTransport { rx, tx }

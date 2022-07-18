@@ -22,11 +22,37 @@ use vmxnet3::smoltcp::DevQueuePhy;
 
 use super::get_local_pid;
 use super::syscall_res::*;
-use crate::fallible_string::TryString;
 
+pub(crate) mod allocate_physical;
 pub(crate) mod dcm_msg;
+pub(crate) mod request_core;
 
 use dcm_msg::ALLOC_LEN;
+
+// TODO: replce with properly nested RPCs (and similarly in fio)
+// TODO: these should instead correspond with proper syscalls
+#[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
+#[repr(u8)]
+pub(crate) enum ResourceRequest {
+    /// Request a memory slice
+    Memory = 14,
+    /// Request a core
+    Core = 15,
+
+    Unknown = 16,
+}
+
+impl From<RPCType> for ResourceRequest {
+    /// Construct a RPCType enum based on a 8-bit value.
+    fn from(op: RPCType) -> ResourceRequest {
+        match op {
+            0 => ResourceRequest::Memory,
+            1 => ResourceRequest::Core,
+            _ => ResourceRequest::Unknown,
+        }
+    }
+}
+unsafe_abomonate!(ResourceRequest);
 
 pub struct DCMInterface {
     pub client: Box<dyn RPCClient>,
@@ -73,54 +99,4 @@ impl DCMInterface {
 
         DCMInterface { client, udp_handle }
     }
-}
-
-// RPC Handler function for delete() RPCs in the controller
-pub(crate) fn handle_mem_request(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.pid) };
-    if local_pid.is_none() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-    let path = core::str::from_utf8(&payload[..hdr.msg_len as usize])?;
-
-    // Construct and return result
-    let res = SyscallRes {
-        ret: convert_return(Ok((0, 0))),
-    };
-    construct_ret(hdr, payload, res)
-}
-
-#[derive(Debug)]
-pub(crate) struct RequestCoreReq {
-    pub application: u64,
-    pub core_id: u64,
-    pub entry_point: u64,
-}
-unsafe_abomonate!(RequestCoreReq: application, core_id, entry_point);
-
-// RPC Handler function for delete() RPCs in the controller
-pub(crate) fn handle_core_request(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.pid) };
-    if local_pid.is_none() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
-    // Parse request
-    let core_req = match unsafe { decode::<RequestCoreReq>(payload) } {
-        Some((req, _)) => req,
-        None => {
-            warn!("Invalid payload for request: {:?}", hdr);
-            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
-        }
-    };
-
-    // Construct and return result
-    let res = SyscallRes {
-        ret: convert_return(Ok((0, 0))),
-    };
-    construct_ret(hdr, payload, res)
 }

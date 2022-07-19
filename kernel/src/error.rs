@@ -169,6 +169,8 @@ pub enum KError {
     TryFromIntError,
     /// The provided file-descriptor value was too big (>= MAX_FILES_PER_PROCESS)
     FileDescriptorTooLarge,
+    /// Unable to convert message ID to valid RPC type (faulty message?)
+    InvalidRpcType,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {

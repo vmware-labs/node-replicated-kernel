@@ -1,6 +1,8 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use core::convert::TryFrom;
+
 use abomonation::{encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
@@ -46,28 +48,29 @@ pub(crate) enum LwkRpc {
     Log = 12,
     /// Allocate physical memory for a process.
     AllocPhysical = 13,
-    Unknown,
 }
 
-impl From<RPCType> for LwkRpc {
+impl TryFrom<RPCType> for LwkRpc {
+    type Error = KError;
+
     /// Construct a RPCType enum based on a 8-bit value.
-    fn from(op: RPCType) -> LwkRpc {
+    fn try_from(op: RPCType) -> Result<Self, Self::Error> {
         match op {
-            0 => LwkRpc::Create,
-            1 => LwkRpc::Open,
-            2 => LwkRpc::Read,
-            3 => LwkRpc::ReadAt,
-            4 => LwkRpc::Write,
-            5 => LwkRpc::WriteAt,
-            6 => LwkRpc::Close,
-            7 => LwkRpc::GetInfo,
-            8 => LwkRpc::Delete,
-            9 => LwkRpc::WriteDirect,
-            10 => LwkRpc::FileRename,
-            11 => LwkRpc::MkDir,
-            12 => LwkRpc::Log,
-            13 => LwkRpc::AllocPhysical,
-            _ => LwkRpc::Unknown,
+            0 => Ok(LwkRpc::Create),
+            1 => Ok(LwkRpc::Open),
+            2 => Ok(LwkRpc::Read),
+            3 => Ok(LwkRpc::ReadAt),
+            4 => Ok(LwkRpc::Write),
+            5 => Ok(LwkRpc::WriteAt),
+            6 => Ok(LwkRpc::Close),
+            7 => Ok(LwkRpc::GetInfo),
+            8 => Ok(LwkRpc::Delete),
+            9 => Ok(LwkRpc::WriteDirect),
+            10 => Ok(LwkRpc::FileRename),
+            11 => Ok(LwkRpc::MkDir),
+            12 => Ok(LwkRpc::Log),
+            13 => Ok(LwkRpc::AllocPhysical),
+            _ => Err(KError::InvalidRpcType),
         }
     }
 }

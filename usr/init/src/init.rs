@@ -73,6 +73,11 @@ fn alloc_test() {
     info!("alloc_test OK");
 }
 
+fn alloc_physical_test() {
+    let frame = vibrio::syscalls::PhysicalMemory::allocate_base_page();
+    info!("frame was {:?}", frame);
+}
+
 fn scheduler_smp_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
@@ -731,6 +736,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-pmem-alloc")]
     pmem_alloc(ncores);
+
+    #[cfg(feature = "test-phys-alloc")]
+    alloc_physical_test();
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();

@@ -14,6 +14,7 @@ use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpace
 use super::close::rpc_close;
 use super::delete::rpc_delete;
 use super::getinfo::rpc_getinfo;
+use super::mem::rpc_alloc_physical;
 use super::mkdir::rpc_mkdir;
 use super::open::rpc_open;
 use super::print::rpc_log;
@@ -139,6 +140,10 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
+        let mut client = super::RPC_CLIENT.lock();
+        let pid = crate::arch::process::current_pid()?;
+        rpc_alloc_physical(&mut **client, pid, page_size, affinity)?;
+
         self.local.allocate_physical(page_size, affinity)
     }
 

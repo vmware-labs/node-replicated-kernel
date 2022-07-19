@@ -69,6 +69,12 @@ pub(crate) fn run() {
     server
         .register(LwkRpc::ReadAt as RPCType, &READ_HANDLER)
         .unwrap();
+    server
+        .register(LwkRpc::Log as RPCType, &LOG_HANDLER)
+        .unwrap();
+    server
+        .register(LwkRpc::AllocPhysical as RPCType, &ALLOC_HANDLER)
+        .unwrap();
     server.add_client(&CLIENT_REGISTRAR).unwrap();
 
     log::info!("Starting RPC server!");

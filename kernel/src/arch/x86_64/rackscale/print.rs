@@ -1,4 +1,4 @@
-// Copyright © 2021 University of Colorado. All Rights Reserved.
+// Copyright © 2022 University of Colorado and VMware Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use core::fmt::Debug;
@@ -48,15 +48,14 @@ pub(crate) fn handle_log(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), 
     if local_pid.is_none() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
-    let local_pid = local_pid.unwrap();
-    let path_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
-    let path = TryString::try_from(path_str)?.into(); // TODO(alloc): fixme unnecessary
 
-    // Call local file_info function
-    let ret = cnrfs::MlnrKernelNode::file_info(local_pid, path);
+    let local_pid = local_pid.unwrap();
+    let msg_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
+    log::info!("Remote Log from {}: {}", local_pid, msg_str);
+
     // Construct results from return data
     let res = FIORes {
-        ret: convert_return(ret),
+        ret: convert_return(Ok((0, 0))),
     };
     construct_ret(hdr, payload, res)
 }

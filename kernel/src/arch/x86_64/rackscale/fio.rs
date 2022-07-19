@@ -44,7 +44,7 @@ pub(crate) enum LwkRpc {
     MkDir = 11,
     /// Log (print) message of a process.
     Log = 12,
-    /// Allocate physical memory for a process
+    /// Allocate physical memory for a process.
     AllocPhysical = 13,
     Unknown,
 }
@@ -65,6 +65,8 @@ impl From<RPCType> for LwkRpc {
             9 => LwkRpc::WriteDirect,
             10 => LwkRpc::FileRename,
             11 => LwkRpc::MkDir,
+            12 => LwkRpc::Log,
+            13 => LwkRpc::AllocPhysical,
             _ => LwkRpc::Unknown,
         }
     }
@@ -85,7 +87,7 @@ lazy_static! {
 }
 
 // Lookup the local pid corresponding to a remote pid
-pub(crate) fn get_local_pid(remote_pid: usize) -> Option<usize> {
+pub(crate) fn get_local_pid(remote_pid: Pid) -> Option<Pid> {
     let process_lookup = PID_MAP.read();
     let local_pid = process_lookup.get(&remote_pid);
     if let None = local_pid {

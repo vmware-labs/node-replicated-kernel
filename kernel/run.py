@@ -38,10 +38,12 @@ ARCH = "x86_64"
 
 NETWORK_CONFIG = {
     'tap0': {
+        'mid': 0,
         'ip_zone': '172.31.0.20/24',
         'mac': '56:b4:44:e9:62:dc',
     },
     'tap2': {
+        'mid': 1,
         'ip_zone': '172.31.0.2/24',
         'mac': '56:b4:44:e9:62:dd',
     },
@@ -264,9 +266,7 @@ def deploy(args):
     """
     log("Deploy binaries")
 
-    is_client = False
-    if args.cmd:
-        is_client = args.cmd.find("client") != -1
+    is_client = args.cmd and args.cmd.find("client") != -1
 
     # Clean up / create ESP dir structure
     debug_release = 'release' if args.release else 'debug'
@@ -290,6 +290,9 @@ def deploy(args):
         shutil.copy2(uefi_build_path / 'bootloader.efi',
                     esp_boot_path / 'BootX64.efi')
 
+    # Append globally unique machine id to cmd (for rackscale)
+    if args.cmd and NETWORK_CONFIG[args.tap]['mid'] != None:
+        args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
     # Write kernel cmd-line file in ESP dir
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
         if args.cmd:
@@ -769,9 +772,7 @@ if __name__ == '__main__':
             raise e
 
     # Setup network
-    is_client = False
-    if args.cmd:
-        is_client = args.cmd.find("client") != -1
+    is_client = args.cmd and args.cmd.find("client") != -1
     if not is_client:
         configure_network(args)
 

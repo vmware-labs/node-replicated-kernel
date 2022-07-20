@@ -922,17 +922,29 @@ fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
 /// Spawns a DCM solver
 ///
 /// Uses target/dcm-scheduler.jar that is set up by run.py
-fn spawn_dcm() -> Result<rexpect::session::PtyReplSession> {
+/// -r => number of requests per solve
+fn spawn_dcm(r: usize) -> Result<rexpect::session::PtyReplSession> {
     use std::fs::remove_file;
 
     // Remove existing DCM log file
     let file_name = "dcm.log";
     let _ignore = remove_file(file_name);
 
+    let mut dcm_args = Vec::new();
+    dcm_args.push("-r".to_string());
+    dcm_args.push(format!("{}", r));
+
     // Start DCM
     let mut b = spawn_bash(Some(45_000))?;
-    b.send_line(format!("java -jar ../target/dcm-scheduler.jar > {}", file_name).as_str())
-        .unwrap();
+    b.send_line(
+        format!(
+            "java -jar ../target/dcm-scheduler.jar {} > {}",
+            dcm_args.join(" "),
+            file_name
+        )
+        .as_str(),
+    )
+    .unwrap();
     Ok(b)
 }
 
@@ -1718,11 +1730,9 @@ fn exokernel_fs_test(is_shmem: bool) {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm()?;
+            let mut dcm = spawn_dcm(1)?;
             let mut p = spawn_nrk(&cmdline_controller)?;
 
-            output += p.exp_string("Created UDP socket!")?.as_str();
-            output += p.exp_string("Started RPC client!")?.as_str();
             //output += p.exp_string("Finished sending requests!")?.as_str();
             output += p.exp_eof()?.as_str();
 
@@ -1828,11 +1838,11 @@ fn exokernel_dcm_test(is_shmem: bool) {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm()?;
+            let mut dcm = spawn_dcm(1)?;
             let mut p = spawn_nrk(&cmdline_controller)?;
 
-            output += p.exp_string("Created UDP socket!")?.as_str();
-            output += p.exp_string("Started RPC client!")?.as_str();
+            output += p.exp_string("Created DCM UDP socket!")?.as_str();
+            output += p.exp_string("Created DCM RPC client!")?.as_str();
             output += p.exp_eof()?.as_str();
 
             dcm.send_control('c')?;
@@ -1920,11 +1930,8 @@ fn s03_shmem_exokernel_fs_prop_test() {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm()?;
+            let mut dcm = spawn_dcm(1)?;
             let mut p = spawn_nrk(&cmdline_controller)?;
-
-            output += p.exp_string("Created UDP socket!")?.as_str();
-            output += p.exp_string("Started RPC client!")?.as_str();
             //output += p.exp_string("Finished sending requests!")?.as_str();
             output += p.exp_eof()?.as_str();
 
@@ -2883,11 +2890,8 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 
                 let mut output = String::new();
                 let mut qemu_run = || -> Result<WaitStatus> {
-                    let mut dcm = spawn_dcm()?;
+                    let mut dcm = spawn_dcm(1)?;
                     let mut p = spawn_nrk(&cmdline_controller)?;
-
-                    output += p.exp_string("Created UDP socket!")?.as_str();
-                    output += p.exp_string("Started RPC client!")?.as_str();
                     //output += p.exp_string("Finished sending requests!")?.as_str();
                     output += p.exp_eof()?.as_str();
 
@@ -2970,97 +2974,6 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
             let _ignore = remove_file(&shmem_file_name);
         }
     }
-}
-
-/// Tests that the vmxnet3 driver is functional together with the smoltcp
-/// network stack.
-#[cfg(not(feature = "baremetal"))]
-#[test]
-fn s06_dcm() {
-    use memfile::{CreateOptions, MemFile};
-    use std::fs::remove_file;
-    use std::sync::Arc;
-    use std::thread::sleep;
-    use std::time::Duration;
-
-    // Setup ivshmem file
-    let filename = "ivshmem-file";
-    let filelen = 2;
-    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
-    file.set_len(filelen * 1024 * 1024)
-        .expect("Unable to set file length");
-
-    setup_network(2);
-
-    // Create build for both controller and client
-    let build = Arc::new(
-        BuildArgs::default()
-            .module("init")
-            .user_feature("test-fs")
-            .kernel_feature("shmem")
-            .kernel_feature("ethernet")
-            .kernel_feature("rackscale")
-            .release()
-            .build(),
-    );
-
-    // Run DCM and controller in separate thread
-    let build1 = build.clone();
-    let controller = std::thread::spawn(move || {
-        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(45_000)
-            .cmd("mode=controller transport=shmem")
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
-            .tap("tap0")
-            .no_network_setup()
-            .use_vmxnet3();
-
-        let mut output = String::new();
-        let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm()?;
-            let mut p = spawn_nrk(&cmdline_controller)?;
-
-            output += p.exp_string("Created UDP socket!")?.as_str();
-            output += p.exp_string("Started RPC client!")?.as_str();
-            //output += p.exp_string("Finished sending requests!")?.as_str();
-            output += p.exp_eof()?.as_str();
-
-            dcm.send_control('c')?;
-            p.process.exit()
-        };
-
-        let _ignore = qemu_run();
-    });
-
-    // Run client in separate thead. Wait a bit to make sure DCM and controller started
-    let build2 = build.clone();
-    let client = std::thread::spawn(move || {
-        sleep(Duration::from_millis(5_000));
-        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-            .timeout(30_000)
-            .cmd("mode=client transport=shmem")
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
-            .tap("tap2")
-            .no_network_setup()
-            .use_vmxnet3();
-
-        let mut output = String::new();
-        let mut qemu_run = || -> Result<WaitStatus> {
-            let mut p = spawn_nrk(&cmdline_client)?;
-            output += p.exp_string("fs_test OK")?.as_str();
-            output += p.exp_eof()?.as_str();
-            p.process.exit()
-        };
-
-        check_for_successful_exit(&cmdline_client, qemu_run(), output);
-    });
-
-    controller.join().unwrap();
-    client.join().unwrap();
-
-    let _ignore = remove_file(&filename);
 }
 
 fn memcached_benchmark(

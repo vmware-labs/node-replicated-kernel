@@ -65,13 +65,12 @@ pub(crate) fn handle_allocate_physical(
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.pid) };
     if local_pid.is_none() {
-        warn!("Pid lookup failed");
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
 
     // Parse request
-    let core_req = match unsafe { decode::<AllocatePhysicalRequest>(payload) } {
+    let mem_req = match unsafe { decode::<AllocatePhysicalRequest>(payload) } {
         Some((req, _)) => req,
         None => {
             warn!("Invalid payload for request: {:?}", hdr);

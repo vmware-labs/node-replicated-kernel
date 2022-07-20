@@ -3,8 +3,8 @@
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::RefCell;
 use log::{debug, warn};
+use spin::Mutex;
 
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
@@ -20,7 +20,7 @@ const RX_BUF_LEN: usize = 8192;
 const TX_BUF_LEN: usize = 8192;
 
 pub struct TCPTransport<'a> {
-    iface: Arc<RefCell<Interface<'a, DevQueuePhy>>>,
+    iface: Arc<Mutex<Interface<'a, DevQueuePhy>>>,
     server_handle: SocketHandle,
     server_ip: Option<IpAddress>,
     server_port: u16,
@@ -31,7 +31,7 @@ impl TCPTransport<'_> {
     pub fn new(
         server_ip: Option<IpAddress>,
         server_port: u16,
-        iface: Arc<RefCell<Interface<'_, DevQueuePhy>>>,
+        iface: Arc<Mutex<Interface<'_, DevQueuePhy>>>,
     ) -> TCPTransport<'_> {
         lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
         lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
@@ -51,7 +51,7 @@ impl TCPTransport<'_> {
         tcp_socket.set_ack_delay(None);
 
         // Add socket to interface and record socket handle
-        let server_handle = iface.borrow_mut().add_socket(tcp_socket);
+        let server_handle = iface.lock().add_socket(tcp_socket);
 
         TCPTransport {
             iface,
@@ -71,7 +71,7 @@ impl TCPTransport<'_> {
         }
 
         {
-            let mut iface = self.iface.borrow_mut();
+            let mut iface = self.iface.lock();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
             // Attempt to write from first buffer into the socket send buffer
@@ -94,7 +94,7 @@ impl TCPTransport<'_> {
 
         // Send rest of the data
         loop {
-            let mut iface = self.iface.borrow_mut();
+            let mut iface = self.iface.lock();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
             // Send until socket state is bad (shouldn't happen), send buffer is full, all data is sent,
             // or no progress is being made (e.g., send_slice starts returning 0)
@@ -141,7 +141,7 @@ impl TCPTransport<'_> {
         loop {
             // Recv until socket state is bad (shouldn't happen), all data is received,
             // or no progress is being made (e.g., recv_slice starts returning 0)
-            let mut iface = self.iface.borrow_mut();
+            let mut iface = self.iface.lock();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
             let bytes_recv = 1;
@@ -186,7 +186,7 @@ impl TCPTransport<'_> {
         debug!("recv_msg, try = {:?}", is_try);
         let mut offset = 0;
         {
-            let mut iface = self.iface.borrow_mut();
+            let mut iface = self.iface.lock();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
             if socket.can_recv() {
                 let hdr_slice = unsafe { hdr.as_mut_bytes() };
@@ -315,7 +315,7 @@ impl Transport for TCPTransport<'_> {
 
     fn client_connect(&mut self) -> Result<(), RPCError> {
         {
-            let mut iface = self.iface.borrow_mut();
+            let mut iface = self.iface.lock();
             let (socket, cx) = iface.get_socket_and_context::<TcpSocket>(self.server_handle);
 
             // TODO: add timeout?? with error returned if timeout occurs?
@@ -336,7 +336,7 @@ impl Transport for TCPTransport<'_> {
         // Connect to server, poll until connection is complete
         {
             loop {
-                match self.iface.borrow_mut().poll(Instant::from_millis(
+                match self.iface.lock().poll(Instant::from_millis(
                     rawtime::duration_since_boot().as_millis() as i64,
                 )) {
                     Ok(_) => {}
@@ -344,7 +344,7 @@ impl Transport for TCPTransport<'_> {
                         warn!("poll error: {}", e);
                     }
                 }
-                let mut iface = self.iface.borrow_mut();
+                let mut iface = self.iface.lock();
                 let socket = iface.get_socket::<TcpSocket>(self.server_handle);
 
                 // Waiting for send/recv forces the TCP handshake to fully complete
@@ -360,7 +360,7 @@ impl Transport for TCPTransport<'_> {
     fn server_accept(&self) -> Result<(), RPCError> {
         // Listen
         {
-            let mut iface = self.iface.borrow_mut();
+            let mut iface = (*self.iface).lock();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
             socket.listen(self.server_port).unwrap();
             debug!("Listening at port {}", self.server_port);
@@ -368,7 +368,7 @@ impl Transport for TCPTransport<'_> {
 
         // Poll interface until connection is established
         loop {
-            match self.iface.borrow_mut().poll(Instant::from_millis(
+            match self.iface.lock().poll(Instant::from_millis(
                 rawtime::duration_since_boot().as_millis() as i64,
             )) {
                 Ok(_) => {}
@@ -377,7 +377,7 @@ impl Transport for TCPTransport<'_> {
                 }
             }
 
-            let mut iface = self.iface.borrow_mut();
+            let mut iface = self.iface.lock();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
             if socket.is_active() && (socket.may_send() || socket.may_recv()) {
                 debug!("Connected to client!");

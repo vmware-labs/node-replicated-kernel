@@ -11,14 +11,14 @@ use crate::rpc::*;
 use crate::transport::Transport;
 
 pub struct Client {
-    transport: Box<dyn Transport>,
+    transport: Box<dyn Transport + Send>,
     client_id: NodeId,
     req_id: u64,
     hdr: UnsafeCell<RPCHeader>,
 }
 
 impl Client {
-    pub fn new<T: 'static + Transport>(transport: Box<T>) -> Client {
+    pub fn new<T: 'static + Transport + Send>(transport: Box<T>) -> Client {
         Client {
             transport,
             client_id: 0,

@@ -4,11 +4,11 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::RefCell;
-
 use fallible_collections::FallibleVecGlobal;
+use lazy_static::lazy_static;
 use smoltcp::iface::{Interface, InterfaceBuilder, NeighborCache, Routes};
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address};
+use spin::Mutex;
 use vmxnet3::pci::BarAccess;
 use vmxnet3::smoltcp::DevQueuePhy;
 use vmxnet3::vmx::VMXNet3;
@@ -20,8 +20,13 @@ use crate::memory::PAddr;
 use crate::pci::claim_device;
 use kpi::KERNEL_BASE;
 
+lazy_static! {
+    pub(crate) static ref ETHERNET_IFACE: Arc<Mutex<Interface<'static, DevQueuePhy>>> =
+        init_network().expect("Failed to create ethernet interface");
+}
+
 #[allow(unused)]
-pub(crate) fn init_network<'a>() -> KResult<Arc<RefCell<Interface<'a, DevQueuePhy>>>> {
+pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>>>> {
     const VMWARE_INC: u16 = 0x15ad;
     const VMXNET_DEV: u16 = 0x07b0;
     if let Some(vmxnet3_dev) = claim_device(VMWARE_INC, VMXNET_DEV) {
@@ -80,7 +85,7 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<RefCell<Interface<'a, DevQueuePh
             .routes(routes)
             .neighbor_cache(neighbor_cache)
             .finalize();
-        Ok(Arc::new(RefCell::new(iface)))
+        Ok(Arc::new(Mutex::new(iface)))
     } else {
         Err(KError::VMXNet3DeviceNotFound)
     }
@@ -97,8 +102,11 @@ pub(crate) fn init_ethernet_rpc(
     use rpc::transport::TCPTransport;
     use rpc::RPCClient;
 
-    let iface = init_network()?;
-    let rpc_transport = Box::try_new(TCPTransport::new(Some(server_ip), server_port, iface))?;
+    let rpc_transport = Box::try_new(TCPTransport::new(
+        Some(server_ip),
+        server_port,
+        Arc::clone(&ETHERNET_IFACE),
+    ))?;
     let mut client = Box::try_new(Client::new(rpc_transport))?;
     client.connect()?;
     Ok(client)

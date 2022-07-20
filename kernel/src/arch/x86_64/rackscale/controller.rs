@@ -13,7 +13,7 @@ use rpc::transport::Transport as RPCTransport;
 
 use crate::arch::debug::shutdown;
 use crate::arch::rackscale::dcm::*;
-use crate::transport::ethernet::init_network;
+use crate::transport::ethernet::ETHERNET_IFACE;
 use crate::ExitReason;
 
 use super::*;
@@ -23,7 +23,6 @@ const PORT: u16 = 6970;
 /// Test TCP RPC-based controller
 pub(crate) fn run() {
     // Create network interface and clock
-    let iface = init_network().expect("Failed to initialize network interface");
     #[derive(Debug)]
     #[cfg_attr(feature = "defmt", derive(defmt::Format))]
     pub(crate) struct Clock(Cell<Instant>);
@@ -41,16 +40,13 @@ pub(crate) fn run() {
     }
     let clock = Clock::new();
 
-    // Initialize DCM
-    let dcmController = DCMInterface::new(Arc::clone(&iface));
-
     // Initialize the RPC server
     let mut server: Box<dyn RPCServer> = if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         use rpc::{server::Server, transport::TCPTransport};
-        let transport = Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&iface)))
+        let transport = Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&ETHERNET_IFACE)))
             .expect("Out of memory during init");
         Box::try_new(Server::new(transport)).expect("Out of memory during init")
     } else if crate::CMDLINE
@@ -72,7 +68,7 @@ pub(crate) fn run() {
     // Start running the RPC server
     log::info!("Starting RPC server!");
     loop {
-        match iface.borrow_mut().poll(Instant::from_millis(
+        match ETHERNET_IFACE.lock().poll(Instant::from_millis(
             rawtime::duration_since_boot().as_millis() as i64,
         )) {
             Ok(_) => {}

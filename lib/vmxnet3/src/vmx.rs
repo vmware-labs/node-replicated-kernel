@@ -48,6 +48,8 @@ struct TRXQueueShared {
     buffer: *mut u8,
 }
 
+unsafe impl Send for TRXQueueShared {}
+
 impl TRXQueueShared {
     fn new(txqsets: usize, rxqsets: usize) -> Result<TRXQueueShared, VMXNet3Error> {
         // Safety: Needs to allocate slice that can hold txqsets and rxqsets structs

@@ -1,15 +1,17 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use super::super::syscall_res::*;
-use super::get_local_pid;
-use super::ResourceRequest;
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
+
+use super::super::syscall_res::*;
+use super::dcm_msg::make_dcm_request;
+use super::get_local_pid;
+use super::ResourceRequest;
 
 #[derive(Debug)]
 pub(crate) struct RequestCoreReq {
@@ -75,9 +77,11 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
         }
     };
 
+    let node = make_dcm_request(local_pid, true);
+
     // Construct and return result
     let res = SyscallRes {
-        ret: convert_return(Ok((0, 0))),
+        ret: convert_return(Ok((node, 0))),
     };
     construct_ret(hdr, payload, res)
 }

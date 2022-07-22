@@ -21,18 +21,18 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
     debug!("GetInfo({:?})", name);
 
     // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
     rpc_client
         .call(
             pid,
-            LwkRpc::GetInfo as RPCType,
+            KernelRpc::GetInfo as RPCType,
             &[name.as_ref()],
             &mut [&mut res_data],
         )
         .unwrap();
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -57,7 +57,7 @@ pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<
     // Call local file_info function
     let ret = cnrfs::MlnrKernelNode::file_info(local_pid, path);
     // Construct results from return data
-    let res = FIORes {
+    let res = KernelRpcRes {
         ret: convert_return(ret),
     };
     construct_ret(hdr, payload, res)

@@ -50,7 +50,7 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
     };
 });
 
-pub(crate) use fio::LwkRpc;
+pub(crate) use fio::KernelRpc;
 
 // Re-export client registration
 use self::fio::register_client;

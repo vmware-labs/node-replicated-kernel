@@ -36,20 +36,20 @@ pub(crate) fn rpc_alloc_physical(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
 
     // Call readat() or read() RPCs
     rpc_client
         .call(
             pid,
-            LwkRpc::AllocPhysical as RPCType,
+            KernelRpc::AllocPhysical as RPCType,
             &[&req_data],
             &mut [&mut res_data],
         )
         .unwrap();
 
     // Decode result, return result if decoded successfully
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -93,7 +93,7 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
     //let ret = cnrfs::NrProcess::allocate_physical(size, affinity);
 
     // Construct return
-    let res = FIORes {
+    let res = KernelRpcRes {
         ret: convert_return(Ok((0, 0))),
     };
     construct_ret(hdr, payload, res)

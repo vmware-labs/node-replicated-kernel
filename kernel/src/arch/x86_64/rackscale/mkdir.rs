@@ -37,20 +37,20 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
 
     // Call RPC
     rpc_client
         .call(
             pid,
-            LwkRpc::MkDir as RPCType,
+            KernelRpc::MkDir as RPCType,
             &[&req_data, pathname.as_ref()],
             &mut [&mut res_data],
         )
         .unwrap();
 
     // Parse and return result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -85,7 +85,7 @@ pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
     let mkdir_req = cnrfs::MlnrKernelNode::mkdir(local_pid, path_string, modes);
 
     // Call mkdir function and send result
-    let res = FIORes {
+    let res = KernelRpcRes {
         ret: convert_return(mkdir_req),
     };
     construct_ret(hdr, payload, res)

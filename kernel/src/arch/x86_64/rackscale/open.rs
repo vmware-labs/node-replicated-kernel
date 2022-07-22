@@ -37,7 +37,7 @@ pub(crate) fn rpc_open<P: AsRef<[u8]> + Debug>(
         pathname,
         flags,
         modes,
-        LwkRpc::Open as RPCType,
+        KernelRpc::Open as RPCType,
     )
 }
 
@@ -57,7 +57,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Construct result buffer
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
 
     // Call the RPC
     rpc_client
@@ -70,7 +70,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
         .unwrap();
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -116,7 +116,7 @@ pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     let cnr_ret = cnrfs::MlnrKernelNode::map_fd(local_pid, path_string, flags, modes);
 
     // Create return
-    let res = FIORes {
+    let res = KernelRpcRes {
         ret: convert_return(cnr_ret),
     };
     construct_ret(hdr, payload, res)

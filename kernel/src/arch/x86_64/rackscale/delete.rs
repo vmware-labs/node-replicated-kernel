@@ -21,20 +21,20 @@ pub(crate) fn rpc_delete(
     debug!("Delete({:?})", pathname);
 
     // Create buffer for result
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
 
     // Call RPC
     rpc_client
         .call(
             pid,
-            LwkRpc::Delete as RPCType,
+            KernelRpc::Delete as RPCType,
             &[&pathname.as_bytes()],
             &mut [&mut res_data],
         )
         .unwrap();
 
     // Decode result - return result if decoding successful
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -56,7 +56,7 @@ pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
     let path = core::str::from_utf8(&payload[..hdr.msg_len as usize])?;
 
     // Construct and return result
-    let res = FIORes {
+    let res = KernelRpcRes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
             local_pid,
             TryString::try_from(path)?.into(), // TODO(fixme): unnecessary allocation

@@ -19,18 +19,18 @@ pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
     msg: P,
 ) -> Result<(u64, u64), RPCError> {
     // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
     rpc_client
         .call(
             pid,
-            LwkRpc::Log as RPCType,
+            KernelRpc::Log as RPCType,
             &[msg.as_ref()],
             &mut [&mut res_data],
         )
         .unwrap();
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
@@ -54,7 +54,7 @@ pub(crate) fn handle_log(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), 
     log::info!("Remote Log from {}: {}", local_pid, msg_str);
 
     // Construct results from return data
-    let res = FIORes {
+    let res = KernelRpcRes {
         ret: convert_return(Ok((0, 0))),
     };
     construct_ret(hdr, payload, res)

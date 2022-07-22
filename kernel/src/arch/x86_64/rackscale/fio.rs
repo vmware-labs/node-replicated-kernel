@@ -19,7 +19,7 @@ use crate::process::Pid;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
-pub(crate) enum LwkRpc {
+pub(crate) enum KernelRpc {
     /// Create a file
     Create = 0,
     /// Open a file
@@ -50,39 +50,39 @@ pub(crate) enum LwkRpc {
     AllocPhysical = 13,
 }
 
-impl TryFrom<RPCType> for LwkRpc {
+impl TryFrom<RPCType> for KernelRpc {
     type Error = KError;
 
     /// Construct a RPCType enum based on a 8-bit value.
     fn try_from(op: RPCType) -> Result<Self, Self::Error> {
         match op {
-            0 => Ok(LwkRpc::Create),
-            1 => Ok(LwkRpc::Open),
-            2 => Ok(LwkRpc::Read),
-            3 => Ok(LwkRpc::ReadAt),
-            4 => Ok(LwkRpc::Write),
-            5 => Ok(LwkRpc::WriteAt),
-            6 => Ok(LwkRpc::Close),
-            7 => Ok(LwkRpc::GetInfo),
-            8 => Ok(LwkRpc::Delete),
-            9 => Ok(LwkRpc::WriteDirect),
-            10 => Ok(LwkRpc::FileRename),
-            11 => Ok(LwkRpc::MkDir),
-            12 => Ok(LwkRpc::Log),
-            13 => Ok(LwkRpc::AllocPhysical),
+            0 => Ok(KernelRpc::Create),
+            1 => Ok(KernelRpc::Open),
+            2 => Ok(KernelRpc::Read),
+            3 => Ok(KernelRpc::ReadAt),
+            4 => Ok(KernelRpc::Write),
+            5 => Ok(KernelRpc::WriteAt),
+            6 => Ok(KernelRpc::Close),
+            7 => Ok(KernelRpc::GetInfo),
+            8 => Ok(KernelRpc::Delete),
+            9 => Ok(KernelRpc::WriteDirect),
+            10 => Ok(KernelRpc::FileRename),
+            11 => Ok(KernelRpc::MkDir),
+            12 => Ok(KernelRpc::Log),
+            13 => Ok(KernelRpc::AllocPhysical),
             _ => Err(KError::InvalidRpcType),
         }
     }
 }
-unsafe_abomonate!(LwkRpc);
+unsafe_abomonate!(KernelRpc);
 
 // Struct used to encapulate a system call result
 #[derive(Debug)]
-pub(crate) struct FIORes {
+pub(crate) struct KernelRpcRes {
     pub ret: Result<(u64, u64), RPCError>,
 }
-unsafe_abomonate!(FIORes: ret);
-pub(crate) const FIORES_SIZE: u64 = core::mem::size_of::<FIORes>() as u64;
+unsafe_abomonate!(KernelRpcRes: ret);
+pub(crate) const KernelRpcRes_SIZE: u64 = core::mem::size_of::<KernelRpcRes>() as u64;
 
 // Mapping between local PIDs and remote (client) PIDs
 lazy_static! {
@@ -144,7 +144,7 @@ pub(crate) fn register_client(
     }
 }
 
-// Below are utility functions for working with FIORes
+// Below are utility functions for working with KernelRpcRes
 
 #[inline(always)]
 pub(crate) fn construct_error_ret(
@@ -152,7 +152,7 @@ pub(crate) fn construct_error_ret(
     payload: &mut [u8],
     err: RPCError,
 ) -> Result<(), RPCError> {
-    let res = FIORes { ret: Err(err) };
+    let res = KernelRpcRes { ret: Err(err) };
     construct_ret(hdr, payload, res)
 }
 
@@ -160,7 +160,7 @@ pub(crate) fn construct_error_ret(
 pub(crate) fn construct_ret(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
-    res: FIORes,
+    res: KernelRpcRes,
 ) -> Result<(), RPCError> {
     construct_ret_extra_data(hdr, payload, res, 0)
 }
@@ -169,14 +169,14 @@ pub(crate) fn construct_ret(
 pub(crate) fn construct_ret_extra_data(
     hdr: &mut RPCHeader,
     mut payload: &mut [u8],
-    res: FIORes,
+    res: KernelRpcRes,
     additional_data_len: u64,
 ) -> Result<(), RPCError> {
     // Encode payload in buffer
     unsafe { encode(&res, &mut payload) }.unwrap();
 
     // Modify header and write into output buffer
-    hdr.msg_len = FIORES_SIZE + additional_data_len;
+    hdr.msg_len = KernelRpcRes_SIZE + additional_data_len;
     Ok(())
 }
 

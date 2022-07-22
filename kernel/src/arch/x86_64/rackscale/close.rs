@@ -31,20 +31,20 @@ pub(crate) fn rpc_close(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Setup result
-    let mut res_data = [0u8; core::mem::size_of::<FIORes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
 
     // Call Close() RPC
     rpc_client
         .call(
             pid,
-            LwkRpc::Close as RPCType,
+            KernelRpc::Close as RPCType,
             &[&req_data],
             &mut [&mut res_data],
         )
         .unwrap();
 
     // Decode and return result
-    if let Some((res, remaining)) = unsafe { decode::<FIORes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
         // Check for extra data
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
@@ -73,7 +73,7 @@ pub(crate) fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         debug!("Close(fd={:?}), local_pid={:?}", req.fd, local_pid);
 
         // Call close (unmap_fd) and return result
-        let res = FIORes {
+        let res = KernelRpcRes {
             ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(local_pid, req.fd)),
         };
         construct_ret(hdr, payload, res)

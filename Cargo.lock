@@ -261,7 +261,6 @@ dependencies = [
  "log",
  "uefi",
  "uefi-services",
- "x86 0.51.0",
  "x86 0.52.0",
 ]
 

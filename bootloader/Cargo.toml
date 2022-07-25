@@ -17,7 +17,6 @@ default = []
 bootloader_shared = { path = "../lib/bootloader_shared" }
 
 ## External dependencies
-x86 = { version = "0.52", features = ["unstable"] }
 elfloader = "0.14"
 log = { version = "0.4", default-features = false }
 arrayvec = { version = "0.7.0", default-features = false }
@@ -28,7 +27,7 @@ uefi-services = "0.12"
 # Arch Specific Dependencies for x86_64 Targets
 # -------------------------------------------------------------------------------------------------
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86 = { version = "0.51", features = ["unstable"] }
+x86 = { version = "0.52", features = ["unstable"] }
 
 
 # Arch Specific Dependencies for aarch64 Targets

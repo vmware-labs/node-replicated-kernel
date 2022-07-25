@@ -19,6 +19,7 @@ import re
 import errno
 from time import sleep
 import tempfile
+import platform
 
 from plumbum import colors, local, SshMachine
 from plumbum.commands import ProcessExecutionError
@@ -39,7 +40,6 @@ CARGO_NOSTD_BUILD_ARGS = ["-Z", "build-std=core,alloc",
                           "-Z", "build-std-features=compiler-builtins-mem"]
 ARCH = "x86_64"
 
-
 def get_network_config(workers):
     """
     Returns a list of network configurations for the workers.
@@ -56,8 +56,34 @@ def get_network_config(workers):
 MAX_WORKERS = 16
 NETWORK_CONFIG = get_network_config(MAX_WORKERS)
 NETWORK_INFRA_IP = '172.31.0.20/24'
-
 DCM_SCHEDULER_VERSION = "1.1.4"
+
+# all supported platforms
+PLATFORMS = [
+    # x86_64: qemu and real pc
+    "x86_64-qemu",
+    "x86_64-pc",
+    # aarch64 (armv8) qemu and thunderx
+    "aarch64-qemu",
+    "aarch64-thunderx"
+]
+
+# convert the platform to the architecture
+def platform_to_arch(platform):
+    if platform.startswith("x86_64"):
+        return "x86_64"
+    elif platform.startswith("aarch64"):
+        return "aarch64"
+    else:
+        raise Exception("Unknown platform: {}".format(platform))
+
+# whether or not we're running in qemu
+def platform_is_qenu(platform):
+    return platform.endswith("-qemu")
+
+# the default build architecture and default build platform
+DEFAULT_PLATFORM = PLATFORMS[0]
+
 
 #
 # Important globals
@@ -68,7 +94,18 @@ KERNEL_PATH = SCRIPT_PATH
 LIBS_PATH = (SCRIPT_PATH / '..').resolve() / 'lib'
 USR_PATH = (SCRIPT_PATH / '..').resolve() / 'usr'
 
-UEFI_TARGET = "{}-uefi".format(ARCH)
+def uefi_target(args):
+    return "{}-uefi".format(platform_to_arch(args.target))
+
+def qemu_system(args) :
+    arch = platform_to_arch(args.target)
+    if arch == "x86_64":
+        return "qemu-system-x86_64"
+    if arch == "aarch64":
+        return "qemu-system-x86_64"
+    else:
+        raise Exception("Unknown target: {}".format(args.target))
+
 KERNEL_TARGET = "{}-nrk".format(ARCH)
 USER_TARGET = "{}-nrk-none".format(ARCH)
 USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
@@ -77,6 +114,10 @@ USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
 # Command line argument parser
 #
 parser = argparse.ArgumentParser()
+# platform and architecture
+parser.add_argument("--target", default=DEFAULT_PLATFORM, choices=PLATFORMS,
+                    help="Target platform and architecture to build for.")
+
 # General build arguments
 parser.add_argument("-v", "--verbose", action="store_true",
                     help="increase output verbosity")
@@ -188,7 +229,7 @@ def log(msg):
 def build_bootloader(args):
     "Builds the bootloader, copies the binary in the target UEFI directory"
     log("Build bootloader")
-    uefi_build_args = ['build', '--target', UEFI_TARGET]
+    uefi_build_args = ['build', '--target', uefi_target(args)]
     uefi_build_args += ['--package', 'bootloader']
     uefi_build_args += CARGO_DEFAULT_ARGS
     uefi_build_args += CARGO_NOSTD_BUILD_ARGS
@@ -290,7 +331,7 @@ def deploy(args):
 
     # Clean up / create ESP dir structure
     debug_release = 'release' if args.release else 'debug'
-    uefi_build_path = TARGET_PATH / UEFI_TARGET / debug_release
+    uefi_build_path = TARGET_PATH / uefi_target(args) / debug_release
     user_build_path = TARGET_PATH / USER_TARGET / debug_release
     kernel_build_path = TARGET_PATH / KERNEL_TARGET / debug_release
 
@@ -354,6 +395,26 @@ boot EFI/Boot/BootX64.efi
         boot_file.write(ipxe_script)
 
 
+
+def qemu_system_default_args(qemu):
+    args = ['-no-reboot']
+    if qemu == 'qemu-system-x86_64':
+        if platform.machine() == 'x86_64':
+            args += ['-enable-kvm']
+        arts += ['-cpu',
+                 'host,migratable=no,+invtsc,+tsc,+x2apic,+fsgsbase']
+    elif qemu == 'qemu-system-aarch64':
+        if platform.machine() == 'aarch64':
+            args += ['-enable-kvm']
+        args += ["-machine", "virt", "-cpu", "cortex-a72"]
+    else :
+        raise Exception("Unknown qemu: {}".format(qemu))
+    # Use serial communication
+    # '-nographic',
+    args += ['-display', 'none', '-serial', 'stdio']
+    return args
+
+
 def run_qemu(args):
     """
     Run the kernel on a QEMU instance.
@@ -363,10 +424,11 @@ def run_qemu(args):
     from plumbum.machines import LocalCommand
     from packaging import version
 
+    qemu = qemu_system(args)
+
     if args.qemu_pmem:
         required_version = version.parse("6.0.0")
-        version_check = ['/usr/bin/env'] + \
-            ['qemu-system-x86_64'] + ['-version']
+        version_check = ['/usr/bin/env'] + [qemu] + ['-version']
         # TODO: Ad-hoc approach to find version number. Can we improve it?
         ver = str(subprocess.check_output(version_check)
                   ).split(' ')[3].split('\\n')[0]
@@ -376,16 +438,11 @@ def run_qemu(args):
 
     log("Starting QEMU")
     debug_release = 'release' if args.release else 'debug'
-    esp_path = TARGET_PATH / UEFI_TARGET / debug_release / 'esp'
+    esp_path = TARGET_PATH / uefi_target(args) / debug_release / 'esp'
 
-    qemu_default_args = ['-no-reboot']
+    qemu_default_args = qemu_system_default_args(qemu)
+
     # Setup KVM and required guest hardware features
-    qemu_default_args += ['-enable-kvm']
-    qemu_default_args += ['-cpu',
-                          'host,migratable=no,+invtsc,+tsc,+x2apic,+fsgsbase']
-    # Use serial communication
-    # '-nographic',
-    qemu_default_args += ['-display', 'none', '-serial', 'stdio']
 
     if args.kgdb:
         # Add a second serial line (VM I/O port 0x2f8 <-> localhost:1234) that
@@ -606,7 +663,7 @@ def run_baremetal(args):
 
         log("Deploying binaries to ipxe location")
         debug_release = 'release' if args.release else 'debug'
-        uefi_build_path = TARGET_PATH / UEFI_TARGET / debug_release
+        uefi_build_path = TARGET_PATH / uefi_target(args) / debug_release
 
         esp_path = uefi_build_path / 'esp'
         to_copy = [plumbum.local.path(entry) for entry in esp_path.glob("*")]
@@ -793,6 +850,11 @@ if __name__ == '__main__':
     if 'gdb' in args.kfeatures and not args.kgdb:
         print("You set gdb in kfeatures but haven't provided `--kgdb` to `run.py`.")
         print("Just use `--kgdb` to make sure `run.py` configures QEMU with the proper serial line.")
+        sys.exit(errno.EINVAL)
+
+    if platform_is_qenu(args.target) and args.machine != "qemu" :
+        print(f"You set the platform to {args.target} and machine to {args.machine}")
+        print("Please select either `--machine qemu` or `--platform` to not qemu.")
         sys.exit(errno.EINVAL)
 
     try:

@@ -8,8 +8,8 @@ use core::mem::transmute;
 use x86::bits64::paging::*;
 use x86::controlregs;
 
-use uefi_services::system_table;
 use uefi::table::boot::AllocateType;
+use uefi_services::system_table;
 
 use crate::kernel::*;
 
@@ -65,14 +65,20 @@ impl MapAction {
     }
 }
 
-
-
 /// A VSpace allows to create and modify a (virtual) address space.
 pub struct VSpaceX86<'a> {
     pub pml4: &'a mut PML4,
 }
 
-impl <'a> VSpaceX86<'a> {
+impl<'a> VSpaceX86<'a> {
+    pub fn new() -> VSpaceX86<'a> {
+        trace!("Allocate a PML4 (page-table root)");
+        let pml4: PAddr = VSpaceX86::allocate_one_page();
+        let pml4_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
+
+        VSpaceX86 { pml4: pml4_table }
+    }
+
     /// Constructs an identity map but with an offset added to the region.
     pub(crate) fn map_identity_with_offset(
         &mut self,
@@ -503,8 +509,9 @@ impl <'a> VSpaceX86<'a> {
 
                 for (pdpt_idx, pdpt_item) in pdpt_table.iter().enumerate() {
                     if pdpt_item.is_present() {
-                        let pd_table =
-                            transmute::<VAddr, &mut PD>(VAddr::from_u64(pdpt_item.address().as_u64()));
+                        let pd_table = transmute::<VAddr, &mut PD>(VAddr::from_u64(
+                            pdpt_item.address().as_u64(),
+                        ));
                         if pdpt_item.is_page() {
                             let vaddr: usize = (512 * (512 * (512 * 0x1000))) * pml_idx
                                 + (512 * (512 * 0x1000)) * pdpt_idx;
@@ -526,7 +533,8 @@ impl <'a> VSpaceX86<'a> {
                                     } else {
                                         assert!(!pd_item.is_page());
                                         for (pte_idx, pte) in ptes.iter().enumerate() {
-                                            let vaddr: usize = (512 * (512 * (512 * 0x1000))) * pml_idx
+                                            let vaddr: usize = (512 * (512 * (512 * 0x1000)))
+                                                * pml_idx
                                                 + (512 * (512 * 0x1000)) * pdpt_idx
                                                 + (512 * 0x1000) * pd_idx
                                                 + (0x1000) * pte_idx;
@@ -549,7 +557,6 @@ impl <'a> VSpaceX86<'a> {
     }
 }
 
-
 /// Debug function to see what's currently in the UEFI address space.
 #[allow(unused)]
 fn dump_translation_root_register() {
@@ -559,7 +566,9 @@ fn dump_translation_root_register() {
 
         let mut pml4: PAddr = PAddr::from(cr_three);
         let mut pml4_table = unsafe { transmute::<VAddr, &mut PML4>(paddr_to_uefi_vaddr(pml4)) };
-        let vspace = VSpaceX86 { pml4: &mut pml4_table };
+        let vspace = VSpaceX86 {
+            pml4: &mut pml4_table,
+        };
         vspace.dump_table();
     }
 }

@@ -13,7 +13,6 @@ use crate::kernel::*;
 
 use crate::MapAction;
 
-
 impl MapAction {
     /// Transform MapAction into rights for 1 GiB page.
     fn to_l1_rights(&self) -> PDPTFlags {
@@ -66,11 +65,21 @@ impl MapAction {
 
 /// A VSpace allows to create and modify a (virtual) address space.
 pub struct VSpaceAArch64<'a> {
-    pub l0_table: &'a mut PML4,
+    //pub l0_table: &'a mut PML4,
 }
 
+impl<'a> VSpaceAArch64<'a> {
+    pub fn new() -> VSpaceX86<'a> {
+        trace!("Allocate a PML4 (page-table root)");
 
-impl <'a> VSpaceAArch64<'a> {
+        panic!("not yet implemented!");
+
+        // let l0: PAddr = VSpaceX86::allocate_one_page();
+        // let l0_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
+
+        VSpaceAArch64 { /* l0_table: l0_table */}
+    }
+
     /// Constructs an identity map but with an offset added to the region.
     pub(crate) fn map_identity_with_offset(
         &mut self,
@@ -141,7 +150,6 @@ impl <'a> VSpaceAArch64<'a> {
         panic!("not yet implemented!");
     }
 }
-
 
 /// Debug function to see what's currently in the UEFI address space.
 #[allow(unused)]

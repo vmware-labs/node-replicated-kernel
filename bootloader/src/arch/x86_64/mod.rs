@@ -4,6 +4,7 @@
 
 use core::arch::global_asm;
 
+pub mod cpu;
 mod vspace;
 
 pub use vspace::VSpaceX86 as VSpace;

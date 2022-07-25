@@ -7,9 +7,9 @@ use core::fmt;
 
 use crate::PAddr;
 use crate::VAddr;
-use crate::{BASE_PAGE_SIZE, BASE_PAGE_SHIFT};
 use crate::KERNEL_ELF;
 use crate::KERNEL_PT;
+use crate::{BASE_PAGE_SHIFT, BASE_PAGE_SIZE};
 
 /// Mapping rights to give to address translation.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]

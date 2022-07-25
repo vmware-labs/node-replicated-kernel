@@ -37,7 +37,7 @@ function install_run_dependencies()
         brew install qemu
     elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
         # native build dependencies
-        $APT install -y qemu qemu-kvm qemu-system-x86 sshpass hwloc libhwloc-dev numactl libevent-dev bridge-utils > /dev/null
+        $APT install -y qemu qemu-kvm qemu-system-x86 qemu-system-arm qemu-efi-aarch64 sshpass hwloc libhwloc-dev numactl libevent-dev bridge-utils > /dev/null
 
         # nrk integration-test dependencies
         $APT install -y isc-dhcp-server socat netcat-openbsd redis-tools net-tools graphviz tcpdump > /dev/null

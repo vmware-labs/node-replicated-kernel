@@ -80,6 +80,10 @@ impl<'a> VSpaceAArch64<'a> {
         VSpaceAArch64 { /* l0_table: l0_table */}
     }
 
+    pub fn roottable(&self) -> u64 {
+        panic!("not yet implemented!");
+    }
+
     /// Constructs an identity map but with an offset added to the region.
     pub(crate) fn map_identity_with_offset(
         &mut self,

@@ -73,16 +73,12 @@ pub mod arch;
 
 use arch::VSpace;
 
-use x86::bits64::paging::*;
-use x86::controlregs;
-
 mod kernel;
 mod memory;
 mod modules;
 mod vspace;
 
 use kernel::*;
-use memory::*;
 use modules::*;
 use vspace::*;
 
@@ -109,7 +105,7 @@ fn check_revision(rev: uefi::table::Revision) {
 
 /// Allocates `pages` * `BASE_PAGE_SIZE` bytes of physical memory
 /// and return the address.
-pub fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> PAddr {
+pub fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> arch::PAddr {
     let num = st
         .boot_services()
         .allocate_pages(AllocateType::AnyPages, typ, pages)
@@ -119,10 +115,10 @@ pub fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> 
     // (UEFI Specification 2.8, EFI_BOOT_SERVICES.AllocatePages())
     unsafe {
         st.boot_services()
-            .set_mem(num as *mut u8, pages * BASE_PAGE_SIZE, 0u8)
+            .set_mem(num as *mut u8, pages * arch::BASE_PAGE_SIZE, 0u8)
     };
 
-    PAddr::from(num)
+    arch::PAddr::from(num)
 }
 
 /// Find out how many pages we require to load the memory map
@@ -136,9 +132,9 @@ fn estimate_memory_map_size(st: &SystemTable<Boot>) -> (usize, usize) {
     // due to UEFI API crazyness, round to page-size
     let sz = round_up!(
         mm_size_estimate.map_size + 32 * mm_size_estimate.entry_size,
-        BASE_PAGE_SIZE
+        arch::BASE_PAGE_SIZE
     );
-    assert_eq!(sz % BASE_PAGE_SIZE, 0, "Not multiple of page-size.");
+    assert_eq!(sz % arch::BASE_PAGE_SIZE, 0, "Not multiple of page-size.");
 
     (sz, sz / mem::size_of::<MemoryDescriptor>())
 }
@@ -146,7 +142,11 @@ fn estimate_memory_map_size(st: &SystemTable<Boot>) -> (usize, usize) {
 /// Load the memory map into buffer (which is hopefully big enough).
 fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
     let (mm_size, _no_descs) = estimate_memory_map_size(st);
-    let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UEFI_MEMORY_MAP));
+    let mm_paddr = allocate_pages(
+        &st,
+        mm_size / arch::BASE_PAGE_SIZE,
+        MemoryType(UEFI_MEMORY_MAP),
+    );
     let mm_slice: &mut [u8] = unsafe {
         slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
     };
@@ -163,9 +163,9 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         }
 
         // Compute physical base and bound for the region we're about to map
-        let phys_range_start = PAddr::from(entry.phys_start);
+        let phys_range_start = arch::PAddr::from(entry.phys_start);
         let phys_range_end =
-            PAddr::from(entry.phys_start + entry.page_count * BASE_PAGE_SIZE as u64);
+            arch::PAddr::from(entry.phys_start + entry.page_count * arch::BASE_PAGE_SIZE as u64);
 
         if phys_range_start.as_u64() <= 0xfee00000u64 && phys_range_end.as_u64() >= 0xfee00000u64 {
             debug!("{:?} covers APIC range, ignore for now.", entry);
@@ -222,7 +222,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 || entry.ty == MemoryType(KERNEL_ARGS)
             {
                 kernel.vspace.map_identity_with_offset(
-                    PAddr::from(KERNEL_OFFSET as u64),
+                    arch::PAddr::from(arch::KERNEL_OFFSET as u64),
                     phys_range_start,
                     phys_range_end,
                     rights,
@@ -319,9 +319,9 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
     // let pml4_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
 
     let mut kernel = Kernel {
-        offset: VAddr::from(0usize),
+        offset: arch::VAddr::from(0usize),
         mapping: Vec::new(),
-        vspace: VSpace::new(),
+        vspace: arch::VSpace::new(),
         tls: None,
     };
 
@@ -333,22 +333,22 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
     // On big machines with the init stack tends to put big structures
     // on the stack so we reserve a fair amount of space:
     let stack_pages: usize = 768;
-    let stack_region: PAddr = allocate_pages(&st, stack_pages, MemoryType(KERNEL_STACK));
-    let stack_protector: PAddr = stack_region;
-    let stack_base: PAddr = stack_region + BASE_PAGE_SIZE;
+    let stack_region: arch::PAddr = allocate_pages(&st, stack_pages, MemoryType(KERNEL_STACK));
+    let stack_protector: arch::PAddr = stack_region;
+    let stack_base: arch::PAddr = stack_region + arch::BASE_PAGE_SIZE;
 
-    let stack_size: usize = (stack_pages - 1) * BASE_PAGE_SIZE;
-    let stack_top: PAddr = stack_base + stack_size as u64;
-    assert_eq!(stack_protector + BASE_PAGE_SIZE, stack_base);
+    let stack_size: usize = (stack_pages - 1) * arch::BASE_PAGE_SIZE;
+    let stack_top: arch::PAddr = stack_base + stack_size as u64;
+    assert_eq!(stack_protector + arch::BASE_PAGE_SIZE, stack_base);
 
     kernel.vspace.map_identity_with_offset(
-        PAddr::from(KERNEL_OFFSET as u64),
+        arch::PAddr::from(arch::KERNEL_OFFSET as u64),
         stack_protector,
-        stack_protector + BASE_PAGE_SIZE,
+        stack_protector + arch::BASE_PAGE_SIZE,
         MapAction::ReadUser, // TODO: should be MapAction::None
     );
     kernel.vspace.map_identity_with_offset(
-        PAddr::from(KERNEL_OFFSET as u64),
+        arch::PAddr::from(arch::KERNEL_OFFSET as u64),
         stack_base,
         stack_top,
         MapAction::ReadWriteKernel,
@@ -358,9 +358,9 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         stack_base.as_u64(),
         stack_top.as_u64(),
         stack_protector,
-        stack_protector + BASE_PAGE_SIZE,
+        stack_protector + arch::BASE_PAGE_SIZE,
     );
-    assert!(mem::size_of::<KernelArgs>() < BASE_PAGE_SIZE);
+    assert!(mem::size_of::<KernelArgs>() < arch::BASE_PAGE_SIZE);
     let kernel_args_paddr = allocate_pages(&st, 1, MemoryType(KERNEL_ARGS));
 
     // Make sure we still have access to the UEFI mappings:
@@ -378,8 +378,12 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         // * Switch stack and do a jump to kernel ELF entry point
         // Get an estimate of the memory map size:
         let (mm_size, no_descs) = estimate_memory_map_size(&st);
-        assert_eq!(mm_size % BASE_PAGE_SIZE, 0);
-        let mm_paddr = allocate_pages(&st, mm_size / BASE_PAGE_SIZE, MemoryType(UEFI_MEMORY_MAP));
+        assert_eq!(mm_size % arch::BASE_PAGE_SIZE, 0);
+        let mm_paddr = allocate_pages(
+            &st,
+            mm_size / arch::BASE_PAGE_SIZE,
+            MemoryType(UEFI_MEMORY_MAP),
+        );
         let mm_slice =
             slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size);
         trace!("Memory map allocated.");
@@ -389,15 +393,15 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         // but for now we just allocate a separate page (and don't care about
         // wasted memory)
         let mut kernel_args =
-            transmute::<VAddr, &mut KernelArgs>(paddr_to_uefi_vaddr(kernel_args_paddr));
+            transmute::<arch::VAddr, &mut KernelArgs>(paddr_to_uefi_vaddr(kernel_args_paddr));
         trace!("Kernel args allocated at {:#x}.", kernel_args_paddr);
         kernel_args.mm_iter = Vec::with_capacity(no_descs);
 
         // Initialize the KernelArgs
         kernel_args.command_line = core::str::from_utf8_unchecked(cmdline_blob);
-        kernel_args.mm = (mm_paddr + KERNEL_OFFSET, mm_size);
-        kernel_args.pml4 = PAddr::from(kernel.vspace.pml4 as *const _ as u64);
-        kernel_args.stack = (stack_base + KERNEL_OFFSET, stack_size);
+        kernel_args.mm = (mm_paddr + arch::KERNEL_OFFSET, mm_size);
+        kernel_args.pml4 = arch::PAddr::from(kernel.vspace.pml4 as *const _ as u64);
+        kernel_args.stack = (stack_base + arch::KERNEL_OFFSET, stack_size);
         kernel_args.kernel_elf_offset = kernel.offset;
         kernel_args.tls_info = kernel.tls;
         kernel_args.modules = arrayvec::ArrayVec::new();
@@ -414,9 +418,9 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         }
         for entry in st.config_table() {
             if entry.guid == ACPI2_GUID {
-                kernel_args.acpi2_rsdp = PAddr::from(entry.address as u64);
+                kernel_args.acpi2_rsdp = arch::PAddr::from(entry.address as u64);
             } else if entry.guid == ACPI_GUID {
-                kernel_args.acpi1_rsdp = PAddr::from(entry.address as u64);
+                kernel_args.acpi1_rsdp = arch::PAddr::from(entry.address as u64);
             }
         }
 
@@ -426,10 +430,10 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
             let mut frame_buffer = gop.frame_buffer();
             let frame_buf_ptr = frame_buffer.as_mut_ptr();
             let size = frame_buffer.size();
-            let _frame_buf_paddr = PAddr::from(frame_buf_ptr as u64);
+            let _frame_buf_paddr = arch::PAddr::from(frame_buf_ptr as u64);
 
             kernel_args.frame_buffer = Some(core::slice::from_raw_parts_mut(
-                frame_buf_ptr.add(KERNEL_OFFSET),
+                frame_buf_ptr.add(arch::KERNEL_OFFSET),
                 size,
             ));
             kernel_args.mode_info = Some(gop.current_mode_info());
@@ -458,11 +462,11 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         arch::cpu::disable_interrupts();
 
         // Switch to the kernel address space
-        arch::cpu::set_translation_table((kernel.vspace.pml4) as *const _ as u64);
+        arch::cpu::set_translation_table(kernel.vspace.roottable());
 
         // Finally switch to the kernel stack and entry function
         jump_to_kernel(
-            KERNEL_OFFSET as u64 + stack_top.as_u64() - (BASE_PAGE_SIZE as u64),
+            arch::KERNEL_OFFSET as u64 + stack_top.as_u64() - (arch::BASE_PAGE_SIZE as u64),
             kernel.offset.as_u64() + binary.entry_point(),
             paddr_to_kernel_vaddr(kernel_args_paddr).as_u64(),
         );

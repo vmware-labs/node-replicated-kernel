@@ -84,6 +84,10 @@ impl<'a> VSpaceX86<'a> {
         VSpaceX86 { pml4: pml4_table }
     }
 
+    pub fn roottable(&self) -> u64 {
+        self.pml4 as *const _ as u64
+    }
+
     /// Constructs an identity map but with an offset added to the region.
     pub(crate) fn map_identity_with_offset(
         &mut self,
@@ -323,17 +327,17 @@ impl<'a> VSpaceX86<'a> {
 
     fn new_pt(&mut self) -> PDEntry {
         let paddr: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
-        return PDEntry::new(paddr, PDFlags::P | PDFlags::RW);
+        PDEntry::new(paddr, PDFlags::P | PDFlags::RW)
     }
 
     fn new_pd(&mut self) -> PDPTEntry {
         let paddr: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
-        return PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW);
+        PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW)
     }
 
     fn new_pdpt(&mut self) -> PML4Entry {
         let paddr: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
-        return PML4Entry::new(paddr, PML4Flags::P | PML4Flags::RW);
+        PML4Entry::new(paddr, PML4Flags::P | PML4Flags::RW)
     }
 
     /// Resolve a PDEntry to a page table.

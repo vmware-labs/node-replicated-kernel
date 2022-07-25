@@ -8,6 +8,7 @@ use bootloader_shared::TlsInfo;
 use elfloader::{self, ElfLoaderErr};
 use x86::bits64::paging::*;
 
+use crate::arch;
 use crate::memory;
 use crate::vspace::*;
 use crate::VSpace;
@@ -52,14 +53,8 @@ pub(crate) fn paddr_to_uefi_vaddr(paddr: PAddr) -> VAddr {
 
 /// Translate between PAddr and VAddr
 pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
-    return VAddr::from(KERNEL_OFFSET + paddr.as_usize());
+    return VAddr::from(arch::KERNEL_OFFSET + paddr.as_usize());
 }
-
-/// The starting address of the kernel address space
-///
-/// All physical mappings are identity mapped with KERNEL_OFFSET as
-/// displacement.
-pub const KERNEL_OFFSET: usize = 1 << 46;
 
 /// This struct stores meta-data required to construct
 /// an address space for the kernel and relocate the
@@ -170,7 +165,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             max_alignment,
         );
 
-        self.offset = VAddr::from(KERNEL_OFFSET + pbase.as_usize());
+        self.offset = VAddr::from(arch::KERNEL_OFFSET + pbase.as_usize());
         info!("Kernel loaded at address: {:#x}", self.offset);
 
         // Do the mappings:

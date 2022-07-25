@@ -3,6 +3,7 @@ name = "nrk"
 version = "0.0.4"
 authors = [
   "Gerd Zellweger <mail@gerdzellweger.com>",
+  "Reto Achermann <achreto@cs.ubc.ca>",
 ]
 description = "Experimental OS kernel"
 readme = "README.md"
@@ -54,6 +55,18 @@ gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub.git", branch = "de
 # Optional external libraries:
 addr2line = { version = "0.16", default-features = false, features = ["rustc-demangle"], optional = true }
 smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
+
+
+# Arch Specific Dependencies for x86_64 Targets
+# -------------------------------------------------------------------------------------------------
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86 = { version = "0.51", features = ["unstable"] }
+
+
+# Arch Specific Dependencies for aarch64 Targets
+# -------------------------------------------------------------------------------------------------
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+# aarch64 = { path = "lib/aarch64" }
 
 [[bin]]
 name = "nrk"

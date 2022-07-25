@@ -261,6 +261,7 @@ dependencies = [
  "log",
  "uefi",
  "uefi-services",
+ "x86 0.51.0",
  "x86 0.52.0",
 ]
 
@@ -1143,6 +1144,7 @@ dependencies = [
  "uefi",
  "vmxnet3",
  "which",
+ "x86 0.51.0",
  "x86 0.52.0",
 ]
 
@@ -2189,6 +2191,17 @@ name = "x86"
 version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55b5be8cc34d017d8aabec95bc45a43d0f20e8b2a31a453cabc804fe996f8dca"
+dependencies = [
+ "bit_field",
+ "bitflags",
+ "raw-cpuid",
+]
+
+[[package]]
+name = "x86"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa7477e4af519a58818c1f0ab4b149d0ce3304e625be8fe56c8484cac50b0532"
 dependencies = [
  "bit_field",
  "bitflags",

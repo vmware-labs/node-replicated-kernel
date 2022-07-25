@@ -77,10 +77,12 @@ use x86::bits64::paging::*;
 use x86::controlregs;
 
 mod kernel;
+mod memory;
 mod modules;
 mod vspace;
 
 use kernel::*;
+use memory::*;
 use modules::*;
 use vspace::*;
 

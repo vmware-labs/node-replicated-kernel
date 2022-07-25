@@ -8,8 +8,8 @@ use bootloader_shared::TlsInfo;
 use elfloader::{self, ElfLoaderErr};
 use x86::bits64::paging::*;
 
+use crate::memory;
 use crate::vspace::*;
-
 use crate::VSpace;
 
 macro_rules! round_up {
@@ -164,7 +164,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             is_page_aligned!(max_end),
             "max end is not aligned to page-size"
         );
-        let pbase = VSpace::allocate_pages_aligned(
+        let pbase = memory::allocate_pages_aligned(
             ((max_end - min_base) >> BASE_PAGE_SHIFT) as usize,
             uefi::table::boot::MemoryType(KERNEL_ELF),
             max_alignment,

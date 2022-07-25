@@ -12,8 +12,13 @@ use uefi::table::boot::AllocateType;
 use uefi_services::system_table;
 
 use crate::kernel::*;
+use crate::memory;
 
 use crate::MapAction;
+
+// export the base page size and shifts
+pub use x86::bits64::paging::{PAddr, VAddr};
+pub use x86::bits64::paging::{BASE_PAGE_SHIFT, BASE_PAGE_SIZE};
 
 impl MapAction {
     /// Transform MapAction into rights for 1 GiB page.
@@ -73,7 +78,7 @@ pub struct VSpaceX86<'a> {
 impl<'a> VSpaceX86<'a> {
     pub fn new() -> VSpaceX86<'a> {
         trace!("Allocate a PML4 (page-table root)");
-        let pml4: PAddr = VSpaceX86::allocate_one_page();
+        let pml4: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let pml4_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
 
         VSpaceX86 { pml4: pml4_table }
@@ -316,123 +321,18 @@ impl<'a> VSpaceX86<'a> {
         // else we're done here, return
     }
 
-    /// A simple wrapper function for allocating just oen page.
-    pub(crate) fn allocate_one_page() -> PAddr {
-        let paddr = VSpaceX86::allocate_pages(1, uefi::table::boot::MemoryType(KERNEL_PT));
-        trace!("allocate_one_page {:#x}", paddr);
-        paddr
-    }
-
-    /// Does an allocation of physical memory where the base-address is a multiple of `align_to`.
-    pub(crate) fn allocate_pages_aligned(
-        how_many: usize,
-        typ: uefi::table::boot::MemoryType,
-        align_to: u64,
-    ) -> PAddr {
-        assert!(align_to.is_power_of_two(), "Alignment needs to be pow2");
-        assert!(
-            align_to >= BASE_PAGE_SIZE as u64,
-            "Alignment needs to be at least page-size"
-        );
-
-        let alignment_mask = align_to - 1;
-        let actual_how_many = how_many + ((align_to as usize) >> BASE_PAGE_SHIFT);
-        assert!(actual_how_many >= how_many);
-
-        // The region we allocated
-        let paddr = VSpaceX86::allocate_pages(actual_how_many, typ);
-        let end = paddr + (actual_how_many * BASE_PAGE_SIZE);
-
-        // The region within the allocated one we actually want
-        let aligned_paddr = PAddr::from((paddr + alignment_mask) & !alignment_mask);
-        assert_eq!(aligned_paddr % align_to, 0, "Not aligned properly");
-        let aligned_end = aligned_paddr + (how_many * BASE_PAGE_SIZE);
-
-        // How many pages at the bottom and top we need to free
-        let unaligned_unused_pages_bottom = (aligned_paddr - paddr).as_usize() / BASE_PAGE_SIZE;
-        let unaligned_unused_pages_top = (end - aligned_end).as_usize() / BASE_PAGE_SIZE;
-
-        debug!(
-            "Wanted to allocate {} pages but we allocated {} ({:#x} -- {:#x}), keeping range ({:#x} -- {:#x}), freeing #pages at bottom {} and top {}",
-            how_many, actual_how_many,
-            paddr,
-            end,
-            aligned_paddr,
-            aligned_paddr + (how_many * BASE_PAGE_SIZE),
-            unaligned_unused_pages_bottom,
-            unaligned_unused_pages_top
-        );
-
-        assert!(
-            unaligned_unused_pages_bottom + unaligned_unused_pages_top
-                == actual_how_many - how_many,
-            "Don't loose any pages"
-        );
-
-        // Free unused top and bottom regions again:
-        unsafe {
-            let st = system_table();
-            if unaligned_unused_pages_bottom > 1 {
-                st.as_ref()
-                    .boot_services()
-                    // This weird API will free the top-most page too? (that's why we do -1)
-                    // (had a bug where it reused a page from the kernel text as stack)
-                    .free_pages(paddr.as_u64(), unaligned_unused_pages_bottom - 1)
-                    .expect("Can't free prev. allocated memory");
-            }
-
-            if unaligned_unused_pages_top > 1 {
-                st.as_ref()
-                    .boot_services()
-                    // Again + page size because I don't know how this API does things
-                    .free_pages(
-                        aligned_end.as_u64() + BASE_PAGE_SIZE as u64,
-                        unaligned_unused_pages_top - 1,
-                    )
-                    .expect("Can't free prev. allocated memory");
-            }
-        }
-
-        PAddr::from(aligned_paddr)
-    }
-
-    /// Allocates a set of consecutive physical pages, using UEFI.
-    ///
-    /// Zeroes the memory we allocate (TODO: I'm not sure if this is already done by UEFI).
-    /// Returns a `u64` containing the base to that.
-    pub(crate) fn allocate_pages(how_many: usize, typ: uefi::table::boot::MemoryType) -> PAddr {
-        let st = system_table();
-        unsafe {
-            match st
-                .as_ref()
-                .boot_services()
-                .allocate_pages(AllocateType::AnyPages, typ, how_many)
-            {
-                Ok(num) => {
-                    st.as_ref().boot_services().set_mem(
-                        num as *mut u8,
-                        how_many * BASE_PAGE_SIZE,
-                        0u8,
-                    );
-                    PAddr::from(num)
-                }
-                Err(status) => panic!("failed to allocate {:?}", status),
-            }
-        }
-    }
-
     fn new_pt(&mut self) -> PDEntry {
-        let paddr: PAddr = VSpaceX86::allocate_one_page();
+        let paddr: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         return PDEntry::new(paddr, PDFlags::P | PDFlags::RW);
     }
 
     fn new_pd(&mut self) -> PDPTEntry {
-        let paddr: PAddr = VSpaceX86::allocate_one_page();
+        let paddr: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         return PDPTEntry::new(paddr, PDPTFlags::P | PDPTFlags::RW);
     }
 
     fn new_pdpt(&mut self) -> PML4Entry {
-        let paddr: PAddr = VSpaceX86::allocate_one_page();
+        let paddr: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         return PML4Entry::new(paddr, PML4Flags::P | PML4Flags::RW);
     }
 
@@ -493,7 +393,7 @@ impl<'a> VSpaceX86<'a> {
     pub fn map(&mut self, base: VAddr, size: usize, rights: MapAction, palignment: u64) {
         assert!(base.is_base_page_aligned(), "base is not page-aligned");
         assert_eq!(size % BASE_PAGE_SIZE, 0, "size is not page-aligned");
-        let paddr = VSpaceX86::allocate_pages_aligned(
+        let paddr = memory::allocate_pages_aligned(
             size / BASE_PAGE_SIZE,
             uefi::table::boot::MemoryType(KERNEL_ELF),
             palignment,

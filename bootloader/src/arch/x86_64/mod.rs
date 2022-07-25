@@ -8,6 +8,10 @@ pub mod cpu;
 mod vspace;
 
 pub use vspace::VSpaceX86 as VSpace;
+pub use vspace::{PAddr, VAddr};
+
+// export the base page size and shifts
+pub use vspace::{BASE_PAGE_SHIFT, BASE_PAGE_SIZE};
 
 // Include the `jump_to_kernel` assembly function. This does some things we can't express in
 // rust like switching the stack.

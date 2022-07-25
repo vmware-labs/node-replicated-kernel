@@ -1,4 +1,5 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
+// Copyright © 2022 The University of British Columbia. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 //! A UEFI based bootloader for an x86-64 kernel.
@@ -50,7 +51,6 @@ extern crate alloc;
 extern crate elfloader;
 extern crate x86;
 
-use core::arch::global_asm;
 use core::mem::transmute;
 use core::{mem, slice};
 
@@ -60,6 +60,22 @@ use uefi::table::boot::{AllocateType, MemoryDescriptor, MemoryType};
 use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
 
 use crate::alloc::vec::Vec;
+
+
+
+// The x86-64 platform specific code.
+#[cfg(all(target_arch = "x86_64"))]
+#[path = "arch/x86_64/mod.rs"]
+pub mod arch;
+
+// The aarch64 platform specific code.
+#[cfg(all(target_arch = "aarch64"))]
+#[path = "arch/aarch64/mod.rs"]
+pub mod arch;
+
+
+use arch::VSpace;
+
 
 use x86::bits64::paging::*;
 use x86::controlregs;
@@ -81,15 +97,20 @@ macro_rules! round_up {
     };
 }
 
-// Include the `jump_to_kernel` assembly function. This does some things we can't express in
-// rust like switching the stack.
-global_asm!(include_str!("switch.S"), options(att_syntax));
+use core::arch::global_asm;
+#[cfg(all(target_arch = "x86_64"))]
+global_asm!(include_str!("arch/x86_64/switch.S"), options(att_syntax));
+
+
+#[cfg(all(target_arch = "aarch64"))]
+global_asm!(include_str!("arch/aarch64/switch.S"), options(att_syntax));
 
 extern "C" {
     /// Switches from this UEFI bootloader to the kernel init function (passes the sysinfo argument),
     /// kernel stack and kernel address space.
-    fn jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64);
+    pub fn jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64);
 }
+
 
 /// Make sure our UEFI version is not outdated.
 fn check_revision(rev: uefi::table::Revision) {
@@ -113,19 +134,6 @@ pub fn allocate_pages(st: &SystemTable<Boot>, pages: usize, typ: MemoryType) -> 
     };
 
     PAddr::from(num)
-}
-
-/// Debug function to see what's currently in the UEFI address space.
-#[allow(unused)]
-fn dump_cr3() {
-    unsafe {
-        let cr_three: u64 = controlregs::cr3();
-        debug!("current CR3: {:x}", cr_three);
-
-        let pml4: PAddr = PAddr::from(cr_three);
-        let pml4_table = unsafe { transmute::<VAddr, &PML4>(paddr_to_uefi_vaddr(pml4)) };
-        vspace::dump_table(pml4_table);
-    }
 }
 
 /// Find out how many pages we require to load the memory map
@@ -420,7 +428,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
 
     // Make sure we still have access to the UEFI mappings:
     // Get the current memory map and 1:1 map all physical memory
-    // dump_cr3();
+    // dump_translation_root_register();
     map_physical_memory(&st, &mut kernel);
     trace!("Replicated UEFI memory map");
     assert_required_cpu_features();

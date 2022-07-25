@@ -10,6 +10,8 @@ use x86::bits64::paging::*;
 
 use crate::vspace::*;
 
+use crate::VSpace;
+
 macro_rules! round_up {
     ($num:expr, $s:expr) => {
         (($num + $s - 1) / $s) * $s

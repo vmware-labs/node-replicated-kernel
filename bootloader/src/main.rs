@@ -97,13 +97,6 @@ macro_rules! round_up {
     };
 }
 
-use core::arch::global_asm;
-#[cfg(all(target_arch = "x86_64"))]
-global_asm!(include_str!("arch/x86_64/switch.S"), options(att_syntax));
-
-
-#[cfg(all(target_arch = "aarch64"))]
-global_asm!(include_str!("arch/aarch64/switch.S"), options(att_syntax));
 
 extern "C" {
     /// Switches from this UEFI bootloader to the kernel init function (passes the sysinfo argument),

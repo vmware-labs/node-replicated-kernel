@@ -7,6 +7,7 @@
 // ARG3 %r8
 
 .text
+.global jump_to_kernel
 .extern jump_to_kernel
 jump_to_kernel: // fn(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64)
     // switch to our new stack

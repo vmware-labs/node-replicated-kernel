@@ -401,7 +401,7 @@ def qemu_system_default_args(qemu):
     if qemu == 'qemu-system-x86_64':
         if platform.machine() == 'x86_64':
             args += ['-enable-kvm']
-        arts += ['-cpu',
+        args += ['-cpu',
                  'host,migratable=no,+invtsc,+tsc,+x2apic,+fsgsbase']
     elif qemu == 'qemu-system-aarch64':
         if platform.machine() == 'aarch64':

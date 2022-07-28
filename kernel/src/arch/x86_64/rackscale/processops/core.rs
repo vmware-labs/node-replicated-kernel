@@ -4,14 +4,12 @@
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use kpi::FileOperation;
 use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::super::dcm::dcm_msg::make_dcm_request;
-use super::super::dcm::DCM_INTERFACE;
-
+use super::super::get_local_pid;
 use super::super::kernelrpc::*;
 
 #[derive(Debug)]
@@ -78,7 +76,7 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
         }
     };
 
-    let node = make_dcm_request(local_pid, false);
+    let node = make_dcm_request(local_pid, true);
 
     // Construct and return result
     let res = KernelRpcRes {

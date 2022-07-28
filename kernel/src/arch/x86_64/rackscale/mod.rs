@@ -16,7 +16,6 @@ pub(crate) mod dcm;
 pub(crate) mod error;
 pub(crate) mod fileops;
 pub(crate) mod kernelrpc;
-pub(crate) mod print;
 pub(crate) mod processops;
 pub(crate) mod syscalls;
 
@@ -116,9 +115,6 @@ pub(crate) use self::kernelrpc::KernelRpc;
 // Re-export client registration
 pub(crate) const CLIENT_REGISTRAR: RegistrationHandler = register_client;
 
-// Re-export other syscalls
-pub(crate) const LOG_HANDLER: RPCHandler = self::print::handle_log;
-
 // Re-export handlers: file operations
 pub(crate) const CLOSE_HANDLER: RPCHandler = fileops::close::handle_close;
 pub(crate) const DELETE_HANDLER: RPCHandler = fileops::delete::handle_delete;
@@ -132,3 +128,4 @@ pub(crate) const WRITE_HANDLER: RPCHandler = fileops::rw::handle_write;
 // Re-export handdlers: process operations
 pub(crate) const CORE_HANDLER: RPCHandler = processops::core::handle_request_core;
 pub(crate) const ALLOC_HANDLER: RPCHandler = processops::mem::handle_phys_alloc;
+pub(crate) const LOG_HANDLER: RPCHandler = processops::print::handle_log;

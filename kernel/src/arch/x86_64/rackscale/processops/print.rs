@@ -11,7 +11,8 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
-use super::kernelrpc::*;
+use super::super::get_local_pid;
+use super::super::kernelrpc::*;
 
 pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,

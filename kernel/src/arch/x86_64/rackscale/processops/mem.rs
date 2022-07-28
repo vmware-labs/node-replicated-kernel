@@ -12,6 +12,8 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
+use super::super::dcm::dcm_msg::make_dcm_request;
+use super::super::get_local_pid;
 use super::super::kernelrpc::*;
 
 #[derive(Debug)]
@@ -37,8 +39,6 @@ pub(crate) fn rpc_alloc_physical(
 
     // Create result buffer
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
-
-    // Call readat() or read() RPCs
     rpc_client
         .call(
             pid,
@@ -84,17 +84,17 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
         return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
     }
 
-    // Allocate physical memory
+    let node = make_dcm_request(local_pid, false);
+    // TODO: get handle to memory allocated by DCM
     log::error!(
         "Need to implement allocating physical memory {} {}",
         size,
         affinity
     );
-    //let ret = cnrfs::NrProcess::allocate_physical(size, affinity);
 
     // Construct return
     let res = KernelRpcRes {
-        ret: convert_return(Ok((0, 0))),
+        ret: convert_return(Ok((node, 0))),
     };
     construct_ret(hdr, payload, res)
 }

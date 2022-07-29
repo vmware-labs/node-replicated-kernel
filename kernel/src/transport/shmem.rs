@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use kpi::KERNEL_BASE;
+use lazy_static::lazy_static;
 #[cfg(feature = "rpc")]
 use rpc::transport::ShmemTransport;
 
@@ -9,6 +10,23 @@ use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
 use crate::memory::PAddr;
 use crate::pci::claim_device;
+
+pub(crate) struct ShmemRegion {
+    pub base_kaddr: u64,
+    pub size: u64,
+}
+
+lazy_static! {
+    pub(crate) static ref SHMEM_REGION: ShmemRegion = {
+        let (base_addr, size) = init_shmem_device().expect("Failed to init shmem device");
+        ShmemRegion {
+            base_kaddr: KERNEL_BASE + base_addr,
+            size,
+        }
+    };
+}
+
+pub(crate) const MAX_SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
 
 /// Setup inter-vm shared-memory device.
 #[allow(unused)]
@@ -56,8 +74,8 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
 
-    let (base_addr, size) = init_shmem_device()?;
-    let allocator = ShmemAllocator::new(base_addr + KERNEL_BASE, size);
+    let transport_size = core::cmp::min(SHMEM_REGION.size, MAX_SHMEM_TRANSPORT_SIZE);
+    let allocator = ShmemAllocator::new(SHMEM_REGION.base_kaddr, transport_size);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
             let server_to_client_queue =

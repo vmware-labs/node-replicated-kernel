@@ -27,7 +27,7 @@ use super::*;
 /// A big cache of base and large pages for a NUMA node, fits on a 2 MiB page.
 ///
 /// Stores 256 GiB of large pages and 512 MiB of base pages.
-pub(crate) type FrameCacheLarge = MCache<131071, 131070>;
+pub type FrameCacheLarge = MCache<131071, 131070>;
 sa::assert_eq_size!(FrameCacheLarge, [u8; LARGE_PAGE_SIZE]);
 sa::const_assert!(core::mem::align_of::<FrameCacheLarge>() <= super::BASE_PAGE_SIZE);
 
@@ -50,7 +50,7 @@ sa::const_assert!(core::mem::align_of::<FrameCacheEarly>() <= super::LARGE_PAGE_
 ///
 /// Holds two stacks of pages for O(1) allocation/deallocation.
 /// Implements the `GrowBackend` to hand pages out.
-pub(crate) struct MCache<const BP: usize, const LP: usize> {
+pub struct MCache<const BP: usize, const LP: usize> {
     /// Which node the memory in this cache is from.
     node: atopology::NodeId,
     /// A vector of free, cached base-page addresses

@@ -25,8 +25,9 @@ use vmxnet3::smoltcp::DevQueuePhy;
 use super::get_local_pid;
 use super::kernelrpc::*;
 use crate::fallible_string::TryString;
+use crate::memory::mcache::FrameCacheLarge;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
-
+use crate::transport::shmem::create_shmem_manager;
 pub(crate) mod dcm_msg;
 
 use dcm_msg::ALLOC_LEN;
@@ -39,6 +40,9 @@ lazy_static! {
 pub struct DCMInterface {
     pub client: Box<Client>,
     pub udp_handle: SocketHandle,
+    // TODO: should probably use MemManager, but don't here for simplicity (e.g., send/sync issues with dyn traits)
+    // this would allow FrameCacheLarge privacy to once again become pub(crate) instead of pub, but MemManager would need to become pub.
+    pub shmem_manager: Box<FrameCacheLarge>,
 }
 
 impl DCMInterface {
@@ -67,9 +71,19 @@ impl DCMInterface {
         let udp_handle = iface.lock().add_socket(udp_socket);
         log::info!("Created DCM UDP socket!");
 
+        // Create RPC client connecting to DCM
         let client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970).unwrap();
         log::info!("Created DCM RPC client!");
 
-        DCMInterface { client, udp_handle }
+        // Create shmem memory manager
+        // TODO: this should really be a result of client connection??
+        let shmem_manager = create_shmem_manager().expect("No client shmem manager created.");
+        log::info!("DCM shmem manager: {:?}", shmem_manager);
+
+        DCMInterface {
+            client,
+            udp_handle,
+            shmem_manager,
+        }
     }
 }

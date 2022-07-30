@@ -66,13 +66,6 @@ pub(crate) fn run() {
     register_rpcs(&mut server);
     server.add_client(&CLIENT_REGISTRAR).unwrap();
 
-    // Set up memory region corresponding to client
-    let client_mcache = create_shmem_manager();
-    match client_mcache {
-        Some(mcache) => log::info!("client shmem manager: {:?}", mcache),
-        None => log::info!("no client shmem manager created"),
-    }
-
     // Start running the RPC server
     log::info!("Starting RPC server!");
     loop {

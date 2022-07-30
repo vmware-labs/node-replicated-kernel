@@ -1,14 +1,17 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::boxed::Box;
 use kpi::KERNEL_BASE;
 use lazy_static::lazy_static;
 #[cfg(feature = "rpc")]
 use rpc::transport::ShmemTransport;
 
+use crate::cmdline::Transport;
 use crate::error::{KError, KResult};
+use crate::memory::mcache::FrameCacheLarge;
 use crate::memory::vspace::MapAction;
-use crate::memory::PAddr;
+use crate::memory::{Frame, PAddr};
 use crate::pci::claim_device;
 
 pub(crate) struct ShmemRegion {
@@ -106,7 +109,6 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
 
 #[cfg(feature = "rpc")]
 pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client::Client>> {
-    use alloc::boxed::Box;
     use rpc::client::Client;
     use rpc::RPCClient;
 
@@ -117,4 +119,32 @@ pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client::Client>
     let mut client = Box::try_new(Client::new(transport))?;
     client.connect()?;
     Ok(client)
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheLarge>> {
+    // Create remote memory frame
+    let base: PAddr = PAddr::from(SHMEM_REGION.base_kaddr);
+    let frame_size = if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.transport == Transport::Ethernet)
+    {
+        // Subtract memory used for transport if using shmem transport
+        core::cmp::min(0, SHMEM_REGION.size - MAX_SHMEM_TRANSPORT_SIZE)
+    } else {
+        SHMEM_REGION.size
+    };
+
+    // If there is shared memory available, create memory frame for cache
+    if frame_size > 0 {
+        let shmem_frame = Frame::new(base, frame_size as usize, 0);
+        assert!(shmem_frame != Frame::empty());
+
+        // Allocate memory manager in local memory, and populate with shmem
+        let mut shmem_cache = Box::new(FrameCacheLarge::new(0));
+        shmem_cache.populate_2m_first(shmem_frame);
+        Some(shmem_cache)
+    } else {
+        None
+    }
 }

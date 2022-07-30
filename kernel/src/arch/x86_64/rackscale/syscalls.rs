@@ -3,9 +3,10 @@ use alloc::string::String;
 
 use kpi::io::{FileFlags, FileModes};
 
-use crate::arch::process::Ring3Process;
+use crate::arch::process::{current_pid, Ring3Process};
 use crate::error::KResult;
 use crate::fs::fd::FileDescriptor;
+use crate::memory::Frame;
 use crate::nrproc;
 use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch};
@@ -147,9 +148,18 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
         let mut client = super::RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
-        rpc_alloc_physical(&mut **client, pid, page_size, affinity)?;
+        let (frame_size, frame_base) = rpc_alloc_physical(&mut **client, pid, page_size, affinity)?;
 
-        self.local.allocate_physical(page_size, affinity)
+        // TODO: We can't do this on the remote node right now, so try to do this here
+        let frame = Frame {
+            base: x86::bits64::paging::PAddr(frame_base),
+            size: frame_size as usize,
+            affinity: affinity as usize,
+        };
+        let pid = current_pid()?;
+        let fid = nrproc::NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
+        Ok((fid as u64, frame.base.as_u64()))
+        //self.local.allocate_physical(page_size, affinity)
     }
 
     fn exit(&self, code: u64) -> KResult<(u64, u64)> {

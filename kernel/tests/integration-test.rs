@@ -1800,7 +1800,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
 
     // Setup ivshmem file
     let filename = "ivshmem-file";
-    let filelen = 2;
+    let filelen = 8;
     let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");

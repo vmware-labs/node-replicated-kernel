@@ -770,18 +770,21 @@ fn dcm() {
     use crate::arch::rackscale::processops::core::rpc_request_core;
     use crate::arch::rackscale::processops::mem::rpc_alloc_physical;
     use crate::arch::rackscale::RPC_CLIENT;
+    use crate::memory::BASE_PAGE_SIZE;
     use log::info;
 
     let pid = 0; // Using dummy pid for now
     let affinity = 1; // Using dummy affinity for now
-    let page_size = 2; // Using dummy page_size for now
+    let page_size = BASE_PAGE_SIZE as u64; // Using dummy page_size for now
     let core_id = 3; // Using dummy core_id for now
     let entry_point = 4; // Using dummy entry_point for now
 
     info!("About to send resource requests!");
     for _ in 0..5 {
         let mut client = RPC_CLIENT.lock();
-        let _mem_ret = rpc_alloc_physical(&mut **client, pid, page_size, affinity).unwrap();
+        let (_fid, _frame_base) =
+            rpc_alloc_physical(&mut **client, pid, page_size, affinity).unwrap();
+        // TODO: how can I test access to the memory?
         let _core_ret = rpc_request_core(&mut **client, pid, core_id, entry_point).unwrap();
     }
 

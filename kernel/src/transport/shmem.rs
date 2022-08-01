@@ -124,25 +124,34 @@ pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client::Client>
 #[cfg(feature = "rackscale")]
 pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheLarge>> {
     // Create remote memory frame
-    let base: PAddr = PAddr::from(SHMEM_REGION.base_kaddr);
-    let frame_size = if crate::CMDLINE
+    let shmem_frame = if crate::CMDLINE
         .get()
-        .map_or(false, |c| c.transport == Transport::Ethernet)
+        .map_or(false, |c| c.transport == Transport::Shmem)
     {
-        // Subtract memory used for transport if using shmem transport
-        core::cmp::min(0, SHMEM_REGION.size - MAX_SHMEM_TRANSPORT_SIZE)
+        // Subtract memory used for transport if using shmem transport, and adjust base
+        log::info!("HI FROM SHMEM RESIZE REGION");
+        let frame_size = core::cmp::max(0, SHMEM_REGION.size - MAX_SHMEM_TRANSPORT_SIZE);
+        if frame_size > 0 {
+            let base = PAddr::from(SHMEM_REGION.base_kaddr + MAX_SHMEM_TRANSPORT_SIZE);
+            Some(Frame::new(base, frame_size as usize, 0))
+        } else {
+            // Transport is taking up all room in shared memory
+            None
+        }
     } else {
-        SHMEM_REGION.size
+        // Use entire region of shared memory
+        Some(Frame::new(
+            PAddr::from(SHMEM_REGION.base_kaddr),
+            SHMEM_REGION.size as usize,
+            0,
+        ))
     };
 
     // If there is shared memory available, create memory frame for cache
-    if frame_size > 0 {
-        let shmem_frame = Frame::new(base, frame_size as usize, 0);
-        assert!(shmem_frame != Frame::empty());
-
+    if let Some(frame) = shmem_frame {
         // Allocate memory manager in local memory, and populate with shmem
         let mut shmem_cache = Box::new(FrameCacheLarge::new(0));
-        shmem_cache.populate_2m_first(shmem_frame);
+        shmem_cache.populate_2m_first(frame);
         Some(shmem_cache)
     } else {
         None

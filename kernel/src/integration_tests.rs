@@ -784,7 +784,7 @@ fn dcm() {
         let mut client = RPC_CLIENT.lock();
         let (_fid, _frame_base) =
             rpc_alloc_physical(&mut **client, pid, page_size, affinity).unwrap();
-        // TODO: how can I test access to the memory?
+        // TODO: access the memory
         let _core_ret = rpc_request_core(&mut **client, pid, core_id, entry_point).unwrap();
     }
 

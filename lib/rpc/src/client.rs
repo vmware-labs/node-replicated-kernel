@@ -50,7 +50,9 @@ impl RPCClient for Client {
         // Calculate total data_out len
         let data_in_len = data_in.iter().fold(0, |acc, x| acc + x.len());
 
-        // Create request header and send message
+        // Create request header and send message. It is safe to create a mutable reference here
+        // because it is assumed there will only be one invocation of call() running at a time, and only
+        // the client has access to this field.
         let mut hdr = unsafe { &mut *self.hdr.get() };
         hdr.pid = pid;
         hdr.req_id = self.req_id;

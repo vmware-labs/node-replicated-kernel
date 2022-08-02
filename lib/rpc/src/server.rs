@@ -36,6 +36,8 @@ impl<'t, 'a> Server<'a> {
     /// receives next RPC call with RPC ID
     fn receive(&self) -> Result<RPCType, RPCError> {
         // Receive request header
+        // It is assumed the transport will only retain the mutable reference to the buffer
+        // long enough to copy it into some sort of output/send buffer
         self.transport.recv_mbuf(unsafe { &mut *self.mbuf.get() })?;
         Ok(unsafe { (*self.mbuf.get()).hdr.msg_type })
     }
@@ -43,17 +45,22 @@ impl<'t, 'a> Server<'a> {
     /// receives next RPC call with RPC ID
     fn try_receive(&self) -> Result<Option<RPCType>, RPCError> {
         // Receive request header
+        // It is assumed the transport will only retain the mutable reference to the buffer
+        // long enough to copy data into it during this function call.
         if !self
             .transport
             .try_recv_mbuf(unsafe { &mut *self.mbuf.get() })?
         {
             return Ok(None);
         }
+
         Ok(Some(unsafe { (*self.mbuf.get()).hdr.msg_type }))
     }
 
     /// Replies an RPC call with results
     fn reply(&self) -> Result<(), RPCError> {
+        // It is assumed the transport will only retain the mutable reference to the buffer
+        // long enough to copy it into some sort of output/send buffer,
         self.transport.send_mbuf(unsafe { &mut *self.mbuf.get() })
     }
 }
@@ -83,6 +90,9 @@ impl<'a> RPCServer<'a> for Server<'a> {
         self.receive()?;
 
         // TODO: registration
+        // It is assumed that handler functions will only use the mutable reference
+        // during the function invocation (and not retain the reference), which makes it safe to
+        // create a new mutable reference to the buffer during each time this function is called
         let client_id = func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
             &mut (*self.mbuf.get()).data
         })?;
@@ -100,6 +110,9 @@ impl<'a> RPCServer<'a> for Server<'a> {
         match self.handlers.borrow().get(&rpc_id) {
             Some(func) => {
                 {
+                    // It is assumed that handler functions will only use the mutable reference
+                    // during the function invocation (and not retain the reference), which makes it safe to
+                    // create a new mutable reference to the buffer during each time this function is called
                     func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
                         &mut (*self.mbuf.get()).data
                     })?;
@@ -119,6 +132,9 @@ impl<'a> RPCServer<'a> for Server<'a> {
             Some(rpc_id) => match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
                     {
+                        // It is assumed that handler functions will only use the mutable reference
+                        // during the function invocation (and not retain the reference), which makes it safe to
+                        // create a new mutable reference to the buffer during each time this function is called
                         func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
                             &mut (*self.mbuf.get()).data
                         })?;

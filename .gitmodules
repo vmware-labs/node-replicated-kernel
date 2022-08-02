@@ -2,3 +2,6 @@
 	path = lib/node-replication
 	url = git@github.com:vmware/node-replication.git
 	branch = mut_scan_vec
+[submodule "lib/armv8"]
+	path = lib/armv8
+	url = git@github.com:achreto/rust-armv8.git

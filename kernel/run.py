@@ -102,7 +102,7 @@ def qemu_system(args) :
     if arch == "x86_64":
         return "qemu-system-x86_64"
     if arch == "aarch64":
-        return "qemu-system-x86_64"
+        return "qemu-system-aarch64"
     else:
         raise Exception("Unknown target: {}".format(args.target))
 
@@ -564,7 +564,7 @@ def run_qemu(args):
     # Name threads on host for `qemu_affinity.py` to find it
     qemu_default_args += ['-name', 'nrk,debug-threads=on']
 
-    qemu_args = ['qemu-system-x86_64'] + qemu_default_args.copy()
+    qemu_args = [qemu_system(args)] + qemu_default_args.copy()
     if args.qemu_settings:
         qemu_args += args.qemu_settings.split()
 

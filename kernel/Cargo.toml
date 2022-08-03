@@ -66,7 +66,7 @@ x86 = { version = "0.51", features = ["unstable"] }
 # Arch Specific Dependencies for aarch64 Targets
 # -------------------------------------------------------------------------------------------------
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-# aarch64 = { path = "lib/aarch64" }
+armv8 = { path = "../lib/armv8" }
 
 [[bin]]
 name = "nrk"

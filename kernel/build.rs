@@ -33,6 +33,14 @@ fn main() {
             .compile("nrk_asm");
     }
 
+    if std::env::consts::OS == "linux" && env::var("TARGET").unwrap() == "aarch64-nrk" {
+        cc::Build::new()
+            .pic(true)
+            .warnings(true)
+            //.cargo_metadata(false)
+            .compile("nrk_asm");
+    }
+
     let output = Command::new("git")
         .args(&["rev-parse", "HEAD"])
         .output()

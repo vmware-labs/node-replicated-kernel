@@ -105,6 +105,9 @@ USR_PATH = (SCRIPT_PATH / '..').resolve() / 'usr'
 def uefi_target(args):
     return "{}-uefi".format(platform_to_arch(args.target))
 
+def kernel_target(args):
+    return "{}-nrk".format(platform_to_arch(args.target))
+
 def qemu_system(args) :
     arch = platform_to_arch(args.target)
     if arch == "x86_64":
@@ -114,7 +117,6 @@ def qemu_system(args) :
     else:
         raise Exception("Unknown target: {}".format(args.target))
 
-KERNEL_TARGET = "{}-nrk".format(ARCH)
 USER_TARGET = "{}-nrk-none".format(ARCH)
 USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
 
@@ -258,7 +260,7 @@ def build_kernel(args):
         with local.env(RUST_TARGET_PATH=(KERNEL_PATH / 'src' / 'arch' / ARCH).absolute()):
             # TODO(cross-compilation): in case we use a cross compiler/linker
             # also set: CARGO_TARGET_X86_64_NRK_LINKER=x86_64-elf-ld
-            build_args = ['build', '--target', KERNEL_TARGET]
+            build_args = ['build', '--target', kernel_target(args)]
             if args.no_kfeatures:
                 build_args += ["--no-default-features"]
             for feature in args.kfeatures:
@@ -341,7 +343,7 @@ def deploy(args):
     debug_release = 'release' if args.release else 'debug'
     uefi_build_path = TARGET_PATH / uefi_target(args) / debug_release
     user_build_path = TARGET_PATH / USER_TARGET / debug_release
-    kernel_build_path = TARGET_PATH / KERNEL_TARGET / debug_release
+    kernel_build_path = TARGET_PATH / kernel_target(args) / debug_release
 
     # Clean and create_esp dir:
     esp_path = uefi_build_path / 'esp'

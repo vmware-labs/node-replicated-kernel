@@ -1,0 +1,23 @@
+{
+	"env": "",
+	"dynamic-linking": false,
+	"llvm-target": "aarch64-unknown-none",
+	"data-layout": "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128",
+	"target-endian": "little",
+	"target-pointer-width": "64",
+	"target-c-int-width": "32",
+	"linker": "rust-lld",
+	"linker-flavor": "ld.lld",
+	"os": "none",
+	"arch": "aarch64",
+	"is-builtin": true,
+	"disable-redzone": true,
+	"features": "+strict-align,+neon,+fp-armv8",
+	"position-independent-executables": true,
+	"executables": true,
+	"has-thread-local": true,
+	"max-atomic-width": 128,
+	"panic-strategy": "abort"
+}
+
+

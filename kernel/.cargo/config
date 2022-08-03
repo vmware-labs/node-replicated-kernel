@@ -3,3 +3,8 @@ rustflags = [
     "-C", "target-feature=+sse2",
     # "--cfg", "no_global_oom_handling"
 ]
+
+[target.aarch64-nrk]
+rustflags = [
+    # "--cfg", "no_global_oom_handling"
+]

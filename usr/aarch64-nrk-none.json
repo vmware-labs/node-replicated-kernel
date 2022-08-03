@@ -10,7 +10,6 @@
 	"linker-flavor": "ld.lld",
 	"os": "none",
 	"arch": "aarch64",
-	"is-builtin": true,
 	"disable-redzone": true,
 	"features": "+strict-align,+neon,+fp-armv8",
 	"position-independent-executables": true,

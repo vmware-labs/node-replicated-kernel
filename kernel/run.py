@@ -77,6 +77,14 @@ def platform_to_arch(platform):
     else:
         raise Exception("Unknown platform: {}".format(platform))
 
+def platform_efi_target(args):
+    if args.target.startswith("x86_64"):
+        return "BootX64.efi"
+    elif args.target.startswith("aarch64"):
+        return "BootAA64.efi"
+    else:
+        raise Exception("Unknown platform: {}".format(platform))
+
 # whether or not we're running in qemu
 def platform_is_qenu(platform):
     return platform.endswith("-qemu")
@@ -349,7 +357,7 @@ def deploy(args):
 
         # Deploy kernel
         shutil.copy2(uefi_build_path / 'bootloader.efi',
-                     esp_boot_path / 'BootX64.efi')
+                    esp_boot_path / platform_efi_target(args))
 
     # Append globally unique machine id to cmd (for rackscale)
     # as well as a number of workers (clients)
@@ -396,17 +404,36 @@ boot EFI/Boot/BootX64.efi
 
 
 
-def qemu_system_default_args(qemu):
+def qemu_system_default_args(qemu, esp_path):
     args = ['-no-reboot']
     if qemu == 'qemu-system-x86_64':
         if platform.machine() == 'x86_64':
             args += ['-enable-kvm']
         args += ['-cpu',
                  'host,migratable=no,+invtsc,+tsc,+x2apic,+fsgsbase']
+        args += ['-drive',
+                 'if=pflash,format=raw,file={}/OVMF_CODE.fd,readonly=on'.format(BOOTLOADER_PATH)]
+        args += ['-drive',
+                 'if=pflash,format=raw,file={}/OVMF_VARS.fd,readonly=on'.format(BOOTLOADER_PATH)]
+        # Add UEFI bootloader support
+        args += ['-device', 'ahci,id=ahci,multifunction=on']
+        args += ['-drive',
+                 'if=none,format=raw,file=fat:rw:{},id=esp'.format(esp_path)]
+        args += ['-device', 'ide-hd,bus=ahci.0,drive=esp']
+
+        # Debug port to exit qemu and communicate back exit-code for tests
+        args += ['-device',
+                 'isa-debug-exit,iobase=0xf4,iosize=0x04']
     elif qemu == 'qemu-system-aarch64':
         if platform.machine() == 'aarch64':
             args += ['-enable-kvm']
-        args += ["-machine", "virt", "-cpu", "cortex-a72"]
+        args += ["-machine", "virt,virtualization=on,gic-version=3", "-cpu", "cortex-a72"]
+        # Add UEFI bootloader support
+        args += ['-drive', f'if=pflash,format=raw,file={BOOTLOADER_PATH}/OVMF_CODE_aarch64.fd,readonly=on']
+        args += ['-drive', f'if=pflash,format=raw,file={BOOTLOADER_PATH}/OVMF_VARS_aarch64.fd,readonly=off']
+        # Mount a local directory as a FAT partition.
+        args += ['-drive', f'format=raw,file=fat:rw:{esp_path}']
+
     else :
         raise Exception("Unknown qemu: {}".format(qemu))
     # Use serial communication
@@ -420,9 +447,22 @@ def run_qemu(args):
     Run the kernel on a QEMU instance.
     """
 
-    from plumbum.cmd import sudo, tunctl, ifconfig, corealloc
+    from plumbum.cmd import sudo, tunctl, ifconfig, corealloc, dd
     from plumbum.machines import LocalCommand
     from packaging import version
+
+
+    if platform_to_arch(args.target) == 'aarch64' :
+        code_fd = BOOTLOADER_PATH / 'OVMF_CODE_aarch64.fd'
+        if not code_fd.exists():
+            # $ dd if=/dev/zero of=flash0.img bs=1M count=64
+            dd("if=/dev/zero", f"of={code_fd}", "bs=1M", "count=64")
+            # $ dd if=/usr/share/qemu-efi-aarch64/QEMU_EFI.fd of=flash0.img conv=notrunc
+            dd("if=/usr/share/qemu-efi-aarch64/QEMU_EFI.fd", f"of={code_fd}", "conv=notrunc")
+        vars_fd  = BOOTLOADER_PATH / 'OVMF_VARS_aarch64.fd'
+        if not vars_fd.exists():
+            # $ dd if=/dev/zero of=flash1.img bs=1M count=64
+            dd("if=/dev/zero", f"of={vars_fd}", "bs=1M", "count=64")
 
     qemu = qemu_system(args)
 
@@ -440,7 +480,7 @@ def run_qemu(args):
     debug_release = 'release' if args.release else 'debug'
     esp_path = TARGET_PATH / uefi_target(args) / debug_release / 'esp'
 
-    qemu_default_args = qemu_system_default_args(qemu)
+    qemu_default_args = qemu_system_default_args(qemu, esp_path)
 
     # Setup KVM and required guest hardware features
 
@@ -449,19 +489,6 @@ def run_qemu(args):
         # we use to connect with gdb
         qemu_default_args += ['-serial', 'tcp:127.0.0.1:1234,server,nowait']
 
-    # Add UEFI bootloader support
-    qemu_default_args += ['-drive',
-                          'if=pflash,format=raw,file={}/OVMF_CODE.fd,readonly=on'.format(BOOTLOADER_PATH)]
-    qemu_default_args += ['-drive',
-                          'if=pflash,format=raw,file={}/OVMF_VARS.fd,readonly=on'.format(BOOTLOADER_PATH)]
-    qemu_default_args += ['-device', 'ahci,id=ahci,multifunction=on']
-    qemu_default_args += ['-drive',
-                          'if=none,format=raw,file=fat:rw:{},id=esp'.format(esp_path)]
-    qemu_default_args += ['-device', 'ide-hd,bus=ahci.0,drive=esp']
-
-    # Debug port to exit qemu and communicate back exit-code for tests
-    qemu_default_args += ['-device',
-                          'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
     if args.qemu_ivshmem:
         if not args.qemu_shmem_path:

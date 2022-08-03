@@ -14,7 +14,7 @@ use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::BASE_PAGE_SIZE;
 
-use super::super::dcm::dcm_msg::make_dcm_request;
+use super::super::dcm::dcm_request::make_dcm_request;
 use super::super::dcm::DCM_INTERFACE;
 use super::super::get_local_pid;
 use super::super::kernelrpc::*;

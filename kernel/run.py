@@ -108,6 +108,9 @@ def uefi_target(args):
 def kernel_target(args):
     return "{}-nrk".format(platform_to_arch(args.target))
 
+def user_target(args):
+    return "{}-nrk-none".format(platform_to_arch(args.target))
+
 def qemu_system(args) :
     arch = platform_to_arch(args.target)
     if arch == "x86_64":
@@ -117,7 +120,6 @@ def qemu_system(args) :
     else:
         raise Exception("Unknown target: {}".format(args.target))
 
-USER_TARGET = "{}-nrk-none".format(ARCH)
 USER_RUSTFLAGS = "-Clink-arg=-zmax-page-size=0x200000"
 
 #
@@ -257,7 +259,7 @@ def build_kernel(args):
     "Builds the kernel binary"
     log("Build kernel")
     with local.cwd(KERNEL_PATH):
-        with local.env(RUST_TARGET_PATH=(KERNEL_PATH / 'src' / 'arch' / ARCH).absolute()):
+        with local.env(RUST_TARGET_PATH=(KERNEL_PATH / 'src' / 'arch' / platform_to_arch(args.target)).absolute()):
             # TODO(cross-compilation): in case we use a cross compiler/linker
             # also set: CARGO_TARGET_X86_64_NRK_LINKER=x86_64-elf-ld
             build_args = ['build', '--target', kernel_target(args)]
@@ -270,14 +272,14 @@ def build_kernel(args):
             if args.verbose:
                 print("cd {}".format(KERNEL_PATH))
                 print("RUST_TARGET_PATH={} cargo ".format(
-                    KERNEL_PATH / 'src' / 'arch' / ARCH) + " ".join(build_args))
+                    KERNEL_PATH / 'src' / 'arch' / platform_to_arch(args.target)) + " ".join(build_args))
             cargo(*build_args)
 
 
 def build_user_libraries(args):
     "Builds nrk vibrio lib to provide runtime support for other rump based apps"
     log("Build user-space lib vibrio")
-    build_args = ['build', '--target', USER_TARGET]
+    build_args = ['build', '--target',  user_target(args)]
     build_args += ["--features", "rumprt"]
     if args.nic == "virtio-net-pci":
         build_args += ["--features", "virtio"]
@@ -299,7 +301,7 @@ def build_user_libraries(args):
 
 def build_userspace(args):
     "Builds user-space programs"
-    build_args_default = ['build', '--target', USER_TARGET]
+    build_args_default = ['build', '--target', user_target(args)]
     build_args_default += CARGO_DEFAULT_ARGS
     build_args_default += CARGO_NOSTD_BUILD_ARGS
 
@@ -342,7 +344,7 @@ def deploy(args):
     # Clean up / create ESP dir structure
     debug_release = 'release' if args.release else 'debug'
     uefi_build_path = TARGET_PATH / uefi_target(args) / debug_release
-    user_build_path = TARGET_PATH / USER_TARGET / debug_release
+    user_build_path = TARGET_PATH / user_target(args) / debug_release
     kernel_build_path = TARGET_PATH / kernel_target(args) / debug_release
 
     # Clean and create_esp dir:

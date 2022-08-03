@@ -212,7 +212,11 @@ impl TCPTransport<'_> {
         let max_recv_data = payload.iter().fold(0, |acc, x| acc + x.len());
         if expected_data > max_recv_data {
             // Not enough space to store all message data
-            log::error!("Found {:?} payload data, but only have room for {:?}", expected_data, max_recv_data);
+            log::error!(
+                "Found {:?} payload data, but only have room for {:?}",
+                expected_data,
+                max_recv_data
+            );
             Err(RPCError::InternalError)
         } else if expected_data == 0 {
             Ok(true)

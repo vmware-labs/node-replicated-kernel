@@ -6,7 +6,6 @@ use crate::alloc::vec::Vec;
 
 use bootloader_shared::TlsInfo;
 use elfloader::{self, ElfLoaderErr};
-use x86::bits64::paging::*;
 
 use crate::arch;
 use crate::memory;
@@ -21,7 +20,7 @@ macro_rules! round_up {
 
 macro_rules! is_page_aligned {
     ($num:expr) => {
-        $num % BASE_PAGE_SIZE as u64 == 0
+        $num % arch::BASE_PAGE_SIZE as u64 == 0
     };
 }
 
@@ -47,13 +46,13 @@ pub const MODULE: u32 = 0x80000006;
 pub const GIB_512: usize = 512 * 512 * 512 * 0x1000;
 
 /// Translate between PAddr and VAddr
-pub(crate) fn paddr_to_uefi_vaddr(paddr: PAddr) -> VAddr {
-    return VAddr::from(paddr.as_u64());
+pub(crate) fn paddr_to_uefi_vaddr(paddr: arch::PAddr) -> arch::VAddr {
+    return arch::VAddr::from(paddr.as_u64());
 }
 
 /// Translate between PAddr and VAddr
-pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
-    return VAddr::from(arch::KERNEL_OFFSET + paddr.as_usize());
+pub(crate) fn paddr_to_kernel_vaddr(paddr: arch::PAddr) -> arch::VAddr {
+    return arch::VAddr::from(arch::KERNEL_OFFSET + paddr.as_usize());
 }
 
 /// This struct stores meta-data required to construct
@@ -62,8 +61,8 @@ pub(crate) fn paddr_to_kernel_vaddr(paddr: PAddr) -> VAddr {
 ///
 /// It also implements the ElfLoader trait.
 pub struct Kernel<'a> {
-    pub offset: VAddr,
-    pub mapping: Vec<(VAddr, usize, u64, MapAction)>,
+    pub offset: arch::VAddr,
+    pub mapping: Vec<(arch::VAddr, usize, u64, MapAction)>,
     pub vspace: VSpace<'a>,
     pub tls: Option<TlsInfo>,
 }
@@ -85,8 +84,8 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     fn allocate(&mut self, load_headers: elfloader::LoadableHeaders) -> Result<(), ElfLoaderErr> {
         // Should contain what memory range we need to cover to contain
         // loadable regions:
-        let mut min_base: VAddr = VAddr::from(usize::MAX);
-        let mut max_end: VAddr = VAddr::from(0usize);
+        let mut min_base: arch::VAddr = arch::VAddr::from(usize::MAX);
+        let mut max_end: arch::VAddr = arch::VAddr::from(0usize);
         let mut max_alignment: u64 = 0;
 
         for header in load_headers.into_iter() {
@@ -97,11 +96,14 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
 
             // Calculate the offset and align to page boundaries
             // We can't expect to get something that is page-aligned from ELF
-            let page_base: VAddr = VAddr::from(base & !0xfff); // Round down to nearest page-size
-            let size_page = round_up!(size + (base & 0xfff) as usize, BASE_PAGE_SIZE as usize);
+            let page_base: arch::VAddr = arch::VAddr::from(base & !0xfff); // Round down to nearest page-size
+            let size_page = round_up!(
+                size + (base & 0xfff) as usize,
+                arch::BASE_PAGE_SIZE as usize
+            );
             assert!(size_page >= size);
-            assert_eq!(size_page % BASE_PAGE_SIZE, 0);
-            assert_eq!(page_base % BASE_PAGE_SIZE, 0);
+            assert_eq!(size_page % arch::BASE_PAGE_SIZE, 0);
+            assert_eq!(page_base % arch::BASE_PAGE_SIZE, 0);
 
             // Update virtual range for ELF file [max, min] and alignment:
             if max_alignment < align_to {
@@ -160,12 +162,12 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             "max end is not aligned to page-size"
         );
         let pbase = memory::allocate_pages_aligned(
-            ((max_end - min_base) >> BASE_PAGE_SHIFT) as usize,
+            ((max_end - min_base) >> arch::BASE_PAGE_SHIFT) as usize,
             uefi::table::boot::MemoryType(KERNEL_ELF),
             max_alignment,
         );
 
-        self.offset = VAddr::from(arch::KERNEL_OFFSET + pbase.as_usize());
+        self.offset = arch::VAddr::from(arch::KERNEL_OFFSET + pbase.as_usize());
         info!("Kernel loaded at address: {:#x}", self.offset);
 
         // Do the mappings:
@@ -193,7 +195,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
 
         // Load the region at destination in the kernel space
         for (idx, val) in region.iter().enumerate() {
-            let vaddr = VAddr::from(destination + idx);
+            let vaddr = arch::VAddr::from(destination + idx);
             let paddr = self.vspace.resolve_addr(vaddr);
             if paddr.is_some() {
                 // Inefficient byte-wise copy since we don't necessarily
@@ -229,7 +231,7 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
         // We can't access addr in UEFI space so we resolve it to a physical address (UEFI has 1:1 mappings)
         let uefi_addr = self
             .vspace
-            .resolve_addr(VAddr::from(addr))
+            .resolve_addr(arch::VAddr::from(addr))
             .expect("Can't resolve address")
             .as_u64() as *mut u64;
 
@@ -255,12 +257,12 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             self.offset + base + size
         );
         assert_eq!(
-            (self.offset + base + size) % BASE_PAGE_SIZE,
+            (self.offset + base + size) % arch::BASE_PAGE_SIZE,
             0,
             "RELRO segment doesn't end on a page-boundary"
         );
 
-        let _from: VAddr = self.offset + (base & !0xfff); // Round down to nearest page-size
+        let _from: arch::VAddr = self.offset + (base & !0xfff); // Round down to nearest page-size
         let _to = self.offset + base + size;
 
         // TODO: NYI

@@ -14,7 +14,7 @@
     "pre-link-args": {
       "lld-link": [
         "/subsystem:EFI_Application",
-        "/entry:efi_main",
+        "/entry:uefi_start",
         "/machine:arm64"
       ]
     },

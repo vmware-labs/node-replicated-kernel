@@ -6,11 +6,15 @@ use core::arch::global_asm;
 pub mod cpu;
 mod vspace;
 
+pub use armv8::aarch64::vm::granule4k::*;
+
 pub use vspace::VSpaceAArch64 as VSpace;
 
 // Include the `jump_to_kernel` assembly function. This does some things we can't express in
 // rust like switching the stack.
-global_asm!(include_str!("switch.S"), options(att_syntax));
+global_asm!(include_str!("switch.S"));
+
+global_asm!(include_str!("__chkstk.S"));
 
 /// The starting address of the kernel address space
 ///

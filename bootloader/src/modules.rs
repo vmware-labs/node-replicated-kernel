@@ -13,8 +13,8 @@ use uefi::proto::media::file::*;
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::table::boot::MemoryType;
 use uefi::{CStr16, Char16};
-use x86::bits64::paging::BASE_PAGE_SIZE;
 
+use crate::arch;
 use crate::kernel::{paddr_to_kernel_vaddr, paddr_to_uefi_vaddr, MODULE};
 use crate::{allocate_pages, round_up, KernelArgs, Module};
 
@@ -74,7 +74,7 @@ pub fn load_binary_into_memory(
     debug!("Found {} binary with {} bytes", name, module_size);
     let module_base_paddr = allocate_pages(
         &st,
-        round_up!(module_size, BASE_PAGE_SIZE) / BASE_PAGE_SIZE,
+        round_up!(module_size, arch::BASE_PAGE_SIZE) / arch::BASE_PAGE_SIZE,
         MemoryType(MODULE),
     );
     trace!("Load the {} binary (in a vector)", name);

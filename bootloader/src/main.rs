@@ -49,7 +49,6 @@ extern crate log;
 extern crate alloc;
 
 extern crate elfloader;
-extern crate x86;
 
 use core::mem::transmute;
 use core::{mem, slice};
@@ -400,7 +399,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         // Initialize the KernelArgs
         kernel_args.command_line = core::str::from_utf8_unchecked(cmdline_blob);
         kernel_args.mm = (mm_paddr + arch::KERNEL_OFFSET, mm_size);
-        kernel_args.pml4 = arch::PAddr::from(kernel.vspace.pml4 as *const _ as u64);
+        kernel_args.pml4 = arch::PAddr::from(kernel.vspace.roottable());
         kernel_args.stack = (stack_base + arch::KERNEL_OFFSET, stack_size);
         kernel_args.kernel_elf_offset = kernel.offset;
         kernel_args.tls_info = kernel.tls;

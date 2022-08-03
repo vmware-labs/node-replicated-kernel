@@ -2,82 +2,83 @@
 // Copyright © 2022 The University of British Columbia. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use crate::VAddr;
-
 use core::mem::transmute;
 
-use x86::bits64::paging::*;
-use x86::controlregs;
+use armv8::aarch64::vm::granule4k::*;
 
 use crate::kernel::*;
+use crate::memory;
 
 use crate::MapAction;
 
 impl MapAction {
     /// Transform MapAction into rights for 1 GiB page.
-    fn to_l1_rights(&self) -> PDPTFlags {
+    fn to_l1_rights(&self) -> u32 /* PDPTFlags */ {
         use MapAction::*;
-        match self {
-            None => PDPTFlags::empty(),
-            ReadUser => PDPTFlags::XD | PDPTFlags::US,
-            ReadKernel => PDPTFlags::XD,
-            ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
-            ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
-            ReadExecuteUser => PDPTFlags::US,
-            ReadExecuteKernel => PDPTFlags::empty(),
-            ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
-            ReadWriteExecuteKernel => PDPTFlags::RW,
-        }
+        panic!("handle me!");
+        // match self {
+        //     None => PDPTFlags::empty(),
+        //     ReadUser => PDPTFlags::XD | PDPTFlags::US,
+        //     ReadKernel => PDPTFlags::XD,
+        //     ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
+        //     ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
+        //     ReadExecuteUser => PDPTFlags::US,
+        //     ReadExecuteKernel => PDPTFlags::empty(),
+        //     ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
+        //     ReadWriteExecuteKernel => PDPTFlags::RW,
+        // }
     }
 
     /// Transform MapAction into rights for 2 MiB page.
-    fn to_l2_rights(&self) -> PDFlags {
+    fn to_l2_rights(&self) -> u32 /* PDFlags */ {
         use MapAction::*;
-        match self {
-            None => PDFlags::empty(),
-            ReadUser => PDFlags::XD | PDFlags::US,
-            ReadKernel => PDFlags::XD,
-            ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
-            ReadWriteKernel => PDFlags::RW | PDFlags::XD,
-            ReadExecuteUser => PDFlags::US,
-            ReadExecuteKernel => PDFlags::empty(),
-            ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
-            ReadWriteExecuteKernel => PDFlags::RW,
-        }
+        panic!("handle me!");
+        // match self {
+        //     None => PDFlags::empty(),
+        //     ReadUser => PDFlags::XD | PDFlags::US,
+        //     ReadKernel => PDFlags::XD,
+        //     ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
+        //     ReadWriteKernel => PDFlags::RW | PDFlags::XD,
+        //     ReadExecuteUser => PDFlags::US,
+        //     ReadExecuteKernel => PDFlags::empty(),
+        //     ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
+        //     ReadWriteExecuteKernel => PDFlags::RW,
+        // }
     }
 
     /// Transform MapAction into rights for 4KiB page.
-    fn to_l3_rights(&self) -> PTFlags {
+    fn to_l3_rights(&self) -> u32 /* PTFlags */ {
         use MapAction::*;
-        match self {
-            None => PTFlags::empty(),
-            ReadUser => PTFlags::XD | PTFlags::US,
-            ReadKernel => PTFlags::XD,
-            ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
-            ReadWriteKernel => PTFlags::RW | PTFlags::XD,
-            ReadExecuteUser => PTFlags::US,
-            ReadExecuteKernel => PTFlags::empty(),
-            ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
-            ReadWriteExecuteKernel => PTFlags::RW,
-        }
+        panic!("handle me!");
+        // match self {
+        //     None => PTFlags::empty(),
+        //     ReadUser => PTFlags::XD | PTFlags::US,
+        //     ReadKernel => PTFlags::XD,
+        //     ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
+        //     ReadWriteKernel => PTFlags::RW | PTFlags::XD,
+        //     ReadExecuteUser => PTFlags::US,
+        //     ReadExecuteKernel => PTFlags::empty(),
+        //     ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
+        //     ReadWriteExecuteKernel => PTFlags::RW,
+        // }
     }
 }
 
 /// A VSpace allows to create and modify a (virtual) address space.
 pub struct VSpaceAArch64<'a> {
-    //pub l0_table: &'a mut PML4,
+    pub l0_table: &'a mut L0Table,
 }
 
 impl<'a> VSpaceAArch64<'a> {
-    pub fn new() -> VSpaceX86<'a> {
+    pub fn new() -> VSpaceAArch64<'a> {
         trace!("Allocate a PML4 (page-table root)");
 
-        panic!("not yet implemented!");
+        let l0: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
+        let l0_table = unsafe { &mut *paddr_to_uefi_vaddr(l0).as_mut_ptr::<L0Table>() };
 
-        // let l0: PAddr = VSpaceX86::allocate_one_page();
         // let l0_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
 
-        VSpaceAArch64 { /* l0_table: l0_table */}
+        VSpaceAArch64 { l0_table: l0_table }
     }
 
     pub fn roottable(&self) -> u64 {

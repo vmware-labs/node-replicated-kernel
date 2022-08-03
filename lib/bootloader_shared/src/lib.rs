@@ -15,6 +15,11 @@
 #![feature(const_mut_refs)]
 extern crate alloc;
 
+#[cfg(all(target_arch = "aarch64"))]
+use armv8::aarch64::vm::granule4k as arch;
+#[cfg(all(target_arch = "x86_64"))]
+use x86::bits64::paging as arch;
+
 use alloc::vec::Vec;
 
 /// Describes an ELF binary we loaded from the UEFI image into memory.
@@ -25,9 +30,9 @@ pub struct Module {
     /// Length of name
     pub name_len: usize,
     /// Where in memory the binary is (kernel virtual address).
-    pub binary_vaddr: x86::bits64::paging::VAddr,
+    pub binary_vaddr: arch::VAddr,
     /// Where in memory the binary is (physical address)
-    pub binary_paddr: x86::bits64::paging::PAddr,
+    pub binary_paddr: arch::PAddr,
     /// How big the binary is (in bytes)
     pub binary_size: usize,
 }
@@ -40,8 +45,8 @@ impl Module {
     /// The name will be truncated to 32 bytes.
     pub fn new(
         name: &str,
-        binary_vaddr: x86::bits64::paging::VAddr,
-        binary_paddr: x86::bits64::paging::PAddr,
+        binary_vaddr: arch::VAddr,
+        binary_paddr: arch::PAddr,
         binary_size: usize,
     ) -> Module {
         let mut name_slice: [u8; Module::MAX_NAME_LEN] = [0; Module::MAX_NAME_LEN];
@@ -64,7 +69,7 @@ impl Module {
 
     /// Base address of the binary blob (in kernel space).
     #[allow(unused)]
-    pub fn base(&self) -> x86::bits64::paging::VAddr {
+    pub fn base(&self) -> arch::VAddr {
         self.binary_vaddr
     }
 
@@ -122,7 +127,7 @@ pub struct TlsInfo {
 #[derive(Debug)]
 pub struct KernelArgs {
     /// Physical base address and size of the UEFI memory map (constructed on boot services exit).
-    pub mm: (x86::bits64::paging::PAddr, usize),
+    pub mm: (arch::PAddr, usize),
 
     /// Iterator over memory map
     pub mm_iter: Vec<uefi::table::boot::MemoryDescriptor>,
@@ -139,19 +144,19 @@ pub struct KernelArgs {
     /// The physical base address of root PML4 (page) for the kernel
     /// address space that gets loaded in cr3.
     /// The kernel can also find this by reading cr3.
-    pub pml4: x86::bits64::paging::PAddr,
+    pub pml4: arch::PAddr,
 
     /// Kernel stack base address and stack size.
-    pub stack: (x86::bits64::paging::PAddr, usize),
+    pub stack: (arch::PAddr, usize),
 
     /// The offset where the elfloader placed the kernel
-    pub kernel_elf_offset: x86::bits64::paging::VAddr,
+    pub kernel_elf_offset: arch::VAddr,
 
     /// The physical address of the ACPIv1 RSDP (Root System Description Pointer)
-    pub acpi1_rsdp: x86::bits64::paging::PAddr,
+    pub acpi1_rsdp: arch::PAddr,
 
     /// The physical address of the ACPIv2 RSDP (Root System Description Pointer)
-    pub acpi2_rsdp: x86::bits64::paging::PAddr,
+    pub acpi2_rsdp: arch::PAddr,
 
     /// Information from the TLS section of the kernel ELF
     /// (if it exists)
@@ -165,16 +170,16 @@ pub struct KernelArgs {
 impl KernelArgs {
     pub const fn new() -> Self {
         Self {
-            mm: (x86::bits64::paging::PAddr(0), 0),
+            mm: (arch::PAddr(0), 0),
             mm_iter: Vec::new(),
             command_line: "<< unset >>",
             frame_buffer: None,
             mode_info: None,
-            pml4: x86::bits64::paging::PAddr(0),
-            stack: (x86::bits64::paging::PAddr(0), 0),
-            kernel_elf_offset: x86::bits64::paging::VAddr(0),
-            acpi1_rsdp: x86::bits64::paging::PAddr(0),
-            acpi2_rsdp: x86::bits64::paging::PAddr(0),
+            pml4: arch::PAddr(0),
+            stack: (arch::PAddr(0), 0),
+            kernel_elf_offset: arch::VAddr(0),
+            acpi1_rsdp: arch::PAddr(0),
+            acpi2_rsdp: arch::PAddr(0),
             tls_info: None,
             modules: arrayvec::ArrayVec::new_const(),
         }

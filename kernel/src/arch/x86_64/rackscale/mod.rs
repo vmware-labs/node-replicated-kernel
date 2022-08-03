@@ -22,8 +22,12 @@ pub(crate) mod syscalls;
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::{cnrfs, NrLock};
+use crate::memory::LARGE_PAGE_SIZE;
 use crate::nr;
 use crate::process::Pid;
+use crate::transport::shmem::SHMEM_REGION;
+
+use dcm::node_registration::dcm_register_node;
 
 /// A handle to an RPC client
 ///
@@ -60,11 +64,24 @@ pub(crate) fn register_client(
     hdr: &mut RPCHeader,
     _payload: &mut [u8],
 ) -> Result<NodeId, RPCError> {
-    // use local pid as client ID
-    match register_pid(hdr.pid) {
-        Ok(client_id) => Ok(client_id as NodeId),
-        Err(err) => Err(err.into()),
-    }
+    // TODO: memslices and cores should really come from registration payload
+
+    // map remote pid to local pid
+    let local_pid = register_pid(hdr.pid)?;
+
+    // TODO: calculate cores
+    let cores = 64;
+    let memslices = SHMEM_REGION.size / LARGE_PAGE_SIZE as u64;
+
+    // Register client resources with DCM
+    let node_id = dcm_register_node(local_pid, cores, memslices);
+    log::info!(
+        "Registered client {:?} with {:?} cores and {:?} memslices",
+        node_id,
+        cores,
+        memslices
+    );
+    Ok(node_id)
 }
 
 // Lookup the local pid corresponding to a remote pid

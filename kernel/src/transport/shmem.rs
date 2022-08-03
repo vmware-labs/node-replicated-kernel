@@ -87,7 +87,11 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
                 Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
             let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
-            log::info!("Controller: Created shared-memory transport!");
+            log::info!(
+                "Controller: Created shared-memory transport! size={:?}, base={:?}",
+                transport_size,
+                SHMEM_REGION.base_kaddr
+            );
             Ok(ShmemTransport::new(server_receiver, server_sender))
         }
         Mode::Client => {
@@ -97,7 +101,11 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
                 Arc::new(Queue::with_capacity_in(false, 32, &allocator).unwrap());
             let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
             let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
-            log::info!("Client: Created shared-memory transport!");
+            log::info!(
+                "Client: Created shared-memory transport! size={:?}, base={:?}",
+                transport_size,
+                SHMEM_REGION.base_kaddr
+            );
             Ok(ShmemTransport::new(client_receiver, client_sender))
         }
         Mode::Native => {
@@ -129,7 +137,6 @@ pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheLarge>> {
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         // Subtract memory used for transport if using shmem transport, and adjust base
-        log::info!("HI FROM SHMEM RESIZE REGION");
         let frame_size = core::cmp::max(0, SHMEM_REGION.size - MAX_SHMEM_TRANSPORT_SIZE);
         if frame_size > 0 {
             let base = PAddr::from(SHMEM_REGION.base_kaddr + MAX_SHMEM_TRANSPORT_SIZE);

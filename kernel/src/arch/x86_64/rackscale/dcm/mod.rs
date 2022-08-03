@@ -7,6 +7,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::borrow::BorrowMut;
 use core::cell::RefCell;
+use core::convert::TryFrom;
 use core::fmt::Debug;
 use core2::io::Result as IOResult;
 use core2::io::Write;
@@ -28,9 +29,32 @@ use crate::fallible_string::TryString;
 use crate::memory::mcache::FrameCacheLarge;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
 use crate::transport::shmem::create_shmem_manager;
-pub(crate) mod dcm_msg;
 
-use dcm_msg::ALLOC_LEN;
+pub(crate) mod dcm_request;
+pub(crate) mod node_registration;
+
+#[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
+#[repr(u8)]
+pub(crate) enum DCMOps {
+    /// Register a node (cores and memory) with DCM
+    RegisterNode = 1,
+    /// Request cores or memory from DCM
+    ResourceRequest = 2,
+
+    Unknown = 3,
+}
+
+impl From<RPCType> for DCMOps {
+    /// Construct a RPCType enum based on a 8-bit value.
+    fn from(op: RPCType) -> DCMOps {
+        match op {
+            1 => DCMOps::RegisterNode,
+            2 => DCMOps::ResourceRequest,
+            _ => DCMOps::Unknown,
+        }
+    }
+}
+unsafe_abomonate!(DCMOps);
 
 lazy_static! {
     pub(crate) static ref DCM_INTERFACE: Arc<Mutex<DCMInterface>> =
@@ -49,8 +73,8 @@ impl DCMInterface {
     pub fn new(iface: Arc<Mutex<Interface<'static, DevQueuePhy>>>) -> DCMInterface {
         // Create UDP RX buffer
         let mut sock_vec = Vec::new();
-        sock_vec.try_reserve_exact(ALLOC_LEN).unwrap();
-        sock_vec.resize(ALLOC_LEN, 0);
+        sock_vec.try_reserve_exact(dcm_request::ALLOC_LEN).unwrap();
+        sock_vec.resize(dcm_request::ALLOC_LEN, 0);
         let mut metadata_vec = Vec::<UdpPacketMetadata>::new();
         metadata_vec.try_reserve_exact(1).unwrap();
         metadata_vec.resize(1, UdpPacketMetadata::EMPTY);

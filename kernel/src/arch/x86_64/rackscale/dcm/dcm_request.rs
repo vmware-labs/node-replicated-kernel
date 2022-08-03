@@ -3,6 +3,7 @@
 
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use log::{debug, warn};
+use rpc::rpc::RPCType;
 use rpc::RPCClient;
 use smoltcp::socket::UdpSocket;
 use smoltcp::time::Instant;
@@ -10,7 +11,7 @@ use smoltcp::time::Instant;
 use crate::transport::ethernet::ETHERNET_IFACE;
 
 use super::super::kernelrpc::*;
-use super::DCM_INTERFACE;
+use super::{DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -107,9 +108,12 @@ pub(crate) fn make_dcm_request(local_pid: usize, is_core: bool) -> u64 {
         DCM_INTERFACE
             .lock()
             .client
-            .call(local_pid, 1, unsafe { &[req.as_bytes()] }, unsafe {
-                &mut [res.as_mut_bytes()]
-            })
+            .call(
+                local_pid,
+                DCMOps::ResourceRequest as RPCType,
+                unsafe { &[req.as_bytes()] },
+                unsafe { &mut [res.as_mut_bytes()] },
+            )
             .unwrap();
         debug!("Received allocation id in response: {:?}", res.alloc_id);
     }

@@ -1635,6 +1635,7 @@ fn s03_ivshmem_write_and_read() {
     let build = BuildArgs::default().build();
 
     let filename = String::from("ivshmem-file");
+    let _ignore = remove_file(&filename);
     let filelen = 2048;
     let file =
         MemFile::create(filename.as_str(), CreateOptions::new()).expect("Unable to create memfile");
@@ -1692,7 +1693,8 @@ fn exokernel_fs_test(is_shmem: bool) {
 
     // Setup ivshmem file
     let filename = "ivshmem-file";
-    let filelen = 2;
+    let _ignore = remove_file(&filename);
+    let filelen = 8;
     let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
@@ -1800,6 +1802,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
 
     // Setup ivshmem file
     let filename = "ivshmem-file";
+    let _ignore = remove_file(&filename);
     let filelen = 8;
     let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen * 1024 * 1024)
@@ -1901,7 +1904,8 @@ fn s03_shmem_exokernel_fs_prop_test() {
 
     // Setup ivshmem file
     let filename = "ivshmem-file";
-    let filelen = 2;
+    let _ignore = remove_file(&filename);
+    let filelen = 8;
     let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");
@@ -2849,7 +2853,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
         for &of in open_files.iter() {
             // Set up file for shmem
             let shmem_file_name = "ivshmem-file";
-            let filelen = 2;
+            let filelen = 8;
             let file = MemFile::create(shmem_file_name, CreateOptions::new())
                 .expect("Unable to create memfile");
             file.set_len(filelen * 1024 * 1024)

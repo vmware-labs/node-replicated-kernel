@@ -2823,7 +2823,6 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
     } else {
         "ethernet_exokernel_fxmark_benchmark.csv"
     };
-    let _ignore = remove_file(file_name);
 
     setup_network(2);
 
@@ -2853,6 +2852,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
         for &of in open_files.iter() {
             // Set up file for shmem
             let shmem_file_name = "ivshmem-file";
+            let _ignore = remove_file(file_name);
             let filelen = 8;
             let file = MemFile::create(shmem_file_name, CreateOptions::new())
                 .expect("Unable to create memfile");
@@ -2896,7 +2896,6 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                 let mut qemu_run = || -> Result<WaitStatus> {
                     let mut dcm = spawn_dcm(1)?;
                     let mut p = spawn_nrk(&cmdline_controller)?;
-                    //output += p.exp_string("Finished sending requests!")?.as_str();
                     output += p.exp_eof()?.as_str();
 
                     dcm.send_control('c')?;

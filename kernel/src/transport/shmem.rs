@@ -4,12 +4,12 @@
 use alloc::boxed::Box;
 use kpi::KERNEL_BASE;
 use lazy_static::lazy_static;
-#[cfg(feature = "rpc")]
-use rpc::transport::ShmemTransport;
+
+#[cfg(feature = "rackscale")]
+use {crate::arch::rackscale::FrameCacheMemslice, rpc::transport::ShmemTransport};
 
 use crate::cmdline::Transport;
 use crate::error::{KError, KResult};
-use crate::memory::mcache::FrameCacheMemslice;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PAddr};
 use crate::pci::claim_device;

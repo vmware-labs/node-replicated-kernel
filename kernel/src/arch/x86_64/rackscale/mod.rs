@@ -10,6 +10,7 @@ use log::{debug, error};
 use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
 use rpc::rpc::{NodeId, RPCError, RPCHeader};
 use spin::{Lazy, Mutex};
+use static_assertions as sa;
 
 pub(crate) mod controller;
 pub(crate) mod dcm;
@@ -22,12 +23,20 @@ pub(crate) mod syscalls;
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::{cnrfs, NrLock};
+use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::nr;
 use crate::process::Pid;
 use crate::transport::shmem::SHMEM_REGION;
 
 use dcm::node_registration::dcm_register_node;
+
+/// A cache of 2MiB pages, fits on a 2 MiB page.
+///
+/// Used to allocate remote memory (in large chunks)
+pub type FrameCacheMemslice = MCache<2048, 0>;
+sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
 
 /// A handle to an RPC client
 ///

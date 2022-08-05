@@ -46,13 +46,6 @@ pub(crate) type FrameCacheEarly = MCache<2048, 12>;
 sa::const_assert!(core::mem::size_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
 sa::const_assert!(core::mem::align_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
 
-/// A cache of 2MiB pages, fits on a 2 MiB page.
-///
-/// Used to allocate remote memory (in large chunks)
-pub type FrameCacheMemslice = MCache<2048, 0>;
-sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= super::LARGE_PAGE_SIZE);
-sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= super::LARGE_PAGE_SIZE);
-
 /// A simple page-cache for a NUMA node.
 ///
 /// Holds two stacks of pages for O(1) allocation/deallocation.

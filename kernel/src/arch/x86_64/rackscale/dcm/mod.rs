@@ -26,7 +26,7 @@ use vmxnet3::smoltcp::DevQueuePhy;
 use super::get_local_pid;
 use super::kernelrpc::*;
 use crate::fallible_string::TryString;
-use crate::memory::mcache::FrameCacheLarge;
+use crate::memory::mcache::FrameCacheMemslice;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
 use crate::transport::shmem::create_shmem_manager;
 
@@ -65,8 +65,7 @@ pub struct DCMInterface {
     pub client: Box<Client>,
     pub udp_handle: SocketHandle,
     // TODO: should probably use MemManager, but don't here for simplicity (e.g., send/sync issues with dyn traits)
-    // this would allow FrameCacheLarge privacy to once again become pub(crate) instead of pub, but MemManager would need to become pub.
-    pub shmem_manager: Box<FrameCacheLarge>,
+    pub shmem_manager: Box<FrameCacheMemslice>,
 }
 
 impl DCMInterface {

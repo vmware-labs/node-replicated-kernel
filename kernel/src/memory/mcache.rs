@@ -27,7 +27,7 @@ use super::*;
 /// A big cache of base and large pages for a NUMA node, fits on a 2 MiB page.
 ///
 /// Stores 256 GiB of large pages and 512 MiB of base pages.
-pub type FrameCacheLarge = MCache<131071, 131070>;
+pub(crate) type FrameCacheLarge = MCache<131071, 131070>;
 sa::assert_eq_size!(FrameCacheLarge, [u8; LARGE_PAGE_SIZE]);
 sa::const_assert!(core::mem::align_of::<FrameCacheLarge>() <= super::BASE_PAGE_SIZE);
 
@@ -45,6 +45,13 @@ sa::const_assert!(core::mem::align_of::<FrameCacheSmall>() <= super::BASE_PAGE_S
 pub(crate) type FrameCacheEarly = MCache<2048, 12>;
 sa::const_assert!(core::mem::size_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
 sa::const_assert!(core::mem::align_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
+
+/// A cache of 2MiB pages, fits on a 2 MiB page.
+///
+/// Used to allocate remote memory (in large chunks)
+pub type FrameCacheMemslice = MCache<2048, 0>;
+sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= super::LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= super::LARGE_PAGE_SIZE);
 
 /// A simple page-cache for a NUMA node.
 ///

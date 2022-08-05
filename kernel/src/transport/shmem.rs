@@ -9,7 +9,7 @@ use rpc::transport::ShmemTransport;
 
 use crate::cmdline::Transport;
 use crate::error::{KError, KResult};
-use crate::memory::mcache::FrameCacheLarge;
+use crate::memory::mcache::FrameCacheMemslice;
 use crate::memory::vspace::MapAction;
 use crate::memory::{Frame, PAddr};
 use crate::pci::claim_device;
@@ -130,7 +130,7 @@ pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client::Client>
 }
 
 #[cfg(feature = "rackscale")]
-pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheLarge>> {
+pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheMemslice>> {
     // Create remote memory frame
     let shmem_frame = if crate::CMDLINE
         .get()
@@ -157,7 +157,7 @@ pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheLarge>> {
     // If there is shared memory available, create memory frame for cache
     if let Some(frame) = shmem_frame {
         // Allocate memory manager in local memory, and populate with shmem
-        let mut shmem_cache = Box::new(FrameCacheLarge::new(0));
+        let mut shmem_cache = Box::new(FrameCacheMemslice::new(0));
         shmem_cache.populate_2m_first(frame);
         Some(shmem_cache)
     } else {

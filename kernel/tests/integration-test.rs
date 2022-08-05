@@ -2876,7 +2876,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
             let build1 = build.clone();
             let controller = std::thread::spawn(move || {
                 let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-                    .timeout(30_000)
+                    .timeout(40_000)
                     .cmd(&controller_cmdline)
                     .ivshmem(filelen as usize)
                     .shmem_path(shmem_file_name)
@@ -2907,7 +2907,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 
             let build2 = build.clone();
             let client = std::thread::spawn(move || {
-                sleep(Duration::from_millis(10_000));
+                sleep(Duration::from_millis(15_000));
                 let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                     .timeout(180_000)
                     .ivshmem(filelen as usize)

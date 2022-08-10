@@ -60,7 +60,7 @@ lazy_static! {
         Arc::new(Mutex::new(DCMInterface::new(Arc::clone(&ETHERNET_IFACE))));
 }
 
-pub struct DCMInterface {
+pub(crate) struct DCMInterface {
     pub client: Box<Client>,
     pub udp_handle: SocketHandle,
     // TODO: should probably use MemManager, but don't here for simplicity (e.g., send/sync issues with dyn traits)

@@ -50,7 +50,7 @@ sa::const_assert!(core::mem::align_of::<FrameCacheEarly>() <= super::LARGE_PAGE_
 ///
 /// Holds two stacks of pages for O(1) allocation/deallocation.
 /// Implements the `GrowBackend` to hand pages out.
-pub struct MCache<const BP: usize, const LP: usize> {
+pub(crate) struct MCache<const BP: usize, const LP: usize> {
     /// Which node the memory in this cache is from.
     node: atopology::NodeId,
     /// A vector of free, cached base-page addresses

@@ -57,8 +57,10 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
         )
     } else {
         // Default is Shmem, even if transport unspecified
+        let machine_id = crate::CMDLINE.get().map_or(0, |c| c.machine_id);
         Mutex::new(
-            crate::transport::shmem::init_shmem_rpc().expect("Failed to initialize shmem RPC"),
+            crate::transport::shmem::init_shmem_rpc(machine_id)
+                .expect("Failed to initialize shmem RPC"),
         )
     };
 });

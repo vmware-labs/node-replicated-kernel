@@ -4,6 +4,8 @@
 use alloc::boxed::Box;
 use kpi::KERNEL_BASE;
 use lazy_static::lazy_static;
+use rpc::rpc::MAX_BUFF_LEN;
+use static_assertions::const_assert;
 
 #[cfg(feature = "rackscale")]
 use {crate::arch::rackscale::FrameCacheMemslice, rpc::transport::ShmemTransport};
@@ -30,6 +32,12 @@ lazy_static! {
 }
 
 pub(crate) const MAX_SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
+
+// The default size of the Shared memory queue is 32.
+// The total size of two queues(sender and reciever) should be less
+// that the MAX_SHMEM_TRANSPORT_SIZE.
+const SHMEM_QUEUE_SIZE: usize = 32;
+const_assert!(2 * SHMEM_QUEUE_SIZE * MAX_BUFF_LEN <= MAX_SHMEM_TRANSPORT_SIZE as usize);
 
 /// Setup inter-vm shared-memory device.
 #[allow(unused)]
@@ -70,41 +78,44 @@ pub(crate) fn init_shmem_device() -> KResult<(u64, u64)> {
 }
 
 #[cfg(feature = "rpc")]
-pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
+pub(crate) fn create_shmem_transport(machine_id: u8) -> KResult<ShmemTransport<'static>> {
     use crate::cmdline::Mode;
     use alloc::sync::Arc;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
 
+    assert!(machine_id as u64 * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_REGION.size);
     let transport_size = core::cmp::min(SHMEM_REGION.size, MAX_SHMEM_TRANSPORT_SIZE);
-    let allocator = ShmemAllocator::new(SHMEM_REGION.base_kaddr, transport_size);
+    let base_addr = SHMEM_REGION.base_kaddr + (machine_id - 1) as u64 * transport_size;
+    let allocator = ShmemAllocator::new(base_addr, transport_size);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
             let server_to_client_queue =
-                Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(true, SHMEM_QUEUE_SIZE, &allocator).unwrap());
             let client_to_server_queue =
-                Arc::new(Queue::with_capacity_in(true, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(true, SHMEM_QUEUE_SIZE, &allocator).unwrap());
             let server_sender = Sender::with_shared_queue(server_to_client_queue.clone());
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
             log::info!(
-                "Controller: Created shared-memory transport! size={:?}, base={:?}",
+                "Controller: Created shared-memory transport for machine {}! size={:?}, base={:?}",
+                machine_id,
                 transport_size,
-                SHMEM_REGION.base_kaddr
+                base_addr
             );
             Ok(ShmemTransport::new(server_receiver, server_sender))
         }
         Mode::Client => {
             let server_to_client_queue =
-                Arc::new(Queue::with_capacity_in(false, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(false, SHMEM_QUEUE_SIZE, &allocator).unwrap());
             let client_to_server_queue =
-                Arc::new(Queue::with_capacity_in(false, 32, &allocator).unwrap());
+                Arc::new(Queue::with_capacity_in(false, SHMEM_QUEUE_SIZE, &allocator).unwrap());
             let client_receiver = Receiver::with_shared_queue(server_to_client_queue.clone());
             let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
             log::info!(
                 "Client: Created shared-memory transport! size={:?}, base={:?}",
                 transport_size,
-                SHMEM_REGION.base_kaddr
+                base_addr
             );
             Ok(ShmemTransport::new(client_receiver, client_sender))
         }
@@ -116,12 +127,12 @@ pub(crate) fn create_shmem_transport() -> KResult<ShmemTransport<'static>> {
 }
 
 #[cfg(feature = "rpc")]
-pub(crate) fn init_shmem_rpc() -> KResult<alloc::boxed::Box<rpc::client::Client>> {
+pub(crate) fn init_shmem_rpc(machine_id: u8) -> KResult<alloc::boxed::Box<rpc::client::Client>> {
     use rpc::client::Client;
     use rpc::RPCClient;
 
     // Set up the transport
-    let transport = Box::try_new(create_shmem_transport()?)?;
+    let transport = Box::try_new(create_shmem_transport(machine_id)?)?;
 
     // Create the client
     let mut client = Box::try_new(Client::new(transport))?;

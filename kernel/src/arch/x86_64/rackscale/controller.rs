@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::cell::Cell;
 use hashbrown::HashMap;
 use smoltcp::time::Instant;
@@ -20,6 +21,7 @@ use crate::ExitReason;
 use super::*;
 
 const PORT: u16 = 6970;
+const MAX_SHMEM_CLIENTS: u8 = 4;
 
 /// Test TCP RPC-based controller
 pub(crate) fn run() {
@@ -42,26 +44,32 @@ pub(crate) fn run() {
     let clock = Clock::new();
 
     // Initialize the RPC server
-    let mut server: Box<dyn RPCServer> = if crate::CMDLINE
+    let mut servers: Vec<Box<dyn RPCServer>> = Vec::with_capacity(MAX_SHMEM_CLIENTS as usize);
+    if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         use rpc::{server::Server, transport::TCPTransport};
         let transport = Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&ETHERNET_IFACE)))
             .expect("Out of memory during init");
-        Box::try_new(Server::new(transport)).expect("Out of memory during init")
+        servers.push(Box::try_new(Server::new(transport)).expect("Out of memory during init"));
     } else if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         use crate::transport::shmem::create_shmem_transport;
-        let transport =
-            Box::try_new(create_shmem_transport().expect("Failed to create shmem transport"))
-                .expect("Out of memory during init");
-        Box::try_new(Server::new(transport)).expect("Out of memory during init")
+        for machine_id in 1..MAX_SHMEM_CLIENTS + 1 {
+            let transport = Box::try_new(
+                create_shmem_transport(machine_id).expect("Failed to create shmem transport"),
+            )
+            .expect("Out of memory during init");
+            servers.push(Box::try_new(Server::new(transport)).expect("Out of memory during init"));
+        }
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
-    };
+    }
+
+    let mut server = &mut servers[0];
 
     register_rpcs(&mut server);
     server.add_client(&CLIENT_REGISTRAR).unwrap();

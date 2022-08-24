@@ -16,16 +16,30 @@ pub mod io;
 pub mod process;
 pub mod system;
 pub mod upcall;
-pub mod x86_64;
+
+
+#[cfg(all(target_arch = "x86_64"))]
+#[path = "arch/x86_64/mod.rs"]
+pub mod arch;
+
+// The aarch64 platform specific code.
+#[cfg(all(target_arch = "aarch64"))]
+#[path = "arch/aarch64/mod.rs"]
+pub mod arch;
+
 
 /// The syscall layer (only relevant for Ring3 code -> target_os = nrk)
 #[cfg(not(target_os = "none"))]
 pub mod syscalls;
 
-/// A short-cut to the architecture specific part that this crate was compiled for.
-pub mod arch {
-    #[cfg(target_arch = "x86_64")]
-    pub use crate::x86_64::*;
+#[cfg(all(target_arch = "aarch64"))]
+pub mod aarch64 {
+    pub use crate::arch::*;
+}
+
+#[cfg(all(target_arch = "x86_64"))]
+pub mod x86_64 {
+    pub use crate::arch::*;
 }
 
 /// Start of the kernel address space.

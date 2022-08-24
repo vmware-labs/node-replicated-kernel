@@ -4,7 +4,7 @@
 use core::convert::TryInto;
 
 use serde::{Deserialize, Serialize};
-use x86::bits64::paging::PML4_SLOT_SIZE;
+use crate::arch::ROOT_TABLE_SLOT_SIZE;
 
 /// Max number of cores supported by the process allocator.
 pub const MAX_CORES: usize = 96;
@@ -28,9 +28,9 @@ pub const HEAP_END: usize = HEAP_START + ((MAX_CORES + 1) * HEAP_PER_CORE_REGION
 // really necessary for anything except benchmarking: it helps for scalability
 // benchmarks if we know that all other slots are "empty" and we don't
 // accidentially try to map somewhere where there are already mappings...
-static_assertions::const_assert!(HEAP_END <= 2 * PML4_SLOT_SIZE);
-static_assertions::const_assert!(EXECUTOR_OFFSET <= PML4_SLOT_SIZE);
-static_assertions::const_assert!(ELF_OFFSET <= PML4_SLOT_SIZE);
+static_assertions::const_assert!(HEAP_END <= 2 * ROOT_TABLE_SLOT_SIZE);
+static_assertions::const_assert!(EXECUTOR_OFFSET <= ROOT_TABLE_SLOT_SIZE);
+static_assertions::const_assert!(ELF_OFFSET <= ROOT_TABLE_SLOT_SIZE);
 
 pub type FrameId = usize;
 

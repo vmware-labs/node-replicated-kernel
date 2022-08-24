@@ -22,3 +22,9 @@ global_asm!(include_str!("switch.S"), options(att_syntax));
 /// All physical mappings are identity mapped with KERNEL_OFFSET as
 /// displacement.
 pub const KERNEL_OFFSET: usize = 1 << 46;
+
+
+/// prints some architecture specific strings
+pub fn print_arch() {
+    info!("Running on x86_64");
+}

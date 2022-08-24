@@ -7,6 +7,7 @@ pub mod cpu;
 mod vspace;
 
 pub use armv8::aarch64::vm::granule4k::*;
+use armv8::aarch64::registers::Currentel;
 
 pub use vspace::VSpaceAArch64 as VSpace;
 
@@ -21,3 +22,8 @@ global_asm!(include_str!("__chkstk.S"));
 /// All physical mappings are identity mapped with KERNEL_OFFSET as
 /// displacement.
 pub const KERNEL_OFFSET: usize = 1 << 48;
+
+/// prints some architecture specific strings
+pub fn print_arch() {
+    info!("Running on Arm in EL{}", Currentel::el_read());
+}

@@ -1,16 +1,24 @@
 // Copyright © 2022 The University of British Columbia. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use core::cell::RefCell;
+
+use crate::error::KResult;
+use crate::prelude::{Box, KError};
 use crate::process::Pid;
 
 /// the architecture specific stack alignment for processes
 pub(crate) const STACK_ALIGNMENT: usize = 16;
 
 /// The process model of the current architecture.
-pub(crate) type ArchProcess = Ring3Process;
+pub(crate) type ArchProcess = EL0Process;
 
 ///The executor of the current architecture.
-pub(crate) type ArchExecutor = Ring3Executor;
+pub(crate) type ArchExecutor = EL0Executor;
+
+struct EL0Process {}
+
+struct EL0Executor {}
 
 /// A handle to the currently active (scheduled on the core) process.
 #[thread_local]
@@ -23,6 +31,16 @@ pub(crate) fn swap_current_executor(new_executor: Box<ArchExecutor>) -> Option<B
 
 pub(crate) fn has_executor() -> bool {
     CURRENT_EXECUTOR.borrow().is_some()
+}
+
+pub(crate) fn current_pid() -> KResult<Pid> {
+    pub(crate) fn current_pid() -> KResult<Pid> {
+        Ok(CURRENT_EXECUTOR
+            .borrow()
+            .as_ref()
+            .ok_or(KError::ProcessNotSet)?
+            .pid)
+    }
 }
 
 /// Spawns a new process

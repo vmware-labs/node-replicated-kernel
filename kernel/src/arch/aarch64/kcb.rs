@@ -1,6 +1,8 @@
 // Copyright © 2022 The University of British Columbia. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use crate::memory::per_core::PerCoreMemory;
+
 /// Try to retrieve the per-core memory allocator by reading the gs register.
 ///
 /// This may return None if the memory allocators is not yet set (i.e., during

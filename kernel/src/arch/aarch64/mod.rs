@@ -3,12 +3,16 @@
 
 //! AArch64 specific kernel code.
 
+use core::arch::asm;
+
 pub use bootloader_shared::*;
 
 pub mod debug;
 pub mod kcb;
 pub mod memory;
 pub mod process;
+pub mod signals;
+pub mod vspace;
 
 pub(crate) const MAX_NUMA_NODES: usize = 12;
 pub(crate) const MAX_CORES: usize = 192;
@@ -18,7 +22,7 @@ pub(crate) const MAX_CORES: usize = 192;
 /// Interrupts are enabled before going to sleep.
 pub(crate) fn halt() -> ! {
     unsafe {
-        asm!("wfi" :::: "volatile");
+        asm!("wfi");
     }
 }
 

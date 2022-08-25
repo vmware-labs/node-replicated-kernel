@@ -1,6 +1,11 @@
 // Copyright © 2022 The University of British Columbia. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use core::arch::asm;
+use klogger::sprintln;
+
+use crate::ExitReason;
+
 /// Shutdown the processor.
 ///
 /// Currently we only support the debug exit method from qemu, which conveniently

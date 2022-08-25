@@ -3,8 +3,9 @@
 
 use core::convert::TryInto;
 
-use gdbstub::target::ext::base::SingleRegisterAccess;
-use gdbstub::target::{TargetError, TargetResult};
+use gdbstub::target::{
+    ext::base::single_register_access::SingleRegisterAccess, TargetError, TargetResult,
+};
 use gdbstub_arch::x86::reg::id::{X86SegmentRegId, X86_64CoreRegId};
 use log::{error, trace};
 

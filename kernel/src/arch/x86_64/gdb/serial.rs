@@ -4,7 +4,7 @@
 //! GDB serial line connection implementation.
 
 use bit_field::BitField;
-use gdbstub::{Connection, ConnectionExt};
+use gdbstub::conn::{Connection, ConnectionExt};
 use x86::io;
 
 use crate::error::KError;

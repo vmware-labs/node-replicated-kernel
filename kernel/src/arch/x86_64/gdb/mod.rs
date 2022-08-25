@@ -4,13 +4,13 @@
 use core::num::NonZeroUsize;
 
 use gdbstub::common::Signal;
-use gdbstub::state_machine::GdbStubStateMachine;
-use gdbstub::target::ext::base::multithread::ThreadStopReason;
+use gdbstub::conn::ConnectionExt;
+use gdbstub::stub::MultiThreadStopReason;
+use gdbstub::stub::{state_machine::GdbStubStateMachine, GdbStubError};
 use gdbstub::target::ext::base::BaseOps;
 use gdbstub::target::ext::breakpoints::BreakpointsOps;
 use gdbstub::target::ext::section_offsets::SectionOffsetsOps;
 use gdbstub::target::Target;
-use gdbstub::{ConnectionExt, GdbStubError};
 use gdbstub_arch::x86::X86_64_SSE;
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace};
@@ -55,7 +55,7 @@ lazy_static! {
     pub(crate) static ref GDB_STUB: Mutex<Option<(GdbStubStateMachine<'static, KernelDebugger, GdbSerial>, KernelDebugger)>> = {
         let connection = wait_for_gdb_connection(GDB_REMOTE_PORT).expect("Can't connect to GDB");
         let mut target = KernelDebugger::new();
-        let gdb_stm = gdbstub::GdbStub::new(connection).run_state_machine(&mut target).expect("Can't start GDB session");
+        let gdb_stm = gdbstub::stub::GdbStub::new(connection).run_state_machine(&mut target).expect("Can't start GDB session");
         Mutex::new(Some((gdb_stm, target)))
     };
 }
@@ -119,7 +119,8 @@ pub(crate) fn event_loop(reason: KCoreStopReason) -> Result<(), KError> {
                 }
             }
             GdbStubStateMachine::CtrlCInterrupt(gdb_stm_inner) => {
-                match gdb_stm_inner.interrupt_handled(&mut target, Some(ThreadStopReason::DoneStep))
+                match gdb_stm_inner
+                    .interrupt_handled(&mut target, Some(MultiThreadStopReason::DoneStep))
                 {
                     Ok(gdb) => gdb,
                     Err(e) => {
@@ -243,12 +244,17 @@ impl KernelDebugger {
     /// hardware debug register and reading which one was hit.
     ///
     // Also does some additional stuff like re-enabling the breakpoints.
-    fn determine_stop_reason(&mut self, reason: KCoreStopReason) -> Option<ThreadStopReason<u64>> {
+    fn determine_stop_reason(
+        &mut self,
+        reason: KCoreStopReason,
+    ) -> Option<MultiThreadStopReason<u64>> {
         match reason {
-            KCoreStopReason::ConnectionInterrupt => Some(ThreadStopReason::Signal(Signal::SIGTRAP)),
+            KCoreStopReason::ConnectionInterrupt => {
+                Some(MultiThreadStopReason::Signal(Signal::SIGTRAP))
+            }
             KCoreStopReason::BreakpointInterrupt => {
                 unimplemented!("Breakpoint interrupt not implemented");
-                //Some(ThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
+                //Some(MultiThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
             }
             KCoreStopReason::DebugInterrupt => {
                 // Safety: We are in the kernel so we can access dr6.
@@ -274,24 +280,28 @@ impl KernelDebugger {
                 };
 
                 // Map things to a gdbstub stop reason:
-                let stop: Option<ThreadStopReason<u64>> = if let Some(BreakState(
+                let stop: Option<MultiThreadStopReason<u64>> = if let Some(BreakState(
                     _va,
                     BreakType::Breakpoint,
                     BreakRequest::Hardware,
                 )) = bp
                 {
-                    Some(ThreadStopReason::HwBreak(NonZeroUsize::new(1).unwrap()))
+                    Some(MultiThreadStopReason::HwBreak(
+                        NonZeroUsize::new(1).unwrap(),
+                    ))
                 } else if let Some(BreakState(_va, BreakType::Breakpoint, BreakRequest::Software)) =
                     bp
                 {
-                    Some(ThreadStopReason::SwBreak(NonZeroUsize::new(1).unwrap()))
+                    Some(MultiThreadStopReason::SwBreak(
+                        NonZeroUsize::new(1).unwrap(),
+                    ))
                 } else if let Some(BreakState(
                     va,
                     BreakType::Watchpoint(kind),
                     BreakRequest::Hardware,
                 )) = bp
                 {
-                    Some(ThreadStopReason::Watch {
+                    Some(MultiThreadStopReason::Watch {
                         tid: NonZeroUsize::new(1).unwrap(),
                         kind,
                         addr: va.as_u64(),
@@ -306,7 +316,7 @@ impl KernelDebugger {
                 } else if dr6.contains(debugregs::Dr6::BS) {
                     // When the BS flag is set, any of the other debug status bits also may be set.
                     dr6.remove(debugregs::Dr6::BS);
-                    Some(ThreadStopReason::DoneStep)
+                    Some(MultiThreadStopReason::DoneStep)
                 } else {
                     None
                 };

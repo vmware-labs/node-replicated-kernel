@@ -4,10 +4,8 @@
 use core::convert::TryInto;
 
 use gdbstub::common::Signal;
-use gdbstub::target::ext::base::singlethread::{
-    SingleThreadOps, SingleThreadSingleStep, SingleThreadSingleStepOps,
-};
-use gdbstub::target::ext::base::SingleRegisterAccessOps;
+use gdbstub::target::ext::base::single_register_access::SingleRegisterAccessOps;
+use gdbstub::target::ext::base::singlethread::SingleThreadSingleStep;
 use gdbstub::target::{TargetError, TargetResult};
 use log::{debug, error, info, trace, warn};
 
@@ -17,7 +15,7 @@ use crate::memory::vspace::AddressSpace;
 use crate::memory::{VAddr, BASE_PAGE_SIZE};
 use kpi::arch::ST_REGS;
 
-impl SingleThreadOps for KernelDebugger {
+impl gdbstub::target::ext::base::singlethread::SingleThreadResume for KernelDebugger {
     fn resume(&mut self, signal: Option<Signal>) -> Result<(), Self::Error> {
         assert!(signal.is_none(), "Not supported at the moment.");
 
@@ -34,7 +32,9 @@ impl SingleThreadOps for KernelDebugger {
         // outside of the resume implementation by returning None.
         Ok(())
     }
+}
 
+impl gdbstub::target::ext::base::singlethread::SingleThreadBase for KernelDebugger {
     fn read_registers(
         &mut self,
         regs: &mut gdbstub_arch::x86::reg::X86_64CoreRegs,
@@ -271,11 +271,6 @@ impl SingleThreadOps for KernelDebugger {
     fn support_single_register_access(&mut self) -> Option<SingleRegisterAccessOps<(), Self>> {
         //Some(self)
         None
-    }
-
-    fn support_single_step(&mut self) -> Option<SingleThreadSingleStepOps<Self>> {
-        Some(self)
-        //None
     }
 }
 

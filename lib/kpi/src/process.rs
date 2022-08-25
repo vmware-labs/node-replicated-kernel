@@ -3,8 +3,8 @@
 
 use core::convert::TryInto;
 
-use serde::{Deserialize, Serialize};
 use crate::arch::ROOT_TABLE_SLOT_SIZE;
+use serde::{Deserialize, Serialize};
 
 /// Max number of cores supported by the process allocator.
 pub const MAX_CORES: usize = 96;

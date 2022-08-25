@@ -17,7 +17,6 @@ pub mod process;
 pub mod system;
 pub mod upcall;
 
-
 #[cfg(all(target_arch = "x86_64"))]
 #[path = "arch/x86_64/mod.rs"]
 pub mod arch;
@@ -26,7 +25,6 @@ pub mod arch;
 #[cfg(all(target_arch = "aarch64"))]
 #[path = "arch/aarch64/mod.rs"]
 pub mod arch;
-
 
 /// The syscall layer (only relevant for Ring3 code -> target_os = nrk)
 #[cfg(not(target_os = "none"))]

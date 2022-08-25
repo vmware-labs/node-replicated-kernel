@@ -10,4 +10,4 @@ use core::ops::Range;
 
 use armv8::aarch64::vm::granule4k::*;
 
-pub const ROOT_TABLE_SLOT_SIZE : usize = L1_TABLE_ENTRIES * HUGE_PAGE_SIZE;
+pub const ROOT_TABLE_SLOT_SIZE: usize = L1_TABLE_ENTRIES * HUGE_PAGE_SIZE;

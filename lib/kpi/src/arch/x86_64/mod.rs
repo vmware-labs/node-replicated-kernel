@@ -27,7 +27,7 @@ pub const SS_USER_GDT_INDEX: u16 = 4;
 pub const SS_SELECTOR: SegmentSelector = SegmentSelector::new(SS_USER_GDT_INDEX, Ring::Ring3);
 static_assertions::const_assert_eq!(SS_SELECTOR.bits(), 35);
 
-pub const ROOT_TABLE_SLOT_SIZE : usize = x86::bits64::paging::PML4_SLOT_SIZE;
+pub const ROOT_TABLE_SLOT_SIZE: usize = x86::bits64::paging::PML4_SLOT_SIZE;
 
 /// The virtual CPU is a shared data-structure between the kernel and user-space
 /// that facilitates IRQ/trap delivery and emulation of critical sections

@@ -21,3 +21,8 @@ pub(crate) fn halt() -> ! {
         asm!("wfi" :::: "volatile");
     }
 }
+
+/// For cores that advances the replica eagerly. This avoids additional IPI costs.
+pub(crate) fn advance_fs_replica() {
+    panic!("not yet implemented");
+}

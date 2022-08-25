@@ -48,14 +48,15 @@ pub(crate) const STACK_ALIGNMENT: usize = 16;
 /// The process model of the current architecture.
 pub(crate) type ArchProcess = Ring3Process;
 
+///The executor of the current architecture.
+pub(crate) type ArchExecutor = Ring3Executor;
+
 /// A handle to the currently active (scheduled on the core) process.
 #[thread_local]
-pub(crate) static CURRENT_EXECUTOR: RefCell<Option<Box<Ring3Executor>>> = RefCell::new(None);
+pub(crate) static CURRENT_EXECUTOR: RefCell<Option<Box<ArchExecutor>>> = RefCell::new(None);
 
 /// Swaps out current process with a new process. Returns the old process.
-pub(crate) fn swap_current_executor(
-    new_executor: Box<Ring3Executor>,
-) -> Option<Box<Ring3Executor>> {
+pub(crate) fn swap_current_executor(new_executor: Box<ArchExecutor>) -> Option<Box<ArchExecutor>> {
     CURRENT_EXECUTOR.borrow_mut().replace(new_executor)
 }
 

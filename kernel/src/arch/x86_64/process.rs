@@ -43,6 +43,8 @@ use super::MAX_NUMA_NODES;
 
 const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
 
+pub(crate) const STACK_ALIGNMENT: usize = 16;
+
 /// The process model of the current architecture.
 pub(crate) type ArchProcess = Ring3Process;
 

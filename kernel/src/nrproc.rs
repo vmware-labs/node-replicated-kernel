@@ -126,7 +126,7 @@ pub(crate) trait ProcessManager {
         &self,
     ) -> &'static ArrayVec<
         ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
-        MAX_NUMA_NODES,
+        { MAX_NUMA_NODES },
     >;
 }
 

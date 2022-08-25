@@ -23,28 +23,29 @@ use static_assertions as sa;
 use super::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider, ReapBackend};
 use super::utils::DataSize;
 use super::*;
+use crate::arch::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 /// A big cache of base and large pages for a NUMA node, fits on a 2 MiB page.
 ///
 /// Stores 256 GiB of large pages and 512 MiB of base pages.
 pub(crate) type FrameCacheLarge = MCache<131071, 131070>;
 sa::assert_eq_size!(FrameCacheLarge, [u8; LARGE_PAGE_SIZE]);
-sa::const_assert!(core::mem::align_of::<FrameCacheLarge>() <= super::BASE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheLarge>() <= BASE_PAGE_SIZE);
 
 /// A small cache of 4 KiB and 2 MiB pages, fits on a 4K page.
 ///
 /// Used for example for per-core caches.
 pub(crate) type FrameCacheSmall = MCache<381, 128>;
 sa::assert_eq_size!(FrameCacheSmall, [u8; BASE_PAGE_SIZE]);
-sa::const_assert!(core::mem::align_of::<FrameCacheSmall>() <= super::BASE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheSmall>() <= BASE_PAGE_SIZE);
 
 /// A slightly bigger cache of 4KiB and less 2MiB pages (than
 /// `FrameCacheSmall`), fits on a 2 MiB page.
 ///
 /// Used to allocate early during initialization.
 pub(crate) type FrameCacheEarly = MCache<2048, 12>;
-sa::const_assert!(core::mem::size_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
-sa::const_assert!(core::mem::align_of::<FrameCacheEarly>() <= super::LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::size_of::<FrameCacheEarly>() <= LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheEarly>() <= LARGE_PAGE_SIZE);
 
 /// A simple page-cache for a NUMA node.
 ///

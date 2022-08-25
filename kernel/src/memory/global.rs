@@ -33,11 +33,11 @@ pub(crate) struct GlobalMemory {
     /// Holds a small amount of memory for every NUMA node.
     ///
     /// Used to initialize the system.
-    pub(crate) emem: ArrayVec<Mutex<mcache::FrameCacheSmall>, MAX_NUMA_NODES>,
+    pub(crate) emem: ArrayVec<Mutex<mcache::FrameCacheSmall>, { MAX_NUMA_NODES }>,
 
     /// All node-caches in the system (one for every NUMA node).
     pub(crate) node_caches:
-        ArrayVec<CachePadded<Mutex<&'static mut mcache::FrameCacheLarge>>, MAX_NUMA_NODES>,
+        ArrayVec<CachePadded<Mutex<&'static mut mcache::FrameCacheLarge>>, { MAX_NUMA_NODES }>,
 }
 
 impl GlobalMemory {

@@ -37,7 +37,7 @@ pub(crate) struct DeterministicAlloc {
     /// We store the Layout and address (as u64 but it's really a *mut u8) for
     /// every allocation. Layout is technically not necessary (but used to
     /// sanity check the code).
-    qs: ArrayVec<CachePadded<Queue<(Layout, u64)>>, MAX_NUMA_NODES>,
+    qs: ArrayVec<CachePadded<Queue<(Layout, u64)>>, { MAX_NUMA_NODES }>,
     /// Mutex that needs to be acquired when a leading replica needs to allocate
     /// for all replicas.
     fill: CachePadded<Mutex<()>>,

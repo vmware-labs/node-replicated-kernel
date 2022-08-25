@@ -42,6 +42,11 @@ extern crate alloc;
 #[path = "arch/x86_64/mod.rs"]
 pub mod arch;
 
+/// The x86-64 platform specific code.
+#[cfg(all(target_arch = "aarch64", target_os = "none"))]
+#[path = "arch/aarch64/mod.rs"]
+pub mod arch;
+
 /// The unix platform specific code.
 #[cfg(all(target_arch = "x86_64", target_family = "unix"))]
 #[path = "arch/unix/mod.rs"]

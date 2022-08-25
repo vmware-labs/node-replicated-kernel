@@ -242,7 +242,7 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
 
     for gtid in handle.cores() {
         if gtid != my_gtid {
-            let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid].apic_id();
+            let apic_id: ApicId = atopology::MACHINE_TOPOLOGY.threads[gtid].hwid.into();
             let cluster_addr = apic_id.x2apic_logical_cluster_address();
             let cluster = apic_id.x2apic_logical_cluster_id();
 
@@ -287,8 +287,8 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
 
 pub(crate) fn advance_replica(gtid: atopology::GlobalThreadId, log_id: usize) {
     trace!("Send AdvanceReplica IPI for {} to {}", log_id, gtid);
-    let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid as usize].apic_id();
+    let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid as usize].hwid;
 
     enqueue(gtid, WorkItem::AdvanceReplica(log_id));
-    send_ipi_to_apic(apic_id);
+    send_ipi_to_apic(apic_id.into());
 }

@@ -13,8 +13,8 @@ use core::alloc::Layout;
 use core::slice;
 
 use crate::arch::memory::BASE_PAGE_SIZE;
+use crate::arch::process::STACK_ALIGNMENT;
 
-pub(crate) const STACK_ALIGNMENT: usize = 16;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct StackPointer(*mut usize);

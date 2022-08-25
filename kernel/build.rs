@@ -34,11 +34,11 @@ fn main() {
     }
 
     if std::env::consts::OS == "linux" && env::var("TARGET").unwrap() == "aarch64-nrk" {
-        cc::Build::new()
-            .pic(true)
-            .warnings(true)
-            //.cargo_metadata(false)
-            .compile("nrk_asm");
+        // cc::Build::new()
+        //     .pic(true)
+        //     .warnings(true)
+        //     //.cargo_metadata(false)
+        //     .compile("nrk_asm");
     }
 
     let output = Command::new("git")

@@ -15,23 +15,20 @@ resolver = "2"
 
 [dependencies]
 # Our own dependencies:
-apic = { path = "../lib/apic/" }
 node-replication = { path = "../lib/node-replication/nr" } #"0.1.1"
 cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 rpc = { path = "../lib/rpc", optional = true }
-vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-x86 = { version = "0.52", features = ["unstable"] }
-klogger = "0.0.16"
-driverkit = "0.21"
+klogger = {git = "https://github.com/achreto/rust-klogger"}
+driverkit = { git = "https://github.com/gz/rust-driverkit", branch = "dev/aarch64" }
 spin = "0.9.1"
 elfloader = "0.14"
-slabmalloc = "0.10"
-backtracer_core = "0.0.7"
-rawtime = "0.0.10"
+slabmalloc = { git = "https://github.com/achreto/rust-slabmalloc" }
+backtracer_core = { git = "https://github.com/achreto/backtracer" }
 libacpica = "0.0.8"
-atopology = "0.0.33"
+atopology = { git = "https://github.com/achreto/rust-topology" }
+
 # External libraries we use:
 log = "0.4"
 displaydoc = { version = "0.2", default-features = false }
@@ -60,13 +57,15 @@ smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "
 # Arch Specific Dependencies for x86_64 Targets
 # -------------------------------------------------------------------------------------------------
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86 = { version = "0.51", features = ["unstable"] }
-
+x86 = { version = "0.52", features = ["unstable"] }
+apic = { path = "../lib/apic/" }
+vmxnet3 = { path = "../lib/vmxnet3" }
+rawtime = "0.0.9"
 
 # Arch Specific Dependencies for aarch64 Targets
 # -------------------------------------------------------------------------------------------------
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-armv8 = { path = "../lib/armv8" }
+armv8 = { git = "https://github.com/achreto/rust-armv8" }
 
 [[bin]]
 name = "nrk"

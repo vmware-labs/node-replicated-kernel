@@ -432,7 +432,7 @@ pub(super) fn boot_app_cores(
 
         unsafe {
             initialize(
-                thread.apic_id(),
+                thread.hwid.into(),
                 super::start_app_core,
                 arg.clone(),
                 &initialized,
@@ -449,7 +449,7 @@ pub(super) fn boot_app_cores(
 
                 // Have we waited long enough?
                 if start.elapsed().as_secs() > 1 {
-                    panic!("Core {:?} didn't boot properly...", thread.apic_id());
+                    panic!("Core {:?} didn't boot properly...", thread.hw_id_raw());
                 }
 
                 core::hint::spin_loop();
@@ -458,7 +458,7 @@ pub(super) fn boot_app_cores(
         core::mem::forget(coreboot_stack);
 
         assert!(initialized.load(Ordering::SeqCst));
-        debug!("Core {:?} has started", thread.apic_id());
+        debug!("Core {:?} has started", thread.hw_id_raw());
         pcm.set_mem_affinity(0).expect("Can't set affinity");
     }
 

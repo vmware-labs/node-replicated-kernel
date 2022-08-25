@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use core::cmp::{Eq, PartialEq};
 
 use proptest::prelude::*;
+use x86::current::paging::PTFlags;
 
 use crate::error::KError;
 use crate::memory::vspace_model::ModelAddressSpace;
@@ -128,4 +129,17 @@ proptest! {
             }
         }
     }
+}
+
+/// map_frame should allow increase of mapping
+#[test]
+fn from_ptflags() {
+    let ru = PTFlags::P | PTFlags::US | PTFlags::XD;
+    let ma: MapAction = ru.into();
+    assert_eq!(ma, MapAction::ReadUser);
+
+    let rk = PTFlags::XD | PTFlags::P;
+    assert_ne!(ru, rk);
+    let ma: MapAction = rk.into();
+    assert_eq!(ma, MapAction::ReadKernel);
 }

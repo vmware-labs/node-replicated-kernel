@@ -8,7 +8,6 @@ use core::fmt;
 
 use crate::error::KError;
 use bit_field::BitField;
-use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 
 use super::{Frame, PAddr, VAddr};
 
@@ -199,23 +198,6 @@ pub(crate) enum MapAction {
 }
 
 impl MapAction {
-    /// Transform MapAction into rights for 1 GiB page.
-    pub(crate) fn to_pdpt_rights(self) -> PDPTFlags {
-        use MapAction::*;
-        match self {
-            None => PDPTFlags::empty(),
-            ReadUser => PDPTFlags::XD | PDPTFlags::US,
-            ReadKernel => PDPTFlags::XD,
-            ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
-            ReadWriteUserNoCache => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
-            ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
-            ReadExecuteUser => PDPTFlags::US,
-            ReadExecuteKernel => PDPTFlags::empty(),
-            ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
-            ReadWriteExecuteKernel => PDPTFlags::RW,
-        }
-    }
-
     pub(crate) fn is_readable(&self) -> bool {
         *self != MapAction::None
     }
@@ -238,150 +220,6 @@ impl MapAction {
             self,
             ReadExecuteUser | ReadExecuteKernel | ReadWriteExecuteUser | ReadWriteExecuteKernel
         )
-    }
-
-    /// Transform MapAction into rights for 2 MiB page.
-    pub(crate) fn to_pd_rights(self) -> PDFlags {
-        use MapAction::*;
-        match self {
-            None => PDFlags::empty(),
-            ReadUser => PDFlags::XD | PDFlags::US,
-            ReadKernel => PDFlags::XD,
-            ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
-            ReadWriteUserNoCache => PDFlags::RW | PDFlags::XD | PDFlags::US,
-            ReadWriteKernel => PDFlags::RW | PDFlags::XD,
-            ReadExecuteUser => PDFlags::US,
-            ReadExecuteKernel => PDFlags::empty(),
-            ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
-            ReadWriteExecuteKernel => PDFlags::RW,
-        }
-    }
-
-    /// Transform MapAction into rights for 4KiB page.
-    pub(crate) fn to_pt_rights(self) -> PTFlags {
-        use MapAction::*;
-        match self {
-            None => PTFlags::empty(),
-            ReadUser => PTFlags::XD | PTFlags::US,
-            ReadKernel => PTFlags::XD,
-            ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
-            ReadWriteUserNoCache => PTFlags::RW | PTFlags::XD | PTFlags::US,
-            ReadWriteKernel => PTFlags::RW | PTFlags::XD,
-            ReadExecuteUser => PTFlags::US,
-            ReadExecuteKernel => PTFlags::empty(),
-            ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
-            ReadWriteExecuteKernel => PTFlags::RW,
-        }
-    }
-}
-
-impl From<PTFlags> for MapAction {
-    fn from(f: PTFlags) -> MapAction {
-        use MapAction::*;
-        let irrelevant_bits: PTFlags =
-            PTFlags::PWT | PTFlags::A | PTFlags::D | PTFlags::G | PTFlags::PWT;
-
-        let mut cleaned = f;
-        cleaned.remove(irrelevant_bits);
-
-        // Ugly if else (due to https://github.com/bitflags/bitflags/issues/201)
-        if cleaned == PTFlags::P | PTFlags::US | PTFlags::XD {
-            MapAction::ReadUser
-        } else if cleaned == PTFlags::XD | PTFlags::P {
-            MapAction::ReadKernel
-        } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::US | PTFlags::P | PTFlags::PCD {
-            ReadWriteUserNoCache
-        } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::US | PTFlags::P {
-            ReadWriteUser
-        } else if cleaned == PTFlags::RW | PTFlags::XD | PTFlags::P {
-            ReadWriteKernel
-        } else if cleaned == PTFlags::US | PTFlags::P {
-            ReadExecuteUser
-        } else if cleaned == PTFlags::RW | PTFlags::US | PTFlags::P {
-            ReadWriteExecuteUser
-        } else if cleaned == PTFlags::RW | PTFlags::P {
-            ReadWriteExecuteKernel
-        } else if cleaned == PTFlags::P {
-            ReadExecuteKernel
-        } else {
-            None
-        }
-    }
-}
-
-impl From<PDFlags> for MapAction {
-    fn from(f: PDFlags) -> MapAction {
-        use MapAction::*;
-
-        let irrelevant_bits =
-            PDFlags::PWT | PDFlags::A | PDFlags::D | PDFlags::PS | PDFlags::G | PDFlags::PAT;
-
-        let mut cleaned = f;
-        cleaned.remove(irrelevant_bits);
-
-        // Ugly if else (due to https://github.com/bitflags/bitflags/issues/201)
-        if cleaned == PDFlags::P | PDFlags::US | PDFlags::XD {
-            MapAction::ReadUser
-        } else if cleaned == PDFlags::XD | PDFlags::P {
-            MapAction::ReadKernel
-        } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::US | PDFlags::P | PDFlags::PCD {
-            ReadWriteUserNoCache
-        } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::US | PDFlags::P {
-            ReadWriteUser
-        } else if cleaned == PDFlags::RW | PDFlags::XD | PDFlags::P {
-            ReadWriteKernel
-        } else if cleaned == PDFlags::US | PDFlags::P {
-            ReadExecuteUser
-        } else if cleaned == PDFlags::RW | PDFlags::US | PDFlags::P {
-            ReadWriteExecuteUser
-        } else if cleaned == PDFlags::RW | PDFlags::P {
-            ReadWriteExecuteKernel
-        } else if cleaned == PDFlags::P {
-            ReadExecuteKernel
-        } else {
-            None
-        }
-    }
-}
-
-impl From<PDPTFlags> for MapAction {
-    fn from(f: PDPTFlags) -> MapAction {
-        use MapAction::*;
-
-        let irrelevant_bits: PDPTFlags = PDPTFlags::PWT
-            | PDPTFlags::A
-            | PDPTFlags::D
-            | PDPTFlags::PS
-            | PDPTFlags::G
-            | PDPTFlags::PAT;
-
-        let mut cleaned = f;
-        cleaned.remove(irrelevant_bits);
-
-        // Ugly if else (due to https://github.com/bitflags/bitflags/issues/201)
-        if cleaned == PDPTFlags::P | PDPTFlags::US | PDPTFlags::XD {
-            MapAction::ReadUser
-        } else if cleaned == PDPTFlags::XD | PDPTFlags::P {
-            MapAction::ReadKernel
-        } else if cleaned
-            == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US | PDPTFlags::P | PDPTFlags::PCD
-        {
-            ReadWriteUserNoCache
-        } else if cleaned == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US | PDPTFlags::P {
-            ReadWriteUser
-        } else if cleaned == PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::P {
-            ReadWriteKernel
-        } else if cleaned == PDPTFlags::US | PDPTFlags::P {
-            ReadExecuteUser
-        } else if cleaned == PDPTFlags::RW | PDPTFlags::US | PDPTFlags::P {
-            ReadWriteExecuteUser
-        } else if cleaned == PDPTFlags::RW | PDPTFlags::P {
-            ReadWriteExecuteKernel
-        } else if cleaned == PDPTFlags::P {
-            ReadExecuteKernel
-        } else {
-            None
-        }
     }
 }
 

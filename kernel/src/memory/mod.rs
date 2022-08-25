@@ -45,9 +45,7 @@ pub mod vspace_model;
 #[cfg(target_os = "none")]
 #[global_allocator]
 static MEM_PROVIDER: KernelAllocator = KernelAllocator {
-    big_objects_sbrk: AtomicU64::new(
-        KERNEL_BASE + (2048 * x86::bits64::paging::HUGE_PAGE_SIZE) as u64,
-    ),
+    big_objects_sbrk: AtomicU64::new(KERNEL_BASE + (2048u64 * 1024u64 * 1024u64 * 1024u64)),
 };
 
 /// Different types of allocator that the KernelAllocator can use.

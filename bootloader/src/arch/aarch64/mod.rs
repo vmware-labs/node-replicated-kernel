@@ -6,8 +6,8 @@ use core::arch::global_asm;
 pub mod cpu;
 mod vspace;
 
-pub use armv8::aarch64::vm::granule4k::*;
 use armv8::aarch64::registers::Currentel;
+pub use armv8::aarch64::vm::granule4k::*;
 
 pub use vspace::VSpaceAArch64 as VSpace;
 

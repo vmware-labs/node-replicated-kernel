@@ -1,8 +1,6 @@
 //! Implementation of a model vspace (for testing/model checking)
 use core::iter::Iterator;
 
-use x86::current::paging::PTFlags;
-
 use super::vspace::*;
 use crate::error::KError;
 use crate::memory::{Frame, PAddr, VAddr, BASE_PAGE_SIZE};
@@ -296,19 +294,6 @@ fn model_bug_already_mapped3() {
     let _ret = a
         .map_frame(va, frame, MapAction::ReadUser)
         .expect_err("Could map frame?");
-}
-
-/// map_frame should allow increase of mapping
-#[test]
-fn from_ptflags() {
-    let ru = PTFlags::P | PTFlags::US | PTFlags::XD;
-    let ma: MapAction = ru.into();
-    assert_eq!(ma, MapAction::ReadUser);
-
-    let rk = PTFlags::XD | PTFlags::P;
-    assert_ne!(ru, rk);
-    let ma: MapAction = rk.into();
-    assert_eq!(ma, MapAction::ReadKernel);
 }
 
 #[test]

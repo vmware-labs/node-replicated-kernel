@@ -12,7 +12,7 @@ use alloc::boxed::Box;
 use core::alloc::Layout;
 use core::slice;
 
-use x86::bits64::paging::BASE_PAGE_SIZE;
+use crate::arch::memory::BASE_PAGE_SIZE;
 
 pub(crate) const STACK_ALIGNMENT: usize = 16;
 

@@ -37,7 +37,8 @@ can install both build and run dependencies by executing `setup.sh` in the root
 of the repository directly on your machine (*this requires the latest Ubuntu
 LTS*). The script will install all required OS packages, [install Rust using
 `rustup`](https://rustup.rs/) and some additional rust programs and
-dependencies.
+dependencies. To run rackscale integration tests, you will also have to install
+the [DCM-based scheduler dependencies](https://github.com/hunhoffe/nrk-dcm-scheduler).
 
 The build dependencies can be divided into these categories
 

@@ -94,6 +94,15 @@ vmxnet3. virtio and e1000 are available by using the respective rumpkernel
 drivers (and it's network stack). vmxnet3 is a standalone implementation that
 uses `smoltcp` for the network stack and is also capable of running in ring 0.
 
+### Network Setup
+
+The integration tests that run multiple instances of nrk require
+bridged tap interfaces. For those integration tests, the test framework calls
+run.py with the `--network-only` flag which will destroy existing conflicting
+tap interfaces and create new tap interface(s) for the test based on the
+number of hosts in the test. Then, to run the nrk instances, run.py is invoked
+with the `--no-network-setup` flag.
+
 ### Ping
 
 A simple check is to use ping (on the host) to test the network stack

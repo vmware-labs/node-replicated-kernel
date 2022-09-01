@@ -15,7 +15,6 @@ use core::slice;
 use crate::arch::memory::BASE_PAGE_SIZE;
 use crate::arch::process::STACK_ALIGNMENT;
 
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct StackPointer(*mut usize);
 

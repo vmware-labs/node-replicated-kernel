@@ -28,6 +28,7 @@ slabmalloc = { git = "https://github.com/achreto/rust-slabmalloc" }
 backtracer_core = { git = "https://github.com/achreto/backtracer" }
 libacpica = "0.0.8"
 atopology = { git = "https://github.com/achreto/rust-topology" }
+rawtime = { git = "https://github.com/achreto/rust-rawtime" }
 
 # External libraries we use:
 log = "0.4"
@@ -60,7 +61,6 @@ smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "
 x86 = { version = "0.52", features = ["unstable"] }
 apic = { path = "../lib/apic/" }
 vmxnet3 = { path = "../lib/vmxnet3" }
-rawtime = "0.0.9"
 
 # Arch Specific Dependencies for aarch64 Targets
 # -------------------------------------------------------------------------------------------------

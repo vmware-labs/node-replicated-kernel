@@ -12,6 +12,7 @@ pub mod kcb;
 pub mod memory;
 pub mod process;
 pub mod signals;
+pub mod timer;
 pub mod vspace;
 
 pub(crate) const MAX_NUMA_NODES: usize = 12;

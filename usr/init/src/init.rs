@@ -74,8 +74,23 @@ fn alloc_test() {
 }
 
 fn alloc_physical_test() {
-    let frame = vibrio::syscalls::PhysicalMemory::allocate_base_page();
-    info!("frame was {:?}", frame);
+    use x86::bits32::paging::BASE_PAGE_SIZE;
+
+    let (frame_id, base) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
+        .expect("Failed to get physical memory base page");
+    info!("base frame id={:?}, paddr={:?}", frame_id, base);
+
+    unsafe {
+        vibrio::syscalls::VSpace::map_frame(frame_id, base.as_u64())
+            .expect("Failed to map base page");
+        let slice: &mut [u8] = from_raw_parts_mut(base.as_u64() as *mut u8, BASE_PAGE_SIZE);
+        for i in slice.iter_mut() {
+            *i = 0xb;
+        }
+        assert_eq!(slice[99], 0xb);
+    }
+
+    info!("phys_alloc_test OK");
 }
 
 fn scheduler_smp_test() {

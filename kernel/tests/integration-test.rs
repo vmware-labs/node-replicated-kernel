@@ -3369,3 +3369,25 @@ fn s06_pmem_alloc() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
+
+/// Tests that basic physical allocation support is functional.
+#[test]
+fn s06_phys_alloc() {
+    let build = BuildArgs::default()
+        .module("init")
+        .user_feature("test-phys-alloc")
+        .release()
+        .build();
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build).timeout(20_000);
+    let mut output = String::new();
+
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        output += p.exp_string("phys_alloc_test OK")?.as_str();
+        output += p.exp_eof()?.as_str();
+        p.process.exit()
+    };
+
+    check_for_successful_exit(&cmdline, qemu_run(), output);
+}

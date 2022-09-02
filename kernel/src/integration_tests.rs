@@ -702,7 +702,7 @@ fn vmxnet_smoltcp() {
     let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 4096]);
     let tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 
-    let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xdc]);
+    let ethernet_addr = EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0]);
     let ip_addrs = [IpCidr::new(IpAddress::v4(172, 31, 0, 10), 24)];
 
     // Create SocketSet w/ space for 1 socket

@@ -25,6 +25,7 @@ from plumbum.commands import ProcessExecutionError
 
 from plumbum.cmd import whoami, python3, cat, getent, whoami, cargo
 
+
 def exception_handler(exception_type, exception, traceback):
     print("%s: %s" % (exception_type.__name__, exception))
 
@@ -34,19 +35,26 @@ def exception_handler(exception_type, exception, traceback):
 #
 SCRIPT_PATH = pathlib.Path(os.path.dirname(os.path.realpath(__file__)))
 CARGO_DEFAULT_ARGS = ["--color", "always"]
-CARGO_NOSTD_BUILD_ARGS = ["-Z", "build-std=core,alloc", "-Z", "build-std-features=compiler-builtins-mem"]
+CARGO_NOSTD_BUILD_ARGS = ["-Z", "build-std=core,alloc",
+                          "-Z", "build-std-features=compiler-builtins-mem"]
 ARCH = "x86_64"
 
-NETWORK_CONFIG = {
-    'tap0': {
-        'mid': 0,
-        'mac': '56:b4:44:e9:62:dc',
-    },
-    'tap2': {
-        'mid': 1,
-        'mac': '56:b4:44:e9:62:dd',
-    },
-}
+
+def get_network_config(workers):
+    """
+    Returns a list of network configurations for the workers.
+    """
+    config = {}
+    for i in range(workers):
+        config['tap{}'.format(2*i)] = {
+            'mid': i,
+            'mac': '56:b4:44:e9:62:d{:x}'.format(i),
+        }
+    return config
+
+
+MAX_WORKERS = 16
+NETWORK_CONFIG = get_network_config(MAX_WORKERS)
 NETWORK_INFRA_IP = '172.31.0.20/24'
 
 DCM_SCHEDULER_VERSION = "1.1.2"
@@ -145,13 +153,13 @@ subparser = parser.add_subparsers(help='Advanced network configuration')
 # Network setup parser
 parser_net = subparser.add_parser('net', help='Network setup')
 parser_net.add_argument('--workers', type=int, required=False, default=0,
-                            help='Setup `n` workers connected to one controller.')
+                        help='Setup `n` workers connected to one controller.')
 
 parser_net_mut = parser_net.add_mutually_exclusive_group(required=False)
 parser_net_mut.add_argument("--network-only", action="store_true", default=False,
-                    help="Setup network only.")
+                            help="Setup network only.")
 parser_net_mut.add_argument("--no-network-setup", action="store_true", default=False,
-                    help="Setup network.")
+                            help="Setup network.")
 
 NRK_EXIT_CODES = {
     0: "[SUCCESS]",
@@ -291,7 +299,7 @@ def deploy(args):
 
         # Deploy kernel
         shutil.copy2(uefi_build_path / 'bootloader.efi',
-                    esp_boot_path / 'BootX64.efi')
+                     esp_boot_path / 'BootX64.efi')
 
     # Append globally unique machine id to cmd (for rackscale)
     if args.cmd and NETWORK_CONFIG[args.tap]['mid'] != None:
@@ -688,6 +696,8 @@ def configure_network(args):
     """
     from plumbum.cmd import sudo, tunctl, ifconfig, ip, brctl
 
+    assert args.workers <= MAX_WORKERS, "Too many workers, can't configure network"
+
     user = (whoami)().strip()
     group = (local['id']['-gn'])().strip()
 
@@ -716,6 +726,7 @@ def configure_network(args):
             sudo[brctl[['addif', 'br0', ncfg]]]()
         sudo[ip[['link', 'set', 'br0', 'up']]](retcode=(0, 1))
 
+
 def configure_dcm_scheduler(args):
     """
     Set up the DCM jar, fetch if configured version isn't present
@@ -729,7 +740,8 @@ def configure_dcm_scheduler(args):
 
     # If not given in argument, use specific version of DCM jar
     if args.dcm_path == None:
-        dcm_jar = "scheduler-{}-jar-with-dependencies.jar".format(DCM_SCHEDULER_VERSION)
+        dcm_jar = "scheduler-{}-jar-with-dependencies.jar".format(
+            DCM_SCHEDULER_VERSION)
         dcm_path = os.path.join(jar_dir, dcm_jar)
 
         # Download jar if necessary
@@ -741,6 +753,7 @@ def configure_dcm_scheduler(args):
     if os.path.exists(symlink_jar_path) or os.path.islink(symlink_jar_path):
         os.unlink(symlink_jar_path)
     os.symlink(dcm_path, symlink_jar_path)
+
 
 #
 # Main routine of run.py

@@ -936,7 +936,7 @@ fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
 ///
 /// Uses target/dcm-scheduler.jar that is set up by run.py
 /// -r => number of requests per solve
-fn spawn_dcm(r: usize) -> Result<rexpect::session::PtyReplSession> {
+fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSession> {
     use std::fs::remove_file;
 
     // Remove existing DCM log file
@@ -948,16 +948,14 @@ fn spawn_dcm(r: usize) -> Result<rexpect::session::PtyReplSession> {
     dcm_args.push(format!("{}", r));
 
     // Start DCM
-    let mut b = spawn_bash(Some(45_000))?;
-    b.send_line(
-        format!(
-            "java -jar ../target/dcm-scheduler.jar {} > {}",
-            dcm_args.join(" "),
-            file_name
-        )
-        .as_str(),
-    )
-    .unwrap();
+    let cmd = format!(
+        "java -jar ../target/dcm-scheduler.jar {} > {}",
+        dcm_args.join(" "),
+        file_name
+    );
+    eprintln!("Invoke DCM: {}", cmd);
+    let mut b = spawn_bash(Some(timeout))?;
+    b.send_line(&cmd)?;
     Ok(b)
 }
 
@@ -1701,6 +1699,7 @@ fn exokernel_fs_test(is_shmem: bool) {
     setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     setup_network(2);
+    let timeout = 30_000;
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -1723,7 +1722,7 @@ fn exokernel_fs_test(is_shmem: bool) {
             "mode=controller transport=ethernet"
         };
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(30_000)
+            .timeout(timeout)
             .cmd(controller_cmd)
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
@@ -1733,7 +1732,7 @@ fn exokernel_fs_test(is_shmem: bool) {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm(1)?;
+            let mut dcm = spawn_dcm(1, timeout)?;
             let mut p = spawn_nrk(&cmdline_controller)?;
 
             //output += p.exp_string("Finished sending requests!")?.as_str();
@@ -1756,7 +1755,7 @@ fn exokernel_fs_test(is_shmem: bool) {
             "mode=client transport=ethernet"
         };
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-            .timeout(30_000)
+            .timeout(timeout)
             .cmd(client_cmd)
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
@@ -1804,6 +1803,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
     setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     setup_network(2);
+    let timeout = 30_000;
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -1826,7 +1826,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
             "mode=controller transport=ethernet"
         };
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(30_000)
+            .timeout(timeout)
             .cmd(controller_cmd)
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
@@ -1836,7 +1836,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm(1)?;
+            let mut dcm = spawn_dcm(1, timeout)?;
             let mut p = spawn_nrk(&cmdline_controller)?;
 
             output += p.exp_string("Created DCM UDP socket!")?.as_str();
@@ -1860,7 +1860,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
             "mode=client transport=ethernet"
         };
         let cmdline_client = RunnerArgs::new_with_build("dcm", &build2)
-            .timeout(30_000)
+            .timeout(timeout)
             .cmd(client_cmd)
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
@@ -1900,6 +1900,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
     setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     setup_network(2);
+    let timeout = 180_000;
 
     let build = Arc::new(
         BuildArgs::default()
@@ -1913,7 +1914,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
     let build1 = build.clone();
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(180_000)
+            .timeout(timeout)
             .cmd("mode=controller")
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
@@ -1923,7 +1924,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm(1)?;
+            let mut dcm = spawn_dcm(1, timeout)?;
             let mut p = spawn_nrk(&cmdline_controller)?;
             //output += p.exp_string("Finished sending requests!")?.as_str();
             output += p.exp_eof()?.as_str();
@@ -1939,7 +1940,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
     let client = std::thread::spawn(move || {
         sleep(Duration::from_millis(5_000));
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-            .timeout(180_000)
+            .timeout(timeout)
             .cmd("mode=client")
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
@@ -1960,6 +1961,90 @@ fn s03_shmem_exokernel_fs_prop_test() {
 
     controller.join().unwrap();
     client.join().unwrap();
+
+    let _ignore = remove_file(SHMEM_PATH);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_shmem_multiinstance() {
+    use std::fs::remove_file;
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let timeout = 60_000;
+    let clients = 1;
+    let mut processes = Vec::with_capacity(clients + 1);
+
+    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+    setup_network(clients + 1);
+
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-print")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    let controller_build = build.clone();
+    let controller = std::thread::spawn(move || {
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
+            .timeout(timeout)
+            .cmd("mode=controller")
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap0")
+            .no_network_setup()
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm(1, timeout)?;
+            let mut p = spawn_nrk(&cmdline_controller)?;
+            //output += p.exp_string("Finished sending requests!")?.as_str();
+            output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+    processes.push(controller);
+
+    for i in 1..=clients {
+        let tap = format!("tap{}", 2 * i);
+        let client_build = build.clone();
+        let client = std::thread::spawn(move || {
+            sleep(Duration::from_millis(5_000));
+            let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
+                .timeout(timeout)
+                .cmd("mode=client")
+                .shmem_size(SHMEM_SIZE as usize)
+                .shmem_path(SHMEM_PATH)
+                .tap(&tap)
+                .no_network_setup()
+                .use_vmxnet3();
+
+            let mut output = String::new();
+            let mut qemu_run = || -> Result<WaitStatus> {
+                let mut p = spawn_nrk(&cmdline_client)?;
+                output += p.exp_string("print_test OK")?.as_str();
+                output += p.exp_eof()?.as_str();
+                p.process.exit()
+            };
+
+            check_for_successful_exit(&cmdline_client, qemu_run(), output);
+        });
+        processes.push(client);
+    }
+
+    for p in processes {
+        p.join().unwrap();
+    }
 
     let _ignore = remove_file(SHMEM_PATH);
 }
@@ -2813,6 +2898,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
     };
 
     setup_network(2);
+    let timeout = 180_000;
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -2858,7 +2944,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
             let build1 = build.clone();
             let controller = std::thread::spawn(move || {
                 let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-                    .timeout(40_000)
+                    .timeout(timeout)
                     .cmd(&controller_cmdline)
                     .shmem_size(SHMEM_SIZE as usize)
                     .shmem_path(SHMEM_PATH)
@@ -2876,7 +2962,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
 
                 let mut output = String::new();
                 let mut qemu_run = || -> Result<WaitStatus> {
-                    let mut dcm = spawn_dcm(1)?;
+                    let mut dcm = spawn_dcm(1, timeout)?;
                     let mut p = spawn_nrk(&cmdline_controller)?;
                     output += p.exp_eof()?.as_str();
 
@@ -2891,7 +2977,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
             let client = std::thread::spawn(move || {
                 sleep(Duration::from_millis(15_000));
                 let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
-                    .timeout(180_000)
+                    .timeout(timeout)
                     .shmem_size(SHMEM_SIZE as usize)
                     .shmem_path(SHMEM_PATH)
                     .tap("tap2")

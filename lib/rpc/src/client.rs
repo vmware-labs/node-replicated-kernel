@@ -35,8 +35,12 @@ impl RPCClient for Client {
         self.transport.client_connect()?;
 
         // TODO: this is a dummy filler for an actual registration function
-        self.call(self.client_id as usize, 0_u8, &[], &mut [])
-            .unwrap();
+        let pid = if self.client_id == 0 {
+            0
+        } else {
+            (self.client_id - 1) as usize
+        };
+        self.call(pid, 0_u8, &[], &mut []).unwrap();
         Ok(self.client_id)
     }
 

@@ -97,6 +97,7 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
 pub(crate) fn init_ethernet_rpc(
     server_ip: smoltcp::wire::IpAddress,
     server_port: u16,
+    machine_id: u8,
 ) -> KResult<alloc::boxed::Box<rpc::client::Client>> {
     use alloc::boxed::Box;
     use rpc::client::Client;
@@ -108,7 +109,7 @@ pub(crate) fn init_ethernet_rpc(
         server_port,
         Arc::clone(&ETHERNET_IFACE),
     ))?;
-    let mut client = Box::try_new(Client::new(rpc_transport))?;
+    let mut client = Box::try_new(Client::new(rpc_transport, machine_id))?;
     client.connect()?;
     Ok(client)
 }

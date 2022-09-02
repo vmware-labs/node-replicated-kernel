@@ -135,7 +135,7 @@ pub(crate) fn init_shmem_rpc(machine_id: u8) -> KResult<alloc::boxed::Box<rpc::c
     let transport = Box::try_new(create_shmem_transport(machine_id)?)?;
 
     // Create the client
-    let mut client = Box::try_new(Client::new(transport))?;
+    let mut client = Box::try_new(Client::new(transport, machine_id))?;
     client.connect()?;
     Ok(client)
 }

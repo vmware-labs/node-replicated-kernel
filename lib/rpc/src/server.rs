@@ -99,8 +99,6 @@ impl<'a> RPCServer<'a> for Server<'a> {
 
         // Send response
         self.reply()?;
-
-        // Single client server, so all client IDs are 0
         Ok(client_id)
     }
 

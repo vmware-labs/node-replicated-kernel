@@ -69,10 +69,12 @@ pub(crate) fn run() {
         unreachable!("No supported transport layer specified in kernel argument");
     }
 
-    let mut server = &mut servers[0];
+    for mut server in servers.iter_mut() {
+        register_rpcs(&mut server);
+        server.add_client(&CLIENT_REGISTRAR).unwrap();
+    }
 
-    register_rpcs(&mut server);
-    server.add_client(&CLIENT_REGISTRAR).unwrap();
+    let mut server = &mut servers[0];
 
     // Start running the RPC server
     log::info!("Starting RPC server!");

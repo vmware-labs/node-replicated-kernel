@@ -18,10 +18,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new<T: 'static + Transport + Send>(transport: Box<T>) -> Client {
+    pub fn new<T: 'static + Transport + Send>(transport: Box<T>, machine_id: u8) -> Client {
         Client {
             transport,
-            client_id: 0,
+            client_id: machine_id as u64,
             req_id: 0,
             hdr: UnsafeCell::new(RPCHeader::default()),
         }
@@ -35,7 +35,8 @@ impl RPCClient for Client {
         self.transport.client_connect()?;
 
         // TODO: this is a dummy filler for an actual registration function
-        self.call(0, 0_u8, &[], &mut []).unwrap();
+        self.call(self.client_id as usize, 0_u8, &[], &mut [])
+            .unwrap();
         Ok(self.client_id)
     }
 
@@ -64,7 +65,7 @@ impl RPCClient for Client {
         self.transport.recv_msg(hdr, data_out)?;
 
         // Check request & client IDs, and also length of received data
-        if hdr.client_id != self.client_id || hdr.req_id != self.req_id {
+        if self.client_id != 0 && hdr.client_id + 1 != self.client_id || hdr.req_id != self.req_id {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",
                 hdr.client_id, self.client_id, hdr.req_id, self.req_id

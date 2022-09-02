@@ -44,6 +44,7 @@ sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE
 #[thread_local]
 pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
     // Create network stack and instantiate RPC Client
+    let machine_id = crate::CMDLINE.get().map_or(0, |c| c.machine_id);
     return if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
@@ -52,12 +53,12 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
             crate::transport::ethernet::init_ethernet_rpc(
                 smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
                 6970,
+                machine_id,
             )
             .expect("Failed to initialize ethernet RPC"),
         )
     } else {
         // Default is Shmem, even if transport unspecified
-        let machine_id = crate::CMDLINE.get().map_or(0, |c| c.machine_id);
         Mutex::new(
             crate::transport::shmem::init_shmem_rpc(machine_id)
                 .expect("Failed to initialize shmem RPC"),
@@ -92,6 +93,7 @@ pub(crate) fn register_client(
         cores,
         memslices
     );
+    hdr.client_id = node_id;
     Ok(node_id)
 }
 
@@ -119,12 +121,12 @@ pub(crate) fn register_pid(remote_pid: usize) -> Result<usize, KError> {
                         // TODO: register pid
                         let mut pmap = PID_MAP.write();
                         pmap.try_reserve(1)?;
-                        pmap.try_insert(remote_pid, local_pid)
-                            .map_err(|_e| KError::FileDescForPidAlreadyAdded)?;
                         debug!(
                             "Mapped remote pid {} to local pid {}",
                             remote_pid, local_pid
                         );
+                        pmap.try_insert(remote_pid, local_pid)
+                            .map_err(|_e| KError::FileDescForPidAlreadyAdded)?;
                         Ok(local_pid)
                     }
                     Err(err) => {

@@ -94,7 +94,7 @@ impl DCMInterface {
         log::info!("Created DCM UDP socket!");
 
         // Create RPC client connecting to DCM
-        let client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970).unwrap();
+        let client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970, 0).unwrap();
         log::info!("Created DCM RPC client!");
 
         // Create shmem memory manager

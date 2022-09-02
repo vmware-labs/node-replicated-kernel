@@ -54,6 +54,10 @@ const MEMASLAP_BINARY: &str = "memaslap";
 /// Binary of the redis benchmark program
 const REDIS_BENCHMARK: &str = "redis-benchmark";
 
+/// Shmem related default values
+const SHMEM_PATH: &str = "ivshmem-file";
+const SHMEM_SIZE: u64 = 8;
+
 /// Different ExitStatus codes as returned by NRK.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 enum ExitStatus {
@@ -460,7 +464,7 @@ struct RunnerArgs<'a> {
     /// Enable gdb for the kernel
     kgdb: bool,
     /// shared memory size.
-    ivshmem: usize,
+    shmem_size: usize,
     /// Shared memory file path.
     shmem_path: String,
     /// Tap interface
@@ -493,7 +497,7 @@ impl<'a> RunnerArgs<'a> {
             prealloc: false,
             large_pages: false,
             kgdb: false,
-            ivshmem: 0,
+            shmem_size: 0,
             shmem_path: String::new(),
             tap: None,
             workers: None,
@@ -526,7 +530,7 @@ impl<'a> RunnerArgs<'a> {
             prealloc: false,
             large_pages: false,
             kgdb: false,
-            ivshmem: 0,
+            shmem_size: 0,
             shmem_path: String::new(),
             tap: None,
             workers: None,
@@ -647,8 +651,8 @@ impl<'a> RunnerArgs<'a> {
         self
     }
 
-    fn ivshmem(mut self, mibs: usize) -> RunnerArgs<'a> {
-        self.ivshmem = mibs;
+    fn shmem_size(mut self, mibs: usize) -> RunnerArgs<'a> {
+        self.shmem_size = mibs;
         self
     }
 
@@ -722,9 +726,9 @@ impl<'a> RunnerArgs<'a> {
                     cmd.push(format!("{}", self.pmem));
                 }
 
-                if self.ivshmem > 0 {
+                if self.shmem_size > 0 {
                     cmd.push(String::from("--qemu-ivshmem"));
-                    cmd.push(format!("{}", self.ivshmem));
+                    cmd.push(format!("{}", self.shmem_size));
                 }
 
                 if !self.shmem_path.is_empty() {
@@ -892,6 +896,15 @@ fn setup_network(num_nodes: usize) {
         p.process.exit()
     };
     network_setup().unwrap();
+}
+
+fn setup_shmem(filename: &str, filelen: u64) {
+    use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+    let _ignore = remove_file(&filename);
+    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
+    file.set_len(filelen * 1024 * 1024)
+        .expect("Unable to set file length");
 }
 
 /// Builds the kernel and spawns a qemu instance of it.
@@ -1630,21 +1643,15 @@ fn s03_vmxnet3_smoltcp() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_ivshmem_write_and_read() {
-    use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;
     let build = BuildArgs::default().build();
 
-    let filename = String::from("ivshmem-file");
-    let _ignore = remove_file(&filename);
-    let filelen = 2048;
-    let file =
-        MemFile::create(filename.as_str(), CreateOptions::new()).expect("Unable to create memfile");
-    file.set_len(filelen).expect("Unable to set file length");
+    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     let cmdline = RunnerArgs::new_with_build("cxl-write", &build)
         .timeout(30_000)
-        .ivshmem(filelen as usize / 1024)
-        .shmem_path(&filename);
+        .shmem_size(SHMEM_SIZE as usize)
+        .shmem_path(SHMEM_PATH);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -1657,8 +1664,8 @@ fn s03_ivshmem_write_and_read() {
 
     let cmdline = RunnerArgs::new_with_build("cxl-read", &build)
         .timeout(30_000)
-        .ivshmem(filelen as usize / 1024)
-        .shmem_path(&filename);
+        .shmem_size(SHMEM_SIZE as usize)
+        .shmem_path(SHMEM_PATH);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -1668,7 +1675,7 @@ fn s03_ivshmem_write_and_read() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
-    let _ignore = remove_file(&filename);
+    let _ignore = remove_file(SHMEM_PATH);
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -1685,19 +1692,13 @@ fn s03_ethernet_exokernel_fs_test() {
 
 #[cfg(not(feature = "baremetal"))]
 fn exokernel_fs_test(is_shmem: bool) {
-    use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
     // Setup ivshmem file
-    let filename = "ivshmem-file";
-    let _ignore = remove_file(&filename);
-    let filelen = 8;
-    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
-    file.set_len(filelen * 1024 * 1024)
-        .expect("Unable to set file length");
+    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     setup_network(2);
 
@@ -1724,8 +1725,8 @@ fn exokernel_fs_test(is_shmem: bool) {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(30_000)
             .cmd(controller_cmd)
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
             .use_vmxnet3();
@@ -1757,8 +1758,8 @@ fn exokernel_fs_test(is_shmem: bool) {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(30_000)
             .cmd(client_cmd)
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
             .use_vmxnet3();
@@ -1777,7 +1778,7 @@ fn exokernel_fs_test(is_shmem: bool) {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(&filename);
+    let _ignore = remove_file(SHMEM_PATH);
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -1794,19 +1795,13 @@ fn s03_ethernet_exokernel_dcm_test() {
 
 #[cfg(not(feature = "baremetal"))]
 fn exokernel_dcm_test(is_shmem: bool) {
-    use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
     // Setup ivshmem file
-    let filename = "ivshmem-file";
-    let _ignore = remove_file(&filename);
-    let filelen = 8;
-    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
-    file.set_len(filelen * 1024 * 1024)
-        .expect("Unable to set file length");
+    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     setup_network(2);
 
@@ -1833,8 +1828,8 @@ fn exokernel_dcm_test(is_shmem: bool) {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(30_000)
             .cmd(controller_cmd)
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
             .use_vmxnet3();
@@ -1867,8 +1862,8 @@ fn exokernel_dcm_test(is_shmem: bool) {
         let cmdline_client = RunnerArgs::new_with_build("dcm", &build2)
             .timeout(30_000)
             .cmd(client_cmd)
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
             .use_vmxnet3();
@@ -1890,25 +1885,19 @@ fn exokernel_dcm_test(is_shmem: bool) {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(&filename);
+    let _ignore = remove_file(SHMEM_PATH);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_shmem_exokernel_fs_prop_test() {
-    use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
     // Setup ivshmem file
-    let filename = "ivshmem-file";
-    let _ignore = remove_file(&filename);
-    let filelen = 8;
-    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
-    file.set_len(filelen * 1024 * 1024)
-        .expect("Unable to set file length");
+    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     setup_network(2);
 
@@ -1926,8 +1915,8 @@ fn s03_shmem_exokernel_fs_prop_test() {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(180_000)
             .cmd("mode=controller")
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
             .use_vmxnet3();
@@ -1952,8 +1941,8 @@ fn s03_shmem_exokernel_fs_prop_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(180_000)
             .cmd("mode=client")
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
             .use_vmxnet3();
@@ -1972,7 +1961,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(&filename);
+    let _ignore = remove_file(SHMEM_PATH);
 }
 
 /// Tests the lineup scheduler multi-core ability.
@@ -2809,7 +2798,6 @@ fn s06_ethernet_exokernel_fxmark_benchmark() {
 
 #[cfg(not(feature = "baremetal"))]
 fn exokernel_fxmark_benchmark(is_shmem: bool) {
-    use memfile::{CreateOptions, MemFile};
     use std::thread::sleep;
     use std::time::Duration;
     use std::{fs::remove_file, sync::Arc};
@@ -2851,13 +2839,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
         let open_files: Vec<usize> = open_files(benchmark, 1, 1);
         for &of in open_files.iter() {
             // Set up file for shmem
-            let shmem_file_name = "ivshmem-file";
-            let _ignore = remove_file(file_name);
-            let filelen = 8;
-            let file = MemFile::create(shmem_file_name, CreateOptions::new())
-                .expect("Unable to create memfile");
-            file.set_len(filelen * 1024 * 1024)
-                .expect("Unable to set file length");
+            setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
             let kernel_cmdline = format!(
                 "mode=client transport={} initargs={}X{}X{}",
@@ -2878,8 +2860,8 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                 let mut cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
                     .timeout(40_000)
                     .cmd(&controller_cmdline)
-                    .ivshmem(filelen as usize)
-                    .shmem_path(shmem_file_name)
+                    .shmem_size(SHMEM_SIZE as usize)
+                    .shmem_path(SHMEM_PATH)
                     .tap("tap0")
                     .no_network_setup()
                     .use_vmxnet3();
@@ -2910,8 +2892,8 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                 sleep(Duration::from_millis(15_000));
                 let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                     .timeout(180_000)
-                    .ivshmem(filelen as usize)
-                    .shmem_path(shmem_file_name)
+                    .shmem_size(SHMEM_SIZE as usize)
+                    .shmem_path(SHMEM_PATH)
                     .tap("tap2")
                     .no_network_setup()
                     .use_vmxnet3()
@@ -2974,7 +2956,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
             controller.join().unwrap();
             client.join().unwrap();
 
-            let _ignore = remove_file(&shmem_file_name);
+            let _ignore = remove_file(SHMEM_PATH);
         }
     }
 }

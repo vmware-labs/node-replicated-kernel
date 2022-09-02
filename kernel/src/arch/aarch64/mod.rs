@@ -23,7 +23,9 @@ pub(crate) const MAX_CORES: usize = 192;
 /// Interrupts are enabled before going to sleep.
 pub(crate) fn halt() -> ! {
     unsafe {
-        asm!("wfi");
+        loop {
+            asm!("wfi")
+        }
     }
 }
 

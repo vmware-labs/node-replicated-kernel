@@ -482,7 +482,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     if layout.size() <= BASE_PAGE_SIZE {
                         assert!(layout.align() <= BASE_PAGE_SIZE);
                         let frame = Frame::new(
-                            kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
+                            kernel_vaddr_to_paddr(VAddr::from(ptr as u64)),
                             BASE_PAGE_SIZE,
                             // TODO(numa-correctness): This is not necessarily correct as free can happen
                             // while `physical_memory` changes to different affinities
@@ -508,7 +508,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     } else if layout.size() <= LARGE_PAGE_SIZE {
                         assert!(layout.align() <= LARGE_PAGE_SIZE);
                         let frame = Frame::new(
-                            kernel_vaddr_to_paddr(VAddr::from_u64(ptr as u64)),
+                            kernel_vaddr_to_paddr(VAddr::from(ptr as u64)),
                             LARGE_PAGE_SIZE,
                             // TODO(numa-correctness): This is not necessarily correct as free can happen
                             // while `physical_memory` changes to different affinities

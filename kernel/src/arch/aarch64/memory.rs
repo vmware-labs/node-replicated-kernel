@@ -3,7 +3,6 @@
 
 pub use armv8::aarch64::vm::granule4k::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
-
 // Re-export from the x86 crate
 pub use kpi::{MemType, KERNEL_BASE};
 

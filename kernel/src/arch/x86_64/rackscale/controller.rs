@@ -52,7 +52,10 @@ pub(crate) fn run() {
         use rpc::{server::Server, transport::TCPTransport};
         let transport = Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&ETHERNET_IFACE)))
             .expect("Out of memory during init");
-        servers.push(Box::try_new(Server::new(transport)).expect("Out of memory during init"));
+        let mut server: Box<dyn RPCServer> =
+            Box::try_new(Server::new(transport)).expect("Out of memory during init");
+        register_rpcs(&mut server);
+        servers.push(server);
     } else if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
@@ -63,18 +66,17 @@ pub(crate) fn run() {
                 create_shmem_transport(machine_id).expect("Failed to create shmem transport"),
             )
             .expect("Out of memory during init");
-            servers.push(Box::try_new(Server::new(transport)).expect("Out of memory during init"));
+            let mut server: Box<dyn RPCServer> =
+                Box::try_new(Server::new(transport)).expect("Out of memory during init");
+            register_rpcs(&mut server);
+            servers.push(server);
         }
     } else {
         unreachable!("No supported transport layer specified in kernel argument");
     }
 
-    for mut server in servers.iter_mut() {
-        register_rpcs(&mut server);
-        server.add_client(&CLIENT_REGISTRAR).unwrap();
-    }
-
     let mut server = &mut servers[0];
+    server.add_client(&CLIENT_REGISTRAR).unwrap();
 
     // Start running the RPC server
     log::info!("Starting RPC server!");
@@ -89,7 +91,7 @@ pub(crate) fn run() {
         }
 
         // Try to handle an RPC request
-        let _ = server.try_handle().unwrap();
+        server.try_handle();
     }
 
     // Shutdown

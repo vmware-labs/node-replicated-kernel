@@ -696,8 +696,6 @@ def configure_network(args):
     """
     from plumbum.cmd import sudo, tunctl, ifconfig, ip, brctl
 
-    assert args.workers <= MAX_WORKERS, "Too many workers, can't configure network"
-
     user = (whoami)().strip()
     group = (local['id']['-gn'])().strip()
 
@@ -718,6 +716,7 @@ def configure_network(args):
         sudo[ifconfig[args.tap, NETWORK_INFRA_IP]]()
         sudo[ip[['link', 'set', args.tap, 'up']]](retcode=(0, 1))
     else:
+        assert args.workers <= MAX_WORKERS, "Too many workers, can't configure network"
         sudo[ip[['link', 'add', 'br0', 'type', 'bridge']]]()
         sudo[ip[['addr', 'add', NETWORK_INFRA_IP, 'brd', '+', 'dev', 'br0']]]()
         for _, ncfg in zip(range(0, args.workers), NETWORK_CONFIG):

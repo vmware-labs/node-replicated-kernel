@@ -127,7 +127,7 @@ parser.add_argument("-d", "--qemu-debug-cpu", action="store_true",
                     help="Debug CPU reset (for qemu)")
 parser.add_argument('--nic', default='e1000', choices=["e1000", "virtio-net-pci", "vmxnet3"],
                     help='What NIC model to use for emulation', required=False)
-parser.add_argument('--tap', default='tap0', choices=[f"tap{i}" for i in range(MAX_WORKERS)],
+parser.add_argument('--tap', default='tap0', choices=[f"tap{2*i}" for i in range(MAX_WORKERS)],
                     help='Which tap interface to use from the host', required=False)
 parser.add_argument('--kgdb', action="store_true",
                     help="Use the GDB remote debugger to connect to the kernel")

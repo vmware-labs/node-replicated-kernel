@@ -103,6 +103,12 @@ tap interfaces and create new tap interface(s) for the test based on the
 number of hosts in the test. Then, to run the nrk instances, run.py is invoked
 with the `--no-network-setup` flag.
 
+To setup the network for a single client and server (`--workers clients+server`), run the following command:
+
+```bash
+python3 run.py --kfeatures integration-test --cmd "test=network_only" net --workers 2 --network-only
+```
+
 ### Ping
 
 A simple check is to use ping (on the host) to test the network stack

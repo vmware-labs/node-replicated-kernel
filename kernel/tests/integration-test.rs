@@ -1728,6 +1728,7 @@ fn exokernel_fs_test(is_shmem: bool) {
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
+            .workers(2)
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -1832,6 +1833,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
+            .workers(2)
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -1920,6 +1922,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
+            .workers(2)
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -1974,7 +1977,7 @@ fn s03_shmem_multiinstance() {
     use std::time::Duration;
 
     let timeout = 60_000;
-    let clients = 1;
+    let clients = 4;
     let mut processes = Vec::with_capacity(clients + 1);
 
     setup_shmem(SHMEM_PATH, SHMEM_SIZE);
@@ -1998,6 +2001,7 @@ fn s03_shmem_multiinstance() {
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
+            .workers(clients + 1)
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -2950,6 +2954,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                     .shmem_path(SHMEM_PATH)
                     .tap("tap0")
                     .no_network_setup()
+                    .workers(2)
                     .use_vmxnet3();
 
                 if cfg!(feature = "smoke") {

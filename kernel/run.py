@@ -278,6 +278,10 @@ def deploy(args):
     log("Deploy binaries")
 
     is_client = args.cmd and args.cmd.find("client") != -1
+    is_controller = args.cmd and args.cmd.find("controller") != -1
+
+    if is_controller:
+        assert args.workers - 1 > 0, "Need at least one worker"
 
     # Clean up / create ESP dir structure
     debug_release = 'release' if args.release else 'debug'
@@ -304,6 +308,8 @@ def deploy(args):
     # Append globally unique machine id to cmd (for rackscale)
     if args.cmd and NETWORK_CONFIG[args.tap]['mid'] != None:
         args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
+        if is_controller:
+            args.cmd += " workers={}".format(args.workers - 1)
     # Write kernel cmd-line file in ESP dir
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
         if args.cmd:

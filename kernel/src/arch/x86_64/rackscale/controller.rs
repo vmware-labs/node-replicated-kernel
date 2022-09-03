@@ -21,7 +21,6 @@ use crate::ExitReason;
 use super::*;
 
 const PORT: u16 = 6970;
-const MAX_SHMEM_CLIENTS: u8 = 4;
 
 /// Test TCP RPC-based controller
 pub(crate) fn run() {
@@ -44,7 +43,8 @@ pub(crate) fn run() {
     let clock = Clock::new();
 
     // Initialize the RPC server
-    let mut servers: Vec<Box<dyn RPCServer>> = Vec::with_capacity(MAX_SHMEM_CLIENTS as usize);
+    let workers = crate::CMDLINE.get().map_or(1, |c| c.workers);
+    let mut servers: Vec<Box<dyn RPCServer>> = Vec::with_capacity(workers as usize);
     if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
@@ -61,7 +61,7 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         use crate::transport::shmem::create_shmem_transport;
-        for machine_id in 1..MAX_SHMEM_CLIENTS + 1 {
+        for machine_id in 1..=workers {
             let transport = Box::try_new(
                 create_shmem_transport(machine_id).expect("Failed to create shmem transport"),
             )
@@ -75,8 +75,11 @@ pub(crate) fn run() {
         unreachable!("No supported transport layer specified in kernel argument");
     }
 
-    let mut server = &mut servers[0];
-    server.add_client(&CLIENT_REGISTRAR).unwrap();
+    for server in servers.iter_mut() {
+        server
+            .add_client(&CLIENT_REGISTRAR)
+            .expect("Failed to connect to remote server");
+    }
 
     // Start running the RPC server
     log::info!("Starting RPC server!");
@@ -91,7 +94,9 @@ pub(crate) fn run() {
         }
 
         // Try to handle an RPC request
-        server.try_handle();
+        for server in servers.iter() {
+            server.try_handle();
+        }
     }
 
     // Shutdown

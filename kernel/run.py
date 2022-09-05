@@ -489,7 +489,7 @@ def run_qemu(args):
         # ip link add bridge1 type bridge ; ifconfig bridge1 up
         # TODO: mac address depend or exokernel or no?
         qemu_default_args += ['-netdev', 'bridge,id=bridge1',
-                              '-device', 'vmxnet3,netdev=bridge1,mac=56:b4:44:e9:62:dc,addr=10.0,multifunction=on']
+                              '-device', 'vmxnet3,netdev=bridge1,mac=56:b4:44:e9:62:d0,addr=10.0,multifunction=on']
         qemu_default_args += ['-chardev', 'socket,path=/var/run/rdmacm-mux-mlx5_0-0,id=mads',
                               '-device', 'pvrdma,ibdev=mlx5_0,ibport=0,netdev=enp216s0f0,mad-chardev=mads,addr=10.1']
     if args.qemu_debug_cpu:

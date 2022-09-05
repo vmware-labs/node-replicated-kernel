@@ -43,7 +43,7 @@ const REDIS_START_MATCH: &'static str = "# Server initialized";
 ///
 /// # Depends on
 /// - `tests/dhcpd.conf`: config file contains match of MAC to IP
-const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:dc via tap0";
+const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
 
 /// Environment variable that points to machine config (for baremetal booting)
 const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";

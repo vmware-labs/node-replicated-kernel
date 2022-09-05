@@ -80,9 +80,9 @@ impl RPCClient for Client {
         // Increment request id
         self.req_id += 1;
 
-        // If registration, update id TODO: proper RPC type?
         if rpc_id == 0u8 {
-            self.client_id = hdr.client_id;
+            // No need to update, as we are already checking the client id above
+            // self.client_id = hdr.client_id;
             debug!("Set client ID to: {}", self.client_id);
             return Ok(());
         }

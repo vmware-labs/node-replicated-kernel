@@ -1987,6 +1987,8 @@ fn s03_shmem_multiinstance() {
         BuildArgs::default()
             .module("init")
             .user_feature("test-print")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
             .kernel_feature("rackscale")
             .release()
             .build(),
@@ -1996,7 +1998,7 @@ fn s03_shmem_multiinstance() {
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
             .timeout(timeout)
-            .cmd("mode=controller")
+            .cmd("mode=controller transport=shmem")
             .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
@@ -2023,10 +2025,10 @@ fn s03_shmem_multiinstance() {
         let tap = format!("tap{}", 2 * i);
         let client_build = build.clone();
         let client = std::thread::spawn(move || {
-            sleep(Duration::from_millis(5_000));
+            sleep(Duration::from_millis(i as u64 * 10_000));
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                 .timeout(timeout)
-                .cmd("mode=client")
+                .cmd("mode=client transport=shmem")
                 .shmem_size(SHMEM_SIZE as usize)
                 .shmem_path(SHMEM_PATH)
                 .tap(&tap)

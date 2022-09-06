@@ -2069,7 +2069,7 @@ fn s04_userspace_multicore() {
     let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
         .cores(num_cores)
         .memory(4096)
-        .timeout(28_000);
+        .timeout(60_000);
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {

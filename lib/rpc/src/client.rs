@@ -68,7 +68,11 @@ impl RPCClient for Client {
         // Receive the response
         self.transport.recv_msg(hdr, data_out)?;
 
-        // Check request & client IDs, and also length of received data
+        // Check request & client IDs, and also length of received data.
+        //
+        // The machine_id on the client side starts with 1 (controller has machine id = 0)
+        // and the server assigns client id starting with 0. So, we need to add 1 to the
+        // server side machine_id to compare it with the client side machine_id.
         if self.client_id != 0 && hdr.client_id + 1 != self.client_id || hdr.req_id != self.req_id {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",

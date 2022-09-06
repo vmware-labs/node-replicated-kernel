@@ -1970,7 +1970,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s03_shmem_multiinstance() {
+fn s03_shmem_exokernel_multiinstance() {
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;

@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::Cell;
+use fallible_collections::FallibleVecGlobal;
 use hashbrown::HashMap;
 use smoltcp::time::Instant;
 
@@ -44,7 +45,8 @@ pub(crate) fn run() {
 
     // Initialize the RPC server
     let workers = crate::CMDLINE.get().map_or(1, |c| c.workers);
-    let mut servers: Vec<Box<dyn RPCServer>> = Vec::with_capacity(workers as usize);
+    let mut servers: Vec<Box<dyn RPCServer>> =
+        Vec::try_with_capacity(workers as usize).expect("Failed to allocate vector for RPC server");
     if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)

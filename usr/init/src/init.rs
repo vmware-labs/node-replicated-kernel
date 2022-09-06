@@ -91,17 +91,17 @@ fn alloc_physical_test() {
     }
 
     // Allocate a large page of physical memory
-    let (frame_id, base) = vibrio::syscalls::PhysicalMemory::allocate_large_page().expect("Failed to get physical memory large page");
-    info!("large frame id={:?}, paddr={:?}", frame_id, base);
+    let (frame_id2, base2) = vibrio::syscalls::PhysicalMemory::allocate_large_page().expect("Failed to get physical memory large page");
+    info!("large frame id={:?}, paddr={:?}", frame_id2, base2);
 
     // Test allocation by checking to see if we can map it okay
     unsafe {
-        vibrio::syscalls::VSpace::map_frame(frame_id, base.as_u64()).expect("Failed to map large page");
-        let slice: &mut [u8] = from_raw_parts_mut(base.as_u64() as *mut u8, LARGE_PAGE_SIZE);
-        for i in slice.iter_mut() {
+        vibrio::syscalls::VSpace::map_frame(frame_id2, base2.as_u64()).expect("Failed to map large page");
+        let slice2: &mut [u8] = from_raw_parts_mut(base2.as_u64() as *mut u8, LARGE_PAGE_SIZE);
+        for i in slice2.iter_mut() {
             *i = 0xb;
         }
-        assert_eq!(slice[99], 0xb);
+        assert_eq!(slice2[99], 0xb);
     }
 
     info!("phys_alloc_test OK");

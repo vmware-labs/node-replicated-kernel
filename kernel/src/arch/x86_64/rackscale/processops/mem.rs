@@ -12,12 +12,15 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
-use crate::memory::BASE_PAGE_SIZE;
+use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
+use crate::nrproc::NrProcess;
 
 use super::super::dcm::dcm_request::make_dcm_request;
 use super::super::dcm::DCM_INTERFACE;
 use super::super::get_local_pid;
 use super::super::kernelrpc::*;
+use crate::arch::process::current_pid;
+use crate::arch::process::Ring3Process;
 
 #[derive(Debug)]
 pub(crate) struct MemReq {
@@ -57,7 +60,20 @@ pub(crate) fn rpc_alloc_physical(
             return Err(RPCError::ExtraData);
         }
         info!("AllocPhysical() {:?}", res);
-        return res.ret;
+
+        if let Ok((frame_size, frame_base)) = res.ret {
+            // Associate frame with the local process
+            let frame = Frame::new(
+                PAddr::from(frame_base),
+                frame_size as usize,
+                affinity as usize,
+            );
+            let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
+
+            return Ok((fid as u64, frame_base));
+        } else {
+            return res.ret;
+        }
     } else {
         return Err(RPCError::MalformedResponse);
     }
@@ -101,10 +117,6 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
         }
     };
     info!("Shmem Frame: {:?}", frame);
-
-    // TODO: Associate memory with the remote process
-    //let pid = current_pid()?;
-    //let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
     // Construct return
     let res = KernelRpcRes {

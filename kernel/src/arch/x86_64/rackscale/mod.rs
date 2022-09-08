@@ -49,6 +49,9 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
+        // To support alloc_phys, client needs shared memory to be mapped
+        lazy_static::initialize(&SHMEM_REGION);
+
         Mutex::new(
             crate::transport::ethernet::init_ethernet_rpc(
                 smoltcp::wire::IpAddress::v4(172, 31, 0, 11),

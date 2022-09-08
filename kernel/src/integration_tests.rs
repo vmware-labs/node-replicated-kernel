@@ -775,7 +775,7 @@ fn dcm() {
 
     let pid = 0; // Using dummy pid for now
     let affinity = 1; // Using dummy affinity for now
-    let page_size = BASE_PAGE_SIZE as u64; // Using dummy page_size for now
+    let frame_size = BASE_PAGE_SIZE as u64; // Using dummy frame_size for now
     let core_id = 3; // Using dummy core_id for now
     let entry_point = 4; // Using dummy entry_point for now
 
@@ -783,13 +783,14 @@ fn dcm() {
     for _ in 0..4 {
         let mut client = RPC_CLIENT.lock();
         let (_fid, frame_base) =
-            rpc_alloc_physical(&mut **client, pid, page_size, affinity).unwrap();
-        for i in 0..page_size {
+            rpc_alloc_physical(&mut **client, pid, frame_size, affinity).unwrap();
+
+        for i in 0..frame_size {
             let region = (frame_base + i as u64) as *mut u8;
             unsafe { core::ptr::write(region, 0xb) };
         }
 
-        // TODO: access the memory
+        // TODO: use the core
         let _core_ret = rpc_request_core(&mut **client, pid, core_id, entry_point).unwrap();
     }
 

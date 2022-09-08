@@ -782,8 +782,13 @@ fn dcm() {
     info!("About to send resource requests!");
     for _ in 0..4 {
         let mut client = RPC_CLIENT.lock();
-        let (_fid, _frame_base) =
+        let (_fid, frame_base) =
             rpc_alloc_physical(&mut **client, pid, page_size, affinity).unwrap();
+        for i in 0..page_size {
+            let region = (frame_base + i as u64) as *mut u8;
+            unsafe { core::ptr::write(region, 0xb) };
+        }
+
         // TODO: access the memory
         let _core_ret = rpc_request_core(&mut **client, pid, core_id, entry_point).unwrap();
     }

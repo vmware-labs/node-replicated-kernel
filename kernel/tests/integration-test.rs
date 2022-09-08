@@ -3391,3 +3391,84 @@ fn s06_phys_alloc() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_exokernel_phys_alloc_test() {
+    use memfile::{CreateOptions, MemFile};
+    use std::fs::remove_file;
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    // Setup ivshmem file
+    let filename = "ivshmem-file";
+    let _ignore = remove_file(&filename);
+    let filelen = 8;
+    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
+    file.set_len(filelen * 1024 * 1024)
+        .expect("Unable to set file length");
+
+    setup_network(2);
+
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-phys-alloc")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    let build1 = build.clone();
+    let controller = std::thread::spawn(move || {
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+            .timeout(180_000)
+            .cmd("mode=controller")
+            .ivshmem(filelen as usize)
+            .shmem_path(filename)
+            .tap("tap0")
+            .no_network_setup()
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm(1)?;
+            let mut p = spawn_nrk(&cmdline_controller)?;
+            output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+
+    let build2 = build.clone();
+    let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(5_000));
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+            .timeout(180_000)
+            .cmd("mode=client")
+            .ivshmem(filelen as usize)
+            .shmem_path(filename)
+            .tap("tap2")
+            .no_network_setup()
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("phys_alloc_test OK")?.as_str();
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+    });
+
+    controller.join().unwrap();
+    client.join().unwrap();
+
+    let _ignore = remove_file(&filename);
+}

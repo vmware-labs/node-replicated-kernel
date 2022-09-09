@@ -770,7 +770,7 @@ fn dcm() {
     use crate::arch::rackscale::processops::core::rpc_request_core;
     use crate::arch::rackscale::processops::mem::rpc_alloc_physical;
     use crate::arch::rackscale::RPC_CLIENT;
-    use crate::memory::BASE_PAGE_SIZE;
+    use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
     use log::info;
 
     let pid = 0; // Using dummy pid for now
@@ -782,11 +782,12 @@ fn dcm() {
     info!("About to send resource requests!");
     for _ in 0..4 {
         let mut client = RPC_CLIENT.lock();
-        let (_fid, frame_base) =
+        let (_fid, paddr_base) =
             rpc_alloc_physical(&mut **client, pid, frame_size, affinity).unwrap();
 
+        let vaddr_base = paddr_to_kernel_vaddr(PAddr::from(paddr_base)).as_u64();
         for i in 0..frame_size {
-            let region = (frame_base + i as u64) as *mut u8;
+            let region = (vaddr_base + i as u64) as *mut u8;
             unsafe { core::ptr::write(region, 0xb) };
         }
 

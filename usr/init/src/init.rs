@@ -74,38 +74,43 @@ fn alloc_test() {
 }
 
 fn alloc_physical_test() {
-    use x86::bits64::paging::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+    use x86::bits64::paging::{PAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
     // Allocate a base page of physical memory
-    let (frame_id, base) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
+    let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
         .expect("Failed to get physical memory base page");
-    info!("base frame id={:?}, paddr={:?}", frame_id, base);
+    info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
+    // Create a base for the frame
+
+    // Create base for the mapping
+    let base: u64 = 0x0510_0000_0000;
 
     // Test allocation by checking to see if we can map it okay
     unsafe {
-        vibrio::syscalls::VSpace::map_frame(frame_id, base.as_u64())
-            .expect("Failed to map base page");
-        let slice: &mut [u8] = from_raw_parts_mut(base.as_u64() as *mut u8, BASE_PAGE_SIZE);
+        vibrio::syscalls::VSpace::map_frame(frame_id, base).expect("Failed to map base page");
+        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, BASE_PAGE_SIZE);
         for i in slice.iter_mut() {
             *i = 0xb;
         }
         assert_eq!(slice[99], 0xb);
+        vibrio::syscalls::VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed");
     }
 
     // Allocate a large page of physical memory
-    let (frame_id2, base2) = vibrio::syscalls::PhysicalMemory::allocate_large_page()
+    let (frame_id2, paddr2) = vibrio::syscalls::PhysicalMemory::allocate_large_page()
         .expect("Failed to get physical memory large page");
-    info!("large frame id={:?}, paddr={:?}", frame_id2, base2);
+    info!("large frame id={:?}, paddr={:?}", frame_id2, paddr2);
 
     // Test allocation by checking to see if we can map it okay
     unsafe {
-        vibrio::syscalls::VSpace::map_frame(frame_id2, base2.as_u64())
-            .expect("Failed to map large page");
-        let slice2: &mut [u8] = from_raw_parts_mut(base2.as_u64() as *mut u8, LARGE_PAGE_SIZE);
+        vibrio::syscalls::VSpace::map_frame(frame_id2, base).expect("Failed to map large page");
+        let slice2: &mut [u8] = from_raw_parts_mut(base as *mut u8, LARGE_PAGE_SIZE);
         for i in slice2.iter_mut() {
-            *i = 0xb;
+            *i = 0xc;
         }
-        assert_eq!(slice2[99], 0xb);
+        assert_eq!(slice2[99], 0xc);
+        vibrio::syscalls::VSpace::unmap(base, LARGE_PAGE_SIZE as u64)
+            .expect("Unmap syscall failed");
     }
 
     info!("phys_alloc_test OK");

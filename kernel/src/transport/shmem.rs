@@ -13,7 +13,7 @@ use {crate::arch::rackscale::FrameCacheMemslice, rpc::transport::ShmemTransport}
 use crate::cmdline::Transport;
 use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
-use crate::memory::{Frame, PAddr};
+use crate::memory::{kernel_vaddr_to_paddr, Frame, PAddr, VAddr};
 use crate::pci::claim_device;
 
 pub(crate) struct ShmemRegion {
@@ -150,7 +150,9 @@ pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheMemslice>> {
         // Subtract memory used for transport if using shmem transport, and adjust base
         let frame_size = core::cmp::max(0, SHMEM_REGION.size - MAX_SHMEM_TRANSPORT_SIZE);
         if frame_size > 0 {
-            let base = PAddr::from(SHMEM_REGION.base_kaddr + MAX_SHMEM_TRANSPORT_SIZE);
+            let base = kernel_vaddr_to_paddr(VAddr::from(
+                SHMEM_REGION.base_kaddr + MAX_SHMEM_TRANSPORT_SIZE,
+            ));
             Some(Frame::new(base, frame_size as usize, 0))
         } else {
             // Transport is taking up all room in shared memory
@@ -159,7 +161,7 @@ pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheMemslice>> {
     } else {
         // Use entire region of shared memory
         Some(Frame::new(
-            PAddr::from(SHMEM_REGION.base_kaddr),
+            kernel_vaddr_to_paddr(VAddr::from(SHMEM_REGION.base_kaddr)),
             SHMEM_REGION.size as usize,
             0,
         ))

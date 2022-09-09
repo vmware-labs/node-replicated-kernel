@@ -105,24 +105,31 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
 
     // Let DCM choose node
     let _node = make_dcm_request(local_pid, false);
+    debug!("Received node assignment from DCM");
 
     // TODO: right now only one allocator, so DCM decision isn't actually used.
     // TODO: how should affinity be handled? Should be this be an NR operation on the controller?
-    let frame = {
-        let mut dcm = DCM_INTERFACE.lock();
-        if size <= BASE_PAGE_SIZE as u64 {
-            dcm.shmem_manager.allocate_base_page()?
-        } else {
-            dcm.shmem_manager.allocate_large_page()?
-        }
+    let mut dcm = DCM_INTERFACE.lock();
+    let ret = if size <= BASE_PAGE_SIZE as u64 {
+        dcm.shmem_manager.allocate_base_page()
+    } else {
+        dcm.shmem_manager.allocate_large_page()
     };
-    info!("Shmem Frame: {:?}", frame);
 
-    // Construct return
-    let res = KernelRpcRes {
-        // TODO: return doesn't match due to above TODO regarding process association
-        // Should be: Ok((fid as u64, frame.base.as_u64()))
-        ret: convert_return(Ok((frame.size as u64, frame.base.as_u64()))),
+    let res = match ret {
+        Ok(frame) => {
+            debug!("Shmem Frame: {:?}", frame);
+            KernelRpcRes {
+                // TODO: Should be Ok((fid as u64, frame.base.as_u64()))
+                ret: convert_return(Ok((frame.size as u64, frame.base.as_u64()))),
+            }
+        }
+        Err(kerror) => {
+            debug!("Failed to allocate physical frame: {:?}", kerror);
+            KernelRpcRes {
+                ret: convert_return(Err(kerror)),
+            }
+        }
     };
     construct_ret(hdr, payload, res)
 }

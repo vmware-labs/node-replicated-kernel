@@ -31,10 +31,11 @@ use crate::transport::shmem::SHMEM_REGION;
 
 use dcm::node_registration::dcm_register_node;
 
-/// A cache of 2MiB pages, fits on a 2 MiB page.
+/// A cache of pages
+/// TODO: think about how we should constrain this?
 ///
 /// Used to allocate remote memory (in large chunks)
-pub(crate) type FrameCacheMemslice = MCache<2048, 0>;
+pub(crate) type FrameCacheMemslice = MCache<2048, 2048>;
 sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
 sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
 

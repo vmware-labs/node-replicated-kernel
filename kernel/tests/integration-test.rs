@@ -3404,7 +3404,7 @@ fn s06_exokernel_phys_alloc_test() {
     // Setup ivshmem file
     let filename = "ivshmem-file";
     let _ignore = remove_file(&filename);
-    let filelen = 8;
+    let filelen = 16;
     let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
     file.set_len(filelen * 1024 * 1024)
         .expect("Unable to set file length");

@@ -3395,19 +3395,15 @@ fn s06_phys_alloc() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_exokernel_phys_alloc_test() {
-    use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    // Setup ivshmem file
-    let filename = "ivshmem-file";
-    let _ignore = remove_file(&filename);
-    let filelen = 16;
-    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
-    file.set_len(filelen * 1024 * 1024)
-        .expect("Unable to set file length");
+    let large_shmem_size = 16; // Needs to be large to have a large page
+    setup_shmem(SHMEM_PATH, large_shmem_size);
+
+    let timeout = 180_000;
 
     setup_network(2);
 
@@ -3423,17 +3419,18 @@ fn s06_exokernel_phys_alloc_test() {
     let build1 = build.clone();
     let controller = std::thread::spawn(move || {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
-            .timeout(180_000)
+            .timeout(timeout)
             .cmd("mode=controller")
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(large_shmem_size as usize)
+            .shmem_path(SHMEM_PATH)
+            .workers(2)
             .tap("tap0")
             .no_network_setup()
             .use_vmxnet3();
 
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
-            let mut dcm = spawn_dcm(1)?;
+            let mut dcm = spawn_dcm(1, timeout)?;
             let mut p = spawn_nrk(&cmdline_controller)?;
             output += p.exp_eof()?.as_str();
 
@@ -3450,8 +3447,8 @@ fn s06_exokernel_phys_alloc_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(180_000)
             .cmd("mode=client")
-            .ivshmem(filelen as usize)
-            .shmem_path(filename)
+            .shmem_size(large_shmem_size as usize)
+            .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
             .use_vmxnet3();
@@ -3470,5 +3467,5 @@ fn s06_exokernel_phys_alloc_test() {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(&filename);
+    let _ignore = remove_file(&SHMEM_PATH);
 }

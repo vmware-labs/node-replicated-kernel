@@ -9,6 +9,8 @@ use armv8::aarch64::vm::granule4k::*;
 use crate::kernel::*;
 use crate::memory;
 
+use crate::arch;
+
 use crate::MapAction;
 
 impl MapAction {
@@ -71,29 +73,31 @@ pub struct VSpaceAArch64<'a> {
 
 impl<'a> VSpaceAArch64<'a> {
     pub fn new() -> VSpaceAArch64<'a> {
-        trace!("Allocate a PML4 (page-table root)");
+        trace!("Allocate a L0Table (page-table root)");
+
+        // configure the address space
 
         let l0: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l0_table = unsafe { &mut *paddr_to_uefi_vaddr(l0).as_mut_ptr::<L0Table>() };
-
-        // let l0_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
 
         VSpaceAArch64 { l0_table: l0_table }
     }
 
     pub fn roottable(&self) -> u64 {
-        panic!("not yet implemented!");
+        self.l0_table as *const _ as u64
     }
 
     /// Constructs an identity map but with an offset added to the region.
     pub(crate) fn map_identity_with_offset(
         &mut self,
-        at_offset: PAddr,
+        at_offset: VAddr,
         pbase: PAddr,
         end: PAddr,
         rights: MapAction,
     ) {
-        panic!("not yet implemented!");
+        // on aarch64 we have the offset from the two ttbr registers.
+        assert!((at_offset == VAddr::from(0x0)) | (at_offset == VAddr::from(arch::KERNEL_OFFSET)));
+        self.map_identity(pbase, end, rights);
     }
 
     /// Constructs an identity map in this region of memory.
@@ -101,8 +105,17 @@ impl<'a> VSpaceAArch64<'a> {
     /// # Example
     /// `map_identity(0x2000, 0x3000)` will map everything between 0x2000 and 0x3000 to
     /// physical address 0x2000 -- 0x3000.
-    pub(crate) fn map_identity(&mut self, base: PAddr, end: PAddr, rights: MapAction) {
-        panic!("not yet implemented!");
+    pub(crate) fn map_identity(&mut self, pbase: PAddr, end: PAddr, rights: MapAction) {
+        let vbase = VAddr::from(pbase.as_u64());
+        let size = (end - pbase).as_usize();
+        debug!(
+            "map_identity_with_offset {:#x} -- {:#x} -> {:#x} -- {:#x}",
+            vbase,
+            vbase + size,
+            pbase,
+            pbase + size
+        );
+        self.map_generic(vbase, (pbase, size), rights);
     }
 
     /// A pretty generic map function, it puts the physical memory range `pregion` with base and
@@ -153,6 +166,60 @@ impl<'a> VSpaceAArch64<'a> {
 
     pub unsafe fn dump_table(&self) {
         panic!("not yet implemented!");
+    }
+
+    fn new_l3_table(&mut self) -> L2Descriptor {
+        let l3: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
+        let l3_table = unsafe { &mut *paddr_to_uefi_vaddr(l3).as_mut_ptr::<L3Table>() };
+
+        L2Descriptor::from(L2DescriptorTable::with_table(l3_table))
+    }
+
+    fn new_l2_table(&mut self) -> L1Descriptor {
+        let l2: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
+        let l2_table = unsafe { &mut *paddr_to_uefi_vaddr(l2).as_mut_ptr::<L2Table>() };
+
+        L1Descriptor::from(L1DescriptorTable::with_table(l2_table))
+    }
+
+    fn new_l1_table(&mut self) -> L0Descriptor {
+        let l1: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
+        let l1_table = unsafe { &mut *paddr_to_uefi_vaddr(l1).as_mut_ptr::<L1Table>() };
+
+        L0Descriptor::with_table(l1_table)
+    }
+
+    /// Resolve a PDEntry to a page table.
+    fn get_l3_table<'b>(&self, entry: L2Descriptor) -> Option<&'b mut L3Table> {
+        if entry.is_valid() {
+            unsafe {
+                Some(transmute::<VAddr, &mut L3Table>(paddr_to_uefi_vaddr(entry.get_paddr().unwrap())))
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Resolve a PDPTEntry to a page directory.
+    fn get_l2_table<'b>(&self, entry: L1Descriptor) -> Option<&'b mut L2Table> {
+        if entry.is_valid() {
+            unsafe {
+                Some(transmute::<VAddr, &mut L2Table>(paddr_to_uefi_vaddr(entry.get_paddr().unwrap())))
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Resolve a PML4Entry to a PDPT.
+    fn get_l1_table<'b>(&self, entry: L0Descriptor) -> Option<&'b mut L1Table> {
+        if entry.is_valid() {
+            unsafe {
+                Some(transmute::<VAddr, &mut L1Table>(paddr_to_uefi_vaddr(entry.get_paddr().unwrap())))
+            }
+        } else {
+            None
+        }
     }
 }
 

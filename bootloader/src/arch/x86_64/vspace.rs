@@ -78,6 +78,7 @@ pub struct VSpaceX86<'a> {
 impl<'a> VSpaceX86<'a> {
     pub fn new() -> VSpaceX86<'a> {
         trace!("Allocate a PML4 (page-table root)");
+
         let pml4: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let pml4_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
 
@@ -91,7 +92,7 @@ impl<'a> VSpaceX86<'a> {
     /// Constructs an identity map but with an offset added to the region.
     pub(crate) fn map_identity_with_offset(
         &mut self,
-        at_offset: PAddr,
+        at_offset: VAddr,
         pbase: PAddr,
         end: PAddr,
         rights: MapAction,

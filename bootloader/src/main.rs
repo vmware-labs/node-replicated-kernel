@@ -221,7 +221,7 @@ fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 || entry.ty == MemoryType(KERNEL_ARGS)
             {
                 kernel.vspace.map_identity_with_offset(
-                    arch::PAddr::from(arch::KERNEL_OFFSET as u64),
+                    arch::VAddr::from(arch::KERNEL_OFFSET as u64),
                     phys_range_start,
                     phys_range_end,
                     rights,
@@ -278,6 +278,7 @@ fn _serial_init(st: &SystemTable<Boot>) {
 pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut st).expect("Can't initialize UEFI");
     log::set_max_level(log::LevelFilter::Info);
+    log::set_max_level(log::LevelFilter::Debug);
     //setup_screen(&st);
     //serial_init(&st);
 
@@ -313,20 +314,16 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
     };
 
     // Next create an address space for our kernel
-
-    // let pml4: PAddr = VSpace::allocate_one_page();
-    // let pml4_table = unsafe { &mut *paddr_to_uefi_vaddr(pml4).as_mut_ptr::<PML4>() };
-
     let mut kernel = Kernel {
         offset: arch::VAddr::from(0usize),
         mapping: Vec::new(),
-        vspace: arch::VSpace::new(),
+        vspace : arch::VSpace::new(),
         tls: None,
     };
 
     // Parse the ELF file and load it into the new address space
     let binary = elfloader::ElfBinary::new(kernel_blob).unwrap();
-    trace!("Load the ELF binary into the address space");
+    info!("Loading kernel binary...");
     binary.load(&mut kernel).expect("Can't load the kernel");
 
     // On big machines with the init stack tends to put big structures
@@ -341,13 +338,13 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
     assert_eq!(stack_protector + arch::BASE_PAGE_SIZE, stack_base);
 
     kernel.vspace.map_identity_with_offset(
-        arch::PAddr::from(arch::KERNEL_OFFSET as u64),
+        arch::VAddr::from(arch::KERNEL_OFFSET as u64),
         stack_protector,
         stack_protector + arch::BASE_PAGE_SIZE,
         MapAction::ReadUser, // TODO: should be MapAction::None
     );
     kernel.vspace.map_identity_with_offset(
-        arch::PAddr::from(arch::KERNEL_OFFSET as u64),
+        arch::VAddr::from(arch::KERNEL_OFFSET as u64),
         stack_base,
         stack_top,
         MapAction::ReadWriteKernel,

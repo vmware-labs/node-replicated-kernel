@@ -16,7 +16,6 @@ use crate::MapAction;
 impl MapAction {
     /// Transform MapAction into rights for 1 GiB page.
     fn to_l1_rights(&self) -> u32 /* PDPTFlags */ {
-        use MapAction::*;
         panic!("handle me!");
         // match self {
         //     None => PDPTFlags::empty(),
@@ -33,7 +32,6 @@ impl MapAction {
 
     /// Transform MapAction into rights for 2 MiB page.
     fn to_l2_rights(&self) -> u32 /* PDFlags */ {
-        use MapAction::*;
         panic!("handle me!");
         // match self {
         //     None => PDFlags::empty(),
@@ -50,7 +48,6 @@ impl MapAction {
 
     /// Transform MapAction into rights for 4KiB page.
     fn to_l3_rights(&self) -> u32 /* PTFlags */ {
-        use MapAction::*;
         panic!("handle me!");
         // match self {
         //     None => PTFlags::empty(),
@@ -125,6 +122,27 @@ impl<'a> VSpaceAArch64<'a> {
     /// We require that `vbase` and `pregion` values are all aligned to a page-size.
     /// TODO: We panic in case there is already a mapping covering the region (should return error).
     pub(crate) fn map_generic(&mut self, vbase: VAddr, pregion: (PAddr, usize), rights: MapAction) {
+        let (pbase, psize) = pregion;
+        assert_eq!(pbase % BASE_PAGE_SIZE, 0);
+        assert_eq!(psize % BASE_PAGE_SIZE, 0);
+        assert_eq!(vbase % BASE_PAGE_SIZE, 0);
+
+        debug!(
+            "map_generic {:#x} -- {:#x} -> {:#x} -- {:#x} {}",
+            vbase,
+            vbase + psize,
+            pbase,
+            pbase + psize,
+            rights
+        );
+
+        if !self.l0_table.entry_at_vaddr(vbase).is_valid() {
+            let table = self.new_l1_table();
+            self.l0_table.set_entry_at_vaddr(vbase, table);
+        }
+
+
+
         panic!("not yet implemented!");
     }
 
@@ -168,21 +186,21 @@ impl<'a> VSpaceAArch64<'a> {
         panic!("not yet implemented!");
     }
 
-    fn new_l3_table(&mut self) -> L2Descriptor {
+    fn new_l3_table(&self) -> L2Descriptor {
         let l3: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l3_table = unsafe { &mut *paddr_to_uefi_vaddr(l3).as_mut_ptr::<L3Table>() };
 
         L2Descriptor::from(L2DescriptorTable::with_table(l3_table))
     }
 
-    fn new_l2_table(&mut self) -> L1Descriptor {
+    fn new_l2_table(&self) -> L1Descriptor {
         let l2: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l2_table = unsafe { &mut *paddr_to_uefi_vaddr(l2).as_mut_ptr::<L2Table>() };
 
         L1Descriptor::from(L1DescriptorTable::with_table(l2_table))
     }
 
-    fn new_l1_table(&mut self) -> L0Descriptor {
+    fn new_l1_table(&self) -> L0Descriptor {
         let l1: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l1_table = unsafe { &mut *paddr_to_uefi_vaddr(l1).as_mut_ptr::<L1Table>() };
 

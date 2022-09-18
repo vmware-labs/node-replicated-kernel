@@ -7,8 +7,10 @@ pub mod cpu;
 mod vspace;
 
 use armv8::aarch64::registers::Currentel;
-pub use armv8::aarch64::vm::granule4k::*;
 
+pub use armv8::aarch64::vm::granule4k::{VAddr, PAddr};
+pub use armv8::aarch64::vm::granule4k::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE, HUGE_PAGE_SIZE};
+pub use armv8::aarch64::vm::granule4k::{BASE_PAGE_SHIFT, LARGE_PAGE_SHIFT, HUGE_PAGE_SHIFT};
 pub use vspace::VSpaceAArch64 as VSpace;
 
 // Include the `jump_to_kernel` assembly function. This does some things we can't express in

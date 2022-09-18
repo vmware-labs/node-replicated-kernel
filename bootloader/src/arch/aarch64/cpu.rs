@@ -16,7 +16,7 @@ pub fn set_translation_table(root: u64) {
 
 /// Make sure the machine supports what we require.
 pub fn assert_required_cpu_features() {
-    /// TODO: add some checks...
+    // TODO: add some checks...
 
     debug!("CPU has all required features, continue");
 }

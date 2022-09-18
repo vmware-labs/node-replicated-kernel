@@ -7,7 +7,8 @@
 //! the arch-specific initialization is done (see `arch/x86_64/mod.rs` for an example).
 
 #![cfg_attr(target_os = "none", no_std)]
-#![deny(warnings)]
+//#![deny(warnings)]
+#![allow(dead_code, unused_imports, unused_variables)]
 #![cfg_attr(target_family = "unix", allow(unused))]
 #![feature(
     is_sorted,

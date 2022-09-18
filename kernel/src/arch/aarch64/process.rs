@@ -36,7 +36,7 @@ pub(crate) type ArchExecutor = EL0Executor;
 ///The resumer of the current architecture.
 pub(crate) type ArchResumer = EL1Resumer;
 
-struct EL0Process {
+pub(crate) struct EL0Process {
     /// Ring3Process ID.
     pub pid: Pid,
     /// Ring3Executor ID.
@@ -57,7 +57,7 @@ struct EL0Process {
 /// (and therefore should be first).
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
-struct EL0Executor {
+pub struct EL0Executor {
     /// CPU context save area (must be first, see exec.S).
     pub save_area: SaveArea,
 

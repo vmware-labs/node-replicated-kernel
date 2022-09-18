@@ -6,6 +6,7 @@
 use core::arch::asm;
 
 pub use bootloader_shared::*;
+use klogger::sprint;
 
 pub mod debug;
 pub mod kcb;
@@ -32,4 +33,21 @@ pub(crate) fn halt() -> ! {
 /// For cores that advances the replica eagerly. This avoids additional IPI costs.
 pub(crate) fn advance_fs_replica() {
     panic!("not yet implemented");
+}
+
+/// Entry function that is called from UEFI At this point we are in x86-64
+/// (long) mode, We have a simple GDT, our address space, and stack set-up. The
+/// argc argument is abused as a pointer ot the KernelArgs struct passed by
+/// UEFI.
+#[cfg(target_os = "none")]
+#[start]
+#[no_mangle]
+fn _start(argc: isize, _argv: *const *const u8) -> isize {
+
+
+    sprint!("\r\n");
+    sprint!("Hello from the kernel!\r");
+    sprint!("\r\n");
+
+    0
 }

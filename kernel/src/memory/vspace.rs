@@ -198,6 +198,16 @@ pub(crate) enum MapAction {
 }
 
 impl MapAction {
+    pub(crate) fn is_kernel(&self) -> bool {
+        match self {
+            MapAction::ReadKernel
+            | MapAction::ReadWriteKernel
+            | MapAction::ReadExecuteKernel
+            | MapAction::ReadWriteExecuteKernel => true,
+            _ => false,
+        }
+    }
+
     pub(crate) fn is_readable(&self) -> bool {
         *self != MapAction::None
     }

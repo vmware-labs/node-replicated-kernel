@@ -10,6 +10,7 @@ members = [
     "lib/lineup",
     "lib/node-replication/cnr",
     "lib/node-replication/nr",
+    "lib/verified-nrkernel",
     "lib/rpc",
     "lib/vibrio",
     "lib/vmxnet3",
@@ -21,7 +22,7 @@ members = [
     #"lib/rust-topology",
     #"lib/rust-driverkit",
     #"lib/rust-x86",
-    #"lib/rawtime",    
+    #"lib/rawtime",
     #"lib/rust-klogger",
     #"lib/rexpect",
 ]

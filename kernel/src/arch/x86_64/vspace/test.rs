@@ -37,7 +37,7 @@ fn action() -> impl Strategy<Value = TestAction> {
             map_rights()
         )
             .prop_map(|(a, b, c)| TestAction::Map(a, b, c)),
-        (vaddrs(0x60_0000), map_rights()).prop_map(|(a, b)| TestAction::Adjust(a, b)),
+        //(vaddrs(0x60_0000), map_rights()).prop_map(|(a, b)| TestAction::Adjust(a, b)),
         vaddrs(0x60_0000).prop_map(TestAction::Unmap),
         vaddrs(0x60_0000).prop_map(TestAction::Resolve),
     ]
@@ -95,7 +95,7 @@ proptest! {
         use TestAction::*;
         use crate::memory::detmem::DA;
 
-        let mut totest = VSpace::new(DA::new().expect("Unable to create DA")).expect("Unable to create vspace");;
+        let mut totest = VSpace::new(DA::new().expect("Unable to create DA")).expect("Unable to create vspace");
         let mut model: ModelAddressSpace = Default::default();
 
         for action in ops {

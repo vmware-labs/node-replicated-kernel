@@ -22,6 +22,7 @@ rpc = { path = "../lib/rpc", optional = true }
 vmxnet3 = { path = "../lib/vmxnet3" }
 bootloader_shared = { path = "../lib/bootloader_shared" }
 x86 = { version = "0.51", features = ["unstable"] }
+verified-pt = { path = "../lib/verified-nrkernel" }
 klogger = "0.0.14"
 driverkit = "0.20"
 spin = "0.9.1"
@@ -86,6 +87,8 @@ cc = "1.0"
 
 [features]
 default = ["addr2line", "serde", "serde_cbor"]
+# Use formally verified code in some places
+verified-code = []
 # Enable Ethernet based networking.
 ethernet = ["smoltcp"]
 # Enable shared memory based communication.

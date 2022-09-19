@@ -206,11 +206,12 @@ impl<'a> VSpaceAArch64<'a> {
         assert_eq!(vbase % BASE_PAGE_SIZE, 0);
 
         debug!(
-            "map_generic {:#x} -- {:#x} -> {:#x} -- {:#x} {}",
+            "map_generic {:#x} -- {:#x} -> {:#x} -- {:#x} ({} kB) {}",
             vbase,
             vbase + psize,
             pbase,
             pbase + psize,
+            psize >> 10,
             rights
         );
 
@@ -218,8 +219,22 @@ impl<'a> VSpaceAArch64<'a> {
         let mut paddr = pbase;
         let mut size = psize;
         while vaddr < vbase + psize {
+            debug!(
+                "mapping {:#x} -- {:#x} -> {:#x} -- {:#x} ({} kB) {}",
+                vaddr,
+                vaddr + size,
+                paddr,
+                paddr + size,
+                size >> 10,
+                rights
+            );
+
             // check if the l0 table entry has already a mapping
             if !self.l0_table.entry_at_vaddr(vaddr).is_valid() {
+                debug!(
+                    " - allocating a new l1 table (idx {})",
+                    L0Table::index(vaddr)
+                );
                 let table = self.new_l1_table();
                 self.l0_table.set_entry_at_vaddr(vaddr, table);
             }
@@ -236,8 +251,31 @@ impl<'a> VSpaceAArch64<'a> {
                 && size >= HUGE_PAGE_SIZE
             {
                 // perform the mapping
-                let idx = L3Table::index(vaddr);
-                while L3Table::index(vaddr) == idx && size >= HUGE_PAGE_SIZE {
+                let idx = L0Table::index(vaddr);
+                while L0Table::index(vaddr) == idx && size >= HUGE_PAGE_SIZE {
+                    debug!(
+                        " - mapping 1G frame: {}.{} -> {:#x} ",
+                        L0Table::index(vaddr),
+                        L1Table::index(vaddr),
+                        paddr
+                    );
+                    if l1_table.entry_at_vaddr(vaddr).is_block() {
+                        panic!(
+                            "l1table[{}.{}] contains already a block mapping: {:#x} -> {:#x}",
+                            L0Table::index(vaddr),
+                            L1Table::index(vaddr),
+                            vaddr,
+                            l1_table.entry_at_vaddr(vaddr).get_paddr()
+                        );
+                    }
+
+                    if l1_table.entry_at_vaddr(vaddr).is_table() {
+                        panic!(
+                            "l2table[{}.{}] already contains a table mapping",
+                            L0Table::index(vaddr),
+                            L1Table::index(vaddr)
+                        );
+                    }
 
                     let mut entry = L1DescriptorBlock::new();
                     rights.set_l1_entry_rights(&mut entry);
@@ -259,6 +297,10 @@ impl<'a> VSpaceAArch64<'a> {
 
             // check if the l0 table entry has already a mapping
             if !l1_table.entry_at_vaddr(vaddr).is_valid() {
+                debug!(
+                    " - allocating a new l2 table (idx {})",
+                    L1Table::index(vaddr)
+                );
                 let table = self.new_l2_table();
                 l1_table.set_entry_at_vaddr(vaddr, table);
             }
@@ -273,8 +315,35 @@ impl<'a> VSpaceAArch64<'a> {
                 && size >= LARGE_PAGE_SIZE
             {
                 // perform the mapping
-                let idx = L2Table::index(vaddr);
-                while L2Table::index(vaddr) == idx && size >= LARGE_PAGE_SIZE {
+                let idx = L1Table::index(vaddr);
+                while L1Table::index(vaddr) == idx && size >= LARGE_PAGE_SIZE {
+                    debug!(
+                        " - mapping 2M frame: {}.{}.{} -> {:#x} ",
+                        L0Table::index(vaddr),
+                        L1Table::index(vaddr),
+                        L2Table::index(vaddr),
+                        paddr
+                    );
+
+                    if l2_table.entry_at_vaddr(vaddr).is_block() {
+                        panic!(
+                            "l2table[{}.{}.{}] contains already a block mapping: {:#x} -> {:#x}",
+                            L0Table::index(vaddr),
+                            L1Table::index(vaddr),
+                            L2Table::index(vaddr),
+                            vaddr,
+                            l2_table.entry_at_vaddr(vaddr).get_paddr()
+                        );
+                    }
+
+                    if l2_table.entry_at_vaddr(vaddr).is_table() {
+                        panic!(
+                            "l2table[{}.{}.{}] already contains a table mapping",
+                            L0Table::index(vaddr),
+                            L1Table::index(vaddr),
+                            L2Table::index(vaddr)
+                        );
+                    }
 
                     let mut entry = L2DescriptorBlock::new();
                     rights.set_l2_entry_rights(&mut entry);
@@ -296,6 +365,10 @@ impl<'a> VSpaceAArch64<'a> {
 
             // check if the l0 table entry has already a mapping
             if !l2_table.entry_at_vaddr(vaddr).is_valid() {
+                debug!(
+                    " - allocating a new l3 table (idx {})",
+                    L2Table::index(vaddr)
+                );
                 let table = self.new_l3_table();
                 l2_table.set_entry_at_vaddr(vaddr, table);
             }
@@ -303,11 +376,30 @@ impl<'a> VSpaceAArch64<'a> {
             // get the l1 table
             let l3_table = self.get_l3_table(l2_table.entry_at_vaddr(vaddr)).unwrap();
 
-            let idx = L3Table::index(vaddr);
-            while L3Table::index(vaddr) == idx && size >= BASE_PAGE_SIZE {
+            let idx = L2Table::index(vaddr);
+            while L2Table::index(vaddr) == idx && size >= BASE_PAGE_SIZE {
+                trace!(
+                    " - mapping 4k frame: {}.{}.{}.{} -> {:#x} ",
+                    L0Table::index(vaddr),
+                    L1Table::index(vaddr),
+                    L2Table::index(vaddr),
+                    L3Table::index(vaddr),
+                    paddr
+                );
+
+                if l3_table.entry_at_vaddr(vaddr).is_valid() {
+                    panic!(
+                        "mapping already exists in l3table: {:#x} -> {:#x}",
+                        vaddr,
+                        l3_table.entry_at_vaddr(vaddr).get_paddr()
+                    );
+                }
+
                 // map it.
                 let mut entry = L3Descriptor::new();
+
                 rights.set_l3_entry_rights(&mut entry);
+
                 entry
                     .inner_shareable()
                     .outer_shareable()
@@ -321,13 +413,6 @@ impl<'a> VSpaceAArch64<'a> {
                 vaddr = vaddr + BASE_PAGE_SIZE;
             }
         }
-
-        if !self.l0_table.entry_at_vaddr(vbase).is_valid() {
-            let table = self.new_l1_table();
-            self.l0_table.set_entry_at_vaddr(vbase, table);
-        }
-
-        panic!("not yet implemented!");
     }
 
     /// A simple wrapper function for allocating just oen page.
@@ -352,8 +437,41 @@ impl<'a> VSpaceAArch64<'a> {
         panic!("not yet implemented!");
     }
 
-    pub(crate) fn resolve_addr(&self, addr: VAddr) -> Option<PAddr> {
-        panic!("not yet implemented!");
+    pub(crate) fn resolve_addr(&self, vaddr: VAddr) -> Option<PAddr> {
+
+        let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
+        if !l0_entry.is_valid() {
+            return None;
+        }
+
+        let l1_table = self.get_l1_table(l0_entry).unwrap();
+        let l1_entry = l1_table.entry_at_vaddr(vaddr);
+        if !l1_entry.is_valid() {
+            return None;
+        }
+
+        if l1_entry.is_block() {
+            return l1_entry.get_frame().map(|paddr| paddr + vaddr.huge_page_offset());
+        }
+
+        let l2_table = self.get_l2_table(l1_entry).unwrap();
+        let l2_entry = l2_table.entry_at_vaddr(vaddr);
+        if !l2_entry.is_valid() {
+            return None;
+        }
+
+        if l2_entry.is_block() {
+            return l2_entry.get_frame().map(|paddr| paddr + vaddr.large_page_offset());
+        }
+
+        let l3_table = self.get_l3_table(l2_entry).unwrap();
+        let l3_entry = l3_table.entry_at_vaddr(vaddr);
+
+        if !l3_entry.is_valid() {
+            return None;
+        }
+
+        return l3_entry.get_frame().map(|paddr| paddr + vaddr.base_page_offset());
     }
 
     /// Back a region of virtual address space with
@@ -420,7 +538,7 @@ impl<'a> VSpaceAArch64<'a> {
         if entry.is_valid() {
             unsafe {
                 Some(transmute::<VAddr, &mut L3Table>(paddr_to_uefi_vaddr(
-                    entry.get_paddr().unwrap(),
+                    entry.get_paddr(),
                 )))
             }
         } else {
@@ -433,7 +551,7 @@ impl<'a> VSpaceAArch64<'a> {
         if entry.is_valid() {
             unsafe {
                 Some(transmute::<VAddr, &mut L2Table>(paddr_to_uefi_vaddr(
-                    entry.get_paddr().unwrap(),
+                    entry.get_paddr(),
                 )))
             }
         } else {
@@ -446,7 +564,7 @@ impl<'a> VSpaceAArch64<'a> {
         if entry.is_valid() {
             unsafe {
                 Some(transmute::<VAddr, &mut L1Table>(paddr_to_uefi_vaddr(
-                    entry.get_paddr().unwrap(),
+                    entry.get_paddr(),
                 )))
             }
         } else {

@@ -14,53 +14,131 @@ use crate::arch;
 use crate::MapAction;
 
 impl MapAction {
-    /// Transform MapAction into rights for 1 GiB page.
-    fn to_l1_rights(&self) -> u32 /* PDPTFlags */ {
-        panic!("handle me!");
-        // match self {
-        //     None => PDPTFlags::empty(),
-        //     ReadUser => PDPTFlags::XD | PDPTFlags::US,
-        //     ReadKernel => PDPTFlags::XD,
-        //     ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
-        //     ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
-        //     ReadExecuteUser => PDPTFlags::US,
-        //     ReadExecuteKernel => PDPTFlags::empty(),
-        //     ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
-        //     ReadWriteExecuteKernel => PDPTFlags::RW,
-        // }
+    fn set_l3_entry_rights(&self, entry: &mut L3Descriptor) {
+        entry.read_only().user_exec_never().priv_exec_never();
+
+        match self {
+            MapAction::None => {
+                entry.no_access();
+            }
+            MapAction::ReadUser | MapAction::ReadKernel => (),
+            MapAction::ReadWriteUser | MapAction::ReadWriteKernel => {
+                entry.read_write();
+            }
+            MapAction::ReadExecuteKernel => {
+                entry.priv_exec();
+            }
+            MapAction::ReadExecuteUser => {
+                entry.user_exec();
+            }
+            MapAction::ReadWriteExecuteUser => {
+                entry.user_exec().read_write();
+            }
+            MapAction::ReadWriteExecuteKernel => {
+                entry.priv_exec().read_write();
+            }
+        }
     }
 
-    /// Transform MapAction into rights for 2 MiB page.
-    fn to_l2_rights(&self) -> u32 /* PDFlags */ {
-        panic!("handle me!");
-        // match self {
-        //     None => PDFlags::empty(),
-        //     ReadUser => PDFlags::XD | PDFlags::US,
-        //     ReadKernel => PDFlags::XD,
-        //     ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
-        //     ReadWriteKernel => PDFlags::RW | PDFlags::XD,
-        //     ReadExecuteUser => PDFlags::US,
-        //     ReadExecuteKernel => PDFlags::empty(),
-        //     ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
-        //     ReadWriteExecuteKernel => PDFlags::RW,
-        // }
+    fn set_l2_entry_rights(&self, entry: &mut L2DescriptorBlock) {
+        entry.read_only().user_exec_never().priv_exec_never();
+
+        match self {
+            MapAction::None => {
+                entry.no_access();
+            }
+            MapAction::ReadUser | MapAction::ReadKernel => (),
+            MapAction::ReadWriteUser | MapAction::ReadWriteKernel => {
+                entry.read_write();
+            }
+            MapAction::ReadExecuteKernel => {
+                entry.priv_exec();
+            }
+            MapAction::ReadExecuteUser => {
+                entry.user_exec();
+            }
+            MapAction::ReadWriteExecuteUser => {
+                entry.user_exec().read_write();
+            }
+            MapAction::ReadWriteExecuteKernel => {
+                entry.priv_exec().read_write();
+            }
+        }
     }
 
-    /// Transform MapAction into rights for 4KiB page.
-    fn to_l3_rights(&self) -> u32 /* PTFlags */ {
-        panic!("handle me!");
-        // match self {
-        //     None => PTFlags::empty(),
-        //     ReadUser => PTFlags::XD | PTFlags::US,
-        //     ReadKernel => PTFlags::XD,
-        //     ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
-        //     ReadWriteKernel => PTFlags::RW | PTFlags::XD,
-        //     ReadExecuteUser => PTFlags::US,
-        //     ReadExecuteKernel => PTFlags::empty(),
-        //     ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
-        //     ReadWriteExecuteKernel => PTFlags::RW,
-        // }
+    fn set_l1_entry_rights(&self, entry: &mut L1DescriptorBlock) {
+        entry.read_only().user_exec_never().priv_exec_never();
+
+        match self {
+            MapAction::None => {
+                entry.no_access();
+            }
+            MapAction::ReadUser | MapAction::ReadKernel => (),
+            MapAction::ReadWriteUser | MapAction::ReadWriteKernel => {
+                entry.read_write();
+            }
+            MapAction::ReadExecuteKernel => {
+                entry.priv_exec();
+            }
+            MapAction::ReadExecuteUser => {
+                entry.user_exec();
+            }
+            MapAction::ReadWriteExecuteUser => {
+                entry.user_exec().read_write();
+            }
+            MapAction::ReadWriteExecuteKernel => {
+                entry.priv_exec().read_write();
+            }
+        }
     }
+
+    // /// Transform MapAction into rights for 1 GiB page.
+    // fn to_l1_rights(&self) -> u32 /* PDPTFlags */ {
+    //     panic!("handle me!");
+    //     // match self {
+    //     //     None => PDPTFlags::empty(),
+    //     //     ReadUser => PDPTFlags::XD | PDPTFlags::US,
+    //     //     ReadKernel => PDPTFlags::XD,
+    //     //     ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
+    //     //     ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
+    //     //     ReadExecuteUser => PDPTFlags::US,
+    //     //     ReadExecuteKernel => PDPTFlags::empty(),
+    //     //     ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
+    //     //     ReadWriteExecuteKernel => PDPTFlags::RW,
+    //     // }
+    // }
+
+    // /// Transform MapAction into rights for 2 MiB page.
+    // fn to_l2_rights(&self) -> u32 /* PDFlags */ {
+    //     panic!("handle me!");
+    //     // match self {
+    //     //     None => PDFlags::empty(),
+    //     //     ReadUser => PDFlags::XD | PDFlags::US,
+    //     //     ReadKernel => PDFlags::XD,
+    //     //     ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
+    //     //     ReadWriteKernel => PDFlags::RW | PDFlags::XD,
+    //     //     ReadExecuteUser => PDFlags::US,
+    //     //     ReadExecuteKernel => PDFlags::empty(),
+    //     //     ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
+    //     //     ReadWriteExecuteKernel => PDFlags::RW,
+    //     // }
+    // }
+
+    // /// Transform MapAction into rights for 4KiB page.
+    // fn to_l3_rights(&self) -> u32 /* PTFlags */ {
+    //     panic!("handle me!");
+    //     // match self {
+    //     //     None => PTFlags::empty(),
+    //     //     ReadUser => PTFlags::XD | PTFlags::US,
+    //     //     ReadKernel => PTFlags::XD,
+    //     //     ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
+    //     //     ReadWriteKernel => PTFlags::RW | PTFlags::XD,
+    //     //     ReadExecuteUser => PTFlags::US,
+    //     //     ReadExecuteKernel => PTFlags::empty(),
+    //     //     ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
+    //     //     ReadWriteExecuteKernel => PTFlags::RW,
+    //     // }
+    // }
 }
 
 /// A VSpace allows to create and modify a (virtual) address space.
@@ -136,12 +214,118 @@ impl<'a> VSpaceAArch64<'a> {
             rights
         );
 
+        let mut vaddr = vbase;
+        let mut paddr = pbase;
+        let mut size = psize;
+        while vaddr < vbase + psize {
+            // check if the l0 table entry has already a mapping
+            if !self.l0_table.entry_at_vaddr(vaddr).is_valid() {
+                let table = self.new_l1_table();
+                self.l0_table.set_entry_at_vaddr(vaddr, table);
+            }
+
+            // get the l1 table
+            let l1_table = self
+                .get_l1_table(self.l0_table.entry_at_vaddr(vaddr))
+                .unwrap();
+
+            // if both, vaddr and paddr are aligned, and we have enough remaining bytes
+            // we can do a huge page mapping
+            if vaddr.is_aligned(HUGE_PAGE_SIZE as u64)
+                && paddr.is_aligned(HUGE_PAGE_SIZE as u64)
+                && size >= HUGE_PAGE_SIZE
+            {
+                // perform the mapping
+                let idx = L3Table::index(vaddr);
+                while L3Table::index(vaddr) == idx && size >= HUGE_PAGE_SIZE {
+
+                    let mut entry = L1DescriptorBlock::new();
+                    rights.set_l1_entry_rights(&mut entry);
+                    entry
+                        .inner_shareable()
+                        .outer_shareable()
+                        .frame(paddr)
+                        .valid();
+
+                    l1_table.set_entry_at_vaddr(vaddr, L1Descriptor::from(entry));
+
+                    size -= HUGE_PAGE_SIZE;
+                    paddr = paddr + HUGE_PAGE_SIZE;
+                    vaddr = vaddr + HUGE_PAGE_SIZE;
+                }
+
+                continue;
+            }
+
+            // check if the l0 table entry has already a mapping
+            if !l1_table.entry_at_vaddr(vaddr).is_valid() {
+                let table = self.new_l2_table();
+                l1_table.set_entry_at_vaddr(vaddr, table);
+            }
+
+            // get the l1 table
+            let l2_table = self.get_l2_table(l1_table.entry_at_vaddr(vaddr)).unwrap();
+
+            // if both, vaddr and paddr are aligned, and we have enough remaining bytes
+            // we can do a huge page mapping
+            if vaddr.is_aligned(LARGE_PAGE_SIZE as u64)
+                && paddr.is_aligned(LARGE_PAGE_SIZE as u64)
+                && size >= LARGE_PAGE_SIZE
+            {
+                // perform the mapping
+                let idx = L2Table::index(vaddr);
+                while L2Table::index(vaddr) == idx && size >= LARGE_PAGE_SIZE {
+
+                    let mut entry = L2DescriptorBlock::new();
+                    rights.set_l2_entry_rights(&mut entry);
+                    entry
+                        .inner_shareable()
+                        .outer_shareable()
+                        .frame(paddr)
+                        .valid();
+
+                    l2_table.set_entry_at_vaddr(vaddr, L2Descriptor::from(entry));
+
+                    size -= LARGE_PAGE_SIZE;
+                    paddr = paddr + LARGE_PAGE_SIZE;
+                    vaddr = vaddr + LARGE_PAGE_SIZE;
+                }
+
+                continue;
+            }
+
+            // check if the l0 table entry has already a mapping
+            if !l2_table.entry_at_vaddr(vaddr).is_valid() {
+                let table = self.new_l3_table();
+                l2_table.set_entry_at_vaddr(vaddr, table);
+            }
+
+            // get the l1 table
+            let l3_table = self.get_l3_table(l2_table.entry_at_vaddr(vaddr)).unwrap();
+
+            let idx = L3Table::index(vaddr);
+            while L3Table::index(vaddr) == idx && size >= BASE_PAGE_SIZE {
+                // map it.
+                let mut entry = L3Descriptor::new();
+                rights.set_l3_entry_rights(&mut entry);
+                entry
+                    .inner_shareable()
+                    .outer_shareable()
+                    .frame(paddr)
+                    .valid();
+
+                l3_table.set_entry_at_vaddr(vaddr, entry);
+
+                size -= BASE_PAGE_SIZE;
+                paddr = paddr + BASE_PAGE_SIZE;
+                vaddr = vaddr + BASE_PAGE_SIZE;
+            }
+        }
+
         if !self.l0_table.entry_at_vaddr(vbase).is_valid() {
             let table = self.new_l1_table();
             self.l0_table.set_entry_at_vaddr(vbase, table);
         }
-
-
 
         panic!("not yet implemented!");
     }
@@ -190,28 +374,54 @@ impl<'a> VSpaceAArch64<'a> {
         let l3: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l3_table = unsafe { &mut *paddr_to_uefi_vaddr(l3).as_mut_ptr::<L3Table>() };
 
-        L2Descriptor::from(L2DescriptorTable::with_table(l3_table))
+        let mut l2_desc = L2DescriptorTable::new();
+        l2_desc
+            .table(l3_table)
+            .priv_exec_table()
+            .user_exec_never_table()
+            .read_write_table()
+            .valid();
+
+        L2Descriptor::from(l2_desc)
     }
 
     fn new_l2_table(&self) -> L1Descriptor {
         let l2: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l2_table = unsafe { &mut *paddr_to_uefi_vaddr(l2).as_mut_ptr::<L2Table>() };
 
-        L1Descriptor::from(L1DescriptorTable::with_table(l2_table))
+        let mut l1_desc = L1DescriptorTable::new();
+        l1_desc
+            .table(l2_table)
+            .priv_exec_table()
+            .user_exec_never_table()
+            .read_write_table()
+            .valid();
+
+        L1Descriptor::from(l1_desc)
     }
 
     fn new_l1_table(&self) -> L0Descriptor {
         let l1: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l1_table = unsafe { &mut *paddr_to_uefi_vaddr(l1).as_mut_ptr::<L1Table>() };
 
-        L0Descriptor::with_table(l1_table)
+        let mut l0_desc = L0Descriptor::new();
+        l0_desc
+            .table(l1_table)
+            .priv_exec_table()
+            .user_exec_never_table()
+            .read_write_table()
+            .valid();
+
+        l0_desc
     }
 
     /// Resolve a PDEntry to a page table.
-    fn get_l3_table<'b>(&self, entry: L2Descriptor) -> Option<&'b mut L3Table> {
+    fn get_l3_table<'b>(&self, entry: &L2Descriptor) -> Option<&'b mut L3Table> {
         if entry.is_valid() {
             unsafe {
-                Some(transmute::<VAddr, &mut L3Table>(paddr_to_uefi_vaddr(entry.get_paddr().unwrap())))
+                Some(transmute::<VAddr, &mut L3Table>(paddr_to_uefi_vaddr(
+                    entry.get_paddr().unwrap(),
+                )))
             }
         } else {
             None
@@ -219,10 +429,12 @@ impl<'a> VSpaceAArch64<'a> {
     }
 
     /// Resolve a PDPTEntry to a page directory.
-    fn get_l2_table<'b>(&self, entry: L1Descriptor) -> Option<&'b mut L2Table> {
+    fn get_l2_table<'b>(&self, entry: &L1Descriptor) -> Option<&'b mut L2Table> {
         if entry.is_valid() {
             unsafe {
-                Some(transmute::<VAddr, &mut L2Table>(paddr_to_uefi_vaddr(entry.get_paddr().unwrap())))
+                Some(transmute::<VAddr, &mut L2Table>(paddr_to_uefi_vaddr(
+                    entry.get_paddr().unwrap(),
+                )))
             }
         } else {
             None
@@ -230,10 +442,12 @@ impl<'a> VSpaceAArch64<'a> {
     }
 
     /// Resolve a PML4Entry to a PDPT.
-    fn get_l1_table<'b>(&self, entry: L0Descriptor) -> Option<&'b mut L1Table> {
+    fn get_l1_table<'b>(&self, entry: &L0Descriptor) -> Option<&'b mut L1Table> {
         if entry.is_valid() {
             unsafe {
-                Some(transmute::<VAddr, &mut L1Table>(paddr_to_uefi_vaddr(entry.get_paddr().unwrap())))
+                Some(transmute::<VAddr, &mut L1Table>(paddr_to_uefi_vaddr(
+                    entry.get_paddr().unwrap(),
+                )))
             }
         } else {
             None

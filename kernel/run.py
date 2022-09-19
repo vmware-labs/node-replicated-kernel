@@ -280,7 +280,7 @@ def deploy(args):
     is_client = args.cmd and args.cmd.find("client") != -1
     is_controller = args.cmd and args.cmd.find("controller") != -1
 
-    if is_controller:
+    if is_controller or is_client:
         assert args.workers - 1 > 0, "Need at least one worker"
 
     # Clean up / create ESP dir structure

@@ -1762,6 +1762,7 @@ fn exokernel_fs_test(is_shmem: bool) {
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
+            .workers(2)
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -1868,6 +1869,7 @@ fn exokernel_dcm_test(is_shmem: bool) {
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
+            .workers(2)
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -1949,6 +1951,7 @@ fn s03_shmem_exokernel_fs_prop_test() {
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
+            .workers(2)
             .use_vmxnet3();
 
         let mut output = String::new();
@@ -2033,6 +2036,7 @@ fn s03_shmem_exokernel_multiinstance() {
                 .shmem_path(SHMEM_PATH)
                 .tap(&tap)
                 .no_network_setup()
+                .workers(clients + 1)
                 .use_vmxnet3();
 
             let mut output = String::new();
@@ -2989,6 +2993,7 @@ fn exokernel_fxmark_benchmark(is_shmem: bool) {
                     .shmem_path(SHMEM_PATH)
                     .tap("tap2")
                     .no_network_setup()
+                    .workers(2)
                     .use_vmxnet3()
                     .cmd(kernel_cmdline.as_str());
 
@@ -3451,6 +3456,7 @@ fn s06_exokernel_phys_alloc_test() {
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
+            .workers(2)
             .use_vmxnet3();
 
         let mut output = String::new();

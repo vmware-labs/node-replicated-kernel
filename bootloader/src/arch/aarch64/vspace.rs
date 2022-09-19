@@ -150,7 +150,8 @@ impl<'a> VSpaceAArch64<'a> {
     pub fn new() -> VSpaceAArch64<'a> {
         trace!("Allocate a L0Table (page-table root)");
 
-        // configure the address space
+        // configure the address space for el1
+        configure_el1();
 
         let l0: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
         let l0_table = unsafe { &mut *paddr_to_uefi_vaddr(l0).as_mut_ptr::<L0Table>() };
@@ -282,6 +283,7 @@ impl<'a> VSpaceAArch64<'a> {
                     entry
                         .inner_shareable()
                         .outer_shareable()
+                        .set_attr_index(MemoryAttributes::NormalMemory)
                         .frame(paddr)
                         .valid();
 
@@ -350,6 +352,7 @@ impl<'a> VSpaceAArch64<'a> {
                     entry
                         .inner_shareable()
                         .outer_shareable()
+                        .set_attr_index(MemoryAttributes::NormalMemory)
                         .frame(paddr)
                         .valid();
 
@@ -403,6 +406,7 @@ impl<'a> VSpaceAArch64<'a> {
                 entry
                     .inner_shareable()
                     .outer_shareable()
+                    .set_attr_index(MemoryAttributes::NormalMemory)
                     .frame(paddr)
                     .valid();
 

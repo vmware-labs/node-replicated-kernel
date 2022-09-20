@@ -85,6 +85,8 @@ impl KernelAllocator {
                 unsafe { Ok(ptr::NonNull::new_unchecked(f.kernel_vaddr().as_mut_ptr())) }
             }
             AllocatorType::MapBig => {
+                use crate::memory::vspace::AddressSpace;
+
                 // Big objects are mapped into the kernel address space
 
                 // This needs some <3:
@@ -142,11 +144,10 @@ impl KernelAllocator {
                     drop(pmanager); // `map_generic` might try to re-acquire mem_manager
 
                     kvspace
-                        .map_generic(
+                        .map_frame(
                             VAddr::from(start_at),
-                            (f.base, f.size()),
+                            f,
                             MapAction::ReadWriteKernel,
-                            true,
                         )
                         .expect("Can't create the mapping");
 
@@ -161,11 +162,10 @@ impl KernelAllocator {
                     drop(pmanager); // `map_generic` might try to re-acquire mem_manager
 
                     kvspace
-                        .map_generic(
+                        .map_frame(
                             VAddr::from(start_at),
-                            (f.base, f.size()),
+                            f,
                             MapAction::ReadWriteKernel,
-                            true,
                         )
                         .expect("Can't create the mapping");
                     start_at += BASE_PAGE_SIZE as u64;

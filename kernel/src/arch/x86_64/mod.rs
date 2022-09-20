@@ -254,9 +254,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Initialize kernel arguments as global
     crate::KERNEL_ARGS.call_once(move || kernel_args);
 
-    // Needs to be done before we switch address space
-    lazy_static::initialize(&vspace::INITIAL_VSPACE);
-
     klogger::init(
         crate::CMDLINE.get().map(|c| c.log_filter).unwrap_or("info"),
         debug::SERIAL_PRINT_PORT.load(Ordering::Relaxed),
@@ -294,7 +291,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut dyn_mem = PerCoreMemory::new(emanager, 0);
     // Make `dyn_mem` a static reference:
     let static_dyn_mem =
-        // Safety: 
+        // Safety:
         // - The initial stack of the core will never get deallocated (hence
         //   'static is fine)
         // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
@@ -305,7 +302,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut arch = kcb::Arch86Kcb::new(static_dyn_mem);
     // Make `arch` a static reference:
     let static_kcb =
-        // Safety: 
+        // Safety:
         // - The initial stack of the core will never get deallocated (hence
         //   'static is fine)
         // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
@@ -316,6 +313,9 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // init stack which remains allocated, we can not reclaim this stack or
     // return from _start.
     core::mem::forget(arch);
+
+    // Needs to be done before we switch address space
+    lazy_static::initialize(&vspace::INITIAL_VSPACE);
 
     serial::init();
     irq::init_apic();
@@ -363,7 +363,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // `global_memory` to every core) that's fine since it is allocated on our
     // BSP init stack (which isn't reclaimed):
     let global_memory_static =
-        // Safety: 
+        // Safety:
         // -'static: Lives on init stack (not deallocated)
         // - No mut alias to it
         unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };

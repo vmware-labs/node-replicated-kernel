@@ -1,7 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-#![allow(warnings)]
+#![allow(warnings, dead_code)]
 
 use alloc::boxed::Box;
 use core::alloc::Layout;
@@ -31,8 +31,7 @@ unsafe impl Sync for PageTable {}
 unsafe impl Send for PageTable {}
 
 impl Drop for PageTable {
-    fn drop(&mut self) {
-    }
+    fn drop(&mut self) {}
 }
 
 impl AddressSpace for PageTable {
@@ -62,16 +61,18 @@ impl AddressSpace for PageTable {
     }
 
     fn adjust(&mut self, vaddr: VAddr, rights: MapAction) -> Result<(VAddr, usize), KError> {
-        unimplemented!();
-        //self.unmap_frame(vaddr);
-        //self.map_frame(vaddr, );
-        //self.map_frame(vaddr, )
+        let tlb_flush_handle = self.unmap(vaddr)?;
+        self.map_frame(vaddr, tlb_flush_handle.frame, rights)?;
+        Ok((vaddr, tlb_flush_handle.frame.size))
     }
 
     fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
         let res = self.inner.resolve(addr.as_usize());
         match res {
-            verified_pt::pervasive::result::Result::Ok(pa) => Ok((PAddr::from(pa), MapAction::None)),
+            verified_pt::pervasive::result::Result::Ok((pa, flags)) => {
+                let ptflags = PTFlags::from_bits_truncate(flags);
+                Ok((PAddr::from(pa), ptflags.into()))
+            },
             verified_pt::pervasive::result::Result::Err(_) => Err(KError::NotMapped),
         }
     }
@@ -79,7 +80,11 @@ impl AddressSpace for PageTable {
     fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, KError> {
         let res = self.inner.unmap(base.as_usize());
         match res {
-            verified_pt::definitions_t::UnmapResult::Ok => Ok(TlbFlushHandle::new(base, Frame::empty())),
+            verified_pt::definitions_t::UnmapResult::Ok(pa, size, flags) => {
+                let ptflags = PTFlags::from_bits_truncate(flags);
+                let node = 0x0; // TODO
+                Ok(TlbFlushHandle::new(VAddr::from(base), Frame::new(pa.into(), size, 0)))
+            },
             verified_pt::definitions_t::UnmapResult::ErrNoSuchMapping => Err(KError::NotMapped),
         }
     }
@@ -90,21 +95,20 @@ impl PageTable {
     ///
     /// Allocate an initial PML4 table for it.
     pub(crate) fn new(da: DA) -> Result<PageTable, KError> {
-        let pml4 = PageTable::alloc_frame_with_da(&da);
-        Ok(PageTable {
-            inner: verified_pt::impl_u::l2_impl::PageTable {
-                memory: verified_pt::mem_t::PageTableMemory {
-                    //#[cfg(not(test))]
-                    ptr: KERNEL_BASE as *mut u64,
-                    //#[cfg(test)]
-                    //ptr: 0x0 as *mut u64,
-                    pml4: pml4.base.as_usize(),
-                    pt_allocator: Box::new(move || PageTable::alloc_frame_with_da(&da).base.as_usize()),
+        unsafe {
+            let pml4 = PageTable::alloc_frame_with_da(&da);
+            Ok(PageTable {
+                inner: verified_pt::impl_u::l2_impl::PageTable {
+                    memory: verified_pt::mem_t::PageTableMemory {
+                        ptr: KERNEL_BASE as *mut u64,
+                        pml4: pml4.base.as_usize(),
+                        pt_allocator: Box::new(move || PageTable::alloc_frame_with_da(&da).base.as_usize()),
+                    },
+                    arch: verified_pt::definitions_t::x86_arch_exec(),
+                    ghost_pt: (),
                 },
-                arch: verified_pt::definitions_t::x86_arch_exec(),
-                ghost_pt: (),
-            },
-        })
+            })
+        }
     }
 
     /// Create a new address space given a raw pointer to a PML4 table.
@@ -122,7 +126,7 @@ impl PageTable {
         PageTable {
             inner: verified_pt::impl_u::l2_impl::PageTable {
                 memory: verified_pt::mem_t::PageTableMemory {
-                    ptr: KERNEL_BASE as *mut u64,
+                    ptr: 0x0 as *mut u64,
                     pml4: pml4_table as usize,
                     pt_allocator: Box::new(|| PageTable::alloc_frame_no_da().base.as_usize()),
                 },
@@ -137,11 +141,34 @@ impl PageTable {
     }
 
     pub(crate) fn pml4<'a>(&'a self) -> Pin<&'a PML4> {
-        unimplemented!()
+        unsafe {
+            let pml4_vaddr: VAddr = self.inner.memory.pml4.into();
+            let pml4: &'a PML4 = &*pml4_vaddr.as_ptr::<PML4>();
+
+            Pin::new_unchecked(pml4)
+        }
+    }
+
+    pub(crate) fn pml4_mut<'a>(&'a mut self) -> Pin<&'a mut PML4> {
+        unsafe {
+            let pml4_vaddr: VAddr = self.inner.memory.pml4.into();
+            let pml4: &'a mut PML4 = &mut *pml4_vaddr.as_mut_ptr::<PML4>();
+
+            Pin::new_unchecked(pml4)
+        }
     }
 
     pub(crate) fn patch_kernel_mappings(&mut self, kvspace: &Self) {
-        unimplemented!()
+        // Install the kernel mappings
+        // TODO(efficiency): These should probably be global mappings
+        // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
+        // TODO(ugly): Find a better way to express this mess
+
+        for i in 128..=135 {
+            let kernel_pml_entry = kvspace.pml4()[i];
+            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+            self.pml4_mut()[i] = kernel_pml_entry;
+        }
     }
 
     /// Constructs an identity map but with an offset added to the region.
@@ -167,8 +194,7 @@ impl PageTable {
             pbase + size
         );
 
-        //self.map_generic(vbase, (pbase, size), rights, true)
-        unimplemented!()
+        self.map_frame(vbase, Frame::new(pbase, size, 0), rights)
     }
 
     /// Identity maps a given physical memory range [`base`, `base` + `size`]

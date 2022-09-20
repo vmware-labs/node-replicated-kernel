@@ -37,7 +37,7 @@ fn action() -> impl Strategy<Value = TestAction> {
             map_rights()
         )
             .prop_map(|(a, b, c)| TestAction::Map(a, b, c)),
-        //(vaddrs(0x60_0000), map_rights()).prop_map(|(a, b)| TestAction::Adjust(a, b)),
+        (vaddrs(0x60_0000), map_rights()).prop_map(|(a, b)| TestAction::Adjust(a, b)),
         vaddrs(0x60_0000).prop_map(TestAction::Unmap),
         vaddrs(0x60_0000).prop_map(TestAction::Resolve),
     ]
@@ -61,7 +61,7 @@ fn map_rights() -> impl Strategy<Value = MapAction> {
 }
 
 fn page_sizes() -> impl Strategy<Value = usize> {
-    prop::sample::select(vec![BASE_PAGE_SIZE, LARGE_PAGE_SIZE])
+    prop::sample::select(vec![BASE_PAGE_SIZE])//, LARGE_PAGE_SIZE])
 }
 
 prop_compose! {

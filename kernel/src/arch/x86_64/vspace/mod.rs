@@ -21,7 +21,6 @@ pub mod page_table;
 #[path = "page_table.rs"]
 pub mod unverified_page_table;
 
-
 #[cfg(test)]
 mod test;
 

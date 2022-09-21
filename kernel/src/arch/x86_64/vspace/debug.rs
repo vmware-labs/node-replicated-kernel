@@ -371,13 +371,17 @@ impl<'a> dot::GraphWalk<'a> for PageTable {
     type Edge = Ed<'a>;
     fn nodes(&self) -> dot::Nodes<'a, Nd> {
         // Failure ok this is only used for debugging
-        let (nodes, _) = self.parse_nodes_edges(self.pml4()).expect("Can't parse nodes");
+        let (nodes, _) = self
+            .parse_nodes_edges(self.pml4())
+            .expect("Can't parse nodes");
         nodes.into()
     }
 
     fn edges(&'a self) -> dot::Edges<'a, Ed> {
         // Failure ok this is only used for debugging
-        let (_, edges) = self.parse_nodes_edges(self.pml4()).expect("Can't parse edges");
+        let (_, edges) = self
+            .parse_nodes_edges(self.pml4())
+            .expect("Can't parse edges");
         edges.into()
     }
 

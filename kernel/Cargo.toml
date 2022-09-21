@@ -86,7 +86,7 @@ which = "4"
 cc = "1.0"
 
 [features]
-default = ["addr2line", "serde", "serde_cbor"]
+default = ["addr2line", "serde", "serde_cbor", "verified-code"]
 # Use formally verified code in some places
 verified-code = []
 # Enable Ethernet based networking.

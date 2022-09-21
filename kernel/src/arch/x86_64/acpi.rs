@@ -223,7 +223,12 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
             )
             .expect("Can't map ACPI memory");
     }
-    trace!("AcpiOsMapMemory(loc = {:#x}, len = {}) = {:#x}", location, len, p);
+    trace!(
+        "AcpiOsMapMemory(loc = {:#x}, len = {}) = {:#x}",
+        location,
+        len,
+        p
+    );
 
     let vaddr = paddr_to_kernel_vaddr(p);
     vaddr.as_mut_ptr::<c_void>()

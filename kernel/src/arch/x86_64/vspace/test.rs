@@ -61,7 +61,7 @@ fn map_rights() -> impl Strategy<Value = MapAction> {
 }
 
 fn page_sizes() -> impl Strategy<Value = usize> {
-    prop::sample::select(vec![BASE_PAGE_SIZE])//, LARGE_PAGE_SIZE])
+    prop::sample::select(vec![BASE_PAGE_SIZE]) //, LARGE_PAGE_SIZE])
 }
 
 prop_compose! {

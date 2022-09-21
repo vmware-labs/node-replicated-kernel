@@ -144,11 +144,7 @@ impl KernelAllocator {
                     drop(pmanager); // `map_generic` might try to re-acquire mem_manager
 
                     kvspace
-                        .map_frame(
-                            VAddr::from(start_at),
-                            f,
-                            MapAction::ReadWriteKernel,
-                        )
+                        .map_frame(VAddr::from(start_at), f, MapAction::ReadWriteKernel)
                         .expect("Can't create the mapping");
 
                     start_at += LARGE_PAGE_SIZE as u64;
@@ -162,11 +158,7 @@ impl KernelAllocator {
                     drop(pmanager); // `map_generic` might try to re-acquire mem_manager
 
                     kvspace
-                        .map_frame(
-                            VAddr::from(start_at),
-                            f,
-                            MapAction::ReadWriteKernel,
-                        )
+                        .map_frame(VAddr::from(start_at), f, MapAction::ReadWriteKernel)
                         .expect("Can't create the mapping");
                     start_at += BASE_PAGE_SIZE as u64;
                 }

@@ -11,16 +11,16 @@ use core::ptr::NonNull;
 
 use crate::arch::memory::KERNEL_BASE;
 use log::{debug, trace};
-use x86::bits64::paging::*;
 use verified_pt;
+use x86::bits64::paging::*;
 
 use crate::error::KError;
 use crate::memory::detmem::DA;
 use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
-pub(crate) use super::unverified_page_table::ReadOnlyPageTable;
 pub(super) use super::unverified_page_table::Modify;
+pub(crate) use super::unverified_page_table::ReadOnlyPageTable;
 pub(super) use super::unverified_page_table::PT_LAYOUT;
 
 pub(crate) struct PageTable {
@@ -45,13 +45,15 @@ impl AddressSpace for PageTable {
                 is_writable: action.is_writable(),
                 is_supervisor: action.is_kernel(),
                 disable_execute: !action.is_executable(),
-            }
+            },
         };
 
         let res = self.inner.map_frame(base.as_usize(), pte);
         match res {
             verified_pt::definitions_t::MapResult::Ok => Ok(()),
-            verified_pt::definitions_t::MapResult::ErrOverlap => Err(KError::AlreadyMapped { base: VAddr::from(0x0) }),
+            verified_pt::definitions_t::MapResult::ErrOverlap => Err(KError::AlreadyMapped {
+                base: VAddr::from(0x0),
+            }),
         }
     }
 
@@ -72,7 +74,7 @@ impl AddressSpace for PageTable {
             verified_pt::pervasive::result::Result::Ok((pa, flags)) => {
                 let ptflags = PTFlags::from_bits_truncate(flags);
                 Ok((PAddr::from(pa), ptflags.into()))
-            },
+            }
             verified_pt::pervasive::result::Result::Err(_) => Err(KError::NotMapped),
         }
     }
@@ -83,8 +85,11 @@ impl AddressSpace for PageTable {
             verified_pt::definitions_t::UnmapResult::Ok(pa, size, flags) => {
                 let ptflags = PTFlags::from_bits_truncate(flags);
                 let node = 0x0; // TODO
-                Ok(TlbFlushHandle::new(VAddr::from(base), Frame::new(pa.into(), size, 0)))
-            },
+                Ok(TlbFlushHandle::new(
+                    VAddr::from(base),
+                    Frame::new(pa.into(), size, 0),
+                ))
+            }
             verified_pt::definitions_t::UnmapResult::ErrNoSuchMapping => Err(KError::NotMapped),
         }
     }
@@ -102,7 +107,9 @@ impl PageTable {
                     memory: verified_pt::mem_t::PageTableMemory {
                         ptr: KERNEL_BASE as *mut u64,
                         pml4: pml4.base.as_usize(),
-                        pt_allocator: Box::new(move || PageTable::alloc_frame_with_da(&da).base.as_usize()),
+                        pt_allocator: Box::new(move || {
+                            PageTable::alloc_frame_with_da(&da).base.as_usize()
+                        }),
                     },
                     arch: verified_pt::definitions_t::x86_arch_exec(),
                     ghost_pt: (),

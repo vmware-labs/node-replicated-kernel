@@ -24,7 +24,7 @@ pub(crate) use super::unverified_page_table::ReadOnlyPageTable;
 pub(super) use super::unverified_page_table::PT_LAYOUT;
 
 pub(crate) struct PageTable {
-    inner: verified_pt::impl_u::l2_impl::PageTable,
+    pub(crate) inner: verified_pt::impl_u::l2_impl::PageTable,
 }
 
 unsafe impl Sync for PageTable {}
@@ -128,7 +128,7 @@ impl PageTable {
     ///   everything the table points to).
     /// - THe `pml4_table` is converted to a Box using [`Box::from_raw`] so
     ///   either should make sure that the `Self` lives forever or the PML4 came
-    ///   from a [q`Box::into_raw`] call).
+    ///   from a [`Box::into_raw`] call).
     pub(super) unsafe fn from_pml4(pml4_table: *mut PML4) -> Self {
         PageTable {
             inner: verified_pt::impl_u::l2_impl::PageTable {
@@ -201,7 +201,25 @@ impl PageTable {
             pbase + size
         );
 
-        self.map_frame(vbase, Frame::new(pbase, size, 0), rights)
+        let lps = size / LARGE_PAGE_SIZE;
+        let bps = (size - (lps * LARGE_PAGE_SIZE)) / BASE_PAGE_SIZE;
+        for i in 0..lps {
+            let vbase_i = VAddr::from_u64((at_offset + pbase + i * LARGE_PAGE_SIZE).as_u64());
+            let pbase_i = pbase + i * LARGE_PAGE_SIZE;
+
+            self.map_frame(vbase_i, Frame::new(pbase_i, LARGE_PAGE_SIZE, 0), rights)?;
+        }
+
+        for i in 0..bps {
+            let vbase_i = VAddr::from_u64(
+                (at_offset + pbase + lps * LARGE_PAGE_SIZE + i * BASE_PAGE_SIZE).as_u64(),
+            );
+            let pbase_i = pbase + lps * LARGE_PAGE_SIZE + i * BASE_PAGE_SIZE;
+
+            self.map_frame(vbase_i, Frame::new(pbase_i, BASE_PAGE_SIZE, 0), rights)?;
+        }
+
+        Ok(())
     }
 
     /// Identity maps a given physical memory range [`base`, `base` + `size`]

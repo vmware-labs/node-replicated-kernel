@@ -52,7 +52,6 @@ lazy_static! {
         unsafe fn find_current_ptable() -> PageTable {
             use x86::controlregs;
             use x86::current::paging::PML4;
-            use crate::memory::paddr_to_kernel_vaddr;
 
             // The cr3 register holds a physical address
             let pml4: PAddr = PAddr::from(controlregs::cr3());
@@ -61,7 +60,7 @@ lazy_static! {
             // - We know we can access this at kernel vaddr and it's a correctly
             // aligned+initialized PML4 pointer because of the informal contract
             // we have with the bootloader
-            let pml4_table = core::mem::transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
+            let pml4_table = core::mem::transmute::<PAddr, *mut PML4>(pml4);
 
             // Safety `from_pml4`:
             // - This is a bit tricky since it technically got allocated by the

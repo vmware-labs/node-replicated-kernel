@@ -1188,9 +1188,12 @@ impl Process for Ring3Process {
             e.load(self)?;
         }
 
-        let kvspace = super::vspace::INITIAL_VSPACE.lock();
+        let mut kvspace = super::vspace::INITIAL_VSPACE.lock();
         self.vspace.page_table.patch_kernel_mappings(&*kvspace);
-
+        #[cfg(feature = "verified-code")]
+        {
+            kvspace.inner.memory.ptr = crate::memory::KERNEL_BASE as *mut u64;
+        }
         Ok(())
     }
 

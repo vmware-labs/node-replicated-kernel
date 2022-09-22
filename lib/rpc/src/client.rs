@@ -35,7 +35,8 @@ impl RPCClient for Client {
         self.transport.client_connect()?;
 
         let mut assigned_client_id = [0u8; 8];
-        self.call(0, RPC_TYPE_CONNECT, data_in, &mut [&mut assigned_client_id]).unwrap();
+        self.call(0, RPC_TYPE_CONNECT, data_in, &mut [&mut assigned_client_id])
+            .unwrap();
 
         self.client_id = u64::from_le_bytes(assigned_client_id);
         debug!("connect() - Set client_id to: {:?}", self.client_id);

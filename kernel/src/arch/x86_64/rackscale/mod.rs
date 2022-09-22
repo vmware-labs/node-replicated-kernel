@@ -6,7 +6,7 @@
 use alloc::boxed::Box;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
-use log::{debug, error};
+use log::{debug, error, warn};
 use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
 use rpc::rpc::{NodeId, RPCError, RPCHeader};
 use spin::{Lazy, Mutex};
@@ -57,7 +57,6 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
             crate::transport::ethernet::init_ethernet_rpc(
                 smoltcp::wire::IpAddress::v4(172, 31, 0, 11),
                 6970,
-                machine_id,
             )
             .expect("Failed to initialize ethernet RPC"),
         )
@@ -72,7 +71,7 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
 
 // Mapping between local PIDs and remote (client) PIDs
 lazy_static! {
-    static ref PID_MAP: NrLock<HashMap<Pid, Pid>> = NrLock::default();
+    static ref PID_MAP: NrLock<HashMap<(NodeId, Pid), Pid>> = NrLock::default();
 }
 
 // RPC Handler for client registration
@@ -80,17 +79,13 @@ pub(crate) fn register_client(
     hdr: &mut RPCHeader,
     _payload: &mut [u8],
 ) -> Result<NodeId, RPCError> {
-    // TODO: memslices and cores should really come from registration payload
-
-    // map remote pid to local pid
-    let local_pid = register_pid(hdr.pid)?;
-
-    // TODO: calculate cores
+    // TODO: calculate cores and memslices more correctly
     let cores = 64;
     let memslices = SHMEM_REGION.size / LARGE_PAGE_SIZE as u64;
 
-    // Register client resources with DCM
-    let node_id = dcm_register_node(local_pid, cores, memslices);
+    // Register client resources with DCM, DCM doesn't care about pids, so
+    // send w/ dummy pid
+    let node_id = dcm_register_node(0, cores, memslices);
     log::info!(
         "Registered client {:?} with {:?} cores and {:?} memslices",
         node_id,
@@ -102,18 +97,26 @@ pub(crate) fn register_client(
 }
 
 // Lookup the local pid corresponding to a remote pid
-pub(crate) fn get_local_pid(remote_pid: usize) -> Option<usize> {
-    let process_lookup = PID_MAP.read();
-    let local_pid = process_lookup.get(&remote_pid);
-    if let None = local_pid {
-        error!("Failed to lookup remote pid {}", remote_pid);
-        return None;
+pub(crate) fn get_local_pid(node_id: NodeId, remote_pid: usize) -> Result<usize, KError> {
+    {
+        let process_lookup = PID_MAP.read();
+        let local_pid = process_lookup.get(&(node_id, remote_pid));
+        if let Some(pid) = local_pid {
+            return Ok(*(local_pid.unwrap()));
+        }
     }
-    Some(*(local_pid.unwrap()))
+
+    // TODO: will eventually want to delete this logic, as we should create
+    // mapping on process creation.
+    warn!(
+        "Failed to lookup remote pid {}:{}, will register locally instead",
+        node_id, remote_pid
+    );
+    register_pid(node_id, remote_pid)
 }
 
 // Register a remote pid by creating a local pid and creating a remote-local PID mapping
-pub(crate) fn register_pid(remote_pid: usize) -> Result<usize, KError> {
+pub(crate) fn register_pid(node_id: NodeId, remote_pid: usize) -> Result<usize, KError> {
     crate::nr::NR_REPLICA
         .get()
         .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
@@ -123,13 +126,14 @@ pub(crate) fn register_pid(remote_pid: usize) -> Result<usize, KError> {
                 match cnrfs::MlnrKernelNode::add_process(local_pid) {
                     Ok(_) => {
                         // TODO: register pid
+                        debug!("register_pid about to get PID_MAP");
                         let mut pmap = PID_MAP.write();
                         pmap.try_reserve(1)?;
                         debug!(
                             "Mapped remote pid {} to local pid {}",
                             remote_pid, local_pid
                         );
-                        pmap.try_insert(remote_pid, local_pid)
+                        pmap.try_insert((node_id, remote_pid), local_pid)
                             .map_err(|_e| KError::FileDescForPidAlreadyAdded)?;
                         Ok(local_pid)
                     }

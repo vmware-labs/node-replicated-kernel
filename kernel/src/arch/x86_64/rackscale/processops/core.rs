@@ -61,8 +61,8 @@ pub(crate) fn rpc_request_core(
 // RPC Handler function for delete() RPCs in the controller
 pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Lookup local pid
-    let local_pid = { get_local_pid(hdr.pid) };
-    if local_pid.is_none() {
+    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
+    if local_pid.is_err() {
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();

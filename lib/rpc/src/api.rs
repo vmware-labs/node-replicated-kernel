@@ -37,7 +37,7 @@ pub trait RPCServer<'a> {
 /// RPC client operations
 pub trait RPCClient {
     /// Registers with a RPC server
-    fn connect(&mut self) -> Result<NodeId, RPCError>;
+    fn connect(&mut self, data_in: &[&[u8]]) -> Result<(), RPCError>;
 
     /// Calls a remote RPC function with ID
     fn call(

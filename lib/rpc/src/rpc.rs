@@ -67,6 +67,7 @@ impl core::convert::From<alloc::collections::TryReserveError> for RPCError {
 }
 
 pub type RPCType = u8;
+pub const RPC_TYPE_CONNECT: u8 = 0u8;
 
 #[derive(Debug, Default)]
 #[repr(C)]

@@ -18,10 +18,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new<T: 'static + Transport + Send>(transport: Box<T>, machine_id: u8) -> Client {
+    pub fn new<T: 'static + Transport + Send>(transport: Box<T>) -> Client {
         Client {
             transport,
-            client_id: machine_id as u64,
+            client_id: 0,
             req_id: 0,
             hdr: UnsafeCell::new(RPCHeader::default()),
         }
@@ -31,17 +31,16 @@ impl Client {
 /// RPC client operations
 impl RPCClient for Client {
     /// Registers with a RPC server
-    fn connect(&mut self) -> Result<NodeId, RPCError> {
+    fn connect(&mut self, data_in: &[&[u8]]) -> Result<(), RPCError> {
         self.transport.client_connect()?;
 
-        // TODO: this is a dummy filler for an actual registration function
-        let pid = if self.client_id == 0 {
-            0
-        } else {
-            (self.client_id - 1) as usize
-        };
-        self.call(pid, 0_u8, &[], &mut []).unwrap();
-        Ok(self.client_id)
+        let mut assigned_client_id = [0u8; 8];
+        self.call(0, RPC_TYPE_CONNECT, data_in, &mut [&mut assigned_client_id]).unwrap();
+
+        self.client_id = u64::from_le_bytes(assigned_client_id);
+        debug!("connect() - Set client_id to: {:?}", self.client_id);
+
+        Ok(())
     }
 
     /// Calls a remote RPC function with ID
@@ -69,11 +68,7 @@ impl RPCClient for Client {
         self.transport.recv_msg(hdr, data_out)?;
 
         // Check request & client IDs, and also length of received data.
-        //
-        // The machine_id on the client side starts with 1 (controller has machine id = 0)
-        // and the server assigns client id starting with 0. So, we need to add 1 to the
-        // server side machine_id to compare it with the client side machine_id.
-        if self.client_id != 0 && hdr.client_id + 1 != self.client_id || hdr.req_id != self.req_id {
+        if hdr.client_id != self.client_id || hdr.req_id != self.req_id {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",
                 hdr.client_id, self.client_id, hdr.req_id, self.req_id
@@ -83,13 +78,6 @@ impl RPCClient for Client {
 
         // Increment request id
         self.req_id += 1;
-
-        if rpc_id == 0u8 {
-            // No need to update, as we are already checking the client id above
-            // self.client_id = hdr.client_id;
-            debug!("Set client ID to: {}", self.client_id);
-            return Ok(());
-        }
         Ok(())
     }
 }

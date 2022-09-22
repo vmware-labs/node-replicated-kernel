@@ -60,7 +60,7 @@ impl DeterministicAlloc {
         // Need to figure out this capacity; it is hard to determine,
         // something like: (#allocations of write op in NR with most
         // allocations)*(max log entries till GC)
-        const ALLOC_CAP: usize = 32_000;
+        const ALLOC_CAP: usize = 8192;
 
         let mut qs = ArrayVec::new();
         for _i in 0..nodes {

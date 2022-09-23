@@ -9,8 +9,8 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::super::dcm::dcm_request::make_dcm_request;
-use super::super::get_local_pid;
 use super::super::kernelrpc::*;
+use crate::arch::rackscale::controller::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct RequestCoreReq {

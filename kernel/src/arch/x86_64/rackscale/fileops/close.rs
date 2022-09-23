@@ -12,9 +12,9 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
-use super::super::get_local_pid;
 use super::super::kernelrpc::*;
 use super::FileIO;
+use crate::arch::rackscale::controller::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct CloseReq {

@@ -8,7 +8,7 @@ use rpc::rpc::MAX_BUFF_LEN;
 use static_assertions::const_assert;
 
 #[cfg(feature = "rackscale")]
-use {crate::arch::rackscale::FrameCacheMemslice, rpc::transport::ShmemTransport};
+use {crate::arch::rackscale::controller::FrameCacheMemslice, rpc::transport::ShmemTransport};
 
 use crate::cmdline::Transport;
 use crate::error::{KError, KResult};

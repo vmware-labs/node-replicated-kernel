@@ -24,7 +24,7 @@ use spin::Mutex;
 use vmxnet3::smoltcp::DevQueuePhy;
 
 use super::kernelrpc::*;
-use super::{get_local_pid, FrameCacheMemslice};
+use crate::arch::rackscale::controller::{get_local_pid, FrameCacheMemslice};
 use crate::fallible_string::TryString;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
 use crate::transport::shmem::create_shmem_manager;

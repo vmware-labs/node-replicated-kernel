@@ -17,10 +17,10 @@ use crate::nrproc::NrProcess;
 
 use super::super::dcm::dcm_request::make_dcm_request;
 use super::super::dcm::DCM_INTERFACE;
-use super::super::get_local_pid;
 use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
+use crate::arch::rackscale::controller::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct MemReq {

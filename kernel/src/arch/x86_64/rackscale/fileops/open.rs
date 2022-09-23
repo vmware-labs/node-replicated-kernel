@@ -16,7 +16,7 @@ use crate::fs::cnrfs;
 
 use super::super::kernelrpc::*;
 use super::FileIO;
-use crate::arch::rackscale::get_local_pid;
+use crate::arch::rackscale::controller::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct OpenReq {

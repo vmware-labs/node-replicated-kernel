@@ -12,6 +12,7 @@ use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch};
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
+use super::client::RPC_CLIENT;
 use super::fileops::close::rpc_close;
 use super::fileops::delete::rpc_delete;
 use super::fileops::getinfo::rpc_getinfo;
@@ -37,7 +38,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
 
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_open(&mut **client, pid, pathstring, flags, modes).map_err(|e| e.into())
     }
 
@@ -45,7 +46,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         nrproc::NrProcess::<Ring3Process>::userspace_exec_slice_mut(
             uslice,
             Box::try_new(move |ubuf: &mut [u8]| {
-                let mut client = super::RPC_CLIENT.lock();
+                let mut client = RPC_CLIENT.lock();
                 rpc_read(&mut **client, uslice.pid, fd, ubuf).map_err(|e| e.into())
             })?,
         )
@@ -53,7 +54,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
 
     fn write(&self, fd: FileDescriptor, uslice: UserSlice) -> KResult<(u64, u64)> {
         let kernslice = KernArcBuffer::try_from(uslice)?;
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_write(&mut **client, uslice.pid, fd, &*kernslice.buffer).map_err(|e| e.into())
     }
 
@@ -61,7 +62,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         nrproc::NrProcess::<Ring3Process>::userspace_exec_slice_mut(
             uslice,
             Box::try_new(move |ubuf: &mut [u8]| {
-                let mut client = super::RPC_CLIENT.lock();
+                let mut client = RPC_CLIENT.lock();
                 rpc_readat(&mut **client, uslice.pid, fd, ubuf, offset).map_err(|e| e.into())
             })?,
         )
@@ -69,13 +70,13 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
 
     fn write_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
         let kernslice = KernArcBuffer::try_from(uslice)?;
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_writeat(&mut **client, uslice.pid, fd, offset, &*kernslice.buffer).map_err(|e| e.into())
     }
 
     fn close(&self, fd: FileDescriptor) -> KResult<(u64, u64)> {
         let pid = crate::arch::process::current_pid()?;
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
     }
 
@@ -83,7 +84,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
 
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_getinfo(&mut **client, pid, pathstring).map_err(|e| e.into())
     }
 
@@ -91,7 +92,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
 
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_delete(&mut **client, pid, pathstring).map_err(|e| e.into())
     }
 
@@ -104,7 +105,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let oldpath: String = oldpath.try_into()?;
         let newpath: String = newpath.try_into()?;
 
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_rename(&mut **client, pid, oldpath, newpath).map_err(|e| e.into())
     }
 
@@ -112,7 +113,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
         let pid = path.pid;
         let pathstring: String = path.try_into()?;
 
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_mkdir(&mut **client, pid, pathstring, modes).map_err(|e| e.into())
     }
 }
@@ -121,7 +122,7 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn log(&self, uslice: UserSlice) -> KResult<(u64, u64)> {
         self.local.log(uslice)?;
         let msg: String = uslice.try_into()?;
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         rpc_log(&mut **client, uslice.pid, msg).map_err(|e| e.into())
     }
 
@@ -138,7 +139,7 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn request_core(&self, core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
         rpc_request_core(&mut **client, pid, core_id, entry_point)?;
 
@@ -146,7 +147,7 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
-        let mut client = super::RPC_CLIENT.lock();
+        let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
         rpc_alloc_physical(&mut **client, pid, page_size, affinity).map_err(|e| e.into())
     }

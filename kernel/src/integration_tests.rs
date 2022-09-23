@@ -767,9 +767,9 @@ fn vmxnet_smoltcp() {
 /// Test vmxnet3 integrated with smoltcp.s
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 fn dcm() {
+    use crate::arch::rackscale::client::RPC_CLIENT;
     use crate::arch::rackscale::processops::core::rpc_request_core;
     use crate::arch::rackscale::processops::mem::rpc_alloc_physical;
-    use crate::arch::rackscale::RPC_CLIENT;
     use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
     use log::info;
 

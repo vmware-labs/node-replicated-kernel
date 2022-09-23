@@ -13,7 +13,7 @@ use crate::fs::cnrfs;
 
 use super::super::kernelrpc::*;
 use super::FileIO;
-use crate::arch::rackscale::get_local_pid;
+use crate::arch::rackscale::controller::get_local_pid;
 
 pub(crate) fn rpc_delete(
     rpc_client: &mut dyn RPCClient,

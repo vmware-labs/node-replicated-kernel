@@ -3,14 +3,14 @@
 
 use core::result::Result;
 
-use crate::rpc::{NodeId, RPCError, RPCHeader, RPCType};
+use crate::rpc::{ClientId, RPCError, RPCHeader, RPCType};
 
 /// RPC Handler function
 pub type RPCHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError>;
 
 /// RPC Client registration function
 pub type RegistrationHandler =
-    fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<NodeId, RPCError>;
+    fn(hdr: &mut RPCHeader, payload: &[u8]) -> Result<ClientId, RPCError>;
 
 /// RPC server operations
 pub trait RPCServer<'a> {
@@ -20,7 +20,7 @@ pub trait RPCServer<'a> {
         'c: 'a;
 
     /// Accept an RPC client
-    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<NodeId, RPCError>
+    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<(), RPCError>
     where
         'c: 'a;
 

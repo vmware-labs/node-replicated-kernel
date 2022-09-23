@@ -9,7 +9,7 @@ fn test_client_server_shmem_transport() {
 
     use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
     use rpc::client::Client;
-    use rpc::rpc::{NodeId, RPCError, RPCHeader};
+    use rpc::rpc::{ClientId, RPCError, RPCHeader};
     use rpc::server::Server;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::{Queue, Receiver, Sender};
@@ -41,7 +41,7 @@ fn test_client_server_shmem_transport() {
         server.register(1, &ECHO_HANDLER).unwrap();
 
         // Accept a client
-        fn register_client(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<NodeId, RPCError> {
+        fn register_client(_hdr: &mut RPCHeader, _payload: &[u8]) -> Result<ClientId, RPCError> {
             Ok(0)
         }
         pub const CLIENT_REGISTRAR: RegistrationHandler = register_client;

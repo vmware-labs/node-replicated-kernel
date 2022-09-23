@@ -1,10 +1,11 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use abomonation::decode;
 use alloc::boxed::Box;
 use core::cell::UnsafeCell;
 
-use log::{debug, warn};
+use log::{debug, error, warn};
 
 use crate::api::*;
 use crate::rpc::*;
@@ -12,7 +13,7 @@ use crate::transport::Transport;
 
 pub struct Client {
     transport: Box<dyn Transport + Send>,
-    client_id: NodeId,
+    client_id: ClientId,
     req_id: u64,
     hdr: UnsafeCell<RPCHeader>,
 }
@@ -34,13 +35,18 @@ impl RPCClient for Client {
     fn connect(&mut self, data_in: &[&[u8]]) -> Result<(), RPCError> {
         self.transport.client_connect()?;
 
-        let mut assigned_client_id = [0u8; 8];
-        self.call(0, RPC_TYPE_CONNECT, data_in, &mut [&mut assigned_client_id])
+        let mut res_data = [0u8; 8];
+        self.call(0, RPC_TYPE_CONNECT, data_in, &mut [&mut res_data])
             .unwrap();
 
-        self.client_id = u64::from_le_bytes(assigned_client_id);
-        debug!("connect() - Set client_id to: {:?}", self.client_id);
-
+        // Decode client id
+        if let Some((res, _remaining)) = unsafe { decode::<ClientIdRes>(&mut res_data) } {
+            self.client_id = res.client_id;
+            debug!("connect() - Set client_id to: {:?}", self.client_id);
+        } else {
+            error!("Failed to decode client id during client connection");
+            return Err(RPCError::MalformedResponse);
+        }
         Ok(())
     }
 
@@ -69,7 +75,9 @@ impl RPCClient for Client {
         self.transport.recv_msg(hdr, data_out)?;
 
         // Check request & client IDs, and also length of received data.
-        if hdr.client_id != self.client_id || hdr.req_id != self.req_id {
+        if (hdr.client_id != self.client_id && rpc_id != RPC_TYPE_CONNECT)
+            || hdr.req_id != self.req_id
+        {
             warn!(
                 "Mismatched client id ({}, {}) or request id ({}, {})",
                 hdr.client_id, self.client_id, hdr.req_id, self.req_id

@@ -1,11 +1,21 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::Abomonation;
+use abomonation::{unsafe_abomonate, Abomonation};
 use core::{convert::TryInto, str::Utf8Error};
+use core2::io::Result as IOResult;
+use core2::io::Write;
 
 /// Node ID for servers/clients
-pub type NodeId = u64;
+pub type ClientId = u64;
+
+#[derive(Debug)]
+pub(crate) struct ClientIdRes {
+    // abomonate doesn't work well with type aliases so use
+    // u64 here instead of ClientId
+    pub client_id: ClientId,
+}
+unsafe_abomonate!(ClientIdRes: client_id);
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 pub enum RPCError {

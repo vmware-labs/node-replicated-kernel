@@ -10,6 +10,7 @@ extern crate std;
 #[macro_use]
 extern crate abomonation;
 extern crate alloc;
+extern crate core2;
 extern crate smoltcp;
 extern crate vmxnet3;
 

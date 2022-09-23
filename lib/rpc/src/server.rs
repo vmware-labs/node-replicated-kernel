@@ -1,6 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use abomonation::encode;
 use alloc::boxed::Box;
 use core::cell::{RefCell, UnsafeCell};
 
@@ -80,7 +81,7 @@ impl<'a> RPCServer<'a> for Server<'a> {
     }
 
     /// Accept a client
-    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<NodeId, RPCError>
+    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<(), RPCError>
     where
         'c: 'a,
     {
@@ -90,16 +91,25 @@ impl<'a> RPCServer<'a> for Server<'a> {
         self.receive()?;
 
         // TODO: registration
-        // It is assumed that handler functions will only use the mutable reference
+        // It is assumed that handler functions will only use the mutable reference to the header
         // during the function invocation (and not retain the reference), which makes it safe to
         // create a new mutable reference to the buffer during each time this function is called
         let client_id = func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
-            &mut (*self.mbuf.get()).data
+            &(*self.mbuf.get()).data
         })?;
+
+        // Construct result
+        let res = ClientIdRes { client_id };
+        unsafe {
+            let mut payload = &mut (*self.mbuf.get()).data;
+            encode(&res, &mut (&mut payload).as_mut()).unwrap();
+            let hdr = &mut (*self.mbuf.get()).hdr;
+            hdr.msg_len = core::mem::size_of::<ClientIdRes>() as u64;
+        }
 
         // Send response
         self.reply()?;
-        Ok(client_id)
+        Ok(())
     }
 
     /// Handle 1 RPC per client

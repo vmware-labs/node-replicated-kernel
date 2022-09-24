@@ -21,6 +21,7 @@ use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::controller::get_local_pid;
+use crate::transport::shmem::SHMEM_REGION;
 
 #[derive(Debug)]
 pub(crate) struct MemReq {
@@ -63,8 +64,13 @@ pub(crate) fn rpc_alloc_physical(
 
         if let Ok((frame_size, frame_base)) = res.ret {
             // Associate frame with the local process
+            info!(
+                "AllocPhysical() mapping base from {:?} to {:?}",
+                frame_base,
+                frame_base + SHMEM_REGION.base_addr
+            );
             let frame = Frame::new(
-                PAddr::from(frame_base),
+                PAddr::from(frame_base) + SHMEM_REGION.base_addr,
                 frame_size as usize,
                 affinity as usize,
             );

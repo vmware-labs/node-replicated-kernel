@@ -94,12 +94,14 @@ impl DCMInterface {
         log::info!("Created DCM UDP socket!");
 
         // Create RPC client connecting to DCM
-        let client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970).unwrap();
+        let client = init_ethernet_rpc(IpAddress::v4(172, 31, 0, 20), 6970, false).unwrap();
         log::info!("Created DCM RPC client!");
 
         // Create shmem memory manager
         // TODO: this should really be a result of client connection??
-        let shmem_manager = create_shmem_manager().expect("No client shmem manager created.");
+        use crate::memory::LARGE_PAGE_SIZE;
+        let shmem_manager = create_shmem_manager(0, 2 * LARGE_PAGE_SIZE as u64, 0)
+            .expect("No client shmem manager created.");
         log::info!("DCM shmem manager: {:?}", shmem_manager);
 
         DCMInterface {

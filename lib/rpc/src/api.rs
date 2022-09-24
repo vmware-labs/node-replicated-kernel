@@ -10,7 +10,7 @@ pub type RPCHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), 
 
 /// RPC Client registration function
 pub type RegistrationHandler =
-    fn(hdr: &mut RPCHeader, payload: &[u8]) -> Result<ClientId, RPCError>;
+    fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<ClientId, RPCError>;
 
 /// RPC server operations
 pub trait RPCServer<'a> {

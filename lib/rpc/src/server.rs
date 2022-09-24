@@ -95,7 +95,7 @@ impl<'a> RPCServer<'a> for Server<'a> {
         // during the function invocation (and not retain the reference), which makes it safe to
         // create a new mutable reference to the buffer during each time this function is called
         let client_id = func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
-            &(*self.mbuf.get()).data
+            &mut (*self.mbuf.get()).data
         })?;
 
         // Construct result

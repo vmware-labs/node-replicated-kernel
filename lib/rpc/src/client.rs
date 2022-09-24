@@ -35,8 +35,8 @@ impl RPCClient for Client {
     fn connect(&mut self, data_in: &[&[u8]]) -> Result<(), RPCError> {
         self.transport.client_connect()?;
 
-        let mut res_data = [0u8; 8];
-        self.call(0, RPC_TYPE_CONNECT, data_in, &mut [&mut res_data])
+        let mut res_data = [0u8; core::mem::size_of::<ClientIdRes>()];
+        self.call(0, RPC_TYPE_CONNECT, data_in, &mut [&mut res_data[..]])
             .unwrap();
 
         // Decode client id

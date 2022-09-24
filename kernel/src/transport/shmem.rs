@@ -13,21 +13,18 @@ use {crate::arch::rackscale::controller::FrameCacheMemslice, rpc::transport::Shm
 use crate::cmdline::Transport;
 use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
-use crate::memory::{kernel_vaddr_to_paddr, Frame, PAddr, VAddr};
+use crate::memory::{Frame, PAddr};
 use crate::pci::claim_device;
 
 pub(crate) struct ShmemRegion {
-    pub base_kaddr: u64,
+    pub base_addr: u64,
     pub size: u64,
 }
 
 lazy_static! {
     pub(crate) static ref SHMEM_REGION: ShmemRegion = {
         let (base_addr, size) = init_shmem_device().expect("Failed to init shmem device");
-        ShmemRegion {
-            base_kaddr: KERNEL_BASE + base_addr,
-            size,
-        }
+        ShmemRegion { base_addr, size }
     };
 }
 
@@ -78,16 +75,16 @@ pub(crate) fn init_shmem_device() -> KResult<(u64, u64)> {
 }
 
 #[cfg(feature = "rpc")]
-pub(crate) fn create_shmem_transport(machine_id: u8) -> KResult<ShmemTransport<'static>> {
+pub(crate) fn create_shmem_transport(client_id: u64) -> KResult<ShmemTransport<'static>> {
     use crate::cmdline::Mode;
     use alloc::sync::Arc;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
 
-    assert!(machine_id as u64 * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_REGION.size);
+    assert!(client_id * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_REGION.size);
     let transport_size = core::cmp::min(SHMEM_REGION.size, MAX_SHMEM_TRANSPORT_SIZE);
-    let base_addr = SHMEM_REGION.base_kaddr + (machine_id - 1) as u64 * transport_size;
+    let base_addr = SHMEM_REGION.base_addr + KERNEL_BASE + client_id * transport_size;
     let allocator = ShmemAllocator::new(base_addr, transport_size);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
@@ -99,7 +96,7 @@ pub(crate) fn create_shmem_transport(machine_id: u8) -> KResult<ShmemTransport<'
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
             log::info!(
                 "Controller: Created shared-memory transport for machine {}! size={:?}, base={:?}",
-                machine_id,
+                client_id,
                 transport_size,
                 base_addr
             );
@@ -127,49 +124,59 @@ pub(crate) fn create_shmem_transport(machine_id: u8) -> KResult<ShmemTransport<'
 }
 
 #[cfg(feature = "rpc")]
-pub(crate) fn init_shmem_rpc(machine_id: u8) -> KResult<alloc::boxed::Box<rpc::client::Client>> {
+pub(crate) fn init_shmem_rpc(
+    send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
+) -> KResult<Box<rpc::client::Client>> {
+    use crate::arch::rackscale::client::get_local_client_id;
+    use crate::arch::rackscale::registration::initialize_client;
     use rpc::client::Client;
-    use rpc::RPCClient;
 
     // Set up the transport
-    let transport = Box::try_new(create_shmem_transport(machine_id)?)?;
+    let transport = Box::try_new(create_shmem_transport(get_local_client_id())?)?;
 
     // Create the client
-    let mut client = Box::try_new(Client::new(transport))?;
-    client.connect(&[])?;
-    Ok(client)
+    let client = Box::try_new(Client::new(transport))?;
+    initialize_client(client, send_client_data)
 }
 
 #[cfg(feature = "rackscale")]
-pub(crate) fn create_shmem_manager() -> Option<Box<FrameCacheMemslice>> {
-    // Create remote memory frame
-    let shmem_frame = if crate::CMDLINE
+pub(crate) fn get_affinity_shmem() -> (u64, u64) {
+    use crate::arch::rackscale::client::{get_local_client_id, get_num_clients};
+
+    let mut base_offset = 0;
+    let mut size = SHMEM_REGION.size;
+    let num_clients = get_num_clients();
+
+    if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
-        // Subtract memory used for transport if using shmem transport, and adjust base
-        let frame_size = core::cmp::max(0, SHMEM_REGION.size - MAX_SHMEM_TRANSPORT_SIZE);
-        if frame_size > 0 {
-            let base = kernel_vaddr_to_paddr(VAddr::from(
-                SHMEM_REGION.base_kaddr + MAX_SHMEM_TRANSPORT_SIZE,
-            ));
-            Some(Frame::new(base, frame_size as usize, 0))
-        } else {
-            // Transport is taking up all room in shared memory
-            None
-        }
-    } else {
-        // Use entire region of shared memory
-        Some(Frame::new(
-            kernel_vaddr_to_paddr(VAddr::from(SHMEM_REGION.base_kaddr)),
-            SHMEM_REGION.size as usize,
-            0,
-        ))
+        // Offset base to ignore shmem used for client transports
+        base_offset += MAX_SHMEM_TRANSPORT_SIZE * num_clients;
+        // Remove amount used for transport from the size
+        size = core::cmp::max(0, size - MAX_SHMEM_TRANSPORT_SIZE * num_clients);
     };
 
-    // If there is shared memory available, create memory frame for cache
-    if let Some(frame) = shmem_frame {
-        // Allocate memory manager in local memory, and populate with shmem
+    size = size / num_clients;
+    base_offset += size * (get_local_client_id() - 1);
+    log::debug!(
+        "Shmem affinity region: size={:?}, base={:?}",
+        size,
+        base_offset
+    );
+
+    (base_offset, size)
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn create_shmem_manager(
+    base: u64,
+    size: u64,
+    client_id: u64,
+) -> Option<Box<FrameCacheMemslice>> {
+    if size > 0 {
+        // Using client_id as affinity, but that's probably not really correct here
+        let frame = Frame::new(PAddr(base), size as usize, client_id as usize);
         let mut shmem_cache = Box::new(FrameCacheMemslice::new(0));
         shmem_cache.populate_2m_first(frame);
         Some(shmem_cache)

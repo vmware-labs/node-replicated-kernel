@@ -17,6 +17,7 @@ use rpc::rpc::{ClientId, RPCType};
 use rpc::server::Server;
 
 use crate::arch::debug::shutdown;
+use crate::arch::rackscale::client::get_num_clients;
 use crate::arch::rackscale::dcm::*;
 use crate::cmdline::Transport;
 use crate::error::KError;
@@ -70,9 +71,9 @@ pub(crate) fn run() {
     let clock = Clock::new();
 
     // Initialize the RPC server
-    let workers = crate::CMDLINE.get().map_or(1, |c| c.workers);
-    let mut servers: Vec<Box<dyn RPCServer>> =
-        Vec::try_with_capacity(workers as usize).expect("Failed to allocate vector for RPC server");
+    let num_clients = get_num_clients();
+    let mut servers: Vec<Box<dyn RPCServer>> = Vec::try_with_capacity(num_clients as usize)
+        .expect("Failed to allocate vector for RPC server");
     if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
@@ -89,9 +90,9 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         use crate::transport::shmem::create_shmem_transport;
-        for machine_id in 1..=workers {
+        for client_id in 0..=num_clients {
             let transport = Box::try_new(
-                create_shmem_transport(machine_id).expect("Failed to create shmem transport"),
+                create_shmem_transport(client_id).expect("Failed to create shmem transport"),
             )
             .expect("Out of memory during init");
             let mut server: Box<dyn RPCServer> =

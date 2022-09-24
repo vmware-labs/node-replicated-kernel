@@ -41,7 +41,10 @@ fn test_client_server_shmem_transport() {
         server.register(1, &ECHO_HANDLER).unwrap();
 
         // Accept a client
-        fn register_client(_hdr: &mut RPCHeader, _payload: &[u8]) -> Result<ClientId, RPCError> {
+        fn register_client(
+            _hdr: &mut RPCHeader,
+            _payload: &mut [u8],
+        ) -> Result<ClientId, RPCError> {
             Ok(0)
         }
         pub const CLIENT_REGISTRAR: RegistrationHandler = register_client;

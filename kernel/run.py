@@ -306,10 +306,10 @@ def deploy(args):
                      esp_boot_path / 'BootX64.efi')
 
     # Append globally unique machine id to cmd (for rackscale)
+    # as well as a number of workers (clients)
     if args.cmd and NETWORK_CONFIG[args.tap]['mid'] != None:
         args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
-        if is_controller:
-            args.cmd += " workers={}".format(args.workers - 1)
+        args.cmd += " workers={}".format(args.workers)
     # Write kernel cmd-line file in ESP dir
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
         if args.cmd:

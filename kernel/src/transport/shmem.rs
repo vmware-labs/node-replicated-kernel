@@ -81,9 +81,10 @@ pub(crate) fn create_shmem_transport(client_id: u64) -> KResult<ShmemTransport<'
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
+    use crate::arch::rackscale::client::get_num_clients;
 
     assert!(client_id * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_REGION.size);
-    let transport_size = core::cmp::min(SHMEM_REGION.size, MAX_SHMEM_TRANSPORT_SIZE);
+    let transport_size = core::cmp::min(SHMEM_REGION.size / get_num_clients(), MAX_SHMEM_TRANSPORT_SIZE);
     let base_addr = SHMEM_REGION.base_addr + KERNEL_BASE + client_id * transport_size;
     let allocator = ShmemAllocator::new(base_addr, transport_size);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {

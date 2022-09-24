@@ -41,6 +41,8 @@ impl RPCClient for Client {
 
         // Decode client id
         if let Some((res, _remaining)) = unsafe { decode::<ClientIdRes>(&mut res_data) } {
+            let mut hdr = unsafe { &mut *self.hdr.get() };
+            hdr.client_id = res.client_id;
             self.client_id = res.client_id;
             debug!("connect() - Set client_id to: {:?}", self.client_id);
         } else {

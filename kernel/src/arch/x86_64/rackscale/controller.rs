@@ -90,7 +90,7 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         use crate::transport::shmem::create_shmem_transport;
-        for client_id in 0..=num_clients {
+        for client_id in 0..=(num_clients-1) {
             let transport = Box::try_new(
                 create_shmem_transport(client_id).expect("Failed to create shmem transport"),
             )

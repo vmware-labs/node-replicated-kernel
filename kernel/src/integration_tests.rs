@@ -780,7 +780,7 @@ fn dcm() {
     let entry_point = 4; // Using dummy entry_point for now
 
     info!("About to send resource requests!");
-    for _ in 0..4 {
+    for _ in 0..3 {
         let mut client = RPC_CLIENT.lock();
         let (_alloced_frame_size, addr_base) =
             rpc_alloc_physical(&mut **client, pid, frame_size, affinity).unwrap();

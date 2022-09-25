@@ -309,7 +309,8 @@ def deploy(args):
     # as well as a number of workers (clients)
     if args.cmd and NETWORK_CONFIG[args.tap]['mid'] != None:
         args.cmd += " mid={}".format(NETWORK_CONFIG[args.tap]['mid'])
-        args.cmd += " workers={}".format(args.workers)
+        if is_controller or is_client:
+            args.cmd += " workers={}".format(args.workers)
     # Write kernel cmd-line file in ESP dir
     with open(esp_path / 'cmdline.in', 'w') as cmdfile:
         if args.cmd:

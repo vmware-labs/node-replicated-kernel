@@ -11,9 +11,10 @@ use rpc::rpc::{ClientId, RPCError, RPCHeader};
 use rpc::RPCClient;
 
 use super::dcm::node_registration::dcm_register_node;
+use crate::arch::rackscale::controller::SHMEM_MANAGERS;
 use crate::error::KResult;
 use crate::memory::LARGE_PAGE_SIZE;
-use crate::transport::shmem::get_affinity_shmem;
+use crate::transport::shmem::{create_shmem_manager, get_affinity_shmem};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -66,7 +67,7 @@ pub(crate) fn initialize_client(
         let req = ClientRegistrationRequest {
             affinity_shmem_offset,
             affinity_shmem_size,
-            num_cores: 2,
+            num_cores: 4,
         };
         let mut req_data = [0u8; core::mem::size_of::<ClientRegistrationRequest>()];
         unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
@@ -82,17 +83,31 @@ pub(crate) fn register_client(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
 ) -> Result<ClientId, RPCError> {
+    use crate::memory::LARGE_PAGE_SIZE;
+
     // Decode client registration request
     return if let Some((req, _remaining)) = unsafe { decode::<ClientRegistrationRequest>(payload) }
     {
         let memslices = req.affinity_shmem_size / (LARGE_PAGE_SIZE as u64);
-        info!("Received registration request from client with {:?} cores and shmem {:?}-{:?} ({:?} memslices)", 
+        info!("Received registration request from client with {:?} cores and shmem {:x?}-{:x?} ({:?} memslices)",
             req.num_cores, req.affinity_shmem_offset, req.affinity_shmem_offset + req.affinity_shmem_size, memslices);
 
         // Register client resources with DCM, DCM doesn't care about pids, so
         // send w/ dummy pid
         let node_id = dcm_register_node(0, req.num_cores, memslices);
         info!("Registered client DCM, assigned client_id={:?}", node_id);
+
+        // Create shmem memory manager
+        // Probably not most accurate to use node_id for affinity here
+        let mut managers = SHMEM_MANAGERS.lock();
+        managers[node_id as usize] =
+            create_shmem_manager(req.affinity_shmem_offset, req.affinity_shmem_size, node_id);
+        log::info!(
+            "Created shmem manager on behalf of client {:?}: {:?}",
+            node_id,
+            managers[node_id as usize]
+        );
+
         Ok(node_id)
     } else {
         error!("Failed to decode client registration request during register_client");

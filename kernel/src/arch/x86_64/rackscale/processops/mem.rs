@@ -20,7 +20,7 @@ use super::super::dcm::DCM_INTERFACE;
 use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::controller::get_local_pid;
+use crate::arch::rackscale::controller::{get_local_pid, SHMEM_MANAGERS};
 use crate::transport::shmem::SHMEM_REGION;
 
 #[derive(Debug)]
@@ -60,17 +60,17 @@ pub(crate) fn rpc_alloc_physical(
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData);
         }
-        info!("AllocPhysical() {:?}", res);
 
         if let Ok((frame_size, frame_base)) = res.ret {
             // Associate frame with the local process
-            info!(
-                "AllocPhysical() mapping base from {:?} to {:?}",
+            debug!(
+                "AllocPhysical() mapping base from {:x?} to {:x?}",
                 frame_base,
                 frame_base + SHMEM_REGION.base_addr
             );
+            let frame_base = frame_base + SHMEM_REGION.base_addr;
             let frame = Frame::new(
-                PAddr::from(frame_base) + SHMEM_REGION.base_addr,
+                PAddr::from(frame_base),
                 frame_size as usize,
                 affinity as usize,
             );
@@ -99,7 +99,7 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
     let affinity;
     if let Some((req, _)) = unsafe { decode::<MemReq>(payload) } {
         debug!(
-            "AllocPhysical(size={:?}, affinity={:?}), local_pid={:?}",
+            "AllocPhysical(size={:x?}, affinity={:?}), local_pid={:?}",
             req.size, req.affinity, local_pid
         );
         size = req.size;
@@ -110,16 +110,18 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
     }
 
     // Let DCM choose node
-    let _node = make_dcm_request(local_pid, false);
-    debug!("Received node assignment from DCM");
+    let node = make_dcm_request(local_pid, false);
+    debug!("Received node assignment from DCM: node {:?}", node);
 
-    // TODO: right now only one allocator, so DCM decision isn't actually used.
-    // TODO: how should affinity be handled? Should be this be an NR operation on the controller?
     let mut dcm = DCM_INTERFACE.lock();
+    let mut shmem_managers = SHMEM_MANAGERS.lock();
+    let manager = shmem_managers[node as usize]
+        .as_mut()
+        .expect("Error - no shmem manager for client");
     let ret = if size <= BASE_PAGE_SIZE as u64 {
-        dcm.shmem_manager.allocate_base_page()
+        manager.allocate_base_page()
     } else {
-        dcm.shmem_manager.allocate_large_page()
+        manager.allocate_large_page()
     };
 
     let res = match ret {

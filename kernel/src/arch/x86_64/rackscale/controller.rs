@@ -10,6 +10,7 @@ use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use log::{debug, error, warn};
 use smoltcp::time::Instant;
+use spin::Mutex;
 use static_assertions as sa;
 
 use rpc::api::RPCServer;
@@ -48,6 +49,17 @@ sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE
 // unique Pid space.
 lazy_static! {
     static ref PID_MAP: NrLock<HashMap<(ClientId, Pid), Pid>> = NrLock::default();
+}
+
+lazy_static! {
+    pub(crate) static ref SHMEM_MANAGERS: Arc<Mutex<Vec<Option<Box<FrameCacheMemslice>>>>> = {
+        let mut shmem_manager_vec = Vec::try_with_capacity(get_num_clients() as usize)
+            .expect("Failed to create vector of shmem managers");
+        for i in 0..get_num_clients() {
+            shmem_manager_vec.push(None);
+        }
+        Arc::new(Mutex::new(shmem_manager_vec))
+    };
 }
 
 /// Test TCP RPC-based controller
@@ -90,7 +102,7 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         use crate::transport::shmem::create_shmem_transport;
-        for client_id in 0..=(num_clients-1) {
+        for client_id in 0..=(num_clients - 1) {
             let transport = Box::try_new(
                 create_shmem_transport(client_id).expect("Failed to create shmem transport"),
             )

@@ -66,7 +66,6 @@ pub(crate) fn init_shmem_device() -> KResult<(u64, u64)> {
                 MapAction::ReadWriteKernel,
             )
             .expect("Failed to write potential shmem bar addresses");
-
         Ok((base_paddr, size))
     } else {
         log::error!("Unable to find IVSHMEM device");
@@ -76,15 +75,18 @@ pub(crate) fn init_shmem_device() -> KResult<(u64, u64)> {
 
 #[cfg(feature = "rpc")]
 pub(crate) fn create_shmem_transport(client_id: u64) -> KResult<ShmemTransport<'static>> {
+    use crate::arch::rackscale::client::get_num_clients;
     use crate::cmdline::Mode;
     use alloc::sync::Arc;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
-    use crate::arch::rackscale::client::get_num_clients;
 
     assert!(client_id * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_REGION.size);
-    let transport_size = core::cmp::min(SHMEM_REGION.size / get_num_clients(), MAX_SHMEM_TRANSPORT_SIZE);
+    let transport_size = core::cmp::min(
+        SHMEM_REGION.size / get_num_clients(),
+        MAX_SHMEM_TRANSPORT_SIZE,
+    );
     let base_addr = SHMEM_REGION.base_addr + KERNEL_BASE + client_id * transport_size;
     let allocator = ShmemAllocator::new(base_addr, transport_size);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
@@ -154,16 +156,17 @@ pub(crate) fn get_affinity_shmem() -> (u64, u64) {
     {
         // Offset base to ignore shmem used for client transports
         base_offset += MAX_SHMEM_TRANSPORT_SIZE * num_clients;
+
         // Remove amount used for transport from the size
         size = core::cmp::max(0, size - MAX_SHMEM_TRANSPORT_SIZE * num_clients);
     };
 
     size = size / num_clients;
-    base_offset += size * (get_local_client_id() - 1);
+    base_offset += size * get_local_client_id();
     log::debug!(
-        "Shmem affinity region: size={:?}, base={:?}",
+        "Shmem affinity region: offset={:x?}, size={:x?}",
+        base_offset,
         size,
-        base_offset
     );
 
     (base_offset, size)

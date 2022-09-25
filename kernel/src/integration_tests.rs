@@ -774,7 +774,7 @@ fn dcm() {
     use log::info;
 
     let pid = 0; // Using dummy pid for now
-    let affinity = 1; // Using dummy affinity for now
+    let affinity = 0; // Using dummy affinity for now
     let frame_size = BASE_PAGE_SIZE as u64; // Using dummy frame_size for now
     let core_id = 3; // Using dummy core_id for now
     let entry_point = 4; // Using dummy entry_point for now
@@ -782,11 +782,11 @@ fn dcm() {
     info!("About to send resource requests!");
     for _ in 0..4 {
         let mut client = RPC_CLIENT.lock();
-        let (_fid, paddr_base) =
+        let (_alloced_frame_size, addr_base) =
             rpc_alloc_physical(&mut **client, pid, frame_size, affinity).unwrap();
 
-        let vaddr_base = paddr_to_kernel_vaddr(PAddr::from(paddr_base)).as_u64();
-        for i in 0..frame_size {
+        let vaddr_base = paddr_to_kernel_vaddr(PAddr::from(addr_base)).as_u64();
+        for i in 0..2 {
             let region = (vaddr_base + i as u64) as *mut u8;
             unsafe { core::ptr::write(region, 0xb) };
         }

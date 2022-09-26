@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::mem::MaybeUninit;
 use fallible_collections::FallibleVecGlobal;
+use x86::bits32::paging::LARGE_PAGE_SIZE;
 
 use arrayvec::ArrayVec;
 use fallible_collections::vec::FallibleVec;
@@ -511,9 +512,30 @@ where
             }
 
             // Can be MapFrame with base supplied ...
-            ProcessOpMut::MemMapDevice(frame, action) => {
+            ProcessOpMut::MemMapDevice(mut frame, action) => {
+                use crate::memory::BASE_PAGE_SIZE;
                 let base = VAddr::from(frame.base.as_u64());
-                self.process.vspace_mut().map_frame(base, frame, action)?;
+
+                let (lps, bps) = frame.pages();
+                for i in 0..lps {
+                    let ith_base = base + (i * LARGE_PAGE_SIZE);
+                    let (ith_frame, rest) = frame.split_at(LARGE_PAGE_SIZE);
+                    self.process
+                        .vspace_mut()
+                        .map_frame(ith_base, ith_frame, action)?;
+                    frame = rest;
+                }
+
+                let base = base + (lps * LARGE_PAGE_SIZE);
+                for i in 0..bps {
+                    let ith_base = base + (i * BASE_PAGE_SIZE);
+                    let (ith_frame, rest) = frame.split_at(BASE_PAGE_SIZE);
+                    self.process
+                        .vspace_mut()
+                        .map_frame(ith_base, ith_frame, action)?;
+                    frame = rest;
+                }
+
                 Ok(ProcessResult::Ok)
             }
 

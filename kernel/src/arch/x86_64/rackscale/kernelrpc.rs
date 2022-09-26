@@ -47,9 +47,11 @@ pub(crate) enum KernelRpc {
     /// Log (print) message of a process.
     Log = 12,
     /// Allocate physical memory for a process.
-    AllocPhysical = 13,
+    AllocatePhysical = 13,
+    /// Release physical memory from a process.
+    ReleasePhysical = 14,
     /// Allocate a core for a process
-    RequestCore = 14,
+    RequestCore = 15,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -71,8 +73,9 @@ impl TryFrom<RPCType> for KernelRpc {
             10 => Ok(KernelRpc::FileRename),
             11 => Ok(KernelRpc::MkDir),
             12 => Ok(KernelRpc::Log),
-            13 => Ok(KernelRpc::AllocPhysical),
-            14 => Ok(KernelRpc::RequestCore),
+            13 => Ok(KernelRpc::AllocatePhysical),
+            15 => Ok(KernelRpc::ReleasePhysical),
+            15 => Ok(KernelRpc::RequestCore),
             _ => Err(KError::InvalidRpcType),
         }
     }

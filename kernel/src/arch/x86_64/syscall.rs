@@ -225,6 +225,33 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         Ok((fid as u64, frame.base.as_u64()))
     }
 
+    fn release_physical(&self, _frame_id: u64) -> Result<(u64, u64), KError> {
+        /*
+        // Fetch the page
+        let pid = current_pid()?;
+        // TODO: need to implement a mechanism for this?
+        let frame = NrProcess::<Ring3Process>::lookup_frame_for_process(pid, fid)?;
+
+        // Release the page (need to make sure we drop pmanager again
+        // before we go to NR):
+        {
+            let pcm = super::kcb::per_core_mem();
+            let mut pmanager = pcm.mem_manager();
+            if frame.size == BASE_PAGE_SIZE {
+                pmanager.release_base_page(frame)?
+            } else {
+                pmanager.release_large_page(frame)?
+            }
+        };
+
+        // Disassociate memory with the process
+        // TODO: need to implement a mechanism for this?
+        NrProcess::<Ring3Process>::release_frame_from_process(pid, fid)?;
+        */
+
+        Ok((0, 0))
+    }
+
     fn exit(&self, code: u64) -> Result<(u64, u64), KError> {
         debug!("Process got exit, we are done for now...");
         // TODO: For now just a dummy version that exits Qemu

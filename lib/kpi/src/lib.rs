@@ -101,6 +101,8 @@ pub enum ProcessOperation {
     RequestCore = 7,
     /// Allocate a physical memory page as a mem object to the process.
     AllocatePhysical = 8,
+    /// Release a physical memory page from the process.
+    ReleasePhysical = 9,
 }
 
 impl ProcessOperation {
@@ -115,6 +117,7 @@ impl ProcessOperation {
             6 => Some(Self::GetProcessInfo),
             7 => Some(Self::RequestCore),
             8 => Some(Self::AllocatePhysical),
+            9 => Some(Self::ReleasePhysical),
             _ => None,
         }
     }

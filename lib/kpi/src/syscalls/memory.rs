@@ -148,11 +148,28 @@ impl PhysicalMemory {
         }
     }
 
-    pub fn release_base_page(_id: FrameId) -> Result<(), SystemCallError> {
-        unimplemented!()
+    pub fn release_base_page(id: FrameId) -> Result<(), SystemCallError> {
+        PhysicalMemory::release_page(id)
     }
 
-    pub fn release_large_page(_id: FrameId) -> Result<(), SystemCallError> {
-        unimplemented!()
+    pub fn release_large_page(id: FrameId) -> Result<(), SystemCallError> {
+        PhysicalMemory::release_page(id)
+    }
+
+    fn release_page(id: FrameId) -> Result<(), SystemCallError> {
+        unsafe {
+            let (err, _, _) = syscall!(
+                SystemCall::Process as u64,
+                ProcessOperation::ReleasePhysical as u64,
+                id,
+                3
+            );
+
+            if err == 0 {
+                Ok(())
+            } else {
+                Err(SystemCallError::from(err))
+            }
+        }
     }
 }

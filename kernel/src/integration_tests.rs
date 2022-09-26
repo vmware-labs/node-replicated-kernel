@@ -768,8 +768,8 @@ fn vmxnet_smoltcp() {
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 fn dcm() {
     use crate::arch::rackscale::client::RPC_CLIENT;
+    use crate::arch::rackscale::processops::allocate_physical::rpc_allocate_physical;
     use crate::arch::rackscale::processops::core::rpc_request_core;
-    use crate::arch::rackscale::processops::mem::rpc_alloc_physical;
     use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
     use log::info;
 
@@ -783,7 +783,7 @@ fn dcm() {
     for _ in 0..3 {
         let mut client = RPC_CLIENT.lock();
         let (_alloced_frame_size, addr_base) =
-            rpc_alloc_physical(&mut **client, pid, frame_size, affinity).unwrap();
+            rpc_allocate_physical(&mut **client, pid, frame_size, affinity).unwrap();
 
         let vaddr_base = paddr_to_kernel_vaddr(PAddr::from(addr_base)).as_u64();
         for i in 0..2 {

@@ -96,6 +96,10 @@ fn alloc_physical_test() {
         vibrio::syscalls::VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed");
     }
 
+    // Release base page
+    vibrio::syscalls::PhysicalMemory::release_base_page(frame_id)
+        .expect("Failed to release physical memory base page");
+
     // Allocate a large page of physical memory
     let (frame_id2, paddr2) = vibrio::syscalls::PhysicalMemory::allocate_large_page()
         .expect("Failed to get physical memory large page");
@@ -112,6 +116,10 @@ fn alloc_physical_test() {
         vibrio::syscalls::VSpace::unmap(base, LARGE_PAGE_SIZE as u64)
             .expect("Unmap syscall failed");
     }
+
+    // Release large page
+    vibrio::syscalls::PhysicalMemory::release_large_page(frame_id2)
+        .expect("Failed to release physical memory large page");
 
     info!("phys_alloc_test OK");
 }

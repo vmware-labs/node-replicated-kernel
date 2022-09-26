@@ -9,39 +9,41 @@ use log::{debug, info, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use crate::arch::process::current_pid;
+use crate::arch::process::Ring3Process;
+use crate::arch::rackscale::client::FRAME_MAP;
+use crate::arch::rackscale::controller::{get_local_pid, SHMEM_MANAGERS};
+use crate::error::KError;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
+use crate::transport::shmem::SHMEM_REGION;
 
 use super::super::dcm::dcm_request::make_dcm_request;
 use super::super::dcm::DCM_INTERFACE;
 use super::super::kernelrpc::*;
-use crate::arch::process::current_pid;
-use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::controller::{get_local_pid, SHMEM_MANAGERS};
-use crate::transport::shmem::SHMEM_REGION;
 
 #[derive(Debug)]
-pub(crate) struct MemReq {
+pub(crate) struct AllocatePhysicalReq {
     pub size: u64,
     pub affinity: u64,
 }
-unsafe_abomonate!(MemReq: size, affinity);
+unsafe_abomonate!(AllocatePhysicalReq: size, affinity);
 
 /// RPC to forward physical memory allocation request to controller.
-pub(crate) fn rpc_alloc_physical(
+pub(crate) fn rpc_allocate_physical(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     size: u64,
     affinity: u64,
 ) -> Result<(u64, u64), RPCError> {
-    info!("AllocPhysical({:?}, {:?})", size, affinity);
+    info!("AllocatePhysical({:?}, {:?})", size, affinity);
 
     // Construct request data
-    let req = MemReq { size, affinity };
-    let mut req_data = [0u8; core::mem::size_of::<MemReq>()];
+    let req = AllocatePhysicalReq { size, affinity };
+    let mut req_data = [0u8; core::mem::size_of::<AllocatePhysicalReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Create result buffer
@@ -49,7 +51,7 @@ pub(crate) fn rpc_alloc_physical(
     rpc_client
         .call(
             pid,
-            KernelRpc::AllocPhysical as RPCType,
+            KernelRpc::AllocatePhysical as RPCType,
             &[&req_data],
             &mut [&mut res_data],
         )
@@ -61,20 +63,31 @@ pub(crate) fn rpc_alloc_physical(
             return Err(RPCError::ExtraData);
         }
 
-        if let Ok((frame_size, frame_base)) = res.ret {
+        if let Ok((node_id, frame_base)) = res.ret {
             // Associate frame with the local process
             debug!(
-                "AllocPhysical() mapping base from {:x?} to {:x?}",
+                "AllocatePhysical() mapping base from {:x?} to {:x?}",
                 frame_base,
                 frame_base + SHMEM_REGION.base_addr
             );
             let frame_base = frame_base + SHMEM_REGION.base_addr;
-            let frame = Frame::new(
-                PAddr::from(frame_base),
-                frame_size as usize,
-                affinity as usize,
-            );
+            let frame = Frame::new(PAddr::from(frame_base), size as usize, affinity as usize);
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
+
+            // Add frame mapping to local map
+            {
+                let mut frame_map = FRAME_MAP.write();
+                frame_map
+                    .try_reserve(1)
+                    .map_err(|_e| RPCError::InternalError)?;
+                debug!(
+                    "Mapped local frame {} to address space (node) {}",
+                    fid, node_id
+                );
+                frame_map
+                    .try_insert(fid as u64, node_id)
+                    .map_err(|_e| KError::InvalidFrame)?;
+            }
 
             return Ok((fid as u64, frame_base));
         } else {
@@ -86,7 +99,10 @@ pub(crate) fn rpc_alloc_physical(
 }
 
 /// RPC handler for physical memory allocation on the controller.
-pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_allocate_physical(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+) -> Result<(), RPCError> {
     // Lookup local pid
     let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
     if local_pid.is_err() {
@@ -97,9 +113,9 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
     // Extract data needed from the request
     let size;
     let affinity;
-    if let Some((req, _)) = unsafe { decode::<MemReq>(payload) } {
+    if let Some((req, _)) = unsafe { decode::<AllocatePhysicalReq>(payload) } {
         debug!(
-            "AllocPhysical(size={:x?}, affinity={:?}), local_pid={:?}",
+            "AllocatePhysical(size={:x?}, affinity={:?}), local_pid={:?}",
             req.size, req.affinity, local_pid
         );
         size = req.size;
@@ -113,7 +129,6 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
     let node = make_dcm_request(local_pid, false);
     debug!("Received node assignment from DCM: node {:?}", node);
 
-    let mut dcm = DCM_INTERFACE.lock();
     let mut shmem_managers = SHMEM_MANAGERS.lock();
     let manager = shmem_managers[node as usize]
         .as_mut()
@@ -128,8 +143,11 @@ pub(crate) fn handle_phys_alloc(hdr: &mut RPCHeader, payload: &mut [u8]) -> Resu
         Ok(frame) => {
             debug!("Shmem Frame: {:?}", frame);
             KernelRpcRes {
-                // TODO: Should be Ok((fid as u64, frame.base.as_u64()))
-                ret: convert_return(Ok((frame.size as u64, frame.base.as_u64()))),
+                // Should technically be Ok((fid as u64, frame.base.as_u64()))
+                // We return node_id here, but it should really be an AS (address space)
+                // identifier, (most likely). This works for now because there is only
+                // 1 AS per node.
+                ret: convert_return(Ok((node, frame.base.as_u64()))),
             }
         }
         Err(kerror) => {

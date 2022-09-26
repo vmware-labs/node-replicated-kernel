@@ -180,7 +180,16 @@ fn register_rpcs(server: &mut Box<dyn RPCServer>) {
         .register(KernelRpc::Log as RPCType, &LOG_HANDLER)
         .unwrap();
     server
-        .register(KernelRpc::AllocPhysical as RPCType, &ALLOC_HANDLER)
+        .register(
+            KernelRpc::AllocatePhysical as RPCType,
+            &ALLOCATE_PHYSICAL_HANDLER,
+        )
+        .unwrap();
+    server
+        .register(
+            KernelRpc::ReleasePhysical as RPCType,
+            &RELEASE_PHYSICAL_HANDLER,
+        )
         .unwrap();
     server
         .register(KernelRpc::RequestCore as RPCType, &CORE_HANDLER)

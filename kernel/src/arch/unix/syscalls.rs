@@ -51,6 +51,10 @@ impl ProcessDispatch<u64> for UnixSystemCalls {
         todo!()
     }
 
+    fn release_physical(&self, _frame_id: u64) -> KResult<(u64, u64)> {
+        todo!()
+    }
+
     fn exit(&self, _code: u64) -> KResult<(u64, u64)> {
         todo!()
     }

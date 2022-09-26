@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
+use hashbrown::HashMap;
+use lazy_static::lazy_static;
 use spin::{Lazy, Mutex};
 
 use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
 use rpc::rpc::{ClientId, RPCError, RPCHeader};
 
 use crate::cmdline::Transport;
+use crate::error::KError;
+use crate::fs::NrLock;
 use crate::transport::shmem::SHMEM_REGION;
 
 /// A handle to an RPC client
@@ -38,6 +42,22 @@ pub(crate) static RPC_CLIENT: Lazy<Mutex<Box<dyn RPCClient>>> = Lazy::new(|| {
         )
     };
 });
+
+// Mapping between local frame IDs and remote memory address space ID (node id, currently).
+lazy_static! {
+    pub(crate) static ref FRAME_MAP: NrLock<HashMap<u64, u64>> = NrLock::default();
+}
+
+// Lookup the address space corresponding to a local frame
+pub(crate) fn get_frame_as(frame_id: u64) -> Result<u64, RPCError> {
+    let frame_lookup = FRAME_MAP.read();
+    let ret = frame_lookup.get(&frame_id);
+    if let Some(addr_space) = ret {
+        Ok(*addr_space)
+    } else {
+        Err(RPCError::InternalError)
+    }
+}
 
 pub(crate) fn get_num_clients() -> u64 {
     (crate::CMDLINE.get().map_or(2, |c| c.workers) - 1) as u64

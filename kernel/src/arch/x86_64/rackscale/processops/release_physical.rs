@@ -39,12 +39,13 @@ pub(crate) fn rpc_release_physical(
     frame_id: u64,
 ) -> Result<(u64, u64), RPCError> {
     info!("ReleasePhysical({:?})", frame_id);
+    // TODO - need to make sure frame is unmapped from process address space
 
     // Construct request data
     let node_id = get_frame_as(frame_id)?;
 
     // TODO - need to be able to lookup frame?
-    //let frame = NrProcess::<Ring3Process>::lookup_frame_for_process(pid, fid)?;
+    //let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, fid)?;
     let frame_base = 0; // TODO: should be frame.base;
     let frame_size = 0; // TODO: should be frame.size;
 
@@ -73,13 +74,7 @@ pub(crate) fn rpc_release_physical(
             return Err(RPCError::ExtraData);
         }
 
-        if let Ok((0, 0)) = res.ret {
-            // TODO: Disassociate frame with the local process
-            //NrProcess::<Ring3Process>::release_frame_from_process(pid, fid)?;
-            return Ok((0, 0));
-        } else {
-            return res.ret;
-        }
+        return res.ret;
     } else {
         return Err(RPCError::MalformedResponse);
     }

@@ -226,11 +226,12 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
     }
 
     fn release_physical(&self, _frame_id: u64) -> Result<(u64, u64), KError> {
+        // TODO: need to ensure frame is unmapped from process address space
+
         /*
-        // Fetch the page
-        let pid = current_pid()?;
+        // Fetch the frame and release from the process
         // TODO: need to implement a mechanism for this?
-        let frame = NrProcess::<Ring3Process>::lookup_frame_for_process(pid, fid)?;
+        let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, fid)?;
 
         // Release the page (need to make sure we drop pmanager again
         // before we go to NR):
@@ -243,10 +244,6 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
                 pmanager.release_large_page(frame)?
             }
         };
-
-        // Disassociate memory with the process
-        // TODO: need to implement a mechanism for this?
-        NrProcess::<Ring3Process>::release_frame_from_process(pid, fid)?;
         */
 
         Ok((0, 0))

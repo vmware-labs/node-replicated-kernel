@@ -28,18 +28,23 @@ use crate::arch::rackscale::controller::{get_local_pid, FrameCacheMemslice};
 use crate::fallible_string::TryString;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
 
-pub(crate) mod dcm_request;
 pub(crate) mod node_registration;
+pub(crate) mod resource_alloc;
+pub(crate) mod resource_release;
+
+use resource_alloc::ALLOC_LEN;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
 pub(crate) enum DCMOps {
     /// Register a node (cores and memory) with DCM
     RegisterNode = 1,
-    /// Request cores or memory from DCM
-    ResourceRequest = 2,
+    /// Alloc cores or memory from DCM
+    ResourceAlloc = 2,
+    /// Release a resource to DCM
+    ResourceRelease = 3,
 
-    Unknown = 3,
+    Unknown = 4,
 }
 
 impl From<RPCType> for DCMOps {
@@ -47,7 +52,8 @@ impl From<RPCType> for DCMOps {
     fn from(op: RPCType) -> DCMOps {
         match op {
             1 => DCMOps::RegisterNode,
-            2 => DCMOps::ResourceRequest,
+            2 => DCMOps::ResourceAlloc,
+            3 => DCMOps::ResourceRelease,
             _ => DCMOps::Unknown,
         }
     }
@@ -68,8 +74,8 @@ impl DCMInterface {
     pub fn new(iface: Arc<Mutex<Interface<'static, DevQueuePhy>>>) -> DCMInterface {
         // Create UDP RX buffer
         let mut sock_vec = Vec::new();
-        sock_vec.try_reserve_exact(dcm_request::ALLOC_LEN).unwrap();
-        sock_vec.resize(dcm_request::ALLOC_LEN, 0);
+        sock_vec.try_reserve_exact(ALLOC_LEN).unwrap();
+        sock_vec.resize(ALLOC_LEN, 0);
         let mut metadata_vec = Vec::<UdpPacketMetadata>::new();
         metadata_vec.try_reserve_exact(1).unwrap();
         metadata_vec.resize(1, UdpPacketMetadata::EMPTY);

@@ -14,26 +14,29 @@ use super::{DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct AllocRequest {
+pub struct ResourceAllocRequest {
     pub application: u64,
     pub cores: u64,
     pub memslices: u64,
 }
-pub const REQ_SIZE: usize = core::mem::size_of::<AllocRequest>();
+pub const REQ_SIZE: usize = core::mem::size_of::<ResourceAllocRequest>();
 
-impl AllocRequest {
+impl ResourceAllocRequest {
     /// # Safety
-    /// - `self` must be valid AllocRequest
+    /// - `self` must be valid ResourceAllocRequest
     pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; REQ_SIZE] {
-        ::core::slice::from_raw_parts_mut((self as *const AllocRequest) as *mut u8, REQ_SIZE)
-            .try_into()
-            .expect("slice with incorrect length")
+        ::core::slice::from_raw_parts_mut(
+            (self as *const ResourceAllocRequest) as *mut u8,
+            REQ_SIZE,
+        )
+        .try_into()
+        .expect("slice with incorrect length")
     }
 
     /// # Safety
-    /// - `self` must be valid AllocRequest
+    /// - `self` must be valid ResourceAllocRequest
     pub unsafe fn as_bytes(&self) -> &[u8; REQ_SIZE] {
-        ::core::slice::from_raw_parts((self as *const AllocRequest) as *const u8, REQ_SIZE)
+        ::core::slice::from_raw_parts((self as *const ResourceAllocRequest) as *const u8, REQ_SIZE)
             .try_into()
             .expect("slice with incorrect length")
     }
@@ -41,63 +44,75 @@ impl AllocRequest {
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct AllocResponse {
+pub struct ResourceAllocResponse {
     pub alloc_id: u64,
 }
-pub const RES_SIZE: usize = core::mem::size_of::<AllocResponse>();
+pub const RES_SIZE: usize = core::mem::size_of::<ResourceAllocResponse>();
 
-impl AllocResponse {
+impl ResourceAllocResponse {
     /// # Safety
-    /// - `self` must be valid AllocResponse
+    /// - `self` must be valid ResourceAllocResponse
     pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; RES_SIZE] {
-        ::core::slice::from_raw_parts_mut((self as *const AllocResponse) as *mut u8, RES_SIZE)
-            .try_into()
-            .expect("slice with incorrect length")
+        ::core::slice::from_raw_parts_mut(
+            (self as *const ResourceAllocResponse) as *mut u8,
+            RES_SIZE,
+        )
+        .try_into()
+        .expect("slice with incorrect length")
     }
 
     /// # Safety
-    /// - `self` must be valid AllocResponse
+    /// - `self` must be valid ResourceAllocResponse
     pub unsafe fn as_bytes(&self) -> &[u8; RES_SIZE] {
-        ::core::slice::from_raw_parts((self as *const AllocResponse) as *const u8, RES_SIZE)
-            .try_into()
-            .expect("slice with incorrect length")
+        ::core::slice::from_raw_parts(
+            (self as *const ResourceAllocResponse) as *const u8,
+            RES_SIZE,
+        )
+        .try_into()
+        .expect("slice with incorrect length")
     }
 }
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct AllocAssignment {
+pub struct ResourceAllocAssignment {
     pub alloc_id: u64,
     pub node: u64,
 }
-pub const ALLOC_LEN: usize = core::mem::size_of::<AllocAssignment>();
+pub const ALLOC_LEN: usize = core::mem::size_of::<ResourceAllocAssignment>();
 
-impl AllocAssignment {
+impl ResourceAllocAssignment {
     /// # Safety
-    /// - `self` must be valid AllocAssignment
+    /// - `self` must be valid ResourceAllocAssignment
     pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; ALLOC_LEN] {
-        ::core::slice::from_raw_parts_mut((self as *const AllocAssignment) as *mut u8, ALLOC_LEN)
-            .try_into()
-            .expect("slice with incorrect length")
+        ::core::slice::from_raw_parts_mut(
+            (self as *const ResourceAllocAssignment) as *mut u8,
+            ALLOC_LEN,
+        )
+        .try_into()
+        .expect("slice with incorrect length")
     }
 
     /// # Safety
-    /// - `self` must be valid AllocAssignment
+    /// - `self` must be valid ResourceAllocAssignment
     pub unsafe fn as_bytes(&self) -> &[u8; ALLOC_LEN] {
-        ::core::slice::from_raw_parts((self as *const AllocAssignment) as *const u8, ALLOC_LEN)
-            .try_into()
-            .expect("slice with incorrect length")
+        ::core::slice::from_raw_parts(
+            (self as *const ResourceAllocAssignment) as *const u8,
+            ALLOC_LEN,
+        )
+        .try_into()
+        .expect("slice with incorrect length")
     }
 }
 
-pub(crate) fn make_dcm_request(local_pid: usize, is_core: bool) -> u64 {
-    let req = AllocRequest {
-        application: 1,
+pub(crate) fn dcm_resource_alloc(local_pid: usize, is_core: bool) -> u64 {
+    let req = ResourceAllocRequest {
+        application: 1, // TODO: filler for application for no
         cores: if is_core { 1 } else { 0 },
         memslices: if is_core { 0 } else { 1 },
     };
-    let mut res = AllocResponse { alloc_id: 0 };
-    let mut assignment = AllocAssignment {
+    let mut res = ResourceAllocResponse { alloc_id: 0 };
+    let mut assignment = ResourceAllocAssignment {
         alloc_id: 0,
         node: 0,
     };
@@ -109,7 +124,7 @@ pub(crate) fn make_dcm_request(local_pid: usize, is_core: bool) -> u64 {
             .client
             .call(
                 local_pid,
-                DCMOps::ResourceRequest as RPCType,
+                DCMOps::ResourceAlloc as RPCType,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },
             )

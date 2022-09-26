@@ -21,7 +21,7 @@ use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 use crate::transport::shmem::SHMEM_REGION;
 
-use super::super::dcm::dcm_request::make_dcm_request;
+use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::dcm::DCM_INTERFACE;
 use super::super::kernelrpc::*;
 
@@ -126,7 +126,7 @@ pub(crate) fn handle_allocate_physical(
     }
 
     // Let DCM choose node
-    let node = make_dcm_request(local_pid, false);
+    let node = dcm_resource_alloc(local_pid, false);
     debug!("Received node assignment from DCM: node {:?}", node);
 
     let mut shmem_managers = SHMEM_MANAGERS.lock();

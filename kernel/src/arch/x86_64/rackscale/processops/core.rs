@@ -8,7 +8,7 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::dcm::dcm_request::make_dcm_request;
+use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use crate::arch::rackscale::controller::get_local_pid;
 
@@ -76,7 +76,7 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
         }
     };
 
-    let node = make_dcm_request(local_pid, true);
+    let node = dcm_resource_alloc(local_pid, true);
 
     // Construct and return result
     let res = KernelRpcRes {

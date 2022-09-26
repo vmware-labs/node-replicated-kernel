@@ -15,7 +15,7 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 
-use super::super::dcm::dcm_request::make_dcm_request;
+use super::super::dcm::resource_release::dcm_resource_release;
 use super::super::dcm::DCM_INTERFACE;
 use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
@@ -132,9 +132,9 @@ pub(crate) fn handle_release_physical(
         Ok(())
     };
 
-    // TODO: update DCM
-    //let node = make_dcm_request(local_pid, false);
-    //debug!("Received node assignment from DCM: node {:?}", node);
+    // Tell DCM the resource is no longer being used
+    let is_success = dcm_resource_release(node_id, local_pid, false);
+    debug!("DCM release resource: is_success={:?}", is_success);
 
     let res = match ret {
         Ok(()) => KernelRpcRes {

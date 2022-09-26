@@ -1361,7 +1361,7 @@ fn s02_gdb() {
     /// Spawn the gdb debugger
     pub fn spawn_gdb(binary: &str) -> Result<PtyReplSession> {
         // The `-nx` ignores any potential .gdbinit files that may mess with the test
-        spawn(format!("gdb -nx {}", binary).as_str(), Some(3_000)).and_then(|p| {
+        spawn(format!("gdb -nx {}", binary).as_str(), Some(5_000)).and_then(|p| {
             Ok(PtyReplSession {
                 prompt: "(gdb) ".to_string(),
                 pty_session: p,
@@ -1441,6 +1441,22 @@ fn s02_gdb() {
 
         // Test `continue`
         output += gdb.wait_for_prompt()?.as_str();
+        gdb.send_line("continue")?;
+        // We're in the "infinite" loop now, we won't get a prompt...
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        // Interrupt execution with a Ctrl+C
+        gdb.send_control('c')?;
+        output += gdb
+            .exp_string("Program received signal SIGINT, Interrupt.")?
+            .as_str();
+        output += gdb.wait_for_prompt()?.as_str();
+
+        // Get out of the loop by overwriting var (test mem/register write)
+        gdb.send_line("set cond = false")?;
+        output += gdb.wait_for_prompt()?.as_str();
+
+        // Should go to the end now...
         gdb.send_line("continue")?;
         output += gdb.exp_string("Remote connection closed")?.as_str();
 

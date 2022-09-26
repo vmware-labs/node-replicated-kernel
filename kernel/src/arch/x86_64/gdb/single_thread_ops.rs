@@ -24,9 +24,13 @@ impl SingleThreadOps for KernelDebugger {
         self._signal = signal;
         self.resume_with = Some(ExecMode::Continue);
         trace!(
-            "resume: signal = {:?} resume_with =  {:?}",
+            "SingleThreadOps::resume: signal = {:?} resume_with = {:?}",
             signal,
             self.resume_with
+        );
+        info!(
+            "SingleThreadOps::resume: signal = {:?} resume_with = {:?}",
+            signal, self.resume_with
         );
 
         // If the target is running under the more advanced GdbStubStateMachine
@@ -39,6 +43,7 @@ impl SingleThreadOps for KernelDebugger {
         &mut self,
         regs: &mut gdbstub_arch::x86::reg::X86_64CoreRegs,
     ) -> TargetResult<(), Self> {
+        trace!("read_registers");
         let kcb = super::super::kcb::get_kcb();
         if let Some(saved) = &kcb.save_area {
             // RAX, RBX, RCX, RDX, RSI, RDI, RBP, RSP, r8-r15
@@ -269,13 +274,11 @@ impl SingleThreadOps for KernelDebugger {
     }
 
     fn support_single_register_access(&mut self) -> Option<SingleRegisterAccessOps<(), Self>> {
-        //Some(self)
-        None
+        Some(self)
     }
 
     fn support_single_step(&mut self) -> Option<SingleThreadSingleStepOps<Self>> {
         Some(self)
-        //None
     }
 }
 
@@ -287,7 +290,7 @@ impl SingleThreadSingleStep for KernelDebugger {
         self._signal = signal;
         self.resume_with = Some(ExecMode::SingleStep);
         info!(
-            "set signal = {:?} resume_with =  {:?}",
+            "SingleThreadSingleStep::step: set signal = {:?} resume_with =  {:?}",
             signal, self.resume_with
         );
 

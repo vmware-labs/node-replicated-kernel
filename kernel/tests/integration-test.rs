@@ -1219,7 +1219,7 @@ fn s01_timer() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
 
-/// Test that we can initialize the ACPI subsystem and figure out the machine topology.
+/* Test that we can initialize the ACPI subsystem and figure out the machine topology.
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_topology() {
@@ -1240,7 +1240,7 @@ fn s02_acpi_topology() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
-}
+}*/
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology
 /// (a different one than acpi_smoke).
@@ -1676,6 +1676,7 @@ fn s03_ivshmem_write_and_read() {
     let _ignore = remove_file(SHMEM_PATH);
 }
 
+/*
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_shmem_exokernel_fs_test() {
@@ -2054,6 +2055,7 @@ fn s03_shmem_exokernel_multiinstance() {
 
     let _ignore = remove_file(SHMEM_PATH);
 }
+*/
 
 /// Tests the lineup scheduler multi-core ability.
 ///

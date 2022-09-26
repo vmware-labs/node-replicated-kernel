@@ -114,10 +114,6 @@ pub(crate) fn handle_release_physical(
         return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
     }
 
-    // TODO: update DCM
-    //let node = make_dcm_request(local_pid, false);
-    //debug!("Received node assignment from DCM: node {:?}", node);
-
     // TODO: using dummy affinity
     let frame = Frame::new(PAddr::from(frame_base), frame_size as usize, 0);
 
@@ -126,11 +122,19 @@ pub(crate) fn handle_release_physical(
     let manager = shmem_managers[node_id as usize]
         .as_mut()
         .expect("Error - no shmem manager found for client");
+
+    // TODO: we don't have real frame information, so skip actual calls
     let ret = if frame_size <= BASE_PAGE_SIZE as u64 {
-        manager.release_base_page(frame)
+        //manager.release_base_page(frame)
+        Ok(())
     } else {
-        manager.release_large_page(frame)
+        //manager.release_large_page(frame)
+        Ok(())
     };
+
+    // TODO: update DCM
+    //let node = make_dcm_request(local_pid, false);
+    //debug!("Received node assignment from DCM: node {:?}", node);
 
     let res = match ret {
         Ok(()) => KernelRpcRes {

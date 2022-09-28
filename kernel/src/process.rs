@@ -38,7 +38,7 @@ pub(crate) type Pid = usize;
 pub(crate) type Eid = usize;
 
 /// How many (concurrent) processes the systems supports.
-pub(crate) const MAX_PROCESSES: usize = 12;
+pub(crate) const MAX_PROCESSES: usize = 8;
 
 /// How many registered "named" frames a process can have.
 pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;

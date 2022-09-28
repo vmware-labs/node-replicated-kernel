@@ -1,6 +1,8 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+#![allow(warnings, dead_code)]
+
 use alloc::boxed::Box;
 use core::alloc::Layout;
 use core::mem::transmute;
@@ -17,14 +19,14 @@ use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
 /// Describes a potential modification operation on existing page tables.
-const PT_LAYOUT: Layout =
+pub(super) const PT_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
 // Safety (size not overflowing when rounding up is given with size == align):
 static_assertions::const_assert!(BASE_PAGE_SIZE > 0); // align must not be zero
 static_assertions::const_assert!(BASE_PAGE_SIZE.is_power_of_two()); // align must be a power of two
 
 /// A modification operation on the PageTable.
-enum Modify {
+pub(super) enum Modify {
     /// Change rights of mapping to new MapAction.
     UpdateRights(MapAction),
     /// Remove frame from page-table.
@@ -184,9 +186,44 @@ impl PageTable {
         })
     }
 
+    /// Create a new address space given a raw pointer to a PML4 table.
+    ///
+    /// # Safety
+    /// - tldr: never use this function (use [`PageTable::new`] instead), except
+    ///   for where we construct a `PageTable` from the initial cr3 value that
+    ///   the bootloader gave us.
+    /// - Pretty unsafe needs to be unaliased and valid PML4 table (including
+    ///   everything the table points to).
+    /// - THe `pml4_table` is converted to a Box using [`Box::from_raw`] so
+    ///   either should make sure that the `Self` lives forever or the PML4 came
+    ///   from a [q`Box::into_raw`] call).
+    pub(super) unsafe fn from_pml4(pml4_table: *mut PML4) -> Self {
+        Self {
+            pml4: Box::into_pin(Box::from_raw(pml4_table)),
+            da: None,
+        }
+    }
+
     pub(crate) fn pml4_address(&self) -> PAddr {
         let pml4_vaddr = VAddr::from(&*self.pml4 as *const _ as u64);
         kernel_vaddr_to_paddr(pml4_vaddr)
+    }
+
+    pub(crate) fn pml4(&self) -> Pin<&PML4> {
+        self.pml4.as_ref()
+    }
+
+    pub(crate) fn patch_kernel_mappings(&mut self, kvspace: &Self) {
+        // Install the kernel mappings
+        // TODO(efficiency): These should probably be global mappings
+        // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
+        // TODO(ugly): Find a better way to express this mess
+
+        for i in 128..=135 {
+            let kernel_pml_entry = kvspace.pml4[i];
+            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
+            self.pml4[i] = kernel_pml_entry;
+        }
     }
 
     /// Constructs an identity map but with an offset added to the region.

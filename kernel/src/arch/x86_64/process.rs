@@ -1188,17 +1188,12 @@ impl Process for Ring3Process {
             e.load(self)?;
         }
 
-        // Install the kernel mappings
-        // TODO(efficiency): These should probably be global mappings
-        // TODO(broken): Big (>= 2 MiB) allocations should be inserted here too
-        // TODO(ugly): Find a better way to express this mess
-        let kvspace = super::vspace::INITIAL_VSPACE.lock();
-        for i in 128..=135 {
-            let kernel_pml_entry = kvspace.pml4[i];
-            trace!("Patched in kernel mappings at {:?}", kernel_pml_entry);
-            self.vspace.page_table.pml4[i] = kernel_pml_entry;
+        let mut kvspace = super::vspace::INITIAL_VSPACE.lock();
+        self.vspace.page_table.patch_kernel_mappings(&*kvspace);
+        #[cfg(feature = "verified-code")]
+        {
+            kvspace.inner.memory.ptr = crate::memory::KERNEL_BASE as *mut u64;
         }
-
         Ok(())
     }
 

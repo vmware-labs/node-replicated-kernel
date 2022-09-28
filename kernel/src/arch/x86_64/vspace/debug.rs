@@ -23,11 +23,11 @@ impl PageTable {
 
     fn parse_nodes_edges<'a>(
         &'a self,
+        pml4_table: Pin<&'a [PML4Entry; 512]>,
     ) -> Result<(dot::Nodes<'a, Nd<'a>>, dot::Edges<'a, Ed<'a>>), KError> {
         let mut nodes = Vec::try_with_capacity(PageTable::INITIAL_NODES_CAPACITY)?;
         let mut edges = Vec::try_with_capacity(PageTable::INITIAL_EDGES_CAPACITY)?;
 
-        let pml4_table = self.pml4.as_ref();
         nodes.try_push(Nd::PML4(pml4_table, None))?;
 
         unsafe {
@@ -371,13 +371,17 @@ impl<'a> dot::GraphWalk<'a> for PageTable {
     type Edge = Ed<'a>;
     fn nodes(&self) -> dot::Nodes<'a, Nd> {
         // Failure ok this is only used for debugging
-        let (nodes, _) = self.parse_nodes_edges().expect("Can't parse nodes");
+        let (nodes, _) = self
+            .parse_nodes_edges(self.pml4())
+            .expect("Can't parse nodes");
         nodes.into()
     }
 
     fn edges(&'a self) -> dot::Edges<'a, Ed> {
         // Failure ok this is only used for debugging
-        let (_, edges) = self.parse_nodes_edges().expect("Can't parse edges");
+        let (_, edges) = self
+            .parse_nodes_edges(self.pml4())
+            .expect("Can't parse edges");
         edges.into()
     }
 

@@ -1,7 +1,6 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::boxed::Box;
 use core::ops::Bound::*;
 
 use fallible_collections::btree::BTreeMap;
@@ -10,7 +9,18 @@ use spin::Mutex;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
 
 mod debug;
+
+#[cfg(not(feature = "verified-code"))]
 pub mod page_table; /* TODO(encapsulation): This should be a private module but we break encapsulation in a few places */
+
+#[cfg(feature = "verified-code")]
+#[path = "verified_page_table.rs"]
+pub mod page_table;
+
+#[cfg(feature = "verified-code")]
+#[path = "page_table.rs"]
+pub mod unverified_page_table;
+
 #[cfg(test)]
 mod test;
 
@@ -42,7 +52,6 @@ lazy_static! {
         unsafe fn find_current_ptable() -> PageTable {
             use x86::controlregs;
             use x86::current::paging::PML4;
-            use crate::memory::paddr_to_kernel_vaddr;
 
             // The cr3 register holds a physical address
             let pml4: PAddr = PAddr::from(controlregs::cr3());
@@ -51,9 +60,9 @@ lazy_static! {
             // - We know we can access this at kernel vaddr and it's a correctly
             // aligned+initialized PML4 pointer because of the informal contract
             // we have with the bootloader
-            let pml4_table = core::mem::transmute::<VAddr, *mut PML4>(paddr_to_kernel_vaddr(pml4));
+            let pml4_table = core::mem::transmute::<PAddr, *mut PML4>(pml4);
 
-            // Safety `Box::from_raw`:
+            // Safety `from_pml4`:
             // - This is a bit tricky since it technically got allocated by the
             //   bootloader
             // - However it should never get dropped anyways since we don't
@@ -68,10 +77,7 @@ lazy_static! {
             //   (free bits) which won't exist because this memory was never
             //   allocated with slabmalloc (maybe we can have a no_drop variant
             //   of PageTable?)
-            PageTable {
-                pml4: Box::into_pin(Box::from_raw(pml4_table)),
-                da: None,
-            }
+            PageTable::from_pml4(pml4_table)
         }
 
         // Safety `find_current_ptable`:

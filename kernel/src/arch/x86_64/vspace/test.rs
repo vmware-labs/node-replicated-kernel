@@ -61,7 +61,7 @@ fn map_rights() -> impl Strategy<Value = MapAction> {
 }
 
 fn page_sizes() -> impl Strategy<Value = usize> {
-    prop::sample::select(vec![BASE_PAGE_SIZE, LARGE_PAGE_SIZE])
+    prop::sample::select(vec![BASE_PAGE_SIZE]) //, LARGE_PAGE_SIZE])
 }
 
 prop_compose! {
@@ -95,7 +95,7 @@ proptest! {
         use TestAction::*;
         use crate::memory::detmem::DA;
 
-        let mut totest = VSpace::new(DA::new().expect("Unable to create DA")).expect("Unable to create vspace");;
+        let mut totest = VSpace::new(DA::new().expect("Unable to create DA")).expect("Unable to create vspace");
         let mut model: ModelAddressSpace = Default::default();
 
         for action in ops {

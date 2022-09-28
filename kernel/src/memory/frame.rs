@@ -152,9 +152,22 @@ impl Frame {
         })
     }
 
-    /// Size of the region (in 4K pages).
+    /// Region size divided by 4 KiB page size.
     pub(crate) fn base_pages(&self) -> usize {
         self.size / BASE_PAGE_SIZE
+    }
+
+    /// Region size divided by large page size.
+    pub(crate) fn large_pages(&self) -> usize {
+        self.size / LARGE_PAGE_SIZE
+    }
+
+    /// Size of the region (in 4K and 2M pages).
+    pub(crate) fn pages(&self) -> (usize, usize) {
+        let lps = self.large_pages();
+        let bps = (self.size - (lps * LARGE_PAGE_SIZE)) / BASE_PAGE_SIZE;
+
+        (lps, bps)
     }
 
     #[cfg(test)]

@@ -15,6 +15,7 @@ rm -f leveldb_benchmark.csv
 # For vmops: --features prealloc can improve performance further (at the expense of test duration)
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_unmaplat_latency_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_redis_benchmark_ --nocapture
 #RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_memcached_benchmark --nocapture
 RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_leveldb_benchmark --nocapture
@@ -63,8 +64,10 @@ mkdir -p ${DEPLOY_DIR}
 cp gh-pages/vmops/index.markdown ${DEPLOY_DIR}
 mv vmops_benchmark.csv ${DEPLOY_DIR}
 mv vmops_benchmark_latency.csv ${DEPLOY_DIR}
+mv vmops_unmaplat_benchmark_latency.csv ${DEPLOY_DIR}
 gzip ${DEPLOY_DIR}/vmops_benchmark.csv
 gzip ${DEPLOY_DIR}/vmops_benchmark_latency.csv
+gzip ${DEPLOY_DIR}/vmops_unmaplat_benchmark_latency.csv
 
 # Copy memfs results
 DEPLOY_DIR="gh-pages/memfs/${CI_MACHINE_TYPE}/${GIT_REV_CURRENT}/"

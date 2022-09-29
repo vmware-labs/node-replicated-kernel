@@ -1220,6 +1220,7 @@ fn s01_timer() {
 }
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology.
+/*
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s02_acpi_topology() {
@@ -2206,6 +2207,7 @@ fn s02_vspace_debug() {
     check_for_successful_exit(&cmdline, qemu_run(), output);
     plot_vspace(&graphviz_output).expect("Can't plot vspace");
 }
+*/
 
 /// Tests that user-space application redis is functional
 /// by spawing it and connecting to it from the network.

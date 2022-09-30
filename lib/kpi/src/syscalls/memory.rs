@@ -118,14 +118,14 @@ pub struct PhysicalMemory;
 
 impl PhysicalMemory {
     pub fn allocate_base_page() -> Result<(FrameId, PAddr), SystemCallError> {
-        PhysicalMemory::allocate_page(true)
+        PhysicalMemory::allocate_frame(true)
     }
 
     pub fn allocate_large_page() -> Result<(FrameId, PAddr), SystemCallError> {
-        PhysicalMemory::allocate_page(false)
+        PhysicalMemory::allocate_frame(false)
     }
 
-    fn allocate_page(is_base: bool) -> Result<(FrameId, PAddr), SystemCallError> {
+    fn allocate_frame(is_base: bool) -> Result<(FrameId, PAddr), SystemCallError> {
         let page_size = if is_base {
             x86::current::paging::BASE_PAGE_SIZE
         } else {
@@ -148,11 +148,7 @@ impl PhysicalMemory {
         }
     }
 
-    pub fn release_base_page(id: FrameId) -> Result<(), SystemCallError> {
-        PhysicalMemory::release_page(id)
-    }
-
-    pub fn release_large_page(id: FrameId) -> Result<(), SystemCallError> {
+    pub fn release_frame(id: FrameId) -> Result<(), SystemCallError> {
         PhysicalMemory::release_page(id)
     }
 

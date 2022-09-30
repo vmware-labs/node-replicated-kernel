@@ -1351,6 +1351,16 @@ impl Process for Ring3Process {
             .ok_or(KError::InvalidFrameId)
     }
 
+    fn add_frame_mapping(
+        &mut self,
+        frame_id: FrameId,
+        base: VAddr,
+    ) -> Result<(), KError> {
+        let frame = self.get_frame(frame_id)?;
+        let mapping_id = frame.add_mapping(mapping)?;
+        Ok(mapping_id)
+    }
+
     fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {
         match self.frames.get_mut(fid) {
             Some(maybe_frame) => {

@@ -85,6 +85,7 @@ pub(crate) trait Process {
 
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError>;
     fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, KError>;
+    fn add_frame_mapping(&mut self, frame_id: FrameId, vaddr: VAddr) -> Result<(), KError>;
     fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError>;
 }
 

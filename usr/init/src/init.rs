@@ -97,7 +97,7 @@ fn alloc_physical_test() {
     }
 
     // Release base page
-    vibrio::syscalls::PhysicalMemory::release_base_page(frame_id)
+    vibrio::syscalls::PhysicalMemory::release_frame(frame_id)
         .expect("Failed to release physical memory base page");
 
     // Allocate a large page of physical memory
@@ -118,7 +118,7 @@ fn alloc_physical_test() {
     }
 
     // Release large page
-    vibrio::syscalls::PhysicalMemory::release_large_page(frame_id2)
+    vibrio::syscalls::PhysicalMemory::release_frame(frame_id2)
         .expect("Failed to release physical memory large page");
 
     info!("phys_alloc_test OK");

@@ -80,7 +80,8 @@ pub(crate) enum ProcessOpMut {
 
     /// Assign a physical frame to a process (returns a FrameId).
     AllocateFrameToProcess(Frame),
-
+    /// Remove a physical frame previosuly allocated to the process (returns a Frame).
+    ReleaseFrameFromProcess(FrameId),
     DispatcherAllocation(Frame),
 
     MemMapFrame(VAddr, Frame, MapAction),
@@ -101,6 +102,7 @@ pub(crate) enum ProcessResult<E: Executor> {
     Unmapped(TlbFlushHandle),
     Resolved(PAddr, MapAction),
     FrameId(usize),
+    Frame(Frame),
     ReadSlice(Arc<[u8]>),
     ReadString(String),
 }
@@ -330,6 +332,22 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
+    pub(crate) fn release_frame_from_process(pid: Pid, fid: FrameId)  -> Result<Frame, KError> {
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+
+        let node = *crate::environment::NODE_ID;
+
+        let response = PROCESS_TABLE[node][pid].execute_mut(
+            ProcessOpMut::ReleaseFrameFromProcess(fid),
+            PROCESS_TOKEN.get().unwrap()[pid],
+        );
+        match response {
+            Ok(ProcessResult::Frame(f)) => Ok(f),
+            Err(e) => Err(e),
+            _ => unreachable!("Got unexpected response"),
+        }
+    }
+
     pub(crate) fn allocate_dispatchers(pid: Pid, frame: Frame) -> Result<usize, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
@@ -546,6 +564,12 @@ where
             ProcessOpMut::AllocateFrameToProcess(frame) => {
                 let fid = self.process.add_frame(frame)?;
                 Ok(ProcessResult::FrameId(fid))
+            }
+
+            ProcessOpMut::ReleaseFrameFromProcess(fid) => {
+                let frame = self.process.deallocate_frame(fid)?;
+                log::error!("need to unmap {:?} in process' address space", frame);
+                Ok(ProcessResult::Frame(frame))
             }
         }
     }

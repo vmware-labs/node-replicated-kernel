@@ -17,6 +17,7 @@ use kpi::{MemType, SystemCallError};
 use crate::arch::process::current_pid;
 use crate::cmdline::CommandLineArguments;
 use crate::error::KError;
+use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::MapAction;
 use crate::memory::Frame;
 use crate::nr;
@@ -225,26 +226,44 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         Ok((fid as u64, frame.base.as_u64()))
     }
 
-    fn release_physical(&self, _frame_id: u64) -> Result<(u64, u64), KError> {
-        // TODO: need to ensure frame is unmapped from process address space
-
-        /*
+    fn release_physical(&self, fid: u64) -> Result<(u64, u64), KError> {
         // Fetch the frame and release from the process
-        // TODO: need to implement a mechanism for this?
-        let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, fid)?;
+        let pid = current_pid()?;
+        let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, fid as FrameId)?;
 
-        // Release the page (need to make sure we drop pmanager again
-        // before we go to NR):
+        // Release the page (need to make sure we drop pmanager again before we
+        // go to NR):
         {
             let pcm = super::kcb::per_core_mem();
             let mut pmanager = pcm.mem_manager();
+            
+            // This entire logic should probably go into [`GlobalMemory`]:
             if frame.size == BASE_PAGE_SIZE {
-                pmanager.release_base_page(frame)?
+                match pmanager.release_base_page(frame) {
+                    Ok(_) => {}
+                    Err(KError::CacheFull) => {
+                        pcm.gmanager.map(|g| {
+                            let mut gmanager = g.node_caches[frame.affinity].lock();
+                            gmanager.release_base_page(frame).expect("Can't fail");
+                        });
+                    }
+                    Err(e) => return Err(e),
+                }
+                
             } else {
-                pmanager.release_large_page(frame)?
+                assert_eq!(frame.size, LARGE_PAGE_SIZE);
+                match pmanager.release_large_page(frame) {
+                    Ok(_) => {}
+                    Err(KError::CacheFull) => {
+                        pcm.gmanager.map(|g| {
+                            let mut gmanager = g.node_caches[frame.affinity].lock();
+                            gmanager.release_large_page(frame).expect("Can't fail");
+                        });
+                    }
+                    Err(e) => return Err(e),
+                }
             }
-        };
-        */
+        }
 
         Ok((0, 0))
     }

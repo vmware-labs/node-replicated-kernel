@@ -27,21 +27,24 @@ pub enum MapAction {
     ReadWriteExecuteUser,
     /// Map region read-write-executable for kernel.
     ReadWriteExecuteKernel,
+    /// Map region as device memory (read-write) for kernel.
+    DeviceMemoryKernel,
 }
 
 impl fmt::Display for MapAction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use MapAction::*;
         match self {
-            None => write!(f, " ---"),
-            ReadUser => write!(f, "uR--"),
-            ReadKernel => write!(f, "kR--"),
-            ReadWriteUser => write!(f, "uRW-"),
-            ReadWriteKernel => write!(f, "kRW-"),
-            ReadExecuteUser => write!(f, "uR-X"),
-            ReadExecuteKernel => write!(f, "kR-X"),
-            ReadWriteExecuteUser => write!(f, "uRWX"),
-            ReadWriteExecuteKernel => write!(f, "kRWX"),
+            None => write!(f, " ----"),
+            ReadUser => write!(f, "uR---"),
+            ReadKernel => write!(f, "kR---"),
+            ReadWriteUser => write!(f, "uRW--"),
+            ReadWriteKernel => write!(f, "kRW--"),
+            ReadExecuteUser => write!(f, "uR-X-"),
+            ReadExecuteKernel => write!(f, "kR-X-"),
+            ReadWriteExecuteUser => write!(f, "uRWX-"),
+            ReadWriteExecuteKernel => write!(f, "kRWX-"),
+            DeviceMemoryKernel => write!(f, "kRW-D"),
         }
     }
 }

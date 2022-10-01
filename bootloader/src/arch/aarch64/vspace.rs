@@ -3,11 +3,16 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use core::mem::transmute;
+use core::{mem, slice};
 
 use armv8::aarch64::vm::granule4k::*;
 
+use uefi::prelude::*;
+use uefi::table::boot::MemoryType;
+
 use crate::kernel::*;
 use crate::memory;
+use crate::{allocate_pages, estimate_memory_map_size};
 
 use crate::arch;
 
@@ -15,7 +20,11 @@ use crate::MapAction;
 
 impl MapAction {
     fn set_l3_entry_rights(&self, entry: &mut L3Descriptor) {
-        entry.read_only().user_exec_never().priv_exec_never();
+        entry
+            .read_only()
+            .user_exec_never()
+            .priv_exec_never()
+            .set_attr_index(MemoryAttributes::NormalMemory);
 
         match self {
             MapAction::None => {
@@ -36,12 +45,21 @@ impl MapAction {
             }
             MapAction::ReadWriteExecuteKernel => {
                 entry.priv_exec().read_write();
+            }
+            MapAction::DeviceMemoryKernel => {
+                entry
+                    .read_write()
+                    .set_attr_index(MemoryAttributes::DeviceMemory);
             }
         }
     }
 
     fn set_l2_entry_rights(&self, entry: &mut L2DescriptorBlock) {
-        entry.read_only().user_exec_never().priv_exec_never();
+        entry
+            .read_only()
+            .user_exec_never()
+            .priv_exec_never()
+            .set_attr_index(MemoryAttributes::NormalMemory);
 
         match self {
             MapAction::None => {
@@ -62,12 +80,21 @@ impl MapAction {
             }
             MapAction::ReadWriteExecuteKernel => {
                 entry.priv_exec().read_write();
+            }
+            MapAction::DeviceMemoryKernel => {
+                entry
+                    .read_write()
+                    .set_attr_index(MemoryAttributes::DeviceMemory);
             }
         }
     }
 
     fn set_l1_entry_rights(&self, entry: &mut L1DescriptorBlock) {
-        entry.read_only().user_exec_never().priv_exec_never();
+        entry
+            .read_only()
+            .user_exec_never()
+            .priv_exec_never()
+            .set_attr_index(MemoryAttributes::NormalMemory);
 
         match self {
             MapAction::None => {
@@ -89,56 +116,13 @@ impl MapAction {
             MapAction::ReadWriteExecuteKernel => {
                 entry.priv_exec().read_write();
             }
+            MapAction::DeviceMemoryKernel => {
+                entry
+                    .read_write()
+                    .set_attr_index(MemoryAttributes::DeviceMemory);
+            }
         }
     }
-
-    // /// Transform MapAction into rights for 1 GiB page.
-    // fn to_l1_rights(&self) -> u32 /* PDPTFlags */ {
-    //     panic!("handle me!");
-    //     // match self {
-    //     //     None => PDPTFlags::empty(),
-    //     //     ReadUser => PDPTFlags::XD | PDPTFlags::US,
-    //     //     ReadKernel => PDPTFlags::XD,
-    //     //     ReadWriteUser => PDPTFlags::RW | PDPTFlags::XD | PDPTFlags::US,
-    //     //     ReadWriteKernel => PDPTFlags::RW | PDPTFlags::XD,
-    //     //     ReadExecuteUser => PDPTFlags::US,
-    //     //     ReadExecuteKernel => PDPTFlags::empty(),
-    //     //     ReadWriteExecuteUser => PDPTFlags::RW | PDPTFlags::US,
-    //     //     ReadWriteExecuteKernel => PDPTFlags::RW,
-    //     // }
-    // }
-
-    // /// Transform MapAction into rights for 2 MiB page.
-    // fn to_l2_rights(&self) -> u32 /* PDFlags */ {
-    //     panic!("handle me!");
-    //     // match self {
-    //     //     None => PDFlags::empty(),
-    //     //     ReadUser => PDFlags::XD | PDFlags::US,
-    //     //     ReadKernel => PDFlags::XD,
-    //     //     ReadWriteUser => PDFlags::RW | PDFlags::XD | PDFlags::US,
-    //     //     ReadWriteKernel => PDFlags::RW | PDFlags::XD,
-    //     //     ReadExecuteUser => PDFlags::US,
-    //     //     ReadExecuteKernel => PDFlags::empty(),
-    //     //     ReadWriteExecuteUser => PDFlags::RW | PDFlags::US,
-    //     //     ReadWriteExecuteKernel => PDFlags::RW,
-    //     // }
-    // }
-
-    // /// Transform MapAction into rights for 4KiB page.
-    // fn to_l3_rights(&self) -> u32 /* PTFlags */ {
-    //     panic!("handle me!");
-    //     // match self {
-    //     //     None => PTFlags::empty(),
-    //     //     ReadUser => PTFlags::XD | PTFlags::US,
-    //     //     ReadKernel => PTFlags::XD,
-    //     //     ReadWriteUser => PTFlags::RW | PTFlags::XD | PTFlags::US,
-    //     //     ReadWriteKernel => PTFlags::RW | PTFlags::XD,
-    //     //     ReadExecuteUser => PTFlags::US,
-    //     //     ReadExecuteKernel => PTFlags::empty(),
-    //     //     ReadWriteExecuteUser => PTFlags::RW | PTFlags::US,
-    //     //     ReadWriteExecuteKernel => PTFlags::RW,
-    //     // }
-    // }
 }
 
 /// A VSpace allows to create and modify a (virtual) address space.
@@ -207,7 +191,7 @@ impl<'a> VSpaceAArch64<'a> {
         assert_eq!(vbase % BASE_PAGE_SIZE, 0);
 
         debug!(
-            "map_generic {:#x} -- {:#x} -> {:#x} -- {:#x} ({} kB) {}",
+            "map_generic {:#x}..{:#x} -> {:#x}..{:#x} ({} kB) {}",
             vbase,
             vbase + psize,
             pbase,
@@ -221,7 +205,7 @@ impl<'a> VSpaceAArch64<'a> {
         let mut size = psize;
         while vaddr < vbase + psize {
             debug!(
-                "mapping {:#x} -- {:#x} -> {:#x} -- {:#x} ({} kB) {}",
+                "mapping {:#x}..{:#x} -> {:#x}..{:#x} ({} kB) {}",
                 vaddr,
                 vaddr + size,
                 paddr,
@@ -319,13 +303,13 @@ impl<'a> VSpaceAArch64<'a> {
                 // perform the mapping
                 let idx = L1Table::index(vaddr);
                 while L1Table::index(vaddr) == idx && size >= LARGE_PAGE_SIZE {
-                    debug!(
-                        " - mapping 2M frame: {}.{}.{} -> {:#x} ",
-                        L0Table::index(vaddr),
-                        L1Table::index(vaddr),
-                        L2Table::index(vaddr),
-                        paddr
-                    );
+                    // debug!(
+                    //     " - mapping 2M frame: {}.{}.{} -> {:#x} ",
+                    //     L0Table::index(vaddr),
+                    //     L1Table::index(vaddr),
+                    //     L2Table::index(vaddr),
+                    //     paddr
+                    // );
 
                     if l2_table.entry_at_vaddr(vaddr).is_block() {
                         panic!(
@@ -442,7 +426,6 @@ impl<'a> VSpaceAArch64<'a> {
     }
 
     pub(crate) fn resolve_addr(&self, vaddr: VAddr) -> Option<PAddr> {
-
         let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
         if !l0_entry.is_valid() {
             return None;
@@ -455,7 +438,9 @@ impl<'a> VSpaceAArch64<'a> {
         }
 
         if l1_entry.is_block() {
-            return l1_entry.get_frame().map(|paddr| paddr + vaddr.huge_page_offset());
+            return l1_entry
+                .get_frame()
+                .map(|paddr| paddr + vaddr.huge_page_offset());
         }
 
         let l2_table = self.get_l2_table(l1_entry).unwrap();
@@ -465,7 +450,9 @@ impl<'a> VSpaceAArch64<'a> {
         }
 
         if l2_entry.is_block() {
-            return l2_entry.get_frame().map(|paddr| paddr + vaddr.large_page_offset());
+            return l2_entry
+                .get_frame()
+                .map(|paddr| paddr + vaddr.large_page_offset());
         }
 
         let l3_table = self.get_l3_table(l2_entry).unwrap();
@@ -475,7 +462,9 @@ impl<'a> VSpaceAArch64<'a> {
             return None;
         }
 
-        return l3_entry.get_frame().map(|paddr| paddr + vaddr.base_page_offset());
+        return l3_entry
+            .get_frame()
+            .map(|paddr| paddr + vaddr.base_page_offset());
     }
 
     /// Back a region of virtual address space with
@@ -581,4 +570,98 @@ impl<'a> VSpaceAArch64<'a> {
 #[allow(unused)]
 fn dump_translation_root_register() {
     panic!("not yet implemented!");
+}
+
+/// Load the memory map into buffer (which is hopefully big enough).
+pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
+    let (mm_size, _no_descs) = estimate_memory_map_size(st);
+    let mm_paddr = allocate_pages(
+        &st,
+        mm_size / arch::BASE_PAGE_SIZE,
+        MemoryType(UEFI_MEMORY_MAP),
+    );
+    let mm_slice: &mut [u8] = unsafe {
+        slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
+    };
+
+    let (_key, desc_iter) = st
+        .boot_services()
+        .memory_map(mm_slice)
+        .expect("Failed to retrieve UEFI memory map");
+
+    for entry in desc_iter {
+        if entry.phys_start == 0x0 {
+            debug!("Don't map memory entry at physical zero? {:#?}", entry);
+            continue;
+        }
+
+        // Compute physical base and bound for the region we're about to map
+        let phys_range_start = arch::PAddr::from(entry.phys_start);
+        let phys_range_end =
+            arch::PAddr::from(entry.phys_start + entry.page_count * arch::BASE_PAGE_SIZE as u64);
+
+        if phys_range_start.as_u64() <= 0xfee00000u64 && phys_range_end.as_u64() >= 0xfee00000u64 {
+            debug!("{:?} covers APIC range, ignore for now.", entry);
+            continue;
+        }
+
+        let rights: MapAction = match entry.ty {
+            MemoryType::RESERVED => MapAction::None,
+            MemoryType::LOADER_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::LOADER_DATA => MapAction::ReadWriteKernel,
+            MemoryType::BOOT_SERVICES_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::BOOT_SERVICES_DATA => MapAction::ReadWriteKernel,
+            MemoryType::RUNTIME_SERVICES_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::RUNTIME_SERVICES_DATA => MapAction::ReadWriteKernel,
+            MemoryType::CONVENTIONAL => MapAction::ReadWriteExecuteKernel,
+            MemoryType::UNUSABLE => MapAction::None,
+            MemoryType::ACPI_RECLAIM => MapAction::ReadWriteKernel,
+            MemoryType::ACPI_NON_VOLATILE => MapAction::ReadWriteKernel,
+            MemoryType::MMIO => MapAction::DeviceMemoryKernel,
+            MemoryType::MMIO_PORT_SPACE => MapAction::ReadWriteKernel,
+            MemoryType::PAL_CODE => MapAction::ReadExecuteKernel,
+            MemoryType::PERSISTENT_MEMORY => MapAction::ReadWriteKernel,
+            MemoryType(KERNEL_ELF) => MapAction::ReadKernel,
+            MemoryType(KERNEL_PT) => MapAction::ReadWriteKernel,
+            MemoryType(KERNEL_STACK) => MapAction::ReadWriteKernel,
+            MemoryType(UEFI_MEMORY_MAP) => MapAction::ReadWriteKernel,
+            MemoryType(KERNEL_ARGS) => MapAction::ReadKernel,
+            MemoryType(MODULE) => MapAction::ReadKernel,
+            _ => {
+                error!("Unknown memory type, what should we do? {:#?}", entry);
+                MapAction::None
+            }
+        };
+
+        debug!(
+            "Doing {:?} {:?} on {:#x} -- {:#x}",
+            entry.ty, rights, phys_range_start, phys_range_end
+        );
+
+        if rights != MapAction::None {
+            // kernel
+            //     .vspace
+            //     .map_identity(phys_range_start, phys_range_end, rights);
+
+            if entry.ty == MemoryType::CONVENTIONAL
+                // We're allowed to use these regions according to the spec  after we call ExitBootServices.
+                // Also it can sometimes happens that the regions here switch from this type back
+                // to conventional if we're not careful with memory allocations between the call
+                // to `map_physical_memory` until getting the final memory mapped before booting..
+                || entry.ty == MemoryType::BOOT_SERVICES_DATA
+                || entry.ty == MemoryType::LOADER_DATA
+                // These are regions we need to access in kernel space:
+                || entry.ty == MemoryType(KERNEL_PT)
+                || entry.ty == MemoryType(MODULE)
+                || entry.ty == MemoryType(KERNEL_ARGS)
+            {
+                kernel.vspace.map_identity_with_offset(
+                    arch::VAddr::from(arch::KERNEL_OFFSET as u64),
+                    phys_range_start,
+                    phys_range_end,
+                    rights,
+                );
+            }
+        }
+    }
 }

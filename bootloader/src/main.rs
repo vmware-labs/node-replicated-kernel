@@ -138,99 +138,6 @@ fn estimate_memory_map_size(st: &SystemTable<Boot>) -> (usize, usize) {
     (sz, sz / mem::size_of::<MemoryDescriptor>())
 }
 
-/// Load the memory map into buffer (which is hopefully big enough).
-fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
-    let (mm_size, _no_descs) = estimate_memory_map_size(st);
-    let mm_paddr = allocate_pages(
-        &st,
-        mm_size / arch::BASE_PAGE_SIZE,
-        MemoryType(UEFI_MEMORY_MAP),
-    );
-    let mm_slice: &mut [u8] = unsafe {
-        slice::from_raw_parts_mut(paddr_to_uefi_vaddr(mm_paddr).as_mut_ptr::<u8>(), mm_size)
-    };
-
-    let (_key, desc_iter) = st
-        .boot_services()
-        .memory_map(mm_slice)
-        .expect("Failed to retrieve UEFI memory map");
-
-    for entry in desc_iter {
-        if entry.phys_start == 0x0 {
-            debug!("Don't map memory entry at physical zero? {:#?}", entry);
-            continue;
-        }
-
-        // Compute physical base and bound for the region we're about to map
-        let phys_range_start = arch::PAddr::from(entry.phys_start);
-        let phys_range_end =
-            arch::PAddr::from(entry.phys_start + entry.page_count * arch::BASE_PAGE_SIZE as u64);
-
-        if phys_range_start.as_u64() <= 0xfee00000u64 && phys_range_end.as_u64() >= 0xfee00000u64 {
-            debug!("{:?} covers APIC range, ignore for now.", entry);
-            continue;
-        }
-
-        let rights: MapAction = match entry.ty {
-            MemoryType::RESERVED => MapAction::None,
-            MemoryType::LOADER_CODE => MapAction::ReadExecuteKernel,
-            MemoryType::LOADER_DATA => MapAction::ReadWriteKernel,
-            MemoryType::BOOT_SERVICES_CODE => MapAction::ReadExecuteKernel,
-            MemoryType::BOOT_SERVICES_DATA => MapAction::ReadWriteKernel,
-            MemoryType::RUNTIME_SERVICES_CODE => MapAction::ReadExecuteKernel,
-            MemoryType::RUNTIME_SERVICES_DATA => MapAction::ReadWriteKernel,
-            MemoryType::CONVENTIONAL => MapAction::ReadWriteExecuteKernel,
-            MemoryType::UNUSABLE => MapAction::None,
-            MemoryType::ACPI_RECLAIM => MapAction::ReadWriteKernel,
-            MemoryType::ACPI_NON_VOLATILE => MapAction::ReadWriteKernel,
-            MemoryType::MMIO => MapAction::ReadWriteKernel,
-            MemoryType::MMIO_PORT_SPACE => MapAction::ReadWriteKernel,
-            MemoryType::PAL_CODE => MapAction::ReadExecuteKernel,
-            MemoryType::PERSISTENT_MEMORY => MapAction::ReadWriteKernel,
-            MemoryType(KERNEL_ELF) => MapAction::ReadKernel,
-            MemoryType(KERNEL_PT) => MapAction::ReadWriteKernel,
-            MemoryType(KERNEL_STACK) => MapAction::ReadWriteKernel,
-            MemoryType(UEFI_MEMORY_MAP) => MapAction::ReadWriteKernel,
-            MemoryType(KERNEL_ARGS) => MapAction::ReadKernel,
-            MemoryType(MODULE) => MapAction::ReadKernel,
-            _ => {
-                error!("Unknown memory type, what should we do? {:#?}", entry);
-                MapAction::None
-            }
-        };
-
-        debug!(
-            "Doing {:?} on {:#x} -- {:#x}",
-            rights, phys_range_start, phys_range_end
-        );
-        if rights != MapAction::None {
-            kernel
-                .vspace
-                .map_identity(phys_range_start, phys_range_end, rights);
-
-            if entry.ty == MemoryType::CONVENTIONAL
-                // We're allowed to use these regions according to the spec  after we call ExitBootServices.
-                // Also it can sometimes happens that the regions here switch from this type back
-                // to conventional if we're not careful with memory allocations between the call
-                // to `map_physical_memory` until getting the final memory mapped before booting..
-                || entry.ty == MemoryType::BOOT_SERVICES_DATA
-                || entry.ty == MemoryType::LOADER_DATA
-                // These are regions we need to access in kernel space:
-                || entry.ty == MemoryType(KERNEL_PT)
-                || entry.ty == MemoryType(MODULE)
-                || entry.ty == MemoryType(KERNEL_ARGS)
-            {
-                kernel.vspace.map_identity_with_offset(
-                    arch::VAddr::from(arch::KERNEL_OFFSET as u64),
-                    phys_range_start,
-                    phys_range_end,
-                    rights,
-                );
-            }
-        }
-    }
-}
-
 /// Initialize the screen to the highest possible resolution.
 fn _setup_screen(st: &SystemTable<Boot>) {
     if let Ok(gop) = st.boot_services().locate_protocol::<GraphicsOutput>() {
@@ -317,7 +224,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
     let mut kernel = Kernel {
         offset: arch::VAddr::from(0usize),
         mapping: Vec::new(),
-        vspace : arch::VSpace::new(),
+        vspace: arch::VSpace::new(),
         tls: None,
     };
 
@@ -362,7 +269,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
     // Make sure we still have access to the UEFI mappings:
     // Get the current memory map and 1:1 map all physical memory
     // dump_translation_root_register();
-    map_physical_memory(&st, &mut kernel);
+    arch::map_physical_memory(&st, &mut kernel);
     trace!("Replicated UEFI memory map");
     arch::cpu::assert_required_cpu_features();
     arch::cpu::setup_cpu_features();

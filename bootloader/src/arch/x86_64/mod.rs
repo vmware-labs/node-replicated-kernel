@@ -7,6 +7,7 @@ use core::arch::global_asm;
 pub mod cpu;
 mod vspace;
 
+pub use vspace::map_physical_memory;
 pub use vspace::VSpaceX86 as VSpace;
 pub use vspace::{PAddr, VAddr};
 

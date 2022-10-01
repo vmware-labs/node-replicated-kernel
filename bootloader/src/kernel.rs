@@ -221,12 +221,12 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
     /// with all dependencies we only expect to get relocations of type RELATIVE.
     /// Otherwise, the build would be broken or you got a garbage ELF file.
     /// We return an error in this case.
-    fn relocate(&mut self, entry: &elfloader::Rela<elfloader::P64>) -> Result<(), ElfLoaderErr> {
+    fn relocate(&mut self, entry: elfloader::RelocationEntry) -> Result<(), ElfLoaderErr> {
         // Get the pointer to where the relocation happens in the
         // memory where we loaded the headers
         // The forumla for this is our offset where the kernel is starting,
         // plus the offset of the entry to jump to the code piece
-        let addr = self.offset.as_u64() + entry.get_offset();
+        let addr = self.offset.as_u64() + entry.offset;
 
         // We can't access addr in UEFI space so we resolve it to a physical address (UEFI has 1:1 mappings)
         let uefi_addr = self
@@ -235,18 +235,41 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             .expect("Can't resolve address")
             .as_u64() as *mut u64;
 
-        use elfloader::TypeRela64;
-        if let TypeRela64::R_RELATIVE = TypeRela64::from(entry.get_type()) {
-            // This is a relative relocation of a 64 bit value, we add the offset (where we put our
-            // binary in the vspace) to the addend and we're done:
-            unsafe {
-                // Scary unsafe changing stuff in random memory locations based on
-                // ELF binary values weee!
-                *uefi_addr = self.offset.as_u64() + entry.get_addend();
+        match entry.rtype {
+            elfloader::RelocationType::x86_64(R_AMD64_RELATIVE) => {
+                // This is a relative relocation of a 64 bit value, we add the offset (where we put our
+                // binary in the vspace) to the addend and we're done:
+                let addend = entry
+                    .addend
+                    .ok_or(ElfLoaderErr::UnsupportedRelocationEntry)?;
+
+                unsafe {
+                    // Scary unsafe changing stuff in random memory locations based on
+                    // ELF binary values weee!
+                    *uefi_addr = self.offset.as_u64() + addend;
+                }
+                Ok(())
             }
-            Ok(())
-        } else {
-            Err(ElfLoaderErr::UnsupportedRelocationEntry)
+            elfloader::RelocationType::AArch64(R_AARCH64_RELATIVE) => {
+                let addend = entry
+                    .addend
+                    .ok_or(ElfLoaderErr::UnsupportedRelocationEntry)?;
+
+                unsafe {
+                    // Scary unsafe changing stuff in random memory locations based on
+                    // ELF binary values weee!
+                    *uefi_addr = self.offset.as_u64() + addend;
+                }
+                Ok(())
+            }
+            elfloader::RelocationType::AArch64(x) => {
+                error!("Unsupported relocation type: {:?}", x);
+                Err(ElfLoaderErr::UnsupportedRelocationEntry)
+            }
+            x => {
+                error!("unsuppored relocation entry: {:?}", x);
+                Err(ElfLoaderErr::UnsupportedRelocationEntry)
+            }
         }
     }
 

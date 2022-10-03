@@ -90,12 +90,6 @@ macro_rules! round_up {
     };
 }
 
-extern "C" {
-    /// Switches from this UEFI bootloader to the kernel init function (passes the sysinfo argument),
-    /// kernel stack and kernel address space.
-    pub fn jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64);
-}
-
 /// Make sure our UEFI version is not outdated.
 fn check_revision(rev: uefi::table::Revision) {
     let (major, minor) = (rev.major(), rev.minor());
@@ -222,7 +216,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
 
     // Next create an address space for our kernel
     let mut kernel = Kernel {
-        offset: arch::VAddr::from(0usize),
+        offset: arch::VAddr::from(arch::KERNEL_OFFSET),
         mapping: Vec::new(),
         vspace: arch::VSpace::new(),
         tls: None,
@@ -350,6 +344,20 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
             kernel.offset + binary.entry_point()
         );
 
+        info!(
+            "Kernel stack at: 0x{:x}",
+            arch::KERNEL_OFFSET as u64 + stack_top.as_u64() - (arch::BASE_PAGE_SIZE as u64)
+        );
+
+        info!(
+            "Kernel arguments at: 0x{:x}",
+            paddr_to_kernel_vaddr(kernel_args_paddr).as_u64()
+        );
+
+        info!("Page tables at: 0x{:x}", kernel.vspace.roottable());
+
+        // kernel.vspace.dump_translation_table();
+
         info!("Exiting boot services. About to jump...");
         let (_st, mmiter) = st
             .exit_boot_services(handle, mm_slice)
@@ -368,7 +376,7 @@ pub extern "C" fn uefi_start(handle: uefi::Handle, mut st: SystemTable<Boot>) ->
         arch::cpu::set_translation_table(kernel.vspace.roottable());
 
         // Finally switch to the kernel stack and entry function
-        jump_to_kernel(
+        arch::cpu::jump_to_kernel(
             arch::KERNEL_OFFSET as u64 + stack_top.as_u64() - (arch::BASE_PAGE_SIZE as u64),
             kernel.offset.as_u64() + binary.entry_point(),
             paddr_to_kernel_vaddr(kernel_args_paddr).as_u64(),

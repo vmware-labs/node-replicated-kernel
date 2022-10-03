@@ -6,6 +6,8 @@ use core::arch::global_asm;
 pub mod cpu;
 mod vspace;
 
+use crate::Kernel;
+
 use armv8::aarch64::registers::Currentel;
 
 pub use armv8::aarch64::vm::granule4k::{PAddr, VAddr};
@@ -24,9 +26,14 @@ global_asm!(include_str!("__chkstk.S"));
 ///
 /// All physical mappings are identity mapped with KERNEL_OFFSET as
 /// displacement.
-pub const KERNEL_OFFSET: usize = 1 << 48;
+pub const KERNEL_OFFSET: usize = 0xffff_0000_0000_0000;
 
 /// prints some architecture specific strings
 pub fn print_arch() {
-    info!("Running on Arm in EL{}", Currentel::el_read());
+    let el = Currentel::el_read();
+    if el == 2 {
+        info!("Running on Arm in EL{}", el);
+    } else {
+        panic!("Expected to run at EL2, was running at EL{}", el);
+    }
 }

@@ -4,6 +4,13 @@
 
 use x86;
 
+#[cfg(all(target_arch = "x86_64"))]
+extern "C" {
+    /// Switches from this UEFI bootloader to the kernel init function (passes the sysinfo argument),
+    /// kernel stack and kernel address space.
+    pub fn _jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64);
+}
+
 /// disable the interrupts
 pub fn disable_interrupts() {
     unsafe {
@@ -97,4 +104,10 @@ pub fn assert_required_cpu_features() {
     assert!(has_invariant_tsc);
 
     debug!("CPU has all required features, continue");
+}
+
+pub fn jump_to_kernel(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64) {
+    unsafe {
+        _jump_to_kernel(stack_ptr, kernel_entry, kernel_arg);
+    }
 }

@@ -7,7 +7,7 @@
 // ARG3 %r8
 
 .text
-.extern jump_to_kernel
-.global jump_to_kernel
-jump_to_kernel: // fn(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64)
-    wfi
+.extern eret
+.global eret
+eret: // fn(stack_ptr: u64, kernel_entry: u64, kernel_arg: u64)
+    eret

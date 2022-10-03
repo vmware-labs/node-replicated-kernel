@@ -5,6 +5,7 @@
 use core::mem::transmute;
 use core::{mem, slice};
 
+use armv8::aarch64::registers::Currentel;
 use armv8::aarch64::vm::granule4k::*;
 
 use uefi::prelude::*;
@@ -41,10 +42,10 @@ impl MapAction {
                 entry.user_exec();
             }
             MapAction::ReadWriteExecuteUser => {
-                entry.user_exec().read_write();
+                entry.user_exec(); //.read_write();
             }
             MapAction::ReadWriteExecuteKernel => {
-                entry.priv_exec().read_write();
+                entry.priv_exec(); //.read_write();
             }
             MapAction::DeviceMemoryKernel => {
                 entry
@@ -204,7 +205,7 @@ impl<'a> VSpaceAArch64<'a> {
         let mut paddr = pbase;
         let mut size = psize;
         while vaddr < vbase + psize {
-            debug!(
+            trace!(
                 "mapping {:#x}..{:#x} -> {:#x}..{:#x} ({} kB) {}",
                 vaddr,
                 vaddr + size,
@@ -216,11 +217,11 @@ impl<'a> VSpaceAArch64<'a> {
 
             // check if the l0 table entry has already a mapping
             if !self.l0_table.entry_at_vaddr(vaddr).is_valid() {
-                debug!(
+                trace!(
                     " - allocating a new l1 table (idx {})",
                     L0Table::index(vaddr)
                 );
-                let table = self.new_l1_table();
+                let mut table = self.new_l1_table();
                 self.l0_table.set_entry_at_vaddr(vaddr, table);
             }
 
@@ -238,7 +239,7 @@ impl<'a> VSpaceAArch64<'a> {
                 // perform the mapping
                 let idx = L0Table::index(vaddr);
                 while L0Table::index(vaddr) == idx && size >= HUGE_PAGE_SIZE {
-                    debug!(
+                    trace!(
                         " - mapping 1G frame: {}.{} -> {:#x} ",
                         L0Table::index(vaddr),
                         L1Table::index(vaddr),
@@ -283,7 +284,7 @@ impl<'a> VSpaceAArch64<'a> {
 
             // check if the l0 table entry has already a mapping
             if !l1_table.entry_at_vaddr(vaddr).is_valid() {
-                debug!(
+                trace!(
                     " - allocating a new l2 table (idx {})",
                     L1Table::index(vaddr)
                 );
@@ -303,13 +304,13 @@ impl<'a> VSpaceAArch64<'a> {
                 // perform the mapping
                 let idx = L1Table::index(vaddr);
                 while L1Table::index(vaddr) == idx && size >= LARGE_PAGE_SIZE {
-                    // debug!(
-                    //     " - mapping 2M frame: {}.{}.{} -> {:#x} ",
-                    //     L0Table::index(vaddr),
-                    //     L1Table::index(vaddr),
-                    //     L2Table::index(vaddr),
-                    //     paddr
-                    // );
+                    trace!(
+                        " - mapping 2M frame: {}.{}.{} -> {:#x} ",
+                        L0Table::index(vaddr),
+                        L1Table::index(vaddr),
+                        L2Table::index(vaddr),
+                        paddr
+                    );
 
                     if l2_table.entry_at_vaddr(vaddr).is_block() {
                         panic!(
@@ -352,7 +353,7 @@ impl<'a> VSpaceAArch64<'a> {
 
             // check if the l0 table entry has already a mapping
             if !l2_table.entry_at_vaddr(vaddr).is_valid() {
-                debug!(
+                trace!(
                     " - allocating a new l3 table (idx {})",
                     L2Table::index(vaddr)
                 );
@@ -426,42 +427,56 @@ impl<'a> VSpaceAArch64<'a> {
     }
 
     pub(crate) fn resolve_addr(&self, vaddr: VAddr) -> Option<PAddr> {
+        trace!("Resolving VADDR: {:#x}", vaddr);
         let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
         if !l0_entry.is_valid() {
+            trace!("-> L0Entry: Invalid ({:#x})", l0_entry.as_u64());
             return None;
         }
+
+        trace!("-> L0Entry: {:#x}", l0_entry.as_u64());
 
         let l1_table = self.get_l1_table(l0_entry).unwrap();
         let l1_entry = l1_table.entry_at_vaddr(vaddr);
         if !l1_entry.is_valid() {
+            trace!("  -> L1Entry: Invalid ({:#x})", l1_entry.as_u64());
             return None;
         }
 
         if l1_entry.is_block() {
+            trace!("  -> L1Entry: Block {:#x}", l1_entry.as_u64());
             return l1_entry
                 .get_frame()
                 .map(|paddr| paddr + vaddr.huge_page_offset());
         }
 
+        trace!("  -> L1Entry: {:#x}", l1_entry.as_u64());
+
         let l2_table = self.get_l2_table(l1_entry).unwrap();
         let l2_entry = l2_table.entry_at_vaddr(vaddr);
         if !l2_entry.is_valid() {
+            trace!("    -> L2Entry: Invalid ({:#x})", l2_entry.as_u64());
             return None;
         }
 
         if l2_entry.is_block() {
+            trace!("    -> L2Entry: Block {:#x}", l2_entry.as_u64());
             return l2_entry
                 .get_frame()
                 .map(|paddr| paddr + vaddr.large_page_offset());
         }
 
+        trace!("    -> L2Entry: {:#x}", l2_entry.as_u64());
+
         let l3_table = self.get_l3_table(l2_entry).unwrap();
         let l3_entry = l3_table.entry_at_vaddr(vaddr);
 
         if !l3_entry.is_valid() {
+            trace!("      -> L3Entry: Invalid ({:#x})", l3_entry.as_u64());
             return None;
         }
 
+        trace!("      -> L3Entry: Block {:#x}", l3_entry.as_u64());
         return l3_entry
             .get_frame()
             .map(|paddr| paddr + vaddr.base_page_offset());
@@ -488,9 +503,9 @@ impl<'a> VSpaceAArch64<'a> {
         let mut l2_desc = L2DescriptorTable::new();
         l2_desc
             .table(l3_table)
-            .priv_exec_table()
-            .user_exec_never_table()
-            .read_write_table()
+            // .priv_exec_table()
+            // .user_exec_never_table()
+            // .read_write_table()
             .valid();
 
         L2Descriptor::from(l2_desc)
@@ -503,9 +518,9 @@ impl<'a> VSpaceAArch64<'a> {
         let mut l1_desc = L1DescriptorTable::new();
         l1_desc
             .table(l2_table)
-            .priv_exec_table()
-            .user_exec_never_table()
-            .read_write_table()
+            // .priv_exec_table()
+            // .user_exec_never_table()
+            // .read_write_table()
             .valid();
 
         L1Descriptor::from(l1_desc)
@@ -518,9 +533,9 @@ impl<'a> VSpaceAArch64<'a> {
         let mut l0_desc = L0Descriptor::new();
         l0_desc
             .table(l1_table)
-            .priv_exec_table()
-            .user_exec_never_table()
-            .read_write_table()
+            // .priv_exec_table()
+            // .user_exec_never_table()
+            // .read_write_table()
             .valid();
 
         l0_desc
@@ -564,6 +579,69 @@ impl<'a> VSpaceAArch64<'a> {
             None
         }
     }
+
+    pub fn dump_translation_table(&self) {
+        debug!("dumping translatin tables");
+        debug!("-------------------------------------------------------");
+
+        let mut vaddr = VAddr::from(0);
+        let vaddr_end = VAddr::from(VADDR_MAX);
+        while vaddr < vaddr_end {
+            let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
+            if !l0_entry.is_valid() {
+                // debug!("-> L0Entry: Invalid ({:#x})", l0_entry.as_u64());
+                vaddr += 1u64 << 39;
+                continue;
+            }
+
+            trace!("-> L0Entry: {:#x}", l0_entry.as_u64());
+
+            let l1_table = self.get_l1_table(l0_entry).unwrap();
+            let l1_entry = l1_table.entry_at_vaddr(vaddr);
+            if !l1_entry.is_valid() {
+                // debug!("  -> L1Entry: Invalid ({:#x})", l1_entry.as_u64());
+                vaddr += 1u64 << 30;
+                continue;
+            }
+
+            if l1_entry.is_block() {
+                debug!("  -> L1Entry: Block {:#x}", l1_entry.as_u64());
+                vaddr += 1u64 << 30;
+                continue;
+            }
+
+            debug!("  -> L1Entry: {:#x}", l1_entry.as_u64());
+
+            let l2_table = self.get_l2_table(l1_entry).unwrap();
+            let l2_entry = l2_table.entry_at_vaddr(vaddr);
+            if !l2_entry.is_valid() {
+                // debug!("    -> L2Entry: Invalid ({:#x})", l2_entry.as_u64());
+                vaddr += 1u64 << 21;
+                continue;
+            }
+
+            if l2_entry.is_block() {
+                debug!("    -> L2Entry: Block {:#x}", l2_entry.as_u64());
+                vaddr += 1u64 << 21;
+                continue;
+            }
+
+            debug!("    -> L2Entry: {:#x}", l2_entry.as_u64());
+
+            let l3_table = self.get_l3_table(l2_entry).unwrap();
+            let l3_entry = l3_table.entry_at_vaddr(vaddr);
+
+            if !l3_entry.is_valid() {
+                // trace!("      -> L3Entry: Invalid ({:#x})", l3_entry.as_u64());
+                vaddr += 1u64 << 12;
+                continue;
+            }
+
+            debug!("      -> L3Entry: Block {:#x}", l3_entry.as_u64());
+            vaddr += 1u64 << 12;
+        }
+        debug!("-------------------------------------------------------");
+    }
 }
 
 /// Debug function to see what's currently in the UEFI address space.
@@ -600,11 +678,6 @@ pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         let phys_range_end =
             arch::PAddr::from(entry.phys_start + entry.page_count * arch::BASE_PAGE_SIZE as u64);
 
-        if phys_range_start.as_u64() <= 0xfee00000u64 && phys_range_end.as_u64() >= 0xfee00000u64 {
-            debug!("{:?} covers APIC range, ignore for now.", entry);
-            continue;
-        }
-
         let rights: MapAction = match entry.ty {
             MemoryType::RESERVED => MapAction::None,
             MemoryType::LOADER_CODE => MapAction::ReadExecuteKernel,
@@ -639,10 +712,6 @@ pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         );
 
         if rights != MapAction::None {
-            // kernel
-            //     .vspace
-            //     .map_identity(phys_range_start, phys_range_end, rights);
-
             if entry.ty == MemoryType::CONVENTIONAL
                 // We're allowed to use these regions according to the spec  after we call ExitBootServices.
                 // Also it can sometimes happens that the regions here switch from this type back
@@ -650,6 +719,8 @@ pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
                 // to `map_physical_memory` until getting the final memory mapped before booting..
                 || entry.ty == MemoryType::BOOT_SERVICES_DATA
                 || entry.ty == MemoryType::LOADER_DATA
+                // need access to the serial port
+                || entry.ty == MemoryType::MMIO
                 // These are regions we need to access in kernel space:
                 || entry.ty == MemoryType(KERNEL_PT)
                 || entry.ty == MemoryType(MODULE)
@@ -664,4 +735,11 @@ pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
             }
         }
     }
+
+    kernel.vspace.map_identity_with_offset(
+        arch::VAddr::from(arch::KERNEL_OFFSET as u64),
+        arch::PAddr::from(0x09000000),
+        arch::PAddr::from(0x09000000 + 0x1000),
+        MapAction::DeviceMemoryKernel,
+    );
 }

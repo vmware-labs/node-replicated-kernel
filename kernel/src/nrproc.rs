@@ -21,7 +21,9 @@ use crate::error::{KError, KResult};
 use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
-use crate::process::{Eid, Executor, Pid, Process, SliceAccess, UserSlice, MAX_PROCESSES};
+use crate::process::{
+    Eid, Executor, Pid, Process, SliceAccess, UserSlice, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
+};
 
 /// The tokens per core to access the process replicas.
 #[thread_local]
@@ -332,8 +334,12 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn release_frame_from_process(pid: Pid, fid: FrameId)  -> Result<Frame, KError> {
+    pub(crate) fn release_frame_from_process(
+        pid: Pid,
+        fid: FrameId,
+    ) -> Result<Option<Frame>, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+        debug_assert!(fid < MAX_FRAMES_PER_PROCESS, "Invalid FID");
 
         let node = *crate::environment::NODE_ID;
 
@@ -342,7 +348,13 @@ impl<P: Process> NrProcess<P> {
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
-            Ok(ProcessResult::Frame(f)) => Ok(f),
+            Ok(ProcessResult::Unmapped(handle)) => {
+                let frame = handle.frame;
+                crate::arch::tlb::shootdown(handle);
+                Ok(Some(frame))
+            }
+            Ok(ProcessResult::Frame(f)) => Ok(Some(f)),
+            Ok(ProcessResult::Ok) => Ok(None),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -536,11 +548,19 @@ where
             }
 
             ProcessOpMut::MemMapFrameId(base, frame_id, action) => {
-                let frame = self.process.get_frame(frame_id)?;
-                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
-
-                self.process.vspace_mut().map_frame(base, frame, action)?;
-                Ok(ProcessResult::MappedFrameId(frame.base, frame.size))
+                let (frame, mapped_at) = self.process.get_frame(frame_id)?;
+                if let Some(va) = mapped_at {
+                    if va != base {
+                        return Err(KError::AlreadyMapped { base: va });
+                    } else {
+                        return Ok(ProcessResult::MappedFrameId(frame.base, frame.size));
+                    }
+                } else {
+                    crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
+                    self.process.vspace_mut().map_frame(base, frame, action)?;
+                    self.process.add_frame_mapping(frame_id, base)?;
+                    Ok(ProcessResult::MappedFrameId(frame.base, frame.size))
+                }
             }
 
             ProcessOpMut::MemUnmap(vaddr) => {
@@ -567,9 +587,32 @@ where
             }
 
             ProcessOpMut::ReleaseFrameFromProcess(fid) => {
-                let frame = self.process.deallocate_frame(fid)?;
-                log::error!("need to unmap {:?} in process' address space", frame);
-                Ok(ProcessResult::Frame(frame))
+                let (frame, mapped_at) = self.process.get_frame(fid)?;
+                if let Some(va) = mapped_at {
+                    //
+                    match self.process.vspace_mut().unmap(va) {
+                        Ok(mut shootdown_handle) => {
+                            for (gtid, _eid) in self.active_cores.iter() {
+                                shootdown_handle.add_core(*gtid);
+                            }
+                            self.process.deallocate_frame(fid).expect("Should not fail");
+                            return Ok(ProcessResult::Unmapped(shootdown_handle));
+                        }
+                        Err(KError::NotMapped) => {
+                            // Note: the `unmap` call might fail if the frame was
+                            // already unmapped this is fine as long as we do
+                            // `deallocate_frame` first (and removed the mapping in
+                            // `frames`)
+                            self.process.deallocate_frame(fid).expect("Should not fail");
+                            return Ok(ProcessResult::Ok);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                } else {
+                    // Wasn't mapped, no need to clear TLB
+                    self.process.deallocate_frame(fid).expect("Should not fail");
+                    Ok(ProcessResult::Frame(frame))
+                }
             }
         }
     }

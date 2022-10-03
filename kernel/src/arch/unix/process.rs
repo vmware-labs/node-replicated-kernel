@@ -21,8 +21,8 @@ use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptorEntry;
 use crate::fs::MAX_FILES_PER_PROCESS;
 use crate::memory::detmem::DA;
-use crate::memory::vspace::AddressSpace;
 use crate::memory::vspace::MapAction;
+use crate::memory::vspace::{AddressSpace, TlbFlushHandle};
 use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 use crate::process::{
@@ -264,11 +264,15 @@ impl Process for UnixProcess {
         Err(KError::InvalidFrameId)
     }
 
-    fn get_frame(&mut self, _frame_id: FrameId) -> Result<Frame, KError> {
+    fn get_frame(&mut self, _frame_id: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
         Err(KError::InvalidFrameId)
     }
 
-    fn deallocate_frame(&mut self, _fid: FrameId) -> Result<Frame, KError> {
+    fn add_frame_mapping(&mut self, frame_id: FrameId, vaddr: VAddr) -> Result<(), KError> {
+        Err(KError::InvalidFrameId)
+    }
+
+    fn deallocate_frame(&mut self, _fid: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
         Err(KError::InvalidFrameId)
     }
 }

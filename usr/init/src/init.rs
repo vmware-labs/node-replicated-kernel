@@ -76,29 +76,43 @@ fn alloc_test() {
 fn alloc_physical_test() {
     use x86::bits64::paging::{PAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
-    // Allocate a base page of physical memory
-    let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
-        .expect("Failed to get physical memory base page");
-    info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
-    // Create a base for the frame
-
     // Create base for the mapping
     let base: u64 = 0x0510_0000_0000;
 
     // Test allocation by checking to see if we can map it okay
     unsafe {
-        vibrio::syscalls::VSpace::map_frame(frame_id, base).expect("Failed to map base page");
-        let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, BASE_PAGE_SIZE);
-        for i in slice.iter_mut() {
-            *i = 0xb;
-        }
-        assert_eq!(slice[99], 0xb);
-        vibrio::syscalls::VSpace::unmap(base, BASE_PAGE_SIZE as u64).expect("Unmap syscall failed");
-    }
+        for unmap_it in [true, false] {
+            // Allocate a base page of physical memory
+            let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
+                .expect("Failed to get physical memory base page");
+            info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
 
-    // Release base page
-    vibrio::syscalls::PhysicalMemory::release_frame(frame_id)
-        .expect("Failed to release physical memory base page");
+            vibrio::syscalls::VSpace::map_frame(frame_id, base).expect("Failed to map base page");
+            let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, BASE_PAGE_SIZE);
+            for i in slice.iter_mut() {
+                *i = 0xb;
+            }
+            assert_eq!(slice[99], 0xb);
+
+            // We should be able to "map" it again if we specify the same address
+            vibrio::syscalls::VSpace::map_frame(frame_id, base).expect("Failed to map base page");
+
+            // We should NOT be able to "map" it again at a different address
+            vibrio::syscalls::VSpace::map_frame(frame_id, base + 0x1000)
+                .expect_err("Success mapping twice?");
+
+            // We should be able to unmap it (then release frame will just release the frame id)
+            if unmap_it {
+                vibrio::syscalls::VSpace::unmap(base, BASE_PAGE_SIZE as u64)
+                    .expect("Unmap syscall failed");
+            }
+
+            // If `unmap_it` is false, this should also unmap!
+            // TODO: we should ideally test this by checking/catching the page-faults...
+            vibrio::syscalls::PhysicalMemory::release_frame(frame_id)
+                .expect("Failed to release physical memory base page");
+        }
+    }
 
     // Allocate a large page of physical memory
     let (frame_id2, paddr2) = vibrio::syscalls::PhysicalMemory::allocate_large_page()

@@ -34,6 +34,7 @@ pub mod rackscale;
 pub mod signals;
 pub mod syscalls;
 pub mod timer;
+pub mod tlb;
 pub mod vspace;
 
 pub use bootloader_shared::*;

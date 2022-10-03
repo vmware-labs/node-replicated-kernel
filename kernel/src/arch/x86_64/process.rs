@@ -859,7 +859,7 @@ pub(crate) struct Ring3Process {
     /// File descriptors for the opened file.
     pub fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS>,
     /// Physical frame objects registered to the process.
-    pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
+    pub frames: ArrayVec<(Option<Frame>, Option<VAddr>), MAX_FRAMES_PER_PROCESS>,
     /// Frames of the writeable ELF data section (shared across all replicated Process structs)
     pub writeable_sections: ArrayVec<Frame, MAX_WRITEABLE_SECTIONS_PER_PROCESS>,
     /// Section in ELF where last read-only header is
@@ -879,8 +879,8 @@ impl Ring3Process {
         let fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS> =
             ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]);
 
-        let frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS> =
-            ArrayVec::from([None; MAX_FRAMES_PER_PROCESS]);
+        let frames: ArrayVec<(Option<Frame>, Option<VAddr>), MAX_FRAMES_PER_PROCESS> =
+            ArrayVec::from([(None, None); MAX_FRAMES_PER_PROCESS]);
 
         Ok(Ring3Process {
             pid: pid,
@@ -1335,40 +1335,48 @@ impl Process for Ring3Process {
     }
 
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError> {
-        if let Some(fid) = self.frames.iter().position(|fid| fid.is_none()) {
-            self.frames[fid] = Some(frame);
+        if let Some(fid) = self.frames.iter().position(|entry| entry.0.is_none()) {
+            self.frames[fid] = (Some(frame), None);
             Ok(fid)
         } else {
             Err(KError::TooManyRegisteredFrames)
         }
     }
 
-    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, KError> {
-        self.frames
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
+        let (frame, mapped_at) = self
+            .frames
             .get(frame_id)
             .cloned()
-            .flatten()
+            .ok_or(KError::InvalidFrameId)?;
+
+        if let Some(frame) = frame {
+            Ok((frame, mapped_at))
+        } else {
+            Err(KError::InvalidFrameId)
+        }
+    }
+
+    fn add_frame_mapping(&mut self, frame_id: FrameId, base: VAddr) -> Result<(), KError> {
+        self.frames
+            .get_mut(frame_id)
+            .and_then(|(_, mapping)| {
+                *mapping = Some(base);
+                Some(())
+            })
             .ok_or(KError::InvalidFrameId)
     }
 
-    fn add_frame_mapping(
-        &mut self,
-        frame_id: FrameId,
-        base: VAddr,
-    ) -> Result<(), KError> {
-        let frame = self.get_frame(frame_id)?;
-        let mapping_id = frame.add_mapping(mapping)?;
-        Ok(mapping_id)
-    }
-
-    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
         match self.frames.get_mut(fid) {
-            Some(maybe_frame) => {
-                let mut old = None;
-                core::mem::swap(&mut old, maybe_frame);
-                old.ok_or(KError::InvalidFileDescriptor)
+            Some(cur) => {
+                let mut temp = (None, None);
+                core::mem::swap(&mut temp, cur);
+
+                let va = temp.1;
+                Ok((temp.0.ok_or(KError::InvalidFrame)?, va))
             }
-            _ => Err(KError::InvalidFileDescriptor),
+            _ => Err(KError::InvalidFrameId),
         }
     }
 }

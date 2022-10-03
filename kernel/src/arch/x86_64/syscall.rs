@@ -233,10 +233,10 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
 
         // Release the page (need to make sure we drop pmanager again before we
         // go to NR):
-        {
+        if let Some(frame) = frame {
             let pcm = super::kcb::per_core_mem();
             let mut pmanager = pcm.mem_manager();
-            
+
             // This entire logic should probably go into [`GlobalMemory`]:
             if frame.size == BASE_PAGE_SIZE {
                 match pmanager.release_base_page(frame) {
@@ -249,7 +249,6 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
                     }
                     Err(e) => return Err(e),
                 }
-                
             } else {
                 assert_eq!(frame.size, LARGE_PAGE_SIZE);
                 match pmanager.release_large_page(frame) {

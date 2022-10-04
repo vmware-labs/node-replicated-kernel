@@ -7,12 +7,9 @@
 //! the arch-specific initialization is done (see `arch/x86_64/mod.rs` for an example).
 
 #![cfg_attr(target_os = "none", no_std)]
-
 // Temporarily disabling this to get it compiled, so we can work on the bootloader
 //#![deny(warnings)]
 #![allow(dead_code, unused_imports, unused_variables)]
-
-
 #![cfg_attr(target_family = "unix", allow(unused))]
 #![feature(
     is_sorted,

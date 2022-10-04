@@ -14,8 +14,10 @@ members = [
     "lib/vibrio",
     "lib/vmxnet3",
     "lib/rpc",
+    #"lib/pl011_qemu",
+    #"lib/rust-klogger",
     "usr/init",
-    "usr/rkapps",
+    "usr/rkapps"
     #"lib/libfringe",
     #"lib/acpica-sys"
     #"lib/rust-topology",

@@ -20,7 +20,7 @@ cnr = { path = "../lib/node-replication/cnr" }
 kpi = { path = "../lib/kpi" }
 rpc = { path = "../lib/rpc", optional = true }
 bootloader_shared = { path = "../lib/bootloader_shared" }
-klogger = {git = "https://github.com/achreto/rust-klogger"}
+klogger = { git = "https://github.com/gz/rust-klogger", branch = "aarch64" }
 driverkit = { git = "https://github.com/gz/rust-driverkit", branch = "dev/aarch64" }
 spin = "0.9.1"
 elfloader = "0.14"

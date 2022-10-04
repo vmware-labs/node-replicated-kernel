@@ -45,29 +45,17 @@ use core::ptr::{read_volatile, write_volatile};
 #[start]
 #[no_mangle]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
-    unsafe {
-        asm!("hvc #0");
-    }
-
     const A: *mut u32 = (0xffff_0000_0900_0000) as *mut u32;
-    const B: *mut u32 = (0x09000000) as *mut u32;
 
     unsafe {
-        write_volatile(A, 'a' as u32);
-        write_volatile(A, 'b' as u32);
-        write_volatile(A, 'v' as u32);
-        write_volatile(A, 'd' as u32);
+        write_volatile(A, 'h' as u32);
         write_volatile(A, 'e' as u32);
-        write_volatile(A, 'f' as u32);
-        write_volatile(A, 'g' as u32);
-
-        write_volatile(B, 'a' as u32);
-        write_volatile(B, 'b' as u32);
-        write_volatile(B, 'v' as u32);
-        write_volatile(B, 'd' as u32);
-        write_volatile(B, 'e' as u32);
-        write_volatile(B, 'f' as u32);
-        write_volatile(B, 'g' as u32);
+        write_volatile(A, 'l' as u32);
+        write_volatile(A, 'l' as u32);
+        write_volatile(A, 'o' as u32);
+        write_volatile(A, ' ' as u32);
+        write_volatile(A, '\r' as u32);
+        write_volatile(A, '\n' as u32);
     }
 
     sprint!("\r\n");

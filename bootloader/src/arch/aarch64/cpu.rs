@@ -77,7 +77,6 @@ pub fn setup_cpu_features() {
 
 pub fn set_translation_table(root: u64) {
     Ttbr1El1::new().baddr471_insert(root >> 1).write();
-    Ttbr0El1::new().baddr471_insert(root >> 1).write();
 }
 
 /// Make sure the machine supports what we require.

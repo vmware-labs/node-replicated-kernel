@@ -77,10 +77,10 @@ impl MapAction {
                 entry.user_exec();
             }
             MapAction::ReadWriteExecuteUser => {
-                entry.user_exec().read_write();
+                entry.user_exec();
             }
             MapAction::ReadWriteExecuteKernel => {
-                entry.priv_exec().read_write();
+                entry.priv_exec();
             }
             MapAction::DeviceMemoryKernel => {
                 entry
@@ -112,10 +112,10 @@ impl MapAction {
                 entry.user_exec();
             }
             MapAction::ReadWriteExecuteUser => {
-                entry.user_exec().read_write();
+                entry.user_exec();
             }
             MapAction::ReadWriteExecuteKernel => {
-                entry.priv_exec().read_write();
+                entry.priv_exec();
             }
             MapAction::DeviceMemoryKernel => {
                 entry
@@ -139,7 +139,7 @@ impl<'a> VSpaceAArch64<'a> {
         configure_el1();
 
         let l0: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
-        let l0_table = unsafe { &mut *paddr_to_uefi_vaddr(l0).as_mut_ptr::<L0Table>() };
+        let mut l0_table = unsafe { &mut *paddr_to_uefi_vaddr(l0).as_mut_ptr::<L0Table>() };
 
         VSpaceAArch64 { l0_table: l0_table }
     }
@@ -221,14 +221,12 @@ impl<'a> VSpaceAArch64<'a> {
                     " - allocating a new l1 table (idx {})",
                     L0Table::index(vaddr)
                 );
-                let mut table = self.new_l1_table();
+                let mut table = Self::new_l1_table();
                 self.l0_table.set_entry_at_vaddr(vaddr, table);
             }
 
             // get the l1 table
-            let l1_table = self
-                .get_l1_table(self.l0_table.entry_at_vaddr(vaddr))
-                .unwrap();
+            let l1_table = Self::get_l1_table(self.l0_table.entry_at_vaddr(vaddr)).unwrap();
 
             // if both, vaddr and paddr are aligned, and we have enough remaining bytes
             // we can do a huge page mapping
@@ -268,6 +266,7 @@ impl<'a> VSpaceAArch64<'a> {
                     entry
                         .inner_shareable()
                         .outer_shareable()
+                        .accessed()
                         .set_attr_index(MemoryAttributes::NormalMemory)
                         .frame(paddr)
                         .valid();
@@ -288,12 +287,12 @@ impl<'a> VSpaceAArch64<'a> {
                     " - allocating a new l2 table (idx {})",
                     L1Table::index(vaddr)
                 );
-                let table = self.new_l2_table();
+                let table = Self::new_l2_table();
                 l1_table.set_entry_at_vaddr(vaddr, table);
             }
 
             // get the l1 table
-            let l2_table = self.get_l2_table(l1_table.entry_at_vaddr(vaddr)).unwrap();
+            let l2_table = Self::get_l2_table(l1_table.entry_at_vaddr(vaddr)).unwrap();
 
             // if both, vaddr and paddr are aligned, and we have enough remaining bytes
             // we can do a huge page mapping
@@ -337,6 +336,7 @@ impl<'a> VSpaceAArch64<'a> {
                     entry
                         .inner_shareable()
                         .outer_shareable()
+                        .accessed()
                         .set_attr_index(MemoryAttributes::NormalMemory)
                         .frame(paddr)
                         .valid();
@@ -357,12 +357,12 @@ impl<'a> VSpaceAArch64<'a> {
                     " - allocating a new l3 table (idx {})",
                     L2Table::index(vaddr)
                 );
-                let table = self.new_l3_table();
+                let table = Self::new_l3_table();
                 l2_table.set_entry_at_vaddr(vaddr, table);
             }
 
             // get the l1 table
-            let l3_table = self.get_l3_table(l2_table.entry_at_vaddr(vaddr)).unwrap();
+            let l3_table = Self::get_l3_table(l2_table.entry_at_vaddr(vaddr)).unwrap();
 
             let idx = L2Table::index(vaddr);
             while L2Table::index(vaddr) == idx && size >= BASE_PAGE_SIZE {
@@ -391,6 +391,7 @@ impl<'a> VSpaceAArch64<'a> {
                 entry
                     .inner_shareable()
                     .outer_shareable()
+                    .accessed()
                     .set_attr_index(MemoryAttributes::NormalMemory)
                     .frame(paddr)
                     .valid();
@@ -436,7 +437,7 @@ impl<'a> VSpaceAArch64<'a> {
 
         trace!("-> L0Entry: {:#x}", l0_entry.as_u64());
 
-        let l1_table = self.get_l1_table(l0_entry).unwrap();
+        let l1_table = Self::get_l1_table(l0_entry).unwrap();
         let l1_entry = l1_table.entry_at_vaddr(vaddr);
         if !l1_entry.is_valid() {
             trace!("  -> L1Entry: Invalid ({:#x})", l1_entry.as_u64());
@@ -452,7 +453,7 @@ impl<'a> VSpaceAArch64<'a> {
 
         trace!("  -> L1Entry: {:#x}", l1_entry.as_u64());
 
-        let l2_table = self.get_l2_table(l1_entry).unwrap();
+        let l2_table = Self::get_l2_table(l1_entry).unwrap();
         let l2_entry = l2_table.entry_at_vaddr(vaddr);
         if !l2_entry.is_valid() {
             trace!("    -> L2Entry: Invalid ({:#x})", l2_entry.as_u64());
@@ -468,7 +469,7 @@ impl<'a> VSpaceAArch64<'a> {
 
         trace!("    -> L2Entry: {:#x}", l2_entry.as_u64());
 
-        let l3_table = self.get_l3_table(l2_entry).unwrap();
+        let l3_table = Self::get_l3_table(l2_entry).unwrap();
         let l3_entry = l3_table.entry_at_vaddr(vaddr);
 
         if !l3_entry.is_valid() {
@@ -496,8 +497,11 @@ impl<'a> VSpaceAArch64<'a> {
         panic!("not yet implemented!");
     }
 
-    fn new_l3_table(&self) -> L2Descriptor {
+    fn new_l3_table() -> L2Descriptor {
         let l3: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
+
+        debug!("allocated l3 table: {:x}", l3);
+
         let l3_table = unsafe { &mut *paddr_to_uefi_vaddr(l3).as_mut_ptr::<L3Table>() };
 
         let mut l2_desc = L2DescriptorTable::new();
@@ -508,11 +512,16 @@ impl<'a> VSpaceAArch64<'a> {
             // .read_write_table()
             .valid();
 
+        assert!(l2_desc.get_paddr() == l3);
+
         L2Descriptor::from(l2_desc)
     }
 
-    fn new_l2_table(&self) -> L1Descriptor {
+    fn new_l2_table() -> L1Descriptor {
         let l2: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
+
+        debug!("allocated l2 table: {:x}", l2);
+
         let l2_table = unsafe { &mut *paddr_to_uefi_vaddr(l2).as_mut_ptr::<L2Table>() };
 
         let mut l1_desc = L1DescriptorTable::new();
@@ -523,11 +532,16 @@ impl<'a> VSpaceAArch64<'a> {
             // .read_write_table()
             .valid();
 
+        assert!(l1_desc.get_paddr() == l2);
+
         L1Descriptor::from(l1_desc)
     }
 
-    fn new_l1_table(&self) -> L0Descriptor {
+    fn new_l1_table() -> L0Descriptor {
         let l1: PAddr = memory::allocate_one_page(uefi::table::boot::MemoryType(KERNEL_PT));
+
+        debug!("allocated l1 table: {:x}", l1);
+
         let l1_table = unsafe { &mut *paddr_to_uefi_vaddr(l1).as_mut_ptr::<L1Table>() };
 
         let mut l0_desc = L0Descriptor::new();
@@ -538,11 +552,13 @@ impl<'a> VSpaceAArch64<'a> {
             // .read_write_table()
             .valid();
 
+        assert!(l0_desc.get_paddr() == l1);
+
         l0_desc
     }
 
     /// Resolve a PDEntry to a page table.
-    fn get_l3_table<'b>(&self, entry: &L2Descriptor) -> Option<&'b mut L3Table> {
+    fn get_l3_table<'b>(entry: &L2Descriptor) -> Option<&'b mut L3Table> {
         if entry.is_valid() {
             unsafe {
                 Some(transmute::<VAddr, &mut L3Table>(paddr_to_uefi_vaddr(
@@ -555,7 +571,7 @@ impl<'a> VSpaceAArch64<'a> {
     }
 
     /// Resolve a PDPTEntry to a page directory.
-    fn get_l2_table<'b>(&self, entry: &L1Descriptor) -> Option<&'b mut L2Table> {
+    fn get_l2_table<'b>(entry: &L1Descriptor) -> Option<&'b mut L2Table> {
         if entry.is_valid() {
             unsafe {
                 Some(transmute::<VAddr, &mut L2Table>(paddr_to_uefi_vaddr(
@@ -568,7 +584,7 @@ impl<'a> VSpaceAArch64<'a> {
     }
 
     /// Resolve a PML4Entry to a PDPT.
-    fn get_l1_table<'b>(&self, entry: &L0Descriptor) -> Option<&'b mut L1Table> {
+    fn get_l1_table<'b>(entry: &L0Descriptor) -> Option<&'b mut L1Table> {
         if entry.is_valid() {
             unsafe {
                 Some(transmute::<VAddr, &mut L1Table>(paddr_to_uefi_vaddr(
@@ -596,7 +612,7 @@ impl<'a> VSpaceAArch64<'a> {
 
             trace!("-> L0Entry: {:#x}", l0_entry.as_u64());
 
-            let l1_table = self.get_l1_table(l0_entry).unwrap();
+            let l1_table = Self::get_l1_table(l0_entry).unwrap();
             let l1_entry = l1_table.entry_at_vaddr(vaddr);
             if !l1_entry.is_valid() {
                 // debug!("  -> L1Entry: Invalid ({:#x})", l1_entry.as_u64());
@@ -612,7 +628,7 @@ impl<'a> VSpaceAArch64<'a> {
 
             debug!("  -> L1Entry: {:#x}", l1_entry.as_u64());
 
-            let l2_table = self.get_l2_table(l1_entry).unwrap();
+            let l2_table = Self::get_l2_table(l1_entry).unwrap();
             let l2_entry = l2_table.entry_at_vaddr(vaddr);
             if !l2_entry.is_valid() {
                 // debug!("    -> L2Entry: Invalid ({:#x})", l2_entry.as_u64());
@@ -628,7 +644,7 @@ impl<'a> VSpaceAArch64<'a> {
 
             debug!("    -> L2Entry: {:#x}", l2_entry.as_u64());
 
-            let l3_table = self.get_l3_table(l2_entry).unwrap();
+            let l3_table = Self::get_l3_table(l2_entry).unwrap();
             let l3_entry = l3_table.entry_at_vaddr(vaddr);
 
             if !l3_entry.is_valid() {
@@ -668,11 +684,6 @@ pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         .expect("Failed to retrieve UEFI memory map");
 
     for entry in desc_iter {
-        if entry.phys_start == 0x0 {
-            debug!("Don't map memory entry at physical zero? {:#?}", entry);
-            continue;
-        }
-
         // Compute physical base and bound for the region we're about to map
         let phys_range_start = arch::PAddr::from(entry.phys_start);
         let phys_range_end =
@@ -712,27 +723,13 @@ pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
         );
 
         if rights != MapAction::None {
-            if entry.ty == MemoryType::CONVENTIONAL
-                // We're allowed to use these regions according to the spec  after we call ExitBootServices.
-                // Also it can sometimes happens that the regions here switch from this type back
-                // to conventional if we're not careful with memory allocations between the call
-                // to `map_physical_memory` until getting the final memory mapped before booting..
-                || entry.ty == MemoryType::BOOT_SERVICES_DATA
-                || entry.ty == MemoryType::LOADER_DATA
-                // need access to the serial port
-                || entry.ty == MemoryType::MMIO
-                // These are regions we need to access in kernel space:
-                || entry.ty == MemoryType(KERNEL_PT)
-                || entry.ty == MemoryType(MODULE)
-                || entry.ty == MemoryType(KERNEL_ARGS)
-            {
-                kernel.vspace.map_identity_with_offset(
-                    arch::VAddr::from(arch::KERNEL_OFFSET as u64),
-                    phys_range_start,
-                    phys_range_end,
-                    rights,
-                );
+            if matches!(entry.ty, MemoryType(KERNEL_ELF) | MemoryType(KERNEL_STACK)) {
+                continue;
             }
+
+            kernel
+                .vspace
+                .map_identity(phys_range_start, phys_range_end, rights);
         }
     }
 

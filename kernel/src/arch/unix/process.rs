@@ -26,7 +26,8 @@ use crate::memory::vspace::{AddressSpace, TlbFlushHandle};
 use crate::memory::{Frame, VAddr, LARGE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 use crate::process::{
-    Eid, Executor, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
+    Eid, Executor, FrameManagement, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS,
+    MAX_PROCESSES,
 };
 
 use super::debug;
@@ -259,12 +260,14 @@ impl Process for UnixProcess {
     fn pinfo(&self) -> &kpi::process::ProcessInfo {
         &self.pinfo
     }
+}
 
-    fn add_frame(&mut self, _frame: Frame) -> Result<FrameId, KError> {
+impl FrameManagement for UnixProcess {
+    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError> {
         Err(KError::InvalidFrameId)
     }
 
-    fn get_frame(&mut self, _frame_id: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, usize), KError> {
         Err(KError::InvalidFrameId)
     }
 
@@ -272,7 +275,11 @@ impl Process for UnixProcess {
         Err(KError::InvalidFrameId)
     }
 
-    fn deallocate_frame(&mut self, _fid: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
+    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError> {
+        Err(KError::InvalidFrameId)
+    }
+
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {
         Err(KError::InvalidFrameId)
     }
 }

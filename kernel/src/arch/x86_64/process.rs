@@ -31,7 +31,7 @@ use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, MemType, PAddr, VAddr};
 use crate::nrproc::NrProcess;
 use crate::process::{
-    Eid, Executor, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
+    Eid, Executor, FrameManagement, Pid, Process, ProcessFrames, ResumeHandle, MAX_PROCESSES,
     MAX_WRITEABLE_SECTIONS_PER_PROCESS,
 };
 use crate::round_up;
@@ -859,7 +859,7 @@ pub(crate) struct Ring3Process {
     /// File descriptors for the opened file.
     pub fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS>,
     /// Physical frame objects registered to the process.
-    pub frames: ArrayVec<(Option<Frame>, Option<VAddr>), MAX_FRAMES_PER_PROCESS>,
+    pub pfm: ProcessFrames,
     /// Frames of the writeable ELF data section (shared across all replicated Process structs)
     pub writeable_sections: ArrayVec<Frame, MAX_WRITEABLE_SECTIONS_PER_PROCESS>,
     /// Section in ELF where last read-only header is
@@ -879,8 +879,7 @@ impl Ring3Process {
         let fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS> =
             ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]);
 
-        let frames: ArrayVec<(Option<Frame>, Option<VAddr>), MAX_FRAMES_PER_PROCESS> =
-            ArrayVec::from([(None, None); MAX_FRAMES_PER_PROCESS]);
+        let pfm = ProcessFrames::default();
 
         Ok(Ring3Process {
             pid: pid,
@@ -892,7 +891,7 @@ impl Ring3Process {
             executor_offset: VAddr::from(EXECUTOR_OFFSET),
             fds,
             pinfo: Default::default(),
-            frames,
+            pfm,
             writeable_sections: ArrayVec::new(),
             read_only_offset: VAddr::zero(),
         })
@@ -1333,51 +1332,27 @@ impl Process for Ring3Process {
     fn pinfo(&self) -> &kpi::process::ProcessInfo {
         &self.pinfo
     }
+}
 
+impl FrameManagement for Ring3Process {
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError> {
-        if let Some(fid) = self.frames.iter().position(|entry| entry.0.is_none()) {
-            self.frames[fid] = (Some(frame), None);
-            Ok(fid)
-        } else {
-            Err(KError::TooManyRegisteredFrames)
-        }
+        self.pfm.add_frame(frame)
     }
 
-    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
-        let (frame, mapped_at) = self
-            .frames
-            .get(frame_id)
-            .cloned()
-            .ok_or(KError::InvalidFrameId)?;
-
-        if let Some(frame) = frame {
-            Ok((frame, mapped_at))
-        } else {
-            Err(KError::InvalidFrameId)
-        }
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, usize), KError> {
+        self.pfm.get_frame(frame_id)
     }
 
-    fn add_frame_mapping(&mut self, frame_id: FrameId, base: VAddr) -> Result<(), KError> {
-        self.frames
-            .get_mut(frame_id)
-            .and_then(|(_, mapping)| {
-                *mapping = Some(base);
-                Some(())
-            })
-            .ok_or(KError::InvalidFrameId)
+    fn add_frame_mapping(&mut self, frame_id: FrameId, vaddr: VAddr) -> Result<(), KError> {
+        self.pfm.add_frame_mapping(frame_id, vaddr)
     }
 
-    fn deallocate_frame(&mut self, fid: FrameId) -> Result<(Frame, Option<VAddr>), KError> {
-        match self.frames.get_mut(fid) {
-            Some(cur) => {
-                let mut temp = (None, None);
-                core::mem::swap(&mut temp, cur);
+    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError> {
+        self.pfm.remove_frame_mapping(frame_id, _vaddr)
+    }
 
-                let va = temp.1;
-                Ok((temp.0.ok_or(KError::InvalidFrame)?, va))
-            }
-            _ => Err(KError::InvalidFrameId),
-        }
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {
+        self.pfm.deallocate_frame(fid)
     }
 }
 

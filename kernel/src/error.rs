@@ -99,6 +99,8 @@ pub enum KError {
     BinaryNotFound { binary: &'static str },
     /// Supplied frame was invalid
     InvalidFrame,
+    /// The frame could not be detached from the process -- still mapped in its VSpace.
+    FrameStillMapped,
     /// Address space operation covers existing mapping {base:?}
     AlreadyMapped { base: VAddr },
     /// Provided virtual base {base:?} is invalid (led to overflow on mappings).

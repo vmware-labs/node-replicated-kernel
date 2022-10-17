@@ -238,6 +238,7 @@ impl<P: Process> NrProcess<P> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let node = *crate::environment::NODE_ID;
+        //action.multiple_mappings(true);
 
         let response = PROCESS_TABLE[node][pid].execute_mut(
             ProcessOpMut::MemMapFrameId(base, frame_id, action),
@@ -548,19 +549,11 @@ where
             }
 
             ProcessOpMut::MemMapFrameId(base, frame_id, action) => {
-                let (frame, mapped_at) = self.process.get_frame(frame_id)?;
-                if let Some(va) = mapped_at {
-                    if va != base {
-                        return Err(KError::AlreadyMapped { base: va });
-                    } else {
-                        return Ok(ProcessResult::MappedFrameId(frame.base, frame.size));
-                    }
-                } else {
-                    crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
-                    self.process.vspace_mut().map_frame(base, frame, action)?;
-                    self.process.add_frame_mapping(frame_id, base)?;
-                    Ok(ProcessResult::MappedFrameId(frame.base, frame.size))
-                }
+                let (frame, _refcnt) = self.process.get_frame(frame_id)?;
+                self.process.add_frame_mapping(frame_id, base)?;
+                crate::memory::KernelAllocator::try_refill_tcache(7, 0, MemType::Mem)?;
+                self.process.vspace_mut().map_frame(base, frame, action)?;
+                Ok(ProcessResult::MappedFrameId(frame.base, frame.size))
             }
 
             ProcessOpMut::MemUnmap(vaddr) => {
@@ -587,32 +580,8 @@ where
             }
 
             ProcessOpMut::ReleaseFrameFromProcess(fid) => {
-                let (frame, mapped_at) = self.process.get_frame(fid)?;
-                if let Some(va) = mapped_at {
-                    //
-                    match self.process.vspace_mut().unmap(va) {
-                        Ok(mut shootdown_handle) => {
-                            for (gtid, _eid) in self.active_cores.iter() {
-                                shootdown_handle.add_core(*gtid);
-                            }
-                            self.process.deallocate_frame(fid).expect("Should not fail");
-                            return Ok(ProcessResult::Unmapped(shootdown_handle));
-                        }
-                        Err(KError::NotMapped) => {
-                            // Note: the `unmap` call might fail if the frame was
-                            // already unmapped this is fine as long as we do
-                            // `deallocate_frame` first (and removed the mapping in
-                            // `frames`)
-                            self.process.deallocate_frame(fid).expect("Should not fail");
-                            return Ok(ProcessResult::Ok);
-                        }
-                        Err(e) => return Err(e),
-                    }
-                } else {
-                    // Wasn't mapped, no need to clear TLB
-                    self.process.deallocate_frame(fid).expect("Should not fail");
-                    Ok(ProcessResult::Frame(frame))
-                }
+                let frame = self.process.deallocate_frame(fid)?;
+                Ok(ProcessResult::Frame(frame))
             }
         }
     }

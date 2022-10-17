@@ -47,7 +47,7 @@ pub(crate) const MAX_FRAMES_PER_PROCESS: usize = MAX_CORES;
 pub(crate) const MAX_WRITEABLE_SECTIONS_PER_PROCESS: usize = 4;
 
 /// Abstract definition of a process.
-pub(crate) trait Process {
+pub(crate) trait Process: FrameManagement {
     type E: Executor + Copy + Sync + Send + Debug + PartialEq;
     type A: AddressSpace;
 
@@ -82,11 +82,93 @@ pub(crate) trait Process {
     fn get_fd(&self, index: usize) -> &FileDescriptorEntry;
 
     fn pinfo(&self) -> &kpi::process::ProcessInfo;
+}
 
+pub(crate) trait FrameManagement {
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError>;
-    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, Option<VAddr>), KError>;
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, usize), KError>;
     fn add_frame_mapping(&mut self, frame_id: FrameId, vaddr: VAddr) -> Result<(), KError>;
-    fn deallocate_frame(&mut self, fid: FrameId) -> Result<(Frame, Option<VAddr>), KError>;
+    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError>;
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError>;
+}
+
+/// Implementation for managing a process' frames.
+pub(crate) struct ProcessFrames {
+    /// Physical frame objects registered to the process.
+    frames: ArrayVec<(Option<Frame>, usize), MAX_FRAMES_PER_PROCESS>,
+}
+
+impl Default for ProcessFrames {
+    fn default() -> Self {
+        let frames: ArrayVec<(Option<Frame>, usize), MAX_FRAMES_PER_PROCESS> =
+            ArrayVec::from([(None, 0); MAX_FRAMES_PER_PROCESS]);
+        Self { frames }
+    }
+}
+
+impl FrameManagement for ProcessFrames {
+    fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError> {
+        if let Some(fid) = self.frames.iter().position(|entry| entry.0.is_none()) {
+            self.frames[fid] = (Some(frame), 0);
+            Ok(fid)
+        } else {
+            Err(KError::TooManyRegisteredFrames)
+        }
+    }
+
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, usize), KError> {
+        let (frame, metadata) = self
+            .frames
+            .get(frame_id)
+            .cloned()
+            .ok_or(KError::InvalidFrameId)?;
+
+        if let Some(frame) = frame {
+            Ok((frame, metadata))
+        } else {
+            Err(KError::InvalidFrameId)
+        }
+    }
+
+    fn add_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError> {
+        self.frames
+            .get_mut(frame_id)
+            .and_then(|(frame, ref mut refcnt)| {
+                if frame.is_some() {
+                    *refcnt += 1;
+                    Some(())
+                } else {
+                    None
+                }
+            })
+            .ok_or(KError::InvalidFrameId)
+    }
+
+    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError> {
+        let (frame, ref mut refcnt) = self
+            .frames
+            .get_mut(frame_id)
+            .ok_or(KError::InvalidFrameId)?;
+        if frame.is_some() {
+            if *refcnt > 0 {
+                *refcnt -= 1;
+                Ok(())
+            } else {
+                panic!("Can't call remove_frame_mapping on 0 refcnt frame");
+            }
+        } else {
+            Err(KError::InvalidFrameId)
+        }
+    }
+
+    fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {
+        let (frame, refcnt) = self.frames.get_mut(fid).ok_or(KError::InvalidFrameId)?;
+        if *refcnt == 0 {
+            frame.take().ok_or(KError::InvalidFrameId)
+        } else {
+            Err(KError::FrameStillMapped)
+        }
+    }
 }
 
 /// ResumeHandle is the HW specific logic that switches the CPU

@@ -40,8 +40,7 @@ pub mod x86_64 {
     pub use crate::arch::*;
 }
 
-/// Start of the kernel address space.
-pub const KERNEL_BASE: u64 = 0x4000_0000_0000;
+pub use arch::KERNEL_BASE;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 #[repr(u64)]

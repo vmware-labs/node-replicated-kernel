@@ -10,6 +10,9 @@ use core::ops::Range;
 
 use armv8::aarch64::vm::granule4k::*;
 
+/// Start of the kernel address space.
+pub const KERNEL_BASE: u64 = 0xffff_0000_0000_0000;
+
 pub const ROOT_TABLE_SLOT_SIZE: usize = L1_TABLE_ENTRIES * HUGE_PAGE_SIZE;
 
 /// The virtual CPU is a shared data-structure between the kernel and user-space
@@ -63,9 +66,13 @@ impl VirtualCpu {
 pub struct SaveArea {
     /// General purpose registers
     pub x: [u64; 31],
+    /// the stack pointer register
     pub sp: u64,
+    /// the program counter
     pub pc: u64,
+    /// the saved processor status register
     pub spsr: u64,
+    /// floating point registers (32x128 bits)
     pub v: [u128; 32],
 }
 

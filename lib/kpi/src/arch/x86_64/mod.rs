@@ -13,6 +13,9 @@ use x86::bits64::rflags::RFlags;
 use x86::segmentation::SegmentSelector;
 use x86::Ring;
 
+/// Start of the kernel address space.
+pub const KERNEL_BASE: u64 = 0x4000_0000_0000;
+
 /// Maximum supported virtual address bits (48).
 pub const VADDR_MAX_BITS: usize = 48;
 

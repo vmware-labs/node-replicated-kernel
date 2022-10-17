@@ -34,11 +34,24 @@ fn main() {
     }
 
     if std::env::consts::OS == "linux" && env::var("TARGET").unwrap() == "aarch64-nrk" {
-        // cc::Build::new()
-        //     .pic(true)
-        //     .warnings(true)
-        //     //.cargo_metadata(false)
-        //     .compile("nrk_asm");
+        env::set_var("CC", "aarch64-linux-gnu-gcc");
+        println!("cargo:rerun-if-changed=src/arch/aarch64/exceptions.S");
+
+        cc::Build::new()
+            .flag("-fno-builtin")
+            .flag("-nostdlib")
+            .flag("-U__linux__")
+            .flag("-shared")
+            .flag("-nostartfiles")
+            .flag("-fPIC")
+            .flag("-Wno-unused-parameter")
+            .flag("-I")
+            .flag("src/arch/aarch64/")
+            .file("src/arch/aarch64/exceptions.S")
+            .pic(true)
+            .warnings(true)
+            //.cargo_metadata(false)
+            .compile("nrk_asm");
     }
 
     let output = Command::new("git")

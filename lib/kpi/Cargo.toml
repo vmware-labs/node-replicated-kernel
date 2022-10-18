@@ -13,7 +13,7 @@ serde = { version = "1.0", default-features = false, features = ["derive", "allo
 serde_cbor = { version = "0.11", default-features = false, features = ["alloc"] }
 log = "0.4"
 static_assertions = "1.1.0"
-memoffset = { version = "0.6", features = ["unstable_const"] }
+memoffset = { version = "0.7", features = ["unstable_const"] }
 bit_field = "0.10.1"
 
 [target.'cfg(target_family = "unix")'.dev-dependencies]

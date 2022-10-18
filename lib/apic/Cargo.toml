@@ -10,7 +10,7 @@ edition = "2018"
 
 [dependencies]
 driverkit = "0.20"
-x86 = { version = "0.51", features = ["unstable"] }
+x86 = { version = "0.52", features = ["unstable"] }
 log = "0.4"
 bitflags = "1.0"
 bit_field = "0.10.0"

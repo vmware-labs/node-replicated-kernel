@@ -43,15 +43,11 @@ pub(crate) fn rpc_release_physical(
 
     // Construct request data
     let node_id = get_frame_as(frame_id)?;
-
-    // TODO - need to be able to lookup frame?
-    //let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, fid)?;
-    let frame_base = 0; // TODO: should be frame.base;
-    let frame_size = 0; // TODO: should be frame.size;
+    let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, frame_id as usize)?;
 
     let req = ReleasePhysicalReq {
-        frame_base,
-        frame_size,
+        frame_base: frame.base.as_u64(),
+        frame_size: frame.size as u64,
         node_id,
     };
     let mut req_data = [0u8; core::mem::size_of::<ReleasePhysicalReq>()];

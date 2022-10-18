@@ -163,9 +163,8 @@ impl AddressSpace for PageTable {
         if !base.is_base_page_aligned() {
             return Err(KError::InvalidBase);
         }
-        let (vaddr, paddr, size, _rights) = self.modify_generic(base, Modify::Unmap)?;
-        // TODO(correctness+memory): we lose topology information here...
-        Ok(TlbFlushHandle::new(vaddr, Frame::new(paddr, size, 0)))
+        let (vaddr, paddr, size, rights) = self.modify_generic(base, Modify::Unmap)?;
+        Ok(TlbFlushHandle::new(vaddr, paddr, size, rights))
     }
 }
 

@@ -145,7 +145,7 @@ impl KernelAllocator {
                         .map_generic(
                             VAddr::from(start_at),
                             (f.base, f.size()),
-                            MapAction::ReadWriteKernel,
+                            MapAction::kernel() | MapAction::write(),
                             true,
                         )
                         .expect("Can't create the mapping");
@@ -164,7 +164,7 @@ impl KernelAllocator {
                         .map_generic(
                             VAddr::from(start_at),
                             (f.base, f.size()),
-                            MapAction::ReadWriteKernel,
+                            MapAction::kernel() | MapAction::write(),
                             true,
                         )
                         .expect("Can't create the mapping");

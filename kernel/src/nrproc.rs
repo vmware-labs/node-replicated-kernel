@@ -335,10 +335,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn release_frame_from_process(
-        pid: Pid,
-        fid: FrameId,
-    ) -> Result<Option<Frame>, KError> {
+    pub(crate) fn release_frame_from_process(pid: Pid, fid: FrameId) -> Result<Frame, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
         debug_assert!(fid < MAX_FRAMES_PER_PROCESS, "Invalid FID");
 
@@ -349,13 +346,7 @@ impl<P: Process> NrProcess<P> {
             PROCESS_TOKEN.get().unwrap()[pid],
         );
         match response {
-            Ok(ProcessResult::Unmapped(handle)) => {
-                let frame = handle.frame;
-                crate::arch::tlb::shootdown(handle);
-                Ok(Some(frame))
-            }
-            Ok(ProcessResult::Frame(f)) => Ok(Some(f)),
-            Ok(ProcessResult::Ok) => Ok(None),
+            Ok(ProcessResult::Frame(f)) => Ok(f),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
         }
@@ -558,6 +549,12 @@ where
 
             ProcessOpMut::MemUnmap(vaddr) => {
                 let mut shootdown_handle = self.process.vspace_mut().unmap(vaddr)?;
+                if shootdown_handle.flags.is_aliasable() {
+                    self.process
+                        .remove_frame_mapping(shootdown_handle.paddr, shootdown_handle.vaddr)
+                        .expect("is_aliasable implies this op can't fail");
+                }
+
                 // Figure out which cores are running our current process
                 // (this is where we send IPIs later)
                 for (gtid, _eid) in self.active_cores.iter() {

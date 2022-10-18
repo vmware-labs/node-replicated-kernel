@@ -218,7 +218,7 @@ pub extern "C" fn AcpiOsMapMemory(location: ACPI_PHYSICAL_ADDRESS, len: ACPI_SIZ
             PAddr::from(super::memory::KERNEL_BASE),
             p.align_down_to_base_page(),
             round_up!(adjusted_len.as_usize(), x86::bits64::paging::BASE_PAGE_SIZE),
-            MapAction::ReadWriteKernel,
+            MapAction::kernel() | MapAction::write(),
         )
         .expect("Can't map ACPI memory");
 

@@ -5,24 +5,38 @@
 
 use core::cmp::PartialEq;
 use core::fmt;
+use core::ops::{BitOr, BitOrAssign};
 
 use crate::error::KError;
 use bit_field::BitField;
 
 use super::{Frame, PAddr, VAddr};
 
+/// A handle we use to flush specific TLB entries.
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct TlbFlushHandle {
+    /// Virtual address of the mapping to flush.
     pub vaddr: VAddr,
-    pub frame: Frame,
+    /// It pointed to this PAddr before removal.
+    pub paddr: PAddr,
+    /// The removed size of the mapping was this many bytes.
+    pub size: usize,
+    /// The mapping had those flags.
+    pub flags: MapAction,
+    /// The mapping may be cached in the TLB on the cores following cores.
+    ///
+    /// Note this is initialized to the correct values only later, after the
+    /// `Self` is created and remains empty at first.
     pub core_map: CoreBitMap,
 }
 
 impl TlbFlushHandle {
-    pub(crate) fn new(vaddr: VAddr, frame: Frame) -> TlbFlushHandle {
+    pub(crate) fn new(vaddr: VAddr, paddr: PAddr, size: usize, flags: MapAction) -> TlbFlushHandle {
         TlbFlushHandle {
             vaddr,
-            frame,
+            paddr,
+            size,
+            flags,
             core_map: Default::default(),
         }
     }
@@ -171,72 +185,208 @@ pub(crate) trait AddressSpace {
     //fn mappings()
 }
 
-/// Mapping rights to give to address translation.
+/// Mapping meta-data and permissions for an address translation.
+///
+/// - Just a bunch of boolean flags.
+/// - `is_writeable()` implies `is_readable()`
+/// - Permissions/flags can be combined using bit-wise OR.
+///
+/// ```text
+///                no-perm   is_readable:           is_writeable:        is_executable:
+/// ------------------------------------------------------------------------------------------
+/// user-space   | none()  | all except aliased() | write()            | execute()
+///              |         | and not kernel()     |                    |
+/// ------------------------------------------------------------------------------------------
+/// kernel-space | none()  | kernel()             | kernel() + write() | kernel() + execute()
+/// ```
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[allow(unused)]
-pub(crate) enum MapAction {
-    /// Don't map
-    None,
-    /// Map region read-only.
-    ReadUser,
-    /// Map region read-only for kernel.
-    ReadKernel,
-    /// Map region read-write.
-    ReadWriteUser,
-    /// Map region read-write, disable page-cache for IO regions.
-    ReadWriteUserNoCache,
-    /// Map region read-write for kernel.
-    ReadWriteKernel,
-    /// Map region read-executable.
-    ReadExecuteUser,
-    /// Map region read-executable for kernel.
-    ReadExecuteKernel,
-    /// Map region read-write-executable.
-    ReadWriteExecuteUser,
-    /// Map region read-write-executable for kernel.
-    ReadWriteExecuteKernel,
+pub(crate) struct MapAction {
+    /// The mapping is readable if present.
+    present: bool,
+    /// It's a mapping with write access.
+    write: bool,
+    /// It's a mapping that the CPU can execute code from.
+    exec: bool,
+    /// It's a mapping that is accessible in kernel-space (and implicitly not in
+    /// user-space).
+    kernel: bool,
+    /// Writes to this regions are not cached.
+    not_cached: bool,
+    /// It's a mapping that (maybe) has asliases (e.g., the physical address
+    /// might be mapped multiple times (in the same address space) at different
+    /// virtual offsets).
+    ///
+    /// This is possible with the `map_frame_id` API variants and we have to
+    /// track it so we unly free the frame once all aliases are unmapped again.
+    aliased: bool,
 }
 
 impl MapAction {
+    /// A non-existent mapping.
+    pub(crate) const fn none() -> Self {
+        MapAction {
+            present: false,
+            write: false,
+            exec: false,
+            kernel: false,
+            not_cached: false,
+            aliased: false,
+        }
+    }
+
+    /// A readable mapping that is readable (in user-space).
+    pub(crate) const fn user() -> Self {
+        MapAction {
+            present: true,
+            write: false,
+            exec: false,
+            kernel: false,
+            not_cached: false,
+            aliased: false,
+        }
+    }
+
+    /// A readable mapping that is accessible in kernel-space.
+    pub(crate) const fn kernel() -> Self {
+        MapAction {
+            present: true,
+            write: false,
+            exec: false,
+            kernel: true,
+            not_cached: false,
+            aliased: false,
+        }
+    }
+
+    /// A mapping that writeable and readable (in user-space).
+    pub(crate) const fn write() -> Self {
+        MapAction {
+            present: true,
+            write: true,
+            exec: false,
+            kernel: false,
+            not_cached: false,
+            aliased: false,
+        }
+    }
+
+    /// A mapping that the CPU can execute code from.
+    pub(crate) const fn execute() -> Self {
+        MapAction {
+            present: true,
+            write: false,
+            exec: true,
+            kernel: false,
+            not_cached: false,
+            aliased: false,
+        }
+    }
+
+    /// A mapping for memory that isn't cacheable.
+    pub(crate) const fn no_cache() -> Self {
+        MapAction {
+            present: true,
+            write: false,
+            exec: false,
+            kernel: false,
+            not_cached: true,
+            aliased: false,
+        }
+    }
+
+    /// A mapping that is potentially aliased.
+    #[allow(unused)]
+    pub(crate) const fn aliased() -> Self {
+        MapAction {
+            present: false,
+            write: false,
+            exec: false,
+            kernel: false,
+            not_cached: false,
+            aliased: true,
+        }
+    }
+
+    /// Is this memory read-able?
     pub(crate) fn is_readable(&self) -> bool {
-        *self != MapAction::None
+        self.present
     }
 
+    /// Is this memory write-able?
     pub(crate) fn is_writable(&self) -> bool {
-        use MapAction::*;
-        matches!(
-            self,
-            ReadWriteUser
-                | ReadWriteUserNoCache
-                | ReadWriteKernel
-                | ReadWriteExecuteUser
-                | ReadWriteExecuteKernel
-        )
+        self.write
     }
 
+    /// Is this memory execut-able?
     pub(crate) fn is_executable(&self) -> bool {
-        use MapAction::*;
-        matches!(
-            self,
-            ReadExecuteUser | ReadExecuteKernel | ReadWriteExecuteUser | ReadWriteExecuteKernel
-        )
+        self.exec
+    }
+
+    /// Is this memory cache-able?
+    #[allow(unused)]
+    pub(crate) fn is_cacheable(&self) -> bool {
+        !self.not_cached
+    }
+
+    /// Does this mapping (potentially) have aliases in the address space?
+    pub(crate) fn is_aliasable(&self) -> bool {
+        self.aliased
+    }
+
+    /// Is this user-space memory?
+    pub(crate) fn is_userspace(&self) -> bool {
+        !self.kernel
+    }
+
+    /// Is this kernel-space memory?
+    pub(crate) fn is_kernelspace(&self) -> bool {
+        self.kernel
     }
 }
 
 impl fmt::Display for MapAction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use MapAction::*;
-        match self {
-            None => write!(f, " ---"),
-            ReadUser => write!(f, "uR--"),
-            ReadKernel => write!(f, "kR--"),
-            ReadWriteUser => write!(f, "uRW-"),
-            ReadWriteUserNoCache => write!(f, "uRW-IO"),
-            ReadWriteKernel => write!(f, "kRW-"),
-            ReadExecuteUser => write!(f, "uR-X"),
-            ReadExecuteKernel => write!(f, "kR-X"),
-            ReadWriteExecuteUser => write!(f, "uRWX"),
-            ReadWriteExecuteKernel => write!(f, "kRWX"),
+        let MapAction {
+            present,
+            write,
+            exec,
+            kernel,
+            not_cached,
+            aliased,
+        } = *self;
+
+        let present = if present { 'p' } else { '-' };
+        let kernel_user = if kernel { 'k' } else { 'u' };
+        let read_write = if write { "rw" } else { "r" };
+        let exec = if exec { "x" } else { "-" };
+        let not_cached = if not_cached { "[nc]" } else { "-" };
+        let aliased = if aliased { "[al]" } else { "-" };
+
+        write!(
+            f,
+            "{}{}{}{}{}{}",
+            kernel_user, present, read_write, exec, not_cached, aliased
+        )
+    }
+}
+
+impl BitOr for MapAction {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self {
+            present: self.present || rhs.present,
+            write: self.write || rhs.write,
+            exec: self.exec || rhs.exec,
+            kernel: self.kernel || rhs.kernel,
+            not_cached: self.not_cached || rhs.not_cached,
+            aliased: self.aliased || rhs.aliased,
         }
+    }
+}
+
+impl BitOrAssign for MapAction {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
     }
 }

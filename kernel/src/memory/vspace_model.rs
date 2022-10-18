@@ -173,11 +173,10 @@ impl AddressSpace for ModelAddressSpace {
 
         let element = found.next();
         if element.is_some() {
-            let (cur_vaddr, cur_paddr, cur_length, _cur_rights) = element.unwrap();
+            let (cur_vaddr, cur_paddr, cur_length, cur_rights) = element.unwrap();
             assert!(found.next().is_none(), "Only found one relevant mapping");
             Ok(TlbFlushHandle::new(
-                cur_vaddr,
-                Frame::new(cur_paddr, cur_length, 0),
+                cur_vaddr, cur_paddr, cur_length, cur_rights,
             ))
         } else {
             Err(KError::NotMapped)
@@ -195,30 +194,31 @@ fn model_sanity_check() {
     let frame = Frame::new(frame_base, BASE_PAGE_SIZE, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadKernel)
+        .map_frame(va, frame, MapAction::kernel())
         .expect("Can't map frame");
 
     let (ret_paddr, ret_rights) = a.resolve(va).expect("Can't resolve");
     assert_eq!(ret_paddr, frame_base);
-    assert_eq!(ret_rights, MapAction::ReadKernel);
+    assert_eq!(ret_rights, MapAction::kernel());
 
     let e = a
         .resolve(VAddr::from(0xffff_1000u64))
         .expect_err("resolve should not have succeeded");
     assert_eq!(e, KError::NotMapped);
 
-    a.adjust(va, MapAction::ReadWriteUser)
-        .expect("Can't adjust");
+    a.adjust(va, MapAction::write()).expect("Can't adjust");
 
-    a.adjust(VAddr::from(0xffff_1000u64), MapAction::None)
+    a.adjust(VAddr::from(0xffff_1000u64), MapAction::none())
         .expect_err("Adjusted unmapped region?");
 
     let (ret_paddr, ret_rights) = a.resolve(va).expect("Can't resolve");
     assert_eq!(ret_paddr, frame_base);
-    assert_eq!(ret_rights, MapAction::ReadWriteUser);
+    assert_eq!(ret_rights, MapAction::write());
 
     let handle = a.unmap(va).expect("Can't unmap");
-    assert_eq!(handle.frame, frame);
+    assert_eq!(handle.paddr, frame.base);
+    assert_eq!(handle.size, frame.size);
+    //TODO: assert_eq!(which_affinity(handle.paddr), frame.affinity);
 
     let e = a
         .unmap(va)
@@ -235,7 +235,7 @@ fn model_bug_already_mapped() {
     let frame = Frame::new(frame_base, 4096, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadKernel)
+        .map_frame(va, frame, MapAction::kernel())
         .expect("Can't map frame");
 
     let va = VAddr::from(0xd4000);
@@ -243,7 +243,7 @@ fn model_bug_already_mapped() {
     let frame = Frame::new(frame_base, 0x3b6000, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadKernel)
+        .map_frame(va, frame, MapAction::kernel())
         .expect_err("Could map frame");
 }
 
@@ -257,7 +257,7 @@ fn model_bug_already_mapped2() {
     let frame = Frame::new(frame_base, 0x1000, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadKernel)
+        .map_frame(va, frame, MapAction::kernel())
         .expect("Failed to map frame?");
 
     let va = VAddr::from(0x1ad000);
@@ -265,7 +265,7 @@ fn model_bug_already_mapped2() {
     let frame = Frame::new(frame_base, 0x1000, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadExecuteUser)
+        .map_frame(va, frame, MapAction::execute())
         .expect_err("Could map frame?");
 }
 
@@ -278,21 +278,21 @@ fn model_bug_already_mapped3() {
     let frame = Frame::new(PAddr::from(0x0), 0x1000, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadUser)
+        .map_frame(va, frame, MapAction::user())
         .expect("Failed to map frame?");
 
     let va = VAddr::from(0x1000);
     let frame = Frame::new(PAddr::from(0x0), 0x1000, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadUser)
+        .map_frame(va, frame, MapAction::user())
         .expect("Failed to map frame?");
 
     let va = VAddr::from(0x0);
     let frame = Frame::new(PAddr::from(0x0), 0x20_0000, 0);
 
     let _ret = a
-        .map_frame(va, frame, MapAction::ReadUser)
+        .map_frame(va, frame, MapAction::user())
         .expect_err("Could map frame?");
 }
 
@@ -362,7 +362,7 @@ fn half_range_intersections() {
 fn tlb_flush_handle_full_core_set() {
     use crate::arch::MAX_CORES;
 
-    let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+    let mut t = TlbFlushHandle::new(VAddr::zero(), PAddr::zero(), 4096, MapAction::none());
     for i in 0..MAX_CORES {
         t.add_core(i);
     }
@@ -376,7 +376,7 @@ fn tlb_flush_handle_full_core_set() {
 
 #[test]
 fn tlb_flush_handle_empty_core_set() {
-    let t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+    let t = TlbFlushHandle::new(VAddr::zero(), PAddr::zero(), 4096, MapAction::none());
     assert_eq!(t.cores().count(), 0, "Is empty");
 }
 
@@ -384,7 +384,7 @@ fn tlb_flush_handle_empty_core_set() {
 fn tlb_flush_handle_med_core_set() {
     use crate::arch::MAX_CORES;
 
-    let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+    let mut t = TlbFlushHandle::new(VAddr::zero(), PAddr::zero(), 4096, MapAction::none());
     for i in 0..MAX_CORES {
         t.add_core(i & !0b1);
     }
@@ -399,7 +399,7 @@ fn tlb_flush_handle_med_core_set() {
 #[should_panic]
 fn tlb_flush_handle_invalid_core() {
     use crate::arch::MAX_CORES;
-    let mut t = TlbFlushHandle::new(VAddr::zero(), Frame::new(PAddr::zero(), 4096, 0));
+    let mut t = TlbFlushHandle::new(VAddr::zero(), PAddr::zero(), 4096, MapAction::none());
 
     let gtid = core::cmp::max(MAX_CORES + 1, (u128::BITS * 2) as usize);
     t.add_core(gtid);

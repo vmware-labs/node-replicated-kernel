@@ -936,11 +936,11 @@ impl elfloader::ElfLoader for Ring3Process {
                 (false, false, false) => panic!("MapAction::None"),
                 (true, false, false) => panic!("MapAction::None"),
                 (false, true, false) => panic!("MapAction::None"),
-                (false, false, true) => MapAction::ReadUser,
-                (true, false, true) => MapAction::ReadExecuteUser,
+                (false, false, true) => MapAction::user(),
+                (true, false, true) => MapAction::execute(),
                 (true, true, false) => panic!("MapAction::None"),
-                (false, true, true) => MapAction::ReadWriteUser,
-                (true, true, true) => MapAction::ReadWriteExecuteUser,
+                (false, true, true) => MapAction::write(),
+                (true, true, true) => MapAction::execute() | MapAction::write(),
             };
 
             info!(
@@ -985,10 +985,7 @@ impl elfloader::ElfLoader for Ring3Process {
                     frame
                 } else {
                     // A read-only program header we can replicate:
-                    assert!(
-                        map_action == MapAction::ReadUser
-                            || map_action == MapAction::ReadExecuteUser
-                    );
+                    assert!(map_action.is_readable() && !map_action.is_writable());
                     let mut pmanager = pcm.mem_manager();
                     pmanager
                         .allocate_large_page()
@@ -1239,7 +1236,11 @@ impl Process for Ring3Process {
 
         KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
         self.vspace
-            .map_frame(self.executor_offset, memory, MapAction::ReadWriteUser)
+            .map_frame(
+                self.executor_offset,
+                memory,
+                MapAction::user() | MapAction::write(),
+            )
             .expect("Can't map user-space executor memory.");
         info!(
             "executor space base expanded {:#x} size: {} end {:#x}",
@@ -1347,8 +1348,8 @@ impl FrameManagement for Ring3Process {
         self.pfm.add_frame_mapping(frame_id, vaddr)
     }
 
-    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError> {
-        self.pfm.remove_frame_mapping(frame_id, _vaddr)
+    fn remove_frame_mapping(&mut self, paddr: PAddr, _vaddr: VAddr) -> Result<(), KError> {
+        self.pfm.remove_frame_mapping(paddr, _vaddr)
     }
 
     fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {

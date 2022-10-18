@@ -183,10 +183,10 @@ fn map_physical_persistent_memory() {
         }
 
         let rights: MapAction = match entry.ty {
-            MemoryType::PERSISTENT_MEMORY => MapAction::ReadWriteKernel,
+            MemoryType::PERSISTENT_MEMORY => MapAction::kernel() | MapAction::write(),
             _ => {
                 error!("Unknown memory type, what should we do? {:#?}", entry);
-                MapAction::None
+                MapAction::none()
             }
         };
 
@@ -194,7 +194,7 @@ fn map_physical_persistent_memory() {
             "Doing {:?} on {:#x} -- {:#x}",
             rights, phys_range_start, phys_range_end
         );
-        if rights != MapAction::None && entry.ty == MemoryType::PERSISTENT_MEMORY {
+        if rights != MapAction::none() && entry.ty == MemoryType::PERSISTENT_MEMORY {
             vspace::INITIAL_VSPACE
                 .lock()
                 .map_identity(phys_range_start, size, rights)

@@ -238,7 +238,7 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
     let num_cores = atopology::MACHINE_TOPOLOGY.num_threads();
     let mut shootdowns: Vec<Arc<Shootdown>> = Vec::try_with_capacity(num_cores)
         .expect("TODO(error-handling): ideally: no possible failure during shootdown");
-    let range = handle.vaddr.as_u64()..(handle.vaddr + handle.frame.size).as_u64();
+    let range = handle.vaddr.as_u64()..(handle.vaddr + handle.size).as_u64();
 
     for gtid in handle.cores() {
         if gtid != my_gtid {

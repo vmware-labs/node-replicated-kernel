@@ -49,14 +49,14 @@ fn actions() -> impl Strategy<Value = Vec<TestAction>> {
 
 fn map_rights() -> impl Strategy<Value = MapAction> {
     prop_oneof![
-        Just(MapAction::ReadUser),
-        Just(MapAction::ReadKernel),
-        Just(MapAction::ReadWriteUser),
-        Just(MapAction::ReadWriteKernel),
-        Just(MapAction::ReadExecuteUser),
-        Just(MapAction::ReadExecuteKernel),
-        Just(MapAction::ReadWriteExecuteUser),
-        Just(MapAction::ReadWriteExecuteKernel),
+        Just(MapAction::user()),
+        Just(MapAction::kernel()),
+        Just(MapAction::write()),
+        Just(MapAction::kernel() | MapAction::write()),
+        Just(MapAction::execute()),
+        Just(MapAction::kernel() | MapAction::execute()),
+        Just(MapAction::write() | MapAction::execute()),
+        Just(MapAction::kernel() | MapAction::write() | MapAction::execute()),
     ]
 }
 
@@ -136,10 +136,10 @@ proptest! {
 fn from_ptflags() {
     let ru = PTFlags::P | PTFlags::US | PTFlags::XD;
     let ma: MapAction = ru.into();
-    assert_eq!(ma, MapAction::ReadUser);
+    assert_eq!(ma, MapAction::user());
 
     let rk = PTFlags::XD | PTFlags::P;
     assert_ne!(ru, rk);
     let ma: MapAction = rk.into();
-    assert_eq!(ma, MapAction::ReadKernel);
+    assert_eq!(ma, MapAction::kernel());
 }

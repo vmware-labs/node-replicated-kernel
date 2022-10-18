@@ -198,7 +198,7 @@ impl Process for UnixProcess {
         self.vspace.map_frame(
             VAddr::from(0x2000_0000),
             Frame::new(PAddr::zero(), 0x0, 0x0),
-            MapAction::None,
+            MapAction::none(),
         )
     }
 
@@ -275,7 +275,7 @@ impl FrameManagement for UnixProcess {
         Err(KError::InvalidFrameId)
     }
 
-    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError> {
+    fn remove_frame_mapping(&mut self, paddr: PAddr, _vaddr: VAddr) -> Result<(), KError> {
         Err(KError::InvalidFrameId)
     }
 

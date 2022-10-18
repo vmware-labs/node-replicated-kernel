@@ -42,7 +42,7 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
                         PAddr::from(KERNEL_BASE),
                         PAddr::from(bar),
                         0x1000,
-                        MapAction::ReadWriteKernel,
+                        MapAction::kernel() | MapAction::write(),
                     )
                     .expect("Failed to write potential vmxnet3 bar addresses")
             }

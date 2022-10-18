@@ -231,36 +231,34 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         let pid = current_pid()?;
         let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, fid as FrameId)?;
 
-        // Release the page (need to make sure we drop pmanager again before we
+        // Release the frame (need to make sure we drop pmanager again before we
         // go to NR):
-        if let Some(frame) = frame {
-            let pcm = super::kcb::per_core_mem();
-            let mut pmanager = pcm.mem_manager();
+        let pcm = super::kcb::per_core_mem();
+        let mut pmanager = pcm.mem_manager();
 
-            // This entire logic should probably go into [`GlobalMemory`]:
-            if frame.size == BASE_PAGE_SIZE {
-                match pmanager.release_base_page(frame) {
-                    Ok(_) => {}
-                    Err(KError::CacheFull) => {
-                        pcm.gmanager.map(|g| {
-                            let mut gmanager = g.node_caches[frame.affinity].lock();
-                            gmanager.release_base_page(frame).expect("Can't fail");
-                        });
-                    }
-                    Err(e) => return Err(e),
+        // This entire logic should probably go into [`GlobalMemory`]:
+        if frame.size == BASE_PAGE_SIZE {
+            match pmanager.release_base_page(frame) {
+                Ok(_) => {}
+                Err(KError::CacheFull) => {
+                    pcm.gmanager.map(|g| {
+                        let mut gmanager = g.node_caches[frame.affinity].lock();
+                        gmanager.release_base_page(frame).expect("Can't fail");
+                    });
                 }
-            } else {
-                assert_eq!(frame.size, LARGE_PAGE_SIZE);
-                match pmanager.release_large_page(frame) {
-                    Ok(_) => {}
-                    Err(KError::CacheFull) => {
-                        pcm.gmanager.map(|g| {
-                            let mut gmanager = g.node_caches[frame.affinity].lock();
-                            gmanager.release_large_page(frame).expect("Can't fail");
-                        });
-                    }
-                    Err(e) => return Err(e),
+                Err(e) => return Err(e),
+            }
+        } else {
+            assert_eq!(frame.size, LARGE_PAGE_SIZE);
+            match pmanager.release_large_page(frame) {
+                Ok(_) => {}
+                Err(KError::CacheFull) => {
+                    pcm.gmanager.map(|g| {
+                        let mut gmanager = g.node_caches[frame.affinity].lock();
+                        gmanager.release_large_page(frame).expect("Can't fail");
+                    });
                 }
+                Err(e) => return Err(e),
             }
         }
 
@@ -332,13 +330,8 @@ pub(crate) trait Arch86VSpaceDispatch {
             }
         }
 
-        NrProcess::<Ring3Process>::map_frames(
-            current_pid()?,
-            base,
-            frames,
-            MapAction::ReadWriteUser,
-        )
-        .expect("Can't map memory");
+        NrProcess::<Ring3Process>::map_frames(current_pid()?, base, frames, MapAction::write())
+            .expect("Can't map memory");
 
         Ok((paddr.unwrap().as_u64(), total_len as u64))
     }
@@ -349,7 +342,7 @@ pub(crate) trait Arch86VSpaceDispatch {
 
         let handle = NrProcess::<Ring3Process>::unmap(pid, base)?;
         let va: u64 = handle.vaddr.as_u64();
-        let sz: u64 = handle.frame.size as u64;
+        let sz: u64 = handle.size as u64;
         super::tlb::shootdown(handle);
 
         Ok((va, sz))
@@ -374,7 +367,7 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
         let size = size.try_into().unwrap();
         let frame = Frame::new(paddr, size, *crate::environment::NODE_ID);
 
-        NrProcess::<Ring3Process>::map_device_frame(pid, frame, MapAction::ReadWriteUser)
+        NrProcess::<Ring3Process>::map_device_frame(pid, frame, MapAction::write())
     }
 
     fn map_frame_id(&self, base: u64, frame_id: u64) -> Result<(u64, u64), KError> {
@@ -383,8 +376,12 @@ impl<T: Arch86VSpaceDispatch> VSpaceDispatch<u64> for T {
         let base = VAddr::from(base);
         let frame_id: FrameId = frame_id.try_into().map_err(|_e| KError::InvalidFrameId)?;
 
-        let (paddr, size) =
-            NrProcess::<Ring3Process>::map_frame_id(pid, frame_id, base, MapAction::ReadWriteUser)?;
+        let (paddr, size) = NrProcess::<Ring3Process>::map_frame_id(
+            pid,
+            frame_id,
+            base,
+            MapAction::user() | MapAction::write() | MapAction::aliased(),
+        )?;
         Ok((paddr.as_u64(), size as u64))
     }
 

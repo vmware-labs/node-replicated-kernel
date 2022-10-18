@@ -116,7 +116,7 @@ unsafe fn copy_bootstrap_code() {
         .map_identity(
             PAddr::from(REAL_MODE_BASE as u64),
             round_up!(boot_code_size, BASE_PAGE_SIZE),
-            MapAction::ReadWriteExecuteKernel,
+            MapAction::kernel() | MapAction::execute() | MapAction::write(),
         )
         .expect("Can't map bootstrap code");
 

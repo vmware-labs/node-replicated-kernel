@@ -790,7 +790,7 @@ pub(crate) fn ioapic_initialize() {
                 vbase,
                 ioapic_frame.base,
                 ioapic_frame.size(),
-                MapAction::ReadWriteKernel,
+                MapAction::kernel() | MapAction::write(),
             )
             .expect("Can't create APIC mapping?");
     }

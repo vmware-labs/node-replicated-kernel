@@ -21,7 +21,7 @@ members = [
     #"lib/rust-topology",
     #"lib/rust-driverkit",
     #"lib/rust-x86",
-    #"lib/rawtime",    
+    #"lib/rawtime",
     #"lib/rust-klogger",
     #"lib/rexpect",
 ]
@@ -36,8 +36,8 @@ panic = "abort"
 debug = true
 
 [patch.crates-io]
+x86 = { git = "https://github.com/gz/rust-x86", tag = "0.52.0" }
 #driverkit = { path = "lib/rust-driverkit" }
-#x86 = { path = "lib/rust-x86" }
 #rawtime = { path = "lib/rawtime" }
 #atopology = { path = "lib/rust-topology" }
 #klogger = { path = "lib/rust-klogger" }

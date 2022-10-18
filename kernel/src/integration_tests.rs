@@ -666,7 +666,7 @@ fn vmxnet_smoltcp() {
                     PAddr::from(KERNEL_BASE),
                     PAddr::from(bar),
                     0x1000,
-                    MapAction::ReadWriteKernel,
+                    MapAction::kernel() | MapAction::write(),
                 )
                 .is_ok());
         }

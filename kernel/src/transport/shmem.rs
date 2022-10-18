@@ -63,7 +63,7 @@ pub(crate) fn init_shmem_device() -> KResult<(u64, u64)> {
                 PAddr::from(KERNEL_BASE),
                 PAddr::from(base_paddr),
                 size as usize,
-                MapAction::ReadWriteKernel,
+                MapAction::kernel() | MapAction::write(),
             )
             .expect("Failed to write potential shmem bar addresses");
         Ok((base_paddr, size))

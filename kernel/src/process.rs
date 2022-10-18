@@ -27,7 +27,7 @@ use crate::error::{KError, KResult};
 use crate::fs::{cnrfs, fd::FileDescriptorEntry};
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
-use crate::memory::{Frame, KernelAllocator, VAddr, KERNEL_BASE};
+use crate::memory::{Frame, KernelAllocator, PAddr, VAddr, KERNEL_BASE};
 use crate::prelude::overlaps;
 use crate::{nr, nrproc, round_up};
 
@@ -88,7 +88,7 @@ pub(crate) trait FrameManagement {
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError>;
     fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, usize), KError>;
     fn add_frame_mapping(&mut self, frame_id: FrameId, vaddr: VAddr) -> Result<(), KError>;
-    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError>;
+    fn remove_frame_mapping(&mut self, paddr: PAddr, _vaddr: VAddr) -> Result<(), KError>;
     fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError>;
 }
 
@@ -144,21 +144,24 @@ impl FrameManagement for ProcessFrames {
             .ok_or(KError::InvalidFrameId)
     }
 
-    fn remove_frame_mapping(&mut self, frame_id: FrameId, _vaddr: VAddr) -> Result<(), KError> {
-        let (frame, ref mut refcnt) = self
-            .frames
-            .get_mut(frame_id)
-            .ok_or(KError::InvalidFrameId)?;
-        if frame.is_some() {
-            if *refcnt > 0 {
-                *refcnt -= 1;
-                Ok(())
-            } else {
-                panic!("Can't call remove_frame_mapping on 0 refcnt frame");
+    fn remove_frame_mapping(&mut self, paddr: PAddr, _vaddr: VAddr) -> Result<(), KError> {
+        // If `self.frames` is too big, the O(n) lookup in this fn might become
+        // a problem. better to implement some reverse-map for PAddr -> FrameId
+        // then.
+        static_assertions::const_assert!(MAX_FRAMES_PER_PROCESS < 1024);
+
+        for (frame, ref mut refcnt) in self.frames.iter_mut() {
+            if let Some(frame) = frame {
+                if frame.base == paddr && *refcnt > 0 {
+                    *refcnt -= 1;
+                    return Ok(());
+                } else {
+                    panic!("Can't call remove_frame_mapping on 0 refcnt frame");
+                }
             }
-        } else {
-            Err(KError::InvalidFrameId)
         }
+        // Frame not found
+        Err(KError::InvalidFrameId)
     }
 
     fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {

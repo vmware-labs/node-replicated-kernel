@@ -20,10 +20,13 @@ members = [
     #"lib/acpica-sys"
     #"lib/rust-topology",
     #"lib/rust-driverkit",
+    #"lib/rust-armv8",
     #"lib/rust-x86",
-    #"lib/rawtime",
+    "lib/rawtime",
+    #"lib/backtracer",
     #"lib/rust-klogger",
     #"lib/rexpect",
+    #"lib/pl011_qemu",
 ]
 
 # disable stack unwinding on panic for now
@@ -36,10 +39,11 @@ panic = "abort"
 debug = true
 
 [patch.crates-io]
-x86 = { git = "https://github.com/gz/rust-x86", tag = "0.52.0" }
+#x86 = { path = "lib/rust-x86" }
 #driverkit = { path = "lib/rust-driverkit" }
 #rawtime = { path = "lib/rawtime" }
 #atopology = { path = "lib/rust-topology" }
 #klogger = { path = "lib/rust-klogger" }
 #libacpica = { path = "lib/acpica-sys" }
 #rexpect = { path = "lib/rexpect" }
+#backtracer_core = { path = "lib/backtracer" }

@@ -147,7 +147,7 @@ pub extern "C" fn exceptions_handle_unsupported(
         match esr.0.read_as_enum(ESR_EL1::EC) {
             Some(ESR_EL1::EC::Value::DataAbortCurrentEL) => {
                 log::error!(
-                    "Unhandled exception: DataAbort ({:?}) at {:x} with address {:x}",
+                    "Unhandled exception: DataAbort ({:?}) at 0x{:x} with address 0x{:x}",
                     exn,
                     epc,
                     FAR_EL1.get()

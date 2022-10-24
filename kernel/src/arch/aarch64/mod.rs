@@ -11,10 +11,12 @@ use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::cmdline::CommandLineArguments;
+use crate::memory::per_core::PerCoreMemory;
 
 pub use bootloader_shared::*;
 use klogger::sprint;
 
+//pub mod acpi;
 pub mod debug;
 mod exceptions;
 pub mod kcb;
@@ -125,6 +127,44 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::WALL_TIME_ANCHOR,
         *rawtime::BOOT_TIME_ANCHOR
     );
+
+    // Parse memory map provided by UEFI, create an initial emergency memory
+    // manager with a little bit of memory so we can do some early allocations.
+    let (emanager, memory_regions) = memory::process_uefi_memory_regions();
+
+    let mut dyn_mem = PerCoreMemory::new(emanager, 0);
+    // Make `dyn_mem` a static reference:
+    let static_dyn_mem =
+        // Safety:
+        // - The initial stack of the core will never get deallocated (hence
+        //   'static is fine)
+        // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
+        //   while we have now make a &'static to the same object)
+        unsafe { core::mem::transmute::<&PerCoreMemory, &'static PerCoreMemory>(&dyn_mem) };
+
+    // Construct the per-core state object that is accessed through the kernel
+    // "core-local-storage" gs-register:
+    let mut arch = kcb::AArch64Kcb::new(static_dyn_mem);
+    // Make `arch` a static reference:
+    let static_kcb =
+        // Safety:
+        // - The initial stack of the core will never get deallocated (hence
+        //   'static is fine)
+        // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
+        //   while we have now make a &'static to the same object)
+        unsafe { core::mem::transmute::<&mut kcb::AArch64Kcb, &'static mut kcb::AArch64Kcb>(&mut arch) };
+    static_kcb.install();
+    // Make sure we don't drop arch, dyn_mem and anything in it, they are on the
+    // init stack which remains allocated, we can not reclaim this stack or
+    // return from _start.
+    core::mem::forget(arch);
+
+    log::warn!("todo: initialize serial (maybe not needed?)!\n"); //irq::init_apic();serial::init();
+    log::warn!("todo: initialize gic!\n"); //irq::init_apic();
+
+    //assert!(acpi::init().is_ok());
+    // Initialize atopology crate and sanity check machine size
+    //crate::environment::init_topology();
 
     halt();
 }

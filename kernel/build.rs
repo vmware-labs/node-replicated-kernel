@@ -36,7 +36,8 @@ fn main() {
     if std::env::consts::OS == "linux" && env::var("TARGET").unwrap() == "aarch64-nrk" {
         env::set_var("CC", "aarch64-linux-gnu-gcc");
         println!("cargo:rerun-if-changed=src/arch/aarch64/exceptions.S");
-
+        println!("cargo:rerun-if-changed=src/arch/x86_64/acpi_printf.c");
+        println!("cargo:rerun-if-changed=src/arch/x86_64/acpi_printf.h");
         cc::Build::new()
             .flag("-fno-builtin")
             .flag("-nostdlib")
@@ -48,6 +49,7 @@ fn main() {
             .flag("-I")
             .flag("src/arch/aarch64/")
             .file("src/arch/aarch64/exceptions.S")
+            .file("src/arch/x86_64/acpi_printf.c")
             .pic(true)
             .warnings(true)
             //.cargo_metadata(false)

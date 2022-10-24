@@ -226,7 +226,7 @@ impl<'a> VSpaceAArch64<'a> {
             }
 
             // get the l1 table
-            let l1_table = Self::get_l1_table(self.l0_table.entry_at_vaddr(vaddr)).unwrap();
+            let l1_table = Self::get_l1_table(self.l0_table.entry_at_vaddr_as_ref(vaddr)).unwrap();
 
             // if both, vaddr and paddr are aligned, and we have enough remaining bytes
             // we can do a huge page mapping
@@ -292,7 +292,7 @@ impl<'a> VSpaceAArch64<'a> {
             }
 
             // get the l1 table
-            let l2_table = Self::get_l2_table(l1_table.entry_at_vaddr(vaddr)).unwrap();
+            let l2_table = Self::get_l2_table(l1_table.entry_at_vaddr_as_ref(vaddr)).unwrap();
 
             // if both, vaddr and paddr are aligned, and we have enough remaining bytes
             // we can do a huge page mapping
@@ -362,7 +362,7 @@ impl<'a> VSpaceAArch64<'a> {
             }
 
             // get the l1 table
-            let l3_table = Self::get_l3_table(l2_table.entry_at_vaddr(vaddr)).unwrap();
+            let l3_table = Self::get_l3_table(l2_table.entry_at_vaddr_as_ref(vaddr)).unwrap();
 
             let idx = L2Table::index(vaddr);
             while L2Table::index(vaddr) == idx && size >= BASE_PAGE_SIZE {
@@ -429,7 +429,7 @@ impl<'a> VSpaceAArch64<'a> {
 
     pub(crate) fn resolve_addr(&self, vaddr: VAddr) -> Option<PAddr> {
         trace!("Resolving VADDR: {:#x}", vaddr);
-        let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
+        let l0_entry = self.l0_table.entry_at_vaddr_as_ref(vaddr);
         if !l0_entry.is_valid() {
             trace!("-> L0Entry: Invalid ({:#x})", l0_entry.as_u64());
             return None;
@@ -438,7 +438,7 @@ impl<'a> VSpaceAArch64<'a> {
         trace!("-> L0Entry: {:#x}", l0_entry.as_u64());
 
         let l1_table = Self::get_l1_table(l0_entry).unwrap();
-        let l1_entry = l1_table.entry_at_vaddr(vaddr);
+        let l1_entry = l1_table.entry_at_vaddr_as_ref(vaddr);
         if !l1_entry.is_valid() {
             trace!("  -> L1Entry: Invalid ({:#x})", l1_entry.as_u64());
             return None;
@@ -454,7 +454,7 @@ impl<'a> VSpaceAArch64<'a> {
         trace!("  -> L1Entry: {:#x}", l1_entry.as_u64());
 
         let l2_table = Self::get_l2_table(l1_entry).unwrap();
-        let l2_entry = l2_table.entry_at_vaddr(vaddr);
+        let l2_entry = l2_table.entry_at_vaddr_as_ref(vaddr);
         if !l2_entry.is_valid() {
             trace!("    -> L2Entry: Invalid ({:#x})", l2_entry.as_u64());
             return None;
@@ -600,10 +600,10 @@ impl<'a> VSpaceAArch64<'a> {
         debug!("dumping translatin tables");
         debug!("-------------------------------------------------------");
 
-        let mut vaddr = VAddr::from(0);
+        let mut vaddr = VAddr::from(0 as u64);
         let vaddr_end = VAddr::from(VADDR_MAX);
         while vaddr < vaddr_end {
-            let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
+            let l0_entry = self.l0_table.entry_at_vaddr_as_ref(vaddr);
             if !l0_entry.is_valid() {
                 // debug!("-> L0Entry: Invalid ({:#x})", l0_entry.as_u64());
                 vaddr += 1u64 << 39;
@@ -613,7 +613,7 @@ impl<'a> VSpaceAArch64<'a> {
             trace!("-> L0Entry: {:#x}", l0_entry.as_u64());
 
             let l1_table = Self::get_l1_table(l0_entry).unwrap();
-            let l1_entry = l1_table.entry_at_vaddr(vaddr);
+            let l1_entry = l1_table.entry_at_vaddr_as_ref(vaddr);
             if !l1_entry.is_valid() {
                 // debug!("  -> L1Entry: Invalid ({:#x})", l1_entry.as_u64());
                 vaddr += 1u64 << 30;
@@ -629,7 +629,7 @@ impl<'a> VSpaceAArch64<'a> {
             debug!("  -> L1Entry: {:#x}", l1_entry.as_u64());
 
             let l2_table = Self::get_l2_table(l1_entry).unwrap();
-            let l2_entry = l2_table.entry_at_vaddr(vaddr);
+            let l2_entry = l2_table.entry_at_vaddr_as_ref(vaddr);
             if !l2_entry.is_valid() {
                 // debug!("    -> L2Entry: Invalid ({:#x})", l2_entry.as_u64());
                 vaddr += 1u64 << 21;

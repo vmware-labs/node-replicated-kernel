@@ -20,7 +20,7 @@ use super::super::dcm::DCM_INTERFACE;
 use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::client::get_frame_as;
+use crate::arch::rackscale::client::{get_frame_as, FRAME_MAP};
 use crate::arch::rackscale::controller::{get_local_pid, SHMEM_MANAGERS};
 use crate::transport::shmem::SHMEM_REGION;
 
@@ -39,11 +39,15 @@ pub(crate) fn rpc_release_physical(
     frame_id: u64,
 ) -> Result<(u64, u64), RPCError> {
     info!("ReleasePhysical({:?})", frame_id);
-    // TODO - need to make sure frame is unmapped from process address space
 
     // Construct request data
     let node_id = get_frame_as(frame_id)?;
     let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, frame_id as usize)?;
+
+    let mut frame_map = FRAME_MAP.write();
+    frame_map
+        .remove(&frame_id)
+        .expect("Didn't find a frame for frame_id");
 
     let req = ReleasePhysicalReq {
         frame_base: frame.base.as_u64(),

@@ -28,7 +28,7 @@ spin = "0.9.1"
 elfloader = "0.14"
 slabmalloc = "0.10"
 backtracer_core = "0.0.5"
-rawtime = "0.0.9"
+rawtime = "0.0.10"
 libacpica = "0.0.8"
 atopology = "0.0.32"
 # External libraries we use:

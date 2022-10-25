@@ -133,7 +133,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     log::info!("Initializing VSpace");
     // Needs to be done before we switch address space
-    // lazy_static::initialize(&vspace::INITIAL_VSPACE);
+    lazy_static::initialize(&vspace::INITIAL_VSPACE);
 
     log::info!(
         "Started at {} with {:?} since CPU startup",
@@ -190,7 +190,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     //assert!(acpi::init().is_ok());
     // Initialize atopology crate and sanity check machine size
-    //crate::environment::init_topology();
+    crate::environment::init_topology();
 
     // Identify NUMA region for physical memory (needs topology)
     let annotated_regions = identify_numa_affinity(memory_regions);
@@ -265,7 +265,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         // Safety:
         // - IDT is set-up, interrupts are working
         // - Only a breakpoint to wait for debugger to attach
-        unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
+        //unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
     }
 
     #[cfg(feature = "rackscale")]

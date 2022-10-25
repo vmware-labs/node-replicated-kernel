@@ -36,7 +36,7 @@ enum Modify {
 
 pub(crate) struct PageTable {
     pub l0_table: Pin<Box<L0Table>>,
-    pub da: DA,
+    pub da: Option<DA>,
 }
 
 impl PageTable {
@@ -55,7 +55,7 @@ impl PageTable {
 
         Ok(PageTable {
             l0_table: Box::into_pin(unsafe { Box::from_raw(l0_table) }),
-            da,
+            da: Some(da),
         })
     }
 
@@ -334,7 +334,16 @@ impl PageTable {
 
     fn alloc_page(&self) -> Frame {
         use core::alloc::Allocator;
-        let frame_ptr = self.da.allocate(PT_LAYOUT).unwrap();
+        let frame_ptr = self.da.as_ref().map_or_else(
+            || unsafe {
+                let ptr = alloc::alloc::alloc(PT_LAYOUT);
+                debug_assert!(!ptr.is_null());
+
+                let nptr = NonNull::new_unchecked(ptr);
+                NonNull::slice_from_raw_parts(nptr, PT_LAYOUT.size())
+            },
+            |da| da.allocate(PT_LAYOUT).unwrap(),
+        );
         let vaddr = VAddr::from(frame_ptr.as_ptr() as *const u8 as u64);
         let paddr = crate::arch::memory::kernel_vaddr_to_paddr(vaddr);
         let mut frame = Frame::new(paddr, PT_LAYOUT.size(), 0);

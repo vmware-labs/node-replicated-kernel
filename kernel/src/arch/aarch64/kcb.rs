@@ -18,12 +18,21 @@ use crate::stack::{OwnedStack, Stack};
 /// initialization).
 ///
 /// # Safety
-/// - The fsgsbase bit must be enabled.
 /// - This gets a handle to PerCoreMemory (ideally, we should ensure that there
 ///   is no outstanding mut alias to it e.g., during initialization see comments
 ///   in mod.rs)
 pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
-    panic!("not yet implemented");
+    unsafe {
+        let kcb = TPIDR_EL1.get();
+        if kcb != 0 {
+            let pcm = (kcb + memoffset::offset_of!(AArch64Kcb, mem) as u64) as *const PerCoreMemory;
+            assert!(pcm != ptr::null_mut());
+            let static_pcm = &*pcm as &'static PerCoreMemory;
+            // log::info!("Found per-core memory at {:p}", static_pcm);
+            return Some(static_pcm);
+        }
+    }
+    None
 }
 
 /// Reference to per-core memory state.
@@ -36,6 +45,26 @@ pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
 /// - If the per-core memory is not yet initialized (only in debug mode).
 pub(crate) fn per_core_mem() -> &'static PerCoreMemory {
     panic!("not yet implemented");
+}
+
+/// Retrieve the AArch64Kcb by reading the gs register.
+///
+///
+/// # Panic
+/// This will fail in case the KCB is not yet set (i.e., early on during
+/// initialization).
+pub(crate) fn get_kcb<'a>() -> &'a mut AArch64Kcb {
+    unsafe {
+        // Safety:
+        // - TODO(safety+soundness): not safe, should return a non-mut reference
+        //   with mutable stuff (it's just save_area that's left) wrapped in
+        //   RefCell or similar (treat the same as a thread-local)
+        let kcb_raw = TPIDR_EL1.get();
+        let kcb = kcb_raw as *mut AArch64Kcb;
+        assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
+        let kptr = ptr::NonNull::new_unchecked(kcb);
+        &mut *kptr.as_ptr()
+    }
 }
 
 /// Architecture specific core control block.
@@ -80,12 +109,18 @@ impl AArch64Kcb {
     }
 
     pub(super) fn install(&mut self) {
-        self.set_kernel_stack(OwnedStack::new(128 * BASE_PAGE_SIZE));
+        self.initialize_tpidr();
+        log::info!("allocating stack...");
+        let stack = OwnedStack::new(128 * BASE_PAGE_SIZE);
+        log::info!("setting stack");
+        self.set_kernel_stack(stack);
+        log::info!("setting save area...");
         self.set_save_area(Box::pin(kpi::arch::SaveArea::empty()));
     }
 
     fn initialize_tpidr(&mut self) {
         let kcb: ptr::NonNull<AArch64Kcb> = ptr::NonNull::from(self);
+        log::info!("setting kcb to {:p}", kcb);
         TPIDR_EL1.set(kcb.as_ptr() as u64)
     }
 

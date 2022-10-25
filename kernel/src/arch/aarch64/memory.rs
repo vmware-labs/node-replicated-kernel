@@ -115,3 +115,35 @@ pub(super) fn process_uefi_memory_regions() -> (
         memory_regions,
     )
 }
+
+/// Annotate all physical memory frames we got from UEFI with NUMA affinity by
+/// walking through every region `memory_regions` and build subregions that are
+/// constructed with the correct NUMA affinity.
+///
+/// We split frames in `memory_regions` in case they overlap multiple NUMA
+/// regions, and let's hope it all fits in `annotated_regions`.
+///
+/// This really isn't the most efficient algorithm we could've built but we only
+/// run this once and don't expect thousands of NUMA nodes or memory regions
+/// anyways.
+///
+/// # Notes
+/// There are some implicit assumptions here that a memory region always has
+/// just one affinity -- which is also what `topology` assumes.
+pub(super) fn identify_numa_affinity(
+    memory_regions: ArrayVec<Frame, MAX_PHYSICAL_REGIONS>,
+) -> ArrayVec<Frame, MAX_PHYSICAL_REGIONS> {
+    log::warn!("Numa affinity not yet supported on aarch64");
+    memory_regions
+}
+
+/// Initializes persistent memory in the system
+///
+/// - Discover persistent memory using topology information.
+/// - Identity map the persistent memoy regions to user and kernel space.
+/// - Find the NUMA-affinity for each persistent memory region.
+/// - Use the region and affinity region to bind an allocator to the regions.
+pub(super) fn init_persistent_memory() -> ArrayVec<Frame, MAX_PHYSICAL_REGIONS> {
+    log::warn!("Persistent memory not yet supported on aarch64");
+    ArrayVec::new()
+}

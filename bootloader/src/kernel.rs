@@ -193,23 +193,26 @@ impl<'a> elfloader::ElfLoader for Kernel<'a> {
             destination + region.len()
         );
 
-        // Load the region at destination in the kernel space
+        assert!(region.as_ptr() as u64 % 8 == 0);
+
+        let mut paddr = arch::PAddr::from(0u64);
         for (idx, val) in region.iter().enumerate() {
-            let vaddr = arch::VAddr::from(destination + idx);
-            let paddr = self.vspace.resolve_addr(vaddr);
-            if paddr.is_some() {
-                // Inefficient byte-wise copy since we don't necessarily
-                // have consecutive "physical" memory in UEFI we can
-                // just memcopy this stuff into.
-                // Best way would probably mean to map replicate the kernel mappings
-                // in UEFI space if this ever becomes a problem.
-                let ptr = paddr.unwrap().as_u64() as *mut u8;
-                unsafe {
-                    *ptr = *val;
+            // attempt to try to walk the page table less...
+            if idx % 8 == 0 {
+                let vaddr = arch::VAddr::from(destination + idx);
+                let newpaddr = self.vspace.resolve_addr(vaddr);
+                if newpaddr.is_some() {
+                    paddr = newpaddr.unwrap();
+                } else {
+                    panic!("Can't write to the resolved address in the kernel vspace.");
                 }
-            } else {
-                panic!("Can't write to the resolved address in the kernel vspace.");
             }
+
+            let ptr = paddr.as_u64() as *mut u8;
+            unsafe {
+                *ptr = *val;
+            }
+            paddr = paddr + 1u64;
         }
 
         Ok(())

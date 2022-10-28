@@ -11,8 +11,6 @@ pub type ClientId = u64;
 
 #[derive(Debug)]
 pub(crate) struct ClientIdRes {
-    // abomonate doesn't work well with type aliases so use
-    // u64 here instead of ClientId
     pub client_id: ClientId,
 }
 unsafe_abomonate!(ClientIdRes: client_id);

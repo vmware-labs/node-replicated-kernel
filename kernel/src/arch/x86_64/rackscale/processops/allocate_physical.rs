@@ -80,15 +80,12 @@ pub(crate) fn rpc_allocate_physical(
                 frame_map
                     .try_reserve(1)
                     .map_err(|_e| RPCError::InternalError)?;
-                info!(
-                    "Mapped local frame {} to address space (node) {}",
-                    fid, node_id
-                );
+                info!("Try reserve 1 local frame");
                 frame_map
                     .try_insert(fid as u64, node_id)
                     .map_err(|_e| KError::InvalidFrame)?;
                 info!(
-                    "xxx Mapped local frame {} to address space (node) {}",
+                    "Inserted local frame {} to address space (node) {}",
                     fid, node_id
                 );
             }

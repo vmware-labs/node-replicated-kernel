@@ -503,6 +503,16 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
         nrproc::NrProcess::<Ring3Process>::synchronize(pid);
     }
 
+    // If this is a rackscale client, check for work from the controller
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        use crate::arch::rackscale::client::client_get_work;
+        client_get_work();
+    }
+
     if super::process::has_executor() {
         // TODO(process-mgmt): Ensures that we still periodically
         // check and advance replicas even on cores that have a core.
@@ -529,7 +539,7 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
         r.resume()
     } else {
         // Go to scheduler instead
-        //warn!("got a timer on core {}", *crate::kcb::CORE_ID);
+        //warn!("got a timer on core {}", *crate::environment::CORE_ID);
         crate::scheduler::schedule()
     }
 }

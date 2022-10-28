@@ -145,6 +145,35 @@ fn alloc_physical_test() {
     info!("phys_alloc_test OK");
 }
 
+// Just used for rackscale right now, not for standalone
+fn request_core_remote_test() {
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
+
+    let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+
+    // Only ask for more cores on the machine with only 1 core
+    if threads.len() == 1 {
+        let HW_THREAD_ID = 1;
+        match vibrio::syscalls::Process::request_core(
+            HW_THREAD_ID,
+            VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+        ) {
+            Ok(_) => {
+                info!("request_core_remote_test OK");
+            }
+            Err(e) => {
+                error!("Can't spawn on {:?}: {:?}", HW_THREAD_ID, e);
+            }
+        }
+    } else {
+        // Run scheduler on core 0
+        let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+        loop {
+            s.run(&scb);
+        }
+    }
+}
+
 fn scheduler_smp_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
@@ -806,6 +835,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-phys-alloc")]
     alloc_physical_test();
+
+    #[cfg(feature = "test-request-core-remote")]
+    request_core_remote_test();
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();

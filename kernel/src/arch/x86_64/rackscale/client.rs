@@ -11,6 +11,7 @@ use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
 use rpc::client::Client;
 use rpc::rpc::{ClientId, RPCError, RPCHeader};
 
+use crate::arch::rackscale::processops::request_core::request_core_work;
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::NrLock;
@@ -67,4 +68,9 @@ pub(crate) fn get_num_clients() -> u64 {
 
 pub(crate) fn get_local_client_id() -> u64 {
     (crate::CMDLINE.get().map_or(1, |c| c.machine_id) - 1) as u64
+}
+
+pub(crate) fn client_get_work() -> () {
+    let mut client = RPC_CLIENT.lock();
+    request_core_work(&mut **client);
 }

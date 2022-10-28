@@ -21,9 +21,9 @@ use super::fileops::open::rpc_open;
 use super::fileops::rename::rpc_rename;
 use super::fileops::rw::{rpc_read, rpc_readat, rpc_write, rpc_writeat};
 use super::processops::allocate_physical::rpc_allocate_physical;
-use super::processops::core::rpc_request_core;
 use super::processops::print::rpc_log;
 use super::processops::release_physical::rpc_release_physical;
+use super::processops::request_core::rpc_request_core;
 
 pub(crate) struct Arch86LwkSystemCall {
     pub(crate) local: Arch86SystemCall,
@@ -142,9 +142,7 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn request_core(&self, core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
         let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
-        rpc_request_core(&mut **client, pid, core_id, entry_point)?;
-
-        self.local.request_core(core_id, entry_point)
+        rpc_request_core(&mut **client, pid, core_id, entry_point).map_err(|e| e.into())
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {

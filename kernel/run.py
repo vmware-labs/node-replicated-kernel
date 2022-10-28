@@ -80,8 +80,7 @@ parser = argparse.ArgumentParser()
 # General build arguments
 parser.add_argument("-v", "--verbose", action="store_true",
                     help="increase output verbosity")
-parser.add_argument("-n", "--norun", action="store_true",
-                    help="Only build, don't run")
+
 parser.add_argument("-r", "--release", action="store_true",
                     help="Do a release build.")
 parser.add_argument("--kfeatures", type=str, nargs='+', default=[],
@@ -96,6 +95,12 @@ parser.add_argument("--cmd", type=str,
                     help="Command line arguments passed to the kernel.")
 parser.add_argument("--machine",
                     help='Which machine to run on (defaults to qemu)', required=False, default='qemu')
+
+parser_tasks_mut = parser.add_mutually_exclusive_group(required=False)
+parser_tasks_mut.add_argument("-n", "--norun", action="store_true", default=False,
+                    help="Only build, don't run")
+parser_tasks_mut.add_argument("-b", "--nobuild", action="store_true", default=False,
+                    help="Only run, don't build")
 
 
 # DCM Scheduler arguments
@@ -812,11 +817,12 @@ if __name__ == '__main__':
         # Minimize python exception backtraces
         sys.excepthook = exception_handler
 
-    # Build
-    build_bootloader(args)
-    build_kernel(args)
-    build_user_libraries(args)
-    build_userspace(args)
+    if not args.nobuild:
+        # Build
+        build_bootloader(args)
+        build_kernel(args)
+        build_user_libraries(args)
+        build_userspace(args)
 
     # Deploy
     deploy(args)

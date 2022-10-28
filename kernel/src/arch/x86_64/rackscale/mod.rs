@@ -33,9 +33,13 @@ pub(crate) const READ_HANDLER: RPCHandler = fileops::rw::handle_read;
 pub(crate) const WRITE_HANDLER: RPCHandler = fileops::rw::handle_write;
 
 // Re-export handdlers: process operations
-pub(crate) const CORE_HANDLER: RPCHandler = processops::core::handle_request_core;
+pub(crate) const REQUEST_CORE_HANDLER: RPCHandler = processops::request_core::handle_request_core;
 pub(crate) const ALLOCATE_PHYSICAL_HANDLER: RPCHandler =
     processops::allocate_physical::handle_allocate_physical;
 pub(crate) const RELEASE_PHYSICAL_HANDLER: RPCHandler =
     processops::release_physical::handle_release_physical;
 pub(crate) const LOG_HANDLER: RPCHandler = processops::print::handle_log;
+
+// Client polls for work
+pub(crate) const REQUEST_CORE_WORK_HANDLER: RPCHandler =
+    processops::request_core::handle_request_core_work;

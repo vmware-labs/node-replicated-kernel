@@ -29,6 +29,8 @@ pub struct RunnerArgs<'a> {
     cmd: Option<&'a str>,
     /// If true don't run, just compile.
     norun: bool,
+    /// If true don't build, just run.
+    nobuild: bool,
     /// Parameters to add to the QEMU command line
     qemu_args: Vec<&'a str>,
     /// Timeout in ms
@@ -70,6 +72,7 @@ impl<'a> RunnerArgs<'a> {
             pmem: 0,
             cmd: None,
             norun: false,
+            nobuild: false,
             qemu_args: Vec::new(),
             timeout: Some(15_000),
             nic: "e1000",
@@ -103,6 +106,7 @@ impl<'a> RunnerArgs<'a> {
             pmem: 0,
             cmd: None,
             norun: false,
+            nobuild: false,
             qemu_args: Vec::new(),
             timeout: Some(15_000),
             nic: "e1000",
@@ -186,6 +190,12 @@ impl<'a> RunnerArgs<'a> {
     /// Don't run, just build.
     pub fn norun(mut self) -> RunnerArgs<'a> {
         self.norun = true;
+        self
+    }
+
+    /// Don't build, just run.
+    pub fn nobuild(mut self) -> RunnerArgs<'a> {
+        self.nobuild = true;
         self
     }
 
@@ -373,6 +383,11 @@ impl<'a> RunnerArgs<'a> {
         // Don't run qemu, just build?
         if self.norun {
             cmd.push(String::from("--norun"));
+        }
+
+        // Don't run qemu, just build?
+        if self.nobuild {
+            cmd.push(String::from("--nobuild"));
         }
 
         // Considered empty if only subcommand start ('net') is only thing in array

@@ -47,6 +47,7 @@ test-fs = []
 test-fs-prop = []
 test-pmem-alloc = []
 test-phys-alloc = []
+test-request-core-remote = []
 
 # Simple micro-benchmarks
 bench-vmops = []
@@ -74,6 +75,7 @@ all-tests = [
     "test-rump-net",
     "test-fs",
     "test-phys-alloc",
+    # "test-request-core-remote", TODO: used only for rackscale tests right now
     #"test-fs-prop", # needs userspace
     #"test-pmem-alloc", # needs SMP
 ]

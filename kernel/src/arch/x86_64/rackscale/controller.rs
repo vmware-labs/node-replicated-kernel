@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
+use alloc::collections::vec_deque::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::Cell;
@@ -20,6 +21,7 @@ use rpc::server::Server;
 use crate::arch::debug::shutdown;
 use crate::arch::rackscale::client::get_num_clients;
 use crate::arch::rackscale::dcm::*;
+use crate::arch::rackscale::processops::request_core::RequestCoreReq;
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::{cnrfs, NrLock};
@@ -59,6 +61,20 @@ lazy_static! {
             shmem_manager_vec.push(None);
         }
         Arc::new(Mutex::new(shmem_manager_vec))
+    };
+}
+
+// Keep track of unfulfilled core assignments
+lazy_static! {
+    pub(crate) static ref UNFULFILLED_CORE_ASSIGNMENTS: Arc<Mutex<Vec<Box<VecDeque<RequestCoreReq>>>>> = {
+        let mut core_assignments = Vec::try_with_capacity(get_num_clients() as usize)
+            .expect("Failed to create vector for core requests");
+        for i in 0..get_num_clients() {
+            // TODO: how to size vector appropriately? No try method for VecDeque
+            let mut client_core_assignments = VecDeque::with_capacity(3 as usize);
+            core_assignments.push(Box::new(client_core_assignments))
+        }
+        Arc::new(Mutex::new(core_assignments))
     };
 }
 
@@ -192,7 +208,14 @@ fn register_rpcs(server: &mut Box<dyn RPCServer>) {
         )
         .unwrap();
     server
-        .register(KernelRpc::RequestCore as RPCType, &CORE_HANDLER)
+        .register(KernelRpc::RequestCore as RPCType, &REQUEST_CORE_HANDLER)
+        .unwrap();
+
+    server
+        .register(
+            KernelRpc::RequestWork as RPCType,
+            &REQUEST_CORE_WORK_HANDLER,
+        )
         .unwrap();
 }
 

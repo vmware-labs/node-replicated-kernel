@@ -394,7 +394,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     setup_network(2);
-    let timeout = 30_000;
+    let timeout = 60_000;
 
     let machine = Machine::determine();
     let client_num_cores: usize = core::cmp::min(5, machine.max_cores() - 1);
@@ -446,7 +446,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
 
     // Run client in separate thead. Wait a bit to make sure DCM and controller started
     let build2 = build.clone();
-    let _client = std::thread::spawn(move || {
+    let client = std::thread::spawn(move || {
         sleep(Duration::from_millis(5_000));
         let client_cmd = if is_shmem {
             "mode=client transport=shmem"
@@ -481,6 +481,134 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     });
 
     controller.join().unwrap();
+    client.join().unwrap();
+
+    let _ignore = remove_file(SHMEM_PATH);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_shmem_request_core_remote() {
+    use std::fs::remove_file;
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    // Setup ivshmem file
+    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+
+    setup_network(3);
+    let timeout = 30_000;
+
+    // Create build for both controller and client
+    let controller_build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+    let client_build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-request-core-remote")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    // Run DCM and controller in separate thread
+    let controller = std::thread::spawn(move || {
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
+            .timeout(timeout)
+            .cmd("mode=controller transport=shmem")
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap0")
+            .no_network_setup()
+            .workers(3)
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm(1, timeout)?;
+            let mut p = spawn_nrk(&cmdline_controller)?;
+
+            //output += p.exp_string("Finished sending requests!")?.as_str();
+            output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+
+    // Run client in separate thead. Wait a bit to make sure DCM and controller started
+    let client1_build = client_build.clone();
+    let client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(5_000));
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client1_build)
+            .timeout(timeout)
+            .cmd("mode=client transport=shmem")
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap2")
+            .no_network_setup()
+            .workers(3)
+            .cores(2)
+            .memory(4096)
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p
+                .exp_string("Client finished processing core work request")?
+                .as_str();
+            output += p.exp_string("Client received no work.")?.as_str();
+            output += p.exp_string("Client received no work.")?.as_str();
+            output += p.exp_string("Client received no work.")?.as_str();
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+
+    // Run client in separate thead. Wait a bit to make sure DCM and controller started
+    let client2_build = client_build.clone();
+    let client2 = std::thread::spawn(move || {
+        sleep(Duration::from_millis(10_000));
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client2_build)
+            .timeout(timeout)
+            .cmd("mode=client transport=shmem")
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap4")
+            .no_network_setup()
+            .workers(3)
+            .nobuild() // Use build from previous client for consistency
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            p.exp_string("request_core_remote_test OK")?;
+            output = p.exp_eof()?;
+            output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+
+        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+    });
+
+    controller.join().unwrap();
+    client.join().unwrap();
+    client2.join().unwrap();
 
     let _ignore = remove_file(SHMEM_PATH);
 }

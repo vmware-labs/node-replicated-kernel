@@ -52,6 +52,8 @@ pub(crate) enum KernelRpc {
     ReleasePhysical = 14,
     /// Allocate a core for a process
     RequestCore = 15,
+    /// Request work (e.g., request cores) - used by client to ask controller for tasks
+    RequestWork = 16,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -76,6 +78,7 @@ impl TryFrom<RPCType> for KernelRpc {
             13 => Ok(KernelRpc::AllocatePhysical),
             15 => Ok(KernelRpc::ReleasePhysical),
             15 => Ok(KernelRpc::RequestCore),
+            16 => Ok(KernelRpc::RequestWork),
             _ => Err(KError::InvalidRpcType),
         }
     }

@@ -173,6 +173,8 @@ pub enum KError {
     FileDescriptorTooLarge,
     /// Unable to convert message ID to valid RPC type (faulty message?)
     InvalidRpcType,
+    /// Unable to perform DCM transaction (faulty message?)
+    DCMError,
 }
 
 impl From<CapacityError<crate::memory::Frame>> for KError {

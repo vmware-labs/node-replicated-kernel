@@ -5,10 +5,11 @@ use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::FileOperation;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use crate::error::KError;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
@@ -113,30 +114,37 @@ pub(crate) fn handle_release_physical(
     let frame = Frame::new(PAddr::from(frame_base), frame_size as usize, 0);
 
     let mut shmem_managers = SHMEM_MANAGERS.lock();
-    // TODO: here and in alloc should percolate error to client
+
+    // TODO: error handling here could use work. Should client be notified?
     let manager = shmem_managers[node_id as usize]
         .as_mut()
         .expect("Error - no shmem manager found for client");
 
-    // TODO: we don't have real frame information, so skip actual calls
     let ret = if frame_size <= BASE_PAGE_SIZE as u64 {
-        //manager.release_base_page(frame)
-        Ok(())
+        manager.release_base_page(frame)
     } else {
-        //manager.release_large_page(frame)
-        Ok(())
+        manager.release_large_page(frame)
     };
 
-    // Tell DCM the resource is no longer being used
-    let is_success = dcm_resource_release(node_id, local_pid, false);
-    debug!("DCM release resource: is_success={:?}", is_success);
-
+    // Construct result. For success, both DCM and the manager need to release the memory
     let res = match ret {
-        Ok(()) => KernelRpcRes {
-            ret: convert_return(Ok((0, 0))),
-        },
+        Ok(()) => {
+            // Tell DCM the resource is no longer being used
+            if dcm_resource_release(node_id, local_pid, false) == 0 {
+                debug!("DCM release resource was successful");
+                KernelRpcRes {
+                    ret: convert_return(Ok((0, 0))),
+                }
+            } else {
+                error!("DCM release resource failed");
+                KernelRpcRes {
+                    // TODO: not sure if this is the best error to send
+                    ret: convert_return(Err(KError::DCMError)),
+                }
+            }
+        }
         Err(kerror) => {
-            debug!("Failed to release physical frame: {:?}", kerror);
+            error!("Manager failed to release physical frame: {:?}", kerror);
             KernelRpcRes {
                 ret: convert_return(Err(kerror)),
             }

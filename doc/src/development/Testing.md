@@ -87,6 +87,18 @@ To add a new integration test the following tests may be necessary:
 1. Add a runner function to `kernel/tests/integration-test.rs` that builds the
    kernel with the cargo feature runs it and checks the output.
 
+Integration tests are divided into categories and named accordingly (partially
+to ensure the tests run in a sensible order):
+* ```s00_*```: Core kernel functionality like boot-up and fault handling
+* ```s01_*```: Low level kernel services: SSE, memory allocation etc.
+* ```s02_*```: High level kernel services: ACPI, core booting mechanism, NR, VSpace etc.
+* ```s03_*```: High level kernel functionality: Spawn cores, run user-space programs
+* ```s04_*```: User-space runtimes
+* ```s05_*```: User-space applications
+* ```s06_*```: User-space applications benchmarks
+* ```s07_*```: Rackscale (distributed) tests
+* ```s08_*```: Rackscale (distributed) benchmarks 
+
 ## Network
 
 nrk has support for three network interfaces at the moment: virtio, e1000 and

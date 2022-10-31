@@ -20,7 +20,7 @@ use crate::common::runner_args::{check_for_successful_exit, RunnerArgs};
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s07_rackscale_phys_alloc_test() {
+fn s06_rackscale_phys_alloc_test() {
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
@@ -99,13 +99,13 @@ fn s07_rackscale_phys_alloc_test() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s07_rackscale_shmem_fs_test() {
+fn s06_rackscale_shmem_fs_test() {
     rackscale_fs_test(true);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s07_rackscale_ethernet_fs_test() {
+fn s06_rackscale_ethernet_fs_test() {
     rackscale_fs_test(false);
 }
 
@@ -205,13 +205,13 @@ fn rackscale_fs_test(is_shmem: bool) {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s07_rackscale_shmem_dcm_test() {
+fn s06_rackscale_shmem_dcm_test() {
     rackscale_dcm_test(true);
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s07_rackscale_ethernet_dcm_test() {
+fn s06_rackscale_ethernet_dcm_test() {
     rackscale_dcm_test(false);
 }
 
@@ -315,7 +315,7 @@ fn rackscale_dcm_test(is_shmem: bool) {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s07_rackscale_shmem_fs_prop_test() {
+fn s06_rackscale_shmem_fs_prop_test() {
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
@@ -394,7 +394,7 @@ fn s07_rackscale_shmem_fs_prop_test() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s07_rackscale_shmem_multiinstance() {
+fn s06_rackscale_shmem_multiinstance() {
     use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;

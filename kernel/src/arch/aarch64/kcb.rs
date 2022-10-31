@@ -22,17 +22,11 @@ use crate::stack::{OwnedStack, Stack};
 ///   is no outstanding mut alias to it e.g., during initialization see comments
 ///   in mod.rs)
 pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
-    unsafe {
-        let kcb = TPIDR_EL1.get();
-        if kcb != 0 {
-            let pcm = (kcb + memoffset::offset_of!(AArch64Kcb, mem) as u64) as *const PerCoreMemory;
-            assert!(pcm != ptr::null_mut());
-            let static_pcm = &*pcm as &'static PerCoreMemory;
-            // log::info!("Found per-core memory at {:p}", static_pcm);
-            return Some(static_pcm);
-        }
+    if let Some(kcb) = try_get_kcb() {
+        Some(kcb.mem)
+    } else {
+        None
     }
-    None
 }
 
 /// Reference to per-core memory state.
@@ -44,7 +38,40 @@ pub(crate) fn try_per_core_mem() -> Option<&'static PerCoreMemory> {
 /// # Panics
 /// - If the per-core memory is not yet initialized (only in debug mode).
 pub(crate) fn per_core_mem() -> &'static PerCoreMemory {
-    panic!("not yet implemented");
+    // Safety:
+    // - Either this will be initialized with PerCoreMemory or panic.
+    // - rdgsbase is ok because we enabled the instruction during core init
+    // - [`Arch86Kcb::initialize_gs`] made sure that the gs has the right object
+    //   / layout for the cast
+    // - There should be no mut alias to the per-core memory after init is
+    //   complete (this would basically be a #[thread_local] in a regular
+    //   program)
+    // - And we check/panic that the gs register is not null
+    unsafe {
+        let kcb = get_kcb();
+        kcb.mem
+    }
+}
+
+/// Retrieve the AArch64Kcb by reading the gs register.
+///
+///
+/// # Panic
+/// This will fail in case the KCB is not yet set (i.e., early on during
+/// initialization).
+pub(crate) fn try_get_kcb<'a>() -> Option<&'a mut AArch64Kcb> {
+    unsafe {
+        // Safety:
+        // - TODO(safety+soundness): not safe, should return a non-mut reference
+        //   with mutable stuff (it's just save_area that's left) wrapped in
+        //   RefCell or similar (treat the same as a thread-local)
+        let kcb_raw = TPIDR_EL1.get();
+        if kcb_raw != 0 {
+            Some(get_kcb())
+        } else {
+            None
+        }
+    }
 }
 
 /// Retrieve the AArch64Kcb by reading the gs register.
@@ -61,6 +88,7 @@ pub(crate) fn get_kcb<'a>() -> &'a mut AArch64Kcb {
         //   RefCell or similar (treat the same as a thread-local)
         let kcb_raw = TPIDR_EL1.get();
         let kcb = kcb_raw as *mut AArch64Kcb;
+
         assert!(kcb != ptr::null_mut(), "KCB not found in gs register.");
         let kptr = ptr::NonNull::new_unchecked(kcb);
         &mut *kptr.as_ptr()
@@ -89,6 +117,9 @@ pub(crate) struct AArch64Kcb {
     /// here).
     pub(super) save_area: Option<Pin<Box<kpi::arch::SaveArea>>>,
 
+    /// The memory location of the TLS (`fs` base) region.
+    pub(super) tls_base: *const super::tls::ThreadControlBlock,
+
     /// The state of the memory allocator on this core.
     pub(crate) mem: &'static PerCoreMemory,
 
@@ -98,11 +129,22 @@ pub(crate) struct AArch64Kcb {
     kernel_stack: Option<OwnedStack>,
 }
 
+// The `syscall_stack_top` entry must be at offset 0 of KCB (for assembly code in exec.S, isr.S & process.rs)
+static_assertions::const_assert_eq!(memoffset::offset_of!(AArch64Kcb, kernel_stack_top), 0);
+// The `save_area` entry must be at offset 8 of KCB (for assembly code in exec.S, isr.S & process.rs)
+static_assertions::const_assert_eq!(memoffset::offset_of!(AArch64Kcb, save_area), 8);
+// The `tls_area` entry must be at offset 16 of KCB (for assembly code in exec.S, isr.S & process.rs)
+static_assertions::const_assert_eq!(memoffset::offset_of!(AArch64Kcb, tls_base), 16);
+
+const STACK_SIZE: usize = 128 * BASE_PAGE_SIZE;
+
 impl AArch64Kcb {
     pub(crate) fn new(mem: &'static PerCoreMemory) -> Self {
+        log::info!("AArch64Kcb::new({:p})", mem);
         Self {
             kernel_stack_top: ptr::null_mut(),
             save_area: None,
+            tls_base: ptr::null(),
             mem,
             kernel_stack: None,
         }
@@ -110,23 +152,29 @@ impl AArch64Kcb {
 
     pub(super) fn install(&mut self) {
         self.initialize_tpidr();
-        log::info!("allocating stack...");
-        let stack = OwnedStack::new(128 * BASE_PAGE_SIZE);
-        log::info!("setting stack");
-        self.set_kernel_stack(stack);
-        log::info!("setting save area...");
+        self.set_kernel_stack(OwnedStack::new(STACK_SIZE));
         self.set_save_area(Box::pin(kpi::arch::SaveArea::empty()));
+
+        // Install thread-local storage for (this sets up the fs register)
+        if let Some(tls_args) = crate::KERNEL_ARGS.get().and_then(|k| k.tls_info.as_ref()) {
+            use super::tls::ThreadControlBlock;
+            unsafe {
+                let tcb = ThreadControlBlock::init(tls_args)
+                    .expect("Unable to initialize TLS during init");
+                self.tls_base = tcb;
+            }
+        }
     }
 
     fn initialize_tpidr(&mut self) {
         let kcb: ptr::NonNull<AArch64Kcb> = ptr::NonNull::from(self);
-        log::info!("setting kcb to {:p}", kcb);
+        // log::info!("setting kcb to {:p}", kcb);
         TPIDR_EL1.set(kcb.as_ptr() as u64)
     }
 
     fn set_kernel_stack(&mut self, stack: OwnedStack) {
         self.kernel_stack_top = stack.base();
-        log::trace!("Kernel stack top set to: {:p}", self.kernel_stack_top);
+        // log::trace!("Kernel stack top set to: {:p}", self.kernel_stack_top);
         self.kernel_stack = Some(stack);
     }
 

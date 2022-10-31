@@ -35,9 +35,11 @@ mod exceptions;
 pub mod kcb;
 pub mod memory;
 pub mod process;
+mod serial;
 pub mod signals;
 mod syscall;
 pub mod timer;
+mod tls;
 pub mod vspace;
 
 pub(crate) const MAX_NUMA_NODES: usize = 12;
@@ -141,12 +143,22 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         *rawtime::BOOT_TIME_ANCHOR
     );
 
+    // Initializes the serial console. (this is already done in a very basic
+    // form by klogger::init above, but now we do it for more ports)
+    debug::init();
+
     // Parse memory map provided by UEFI, create an initial emergency memory
     // manager with a little bit of memory so we can do some early allocations.
     let (emanager, memory_regions) = memory::process_uefi_memory_regions();
 
     log::info!("Initializing memory manager");
     let mut dyn_mem = PerCoreMemory::new(emanager, 0);
+
+    log::info!(
+        "PerCoreMemory = {:p} {}",
+        &dyn_mem,
+        dyn_mem.gmanager.is_none()
+    );
 
     // Make `dyn_mem` a static reference:
     let static_dyn_mem =
@@ -157,10 +169,17 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         //   while we have now make a &'static to the same object)
         unsafe { core::mem::transmute::<&PerCoreMemory, &'static PerCoreMemory>(&dyn_mem) };
 
+    log::info!(
+        "PerCoreMemory = {:p} {}",
+        static_dyn_mem,
+        static_dyn_mem.gmanager.is_none()
+    );
+
     log::info!("setting up KCB");
     // Construct the per-core state object that is accessed through the kernel
-    // "core-local-storage" gs-register:
+    // "core-local-storage" threadid:
     let mut arch = kcb::AArch64Kcb::new(static_dyn_mem);
+    log::info!("KCB = {:p}", &arch);
     // Make `arch` a static reference:
     let static_kcb =
         // Safety:
@@ -170,7 +189,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         //   while we have now make a &'static to the same object)
         unsafe { core::mem::transmute::<&mut kcb::AArch64Kcb, &'static mut kcb::AArch64Kcb>(&mut arch) };
 
-    log::info!("installing the KCB");
+    log::info!("KCB = {:p}", static_kcb);
+    log::info!("installing the KCB: {:p}", static_kcb);
     static_kcb.install();
     // Make sure we don't drop arch, dyn_mem and anything in it, they are on the
     // init stack which remains allocated, we can not reclaim this stack or
@@ -179,7 +199,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     log::info!("forgetting arch");
     core::mem::forget(arch);
 
-    log::warn!("todo: initialize serial (maybe not needed?)!\n"); //irq::init_apic();serial::init();
+    serial::init();
     log::warn!("todo: initialize gic!\n"); //irq::init_apic();
 
     #[cfg(all(
@@ -244,19 +264,23 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Starting to initialize file-system
     let fs_logs = crate::fs::cnrfs::allocate_logs();
+
     // Construct the first replica
     let fs_replica = MlnrReplica::<MlnrKernelNode>::new(
         fs_logs
             .try_clone()
             .expect("Not enough memory to initialize system"),
     );
-    crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+    log::error!("init_cnrfs_on_thread() uses TLS");
+    // crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
 
     // Intialize PCI
     // crate::pci::init();
 
+    log::warn!("PROCESS_TABLE()");
     // Initialize processes
     lazy_static::initialize(&process::PROCESS_TABLE);
+    log::warn!("register_thread_with_process_replicas()");
     crate::nrproc::register_thread_with_process_replicas();
 
     #[cfg(feature = "gdb")]
@@ -275,6 +299,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     {
         let _ = spin::lazy::Lazy::force(&rackscale::RPC_CLIENT);
     }
+
+    log::warn!("boot_app_cores()");
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)
     coreboot::boot_app_cores(log.clone(), bsp_replica, fs_logs, fs_replica);

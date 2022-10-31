@@ -11,6 +11,7 @@ use fallible_collections::btree::BTreeMap;
 use tock_registers::interfaces::{Readable, Writeable};
 
 use crate::error::KError;
+use crate::memory::detmem::DA;
 use crate::memory::paddr_to_kernel_vaddr;
 use crate::memory::vspace::*; // detmem::DA,
 use crate::memory::{Frame, PAddr, VAddr};
@@ -63,6 +64,15 @@ lazy_static! {
 pub(crate) struct VSpace {
     pub mappings: BTreeMap<VAddr, MappingInfo>,
     pub page_table: PageTable,
+}
+
+impl VSpace {
+    pub(crate) fn new(da: DA) -> Result<Self, KError> {
+        Ok(VSpace {
+            mappings: BTreeMap::new(),
+            page_table: PageTable::new(da)?,
+        })
+    }
 }
 
 impl AddressSpace for VSpace {

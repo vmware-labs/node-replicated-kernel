@@ -6,6 +6,18 @@ use klogger::sprintln;
 
 use crate::ExitReason;
 
+pub(crate) fn init() {}
+
+pub unsafe fn getc() -> char {
+    log::error!("getc() not implemented");
+    unimplemented!()
+}
+
+/// Write a string to the output channel
+pub unsafe fn puts(s: &str) {
+    sprintln!("{}", s);
+}
+
 /// Shutdown the processor.
 ///
 /// Currently we only support the debug exit method from qemu, which conveniently

@@ -9,20 +9,27 @@ use arrayvec::ArrayVec;
 use core::cell::RefCell;
 use core::cmp::PartialEq;
 use kpi::arch::SaveArea;
-use kpi::process::FrameId;
 use lazy_static::lazy_static;
-use node_replication::Replica; // Dispatch, Log, // ELF_OFFSET, EXECUTOR_OFFSET
 
+use crate::arch::kcb::per_core_mem;
 use crate::error::KResult;
-use crate::fs::fd::FileDescriptorEntry;
+use crate::fs::{fd::FileDescriptorEntry, MAX_FILES_PER_PROCESS};
+use crate::memory::detmem::DA;
 use crate::memory::{Frame, VAddr};
 use crate::nrproc::NrProcess;
 use crate::prelude::KError;
-use crate::process::{Eid, Executor, Pid, Process, ResumeHandle, MAX_PROCESSES}; // MAX_WRITEABLE_SECTIONS_PER_PROCESS MAX_FRAMES_PER_PROCESS // paddr_to_kernel_vaddr  KernelAllocator, MemType, PAddr,
+use crate::process::{
+    Eid, Executor, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
+    MAX_WRITEABLE_SECTIONS_PER_PROCESS,
+};
+use kpi::process::{FrameId, ELF_OFFSET, EXECUTOR_OFFSET};
+use node_replication::{Dispatch, Log, Replica};
 
 use super::vspace::*;
 use super::Module;
 use super::MAX_NUMA_NODES;
+
+use crate::memory::LARGE_PAGE_SIZE;
 
 /// the architecture specific stack alignment for processes
 pub(crate) const STACK_ALIGNMENT: usize = 16;
@@ -37,7 +44,7 @@ pub(crate) type ArchExecutor = EL0Executor;
 pub(crate) type ArchResumer = EL1Resumer;
 
 pub(crate) struct EL0Process {
-    /// Ring3Process ID.
+    /// EL0 Process ID.
     pub pid: Pid,
     /// Ring3Executor ID.
     pub current_eid: Eid,
@@ -47,6 +54,53 @@ pub(crate) struct EL0Process {
     pub offset: VAddr,
     /// Process info struct (can be retrieved by user-space)
     pub pinfo: kpi::process::ProcessInfo,
+    /// The entry point of the ELF file (set during elfloading).
+    pub entry_point: VAddr,
+    /// Executor cache (holds a per-region cache of executors)
+    pub executor_cache: ArrayVec<Option<Vec<Box<ArchExecutor>>>, MAX_NUMA_NODES>,
+    /// Offset where executor memory is located in user-space.
+    pub executor_offset: VAddr,
+    /// File descriptors for the opened file.
+    pub fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS>,
+    /// Physical frame objects registered to the process.
+    pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
+    /// Frames of the writeable ELF data section (shared across all replicated Process structs)
+    pub writeable_sections: ArrayVec<Frame, MAX_WRITEABLE_SECTIONS_PER_PROCESS>,
+    /// Section in ELF where last read-only header is
+    ///
+    /// (TODO(robustness): assumes that all read-only segments come before
+    /// writable segments).
+    pub read_only_offset: VAddr,
+}
+
+impl EL0Process {
+    fn new(pid: Pid, da: DA) -> Result<Self, KError> {
+        const NONE_EXECUTOR: Option<Vec<Box<ArchExecutor>>> = None;
+        let executor_cache: ArrayVec<Option<Vec<Box<ArchExecutor>>>, MAX_NUMA_NODES> =
+            ArrayVec::from([NONE_EXECUTOR; MAX_NUMA_NODES]);
+
+        const NONE_FD: Option<FileDescriptorEntry> = None;
+        let fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS> =
+            ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]);
+
+        let frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS> =
+            ArrayVec::from([None; MAX_FRAMES_PER_PROCESS]);
+
+        Ok(Self {
+            pid,
+            current_eid: 0,
+            offset: VAddr::from(ELF_OFFSET),
+            vspace: VSpace::new(da)?,
+            entry_point: VAddr::from(0usize),
+            executor_cache,
+            executor_offset: VAddr::from(EXECUTOR_OFFSET),
+            fds,
+            pinfo: Default::default(),
+            frames,
+            writeable_sections: ArrayVec::new(),
+            read_only_offset: VAddr::zero(),
+        })
+    }
 }
 
 /// An executor is a thread running in a ring 3 in the context
@@ -105,7 +159,52 @@ pub(crate) fn current_pid() -> KResult<Pid> {
 
 lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<ArchProcess>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
-        panic!("not yet implemented");
+        // Want at least one replica...
+        let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
+        log::warn!("PROCESS_TABLE 1");
+        let mut numa_cache = ArrayVec::new();
+        for _n in 0..numa_nodes {
+            let process_replicas = ArrayVec::new();
+            debug_assert!(!numa_cache.is_full());
+            numa_cache.push(process_replicas)
+        }
+
+        log::warn!("PROCESS_TABLE 2");
+
+        for pid in 0..MAX_PROCESSES {
+            log::warn!("PROCESS_TABLE 3.1");
+                let log = Arc::try_new(Log::<<NrProcess<ArchProcess> as Dispatch>::WriteOperation>::new(
+                    LARGE_PAGE_SIZE,
+                )).expect("Can't initialize processes, out of memory.");
+
+            log::warn!("PROCESS_TABLE 3.2");
+            let da = DA::new().expect("Can't initialize process deterministic memory allocator");
+            for node in 0..numa_nodes {
+
+                log::warn!("PROCESS_TABLE 3.2.1");
+                let pcm = per_core_mem();
+                pcm.set_mem_affinity(node as atopology::NodeId).expect("Can't change affinity");
+                debug_assert!(!numa_cache[node].is_full());
+                log::warn!("PROCESS_TABLE 3.2.2");
+                let my_da = da.clone();
+                log::warn!("PROCESS_TABLE 3.2.3");
+                let pr = ArchProcess::new(pid, my_da).expect("Can't create process during init");
+                log::warn!("PROCESS_TABLE 3.2.4");
+                let p = Box::try_new(pr).expect("Not enough memory to initialize processes");
+                log::warn!("PROCESS_TABLE 3.2.5");
+                let nrp = NrProcess::new(p, da.clone());
+                log::warn!("PROCESS_TABLE 3.2.6");
+                numa_cache[node].push(Replica::<NrProcess<ArchProcess>>::with_data(&log, nrp));
+
+                debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
+                pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
+            }
+            log::warn!("PROCESS_TABLE 3.3");
+        }
+
+        log::warn!("PROCESS_TABLE 3");
+
+        numa_cache
     };
 }
 

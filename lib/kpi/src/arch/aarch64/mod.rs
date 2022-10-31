@@ -77,6 +77,16 @@ pub struct SaveArea {
 }
 
 impl SaveArea {
+    pub fn empty() -> Self {
+        Self {
+            x: [0; 31],
+            sp: 0,
+            pc: 0,
+            spsr: 0,
+            v: [0; 32],
+        }
+    }
+
     /// sets the frame pointer register
     pub fn set_fp(&self) -> u64 {
         self.x[30]

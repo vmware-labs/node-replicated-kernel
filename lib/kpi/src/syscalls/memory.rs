@@ -148,8 +148,9 @@ impl PhysicalMemory {
         }
     }
 
-    pub fn release_frame(id: FrameId) -> Result<(), SystemCallError> {
-        PhysicalMemory::release_page(id)
+    pub fn allocate_large_page() -> Result<(FrameId, PAddr), SystemCallError> {
+        log::error!("huh");
+        unimplemented!()
     }
 
     fn release_page(id: FrameId) -> Result<(), SystemCallError> {

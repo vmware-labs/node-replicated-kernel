@@ -9,6 +9,14 @@
 //! execution taking into account the dependency chain:
 //! * `s03_*`: High level kernel functionality: Spawn cores, run user-space programs
 
+use rexpect::errors::*;
+use rexpect::process::wait::WaitStatus;
+use rexpect::spawn;
+
+use crate::common::builder::BuildArgs;
+use crate::common::helpers::{setup_shmem, spawn_nrk, SHMEM_PATH, SHMEM_SIZE};
+use crate::common::runner_args::{check_for_successful_exit, RunnerArgs};
+
 /// Test that we boot up all cores in the system.
 #[cfg(not(feature = "baremetal"))] // TODO: can be ported to baremetal
 #[test]

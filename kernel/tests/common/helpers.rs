@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use std::io::ErrorKind;
 use std::process;
 
@@ -13,7 +16,12 @@ use crate::common::runner_args::RunnerArgs;
 ///
 /// # Depends on
 /// - `tests/dhcpd.conf`: config file contains match of MAC to IP
-const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
+pub(crate) const DHCP_ACK_MATCH: &'static str =
+    "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
+
+/// Shmem related default values
+pub(crate) const SHMEM_PATH: &str = "ivshmem-file";
+pub(crate) const SHMEM_SIZE: u64 = 8;
 
 /// Sets up network interfaces and bridge for rackscale mode
 ///

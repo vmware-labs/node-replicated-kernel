@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
@@ -9,9 +12,9 @@ use crate::common::ExitStatus;
 #[derive(Clone)]
 pub(crate) struct RunnerArgs<'a> {
     /// Which machine we should execute on
-    machine: Machine,
+    pub(crate) machine: Machine,
     /// Any arguments used during the build of kernel/user-space
-    build_args: BuildArgs<'a>,
+    pub(crate) build_args: BuildArgs<'a>,
     /// Kernel test (aka xmain function) that should be executed.
     kernel_test: &'a str,
     /// Number of NUMA nodes the VM should have.

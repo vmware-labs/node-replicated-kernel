@@ -1,12 +1,12 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use std::fmt::{self, Display, Formatter};
 
 pub(crate) mod builder;
 pub(crate) mod helpers;
+pub(crate) mod redis;
 pub(crate) mod runner_args;
-
-/// Shmem related default values
-const SHMEM_PATH: &str = "ivshmem-file";
-const SHMEM_SIZE: u64 = 8;
 
 /// Different ExitStatus codes as returned by NRK.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]

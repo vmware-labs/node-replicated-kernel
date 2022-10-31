@@ -1,3 +1,6 @@
+// Copyright © 2021 VMware, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 use std::io::Write;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
@@ -183,7 +186,7 @@ pub(crate) struct BuildArgs<'a> {
     /// Which user-space modules to include.
     mods: Vec<&'a str>,
     /// Should we compile in release mode?
-    release: bool,
+    pub(crate) release: bool,
 }
 
 impl<'a> Default for BuildArgs<'a> {

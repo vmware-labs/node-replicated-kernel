@@ -15,27 +15,13 @@
 //! * `s05_*`: User-space applications
 //! * `s06_*`: User-space applications benchmarks
 
-/*
-use std::fmt::{self, Display, Formatter};
-use std::fs::{File, OpenOptions};
-use std::io::ErrorKind;
-use std::io::Write;
-use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
-use std::{io, process};
-
-use hwloc2::{ObjectType, Topology};
-use lazy_static::lazy_static;
-
-use csv::WriterBuilder;
-use rexpect::errors::*;
-use rexpect::process::signal::SIGTERM;
-use rexpect::process::wait::WaitStatus;
-use rexpect::session::{spawn_command, PtyReplSession};
-use rexpect::{spawn, spawn_bash};
-use serde::Serialize;
-*/
-
 pub(crate) mod common;
 pub(crate) mod s00_core_tests;
 pub(crate) mod s01_kernel_low_tests;
+pub(crate) mod s02_kernel_high_tests;
+pub(crate) mod s03_kernel_high_tests;
+pub(crate) mod s04_user_runtime_tests;
+pub(crate) mod s05_user_app_tests;
+pub(crate) mod s06_benchmarks;
+pub(crate) mod s07_rackscale_tests;
+pub(crate) mod s08_rackscale_benchmarks;

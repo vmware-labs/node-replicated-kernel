@@ -9,6 +9,19 @@
 //! execution taking into account the dependency chain:
 //! * `s02_*`: High level kernel services: ACPI, core booting mechanism, NR, VSpace etc.
 
+use std::fs::File;
+use std::io::Write;
+use std::{io, process};
+
+use rexpect::errors::*;
+use rexpect::process::wait::WaitStatus;
+use rexpect::session::PtyReplSession;
+use rexpect::spawn;
+
+use crate::common::builder::BuildArgs;
+use crate::common::helpers::spawn_nrk;
+use crate::common::runner_args::{check_for_successful_exit, RunnerArgs};
+
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology.
 #[cfg(not(feature = "baremetal"))]
 #[test]

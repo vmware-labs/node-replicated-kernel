@@ -697,7 +697,7 @@ pub fn map_physical_memory(st: &SystemTable<Boot>, kernel: &mut Kernel) {
             MemoryType::BOOT_SERVICES_DATA => MapAction::ReadWriteKernel,
             MemoryType::RUNTIME_SERVICES_CODE => MapAction::ReadExecuteKernel,
             MemoryType::RUNTIME_SERVICES_DATA => MapAction::ReadWriteKernel,
-            MemoryType::CONVENTIONAL => MapAction::ReadWriteExecuteKernel,
+            MemoryType::CONVENTIONAL => MapAction::ReadWriteKernel,
             MemoryType::UNUSABLE => MapAction::None,
             MemoryType::ACPI_RECLAIM => MapAction::ReadWriteKernel,
             MemoryType::ACPI_NON_VOLATILE => MapAction::ReadWriteKernel,

@@ -7,7 +7,7 @@
 //!
 //! The naming scheme of the tests ensures a somewhat useful order of test
 //! execution taking into account the dependency chain:
-//! * `s07_*`: Rackscale (distributed) tests
+//! * `s06_*`: Rackscale (distributed) tests
 
 use rexpect::errors::*;
 use rexpect::process::wait::WaitStatus;

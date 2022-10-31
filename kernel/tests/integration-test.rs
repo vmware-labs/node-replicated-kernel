@@ -13,7 +13,9 @@
 //! * `s03_*`: High level kernel functionality: Spawn cores, run user-space programs
 //! * `s04_*`: User-space runtimes
 //! * `s05_*`: User-space applications
-//! * `s06_*`: User-space applications benchmarks
+//! * `s06_*`: Rackscale (distributed) tests
+//! * `s10_*`: User-space applications benchmarks
+//! * `s11_*`: Rackscale (distributed) benchmarks
 
 pub(crate) mod common;
 pub(crate) mod s00_core_tests;
@@ -22,6 +24,7 @@ pub(crate) mod s02_kernel_high_tests;
 pub(crate) mod s03_kernel_high_tests;
 pub(crate) mod s04_user_runtime_tests;
 pub(crate) mod s05_user_app_tests;
-pub(crate) mod s06_benchmarks;
-pub(crate) mod s07_rackscale_tests;
-pub(crate) mod s08_rackscale_benchmarks;
+pub(crate) mod s06_rackscale_tests;
+
+pub(crate) mod s10_benchmarks;
+pub(crate) mod s11_rackscale_benchmarks;

@@ -7,7 +7,7 @@
 //!
 //! The naming scheme of the tests ensures a somewhat useful order of test
 //! execution taking into account the dependency chain:
-//! * `s06_*`: User-space applications benchmarks
+//! * `s10_*`: User-space applications benchmarks
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -30,7 +30,7 @@ const MEMASLAP_BINARY: &str = "memaslap";
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s06_redis_benchmark_virtio() {
+fn s10_redis_benchmark_virtio() {
     let _r = which::which(REDIS_BENCHMARK)
         .expect("redis-benchmark not installed on host, test will fail!");
 
@@ -70,7 +70,7 @@ fn s06_redis_benchmark_virtio() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s06_redis_benchmark_e1000() {
+fn s10_redis_benchmark_e1000() {
     setup_network(1);
 
     let _r = which::which(REDIS_BENCHMARK)
@@ -109,7 +109,7 @@ fn s06_redis_benchmark_e1000() {
 }
 
 #[test]
-fn s06_vmops_benchmark() {
+fn s10_vmops_benchmark() {
     let mut build = BuildArgs::default()
         .module("init")
         .user_feature("bench-vmops")
@@ -195,7 +195,7 @@ fn s06_vmops_benchmark() {
 }
 
 #[test]
-fn s06_shootdown_simple() {
+fn s10_shootdown_simple() {
     let machine = Machine::determine();
     let build = BuildArgs::default().module("init").release();
     let build = if cfg!(feature = "smoke") {
@@ -273,7 +273,7 @@ fn s06_shootdown_simple() {
 }
 
 #[test]
-fn s06_vmops_latency_benchmark() {
+fn s10_vmops_latency_benchmark() {
     let machine = Machine::determine();
     let mut build = BuildArgs::default()
         .module("init")
@@ -356,7 +356,7 @@ fn s06_vmops_latency_benchmark() {
 }
 
 #[test]
-fn s06_vmops_unmaplat_latency_benchmark() {
+fn s10_vmops_unmaplat_latency_benchmark() {
     let machine = Machine::determine();
     let mut build = BuildArgs::default()
         .module("init")
@@ -438,7 +438,7 @@ fn s06_vmops_unmaplat_latency_benchmark() {
 }
 
 #[test]
-fn s06_fxmark_benchmark() {
+fn s10_fxmark_benchmark() {
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
     let benchmarks = vec!["mixX0", "mixX10", "mixX100"];
     let num_microbenchs = benchmarks.len() as u64;
@@ -669,7 +669,7 @@ fn memcached_benchmark(
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s06_memcached_benchmark() {
+fn s10_memcached_benchmark() {
     let _r =
         which::which(MEMASLAP_BINARY).expect("memaslap not installed on host, test will fail!");
 
@@ -730,7 +730,7 @@ fn s06_memcached_benchmark() {
 }
 
 #[test]
-fn s06_leveldb_benchmark() {
+fn s10_leveldb_benchmark() {
     setup_network(1);
 
     let machine = Machine::determine();
@@ -835,7 +835,7 @@ fn s06_leveldb_benchmark() {
 /// Tests that basic pmem allocation support is functional.
 /// TODO: Store persistent data durably and test it.
 #[test]
-fn s06_pmem_alloc() {
+fn s10_pmem_alloc() {
     let machine = Machine::determine();
     // Have at least 2 numa nodes, ensures we test more code-logic
     let nodes = std::cmp::max(2, machine.max_numa_nodes());

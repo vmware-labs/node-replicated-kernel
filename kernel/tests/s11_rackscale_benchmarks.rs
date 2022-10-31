@@ -7,7 +7,7 @@
 //!
 //! The naming scheme of the tests ensures a somewhat useful order of test
 //! execution taking into account the dependency chain:
-//! * `s08_*`: Rackscale (distributed) benchmarks
+//! * `s11_*`: Rackscale (distributed) benchmarks
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -24,13 +24,13 @@ use crate::common::runner_args::{check_for_successful_exit, RunnerArgs};
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
-fn s08_rackscale_shmem_fxmark_benchmark() {
+fn s11_rackscale_shmem_fxmark_benchmark() {
     rackscale_fxmark_benchmark(true);
 }
 
 #[test]
 #[cfg(not(feature = "baremetal"))]
-fn s08_rackscale_ethernet_fxmark_benchmark() {
+fn s11_rackscale_ethernet_fxmark_benchmark() {
     rackscale_fxmark_benchmark(false);
 }
 

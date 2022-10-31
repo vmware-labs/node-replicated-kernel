@@ -95,9 +95,11 @@ to ensure the tests run in a sensible order):
 * ```s03_*```: High level kernel functionality: Spawn cores, run user-space programs
 * ```s04_*```: User-space runtimes
 * ```s05_*```: User-space applications
-* ```s06_*```: User-space applications benchmarks
-* ```s07_*```: Rackscale (distributed) tests
-* ```s08_*```: Rackscale (distributed) benchmarks 
+* ```s06_*```: Rackscale (distributed) tests
+
+Benchmarks are named as such: 
+* ```s10_*```: User-space applications benchmarks
+* ```s11_*```: Rackscale (distributed) benchmarks
 
 ## Network
 

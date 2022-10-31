@@ -185,7 +185,7 @@ pub fn bench(ncores: Option<usize>) {
         let h = hlock.as_ref().unwrap();
 
         info!("benchmark,ncores,memsize,p1,p25,p50,p75,p99,p99.9,p100");
-        // Don't adjust this line without changing `s06_vmops_latency_benchmark`
+        // Don't adjust this line without changing `s10_vmops_latency_benchmark`
         info!(
             "Latency percentiles: {},{},{},{},{},{},{},{},{},{}",
             "unmap",

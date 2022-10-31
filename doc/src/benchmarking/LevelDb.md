@@ -11,7 +11,7 @@ directly:
 
 ```bash
 cd kernel
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_leveldb_benchmark
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_leveldb_benchmark
 ```
 
 This test will run the db-bench binary for LevelDB which runs various benchmarks

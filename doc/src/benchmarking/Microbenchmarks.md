@@ -9,7 +9,7 @@ benchmark suite. The benchmark code is located at `usr/init/src/fxmark`.
 To run the fxmark benchmarks invoke the following command:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_fxmark_bench --nocapture
 ```
 
 fxmark supports several different file benchmarks:
@@ -31,21 +31,21 @@ fxmark supports several different file benchmarks:
 
 The following integration tests benchmark the address-space in nrk:
 
-* `s06_vmops_benchmark`: This benchmark repeatedly inserts the same frame over
+* `s10_vmops_benchmark`: This benchmark repeatedly inserts the same frame over
   and over in the process' address space, while varying the number of cores that
   do insertions. Every core works in its own partition of the address space. The
   system measures the throughput (operations per second).
 
-* `s06_vmops_latency_benchmark`: Same as `s06_vmops_benchmark`, but measure
+* `s10_vmops_latency_benchmark`: Same as `s10_vmops_benchmark`, but measure
   latency instead of throughput.
 
-* `s06_vmops_unmaplat_latency_benchmark`: The benchmark maps a frame in the
+* `s10_vmops_unmaplat_latency_benchmark`: The benchmark maps a frame in the
   address space, then spawns a series of threads on other cores that access the
   frame, afterwards it unmaps the frame and measures the latency of the unmap
   operation (the latency is dominated by completing the TLB shootdown protocol
   on all cores).
 
-* `s06_shootdown_simple`: The benchmark measures the overhead in the kernel for
+* `s10_shootdown_simple`: The benchmark measures the overhead in the kernel for
   programming the APIC and sending IPIs to initiate and complete the shootdown
   protocol.
 
@@ -53,10 +53,10 @@ The benchmark code is located at `usr/init/src/vmops/`. To invoke the
 benchmarks, run:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_latency_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_vmops_unmaplat_latency_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s06_shootdown_simple --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_unmaplat_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_shootdown_simple --nocapture
 ```
 
 ## Network

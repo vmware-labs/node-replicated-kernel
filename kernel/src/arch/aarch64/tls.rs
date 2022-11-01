@@ -10,6 +10,7 @@ use core::mem;
 use core::ptr;
 
 use bootloader_shared::TlsInfo;
+use kpi::KERNEL_BASE;
 
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{Readable, Writeable};
@@ -73,16 +74,27 @@ impl ThreadControlBlock {
     /// - `enable_fsgsbase` has already been called on the core (sets bit in
     ///   Cr4)
     /// - Assume that BIOS/UEFI initializes fs with 0x0
+    ///   Cr4)
     pub(super) unsafe fn init(info: &TlsInfo) -> KResult<*const ThreadControlBlock> {
+        log::info!("initializing TLS with {:?}", info);
         let tcb = ThreadControlBlock::new(info);
         match ThreadControlBlock::try_get_tcb() {
-            Some(_) => Err(KError::TLSAlreadyInitialized),
+            Some(x) => {
+                if (x as *const _ as u64) < KERNEL_BASE {
+                    log::warn!("tls already initialized: {:p}, re-initialize", x);
+                    ThreadControlBlock::install(tcb);
+                    Ok(tcb)
+                } else {
+                    Err(KError::TLSAlreadyInitialized)
+                }
+            }
             None => {
                 ThreadControlBlock::install(tcb);
                 Ok(tcb)
             }
         }
     }
+
 
     /// Creates a new thread local storage area.
     ///
@@ -185,7 +197,7 @@ impl ThreadControlBlock {
     ///   shouldn't)). `fs` save/restore is handled in the assembly code for
     ///   syscalls/interrupts.
     unsafe fn install(ptr: *const ThreadControlBlock) {
-        TPIDRRO_EL0.set(ptr as u64)
+        TPIDR_EL0.set(ptr as u64)
     }
 
     pub(crate) fn try_get_tcb<'a>() -> Option<&'a mut ThreadControlBlock> {
@@ -194,7 +206,7 @@ impl ThreadControlBlock {
             // - TODO(safety+soundness): not safe, should return a non-mut reference
             //   with mutable stuff (it's just save_area that's left) wrapped in
             //   RefCell or similar (treat the same as a thread-local)
-            let kcb_raw = TPIDRRO_EL0.get();
+            let kcb_raw = TPIDR_EL0.get();
             if kcb_raw != 0 {
                 Some(ThreadControlBlock::get_tcb())
             } else {
@@ -205,7 +217,7 @@ impl ThreadControlBlock {
 
     fn get_tcb<'a>() -> &'a mut ThreadControlBlock {
         unsafe {
-            let tcb_raw = TPIDRRO_EL0.get();
+            let tcb_raw = TPIDR_EL0.get();
             let tcb = tcb_raw as *mut ThreadControlBlock;
 
             assert!(tcb != ptr::null_mut(), "TCB not found in gs register.");

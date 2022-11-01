@@ -89,7 +89,7 @@ impl SaveArea {
 
     /// sets the frame pointer register
     pub fn set_fp(&self) -> u64 {
-        self.x[30]
+        self.x[29]
     }
 
     /// obtains the frame pointer register

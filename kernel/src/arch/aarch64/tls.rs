@@ -38,6 +38,7 @@ fn get_tls_region(info: &TlsInfo) -> (&'static [u8], Layout) {
     (tls_region, tls_layout)
 }
 
+
 /// Per-core TLS state in the kernel.
 ///
 /// - This is what the `fs` register ends up pointing to. Ideally, we could tell
@@ -53,14 +54,14 @@ fn get_tls_region(info: &TlsInfo) -> (&'static [u8], Layout) {
 /// first two elements.
 #[repr(C)]
 pub(crate) struct ThreadControlBlock {
+    /// For dynamic loading (unused but added for future compatibility (we don't
+    /// do dynamic linking/modules)).
+    tcb_dtv: *const *const u8,
+
     /// Points to `self` (makes sure mov %fs:0x0 works)
     ///
     /// This is how the compiler looks up TLS things.
     tcb_myself: *mut ThreadControlBlock,
-
-    /// For dynamic loading (unused but added for future compatibility (we don't
-    /// do dynamic linking/modules)).
-    tcb_dtv: *const *const u8,
 }
 
 impl ThreadControlBlock {
@@ -76,7 +77,7 @@ impl ThreadControlBlock {
     /// - Assume that BIOS/UEFI initializes fs with 0x0
     ///   Cr4)
     pub(super) unsafe fn init(info: &TlsInfo) -> KResult<*const ThreadControlBlock> {
-        log::info!("initializing TLS with {:?}", info);
+        log::info!("initializing TLS with {:x?}", info);
         let tcb = ThreadControlBlock::new(info);
         match ThreadControlBlock::try_get_tcb() {
             Some(x) => {
@@ -111,20 +112,26 @@ impl ThreadControlBlock {
     /// cores.
     fn new(info: &TlsInfo) -> *const ThreadControlBlock {
         const TCB_INITIAL: ThreadControlBlock = ThreadControlBlock {
-            tcb_myself: ptr::null_mut(),
             tcb_dtv: ptr::null(),
+            tcb_myself: ptr::null_mut(),
         };
 
         let (initial_tdata, tls_data_layout) = get_tls_region(info);
 
-        // Allocate memory for a TLS block: variant 2: [tdata, tbss, TCB], and
-        // start of TCB goes in fs):
+        // Allocate memory for a TLS block:
+        // *------------------------------------------------------------------------------*
+        // | thread | tcb | X | tls1 | ... | tlsN | ... | tls_cnt | dtv[1] | ... | dtv[N] |
+        // *------------------------------------------------------------------------------*
+        // ^         ^         ^             ^            ^
+        // td        tp      dtv[1]       dtv[n+1]       dtv
+        // We do have sizeof(thread) == 0
 
         // Safety `alloc_zeroed`:
         let (tls_all_layout, _offset) = tls_data_layout
             .extend(Layout::new::<ThreadControlBlock>())
             .expect("Can't append ThreadControlBlock to TLS layout during init");
-        // Make sure `extend` didn't end up padding for `ThreadControlBlock` (so
+
+            // Make sure `extend` didn't end up padding for `ThreadControlBlock` (so
         // tdata/tbss is still properly aligned on access): If not (I think) we
         // might lose alignment of `tls_data_layout` because we start from the
         // TCB going backwards. The ELF Handling For TLS by Drepper
@@ -137,8 +144,14 @@ impl ThreadControlBlock {
         );
         assert!(tls_data_layout.size() > 0, "allocate a non-zero size");
 
-        let tls_base: *mut u8 = unsafe { alloc::alloc::alloc_zeroed(tls_all_layout) };
-        assert_ne!(tls_base, ptr::null_mut(), "Out of memory during init?");
+        // the base pointer of the tls block
+        let td: *mut u8 = unsafe { alloc::alloc::alloc_zeroed(tls_all_layout) };
+        assert_ne!(td, ptr::null_mut(), "Out of memory during init?");
+
+        // tp is the same as td, as we won't have any thread structure here
+        let tp: *mut u8 = td; // + 0;
+
+        assert_eq!(((tp as u64)  & 0x7), 0, "Alignment!");
 
         unsafe {
             // Safety `add`:
@@ -148,15 +161,15 @@ impl ThreadControlBlock {
             //   valid, and we substract from it
             // - The offset being in bounds cannot rely on "wrapping around" the
             //   address space: Yes, trivial
-            let tcb_start_addr =
-                tls_base.add(tls_all_layout.size() - mem::size_of::<ThreadControlBlock>());
 
             // Safety deref+assignment:
             // - We know location is valid and aligned because of all the work above
             // - No mutable outside of this function
-            let tcb = tcb_start_addr as *mut ThreadControlBlock;
+            let tcb = tp as *mut ThreadControlBlock;
+
             // - Copy of plain-old-data, raw-pointer
             *tcb = TCB_INITIAL;
+
             // Safety: TLS lookups on x86 will be using `fs:0x0` so we have add
             // a self-pointer as the first arg of the TCB
             (*tcb).tcb_myself = tcb;
@@ -165,7 +178,7 @@ impl ThreadControlBlock {
                 "initial_tdata {:?} len={}, tls_base = {:?} tcb = {:?}",
                 initial_tdata,
                 initial_tdata.len(),
-                tls_base,
+                tp,
                 tcb
             );
 
@@ -175,7 +188,11 @@ impl ThreadControlBlock {
             // - dst must be valid for writes of count * size_of::<T>() bytes: Yes (see allocation above)
             // - Both src and dst must be properly aligned: Yes (see allocation above)
             // - No overlap: Yes (assuming allocator/ELF parsing is correct)
-            tls_base.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());
+            let tdata : *mut u8 = ((tp as usize) + (core::mem::size_of::<ThreadControlBlock>())) as *mut u8;
+
+            tdata.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());
+
+            (*tcb).tcb_dtv = tdata as *const *const u8;
 
             tcb as *const ThreadControlBlock
         }

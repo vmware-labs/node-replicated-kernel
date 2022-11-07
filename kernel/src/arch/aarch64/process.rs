@@ -161,48 +161,33 @@ lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<ArchProcess>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
         // Want at least one replica...
         let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
-        log::warn!("PROCESS_TABLE 1");
         let mut numa_cache = ArrayVec::new();
         for _n in 0..numa_nodes {
             let process_replicas = ArrayVec::new();
             debug_assert!(!numa_cache.is_full());
             numa_cache.push(process_replicas)
         }
-
-        log::warn!("PROCESS_TABLE 2");
-
         for pid in 0..MAX_PROCESSES {
-            log::warn!("PROCESS_TABLE 3.1");
                 let log = Arc::try_new(Log::<<NrProcess<ArchProcess> as Dispatch>::WriteOperation>::new(
                     LARGE_PAGE_SIZE,
                 )).expect("Can't initialize processes, out of memory.");
 
-            log::warn!("PROCESS_TABLE 3.2");
             let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
 
-                log::warn!("PROCESS_TABLE 3.2.1");
                 let pcm = per_core_mem();
                 pcm.set_mem_affinity(node as atopology::NodeId).expect("Can't change affinity");
                 debug_assert!(!numa_cache[node].is_full());
-                log::warn!("PROCESS_TABLE 3.2.2");
                 let my_da = da.clone();
-                log::warn!("PROCESS_TABLE 3.2.3");
                 let pr = ArchProcess::new(pid, my_da).expect("Can't create process during init");
-                log::warn!("PROCESS_TABLE 3.2.4");
                 let p = Box::try_new(pr).expect("Not enough memory to initialize processes");
-                log::warn!("PROCESS_TABLE 3.2.5");
                 let nrp = NrProcess::new(p, da.clone());
-                log::warn!("PROCESS_TABLE 3.2.6");
                 numa_cache[node].push(Replica::<NrProcess<ArchProcess>>::with_data(&log, nrp));
 
                 debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
                 pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
             }
-            log::warn!("PROCESS_TABLE 3.3");
         }
-
-        log::warn!("PROCESS_TABLE 3");
 
         numa_cache
     };

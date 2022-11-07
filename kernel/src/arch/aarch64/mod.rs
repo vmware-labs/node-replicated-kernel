@@ -72,6 +72,7 @@ pub(crate) fn advance_fs_replica() {
 
 use core::ptr::{read_volatile, write_volatile};
 
+
 /// Entry function that is called from UEFI At this point we are in x86-64
 /// (long) mode, We have a simple GDT, our address space, and stack set-up. The
 /// argc argument is abused as a pointer ot the KernelArgs struct passed by
@@ -86,6 +87,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         0xffff_0000_0900_0000,
     )
     .expect("Can't set-up logging");
+
+
 
     let el = CurrentEL.read(CurrentEL::EL);
     log::info!("Starting kernel on aarch64 in EL{:?}", el);

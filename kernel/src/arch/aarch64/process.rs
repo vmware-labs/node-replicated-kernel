@@ -193,6 +193,8 @@ lazy_static! {
     };
 }
 
+const INVALID_EXECUTOR_START: VAddr = VAddr(0xdeadffff);
+
 /// Spawns a new process
 ///
 /// We're loading a process from a module:
@@ -204,7 +206,21 @@ lazy_static! {
 /// - Finally we allocate a dispatcher to the current core (0) and start running the process
 #[cfg(target_os = "none")]
 pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
-    panic!("not yet implemented");
+    use crate::nr;
+    use crate::process::{allocate_dispatchers, make_process};
+
+    let pid = make_process::<EL0Process>(binary)?;
+    allocate_dispatchers::<EL0Process>(pid)?;
+
+    // Set current thread to run executor from our process (on the current core)
+    let _gtid = nr::KernelNode::allocate_core_to_process(
+        pid,
+        INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
+        Some(*crate::environment::NODE_ID),
+        Some(*crate::environment::CORE_ID),
+    )?;
+
+    Ok(pid)
 }
 
 pub(crate) struct ArchProcessManagement;

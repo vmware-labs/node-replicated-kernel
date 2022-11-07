@@ -39,6 +39,7 @@ mod serial;
 pub mod signals;
 mod syscall;
 pub mod timer;
+mod tlb;
 mod tls;
 pub mod vspace;
 
@@ -67,11 +68,10 @@ pub(crate) fn halt() -> ! {
 
 /// For cores that advances the replica eagerly. This avoids additional IPI costs.
 pub(crate) fn advance_fs_replica() {
-    panic!("not yet implemented");
+    tlb::eager_advance_fs_replica();
 }
 
 use core::ptr::{read_volatile, write_volatile};
-
 
 /// Entry function that is called from UEFI At this point we are in x86-64
 /// (long) mode, We have a simple GDT, our address space, and stack set-up. The
@@ -87,8 +87,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         0xffff_0000_0900_0000,
     )
     .expect("Can't set-up logging");
-
-
 
     let el = CurrentEL.read(CurrentEL::EL);
     log::info!("Starting kernel on aarch64 in EL{:?}", el);

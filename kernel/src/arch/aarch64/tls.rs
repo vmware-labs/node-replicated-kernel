@@ -38,7 +38,6 @@ fn get_tls_region(info: &TlsInfo) -> (&'static [u8], Layout) {
     (tls_region, tls_layout)
 }
 
-
 /// Per-core TLS state in the kernel.
 ///
 /// - This is what the `fs` register ends up pointing to. Ideally, we could tell
@@ -96,7 +95,6 @@ impl ThreadControlBlock {
         }
     }
 
-
     /// Creates a new thread local storage area.
     ///
     /// Note that the returned pointer points somewhere in the middle/end of the
@@ -131,7 +129,7 @@ impl ThreadControlBlock {
             .extend(Layout::new::<ThreadControlBlock>())
             .expect("Can't append ThreadControlBlock to TLS layout during init");
 
-            // Make sure `extend` didn't end up padding for `ThreadControlBlock` (so
+        // Make sure `extend` didn't end up padding for `ThreadControlBlock` (so
         // tdata/tbss is still properly aligned on access): If not (I think) we
         // might lose alignment of `tls_data_layout` because we start from the
         // TCB going backwards. The ELF Handling For TLS by Drepper
@@ -151,7 +149,7 @@ impl ThreadControlBlock {
         // tp is the same as td, as we won't have any thread structure here
         let tp: *mut u8 = td; // + 0;
 
-        assert_eq!(((tp as u64)  & 0x7), 0, "Alignment!");
+        assert_eq!(((tp as u64) & 0x7), 0, "Alignment!");
 
         unsafe {
             // Safety `add`:
@@ -188,7 +186,8 @@ impl ThreadControlBlock {
             // - dst must be valid for writes of count * size_of::<T>() bytes: Yes (see allocation above)
             // - Both src and dst must be properly aligned: Yes (see allocation above)
             // - No overlap: Yes (assuming allocator/ELF parsing is correct)
-            let tdata : *mut u8 = ((tp as usize) + (core::mem::size_of::<ThreadControlBlock>())) as *mut u8;
+            let tdata: *mut u8 =
+                ((tp as usize) + (core::mem::size_of::<ThreadControlBlock>())) as *mut u8;
 
             tdata.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());
 

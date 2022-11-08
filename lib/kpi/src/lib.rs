@@ -27,7 +27,7 @@ pub mod arch;
 pub mod arch;
 
 /// The syscall layer (only relevant for Ring3 code -> target_os = nrk)
-#[cfg(not(target_os = "none"))]
+//#[cfg(not(target_os = "none"))]
 pub mod syscalls;
 
 #[cfg(all(target_arch = "aarch64"))]

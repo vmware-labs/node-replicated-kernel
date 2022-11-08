@@ -5,11 +5,10 @@
 
 use crate::*;
 
+use crate::arch::VirtualCpu;
 use crate::process::{CoreToken, ProcessInfo};
-use crate::syscall;
-use crate::x86_64::VirtualCpu;
 
-use x86::bits64::paging::VAddr;
+use arch::VAddr;
 
 pub struct Process;
 

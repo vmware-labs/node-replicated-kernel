@@ -6,7 +6,6 @@
 //! Code in this module is not linked into the kernel.
 
 mod io;
-mod macros;
 mod memory;
 mod process;
 mod system;

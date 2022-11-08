@@ -8,7 +8,11 @@
 use core::fmt;
 use core::ops::Range;
 
-use x86::bits64::paging::VAddr;
+pub mod syscalls;
+
+pub use x86::bits64::paging::BASE_PAGE_SIZE;
+pub use x86::bits64::paging::{PAddr, VAddr};
+
 use x86::bits64::rflags::RFlags;
 use x86::segmentation::SegmentSelector;
 use x86::Ring;

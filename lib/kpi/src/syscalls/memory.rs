@@ -10,7 +10,7 @@ use crate::*;
 
 use crate::syscall;
 
-use x86::bits64::paging::{PAddr, VAddr};
+use crate::arch::{PAddr, VAddr};
 
 /// System calls to manipulate the process' address-space.
 pub struct VSpace;

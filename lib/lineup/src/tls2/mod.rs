@@ -31,10 +31,16 @@ use crate::threads::{ThreadId, YieldRequest, YieldResume};
 use crate::upcalls::Upcalls;
 use crate::{CoreId, IrqVector};
 
-#[cfg(target_os = "nrk")]
-pub mod nrk;
-#[cfg(target_os = "nrk")]
-pub use crate::tls2::nrk as arch;
+#[cfg(all(target_os = "nrk", target_arch = "x86_64"))]
+pub mod nrk_x86_64;
+#[cfg(all(target_os = "nrk", target_arch = "x86_64"))]
+pub use crate::tls2::nrk_x86_64 as arch;
+
+#[cfg(all(target_os = "nrk", target_arch = "aarch64"))]
+pub mod nrk_aarch64;
+
+#[cfg(all(target_os = "nrk", target_arch = "aarch64"))]
+pub use crate::tls2::nrk_aarch64 as arch;
 
 #[cfg(target_family = "unix")]
 pub mod unix;
@@ -304,11 +310,7 @@ pub struct Environment {}
 impl Environment {
     #[cfg(target_os = "nrk")]
     pub fn tid() -> ThreadId {
-        unsafe {
-            let tcb = x86::current::segmentation::fs_deref!(0) as *const ThreadControlBlock;
-            assert!(!tcb.is_null(), "Don't have TCB available?");
-            (*tcb).tid
-        }
+        arch::tid()
     }
 
     #[cfg(target_family = "unix")]
@@ -323,11 +325,7 @@ impl Environment {
     // TODO(correctness): this needs some hardending to avoid aliasing of ThreadState!
     #[cfg(target_os = "nrk")]
     pub fn thread<'a>() -> &'a mut ThreadControlBlock<'static> {
-        unsafe {
-            let tcb = x86::current::segmentation::fs_deref!(0) as *mut ThreadControlBlock;
-            assert!(!tcb.is_null(), "Don't have TCB available?");
-            &mut *tcb
-        }
+        arch::thread()
     }
 
     #[cfg(target_family = "unix")]

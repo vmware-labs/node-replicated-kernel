@@ -6,6 +6,7 @@ use core::alloc::Layout;
 use x86::bits64::segmentation;
 
 use super::{SchedulerControlBlock, ThreadControlBlock};
+use crate::threads::ThreadId;
 
 pub(crate) unsafe fn get_tcb<'a>() -> *mut ThreadControlBlock<'a> {
     segmentation::rdfsbase() as *mut ThreadControlBlock
@@ -21,6 +22,22 @@ pub(crate) unsafe fn get_scb() -> *const SchedulerControlBlock {
 
 pub(crate) unsafe fn set_scb(scb: *const SchedulerControlBlock) {
     segmentation::wrgsbase(scb as *const _ as u64)
+}
+
+pub fn thread<'a>() -> &'a mut ThreadControlBlock<'static> {
+    unsafe {
+        let tcb = x86::current::segmentation::fs_deref!(0) as *mut ThreadControlBlock;
+        assert!(!tcb.is_null(), "Don't have TCB available?");
+        &mut *tcb
+    }
+}
+
+pub fn tid() -> ThreadId {
+    unsafe {
+        let tcb = x86::current::segmentation::fs_deref!(0) as *const ThreadControlBlock;
+        assert!(!tcb.is_null(), "Don't have TCB available?");
+        (*tcb).tid
+    }
 }
 
 /// Determines the necessary space for per-thread TLS memory region.

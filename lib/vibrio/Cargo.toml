@@ -16,9 +16,6 @@ kpi = { path = "../kpi" }
 lineup = { path = "../lineup" }
 bitflags = "1.2"
 log = "0.4"
-x86 = { version = "0.52", features = ["unstable"] }
-slabmalloc = "0.10"
-rawtime = "0.0.10"
 spin = "0.9.2"
 cstr_core = { version = "0.2.3", default-features = false , features = ["alloc"] }
 hashbrown = { version = "0.11.2", optional = true }
@@ -26,6 +23,21 @@ lazy_static = { version = "1.3", features = ["spin_no_std"] }
 serde_cbor = { version = "0.11", default-features = false, features = ["alloc"] }
 crossbeam-utils = {version = "0.8", default-features = false}
 arrayvec = { version = "0.7.0", default-features = false }
+
+
+
+
+# Arch Specific Dependencies for x86_64 Targets
+# -------------------------------------------------------------------------------------------------
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86 = { version = "0.52", features = ["unstable"] }
+
+
+# Arch Specific Dependencies for aarch64 Targets
+# -------------------------------------------------------------------------------------------------
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+armv8 = { path = "../armv8/" }
+
 
 [target.'cfg(target_os = "nrk")'.dependencies]
 rumpkernel = { version = "0.0.5", optional = true }

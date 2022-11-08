@@ -12,10 +12,10 @@
 use rexpect::errors::*;
 use rexpect::process::wait::WaitStatus;
 
-use crate::common::builder::BuildArgs;
-use crate::common::helpers::spawn_nrk;
-use crate::common::runner_args::{check_for_exit, check_for_successful_exit, RunnerArgs};
-use crate::common::ExitStatus;
+use testutils::builder::BuildArgs;
+use testutils::helpers::spawn_nrk;
+use testutils::runner_args::{check_for_exit, check_for_successful_exit, RunnerArgs};
+use testutils::ExitStatus;
 
 /// Make sure exiting the kernel works.
 ///

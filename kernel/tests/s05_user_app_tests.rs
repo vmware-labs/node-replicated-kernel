@@ -13,10 +13,10 @@ use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
 
-use crate::common::builder::BuildArgs;
-use crate::common::helpers::{setup_network, spawn_dhcpd, spawn_nc, spawn_nrk, DHCP_ACK_MATCH};
-use crate::common::redis::{REDIS_BENCHMARK, REDIS_PORT, REDIS_START_MATCH};
-use crate::common::runner_args::{wait_for_sigterm, RunnerArgs};
+use testutils::builder::BuildArgs;
+use testutils::helpers::{setup_network, spawn_dhcpd, spawn_nc, spawn_nrk, DHCP_ACK_MATCH};
+use testutils::redis::{REDIS_BENCHMARK, REDIS_PORT, REDIS_START_MATCH};
+use testutils::runner_args::{wait_for_sigterm, RunnerArgs};
 
 /// Tests that user-space application redis is functional
 /// by spawing it and connecting to it from the network.

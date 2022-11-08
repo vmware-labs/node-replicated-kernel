@@ -18,9 +18,9 @@ use rexpect::process::wait::WaitStatus;
 use rexpect::session::PtyReplSession;
 use rexpect::spawn;
 
-use crate::common::builder::BuildArgs;
-use crate::common::helpers::spawn_nrk;
-use crate::common::runner_args::{check_for_successful_exit, RunnerArgs};
+use testutils::builder::BuildArgs;
+use testutils::helpers::spawn_nrk;
+use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
 
 /// Test that we can initialize the ACPI subsystem and figure out the machine topology.
 #[cfg(not(feature = "baremetal"))]

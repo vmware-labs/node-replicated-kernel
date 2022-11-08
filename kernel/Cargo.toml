@@ -80,6 +80,7 @@ proptest = "1.0.0"
 hwloc2 = "2.2"
 env_logger = "0.9"
 which = "4"
+testutils = { path = "testutils" }
 
 [build-dependencies]
 cc = "1.0"

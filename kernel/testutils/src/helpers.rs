@@ -9,25 +9,24 @@ use rexpect::process::wait::WaitStatus;
 use rexpect::session::spawn_command;
 use rexpect::{spawn, spawn_bash};
 
-use crate::common::builder::BuildArgs;
-use crate::common::runner_args::RunnerArgs;
+use crate::builder::BuildArgs;
+use crate::runner_args::RunnerArgs;
 
 /// Line we use in dhcpd to match for giving IP to Qemu VM.
 ///
 /// # Depends on
 /// - `tests/dhcpd.conf`: config file contains match of MAC to IP
-pub(crate) const DHCP_ACK_MATCH: &'static str =
-    "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
+pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:62:d0 via tap0";
 
 /// Shmem related default values
-pub(crate) const SHMEM_PATH: &str = "ivshmem-file";
-pub(crate) const SHMEM_SIZE: u64 = 8;
+pub const SHMEM_PATH: &str = "ivshmem-file";
+pub const SHMEM_SIZE: u64 = 8;
 
 /// Sets up network interfaces and bridge for rackscale mode
 ///
 /// num_nodes includes the controller in the count. Internally this
 /// invokes run.py in 'network-only' mode.
-pub(crate) fn setup_network(num_nodes: usize) {
+pub fn setup_network(num_nodes: usize) {
     // Setup network
     let net_build = BuildArgs::default().build();
     let network_setup = RunnerArgs::new_with_build("network_only", &net_build)
@@ -43,7 +42,7 @@ pub(crate) fn setup_network(num_nodes: usize) {
     network_setup().unwrap();
 }
 
-pub(crate) fn setup_shmem(filename: &str, filelen: u64) {
+pub fn setup_shmem(filename: &str, filelen: u64) {
     use memfile::{CreateOptions, MemFile};
     use std::fs::remove_file;
     let _ignore = remove_file(&filename);
@@ -61,7 +60,7 @@ pub(crate) fn setup_shmem(filename: &str, filelen: u64) {
 /// It will make sure the code is compiled and ready to launch.
 /// Otherwise the 15s timeout we set on the PtySession may not be enough
 /// to build from scratch and run the test.
-pub(crate) fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
+pub fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
     let mut o = process::Command::new("python3");
     o.args(args.as_cmd());
 
@@ -81,7 +80,7 @@ pub(crate) fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySessio
 ///
 /// Uses target/dcm-scheduler.jar that is set up by run.py
 /// -r => number of requests per solve
-pub(crate) fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSession> {
+pub fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSession> {
     use std::fs::remove_file;
 
     // Remove existing DCM log file
@@ -108,7 +107,7 @@ pub(crate) fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyR
 ///
 /// It uses our dhcpd config and listens on the tap0 interface
 /// (that we set up in our run.py script).
-pub(crate) fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
+pub fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
     // apparmor prevents reading of ./tests/dhcpd.conf for dhcpd
     // on Ubuntu, so we make sure it is disabled:
     let o = process::Command::new("sudo")
@@ -133,16 +132,16 @@ pub(crate) fn spawn_dhcpd() -> Result<rexpect::session::PtyReplSession> {
 }
 
 /// Helper function that spawns a UDP receiver socket on the host.
-pub(crate) fn spawn_receiver() -> Result<rexpect::session::PtySession> {
+pub fn spawn_receiver() -> Result<rexpect::session::PtySession> {
     spawn("socat UDP-LISTEN:8889,fork stdout", Some(20_000))
 }
 
 /// Helper function that tries to ping the QEMU guest.
-pub(crate) fn spawn_ping() -> Result<rexpect::session::PtySession> {
+pub fn spawn_ping() -> Result<rexpect::session::PtySession> {
     spawn("ping 172.31.0.10", Some(20_000))
 }
 
 #[allow(unused)]
-pub(crate) fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
+pub fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
     spawn(format!("nc 172.31.0.10 {}", port).as_str(), Some(20000))
 }

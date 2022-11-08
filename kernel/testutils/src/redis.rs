@@ -10,18 +10,15 @@ use rexpect::spawn;
 use serde::Serialize;
 
 /// Port we use for the Redis instances.
-pub(crate) const REDIS_PORT: u16 = 6379;
+pub const REDIS_PORT: u16 = 6379;
 
 /// Line we use to tell if Redis has started.
-pub(crate) const REDIS_START_MATCH: &'static str = "# Server initialized";
+pub const REDIS_START_MATCH: &'static str = "# Server initialized";
 
 /// Binary of the redis benchmark program
-pub(crate) const REDIS_BENCHMARK: &str = "redis-benchmark";
+pub const REDIS_BENCHMARK: &str = "redis-benchmark";
 
-pub(crate) fn redis_benchmark(
-    nic: &'static str,
-    requests: usize,
-) -> Result<rexpect::session::PtySession> {
+pub fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::session::PtySession> {
     fn spawn_bencher(port: u16, requests: usize) -> Result<rexpect::session::PtySession> {
         spawn(
             format!(

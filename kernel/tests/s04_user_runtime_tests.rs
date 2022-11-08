@@ -13,11 +13,11 @@ use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
 
-use crate::common::builder::{BuildArgs, Machine};
-use crate::common::helpers::{
+use testutils::builder::{BuildArgs, Machine};
+use testutils::helpers::{
     setup_network, spawn_dhcpd, spawn_nrk, spawn_ping, spawn_receiver, DHCP_ACK_MATCH,
 };
-use crate::common::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
+use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
 /// Tests the lineup scheduler multi-core ability.
 ///

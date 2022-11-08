@@ -5,16 +5,16 @@ use rexpect::errors::*;
 use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
 
-use crate::common::builder::{BuildArgs, Built, Machine};
-use crate::common::ExitStatus;
+use crate::builder::{BuildArgs, Built, Machine};
+use crate::ExitStatus;
 
 /// Arguments passed to the run.py script to configure a test.
 #[derive(Clone)]
-pub(crate) struct RunnerArgs<'a> {
+pub struct RunnerArgs<'a> {
     /// Which machine we should execute on
-    pub(crate) machine: Machine,
+    pub machine: Machine,
     /// Any arguments used during the build of kernel/user-space
-    pub(crate) build_args: BuildArgs<'a>,
+    pub build_args: BuildArgs<'a>,
     /// Kernel test (aka xmain function) that should be executed.
     kernel_test: &'a str,
     /// Number of NUMA nodes the VM should have.
@@ -32,7 +32,7 @@ pub(crate) struct RunnerArgs<'a> {
     /// Parameters to add to the QEMU command line
     qemu_args: Vec<&'a str>,
     /// Timeout in ms
-    pub(crate) timeout: Option<u64>,
+    pub timeout: Option<u64>,
     /// Default network interface for QEMU
     nic: &'static str,
     /// Pin QEMU cpu threads
@@ -59,7 +59,7 @@ pub(crate) struct RunnerArgs<'a> {
 
 #[allow(unused)]
 impl<'a> RunnerArgs<'a> {
-    pub(crate) fn new_with_build(kernel_test: &'a str, built: &'a Built<'a>) -> RunnerArgs<'a> {
+    pub fn new_with_build(kernel_test: &'a str, built: &'a Built<'a>) -> RunnerArgs<'a> {
         let mut args = RunnerArgs {
             machine: Machine::determine(),
             kernel_test,
@@ -92,7 +92,7 @@ impl<'a> RunnerArgs<'a> {
         args
     }
 
-    pub(crate) fn new(kernel_test: &'a str) -> RunnerArgs {
+    pub fn new(kernel_test: &'a str) -> RunnerArgs {
         let mut args = RunnerArgs {
             machine: Machine::determine(),
             kernel_test,
@@ -126,37 +126,37 @@ impl<'a> RunnerArgs<'a> {
     }
 
     /// What machine we should run on.
-    pub(crate) fn machine(mut self, machine: Machine) -> RunnerArgs<'a> {
+    pub fn machine(mut self, machine: Machine) -> RunnerArgs<'a> {
         self.machine = machine;
         self
     }
 
     /// How many NUMA nodes QEMU should simulate.
-    pub(crate) fn nodes(mut self, nodes: usize) -> RunnerArgs<'a> {
+    pub fn nodes(mut self, nodes: usize) -> RunnerArgs<'a> {
         self.nodes = nodes;
         self
     }
 
     /// Use virtio NIC.
-    pub(crate) fn use_virtio(mut self) -> RunnerArgs<'a> {
+    pub fn use_virtio(mut self) -> RunnerArgs<'a> {
         self.nic = "virtio-net-pci";
         self
     }
 
     /// Use virtio NIC.
-    pub(crate) fn use_vmxnet3(mut self) -> RunnerArgs<'a> {
+    pub fn use_vmxnet3(mut self) -> RunnerArgs<'a> {
         self.nic = "vmxnet3";
         self
     }
 
     /// Use e1000 NIC.
-    pub(crate) fn use_e1000(mut self) -> RunnerArgs<'a> {
+    pub fn use_e1000(mut self) -> RunnerArgs<'a> {
         self.nic = "e1000";
         self
     }
 
     /// How many cores QEMU should simulate.
-    pub(crate) fn cores(mut self, cores: usize) -> RunnerArgs<'a> {
+    pub fn cores(mut self, cores: usize) -> RunnerArgs<'a> {
         self.cores = cores;
         self
     }
@@ -164,7 +164,7 @@ impl<'a> RunnerArgs<'a> {
     /// How much total system memory (in MiB) that the instance should get.
     ///
     /// The amount is evenly divided among all nodes.
-    pub(crate) fn memory(mut self, mibs: usize) -> RunnerArgs<'a> {
+    pub fn memory(mut self, mibs: usize) -> RunnerArgs<'a> {
         self.memory = mibs;
         self
     }
@@ -172,97 +172,97 @@ impl<'a> RunnerArgs<'a> {
     /// How much total system persistent memory (in MiB) that the instance should get.
     ///
     /// The amount is evenly divided among all nodes.
-    pub(crate) fn pmem(mut self, mibs: usize) -> RunnerArgs<'a> {
+    pub fn pmem(mut self, mibs: usize) -> RunnerArgs<'a> {
         self.pmem = mibs;
         self
     }
 
     /// Command line passed to the kernel.
-    pub(crate) fn cmd(mut self, cmd: &'a str) -> RunnerArgs<'a> {
+    pub fn cmd(mut self, cmd: &'a str) -> RunnerArgs<'a> {
         self.cmd = Some(cmd);
         self
     }
 
     /// Don't run, just build.
-    pub(crate) fn norun(mut self) -> RunnerArgs<'a> {
+    pub fn norun(mut self) -> RunnerArgs<'a> {
         self.norun = true;
         self
     }
 
     /// Which arguments we want to add to QEMU.
-    pub(crate) fn qemu_args(mut self, args: &[&'a str]) -> RunnerArgs<'a> {
+    pub fn qemu_args(mut self, args: &[&'a str]) -> RunnerArgs<'a> {
         self.qemu_args.extend_from_slice(args);
         self
     }
 
     /// Adds an argument to QEMU.
-    pub(crate) fn qemu_arg(mut self, arg: &'a str) -> RunnerArgs<'a> {
+    pub fn qemu_arg(mut self, arg: &'a str) -> RunnerArgs<'a> {
         self.qemu_args.push(arg);
         self
     }
 
-    pub(crate) fn timeout(mut self, timeout: u64) -> RunnerArgs<'a> {
+    pub fn timeout(mut self, timeout: u64) -> RunnerArgs<'a> {
         self.timeout = Some(timeout);
         self
     }
 
-    pub(crate) fn disable_timeout(mut self) -> RunnerArgs<'a> {
+    pub fn disable_timeout(mut self) -> RunnerArgs<'a> {
         self.timeout = None;
         self
     }
 
-    pub(crate) fn setaffinity(mut self) -> RunnerArgs<'a> {
+    pub fn setaffinity(mut self) -> RunnerArgs<'a> {
         self.setaffinity = true;
         self
     }
 
-    pub(crate) fn prealloc(mut self) -> RunnerArgs<'a> {
+    pub fn prealloc(mut self) -> RunnerArgs<'a> {
         self.prealloc = true;
         self
     }
 
-    pub(crate) fn large_pages(mut self) -> RunnerArgs<'a> {
+    pub fn large_pages(mut self) -> RunnerArgs<'a> {
         self.large_pages = true;
         self
     }
 
-    pub(crate) fn kgdb(mut self) -> RunnerArgs<'a> {
+    pub fn kgdb(mut self) -> RunnerArgs<'a> {
         self.kgdb = true;
         self
     }
 
-    pub(crate) fn shmem_size(mut self, mibs: usize) -> RunnerArgs<'a> {
+    pub fn shmem_size(mut self, mibs: usize) -> RunnerArgs<'a> {
         self.shmem_size = mibs;
         self
     }
 
-    pub(crate) fn shmem_path(mut self, path: &str) -> RunnerArgs<'a> {
+    pub fn shmem_path(mut self, path: &str) -> RunnerArgs<'a> {
         self.shmem_path = String::from(path);
         self
     }
 
-    pub(crate) fn tap(mut self, tap: &str) -> RunnerArgs<'a> {
+    pub fn tap(mut self, tap: &str) -> RunnerArgs<'a> {
         self.tap = Some(String::from(tap));
         self
     }
 
-    pub(crate) fn workers(mut self, workers: usize) -> RunnerArgs<'a> {
+    pub fn workers(mut self, workers: usize) -> RunnerArgs<'a> {
         self.workers = Some(workers);
         self
     }
 
-    pub(crate) fn network_only(mut self) -> RunnerArgs<'a> {
+    pub fn network_only(mut self) -> RunnerArgs<'a> {
         self.network_only = true;
         self
     }
 
-    pub(crate) fn no_network_setup(mut self) -> RunnerArgs<'a> {
+    pub fn no_network_setup(mut self) -> RunnerArgs<'a> {
         self.no_network_setup = true;
         self
     }
 
     /// Converts the RunnerArgs to a run.py command line invocation.
-    pub(crate) fn as_cmd(&'a self) -> Vec<String> {
+    pub fn as_cmd(&'a self) -> Vec<String> {
         // Figure out log-level
         let log_level = match std::env::var("RUST_LOG") {
             Ok(lvl) if lvl == "debug" => "debug",
@@ -384,11 +384,11 @@ impl<'a> RunnerArgs<'a> {
     }
 }
 
-pub(crate) fn check_for_successful_exit(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
+pub fn check_for_successful_exit(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
     check_for_exit(ExitStatus::Success, args, r, output);
 }
 
-pub(crate) fn log_qemu_out(args: &RunnerArgs, output: String) {
+pub fn log_qemu_out(args: &RunnerArgs, output: String) {
     if !output.is_empty() {
         println!("\n===== QEMU LOG =====");
         println!("{}", &output);
@@ -409,7 +409,7 @@ pub(crate) fn log_qemu_out(args: &RunnerArgs, output: String) {
     println!("We invoked: python3 {}", quoted_cmd);
 }
 
-pub(crate) fn check_for_exit(
+pub fn check_for_exit(
     expected: ExitStatus,
     args: &RunnerArgs,
     r: Result<WaitStatus>,
@@ -441,7 +441,7 @@ pub(crate) fn check_for_exit(
     };
 }
 
-pub(crate) fn wait_for_sigterm(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
+pub fn wait_for_sigterm(args: &RunnerArgs, r: Result<WaitStatus>, output: String) {
     match r {
         Ok(WaitStatus::Signaled(_, SIGTERM, _)) => { /* This is what we expect */ }
         Ok(WaitStatus::Exited(_, code)) => {

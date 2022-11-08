@@ -1,0 +1,23 @@
+[package]
+name = "testutils"
+version = "0.0.1"
+authors = [
+  "Gerd Zellweger <mail@gerdzellweger.com>",
+]
+description = "Experimental OS kernel test utility code"
+license = "MIT OR Apache-2.0"
+build = "build.rs"
+edition = "2021"
+resolver = "2"
+
+[build-dependencies]
+cc = "1.0"
+
+[dependencies]
+csv = "1.1"
+env_logger = "0.9"
+hwloc2 = "2.2"
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
+serde = { version = "1" }
+memfile = "0.2.1"
+rexpect = { git = "https://github.com/gz/rexpect.git", branch = "eof-nix" }

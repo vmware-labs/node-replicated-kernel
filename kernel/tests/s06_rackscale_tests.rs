@@ -12,11 +12,11 @@
 use rexpect::errors::*;
 use rexpect::process::wait::WaitStatus;
 
-use crate::common::builder::BuildArgs;
-use crate::common::helpers::{
+use testutils::builder::BuildArgs;
+use testutils::helpers::{
     setup_network, setup_shmem, spawn_dcm, spawn_nrk, SHMEM_PATH, SHMEM_SIZE,
 };
-use crate::common::runner_args::{check_for_successful_exit, RunnerArgs};
+use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
 
 #[cfg(not(feature = "baremetal"))]
 #[test]

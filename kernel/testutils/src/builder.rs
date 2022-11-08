@@ -14,7 +14,7 @@ const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";
 
 /// Different machine types we can run on.
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub(crate) enum Machine {
+pub enum Machine {
     /// A bare-metal machine identified by a string.
     /// The name is described in the corresponding TOML file.
     ///
@@ -25,7 +25,7 @@ pub(crate) enum Machine {
 }
 
 impl Machine {
-    pub(crate) fn determine() -> Self {
+    pub fn determine() -> Self {
         match std::env::var(BAREMETAL_MACHINE) {
             Ok(name) => {
                 if name.is_empty() {
@@ -43,7 +43,7 @@ impl Machine {
         }
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             Machine::Qemu => "qemu",
             Machine::Baremetal(s) => s.as_str(),
@@ -52,7 +52,7 @@ impl Machine {
 
     /// Return a set of cores to run benchmark, run fewer total iterations
     /// and instead more with high core counts.
-    pub(crate) fn thread_defaults_low_mid_high(&self) -> Vec<usize> {
+    pub fn thread_defaults_low_mid_high(&self) -> Vec<usize> {
         if cfg!(feature = "smoke") {
             return vec![1, 4];
         }
@@ -81,7 +81,7 @@ impl Machine {
 
     /// Return a set of cores to run benchmark on sampled uniform between
     /// 1..self.max_cores().
-    pub(crate) fn thread_defaults_uniform(&self) -> Vec<usize> {
+    pub fn thread_defaults_uniform(&self) -> Vec<usize> {
         if cfg!(feature = "smoke") {
             return vec![1, 4];
         }
@@ -120,7 +120,7 @@ impl Machine {
         threads
     }
 
-    pub(crate) fn max_cores(&self) -> usize {
+    pub fn max_cores(&self) -> usize {
         if let Machine::Qemu = self {
             let topo = Topology::new().expect("Can't retrieve System topology?");
             topo.objects_with_type(&ObjectType::Core)
@@ -134,7 +134,7 @@ impl Machine {
         }
     }
 
-    pub(crate) fn max_numa_nodes(&self) -> usize {
+    pub fn max_numa_nodes(&self) -> usize {
         if let Machine::Qemu = self {
             let topo = Topology::new().expect("Can't retrieve System topology?");
             // TODO: Should be ObjectType::NUMANode but this fails in the C library?
@@ -159,7 +159,7 @@ impl Machine {
 /// # Note
 /// For the tests, all BuildEnvironment's (with different dir) need to be
 /// singleton instances, protected for example by a Mutex.
-pub(crate) struct BuildEnvironment {
+pub struct BuildEnvironment {
     _dir: &'static str,
 }
 
@@ -172,13 +172,13 @@ lazy_static! {
 /// built with the given BuildArgs.
 ///
 /// Use `BuildArgs::build` to construct (by providing a BuildEnvironment).
-pub(crate) struct Built<'a> {
-    pub(crate) with_args: BuildArgs<'a>,
+pub struct Built<'a> {
+    pub with_args: BuildArgs<'a>,
 }
 
 /// Arguments passed to the run.py script to build a test.
 #[derive(Clone)]
-pub(crate) struct BuildArgs<'a> {
+pub struct BuildArgs<'a> {
     /// Test name of kernel integration test.
     kernel_features: Vec<&'a str>,
     /// Features passed to compiled user-space modules.
@@ -186,7 +186,7 @@ pub(crate) struct BuildArgs<'a> {
     /// Which user-space modules to include.
     mods: Vec<&'a str>,
     /// Should we compile in release mode?
-    pub(crate) release: bool,
+    pub release: bool,
 }
 
 impl<'a> Default for BuildArgs<'a> {
@@ -201,7 +201,7 @@ impl<'a> Default for BuildArgs<'a> {
 }
 
 impl<'a> BuildArgs<'a> {
-    pub(crate) fn build(self) -> Built<'a> {
+    pub fn build(self) -> Built<'a> {
         let env = match TARGET_DIR.lock() {
             Ok(env) => env,
             // It's fine to get the environment again if another test failed,
@@ -215,7 +215,7 @@ impl<'a> BuildArgs<'a> {
     }
 
     /// Build the kernel/user-space.
-    pub(crate) fn compile(self, _env: MutexGuard<'static, BuildEnvironment>) -> Built<'a> {
+    pub fn compile(self, _env: MutexGuard<'static, BuildEnvironment>) -> Built<'a> {
         let mut compile_args = self.as_cmd();
         compile_args.push("--norun".to_string());
         compile_args.push("net".to_string());
@@ -244,7 +244,7 @@ impl<'a> BuildArgs<'a> {
     }
 
     /// Converts the RunnerArgs to a run.py command line invocation.
-    pub(crate) fn as_cmd(&'a self) -> Vec<String> {
+    pub fn as_cmd(&'a self) -> Vec<String> {
         // Add features for build
         let kernel_features = String::from(self.kernel_features.join(","));
         let user_features = String::from(self.user_features.join(","));
@@ -277,31 +277,31 @@ impl<'a> BuildArgs<'a> {
     }
 
     /// Add a cargo feature to the kernel build.
-    pub(crate) fn kernel_feature(mut self, kernel_feature: &'a str) -> BuildArgs<'a> {
+    pub fn kernel_feature(mut self, kernel_feature: &'a str) -> BuildArgs<'a> {
         self.kernel_features.push(kernel_feature);
         self
     }
 
     /// What cargo features should be passed to the user-space modules build.
-    pub(crate) fn user_features(mut self, user_features: &[&'a str]) -> BuildArgs<'a> {
+    pub fn user_features(mut self, user_features: &[&'a str]) -> BuildArgs<'a> {
         self.user_features.extend_from_slice(user_features);
         self
     }
 
     /// Add a cargo feature to the user-space modules build.
-    pub(crate) fn user_feature(mut self, user_feature: &'a str) -> BuildArgs<'a> {
+    pub fn user_feature(mut self, user_feature: &'a str) -> BuildArgs<'a> {
         self.user_features.push(user_feature);
         self
     }
 
     /// Adds a user-space module to the build and deployment.
-    pub(crate) fn module(mut self, module: &'a str) -> BuildArgs<'a> {
+    pub fn module(mut self, module: &'a str) -> BuildArgs<'a> {
         self.mods.push(module);
         self
     }
 
     /// Do a release build.
-    pub(crate) fn release(mut self) -> BuildArgs<'a> {
+    pub fn release(mut self) -> BuildArgs<'a> {
         self.release = true;
         self
     }

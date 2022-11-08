@@ -17,7 +17,8 @@
 //! * `s10_*`: User-space applications benchmarks
 //! * `s11_*`: Rackscale (distributed) benchmarks
 
-pub(crate) mod common;
+extern crate testutils;
+
 pub(crate) mod s00_core_tests;
 pub(crate) mod s01_kernel_low_tests;
 pub(crate) mod s02_kernel_high_tests;

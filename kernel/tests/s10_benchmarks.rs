@@ -20,10 +20,10 @@ use rexpect::process::wait::WaitStatus;
 use rexpect::spawn;
 use serde::Serialize;
 
-use crate::common::builder::{BuildArgs, Machine};
-use crate::common::helpers::{setup_network, spawn_dhcpd, spawn_nrk, DHCP_ACK_MATCH};
-use crate::common::redis::{redis_benchmark, REDIS_BENCHMARK, REDIS_START_MATCH};
-use crate::common::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
+use testutils::builder::{BuildArgs, Machine};
+use testutils::helpers::{setup_network, spawn_dhcpd, spawn_nrk, DHCP_ACK_MATCH};
+use testutils::redis::{redis_benchmark, REDIS_BENCHMARK, REDIS_START_MATCH};
+use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
 /// Binary of the memcached benchmark program
 const MEMASLAP_BINARY: &str = "memaslap";

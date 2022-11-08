@@ -3,14 +3,19 @@
 
 use std::fmt::{self, Display, Formatter};
 
-pub(crate) mod builder;
-pub(crate) mod helpers;
-pub(crate) mod redis;
-pub(crate) mod runner_args;
+extern crate csv;
+extern crate hwloc2;
+extern crate rexpect;
+extern crate serde;
+
+pub mod builder;
+pub mod helpers;
+pub mod redis;
+pub mod runner_args;
 
 /// Different ExitStatus codes as returned by NRK.
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
-pub(crate) enum ExitStatus {
+pub enum ExitStatus {
     /// Successful exit.
     Success,
     /// ReturnFromMain: main() function returned to arch_indepdendent part.

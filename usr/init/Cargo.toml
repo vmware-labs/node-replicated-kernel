@@ -15,9 +15,7 @@ lineup = { path = "../../lib/lineup" }
 vibrio = { path = "../../lib/vibrio" }
 kpi = { path = "../../lib/kpi" }
 arrayvec = { version = "0.7.0", default-features = false }
-proptest = { git = "https://github.com/gz/proptest.git", branch = "x86-asm", default-features = false, features = ['alloc', 'hardware-rng'] }
 rawtime = "0.0.10"
-x86 = { version = "0.52", features = ["unstable"] }
 log = "0.4"
 #libm = "0.2.2"
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }
@@ -25,6 +23,21 @@ lazy_static =  { version = "1.4", default_features = false }
 cstr_core = { version = "0.2.3", default-features = false }
 spin = { version = "0.5.2", default_features = false }
 hashbrown = { version = "0.11", features = [ "nightly" ] }
+rawtime = { git = "https://github.com/achreto/rust-rawtime" }
+
+# Arch Specific Dependencies for x86_64 Targets
+# -------------------------------------------------------------------------------------------------
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86 = { version = "0.52", features = ["unstable"] }
+proptest = { git = "https://github.com/gz/proptest.git", branch = "x86-asm", default-features = false, features = ['alloc', 'hardware-rng'] }
+
+
+# Arch Specific Dependencies for aarch64 Targets
+# -------------------------------------------------------------------------------------------------
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+armv8 = { git = "https://github.com/achreto/rust-armv8" }
+
+
 
 [features]
 default = []

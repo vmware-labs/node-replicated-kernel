@@ -37,7 +37,7 @@ displaydoc = { version = "0.2", default-features = false }
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 once_cell = { version = "1.12.0", features = [ "alloc" ], default-features = false }
 logos = { version = "0.12", default-features = false, features = ["export_derive"] }
-hashbrown = { version = "0.11", features = [ "nightly" ] }
+hashbrown = { version = "0.13", features = [ "nightly" ] }
 cstr_core = { version = "0.2.3", default-features = false }
 uefi = "0.15"
 crossbeam-utils = { version = "0.8.0", default-features = false }

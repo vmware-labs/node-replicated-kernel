@@ -13,6 +13,7 @@ use vibrio::io::*;
 use vibrio::SystemCallError;
 
 use log::trace;
+#[cfg(target_arch = "x86_64")]
 use proptest::prelude::*;
 
 pub type Mnode = u64;
@@ -574,6 +575,7 @@ enum TestAction {
 }
 
 /// Generates one `TestAction` entry randomly.
+#[cfg(target_arch = "x86_64")]
 fn action() -> impl Strategy<Value = TestAction> {
     prop_oneof![
         (fd_gen(0xA), size_gen(128)).prop_map(|(a, c)| TestAction::Read(a, c)),
@@ -594,11 +596,13 @@ fn action() -> impl Strategy<Value = TestAction> {
 }
 
 /// Generates a vector of TestAction entries (by repeatingly calling `action`).
+#[cfg(target_arch = "x86_64")]
 fn actions() -> impl Strategy<Value = Vec<TestAction>> {
     prop::collection::vec(action(), 0..512)
 }
 
 /// Generates one fill pattern (for writes).
+#[cfg(target_arch = "x86_64")]
 fn fill_pattern() -> impl Strategy<Value = char> {
     prop_oneof![
         Just('a'),
@@ -613,32 +617,38 @@ fn fill_pattern() -> impl Strategy<Value = char> {
 }
 
 // Generates an offset.
+#[cfg(target_arch = "x86_64")]
 prop_compose! {
     fn offset_gen(max: i64)(offset in 0..max) -> i64 { offset }
 }
 
 // Generates a random file descriptor.
 const FD_OFFSET: u64 = 100;
+#[cfg(target_arch = "x86_64")]
 prop_compose! {
     fn fd_gen(max: u64)(mnode in 0..max) -> u64 { mnode }
 }
 
 // Generates a random mode.
+#[cfg(target_arch = "x86_64")]
 prop_compose! {
     fn mode_gen(max: u64)(mode in 0..max) -> u64 { mode }
 }
 
 // Generates a random file flag.
+#[cfg(target_arch = "x86_64")]
 prop_compose! {
     fn flag_gen(max: u64)(flag in 0..max) -> u64 { flag }
 }
 
 // Generates a random (read/write)-request size.
+#[cfg(target_arch = "x86_64")]
 prop_compose! {
     fn size_gen(max: usize)(size in 0..max) -> usize { size }
 }
 
 /// Generates a random path entry.
+#[cfg(target_arch = "x86_64")]
 fn path_names() -> impl Strategy<Value = String> {
     prop_oneof![
         //Just(String::from("/")),
@@ -655,6 +665,7 @@ fn path_names() -> impl Strategy<Value = String> {
 
 /// Creates a path of depth a given depth (4), represented as a
 /// vector of Strings.
+#[cfg(target_arch = "x86_64")]
 fn path() -> impl Strategy<Value = Vec<String>> {
     proptest::collection::vec(path_names(), 4)
 }
@@ -775,12 +786,16 @@ fn model_equivalence(ops: Vec<TestAction>) {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 pub fn run_fio_syscall_proptests() {
     // Reduce the number of tests so we don't use up all the cache
     proptest!(ProptestConfig::with_cases(100), |(ops in actions())| {
         model_equivalence(ops);
     });
 }
+
+#[cfg(target_arch = "aarch64")]
+pub fn run_fio_syscall_proptests() {}
 
 /// Create a file with non-read permission and try to read it.
 fn test_file_read_permission_error() {

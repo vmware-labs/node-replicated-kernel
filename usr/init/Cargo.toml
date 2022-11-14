@@ -38,7 +38,6 @@ proptest = { git = "https://github.com/gz/proptest.git", branch = "x86-asm", def
 armv8 = { git = "https://github.com/achreto/rust-armv8" }
 
 
-
 [features]
 default = []
 rumprt = ["vibrio/rumprt"]

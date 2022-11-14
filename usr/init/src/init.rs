@@ -1,4 +1,5 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
+// Copyright © 2022 The University of British Columbia. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #![no_std]
@@ -24,7 +25,9 @@ use vibrio::sys_println;
 
 use lineup::tls2::SchedulerControlBlock;
 use log::{debug, error, info, Level};
-use x86::bits64::paging::VAddr;
+
+//use x86::bits64::paging::VAddr;
+use kpi::arch::VAddr;
 
 mod fs;
 #[cfg(feature = "fxmark")]
@@ -795,6 +798,7 @@ pub fn install_vcpu_area() {
         VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64);
 }
 
+#[cfg(target_arch = "x86_64")]
 pub fn upcall_test() {
     sys_println!("causing a debug exception");
     unsafe { x86::int!(3) };

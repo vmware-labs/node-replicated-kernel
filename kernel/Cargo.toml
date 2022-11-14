@@ -23,7 +23,7 @@ bootloader_shared = { path = "../lib/bootloader_shared" }
 klogger = { git = "https://github.com/gz/rust-klogger", branch = "aarch64" }
 driverkit = { git = "https://github.com/gz/rust-driverkit", branch = "dev/aarch64" }
 spin = "0.9.1"
-elfloader = "0.14"
+elfloader = "0.16"
 slabmalloc = { git = "https://github.com/achreto/rust-slabmalloc" }
 backtracer_core = { git = "https://github.com/achreto/backtracer" }
 libacpica = "0.0.8"

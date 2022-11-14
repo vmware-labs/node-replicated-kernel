@@ -34,6 +34,8 @@ use super::debug;
 use super::vspace::VSpace;
 use super::MAX_NUMA_NODES;
 
+pub(crate) const STACK_ALIGNMENT: usize = 16;
+
 /// The process model of the current architecture.
 pub(crate) type ArchProcess = UnixProcess;
 

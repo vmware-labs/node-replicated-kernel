@@ -25,6 +25,7 @@ pub use kpi::*;
 extern crate arrayvec;
 extern crate lazy_static;
 
+mod arch;
 pub mod mem;
 #[cfg(target_os = "nrk")]
 pub mod upcalls;
@@ -48,7 +49,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
 
     unsafe {
-        let rsp = x86::bits64::registers::rsp();
+        let rsp = arch::sp();
         for i in 0..32 {
             let ptr = (rsp as *const u64).offset(i);
             sys_println!("stack[{}] = {:#x}", i, *ptr);

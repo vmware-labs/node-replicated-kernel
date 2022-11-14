@@ -13,7 +13,8 @@ use arrayvec::ArrayVec;
 use lazy_static::lazy_static;
 use log::{error, warn};
 use spin::Mutex;
-use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+
+use kpi::arch::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 use kpi::process::{HEAP_PER_CORE_REGION, HEAP_START, MAX_CORES};
 use kpi::SystemCallError;

@@ -11,7 +11,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&str, MainFn); 28] = [
+const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -37,7 +37,6 @@ const INTEGRATION_TESTS: [(&str, MainFn); 28] = [
     ("replica-advance", replica_advance),
     ("gdb", gdb),
     ("vmxnet-smoltcp", vmxnet_smoltcp),
-    ("dcm", dcm),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
 ];
@@ -761,41 +760,6 @@ fn vmxnet_smoltcp() {
         }
     }
 
-    shutdown(ExitReason::Ok);
-}
-
-/// Test vmxnet3 integrated with smoltcp.s
-#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
-fn dcm() {
-    use crate::arch::rackscale::client::RPC_CLIENT;
-    use crate::arch::rackscale::processops::allocate_physical::rpc_allocate_physical;
-    use crate::arch::rackscale::processops::core::rpc_request_core;
-    use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
-    use log::info;
-
-    let pid = 0; // Using dummy pid for now
-    let affinity = 0; // Using dummy affinity for now
-    let frame_size = BASE_PAGE_SIZE as u64; // Using dummy frame_size for now
-    let core_id = 3; // Using dummy core_id for now
-    let entry_point = 4; // Using dummy entry_point for now
-
-    info!("About to send resource requests!");
-    for _ in 0..3 {
-        let mut client = RPC_CLIENT.lock();
-        let (_alloced_frame_size, addr_base) =
-            rpc_allocate_physical(&mut **client, pid, frame_size, affinity).unwrap();
-
-        let vaddr_base = paddr_to_kernel_vaddr(PAddr::from(addr_base)).as_u64();
-        for i in 0..2 {
-            let region = (vaddr_base + i as u64) as *mut u8;
-            unsafe { core::ptr::write(region, 0xb) };
-        }
-
-        // TODO: use the core
-        let _core_ret = rpc_request_core(&mut **client, pid, core_id, entry_point).unwrap();
-    }
-
-    info!("Finished sending resource requests!");
     shutdown(ExitReason::Ok);
 }
 

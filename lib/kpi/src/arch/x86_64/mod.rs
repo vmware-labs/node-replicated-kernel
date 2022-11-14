@@ -10,8 +10,8 @@ use core::ops::Range;
 
 pub mod syscalls;
 
-pub use x86::bits64::paging::BASE_PAGE_SIZE;
 pub use x86::bits64::paging::{PAddr, VAddr};
+pub use x86::bits64::paging::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 use x86::bits64::rflags::RFlags;
 use x86::segmentation::SegmentSelector;

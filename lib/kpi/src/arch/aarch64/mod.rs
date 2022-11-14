@@ -10,7 +10,7 @@ use core::ops::Range;
 
 pub mod syscalls;
 
-pub use armv8::aarch64::vm::granule4k::{PAddr, VAddr, BASE_PAGE_SIZE};
+pub use armv8::aarch64::vm::granule4k::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
 use armv8::aarch64::vm::granule4k::*;
 

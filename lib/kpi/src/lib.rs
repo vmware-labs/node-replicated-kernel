@@ -6,7 +6,7 @@
 #![no_std]
 #![feature(const_ptr_offset_from)]
 
-#[cfg(not(target_os = "none"))]
+//#[cfg(not(target_os = "none"))]
 extern crate alloc;
 
 #[macro_use]

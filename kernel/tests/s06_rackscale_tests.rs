@@ -10,13 +10,14 @@
 //! * `s06_*`: Rackscale (distributed) tests
 
 use rexpect::errors::*;
+use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
 
-use testutils::builder::BuildArgs;
+use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
     setup_network, setup_shmem, spawn_dcm, spawn_nrk, SHMEM_PATH, SHMEM_SIZE,
 };
-use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
+use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
@@ -476,6 +477,120 @@ fn s06_rackscale_shmem_multiinstance() {
     for p in processes {
         p.join().unwrap();
     }
+
+    let _ignore = remove_file(SHMEM_PATH);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_shmem_userspace_multicore_test() {
+    rackscale_userspace_multicore_test(true);
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s06_rackscale_ethernet_userspace_multicore_test() {
+    rackscale_userspace_multicore_test(false);
+}
+
+#[cfg(not(feature = "baremetal"))]
+fn rackscale_userspace_multicore_test(is_shmem: bool) {
+    use std::fs::remove_file;
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    // Setup ivshmem file
+    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+
+    setup_network(2);
+    let timeout = 30_000;
+
+    let machine = Machine::determine();
+    let client_num_cores: usize = machine.max_cores() - 1;
+
+    // Create build for both controller and client
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-scheduler-smp")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    // Run DCM and controller in separate thread
+    let build1 = build.clone();
+    let controller = std::thread::spawn(move || {
+        let controller_cmd = if is_shmem {
+            "mode=controller transport=shmem"
+        } else {
+            "mode=controller transport=ethernet"
+        };
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
+            .timeout(timeout)
+            .cmd(controller_cmd)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap0")
+            .no_network_setup()
+            .workers(2)
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut dcm = spawn_dcm(1, timeout)?;
+            let mut p = spawn_nrk(&cmdline_controller)?;
+
+            //output += p.exp_string("Finished sending requests!")?.as_str();
+            output += p.exp_eof()?.as_str();
+
+            dcm.send_control('c')?;
+            p.process.exit()
+        };
+
+        let _ignore = qemu_run();
+    });
+
+    // Run client in separate thead. Wait a bit to make sure DCM and controller started
+    let build2 = build.clone();
+    let _client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(5_000));
+        let client_cmd = if is_shmem {
+            "mode=client transport=shmem"
+        } else {
+            "mode=client transport=ethernet"
+        };
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+            .timeout(timeout)
+            .cmd(client_cmd)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap2")
+            .no_network_setup()
+            .workers(2)
+            .cores(client_num_cores)
+            .memory(4096)
+            .use_vmxnet3();
+
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+
+            for _i in 0..client_num_cores {
+                let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
+                output += r.0.as_str();
+                output += r.1.as_str();
+            }
+            p.process.kill(SIGTERM)
+        };
+
+        wait_for_sigterm(&cmdline_client, qemu_run(), output);
+    });
+
+    controller.join().unwrap();
 
     let _ignore = remove_file(SHMEM_PATH);
 }

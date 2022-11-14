@@ -414,7 +414,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         .get()
         .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
     {
-        let _ = spin::lazy::Lazy::force(&rackscale::client::RPC_CLIENT);
+        // Force client instantiation
+        let _ = rackscale::client::RPC_CLIENT.clone();
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)

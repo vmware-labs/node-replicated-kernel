@@ -63,11 +63,10 @@ pub(crate) fn initialize_client(
     if send_client_data {
         let (affinity_shmem_offset, affinity_shmem_size) = get_affinity_shmem();
 
-        // TODO: calculate cores correctly
         let req = ClientRegistrationRequest {
             affinity_shmem_offset,
             affinity_shmem_size,
-            num_cores: 4,
+            num_cores: atopology::MACHINE_TOPOLOGY.num_threads() as u64,
         };
         let mut req_data = [0u8; core::mem::size_of::<ClientRegistrationRequest>()];
         unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();

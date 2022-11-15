@@ -112,6 +112,12 @@ impl SaveArea {
     }
 }
 
+impl Default for SaveArea {
+    fn default() -> SaveArea {
+        SaveArea::empty()
+    }
+}
+
 impl fmt::Debug for SaveArea {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(

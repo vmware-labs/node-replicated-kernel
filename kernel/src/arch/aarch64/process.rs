@@ -229,12 +229,12 @@ impl EL0Executor {
 
     fn stack_top(&self) -> VAddr {
         // -16 due to AArch64 stack alignemnt requirements
-        self.stack_base + EL0Executor::INIT_STACK_SIZE - 18usize
+        self.stack_base + EL0Executor::INIT_STACK_SIZE - 16usize
     }
 
     fn upcall_stack_top(&self) -> VAddr {
         // -16 due to AArch64 stack alignemnt requirements
-        self.upcall_stack_base + EL0Executor::UPCALL_STACK_SIZE - 18usize
+        self.upcall_stack_base + EL0Executor::UPCALL_STACK_SIZE - 16usize
     }
 }
 

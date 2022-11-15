@@ -397,7 +397,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let timeout = 30_000;
 
     let machine = Machine::determine();
-    let client_num_cores: usize = machine.max_cores() - 1;
+    let client_num_cores: usize = core::cmp::min(5, machine.max_cores() - 1);
 
     // Create build for both controller and client
     let build = Arc::new(

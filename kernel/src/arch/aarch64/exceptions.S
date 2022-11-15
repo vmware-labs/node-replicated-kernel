@@ -125,7 +125,7 @@ invalid_exception elx_spx_serror EXN_AARCH64__EL_CURRENT_STACK_CURRENT_SERROR
 
 /*
  * ==========================================================================
- * Lower EL using AArch64 - Those are basically SMC calls
+ * Lower EL using AArch64 - Those are basically SVC calls / IRQ
  * ==========================================================================
  */
 
@@ -133,45 +133,31 @@ invalid_exception elx_spx_serror EXN_AARCH64__EL_CURRENT_STACK_CURRENT_SERROR
 /* 0x400 - Lower EL using AArch64  - Synchronous Exception */
 .align 7
 el_lo_aarch64_sync:
-
-    /* System Calls:
-     * w0:    function identifier
-     * x1-x6: arguments
-     * x0-x3: results
-     * x9-x15: temporary registers.
-     * Registers X18-X30 and stack pointers SP_EL0 and SP_ELx are saved by the
-     * function that is called, and must be preserved over the SVC.
-     */
-
-    /* disable interrupts (irq, fiq), enable debug and aborts */
+    // disable the interrupts
     msr    daifclr, #3
 
-    /* we expect only SMC calls to happen */
-    mrs    x8, esr_el3
-    ubfx   x8, x8, #26, #6
-    cmp    x8, #0x17
-    b.ne   el_lo_aarch64_sync_err
+    // spill a few registers onto the stack.
+    // we preserve registers x0-x7 as they will remain and we can access
+    // them directly in the syscall hander.
+    // Registers x12-x15 are caller saved, so the won't need to be preserved.
 
-    /* make room on the stack for caller save values, the context */
-    add sp, sp, #-(16 * 8)
+    stp x14, x15, [sp, #-(2 * 8)]!
+    stp x12, x13, [sp, #-(2 * 8)]!
 
-    /* store the values */
-    stp x18, x19, [sp]
-    stp x20, x21, [sp, #(2 * 8)]
-    stp x22, x23, [sp, #(4 * 8)]
-    stp x24, x25, [sp, #(6 * 8)]
-    stp x26, x27, [sp, #(8 * 8)]
-    stp x28, x29, [sp, #(10 * 8)]
-    stp x30, x30, [sp, #(12 * 8)]
-    mrs x9, sp_el0
-    mrs x10, sp_el1
-    stp x9, x10, [sp, #(14 * 8)]
+    // get the kcb
+    mrs x12, tpidr_el1
 
-    /* set the context pointer in 7th argument */
-    mov x7, sp
+    // get the exception type by reading the esr register
+    mrs x14, esr_el1
+    // extract bits 26-31 to get the exception class
+    ubfx   x13, x14, #26, #6
+    // compare with SVC instruction execution in AArch64 state.
+    cmp x13, 0b010101
+    // branch off to the abort handler
+    b.ne  el_lo_aarch64_sync_err
 
-    /* branch off ot the syscall handler */
-    b handle_syscall
+    // save system call context
+    b save_syscall_context
 
 
 /* 0x480 - Lower EL using AArch64  - IRQ / vIRQ */
@@ -207,9 +193,24 @@ invalid_exception el_lo_aarch32_serror EXN_AARCH32__LOWER_EL_SERROR
 __exn_vectors_end:
 
 
-/* Hanlder for invalid system calls from lower EL */
-invalid_exception el_lo_aarch64_sync_err EXN_AARCH64__LOWER_EL_SYNC
+.align 7
+el_lo_aarch64_sync_err:
 
+    /* store spsr and other information */
+    mrs x0, elr_el1
+    mrs x1, spsr_el1
+
+    /* Exception Syndrome Register */
+    mrs x2, esr_el1
+
+    /* Exception vector */
+    mov x3, EXN_AARCH64__LOWER_EL_SYNC
+
+    /* Arguments: x0 = EPC, x1 = SPSR, x2 = ESR, x3 = vector */
+    b handle_user_fault
+
+save_syscall_context:
+    b handle_syscall
 
 /*
  * ===============================================================================================

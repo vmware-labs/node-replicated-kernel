@@ -66,7 +66,7 @@ apic = { path = "../lib/apic/" }
 # Arch Specific Dependencies for aarch64 Targets
 # -------------------------------------------------------------------------------------------------
 [target.'cfg(target_arch = "aarch64")'.dependencies]
-armv8 = { git = "https://github.com/achreto/rust-armv8" }
+armv8 = { git = "https://github.com/achreto/rust-armv8", features = ["unstable"] }
 cortex-a = "8.0.0"
 tock-registers = "0.8.x"
 

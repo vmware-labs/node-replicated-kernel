@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
+use core::ops::Bound::Excluded;
+use core::ops::Bound::Included;
+use core::ops::Bound::Unbounded;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
@@ -73,26 +76,106 @@ impl VSpace {
             page_table: PageTable::new(da)?,
         })
     }
+
+    pub(crate) fn root_table_address(&self) -> PAddr {
+        self.page_table.root_table_address()
+    }
+}
+
+impl Drop for VSpace {
+    fn drop(&mut self) {
+        //panic!("Drop for VSpace!");
+    }
 }
 
 impl AddressSpace for VSpace {
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
-        panic!("not yet implemented")
+        log::info!(
+            "mapping frame: {:p}..{:p} to {:p}..{:p}  {}",
+            base,
+            base + frame.size(),
+            frame.base,
+            frame.base + frame.size(),
+            action
+        );
+
+        if frame.size() == 0 {
+            return Err(KError::InvalidFrame);
+        }
+        if frame.base % frame.size() != 0 {
+            // physical address should be aligned to page-size
+            return Err(KError::InvalidFrame);
+        }
+        if base % frame.size() != 0 {
+            // virtual addr should be aligned to page-size
+            return Err(KError::InvalidBase);
+        }
+
+        let tomap_range = base.as_usize()..base.as_usize() + frame.size;
+
+        // Check all mapping in that region to see if we can allow this map:
+        // Start with greatest VAddr that is smaller than base
+        for (&existing_base, existing_mapping) in self
+            .mappings
+            .range((Unbounded, Excluded(VAddr::from(tomap_range.end))))
+            .rev()
+        {
+            let existing_map_range = existing_mapping.vrange(existing_base);
+            if existing_map_range.end <= tomap_range.start {
+                // We reached the end of relevant mappings
+                break;
+            }
+
+            if existing_base == base
+                && existing_mapping.frame.base == frame.base
+                && existing_mapping.frame.size <= frame.size
+                && existing_mapping.rights == action
+            {
+                return Ok(());
+            } else {
+                return Err(KError::AlreadyMapped {
+                    base: VAddr::from(existing_base),
+                });
+            }
+        }
+
+        self.mappings
+            .try_insert(base, MappingInfo::new(frame, action))?;
+        self.page_table.map_frame(base, frame, action)
     }
 
     fn map_memory_requirements(_base: VAddr, _frames: &[Frame]) -> usize {
-        panic!("not yet implemented")
+        // Implementation specific, the model does not require additional
+        // memory for page-tables
+        0
     }
 
     fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
-        panic!("not yet implemented")
+        self.page_table.resolve(addr)
     }
 
     fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, KError> {
-        panic!("not yet implemented")
+        for (&existing_base, existing_mapping) in
+            self.mappings.range((Unbounded, Included(base))).rev()
+        {
+            let existing_map_range = existing_mapping.vrange(existing_base);
+            if existing_map_range.contains(&base.as_usize()) {
+                break;
+            } else {
+                return Err(KError::NotMapped);
+            }
+        }
+
+        let r = self.page_table.unmap(base)?;
+        let rbt = self.mappings.remove(&r.vaddr);
+        debug_assert!(rbt.is_some());
+        Ok(r)
     }
 
     fn adjust(&mut self, base: VAddr, new_rights: MapAction) -> Result<(VAddr, usize), KError> {
-        panic!("not yet implemented")
+        let r = self.page_table.adjust(base, new_rights)?;
+        let mapping = self.mappings.get_mut(&r.0).ok_or(KError::NotMapped)?;
+        mapping.rights = new_rights;
+        Ok(r)
     }
 }

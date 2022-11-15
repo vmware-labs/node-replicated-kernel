@@ -273,7 +273,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             .expect("Not enough memory to initialize system"),
     );
     log::error!("init_cnrfs_on_thread() uses TLS");
-    // crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+    crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
 
     // Intialize PCI
     // crate::pci::init();

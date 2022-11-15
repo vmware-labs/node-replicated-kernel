@@ -1081,13 +1081,16 @@ impl elfloader::ElfLoader for Ring3Process {
     /// We return an error in this case.
     fn relocate(
         &mut self,
-        entry: &elfloader::Rela<elfloader::P64>,
+        entry: elfloader::RelocationEntry,
     ) -> Result<(), elfloader::ElfLoaderErr> {
+        use elfloader::arch::x86_64::RelocationTypes::R_AMD64_RELATIVE;
+        use elfloader::RelocationType;
+
         // Get the pointer to where the relocation happens in the
         // memory where we loaded the headers
         // The forumla for this is our offset where the kernel is starting,
         // plus the offset of the entry to jump to the code piece
-        let addr = self.offset + entry.get_offset();
+        let addr = self.offset + entry.offset;
 
         if addr >= self.read_only_offset {
             // Don't relocate anything in write-able section, already done
@@ -1103,18 +1106,20 @@ impl elfloader::ElfLoader for Ring3Process {
             paddr, kernel_addr
         );
 
-        use elfloader::TypeRela64;
-        if let TypeRela64::R_RELATIVE = TypeRela64::from(entry.get_type()) {
-            // This is a relative relocation of a 64 bit value, we add the offset (where we put our
-            // binary in the vspace) to the addend and we're done:
-            unsafe {
-                // Scary unsafe changing stuff in random memory locations based on
-                // ELF binary values weee!
-                *(kernel_addr.as_mut_ptr::<u64>()) = self.offset.as_u64() + entry.get_addend();
+        let addend = entry
+            .addend
+            .ok_or(elfloader::ElfLoaderErr::UnsupportedRelocationEntry)?;
+
+        match entry.rtype {
+            RelocationType::x86_64(R_AMD64_RELATIVE) => {
+                unsafe {
+                    // Scary unsafe changing stuff in random memory locations based on
+                    // ELF binary values weee!
+                    *(kernel_addr.as_mut_ptr::<u64>()) = self.offset.as_u64() + addend;
+                }
+                Ok(())
             }
-            Ok(())
-        } else {
-            Err(elfloader::ElfLoaderErr::UnsupportedRelocationEntry)
+            _ => Err(elfloader::ElfLoaderErr::UnsupportedRelocationEntry),
         }
     }
 

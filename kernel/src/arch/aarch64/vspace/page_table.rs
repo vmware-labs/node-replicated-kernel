@@ -474,61 +474,62 @@ impl AddressSpace for PageTable {
         Ok((vaddr, size))
     }
 
-    fn resolve(&self, addr: VAddr) -> Result<(PAddr, MapAction), KError> {
-        // log::trace!("Resolving VADDR: {:#x}", vaddr);
-        // let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
-        // if !l0_entry.is_valid() {
-        //     log::trace!("-> L0Descriptor: Invalid ({:#x})", l0_entry.as_u64());
-        //     Err(KError::NotMapped)
-        // }
+    fn resolve(&self, vaddr: VAddr) -> Result<(PAddr, MapAction), KError> {
+        log::trace!("Resolving VADDR: {:#x}", vaddr);
+        let l0_entry = self.l0_table.entry_at_vaddr(vaddr);
+        if !l0_entry.is_valid() {
+            log::trace!("-> L0Descriptor: Invalid ({:#x})", l0_entry.as_u64());
+            return Err(KError::NotMapped);
+        }
 
-        // log::trace!("-> L0Descriptor: {:#x}", l0_entry.as_u64());
+        log::trace!("-> L0Descriptor: {:#x}", l0_entry.as_u64());
 
-        // let l1_table = self.get_l1_table(l0_entry).unwrap();
-        // let l1_entry = l1_table.entry_at_vaddr(vaddr);
-        // if !l1_entry.is_valid() {
-        //     log::trace!("  -> L1Descriptor: Invalid ({:#x})", l1_entry.as_u64());
-        //     Err(KError::NotMapped)
-        // }
+        let l1_table = self.get_l1_table(l0_entry);
+        let l1_entry = l1_table.entry_at_vaddr(vaddr);
+        if !l1_entry.is_valid() {
+            log::trace!("  -> L1Descriptor: Invalid ({:#x})", l1_entry.as_u64());
+            return Err(KError::NotMapped);
+        }
 
-        // if l1_entry.is_block() {
-        //     log::trace!("  -> L1Descriptor: Block {:#x}", l1_entry.as_u64());
-        //     return l1_entry
-        //         .get_frame()
-        //         .map(|paddr| paddr + vaddr.huge_page_offset());
-        // }
+        if l1_entry.is_block() {
+            log::trace!("  -> L1Descriptor: Block {:#x}", l1_entry.as_u64());
+            let frame = l1_entry.get_frame().unwrap();
 
-        // log::trace!("  -> L1Descriptor: {:#x}", l1_entry.as_u64());
+            return Ok((frame + vaddr.huge_page_offset(), MapAction::ReadExecuteUser));
+        }
 
-        // let l2_table = self.get_l2_table(l1_entry).unwrap();
-        // let l2_entry = l2_table.entry_at_vaddr(vaddr);
-        // if !l2_entry.is_valid() {
-        //     log::trace!("    -> L2Descriptor: Invalid ({:#x})", l2_entry.as_u64());
-        //     Err(KError::NotMapped)
-        // }
+        log::trace!("  -> L1Descriptor: {:#x}", l1_entry.as_u64());
 
-        // if l2_entry.is_block() {
-        //     log::trace!("    -> L2Descriptor: Block {:#x}", l2_entry.as_u64());
-        //     return l2_entry
-        //         .get_frame()
-        //         .map(|paddr| paddr + vaddr.large_page_offset());
-        // }
+        let l2_table = self.get_l2_table(l1_entry);
+        let l2_entry = l2_table.entry_at_vaddr(vaddr);
+        if !l2_entry.is_valid() {
+            log::trace!("    -> L2Descriptor: Invalid ({:#x})", l2_entry.as_u64());
+            return Err(KError::NotMapped);
+        }
 
-        // log::trace!("    -> L2Descriptor: {:#x}", l2_entry.as_u64());
+        if l2_entry.is_block() {
+            log::trace!("    -> L2Descriptor: Block {:#x}", l2_entry.as_u64());
+            let frame = l2_entry.get_frame().unwrap();
 
-        // let l3_table = self.get_l3_table(l2_entry).unwrap();
-        // let l3_entry = l3_table.entry_at_vaddr(vaddr);
+            return Ok((
+                frame + vaddr.large_page_offset(),
+                MapAction::ReadExecuteUser,
+            ));
+        }
 
-        // if !l3_entry.is_valid() {
-        //     log::trace!("      -> L3Descriptor: Invalid ({:#x})", l3_entry.as_u64());
-        //     Err(KError::NotMapped)
-        // }
+        log::trace!("    -> L2Descriptor: {:#x}", l2_entry.as_u64());
 
-        // log::trace!("      -> L3Descriptor: Block {:#x}", l3_entry.as_u64());
-        // l3_entry
-        //     .get_frame()
-        //     .map(|paddr| paddr + vaddr.base_page_offset());
-        Err(KError::NotMapped)
+        let l3_table = self.get_l3_table(l2_entry);
+        let l3_entry = l3_table.entry_at_vaddr(vaddr);
+
+        if !l3_entry.is_valid() {
+            log::trace!("      -> L3Descriptor: Invalid ({:#x})", l3_entry.as_u64());
+            return Err(KError::NotMapped);
+        }
+
+        log::trace!("      -> L3Descriptor: Block {:#x}", l3_entry.as_u64());
+        let frame = l3_entry.get_frame().unwrap();
+        Ok((frame + vaddr.base_page_offset(), MapAction::ReadExecuteUser))
     }
 
     fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, KError> {

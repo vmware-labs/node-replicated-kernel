@@ -10,5 +10,5 @@ pub(crate) const DEFAULT_TIMER_DEADLINE: u64 = 2_000_000_000;
 /// Duration::from_millis(10) and for that we need a way to reliably
 /// convert between TSC and Instant
 pub(crate) fn set(deadline: u64) {
-    panic!("not yet implemented")
+    log::error!("TIMER NOT SET!!! not yet implemented");
 }

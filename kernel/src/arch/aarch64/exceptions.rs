@@ -207,3 +207,107 @@ pub extern "C" fn exceptions_handle_unsupported(
     log::error!("Halting the system\n");
     halt()
 }
+
+/// Hander for unsupported exceptions
+///
+/// # Argument
+// - `epc`    the program counter that caused the exception
+// - `spsr`   the sps
+// - `esr`    the exception syndrome register value
+// - `vector` the exception vector
+#[inline(never)]
+#[no_mangle]
+pub extern "C" fn handle_user_fault(epc: u64, spsr: u64, esr: EsrEL1, vector: u64) -> ! {
+    sprint!("\n\n");
+    let exn = ExnTypes::from(vector);
+
+    if exn.is_user_aarch32_exception() {
+        log::error!("BUG: Exceptions from user in AArch32 mode are not supported.");
+    }
+
+    if exn.is_kernel_exception_with_el0_stack() {
+        log::error!("BUG: Exceptions from the kernel with EL0 stack are not supported");
+    }
+
+    match esr.0.read_as_enum(ESR_EL1::EC) {
+        Some(ESR_EL1::EC::Value::DataAbortLowerEL) => {
+            log::error!(
+                "Unhandled user exception: DataAbort ({:?}) at 0x{:x} with address 0x{:x}  (pagefault)",
+                exn,
+                epc,
+                FAR_EL1.get()
+            );
+        }
+        Some(ESR_EL1::EC::Value::SError) => {
+            log::error!(
+                "Unhandled user exception:  SError ({:?}) at {:x} with address {:x}",
+                exn,
+                epc,
+                FAR_EL1.get()
+            );
+        }
+        Some(ESR_EL1::EC::Value::TrappedFP64) => {
+            log::error!(
+                "Unhandled user exception: Trapped Foating Point Instruction ({:?}) at {:x}",
+                exn,
+                epc
+            );
+        }
+        Some(ESR_EL1::EC::Value::SPAlignmentFault) => {
+            log::error!(
+                "Unhandled user exception:  Stack Pointer Alignment Fault ({:?}) at {:x}",
+                exn,
+                epc
+            );
+        }
+        Some(ESR_EL1::EC::Value::PCAlignmentFault) => {
+            log::error!(
+                "Unhandled user exception: Program Counter Alignment Fault ({:?}) at {:x}",
+                exn,
+                epc
+            );
+        }
+        Some(ESR_EL1::EC::Value::InstrAbortLowerEL) => {
+            log::error!(
+                "Unhandled user exception: Instruction Abort ({:?}) at {:x} with address {:x}",
+                exn,
+                epc,
+                FAR_EL1.get()
+            );
+        }
+        Some(ESR_EL1::EC::Value::SError) => {
+            log::error!(
+                "Unhandled user exception:  SError ({:?}) at {:x} with address {:x}",
+                exn,
+                epc,
+                FAR_EL1.get()
+            );
+        }
+        Some(ESR_EL1::EC::Value::SVC64) => {
+            log::error!(
+                "Unhandled user exception:  System call should not end up here ({:?}) at {:x}",
+                exn,
+                epc
+            );
+        }
+        Some(x) => {
+            log::error!(
+                "Unhandled user exception: {:?} ({:b}) at {:x}",
+                exn,
+                esr.0.read(ESR_EL1::EC),
+                epc
+            );
+        }
+        _ => {
+            panic!(
+                "Unexpected EC code {} ({:?}) at {:x}",
+                esr.0.read(ESR_EL1::EC),
+                exn,
+                epc
+            );
+        }
+    }
+
+    log::error!("Halting the system\n");
+    halt()
+}

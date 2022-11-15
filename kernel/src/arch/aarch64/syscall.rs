@@ -19,6 +19,12 @@ pub extern "C" fn handle_syscall(
     arg6: u64,
     context: u64,
 ) -> ! {
-    log::error!("Handle syscalls!");
+    log::error!(
+        "Handle syscalls!: {:x} {:x} {:x} {:x}",
+        function,
+        arg1,
+        arg2,
+        arg3
+    );
     halt()
 }

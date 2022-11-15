@@ -344,7 +344,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
 
     fn relocate(
         &mut self,
-        entry: elfloader::RelocationEntry, //&elfloader::Rela<elfloader::P64>,
+        entry: elfloader::RelocationEntry,
     ) -> Result<(), elfloader::ElfLoaderErr> {
         use elfloader::arch::aarch64::RelocationTypes::R_AARCH64_RELATIVE;
         use elfloader::arch::x86_64::RelocationTypes::R_AMD64_RELATIVE;

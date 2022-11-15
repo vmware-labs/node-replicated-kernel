@@ -545,7 +545,7 @@ impl elfloader::ElfLoader for ArchProcess {
                 (true, false, true) => MapAction::ReadExecuteUser,
                 (true, true, false) => panic!("MapAction::None"),
                 (false, true, true) => MapAction::ReadWriteUser,
-                (true, true, true) => MapAction::ReadWriteExecuteUser,
+                (true, true, true) => panic!("MapAction::ReadWriteExecuteUser"), // MapAction::ReadWriteExecuteUser,
             };
 
             log::info!(
@@ -1042,7 +1042,7 @@ impl Executor for EL0Executor {
         unsafe {
             let current_vroot = PAddr::from(TTBR0_EL1.get());
             if current_vroot != self.vroot {
-                log::trace!("Switching to 0x{:x}", self.vroot);
+                log::info!("Switching to 0x{:x}", self.vroot);
                 TTBR0_EL1.set(self.vroot.into());
             }
         }

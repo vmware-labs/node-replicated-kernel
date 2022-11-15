@@ -237,6 +237,7 @@ pub extern "C" fn handle_user_fault(epc: u64, spsr: u64, esr: EsrEL1, vector: u6
                 epc,
                 FAR_EL1.get()
             );
+            log::error!("ISS: {:b}", esr.0.read(ESR_EL1::ISS) & 0b111111)
         }
         Some(ESR_EL1::EC::Value::SError) => {
             log::error!(
@@ -274,6 +275,7 @@ pub extern "C" fn handle_user_fault(epc: u64, spsr: u64, esr: EsrEL1, vector: u6
                 epc,
                 FAR_EL1.get()
             );
+            log::error!("ISS: {:b}", esr.0.read(ESR_EL1::ISS) & 0b111111)
         }
         Some(ESR_EL1::EC::Value::SError) => {
             log::error!(

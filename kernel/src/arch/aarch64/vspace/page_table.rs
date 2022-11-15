@@ -60,7 +60,7 @@ impl PageTable {
     }
 
     pub(crate) fn root_table_address(&self) -> PAddr {
-        let l0_vaddr = VAddr::from(&self.l0_table as *const _ as u64);
+        let l0_vaddr = VAddr::from(&*self.l0_table as *const _ as u64);
         kernel_vaddr_to_paddr(l0_vaddr)
     }
 

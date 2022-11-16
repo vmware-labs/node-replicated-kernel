@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 //! Data structures to exchange system-wide information between kernel and user-space.
-
-use serde::{Deserialize, Serialize};
+use abomonation::{unsafe_abomonate, Abomonation};
+use core2::io::Result as IOResult;
+use core2::io::Write;
 
 /// A system global ID for a CPU hardware thread.
 pub type GlobalThreadId = usize;
@@ -20,7 +21,7 @@ pub type PackageId = usize;
 /// Affinity region, a NUMA node (consists of a bunch of threads/core/packages and memory regions).
 pub type NodeId = usize;
 
-#[derive(Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
 pub struct CpuThread {
     /// ID the thread, global within a system.
     pub id: GlobalThreadId,
@@ -33,3 +34,4 @@ pub struct CpuThread {
     /// ID of the thread (relative to the core (usually either 0 or 1)).
     pub thread_id: ThreadId,
 }
+unsafe_abomonate!(CpuThread: id, node_id, package_id, core_id, thread_id);

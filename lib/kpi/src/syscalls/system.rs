@@ -6,6 +6,8 @@
 
 use alloc::vec::Vec;
 
+use abomonation::decode;
+
 use crate::{syscall, *};
 
 use crate::system::{CoreId, CpuThread};
@@ -30,8 +32,18 @@ impl System {
             let len = len as usize;
             debug_assert!(len <= buf.len());
             buf.resize(len, 0);
-            let deserialized: Vec<CpuThread> = serde_cbor::from_slice(&buf).unwrap();
-            Ok(deserialized)
+            if let Some((deserialized, remaining)) =
+                unsafe { decode::<Vec<CpuThread>>(&mut buf[..len]) }
+            {
+                if remaining.len() > 0 {
+                    Err(SystemCallError::InternalError)
+                } else {
+                    // This does perform a copy, which is less than ideal.
+                    Ok(deserialized.to_vec())
+                }
+            } else {
+                Err(SystemCallError::InternalError)
+            }
         } else {
             Err(SystemCallError::from(r))
         }

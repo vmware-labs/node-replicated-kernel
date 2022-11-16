@@ -44,6 +44,8 @@ impl CoreToken {
     }
 }
 
+// TODO: still use serde instead of abomonation because abomonation doesn't
+// know how to handle 'static string.
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct ProcessInfo {
     pub has_tls: bool,

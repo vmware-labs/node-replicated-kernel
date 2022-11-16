@@ -53,8 +53,6 @@ gdbstub = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6
 gdbstub_arch = { git = "https://github.com/daniel5151/gdbstub.git", branch = "dev/0.6" }
 # Optional external libraries:
 addr2line = { version = "0.16", default-features = false, features = ["rustc-demangle"], optional = true }
-abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false, optional = true }
-core2 = { version = "0.3", default-features = false, features = [ "alloc" ], optional = true }
 smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp" ], optional = true }
 
 [[bin]]
@@ -62,12 +60,16 @@ name = "nrk"
 path = "src/main.rs"
 
 [target.'cfg(target_os = "none")'.dependencies]
+abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false, optional = true }
+core2 = { version = "0.3", default-features = false, features = [ "alloc" ], optional = true }
 serde = { version = "1", default-features = false, features = ["alloc", "derive"], optional = true }
 serde_cbor = { version = "0.11", default-features = false, optional = true }
 
 [target.'cfg(not(target_os = "none"))'.dependencies]
 libc = { version = "0.2.53", default-features = false }
 csv = "1.1"
+abomonation = { git="https://github.com/hunhoffe/abomonation.git", branch="no-std", default-features = false, optional = true }
+core2 = { version = "0.3", default-features = false, features = [ "alloc" ], optional = true }
 serde = { version = "1" }
 serde_cbor = { version = "0.11" }
 rand = { version = "0.8", features = ["small_rng"] }
@@ -86,7 +88,7 @@ testutils = { path = "testutils" }
 cc = "1.0"
 
 [features]
-default = ["addr2line", "serde", "serde_cbor"]
+default = ["addr2line", "serde", "serde_cbor", "core2", "abomonation"]
 # Enable Ethernet based networking.
 ethernet = ["smoltcp"]
 # Enable shared memory based communication.
@@ -95,7 +97,7 @@ shmem = []
 # kernels that communicate with the control-plane for coarse-grained policy
 # decisions. Use in combination with `shmem` or `ethernet` feature to control
 # transport.
-rackscale = ["core2", "abomonation", "rpc"]
+rackscale = ["rpc"]
 # server code (supply --kgdb to run.py).
 gdb = []
 

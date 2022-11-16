@@ -5,6 +5,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::convert::TryInto;
 
+use abomonation::encode;
 use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use log::{debug, info, trace, warn};
 use x86::bits64::paging::{PAddr, VAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
@@ -80,8 +81,14 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
             })?;
         }
 
-        // TODO(dependency): Get rid of serde/serde_cbor, use something sane instead
-        let serialized = serde_cbor::to_vec(&return_threads).unwrap();
+        // We know that we will need room for at least all of the hw threads. abomonation
+        // may increase size as needed.
+        let mut serialized =
+            Vec::try_with_capacity(num_threads * core::mem::size_of::<kpi::system::CpuThread>())
+                .expect("Failed to allocate memory for serialized data");
+        unsafe { encode(&return_threads, &mut serialized) }
+            .expect("Failed to serialize hw_threads");
+
         if serialized.len() <= vaddr_buf_len as usize {
             let mut user_slice = UserSlice::new(
                 current_pid()?,

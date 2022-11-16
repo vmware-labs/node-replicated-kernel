@@ -27,11 +27,15 @@ To run the unit tests of the kernel:
 To run the integration tests of the kernel:
 
 1. `cd kernel`
-1. `RUST_TEST_THREADS=1 cargo test --test integration-test`
+1. `RUST_TEST_THREADS=1 cargo test --test '*'`
 
 If you would like to run a specific integration test you can pass it with `--`:
 
-1. `RUST_TEST_THREADS=1 cargo test --test integration-test -- userspace_smoke`
+1. `RUST_TEST_THREADS=1 cargo test --test '*' -- userspace_smoke`
+
+If you would like to run a specific set of integration tests, you can specify the file name with `--test`:
+
+1. `RUST_TEST_THREADS=1 cargo test --test s00_core_test`
 
 In case an integration test fails, adding `--nocapture` at the end (needs to
 come after the `--`) will make sure that the underlying `run.py` invocations are
@@ -72,7 +76,7 @@ flags will also choose a different main() function than the one you're seeing
 There is two parts to the integration test.
 
 - The host side (that will go off and spawn a qemu instance) for running the
-  integration tests. It is found in `kernel/tests/integration-test.rs`.
+  integration tests. It is found in `kernel/tests`.
 - The corresponding main functions in the kernel that gets executed for a
   particular example are located at `kernel/src/integration_main.rs`
 
@@ -84,7 +88,7 @@ To add a new integration test the following tests may be necessary:
    `kernel/src/integration_main.rs` with the used feature name as an annotation.
    It may also be possible to re-use an existing xmain function, in that case
    make not of the feature name used to include it.
-1. Add a runner function to `kernel/tests/integration-test.rs` that builds the
+1. Add a runner function to one of the files in `kernel/tests` that builds the
    kernel with the cargo feature runs it and checks the output.
 
 Integration tests are divided into categories and named accordingly (partially
@@ -156,7 +160,7 @@ A fully automated CI test that checks the network using ping is available as
 well, it can be invoked with the following command:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s04_userspace_rumprt_net
+RUST_TEST_THREADS=1 cargo test --test '*' -- s04_userspace_rumprt_net
 ```
 
 ### socat and netcat

@@ -19,12 +19,12 @@ directly:
 ```bash
 cd kernel
 # Runs both _virtio and _e1000 redis benchmark tests
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_redis_benchmark
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_redis_benchmark
 ```
 
 ## Launch redis manually
 
-You can also do the steps that the integration-test does manually. We start a
+You can also do the steps that the integration test does manually. We start a
 DHCP server first. The `apparmor teardown` is necessary if you don't have a
 security policy that allows the use of a `dhcpd.conf` at this location.
 

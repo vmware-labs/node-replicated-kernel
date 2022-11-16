@@ -9,7 +9,7 @@ benchmark suite. The benchmark code is located at `usr/init/src/fxmark`.
 To run the fxmark benchmarks invoke the following command:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 ```
 
 fxmark supports several different file benchmarks:
@@ -53,10 +53,10 @@ The benchmark code is located at `usr/init/src/vmops/`. To invoke the
 benchmarks, run:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_latency_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_unmaplat_latency_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_shootdown_simple --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_unmaplat_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_shootdown_simple --nocapture
 ```
 
 ## Network

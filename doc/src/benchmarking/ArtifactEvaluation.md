@@ -101,7 +101,7 @@ Please follow the given steps to reproduce Figure 3 in the paper.
 To execute the benchmark, run:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 ```
 
 The command runs all NR-FS microbenchmarks and stores the results in a CSV file
@@ -172,7 +172,7 @@ To run the LevelDB benchmark on NrOS execute:
 
 ```bash
 cd $HOME/nrk/kernel
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_leveldb_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_leveldb_benchmark --nocapture
 ```
 
 This step will take ~15-20min. If everything worked, you should see an output like this one at the end:
@@ -229,7 +229,7 @@ To run the throughput benchmark (Figure 5) on NrOS execute:
 
 ```bash
 cd $HOME/nrk/kernel
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
 ```
 
 This step will take ~3min. If everything worked, you should see an output like this one at the end:
@@ -246,7 +246,7 @@ The results will be stored in `vmops_benchmark.csv`.
 To run the latency benchmark (Figure 6a) on NrOS execute:
 
 ```bash
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_latency_benchmark --nocapture
 ```
 
 This step will take ~2min. If everything worked, you should see an output like this one at the end:
@@ -264,7 +264,7 @@ To run the unmap latency benchmark (Figure 6c) on NrOS execute:
 
 ```bash
 cd $HOME/nrk/kernel
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_unmaplat_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_unmaplat_latency_benchmark --nocapture
 ```
 
 This step will take ~2min. If everything worked, you should see an output like this one at the end:

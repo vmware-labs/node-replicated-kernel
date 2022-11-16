@@ -13,12 +13,12 @@ rm -f fxmark_benchmark.csv
 rm -f leveldb_benchmark.csv
 
 # For vmops: --features prealloc can improve performance further (at the expense of test duration)
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_vmops_latency_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_redis_benchmark_ --nocapture
-#RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_memcached_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_leveldb_benchmark --nocapture
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_fxmark_bench --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_vmops_latency_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_redis_benchmark_ --nocapture
+#RUST_TEST_THREADS=1 cargo test --test s10* -- s10_memcached_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_leveldb_benchmark --nocapture
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_fxmark_bench --nocapture
 
 # Clone repo
 rm -rf gh-pages

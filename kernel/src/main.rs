@@ -94,7 +94,7 @@ mod integration_tests;
 /// to exit the VM and communicate the status to the host.
 ///
 /// # Notes
-/// If this type is modified, update the `run.py` script and `tests/integration-test.rs` as well.
+/// If this type is modified, update the `run.py` script and `testutils/*.rs` as well.
 #[derive(Copy, Clone, Debug)]
 #[repr(u8)]
 pub(crate) enum ExitReason {

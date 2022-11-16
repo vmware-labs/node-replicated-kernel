@@ -10,7 +10,7 @@ directly:
 
 ```bash
 cd kernel
-RUST_TEST_THREADS=1 cargo test --test integration-test -- s10_memcached_benchmark
+RUST_TEST_THREADS=1 cargo test --test s10* -- s10_memcached_benchmark
 ```
 
 This test will spawn memcached on one, two and four threads and measure

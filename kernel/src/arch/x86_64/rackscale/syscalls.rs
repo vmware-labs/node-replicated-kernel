@@ -9,7 +9,7 @@ use crate::fs::fd::FileDescriptor;
 use crate::memory::Frame;
 use crate::nrproc;
 use crate::process::{KernArcBuffer, UserSlice};
-use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch};
+use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch, SystemDispatch};
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
 use super::client::RPC_CLIENT;
@@ -31,8 +31,21 @@ pub(crate) struct Arch86LwkSystemCall {
 
 impl SystemCallDispatch<u64> for Arch86LwkSystemCall {}
 // Use x86 syscall processing for not yet implemented systems:
-impl Arch86SystemDispatch for Arch86LwkSystemCall {}
 impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
+
+impl SystemDispatch<u64> for Arch86LwkSystemCall {
+    fn get_hardware_threads(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> KResult<(u64, u64)> {
+        self.local.get_hardware_threads(vaddr_buf, vaddr_buf_len)
+    }
+
+    fn get_stats(&self) -> KResult<(u64, u64)> {
+        self.local.get_stats()
+    }
+
+    fn get_core_id(&self) -> KResult<(u64, u64)> {
+        self.local.get_core_id()
+    }
+}
 
 impl FsDispatch<u64> for Arch86LwkSystemCall {
     fn open(&self, path: UserSlice, flags: FileFlags, modes: FileModes) -> KResult<(u64, u64)> {

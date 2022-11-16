@@ -84,7 +84,7 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
         return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
     }
     let local_pid = local_pid.unwrap();
-    info!("handle_request_core() start");
+    log::trace!("handle_request_core() start");
 
     // Parse request
     let core_req = match unsafe { decode::<RequestCoreReq>(payload) } {
@@ -166,7 +166,7 @@ pub(crate) fn request_core_work(rpc_client: &mut dyn RPCClient) -> () {
 
             log::info!("Client finished processing core work request");
         } else {
-            log::info!("Client received no work.")
+            log::trace!("Client received no work.")
         }
     }
 }
@@ -183,7 +183,9 @@ pub(crate) fn handle_request_core_work(
             .expect("failed to fetch core assignment deque for node");
         deque.pop_front()
     };
-    log::info!("handle_request_core_work() Found work={:?}", work);
+    if work.is_some() {
+        log::info!("handle_request_core_work() Found work={:?}", work);
+    }
     let result = RequestCoreWorkRes { work };
 
     // Populate output buffer & header

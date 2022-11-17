@@ -66,7 +66,7 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub(crate) static ref HWTHREADS: Arc<Mutex<Vec<(ClientId, CpuThread)>>> = {
+    pub(crate) static ref HWTHREADS: Arc<Mutex<Vec<CpuThread>>> = {
         let mut hwthreads = Vec::try_with_capacity(get_num_clients() as usize)
             .expect("Failed to create vector for rack cpu threads");
         Arc::new(Mutex::new(hwthreads))

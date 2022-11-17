@@ -62,12 +62,12 @@ pub(crate) fn get_frame_as(frame_id: u64) -> Result<u64, RPCError> {
     }
 }
 
-pub(crate) fn get_num_clients() -> u64 {
-    (crate::CMDLINE.get().map_or(2, |c| c.workers) - 1) as u64
+pub(crate) fn get_num_clients() -> ClientId {
+    (crate::CMDLINE.get().map_or(2, |c| c.workers) - 1) as ClientId
 }
 
-pub(crate) fn get_local_client_id() -> u64 {
-    (crate::CMDLINE.get().map_or(1, |c| c.machine_id) - 1) as u64
+pub(crate) fn get_local_client_id() -> ClientId {
+    (crate::CMDLINE.get().map_or(1, |c| c.machine_id) - 1) as ClientId
 }
 
 pub(crate) fn client_get_work() -> () {

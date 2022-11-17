@@ -82,29 +82,20 @@ pub(crate) fn handle_get_hardware_threads(
     }
     let local_pid = local_pid.unwrap();
 
-    let rack_threads = HWTHREADS.lock();
-
-    // calculate total number of threads
-    let mut hwthreads =
-        Vec::try_with_capacity(rack_threads.len()).expect("failed to allocate space for hwthreads");
-    for i in 0..rack_threads.len() {
-        hwthreads.push(rack_threads[i].1);
-    }
-    log::info!(
-        "Found {:?} hardware threads: {:?}",
-        hwthreads.len(),
-        hwthreads
-    );
-
     // Encode hwthread information into payload buffer
+    let rack_threads = HWTHREADS.lock();
     let start = KernelRpcRes_SIZE as usize;
     let end = start
-        + hwthreads.len() * core::mem::size_of::<CpuThread>()
+        + rack_threads.len() * core::mem::size_of::<CpuThread>()
         + core::mem::size_of::<Vec<CpuThread>>();
     let additional_data = end - start;
-    unsafe { encode(&hwthreads, &mut &mut payload[start..end]) }
+    unsafe { encode(&*rack_threads, &mut &mut payload[start..end]) }
         .expect("Failed to encode hardware thread vector");
-    log::info!("Sending back {:?} bytes of data", additional_data);
+    log::info!(
+        "Sending back {:?} bytes of data ({:?} hwthreads)",
+        additional_data,
+        rack_threads.len()
+    );
 
     // Construct return
     let res = KernelRpcRes {

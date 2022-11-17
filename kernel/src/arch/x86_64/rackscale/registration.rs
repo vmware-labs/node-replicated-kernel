@@ -15,6 +15,7 @@ use rpc::RPCClient;
 
 use super::dcm::node_registration::dcm_register_node;
 use crate::arch::rackscale::controller::{HWTHREADS, SHMEM_MANAGERS};
+use crate::arch::rackscale::systemops::{local_to_gtid, local_to_node_id, local_to_package_id};
 use crate::error::KResult;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::transport::shmem::{create_shmem_manager, get_affinity_shmem};
@@ -125,31 +126,39 @@ pub(crate) fn register_client(
             if remaining.len() == 0 {
                 // Register client resources with DCM, DCM doesn't care about pids, so
                 // send w/ dummy pid
-                let node_id = dcm_register_node(0, req.num_cores, memslices);
-                info!("Registered client DCM, assigned client_id={:?}", node_id);
+                let client_id = dcm_register_node(0, req.num_cores, memslices);
+                info!("Registered client DCM, assigned client_id={:?}", client_id);
 
                 // Create shmem memory manager
-                // Probably not most accurate to use node_id for affinity here
+                // Probably not most accurate to use client_id for affinity here
                 let mut managers = SHMEM_MANAGERS.lock();
-                managers[node_id as usize] = create_shmem_manager(
+                managers[client_id as usize] = create_shmem_manager(
                     req.affinity_shmem_offset,
                     req.affinity_shmem_size,
-                    node_id,
+                    client_id,
                 );
                 log::info!(
                     "Created shmem manager on behalf of client {:?}: {:?}",
-                    node_id,
-                    managers[node_id as usize]
+                    client_id,
+                    managers[client_id as usize]
                 );
 
                 // Record information about the hardware threads
                 info!("hwthreads: {:?}", hwthreads);
                 let mut rack_threads = HWTHREADS.lock();
                 for hwthread in hwthreads {
-                    rack_threads.push((node_id, *hwthread));
+                    rack_threads.push(CpuThread {
+                        // these are global values to make sure no conflicts across rack
+                        id: local_to_gtid(hwthread.id, client_id),
+                        node_id: local_to_node_id(hwthread.node_id, client_id),
+                        package_id: local_to_package_id(hwthread.package_id, client_id),
+                        // these are local relative to below, so no work to do
+                        core_id: hwthread.core_id,
+                        thread_id: hwthread.thread_id,
+                    });
                 }
 
-                Ok(node_id)
+                Ok(client_id)
             } else {
                 error!("Extra data in register_client");
                 Err(RPCError::MalformedResponse)

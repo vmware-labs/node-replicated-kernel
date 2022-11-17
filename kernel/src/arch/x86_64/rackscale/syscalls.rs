@@ -24,6 +24,7 @@ use super::processops::allocate_physical::rpc_allocate_physical;
 use super::processops::print::rpc_log;
 use super::processops::release_physical::rpc_release_physical;
 use super::processops::request_core::rpc_request_core;
+use super::systemops::get_hardware_threads::rpc_get_hardware_threads;
 
 pub(crate) struct Arch86LwkSystemCall {
     pub(crate) local: Arch86SystemCall,
@@ -35,7 +36,9 @@ impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
 
 impl SystemDispatch<u64> for Arch86LwkSystemCall {
     fn get_hardware_threads(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> KResult<(u64, u64)> {
-        self.local.get_hardware_threads(vaddr_buf, vaddr_buf_len)
+        let pid = crate::arch::process::current_pid()?;
+        let mut client = RPC_CLIENT.lock();
+        rpc_get_hardware_threads(&mut **client, pid, vaddr_buf, vaddr_buf_len).map_err(|e| e.into())
     }
 
     fn get_stats(&self) -> KResult<(u64, u64)> {

@@ -14,6 +14,7 @@ pub(crate) mod kernelrpc;
 pub(crate) mod processops;
 pub(crate) mod registration;
 pub(crate) mod syscalls;
+pub(crate) mod systemops;
 
 pub(crate) use self::kernelrpc::KernelRpc;
 
@@ -39,6 +40,10 @@ pub(crate) const ALLOCATE_PHYSICAL_HANDLER: RPCHandler =
 pub(crate) const RELEASE_PHYSICAL_HANDLER: RPCHandler =
     processops::release_physical::handle_release_physical;
 pub(crate) const LOG_HANDLER: RPCHandler = processops::print::handle_log;
+
+// Re-export handlers: system operations
+pub(crate) const GET_HARDWARE_THREADS_HANDLER: RPCHandler =
+    systemops::get_hardware_threads::handle_get_hardware_threads;
 
 // Client polls for work
 pub(crate) const REQUEST_CORE_WORK_HANDLER: RPCHandler =

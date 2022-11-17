@@ -44,6 +44,7 @@ pub(crate) enum KernelRpc {
     FileRename = 10,
     /// Create a directory.
     MkDir = 11,
+
     /// Log (print) message of a process.
     Log = 12,
     /// Allocate physical memory for a process.
@@ -52,8 +53,12 @@ pub(crate) enum KernelRpc {
     ReleasePhysical = 14,
     /// Allocate a core for a process
     RequestCore = 15,
+
     /// Request work (e.g., request cores) - used by client to ask controller for tasks
     RequestWork = 16,
+
+    /// Get the hardware threads for the rack
+    GetHardwareThreads = 17,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -79,6 +84,7 @@ impl TryFrom<RPCType> for KernelRpc {
             15 => Ok(KernelRpc::ReleasePhysical),
             15 => Ok(KernelRpc::RequestCore),
             16 => Ok(KernelRpc::RequestWork),
+            17 => Ok(KernelRpc::GetHardwareThreads),
             _ => Err(KError::InvalidRpcType),
         }
     }

@@ -66,12 +66,9 @@ lazy_static! {
 }
 
 lazy_static! {
-    pub(crate) static ref HWTHREADS: Arc<Mutex<Vec<Vec<CpuThread>>>> = {
+    pub(crate) static ref HWTHREADS: Arc<Mutex<Vec<(ClientId, CpuThread)>>> = {
         let mut hwthreads = Vec::try_with_capacity(get_num_clients() as usize)
             .expect("Failed to create vector for rack cpu threads");
-        for i in 0..get_num_clients() {
-            hwthreads.push(Vec::new());
-        }
         Arc::new(Mutex::new(hwthreads))
     };
 }
@@ -227,6 +224,13 @@ fn register_rpcs(server: &mut Box<dyn RPCServer>) {
         .register(
             KernelRpc::RequestWork as RPCType,
             &REQUEST_CORE_WORK_HANDLER,
+        )
+        .unwrap();
+
+    server
+        .register(
+            KernelRpc::GetHardwareThreads as RPCType,
+            &GET_HARDWARE_THREADS_HANDLER,
         )
         .unwrap();
 }

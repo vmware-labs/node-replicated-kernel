@@ -145,23 +145,9 @@ pub(crate) fn register_client(
                 // Record information about the hardware threads
                 info!("hwthreads: {:?}", hwthreads);
                 let mut rack_threads = HWTHREADS.lock();
-                let mut gtid = 0;
-                for i in 0..node_id as usize {
-                    gtid += rack_threads[i].len();
-                }
-                info!("Starting client gtid at: {:?}", gtid);
                 for hwthread in hwthreads {
-                    // Create new, globally unique global thread id (gtid)
-                    rack_threads[node_id as usize].push(CpuThread {
-                        id: gtid,
-                        node_id: hwthread.node_id,
-                        package_id: hwthread.package_id,
-                        core_id: hwthread.core_id,
-                        thread_id: hwthread.thread_id,
-                    });
-                    gtid += 1;
+                    rack_threads.push((node_id, *hwthread));
                 }
-                info!("rack_threads: {:?}", rack_threads);
 
                 Ok(node_id)
             } else {

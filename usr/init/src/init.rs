@@ -150,27 +150,46 @@ fn request_core_remote_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+    info!("threads: {:?}", threads);
 
-    // Only ask for more cores on the machine with only 1 core
-    if threads.len() == 1 {
-        let HW_THREAD_ID = 1;
-        match vibrio::syscalls::Process::request_core(
-            HW_THREAD_ID,
-            VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-        ) {
-            Ok(_) => {
-                info!("request_core_remote_test OK");
-            }
-            Err(e) => {
-                error!("Can't spawn on {:?}: {:?}", HW_THREAD_ID, e);
+    for thread in threads.iter() {
+        if thread.id != 0 {
+            let r = vibrio::syscalls::Process::request_core(
+                thread.id,
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+            );
+            match r {
+                Ok(ctoken) => {
+                    info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                }
+                Err(_e) => {
+                    panic!("Failed to spawn to core {}", thread.id);
+                }
             }
         }
-    } else {
-        // Run scheduler on core 0
-        let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
-        loop {
-            s.run(&scb);
-        }
+    }
+
+    /*
+    for thread in threads {
+        s.spawn(
+            32 * 4096,
+            move |_| {
+                info!(
+                    "Hello from core {}",
+                    lineup::tls2::Environment::scheduler().core_id
+                );
+            },
+            ptr::null_mut(),
+            thread.id,
+            None,
+        );
+    }
+    */
+
+    // Run scheduler on core 0
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    loop {
+        s.run(&scb);
     }
 }
 

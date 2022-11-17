@@ -3,15 +3,18 @@
 
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use fallible_collections::{FallibleVec, FallibleVecGlobal};
+use kpi::system::CpuThread;
 use log::{debug, error, info, warn};
 use rpc::client::Client;
 use rpc::rpc::{ClientId, RPCError, RPCHeader};
 use rpc::RPCClient;
 
 use super::dcm::node_registration::dcm_register_node;
-use crate::arch::rackscale::controller::SHMEM_MANAGERS;
+use crate::arch::rackscale::controller::{HWTHREADS, SHMEM_MANAGERS};
 use crate::error::KResult;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::transport::shmem::{create_shmem_manager, get_affinity_shmem};
@@ -61,15 +64,41 @@ pub(crate) fn initialize_client(
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
 ) -> KResult<Box<Client>> {
     if send_client_data {
+        // Fetch system information
         let (affinity_shmem_offset, affinity_shmem_size) = get_affinity_shmem();
+        let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
+        let num_threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
+        // Create CpuThreads vector
+        let mut return_threads = Vec::try_with_capacity(num_threads)?;
+        for hwthread in hwthreads {
+            return_threads.try_push(kpi::system::CpuThread {
+                id: hwthread.id as usize,
+                node_id: hwthread.node_id.unwrap_or(0) as usize,
+                package_id: hwthread.package_id as usize,
+                core_id: hwthread.core_id as usize,
+                thread_id: hwthread.thread_id as usize,
+            })?;
+        }
+        info!("return_threads: {:?}", return_threads);
+
+        // Construct client registration request
         let req = ClientRegistrationRequest {
             affinity_shmem_offset,
             affinity_shmem_size,
             num_cores: atopology::MACHINE_TOPOLOGY.num_threads() as u64,
         };
-        let mut req_data = [0u8; core::mem::size_of::<ClientRegistrationRequest>()];
-        unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+
+        // Serialize and send to controller
+        let mut req_data = Vec::try_with_capacity(
+            core::mem::size_of::<ClientRegistrationRequest>()
+                + core::mem::size_of::<CpuThread>() * num_threads
+                + core::mem::size_of::<Vec<CpuThread>>(),
+        )
+        .expect("failed to alloc memory for client registration");
+        unsafe { encode(&req, &mut req_data) }.expect("Failed to encode ClientRegistrationRequest");
+        unsafe { encode(&return_threads, &mut req_data) }
+            .expect("Failed to encode hardware thread vector");
         client.connect(&[&req_data])?;
     } else {
         client.connect(&[&[]])?;
@@ -85,31 +114,68 @@ pub(crate) fn register_client(
     use crate::memory::LARGE_PAGE_SIZE;
 
     // Decode client registration request
-    return if let Some((req, _remaining)) = unsafe { decode::<ClientRegistrationRequest>(payload) }
+    if let Some((req, hwthreads_data)) =
+        unsafe { decode::<ClientRegistrationRequest>(&mut payload[..hdr.msg_len as usize]) }
     {
         let memslices = req.affinity_shmem_size / (LARGE_PAGE_SIZE as u64);
         info!("Received registration request from client with {:?} cores and shmem {:x?}-{:x?} ({:?} memslices)",
             req.num_cores, req.affinity_shmem_offset, req.affinity_shmem_offset + req.affinity_shmem_size, memslices);
 
-        // Register client resources with DCM, DCM doesn't care about pids, so
-        // send w/ dummy pid
-        let node_id = dcm_register_node(0, req.num_cores, memslices);
-        info!("Registered client DCM, assigned client_id={:?}", node_id);
+        if let Some((hwthreads, remaining)) = unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {
+            if remaining.len() == 0 {
+                // Register client resources with DCM, DCM doesn't care about pids, so
+                // send w/ dummy pid
+                let node_id = dcm_register_node(0, req.num_cores, memslices);
+                info!("Registered client DCM, assigned client_id={:?}", node_id);
 
-        // Create shmem memory manager
-        // Probably not most accurate to use node_id for affinity here
-        let mut managers = SHMEM_MANAGERS.lock();
-        managers[node_id as usize] =
-            create_shmem_manager(req.affinity_shmem_offset, req.affinity_shmem_size, node_id);
-        log::info!(
-            "Created shmem manager on behalf of client {:?}: {:?}",
-            node_id,
-            managers[node_id as usize]
-        );
+                // Create shmem memory manager
+                // Probably not most accurate to use node_id for affinity here
+                let mut managers = SHMEM_MANAGERS.lock();
+                managers[node_id as usize] = create_shmem_manager(
+                    req.affinity_shmem_offset,
+                    req.affinity_shmem_size,
+                    node_id,
+                );
+                log::info!(
+                    "Created shmem manager on behalf of client {:?}: {:?}",
+                    node_id,
+                    managers[node_id as usize]
+                );
 
-        Ok(node_id)
+                // Record information about the hardware threads
+                info!("hwthreads: {:?}", hwthreads);
+                let mut rack_threads = HWTHREADS.lock();
+                let mut gtid = 0;
+                for i in 0..node_id as usize {
+                    gtid += rack_threads[i].len();
+                }
+                info!("Starting client gtid at: {:?}", gtid);
+                for hwthread in hwthreads {
+                    // Create new, globally unique global thread id (gtid)
+                    rack_threads[node_id as usize].push(CpuThread {
+                        id: gtid,
+                        node_id: hwthread.node_id,
+                        package_id: hwthread.package_id,
+                        core_id: hwthread.core_id,
+                        thread_id: hwthread.thread_id,
+                    });
+                    gtid += 1;
+                }
+                info!("rack_threads: {:?}", rack_threads);
+
+                Ok(node_id)
+            } else {
+                error!("Extra data in register_client");
+                Err(RPCError::MalformedResponse)
+            }
+        } else {
+            error!(
+                "Failed to decode client registration hwtheads information during register_client"
+            );
+            Err(RPCError::MalformedResponse)
+        }
     } else {
         error!("Failed to decode client registration request during register_client");
         Err(RPCError::MalformedResponse)
-    };
+    }
 }

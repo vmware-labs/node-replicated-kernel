@@ -14,6 +14,7 @@ use smoltcp::time::Instant;
 use spin::Mutex;
 use static_assertions as sa;
 
+use kpi::system::CpuThread;
 use rpc::api::RPCServer;
 use rpc::rpc::{ClientId, RPCType};
 use rpc::server::Server;
@@ -61,6 +62,17 @@ lazy_static! {
             shmem_manager_vec.push(None);
         }
         Arc::new(Mutex::new(shmem_manager_vec))
+    };
+}
+
+lazy_static! {
+    pub(crate) static ref HWTHREADS: Arc<Mutex<Vec<Vec<CpuThread>>>> = {
+        let mut hwthreads = Vec::try_with_capacity(get_num_clients() as usize)
+            .expect("Failed to create vector for rack cpu threads");
+        for i in 0..get_num_clients() {
+            hwthreads.push(Vec::new());
+        }
+        Arc::new(Mutex::new(hwthreads))
     };
 }
 

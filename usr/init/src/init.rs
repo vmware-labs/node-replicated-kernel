@@ -152,39 +152,48 @@ fn request_core_remote_test() {
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     info!("threads: {:?}", threads);
 
-    for thread in threads.iter() {
-        if thread.id != 0 {
-            let r = vibrio::syscalls::Process::request_core(
-                thread.id,
-                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-            );
-            match r {
-                Ok(ctoken) => {
-                    info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
-                }
-                Err(_e) => {
-                    panic!("Failed to spawn to core {}", thread.id);
+    let core_id = vibrio::syscalls::System::core_id().expect("Can't get core id");
+
+    let NUM_CLIENTS = 2; // TODO: this value change tests
+
+    // Only one client will run this, because these are global IDs
+    if core_id == 0 {
+        for thread in threads.iter() {
+            // Ignore core 0 on each client, assume it is already running init procress
+            if thread.id >= NUM_CLIENTS {
+                let r = vibrio::syscalls::Process::request_core(
+                    thread.id, // in rackscale mode, thread.id is ignores - the ctoken is the valid value
+                    VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+                );
+                match r {
+                    Ok(ctoken) => {
+                        info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                    }
+                    Err(_e) => {
+                        panic!("Failed to spawn to core {}", thread.id);
+                    }
                 }
             }
         }
-    }
 
-    /*
-    for thread in threads {
-        s.spawn(
-            32 * 4096,
-            move |_| {
-                info!(
-                    "Hello from core {}",
-                    lineup::tls2::Environment::scheduler().core_id
+        /*
+        for thread in threads {
+                s.spawn(
+                    32 * 4096,
+                    move |_| {
+                        info!(
+                            "Hello from core {}",
+                            lineup::tls2::Environment::scheduler().core_id
+                        );
+                    },
+                    ptr::null_mut(),
+                    thread.id,
+                    None,
                 );
-            },
-            ptr::null_mut(),
-            thread.id,
-            None,
-        );
+        }
+        */
     }
-    */
+    info!("request_core_remote_test OK");
 
     // Run scheduler on core 0
     let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);

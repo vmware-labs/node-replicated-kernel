@@ -14,7 +14,8 @@ use rpc::rpc::{ClientId, RPCError, RPCHeader};
 use rpc::RPCClient;
 
 use super::dcm::node_registration::dcm_register_node;
-use crate::arch::rackscale::controller::{HWTHREADS, SHMEM_MANAGERS};
+use crate::arch::rackscale::client::get_num_clients;
+use crate::arch::rackscale::controller::{HWTHREADS, HWTHREADS_BUSY, SHMEM_MANAGERS};
 use crate::arch::rackscale::systemops::{local_to_gtid, local_to_node_id, local_to_package_id};
 use crate::error::KResult;
 use crate::memory::LARGE_PAGE_SIZE;
@@ -126,7 +127,8 @@ pub(crate) fn register_client(
             if remaining.len() == 0 {
                 // Register client resources with DCM, DCM doesn't care about pids, so
                 // send w/ dummy pid
-                let client_id = dcm_register_node(0, req.num_cores, memslices);
+                // TODO: register with one less core, assume init process uses that 1 core
+                let client_id = dcm_register_node(0, req.num_cores - 1, memslices);
                 info!("Registered client DCM, assigned client_id={:?}", client_id);
 
                 // Create shmem memory manager
@@ -145,8 +147,23 @@ pub(crate) fn register_client(
 
                 // Record information about the hardware threads
                 info!("hwthreads: {:?}", hwthreads);
+
                 let mut rack_threads = HWTHREADS.lock();
+                let mut rack_threads_busy = HWTHREADS_BUSY.lock();
+
+                // Make sure there's enough room to store data on whether core is busy or no
+                let num_clients = get_num_clients() as usize;
+                if rack_threads_busy.capacity() < hwthreads.len() * num_clients + client_id as usize
+                {
+                    rack_threads_busy
+                        .resize_with(hwthreads.len() * num_clients + client_id as usize, || None);
+                }
+
                 for hwthread in hwthreads {
+                    // set all threads to not busy
+                    rack_threads_busy[local_to_gtid(hwthread.id, client_id)] = Some(false);
+
+                    // add thread to global state with global values made globally unique
                     rack_threads.push(CpuThread {
                         // these are global values to make sure no conflicts across rack
                         id: local_to_gtid(hwthread.id, client_id),
@@ -157,6 +174,8 @@ pub(crate) fn register_client(
                         thread_id: hwthread.thread_id,
                     });
                 }
+                // Let's assume init process is running on hwthread 0 on the client so set that to busy
+                rack_threads_busy[local_to_gtid(0, client_id)] = Some(true);
 
                 Ok(client_id)
             } else {

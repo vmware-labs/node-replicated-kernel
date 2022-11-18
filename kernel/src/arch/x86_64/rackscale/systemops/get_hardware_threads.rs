@@ -44,17 +44,15 @@ pub(crate) fn rpc_get_hardware_threads(
 
         if let Ok((data_len, n)) = res.ret {
             if data_len as usize <= remaining.len() && data_len <= vaddr_buf_len {
-                log::info!("There's a match! Writing into usesprace now");
                 let mut user_slice =
                     UserSlice::new(pid, UVAddr::try_from(vaddr_buf)?, data_len as usize)?;
                 NrProcess::<Ring3Process>::write_to_userspace(
                     &mut user_slice,
                     &remaining[..data_len as usize],
                 )?;
-                log::info!("Returning value...");
                 Ok((data_len, n))
             } else {
-                log::info!(
+                log::debug!(
                     "Bad payload data: data_len: {:?} remaining.len(): {:?} vaddr_buf_len: {:?}",
                     data_len,
                     remaining.len(),
@@ -91,7 +89,7 @@ pub(crate) fn handle_get_hardware_threads(
     let additional_data = end - start;
     unsafe { encode(&*rack_threads, &mut &mut payload[start..end]) }
         .expect("Failed to encode hardware thread vector");
-    log::info!(
+    log::trace!(
         "Sending back {:?} bytes of data ({:?} hwthreads)",
         additional_data,
         rack_threads.len()

@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 
 use kpi::io::{FileFlags, FileModes};
+use rpc::rpc::ClientId;
 
 use crate::arch::process::{current_pid, Ring3Process};
 use crate::error::KResult;
@@ -12,7 +13,7 @@ use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch, SystemDispatch};
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
-use super::client::RPC_CLIENT;
+use super::client::{get_local_client_id, RPC_CLIENT};
 use super::fileops::close::rpc_close;
 use super::fileops::delete::rpc_delete;
 use super::fileops::getinfo::rpc_getinfo;
@@ -25,6 +26,7 @@ use super::processops::print::rpc_log;
 use super::processops::release_physical::rpc_release_physical;
 use super::processops::request_core::rpc_request_core;
 use super::systemops::get_hardware_threads::rpc_get_hardware_threads;
+use super::systemops::{gtid_to_local, is_gtid_local, local_to_gtid};
 
 pub(crate) struct Arch86LwkSystemCall {
     pub(crate) local: Arch86SystemCall,
@@ -46,7 +48,14 @@ impl SystemDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn get_core_id(&self) -> KResult<(u64, u64)> {
-        self.local.get_core_id()
+        // map local core ID to rackscale global core ID - since mapping is deterministic on number of
+        // clients we can do this without making an RPC call
+        self.local.get_core_id().and_then(|(core_id, n)| {
+            Ok((
+                local_to_gtid(core_id as usize, get_local_client_id()) as u64,
+                n,
+            ))
+        })
     }
 }
 
@@ -158,7 +167,20 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn request_core(&self, core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
         let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
-        rpc_request_core(&mut **client, pid, core_id, entry_point).map_err(|e| e.into())
+        let ret = rpc_request_core(&mut **client, pid, core_id, entry_point).map_err(|e| e.into());
+
+        // request core locally if that's what was assigned this request
+        let client_id = get_local_client_id();
+        if let Ok((gtid, n)) = ret {
+            if is_gtid_local(gtid as usize, client_id) {
+                self.local
+                    .request_core(gtid_to_local(gtid as usize, client_id) as u64, entry_point)
+            } else {
+                ret
+            }
+        } else {
+            ret
+        }
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {

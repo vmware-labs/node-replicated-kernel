@@ -65,11 +65,25 @@ lazy_static! {
     };
 }
 
+// List of hwthreads of all the clients in the rack
 lazy_static! {
     pub(crate) static ref HWTHREADS: Arc<Mutex<Vec<CpuThread>>> = {
         let mut hwthreads = Vec::try_with_capacity(get_num_clients() as usize)
             .expect("Failed to create vector for rack cpu threads");
         Arc::new(Mutex::new(hwthreads))
+    };
+}
+
+// Keep track of which hwthreads have been allocated. Index corresponds to gtid of hwthread
+lazy_static! {
+    pub(crate) static ref HWTHREADS_BUSY: Arc<Mutex<Vec<Option<bool>>>> = {
+        // Assume each client has about 8 cores, for now
+        let mut hwthreads_busy = Vec::try_with_capacity(get_num_clients() as usize * 8)
+            .expect("Failed to create vector for rack cpu threads");
+        for i in 0..(get_num_clients() as usize * 30) {
+            hwthreads_busy.push(None);
+        }
+        Arc::new(Mutex::new(hwthreads_busy))
     };
 }
 

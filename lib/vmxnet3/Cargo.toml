@@ -17,7 +17,7 @@ driverkit = "0.21"
 smoltcp = { version = "0.8.0", default-features = false, features = [ "alloc", "log", "proto-ipv4", "proto-igmp", "proto-dhcpv4", "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "medium-ethernet" ] }
 
 [target.'cfg(target_family = "unix")'.dev-dependencies]
-env_logger = "0.9"
+env_logger = "0.10"
 
 [features]
 # Enable receive-side-scaling (RSS)

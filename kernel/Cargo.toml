@@ -80,7 +80,7 @@ memfile = "0.2.1"
 rexpect = { git = "https://github.com/gz/rexpect.git", branch = "eof-nix" }
 proptest = "1.0.0"
 hwloc2 = "2.2"
-env_logger = "0.9"
+env_logger = "0.10"
 which = "4"
 testutils = { path = "testutils" }
 

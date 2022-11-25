@@ -14,7 +14,6 @@ use rpc::RPCClient;
 
 use super::super::kernelrpc::*;
 use super::FileIO;
-use crate::arch::rackscale::controller::get_local_pid;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
@@ -67,13 +66,6 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
 
 // RPC Handler function for rename() RPCs in the controller
 pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
     // Decode request
     let oldname_len = match unsafe { decode::<RenameReq>(payload) } {
         Some((req, _)) => req.oldname_len as usize,
@@ -97,7 +89,7 @@ pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
     // Call rename function
     let res = KernelRpcRes {
         ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
-            local_pid, oldname, newname,
+            hdr.pid, oldname, newname,
         )),
     };
 

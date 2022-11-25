@@ -22,7 +22,8 @@ use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::client::{get_frame_as, FRAME_MAP};
-use crate::arch::rackscale::controller::{get_local_pid, SHMEM_MANAGERS};
+use crate::arch::rackscale::controller::SHMEM_MANAGERS;
+use crate::transport::shmem::SHMEM_DEVICE;
 
 #[derive(Debug)]
 pub(crate) struct ReleasePhysicalReq {
@@ -85,13 +86,6 @@ pub(crate) fn handle_release_physical(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
 ) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
     // Extract data needed from the request
     let frame_base;
     let frame_size;
@@ -103,7 +97,7 @@ pub(crate) fn handle_release_physical(
         );
         frame_base = req.frame_base;
         frame_size = req.frame_size;
-        node_id = req.node_id;
+        node_id = req.node_id as usize;
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
         return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
@@ -115,7 +109,7 @@ pub(crate) fn handle_release_physical(
     let mut shmem_managers = SHMEM_MANAGERS.lock();
 
     // TODO: error handling here could use work. Should client be notified?
-    let manager = shmem_managers[node_id as usize]
+    let manager = shmem_managers[node_id]
         .as_mut()
         .expect("Error - no shmem manager found for client");
 
@@ -129,7 +123,7 @@ pub(crate) fn handle_release_physical(
     let res = match ret {
         Ok(()) => {
             // Tell DCM the resource is no longer being used
-            if dcm_resource_release(node_id, local_pid, false) == 0 {
+            if dcm_resource_release(node_id, hdr.pid, false) == 0 {
                 debug!("DCM release resource was successful");
                 KernelRpcRes {
                     ret: convert_return(Ok((0, 0))),

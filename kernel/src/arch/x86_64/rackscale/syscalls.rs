@@ -101,6 +101,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn close(&self, fd: FileDescriptor) -> KResult<(u64, u64)> {
+        // TODO: what to do here??
         let pid = crate::arch::process::current_pid()?;
         let mut client = RPC_CLIENT.lock();
         rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
@@ -165,6 +166,7 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn request_core(&self, core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
+        // TODO: what to do here?
         let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
         let ret = rpc_request_core(&mut **client, pid, core_id, entry_point).map_err(|e| e.into());
@@ -185,11 +187,13 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
         let mut client = RPC_CLIENT.lock();
+        // TODO: what to do here?
         let pid = crate::arch::process::current_pid()?;
         rpc_allocate_physical(&mut **client, pid, page_size, affinity).map_err(|e| e.into())
     }
 
     fn release_physical(&self, frame_id: u64) -> KResult<(u64, u64)> {
+        // TODO: what do to here?
         let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
         rpc_release_physical(&mut **client, pid, frame_id).map_err(|e| e.into())

@@ -72,9 +72,9 @@ pub(crate) fn initialize_client(
         let num_threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
         // Create CpuThreads vector
-        let mut return_threads = Vec::try_with_capacity(num_threads)?;
+        let mut client_threads = Vec::try_with_capacity(num_threads)?;
         for hwthread in hwthreads {
-            return_threads.try_push(kpi::system::CpuThread {
+            client_threads.try_push(kpi::system::CpuThread {
                 id: hwthread.id as usize,
                 node_id: hwthread.node_id.unwrap_or(0) as usize,
                 package_id: hwthread.package_id as usize,
@@ -82,7 +82,7 @@ pub(crate) fn initialize_client(
                 thread_id: hwthread.thread_id as usize,
             })?;
         }
-        info!("return_threads: {:?}", return_threads);
+        info!("client_threads: {:?}", client_threads);
 
         // Construct client registration request
         let req = ClientRegistrationRequest {
@@ -99,7 +99,7 @@ pub(crate) fn initialize_client(
         )
         .expect("failed to alloc memory for client registration");
         unsafe { encode(&req, &mut req_data) }.expect("Failed to encode ClientRegistrationRequest");
-        unsafe { encode(&return_threads, &mut req_data) }
+        unsafe { encode(&client_threads, &mut req_data) }
             .expect("Failed to encode hardware thread vector");
         client.connect(&[&req_data])?;
     } else {
@@ -125,14 +125,12 @@ pub(crate) fn register_client(
 
         if let Some((hwthreads, remaining)) = unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {
             if remaining.len() == 0 {
-                // Register client resources with DCM, DCM doesn't care about pids, so
-                // send w/ dummy pid
-                // TODO: register with one less core, assume init process uses that 1 core
-                let client_id = dcm_register_node(0, req.num_cores - 1, memslices);
+                // Register client resources with DCM, DCM doesn't care about pids, so send w/ dummy pid
+                let client_id = dcm_register_node(0, req.num_cores, memslices);
                 info!("Registered client DCM, assigned client_id={:?}", client_id);
 
                 // Create shmem memory manager
-                // Probably not most accurate to use client_id for affinity here
+                // TODO(hunhoffe): Not accurate to use client_id for affinity here
                 let mut managers = SHMEM_MANAGERS.lock();
                 managers[client_id as usize] = create_shmem_manager(
                     req.affinity_shmem_offset,

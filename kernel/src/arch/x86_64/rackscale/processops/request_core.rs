@@ -17,9 +17,7 @@ use crate::nr;
 use crate::nr::KernelNode;
 
 use super::super::client::{get_local_client_id, get_num_clients};
-use super::super::controller::{
-    get_local_pid, HWTHREADS, HWTHREADS_BUSY, UNFULFILLED_CORE_ASSIGNMENTS,
-};
+use super::super::controller::{HWTHREADS, HWTHREADS_BUSY, UNFULFILLED_CORE_ASSIGNMENTS};
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use super::super::systemops::{gtid_to_local, local_to_gtid};
@@ -78,12 +76,6 @@ pub(crate) fn rpc_request_core(
 
 // RPC Handler function for delete() RPCs in the controller
 pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
     log::trace!("handle_request_core() start");
 
     // Parse request
@@ -95,7 +87,7 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
         }
     };
 
-    let client_id = dcm_resource_alloc(local_pid, true);
+    let client_id = dcm_resource_alloc(hdr.pid, true);
 
     // controller chooses a core id - right now, sequentially for cores on the client_id.
     let num_clients = get_num_clients();

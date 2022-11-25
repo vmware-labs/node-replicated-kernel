@@ -47,13 +47,6 @@ pub(crate) type FrameCacheMemslice = MCache<2048, 2048>;
 sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
 sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
 
-// Mapping between local PIDs and remote (client) PIDs.
-// Using (ClientId, Pid) works as long as each ClientId has it's own
-// unique Pid space.
-lazy_static! {
-    static ref PID_MAP: NrLock<HashMap<(ClientId, Pid), Pid>> = NrLock::default();
-}
-
 lazy_static! {
     pub(crate) static ref SHMEM_MANAGERS: Arc<Mutex<Vec<Option<Box<FrameCacheMemslice>>>>> = {
         let mut shmem_manager_vec = Vec::try_with_capacity(get_num_clients() as usize)
@@ -219,6 +212,9 @@ fn register_rpcs(server: &mut Box<dyn RPCServer>) {
         .register(KernelRpc::Log as RPCType, &LOG_HANDLER)
         .unwrap();
     server
+        .register(KernelRpc::MakeProcess as RPCType, &MAKE_PROCESS_HANDLER)
+        .unwrap();
+    server
         .register(
             KernelRpc::AllocatePhysical as RPCType,
             &ALLOCATE_PHYSICAL_HANDLER,
@@ -247,56 +243,4 @@ fn register_rpcs(server: &mut Box<dyn RPCServer>) {
             &GET_HARDWARE_THREADS_HANDLER,
         )
         .unwrap();
-}
-
-// Lookup the local pid corresponding to a remote pid
-pub(crate) fn get_local_pid(client_id: ClientId, remote_pid: usize) -> Result<usize, KError> {
-    {
-        let process_lookup = PID_MAP.read();
-        let local_pid = process_lookup.get(&(client_id, remote_pid));
-        if let Some(pid) = local_pid {
-            return Ok(*(local_pid.unwrap()));
-        }
-    }
-
-    // TODO: will eventually want to delete this logic, as we should create
-    // mapping on process creation.
-    warn!(
-        "Failed to lookup remote pid {}:{}, will register locally instead",
-        client_id, remote_pid
-    );
-    register_pid(client_id, remote_pid)
-}
-
-// Register a remote pid by creating a local pid and creating a remote-local PID mapping
-pub(crate) fn register_pid(client_id: ClientId, remote_pid: usize) -> Result<usize, KError> {
-    crate::nr::NR_REPLICA
-        .get()
-        .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-            let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
-            if let nr::NodeResult::PidAllocated(local_pid) = response {
-                // TODO: some way to unwind if fails??
-                match cnrfs::MlnrKernelNode::add_process(local_pid) {
-                    Ok(_) => {
-                        // TODO: register pid
-                        debug!("register_pid about to get PID_MAP");
-                        let mut pmap = PID_MAP.write();
-                        pmap.try_reserve(1)?;
-                        debug!(
-                            "Mapped remote pid {} to local pid {}",
-                            remote_pid, local_pid
-                        );
-                        pmap.try_insert((client_id, remote_pid), local_pid)
-                            .map_err(|_e| KError::FileDescForPidAlreadyAdded)?;
-                        Ok(local_pid)
-                    }
-                    Err(err) => {
-                        error!("Unable to register pid {:?} {:?}", remote_pid, err);
-                        Err(KError::NoProcessFoundForPid)
-                    }
-                }
-            } else {
-                Err(KError::NoProcessFoundForPid)
-            }
-        })
 }

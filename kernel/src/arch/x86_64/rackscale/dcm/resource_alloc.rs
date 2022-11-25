@@ -105,9 +105,9 @@ impl ResourceAllocAssignment {
     }
 }
 
-pub(crate) fn dcm_resource_alloc(local_pid: usize, is_core: bool) -> u64 {
+pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> u64 {
     let req = ResourceAllocRequest {
-        application: 1, // TODO: filler for application for no
+        application: pid as u64,
         cores: if is_core { 1 } else { 0 },
         memslices: if is_core { 0 } else { 1 },
     };
@@ -123,7 +123,7 @@ pub(crate) fn dcm_resource_alloc(local_pid: usize, is_core: bool) -> u64 {
             .lock()
             .client
             .call(
-                local_pid,
+                pid,
                 DCMOps::ResourceAlloc as RPCType,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },

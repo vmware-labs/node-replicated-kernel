@@ -16,7 +16,6 @@ use crate::fs::cnrfs;
 
 use super::super::kernelrpc::*;
 use super::FileIO;
-use crate::arch::rackscale::controller::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct OpenReq {
@@ -85,13 +84,6 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
 
 // RPC Handler function for open() RPCs in the controller
 pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
     // Parse body
     let flags;
     let modes;
@@ -99,10 +91,10 @@ pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         unsafe { decode::<OpenReq>(&mut payload[..core::mem::size_of::<OpenReq>()]) }
     {
         debug!(
-            "Open(flags={:?}, modes={:?}), local_pid={:?}",
+            "Open(flags={:?}, modes={:?}), pid={:?}",
             FileFlags::from(req.flags),
             FileModes::from(req.modes),
-            local_pid
+            hdr.pid
         );
         flags = req.flags;
         modes = req.modes;
@@ -115,7 +107,7 @@ pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         core::str::from_utf8(&payload[core::mem::size_of::<OpenReq>()..hdr.msg_len as usize])?;
     let path_string = TryString::try_from(path)?.into();
 
-    let cnr_ret = cnrfs::MlnrKernelNode::map_fd(local_pid, path_string, flags, modes);
+    let cnr_ret = cnrfs::MlnrKernelNode::map_fd(hdr.pid, path_string, flags, modes);
 
     // Create return
     let res = KernelRpcRes {

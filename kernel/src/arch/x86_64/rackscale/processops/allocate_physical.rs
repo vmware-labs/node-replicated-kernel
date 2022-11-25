@@ -12,7 +12,7 @@ use rpc::RPCClient;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::client::FRAME_MAP;
-use crate::arch::rackscale::controller::{get_local_pid, SHMEM_MANAGERS};
+use crate::arch::rackscale::controller::SHMEM_MANAGERS;
 use crate::error::KError;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
@@ -104,20 +104,13 @@ pub(crate) fn handle_allocate_physical(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
 ) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
     // Extract data needed from the request
     let size;
     let affinity;
     if let Some((req, _)) = unsafe { decode::<AllocatePhysicalReq>(payload) } {
         debug!(
-            "AllocatePhysical(size={:x?}, affinity={:?}), local_pid={:?}",
-            req.size, req.affinity, local_pid
+            "AllocatePhysical(size={:x?}, affinity={:?}), pid={:?}",
+            req.size, req.affinity, hdr.pid
         );
         size = req.size;
         affinity = req.affinity;
@@ -127,7 +120,7 @@ pub(crate) fn handle_allocate_physical(
     }
 
     // Let DCM choose node
-    let node = dcm_resource_alloc(local_pid, false);
+    let node = dcm_resource_alloc(hdr.pid, false);
     debug!("Received node assignment from DCM: node {:?}", node);
 
     let mut shmem_managers = SHMEM_MANAGERS.lock();

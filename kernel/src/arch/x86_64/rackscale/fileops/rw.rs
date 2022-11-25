@@ -14,7 +14,6 @@ use crate::fs::fd::FileDescriptor;
 
 use super::super::kernelrpc::*;
 use super::FileIO;
-use crate::arch::rackscale::controller::get_local_pid;
 
 #[derive(Debug)]
 pub(crate) struct RWReq {
@@ -153,13 +152,6 @@ pub(crate) fn rpc_readat(
 
 // RPC Handler function for read() RPCs in the controller
 pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
     // Extract data needed from the request
     let fd;
     let len;
@@ -167,8 +159,8 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     let mut operation = FileOperation::Read;
     if let Some((req, _)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
-            "Read(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
-            req.fd, req.len, req.offset, local_pid
+            "Read(At)(fd={:?}, len={:?}, offset={:?}), pid={:?}",
+            req.fd, req.len, req.offset, hdr.pid
         );
         fd = req.fd;
         len = req.len;
@@ -184,8 +176,7 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     // Read directly into payload buffer, at offset after result field & header
     let start = KernelRpcRes_SIZE as usize;
     let end = start + len as usize;
-    let ret =
-        cnrfs::MlnrKernelNode::file_read(local_pid, fd, &mut &mut payload[start..end], offset);
+    let ret = cnrfs::MlnrKernelNode::file_read(hdr.pid, fd, &mut &mut payload[start..end], offset);
 
     // Read in additional data (e.g., the read data payload)
     let mut additional_data = 0;
@@ -202,18 +193,11 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
 
 // RPC Handler function for write() RPCs in the controller
 pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
     // Decode request
     if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
-            "Write(At)(fd={:?}, len={:?}, offset={:?}), local_pid={:?}",
-            req.fd, req.len, req.offset, local_pid
+            "Write(At)(fd={:?}, len={:?}, offset={:?}), pid={:?}",
+            req.fd, req.len, req.offset, hdr.pid
         );
 
         // Call Write() or WriteAt()
@@ -224,7 +208,7 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         };
 
         let data = (remaining[..req.len as usize]).try_into()?;
-        let ret = cnrfs::MlnrKernelNode::file_write(local_pid, req.fd, data, offset);
+        let ret = cnrfs::MlnrKernelNode::file_write(hdr.pid, req.fd, data, offset);
 
         // Construct return
         let res = KernelRpcRes {

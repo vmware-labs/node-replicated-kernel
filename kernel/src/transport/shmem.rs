@@ -55,10 +55,6 @@ impl ShmemDevice {
         const INTER_VM_SHARED_MEM_DEV: u16 = 0x1110;
 
         if let Some(mut ivshmem_device) = claim_device(RED_HAT_INC, INTER_VM_SHARED_MEM_DEV) {
-            log::info!(
-                "shmem revision: {:?}",
-                ivshmem_device.revision_and_class().0
-            );
             let register_region = ivshmem_device.bar(0).expect("Unable to find shmem BAR0");
             log::info!(
                 "Found IVSHMEM device register region with base paddr {:X} and size {}",
@@ -77,7 +73,6 @@ impl ShmemDevice {
                 .capabilities()
                 .find(|cap| cap.id == CapabilityId::MsiX)
             {
-                log::info!("Device has capability {:?}", cap.id);
                 if let CapabilityType::MsiX(msi) = ivshmem_device.get_cap_region_mut(cap) {
                     log::info!(
                         "Device MSI-X table is at bar {} offset {} table size is {}",

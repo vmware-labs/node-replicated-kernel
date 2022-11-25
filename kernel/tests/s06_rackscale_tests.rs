@@ -617,13 +617,13 @@ fn s04_rackscale_shmem_userspace_rumprt_fs() {
 /// management, IO and device interrupts.
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
-    use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
     // Setup ivshmem file
-    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
     setup_network(2);
     let timeout = 30_000;
@@ -706,5 +706,5 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
 }

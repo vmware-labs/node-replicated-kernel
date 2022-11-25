@@ -13,7 +13,6 @@ use crate::fs::cnrfs;
 
 use super::super::kernelrpc::*;
 use super::FileIO;
-use crate::arch::rackscale::controller::get_local_pid;
 
 pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
@@ -47,17 +46,10 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
 
 // RPC Handler function for getinfo() RPCs in the controller
 pub(crate) fn handle_getinfo(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
     let path_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
-    let path = TryString::try_from(path_str)?.into(); // TODO(alloc): fixme unnecessary
+    let path = TryString::try_from(path_str)?.into(); // TODO(hunhoffe): fixme unnecessary
+    let ret = cnrfs::MlnrKernelNode::file_info(hdr.pid, path);
 
-    // Call local file_info function
-    let ret = cnrfs::MlnrKernelNode::file_info(local_pid, path);
     // Construct results from return data
     let res = KernelRpcRes {
         ret: convert_return(ret),

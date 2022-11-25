@@ -77,10 +77,10 @@ impl ResourceReleaseResponse {
     }
 }
 
-pub(crate) fn dcm_resource_release(node_id: u64, local_pid: usize, is_core: bool) -> u64 {
+pub(crate) fn dcm_resource_release(node_id: usize, pid: usize, is_core: bool) -> u64 {
     let req = ResourceReleaseRequest {
-        node_id,
-        application: 1, // TODO: filler for application for now
+        node_id: node_id as u64,
+        application: pid as u64,
         cores: if is_core { 1 } else { 0 },
         memslices: if is_core { 0 } else { 1 },
     };
@@ -91,7 +91,7 @@ pub(crate) fn dcm_resource_release(node_id: u64, local_pid: usize, is_core: bool
         .lock()
         .client
         .call(
-            local_pid,
+            pid,
             DCMOps::ResourceRelease as RPCType,
             unsafe { &[req.as_bytes()] },
             unsafe { &mut [res.as_mut_bytes()] },

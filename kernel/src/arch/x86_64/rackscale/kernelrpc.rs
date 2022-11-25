@@ -59,6 +59,9 @@ pub(crate) enum KernelRpc {
 
     /// Get the hardware threads for the rack
     GetHardwareThreads = 17,
+
+    /// Spawn a process
+    MakeProcess = 18,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -85,6 +88,7 @@ impl TryFrom<RPCType> for KernelRpc {
             15 => Ok(KernelRpc::RequestCore),
             16 => Ok(KernelRpc::RequestWork),
             17 => Ok(KernelRpc::GetHardwareThreads),
+            18 => Ok(KernelRpc::MakeProcess),
             _ => Err(KError::InvalidRpcType),
         }
     }

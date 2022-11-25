@@ -14,7 +14,7 @@ use rpc::RPCClient;
 
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::controller::{get_local_pid, HWTHREADS};
+use crate::arch::rackscale::controller::HWTHREADS;
 use crate::nrproc::NrProcess;
 use crate::process::{UVAddr, UserSlice};
 
@@ -73,13 +73,6 @@ pub(crate) fn handle_get_hardware_threads(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
 ) -> Result<(), RPCError> {
-    // Lookup local pid
-    let local_pid = { get_local_pid(hdr.client_id, hdr.pid) };
-    if local_pid.is_err() {
-        return construct_error_ret(hdr, payload, RPCError::NoFileDescForPid);
-    }
-    let local_pid = local_pid.unwrap();
-
     // Encode hwthread information into payload buffer
     let rack_threads = HWTHREADS.lock();
     let start = KernelRpcRes_SIZE as usize;

@@ -17,7 +17,7 @@ use arrayvec::ArrayVec;
 use custom_error::custom_error;
 
 use log::{error, info};
-use x86::current::paging::{PAddr, VAddr};
+use driverkit::{PAddr, VAddr};
 
 use crate::pci::{self, BarAccess, BarIO, DmaObject};
 use crate::reg::*;

@@ -19,7 +19,9 @@ use driverkit::{
     net::rss::*,
 };
 
-use x86::current::paging::{PAddr, VAddr};
+// use x86::current::paging::{PAddr, VAddr};
+use driverkit::{PAddr, VAddr};
+
 
 use crate::pci::{BarAccess, BarIO, DmaObject, KERNEL_BASE};
 use crate::reg::*;

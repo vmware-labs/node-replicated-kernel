@@ -7,7 +7,7 @@
 
 use crate::pci::DmaObject;
 use core::convert::TryInto;
-use x86::current::paging::PAddr;
+use driverkit::PAddr;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]

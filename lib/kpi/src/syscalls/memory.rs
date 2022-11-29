@@ -127,9 +127,9 @@ impl PhysicalMemory {
 
     fn allocate_frame(is_base: bool) -> Result<(FrameId, PAddr), SystemCallError> {
         let page_size = if is_base {
-            x86::current::paging::BASE_PAGE_SIZE
+            crate::arch::BASE_PAGE_SIZE
         } else {
-            x86::current::paging::LARGE_PAGE_SIZE
+            crate::arch::LARGE_PAGE_SIZE
         };
         unsafe {
             let (err, frame_id, paddr) = syscall!(
@@ -148,9 +148,8 @@ impl PhysicalMemory {
         }
     }
 
-    pub fn allocate_large_page() -> Result<(FrameId, PAddr), SystemCallError> {
-        log::error!("huh");
-        unimplemented!()
+    pub fn release_frame(id: FrameId) -> Result<(), SystemCallError> {
+        PhysicalMemory::release_page(id)
     }
 
     fn release_page(id: FrameId) -> Result<(), SystemCallError> {

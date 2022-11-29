@@ -495,7 +495,7 @@ impl AddressSpace for PageTable {
             log::trace!("  -> L1Descriptor: Block {:#x}", l1_entry.as_u64());
             let frame = l1_entry.get_frame().unwrap();
 
-            return Ok((frame + vaddr.huge_page_offset(), MapAction::ReadExecuteUser));
+            return Ok((frame + vaddr.huge_page_offset(), MapAction::user()));
         }
 
         log::trace!("  -> L1Descriptor: {:#x}", l1_entry.as_u64());
@@ -511,10 +511,7 @@ impl AddressSpace for PageTable {
             log::trace!("    -> L2Descriptor: Block {:#x}", l2_entry.as_u64());
             let frame = l2_entry.get_frame().unwrap();
 
-            return Ok((
-                frame + vaddr.large_page_offset(),
-                MapAction::ReadExecuteUser,
-            ));
+            return Ok((frame + vaddr.large_page_offset(), MapAction::user()));
         }
 
         log::trace!("    -> L2Descriptor: {:#x}", l2_entry.as_u64());
@@ -529,16 +526,16 @@ impl AddressSpace for PageTable {
 
         log::trace!("      -> L3Descriptor: Block {:#x}", l3_entry.as_u64());
         let frame = l3_entry.get_frame().unwrap();
-        Ok((frame + vaddr.base_page_offset(), MapAction::ReadExecuteUser))
+        Ok((frame + vaddr.base_page_offset(), MapAction::user()))
     }
 
     fn unmap(&mut self, base: VAddr) -> Result<TlbFlushHandle, KError> {
         if !base.is_base_page_aligned() {
             return Err(KError::InvalidBase);
         }
-        let (vaddr, paddr, size, _rights) = self.modify_generic(base, Modify::Unmap)?;
+        let (vaddr, paddr, size, rights) = self.modify_generic(base, Modify::Unmap)?;
         // TODO(correctness+memory): we lose topology information here...
-        Ok(TlbFlushHandle::new(vaddr, Frame::new(paddr, size, 0)))
+        Ok(TlbFlushHandle::new(vaddr, paddr, size, rights))
     }
 }
 
@@ -550,31 +547,20 @@ impl MapAction {
             .priv_exec_never()
             .set_attr_index(MemoryAttributes::NormalMemory);
 
-        match self {
-            MapAction::None => {
-                entry.no_access();
-            }
-            MapAction::ReadUser | MapAction::ReadKernel => (),
-            MapAction::ReadWriteUser | MapAction::ReadWriteKernel => {
-                entry.read_write();
-            }
-            MapAction::ReadExecuteKernel => {
+        if self.is_writable() {
+            entry.read_write();
+        }
+
+        if self.is_executable() {
+            if self.is_kernelspace() {
                 entry.priv_exec();
-            }
-            MapAction::ReadExecuteUser => {
+            } else {
                 entry.user_exec();
             }
-            MapAction::ReadWriteExecuteUser => {
-                entry.user_exec(); //.read_write();
-            }
-            MapAction::ReadWriteExecuteKernel => {
-                entry.priv_exec(); //.read_write();
-            }
-            MapAction::ReadWriteUserNoCache => {
-                entry
-                    .read_write()
-                    .set_attr_index(MemoryAttributes::DeviceMemory);
-            }
+        }
+
+        if self.is_cacheable() {
+            entry.set_attr_index(MemoryAttributes::DeviceMemory);
         }
     }
 
@@ -585,31 +571,20 @@ impl MapAction {
             .priv_exec_never()
             .set_attr_index(MemoryAttributes::NormalMemory);
 
-        match self {
-            MapAction::None => {
-                entry.no_access();
-            }
-            MapAction::ReadUser | MapAction::ReadKernel => (),
-            MapAction::ReadWriteUser | MapAction::ReadWriteKernel => {
-                entry.read_write();
-            }
-            MapAction::ReadExecuteKernel => {
+        if self.is_writable() {
+            entry.read_write();
+        }
+
+        if self.is_executable() {
+            if self.is_kernelspace() {
                 entry.priv_exec();
-            }
-            MapAction::ReadExecuteUser => {
+            } else {
                 entry.user_exec();
             }
-            MapAction::ReadWriteExecuteUser => {
-                entry.user_exec();
-            }
-            MapAction::ReadWriteExecuteKernel => {
-                entry.priv_exec();
-            }
-            MapAction::ReadWriteUserNoCache => {
-                entry
-                    .read_write()
-                    .set_attr_index(MemoryAttributes::DeviceMemory);
-            }
+        }
+
+        if self.is_cacheable() {
+            entry.set_attr_index(MemoryAttributes::DeviceMemory);
         }
     }
 
@@ -620,31 +595,20 @@ impl MapAction {
             .priv_exec_never()
             .set_attr_index(MemoryAttributes::NormalMemory);
 
-        match self {
-            MapAction::None => {
-                entry.no_access();
-            }
-            MapAction::ReadUser | MapAction::ReadKernel => (),
-            MapAction::ReadWriteUser | MapAction::ReadWriteKernel => {
-                entry.read_write();
-            }
-            MapAction::ReadExecuteKernel => {
+        if self.is_writable() {
+            entry.read_write();
+        }
+
+        if self.is_executable() {
+            if self.is_kernelspace() {
                 entry.priv_exec();
-            }
-            MapAction::ReadExecuteUser => {
+            } else {
                 entry.user_exec();
             }
-            MapAction::ReadWriteExecuteUser => {
-                entry.user_exec();
-            }
-            MapAction::ReadWriteExecuteKernel => {
-                entry.priv_exec();
-            }
-            MapAction::ReadWriteUserNoCache => {
-                entry
-                    .read_write()
-                    .set_attr_index(MemoryAttributes::DeviceMemory);
-            }
+        }
+
+        if self.is_cacheable() {
+            entry.set_attr_index(MemoryAttributes::DeviceMemory);
         }
     }
 }

@@ -23,9 +23,7 @@ lazy_static = { version = "1.3", features = ["spin_no_std"] }
 serde_cbor = { version = "0.11", default-features = false, features = ["alloc"] }
 crossbeam-utils = {version = "0.8", default-features = false}
 arrayvec = { version = "0.7.0", default-features = false }
-
-
-
+slabmalloc = { git = "https://github.com/achreto/rust-slabmalloc" }
 
 # Arch Specific Dependencies for x86_64 Targets
 # -------------------------------------------------------------------------------------------------

@@ -26,6 +26,8 @@ use crate::memory::KernelAllocator;
 use crate::memory::{Frame, MemType, PAddr, VAddr};
 use crate::nrproc::NrProcess;
 use crate::prelude::KError;
+use crate::process::FrameManagement;
+use crate::process::ProcessFrames;
 use crate::process::{
     Eid, Executor, Pid, Process, ResumeHandle, MAX_FRAMES_PER_PROCESS, MAX_PROCESSES,
     MAX_WRITEABLE_SECTIONS_PER_PROCESS,
@@ -76,7 +78,7 @@ pub(crate) struct EL0Process {
     /// File descriptors for the opened file.
     pub fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS>,
     /// Physical frame objects registered to the process.
-    pub frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS>,
+    pub pfm: ProcessFrames,
     /// Frames of the writeable ELF data section (shared across all replicated Process structs)
     pub writeable_sections: ArrayVec<Frame, MAX_WRITEABLE_SECTIONS_PER_PROCESS>,
     /// Section in ELF where last read-only header is
@@ -96,8 +98,7 @@ impl EL0Process {
         let fds: ArrayVec<Option<FileDescriptorEntry>, MAX_FILES_PER_PROCESS> =
             ArrayVec::from([NONE_FD; MAX_FILES_PER_PROCESS]);
 
-        let frames: ArrayVec<Option<Frame>, MAX_FRAMES_PER_PROCESS> =
-            ArrayVec::from([None; MAX_FRAMES_PER_PROCESS]);
+        let pfm = ProcessFrames::default();
 
         Ok(Self {
             pid,
@@ -109,7 +110,7 @@ impl EL0Process {
             executor_offset: VAddr::from(EXECUTOR_OFFSET),
             fds,
             pinfo: Default::default(),
-            frames,
+            pfm,
             writeable_sections: ArrayVec::new(),
             read_only_offset: VAddr::zero(),
         })
@@ -559,11 +560,11 @@ impl elfloader::ElfLoader for ArchProcess {
                 (false, false, false) => panic!("MapAction::None"),
                 (true, false, false) => panic!("MapAction::None"),
                 (false, true, false) => panic!("MapAction::None"),
-                (false, false, true) => MapAction::ReadUser,
-                (true, false, true) => MapAction::ReadExecuteUser,
+                (false, false, true) => MapAction::user(),
+                (true, false, true) => MapAction::execute(),
                 (true, true, false) => panic!("MapAction::None"),
-                (false, true, true) => MapAction::ReadWriteUser,
-                (true, true, true) => panic!("MapAction::ReadWriteExecuteUser"), // MapAction::ReadWriteExecuteUser,
+                (false, true, true) => MapAction::write(),
+                (true, true, true) => MapAction::execute() | MapAction::write(),
             };
 
             log::info!(
@@ -608,10 +609,7 @@ impl elfloader::ElfLoader for ArchProcess {
                     frame
                 } else {
                     // A read-only program header we can replicate:
-                    assert!(
-                        map_action == MapAction::ReadUser
-                            || map_action == MapAction::ReadExecuteUser
-                    );
+                    assert!(map_action.is_readable() && !map_action.is_writable());
                     let mut pmanager = pcm.mem_manager();
                     pmanager
                         .allocate_large_page()
@@ -853,7 +851,11 @@ impl Process for ArchProcess {
 
         KernelAllocator::try_refill_tcache(20, 0, MemType::Mem).expect("Refill didn't work");
         self.vspace
-            .map_frame(self.executor_offset, memory, MapAction::ReadWriteUser)
+            .map_frame(
+                self.executor_offset,
+                memory,
+                MapAction::user() | MapAction::write(),
+            )
             .expect("Can't map user-space executor memory.");
         log::info!(
             "executor space base expanded {:#x} size: {} end {:#x}",
@@ -946,33 +948,27 @@ impl Process for ArchProcess {
     fn pinfo(&self) -> &kpi::process::ProcessInfo {
         &self.pinfo
     }
+}
 
+impl FrameManagement for EL0Process {
     fn add_frame(&mut self, frame: Frame) -> Result<FrameId, KError> {
-        if let Some(fid) = self.frames.iter().position(|fid| fid.is_none()) {
-            self.frames[fid] = Some(frame);
-            Ok(fid)
-        } else {
-            Err(KError::TooManyRegisteredFrames)
-        }
+        self.pfm.add_frame(frame)
     }
 
-    fn get_frame(&mut self, frame_id: FrameId) -> Result<Frame, KError> {
-        self.frames
-            .get(frame_id)
-            .cloned()
-            .flatten()
-            .ok_or(KError::InvalidFrameId)
+    fn get_frame(&mut self, frame_id: FrameId) -> Result<(Frame, usize), KError> {
+        self.pfm.get_frame(frame_id)
+    }
+
+    fn add_frame_mapping(&mut self, frame_id: FrameId, vaddr: VAddr) -> Result<(), KError> {
+        self.pfm.add_frame_mapping(frame_id, vaddr)
+    }
+
+    fn remove_frame_mapping(&mut self, paddr: PAddr, _vaddr: VAddr) -> Result<(), KError> {
+        self.pfm.remove_frame_mapping(paddr, _vaddr)
     }
 
     fn deallocate_frame(&mut self, fid: FrameId) -> Result<Frame, KError> {
-        match self.frames.get_mut(fid) {
-            Some(maybe_frame) => {
-                let mut old = None;
-                core::mem::swap(&mut old, maybe_frame);
-                old.ok_or(KError::InvalidFileDescriptor)
-            }
-            _ => Err(KError::InvalidFileDescriptor),
-        }
+        self.pfm.deallocate_frame(fid)
     }
 }
 

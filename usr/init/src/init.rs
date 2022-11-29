@@ -28,6 +28,8 @@ use log::{debug, error, info, Level};
 
 //use x86::bits64::paging::VAddr;
 use kpi::arch::VAddr;
+use kpi::aarch64::LARGE_PAGE_SIZE;
+use kpi::aarch64::BASE_PAGE_SIZE;
 
 mod fs;
 #[cfg(feature = "fxmark")]
@@ -77,7 +79,6 @@ fn alloc_test() {
 }
 
 fn alloc_physical_test() {
-    use x86::bits64::paging::{PAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
     // Create base for the mapping
     let base: u64 = 0x0510_0000_0000;
@@ -807,13 +808,31 @@ pub fn upcall_test() {
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+
+    tests::syscalls();
+
+
+
     unsafe {
         log::set_logger(&vibrio::writer::LOGGER)
             .map(|()| log::set_max_level(Level::Debug.to_level_filter()))
             .expect("Can't set-up logging");
     }
 
+
+
+    tests::syscalls();
+
     debug!("Initialized logging");
+    log::warn!("foobar");
+
+    vibrio::syscalls::Process::exit(0);
+
+
+
+
+
+
     install_vcpu_area();
 
     let pinfo = vibrio::syscalls::Process::process_info().expect("Can't read process info");

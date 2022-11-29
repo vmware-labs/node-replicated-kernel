@@ -2,33 +2,33 @@
 resolver = "2"
 
 members = [
-    "bootloader",
-    "kernel",
-    "lib/apic",
-    "lib/bootloader_shared",
-    "lib/kpi",
-    "lib/lineup",
-    "lib/node-replication/cnr",
-    "lib/node-replication/nr",
-    "lib/rpc",
-    "lib/vibrio",
-    "lib/vmxnet3",
-    "lib/rpc",
-    #"lib/pl011_qemu",
-    #"lib/rust-klogger",
-    "usr/init",
-    "usr/rkapps"
-    #"lib/libfringe",
-    #"lib/acpica-sys"
-    #"lib/rust-topology",
-    #"lib/rust-driverkit",
-    #"lib/rust-armv8",
-    #"lib/rust-x86",
-    #"lib/rawtime",
-    #"lib/backtracer",
-    #"lib/rust-klogger",
-    #"lib/rexpect",
-    #"lib/pl011_qemu",
+    "bootloader"
+    ,"kernel"
+    ,"lib/apic"
+    ,"lib/bootloader_shared"
+    ,"lib/kpi"
+    ,"lib/lineup"
+    ,"lib/node-replication/cnr"
+    ,"lib/node-replication/nr"
+    ,"lib/rpc"
+    ,"lib/vibrio"
+    ,"lib/vmxnet3"
+    ,"lib/rpc"
+    ,"usr/init"
+    ,"usr/rkapps"
+    #,"lib/pl011_qemu"
+    #,"lib/libfringe"
+    #,"lib/acpica-sys
+    #,"lib/rust-topology"
+    #,"lib/rust-driverkit"
+    #,"lib/rust-armv8"
+    #,"lib/rust-x86"
+    #,"lib/rawtime"
+    #,"lib/backtracer"
+    #,"lib/rust-klogger"
+    #,"lib/rexpect"
+    #,"lib/pl011_qemu"
+    ,"lib/libfringe"
 ]
 
 # disable stack unwinding on panic for now

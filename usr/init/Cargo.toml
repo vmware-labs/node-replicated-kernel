@@ -15,7 +15,6 @@ lineup = { path = "../../lib/lineup" }
 vibrio = { path = "../../lib/vibrio" }
 kpi = { path = "../../lib/kpi" }
 arrayvec = { version = "0.7.0", default-features = false }
-rawtime = "0.0.10"
 log = "0.4"
 #libm = "0.2.2"
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }

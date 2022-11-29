@@ -69,6 +69,16 @@ impl VirtualCpu {
 #[derive(Copy, Clone)]
 pub struct SaveArea {
     /// General purpose registers
+    ///
+    /// x30      LR  The Link Register.
+    /// x29      FP  The Frame Pointer
+    /// x19…x28  Callee-saved registers
+    /// x18      The Platform Register, if needed; otherwise a temporary register. See notes.
+    /// r17      The second intra-procedure-call temporary register (can be used by call veneers and PLT code); at other times may be used as a temporary register.
+    /// r16      The first intra-procedure-call scratch register (can be used by call veneers and PLT code); at other times may be used as a temporary register.
+    /// r9…r15   Temporary registers
+    /// r8       Indirect result location register
+    /// r0…r7    Parameter/result registers
     pub x: [u64; 31],
     /// the stack pointer register
     pub sp: u64,
@@ -76,9 +86,19 @@ pub struct SaveArea {
     pub pc: u64,
     /// the saved processor status register
     pub spsr: u64,
+    /// the saved user writable thread id register
+    pub tpidr: u64,
+
+    _padding: u64,
     /// floating point registers (32x128 bits)
     pub v: [u128; 32],
 }
+
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, sp), 31 * 8);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, pc), 32 * 8);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, spsr), 33 * 8);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, tpidr), 34 * 8);
+static_assertions::const_assert_eq!(memoffset::offset_of!(SaveArea, v), 36 * 8);
 
 impl SaveArea {
     pub fn empty() -> Self {
@@ -87,8 +107,30 @@ impl SaveArea {
             sp: 0,
             pc: 0,
             spsr: 0,
+            tpidr: 0,
+            _padding: 0,
             v: [0; 32],
         }
+    }
+
+    pub fn set_syscall_error_code(&mut self, err: crate::SystemCallError) {
+        self.x[0] = err as u64;
+    }
+
+    pub fn set_syscall_ret0(&mut self, a: u64) {
+        self.x[0] = a;
+    }
+
+    pub fn set_syscall_ret1(&mut self, a: u64) {
+        self.x[1] = a;
+    }
+
+    pub fn set_syscall_ret2(&mut self, a: u64) {
+        self.x[2] = a;
+    }
+
+    pub fn set_syscall_ret3(&mut self, a: u64) {
+        self.x[3] = a;
     }
 
     /// sets the frame pointer register
@@ -110,6 +152,18 @@ impl SaveArea {
     pub fn get_lr(&self) -> u64 {
         self.x[30]
     }
+
+    pub fn set_spsr(&mut self, spsr: u64) {
+        self.spsr = spsr;
+    }
+
+    pub fn set_pc(&mut self, pc: u64) {
+        self.pc = pc;
+    }
+
+    pub fn set_sp(&mut self, sp: u64) {
+        self.sp = sp;
+    }
 }
 
 impl Default for SaveArea {
@@ -120,10 +174,16 @@ impl Default for SaveArea {
 
 impl fmt::Debug for SaveArea {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "SaveArea {{ x: {:?}, sp: {:?}, pc: {:?}, spsr: {:?}, v: {:?} }}",
-            self.x, self.sp, self.pc, self.spsr, self.v
-        )
+        writeln!(f,"Save Area: ");
+        for i in 0..29 {
+            writeln!(f, "  x{:02}    = 0x{:016x}", i, self.x[i])?;
+        }
+        writeln!(f, "  fp    = 0x{:016x}", self.x[29])?;
+        writeln!(f, "  lr    = 0x{:016x}", self.x[30])?;
+        writeln!(f, "  sp    = 0x{:016x}", self.sp)?;
+        writeln!(f, "  pc    = 0x{:016x}", self.pc)?;
+        writeln!(f, "  spsr  = 0x{:016x}", self.spsr)?;
+        writeln!(f, "  tpidr = 0x{:016x}", self.tpidr)
     }
+
 }

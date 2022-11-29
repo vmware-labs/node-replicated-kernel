@@ -7,4 +7,7 @@ rustflags = [
 [target.aarch64-nrk]
 rustflags = [
     # "--cfg", "no_global_oom_handling"
+    # "-C", "llvm-args=tpidr-el1" # use tpidr-el1 as the tls registers
+    "-C", "target-feature=+tpidr-el1"
+    # "-C", "llvm-args=reserve-x28" # use tpidr-el1 as the tls registers
 ]

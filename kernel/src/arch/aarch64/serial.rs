@@ -38,9 +38,8 @@ impl SerialControl {
     /// only once during init. If at some point we need to replace this
     /// dynamically we need to add a flush method to the `SerialControl` struct.
     fn set_print_buffer(buffer: String) {
-        //        assert_eq!(PRINT_BUFFER.borrow().len(), 0, "print buffer not empty");
-        log::error!("serial init: dont' have thread local storage yet");
-        // PRINT_BUFFER.replace(buffer);
+        assert_eq!(PRINT_BUFFER.borrow().len(), 0, "print buffer not empty");
+        PRINT_BUFFER.replace(buffer);
     }
 
     /// A poor mans line buffer scheme

@@ -4,6 +4,7 @@
 //! AArch64 specific kernel code.
 
 use alloc::sync::Arc;
+use core::alloc::Layout;
 use core::arch::asm;
 use core::arch::global_asm;
 use core::mem::transmute;
@@ -17,7 +18,7 @@ use node_replication::{Log, Replica};
 
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::memory::global::GlobalMemory;
-use crate::memory::LARGE_PAGE_SIZE;
+use crate::memory::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::nr::{KernelNode, Op};
 
 use crate::arch::memory::identify_numa_affinity;
@@ -32,6 +33,7 @@ use klogger::sprint;
 pub mod coreboot;
 pub mod debug;
 mod exceptions;
+mod irq;
 pub mod kcb;
 pub mod memory;
 pub mod process;
@@ -59,6 +61,7 @@ extern "C" {
 ///
 /// Interrupts are enabled before going to sleep.
 pub(crate) fn halt() -> ! {
+    log::error!("halting execution.");
     unsafe {
         loop {
             asm!("wfi")
@@ -179,26 +182,29 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     log::info!("setting up KCB");
     // Construct the per-core state object that is accessed through the kernel
     // "core-local-storage" threadid:
-    let mut arch = kcb::AArch64Kcb::new(static_dyn_mem);
-    log::info!("KCB = {:p}", &arch);
-    // Make `arch` a static reference:
-    let static_kcb =
-        // Safety:
-        // - The initial stack of the core will never get deallocated (hence
-        //   'static is fine)
-        // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
-        //   while we have now make a &'static to the same object)
-        unsafe { core::mem::transmute::<&mut kcb::AArch64Kcb, &'static mut kcb::AArch64Kcb>(&mut arch) };
+    kcb::AArch64Kcb::new(static_dyn_mem);
 
-    log::info!("KCB = {:p}", static_kcb);
-    log::info!("installing the KCB: {:p}", static_kcb);
-    static_kcb.install();
+    // let mut arch = kcb::AArch64Kcb::new(static_dyn_mem);
+    // log::info!("KCB = {:p}", &arch);
+
+    // // Make `arch` a static reference:
+    // let static_kcb =
+    //     // Safety:
+    //     // - The initial stack of the core will never get deallocated (hence
+    //     //   'static is fine)
+    //     // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
+    //     //   while we have now make a &'static to the same object)
+    //     unsafe { core::mem::transmute::<&mut kcb::AArch64Kcb, &'static mut kcb::AArch64Kcb>(&mut arch) };
+
+    // log::info!("KCB = {:p}", static_kcb);
+    // log::info!("installing the KCB: {:p}", static_kcb);
+    // static_kcb.install();
     // Make sure we don't drop arch, dyn_mem and anything in it, they are on the
     // init stack which remains allocated, we can not reclaim this stack or
     // return from _start.
 
-    log::info!("forgetting arch");
-    core::mem::forget(arch);
+    // log::info!("forgetting arch");
+    // core::mem::forget(arch);
 
     serial::init();
     log::warn!("todo: initialize gic!\n"); //irq::init_apic();
@@ -278,10 +284,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Intialize PCI
     // crate::pci::init();
 
-    log::warn!("PROCESS_TABLE()");
     // Initialize processes
     lazy_static::initialize(&process::PROCESS_TABLE);
-    log::warn!("register_thread_with_process_replicas()");
     crate::nrproc::register_thread_with_process_replicas();
 
     #[cfg(feature = "gdb")]

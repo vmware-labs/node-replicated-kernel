@@ -30,7 +30,6 @@ pub(crate) static CORES_PER_NUMA_NODE: Lazy<usize> =
 /// Initialize the machine topology (needs ACPI and alloc):
 pub fn init_topology() {
     lazy_static::initialize(&atopology::MACHINE_TOPOLOGY);
-    log::info!("Topology parsed");
 
     trace!("{:#?}", *atopology::MACHINE_TOPOLOGY);
     let nodes = atopology::MACHINE_TOPOLOGY.num_nodes();

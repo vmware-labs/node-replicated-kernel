@@ -12,7 +12,6 @@ build = "build.rs"
 edition = "2021"
 resolver = "2"
 
-
 [dependencies]
 # Our own dependencies:
 node-replication = { path = "../lib/node-replication/nr" } #"0.1.1"
@@ -62,6 +61,7 @@ x86 = { version = "0.52", features = ["unstable"] }
 apic = { path = "../lib/apic/" }
 vmxnet3 = { path = "../lib/vmxnet3" }
 apic = { path = "../lib/apic/" }
+
 
 # Arch Specific Dependencies for aarch64 Targets
 # -------------------------------------------------------------------------------------------------

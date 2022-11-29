@@ -359,7 +359,11 @@ pub(crate) fn with_user_space_access_enabled<F, R>(f: F) -> KResult<R>
 where
     F: FnOnce() -> KResult<R>,
 {
-    panic!("not yet implemented");
+    // log::warn!("with_user_space_access_enabled not properly implemented");
+    // TODO: enable user space access
+    let r = f();
+    // TODO: disable user-space access
+    r
 }
 
 /// Resume the state saved in `SaveArea` using the `iretq` instruction.
@@ -412,6 +416,11 @@ pub(crate) struct EL0Resumer {
     exception: u64,
 }
 
+extern "C" {
+    fn restore_user_context_from_syscall(save_area: u64);
+    fn restore_user_context(save_area: u64);
+}
+
 impl EL0Resumer {
     pub(crate) fn new_iret(save_area: *const kpi::arch::SaveArea) -> EL0Resumer {
         EL0Resumer {
@@ -425,7 +434,7 @@ impl EL0Resumer {
         }
     }
 
-    pub(crate) fn new_restore(save_area: *const kpi::arch::SaveArea) -> EL0Resumer {
+    pub(crate) fn new_restore(save_area: *const kpi::arch::SaveArea, stack: VAddr) -> EL0Resumer {
         EL0Resumer {
             typ: ResumeStrategy::SysRet,
             save_area: save_area,
@@ -468,11 +477,19 @@ impl EL0Resumer {
     }
 
     unsafe fn iret_restore(self) -> ! {
-        panic!("not yet implemented");
+        log::trace!("restoring from: {:x}", self.save_area as u64);
+
+        unsafe {
+            restore_user_context(self.save_area as u64);
+        }
+        panic!("return from iret has returned.");
     }
 
     unsafe fn restore(self) -> ! {
-        panic!("not yet implemented");
+        log::trace!("restoring from: {:x}", self.save_area as u64);
+
+        unsafe { restore_user_context_from_syscall(self.save_area as u64) }
+        panic!("return from syscall has returned.");
     }
 
     unsafe fn upcall(self) -> ! {
@@ -483,18 +500,19 @@ impl EL0Resumer {
     unsafe fn start(self) -> ! {
         log::info!("About to go to user-space: {:#x}", self.entry_point);
 
-        // SPSR_EL1::M::EL0t
-        asm!("
-            msr spsr_el1, x3
-            msr elr_el1,  x2
-            msr sp_el0,   x1
+        let mut save_area = kpi::arch::SaveArea::default();
 
-            eret",
-            in("x3")  0x40,
-            in("x2") self.entry_point.as_u64(),
-            in("x1") self.stack_top.as_u64(),
-            options(noreturn)
-        );
+        save_area.set_syscall_ret0(self.cpu_ctl);
+        save_area.set_syscall_ret1(self.vector);
+        save_area.set_syscall_ret2(self.exception);
+        save_area.set_spsr(0x40);
+        save_area.set_pc(self.entry_point.as_u64());
+        save_area.set_sp(self.stack_top.as_u64() - 16);
+
+        unsafe {
+            restore_user_context(&save_area as *const kpi::arch::SaveArea as u64);
+        }
+        panic!("should not happen");
     }
 }
 
@@ -786,8 +804,6 @@ impl Process for ArchProcess {
         module: &Module,
         writeable_sections: Vec<Frame>,
     ) -> Result<(), KError> {
-        log::warn!("{}::{}", module_path!(), line!());
-
         self.pid = pid;
         // TODO(error-handling): properly unwind on error
         self.writeable_sections.clear();
@@ -1015,7 +1031,11 @@ impl Executor for EL0Executor {
         );
 
         self.maybe_switch_vspace();
-        EL0Resumer::new_restore(&self.save_area as *const kpi::arch::SaveArea)
+        use crate::arch::kcb::get_kcb;
+        EL0Resumer::new_restore(
+            &self.save_area as *const kpi::arch::SaveArea,
+            get_kcb().get_stack(),
+        )
     }
 
     fn upcall(&self, vector: u64, exception: u64) -> Self::Resumer {

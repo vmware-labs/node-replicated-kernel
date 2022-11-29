@@ -15,83 +15,115 @@ use kpi::KERNEL_BASE;
 use cortex_a::{asm::barrier, registers::*};
 use tock_registers::interfaces::{Readable, Writeable};
 
+use crate::arch::kcb::{get_kcb, try_get_kcb, AArch64Kcb};
 use crate::error::{KError, KResult};
 
-fn get_tls_region(info: &TlsInfo) -> (&'static [u8], Layout) {
-    let tls_layout = Layout::from_size_align(info.tls_len_total as usize, info.alignment as usize)
-        .expect("TLS size / alignment issue during init?");
+// Allocate memory for a TLS block:
+// *------------------------------------------------------------------------------*
+// | KCB    | tcb | X | tls1 | ... | tlsN | ... | tls_cnt | dtv[1] | ... | dtv[N] |
+// *------------------------------------------------------------------------------*
+// ^         ^         ^             ^            ^
+// td        tp      dtv[1]       dtv[n+1]       dtv
 
-    // Safety `from_raw_parts`:
-    // - We know this exists/is valid because our ELF loader put the TLS section
-    //   there (hopefully)
-    // - memory range of this slice must be contained within a single allocate
-    //   object: static blob, put there by the ELF loader, no deallocation
-    // - Alignment is `1` for u8 slices:
-    static_assertions::const_assert!(mem::align_of::<[u8; 1]>() == 1);
-    // - Properly initialized values: It's plain-old-data
-    // - total size len * mem::size_of::<T>() of the slice must be no larger than isize::MAX:
-    assert!(info.tls_data_len < isize::MAX.try_into().unwrap());
-    let tls_region = unsafe {
-        core::slice::from_raw_parts(info.tls_data as *const u8, info.tls_data_len as usize)
-    };
+pub(super) fn get_tls_layout() -> Layout {
+    if let Some(tls_args) = crate::KERNEL_ARGS.get().and_then(|k| k.tls_info.as_ref()) {
+        Layout::from_size_align(tls_args.tls_len_total as usize, tls_args.alignment as usize)
+            .expect("TLS size / alignment issue during init?")
+    } else {
+        Layout::from_size_align(0, 16).unwrap()
+    }
+}
 
-    (tls_region, tls_layout)
+fn get_tls_region() -> (&'static [u8], Layout) {
+    if let Some(tls_args) = crate::KERNEL_ARGS.get().and_then(|k| k.tls_info.as_ref()) {
+        let tls_layout =
+            Layout::from_size_align(tls_args.tls_len_total as usize, tls_args.alignment as usize)
+                .expect("TLS size / alignment issue during init?");
+
+        // Safety `from_raw_parts`:
+        // - We know this exists/is valid because our ELF loader put the TLS section
+        //   there (hopefully)
+        // - memory range of this slice must be contained within a single allocate
+        //   object: static blob, put there by the ELF loader, no deallocation
+        // - Alignment is `1` for u8 slices:
+        static_assertions::const_assert!(mem::align_of::<[u8; 1]>() == 1);
+        // - Properly initialized values: It's plain-old-data
+        // - total size len * mem::size_of::<T>() of the slice must be no larger than isize::MAX:
+        assert!(tls_args.tls_data_len < isize::MAX.try_into().unwrap());
+        let tls_region = unsafe {
+            core::slice::from_raw_parts(
+                tls_args.tls_data as *const u8,
+                tls_args.tls_data_len as usize,
+            )
+        };
+        (tls_region, tls_layout)
+    } else {
+        (&[], Layout::from_size_align(0, 16).unwrap())
+    }
 }
 
 /// Per-core TLS state in the kernel.
 ///
-/// - This is what the `fs` register ends up pointing to. Ideally, we could tell
-///   rustc to use the `gs` register for eventual perf. benefits, but currently
-///   this isn't supported (see also
-///   https://github.com/rust-lang/rust/issues/29594#issuecomment-843934159).
-///
-///
-/// - The thread-local-storage variables are stored *in front* of that structure
-/// (TLS variant 2 layout).
-///
 /// - This struct is `repr(C)` because TLS spec depends on the order of the
 /// first two elements.
-#[repr(C)]
+#[repr(C, align(16))]
 pub(crate) struct ThreadControlBlock {
     /// For dynamic loading (unused but added for future compatibility (we don't
     /// do dynamic linking/modules)).
     tcb_dtv: *const *const u8,
-
-    /// Points to `self` (makes sure mov %fs:0x0 works)
-    ///
-    /// This is how the compiler looks up TLS things.
-    tcb_myself: *mut ThreadControlBlock,
+    _pad: *const *const u8,
 }
 
 impl ThreadControlBlock {
-    /// Initialize TLS for the current core.
-    ///
-    /// # Returns
-    /// The memory location that `fs` points to. This is used by the kernel to
-    /// restore the register to the correct kernel value on entry.
-    ///
-    /// # Safety
-    /// - `enable_fsgsbase` has already been called on the core (sets bit in
-    ///   Cr4)
-    /// - Assume that BIOS/UEFI initializes fs with 0x0
-    ///   Cr4)
-    pub(super) unsafe fn init(info: &TlsInfo) -> KResult<*const ThreadControlBlock> {
-        log::info!("initializing TLS with {:x?}", info);
-        let tcb = ThreadControlBlock::new(info);
-        match ThreadControlBlock::try_get_tcb() {
-            Some(x) => {
-                if (x as *const _ as u64) < KERNEL_BASE {
-                    log::warn!("tls already initialized: {:p}, re-initialize", x);
-                    ThreadControlBlock::install(tcb);
-                    Ok(tcb)
-                } else {
-                    Err(KError::TLSAlreadyInitialized)
-                }
-            }
-            None => {
-                ThreadControlBlock::install(tcb);
-                Ok(tcb)
-            }
+    pub fn init_tls(&mut self) {
+        let (initial_tdata, tls_data_layout) = get_tls_region();
+
+        log::info!("tcb vaddr: {:p}", self);
+
+        // Allocate memory for a TLS block:
+        // *------------------------------------------------------------------------------*
+        // | KCB    | tcb | X | tls1 | ... | tlsN | ... | tls_cnt | dtv[1] | ... | dtv[N] |
+        // *------------------------------------------------------------------------------*
+        // ^         ^         ^             ^            ^
+        // td        tp      dtv[1]       dtv[n+1]       dtv
+
+        let tp: *mut ThreadControlBlock = self as *mut ThreadControlBlock;
+
+        assert_eq!(((tp as u64) & 0x7), 0, "Alignment!");
+
+        log::trace!(
+            "initial_tdata {:?} len={}, tls_base = {:?} tcb = {:p}",
+            initial_tdata,
+            initial_tdata.len(),
+            tp,
+            self
+        );
+
+        log::info!(
+            "core::mem::size_of::<ThreadControlBlock>() {:?}",
+            core::mem::size_of::<ThreadControlBlock>()
+        );
+
+        // Initialize tdata section with template data from ELF:
+        // Safety `copy_from_nonoverlapping`:
+        // - src must be valid for reads of count * size_of::<T>() bytes: Yes (see allocation above)
+        // - dst must be valid for writes of count * size_of::<T>() bytes: Yes (see allocation above)
+        // - Both src and dst must be properly aligned: Yes (see allocation above)
+        // - No overlap: Yes (assuming allocator/ELF parsing is correct)
+        let tdata: *mut u8 =
+            ((tp as usize) + (core::mem::size_of::<ThreadControlBlock>())) as *mut u8;
+
+        unsafe {
+            tdata.copy_from_nonoverlapping(initial_tdata.as_ptr(), initial_tdata.len());
+        }
+
+        self.tcb_dtv = tdata as *const *const u8;
+    }
+
+    pub const fn new() -> ThreadControlBlock {
+        ThreadControlBlock {
+            tcb_dtv: ptr::null(),
+            _pad: ptr::null(),
         }
     }
 
@@ -108,25 +140,20 @@ impl ThreadControlBlock {
     /// Currently leaks the memory, someone else needs to ensure that the
     /// allocated memory is `freed` at some point again if we ever shutdown
     /// cores.
-    fn new(info: &TlsInfo) -> *const ThreadControlBlock {
-        const TCB_INITIAL: ThreadControlBlock = ThreadControlBlock {
-            tcb_dtv: ptr::null(),
-            tcb_myself: ptr::null_mut(),
-        };
-
-        let (initial_tdata, tls_data_layout) = get_tls_region(info);
+    pub(super) fn with_tls_info(info: &TlsInfo) -> *const ThreadControlBlock {
+        let (initial_tdata, tls_data_layout) = get_tls_region();
 
         // Allocate memory for a TLS block:
         // *------------------------------------------------------------------------------*
-        // | thread | tcb | X | tls1 | ... | tlsN | ... | tls_cnt | dtv[1] | ... | dtv[N] |
+        // | KCB    | tcb | X | tls1 | ... | tlsN | ... | tls_cnt | dtv[1] | ... | dtv[N] |
         // *------------------------------------------------------------------------------*
         // ^         ^         ^             ^            ^
         // td        tp      dtv[1]       dtv[n+1]       dtv
-        // We do have sizeof(thread) == 0
 
         // Safety `alloc_zeroed`:
+        // we extend this by the KCB size, so we can store the KCB in front.
         let (tls_all_layout, _offset) = tls_data_layout
-            .extend(Layout::new::<ThreadControlBlock>())
+            .extend(Layout::new::<AArch64Kcb>())
             .expect("Can't append ThreadControlBlock to TLS layout during init");
 
         // Make sure `extend` didn't end up padding for `ThreadControlBlock` (so
@@ -137,24 +164,24 @@ impl ThreadControlBlock {
         // assume that ThreadControlBlock is allocated by `malloc` (hence 16
         // byte aligned?).
         assert!(
-            tls_all_layout.size() == mem::size_of::<ThreadControlBlock>() + tls_data_layout.size(),
+            tls_all_layout.size() == mem::size_of::<AArch64Kcb>() + tls_data_layout.size(),
             "`extend` did not insert padding"
         );
         assert!(tls_data_layout.size() > 0, "allocate a non-zero size");
 
-        // the base pointer of the tls block
+        // the base pointer of the tls block pointing to the KCB
         let td: *mut u8 = unsafe { alloc::alloc::alloc_zeroed(tls_all_layout) };
         assert_ne!(td, ptr::null_mut(), "Out of memory during init?");
 
-        // tp is the same as td, as we won't have any thread structure here
-        let tp: *mut u8 = td; // + 0;
-
+        // tp is the TCB in the KCB.
+        let tp: *mut ThreadControlBlock =
+            (td as u64 + memoffset::offset_of!(AArch64Kcb, tcb) as u64) as *mut ThreadControlBlock;
         assert_eq!(((tp as u64) & 0x7), 0, "Alignment!");
 
         unsafe {
             // Safety `add`:
             // - Start and result pointer must be in bounds or one byte past the end of the same object:
-            assert!(tls_all_layout.size() >= mem::size_of::<ThreadControlBlock>());
+            assert!(tls_all_layout.size() >= mem::size_of::<AArch64Kcb>());
             // - Compute offset (bytes can not overflow) isize: Yes, layout is
             //   valid, and we substract from it
             // - The offset being in bounds cannot rely on "wrapping around" the
@@ -166,11 +193,7 @@ impl ThreadControlBlock {
             let tcb = tp as *mut ThreadControlBlock;
 
             // - Copy of plain-old-data, raw-pointer
-            *tcb = TCB_INITIAL;
-
-            // Safety: TLS lookups on x86 will be using `fs:0x0` so we have add
-            // a self-pointer as the first arg of the TCB
-            (*tcb).tcb_myself = tcb;
+            *tcb = ThreadControlBlock::new();
 
             log::trace!(
                 "initial_tdata {:?} len={}, tls_base = {:?} tcb = {:?}",
@@ -197,48 +220,34 @@ impl ThreadControlBlock {
         }
     }
 
-    /// Installs a ThreadControBlock in the `tpidrro` register of the current core.
-    ///
-    /// # Safety
-    ///
-    /// - This will set the memory for all `#[thread_local]` variables and
-    ///   should *only* be called during init when setting up TLS.
-    ///
-    /// - Assumes that `ptr` has been correctly allocated and initialized (with
-    ///   [`ThreadControlBlock::new`]) and `ptr` is only used by one core.
-    ///
-    /// - The same `ptr` also needs to be restored/saved upon entering/exiting
-    ///   from syscalls/interrupt. This is not necessarily a safety concern for
-    ///   this function (as long as we don't change `ptr` after init (and we
-    ///   shouldn't)). `fs` save/restore is handled in the assembly code for
-    ///   syscalls/interrupts.
-    unsafe fn install(ptr: *const ThreadControlBlock) {
-        TPIDR_EL0.set(ptr as u64)
-    }
-
     pub(crate) fn try_get_tcb<'a>() -> Option<&'a mut ThreadControlBlock> {
-        unsafe {
-            // Safety:
-            // - TODO(safety+soundness): not safe, should return a non-mut reference
-            //   with mutable stuff (it's just save_area that's left) wrapped in
-            //   RefCell or similar (treat the same as a thread-local)
-            let kcb_raw = TPIDR_EL0.get();
-            if kcb_raw != 0 {
-                Some(ThreadControlBlock::get_tcb())
-            } else {
-                None
-            }
-        }
+        let kcb = try_get_kcb()?;
+        Some(&mut kcb.tcb)
+        // unsafe {
+        //     // Safety:
+        //     // - TODO(safety+soundness): not safe, should return a non-mut reference
+        //     //   with mutable stuff (it's just save_area that's left) wrapped in
+        //     //   RefCell or similar (treat the same as a thread-local)
+        //     let kcb_raw = TPIDR_EL1.get();
+        //     if kcb_raw != 0 {
+        //         Some(ThreadControlBlock::get_tcb())
+        //     } else {
+        //         None
+        //     }
+        // }
     }
 
     fn get_tcb<'a>() -> &'a mut ThreadControlBlock {
-        unsafe {
-            let tcb_raw = TPIDR_EL0.get();
-            let tcb = tcb_raw as *mut ThreadControlBlock;
+        let kcb = get_kcb();
+        &mut kcb.tcb
 
-            assert!(tcb != ptr::null_mut(), "TCB not found in gs register.");
-            let kptr = ptr::NonNull::new_unchecked(tcb);
-            &mut *kptr.as_ptr()
-        }
+        // unsafe {
+        //     let tcb_raw = TPIDR_EL1.get();
+        //     let tcb = tcb_raw as *mut ThreadControlBlock;
+
+        //     assert!(tcb != ptr::null_mut(), "TCB not found in gs register.");
+        //     let kptr = ptr::NonNull::new_unchecked(tcb);
+        //     &mut *kptr.as_ptr()
+        // }
     }
 }

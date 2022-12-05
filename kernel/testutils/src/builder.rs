@@ -12,6 +12,21 @@ use lazy_static::lazy_static;
 /// Environment variable that points to machine config (for baremetal booting)
 const BAREMETAL_MACHINE: &'static str = "BAREMETAL_MACHINE";
 
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+pub enum Arch {
+    X86_64,
+    Aarch64,
+}
+
+impl Arch {
+    pub fn as_qemu_target(&self) -> &'static str {
+        match self {
+            Arch::X86_64 => "x86_64-qemu",
+            Arch::Aarch64 => "aarch64-qemu",
+        }
+    }
+}
+
 /// Different machine types we can run on.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum Machine {
@@ -19,13 +34,24 @@ pub enum Machine {
     /// The name is described in the corresponding TOML file.
     ///
     /// (e.g., Machine::BareMetal("b1542".into()) should have a corresponding b1542.toml file).
-    Baremetal(String),
+    Baremetal(Arch, String),
     /// Run on a virtual machine with QEMU (machine parameters determined by current host)
-    Qemu,
+    Qemu(Arch),
 }
 
 impl Machine {
     pub fn determine() -> Self {
+        let arch = match std::env::var("ARCH") {
+            Ok(arch) => match arch.as_str() {
+                "x86_64" => Arch::X86_64,
+                "aarch64" => Arch::Aarch64,
+                _ => panic!("Unknown architecture: {}", arch),
+            },
+            _ => {
+                println!("ARCH not set, assuming x86_64");
+                Arch::X86_64
+            }
+        };
         match std::env::var(BAREMETAL_MACHINE) {
             Ok(name) => {
                 if name.is_empty() {
@@ -37,16 +63,24 @@ impl Machine {
                         name, BAREMETAL_MACHINE
                     );
                 }
-                Machine::Baremetal(name)
+                Machine::Baremetal(arch, name)
             }
-            _ => Machine::Qemu,
+            _ => Machine::Qemu(arch),
         }
     }
 
     pub fn name(&self) -> &str {
         match self {
-            Machine::Qemu => "qemu",
-            Machine::Baremetal(s) => s.as_str(),
+            Machine::Qemu(Arch::X86_64) => "qemu-x86_64",
+            Machine::Qemu(Arch::Aarch64) => "qemu-aarch64",
+            Machine::Baremetal(_, s) => s.as_str(),
+        }
+    }
+
+    pub fn arch(&self) -> Arch {
+        match self {
+            Machine::Qemu(arch) => *arch,
+            Machine::Baremetal(arch, _) => *arch,
         }
     }
 
@@ -121,7 +155,7 @@ impl Machine {
     }
 
     pub fn max_cores(&self) -> usize {
-        if let Machine::Qemu = self {
+        if let Machine::Qemu(_) = self {
             let topo = Topology::new().expect("Can't retrieve System topology?");
             topo.objects_with_type(&ObjectType::Core)
                 .map_or(1, |cpus| cpus.len())
@@ -135,7 +169,7 @@ impl Machine {
     }
 
     pub fn max_numa_nodes(&self) -> usize {
-        if let Machine::Qemu = self {
+        if let Machine::Qemu(_) = self {
             let topo = Topology::new().expect("Can't retrieve System topology?");
             // TODO: Should be ObjectType::NUMANode but this fails in the C library?
             topo.objects_with_type(&ObjectType::Package)
@@ -187,6 +221,8 @@ pub struct BuildArgs<'a> {
     mods: Vec<&'a str>,
     /// Should we compile in release mode?
     pub release: bool,
+    /// the architecture to build for (x86_64 or aarch64)
+    arch: Arch,
 }
 
 impl<'a> Default for BuildArgs<'a> {
@@ -196,6 +232,7 @@ impl<'a> Default for BuildArgs<'a> {
             user_features: Vec::new(),
             mods: Vec::new(),
             release: false,
+            arch: Arch::X86_64,
         }
     }
 }
@@ -251,7 +288,6 @@ impl<'a> BuildArgs<'a> {
 
         let mut cmd = vec![
             "run.py".to_string(),
-            //"--norun".to_string(),
         ];
 
         if !self.kernel_features.is_empty() {
@@ -271,6 +307,11 @@ impl<'a> BuildArgs<'a> {
 
         if self.release {
             cmd.push("--release".to_string());
+        }
+
+        match self.arch {
+            Arch::X86_64 => cmd.push("--target x86_64-qemu".to_string()),
+            Arch::Aarch64 => cmd.push("--target aarch64-qemu".to_string()),
         }
 
         cmd
@@ -305,4 +346,11 @@ impl<'a> BuildArgs<'a> {
         self.release = true;
         self
     }
+
+    /// set the architecture of the build
+    pub fn arch(&mut self, arch: Arch) -> &mut BuildArgs<'a> {
+        self.arch = arch;
+        self
+    }
+
 }

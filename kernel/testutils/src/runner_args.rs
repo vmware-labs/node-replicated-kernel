@@ -62,10 +62,15 @@ pub struct RunnerArgs<'a> {
 #[allow(unused)]
 impl<'a> RunnerArgs<'a> {
     pub fn new_with_build(kernel_test: &'a str, built: &'a Built<'a>) -> RunnerArgs<'a> {
+
+        let machine = Machine::determine();
+        let mut build_args = built.with_args.clone();
+        build_args.arch(machine.arch());
+
         let mut args = RunnerArgs {
-            machine: Machine::determine(),
+            machine: machine,
             kernel_test,
-            build_args: built.with_args.clone(),
+            build_args: build_args,
             nodes: 0,
             cores: 1,
             memory: 1024,
@@ -96,10 +101,15 @@ impl<'a> RunnerArgs<'a> {
     }
 
     pub fn new(kernel_test: &'a str) -> RunnerArgs {
+
+        let machine = Machine::determine();
+        let mut build_args = BuildArgs::default();
+        build_args.arch(machine.arch());
+
         let mut args = RunnerArgs {
-            machine: Machine::determine(),
+            machine: machine,
             kernel_test,
-            build_args: Default::default(),
+            build_args: build_args,
             nodes: 0,
             cores: 1,
             memory: 1024,
@@ -131,6 +141,7 @@ impl<'a> RunnerArgs<'a> {
 
     /// What machine we should run on.
     pub fn machine(mut self, machine: Machine) -> RunnerArgs<'a> {
+        self.build_args.arch(machine.arch());
         self.machine = machine;
         self
     }
@@ -301,7 +312,9 @@ impl<'a> RunnerArgs<'a> {
         cmd.push(String::from(self.nic));
 
         match &self.machine {
-            Machine::Qemu => {
+            Machine::Qemu(arch) => {
+                cmd.push(String::from("-target"));
+                cmd.push(arch.as_qemu_target().to_string());
                 cmd.push(String::from("--qemu-cores"));
                 cmd.push(format!("{}", self.cores));
 
@@ -371,7 +384,7 @@ impl<'a> RunnerArgs<'a> {
                     net_cmd.push(String::from("--no-network-setup"));
                 }
             }
-            Machine::Baremetal(mname) => {
+            Machine::Baremetal(_arch, mname) => {
                 cmd.push(format!("--machine={}", mname));
             }
         }

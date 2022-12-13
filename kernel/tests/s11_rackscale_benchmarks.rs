@@ -18,7 +18,7 @@ use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::BuildArgs;
 use testutils::helpers::{
-    setup_network, setup_shmem, spawn_dcm, spawn_nrk, SHMEM_PATH, SHMEM_SIZE,
+    setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server, SHMEM_PATH, SHMEM_SIZE,
 };
 use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
 
@@ -36,9 +36,9 @@ fn s11_rackscale_ethernet_fxmark_benchmark() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_fxmark_benchmark(is_shmem: bool) {
+    use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
-    use std::{fs::remove_file, sync::Arc};
 
     // benchmark naming convention = nameXwrite - mixX10 is - mix benchmark for 10% writes.
     let benchmarks = vec!["mixX0", "mixX10", "mixX100"];
@@ -77,8 +77,8 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     for benchmark in benchmarks {
         let open_files: Vec<usize> = open_files(benchmark, 1, 1);
         for &of in open_files.iter() {
-            // Set up file for shmem
-            setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+            let mut shmem_server =
+                spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
             let kernel_cmdline = format!(
                 "mode=client transport={} initargs={}X{}X{}",
@@ -197,7 +197,7 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
             controller.join().unwrap();
             client.join().unwrap();
 
-            let _ignore = remove_file(SHMEM_PATH);
+            let _ignore = shmem_server.send_control('c');
         }
     }
 }

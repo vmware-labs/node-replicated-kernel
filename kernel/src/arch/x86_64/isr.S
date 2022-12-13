@@ -229,6 +229,9 @@ isr_handler 45
 isr_handler 46
 isr_handler 47
 
+/* qemu shmem interrupt, may (or may not) be used */
+isr_handler 249
+
 /* The MLNR gc interrupt */
 isr_handler 250
 /* TLB work-queue trigger IPI */

@@ -15,20 +15,20 @@ use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::{BuildArgs, Machine};
 use testutils::helpers::{
-    setup_network, setup_shmem, spawn_dcm, spawn_nrk, SHMEM_PATH, SHMEM_SIZE,
+    setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server, SHMEM_PATH, SHMEM_SIZE,
 };
 use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_phys_alloc_test() {
-    use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
     let large_shmem_size = 16; // Needs to be large to have a large page
-    setup_shmem(SHMEM_PATH, large_shmem_size);
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
 
     let timeout = 180_000;
 
@@ -96,7 +96,7 @@ fn s06_rackscale_phys_alloc_test() {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(&SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -113,14 +113,12 @@ fn s06_rackscale_ethernet_fs_test() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_fs_test(is_shmem: bool) {
-    use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    // Setup ivshmem file
-    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
-
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
     setup_network(2);
     let timeout = 30_000;
 
@@ -203,20 +201,18 @@ fn rackscale_fs_test(is_shmem: bool) {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_fs_prop_test() {
-    use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    // Setup ivshmem file
-    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
-
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
     setup_network(2);
     let timeout = 180_000;
 
@@ -283,13 +279,12 @@ fn s06_rackscale_shmem_fs_prop_test() {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_multiinstance() {
-    use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
@@ -298,7 +293,8 @@ fn s06_rackscale_shmem_multiinstance() {
     let clients = 4;
     let mut processes = Vec::with_capacity(clients + 1);
 
-    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
     setup_network(clients + 1);
 
     let build = Arc::new(
@@ -372,7 +368,7 @@ fn s06_rackscale_shmem_multiinstance() {
         p.join().unwrap();
     }
 
-    let _ignore = remove_file(SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
 }
 
 #[cfg(not(feature = "baremetal"))]
@@ -389,13 +385,13 @@ fn s06_rackscale_ethernet_userspace_multicore_test() {
 
 #[cfg(not(feature = "baremetal"))]
 fn rackscale_userspace_multicore_test(is_shmem: bool) {
-    use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
     // Setup ivshmem file
-    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
     setup_network(2);
     let timeout = 60_000;
@@ -487,19 +483,19 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     controller.join().unwrap();
     client.join().unwrap();
 
-    let _ignore = remove_file(SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
 }
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s06_rackscale_shmem_request_core_remote_test() {
-    use std::fs::remove_file;
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
 
-    // Setup ivshmem file
-    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
+    // Setup ivshmem server
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
     setup_network(3);
     let timeout = 30_000;
@@ -605,5 +601,5 @@ fn s06_rackscale_shmem_request_core_remote_test() {
     client.join().unwrap();
     client2.join().unwrap();
 
-    let _ignore = remove_file(SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
 }

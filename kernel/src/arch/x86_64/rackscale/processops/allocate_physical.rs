@@ -19,7 +19,7 @@ use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
-use crate::transport::shmem::SHMEM_REGION;
+use crate::transport::shmem::SHMEM_DEVICE;
 
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::dcm::DCM_INTERFACE;
@@ -68,9 +68,9 @@ pub(crate) fn rpc_allocate_physical(
             debug!(
                 "AllocatePhysical() mapping base from {:x?} to {:x?}",
                 frame_base,
-                frame_base + SHMEM_REGION.base_addr
+                frame_base + SHMEM_DEVICE.mem_addr
             );
-            let frame_base = frame_base + SHMEM_REGION.base_addr;
+            let frame_base = frame_base + SHMEM_DEVICE.mem_addr;
             let frame = Frame::new(PAddr::from(frame_base), size as usize, affinity as usize);
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 

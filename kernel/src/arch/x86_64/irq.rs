@@ -60,6 +60,9 @@ use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring0Resumer, Ring3Process, Ring3Resumer};
 use super::{debug, gdb, timer};
 
+// TODO(hunhoffe): probably not the right place for this but transport/shmem isn't always included.
+pub(crate) const SHMEM_VECTOR: u8 = 249;
+
 /// The x2APIC driver of the current core.
 #[thread_local]
 pub(crate) static LOCAL_APIC: RefCell<X2APICDriver> = RefCell::new(X2APICDriver::new());
@@ -180,8 +183,11 @@ impl Default for IdtTable {
         idt_set!(table.0, 46, isr_handler46, 0);
         idt_set!(table.0, 47, isr_handler47, 0);
 
-        idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler251, 0);
+        // shmem interrupt
+        idt_set!(table.0, SHMEM_VECTOR as usize, isr_handler249, 0);
+
         idt_set!(table.0, MLNR_GC_INIT as usize, isr_handler250, 0);
+        idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler251, 0);
         idt_set!(table.0, apic::TSC_TIMER_VECTOR as usize, isr_handler252, 0);
 
         table
@@ -230,9 +236,8 @@ impl IdtTable {
         idt_set!(table.0, SIMD_FLOATING_POINT_VECTOR, isr_handler_early19, 0);
         idt_set!(table.0, VIRTUALIZATION_VECTOR, isr_handler_early20, 0);
 
-        idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler_early251, 0);
-
         idt_set!(table.0, MLNR_GC_INIT as usize, isr_handler_early250, 0);
+        idt_set!(table.0, TLB_WORK_PENDING as usize, isr_handler_early251, 0);
         idt_set!(
             table.0,
             apic::TSC_TIMER_VECTOR as usize,
@@ -491,7 +496,7 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
     #[cfg(feature = "test-timer")]
     {
         // Don't change this print stmt. without changing
-        // `s01_timer` in integration-tests.rs:
+        // `s01_timer` in tests/s01_kernel_low_tests.rs:
         sprintln!("Got a timer interrupt");
         debug::shutdown(ExitReason::Ok);
     }
@@ -540,6 +545,30 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
     } else {
         // Go to scheduler instead
         //warn!("got a timer on core {}", *crate::environment::CORE_ID);
+        crate::scheduler::schedule()
+    }
+}
+
+/// Handler for the shmem interrupt.
+///
+/// We currently use it to check for work from the controller
+/// or other nodes in the rackscale architecture.
+unsafe fn shmem_handler(_a: &ExceptionArguments) {
+    #[cfg(feature = "test-shmem")]
+    {
+        // Don't change this print stmt. without changing
+        // `s03_ivshmem_interrupt` in tests/s03_kernel_high_tests.rs:
+        sprintln!("Got a shmem interrupt");
+        debug::shutdown(ExitReason::Ok);
+    }
+
+    if super::process::has_executor() {
+        // Return immediately
+        let kcb = get_kcb();
+        let r = kcb_iret_handle(kcb);
+        r.resume()
+    } else {
+        // Go to scheduler instead
         crate::scheduler::schedule()
     }
 }
@@ -681,8 +710,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // If we have an active process we should do scheduler activations:
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
-        if a.vector > 30 && a.vector < 250 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
-            trace!("handle_generic_exception {:?}", a);
+        if a.vector > 30 && a.vector < 249 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
+            log::info!("handle_generic_exception {:?}", a);
 
             let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
             let p = pborrow.as_mut().unwrap();
@@ -760,6 +789,8 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
             }
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
+        } else if a.vector == SHMEM_VECTOR.into() {
+            shmem_handler(&a);
         }
 
         unhandled_irq(&a);

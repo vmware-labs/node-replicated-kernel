@@ -11,7 +11,7 @@ use crate::ExitReason;
 type MainFn = fn();
 
 #[cfg(feature = "integration-test")]
-const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
+const INTEGRATION_TESTS: [(&str, MainFn); 29] = [
     ("exit", just_exit_ok),
     ("wrgsbase", wrgsbase),
     ("pfault-early", just_exit_fail),
@@ -39,6 +39,8 @@ const INTEGRATION_TESTS: [(&str, MainFn); 27] = [
     ("vmxnet-smoltcp", vmxnet_smoltcp),
     ("cxl-read", cxl_read),
     ("cxl-write", cxl_write),
+    ("shmem-interruptor", shmem_interruptor),
+    ("shmem-interruptee", shmem_interruptee),
 ];
 
 #[cfg(feature = "integration-test")]
@@ -770,11 +772,12 @@ pub(crate) const BUFFER_CONTENT: u8 = 0xb;
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub(crate) fn cxl_write() {
     use crate::memory::KERNEL_BASE;
-    use crate::transport::shmem::init_shmem_device;
+    use crate::transport::shmem::SHMEM_DEVICE;
 
-    let (base_paddr, size) = init_shmem_device().expect("Can't init shmem device");
-    for i in 0..size {
-        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+    lazy_static::initialize(&SHMEM_DEVICE);
+
+    for i in 0..SHMEM_DEVICE.mem_size {
+        let region = (SHMEM_DEVICE.mem_addr + KERNEL_BASE + i as u64) as *mut u8;
         unsafe { core::ptr::write(region, BUFFER_CONTENT) };
     }
 
@@ -785,14 +788,59 @@ pub(crate) fn cxl_write() {
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub(crate) fn cxl_read() {
     use crate::memory::KERNEL_BASE;
-    use crate::transport::shmem::init_shmem_device;
+    use crate::transport::shmem::SHMEM_DEVICE;
 
-    let (base_paddr, size) = init_shmem_device().expect("Can't init shmem device");
-    for i in 0..size {
-        let region = (base_paddr + KERNEL_BASE + i as u64) as *mut u8;
+    lazy_static::initialize(&SHMEM_DEVICE);
+
+    for i in 0..SHMEM_DEVICE.mem_size {
+        let region = (SHMEM_DEVICE.mem_addr + KERNEL_BASE + i as u64) as *mut u8;
         let read = unsafe { core::ptr::read(region) };
         assert_eq!(read, BUFFER_CONTENT);
     }
+
+    shutdown(ExitReason::Ok);
+}
+
+/// Test cxl device in the kernel.
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+pub(crate) fn shmem_interruptor() {
+    use crate::transport::shmem::SHMEM_DEVICE;
+
+    lazy_static::initialize(&SHMEM_DEVICE);
+    {
+        // The ivshmem server allocates IDs consecutively, so we'll assume interruptee is
+        // current_id - 1
+        log::info!(
+            "Sending shmem interrupt to: {:?} on vector {:?}",
+            SHMEM_DEVICE.id - 1,
+            1
+        );
+        SHMEM_DEVICE.set_doorbell(1, SHMEM_DEVICE.id - 1);
+    }
+    shutdown(ExitReason::Ok);
+}
+
+/// Test cxl device in the kernel.
+#[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
+pub(crate) fn shmem_interruptee() {
+    use core::hint::spin_loop;
+    use core::time::Duration;
+
+    use crate::arch::irq::SHMEM_VECTOR;
+    use crate::transport::shmem::SHMEM_DEVICE;
+
+    lazy_static::initialize(&SHMEM_DEVICE);
+
+    SHMEM_DEVICE.enable_msix_vector(0, 0, SHMEM_VECTOR);
+    SHMEM_DEVICE.enable_msix_vector(1, 0, SHMEM_VECTOR);
+
+    let start = rawtime::Instant::now();
+    crate::arch::irq::enable();
+    while start.elapsed() < Duration::from_secs(60) {
+        spin_loop();
+    }
+    crate::arch::irq::disable();
+    let _done = start.elapsed().as_nanos();
 
     shutdown(ExitReason::Ok);
 }

@@ -14,7 +14,7 @@ use rexpect::process::wait::WaitStatus;
 use rexpect::spawn;
 
 use testutils::builder::BuildArgs;
-use testutils::helpers::{setup_shmem, spawn_nrk, SHMEM_PATH, SHMEM_SIZE};
+use testutils::helpers::{spawn_nrk, spawn_shmem_server, SHMEM_PATH, SHMEM_SIZE};
 use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
 
 /// Test that we boot up all cores in the system.
@@ -174,15 +174,15 @@ fn s03_phys_alloc() {
 #[cfg(not(feature = "baremetal"))]
 #[test]
 fn s03_ivshmem_write_and_read() {
-    use std::fs::remove_file;
     let build = BuildArgs::default().build();
-
-    setup_shmem(SHMEM_PATH, SHMEM_SIZE);
 
     let cmdline = RunnerArgs::new_with_build("cxl-write", &build)
         .timeout(30_000)
         .shmem_size(SHMEM_SIZE as usize)
         .shmem_path(SHMEM_PATH);
+
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -206,5 +206,71 @@ fn s03_ivshmem_write_and_read() {
     };
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
-    let _ignore = remove_file(SHMEM_PATH);
+    let _ignore = shmem_server.send_control('c');
+}
+
+/// Test that the shared memory device with interrupts is functional
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s03_ivshmem_interrupt() {
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let build = Arc::new(BuildArgs::default().kernel_feature("test-shmem").build());
+
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+
+    // Start interruptee process
+    let build1 = build.clone();
+    let interruptee = std::thread::spawn(move || {
+        let interruptee_cmdline = RunnerArgs::new_with_build("shmem-interruptee", &build1)
+            .cores(2)
+            .timeout(90_000)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH);
+
+        let mut interruptee_output = String::new();
+        let mut interruptee_qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&interruptee_cmdline)?;
+            interruptee_output += p.exp_string("Got a shmem interrupt")?.as_str();
+            interruptee_output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+        check_for_successful_exit(
+            &interruptee_cmdline,
+            interruptee_qemu_run(),
+            interruptee_output,
+        );
+    });
+
+    // Start interruptor processs
+    let build2 = build.clone();
+    let interruptor = std::thread::spawn(move || {
+        let interruptor_cmdline = RunnerArgs::new_with_build("shmem-interruptor", &build2)
+            .cores(2)
+            .timeout(90_000)
+            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_path(SHMEM_PATH);
+
+        let mut interruptor_output = String::new();
+        let mut interruptor_qemu_run = || -> Result<WaitStatus> {
+            sleep(Duration::from_millis(10_000));
+            let mut p = spawn_nrk(&interruptor_cmdline)?;
+            interruptor_output += p.exp_string("Sending shmem interrupt")?.as_str();
+            interruptor_output += p.exp_eof()?.as_str();
+            p.process.exit()
+        };
+        check_for_successful_exit(
+            &interruptor_cmdline,
+            interruptor_qemu_run(),
+            interruptor_output,
+        );
+    });
+
+    interruptee.join().unwrap();
+    interruptor.join().unwrap();
+
+    let _ignore = shmem_server.send_control('c');
 }

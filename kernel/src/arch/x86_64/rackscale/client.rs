@@ -15,7 +15,7 @@ use crate::arch::rackscale::processops::request_core::request_core_work;
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::NrLock;
-use crate::transport::shmem::SHMEM_REGION;
+use crate::transport::shmem::SHMEM_DEVICE;
 
 /// A handle to an RPC client
 ///
@@ -28,7 +28,7 @@ pub(crate) static ref RPC_CLIENT: Arc<Mutex<Box<Client>>> =
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         // To support alloc_phys, client needs shared memory to be mapped
-        lazy_static::initialize(&SHMEM_REGION);
+        lazy_static::initialize(&SHMEM_DEVICE);
 
         Arc::new(Mutex::new(
             crate::transport::ethernet::init_ethernet_rpc(

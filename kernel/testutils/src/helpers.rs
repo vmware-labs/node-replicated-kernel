@@ -1,6 +1,7 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use std::fs::remove_file;
 use std::io::ErrorKind;
 use std::process;
 
@@ -42,13 +43,22 @@ pub fn setup_network(num_nodes: usize) {
     network_setup().unwrap();
 }
 
-pub fn setup_shmem(filename: &str, filelen: u64) {
-    use memfile::{CreateOptions, MemFile};
-    use std::fs::remove_file;
-    let _ignore = remove_file(&filename);
-    let file = MemFile::create(filename, CreateOptions::new()).expect("Unable to create memfile");
-    file.set_len(filelen * 1024 * 1024)
-        .expect("Unable to set file length");
+/// Spawns a qemu shmem server.
+///
+/// The server must run before any nrk instance runs.
+pub fn spawn_shmem_server(filename: &str, filelen: u64) -> Result<rexpect::session::PtySession> {
+    // Delete any straggler files
+    let _ignore = remove_file(filename);
+
+    // Run the ivshmem server; not sure how long we'll need it for so we let it run forever.
+    let cmd = format!(
+        "ivshmem-server -F -S {} -l {} -n {} ",
+        filename,
+        filelen * 1024 * 1024,
+        2, // number of vectors
+    );
+    eprintln!("Invoke shmem server: {}", cmd);
+    spawn(&cmd, None)
 }
 
 /// Builds the kernel and spawns a qemu instance of it.
@@ -81,8 +91,6 @@ pub fn spawn_nrk(args: &RunnerArgs) -> Result<rexpect::session::PtySession> {
 /// Uses target/dcm-scheduler.jar that is set up by run.py
 /// -r => number of requests per solve
 pub fn spawn_dcm(r: usize, timeout: u64) -> Result<rexpect::session::PtyReplSession> {
-    use std::fs::remove_file;
-
     // Remove existing DCM log file
     let file_name = "dcm.log";
     let _ignore = remove_file(file_name);

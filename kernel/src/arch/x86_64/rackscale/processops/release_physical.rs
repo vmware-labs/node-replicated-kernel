@@ -23,7 +23,6 @@ use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::client::{get_frame_as, FRAME_MAP};
 use crate::arch::rackscale::controller::{get_local_pid, SHMEM_MANAGERS};
-use crate::transport::shmem::SHMEM_REGION;
 
 #[derive(Debug)]
 pub(crate) struct ReleasePhysicalReq {

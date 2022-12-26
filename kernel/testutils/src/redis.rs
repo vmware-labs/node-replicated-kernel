@@ -99,7 +99,7 @@ pub fn redis_benchmark(nic: &'static str, requests: usize) -> Result<rexpect::se
         get_tput
     );
     assert!(
-        get_tput > 200_000.0,
+        get_tput > 150_000.0,
         "Redis throughput seems rather low (GET < 200k)?"
     );
 

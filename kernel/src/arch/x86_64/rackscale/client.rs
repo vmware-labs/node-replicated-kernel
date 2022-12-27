@@ -9,7 +9,7 @@ use spin::{Lazy, Mutex};
 
 use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
 use rpc::client::Client;
-use rpc::rpc::{ClientId, RPCError, RPCHeader};
+use rpc::rpc::{RPCError, RPCHeader};
 
 use crate::arch::rackscale::processops::request_core::request_core_work;
 use crate::cmdline::Transport;
@@ -62,12 +62,16 @@ pub(crate) fn get_frame_as(frame_id: u64) -> Result<u64, RPCError> {
     }
 }
 
-pub(crate) fn get_num_clients() -> ClientId {
-    (crate::CMDLINE.get().map_or(2, |c| c.workers) - 1) as ClientId
+pub(crate) fn get_num_clients() -> u64 {
+    (crate::CMDLINE.get().map_or(2, |c| c.workers) - 1) as u64
 }
 
-pub(crate) fn get_local_client_id() -> ClientId {
-    (crate::CMDLINE.get().map_or(1, |c| c.machine_id) - 1) as ClientId
+pub(crate) fn get_num_workers() -> u64 {
+    crate::CMDLINE.get().map_or(1, |c| c.workers) as u64
+}
+
+pub(crate) fn get_local_client_id() -> u64 {
+    (crate::CMDLINE.get().map_or(1, |c| c.machine_id) - 1) as u64
 }
 
 pub(crate) fn client_get_work() -> () {

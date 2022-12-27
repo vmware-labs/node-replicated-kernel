@@ -17,11 +17,12 @@ use super::FileIO;
 
 #[derive(Debug)]
 pub(crate) struct RWReq {
+    pub pid: usize,
     pub fd: FileDescriptor,
     pub len: u64,
     pub offset: i64,
 }
-unsafe_abomonate!(RWReq: fd, len, offset);
+unsafe_abomonate!(RWReq: pid, fd, len, offset);
 
 pub(crate) fn rpc_write(
     rpc_client: &mut dyn RPCClient,
@@ -43,9 +44,10 @@ pub(crate) fn rpc_writeat(
 
     // Constrcut request data
     let req = RWReq {
-        fd: fd,
+        pid,
+        fd,
         len: data.len() as u64,
-        offset: offset,
+        offset,
     };
     let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
@@ -54,25 +56,14 @@ pub(crate) fn rpc_writeat(
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
 
     // Call readat() or read() RPCs
-    if offset == -1 {
-        rpc_client
-            .call(
-                pid,
-                KernelRpc::Write as RPCType,
-                &[&req_data, &data],
-                &mut [&mut res_data],
-            )
-            .unwrap();
+    let rpc_type = if offset == -1 {
+        KernelRpc::Write as RPCType
     } else {
-        rpc_client
-            .call(
-                pid,
-                KernelRpc::WriteAt as RPCType,
-                &[&req_data, &data],
-                &mut [&mut res_data],
-            )
-            .unwrap();
-    }
+        KernelRpc::WriteAt as RPCType
+    };
+    rpc_client
+        .call(rpc_type, &[&req_data, &data], &mut [&mut res_data])
+        .unwrap();
 
     // Decode result, return result if decoded successfully
     if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
@@ -107,9 +98,10 @@ pub(crate) fn rpc_readat(
 
     // Construct request data
     let req = RWReq {
-        fd: fd,
+        pid,
+        fd,
         len: buff_ptr.len() as u64,
-        offset: offset,
+        offset,
     };
     let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
@@ -118,25 +110,18 @@ pub(crate) fn rpc_readat(
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
 
     // Call Read() or ReadAt() RPC
-    if offset == -1 {
-        rpc_client
-            .call(
-                pid,
-                KernelRpc::Read as RPCType,
-                &[&req_data],
-                &mut [&mut res_data, buff_ptr],
-            )
-            .unwrap();
+    let rpc_type = if offset == -1 {
+        KernelRpc::Read as RPCType
     } else {
-        rpc_client
-            .call(
-                pid,
-                KernelRpc::ReadAt as RPCType,
-                &[&req_data],
-                &mut [&mut res_data, buff_ptr],
-            )
-            .unwrap();
-    }
+        KernelRpc::ReadAt as RPCType
+    };
+    rpc_client
+        .call(
+            KernelRpc::ReadAt as RPCType,
+            &[&req_data],
+            &mut [&mut res_data, buff_ptr],
+        )
+        .unwrap();
 
     // Decode result, if successful, return result
     if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
@@ -155,15 +140,17 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     // Extract data needed from the request
     let fd;
     let len;
+    let pid;
     let mut offset = -1;
     let mut operation = FileOperation::Read;
     if let Some((req, _)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
             "Read(At)(fd={:?}, len={:?}, offset={:?}), pid={:?}",
-            req.fd, req.len, req.offset, hdr.pid
+            req.fd, req.len, req.offset, req.pid
         );
         fd = req.fd;
         len = req.len;
+        pid = req.pid;
         if hdr.msg_type == KernelRpc::ReadAt as RPCType {
             offset = req.offset;
             operation = FileOperation::ReadAt;
@@ -176,7 +163,7 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     // Read directly into payload buffer, at offset after result field & header
     let start = KernelRpcRes_SIZE as usize;
     let end = start + len as usize;
-    let ret = cnrfs::MlnrKernelNode::file_read(hdr.pid, fd, &mut &mut payload[start..end], offset);
+    let ret = cnrfs::MlnrKernelNode::file_read(pid, fd, &mut &mut payload[start..end], offset);
 
     // Read in additional data (e.g., the read data payload)
     let mut additional_data = 0;
@@ -197,7 +184,7 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
     if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
             "Write(At)(fd={:?}, len={:?}, offset={:?}), pid={:?}",
-            req.fd, req.len, req.offset, hdr.pid
+            req.fd, req.len, req.offset, req.pid
         );
 
         // Call Write() or WriteAt()
@@ -208,7 +195,7 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         };
 
         let data = (remaining[..req.len as usize]).try_into()?;
-        let ret = cnrfs::MlnrKernelNode::file_write(hdr.pid, req.fd, data, offset);
+        let ret = cnrfs::MlnrKernelNode::file_write(req.pid, req.fd, data, offset);
 
         // Construct return
         let res = KernelRpcRes {

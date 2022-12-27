@@ -16,7 +16,7 @@ use static_assertions as sa;
 
 use kpi::system::CpuThread;
 use rpc::api::RPCServer;
-use rpc::rpc::{ClientId, RPCType};
+use rpc::rpc::RPCType;
 use rpc::server::Server;
 
 use crate::arch::debug::shutdown;

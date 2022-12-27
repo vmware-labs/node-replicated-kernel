@@ -76,7 +76,7 @@ impl NodeRegistrationResponse {
     }
 }
 
-pub(crate) fn dcm_register_node(pid: usize, cores: u64, memslices: u64) -> u64 {
+pub(crate) fn dcm_register_node(cores: u64, memslices: u64) -> u64 {
     // Create request and space for response
     let req = NodeRegistrationRequest { cores, memslices };
     let mut res = NodeRegistrationResponse { node_id: 0 };
@@ -87,7 +87,6 @@ pub(crate) fn dcm_register_node(pid: usize, cores: u64, memslices: u64) -> u64 {
             .lock()
             .client
             .call(
-                pid,
                 DCMOps::RegisterNode as RPCType,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },

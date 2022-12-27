@@ -24,6 +24,7 @@ use super::super::systemops::{gtid_to_local, local_to_gtid};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RequestCoreReq {
+    pub pid: usize,
     pub core_id: u64,
     pub entry_point: u64,
 }
@@ -45,6 +46,7 @@ pub(crate) fn rpc_request_core(
 
     // Construct request data
     let req = RequestCoreReq {
+        pid,
         core_id,
         entry_point,
     };
@@ -55,7 +57,6 @@ pub(crate) fn rpc_request_core(
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
     rpc_client
         .call(
-            pid,
             KernelRpc::RequestCore as RPCType,
             &[&req_data],
             &mut [&mut res_data],
@@ -87,7 +88,7 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
         }
     };
 
-    let client_id = dcm_resource_alloc(hdr.pid, true);
+    let client_id = dcm_resource_alloc(core_req.pid, true);
 
     // controller chooses a core id - right now, sequentially for cores on the client_id.
     let num_clients = get_num_clients();
@@ -121,7 +122,7 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
     };
 
     // can handle request locally if same node otherwise must queue for remote node to handle
-    if client_id != hdr.client_id {
+    if client_id != get_local_client_id() {
         log::info!("Logged unfulfilled core assignment for {:?}", client_id);
         let mut core_request_vec = UNFULFILLED_CORE_ASSIGNMENTS.lock();
         let mut deque = core_request_vec
@@ -133,17 +134,12 @@ pub(crate) fn handle_request_core(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
 }
 
 pub(crate) fn request_core_work(rpc_client: &mut dyn RPCClient) -> () {
-    let mut pid = 0; // TODO: we will need some way to associate with request with a global pid
+    // TODO: we will need some way to associate with request with a global pid
 
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<RequestCoreWorkRes>()];
     rpc_client
-        .call(
-            pid,
-            KernelRpc::RequestWork as RPCType,
-            &[],
-            &mut [&mut res_data],
-        )
+        .call(KernelRpc::RequestWork as RPCType, &[], &mut [&mut res_data])
         .unwrap();
 
     // Decode and return the result
@@ -176,7 +172,7 @@ pub(crate) fn request_core_work(rpc_client: &mut dyn RPCClient) -> () {
             // TODO: some of this is something that will eventually be moved to the controller.
             // TODO: when moved, will need to (maybe) do address space translation for entry point? Should be done in controller.
             let _gtid = KernelNode::allocate_core_to_process(
-                crate::arch::process::current_pid().expect("Cannot get current pid?"), // TODO: set to whatever current pid is executing
+                crate::arch::process::current_pid().expect("Cannot get current pid?"), // TODO: set to whatever current pid is executing BUT should be based on request
                 VAddr::from(core_request.entry_point),
                 Some(affinity),
                 Some(gtid),
@@ -198,7 +194,7 @@ pub(crate) fn handle_request_core_work(
     let work = {
         let mut core_request_vec = UNFULFILLED_CORE_ASSIGNMENTS.lock();
         let mut deque = core_request_vec
-            .get_mut(hdr.client_id as usize)
+            .get_mut(get_local_client_id() as usize)
             .expect("failed to fetch core assignment deque for node");
         deque.pop_front()
     };

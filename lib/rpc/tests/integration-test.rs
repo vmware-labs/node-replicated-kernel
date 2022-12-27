@@ -9,7 +9,7 @@ fn test_client_server_shmem_transport() {
 
     use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
     use rpc::client::Client;
-    use rpc::rpc::{ClientId, RPCError, RPCHeader};
+    use rpc::rpc::{RPCError, RPCHeader, RPCType};
     use rpc::server::Server;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::{Queue, Receiver, Sender};
@@ -28,6 +28,8 @@ fn test_client_server_shmem_transport() {
     let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
     let server_transport = ShmemTransport::new(server_receiver, server_sender);
 
+    const RPC_ECHO: RPCType = 1;
+
     thread::spawn(move || {
         // Create a server
         let rpc_server_transport = Box::new(server_transport);
@@ -38,14 +40,11 @@ fn test_client_server_shmem_transport() {
             Ok(())
         }
         const ECHO_HANDLER: RPCHandler = echo_rpc_handler;
-        server.register(1, &ECHO_HANDLER).unwrap();
+        server.register(RPC_ECHO, &ECHO_HANDLER).unwrap();
 
         // Accept a client
-        fn register_client(
-            _hdr: &mut RPCHeader,
-            _payload: &mut [u8],
-        ) -> Result<ClientId, RPCError> {
-            Ok(0)
+        fn register_client(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
+            Ok(())
         }
         pub const CLIENT_REGISTRAR: RegistrationHandler = register_client;
         server.add_client(&CLIENT_REGISTRAR).unwrap();
@@ -70,7 +69,7 @@ fn test_client_server_shmem_transport() {
 
     // Test echo
     client
-        .call(0, 1, &[&send_data], &mut [&mut recv_data])
+        .call(RPC_ECHO, &[&send_data], &mut [&mut recv_data])
         .unwrap();
     assert_eq!(send_data, recv_data);
 }
@@ -84,7 +83,7 @@ fn test_client_shmem_multithread() {
 
     use rpc::api::{RPCClient, RPCHandler, RPCServer, RegistrationHandler};
     use rpc::client::Client;
-    use rpc::rpc::{ClientId, RPCError, RPCHeader};
+    use rpc::rpc::{RPCError, RPCHeader, RPCType};
     use rpc::server::Server;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::{Queue, Receiver, Sender};
@@ -103,6 +102,8 @@ fn test_client_shmem_multithread() {
     let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
     let server_transport = ShmemTransport::new(server_receiver, server_sender);
 
+    const RPC_ECHO: RPCType = 1;
+
     thread::spawn(move || {
         // Create a server
         let rpc_server_transport = Box::new(server_transport);
@@ -113,14 +114,11 @@ fn test_client_shmem_multithread() {
             Ok(())
         }
         const ECHO_HANDLER: RPCHandler = echo_rpc_handler;
-        server.register(1, &ECHO_HANDLER).unwrap();
+        server.register(RPC_ECHO, &ECHO_HANDLER).unwrap();
 
         // Accept a client
-        fn register_client(
-            _hdr: &mut RPCHeader,
-            _payload: &mut [u8],
-        ) -> Result<ClientId, RPCError> {
-            Ok(0)
+        fn register_client(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
+            Ok(())
         }
         pub const CLIENT_REGISTRAR: RegistrationHandler = register_client;
         server.add_client(&CLIENT_REGISTRAR).unwrap();
@@ -152,7 +150,7 @@ fn test_client_shmem_multithread() {
             // Test echo
             my_client
                 .lock()
-                .call(0, 1, &[&send_data], &mut [&mut recv_data])
+                .call(RPC_ECHO, &[&send_data], &mut [&mut recv_data])
                 .unwrap();
             assert_eq!(send_data, recv_data);
         });

@@ -19,10 +19,11 @@ use super::FileIO;
 
 #[derive(Debug)]
 pub(crate) struct OpenReq {
+    pub pid: usize,
     pub flags: FileFlags,
     pub modes: FileModes,
 }
-unsafe_abomonate!(OpenReq: flags, modes);
+unsafe_abomonate!(OpenReq: pid, flags, modes);
 
 // This is just a wrapper function for rpc_open_create
 pub(crate) fn rpc_open<P: AsRef<[u8]> + Debug>(
@@ -53,7 +54,7 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
     debug!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
 
     // Construct request data
-    let req = OpenReq { flags, modes };
+    let req = OpenReq { pid, flags, modes };
     let mut req_data = [0u8; core::mem::size_of::<OpenReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
@@ -63,7 +64,6 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
     // Call the RPC
     rpc_client
         .call(
-            pid,
             rpc_type,
             &[&req_data, pathname.as_ref()],
             &mut [&mut res_data],
@@ -84,30 +84,28 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
 
 // RPC Handler function for open() RPCs in the controller
 pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
-    // Parse body
-    let flags;
-    let modes;
-    if let Some((req, _)) =
-        unsafe { decode::<OpenReq>(&mut payload[..core::mem::size_of::<OpenReq>()]) }
-    {
-        debug!(
-            "Open(flags={:?}, modes={:?}), pid={:?}",
-            FileFlags::from(req.flags),
-            FileModes::from(req.modes),
-            hdr.pid
-        );
-        flags = req.flags;
-        modes = req.modes;
-    } else {
-        warn!("Invalid payload for request: {:?}", hdr);
-        return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
-    }
+    // Decode request
+    let (pid, flags, modes) = match unsafe { decode::<OpenReq>(payload) } {
+        Some((req, _)) => {
+            debug!(
+                "Open(flags={:?}, modes={:?}), pid={:?}",
+                FileFlags::from(req.flags),
+                FileModes::from(req.modes),
+                req.pid
+            );
+            (req.pid, req.flags, req.modes)
+        }
+        None => {
+            warn!("Invalid payload for request: {:?}", hdr);
+            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        }
+    };
 
     let path =
         core::str::from_utf8(&payload[core::mem::size_of::<OpenReq>()..hdr.msg_len as usize])?;
     let path_string = TryString::try_from(path)?.into();
 
-    let cnr_ret = cnrfs::MlnrKernelNode::map_fd(hdr.pid, path_string, flags, modes);
+    let cnr_ret = cnrfs::MlnrKernelNode::map_fd(pid, path_string, flags, modes);
 
     // Create return
     let res = KernelRpcRes {

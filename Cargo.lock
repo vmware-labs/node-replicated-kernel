@@ -465,8 +465,9 @@ dependencies = [
 
 [[package]]
 name = "driverkit"
-version = "0.22.0"
-source = "git+https://github.com/hunhoffe/rust-driverkit.git?branch=msix#8ff4c9a0772ec8cf8492563b01b78997522b8f54"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a572c88386995c6be673d78bb46c84127fea9d3b620889eafd0bf369cd186f56"
 dependencies = [
  "armv8",
  "bit_field",

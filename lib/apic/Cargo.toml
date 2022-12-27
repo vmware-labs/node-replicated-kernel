@@ -9,7 +9,7 @@ keywords = ["os", "acpi", "irq", "driver", "x86"]
 edition = "2018"
 
 [dependencies]
-driverkit = { git = "https://github.com/hunhoffe/rust-driverkit.git", branch = "msix" }
+driverkit = "0.24"
 x86 = { version = "0.52", features = ["unstable"] }
 log = "0.4"
 bitflags = "1.0"

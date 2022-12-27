@@ -19,9 +19,10 @@ use crate::fs::cnrfs;
 
 #[derive(Debug)]
 pub(crate) struct RenameReq {
+    pub pid: usize,
     pub oldname_len: u64,
 }
-unsafe_abomonate!(RenameReq: oldname_len);
+unsafe_abomonate!(RenameReq: pid, oldname_len);
 
 pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
@@ -33,6 +34,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
 
     // Construct request data
     let req = RenameReq {
+        pid,
         oldname_len: oldname.as_ref().len() as u64,
     };
     let mut req_data = [0u8; core::mem::size_of::<RenameReq>()];
@@ -44,7 +46,6 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     // Call the RPC
     rpc_client
         .call(
-            pid,
             KernelRpc::FileRename as RPCType,
             &[&req_data, oldname.as_ref(), newname.as_ref()],
             &mut [&mut res_data],
@@ -67,8 +68,8 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
 // RPC Handler function for rename() RPCs in the controller
 pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode request
-    let oldname_len = match unsafe { decode::<RenameReq>(payload) } {
-        Some((req, _)) => req.oldname_len as usize,
+    let (pid, oldname_len) = match unsafe { decode::<RenameReq>(payload) } {
+        Some((req, _)) => (req.pid, req.oldname_len as usize),
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
             return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
@@ -88,9 +89,7 @@ pub(crate) fn handle_rename(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
 
     // Call rename function
     let res = KernelRpcRes {
-        ret: convert_return(cnrfs::MlnrKernelNode::file_rename(
-            hdr.pid, oldname, newname,
-        )),
+        ret: convert_return(cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)),
     };
 
     // Return result

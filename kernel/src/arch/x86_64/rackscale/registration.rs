@@ -10,7 +10,7 @@ use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use kpi::system::CpuThread;
 use log::{debug, error, info, warn};
 use rpc::client::Client;
-use rpc::rpc::{ClientId, RPCError, RPCHeader};
+use rpc::rpc::{RPCError, RPCHeader};
 use rpc::RPCClient;
 
 use super::dcm::node_registration::dcm_register_node;
@@ -109,10 +109,7 @@ pub(crate) fn initialize_client(
 }
 
 // RPC Handler for client registration on the controller
-pub(crate) fn register_client(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-) -> Result<ClientId, RPCError> {
+pub(crate) fn register_client(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     use crate::memory::LARGE_PAGE_SIZE;
 
     // Decode client registration request
@@ -126,7 +123,7 @@ pub(crate) fn register_client(
         if let Some((hwthreads, remaining)) = unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {
             if remaining.len() == 0 {
                 // Register client resources with DCM, DCM doesn't care about pids, so send w/ dummy pid
-                let client_id = dcm_register_node(0, req.num_cores, memslices);
+                let client_id = dcm_register_node(req.num_cores, memslices);
                 info!("Registered client DCM, assigned client_id={:?}", client_id);
 
                 // Create shmem memory manager
@@ -149,6 +146,7 @@ pub(crate) fn register_client(
                 let mut rack_threads = HWTHREADS.lock();
                 let mut rack_threads_busy = HWTHREADS_BUSY.lock();
 
+                // TODO(hunhoffe): this should not be necessary. We already assume max number of threads.
                 // Make sure there's enough room to store data on whether core is busy or no
                 let num_clients = get_num_clients() as usize;
                 if rack_threads_busy.capacity() < hwthreads.len() * num_clients + client_id as usize
@@ -175,7 +173,7 @@ pub(crate) fn register_client(
                 // Let's assume init process is running on hwthread 0 on the client so set that to busy
                 rack_threads_busy[local_to_gtid(0, client_id)] = Some(true);
 
-                Ok(client_id)
+                Ok(())
             } else {
                 error!("Extra data in register_client");
                 Err(RPCError::MalformedResponse)

@@ -260,19 +260,19 @@ const SHMEM_QUEUE_SIZE: usize = 32;
 const_assert!(2 * SHMEM_QUEUE_SIZE * MAX_BUFF_LEN <= MAX_SHMEM_TRANSPORT_SIZE as usize);
 
 #[cfg(feature = "rpc")]
-pub(crate) fn create_shmem_transport(client_id: u64) -> KResult<ShmemTransport<'static>> {
+pub(crate) fn create_shmem_transport(machine_id: u64) -> KResult<ShmemTransport<'static>> {
     use crate::arch::rackscale::client::get_num_clients;
     use crate::cmdline::Mode;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
 
-    assert!(client_id * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_DEVICE.mem_size);
+    assert!(machine_id * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_DEVICE.mem_size);
     let transport_size = core::cmp::min(
         SHMEM_DEVICE.mem_size / get_num_clients(),
         MAX_SHMEM_TRANSPORT_SIZE,
     );
-    let base_addr = SHMEM_DEVICE.mem_addr + KERNEL_BASE + client_id * transport_size;
+    let base_addr = SHMEM_DEVICE.mem_addr + KERNEL_BASE + machine_id * transport_size;
     let allocator = ShmemAllocator::new(base_addr, transport_size);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
@@ -284,7 +284,7 @@ pub(crate) fn create_shmem_transport(client_id: u64) -> KResult<ShmemTransport<'
             let server_receiver = Receiver::with_shared_queue(client_to_server_queue.clone());
             log::info!(
                 "Controller: Created shared-memory transport for machine {}! size={:?}, base={:?}",
-                client_id,
+                machine_id,
                 transport_size,
                 base_addr
             );
@@ -361,11 +361,11 @@ pub(crate) fn get_affinity_shmem() -> (u64, u64) {
 pub(crate) fn create_shmem_manager(
     base: u64,
     size: u64,
-    client_id: u64,
+    machine_id: u64,
 ) -> Option<Box<FrameCacheMemslice>> {
     if size > 0 {
-        // Using client_id as affinity, but that's probably not really correct here
-        let frame = Frame::new(PAddr(base), size as usize, client_id as usize);
+        // TODO(correctness): Using machine_id as affinity, but that's probably not really correct here
+        let frame = Frame::new(PAddr(base), size as usize, machine_id as usize);
         let mut shmem_cache = Box::new(FrameCacheMemslice::new(0));
         shmem_cache.populate_2m_first(frame);
         Some(shmem_cache)

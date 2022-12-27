@@ -2,7 +2,6 @@ use alloc::boxed::Box;
 use alloc::string::String;
 
 use kpi::io::{FileFlags, FileModes};
-use rpc::rpc::ClientId;
 
 use crate::arch::process::{current_pid, Ring3Process};
 use crate::error::KResult;
@@ -150,7 +149,7 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
         self.local.log(uslice)?;
         let msg: String = uslice.try_into()?;
         let mut client = RPC_CLIENT.lock();
-        rpc_log(&mut **client, uslice.pid, msg).map_err(|e| e.into())
+        rpc_log(&mut **client, msg).map_err(|e| e.into())
     }
 
     fn get_vcpu_area(&self) -> KResult<(u64, u64)> {

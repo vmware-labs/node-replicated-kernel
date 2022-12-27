@@ -20,9 +20,10 @@ use crate::fs::cnrfs;
 
 #[derive(Debug)]
 pub(crate) struct MkDirReq {
+    pub pid: usize,
     pub modes: FileModes,
 }
-unsafe_abomonate!(MkDirReq: modes);
+unsafe_abomonate!(MkDirReq: pid, modes);
 
 pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
@@ -33,7 +34,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     debug!("MkDir({:?})", pathname);
 
     // Construct request data
-    let req = MkDirReq { modes };
+    let req = MkDirReq { pid, modes };
     let mut req_data = [0u8; core::mem::size_of::<MkDirReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
@@ -43,7 +44,6 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     // Call RPC
     rpc_client
         .call(
-            pid,
             KernelRpc::MkDir as RPCType,
             &[&req_data, pathname.as_ref()],
             &mut [&mut res_data],
@@ -65,8 +65,8 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
 // RPC Handler function for close() RPCs in the controller
 pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Parse request
-    let modes = match unsafe { decode::<MkDirReq>(payload) } {
-        Some((req, _)) => req.modes,
+    let (pid, modes) = match unsafe { decode::<MkDirReq>(payload) } {
+        Some((req, _)) => (req.pid, req.modes),
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
             return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
@@ -76,7 +76,7 @@ pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
     let path =
         core::str::from_utf8(&payload[core::mem::size_of::<MkDirReq>()..hdr.msg_len as usize])?;
     let path_string: String = TryString::try_from(path)?.into();
-    let mkdir_req = cnrfs::MlnrKernelNode::mkdir(hdr.pid, path_string, modes);
+    let mkdir_req = cnrfs::MlnrKernelNode::mkdir(pid, path_string, modes);
 
     // Call mkdir function and send result
     let res = KernelRpcRes {

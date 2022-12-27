@@ -18,12 +18,7 @@ pub(crate) fn rpc_make_process(rpc_client: &mut dyn RPCClient) -> Result<usize, 
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
     rpc_client
-        .call(
-            0,
-            KernelRpc::MakeProcess as RPCType,
-            &[],
-            &mut [&mut res_data],
-        )
+        .call(KernelRpc::MakeProcess as RPCType, &[], &mut [&mut res_data])
         .unwrap();
 
     // Decode and return the result

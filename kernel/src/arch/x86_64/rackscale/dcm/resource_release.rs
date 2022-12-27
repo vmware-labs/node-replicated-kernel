@@ -91,7 +91,6 @@ pub(crate) fn dcm_resource_release(node_id: usize, pid: usize, is_core: bool) ->
         .lock()
         .client
         .call(
-            pid,
             DCMOps::ResourceRelease as RPCType,
             unsafe { &[req.as_bytes()] },
             unsafe { &mut [res.as_mut_bytes()] },

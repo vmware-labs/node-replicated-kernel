@@ -31,7 +31,6 @@ pub(crate) fn rpc_get_hardware_threads(
     // Call GetHardwareThreads() RPC
     rpc_client
         .call(
-            pid,
             KernelRpc::GetHardwareThreads as RPCType,
             &[&[]],
             &mut [&mut res_data],

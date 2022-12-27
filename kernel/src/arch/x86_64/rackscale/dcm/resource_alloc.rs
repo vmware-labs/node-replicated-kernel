@@ -123,7 +123,6 @@ pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> u64 {
             .lock()
             .client
             .call(
-                pid,
                 DCMOps::ResourceAlloc as RPCType,
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },

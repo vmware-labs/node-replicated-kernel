@@ -27,6 +27,7 @@ use crate::transport::shmem::SHMEM_DEVICE;
 
 #[derive(Debug)]
 pub(crate) struct ReleasePhysicalReq {
+    pub pid: usize,
     pub frame_base: u64,
     pub frame_size: u64,
     pub node_id: u64,
@@ -51,6 +52,7 @@ pub(crate) fn rpc_release_physical(
         .expect("Didn't find a frame for frame_id");
 
     let req = ReleasePhysicalReq {
+        pid,
         frame_base: frame.base.as_u64(),
         frame_size: frame.size as u64,
         node_id,
@@ -62,7 +64,6 @@ pub(crate) fn rpc_release_physical(
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
     rpc_client
         .call(
-            pid,
             KernelRpc::ReleasePhysical as RPCType,
             &[&req_data],
             &mut [&mut res_data],
@@ -90,6 +91,7 @@ pub(crate) fn handle_release_physical(
     let frame_base;
     let frame_size;
     let node_id;
+    let pid;
     if let Some((req, _)) = unsafe { decode::<ReleasePhysicalReq>(payload) } {
         debug!(
             "AllocPhysical(frame_base={:x?}, frame_size={:?}), node_id={:?}",
@@ -98,6 +100,7 @@ pub(crate) fn handle_release_physical(
         frame_base = req.frame_base;
         frame_size = req.frame_size;
         node_id = req.node_id as usize;
+        pid = req.pid;
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
         return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
@@ -123,7 +126,7 @@ pub(crate) fn handle_release_physical(
     let res = match ret {
         Ok(()) => {
             // Tell DCM the resource is no longer being used
-            if dcm_resource_release(node_id, hdr.pid, false) == 0 {
+            if dcm_resource_release(node_id, pid, false) == 0 {
                 debug!("DCM release resource was successful");
                 KernelRpcRes {
                     ret: convert_return(Ok((0, 0))),

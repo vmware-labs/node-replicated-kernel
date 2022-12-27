@@ -3,14 +3,13 @@
 
 use core::result::Result;
 
-use crate::rpc::{ClientId, RPCError, RPCHeader, RPCType};
+use crate::rpc::{RPCError, RPCHeader, RPCType};
 
 /// RPC Handler function
 pub type RPCHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError>;
 
 /// RPC Client registration function
-pub type RegistrationHandler =
-    fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<ClientId, RPCError>;
+pub type RegistrationHandler = fn(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError>;
 
 /// RPC server operations
 pub trait RPCServer<'a> {
@@ -42,7 +41,6 @@ pub trait RPCClient {
     /// Calls a remote RPC function with ID
     fn call(
         &mut self,
-        pid: usize,
         rpc_id: RPCType,
         data_in: &[&[u8]],
         data_out: &mut [&mut [u8]],

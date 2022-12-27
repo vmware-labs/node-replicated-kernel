@@ -27,6 +27,7 @@ use super::super::kernelrpc::*;
 
 #[derive(Debug)]
 pub(crate) struct AllocatePhysicalReq {
+    pub pid: usize,
     pub size: u64,
     pub affinity: u64,
 }
@@ -42,7 +43,11 @@ pub(crate) fn rpc_allocate_physical(
     info!("AllocatePhysical({:?}, {:?})", size, affinity);
 
     // Construct request data
-    let req = AllocatePhysicalReq { size, affinity };
+    let req = AllocatePhysicalReq {
+        pid,
+        size,
+        affinity,
+    };
     let mut req_data = [0u8; core::mem::size_of::<AllocatePhysicalReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
@@ -50,7 +55,6 @@ pub(crate) fn rpc_allocate_physical(
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
     rpc_client
         .call(
-            pid,
             KernelRpc::AllocatePhysical as RPCType,
             &[&req_data],
             &mut [&mut res_data],
@@ -107,20 +111,22 @@ pub(crate) fn handle_allocate_physical(
     // Extract data needed from the request
     let size;
     let affinity;
+    let pid;
     if let Some((req, _)) = unsafe { decode::<AllocatePhysicalReq>(payload) } {
         debug!(
             "AllocatePhysical(size={:x?}, affinity={:?}), pid={:?}",
-            req.size, req.affinity, hdr.pid
+            req.size, req.affinity, req.pid
         );
         size = req.size;
         affinity = req.affinity;
+        pid = req.pid;
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
         return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
     }
 
     // Let DCM choose node
-    let node = dcm_resource_alloc(hdr.pid, false);
+    let node = dcm_resource_alloc(pid, false);
     debug!("Received node assignment from DCM: node {:?}", node);
 
     let mut shmem_managers = SHMEM_MANAGERS.lock();

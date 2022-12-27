@@ -17,9 +17,10 @@ use super::FileIO;
 
 #[derive(Debug)]
 pub(crate) struct CloseReq {
+    pub pid: usize,
     pub fd: FileDescriptor,
 }
-unsafe_abomonate!(CloseReq: fd);
+unsafe_abomonate!(CloseReq: pid, fd);
 
 pub(crate) fn rpc_close(
     rpc_client: &mut dyn RPCClient,
@@ -27,7 +28,7 @@ pub(crate) fn rpc_close(
     fd: FileDescriptor,
 ) -> Result<(u64, u64), RPCError> {
     // Setup request data
-    let req = CloseReq { fd: fd };
+    let req = CloseReq { pid, fd };
     let mut req_data = [0u8; core::mem::size_of::<CloseReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
@@ -37,7 +38,6 @@ pub(crate) fn rpc_close(
     // Call Close() RPC
     rpc_client
         .call(
-            pid,
             KernelRpc::Close as RPCType,
             &[&req_data],
             &mut [&mut res_data],
@@ -64,17 +64,17 @@ pub(crate) fn rpc_close(
 pub(crate) fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     // Decode request
     if let Some((req, _)) = unsafe { decode::<CloseReq>(payload) } {
-        debug!("Close(fd={:?}), pid={:?}", req.fd, hdr.pid);
+        debug!("Close(pid={:?}), fd={:?}", req.pid, req.fd);
 
         // Call close (unmap_fd) and return result
         let res = KernelRpcRes {
-            ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(hdr.pid, req.fd)),
+            ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(req.pid, req.fd)),
         };
         construct_ret(hdr, payload, res)
 
     // Report error if failed to decode request
     } else {
-        warn!("Invalid payload for request: {:?}", hdr);
+        warn!("Invalid payload for request {:?}", hdr);
         construct_error_ret(hdr, payload, RPCError::MalformedRequest)
     }
 }

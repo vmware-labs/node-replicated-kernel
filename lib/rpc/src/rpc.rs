@@ -3,17 +3,6 @@
 
 use abomonation::{unsafe_abomonate, Abomonation};
 use core::{convert::TryInto, str::Utf8Error};
-use core2::io::Result as IOResult;
-use core2::io::Write;
-
-/// Node ID for servers/clients
-pub type ClientId = u64;
-
-#[derive(Debug)]
-pub(crate) struct ClientIdRes {
-    pub client_id: ClientId,
-}
-unsafe_abomonate!(ClientIdRes: client_id);
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 pub enum RPCError {
@@ -74,15 +63,13 @@ impl core::convert::From<alloc::collections::TryReserveError> for RPCError {
     }
 }
 
-pub type RPCType = u8;
-pub const RPC_TYPE_CONNECT: u8 = 0u8;
+// TODO(efficiency): type could probably be u8, but this seems easier for alignment w/ DCM?
+pub type RPCType = u64;
+pub const RPC_TYPE_CONNECT: u64 = 0u64;
 
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct RPCHeader {
-    pub client_id: u64,
-    pub pid: usize,
-    pub req_id: u64,
     pub msg_type: RPCType,
     pub msg_len: u64,
 }

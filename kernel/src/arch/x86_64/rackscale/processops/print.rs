@@ -15,14 +15,12 @@ use super::super::kernelrpc::*;
 
 pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
-    pid: usize,
     msg: P,
 ) -> Result<(u64, u64), RPCError> {
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
     rpc_client
         .call(
-            pid,
             KernelRpc::Log as RPCType,
             &[msg.as_ref()],
             &mut [&mut res_data],
@@ -44,7 +42,7 @@ pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
 // RPC Handler function for getinfo() RPCs in the controller
 pub(crate) fn handle_log(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
     let msg_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
-    log::info!("Remote Log from {}: {}", hdr.pid, msg_str);
+    log::info!("Remote Log: {}", msg_str);
 
     // Construct results from return data
     let res = KernelRpcRes {

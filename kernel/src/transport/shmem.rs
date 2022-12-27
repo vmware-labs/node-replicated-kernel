@@ -3,7 +3,7 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use driverkit::pci::{CapabilityId, CapabilityType, MsiXTableEntry};
+use driverkit::pci::{CapabilityId, CapabilityType, PciDevice};
 use kpi::KERNEL_BASE;
 use lazy_static::lazy_static;
 use rpc::rpc::MAX_BUFF_LEN;
@@ -16,7 +16,7 @@ use {crate::arch::rackscale::controller::FrameCacheMemslice, rpc::transport::Shm
 use crate::cmdline::Transport;
 use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
-use crate::memory::{paddr_to_kernel_vaddr, Frame, PAddr, VAddr, BASE_PAGE_SIZE};
+use crate::memory::{paddr_to_kernel_vaddr, Frame, PAddr, BASE_PAGE_SIZE};
 use crate::pci::claim_device;
 
 // Register information from:
@@ -44,11 +44,8 @@ pub(crate) struct ShmemDevice {
     // Doorbell address protected by arc<mutex<>> to prevent concurrent writes
     doorbell: Arc<Mutex<u64>>,
 
-    // MSI-X table protected by arc<mutex<>> to prevent concurrent writes
-    msix_table_addr: Arc<Mutex<VAddr>>,
-
-    // Number of vectors in the MSI-X table
-    pub(crate) msix_vector_count: usize,
+    // ivshmem PciDevice
+    device: Arc<Mutex<PciDevice>>,
 }
 
 impl ShmemDevice {
@@ -144,10 +141,6 @@ impl ShmemDevice {
                 )
                 .expect("Failed to map MSI-X table");
 
-            let (table_addr, table_entries) = ivshmem_device
-                .get_msix_irq_table_info(&paddr_to_kernel_vaddr)
-                .expect("Failed to parse MSI-X table");
-
             Some(ShmemDevice {
                 mem_addr: mem_region.address,
                 mem_size: mem_region.size,
@@ -155,8 +148,7 @@ impl ShmemDevice {
                 doorbell: Arc::new(Mutex::new(
                     register_region.address + KERNEL_BASE + SHMEM_DOORBELL_OFFSET,
                 )),
-                msix_table_addr: Arc::new(Mutex::new(table_addr)),
-                msix_vector_count: table_entries,
+                device: Arc::new(Mutex::new(ivshmem_device)),
             })
         } else {
             log::error!("Unable to find IVSHMEM device");
@@ -186,30 +178,22 @@ impl ShmemDevice {
         destination_id: u8,
         int_vector: u8,
     ) {
-        assert!(table_vector < self.msix_vector_count);
         assert!(int_vector >= 0x10);
         // TODO(correctness): not sure if upper range is exclusive or not, erring on side of caution?
         assert!(int_vector < 0xFE);
         // TODO(correctness): how to validate destination?
 
-        let msix_table_addr = self.msix_table_addr.lock();
-        // Safety:
-        // - We're casting the part of the memory to a MSI-X table according to the spec
-        // - It's just plain-old-data
-        // - We assume it is only accessed while we hold the mutex on self.table_addr
-        // - We have &mut self when giving out a mut reference to the table
-        // - Sanity check that we're within `bar`'s range (TODO)
-        // - Check that `addr` satisfies alignment for [MsiXTableEntry] (TODO)
-        let mut msix_table = unsafe {
-            core::slice::from_raw_parts_mut(
-                msix_table_addr.as_mut_ptr::<MsiXTableEntry>(),
-                self.msix_vector_count,
-            )
-        };
+        let mut device = self.device.lock();
+        let tbl_paddr = device
+            .get_msix_irq_table_mut(&paddr_to_kernel_vaddr)
+            .expect("Failed to get MSI-x Table from ivshmem PciDevice");
+        log::debug!("MSI-X table {:?}", tbl_paddr);
+        assert!(table_vector < tbl_paddr.len());
+
         log::info!(
             "Original MSI entry {:?} is {:?}",
             table_vector,
-            msix_table[table_vector]
+            tbl_paddr[table_vector]
         );
 
         // Use this to construct the message address register (lower 32-bits)
@@ -236,8 +220,8 @@ impl ShmemDevice {
         // Mask for reserved bits 11-4 is: 0111_1111_0000b = 0x07F0
         let reserved_mask = 0x00_00_07_F0;
         let set_addr_high = 0xFF_FF_FF_FF << 32;
-        msix_table[table_vector as usize].addr =
-            (msix_table[table_vector].addr & reserved_mask) | address_register | set_addr_high;
+        tbl_paddr[table_vector as usize].addr =
+            (tbl_paddr[table_vector].addr & reserved_mask) | address_register | set_addr_high;
 
         // Use this to construct the new message address register
         let mut data_register: u32 = 0;
@@ -260,16 +244,16 @@ impl ShmemDevice {
         // Reserved bits are: 63 - 32, 31 - 16, 13 - 11
         // So the low bits of the mask will look like this: 0011_1000_0000_0000b
         let reserved_mask = 0xFF_FF_38_00;
-        msix_table[table_vector].data =
-            (msix_table[table_vector].data & reserved_mask) | data_register;
+        tbl_paddr[table_vector].data =
+            (tbl_paddr[table_vector].data & reserved_mask) | data_register;
 
         // Toggle the interrupt mask for this vector
-        msix_table[table_vector].vector_control ^= 0x1;
+        tbl_paddr[table_vector].vector_control ^= 0x1;
 
         log::info!(
             "New MSI entry {:?} is {:?}",
             table_vector,
-            msix_table[table_vector]
+            tbl_paddr[table_vector]
         );
     }
 }

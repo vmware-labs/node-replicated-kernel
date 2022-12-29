@@ -106,21 +106,13 @@ pub(crate) const KernelRpcRes_SIZE: u64 = core::mem::size_of::<KernelRpcRes>() a
 // Below are utility functions for working with KernelRpcRes
 
 #[inline(always)]
-pub(crate) fn construct_error_ret(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    err: RPCError,
-) -> Result<(), RPCError> {
+pub(crate) fn construct_error_ret(hdr: &mut RPCHeader, payload: &mut [u8], err: RPCError) {
     let res = KernelRpcRes { ret: Err(err) };
     construct_ret(hdr, payload, res)
 }
 
 #[inline(always)]
-pub(crate) fn construct_ret(
-    hdr: &mut RPCHeader,
-    payload: &mut [u8],
-    res: KernelRpcRes,
-) -> Result<(), RPCError> {
+pub(crate) fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: KernelRpcRes) {
     construct_ret_extra_data(hdr, payload, res, 0)
 }
 
@@ -130,13 +122,12 @@ pub(crate) fn construct_ret_extra_data(
     mut payload: &mut [u8],
     res: KernelRpcRes,
     additional_data_len: u64,
-) -> Result<(), RPCError> {
+) {
     // Encode payload in buffer
     unsafe { encode(&res, &mut payload) }.unwrap();
 
     // Modify header and write into output buffer
     hdr.msg_len = KernelRpcRes_SIZE + additional_data_len;
-    Ok(())
 }
 
 #[inline(always)]

@@ -12,7 +12,6 @@ use rpc::RPCClient;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::client::FRAME_MAP;
-use crate::arch::rackscale::controller::SHMEM_MANAGERS;
 use crate::error::KError;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
@@ -21,6 +20,7 @@ use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 use crate::transport::shmem::SHMEM_DEVICE;
 
+use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::dcm::DCM_INTERFACE;
 use super::super::kernelrpc::*;
@@ -107,7 +107,8 @@ pub(crate) fn rpc_allocate_physical(
 pub(crate) fn handle_allocate_physical(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
-) -> Result<(), RPCError> {
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Extract data needed from the request
     let size;
     let affinity;
@@ -122,21 +123,27 @@ pub(crate) fn handle_allocate_physical(
         pid = req.pid;
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
-        return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        return Ok(state);
     }
 
     // Let DCM choose node
-    let node = dcm_resource_alloc(pid, false);
-    debug!("Received node assignment from DCM: node {:?}", node);
+    let dcm_node_id = dcm_resource_alloc(pid, false);
+    debug!("Received node assignment from DCM: node {:?}", dcm_node_id);
 
-    let mut shmem_managers = SHMEM_MANAGERS.lock();
-    let manager = shmem_managers[node as usize]
-        .as_mut()
-        .expect("Error - no shmem manager for client");
-    let ret = if size <= BASE_PAGE_SIZE as u64 {
-        manager.allocate_base_page()
-    } else {
-        manager.allocate_large_page()
+    // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
+    let ret = {
+        let mut client_state = state.get_client_state_by_dcm_node_id(dcm_node_id).lock();
+        let mut manager = client_state
+            .shmem_manager
+            .as_mut()
+            .expect("No shmem manager found for client");
+
+        if size <= BASE_PAGE_SIZE as u64 {
+            manager.allocate_base_page()
+        } else {
+            manager.allocate_large_page()
+        }
     };
 
     let res = match ret {
@@ -147,7 +154,7 @@ pub(crate) fn handle_allocate_physical(
                 // We return node_id here, but it should really be an AS (address space)
                 // identifier, (most likely). This works for now because there is only
                 // 1 AS per node.
-                ret: convert_return(Ok((node, frame.base.as_u64()))),
+                ret: convert_return(Ok((dcm_node_id, frame.base.as_u64()))),
             }
         }
         Err(kerror) => {
@@ -157,5 +164,6 @@ pub(crate) fn handle_allocate_physical(
             }
         }
     };
-    construct_ret(hdr, payload, res)
+    construct_ret(hdr, payload, res);
+    Ok(state)
 }

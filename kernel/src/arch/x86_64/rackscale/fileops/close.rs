@@ -12,6 +12,7 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::FileIO;
 
@@ -61,7 +62,11 @@ pub(crate) fn rpc_close(
 }
 
 // RPC Handler function for close() RPCs in the controller
-pub(crate) fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_close(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Decode request
     if let Some((req, _)) = unsafe { decode::<CloseReq>(payload) } {
         debug!("Close(pid={:?}), fd={:?}", req.pid, req.fd);
@@ -70,11 +75,12 @@ pub(crate) fn handle_close(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         let res = KernelRpcRes {
             ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(req.pid, req.fd)),
         };
-        construct_ret(hdr, payload, res)
+        construct_ret(hdr, payload, res);
 
     // Report error if failed to decode request
     } else {
         warn!("Invalid payload for request {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
+        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
     }
+    Ok(state)
 }

@@ -10,7 +10,7 @@ use smoltcp::time::Instant;
 use crate::transport::ethernet::ETHERNET_IFACE;
 
 use super::super::kernelrpc::*;
-use super::{DCMOps, DCM_INTERFACE};
+use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -77,7 +77,7 @@ impl ResourceAllocResponse {
 #[repr(C)]
 pub struct ResourceAllocAssignment {
     pub alloc_id: u64,
-    pub node: u64,
+    pub node: DCMNodeId,
 }
 pub const ALLOC_LEN: usize = core::mem::size_of::<ResourceAllocAssignment>();
 
@@ -105,7 +105,7 @@ impl ResourceAllocAssignment {
     }
 }
 
-pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> u64 {
+pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> DCMNodeId {
     let req = ResourceAllocRequest {
         application: pid as u64,
         cores: if is_core { 1 } else { 0 },

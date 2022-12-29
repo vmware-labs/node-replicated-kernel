@@ -24,7 +24,7 @@ use spin::Mutex;
 use vmxnet3::smoltcp::DevQueuePhy;
 
 use super::kernelrpc::*;
-use crate::arch::rackscale::controller::FrameCacheMemslice;
+use crate::arch::rackscale::controller_state::FrameCacheMemslice;
 use crate::fallible_string::TryString;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
 
@@ -33,6 +33,8 @@ pub(crate) mod resource_alloc;
 pub(crate) mod resource_release;
 
 use resource_alloc::ALLOC_LEN;
+
+pub(crate) type DCMNodeId = u64;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]

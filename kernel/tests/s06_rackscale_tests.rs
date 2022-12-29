@@ -293,8 +293,9 @@ fn s06_rackscale_shmem_multiinstance() {
     let clients = 4;
     let mut processes = Vec::with_capacity(clients + 1);
 
+    let large_shmem_size = 16;
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
     setup_network(clients + 1);
 
     let build = Arc::new(

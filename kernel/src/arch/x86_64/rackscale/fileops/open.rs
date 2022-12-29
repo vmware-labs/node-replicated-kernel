@@ -14,6 +14,7 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::FileIO;
 
@@ -83,7 +84,11 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
 }
 
 // RPC Handler function for open() RPCs in the controller
-pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_open(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Decode request
     let (pid, flags, modes) = match unsafe { decode::<OpenReq>(payload) } {
         Some((req, _)) => {
@@ -97,7 +102,8 @@ pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         }
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            return Ok(state);
         }
     };
 
@@ -111,5 +117,6 @@ pub(crate) fn handle_open(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     let res = KernelRpcRes {
         ret: convert_return(cnr_ret),
     };
-    construct_ret(hdr, payload, res)
+    construct_ret(hdr, payload, res);
+    Ok(state)
 }

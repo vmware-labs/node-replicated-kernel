@@ -13,6 +13,7 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::FileIO;
 
@@ -59,13 +60,18 @@ pub(crate) fn rpc_delete(
 }
 
 // RPC Handler function for delete() RPCs in the controller
-pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_delete(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Parse request
     let pid = match unsafe { decode::<DeleteReq>(payload) } {
         Some((req, _)) => req.pid,
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            return Ok(state);
         }
     };
     let path = core::str::from_utf8(
@@ -79,5 +85,6 @@ pub(crate) fn handle_delete(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(
             TryString::try_from(path)?.into(), // TODO(hunhoffe): unnecessary allocation
         )),
     };
-    construct_ret(hdr, payload, res)
+    construct_ret(hdr, payload, res);
+    Ok(state)
 }

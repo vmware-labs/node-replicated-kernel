@@ -11,9 +11,11 @@ use spin::Mutex;
 use static_assertions::const_assert;
 
 #[cfg(feature = "rackscale")]
-use {crate::arch::rackscale::controller::FrameCacheMemslice, rpc::transport::ShmemTransport};
+use {
+    crate::arch::rackscale::controller_state::FrameCacheMemslice, rpc::transport::ShmemTransport,
+};
 
-use crate::cmdline::Transport;
+use crate::cmdline::{MachineId, Transport};
 use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
 use crate::memory::{paddr_to_kernel_vaddr, Frame, PAddr, BASE_PAGE_SIZE};
@@ -26,7 +28,7 @@ const SHMEM_IVPOSITION_OFFSET: u64 = 8;
 const SHMEM_DOORBELL_OFFSET: u64 = 12;
 
 // Used for rackscale mode
-pub(crate) const MAX_SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
+pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
 
 lazy_static! {
     pub(crate) static ref SHMEM_DEVICE: ShmemDevice =
@@ -253,27 +255,21 @@ impl ShmemDevice {
     }
 }
 
-// The default size of the Shared memory queue is 32.
-// The total size of two queues(sender and reciever) should be less
-// that the MAX_SHMEM_TRANSPORT_SIZE.
 const SHMEM_QUEUE_SIZE: usize = 32;
-const_assert!(2 * SHMEM_QUEUE_SIZE * MAX_BUFF_LEN <= MAX_SHMEM_TRANSPORT_SIZE as usize);
+// The total size of two queues(sender and reciever) should be less than the transport size.
+const_assert!(2 * SHMEM_QUEUE_SIZE * MAX_BUFF_LEN <= SHMEM_TRANSPORT_SIZE as usize);
 
 #[cfg(feature = "rpc")]
-pub(crate) fn create_shmem_transport(machine_id: u64) -> KResult<ShmemTransport<'static>> {
-    use crate::arch::rackscale::client::get_num_clients;
+pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTransport<'static>> {
     use crate::cmdline::Mode;
     use rpc::transport::shmem::allocator::ShmemAllocator;
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
+    let machine_id = machine_id as u64;
+    assert!(SHMEM_DEVICE.mem_size >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
 
-    assert!(machine_id * MAX_SHMEM_TRANSPORT_SIZE <= SHMEM_DEVICE.mem_size);
-    let transport_size = core::cmp::min(
-        SHMEM_DEVICE.mem_size / get_num_clients(),
-        MAX_SHMEM_TRANSPORT_SIZE,
-    );
-    let base_addr = SHMEM_DEVICE.mem_addr + KERNEL_BASE + machine_id * transport_size;
-    let allocator = ShmemAllocator::new(base_addr, transport_size);
+    let base_addr = SHMEM_DEVICE.mem_addr + KERNEL_BASE + machine_id * SHMEM_TRANSPORT_SIZE;
+    let allocator = ShmemAllocator::new(base_addr, SHMEM_TRANSPORT_SIZE);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
             let server_to_client_queue =
@@ -285,7 +281,7 @@ pub(crate) fn create_shmem_transport(machine_id: u64) -> KResult<ShmemTransport<
             log::info!(
                 "Controller: Created shared-memory transport for machine {}! size={:?}, base={:?}",
                 machine_id,
-                transport_size,
+                SHMEM_TRANSPORT_SIZE,
                 base_addr
             );
             Ok(ShmemTransport::new(server_receiver, server_sender))
@@ -299,7 +295,7 @@ pub(crate) fn create_shmem_transport(machine_id: u64) -> KResult<ShmemTransport<
             let client_sender = Sender::with_shared_queue(client_to_server_queue.clone());
             log::info!(
                 "Client: Created shared-memory transport! size={:?}, base={:?}",
-                transport_size,
+                SHMEM_TRANSPORT_SIZE,
                 base_addr
             );
             Ok(ShmemTransport::new(client_receiver, client_sender))
@@ -315,12 +311,12 @@ pub(crate) fn create_shmem_transport(machine_id: u64) -> KResult<ShmemTransport<
 pub(crate) fn init_shmem_rpc(
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
 ) -> KResult<Box<rpc::client::Client>> {
-    use crate::arch::rackscale::client::get_local_client_id;
+    use crate::arch::rackscale::client::get_machine_id;
     use crate::arch::rackscale::registration::initialize_client;
     use rpc::client::Client;
 
     // Set up the transport
-    let transport = Box::try_new(create_shmem_transport(get_local_client_id())?)?;
+    let transport = Box::try_new(create_shmem_transport(get_machine_id())?)?;
 
     // Create the client
     let client = Box::try_new(Client::new(transport))?;
@@ -329,39 +325,41 @@ pub(crate) fn init_shmem_rpc(
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn get_affinity_shmem() -> (u64, u64) {
-    use crate::arch::rackscale::client::{get_local_client_id, get_num_clients};
+    use crate::arch::rackscale::client::{get_machine_id, get_num_workers};
 
     let mut base_offset = 0;
     let mut size = SHMEM_DEVICE.mem_size;
-    let num_clients = get_num_clients();
+    let num_workers = get_num_workers();
 
     if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         // Offset base to ignore shmem used for client transports
-        base_offset += MAX_SHMEM_TRANSPORT_SIZE * num_clients;
+        base_offset += SHMEM_TRANSPORT_SIZE * num_workers;
 
         // Remove amount used for transport from the size
-        size = core::cmp::max(0, size - MAX_SHMEM_TRANSPORT_SIZE * num_clients);
+        size = core::cmp::max(0, size - SHMEM_TRANSPORT_SIZE * num_workers);
     };
 
-    size = size / num_clients;
-    base_offset += size * get_local_client_id();
-    log::debug!(
+    let pages_per_worker = (size / BASE_PAGE_SIZE as u64) / num_workers;
+    let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
+
+    base_offset += size_per_worker * get_machine_id() as u64;
+    log::info!(
         "Shmem affinity region: offset={:x?}, size={:x?}",
         base_offset,
-        size,
+        size_per_worker,
     );
 
-    (base_offset, size)
+    (base_offset, size_per_worker)
 }
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn create_shmem_manager(
     base: u64,
     size: u64,
-    machine_id: u64,
+    machine_id: MachineId,
 ) -> Option<Box<FrameCacheMemslice>> {
     if size > 0 {
         // TODO(correctness): Using machine_id as affinity, but that's probably not really correct here

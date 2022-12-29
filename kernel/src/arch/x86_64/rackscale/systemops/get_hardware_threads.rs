@@ -12,9 +12,9 @@ use kpi::system::CpuThread;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::controller::HWTHREADS;
 use crate::nrproc::NrProcess;
 use crate::process::{UVAddr, UserSlice};
 
@@ -71,25 +71,27 @@ pub(crate) fn rpc_get_hardware_threads(
 pub(crate) fn handle_get_hardware_threads(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
-) -> Result<(), RPCError> {
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Encode hwthread information into payload buffer
-    let rack_threads = HWTHREADS.lock();
+    let hw_threads = state.get_hardware_threads();
     let start = KernelRpcRes_SIZE as usize;
     let end = start
-        + rack_threads.len() * core::mem::size_of::<CpuThread>()
+        + hw_threads.len() * core::mem::size_of::<CpuThread>()
         + core::mem::size_of::<Vec<CpuThread>>();
     let additional_data = end - start;
-    unsafe { encode(&*rack_threads, &mut &mut payload[start..end]) }
+    unsafe { encode(&hw_threads, &mut &mut payload[start..end]) }
         .expect("Failed to encode hardware thread vector");
     log::trace!(
         "Sending back {:?} bytes of data ({:?} hwthreads)",
         additional_data,
-        rack_threads.len()
+        hw_threads.len()
     );
 
     // Construct return
     let res = KernelRpcRes {
         ret: Ok((additional_data as u64, 0)),
     };
-    construct_ret_extra_data(hdr, payload, res, additional_data as u64)
+    construct_ret_extra_data(hdr, payload, res, additional_data as u64);
+    Ok(state)
 }

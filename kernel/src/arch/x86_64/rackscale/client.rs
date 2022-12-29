@@ -11,8 +11,9 @@ use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
 use rpc::client::Client;
 use rpc::rpc::{RPCError, RPCHeader};
 
-use crate::arch::rackscale::processops::request_core::request_core_work;
-use crate::cmdline::Transport;
+use crate::arch::rackscale::dcm::DCMNodeId;
+use crate::arch::rackscale::processops::core_work::rpc_core_work;
+use crate::cmdline::{MachineId, Transport};
 use crate::error::KError;
 use crate::fs::NrLock;
 use crate::transport::shmem::SHMEM_DEVICE;
@@ -48,11 +49,11 @@ pub(crate) static ref RPC_CLIENT: Arc<Mutex<Box<Client>>> =
 
 // Mapping between local frame IDs and remote memory address space ID (node id, currently).
 lazy_static! {
-    pub(crate) static ref FRAME_MAP: NrLock<HashMap<u64, u64>> = NrLock::default();
+    pub(crate) static ref FRAME_MAP: NrLock<HashMap<u64, DCMNodeId>> = NrLock::default();
 }
 
 // Lookup the address space corresponding to a local frame
-pub(crate) fn get_frame_as(frame_id: u64) -> Result<u64, RPCError> {
+pub(crate) fn get_frame_as(frame_id: u64) -> Result<DCMNodeId, RPCError> {
     let frame_lookup = FRAME_MAP.read();
     let ret = frame_lookup.get(&frame_id);
     if let Some(addr_space) = ret {
@@ -63,18 +64,19 @@ pub(crate) fn get_frame_as(frame_id: u64) -> Result<u64, RPCError> {
 }
 
 pub(crate) fn get_num_clients() -> u64 {
-    (crate::CMDLINE.get().map_or(2, |c| c.workers) - 1) as u64
+    (crate::CMDLINE.get().map_or(1, |c| c.workers) - 1) as u64
 }
 
 pub(crate) fn get_num_workers() -> u64 {
     crate::CMDLINE.get().map_or(1, |c| c.workers) as u64
 }
 
-pub(crate) fn get_local_client_id() -> u64 {
-    (crate::CMDLINE.get().map_or(1, |c| c.machine_id) - 1) as u64
+pub(crate) fn get_machine_id() -> MachineId {
+    crate::CMDLINE.get().map_or(1, |c| c.machine_id)
 }
 
+// TODO(hunhoffe): get rid of this.
 pub(crate) fn client_get_work() -> () {
     let mut client = RPC_CLIENT.lock();
-    request_core_work(&mut **client);
+    rpc_core_work(&mut **client);
 }

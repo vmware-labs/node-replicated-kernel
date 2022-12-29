@@ -1,8 +1,7 @@
-// Copyright © 2021 University of Colorado. All Rights Reserved.
+// Copyright © 2022 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use alloc::collections::vec_deque::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::Cell;
@@ -14,13 +13,12 @@ use smoltcp::time::Instant;
 use spin::Mutex;
 use static_assertions as sa;
 
-use kpi::system::CpuThread;
 use rpc::api::RPCServer;
 use rpc::rpc::RPCType;
 use rpc::server::Server;
 
 use crate::arch::debug::shutdown;
-use crate::arch::rackscale::client::get_num_clients;
+use crate::arch::rackscale::client::{get_num_clients, get_num_workers};
 use crate::arch::rackscale::dcm::*;
 use crate::arch::rackscale::processops::request_core::RequestCoreReq;
 use crate::cmdline::Transport;
@@ -38,61 +36,6 @@ use crate::ExitReason;
 use super::*;
 
 const PORT: u16 = 6970;
-
-/// A cache of pages
-/// TODO: think about how we should constrain this?
-///
-/// Used to allocate remote memory (in large chunks)
-pub(crate) type FrameCacheMemslice = MCache<2048, 2048>;
-sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
-sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
-
-lazy_static! {
-    pub(crate) static ref SHMEM_MANAGERS: Arc<Mutex<Vec<Option<Box<FrameCacheMemslice>>>>> = {
-        let mut shmem_manager_vec = Vec::try_with_capacity(get_num_clients() as usize)
-            .expect("Failed to create vector of shmem managers");
-        for i in 0..get_num_clients() {
-            shmem_manager_vec.push(None);
-        }
-        Arc::new(Mutex::new(shmem_manager_vec))
-    };
-}
-
-// List of hwthreads of all the clients in the rack
-lazy_static! {
-    pub(crate) static ref HWTHREADS: Arc<Mutex<Vec<CpuThread>>> = {
-        let mut hwthreads = Vec::try_with_capacity(get_num_clients() as usize)
-            .expect("Failed to create vector for rack cpu threads");
-        Arc::new(Mutex::new(hwthreads))
-    };
-}
-
-// Keep track of which hwthreads have been allocated. Index corresponds to gtid of hwthread
-lazy_static! {
-    pub(crate) static ref HWTHREADS_BUSY: Arc<Mutex<Vec<Option<bool>>>> = {
-        // Assume each client has about 8 cores, for now
-        let mut hwthreads_busy = Vec::try_with_capacity(get_num_clients() as usize * 8)
-            .expect("Failed to create vector for rack cpu threads");
-        for i in 0..(get_num_clients() as usize * 30) {
-            hwthreads_busy.push(None);
-        }
-        Arc::new(Mutex::new(hwthreads_busy))
-    };
-}
-
-// Keep track of unfulfilled core assignments
-lazy_static! {
-    pub(crate) static ref UNFULFILLED_CORE_ASSIGNMENTS: Arc<Mutex<Vec<Box<VecDeque<RequestCoreReq>>>>> = {
-        let mut core_assignments = Vec::try_with_capacity(get_num_clients() as usize)
-            .expect("Failed to create vector for core requests");
-        for i in 0..get_num_clients() {
-            // TODO: how to size vector appropriately? No try method for VecDeque
-            let mut client_core_assignments = VecDeque::with_capacity(3 as usize);
-            core_assignments.push(Box::new(client_core_assignments))
-        }
-        Arc::new(Mutex::new(core_assignments))
-    };
-}
 
 /// Test TCP RPC-based controller
 pub(crate) fn run() {
@@ -116,8 +59,9 @@ pub(crate) fn run() {
 
     // Initialize the RPC server
     let num_clients = get_num_clients();
-    let mut servers: Vec<Box<dyn RPCServer>> = Vec::try_with_capacity(num_clients as usize)
-        .expect("Failed to allocate vector for RPC server");
+    let mut servers: Vec<Box<dyn RPCServer<ControllerState>>> =
+        Vec::try_with_capacity(num_clients as usize)
+            .expect("Failed to allocate vector for RPC server");
     if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Ethernet)
@@ -125,7 +69,7 @@ pub(crate) fn run() {
         use rpc::{server::Server, transport::TCPTransport};
         let transport = Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&ETHERNET_IFACE)))
             .expect("Out of memory during init");
-        let mut server: Box<dyn RPCServer> =
+        let mut server: Box<dyn RPCServer<ControllerState>> =
             Box::try_new(Server::new(transport)).expect("Out of memory during init");
         register_rpcs(&mut server);
         servers.push(server);
@@ -134,12 +78,13 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
         use crate::transport::shmem::create_shmem_transport;
-        for client_id in 0..=(num_clients - 1) {
+        for machine_id in 1..=num_clients {
             let transport = Box::try_new(
-                create_shmem_transport(client_id).expect("Failed to create shmem transport"),
+                create_shmem_transport(machine_id.try_into().unwrap())
+                    .expect("Failed to create shmem transport"),
             )
             .expect("Out of memory during init");
-            let mut server: Box<dyn RPCServer> =
+            let mut server: Box<dyn RPCServer<ControllerState>> =
                 Box::try_new(Server::new(transport)).expect("Out of memory during init");
             register_rpcs(&mut server);
             servers.push(server);
@@ -148,9 +93,11 @@ pub(crate) fn run() {
         unreachable!("No supported transport layer specified in kernel argument");
     }
 
+    let mut controller_state = ControllerState::new(num_clients as usize);
+
     for server in servers.iter_mut() {
-        server
-            .add_client(&CLIENT_REGISTRAR)
+        controller_state = server
+            .add_client(&CLIENT_REGISTRAR, controller_state)
             .expect("Failed to connect to remote server");
     }
 
@@ -168,7 +115,10 @@ pub(crate) fn run() {
 
         // Try to handle an RPC request
         for server in servers.iter() {
-            server.try_handle();
+            let (mut new_state, _handled) = server
+                .try_handle(controller_state)
+                .expect("Controller failed to handle RPC");
+            controller_state = new_state;
         }
     }
 
@@ -176,7 +126,7 @@ pub(crate) fn run() {
     shutdown(ExitReason::Ok);
 }
 
-fn register_rpcs(server: &mut Box<dyn RPCServer>) {
+fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
     // Register all of the RPC functions supported
     server
         .register(KernelRpc::Close as RPCType, &CLOSE_HANDLER)

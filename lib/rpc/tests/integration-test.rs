@@ -36,21 +36,29 @@ fn test_client_server_shmem_transport() {
         let mut server = Server::new(rpc_server_transport);
 
         // Register an echo RPC
-        fn echo_rpc_handler(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
+        fn echo_rpc_handler(
+            _hdr: &mut RPCHeader,
+            _payload: &mut [u8],
+            _state: (),
+        ) -> Result<(), RPCError> {
             Ok(())
         }
-        const ECHO_HANDLER: RPCHandler = echo_rpc_handler;
+        const ECHO_HANDLER: RPCHandler<()> = echo_rpc_handler;
         server.register(RPC_ECHO, &ECHO_HANDLER).unwrap();
 
         // Accept a client
-        fn register_client(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
+        fn register_client(
+            _hdr: &mut RPCHeader,
+            _payload: &mut [u8],
+            _state: (),
+        ) -> Result<(), RPCError> {
             Ok(())
         }
-        pub const CLIENT_REGISTRAR: RegistrationHandler = register_client;
-        server.add_client(&CLIENT_REGISTRAR).unwrap();
+        pub const CLIENT_REGISTRAR: RegistrationHandler<()> = register_client;
+        server.add_client(&CLIENT_REGISTRAR, ()).unwrap();
 
         // Run the server
-        server.run_server().unwrap();
+        server.run_server(()).unwrap();
     });
 
     // Create a client
@@ -110,21 +118,29 @@ fn test_client_shmem_multithread() {
         let mut server = Server::new(rpc_server_transport);
 
         // Register an echo RPC
-        fn echo_rpc_handler(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
+        fn echo_rpc_handler(
+            _hdr: &mut RPCHeader,
+            _payload: &mut [u8],
+            _state: (),
+        ) -> Result<(), RPCError> {
             Ok(())
         }
-        const ECHO_HANDLER: RPCHandler = echo_rpc_handler;
+        const ECHO_HANDLER: RPCHandler<()> = echo_rpc_handler;
         server.register(RPC_ECHO, &ECHO_HANDLER).unwrap();
 
         // Accept a client
-        fn register_client(_hdr: &mut RPCHeader, _payload: &mut [u8]) -> Result<(), RPCError> {
+        fn register_client(
+            _hdr: &mut RPCHeader,
+            _payload: &mut [u8],
+            _state: (),
+        ) -> Result<(), RPCError> {
             Ok(())
         }
-        pub const CLIENT_REGISTRAR: RegistrationHandler = register_client;
-        server.add_client(&CLIENT_REGISTRAR).unwrap();
+        pub const CLIENT_REGISTRAR: RegistrationHandler<()> = register_client;
+        server.add_client(&CLIENT_REGISTRAR, ()).unwrap();
 
         // Run the server
-        server.run_server().unwrap();
+        server.run_server(()).unwrap();
     });
 
     // Create a client

@@ -207,19 +207,17 @@ fn scheduler_smp_test() {
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
 
-    for thread in threads.iter() {
-        if thread.id != 0 {
-            let r = vibrio::syscalls::Process::request_core(
-                thread.id,
-                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
-            );
-            match r {
-                Ok(ctoken) => {
-                    info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
-                }
-                Err(_e) => {
-                    panic!("Failed to spawn to core {}", thread.id);
-                }
+    for thread in threads[1..].iter() {
+        let r = vibrio::syscalls::Process::request_core(
+            thread.id,
+            VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+        );
+        match r {
+            Ok(ctoken) => {
+                info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+            }
+            Err(_e) => {
+                panic!("Failed to spawn to core {}", thread.id);
             }
         }
     }

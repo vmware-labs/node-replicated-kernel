@@ -10,12 +10,12 @@ use smoltcp::time::Instant;
 use crate::transport::ethernet::ETHERNET_IFACE;
 
 use super::super::kernelrpc::*;
-use super::{DCMOps, DCM_INTERFACE};
+use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct ResourceReleaseRequest {
-    pub node_id: u64,
+    pub node_id: DCMNodeId,
     pub application: u64,
     pub cores: u64,
     pub memslices: u64,
@@ -77,9 +77,9 @@ impl ResourceReleaseResponse {
     }
 }
 
-pub(crate) fn dcm_resource_release(node_id: usize, pid: usize, is_core: bool) -> u64 {
+pub(crate) fn dcm_resource_release(node_id: DCMNodeId, pid: usize, is_core: bool) -> u64 {
     let req = ResourceReleaseRequest {
-        node_id: node_id as u64,
+        node_id: node_id,
         application: pid as u64,
         cores: if is_core { 1 } else { 0 },
         memslices: if is_core { 0 } else { 1 },

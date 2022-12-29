@@ -11,14 +11,14 @@ use crate::api::*;
 use crate::rpc::*;
 use crate::transport::Transport;
 
-pub struct Server<'a> {
+pub struct Server<'a, S> {
     transport: Box<dyn Transport + 'a>,
-    handlers: RefCell<HashMap<RPCType, &'a RPCHandler>>,
+    handlers: RefCell<HashMap<RPCType, &'a RPCHandler<S>>>,
     mbuf: UnsafeCell<MBuf>,
 }
 
-impl<'t, 'a> Server<'a> {
-    pub fn new<T: 't + Transport>(transport: Box<T>) -> Server<'a>
+impl<'t, 'a, S> Server<'a, S> {
+    pub fn new<T: 't + Transport>(transport: Box<T>) -> Server<'a, S>
     where
         't: 'a,
     {
@@ -66,9 +66,9 @@ impl<'t, 'a> Server<'a> {
 }
 
 /// RPC server operations
-impl<'a> RPCServer<'a> for Server<'a> {
+impl<'a, S> RPCServer<'a, S> for Server<'a, S> {
     /// Register an RPC func with an ID
-    fn register<'c>(&mut self, rpc_id: RPCType, handler: &'c RPCHandler) -> Result<(), RPCError>
+    fn register<'c>(&mut self, rpc_id: RPCType, handler: &'c RPCHandler<S>) -> Result<(), RPCError>
     where
         'c: 'a,
     {
@@ -80,7 +80,7 @@ impl<'a> RPCServer<'a> for Server<'a> {
     }
 
     /// Accept a client
-    fn add_client<'c>(&mut self, func: &'c RegistrationHandler) -> Result<(), RPCError>
+    fn add_client<'c>(&mut self, func: &'c RegistrationHandler<S>, state: S) -> Result<S, RPCError>
     where
         'c: 'a,
     {
@@ -92,9 +92,11 @@ impl<'a> RPCServer<'a> for Server<'a> {
         // It is assumed that handler functions will only use the mutable reference to the header
         // during the function invocation (and not retain the reference), which makes it safe to
         // create a new mutable reference to the buffer during each time this function is called
-        func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
-            &mut (*self.mbuf.get()).data
-        })?;
+        let state = func(
+            unsafe { &mut (*self.mbuf.get()).hdr },
+            unsafe { &mut (*self.mbuf.get()).data },
+            state,
+        )?;
 
         // No result for registration
         unsafe {
@@ -104,60 +106,63 @@ impl<'a> RPCServer<'a> for Server<'a> {
 
         // Send response
         self.reply()?;
-        Ok(())
+        Ok(state)
     }
 
     /// Handle 1 RPC per client
-    fn handle(&self) -> Result<(), RPCError> {
+    fn handle(&self, state: S) -> Result<S, RPCError> {
         let rpc_id = self.receive()?;
-        match self.handlers.borrow().get(&rpc_id) {
+        let new_state = match self.handlers.borrow().get(&rpc_id) {
             Some(func) => {
-                {
-                    // It is assumed that handler functions will only use the mutable reference
-                    // during the function invocation (and not retain the reference), which makes it safe to
-                    // create a new mutable reference to the buffer during each time this function is called
-                    func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
-                        &mut (*self.mbuf.get()).data
-                    })?;
-                }
-                self.reply()
+                // It is assumed that handler functions will only use the mutable reference
+                // during the function invocation (and not retain the reference), which makes it safe to
+                // create a new mutable reference to the buffer during each time this function is called
+                let state_output = func(
+                    unsafe { &mut (*self.mbuf.get()).hdr },
+                    unsafe { &mut (*self.mbuf.get()).data },
+                    state,
+                )?;
+                self.reply()?;
+                state_output
             }
             None => {
                 debug!("Invalid RPCType({}), ignoring", rpc_id);
-                Ok(())
+                state
             }
-        }
+        };
+        Ok(new_state)
     }
 
     /// Try to handle 1 RPC per client, if data is available (non-blocking if RPCs not available)
-    fn try_handle(&self) -> Result<bool, RPCError> {
+    fn try_handle(&self, state: S) -> Result<(S, bool), RPCError> {
         match self.try_receive()? {
             Some(rpc_id) => match self.handlers.borrow().get(&rpc_id) {
                 Some(func) => {
-                    {
-                        // It is assumed that handler functions will only use the mutable reference
-                        // during the function invocation (and not retain the reference), which makes it safe to
-                        // create a new mutable reference to the buffer during each time this function is called
-                        func(unsafe { &mut (*self.mbuf.get()).hdr }, unsafe {
-                            &mut (*self.mbuf.get()).data
-                        })?;
-                    }
+                    // It is assumed that handler functions will only use the mutable reference
+                    // during the function invocation (and not retain the reference), which makes it safe to
+                    // create a new mutable reference to the buffer during each time this function is called
+                    let new_state = func(
+                        unsafe { &mut (*self.mbuf.get()).hdr },
+                        unsafe { &mut (*self.mbuf.get()).data },
+                        state,
+                    )?;
                     self.reply()?;
-                    Ok(true)
+                    Ok((new_state, true))
                 }
                 None => {
                     debug!("Invalid RPCType({}), ignoring", rpc_id);
-                    Ok(false)
+                    Ok((state, false))
                 }
             },
-            None => Ok(false),
+            None => Ok((state, false)),
         }
     }
 
     /// Run the RPC server
-    fn run_server(&self) -> Result<(), RPCError> {
+    fn run_server(&self, state: S) -> Result<S, RPCError> {
+        let mut my_state = state;
         loop {
-            let _ = self.handle()?;
+            my_state = self.handle(my_state)?;
         }
     }
 }

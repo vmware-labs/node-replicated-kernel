@@ -12,6 +12,7 @@ use rpc::RPCClient;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::FileIO;
 
@@ -136,7 +137,11 @@ pub(crate) fn rpc_readat(
 }
 
 // RPC Handler function for read() RPCs in the controller
-pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_read(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Extract data needed from the request
     let fd;
     let len;
@@ -157,7 +162,8 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
         }
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
-        return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        return Ok(state);
     }
 
     // Read directly into payload buffer, at offset after result field & header
@@ -175,11 +181,16 @@ pub(crate) fn handle_read(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(),
     let res = KernelRpcRes {
         ret: convert_return(ret),
     };
-    construct_ret_extra_data(hdr, payload, res, additional_data as u64)
+    construct_ret_extra_data(hdr, payload, res, additional_data as u64);
+    Ok(state)
 }
 
 // RPC Handler function for write() RPCs in the controller
-pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_write(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Decode request
     if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
@@ -201,11 +212,12 @@ pub(crate) fn handle_write(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
         let res = KernelRpcRes {
             ret: convert_return(ret),
         };
-        construct_ret(hdr, payload, res)
+        construct_ret(hdr, payload, res);
 
     // Return error if failed to decode request
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest)
+        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
     }
+    Ok(state)
 }

@@ -11,6 +11,7 @@ use crate::error::KError;
 use crate::fs::cnrfs;
 use crate::nr;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 
 // This isn't truly a syscall, but we'll reuse some infrastructure/types.
@@ -37,7 +38,11 @@ pub(crate) fn rpc_make_process(rpc_client: &mut dyn RPCClient) -> Result<usize, 
 }
 
 // RPC Handler function for make_process() RPCs in the controller
-pub(crate) fn handle_make_process(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_make_process(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Create a new process and return the pid
     let ret = nr::NR_REPLICA
         .get()
@@ -58,5 +63,6 @@ pub(crate) fn handle_make_process(hdr: &mut RPCHeader, payload: &mut [u8]) -> Re
     let res = KernelRpcRes {
         ret: convert_return(ret),
     };
-    construct_ret(hdr, payload, res)
+    construct_ret(hdr, payload, res);
+    Ok(state)
 }

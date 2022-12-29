@@ -13,6 +13,7 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use super::FileIO;
 use crate::fallible_string::TryString;
@@ -63,13 +64,18 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
 }
 
 // RPC Handler function for close() RPCs in the controller
-pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_mkdir(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Parse request
     let (pid, modes) = match unsafe { decode::<MkDirReq>(payload) } {
         Some((req, _)) => (req.pid, req.modes),
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            return Ok(state);
         }
     };
 
@@ -82,5 +88,6 @@ pub(crate) fn handle_mkdir(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<()
     let res = KernelRpcRes {
         ret: convert_return(mkdir_req),
     };
-    construct_ret(hdr, payload, res)
+    construct_ret(hdr, payload, res);
+    Ok(state)
 }

@@ -11,6 +11,7 @@ use rpc::RPCClient;
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
+use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 
 pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
@@ -40,7 +41,11 @@ pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
 }
 
 // RPC Handler function for getinfo() RPCs in the controller
-pub(crate) fn handle_log(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), RPCError> {
+pub(crate) fn handle_log(
+    hdr: &mut RPCHeader,
+    payload: &mut [u8],
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     let msg_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
     log::info!("Remote Log: {}", msg_str);
 
@@ -48,5 +53,6 @@ pub(crate) fn handle_log(hdr: &mut RPCHeader, payload: &mut [u8]) -> Result<(), 
     let res = KernelRpcRes {
         ret: convert_return(Ok((0, 0))),
     };
-    construct_ret(hdr, payload, res)
+    construct_ret(hdr, payload, res);
+    Ok(state)
 }

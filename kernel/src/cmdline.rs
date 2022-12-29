@@ -109,6 +109,8 @@ impl From<&str> for Transport {
     }
 }
 
+pub(crate) type MachineId = u8;
+
 /// Arguments parsed from command line string passed from the bootloader to the
 /// kernel.
 #[derive(Copy, Clone, Debug)]
@@ -120,7 +122,7 @@ pub(crate) struct CommandLineArguments {
     pub test: Option<&'static str>,
     pub mode: Mode,
     pub transport: Transport,
-    pub machine_id: u8,
+    pub machine_id: MachineId,
     pub workers: u8,
 }
 // If you move or rename `CommandLineArguments`, you may also need to update the `s02_gdb` test.
@@ -199,7 +201,7 @@ impl CommandLineArguments {
                         prev = CmdToken::Error;
                     }
                     CmdToken::MachineId => {
-                        parsed_args.machine_id = slice.parse::<u8>().unwrap_or(0x0);
+                        parsed_args.machine_id = slice.parse::<MachineId>().unwrap_or(0x0);
                         prev = CmdToken::Error;
                     }
                     CmdToken::Workers => {
@@ -257,7 +259,8 @@ impl CommandLineArguments {
                             prev = CmdToken::Error;
                         }
                         CmdToken::MachineId => {
-                            parsed_args.machine_id = slice_no_quote.parse::<u8>().unwrap_or(0x0);
+                            parsed_args.machine_id =
+                                slice_no_quote.parse::<MachineId>().unwrap_or(0x0);
                             prev = CmdToken::Error;
                         }
                         CmdToken::Workers => {

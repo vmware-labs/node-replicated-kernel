@@ -11,7 +11,7 @@ use smoltcp::time::Instant;
 use crate::transport::ethernet::ETHERNET_IFACE;
 
 use super::super::kernelrpc::*;
-use super::{DCMOps, DCM_INTERFACE};
+use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
@@ -48,7 +48,7 @@ impl NodeRegistrationRequest {
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct NodeRegistrationResponse {
-    pub node_id: u64,
+    pub node_id: DCMNodeId,
 }
 pub const RES_SIZE: usize = core::mem::size_of::<NodeRegistrationResponse>();
 
@@ -76,7 +76,7 @@ impl NodeRegistrationResponse {
     }
 }
 
-pub(crate) fn dcm_register_node(cores: u64, memslices: u64) -> u64 {
+pub(crate) fn dcm_register_node(cores: u64, memslices: u64) -> DCMNodeId {
     // Create request and space for response
     let req = NodeRegistrationRequest { cores, memslices };
     let mut res = NodeRegistrationResponse { node_id: 0 };

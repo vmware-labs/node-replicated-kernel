@@ -12,7 +12,7 @@ use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch, SystemDispatch};
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
-use super::client::{get_local_client_id, RPC_CLIENT};
+use super::client::{get_machine_id, RPC_CLIENT};
 use super::fileops::close::rpc_close;
 use super::fileops::delete::rpc_delete;
 use super::fileops::getinfo::rpc_getinfo;
@@ -50,10 +50,7 @@ impl SystemDispatch<u64> for Arch86LwkSystemCall {
         // map local core ID to rackscale global core ID - since mapping is deterministic on number of
         // clients we can do this without making an RPC call
         self.local.get_core_id().and_then(|(core_id, n)| {
-            Ok((
-                local_to_gtid(core_id as usize, get_local_client_id()) as u64,
-                n,
-            ))
+            Ok((local_to_gtid(core_id as usize, get_machine_id()) as u64, n))
         })
     }
 }
@@ -100,7 +97,6 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn close(&self, fd: FileDescriptor) -> KResult<(u64, u64)> {
-        // TODO: what to do here??
         let pid = crate::arch::process::current_pid()?;
         let mut client = RPC_CLIENT.lock();
         rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
@@ -164,18 +160,18 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
         self.local.get_process_info(vaddr_buf, vaddr_buf_len)
     }
 
-    fn request_core(&self, core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
-        // TODO: what to do here?
+    fn request_core(&self, _core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
         let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
-        let ret = rpc_request_core(&mut **client, pid, core_id, entry_point).map_err(|e| e.into());
+        let ret = rpc_request_core(&mut **client, pid, entry_point).map_err(|e| e.into());
 
         // request core locally if that's what was assigned this request
-        let client_id = get_local_client_id();
+        // otherwise, assume controller handled remote request.
+        let machine_id = get_machine_id();
         if let Ok((gtid, n)) = ret {
-            if is_gtid_local(gtid as usize, client_id) {
+            if is_gtid_local(gtid as usize, machine_id) {
                 self.local
-                    .request_core(gtid_to_local(gtid as usize, client_id) as u64, entry_point)
+                    .request_core(gtid_to_local(gtid as usize, machine_id) as u64, entry_point)
             } else {
                 ret
             }
@@ -186,13 +182,11 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
         let mut client = RPC_CLIENT.lock();
-        // TODO: what to do here?
         let pid = crate::arch::process::current_pid()?;
         rpc_allocate_physical(&mut **client, pid, page_size, affinity).map_err(|e| e.into())
     }
 
     fn release_physical(&self, frame_id: u64) -> KResult<(u64, u64)> {
-        // TODO: what do to here?
         let mut client = RPC_CLIENT.lock();
         let pid = crate::arch::process::current_pid()?;
         rpc_release_physical(&mut **client, pid, frame_id).map_err(|e| e.into())

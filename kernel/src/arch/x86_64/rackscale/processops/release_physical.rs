@@ -16,13 +16,13 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
 
+use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_release::dcm_resource_release;
-use super::super::dcm::DCM_INTERFACE;
+use super::super::dcm::{DCMNodeId, DCM_INTERFACE};
 use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::client::{get_frame_as, FRAME_MAP};
-use crate::arch::rackscale::controller::SHMEM_MANAGERS;
 use crate::transport::shmem::SHMEM_DEVICE;
 
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub(crate) struct ReleasePhysicalReq {
     pub pid: usize,
     pub frame_base: u64,
     pub frame_size: u64,
-    pub node_id: u64,
+    pub node_id: DCMNodeId,
 }
 unsafe_abomonate!(ReleasePhysicalReq: frame_base, frame_size, node_id);
 
@@ -86,47 +86,45 @@ pub(crate) fn rpc_release_physical(
 pub(crate) fn handle_release_physical(
     hdr: &mut RPCHeader,
     payload: &mut [u8],
-) -> Result<(), RPCError> {
+    state: ControllerState,
+) -> Result<ControllerState, RPCError> {
     // Extract data needed from the request
-    let frame_base;
-    let frame_size;
-    let node_id;
-    let pid;
-    if let Some((req, _)) = unsafe { decode::<ReleasePhysicalReq>(payload) } {
-        debug!(
-            "AllocPhysical(frame_base={:x?}, frame_size={:?}), node_id={:?}",
-            req.frame_base, req.frame_size, req.node_id
-        );
-        frame_base = req.frame_base;
-        frame_size = req.frame_size;
-        node_id = req.node_id as usize;
-        pid = req.pid;
-    } else {
-        warn!("Invalid payload for request: {:?}", hdr);
-        return construct_error_ret(hdr, payload, RPCError::MalformedRequest);
-    }
+    let req = match unsafe { decode::<ReleasePhysicalReq>(payload) } {
+        Some((req, _)) => req,
+        _ => {
+            warn!("Invalid payload for request: {:?}", hdr);
+            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            return Ok(state);
+        }
+    };
+    debug!(
+        "AllocPhysical(frame_base={:x?}, frame_size={:?}), dcm_node_id={:?}",
+        req.frame_base, req.frame_size, req.node_id
+    );
 
-    // TODO: using dummy affinity
-    let frame = Frame::new(PAddr::from(frame_base), frame_size as usize, 0);
+    // TODO(correctness): using dummy affinity
+    let frame = Frame::new(PAddr::from(req.frame_base), req.frame_size as usize, 0);
 
-    let mut shmem_managers = SHMEM_MANAGERS.lock();
+    // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
+    let ret = {
+        let mut client_state = state.get_client_state_by_dcm_node_id(req.node_id).lock();
+        let mut manager = client_state
+            .shmem_manager
+            .as_mut()
+            .expect("No shmem manager found for client");
 
-    // TODO: error handling here could use work. Should client be notified?
-    let manager = shmem_managers[node_id]
-        .as_mut()
-        .expect("Error - no shmem manager found for client");
-
-    let ret = if frame_size <= BASE_PAGE_SIZE as u64 {
-        manager.release_base_page(frame)
-    } else {
-        manager.release_large_page(frame)
+        if req.frame_size <= BASE_PAGE_SIZE as u64 {
+            manager.release_base_page(frame)
+        } else {
+            manager.release_large_page(frame)
+        }
     };
 
     // Construct result. For success, both DCM and the manager need to release the memory
     let res = match ret {
         Ok(()) => {
             // Tell DCM the resource is no longer being used
-            if dcm_resource_release(node_id, pid, false) == 0 {
+            if dcm_resource_release(req.node_id, req.pid, false) == 0 {
                 debug!("DCM release resource was successful");
                 KernelRpcRes {
                     ret: convert_return(Ok((0, 0))),
@@ -146,5 +144,6 @@ pub(crate) fn handle_release_physical(
             }
         }
     };
-    construct_ret(hdr, payload, res)
+    construct_ret(hdr, payload, res);
+    Ok(state)
 }

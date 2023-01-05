@@ -11,6 +11,8 @@ use slabmalloc::ZoneAllocator;
 
 use crate::arch::MAX_NUMA_NODES;
 use crate::error::KError;
+use crate::memory::Frame;
+use crate::transport::shmem::SHMEM_AFFINITY;
 
 use super::backends::MemManager;
 use super::emem::EmergencyAllocator;
@@ -36,6 +38,14 @@ impl PerCoreAllocatorState {
         PerCoreAllocatorState {
             affinity: node,
             pmanager: FrameCacheSmall::new(node),
+            zone_allocator: ZoneAllocator::new(),
+        }
+    }
+
+    pub(crate) fn new_with_frame(frame: Frame) -> Self {
+        PerCoreAllocatorState {
+            affinity: frame.affinity,
+            pmanager: FrameCacheSmall::new_with_frame(frame.affinity, frame),
             zone_allocator: ZoneAllocator::new(),
         }
     }
@@ -76,7 +86,9 @@ pub(crate) struct PerCoreMemory {
     /// core needs to allocate memory from another NUMA node. Can have one for
     /// every NUMA node but we intialize it lazily upon calling
     /// `set_mem_affinity`.
-    pub memory_arenas: RefCell<[Option<PerCoreAllocatorState>; crate::arch::MAX_NUMA_NODES]>,
+    /// For a shmem arena, assume only one at index/affinity SHMEM_AFFINITY (which
+    /// is assumed here to be MAX_NUMA_NODES) and initialized with `add_shmem_arena`
+    pub memory_arenas: RefCell<[Option<PerCoreAllocatorState>; crate::arch::MAX_NUMA_NODES + 1]>,
 
     /// Contains a bunch of pmem arenas, in case a core needs to allocate mmeory
     /// from another NUMA node. Can have one for every NUMA node but we
@@ -93,7 +105,7 @@ impl PerCoreMemory {
             gmanager: None,
             pgmanager: None,
             ezone_allocator: RefCell::new(EmergencyAllocator::empty()),
-            memory_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES]),
+            memory_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES + 1]),
             pmem_arenas: RefCell::new([DEFAULT_PHYSICAL_MEMORY_ARENA; MAX_NUMA_NODES]),
             physical_memory: RefCell::new(PerCoreAllocatorState::new(node)),
             persistent_memory: RefCell::new(PerCoreAllocatorState::new(node)),
@@ -120,6 +132,28 @@ impl PerCoreMemory {
         self.pgmanager = Some(pgm);
     }
 
+    pub(crate) fn add_shmem_arena(&mut self, frame: Frame) -> Result<(), KError> {
+        debug_assert!(frame.affinity == SHMEM_AFFINITY);
+        let new_arena = PerCoreAllocatorState::new_with_frame(frame);
+        PerCoreMemory::add_arena(
+            new_arena,
+            &mut *self.memory_arenas.borrow_mut(),
+            SHMEM_AFFINITY,
+        )
+    }
+
+    fn add_arena(
+        new_arena: PerCoreAllocatorState,
+        arenas: &mut [Option<PerCoreAllocatorState>],
+        node: atopology::NodeId,
+    ) -> Result<(), KError> {
+        debug_assert!(new_arena.affinity == node);
+        debug_assert!(node < arenas.len());
+        debug_assert!(arenas[node].is_none());
+        arenas[node].replace(new_arena);
+        Ok(())
+    }
+
     // Swaps out the current arena (from where we allocate memory) with a new
     // arena from the one that can get memory from the provided `node`. If no
     // arena for the current `node` exists, we create a new arena.
@@ -128,8 +162,14 @@ impl PerCoreMemory {
         arenas: &mut [Option<PerCoreAllocatorState>],
         node: atopology::NodeId,
     ) -> Result<(), KError> {
-        if node < arenas.len() && node < atopology::MACHINE_TOPOLOGY.num_nodes() {
+        if node < arenas.len()
+            && (node < core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())
+                || node == SHMEM_AFFINITY)
+        {
             if arenas[node].is_none() {
+                if node == SHMEM_AFFINITY {
+                    panic!("shmem arena cannot be initialized on the fly, instead call add_shmem_arena");
+                }
                 arenas[node] = Some(PerCoreAllocatorState::new(node));
             }
             debug_assert!(arenas[node].is_some());

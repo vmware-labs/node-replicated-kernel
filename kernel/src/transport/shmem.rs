@@ -1,14 +1,20 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use abomonation::{unsafe_abomonate, Abomonation};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use atopology::NodeId;
+use core2::io::Result as IOResult;
+use core2::io::Write;
 use driverkit::pci::{CapabilityId, CapabilityType, PciDevice};
 use kpi::KERNEL_BASE;
 use lazy_static::lazy_static;
 use rpc::rpc::MAX_BUFF_LEN;
 use spin::Mutex;
 use static_assertions::const_assert;
+
+use crate::arch::MAX_NUMA_NODES;
 
 #[cfg(feature = "rackscale")]
 use {
@@ -30,6 +36,39 @@ const SHMEM_DOORBELL_OFFSET: u64 = 12;
 // Used for rackscale mode
 pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
 
+// TODO(correctness,style): Should be create some sort of union or something
+// to differential between node and shmem affinity?
+pub(crate) const SHMEM_AFFINITY: NodeId = MAX_NUMA_NODES;
+
+#[derive(Debug, Default)]
+pub(crate) struct ShmemRegion {
+    pub(crate) base: u64,
+    pub(crate) size: u64,
+}
+unsafe_abomonate!(ShmemRegion: base, size);
+
+impl ShmemRegion {
+    pub(crate) fn get_frame(&self, frame_offset: u64) -> Frame {
+        Frame::new(
+            PAddr(self.base + frame_offset),
+            self.size as usize,
+            SHMEM_AFFINITY,
+        )
+    }
+
+    #[cfg(feature = "rackscale")]
+    pub(crate) fn get_shmem_manager(&self) -> Option<Box<FrameCacheMemslice>> {
+        if self.size > 0 {
+            let frame = self.get_frame(0);
+            let mut shmem_cache = Box::new(FrameCacheMemslice::new(SHMEM_AFFINITY));
+            shmem_cache.populate_2m_first(frame);
+            Some(shmem_cache)
+        } else {
+            None
+        }
+    }
+}
+
 lazy_static! {
     pub(crate) static ref SHMEM_DEVICE: ShmemDevice =
         ShmemDevice::new().expect("Failed to get SHMEM device");
@@ -37,8 +76,7 @@ lazy_static! {
 
 pub(crate) struct ShmemDevice {
     // Shmem memory region.
-    pub(crate) mem_addr: u64,
-    pub(crate) mem_size: u64,
+    pub(crate) region: ShmemRegion,
 
     // Easier to remember here so we can reference without gaining interrupt regiister mutex
     pub(crate) id: u16,
@@ -139,8 +177,10 @@ impl ShmemDevice {
                 .expect("Failed to map MSI-X table");
 
             Some(ShmemDevice {
-                mem_addr: mem_region.address,
-                mem_size: mem_region.size,
+                region: ShmemRegion {
+                    base: mem_region.address,
+                    size: mem_region.size,
+                },
                 id,
                 doorbell: Arc::new(Mutex::new(
                     register_region.address + KERNEL_BASE + SHMEM_DOORBELL_OFFSET,
@@ -266,9 +306,9 @@ pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTran
     use rpc::transport::shmem::Queue;
     use rpc::transport::shmem::{Receiver, Sender};
     let machine_id = machine_id as u64;
-    assert!(SHMEM_DEVICE.mem_size >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
+    assert!(SHMEM_DEVICE.region.size >= (machine_id + 1) * SHMEM_TRANSPORT_SIZE);
 
-    let base_addr = SHMEM_DEVICE.mem_addr + KERNEL_BASE + machine_id * SHMEM_TRANSPORT_SIZE;
+    let base_addr = SHMEM_DEVICE.region.base + KERNEL_BASE + machine_id * SHMEM_TRANSPORT_SIZE;
     let allocator = ShmemAllocator::new(base_addr, SHMEM_TRANSPORT_SIZE);
     match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode) {
         Mode::Controller => {
@@ -324,11 +364,11 @@ pub(crate) fn init_shmem_rpc(
 }
 
 #[cfg(feature = "rackscale")]
-pub(crate) fn get_affinity_shmem() -> (u64, u64) {
+pub(crate) fn get_affinity_shmem() -> ShmemRegion {
     use crate::arch::rackscale::client::{get_machine_id, get_num_workers};
 
     let mut base_offset = 0;
-    let mut size = SHMEM_DEVICE.mem_size;
+    let mut size = SHMEM_DEVICE.region.size;
     let num_workers = get_num_workers();
 
     if crate::CMDLINE
@@ -351,23 +391,8 @@ pub(crate) fn get_affinity_shmem() -> (u64, u64) {
         base_offset,
         size_per_worker,
     );
-
-    (base_offset, size_per_worker)
-}
-
-#[cfg(feature = "rackscale")]
-pub(crate) fn create_shmem_manager(
-    base: u64,
-    size: u64,
-    machine_id: MachineId,
-) -> Option<Box<FrameCacheMemslice>> {
-    if size > 0 {
-        // TODO(correctness): Using machine_id as affinity, but that's probably not really correct here
-        let frame = Frame::new(PAddr(base), size as usize, machine_id as usize);
-        let mut shmem_cache = Box::new(FrameCacheMemslice::new(0));
-        shmem_cache.populate_2m_first(frame);
-        Some(shmem_cache)
-    } else {
-        None
+    ShmemRegion {
+        base: base_offset,
+        size: size_per_worker,
     }
 }

@@ -370,6 +370,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Make sure our BSP core has a reference to GlobalMemory
     dyn_mem.set_global_pmem(&global_memory_static);
+
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+    {
+        use crate::transport::shmem::{get_affinity_shmem, SHMEM_DEVICE};
+
+        let shmem_region = get_affinity_shmem();
+        let frame = shmem_region.get_frame(SHMEM_DEVICE.region.base);
+        log::info!("Shmem allocator frame is: {:?}", frame);
+        dyn_mem
+            .add_shmem_arena(frame)
+            .expect("Failed to add shmem mem arena");
+    }
     core::mem::forget(dyn_mem);
 
     unsafe { vspace::init_large_objects_pml4() };
@@ -401,6 +416,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     crate::pci::init();
 
     // Initialize processes
+    lazy_static::initialize(&process::PROCESS_LOGS);
     lazy_static::initialize(&process::PROCESS_TABLE);
     crate::nrproc::register_thread_with_process_replicas();
 

@@ -30,7 +30,6 @@ use crate::memory::LARGE_PAGE_SIZE;
 use crate::nr;
 use crate::process::Pid;
 use crate::transport::ethernet::ETHERNET_IFACE;
-use crate::transport::shmem::create_shmem_manager;
 use crate::ExitReason;
 
 use super::*;

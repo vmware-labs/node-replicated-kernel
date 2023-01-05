@@ -70,6 +70,37 @@ pub(crate) fn current_pid() -> KResult<Pid> {
 }
 
 lazy_static! {
+    pub(crate) static ref PROCESS_LOGS: Box<
+        ArrayVec<
+            Arc<Log::<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>>,
+            MAX_PROCESSES,
+        >,
+    > = {
+        use crate::transport::shmem::SHMEM_AFFINITY;
+
+        // We want to allocate the logs in shared memory
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(SHMEM_AFFINITY).expect("Can't change affinity");
+
+        let mut process_logs =
+            Box::try_new(ArrayVec::new()).expect("Can't initialize process log vector.");
+        for _pid in 0..MAX_PROCESSES {
+            let log = Arc::try_new(
+                Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(LARGE_PAGE_SIZE),
+            )
+            .expect("Can't initialize process logs, out of memory.");
+            process_logs.push(log);
+        }
+
+        // Reset mem allocator to use per core memory again
+        pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
+        log::info!("Finished initializing process logs in shmem");
+
+        process_logs
+    };
+}
+
+lazy_static! {
     pub(crate) static ref PROCESS_TABLE: ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES> = {
         // Want at least one replica...
         let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
@@ -82,10 +113,6 @@ lazy_static! {
         }
 
         for pid in 0..MAX_PROCESSES {
-                let log = Arc::try_new(Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(
-                    LARGE_PAGE_SIZE,
-                )).expect("Can't initialize processes, out of memory.");
-
             let da = DA::new().expect("Can't initialize process deterministic memory allocator");
             for node in 0..numa_nodes {
                 let pcm = per_core_mem();
@@ -95,7 +122,7 @@ lazy_static! {
                 let p = Box::try_new(Ring3Process::new(pid, da.clone()).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
                 let nrp = NrProcess::new(p, da.clone());
 
-                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&log, nrp));
+                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&PROCESS_LOGS[pid], nrp));
 
                 debug_assert_eq!(*crate::environment::NODE_ID, 0, "Expect initialization to happen on node 0.");
                 pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");

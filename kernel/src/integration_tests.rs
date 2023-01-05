@@ -776,8 +776,8 @@ pub(crate) fn cxl_write() {
 
     lazy_static::initialize(&SHMEM_DEVICE);
 
-    for i in 0..SHMEM_DEVICE.mem_size {
-        let region = (SHMEM_DEVICE.mem_addr + KERNEL_BASE + i as u64) as *mut u8;
+    for i in 0..SHMEM_DEVICE.region.size {
+        let region = (SHMEM_DEVICE.region.base + KERNEL_BASE + i as u64) as *mut u8;
         unsafe { core::ptr::write(region, BUFFER_CONTENT) };
     }
 
@@ -792,8 +792,8 @@ pub(crate) fn cxl_read() {
 
     lazy_static::initialize(&SHMEM_DEVICE);
 
-    for i in 0..SHMEM_DEVICE.mem_size {
-        let region = (SHMEM_DEVICE.mem_addr + KERNEL_BASE + i as u64) as *mut u8;
+    for i in 0..SHMEM_DEVICE.region.size {
+        let region = (SHMEM_DEVICE.region.base + KERNEL_BASE + i as u64) as *mut u8;
         let read = unsafe { core::ptr::read(region) };
         assert_eq!(read, BUFFER_CONTENT);
     }

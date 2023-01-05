@@ -18,7 +18,7 @@ use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
-use crate::transport::shmem::SHMEM_DEVICE;
+use crate::transport::shmem::{ShmemRegion, SHMEM_DEVICE};
 
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
@@ -69,13 +69,15 @@ pub(crate) fn rpc_allocate_physical(
 
         if let Ok((node_id, frame_base)) = res.ret {
             // Associate frame with the local process
+            let shmem_region = ShmemRegion {
+                base: frame_base,
+                size,
+            };
+            let frame = shmem_region.get_frame(SHMEM_DEVICE.region.base);
             debug!(
-                "AllocatePhysical() mapping base from {:x?} to {:x?}",
-                frame_base,
-                frame_base + SHMEM_DEVICE.mem_addr
+                "AllocatePhysical() mapping base from {:x?} to {:?}",
+                frame_base, frame,
             );
-            let frame_base = frame_base + SHMEM_DEVICE.mem_addr;
-            let frame = Frame::new(PAddr::from(frame_base), size as usize, affinity as usize);
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
             // Add frame mapping to local map

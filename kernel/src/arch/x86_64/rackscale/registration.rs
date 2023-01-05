@@ -20,19 +20,17 @@ use crate::arch::rackscale::systemops::{local_to_gtid, local_to_node_id, local_t
 use crate::cmdline::MachineId;
 use crate::error::KResult;
 use crate::memory::LARGE_PAGE_SIZE;
-use crate::transport::shmem::{create_shmem_manager, get_affinity_shmem};
+use crate::transport::shmem::{get_affinity_shmem, ShmemRegion};
 
 #[derive(Debug, Default)]
 pub(crate) struct ClientRegistrationRequest {
     pub(crate) machine_id: MachineId,
-    pub(crate) affinity_shmem_offset: u64,
-    pub(crate) affinity_shmem_size: u64,
+    pub(crate) shmem_region: ShmemRegion,
     pub(crate) num_cores: u64,
 }
 unsafe_abomonate!(
     ClientRegistrationRequest: machine_id,
-    affinity_shmem_offset,
-    affinity_shmem_size,
+    shmem_region,
     num_cores
 );
 
@@ -43,7 +41,7 @@ pub(crate) fn initialize_client(
 ) -> KResult<Box<Client>> {
     if send_client_data {
         // Fetch system information
-        let (affinity_shmem_offset, affinity_shmem_size) = get_affinity_shmem();
+        let shmem_region = get_affinity_shmem();
         let hwthreads = atopology::MACHINE_TOPOLOGY.threads();
         let num_threads = atopology::MACHINE_TOPOLOGY.num_threads();
 
@@ -63,8 +61,7 @@ pub(crate) fn initialize_client(
         // Construct client registration request
         let req = ClientRegistrationRequest {
             machine_id: get_machine_id(),
-            affinity_shmem_offset,
-            affinity_shmem_size,
+            shmem_region,
             num_cores: atopology::MACHINE_TOPOLOGY.num_threads() as u64,
         };
 
@@ -97,9 +94,9 @@ pub(crate) fn register_client(
     if let Some((req, hwthreads_data)) =
         unsafe { decode::<ClientRegistrationRequest>(&mut payload[..hdr.msg_len as usize]) }
     {
-        let memslices = req.affinity_shmem_size / (LARGE_PAGE_SIZE as u64);
+        let memslices = req.shmem_region.size / (LARGE_PAGE_SIZE as u64);
         info!("Received registration request from client {:?} with {:?} cores and shmem {:x?}-{:x?} ({:?} memslices)",
-            req.machine_id, req.num_cores, req.affinity_shmem_offset, req.affinity_shmem_offset + req.affinity_shmem_size, memslices);
+            req.machine_id, req.num_cores, req.shmem_region.base, req.shmem_region.base + req.shmem_region.size, memslices);
 
         // Parse out hw_threads
         let local_hw_threads = match unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {
@@ -143,12 +140,7 @@ pub(crate) fn register_client(
         );
 
         // Create shmem memory manager
-        // TODO(hunhoffe): Not accurate to use the client's machine_id for affinity here
-        let shmem_manager = create_shmem_manager(
-            req.affinity_shmem_offset,
-            req.affinity_shmem_size,
-            req.machine_id,
-        );
+        let shmem_manager = req.shmem_region.get_shmem_manager();
         log::info!(
             "Created shmem manager on behalf of client {:?}: {:?}",
             req.machine_id,

@@ -23,7 +23,7 @@ use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::client::{get_frame_as, FRAME_MAP};
-use crate::transport::shmem::SHMEM_DEVICE;
+use crate::transport::shmem::{SHMEM_AFFINITY, SHMEM_DEVICE};
 
 #[derive(Debug)]
 pub(crate) struct ReleasePhysicalReq {
@@ -102,8 +102,11 @@ pub(crate) fn handle_release_physical(
         req.frame_base, req.frame_size, req.node_id
     );
 
-    // TODO(correctness): using dummy affinity
-    let frame = Frame::new(PAddr::from(req.frame_base), req.frame_size as usize, 0);
+    let frame = Frame::new(
+        PAddr::from(req.frame_base),
+        req.frame_size as usize,
+        SHMEM_AFFINITY,
+    );
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let ret = {

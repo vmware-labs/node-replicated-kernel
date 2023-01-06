@@ -17,7 +17,7 @@ backtracer_core = "0.0.7"
 x86 = { version = "0.52", features = ["unstable"] }
 log = "0.4.6"
 spin = "0.9"
-arr_macro = "0.1"
+arr_macro = "0.2"
 
 [features]
 default = []

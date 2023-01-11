@@ -372,18 +372,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     dyn_mem.set_global_pmem(&global_memory_static);
 
     #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
     {
         use crate::transport::shmem::{get_affinity_shmem, SHMEM_DEVICE};
+        lazy_static::initialize(&SHMEM_DEVICE);
 
-        let shmem_region = get_affinity_shmem();
-        let frame = shmem_region.get_frame(SHMEM_DEVICE.region.base);
-        log::info!("Shmem allocator frame is: {:?}", frame);
-        dyn_mem
-            .add_shmem_arena(frame)
-            .expect("Failed to add shmem mem arena");
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+        {
+            let shmem_region = get_affinity_shmem();
+            let frame = shmem_region.get_frame(SHMEM_DEVICE.region.base);
+            log::info!("Shmem allocator frame is: {:?}", frame);
+            dyn_mem
+                .add_shared_arena(frame)
+                .expect("Failed to add shmem mem arena");
+        }
     }
     core::mem::forget(dyn_mem);
 
@@ -411,6 +414,16 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Intialize PCI
     crate::pci::init();
 
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        // Force client instantiation - this must be done before the process
+        // structures are initialized.
+        lazy_static::initialize(&rackscale::client_state::CLIENT_STATE);
+    }
+
     // Initialize processes
     lazy_static::initialize(&process::PROCESS_LOGS);
     lazy_static::initialize(&process::PROCESS_TABLE);
@@ -423,15 +436,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         // - IDT is set-up, interrupts are working
         // - Only a breakpoint to wait for debugger to attach
         unsafe { x86::int!(1) }; // Cause a debug interrupt to go to the `gdb::event_loop()`
-    }
-
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        // Force client instantiation
-        let _ = rackscale::client::RPC_CLIENT.clone();
     }
 
     // Bring up the rest of the system (needs topology, APIC, and global memory)

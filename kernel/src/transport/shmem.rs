@@ -2,29 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{unsafe_abomonate, Abomonation};
-use alloc::boxed::Box;
 use alloc::sync::Arc;
-use atopology::NodeId;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use driverkit::pci::{CapabilityId, CapabilityType, PciDevice};
 use kpi::KERNEL_BASE;
 use lazy_static::lazy_static;
-use rpc::rpc::MAX_BUFF_LEN;
 use spin::Mutex;
-use static_assertions::const_assert;
 
-use crate::arch::MAX_NUMA_NODES;
-
-#[cfg(feature = "rackscale")]
+#[cfg(feature = "rpc")]
 use {
-    crate::arch::rackscale::controller_state::FrameCacheMemslice, rpc::transport::ShmemTransport,
+    crate::arch::rackscale::controller_state::FrameCacheMemslice,
+    crate::cmdline::{MachineId, Transport},
+    crate::error::{KError, KResult},
+    crate::memory::{Frame, SHARED_AFFINITY},
+    alloc::boxed::Box,
+    rpc::rpc::MAX_BUFF_LEN,
+    rpc::transport::ShmemTransport,
+    static_assertions::const_assert,
 };
 
-use crate::cmdline::{MachineId, Transport};
-use crate::error::{KError, KResult};
 use crate::memory::vspace::MapAction;
-use crate::memory::{paddr_to_kernel_vaddr, Frame, PAddr, BASE_PAGE_SIZE};
+use crate::memory::{paddr_to_kernel_vaddr, PAddr, BASE_PAGE_SIZE};
 use crate::pci::claim_device;
 
 // Register information from:
@@ -33,13 +32,6 @@ use crate::pci::claim_device;
 const SHMEM_IVPOSITION_OFFSET: u64 = 8;
 const SHMEM_DOORBELL_OFFSET: u64 = 12;
 
-// Used for rackscale mode
-pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
-
-// TODO(correctness,style): Should be create some sort of union or something
-// to differential between node and shmem affinity?
-pub(crate) const SHMEM_AFFINITY: NodeId = MAX_NUMA_NODES;
-
 #[derive(Debug, Default)]
 pub(crate) struct ShmemRegion {
     pub(crate) base: u64,
@@ -47,20 +39,20 @@ pub(crate) struct ShmemRegion {
 }
 unsafe_abomonate!(ShmemRegion: base, size);
 
+#[cfg(feature = "rackscale")]
 impl ShmemRegion {
     pub(crate) fn get_frame(&self, frame_offset: u64) -> Frame {
         Frame::new(
             PAddr(self.base + frame_offset),
             self.size as usize,
-            SHMEM_AFFINITY,
+            SHARED_AFFINITY,
         )
     }
 
-    #[cfg(feature = "rackscale")]
     pub(crate) fn get_shmem_manager(&self) -> Option<Box<FrameCacheMemslice>> {
         if self.size > 0 {
             let frame = self.get_frame(0);
-            let mut shmem_cache = Box::new(FrameCacheMemslice::new(SHMEM_AFFINITY));
+            let mut shmem_cache = Box::new(FrameCacheMemslice::new(SHARED_AFFINITY));
             shmem_cache.populate_2m_first(frame);
             Some(shmem_cache)
         } else {
@@ -295,9 +287,15 @@ impl ShmemDevice {
     }
 }
 
+#[cfg(feature = "rpc")]
 const SHMEM_QUEUE_SIZE: usize = 32;
+
 // The total size of two queues(sender and reciever) should be less than the transport size.
+#[cfg(feature = "rpc")]
 const_assert!(2 * SHMEM_QUEUE_SIZE * MAX_BUFF_LEN <= SHMEM_TRANSPORT_SIZE as usize);
+
+#[cfg(feature = "rpc")]
+pub(crate) const SHMEM_TRANSPORT_SIZE: u64 = 2 * 1024 * 1024;
 
 #[cfg(feature = "rpc")]
 pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTransport<'static>> {
@@ -351,8 +349,8 @@ pub(crate) fn create_shmem_transport(machine_id: MachineId) -> KResult<ShmemTran
 pub(crate) fn init_shmem_rpc(
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
 ) -> KResult<Box<rpc::client::Client>> {
-    use crate::arch::rackscale::client::get_machine_id;
     use crate::arch::rackscale::registration::initialize_client;
+    use crate::arch::rackscale::utils::get_machine_id;
     use rpc::client::Client;
 
     // Set up the transport
@@ -365,7 +363,7 @@ pub(crate) fn init_shmem_rpc(
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn get_affinity_shmem() -> ShmemRegion {
-    use crate::arch::rackscale::client::{get_machine_id, get_num_workers};
+    use crate::arch::rackscale::utils::{get_machine_id, get_num_workers};
 
     let mut base_offset = 0;
     let mut size = SHMEM_DEVICE.region.size;

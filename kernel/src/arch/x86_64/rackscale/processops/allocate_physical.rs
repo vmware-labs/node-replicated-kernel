@@ -11,7 +11,7 @@ use rpc::RPCClient;
 
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::client::FRAME_MAP;
+use crate::arch::rackscale::client_state::CLIENT_STATE;
 use crate::error::KError;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
@@ -80,21 +80,8 @@ pub(crate) fn rpc_allocate_physical(
             );
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
-            // Add frame mapping to local map
-            {
-                let mut frame_map = FRAME_MAP.write();
-                frame_map
-                    .try_reserve(1)
-                    .map_err(|_e| RPCError::InternalError)?;
-                info!("Try reserve 1 local frame");
-                frame_map
-                    .try_insert(fid as u64, node_id)
-                    .map_err(|_e| KError::InvalidFrame)?;
-                info!(
-                    "Inserted local frame {} to address space (node) {}",
-                    fid, node_id
-                );
-            }
+            // Add frame mapping to client map
+            CLIENT_STATE.add_frame(fid, node_id);
 
             return Ok((fid as u64, frame_base));
         } else {

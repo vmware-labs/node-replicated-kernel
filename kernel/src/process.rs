@@ -443,10 +443,10 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
         .get()
         .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
     {
-        use crate::arch::rackscale::client::RPC_CLIENT;
+        use crate::arch::rackscale::client_state::CLIENT_STATE;
         use crate::arch::rackscale::processops::make_process::rpc_make_process;
 
-        let mut client = RPC_CLIENT.lock();
+        let mut client = CLIENT_STATE.rpc_client.lock();
         let pid = rpc_make_process(&mut **client)?;
         // Since the pid is globally unique we know it will be locally unique too, and we can create a new process with it
         // We need to do this so that crate::arch::process::current_pid() continue to work.

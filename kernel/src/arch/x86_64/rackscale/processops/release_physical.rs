@@ -4,6 +4,7 @@
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use kpi::process::FrameId;
 use kpi::FileOperation;
 use log::{debug, error, info, warn};
 use rpc::rpc::*;
@@ -13,17 +14,17 @@ use crate::error::KError;
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
-use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
+use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE, SHARED_AFFINITY};
 use crate::nrproc::NrProcess;
 
+use super::super::client_state::CLIENT_STATE;
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_release::dcm_resource_release;
 use super::super::dcm::{DCMNodeId, DCM_INTERFACE};
 use super::super::kernelrpc::*;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::client::{get_frame_as, FRAME_MAP};
-use crate::transport::shmem::{SHMEM_AFFINITY, SHMEM_DEVICE};
+use crate::transport::shmem::SHMEM_DEVICE;
 
 #[derive(Debug)]
 pub(crate) struct ReleasePhysicalReq {
@@ -43,13 +44,13 @@ pub(crate) fn rpc_release_physical(
     info!("ReleasePhysical({:?})", frame_id);
 
     // Construct request data
-    let node_id = get_frame_as(frame_id)?;
-    let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, frame_id as usize)?;
+    let node_id = CLIENT_STATE.get_frame_as(frame_id as FrameId)?;
 
-    let mut frame_map = FRAME_MAP.write();
-    frame_map
-        .remove(&frame_id)
-        .expect("Didn't find a frame for frame_id");
+    // TODO(error_handling): will probably want to do this NrProcess operation on controller, so we can't have a state where this
+    // succeeds but the next part fails without the controller knowing.
+    // this will check if it's removeable (e.g., mapped or no) so we should do this operation before doing anything else
+    let frame = NrProcess::<Ring3Process>::release_frame_from_process(pid, frame_id as FrameId)?;
+    CLIENT_STATE.remove_frame(frame_id as FrameId)?;
 
     let req = ReleasePhysicalReq {
         pid,
@@ -105,7 +106,7 @@ pub(crate) fn handle_release_physical(
     let frame = Frame::new(
         PAddr::from(req.frame_base),
         req.frame_size as usize,
-        SHMEM_AFFINITY,
+        SHARED_AFFINITY,
     );
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?

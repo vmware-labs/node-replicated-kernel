@@ -18,9 +18,9 @@ use rpc::rpc::RPCType;
 use rpc::server::Server;
 
 use crate::arch::debug::shutdown;
-use crate::arch::rackscale::client::{get_num_clients, get_num_workers};
 use crate::arch::rackscale::dcm::*;
 use crate::arch::rackscale::processops::request_core::RequestCoreReq;
+use crate::arch::rackscale::utils::{get_num_clients, get_num_workers};
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::{cnrfs, NrLock};

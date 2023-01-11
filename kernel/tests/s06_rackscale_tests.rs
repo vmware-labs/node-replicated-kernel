@@ -26,9 +26,8 @@ fn s06_rackscale_phys_alloc_test() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let large_shmem_size = 16; // Needs to be large to have a large page
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
     let timeout = 180_000;
 
@@ -48,7 +47,7 @@ fn s06_rackscale_phys_alloc_test() {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(timeout)
             .cmd("mode=controller")
-            .shmem_size(large_shmem_size as usize)
+            .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
             .workers(2)
             .tap("tap0")
@@ -74,7 +73,7 @@ fn s06_rackscale_phys_alloc_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(180_000)
             .cmd("mode=client")
-            .shmem_size(large_shmem_size as usize)
+            .shmem_size(SHMEM_SIZE as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
@@ -293,9 +292,8 @@ fn s06_rackscale_shmem_multiinstance() {
     let clients = 4;
     let mut processes = Vec::with_capacity(clients + 1);
 
-    let large_shmem_size = 16;
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
     setup_network(clients + 1);
 
     let build = Arc::new(

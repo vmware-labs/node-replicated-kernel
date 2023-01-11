@@ -21,6 +21,10 @@ use backends::PhysicalPageProvider;
 
 pub(crate) use frame::Frame;
 pub(crate) use kpi::MemType;
+
+#[cfg(feature = "rackscale")]
+pub(crate) use per_core::SHARED_AFFINITY;
+
 use vspace::MapAction;
 
 /// Re-export arch specific memory definitions

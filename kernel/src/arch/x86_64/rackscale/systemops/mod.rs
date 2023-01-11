@@ -3,7 +3,7 @@
 
 use kpi::system::{GlobalThreadId, NodeId, PackageId};
 
-use crate::arch::rackscale::client::get_num_workers;
+use super::utils::get_num_workers;
 use crate::cmdline::MachineId;
 
 pub mod get_hardware_threads;

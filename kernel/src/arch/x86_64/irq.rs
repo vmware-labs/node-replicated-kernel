@@ -523,8 +523,8 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
         .get()
         .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
     {
-        use crate::arch::rackscale::client::client_get_work;
-        client_get_work();
+        use crate::arch::rackscale::client_state::CLIENT_STATE;
+        CLIENT_STATE.client_get_work();
     }
 
     if super::process::has_executor() {

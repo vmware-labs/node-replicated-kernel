@@ -17,12 +17,12 @@ use crate::memory::VAddr;
 use crate::nr;
 use crate::nr::KernelNode;
 
-use super::super::client::get_machine_id;
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use super::super::processops::core_work::CoreWorkRes;
 use super::super::systemops::{gtid_to_local, local_to_gtid};
+use super::super::utils::get_machine_id;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RequestCoreReq {

@@ -14,9 +14,9 @@ use rpc::rpc::{RPCError, RPCHeader};
 use rpc::RPCClient;
 
 use super::dcm::{node_registration::dcm_register_node, DCMNodeId};
-use crate::arch::rackscale::client::get_machine_id;
-use crate::arch::rackscale::controller_state::{ClientState, ControllerState};
+use crate::arch::rackscale::controller_state::{ControllerState, PerClientState};
 use crate::arch::rackscale::systemops::{local_to_gtid, local_to_node_id, local_to_package_id};
+use crate::arch::rackscale::utils::get_machine_id;
 use crate::cmdline::MachineId;
 use crate::error::KResult;
 use crate::memory::LARGE_PAGE_SIZE;
@@ -147,7 +147,7 @@ pub(crate) fn register_client(
             shmem_manager
         );
 
-        let client_state = ClientState::new(req.machine_id, shmem_manager, global_hw_threads);
+        let client_state = PerClientState::new(req.machine_id, shmem_manager, global_hw_threads);
         state.add_client(dcm_node_id, client_state);
 
         Ok(state)

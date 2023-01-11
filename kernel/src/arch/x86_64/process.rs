@@ -76,11 +76,16 @@ lazy_static! {
             MAX_PROCESSES,
         >,
     > = {
-        use crate::transport::shmem::SHMEM_AFFINITY;
-
-        // We want to allocate the logs in shared memory
-        let pcm = per_core_mem();
-        pcm.set_mem_affinity(SHMEM_AFFINITY).expect("Can't change affinity");
+        #[cfg(feature = "rackscale")]
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+        {
+            // We want to allocate the logs in shared memory
+            use crate::memory::SHARED_AFFINITY;
+            let pcm = per_core_mem();
+            pcm.set_mem_affinity(SHARED_AFFINITY).expect("Can't change affinity");
+        }
 
         let mut process_logs =
             Box::try_new(ArrayVec::new()).expect("Can't initialize process log vector.");
@@ -92,9 +97,16 @@ lazy_static! {
             process_logs.push(log);
         }
 
-        // Reset mem allocator to use per core memory again
-        pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
-        log::info!("Finished initializing process logs in shmem");
+        #[cfg(feature = "rackscale")]
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+        {
+            // Reset mem allocator to use per core memory again
+            let pcm = per_core_mem();
+            pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
+            log::info!("Finished initializing process logs in shmem");
+        }
 
         process_logs
     };

@@ -13,9 +13,9 @@ use static_assertions as sa;
 
 use kpi::system::CpuThread;
 
-use crate::arch::rackscale::client::get_num_workers;
 use crate::arch::rackscale::dcm::DCMNodeId;
 use crate::arch::rackscale::processops::core_work::CoreWorkRes;
+use crate::arch::rackscale::utils::get_num_workers;
 use crate::cmdline::MachineId;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
@@ -29,7 +29,7 @@ sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE)
 sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
 
 /// This is the state the controller records about each client
-pub(crate) struct ClientState {
+pub(crate) struct PerClientState {
     /// The client believes it has this ID
     pub(crate) machine_id: MachineId,
 
@@ -43,13 +43,13 @@ pub(crate) struct ClientState {
     pub(crate) core_assignments: VecDeque<CoreWorkRes>,
 }
 
-impl ClientState {
+impl PerClientState {
     pub(crate) fn new(
         machine_id: MachineId,
         shmem_manager: Option<Box<FrameCacheMemslice>>,
         hw_threads: Vec<(CpuThread, bool)>,
-    ) -> ClientState {
-        ClientState {
+    ) -> PerClientState {
+        PerClientState {
             machine_id,
             shmem_manager,
             hw_threads,
@@ -64,7 +64,7 @@ pub(crate) struct ControllerState {
     max_clients: usize,
 
     /// State related to each client. We want fast lookup by both keys
-    client_states_by_dcm_node_id: HashMap<DCMNodeId, Arc<Mutex<ClientState>>>,
+    client_states_by_dcm_node_id: HashMap<DCMNodeId, Arc<Mutex<PerClientState>>>,
     machine_id_to_dcm_node_id: HashMap<MachineId, DCMNodeId>,
 }
 
@@ -78,7 +78,7 @@ impl ControllerState {
         }
     }
 
-    pub(crate) fn add_client(&mut self, dcm_node_id: DCMNodeId, client_state: ClientState) {
+    pub(crate) fn add_client(&mut self, dcm_node_id: DCMNodeId, client_state: PerClientState) {
         assert!(!self.client_states_by_dcm_node_id.contains_key(&dcm_node_id));
         assert!(!self
             .machine_id_to_dcm_node_id
@@ -92,14 +92,14 @@ impl ControllerState {
     pub(crate) fn get_client_state_by_dcm_node_id(
         &self,
         dcm_node_id: DCMNodeId,
-    ) -> &Arc<Mutex<ClientState>> {
+    ) -> &Arc<Mutex<PerClientState>> {
         self.client_states_by_dcm_node_id.get(&dcm_node_id).unwrap()
     }
 
     pub(crate) fn get_client_state_by_machine_id(
         &self,
         machine_id: MachineId,
-    ) -> &Arc<Mutex<ClientState>> {
+    ) -> &Arc<Mutex<PerClientState>> {
         let dcm_node_id = self.machine_id_to_dcm_node_id.get(&machine_id).unwrap();
         self.client_states_by_dcm_node_id.get(dcm_node_id).unwrap()
     }

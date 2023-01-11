@@ -2,23 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 //! State that's used by a single core to handle dynamic memory allocations.
-
 use core::cell::{RefCell, RefMut};
 use core::fmt;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use atopology::NodeId;
 use slabmalloc::ZoneAllocator;
 
 use crate::arch::MAX_NUMA_NODES;
 use crate::error::KError;
-use crate::memory::Frame;
-use crate::transport::shmem::SHMEM_AFFINITY;
 
 use super::backends::MemManager;
 use super::emem::EmergencyAllocator;
 use super::global::GlobalMemory;
 use super::mcache::FrameCacheEarly;
 use super::mcache::FrameCacheSmall;
+
+// TODO(correctness,style): Need to change how affinity is defined, but this will do for now.
+pub(crate) const SHARED_AFFINITY: NodeId = MAX_NUMA_NODES;
 
 /// State with all "the right" memory managers to handle allocations on a given
 /// core, during normal operations, for a particular `affinity` (NUMA node).
@@ -42,7 +43,8 @@ impl PerCoreAllocatorState {
         }
     }
 
-    pub(crate) fn new_with_frame(frame: Frame) -> Self {
+    #[cfg(feature = "rackscale")]
+    pub(crate) fn new_with_frame(frame: crate::memory::Frame) -> Self {
         PerCoreAllocatorState {
             affinity: frame.affinity,
             pmanager: FrameCacheSmall::new_with_frame(frame.affinity, frame),
@@ -86,8 +88,8 @@ pub(crate) struct PerCoreMemory {
     /// core needs to allocate memory from another NUMA node. Can have one for
     /// every NUMA node but we intialize it lazily upon calling
     /// `set_mem_affinity`.
-    /// For a shmem arena, assume only one at index/affinity SHMEM_AFFINITY (which
-    /// is assumed here to be MAX_NUMA_NODES) and initialized with `add_shmem_arena`
+    /// For a shared arena, assume only one at index/affinity SHARED_AFFINITY (which
+    /// is assumed here to be MAX_NUMA_NODES) and initialized with `add_shared_arena`
     pub memory_arenas: RefCell<[Option<PerCoreAllocatorState>; crate::arch::MAX_NUMA_NODES + 1]>,
 
     /// Contains a bunch of pmem arenas, in case a core needs to allocate mmeory
@@ -132,16 +134,18 @@ impl PerCoreMemory {
         self.pgmanager = Some(pgm);
     }
 
-    pub(crate) fn add_shmem_arena(&mut self, frame: Frame) -> Result<(), KError> {
-        debug_assert!(frame.affinity == SHMEM_AFFINITY);
+    #[cfg(feature = "rackscale")]
+    pub(crate) fn add_shared_arena(&mut self, frame: crate::memory::Frame) -> Result<(), KError> {
+        debug_assert!(frame.affinity == SHARED_AFFINITY);
         let new_arena = PerCoreAllocatorState::new_with_frame(frame);
         PerCoreMemory::add_arena(
             new_arena,
             &mut *self.memory_arenas.borrow_mut(),
-            SHMEM_AFFINITY,
+            SHARED_AFFINITY,
         )
     }
 
+    #[cfg(feature = "rackscale")]
     fn add_arena(
         new_arena: PerCoreAllocatorState,
         arenas: &mut [Option<PerCoreAllocatorState>],
@@ -164,12 +168,13 @@ impl PerCoreMemory {
     ) -> Result<(), KError> {
         if node < arenas.len()
             && (node < core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes())
-                || node == SHMEM_AFFINITY)
+                || node == SHARED_AFFINITY)
         {
             if arenas[node].is_none() {
-                if node == SHMEM_AFFINITY {
-                    panic!("shmem arena cannot be initialized on the fly, instead call add_shmem_arena");
+                if node == SHARED_AFFINITY {
+                    panic!("Shared mem arena cannot be initialized on the fly, instead call add_shared_arena");
                 }
+
                 arenas[node] = Some(PerCoreAllocatorState::new(node));
             }
             debug_assert!(arenas[node].is_some());

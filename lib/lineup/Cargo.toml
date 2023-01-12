@@ -11,7 +11,7 @@ crossbeam-utils = { version = "0.8", default-features = false }
 crossbeam-queue = { version = "0.3", default-features = false, features = ["alloc"] }
 either = { version = "1.5", default-features = false }
 fringe = { git = "https://github.com/gz/libfringe.git", default-features = false, features = ["alloc"], branch = "new-asm-syntax" }
-hashbrown = { version = "0.12.3", features = [ "nightly" ] }
+hashbrown = { version = "0.13.2", features = [ "nightly" ] }
 rawtime = "0.0.10"
 backtracer_core = "0.0.7"
 x86 = { version = "0.52", features = ["unstable"] }

@@ -39,7 +39,7 @@ once_cell = { version = "1.12.0", features = [ "alloc" ], default-features = fal
 logos = { version = "0.12", default-features = false, features = ["export_derive"] }
 hashbrown = { version = "0.11", features = [ "nightly" ] }
 cstr_core = { version = "0.2.3", default-features = false }
-uefi = "0.15"
+uefi = "0.19"
 crossbeam-utils = { version = "0.8.0", default-features = false }
 static_assertions = "1.1.0"
 bit_field = "0.10"

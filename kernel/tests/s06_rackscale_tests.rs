@@ -292,8 +292,9 @@ fn s06_rackscale_shmem_multiinstance() {
     let clients = 4;
     let mut processes = Vec::with_capacity(clients + 1);
 
+    let large_shmem_size = SHMEM_SIZE * (clients as u64);
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
     setup_network(clients + 1);
 
     let build = Arc::new(
@@ -312,7 +313,7 @@ fn s06_rackscale_shmem_multiinstance() {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
             .timeout(timeout)
             .cmd("mode=controller transport=shmem")
-            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_size(large_shmem_size as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
@@ -342,7 +343,7 @@ fn s06_rackscale_shmem_multiinstance() {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                 .timeout(timeout)
                 .cmd("mode=client transport=shmem")
-                .shmem_size(SHMEM_SIZE as usize)
+                .shmem_size(large_shmem_size as usize)
                 .shmem_path(SHMEM_PATH)
                 .tap(&tap)
                 .no_network_setup()

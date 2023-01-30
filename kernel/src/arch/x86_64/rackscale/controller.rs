@@ -192,4 +192,10 @@ fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
             &GET_HARDWARE_THREADS_HANDLER,
         )
         .unwrap();
+    server
+        .register(
+            KernelRpc::GetProcessLogs as RPCType,
+            &GET_PROCESS_LOGS_HANDLER,
+        )
+        .unwrap();
 }

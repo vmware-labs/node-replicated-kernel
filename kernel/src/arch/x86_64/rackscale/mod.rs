@@ -11,6 +11,7 @@ pub(crate) mod controller_state;
 pub(crate) mod dcm;
 pub(crate) mod error;
 pub(crate) mod fileops;
+pub(crate) mod get_process_logs;
 pub(crate) mod kernelrpc;
 pub(crate) mod processops;
 pub(crate) mod registration;
@@ -44,9 +45,6 @@ pub(crate) const ALLOCATE_PHYSICAL_HANDLER: RPCHandler<ControllerState> =
 pub(crate) const RELEASE_PHYSICAL_HANDLER: RPCHandler<ControllerState> =
     processops::release_physical::handle_release_physical;
 pub(crate) const LOG_HANDLER: RPCHandler<ControllerState> = processops::print::handle_log;
-// this isn't actually a process system call, but seems to make the most sense to put it here.
-pub(crate) const MAKE_PROCESS_HANDLER: RPCHandler<ControllerState> =
-    processops::make_process::handle_make_process;
 
 // Re-export handlers: system operations
 pub(crate) const GET_HARDWARE_THREADS_HANDLER: RPCHandler<ControllerState> =
@@ -55,3 +53,10 @@ pub(crate) const GET_HARDWARE_THREADS_HANDLER: RPCHandler<ControllerState> =
 // Client polls for work
 pub(crate) const REQUEST_CORE_WORK_HANDLER: RPCHandler<ControllerState> =
     processops::core_work::handle_core_work;
+
+// there aren't syscalls, but are other operations
+// TODO(hunhoffe): move these to new clientops file??
+pub(crate) const MAKE_PROCESS_HANDLER: RPCHandler<ControllerState> =
+    processops::make_process::handle_make_process;
+pub(crate) const GET_PROCESS_LOGS_HANDLER: RPCHandler<ControllerState> =
+    get_process_logs::handle_get_process_logs;

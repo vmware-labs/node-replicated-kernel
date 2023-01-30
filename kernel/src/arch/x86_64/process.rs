@@ -76,6 +76,8 @@ lazy_static! {
             MAX_PROCESSES,
         >,
     > = {
+
+
         #[cfg(feature = "rackscale")]
         if crate::CMDLINE
             .get()
@@ -85,6 +87,12 @@ lazy_static! {
             use crate::memory::SHARED_AFFINITY;
             let pcm = per_core_mem();
             pcm.set_mem_affinity(SHARED_AFFINITY).expect("Can't change affinity");
+        } else {
+            use crate::arch::rackscale::get_process_logs::rpc_get_proccess_logs;
+            use crate::arch::rackscale::client_state::CLIENT_STATE;
+            log::info!("About to call get_process_logs");
+            let mut client = CLIENT_STATE.rpc_client.lock();
+            return rpc_get_proccess_logs(&mut **client).unwrap();
         }
 
         let mut process_logs =

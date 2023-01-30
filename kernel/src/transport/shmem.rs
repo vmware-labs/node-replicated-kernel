@@ -96,9 +96,11 @@ impl ShmemDevice {
 
             let mem_region = ivshmem_device.bar(2).expect("Unable to find shmem BAR2");
             log::info!(
-                "Found IVSHMEM device memory region with base paddr {:X} and size {}",
+                "Found IVSHMEM device memory region with base paddr {:X} and size {}, range=[{:X}-{:X}]",
                 mem_region.address,
-                mem_region.size
+                mem_region.size,
+                mem_region.address,
+                mem_region.address + mem_region.size
             );
 
             let msi_region = if let Some(cap) = ivshmem_device
@@ -385,9 +387,11 @@ pub(crate) fn get_affinity_shmem() -> ShmemRegion {
 
     base_offset += size_per_worker * get_machine_id() as u64;
     log::info!(
-        "Shmem affinity region: offset={:x?}, size={:x?}",
+        "Shmem affinity region: offset={:x}, size={:x}, range: [{:X}-{:X}]",
         base_offset,
         size_per_worker,
+        base_offset,
+        base_offset + size_per_worker,
     );
     ShmemRegion {
         base: base_offset,

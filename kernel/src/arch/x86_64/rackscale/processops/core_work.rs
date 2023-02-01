@@ -6,10 +6,10 @@ use log::{debug, info, warn};
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use kpi::system::{GlobalThreadId, MachineId};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::cmdline::MachineId;
 use crate::error::KError;
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::fs::{cnrfs, NrLock};
@@ -20,8 +20,6 @@ use crate::nr::KernelNode;
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
-use super::super::systemops::{gtid_to_local, local_to_gtid};
-use super::super::utils::get_machine_id;
 
 #[derive(Debug)]
 pub(crate) struct CoreWorkReq {
@@ -32,7 +30,7 @@ unsafe_abomonate!(CoreWorkReq: machine_id);
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CoreWorkRes {
     pub pid: usize,
-    pub gtid: u64,
+    pub gtid: GlobalThreadId,
     pub entry_point: u64,
 }
 unsafe_abomonate!(CoreWorkRes: pid, gtid, entry_point);
@@ -46,10 +44,11 @@ unsafe_abomonate!(MaybeCoreWorkRes: work);
 pub(crate) fn rpc_core_work(rpc_client: &mut dyn RPCClient) -> () {
     // Construct request data
     let req = CoreWorkReq {
-        machine_id: get_machine_id(),
+        machine_id: *crate::environment::MACHINE_ID,
     };
     let mut req_data = [0u8; core::mem::size_of::<CoreWorkReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
+        .expect("Failed to encode core work request");
 
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<MaybeCoreWorkRes>()];
@@ -59,7 +58,7 @@ pub(crate) fn rpc_core_work(rpc_client: &mut dyn RPCClient) -> () {
             &[&req_data],
             &mut [&mut res_data],
         )
-        .unwrap();
+        .expect("Failed to send core work result request to controller");
 
     // Decode and return the result
     if let Some((res, remaining)) = unsafe { decode::<MaybeCoreWorkRes>(&mut res_data) } {
@@ -69,12 +68,13 @@ pub(crate) fn rpc_core_work(rpc_client: &mut dyn RPCClient) -> () {
         }
         if let Some(core_request) = res.work {
             log::info!("Client fetched RequestCore() {:?}", core_request);
+            debug_assert!(
+                kpi::system::mid_from_gtid(core_request.gtid) == *crate::environment::MACHINE_ID
+            );
 
-            let local_tid: usize =
-                gtid_to_local(core_request.gtid.try_into().unwrap(), get_machine_id());
             let mut affinity = None;
             for thread in atopology::MACHINE_TOPOLOGY.threads() {
-                if thread.id == local_tid {
+                if thread.id == kpi::system::mtid_from_gtid(core_request.gtid) {
                     affinity = Some(thread.node_id.unwrap_or(0));
                 }
             }
@@ -82,11 +82,11 @@ pub(crate) fn rpc_core_work(rpc_client: &mut dyn RPCClient) -> () {
                 .ok_or(KError::InvalidGlobalThreadId)
                 .expect("Failed to get thread affinity");
 
-            let _gtid = KernelNode::allocate_core_to_process(
+            let _mtid = KernelNode::allocate_core_to_process(
                 core_request.pid,
                 VAddr::from(core_request.entry_point),
                 Some(affinity),
-                Some(local_tid),
+                Some(kpi::system::mtid_from_gtid(core_request.gtid)),
             )
             .expect("Failed to allocate core to process");
 
@@ -110,7 +110,7 @@ pub(crate) fn handle_core_work(
         Some((work_req, _)) => work_req.machine_id,
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
@@ -125,7 +125,7 @@ pub(crate) fn handle_core_work(
     let result = MaybeCoreWorkRes { work };
 
     // Populate output buffer & header
-    unsafe { encode(&result, &mut payload) }.unwrap();
+    unsafe { encode(&result, &mut payload) }.expect("Failed to encode core work result");
     hdr.msg_len = core::mem::size_of::<MaybeCoreWorkRes>() as u64;
     Ok(state)
 }

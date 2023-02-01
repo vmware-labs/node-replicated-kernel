@@ -3,8 +3,8 @@
 
 //! Platform specific functions to deal with CNR
 
-pub(crate) fn advance_replica(gtid: atopology::GlobalThreadId, log_id: usize) {
-    log::warn!("advance_replica {} {} not implemented", gtid, log_id);
+pub(crate) fn advance_replica(mtid: kpi::system::MachineThreadId, log_id: usize) {
+    log::warn!("advance_replica {} {} not implemented", mtid, log_id);
     // All metadata operations are done using log 1. So, make sure that the
     // replica has applied all those operation before any other log sync.
     match crate::fs::cnrfs::MlnrKernelNode::synchronize_log(1) {

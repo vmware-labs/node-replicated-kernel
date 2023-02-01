@@ -91,7 +91,7 @@ pub(crate) fn dcm_register_node(cores: u64, memslices: u64) -> DCMNodeId {
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },
             )
-            .unwrap();
+            .expect("Failed to send register node RPC to DCM");
         debug!("Received node id in response: {:?}", res.node_id);
     }
     return res.node_id;

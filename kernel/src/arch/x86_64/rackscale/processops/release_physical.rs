@@ -10,7 +10,7 @@ use log::{debug, error, info, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
@@ -40,7 +40,7 @@ pub(crate) fn rpc_release_physical(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     frame_id: u64,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     info!("ReleasePhysical({:?})", frame_id);
 
     // Construct request data
@@ -59,27 +59,26 @@ pub(crate) fn rpc_release_physical(
         node_id,
     };
     let mut req_data = [0u8; core::mem::size_of::<ReleasePhysicalReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
+        .expect("Failed to encode release physical request");
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
-    rpc_client
-        .call(
-            KernelRpc::ReleasePhysical as RPCType,
-            &[&req_data],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
+    rpc_client.call(
+        KernelRpc::ReleasePhysical as RPCType,
+        &[&req_data],
+        &mut [&mut res_data],
+    )?;
 
     // Decode result, return result if decoded successfully
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            Err(KError::from(RPCError::ExtraData))
+        } else {
+            *res
         }
-
-        return res.ret;
     } else {
-        return Err(RPCError::MalformedResponse);
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -94,7 +93,7 @@ pub(crate) fn handle_release_physical(
         Some((req, _)) => req,
         _ => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
@@ -130,22 +129,16 @@ pub(crate) fn handle_release_physical(
             // Tell DCM the resource is no longer being used
             if dcm_resource_release(req.node_id, req.pid, false) == 0 {
                 debug!("DCM release resource was successful");
-                KernelRpcRes {
-                    ret: convert_return(Ok((0, 0))),
-                }
+                Ok((0, 0))
             } else {
                 error!("DCM release resource failed");
-                KernelRpcRes {
-                    // TODO: not sure if this is the best error to send
-                    ret: convert_return(Err(KError::DCMError)),
-                }
+                // TODO: not sure if this is the best error to send
+                Err(KError::DCMError)
             }
         }
         Err(kerror) => {
             error!("Manager failed to release physical frame: {:?}", kerror);
-            KernelRpcRes {
-                ret: convert_return(Err(kerror)),
-            }
+            Err(kerror)
         }
     };
     construct_ret(hdr, payload, res);

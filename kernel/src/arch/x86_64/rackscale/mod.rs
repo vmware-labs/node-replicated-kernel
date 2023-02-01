@@ -9,7 +9,6 @@ pub(crate) mod client_state;
 pub(crate) mod controller;
 pub(crate) mod controller_state;
 pub(crate) mod dcm;
-pub(crate) mod error;
 pub(crate) mod fileops;
 pub(crate) mod get_process_logs;
 pub(crate) mod kernelrpc;
@@ -17,7 +16,6 @@ pub(crate) mod processops;
 pub(crate) mod registration;
 pub(crate) mod syscalls;
 pub(crate) mod systemops;
-pub(crate) mod utils;
 
 pub(crate) use self::kernelrpc::KernelRpc;
 

@@ -65,6 +65,7 @@ pub mod vspace;
 
 pub(crate) const MAX_NUMA_NODES: usize = 12;
 pub(crate) const MAX_CORES: usize = 192;
+pub(crate) const MAX_MACHINES: usize = u8::MAX as usize;
 
 /// Make sure the machine supports what we require.
 fn assert_required_cpu_features() {

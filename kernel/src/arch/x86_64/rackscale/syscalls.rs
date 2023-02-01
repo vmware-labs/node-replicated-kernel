@@ -25,8 +25,6 @@ use super::processops::print::rpc_log;
 use super::processops::release_physical::rpc_release_physical;
 use super::processops::request_core::rpc_request_core;
 use super::systemops::get_hardware_threads::rpc_get_hardware_threads;
-use super::systemops::{gtid_to_local, is_gtid_local, local_to_gtid};
-use super::utils::get_machine_id;
 
 pub(crate) struct Arch86LwkSystemCall {
     pub(crate) local: Arch86SystemCall,
@@ -48,11 +46,7 @@ impl SystemDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn get_core_id(&self) -> KResult<(u64, u64)> {
-        // map local core ID to rackscale global core ID - since mapping is deterministic on number of
-        // clients we can do this without making an RPC call
-        self.local.get_core_id().and_then(|(core_id, n)| {
-            Ok((local_to_gtid(core_id as usize, get_machine_id()) as u64, n))
-        })
+        self.local.get_core_id()
     }
 }
 
@@ -134,6 +128,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
 
     fn mkdir(&self, path: UserSlice, modes: FileModes) -> KResult<(u64, u64)> {
         let pid = path.pid;
+        log::info!("Calling mkdir system call??");
         let pathstring: String = path.try_into()?;
 
         let mut client = CLIENT_STATE.rpc_client.lock();
@@ -168,11 +163,9 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
 
         // request core locally if that's what was assigned this request
         // otherwise, assume controller handled remote request.
-        let machine_id = get_machine_id();
         if let Ok((gtid, n)) = ret {
-            if is_gtid_local(gtid as usize, machine_id) {
-                self.local
-                    .request_core(gtid_to_local(gtid as usize, machine_id) as u64, entry_point)
+            if kpi::system::mid_from_gtid(gtid as usize) == *crate::environment::MACHINE_ID {
+                self.local.request_core(gtid, entry_point)
             } else {
                 ret
             }

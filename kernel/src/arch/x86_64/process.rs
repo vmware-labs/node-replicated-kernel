@@ -88,9 +88,9 @@ lazy_static! {
             let pcm = per_core_mem();
             pcm.set_mem_affinity(SHARED_AFFINITY).expect("Can't change affinity");
         } else {
+            // Get location of the logs from the controller, who will created them in shared memory
             use crate::arch::rackscale::get_process_logs::rpc_get_proccess_logs;
             use crate::arch::rackscale::client_state::CLIENT_STATE;
-            log::info!("About to call get_process_logs");
             let mut client = CLIENT_STATE.rpc_client.lock();
             return rpc_get_proccess_logs(&mut **client).unwrap();
         }
@@ -113,7 +113,6 @@ lazy_static! {
             // Reset mem allocator to use per core memory again
             let pcm = per_core_mem();
             pcm.set_mem_affinity(0 as atopology::NodeId).expect("Can't change affinity");
-            log::info!("Finished initializing process logs in shmem");
         }
 
         process_logs
@@ -1422,11 +1421,11 @@ pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     allocate_dispatchers::<Ring3Process>(pid)?;
 
     // Set current thread to run executor from our process (on the current core)
-    let _gtid = nr::KernelNode::allocate_core_to_process(
+    let _mtid = nr::KernelNode::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
         Some(*crate::environment::NODE_ID),
-        Some(*crate::environment::CORE_ID),
+        Some(kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)),
     )?;
 
     Ok(pid)

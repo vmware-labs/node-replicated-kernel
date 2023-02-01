@@ -74,7 +74,7 @@ fn alloc_test() {
 }
 
 fn alloc_physical_test() {
-    use x86::bits64::paging::{PAddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
+    use x86::bits64::paging::{BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 
     // Create base for the mapping
     let base: u64 = 0x0510_0000_0000;
@@ -150,53 +150,61 @@ fn request_core_remote_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
     let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
-    info!("threads: {:?}", threads);
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let current_mid = kpi::system::mid_from_gtid(current_gtid);
+    let current_mtid = kpi::system::mtid_from_gtid(current_gtid);
+    log::info!(
+        "gtid={:?} machine_id={:?} machine_thread_id={:?}",
+        current_gtid,
+        current_mid,
+        current_mtid
+    );
 
-    let core_id = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    if current_mid == 1 && current_mtid == 0 {
+        for thread in threads[1..].iter() {
+            let mid = kpi::system::mid_from_gtid(thread.id);
+            let mtid = kpi::system::mtid_from_gtid(thread.id);
+            log::info!(
+                "Considering thread: gtid={:?}, mid={:?}, mtid={:?}",
+                thread.id,
+                mid,
+                mtid
+            );
 
-    let NUM_CLIENTS = 2; // TODO: this value change tests
-
-    // Only one client will run this, because these are global IDs
-    if core_id == 0 {
-        for thread in threads.iter() {
-            // Ignore core 0 on each client, assume it is already running init procress
-            if thread.id >= NUM_CLIENTS {
+            if mtid != 0 {
                 let r = vibrio::syscalls::Process::request_core(
-                    thread.id, // in rackscale mode, thread.id is ignores - the ctoken is the valid value
+                    0, // this field does nothing in rackscale mode
                     VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
                 );
+
                 match r {
-                    Ok(ctoken) => {
-                        info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                    Ok(spawned_gtid) => {
+                        // Spawn process on core that was given to us in response to our request.
+                        info!("Spawned core {:?}", spawned_gtid);
+                        s.spawn(
+                            32 * 4096,
+                            move |_| {
+                                info!(
+                                    "Hello from core {}",
+                                    lineup::tls2::Environment::scheduler().core_id
+                                );
+                            },
+                            ptr::null_mut(),
+                            spawned_gtid.gtid() as usize,
+                            None,
+                        );
                     }
                     Err(_e) => {
-                        panic!("Failed to spawn to core {}", thread.id);
+                        panic!("Failed to spawn core");
                     }
                 }
             }
         }
-
-        /*
-        for thread in threads {
-                s.spawn(
-                    32 * 4096,
-                    move |_| {
-                        info!(
-                            "Hello from core {}",
-                            lineup::tls2::Environment::scheduler().core_id
-                        );
-                    },
-                    ptr::null_mut(),
-                    thread.id,
-                    None,
-                );
-        }
-        */
     }
-    info!("request_core_remote_test OK");
 
-    // Run scheduler on core 0
-    let scb: SchedulerControlBlock = SchedulerControlBlock::new(0);
+    // Run scheduler on core 0 of this machine
+    let core_id = lineup::gtid_to_core_id(current_gtid);
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(core_id);
     loop {
         s.run(&scb);
     }

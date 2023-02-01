@@ -56,7 +56,7 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
         // Create the EthernetInterface wrapping the VMX device
         let device = DevQueuePhy::new(vmx).expect("Can't create PHY");
         let neighbor_cache = NeighborCache::new(BTreeMap::new());
-        let machine_id = crate::CMDLINE.get().map_or(0, |c| c.machine_id);
+        let machine_id: u8 = (*crate::environment::MACHINE_ID).try_into().unwrap();
 
         let (ethernet_addr, ip_addrs) = match crate::CMDLINE.get().map_or(Mode::Native, |c| c.mode)
         {
@@ -64,13 +64,10 @@ pub(crate) fn init_network<'a>() -> KResult<Arc<Mutex<Interface<'a, DevQueuePhy>
                 EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0 + machine_id as u8]),
                 [IpCidr::new(IpAddress::v4(172, 31, 0, 11 + machine_id), 24)],
             ),
-            _ => {
-                // TODO: MAC, IP, and default route should be dynamic
-                (
-                    EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0 + machine_id as u8]),
-                    [IpCidr::new(IpAddress::v4(172, 31, 0, 11 + machine_id), 24)],
-                )
-            }
+            _ => (
+                EthernetAddress([0x56, 0xb4, 0x44, 0xe9, 0x62, 0xd0 + machine_id as u8]),
+                [IpCidr::new(IpAddress::v4(172, 31, 0, 11 + machine_id), 24)],
+            ),
         };
 
         let mut routes = Routes::new(BTreeMap::new());
@@ -105,11 +102,10 @@ pub(crate) fn init_ethernet_rpc(
     use rpc::transport::TCPTransport;
     use rpc::RPCClient;
 
-    let rpc_transport = Box::try_new(TCPTransport::new(
-        Some(server_ip),
-        server_port,
-        Arc::clone(&ETHERNET_IFACE),
-    ))?;
+    let rpc_transport = Box::try_new(
+        TCPTransport::new(Some(server_ip), server_port, Arc::clone(&ETHERNET_IFACE))
+            .map_err(|err| KError::RackscaleRPCError { err })?,
+    )?;
     let mut client = Box::try_new(Client::new(rpc_transport))?;
     initialize_client(client, send_client_data)
 }

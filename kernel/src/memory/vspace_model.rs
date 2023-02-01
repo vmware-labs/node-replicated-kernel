@@ -401,6 +401,6 @@ fn tlb_flush_handle_invalid_core() {
     use crate::arch::MAX_CORES;
     let mut t = TlbFlushHandle::new(VAddr::zero(), PAddr::zero(), 4096, MapAction::none());
 
-    let gtid = core::cmp::max(MAX_CORES + 1, (u128::BITS * 2) as usize);
-    t.add_core(gtid);
+    let mtid = core::cmp::max(MAX_CORES + 1, (u128::BITS * 2) as usize);
+    t.add_core(mtid);
 }

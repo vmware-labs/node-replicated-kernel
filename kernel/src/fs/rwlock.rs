@@ -141,7 +141,10 @@ where
     /// Locks the underlying data-structure for reads. Allows multiple readers to acquire the lock.
     /// Blocks until there aren't any active writers.
     pub(crate) fn read(&self) -> ReadGuard<T> {
-        let tid: usize = *crate::environment::CORE_ID;
+        // TODO(rackscale): this method works since (currently) cnrfs replicas aren't shared across machines.
+        // To have a replica used across machines we'd need to use a rack-unique identifier.
+        let tid: usize = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
+
         // We perform a small optimization. Before attempting to acquire a read lock, we issue
         // naked reads to the write lock and wait until it is free. For that, we retrieve a
         // raw pointer to the write lock over here.

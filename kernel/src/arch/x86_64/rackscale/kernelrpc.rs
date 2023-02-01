@@ -12,7 +12,7 @@ use log::{debug, error};
 
 use rpc::rpc::*;
 
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fs::{cnrfs, NrLock};
 use crate::nr;
 use crate::process::Pid;
@@ -97,26 +97,16 @@ impl TryFrom<RPCType> for KernelRpc {
         }
     }
 }
-unsafe_abomonate!(KernelRpc);
 
-// Struct used to encapulate a system call result
-#[derive(Debug)]
-pub(crate) struct KernelRpcRes {
-    pub ret: Result<(u64, u64), RPCError>,
-}
-unsafe_abomonate!(KernelRpcRes: ret);
-pub(crate) const KernelRpcRes_SIZE: u64 = core::mem::size_of::<KernelRpcRes>() as u64;
-
-// Below are utility functions for working with KernelRpcRes
+pub(crate) const KernelRpcRes_SIZE: u64 = core::mem::size_of::<KResult<(u64, u64)>>() as u64;
 
 #[inline(always)]
-pub(crate) fn construct_error_ret(hdr: &mut RPCHeader, payload: &mut [u8], err: RPCError) {
-    let res = KernelRpcRes { ret: Err(err) };
-    construct_ret(hdr, payload, res)
+pub(crate) fn construct_error_ret(hdr: &mut RPCHeader, payload: &mut [u8], err: KError) {
+    construct_ret(hdr, payload, Err(err))
 }
 
 #[inline(always)]
-pub(crate) fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: KernelRpcRes) {
+pub(crate) fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: KResult<(u64, u64)>) {
     construct_ret_extra_data(hdr, payload, res, 0)
 }
 
@@ -124,7 +114,7 @@ pub(crate) fn construct_ret(hdr: &mut RPCHeader, payload: &mut [u8], res: Kernel
 pub(crate) fn construct_ret_extra_data(
     hdr: &mut RPCHeader,
     mut payload: &mut [u8],
-    res: KernelRpcRes,
+    res: KResult<(u64, u64)>,
     additional_data_len: u64,
 ) {
     // Encode payload in buffer
@@ -132,14 +122,4 @@ pub(crate) fn construct_ret_extra_data(
 
     // Modify header and write into output buffer
     hdr.msg_len = KernelRpcRes_SIZE + additional_data_len;
-}
-
-#[inline(always)]
-pub(crate) fn convert_return(
-    cnrfs_ret: Result<(u64, u64), KError>,
-) -> Result<(u64, u64), RPCError> {
-    match cnrfs_ret {
-        Ok(ret) => Ok(ret),
-        Err(err) => Err(err.into()),
-    }
 }

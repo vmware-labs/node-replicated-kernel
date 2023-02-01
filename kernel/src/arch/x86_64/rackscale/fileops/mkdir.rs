@@ -14,8 +14,10 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::super::controller_state::ControllerState;
+use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::FileIO;
+use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
@@ -31,35 +33,35 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     pid: usize,
     pathname: P,
     modes: FileModes,
-) -> Result<(u64, u64), RPCError> {
-    debug!("MkDir({:?})", pathname);
+) -> KResult<(u64, u64)> {
+    log::info!("MkDir({:?})", pathname);
 
     // Construct request data
     let req = MkDirReq { pid, modes };
     let mut req_data = [0u8; core::mem::size_of::<MkDirReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode mkdir request");
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call RPC
-    rpc_client
-        .call(
-            KernelRpc::MkDir as RPCType,
-            &[&req_data, pathname.as_ref()],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    rpc_client.call(
+        KernelRpc::MkDir as RPCType,
+        &[&req_data, pathname.as_ref()],
+        &mut [&mut res_data],
+    )?;
+    log::info!("mkdir called controller");
 
     // Parse and return result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            Err(KError::from(RPCError::ExtraData))
+        } else {
+            debug!("MkDir() {:?}", res);
+            *res
         }
-        debug!("MkDir() {:?}", res);
-        return res.ret;
     } else {
-        return Err(RPCError::MalformedResponse);
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -69,25 +71,25 @@ pub(crate) fn handle_mkdir(
     payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
+    log::info!("mkdir handler reached");
     // Parse request
     let (pid, modes) = match unsafe { decode::<MkDirReq>(payload) } {
         Some((req, _)) => (req.pid, req.modes),
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
 
-    let path =
-        core::str::from_utf8(&payload[core::mem::size_of::<MkDirReq>()..hdr.msg_len as usize])?;
-    let path_string: String = TryString::try_from(path)?.into();
-    let mkdir_req = cnrfs::MlnrKernelNode::mkdir(pid, path_string, modes);
+    let ret = get_str_from_payload(
+        payload,
+        core::mem::size_of::<MkDirReq>(),
+        hdr.msg_len as usize,
+    )
+    .and_then(|path_string| cnrfs::MlnrKernelNode::mkdir(pid, path_string, modes));
 
     // Call mkdir function and send result
-    let res = KernelRpcRes {
-        ret: convert_return(mkdir_req),
-    };
-    construct_ret(hdr, payload, res);
+    construct_ret(hdr, payload, ret);
     Ok(state)
 }

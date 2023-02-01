@@ -78,7 +78,7 @@ pub(crate) enum ProcessOpMut {
     Load(Pid, &'static Module, Vec<Frame>),
 
     /// Assign a core to a process.
-    AssignExecutor(atopology::NodeId, atopology::GlobalThreadId),
+    AssignExecutor(atopology::NodeId, kpi::system::GlobalThreadId),
 
     /// Assign a physical frame to a process (returns a FrameId).
     AllocateFrameToProcess(Frame),
@@ -133,7 +133,7 @@ pub(crate) trait ProcessManager {
 /// A node-replicated process.
 pub(crate) struct NrProcess<P: Process, M: Allocator + Clone = alloc::alloc::Global> {
     /// A list of all cores where the current process is running.
-    active_cores: Vec<(atopology::GlobalThreadId, Eid), M>,
+    active_cores: Vec<(kpi::system::GlobalThreadId, Eid), M>,
     /// The process struct itself.
     process: Box<P>,
 }
@@ -558,7 +558,16 @@ where
                 // Figure out which cores are running our current process
                 // (this is where we send IPIs later)
                 for (gtid, _eid) in self.active_cores.iter() {
-                    shootdown_handle.add_core(*gtid);
+                    if kpi::system::mid_from_gtid(*gtid) == *crate::environment::MACHINE_ID {
+                        shootdown_handle.add_core(kpi::system::mtid_from_gtid(*gtid));
+                    } else {
+                        // TODO(rackscale) - need figure out how to do remote shootdown
+                        log::error!(
+                            "Cannot send shootdown to remote core: {:?}:{:?}",
+                            kpi::system::mid_from_gtid(*gtid),
+                            kpi::system::mtid_from_gtid(*gtid)
+                        );
+                    }
                 }
 
                 Ok(ProcessResult::Unmapped(shootdown_handle))

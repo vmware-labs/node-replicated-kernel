@@ -9,6 +9,7 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
@@ -27,37 +28,35 @@ pub(crate) fn rpc_close(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     fd: FileDescriptor,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     // Setup request data
     let req = CloseReq { pid, fd };
     let mut req_data = [0u8; core::mem::size_of::<CloseReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode close request");
 
     // Setup result
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call Close() RPC
-    rpc_client
-        .call(
-            KernelRpc::Close as RPCType,
-            &[&req_data],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    rpc_client.call(
+        KernelRpc::Close as RPCType,
+        &[&req_data],
+        &mut [&mut res_data],
+    )?;
 
     // Decode and return result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         // Check for extra data
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            Err(KError::from(RPCError::ExtraData))
+        } else {
+            debug!("Close() {:?}", res);
+            *res
         }
-
-        debug!("Close() {:?}", res);
-        return res.ret;
 
     // Report malformed data if failed to decode result
     } else {
-        return Err(RPCError::MalformedResponse);
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -68,19 +67,13 @@ pub(crate) fn handle_close(
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
     // Decode request
-    if let Some((req, _)) = unsafe { decode::<CloseReq>(payload) } {
+    let ret = if let Some((req, _)) = unsafe { decode::<CloseReq>(payload) } {
         debug!("Close(pid={:?}), fd={:?}", req.pid, req.fd);
-
-        // Call close (unmap_fd) and return result
-        let res = KernelRpcRes {
-            ret: convert_return(cnrfs::MlnrKernelNode::unmap_fd(req.pid, req.fd)),
-        };
-        construct_ret(hdr, payload, res);
-
+        cnrfs::MlnrKernelNode::unmap_fd(req.pid, req.fd)
     // Report error if failed to decode request
     } else {
-        warn!("Invalid payload for request {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
-    }
+        Err(KError::from(RPCError::MalformedRequest))
+    };
+    construct_ret(hdr, payload, ret);
     Ok(state)
 }

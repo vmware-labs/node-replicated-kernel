@@ -126,8 +126,7 @@ impl<'a, S> RPCServer<'a, S> for Server<'a, S> {
                 state_output
             }
             None => {
-                debug!("Invalid RPCType({}), ignoring", rpc_id);
-                state
+                return Err(RPCError::NoHandlerForRPCType);
             }
         };
         Ok(new_state)

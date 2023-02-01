@@ -7,6 +7,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use fallible_collections::FallibleVecGlobal;
 use hashbrown::HashMap;
+use kpi::system::MachineId;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use static_assertions as sa;
@@ -15,8 +16,6 @@ use kpi::system::CpuThread;
 
 use crate::arch::rackscale::dcm::DCMNodeId;
 use crate::arch::rackscale::processops::core_work::CoreWorkRes;
-use crate::arch::rackscale::utils::get_num_workers;
-use crate::cmdline::MachineId;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
 

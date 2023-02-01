@@ -15,6 +15,7 @@ use rpc::RPCClient;
 use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use crate::arch::process::Ring3Process;
+use crate::error::{KError, KResult};
 use crate::nrproc::NrProcess;
 use crate::process::{UVAddr, UserSlice};
 
@@ -23,47 +24,45 @@ pub(crate) fn rpc_get_hardware_threads(
     pid: usize,
     vaddr_buf: u64,
     vaddr_buf_len: u64,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     // Setup result
     // TODO: make dynamic, for now, size copied from kpi implementation
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>() + 5 * 4096];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>() + 5 * 4096];
 
     // Call GetHardwareThreads() RPC
-    rpc_client
-        .call(
-            KernelRpc::GetHardwareThreads as RPCType,
-            &[&[]],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    rpc_client.call(
+        KernelRpc::GetHardwareThreads as RPCType,
+        &[&[]],
+        &mut [&mut res_data],
+    )?;
 
     // Decode and return result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         log::info!("GetHardwareThreads() {:?}", res);
 
-        if let Ok((data_len, n)) = res.ret {
-            if data_len as usize <= remaining.len() && data_len <= vaddr_buf_len {
+        if let Ok((data_len, n)) = res {
+            if *data_len as usize <= remaining.len() && *data_len <= vaddr_buf_len {
                 let mut user_slice =
-                    UserSlice::new(pid, UVAddr::try_from(vaddr_buf)?, data_len as usize)?;
+                    UserSlice::new(pid, UVAddr::try_from(vaddr_buf)?, *data_len as usize)?;
                 NrProcess::<Ring3Process>::write_to_userspace(
                     &mut user_slice,
-                    &remaining[..data_len as usize],
+                    &remaining[..*data_len as usize],
                 )?;
-                Ok((data_len, n))
+                Ok((*data_len, *n))
             } else {
-                log::debug!(
+                log::error!(
                     "Bad payload data: data_len: {:?} remaining.len(): {:?} vaddr_buf_len: {:?}",
-                    data_len,
+                    *data_len,
                     remaining.len(),
                     vaddr_buf_len
                 );
-                Err(RPCError::MalformedResponse)
+                Err(KError::from(RPCError::MalformedResponse))
             }
         } else {
-            res.ret
+            *res
         }
     } else {
-        Err(RPCError::MalformedResponse)
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -89,9 +88,11 @@ pub(crate) fn handle_get_hardware_threads(
     );
 
     // Construct return
-    let res = KernelRpcRes {
-        ret: Ok((additional_data as u64, 0)),
-    };
-    construct_ret_extra_data(hdr, payload, res, additional_data as u64);
+    construct_ret_extra_data(
+        hdr,
+        payload,
+        Ok((additional_data as u64, 0)),
+        additional_data as u64,
+    );
     Ok(state)
 }

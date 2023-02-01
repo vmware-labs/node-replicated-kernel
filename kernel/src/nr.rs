@@ -21,7 +21,7 @@ pub(crate) static NR_REPLICA: Once<(Arc<Replica<'static, KernelNode>>, ReplicaTo
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub(crate) enum ReadOps {
-    CurrentProcess(atopology::GlobalThreadId),
+    CurrentProcess(kpi::system::MachineThreadId),
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -35,7 +35,7 @@ pub(crate) enum Op {
     SchedAllocateCore(
         Pid,
         Option<atopology::NodeId>,
-        Option<atopology::GlobalThreadId>,
+        Option<kpi::system::MachineThreadId>,
         VAddr,
     ),
 }
@@ -45,7 +45,7 @@ pub(crate) enum NodeResult {
     PidAllocated(Pid),
     PidReturned,
     CoreInfo(CoreInfo),
-    CoreAllocated(atopology::GlobalThreadId),
+    CoreAllocated(kpi::system::MachineThreadId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,7 +56,7 @@ pub(crate) struct CoreInfo {
 
 pub(crate) struct KernelNode {
     process_map: HashMap<Pid, ()>,
-    scheduler_map: HashMap<atopology::GlobalThreadId, CoreInfo>,
+    scheduler_map: HashMap<kpi::system::MachineThreadId, CoreInfo>,
 }
 
 impl Default for KernelNode {
@@ -82,16 +82,16 @@ impl KernelNode {
         pid: Pid,
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,
-        gtid: Option<atopology::GlobalThreadId>,
-    ) -> Result<atopology::GlobalThreadId, KError> {
+        mtid: Option<kpi::system::MachineThreadId>,
+    ) -> Result<kpi::system::MachineThreadId, KError> {
         NR_REPLICA
             .get()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
+                let op = Op::SchedAllocateCore(pid, affinity, mtid, entry_point);
                 let response = replica.execute_mut(op, *token);
 
                 match response {
-                    Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
+                    Ok(NodeResult::CoreAllocated(rmtid)) => Ok(rmtid),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -106,10 +106,10 @@ impl Dispatch for KernelNode {
 
     fn dispatch<'rop>(&self, op: Self::ReadOperation<'_>) -> Self::Response {
         match op {
-            ReadOps::CurrentProcess(gtid) => {
+            ReadOps::CurrentProcess(mtid) => {
                 let core_info = self
                     .scheduler_map
-                    .get(&gtid)
+                    .get(&mtid)
                     .ok_or(KError::NoExecutorForCore)?;
                 Ok(NodeResult::CoreInfo(*core_info))
             }
@@ -139,25 +139,25 @@ impl Dispatch for KernelNode {
                     Err(KError::NoProcessFoundForPid)
                 }
             },
-            Op::SchedAllocateCore(pid, _affinity, Some(gtid), entry_point) => {
-                assert!((gtid as usize) < MAX_CORES, "Invalid gtid");
+            Op::SchedAllocateCore(pid, _affinity, Some(mtid), entry_point) => {
+                assert!((mtid as usize) < MAX_CORES, "Invalid mtid");
 
-                match self.scheduler_map.get(&gtid) {
+                match self.scheduler_map.get(&mtid) {
                     Some(_cinfo) => Err(KError::CoreAlreadyAllocated),
                     None => {
-                        trace!("Op::SchedAllocateCore pid={}, gtid={}", pid, gtid);
+                        trace!("Op::SchedAllocateCore pid={}, mtid={}", pid, mtid);
 
                         self.scheduler_map.try_reserve(1)?;
                         let r = self
                             .scheduler_map
-                            .insert(gtid, CoreInfo { pid, entry_point });
+                            .insert(mtid, CoreInfo { pid, entry_point });
                         assert!(r.is_none(), "get() -> None");
 
-                        Ok(NodeResult::CoreAllocated(gtid))
+                        Ok(NodeResult::CoreAllocated(mtid))
                     }
                 }
             }
-            Op::SchedAllocateCore(_pid, _affinity, _gtid, _entry_point) => unimplemented!(),
+            Op::SchedAllocateCore(_pid, _affinity, _mtid, _entry_point) => unimplemented!(),
         }
     }
 }

@@ -10,10 +10,12 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
 use super::super::controller_state::ControllerState;
+use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::FileIO;
 
@@ -27,33 +29,33 @@ pub(crate) fn rpc_getinfo<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     name: P,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     debug!("GetInfo({:?})", name);
 
     // Construct request data
     let req = GetInfoReq { pid };
     let mut req_data = [0u8; core::mem::size_of::<GetInfoReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
+        .expect("Failed to encode getinfo request");
 
     // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
-    rpc_client
-        .call(
-            KernelRpc::GetInfo as RPCType,
-            &[&req_data, name.as_ref()],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
+    rpc_client.call(
+        KernelRpc::GetInfo as RPCType,
+        &[&req_data, name.as_ref()],
+        &mut [&mut res_data],
+    )?;
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            Err(KError::from(RPCError::ExtraData))
+        } else {
+            debug!("GetInfo() {:?}", res);
+            *res
         }
-        debug!("GetInfo() {:?}", res);
-        return res.ret;
     } else {
-        return Err(RPCError::MalformedResponse);
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -68,20 +70,19 @@ pub(crate) fn handle_getinfo(
         Some((req, _)) => req.pid,
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
-    let path_str = core::str::from_utf8(
-        &payload[core::mem::size_of::<GetInfoReq>() as usize..hdr.msg_len as usize],
-    )?;
-    let path = TryString::try_from(path_str)?.into(); // TODO(hunhoffe): fixme unnecessary
-    let ret = cnrfs::MlnrKernelNode::file_info(pid, path);
+
+    let ret = get_str_from_payload(
+        payload,
+        core::mem::size_of::<GetInfoReq>(),
+        hdr.msg_len as usize,
+    )
+    .and_then(|path_string| cnrfs::MlnrKernelNode::file_info(pid, path_string));
 
     // Construct results from return data
-    let res = KernelRpcRes {
-        ret: convert_return(ret),
-    };
-    construct_ret(hdr, payload, res);
+    construct_ret(hdr, payload, ret);
     Ok(state)
 }

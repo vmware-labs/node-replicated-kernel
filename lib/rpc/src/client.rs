@@ -27,9 +27,7 @@ impl RPCClient for Client {
     /// Registers with a RPC server
     fn connect(&mut self, data_in: &[&[u8]]) -> Result<(), RPCError> {
         self.transport.client_connect()?;
-
-        self.call(RPC_TYPE_CONNECT, data_in, &mut []).unwrap();
-        Ok(())
+        self.call(RPC_TYPE_CONNECT, data_in, &mut [])
     }
 
     /// Calls a remote RPC function with ID

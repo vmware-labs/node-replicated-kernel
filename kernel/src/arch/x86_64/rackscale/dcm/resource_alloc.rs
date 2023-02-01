@@ -127,7 +127,7 @@ pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> DCMNodeId {
                 unsafe { &[req.as_bytes()] },
                 unsafe { &mut [res.as_mut_bytes()] },
             )
-            .unwrap();
+            .expect("Failed to send resource alloc RPC to DCM");
         debug!("Received allocation id in response: {:?}", res.alloc_id);
     }
 
@@ -146,7 +146,9 @@ pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> DCMNodeId {
                         if assignment.alloc_id != res.alloc_id {
                             warn!("AllocIds do not match!");
                         }
-                        socket.send_slice(&[1u8], endpoint).unwrap();
+                        socket
+                            .send_slice(&[1u8], endpoint)
+                            .expect("Failed to send UDP message to DCM");
                         received_allocation = true;
                     }
                     Err(e) => {

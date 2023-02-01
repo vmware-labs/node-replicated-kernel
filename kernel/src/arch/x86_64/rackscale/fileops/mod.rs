@@ -12,6 +12,11 @@ pub mod open;
 pub mod rename;
 pub mod rw;
 
+use alloc::string::String;
+
+use crate::error::{KError, KResult};
+use crate::fallible_string::TryString;
+
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
 pub(crate) enum FileIO {
@@ -64,3 +69,14 @@ impl From<RPCType> for FileIO {
     }
 }
 unsafe_abomonate!(FileIO);
+
+pub(crate) fn get_str_from_payload(
+    payload: &mut [u8],
+    start: usize,
+    end: usize,
+) -> KResult<String> {
+    core::str::from_utf8(&payload[start..end])
+        .map_err(|e| KError::from(e))
+        .and_then(|str_from_utf8| TryString::try_from(str_from_utf8).map_err(|e| KError::from(e)))
+        .and_then(|parsed_str| Ok(parsed_str.try_into().unwrap())) // Okay to unwrap, should be infallable
+}

@@ -7,7 +7,7 @@ use log::debug;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::nr;
 
@@ -17,23 +17,21 @@ use super::super::kernelrpc::*;
 // This isn't truly a syscall, but we'll reuse some infrastructure/types.
 pub(crate) fn rpc_make_process(rpc_client: &mut dyn RPCClient) -> Result<usize, KError> {
     // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
-    rpc_client
-        .call(KernelRpc::MakeProcess as RPCType, &[], &mut [&mut res_data])
-        .unwrap();
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
+    rpc_client.call(KernelRpc::MakeProcess as RPCType, &[], &mut [&mut res_data])?;
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData.into());
+            return Err(KError::from(RPCError::ExtraData));
         }
         debug!("MakeProcess() {:?}", res);
-        match res.ret {
-            Ok((pid, _)) => Ok(pid as usize),
-            Err(e) => Err(e.into()),
+        match res {
+            Ok((pid, _)) => Ok(*pid as usize),
+            Err(e) => Err(*e),
         }
     } else {
-        Err(RPCError::MalformedResponse.into())
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -60,9 +58,6 @@ pub(crate) fn handle_make_process(
         .map(|pid| (pid as u64, 0));
 
     // Construct results from return data
-    let res = KernelRpcRes {
-        ret: convert_return(ret),
-    };
-    construct_ret(hdr, payload, res);
+    construct_ret(hdr, payload, ret);
     Ok(state)
 }

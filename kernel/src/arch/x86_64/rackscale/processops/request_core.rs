@@ -6,11 +6,11 @@ use log::{debug, info, warn};
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
+use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::cmdline::MachineId;
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::fs::{cnrfs, NrLock};
 use crate::memory::VAddr;
@@ -21,8 +21,6 @@ use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use super::super::processops::core_work::CoreWorkRes;
-use super::super::systemops::{gtid_to_local, local_to_gtid};
-use super::super::utils::get_machine_id;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RequestCoreReq {
@@ -36,38 +34,39 @@ pub(crate) fn rpc_request_core(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     entry_point: u64,
-) -> Result<(u64, u64), RPCError> {
-    let machine_id = get_machine_id();
-    info!("RequestCore({:?}, {:?})", machine_id, entry_point);
+) -> KResult<(u64, u64)> {
+    info!(
+        "RequestCore({:?}, {:?})",
+        *crate::environment::MACHINE_ID,
+        entry_point
+    );
 
     // Construct request data
     let req = RequestCoreReq {
         pid,
-        machine_id,
+        machine_id: *crate::environment::MACHINE_ID,
         entry_point,
     };
     let mut req_data = [0u8; core::mem::size_of::<RequestCoreReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode core request");
 
     // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
-    rpc_client
-        .call(
-            KernelRpc::RequestCore as RPCType,
-            &[&req_data],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
+    rpc_client.call(
+        KernelRpc::RequestCore as RPCType,
+        &[&req_data],
+        &mut [&mut res_data],
+    )?;
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            return Err(KError::from(RPCError::ExtraData));
         }
         info!("RequestCore() {:?}", res);
-        return res.ret;
+        *res
     } else {
-        return Err(RPCError::MalformedResponse);
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -84,7 +83,7 @@ pub(crate) fn handle_request_core(
         Some((req, _)) => req,
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
@@ -108,18 +107,22 @@ pub(crate) fn handle_request_core(
         }
         // gtid should always be found, as DCM should know if there are free threads or not.
         let gtid = gtid.expect("Failed to find free thread??");
-        log::info!("Found unused thread: {:?}", gtid);
+        log::info!(
+            "Found unused thread: machine={:?}, gtid={:?}",
+            kpi::system::mid_from_gtid(gtid),
+            kpi::system::mtid_from_gtid(gtid)
+        );
 
         // can handle request locally if same node otherwise must queue for remote node to handle
-        if client_state.machine_id != core_req.machine_id {
+        if kpi::system::mid_from_gtid(gtid) != core_req.machine_id {
             log::info!(
                 "Logged unfulfilled core assignment for hardware_id={:?}, dcm_node_id={:?}",
-                client_state.machine_id,
+                kpi::system::mid_from_gtid(gtid),
                 dcm_node_id
             );
             let res = CoreWorkRes {
                 pid: core_req.pid,
-                gtid: gtid as u64,
+                gtid: gtid,
                 entry_point: core_req.entry_point,
             };
             client_state.core_assignments.push_back(res);
@@ -128,10 +131,6 @@ pub(crate) fn handle_request_core(
     };
 
     // Construct and return result
-    let res = KernelRpcRes {
-        ret: convert_return(Ok((gtid as u64, 0))),
-    };
-
-    construct_ret(hdr, payload, res);
+    construct_ret(hdr, payload, Ok((gtid as u64, 0)));
     Ok(state)
 }

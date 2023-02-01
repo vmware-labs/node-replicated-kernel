@@ -20,7 +20,6 @@ use rpc::server::Server;
 use crate::arch::debug::shutdown;
 use crate::arch::rackscale::dcm::*;
 use crate::arch::rackscale::processops::request_core::RequestCoreReq;
-use crate::arch::rackscale::utils::{get_num_clients, get_num_workers};
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::{cnrfs, NrLock};
@@ -57,7 +56,7 @@ pub(crate) fn run() {
     let clock = Clock::new();
 
     // Initialize the RPC server
-    let num_clients = get_num_clients();
+    let num_clients = *crate::environment::NUM_MACHINES - 1;
     let mut servers: Vec<Box<dyn RPCServer<ControllerState>>> =
         Vec::try_with_capacity(num_clients as usize)
             .expect("Failed to allocate vector for RPC server");
@@ -66,8 +65,11 @@ pub(crate) fn run() {
         .map_or(false, |c| c.transport == Transport::Ethernet)
     {
         use rpc::{server::Server, transport::TCPTransport};
-        let transport = Box::try_new(TCPTransport::new(None, PORT, Arc::clone(&ETHERNET_IFACE)))
-            .expect("Out of memory during init");
+        let transport = Box::try_new(
+            TCPTransport::new(None, PORT, Arc::clone(&ETHERNET_IFACE))
+                .expect("Failed to create TCP transport"),
+        )
+        .expect("Out of memory during init");
         let mut server: Box<dyn RPCServer<ControllerState>> =
             Box::try_new(Server::new(transport)).expect("Out of memory during init");
         register_rpcs(&mut server);

@@ -8,35 +8,35 @@ use log::debug;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::fallible_string::TryString;
-use crate::fs::cnrfs;
-
 use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
+use crate::arch::serial::SerialControl;
+use crate::error::{KError, KResult};
+use crate::fallible_string::TryString;
+use crate::fs::cnrfs;
 
 pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
     msg: P,
-) -> Result<(u64, u64), RPCError> {
+) -> Result<(u64, u64), KError> {
     // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
-    rpc_client
-        .call(
-            KernelRpc::Log as RPCType,
-            &[msg.as_ref()],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
+    rpc_client.call(
+        KernelRpc::Log as RPCType,
+        &[msg.as_ref()],
+        &mut [&mut res_data],
+    )?;
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            Err(KError::from(RPCError::ExtraData))
+        } else {
+            debug!("Log() {:?}", res);
+            *res
         }
-        debug!("Log() {:?}", res);
-        return res.ret;
     } else {
-        return Err(RPCError::MalformedResponse);
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -46,13 +46,15 @@ pub(crate) fn handle_log(
     payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    let msg_str = core::str::from_utf8(&payload[0..hdr.msg_len as usize])?;
-    log::info!("Remote Log: {}", msg_str);
+    match core::str::from_utf8(&payload[0..hdr.msg_len as usize]) {
+        Ok(msg_str) => log::info!("Remote Log: {}", msg_str),
+        Err(e) => log::warn!(
+            "log: invalid UTF-8 string: {:?}",
+            &payload[0..hdr.msg_len as usize]
+        ),
+    }
 
     // Construct results from return data
-    let res = KernelRpcRes {
-        ret: convert_return(Ok((0, 0))),
-    };
-    construct_ret(hdr, payload, res);
+    construct_ret(hdr, payload, Ok((0, 0)));
     Ok(state)
 }

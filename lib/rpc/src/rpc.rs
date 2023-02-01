@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use abomonation::{unsafe_abomonate, Abomonation};
-use core::{convert::TryInto, str::Utf8Error};
+use core::convert::TryInto;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 pub enum RPCError {
@@ -14,54 +14,13 @@ pub enum RPCError {
     MalformedRequest,
     InternalError,
     DuplicateRPCType,
-
-    // File IO
-    InvalidFile,
-    InvalidFlags,
-    InvalidOffset,
-    PermissionError,
-    AlreadyPresent,
-    DirectoryError,
-    OpenFileLimit,
-    FileDescForPidAlreadyAdded,
-    NoFileDescForPid,
-
-    // Syscall Errors
-    InvalidSyscallArgument1 {
-        a: u64,
-    },
-    InvalidVSpaceOperation {
-        a: u64,
-    },
-    InvalidProcessOperation {
-        a: u64,
-    },
-    InvalidSystemOperation {
-        a: u64,
-    },
-
-    // General Errors
-    BadAddress,
-    NotSupported,
-
-    /// Can't convert some arg to string
-    Utf8Error,
-    /// Out of memory during request
-    OutOfMemory,
+    NoHandlerForRPCType,
+    ClientInitializationError,
+    ClientConnectError,
+    ServerListenError,
+    MemoryAllocationError,
 }
 unsafe_abomonate!(RPCError);
-
-impl core::convert::From<Utf8Error> for RPCError {
-    fn from(_e: Utf8Error) -> Self {
-        RPCError::Utf8Error
-    }
-}
-
-impl core::convert::From<alloc::collections::TryReserveError> for RPCError {
-    fn from(_: alloc::collections::TryReserveError) -> Self {
-        RPCError::OutOfMemory
-    }
-}
 
 // TODO(efficiency): type could probably be u8, but this seems easier for alignment w/ DCM?
 pub type RPCType = u64;

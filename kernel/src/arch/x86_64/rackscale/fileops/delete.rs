@@ -10,10 +10,12 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
 use super::super::controller_state::ControllerState;
+use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::FileIO;
 
@@ -27,35 +29,34 @@ pub(crate) fn rpc_delete(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
     pathname: String,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     debug!("Delete({:?})", pathname);
 
     // Construct request data
     let req = DeleteReq { pid };
     let mut req_data = [0u8; core::mem::size_of::<DeleteReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
+        .expect("Failed to encode delete request");
 
     // Create buffer for result
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call RPC
-    rpc_client
-        .call(
-            KernelRpc::Delete as RPCType,
-            &[&req_data, &pathname.as_bytes()],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    rpc_client.call(
+        KernelRpc::Delete as RPCType,
+        &[&req_data, &pathname.as_bytes()],
+        &mut [&mut res_data],
+    )?;
 
     // Decode result - return result if decoding successful
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            return Err(KError::from(RPCError::ExtraData));
         }
         debug!("Delete() {:?}", res);
-        return res.ret;
+        return *res;
     } else {
-        return Err(RPCError::MalformedResponse);
+        return Err(KError::from(RPCError::MalformedResponse));
     }
 }
 
@@ -70,21 +71,18 @@ pub(crate) fn handle_delete(
         Some((req, _)) => req.pid,
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
-    let path = core::str::from_utf8(
-        &payload[core::mem::size_of::<DeleteReq>() as usize..hdr.msg_len as usize],
-    )?;
 
-    // Construct and return result
-    let res = KernelRpcRes {
-        ret: convert_return(cnrfs::MlnrKernelNode::file_delete(
-            pid,
-            TryString::try_from(path)?.into(), // TODO(hunhoffe): unnecessary allocation
-        )),
-    };
-    construct_ret(hdr, payload, res);
+    let ret = get_str_from_payload(
+        payload,
+        core::mem::size_of::<DeleteReq>(),
+        hdr.msg_len as usize,
+    )
+    .and_then(|path_string| cnrfs::MlnrKernelNode::file_delete(pid, path_string));
+
+    construct_ret(hdr, payload, ret);
     Ok(state)
 }

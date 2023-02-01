@@ -11,10 +11,12 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
 use super::super::controller_state::ControllerState;
+use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::FileIO;
 
@@ -33,7 +35,7 @@ pub(crate) fn rpc_open<P: AsRef<[u8]> + Debug>(
     pathname: P,
     flags: FileFlags,
     modes: FileModes,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     rpc_open_create(
         rpc_client,
         pid,
@@ -51,35 +53,33 @@ fn rpc_open_create<P: AsRef<[u8]> + Debug>(
     flags: FileFlags,
     modes: FileModes,
     rpc_type: RPCType,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     debug!("Open({:?}, {:?}, {:?})", pathname, flags, modes);
 
     // Construct request data
     let req = OpenReq { pid, flags, modes };
     let mut req_data = [0u8; core::mem::size_of::<OpenReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode open request");
 
     // Construct result buffer
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call the RPC
-    rpc_client
-        .call(
-            rpc_type,
-            &[&req_data, pathname.as_ref()],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    rpc_client.call(
+        rpc_type,
+        &[&req_data, pathname.as_ref()],
+        &mut [&mut res_data],
+    )?;
 
     // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            return Err(KError::from(RPCError::ExtraData));
         }
         debug!("Open() {:?}", res);
-        res.ret
+        *res
     } else {
-        Err(RPCError::MalformedResponse)
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -102,21 +102,18 @@ pub(crate) fn handle_open(
         }
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
 
-    let path =
-        core::str::from_utf8(&payload[core::mem::size_of::<OpenReq>()..hdr.msg_len as usize])?;
-    let path_string = TryString::try_from(path)?.into();
+    let ret = get_str_from_payload(
+        payload,
+        core::mem::size_of::<OpenReq>(),
+        hdr.msg_len as usize,
+    )
+    .and_then(|path_string| cnrfs::MlnrKernelNode::map_fd(pid, path_string, flags, modes));
 
-    let cnr_ret = cnrfs::MlnrKernelNode::map_fd(pid, path_string, flags, modes);
-
-    // Create return
-    let res = KernelRpcRes {
-        ret: convert_return(cnr_ret),
-    };
-    construct_ret(hdr, payload, res);
+    construct_ret(hdr, payload, ret);
     Ok(state)
 }

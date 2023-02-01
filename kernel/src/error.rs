@@ -1,6 +1,8 @@
 // Copyright © 2021 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use abomonation::{unsafe_abomonate, Abomonation};
+use alloc::str::Utf8Error;
 use alloc::string::FromUtf8Error;
 use core::{convert::From, num::TryFromIntError};
 
@@ -13,7 +15,7 @@ use crate::memory::VAddr;
 pub(crate) type KResult<T> = Result<T, KError>;
 
 /// Kernel-wide error type with everything that can potentially go wrong.
-#[derive(displaydoc::Display, PartialEq, Clone, Debug)]
+#[derive(displaydoc::Display, PartialEq, Clone, Debug, Copy)]
 pub enum KError {
     /// User-space pointer is not valid
     BadAddress,
@@ -171,11 +173,15 @@ pub enum KError {
     TryFromIntError,
     /// The provided file-descriptor value was too big (>= MAX_FILES_PER_PROCESS)
     FileDescriptorTooLarge,
-    /// Unable to convert message ID to valid RPC type (faulty message?)
+    /// Rackscale: Unable to convert message ID to valid RPC type (faulty message?)
     InvalidRpcType,
-    /// Unable to perform DCM transaction (faulty message?)
+    /// Rackscale: Unable to perform DCM transaction (faulty message?)
     DCMError,
+    /// Rackscale: An RPC error occurred in the RPC framework
+    #[cfg(feature = "rackscale")]
+    RackscaleRPCError { err: rpc::rpc::RPCError },
 }
+unsafe_abomonate!(KError);
 
 impl From<CapacityError<crate::memory::Frame>> for KError {
     fn from(_err: CapacityError<crate::memory::Frame>) -> Self {
@@ -225,6 +231,12 @@ impl From<FromUtf8Error> for KError {
     }
 }
 
+impl From<Utf8Error> for KError {
+    fn from(_e: Utf8Error) -> Self {
+        KError::NotAValidUtf8String
+    }
+}
+
 impl From<TryFromIntError> for KError {
     fn from(_e: TryFromIntError) -> Self {
         KError::TryFromIntError
@@ -238,6 +250,13 @@ impl From<slabmalloc::AllocationError> for KError {
             // slabmalloc OOM just means we have to refill:
             slabmalloc::AllocationError::OutOfMemory => KError::CacheExhausted,
         }
+    }
+}
+
+#[cfg(feature = "rackscale")]
+impl From<rpc::rpc::RPCError> for KError {
+    fn from(err: rpc::rpc::RPCError) -> Self {
+        KError::RackscaleRPCError { err }
     }
 }
 

@@ -14,7 +14,7 @@ use rpc::rpc::{RPCError, RPCHeader};
 
 use crate::arch::rackscale::dcm::DCMNodeId;
 use crate::arch::rackscale::processops::core_work::rpc_core_work;
-use crate::cmdline::{MachineId, Transport};
+use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::NrLock;
 use crate::transport::shmem::SHMEM_DEVICE;
@@ -68,11 +68,11 @@ impl ClientState {
         }
     }
 
-    pub(crate) fn add_frame(&self, fid: FrameId, node_id: DCMNodeId) -> Result<(), RPCError> {
+    pub(crate) fn add_frame(&self, fid: FrameId, node_id: DCMNodeId) -> Result<(), KError> {
         let mut frame_map = self.frame_map.write();
         frame_map
             .try_reserve(1)
-            .map_err(|_e| RPCError::InternalError)?;
+            .map_err(|_e| KError::NotEnoughMemory)?;
         frame_map
             .try_insert(fid, node_id)
             .map_err(|_e| KError::InvalidFrame)?;

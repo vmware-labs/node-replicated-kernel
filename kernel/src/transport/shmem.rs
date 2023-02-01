@@ -13,10 +13,11 @@ use spin::Mutex;
 #[cfg(feature = "rpc")]
 use {
     crate::arch::rackscale::controller_state::FrameCacheMemslice,
-    crate::cmdline::{MachineId, Transport},
+    crate::cmdline::Transport,
     crate::error::{KError, KResult},
     crate::memory::{Frame, SHARED_AFFINITY},
     alloc::boxed::Box,
+    kpi::system::MachineId,
     rpc::rpc::MAX_BUFF_LEN,
     rpc::transport::ShmemTransport,
     static_assertions::const_assert,
@@ -352,11 +353,10 @@ pub(crate) fn init_shmem_rpc(
     send_client_data: bool, // This field is used to indicate if init_client() should send ClientRegistrationRequest
 ) -> KResult<Box<rpc::client::Client>> {
     use crate::arch::rackscale::registration::initialize_client;
-    use crate::arch::rackscale::utils::get_machine_id;
     use rpc::client::Client;
 
     // Set up the transport
-    let transport = Box::try_new(create_shmem_transport(get_machine_id())?)?;
+    let transport = Box::try_new(create_shmem_transport(*crate::environment::MACHINE_ID)?)?;
 
     // Create the client
     let client = Box::try_new(Client::new(transport))?;
@@ -365,16 +365,14 @@ pub(crate) fn init_shmem_rpc(
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn get_affinity_shmem() -> ShmemRegion {
-    use crate::arch::rackscale::utils::{get_machine_id, get_num_workers};
-
     let mut base_offset = 0;
     let mut size = SHMEM_DEVICE.region.size;
-    let num_workers = get_num_workers();
 
     if crate::CMDLINE
         .get()
         .map_or(false, |c| c.transport == Transport::Shmem)
     {
+        let num_workers = (*crate::environment::NUM_MACHINES - 1) as u64;
         // Offset base to ignore shmem used for client transports
         base_offset += SHMEM_TRANSPORT_SIZE * num_workers;
 
@@ -382,10 +380,12 @@ pub(crate) fn get_affinity_shmem() -> ShmemRegion {
         size = core::cmp::max(0, size - SHMEM_TRANSPORT_SIZE * num_workers);
     };
 
-    let pages_per_worker = (size / BASE_PAGE_SIZE as u64) / num_workers;
+    // Align on base page boundaries
+    let pages_per_worker =
+        (size / BASE_PAGE_SIZE as u64) / *crate::environment::NUM_MACHINES as u64;
     let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
 
-    base_offset += size_per_worker * get_machine_id() as u64;
+    base_offset += size_per_worker * (*crate::environment::MACHINE_ID) as u64;
     log::info!(
         "Shmem affinity region: offset={:x}, size={:x}, range: [{:X}-{:X}]",
         base_offset,

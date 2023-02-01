@@ -32,17 +32,21 @@ impl TCPTransport<'_> {
         server_ip: Option<IpAddress>,
         server_port: u16,
         iface: Arc<Mutex<Interface<'_, DevQueuePhy>>>,
-    ) -> TCPTransport<'_> {
+    ) -> Result<TCPTransport<'_>, RPCError> {
         lazy_static::initialize(&rawtime::BOOT_TIME_ANCHOR);
         lazy_static::initialize(&rawtime::WALL_TIME_ANCHOR);
 
         // Create RX and TX buffers for the socket
         let mut sock_vec = Vec::new();
-        sock_vec.try_reserve_exact(RX_BUF_LEN).unwrap();
+        sock_vec
+            .try_reserve_exact(RX_BUF_LEN)
+            .map_err(|_e| RPCError::MemoryAllocationError)?;
         sock_vec.resize(RX_BUF_LEN, 0);
         let socket_rx_buffer = TcpSocketBuffer::new(sock_vec);
         let mut sock_vec = Vec::new();
-        sock_vec.try_reserve_exact(TX_BUF_LEN).unwrap();
+        sock_vec
+            .try_reserve_exact(TX_BUF_LEN)
+            .map_err(|_e| RPCError::MemoryAllocationError)?;
         sock_vec.resize(TX_BUF_LEN, 0);
 
         // Create the TCP socket
@@ -53,13 +57,13 @@ impl TCPTransport<'_> {
         // Add socket to interface and record socket handle
         let server_handle = iface.lock().add_socket(tcp_socket);
 
-        TCPTransport {
+        Ok(TCPTransport {
             iface,
             server_handle,
             server_ip,
             server_port,
             client_port: 10110,
-        }
+        })
     }
 
     fn send(&self, send_buf: &[u8], is_try: bool) -> Result<bool, RPCError> {
@@ -322,20 +326,16 @@ impl Transport for TCPTransport<'_> {
     fn client_connect(&mut self) -> Result<(), RPCError> {
         {
             let mut iface = self.iface.lock();
+            let ip = self.server_ip.ok_or(RPCError::ClientInitializationError)?;
             let (socket, cx) = iface.get_socket_and_context::<TcpSocket>(self.server_handle);
 
             // TODO: add timeout?? with error returned if timeout occurs?
             socket
-                .connect(
-                    cx,
-                    (self.server_ip.unwrap(), self.server_port),
-                    self.client_port,
-                )
-                .unwrap();
+                .connect(cx, (ip, self.server_port), self.client_port)
+                .map_err(|_| RPCError::ClientConnectError)?;
             debug!(
                 "Attempting to connect to server {}:{}",
-                self.server_ip.unwrap(),
-                self.server_port
+                ip, self.server_port
             );
         }
 
@@ -368,7 +368,9 @@ impl Transport for TCPTransport<'_> {
         {
             let mut iface = (*self.iface).lock();
             let socket = iface.get_socket::<TcpSocket>(self.server_handle);
-            socket.listen(self.server_port).unwrap();
+            socket
+                .listen(self.server_port)
+                .map_err(|_| RPCError::ServerListenError)?;
             debug!("Listening at port {}", self.server_port);
         }
 

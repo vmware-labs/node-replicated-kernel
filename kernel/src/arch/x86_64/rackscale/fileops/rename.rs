@@ -1,7 +1,7 @@
 // Copyright © 2021 University of Colorado. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use core::fmt::Debug;
 
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
@@ -13,8 +13,10 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use super::super::controller_state::ControllerState;
+use super::super::fileops::get_str_from_payload;
 use super::super::kernelrpc::*;
 use super::FileIO;
+use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
@@ -30,7 +32,7 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     pid: usize,
     oldname: P,
     newname: P,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     debug!("Rename({:?}, {:?})", oldname, newname);
 
     // Construct request data
@@ -42,27 +44,25 @@ pub(crate) fn rpc_rename<P: AsRef<[u8]> + Debug>(
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
 
     // Construct result buffer
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call the RPC
-    rpc_client
-        .call(
-            KernelRpc::FileRename as RPCType,
-            &[&req_data, oldname.as_ref(), newname.as_ref()],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    rpc_client.call(
+        KernelRpc::FileRename as RPCType,
+        &[&req_data, oldname.as_ref(), newname.as_ref()],
+        &mut [&mut res_data],
+    )?;
 
     // Parse and return the result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            return Err(KError::from(RPCError::ExtraData));
         }
         debug!("Rename() {:?}", res);
-        res.ret
+        *res
     } else {
         error!("Rename(): Malformed response");
-        Err(RPCError::MalformedResponse)
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -77,28 +77,30 @@ pub(crate) fn handle_rename(
         Some((req, _)) => (req.pid, req.oldname_len as usize),
         None => {
             warn!("Invalid payload for request: {:?}", hdr);
-            construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+            construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
 
-    let oldname_str = core::str::from_utf8(
-        &payload
-            [core::mem::size_of::<RenameReq>()..(core::mem::size_of::<RenameReq>() + oldname_len)],
-    )?;
-    let oldname = TryString::try_from(oldname_str)?.into();
+    let oldname = get_str_from_payload(
+        payload,
+        core::mem::size_of::<RenameReq>(),
+        core::mem::size_of::<RenameReq>() + oldname_len,
+    );
+    let newname = get_str_from_payload(
+        payload,
+        (core::mem::size_of::<RenameReq>() + oldname_len),
+        hdr.msg_len as usize,
+    );
 
-    let newname_str = core::str::from_utf8(
-        &payload[(core::mem::size_of::<RenameReq>() + oldname_len)..hdr.msg_len as usize],
-    )?;
-    let newname = TryString::try_from(newname_str)?.into();
-
-    // Call rename function
-    let res = KernelRpcRes {
-        ret: convert_return(cnrfs::MlnrKernelNode::file_rename(pid, oldname, newname)),
-    };
-
-    // Return result
-    construct_ret(hdr, payload, res);
+    match (oldname, newname) {
+        (Ok(oldname_str), Ok(newname_str)) => construct_ret(
+            hdr,
+            payload,
+            cnrfs::MlnrKernelNode::file_rename(pid, oldname_str, newname_str),
+        ),
+        (Err(e), _) => construct_error_ret(hdr, payload, KError::from(e)),
+        (_, Err(e)) => construct_error_ret(hdr, payload, KError::from(e)),
+    }
     Ok(state)
 }

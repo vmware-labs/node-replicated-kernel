@@ -360,7 +360,9 @@ impl Environment {
             if !scb.is_null() && (scb as u64) < KERNEL_BASE {
                 (*scb).core_id
             } else {
-                kpi::syscalls::System::core_id().expect("Can't get core-id?")
+                crate::gtid_to_core_id(
+                    kpi::syscalls::System::core_id().expect("Can't get core-id?"),
+                )
             }
         }
     }

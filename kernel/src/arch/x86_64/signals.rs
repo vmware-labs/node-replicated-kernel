@@ -3,6 +3,6 @@
 
 //! Platform specific functions to deal with CNR
 
-pub(crate) fn advance_replica(gtid: atopology::GlobalThreadId, log_id: usize) {
-    super::tlb::advance_replica(gtid, log_id)
+pub(crate) fn advance_replica(mtid: kpi::system::MachineThreadId, log_id: usize) {
+    super::tlb::advance_replica(mtid, log_id)
 }

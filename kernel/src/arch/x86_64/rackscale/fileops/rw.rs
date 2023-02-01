@@ -9,6 +9,7 @@ use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 
@@ -30,7 +31,7 @@ pub(crate) fn rpc_write(
     pid: usize,
     fd: FileDescriptor,
     data: &[u8],
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     rpc_writeat(rpc_client, pid, fd, -1, data)
 }
 
@@ -40,7 +41,7 @@ pub(crate) fn rpc_writeat(
     fd: FileDescriptor,
     offset: i64,
     data: &[u8],
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     debug!("Write({:?}, {:?})", fd, offset);
 
     // Constrcut request data
@@ -51,10 +52,10 @@ pub(crate) fn rpc_writeat(
         offset,
     };
     let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode write request");
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call readat() or read() RPCs
     let rpc_type = if offset == -1 {
@@ -62,19 +63,17 @@ pub(crate) fn rpc_writeat(
     } else {
         KernelRpc::WriteAt as RPCType
     };
-    rpc_client
-        .call(rpc_type, &[&req_data, &data], &mut [&mut res_data])
-        .unwrap();
+    rpc_client.call(rpc_type, &[&req_data, &data], &mut [&mut res_data])?;
 
     // Decode result, return result if decoded successfully
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            return Err(KError::from(RPCError::ExtraData));
         }
         debug!("Write() {:?}", res);
-        return res.ret;
+        return *res;
     } else {
-        return Err(RPCError::MalformedResponse);
+        return Err(KError::from(RPCError::MalformedResponse));
     }
 }
 
@@ -84,7 +83,7 @@ pub(crate) fn rpc_read(
     pid: usize,
     fd: FileDescriptor,
     buff_ptr: &mut [u8],
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     rpc_readat(rpc_client, pid, fd, buff_ptr, -1)
 }
 
@@ -94,7 +93,7 @@ pub(crate) fn rpc_readat(
     fd: FileDescriptor,
     buff_ptr: &mut [u8],
     offset: i64,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     debug!("Read({:?}, {:?})", buff_ptr.len(), offset);
 
     // Construct request data
@@ -105,10 +104,10 @@ pub(crate) fn rpc_readat(
         offset,
     };
     let mut req_data = [0u8; core::mem::size_of::<RWReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode read request");
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
 
     // Call Read() or ReadAt() RPC
     let rpc_type = if offset == -1 {
@@ -116,23 +115,22 @@ pub(crate) fn rpc_readat(
     } else {
         KernelRpc::ReadAt as RPCType
     };
-    rpc_client
-        .call(
-            KernelRpc::ReadAt as RPCType,
-            &[&req_data],
-            &mut [&mut res_data, buff_ptr],
-        )
-        .unwrap();
+    rpc_client.call(
+        KernelRpc::ReadAt as RPCType,
+        &[&req_data],
+        &mut [&mut res_data, buff_ptr],
+    )?;
 
     // Decode result, if successful, return result
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            Err(KError::from(RPCError::ExtraData))
+        } else {
+            debug!("Read(At)() {:?}", res);
+            *res
         }
-        debug!("Read(At)() {:?}", res);
-        return res.ret;
     } else {
-        return Err(RPCError::MalformedResponse);
+        Err(KError::from(RPCError::MalformedResponse))
     }
 }
 
@@ -162,7 +160,7 @@ pub(crate) fn handle_read(
         }
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
         return Ok(state);
     }
 
@@ -178,10 +176,7 @@ pub(crate) fn handle_read(
     }
 
     // Construct return
-    let res = KernelRpcRes {
-        ret: convert_return(ret),
-    };
-    construct_ret_extra_data(hdr, payload, res, additional_data as u64);
+    construct_ret_extra_data(hdr, payload, ret, additional_data as u64);
     Ok(state)
 }
 
@@ -192,7 +187,7 @@ pub(crate) fn handle_write(
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
     // Decode request
-    if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
+    let ret = if let Some((req, remaining)) = unsafe { decode::<RWReq>(payload) } {
         debug!(
             "Write(At)(fd={:?}, len={:?}, offset={:?}), pid={:?}",
             req.fd, req.len, req.offset, req.pid
@@ -205,19 +200,15 @@ pub(crate) fn handle_write(
             req.offset
         };
 
-        let data = (remaining[..req.len as usize]).try_into()?;
-        let ret = cnrfs::MlnrKernelNode::file_write(req.pid, req.fd, data, offset);
-
-        // Construct return
-        let res = KernelRpcRes {
-            ret: convert_return(ret),
-        };
-        construct_ret(hdr, payload, res);
-
+        match (remaining[..req.len as usize]).try_into() {
+            Ok(data) => cnrfs::MlnrKernelNode::file_write(req.pid, req.fd, data, offset),
+            Err(e) => Err(e),
+        }
     // Return error if failed to decode request
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
-    }
+        Err(KError::from(RPCError::MalformedRequest))
+    };
+    construct_ret(hdr, payload, ret);
     Ok(state)
 }

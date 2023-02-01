@@ -106,7 +106,6 @@ pub(crate) fn handle_get_process_logs(
                 as u64,
         ));
         logs[i] = arc_log_paddr.as_u64() - SHMEM_DEVICE.region.base;
-        log::info!("Log ptr: {:X}", logs[i]);
     }
 
     // Reset mem allocator to use per core memory again
@@ -120,6 +119,5 @@ pub(crate) fn handle_get_process_logs(
     // Modify header and write into output buffer
     unsafe { encode(&logs, &mut payload) }.unwrap();
     hdr.msg_len = core::mem::size_of::<[usize; MAX_PROCESSES]>() as u64;
-    log::info!("Handled get_process_logs()");
     Ok(state)
 }

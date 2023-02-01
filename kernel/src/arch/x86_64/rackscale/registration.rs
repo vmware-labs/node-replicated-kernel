@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use fallible_collections::{FallibleVec, FallibleVecGlobal};
-use kpi::system::CpuThread;
+use kpi::system::{CpuThread, MachineId};
 use log::{debug, error, info, warn};
 use rpc::client::Client;
 use rpc::rpc::{RPCError, RPCHeader};
@@ -15,9 +15,6 @@ use rpc::RPCClient;
 
 use super::dcm::{node_registration::dcm_register_node, DCMNodeId};
 use crate::arch::rackscale::controller_state::{ControllerState, PerClientState};
-use crate::arch::rackscale::systemops::{local_to_gtid, local_to_node_id, local_to_package_id};
-use crate::arch::rackscale::utils::get_machine_id;
-use crate::cmdline::MachineId;
 use crate::error::KResult;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::transport::shmem::{get_affinity_shmem, ShmemRegion};
@@ -49,7 +46,7 @@ pub(crate) fn initialize_client(
         let mut client_threads = Vec::try_with_capacity(num_threads)?;
         for hwthread in hwthreads {
             client_threads.try_push(kpi::system::CpuThread {
-                id: hwthread.id as usize,
+                id: kpi::system::new_gtid(hwthread.id as usize, *crate::environment::MACHINE_ID),
                 node_id: hwthread.node_id.unwrap_or(0) as usize,
                 package_id: hwthread.package_id as usize,
                 core_id: hwthread.core_id as usize,
@@ -60,7 +57,7 @@ pub(crate) fn initialize_client(
 
         // Construct client registration request
         let req = ClientRegistrationRequest {
-            machine_id: get_machine_id(),
+            machine_id: *crate::environment::MACHINE_ID,
             shmem_region,
             num_cores: atopology::MACHINE_TOPOLOGY.num_threads() as u64,
         };
@@ -99,7 +96,7 @@ pub(crate) fn register_client(
             req.machine_id, req.num_cores, req.shmem_region.base, req.shmem_region.base + req.shmem_region.size, memslices);
 
         // Parse out hw_threads
-        let local_hw_threads = match unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {
+        let hw_threads = match unsafe { decode::<Vec<CpuThread>>(hwthreads_data) } {
             Some((hw_threads, [])) => hw_threads,
             Some((_, _)) => {
                 error!("Extra data in register_client");
@@ -110,26 +107,17 @@ pub(crate) fn register_client(
                 return Err(RPCError::MalformedResponse);
             }
         };
-        info!("local_hw_threads: {:?}", local_hw_threads);
 
-        let mut global_hw_threads = Vec::try_with_capacity(local_hw_threads.len())
+        let mut client_threads = Vec::try_with_capacity(hw_threads.len())
             .expect("Failed to allocate space for client hw thread data");
-        for hw_thread in local_hw_threads {
-            // Update hw_threads state so global values are globally unique
-            let global_hw_thread = CpuThread {
-                id: local_to_gtid(hw_thread.id, req.machine_id),
-                node_id: local_to_node_id(hw_thread.node_id, req.machine_id),
-                package_id: local_to_package_id(hw_thread.package_id, req.machine_id),
-                core_id: hw_thread.core_id,
-                thread_id: hw_thread.thread_id,
-            };
-            global_hw_threads.push((global_hw_thread, false))
+        for hwthread in hw_threads {
+            client_threads.push((*hwthread, false));
         }
 
         // TODO(correctness): assume client is already running something on core zero (also below)
-        global_hw_threads[0] = (global_hw_threads[0].0, true);
+        client_threads[0] = (client_threads[0].0, true);
 
-        info!("unique hw_threads: {:?}", global_hw_threads);
+        info!("client_threads: {:?}", client_threads);
 
         // Register client resources with DCM
         // TODO(correctness): subtract 1 because assume client is already running something on core zero
@@ -147,7 +135,7 @@ pub(crate) fn register_client(
             shmem_manager
         );
 
-        let client_state = PerClientState::new(req.machine_id, shmem_manager, global_hw_threads);
+        let client_state = PerClientState::new(req.machine_id, shmem_manager, client_threads);
         state.add_client(dcm_node_id, client_state);
 
         Ok(state)

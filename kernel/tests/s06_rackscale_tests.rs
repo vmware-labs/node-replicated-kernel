@@ -289,7 +289,7 @@ fn s06_rackscale_shmem_multiinstance() {
     use std::time::Duration;
 
     let timeout = 60_000;
-    let clients = 4;
+    let clients = 3;
     let mut processes = Vec::with_capacity(clients + 1);
 
     let large_shmem_size = SHMEM_SIZE * (clients as u64);
@@ -397,7 +397,7 @@ fn rackscale_userspace_multicore_test(is_shmem: bool) {
     let timeout = 60_000;
 
     let machine = Machine::determine();
-    let client_num_cores: usize = core::cmp::min(5, machine.max_cores() - 1);
+    let client_num_cores: usize = core::cmp::min(5, (machine.max_cores() - 1) / 2);
 
     // Create build for both controller and client
     let build = Arc::new(
@@ -494,8 +494,9 @@ fn s06_rackscale_shmem_request_core_remote_test() {
     use std::time::Duration;
 
     // Setup ivshmem server
+    let large_shmem_size = SHMEM_SIZE * 3;
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
 
     setup_network(3);
     let timeout = 30_000;
@@ -518,7 +519,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
             .timeout(timeout)
             .cmd("mode=controller transport=shmem")
-            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_size(large_shmem_size as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
@@ -546,12 +547,12 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client1_build)
             .timeout(timeout)
             .cmd("mode=client transport=shmem")
-            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_size(large_shmem_size as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
             .workers(3)
-            .cores(1)
+            .cores(2)
             .memory(4096)
             .nobuild() // Use single build for all for consistency
             .use_vmxnet3();
@@ -576,7 +577,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client2_build)
             .timeout(timeout)
             .cmd("mode=client transport=shmem")
-            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_size(large_shmem_size as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap4")
             .no_network_setup()

@@ -39,7 +39,9 @@ pub(crate) fn schedule() -> ! {
         if let Some((replica, token)) = NR_REPLICA.get() {
             loop {
                 let response = replica.execute(
-                    nr::ReadOps::CurrentProcess(*crate::environment::CORE_ID),
+                    nr::ReadOps::CurrentProcess(kpi::system::mtid_from_gtid(
+                        *crate::environment::CORE_ID,
+                    )),
                     *token,
                 );
 

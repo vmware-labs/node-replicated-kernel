@@ -713,7 +713,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         assert!(a.vector < 256);
         //trace!("handle_generic_exception {:?}", a);
         acknowledge();
-        let core_id = *crate::environment::CORE_ID;
+        let core_id = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
 
         let kcb = get_kcb();
 

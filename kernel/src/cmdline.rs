@@ -9,6 +9,8 @@ use core::slice::from_raw_parts;
 use log::error;
 use logos::Logos;
 
+use kpi::system::MachineId;
+
 use crate::arch::memory::paddr_to_kernel_vaddr;
 use crate::memory::PAddr;
 
@@ -108,8 +110,6 @@ impl From<&str> for Transport {
         }
     }
 }
-
-pub(crate) type MachineId = u8;
 
 /// Arguments parsed from command line string passed from the bootloader to the
 /// kernel.

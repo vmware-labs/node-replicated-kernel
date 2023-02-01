@@ -4,12 +4,14 @@
 use log::trace;
 use spin::Lazy;
 
-use crate::arch::{MAX_CORES, MAX_NUMA_NODES};
+use kpi::system::new_gtid;
+
+use crate::arch::{MAX_CORES, MAX_MACHINES, MAX_NUMA_NODES};
 
 /// The core id of the current core (hardware thread).
 #[thread_local]
 pub(crate) static CORE_ID: Lazy<usize> =
-    Lazy::new(|| atopology::MACHINE_TOPOLOGY.current_thread().id);
+    Lazy::new(|| new_gtid(atopology::MACHINE_TOPOLOGY.current_thread().id, *MACHINE_ID));
 
 /// The NUMA node id of the current core (hardware thread).
 #[thread_local]
@@ -19,6 +21,14 @@ pub(crate) static NODE_ID: Lazy<usize> = Lazy::new(|| {
         .node_id
         .unwrap_or(0)
 });
+
+/// The machine id of the current host.
+pub(crate) static MACHINE_ID: Lazy<usize> =
+    Lazy::new(|| crate::CMDLINE.get().map_or(0, |c| c.machine_id) as usize);
+
+/// Number of machines in the current deployment.
+pub(crate) static NUM_MACHINES: Lazy<usize> =
+    Lazy::new(|| crate::CMDLINE.get().map_or(1, |c| c.workers) as usize);
 
 /// How many cores (hardware threads) we have per NUMA node.
 pub(crate) static CORES_PER_NUMA_NODE: Lazy<usize> =
@@ -51,4 +61,8 @@ pub fn init_topology() {
         node_replication::MAX_REPLICAS_PER_LOG >= nodes,
         "We don't support as many replicas as we have NUMA nodes."
     );
+    assert!(
+        MAX_MACHINES >= *NUM_MACHINES,
+        "We don't support more machines than `MAX_MACHINES`"
+    )
 }

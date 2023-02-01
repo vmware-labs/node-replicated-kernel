@@ -107,13 +107,13 @@ impl Shootdown {
     }
 }
 
-pub(crate) fn enqueue(gtid: atopology::GlobalThreadId, s: WorkItem) {
+pub(crate) fn enqueue(mtid: kpi::system::MachineThreadId, s: WorkItem) {
     trace!("TLB enqueue shootdown msg {:?}", s);
-    let _ignore = IPI_WORKQUEUE[gtid as usize].push(s);
+    let _ignore = IPI_WORKQUEUE[mtid as usize].push(s);
 }
 
-pub(crate) fn dequeue(gtid: atopology::GlobalThreadId) {
-    match IPI_WORKQUEUE[gtid as usize].pop() {
+pub(crate) fn dequeue(mtid: kpi::system::MachineThreadId) {
+    match IPI_WORKQUEUE[mtid as usize].pop() {
         Some(msg) => match msg {
             WorkItem::Shootdown(s) => {
                 trace!("TLB channel got msg {:?}", s);
@@ -141,7 +141,7 @@ fn advance_log(log_id: usize) {
 }
 
 pub(crate) fn eager_advance_fs_replica() {
-    let core_id = *crate::environment::CORE_ID;
+    let core_id = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
 
     match IPI_WORKQUEUE[core_id].pop() {
         Some(msg) => {
@@ -210,7 +210,7 @@ fn send_ipi_multicast(ldr: u32) {
 /// It divides IPIs into clusters to avoid overhead of sending IPIs individually.
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
 pub(crate) fn shootdown(handle: TlbFlushHandle) {
-    let my_gtid = *crate::environment::CORE_ID;
+    let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
     // Cluster ID (LDR[31:16]) is the address of the destination cluster
@@ -240,15 +240,15 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
         .expect("TODO(error-handling): ideally: no possible failure during shootdown");
     let range = handle.vaddr.as_u64()..(handle.vaddr + handle.size).as_u64();
 
-    for gtid in handle.cores() {
-        if gtid != my_gtid {
-            let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid].apic_id();
+    for mtid in handle.cores() {
+        if mtid != my_mtid {
+            let apic_id = atopology::MACHINE_TOPOLOGY.threads[mtid].apic_id();
             let cluster_addr = apic_id.x2apic_logical_cluster_address();
             let cluster = apic_id.x2apic_logical_cluster_id();
 
             trace!(
-                "Send shootdown to gtid:{} in cluster:{} cluster_addr:{}",
-                gtid,
+                "Send shootdown to mtid:{} in cluster:{} cluster_addr:{}",
+                mtid,
                 cluster,
                 cluster_addr
             );
@@ -256,7 +256,7 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
 
             let shootdown = Arc::try_new(Shootdown::new(range.clone()))
                 .expect("TODO(error-handling): ideally: no possible failure during shootdown");
-            enqueue(gtid, WorkItem::Shootdown(shootdown.clone()));
+            enqueue(mtid, WorkItem::Shootdown(shootdown.clone()));
 
             debug_assert!(shootdowns.len() < shootdowns.capacity(), "Avoid realloc");
             shootdowns.push(shootdown);
@@ -285,10 +285,10 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
     trace!("done with all shootdowns");
 }
 
-pub(crate) fn advance_replica(gtid: atopology::GlobalThreadId, log_id: usize) {
-    trace!("Send AdvanceReplica IPI for {} to {}", log_id, gtid);
-    let apic_id = atopology::MACHINE_TOPOLOGY.threads[gtid as usize].apic_id();
+pub(crate) fn advance_replica(mtid: kpi::system::MachineThreadId, log_id: usize) {
+    trace!("Send AdvanceReplica IPI for {} to {}", log_id, mtid);
+    let apic_id = atopology::MACHINE_TOPOLOGY.threads[mtid as usize].apic_id();
 
-    enqueue(gtid, WorkItem::AdvanceReplica(log_id));
+    enqueue(mtid, WorkItem::AdvanceReplica(log_id));
     send_ipi_to_apic(apic_id);
 }

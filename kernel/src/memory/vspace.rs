@@ -7,6 +7,8 @@ use core::cmp::PartialEq;
 use core::fmt;
 use core::ops::{BitOr, BitOrAssign};
 
+use kpi::system::MachineThreadId;
+
 use crate::error::KError;
 use bit_field::BitField;
 
@@ -41,8 +43,8 @@ impl TlbFlushHandle {
         }
     }
 
-    pub(crate) fn add_core(&mut self, gtid: atopology::GlobalThreadId) {
-        self.core_map.set_bit(gtid, true)
+    pub(crate) fn add_core(&mut self, mtid: MachineThreadId) {
+        self.core_map.set_bit(mtid as usize, true)
     }
 
     pub(crate) fn cores(&self) -> CoreBitMapIter {

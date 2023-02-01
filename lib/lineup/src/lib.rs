@@ -26,5 +26,12 @@ pub mod upcalls;
 /// Type to represent a core id for the scheduler.
 type CoreId = usize;
 
+/// A utility function that converts from a gtid to a core_id, which is a form more
+/// easily used for indexing.
+pub fn gtid_to_core_id(gtid: kpi::system::GlobalThreadId) -> CoreId {
+    kpi::process::MAX_CORES_PER_MACHINE * kpi::system::mid_from_gtid(gtid)
+        + kpi::system::mtid_from_gtid(gtid)
+}
+
 /// Type to represent an IRQ vector.
 type IrqVector = u64;

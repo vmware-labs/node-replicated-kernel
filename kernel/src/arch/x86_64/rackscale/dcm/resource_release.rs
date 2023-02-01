@@ -95,7 +95,7 @@ pub(crate) fn dcm_resource_release(node_id: DCMNodeId, pid: usize, is_core: bool
             unsafe { &[req.as_bytes()] },
             unsafe { &mut [res.as_mut_bytes()] },
         )
-        .unwrap();
+        .expect("Failed to send resource release RPC to DCM");
     debug!(
         "Received is_success for DCM resource release: {:?}",
         res.is_success

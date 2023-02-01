@@ -73,7 +73,7 @@ impl<T: Arch86SystemDispatch> SystemDispatch<u64> for T {
         let mut return_threads = Vec::try_with_capacity(num_threads)?;
         for hwthread in hwthreads {
             return_threads.try_push(kpi::system::CpuThread {
-                id: hwthread.id as usize,
+                id: kpi::system::new_gtid(hwthread.id as usize, *crate::environment::MACHINE_ID),
                 node_id: hwthread.node_id.unwrap_or(0) as usize,
                 package_id: hwthread.package_id as usize,
                 core_id: hwthread.core_id as usize,
@@ -176,21 +176,21 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
     }
 
     fn request_core(&self, core_id: u64, entry_point: u64) -> Result<(u64, u64), KError> {
-        let gtid: usize = core_id.try_into().unwrap();
+        let mtid: usize = kpi::system::mtid_from_gtid(core_id.try_into().unwrap());
         let mut affinity = None;
         for thread in atopology::MACHINE_TOPOLOGY.threads() {
-            if thread.id == gtid {
+            if thread.id == mtid {
                 affinity = Some(thread.node_id.unwrap_or(0));
             }
         }
         let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
         let pid = current_pid()?;
 
-        let _gtid = nr::KernelNode::allocate_core_to_process(
+        let _mtid = nr::KernelNode::allocate_core_to_process(
             pid,
             VAddr::from(entry_point),
             Some(affinity),
-            Some(gtid),
+            Some(mtid),
         )?;
 
         Ok((core_id, 0))

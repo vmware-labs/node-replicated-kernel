@@ -41,6 +41,7 @@ pub use bootloader_shared::*;
 
 pub(crate) const MAX_NUMA_NODES: usize = 12;
 pub(crate) const MAX_CORES: usize = 192;
+pub(crate) const MAX_MACHINES: usize = u8::MAX as usize;
 
 pub(crate) fn halt() -> ! {
     unsafe { libc::exit(0) };

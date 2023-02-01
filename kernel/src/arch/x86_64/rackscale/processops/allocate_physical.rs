@@ -12,7 +12,7 @@ use rpc::RPCClient;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::arch::rackscale::client_state::CLIENT_STATE;
-use crate::error::KError;
+use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
@@ -39,7 +39,7 @@ pub(crate) fn rpc_allocate_physical(
     pid: usize,
     size: u64,
     affinity: u64,
-) -> Result<(u64, u64), RPCError> {
+) -> KResult<(u64, u64)> {
     info!("AllocatePhysical({:?}, {:?})", size, affinity);
 
     // Construct request data
@@ -49,46 +49,45 @@ pub(crate) fn rpc_allocate_physical(
         affinity,
     };
     let mut req_data = [0u8; core::mem::size_of::<AllocatePhysicalReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.unwrap();
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
+        .expect("Failed to encode allocate physical request");
 
     // Create result buffer
-    let mut res_data = [0u8; core::mem::size_of::<KernelRpcRes>()];
-    rpc_client
-        .call(
-            KernelRpc::AllocatePhysical as RPCType,
-            &[&req_data],
-            &mut [&mut res_data],
-        )
-        .unwrap();
+    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
+    rpc_client.call(
+        KernelRpc::AllocatePhysical as RPCType,
+        &[&req_data],
+        &mut [&mut res_data],
+    )?;
 
     // Decode result, return result if decoded successfully
-    if let Some((res, remaining)) = unsafe { decode::<KernelRpcRes>(&mut res_data) } {
+    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
         if remaining.len() > 0 {
-            return Err(RPCError::ExtraData);
+            return Err(KError::from(RPCError::ExtraData));
         }
 
-        if let Ok((node_id, frame_base)) = res.ret {
+        if let Ok((node_id, frame_base)) = res {
             // Associate frame with the local process
             let shmem_region = ShmemRegion {
-                base: frame_base,
+                base: *frame_base,
                 size,
             };
             let frame = shmem_region.get_frame(SHMEM_DEVICE.region.base);
             debug!(
                 "AllocatePhysical() mapping base from {:x?} to {:?}",
-                frame_base, frame,
+                *frame_base, frame,
             );
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
             // Add frame mapping to client map
-            CLIENT_STATE.add_frame(fid, node_id);
+            CLIENT_STATE.add_frame(fid, *node_id);
 
-            return Ok((fid as u64, frame_base));
+            return Ok((fid as u64, *frame_base));
         } else {
-            return res.ret;
+            return *res;
         }
     } else {
-        return Err(RPCError::MalformedResponse);
+        return Err(KError::from(RPCError::MalformedResponse));
     }
 }
 
@@ -112,7 +111,7 @@ pub(crate) fn handle_allocate_physical(
         pid = req.pid;
     } else {
         warn!("Invalid payload for request: {:?}", hdr);
-        construct_error_ret(hdr, payload, RPCError::MalformedRequest);
+        construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
         return Ok(state);
     }
 
@@ -138,19 +137,15 @@ pub(crate) fn handle_allocate_physical(
     let res = match ret {
         Ok(frame) => {
             debug!("Shmem Frame: {:?}", frame);
-            KernelRpcRes {
-                // Should technically be Ok((fid as u64, frame.base.as_u64()))
-                // We return node_id here, but it should really be an AS (address space)
-                // identifier, (most likely). This works for now because there is only
-                // 1 AS per node.
-                ret: convert_return(Ok((dcm_node_id, frame.base.as_u64()))),
-            }
+            // Should technically be Ok((fid as u64, frame.base.as_u64()))
+            // We return node_id here, but it should really be an AS (address space)
+            // identifier, (most likely). This works for now because there is only
+            // 1 AS per node.
+            Ok((dcm_node_id, frame.base.as_u64()))
         }
         Err(kerror) => {
             debug!("Failed to allocate physical frame: {:?}", kerror);
-            KernelRpcRes {
-                ret: convert_return(Err(kerror)),
-            }
+            Err(kerror)
         }
     };
     construct_ret(hdr, payload, res);

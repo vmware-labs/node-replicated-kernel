@@ -17,6 +17,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use arr_macro::arr;
 use fringe::generator::Generator;
+use kpi::process::MAX_CORES;
 use log::{error, trace};
 use rawtime::Instant;
 
@@ -66,9 +67,10 @@ pub struct SmpScheduler<'a> {
     ///
     /// This is slightly different from SchedulerControlBlock
     /// It's per core but only accessed within SmpScheduler
-    per_core: [SchedulerCoreState; 96], // MAX_THREADS
+    per_core: [SchedulerCoreState; MAX_CORES],
     /// Contains a global counter of thread IDs
     tid_counter: AtomicUsize,
+    /// TODO(rackscale): may need to make IrqVector unique w/ machine id?
     /// Maps interrupt vectors to ThreadId
     irqvec_to_tid: spin::Mutex<hashbrown::HashMap<IrqVector, ThreadId>>,
 }
@@ -93,7 +95,7 @@ impl<'a> SmpScheduler<'a> {
             threads: spin::Mutex::new(hashbrown::HashMap::with_capacity(SmpScheduler::MAX_THREADS)),
             upcalls,
             tid_counter: AtomicUsize::new(0),
-            per_core: arr![SchedulerCoreState::new(); 96], // MAX_THREADS
+            per_core: arr![SchedulerCoreState::new(); 96], // MAX_CORES
             irqvec_to_tid: spin::Mutex::new(hashbrown::HashMap::with_capacity(8)),
         }
     }
@@ -115,7 +117,7 @@ impl<'a> SmpScheduler<'a> {
         stack: LineupStack,
         f: F,
         arg: *mut u8,
-        affinity: CoreId,
+        affinity: kpi::system::GlobalThreadId,
         interrupt_vector: Option<IrqVector>,
         tls: *mut ThreadControlBlock<'static>,
     ) -> Option<ThreadId>
@@ -124,10 +126,12 @@ impl<'a> SmpScheduler<'a> {
     {
         let t = self.tid_counter.fetch_add(1, Ordering::Relaxed);
         let tid = ThreadId(t);
+        let core_id = crate::gtid_to_core_id(affinity);
+
         let (handle, generator) = unsafe {
             Thread::new(
                 tid,
-                affinity,
+                core_id,
                 stack,
                 f,
                 arg,
@@ -138,7 +142,7 @@ impl<'a> SmpScheduler<'a> {
         };
 
         self.add_thread(handle, generator).map(|tid| {
-            self.mark_runnable(tid, affinity);
+            self.mark_runnable(tid, core_id);
             if let Some(vec) = interrupt_vector {
                 self.irqvec_to_tid.lock().insert(vec, tid);
             }
@@ -151,7 +155,7 @@ impl<'a> SmpScheduler<'a> {
         stack_size: usize,
         f: F,
         arg: *mut u8,
-        affinity: CoreId,
+        affinity: kpi::system::GlobalThreadId,
         irq_vec: Option<IrqVector>,
     ) -> Option<ThreadId>
     where

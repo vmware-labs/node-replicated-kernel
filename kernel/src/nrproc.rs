@@ -18,7 +18,6 @@ use spin::Once;
 use crate::arch::process::PROCESS_TABLE;
 use crate::arch::{Module, MAX_NUMA_NODES};
 use crate::error::{KError, KResult};
-use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction, TlbFlushHandle};
 use crate::memory::{Frame, PAddr, VAddr};
 use crate::process::{
@@ -139,7 +138,10 @@ pub(crate) struct NrProcess<P: Process, M: Allocator + Clone = alloc::alloc::Glo
 }
 
 impl<P: Process> NrProcess<P> {
-    pub(crate) fn new(process: Box<P>, _da: DA) -> NrProcess<P> {
+    pub(crate) fn new(
+        process: Box<P>,
+        _allocator: Box<dyn Allocator + Send + Sync>,
+    ) -> NrProcess<P> {
         NrProcess {
             active_cores: Vec::new(),
             process,

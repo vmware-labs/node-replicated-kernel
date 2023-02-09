@@ -6,6 +6,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bootloader_shared::Module;
+use core::alloc::Allocator;
 use core::cell::RefCell;
 use core::ops::{Deref, DerefMut};
 use x86::current::paging::PAddr;
@@ -86,8 +87,8 @@ lazy_static! {
                 debug_assert!(!numa_cache[node].is_full(), "Ensured by loop range");
 
 
-                let p = Box::try_new(UnixProcess::new(pid, da.clone()).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
-                let nrp = NrProcess::new(p, da.clone());
+                let p = Box::try_new(UnixProcess::new(pid, Box::new(da.clone())).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
+                let nrp = NrProcess::new(p, Box::new(da.clone()));
 
                 numa_cache[node].push(Replica::<NrProcess<UnixProcess>>::with_data(&log, nrp));
 
@@ -127,7 +128,7 @@ pub(crate) struct UnixProcess {
 }
 
 impl UnixProcess {
-    fn new(pid: Pid, _da: DA) -> Result<Self, KError> {
+    fn new(pid: Pid, _allocator: Box<dyn Allocator + Send + Sync>) -> Result<Self, KError> {
         Ok(UnixProcess {
             pid,
             vspace: VSpace::new(),

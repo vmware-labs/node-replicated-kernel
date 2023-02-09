@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
+use core::alloc::Allocator;
 use core::ops::Bound::*;
 
 use fallible_collections::btree::BTreeMap;
@@ -15,7 +16,7 @@ pub mod page_table; /* TODO(encapsulation): This should be a private module but 
 mod test;
 
 use crate::error::KError;
-use crate::memory::{detmem::DA, vspace::*};
+use crate::memory::vspace::*;
 use crate::memory::{Frame, PAddr, VAddr};
 
 use page_table::{PageTable, PT_LAYOUT};
@@ -70,7 +71,7 @@ lazy_static! {
             //   of PageTable?)
             PageTable {
                 pml4: Box::into_pin(Box::from_raw(pml4_table)),
-                da: None,
+                allocator: None,
             }
         }
 
@@ -200,10 +201,10 @@ impl Drop for VSpace {
 }
 
 impl VSpace {
-    pub(crate) fn new(da: DA) -> Result<Self, KError> {
+    pub(crate) fn new(allocator: Box<dyn Allocator + Sync + Send>) -> Result<Self, KError> {
         Ok(VSpace {
             mappings: BTreeMap::new(),
-            page_table: PageTable::new(da)?,
+            page_table: PageTable::new(allocator)?,
         })
     }
 

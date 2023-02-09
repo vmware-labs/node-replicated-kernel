@@ -5,6 +5,7 @@ use alloc::boxed::Box;
 use alloc::collections::TryReserveError;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
 use core::arch::asm;
 use core::cell::RefCell;
 use core::cmp::PartialEq;
@@ -138,8 +139,8 @@ lazy_static! {
                 pcm.set_mem_affinity(node as atopology::NodeId).expect("Can't change affinity");
                 debug_assert!(!numa_cache[node].is_full());
 
-                let p = Box::try_new(Ring3Process::new(pid, da.clone()).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
-                let nrp = NrProcess::new(p, da.clone());
+                let p = Box::try_new(Ring3Process::new(pid, Box::new(da.clone())).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
+                let nrp = NrProcess::new(p, Box::new(da.clone()));
 
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&PROCESS_LOGS[pid], nrp));
 
@@ -916,7 +917,7 @@ pub(crate) struct Ring3Process {
 }
 
 impl Ring3Process {
-    fn new(pid: Pid, da: DA) -> Result<Self, KError> {
+    fn new(pid: Pid, allocator: Box<dyn Allocator + Sync + Send>) -> Result<Self, KError> {
         const NONE_EXECUTOR: Option<Vec<Box<Ring3Executor>>> = None;
         let executor_cache: ArrayVec<Option<Vec<Box<Ring3Executor>>>, MAX_NUMA_NODES> =
             ArrayVec::from([NONE_EXECUTOR; MAX_NUMA_NODES]);
@@ -931,7 +932,7 @@ impl Ring3Process {
             pid: pid,
             current_eid: 0,
             offset: VAddr::from(ELF_OFFSET),
-            vspace: VSpace::new(da)?,
+            vspace: VSpace::new(allocator)?,
             entry_point: VAddr::from(0usize),
             executor_cache,
             executor_offset: VAddr::from(EXECUTOR_OFFSET),

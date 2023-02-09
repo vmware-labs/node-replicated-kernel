@@ -95,7 +95,7 @@ proptest! {
         use TestAction::*;
         use crate::memory::detmem::DA;
 
-        let mut totest = VSpace::new(DA::new().expect("Unable to create DA")).expect("Unable to create vspace");;
+        let mut totest = VSpace::new(Box::new(DA::new().expect("Unable to create DA"))).expect("Unable to create vspace");;
         let mut model: ModelAddressSpace = Default::default();
 
         for action in ops {

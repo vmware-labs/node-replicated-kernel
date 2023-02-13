@@ -272,7 +272,7 @@ pub unsafe fn setup_early_idt() {
 ///
 /// # See also
 /// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
-#[repr(C, packed)]
+#[repr(C)]
 pub struct ExceptionArguments {
     _reserved: u64,
     vector: u64,

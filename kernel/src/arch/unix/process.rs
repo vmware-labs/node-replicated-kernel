@@ -286,6 +286,5 @@ impl FrameManagement for UnixProcess {
 
 pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     let pid = crate::process::make_process::<UnixProcess>(binary)?;
-    crate::process::allocate_dispatchers::<UnixProcess>(pid)?;
     Ok(0)
 }

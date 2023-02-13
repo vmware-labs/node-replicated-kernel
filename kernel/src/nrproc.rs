@@ -298,13 +298,11 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn allocate_executor<A>(pm: &A, pid: Pid) -> Result<Box<P::E>, KError>
+    fn try_assign_executor<A>(pm: &A, pid: Pid) -> Result<Box<P::E>, KError>
     where
         A: ProcessManager<Process = P>,
         P: Process + core::marker::Sync + 'static,
     {
-        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
-
         let gtid = *crate::environment::CORE_ID;
         let node = *crate::environment::NODE_ID;
 
@@ -316,6 +314,24 @@ impl<P: Process> NrProcess<P> {
             Ok(ProcessResult::Executor(executor)) => Ok(executor),
             Err(e) => Err(e),
             _ => unreachable!("Got unexpected response"),
+        }
+    }
+
+    pub(crate) fn allocate_executor<A>(pm: &A, pid: Pid) -> Result<Box<P::E>, KError>
+    where
+        A: ProcessManager<Process = P>,
+        P: Process + core::marker::Sync + 'static,
+    {
+        debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
+
+        let response = NrProcess::try_assign_executor(pm, pid);
+        // If we didn't have dispatcher memory allocated, allocate and try again
+        if let Err(KError::NoExecutorAllocated) = response {
+            let node = *crate::environment::NODE_ID;
+            super::process::allocate_dispatchers::<P>(pid, node)?;
+            NrProcess::try_assign_executor(pm, pid)
+        } else {
+            response
         }
     }
 

@@ -6,6 +6,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use atopology::NodeId;
 use core::convert::{TryFrom, TryInto};
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
@@ -21,7 +22,7 @@ use log::{debug, info, trace};
 use crate::arch::kcb::per_core_mem;
 use crate::arch::memory::{paddr_to_kernel_vaddr, BASE_PAGE_SIZE, LARGE_PAGE_SIZE};
 use crate::arch::process::{current_pid, with_user_space_access_enabled, ArchProcess};
-use crate::arch::{Module, MAX_CORES, MAX_NUMA_NODES};
+use crate::arch::{Module, MAX_CORES};
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
 use crate::fs::{cnrfs, fd::FileDescriptorEntry};
@@ -455,47 +456,44 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
         })
 }
 
-/// Create dispatchers for a given Pid to run on all cores.
+/// Create dispatchers for a given Pid to run on a NUMA node.
 ///
 /// Also make sure they are all using NUMA local memory
-pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid) -> Result<(), KError> {
+pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid, affinity: NodeId) -> Result<(), KError> {
     trace!("Allocate dispatchers");
+    debug_assert!(affinity <= atopology::MACHINE_TOPOLOGY.num_nodes());
 
-    let mut create_per_region: ArrayVec<(atopology::NodeId, usize), MAX_NUMA_NODES> =
-        ArrayVec::new();
-
-    if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
+    let to_create = if atopology::MACHINE_TOPOLOGY.num_nodes() > 0 {
+        let mut to_create = atopology::MACHINE_TOPOLOGY.num_threads();
         for node in atopology::MACHINE_TOPOLOGY.nodes() {
-            let threads = node.threads().count();
-            debug_assert!(!create_per_region.is_full(), "Ensured by for loop range");
-            create_per_region.push((node.id, threads));
+            if node.id == affinity {
+                to_create = node.threads().count();
+            }
         }
+        to_create
     } else {
-        debug_assert!(!create_per_region.is_full(), "ensured MAX_NUMA_NODES >= 1");
-        create_per_region.push((0, atopology::MACHINE_TOPOLOGY.num_threads()));
-    }
+        atopology::MACHINE_TOPOLOGY.num_threads()
+    };
 
-    for (affinity, to_create) in create_per_region {
-        let mut dispatchers_created = 0;
-        while dispatchers_created < to_create {
-            KernelAllocator::try_refill_tcache(20, 1, MemType::Mem)?;
-            let mut frame = {
-                let pcm = crate::arch::kcb::per_core_mem();
-                pcm.gmanager.unwrap().node_caches[affinity as usize]
-                    .lock()
-                    .allocate_large_page()?
-            };
+    let mut dispatchers_created = 0;
+    while dispatchers_created < to_create {
+        KernelAllocator::try_refill_tcache(20, 1, MemType::Mem)?;
+        let mut frame = {
+            let pcm = crate::arch::kcb::per_core_mem();
+            pcm.gmanager.unwrap().node_caches[affinity as usize]
+                .lock()
+                .allocate_large_page()?
+        };
 
-            unsafe {
-                frame.zero();
+        unsafe {
+            frame.zero();
+        }
+
+        match nrproc::NrProcess::<P>::allocate_dispatchers(pid, frame) {
+            Ok(count) => {
+                dispatchers_created += count;
             }
-
-            match nrproc::NrProcess::<P>::allocate_dispatchers(pid, frame) {
-                Ok(count) => {
-                    dispatchers_created += count;
-                }
-                _ => unreachable!("Got unexpected response"),
-            }
+            _ => unreachable!("Got unexpected response"),
         }
     }
 

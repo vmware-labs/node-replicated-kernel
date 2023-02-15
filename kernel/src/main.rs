@@ -22,15 +22,15 @@
     linkage,
     c_variadic,
     drain_filter,
+    let_chains,
     new_uninit,
     get_mut_unchecked,
-    const_ptr_offset_from,
     const_refs_to_cell,
     nonnull_slice_from_raw_parts,
     cell_update,
     thread_local,
-    generic_associated_types,
-    maybe_uninit_write_slice
+    maybe_uninit_write_slice,
+    alloc_error_handler
 )]
 
 extern crate alloc;

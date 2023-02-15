@@ -64,7 +64,7 @@ impl File {
                         len
                     }
                     // If file is filled till last buffer
-                    last_buffer_len => ((buffer_num - 1) * BASE_PAGE_SIZE + last_buffer_len),
+                    last_buffer_len => (buffer_num - 1) * BASE_PAGE_SIZE + last_buffer_len,
                 }
             }
         }

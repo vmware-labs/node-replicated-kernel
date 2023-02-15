@@ -279,7 +279,7 @@ pub(crate) fn rust_eh_personality(
 
 #[cfg(target_os = "none")]
 #[no_mangle]
-#[cfg_attr(target_os = "none", lang = "oom")]
+#[alloc_error_handler]
 pub(crate) fn oom(layout: Layout) -> ! {
     sprintln!(
         "OOM: Unable to satisfy allocation request for size {} with alignment {}.",

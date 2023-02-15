@@ -89,7 +89,7 @@ const AT_STACKBASE: Elf64Word = 13;
 /// Store initial information about the process.
 ///
 /// (auxiliary table, command line arguments and environment arguments)
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct InitInfo {
     pub argv_dummy: *mut c_char,

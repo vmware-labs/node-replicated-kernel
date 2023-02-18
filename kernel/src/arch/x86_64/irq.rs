@@ -272,7 +272,7 @@ pub unsafe fn setup_early_idt() {
 ///
 /// # See also
 /// Described in Intel SDM 3a, Figure 6-8. IA-32e Mode Stack Usage After Privilege Level Change
-#[repr(C)]
+#[repr(C, packed)]
 pub struct ExceptionArguments {
     _reserved: u64,
     vector: u64,
@@ -286,10 +286,17 @@ pub struct ExceptionArguments {
 
 impl fmt::Debug for ExceptionArguments {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let vector = self.vector;
+        let exception = self.exception;
+        let rip = self.rip;
+        let cs = self.cs;
+        let rflags = self.rflags;
+        let rsp = self.rsp;
+        let ss = self.ss;
         write!(
                 f,
                 "ExceptionArguments {{ vec = 0x{:x} exception = 0x{:x} rip = 0x{:x}, cs = 0x{:x} rflags = 0x{:x} rsp = 0x{:x} ss = 0x{:x} }}",
-                self.vector, self.exception, self.rip, self.cs, self.rflags, self.rsp, self.ss
+                vector, exception, rip, cs, rflags, rsp, ss
             )
     }
 }
@@ -304,7 +311,8 @@ unsafe fn unhandled_irq(a: &ExceptionArguments) {
         let desc = &EXCEPTIONS[a.vector as usize];
         sprintln!(" {}", desc);
     } else {
-        sprintln!(" dev vector {}", a.vector);
+        let vector = a.vector;
+        sprintln!(" dev vector {}", vector);
     }
     sprintln!("{:?}", a);
     backtrace();
@@ -374,7 +382,8 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     // Print where the fault happend in the address-space:
     let faulting_address = x86::controlregs::cr2();
     sprint!("Faulting address: {:#x}", faulting_address);
-    sprint!(" Instruction Pointer: {:#x}", a.rip);
+    let rip = a.rip;
+    sprint!(" Instruction Pointer: {:#x}", rip);
 
     /*
     if !err.contains(PageFaultError::US) {
@@ -390,7 +399,7 @@ unsafe fn pf_handler(a: &ExceptionArguments) {
     */
 
     // Print the RIP that triggered the fault:
-    sprint!("Instruction Pointer: {:#x}", a.rip);
+    sprint!("Instruction Pointer: {:#x}", rip);
     if !err.contains(PageFaultError::US) {
         crate::KERNEL_ARGS
             .get()
@@ -596,7 +605,8 @@ unsafe fn gp_handler(a: &ExceptionArguments) {
 
     // Print the RIP that triggered the fault:
     //use crate::arch::kcb;
-    sprint!("Instruction Pointer: {:#x}", a.rip);
+    let rip = a.rip;
+    sprint!("Instruction Pointer: {:#x}", rip);
     /*kcb::try_get_kcb::<Arch86Kcb>().map(|k| {
         sprintln!(
             " (in ELF: {:#x})",

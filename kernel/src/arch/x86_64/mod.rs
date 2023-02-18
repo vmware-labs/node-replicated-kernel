@@ -294,7 +294,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut dyn_mem = PerCoreMemory::new(emanager, 0);
     // Make `dyn_mem` a static reference:
     let static_dyn_mem =
-        // Safety: 
+        // Safety:
         // - The initial stack of the core will never get deallocated (hence
         //   'static is fine)
         // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
@@ -305,7 +305,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     let mut arch = kcb::Arch86Kcb::new(static_dyn_mem);
     // Make `arch` a static reference:
     let static_kcb =
-        // Safety: 
+        // Safety:
         // - The initial stack of the core will never get deallocated (hence
         //   'static is fine)
         // - TODO(safety): aliasing rules is broken here (we have mut dyn_mem
@@ -363,7 +363,7 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // `global_memory` to every core) that's fine since it is allocated on our
     // BSP init stack (which isn't reclaimed):
     let global_memory_static =
-        // Safety: 
+        // Safety:
         // -'static: Lives on init stack (not deallocated)
         // - No mut alias to it
         unsafe { core::mem::transmute::<&GlobalMemory, &'static GlobalMemory>(&global_memory) };
@@ -384,13 +384,15 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
 
     // Starting to initialize file-system
+    info!("before alloc logs");
     let fs_logs = crate::fs::cnrfs::allocate_logs();
+    info!("after alloc logs {}", fs_logs.len());
+    let fs_logs_cloned = fs_logs
+        .try_clone()
+        .expect("Not enough memory to initialize system");
+    info!("after fs logs cloned");
     // Construct the first replica
-    let fs_replica = MlnrReplica::<MlnrKernelNode>::new(
-        fs_logs
-            .try_clone()
-            .expect("Not enough memory to initialize system"),
-    );
+    let fs_replica = MlnrReplica::<MlnrKernelNode>::new(fs_logs_cloned);
     crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
 
     // Intialize PCI

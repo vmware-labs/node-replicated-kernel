@@ -960,6 +960,7 @@ impl elfloader::ElfLoader for Ring3Process {
                 .expect("Refill didn't work");
 
             let pcm = crate::arch::kcb::per_core_mem();
+            info!("1");
 
             // TODO(correctness): Will this work (we round-up and map large-pages?)
             // TODO(efficiency): What about wasted memory
@@ -991,13 +992,14 @@ impl elfloader::ElfLoader for Ring3Process {
                         .allocate_large_page()
                         .expect("We refilled so allocation should work.")
                 };
+                info!("2");
 
                 trace!(
                     "process load vspace from {:#x} with {:?}",
                     self.offset + page_base + i * LARGE_PAGE_SIZE,
                     frame
                 );
-
+                info!("3");
                 self.vspace
                     .map_frame(
                         self.offset + page_base + i * LARGE_PAGE_SIZE,
@@ -1005,6 +1007,7 @@ impl elfloader::ElfLoader for Ring3Process {
                         map_action,
                     )
                     .expect("Can't map ELF region");
+                info!("4");
             }
         }
 

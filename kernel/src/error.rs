@@ -195,6 +195,12 @@ impl From<alloc::collections::TryReserveError> for KError {
     }
 }
 
+impl From<fallible_collections::TryReserveError> for KError {
+    fn from(_e: fallible_collections::TryReserveError) -> Self {
+        KError::OutOfMemory
+    }
+}
+
 impl From<hashbrown::TryReserveError> for KError {
     fn from(_e: hashbrown::TryReserveError) -> Self {
         KError::OutOfMemory

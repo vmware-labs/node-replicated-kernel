@@ -372,6 +372,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     dyn_mem.set_global_pmem(&global_memory_static);
     core::mem::forget(dyn_mem);
 
+    unsafe { vspace::init_large_objects_pml4() };
+
     // Set-up interrupt routing drivers (I/O APIC controllers)
     irq::ioapic_initialize();
 

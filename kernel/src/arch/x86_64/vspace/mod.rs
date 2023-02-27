@@ -7,7 +7,7 @@ use core::ops::Bound::*;
 use fallible_collections::btree::BTreeMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
-use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
+use x86::current::paging::{PDFlags, PDPTFlags, PTFlags, PML4Flags, PML4Entry};
 
 mod debug;
 pub mod page_table; /* TODO(encapsulation): This should be a private module but we break encapsulation in a few places */
@@ -18,7 +18,7 @@ use crate::error::KError;
 use crate::memory::{detmem::DA, vspace::*};
 use crate::memory::{Frame, PAddr, VAddr};
 
-use page_table::PageTable;
+use page_table::{PT_LAYOUT, PageTable};
 
 lazy_static! {
     /// A handle to the initial kernel address space (created for us by the
@@ -81,6 +81,27 @@ lazy_static! {
         //   page-table that was set-up by the bootloader.
         spin::Mutex::new(unsafe { find_current_ptable() })
     };
+}
+
+/// We insert a pml4 slot for the big kernel allocated objects, this ensures
+/// that the PML4 entry is already there when we create a ELF process and
+/// patch-in the kernel mappings. Otherwise we don't have a mapping and lose
+/// access to big malloc'd objects in the kernel once we switch to a user-space
+/// page-table.
+///
+/// # TODO
+/// - This clearly needs a better solution. See also the part where we patch
+///   this into the process page-table.
+pub(crate) unsafe fn init_large_objects_pml4() {
+    log::info!("init_large_objects_pml4()");
+    let mut vspace = INITIAL_VSPACE.lock();
+    let frame_ptr = alloc::alloc::alloc(PT_LAYOUT);
+
+    let vaddr = VAddr::from(frame_ptr as *const u8 as u64);
+    let paddr = crate::arch::memory::kernel_vaddr_to_paddr(vaddr);
+    let mut frame = Frame::new(paddr, PT_LAYOUT.size(), 0);
+    frame.zero();
+    (*vspace.pml4)[132] = PML4Entry::new(frame.base, PML4Flags::P | PML4Flags::RW);
 }
 
 pub(crate) struct VSpace {

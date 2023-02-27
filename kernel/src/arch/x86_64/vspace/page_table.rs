@@ -17,7 +17,7 @@ use crate::memory::vspace::*;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, Frame, PAddr, VAddr};
 
 /// Describes a potential modification operation on existing page tables.
-const PT_LAYOUT: Layout =
+pub(super) const PT_LAYOUT: Layout =
     unsafe { Layout::from_size_align_unchecked(BASE_PAGE_SIZE, BASE_PAGE_SIZE) };
 // Safety (size not overflowing when rounding up is given with size == align):
 static_assertions::const_assert!(BASE_PAGE_SIZE > 0); // align must not be zero

@@ -16,6 +16,7 @@ members = [
     "lib/rpc",
     "usr/init",
     "usr/rkapps",
+    #"lib/fallible_collections",
     #"lib/libfringe",
     #"lib/acpica-sys"
     #"lib/rust-topology",

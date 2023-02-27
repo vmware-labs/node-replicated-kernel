@@ -8,7 +8,6 @@ use fallible_collections::btree::BTreeMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use x86::current::paging::{PDFlags, PDPTFlags, PTFlags};
-use log::info;
 
 mod debug;
 pub mod page_table; /* TODO(encapsulation): This should be a private module but we break encapsulation in a few places */
@@ -91,7 +90,6 @@ pub(crate) struct VSpace {
 
 impl AddressSpace for VSpace {
     fn map_frame(&mut self, base: VAddr, frame: Frame, action: MapAction) -> Result<(), KError> {
-        info!("map_frame 1");
         if frame.size() == 0 {
             return Err(KError::InvalidFrame);
         }
@@ -103,7 +101,6 @@ impl AddressSpace for VSpace {
             // virtual addr should be aligned to page-size
             return Err(KError::InvalidBase);
         }
-        info!("map_frame 2");
 
         let tomap_range = base.as_usize()..base.as_usize() + frame.size;
 
@@ -114,13 +111,11 @@ impl AddressSpace for VSpace {
             .range((Unbounded, Excluded(VAddr::from(tomap_range.end))))
             .rev()
         {
-            info!("map_frame 3");
             let existing_map_range = existing_mapping.vrange(existing_base);
             if existing_map_range.end <= tomap_range.start {
                 // We reached the end of relevant mappings
                 break;
             }
-            info!("map_frame 4");
 
             if existing_base == base
                 && existing_mapping.frame.base == frame.base
@@ -134,12 +129,10 @@ impl AddressSpace for VSpace {
                 });
             }
         }
-        info!("map_frame 5");
+
         self.mappings
             .try_insert(base, MappingInfo::new(frame, action))?;
-        info!("map_frame 6");
         let r = self.page_table.map_frame(base, frame, action);
-        info!("map_frame 6");
         r
     }
 

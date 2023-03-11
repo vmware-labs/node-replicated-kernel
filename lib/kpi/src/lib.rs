@@ -4,7 +4,6 @@
 //! Defines the public kernel interface (i.e., system call interface)
 //! and associated data-types.
 #![no_std]
-#![feature(const_ptr_offset_from)]
 
 #[cfg(not(target_os = "none"))]
 extern crate alloc;

@@ -114,7 +114,7 @@ pub(crate) fn advance_all() {
     let node = *crate::environment::NODE_ID;
 
     for pid in 0..MAX_PROCESSES {
-        let _r = PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
+        PROCESS_TABLE[node][pid].sync(PROCESS_TOKEN.get().unwrap()[pid]);
     }
 }
 

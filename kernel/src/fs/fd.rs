@@ -71,10 +71,7 @@ impl FileDescriptorTable {
     pub(crate) fn allocate_fd(&mut self) -> Option<(FileDescriptor, &mut FileDescriptorEntry)> {
         if let Some(fid) = self.table.iter().position(|fd| fd.is_none()) {
             self.table[fid] = Some(Default::default());
-            Some((
-                FileDescriptor::new(fid),
-                self.table[fid as usize].as_mut().unwrap(),
-            ))
+            Some((FileDescriptor::new(fid), self.table[fid].as_mut().unwrap()))
         } else {
             None
         }

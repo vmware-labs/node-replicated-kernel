@@ -106,7 +106,7 @@ impl MemNode {
         }
         // Return error if start-offset is greater than or equal to new-offset OR
         // new offset is greater than the file size.
-        if offset >= new_offset || new_offset > self.get_file_size() as usize {
+        if offset >= new_offset || new_offset > self.get_file_size() {
             return Err(KError::InvalidOffset);
         }
 

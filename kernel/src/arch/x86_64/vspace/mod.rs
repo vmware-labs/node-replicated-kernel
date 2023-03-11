@@ -7,7 +7,7 @@ use core::ops::Bound::*;
 use fallible_collections::btree::BTreeMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
-use x86::current::paging::{PDFlags, PDPTFlags, PTFlags, PML4Flags, PML4Entry};
+use x86::current::paging::{PDFlags, PDPTFlags, PML4Entry, PML4Flags, PTFlags};
 
 mod debug;
 pub mod page_table; /* TODO(encapsulation): This should be a private module but we break encapsulation in a few places */
@@ -18,7 +18,7 @@ use crate::error::KError;
 use crate::memory::{detmem::DA, vspace::*};
 use crate::memory::{Frame, PAddr, VAddr};
 
-use page_table::{PT_LAYOUT, PageTable};
+use page_table::{PageTable, PT_LAYOUT};
 
 lazy_static! {
     /// A handle to the initial kernel address space (created for us by the

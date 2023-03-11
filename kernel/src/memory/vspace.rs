@@ -42,7 +42,7 @@ impl TlbFlushHandle {
     }
 
     pub(crate) fn add_core(&mut self, gtid: atopology::GlobalThreadId) {
-        self.core_map.set_bit(gtid as usize, true)
+        self.core_map.set_bit(gtid, true)
     }
 
     pub(crate) fn cores(&self) -> CoreBitMapIter {

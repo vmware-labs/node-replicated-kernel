@@ -264,19 +264,11 @@ impl KernelAllocator {
         let (gmanager, mut mem_manager, affinity) = match mem_type {
             MemType::Mem => {
                 let affinity = { pcm.physical_memory.borrow().affinity };
-                (
-                    pcm.gmanager.unwrap(),
-                    pcm.try_mem_manager()?,
-                    affinity as usize,
-                )
+                (pcm.gmanager.unwrap(), pcm.try_mem_manager()?, affinity)
             }
             MemType::PMem => {
                 let affinity = { pcm.persistent_memory.borrow().affinity };
-                (
-                    pcm.pgmanager.unwrap(),
-                    pcm.pmem_manager(),
-                    affinity as usize,
-                )
+                (pcm.pgmanager.unwrap(), pcm.pmem_manager(), affinity)
             }
         };
         let mut ncache = gmanager.node_caches[affinity].lock();
@@ -496,8 +488,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                             Err(_e) => match pcm.gmanager {
                                 // Try adding frame to ncache.
                                 Some(gmanager) => {
-                                    let mut ncache =
-                                        gmanager.node_caches[frame.affinity as usize].lock();
+                                    let mut ncache = gmanager.node_caches[frame.affinity].lock();
                                     ncache
                                         .release_base_page(frame)
                                         .expect("Can't deallocate frame");

@@ -9,7 +9,7 @@ use crate::arch::{MAX_CORES, MAX_NUMA_NODES};
 /// The core id of the current core (hardware thread).
 #[thread_local]
 pub(crate) static CORE_ID: Lazy<usize> =
-    Lazy::new(|| atopology::MACHINE_TOPOLOGY.current_thread().id as usize);
+    Lazy::new(|| atopology::MACHINE_TOPOLOGY.current_thread().id);
 
 /// The NUMA node id of the current core (hardware thread).
 #[thread_local]

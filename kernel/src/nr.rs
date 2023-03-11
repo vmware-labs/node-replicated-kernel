@@ -140,7 +140,7 @@ impl Dispatch for KernelNode {
                 }
             },
             Op::SchedAllocateCore(pid, _affinity, Some(gtid), entry_point) => {
-                assert!((gtid as usize) < MAX_CORES, "Invalid gtid");
+                assert!(gtid < MAX_CORES, "Invalid gtid");
 
                 match self.scheduler_map.get(&gtid) {
                     Some(_cinfo) => Err(KError::CoreAlreadyAllocated),

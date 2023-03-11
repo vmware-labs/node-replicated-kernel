@@ -31,7 +31,7 @@ fn new_ctxt(
             .find_section_by_name(S::section_name())
             .map(|s| s.raw_data(&elf.file))
             .unwrap_or(&[]);
-        S::from(gimli::EndianRcSlice::new(Rc::from(&*data), endian))
+        S::from(gimli::EndianRcSlice::new(Rc::from(data), endian))
     }
 
     let debug_abbrev: gimli::DebugAbbrev<_> = load_section(file, endian);

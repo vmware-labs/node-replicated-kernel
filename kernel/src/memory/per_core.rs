@@ -137,7 +137,7 @@ impl PerCoreMemory {
             debug_assert_eq!(arena.affinity, node);
 
             core::mem::swap(&mut arena, current_arena);
-            arenas[arena.affinity as usize].replace(arena);
+            arenas[arena.affinity].replace(arena);
 
             Ok(())
         } else {

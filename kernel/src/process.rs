@@ -232,7 +232,7 @@ impl elfloader::ElfLoader for DataSecAllocator {
             // We can't expect to get something that is page-aligned from ELF
             let page_mask = (LARGE_PAGE_SIZE - 1) as u64;
             let page_base: VAddr = VAddr::from(base & !page_mask); // Round down to nearest page-size
-            let size_page = round_up!(size + (base & page_mask) as usize, LARGE_PAGE_SIZE as usize);
+            let size_page = round_up!(size + (base & page_mask) as usize, LARGE_PAGE_SIZE);
             assert!(size_page >= size);
             assert_eq!(size_page % LARGE_PAGE_SIZE, 0);
             assert_eq!(page_base % LARGE_PAGE_SIZE, 0);
@@ -480,7 +480,7 @@ pub(crate) fn allocate_dispatchers<P: Process>(pid: Pid, affinity: NodeId) -> Re
         KernelAllocator::try_refill_tcache(20, 1, MemType::Mem)?;
         let mut frame = {
             let pcm = crate::arch::kcb::per_core_mem();
-            pcm.gmanager.unwrap().node_caches[affinity as usize]
+            pcm.gmanager.unwrap().node_caches[affinity]
                 .lock()
                 .allocate_large_page()?
         };

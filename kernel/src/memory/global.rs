@@ -69,7 +69,7 @@ impl GlobalMemory {
         // How many NUMA nodes are there in the system
         let max_affinity: usize = memory
             .iter()
-            .map(|f| f.affinity as usize)
+            .map(|f| f.affinity)
             .max()
             .expect("Need at least some frames")
             + 1;

@@ -154,7 +154,7 @@ impl<'a> Id<'a> {
     }
 
     pub(crate) fn as_slice(&'a self) -> &'a str {
-        &*self.name
+        &self.name
     }
 
     pub(crate) fn name(self) -> Cow<'a, str> {
@@ -280,7 +280,7 @@ impl<'a> LabelText<'a> {
             Esc(s) => s,
             Label(s) => {
                 if s.contains('\\') {
-                    (&*s).escape_default().to_string().into()
+                    (*s).escape_default().to_string().into()
                 } else {
                     s
                 }

@@ -111,7 +111,7 @@ impl crate::nrproc::ProcessManager for ArchProcessManagement {
         ArrayVec<Arc<Replica<'static, NrProcess<Self::Process>>>, MAX_PROCESSES>,
         MAX_NUMA_NODES,
     > {
-        &*super::process::PROCESS_TABLE
+        &super::process::PROCESS_TABLE
     }
 }
 
@@ -227,13 +227,13 @@ impl Process for UnixProcess {
     }
 
     fn get_executor(&mut self, _for_region: atopology::NodeId) -> Result<Box<Self::E>, KError> {
-        Ok(Box::new(UnixThread::default()))
+        Ok(Box::default())
     }
 
     fn allocate_fd(&mut self) -> Option<(u64, &mut FileDescriptorEntry)> {
         if let Some(fid) = self.fds.iter().position(|fd| fd.is_none()) {
             self.fds[fid] = Some(Default::default());
-            Some((fid as u64, self.fds[fid as usize].as_mut().unwrap()))
+            Some((fid as u64, self.fds[fid].as_mut().unwrap()))
         } else {
             None
         }

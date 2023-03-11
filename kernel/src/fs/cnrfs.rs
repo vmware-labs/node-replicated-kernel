@@ -590,7 +590,7 @@ impl Dispatch for MlnrKernelNode {
                     .read()
                     .get(&pid)
                     .ok_or(KError::NoProcessFoundForPid)?;
-                let _is_deleted = self.fs.delete(&filename)?;
+                self.fs.delete(&filename)?;
                 Ok(MlnrNodeResult::FileDeleted)
             }
 
@@ -600,7 +600,7 @@ impl Dispatch for MlnrKernelNode {
                     .read()
                     .get(&pid)
                     .ok_or(KError::NoProcessFoundForPid)?;
-                let _is_renamed = self.fs.rename(&oldname, newname)?;
+                self.fs.rename(&oldname, newname)?;
                 Ok(MlnrNodeResult::FileRenamed)
             }
 
@@ -610,7 +610,7 @@ impl Dispatch for MlnrKernelNode {
                     .read()
                     .get(&pid)
                     .ok_or(KError::NoProcessFoundForPid)?;
-                let _is_created = self.fs.mkdir(filename, modes)?;
+                self.fs.mkdir(filename, modes)?;
                 Ok(MlnrNodeResult::DirCreated)
             }
         }

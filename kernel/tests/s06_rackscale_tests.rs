@@ -494,7 +494,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
     use std::time::Duration;
 
     // Setup ivshmem server
-    let large_shmem_size = SHMEM_SIZE * 3;
+    let large_shmem_size = SHMEM_SIZE;
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
 

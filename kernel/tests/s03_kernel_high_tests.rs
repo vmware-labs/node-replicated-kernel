@@ -176,13 +176,16 @@ fn s03_phys_alloc() {
 fn s03_ivshmem_write_and_read() {
     let build = BuildArgs::default().build();
 
+    // A smaller amount of shmem is sufficient for this test.
+    let shmem_size = SHMEM_SIZE / 16;
+
     let cmdline = RunnerArgs::new_with_build("cxl-write", &build)
         .timeout(30_000)
-        .shmem_size(SHMEM_SIZE as usize)
+        .shmem_size(shmem_size as usize)
         .shmem_path(SHMEM_PATH);
 
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
 
     let mut output = String::new();
     let mut qemu_run = || -> Result<WaitStatus> {
@@ -195,7 +198,7 @@ fn s03_ivshmem_write_and_read() {
 
     let cmdline = RunnerArgs::new_with_build("cxl-read", &build)
         .timeout(30_000)
-        .shmem_size(SHMEM_SIZE as usize)
+        .shmem_size(shmem_size as usize)
         .shmem_path(SHMEM_PATH);
 
     let mut output = String::new();

@@ -21,7 +21,7 @@ pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:
 
 /// Shmem related default values
 pub const SHMEM_PATH: &str = "ivshmem-file";
-pub const SHMEM_SIZE: u64 = 64;
+pub const SHMEM_SIZE: u64 = 512;
 
 /// Sets up network interfaces and bridge for rackscale mode
 ///

@@ -44,7 +44,7 @@ impl TlbFlushHandle {
     }
 
     pub(crate) fn add_core(&mut self, mtid: MachineThreadId) {
-        self.core_map.set_bit(mtid as usize, true)
+        self.core_map.set_bit(mtid, true)
     }
 
     pub(crate) fn cores(&self) -> CoreBitMapIter {

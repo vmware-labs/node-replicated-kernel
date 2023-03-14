@@ -607,7 +607,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
-fn s04_rackscale_shmem_userspace_rumprt_fs() {
+fn s06_rackscale_shmem_userspace_rumprt_fs() {
     rackscale_userspace_rumprt_fs(true);
 }
 

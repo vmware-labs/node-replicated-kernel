@@ -24,7 +24,7 @@ pub(crate) static NODE_ID: Lazy<usize> = Lazy::new(|| {
 
 /// The machine id of the current host.
 pub(crate) static MACHINE_ID: Lazy<usize> =
-    Lazy::new(|| crate::CMDLINE.get().map_or(0, |c| c.machine_id) as usize);
+    Lazy::new(|| crate::CMDLINE.get().map_or(0, |c| c.machine_id));
 
 /// Number of machines in the current deployment.
 pub(crate) static NUM_MACHINES: Lazy<usize> =

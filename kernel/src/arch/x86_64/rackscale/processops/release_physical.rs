@@ -6,7 +6,7 @@ use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::process::FrameId;
 use kpi::FileOperation;
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
@@ -41,7 +41,7 @@ pub(crate) fn rpc_release_physical(
     pid: usize,
     frame_id: u64,
 ) -> KResult<(u64, u64)> {
-    info!("ReleasePhysical({:?})", frame_id);
+    debug!("ReleasePhysical({:?})", frame_id);
 
     // Construct request data
     let node_id = CLIENT_STATE.get_frame_as(frame_id as FrameId)?;

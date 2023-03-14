@@ -1,7 +1,7 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use log::{debug, info, warn};
+use log::{debug, warn};
 
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
@@ -35,7 +35,7 @@ pub(crate) fn rpc_request_core(
     pid: usize,
     entry_point: u64,
 ) -> KResult<(u64, u64)> {
-    info!(
+    debug!(
         "RequestCore({:?}, {:?})",
         *crate::environment::MACHINE_ID,
         entry_point
@@ -63,7 +63,7 @@ pub(crate) fn rpc_request_core(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        info!("RequestCore() {:?}", res);
+        debug!("RequestCore() {:?}", res);
         *res
     } else {
         Err(KError::from(RPCError::MalformedResponse))
@@ -107,7 +107,7 @@ pub(crate) fn handle_request_core(
         }
         // gtid should always be found, as DCM should know if there are free threads or not.
         let gtid = gtid.expect("Failed to find free thread??");
-        log::info!(
+        log::debug!(
             "Found unused thread: machine={:?}, gtid={:?}",
             kpi::system::mid_from_gtid(gtid),
             kpi::system::mtid_from_gtid(gtid)
@@ -115,7 +115,7 @@ pub(crate) fn handle_request_core(
 
         // can handle request locally if same node otherwise must queue for remote node to handle
         if kpi::system::mid_from_gtid(gtid) != core_req.machine_id {
-            log::info!(
+            log::debug!(
                 "Logged unfulfilled core assignment for hardware_id={:?}, dcm_node_id={:?}",
                 kpi::system::mid_from_gtid(gtid),
                 dcm_node_id

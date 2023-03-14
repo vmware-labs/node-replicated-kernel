@@ -42,6 +42,8 @@ pub(crate) struct MaybeCoreWorkRes {
 unsafe_abomonate!(MaybeCoreWorkRes: work);
 
 pub(crate) fn rpc_core_work(rpc_client: &mut dyn RPCClient) -> () {
+    debug!("CoreWork()");
+
     // Construct request data
     let req = CoreWorkReq {
         machine_id: *crate::environment::MACHINE_ID,

@@ -34,7 +34,7 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
     pathname: P,
     modes: FileModes,
 ) -> KResult<(u64, u64)> {
-    log::info!("MkDir({:?})", pathname);
+    debug!("MkDir({:?})", pathname);
 
     // Construct request data
     let req = MkDirReq { pid, modes };
@@ -50,7 +50,6 @@ pub(crate) fn rpc_mkdir<P: AsRef<[u8]> + Debug>(
         &[&req_data, pathname.as_ref()],
         &mut [&mut res_data],
     )?;
-    log::info!("mkdir called controller");
 
     // Parse and return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {

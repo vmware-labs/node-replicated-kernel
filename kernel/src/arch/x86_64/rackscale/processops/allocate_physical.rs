@@ -5,7 +5,7 @@ use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::FileOperation;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
@@ -40,7 +40,7 @@ pub(crate) fn rpc_allocate_physical(
     size: u64,
     affinity: u64,
 ) -> KResult<(u64, u64)> {
-    info!("AllocatePhysical({:?}, {:?})", size, affinity);
+    debug!("AllocatePhysical({:?}, {:?})", size, affinity);
 
     // Construct request data
     let req = AllocatePhysicalReq {

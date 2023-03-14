@@ -3,8 +3,11 @@
 
 use core::fmt::Debug;
 
-use abomonation::decode;
-use log::debug;
+use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
+use core2::io::Result as IOResult;
+use core2::io::Write;
+
+use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
@@ -15,15 +18,28 @@ use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
 use crate::fs::cnrfs;
 
+#[derive(Debug)]
+pub(crate) struct LogReq {
+    pub machine_id: MachineId,
+}
+unsafe_abomonate!(LogReq: machine_id);
+
 pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
     rpc_client: &mut dyn RPCClient,
     msg: P,
 ) -> Result<(u64, u64), KError> {
+    // Construct request data
+    let req = LogReq {
+        machine_id: *crate::environment::MACHINE_ID,
+    };
+    let mut req_data = [0u8; core::mem::size_of::<LogReq>()];
+    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode log request");
+
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
     rpc_client.call(
         KernelRpc::Log as RPCType,
-        &[msg.as_ref()],
+        &[&req_data, msg.as_ref()],
         &mut [&mut res_data],
     )?;
 
@@ -32,7 +48,6 @@ pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
         if remaining.len() > 0 {
             Err(KError::from(RPCError::ExtraData))
         } else {
-            debug!("Log() {:?}", res);
             *res
         }
     } else {
@@ -40,18 +55,26 @@ pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
     }
 }
 
-// RPC Handler function for getinfo() RPCs in the controller
+// RPC Handler function for log() RPCs in the controller
 pub(crate) fn handle_log(
     hdr: &mut RPCHeader,
-    payload: &mut [u8],
+    mut payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    match core::str::from_utf8(&payload[0..hdr.msg_len as usize]) {
-        Ok(msg_str) => log::info!("Remote Log: {}", msg_str),
-        Err(e) => log::warn!(
-            "log: invalid UTF-8 string: {:?}",
-            &payload[0..hdr.msg_len as usize]
-        ),
+    // Decode and return the result
+    if let Some((res, remaining)) = unsafe { decode::<LogReq>(&mut payload) } {
+        match core::str::from_utf8(
+            &remaining[0..(hdr.msg_len as usize - core::mem::size_of::<LogReq>())],
+        ) {
+            Ok(msg_str) => {
+                let mut client_state = state.get_client_state_by_machine_id(res.machine_id).lock();
+                client_state.buffered_print(msg_str);
+            }
+            Err(e) => log::warn!(
+                "log: invalid UTF-8 string: {:?}",
+                &payload[0..hdr.msg_len as usize]
+            ),
+        }
     }
 
     // Construct results from return data

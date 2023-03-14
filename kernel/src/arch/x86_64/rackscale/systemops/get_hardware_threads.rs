@@ -25,6 +25,8 @@ pub(crate) fn rpc_get_hardware_threads(
     vaddr_buf: u64,
     vaddr_buf_len: u64,
 ) -> KResult<(u64, u64)> {
+    log::debug!("GetHardwareThreads()");
+
     // Setup result
     // TODO: make dynamic, for now, size copied from kpi implementation
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>() + 5 * 4096];
@@ -38,7 +40,7 @@ pub(crate) fn rpc_get_hardware_threads(
 
     // Decode and return result
     if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
-        log::info!("GetHardwareThreads() {:?}", res);
+        log::debug!("GetHardwareThreads() {:?}", res);
 
         if let Ok((data_len, n)) = res {
             if *data_len as usize <= remaining.len() && *data_len <= vaddr_buf_len {
@@ -81,7 +83,7 @@ pub(crate) fn handle_get_hardware_threads(
     let additional_data = end - start;
     unsafe { encode(&hw_threads, &mut &mut payload[start..end]) }
         .expect("Failed to encode hardware thread vector");
-    log::trace!(
+    log::debug!(
         "Sending back {:?} bytes of data ({:?} hwthreads)",
         additional_data,
         hw_threads.len()

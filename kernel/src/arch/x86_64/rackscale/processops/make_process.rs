@@ -16,6 +16,8 @@ use super::super::kernelrpc::*;
 
 // This isn't truly a syscall, but we'll reuse some infrastructure/types.
 pub(crate) fn rpc_make_process(rpc_client: &mut dyn RPCClient) -> Result<usize, KError> {
+    debug!("MakeProcess()");
+
     // Construct result buffer and call RPC
     let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
     rpc_client.call(KernelRpc::MakeProcess as RPCType, &[], &mut [&mut res_data])?;

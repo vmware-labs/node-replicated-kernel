@@ -42,7 +42,7 @@ pub(crate) fn rpc_get_proccess_logs(
     KError,
 > {
     // Construct result buffer and call RPC
-    log::info!("Calling GetProcessLogs()");
+    log::debug!("Calling GetProcessLogs()");
     let mut res_data = [0u8; core::mem::size_of::<[u64; MAX_PROCESSES]>()];
     rpc_client
         .call(

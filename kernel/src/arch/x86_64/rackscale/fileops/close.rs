@@ -29,6 +29,8 @@ pub(crate) fn rpc_close(
     pid: usize,
     fd: FileDescriptor,
 ) -> KResult<(u64, u64)> {
+    debug!("Close({:?})", fd);
+
     // Setup request data
     let req = CloseReq { pid, fd };
     let mut req_data = [0u8; core::mem::size_of::<CloseReq>()];

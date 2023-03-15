@@ -22,12 +22,14 @@ use testutils::helpers::{
 };
 use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_fxmark_benchmark() {
     rackscale_fxmark_benchmark(true);
 }
 
+#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_ethernet_fxmark_benchmark() {

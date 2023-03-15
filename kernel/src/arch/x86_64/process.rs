@@ -181,6 +181,7 @@ fn create_process_table(
 ) -> ArrayVec<ArrayVec<Arc<Replica<'static, NrProcess<Ring3Process>>>, MAX_PROCESSES>, MAX_NUMA_NODES>
 {
     use crate::memory::shmemalloc::ShmemAlloc;
+    use crate::memory::SHARED_AFFINITY;
 
     // Want at least one replica...
     let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
@@ -192,12 +193,16 @@ fn create_process_table(
         numa_cache.push(process_replicas)
     }
 
+    // We want to allocate all parts of the log in shared memory
+    {
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(SHARED_AFFINITY)
+            .expect("Can't change affinity");
+    }
+
     let allocator = ShmemAlloc();
     for pid in 0..MAX_PROCESSES {
         for node in 0..numa_nodes {
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(node as atopology::NodeId)
-                .expect("Can't change affinity");
             debug_assert!(!numa_cache[node].is_full());
 
             let p = Box::try_new(
@@ -217,10 +222,13 @@ fn create_process_table(
                 0,
                 "Expect initialization to happen on node 0."
             );
-            pcm.set_mem_affinity(0 as atopology::NodeId)
-                .expect("Can't change affinity");
         }
     }
+
+    let pcm = per_core_mem();
+    pcm.set_mem_affinity(0 as atopology::NodeId)
+        .expect("Can't change affinity");
+
     numa_cache
 }
 

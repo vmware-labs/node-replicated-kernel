@@ -255,13 +255,14 @@ pub extern "C" fn main() {
     install_vcpu_area();
 
     let hwthreads = crate::syscalls::System::threads().expect("Can't get system topology");
-    let mut maximum = 1; // We already have core 0
+    let current_core = crate::syscalls::System::core_id().expect("Can't get core id");
+    let mut maximum = 1; // We already have the current core
 
     let pinfo = crate::syscalls::Process::process_info().expect("Can't read process info");
 
     let ncores: Option<usize> = pinfo.cmdline.parse().ok();
     for hwthread in hwthreads.iter().take(ncores.unwrap_or(hwthreads.len())) {
-        if hwthread.id != 0 {
+        if hwthread.id != current_core {
             info!("request core {:?}", hwthread);
             match crate::syscalls::Process::request_core(
                 hwthread.id,

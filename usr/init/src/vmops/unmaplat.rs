@@ -125,10 +125,11 @@ pub fn bench(ncores: Option<usize>) {
     let hwthreads = vibrio::syscalls::System::threads().expect("Can't get system topology");
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
     let cores = ncores.unwrap_or(hwthreads.len());
+    let current_core = vibrio::syscalls::System::core_id().expect("Can't get core id");
 
     let mut maximum = 1; // We already have core 0
     for hwthread in hwthreads.iter().take(cores) {
-        if hwthread.id != 0 {
+        if hwthread.id != current_core {
             match vibrio::syscalls::Process::request_core(
                 hwthread.id,
                 VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),

@@ -42,15 +42,6 @@ impl PerCoreAllocatorState {
             zone_allocator: ZoneAllocator::new(),
         }
     }
-
-    #[cfg(feature = "rackscale")]
-    pub(crate) fn new_with_frame(frame: crate::memory::Frame) -> Self {
-        PerCoreAllocatorState {
-            affinity: frame.affinity,
-            pmanager: FrameCacheSmall::new_with_frame(frame.affinity, frame),
-            zone_allocator: ZoneAllocator::new(),
-        }
-    }
 }
 
 /// The kernel state for dynamic memory allocation on a given core.
@@ -134,30 +125,6 @@ impl PerCoreMemory {
         self.pgmanager = Some(pgm);
     }
 
-    #[cfg(feature = "rackscale")]
-    pub(crate) fn add_shared_arena(&mut self, frame: crate::memory::Frame) -> Result<(), KError> {
-        debug_assert!(frame.affinity == SHARED_AFFINITY);
-        let new_arena = PerCoreAllocatorState::new_with_frame(frame);
-        PerCoreMemory::add_arena(
-            new_arena,
-            &mut *self.memory_arenas.borrow_mut(),
-            SHARED_AFFINITY,
-        )
-    }
-
-    #[cfg(feature = "rackscale")]
-    fn add_arena(
-        new_arena: PerCoreAllocatorState,
-        arenas: &mut [Option<PerCoreAllocatorState>],
-        node: atopology::NodeId,
-    ) -> Result<(), KError> {
-        debug_assert!(new_arena.affinity == node);
-        debug_assert!(node < arenas.len());
-        debug_assert!(arenas[node].is_none());
-        arenas[node].replace(new_arena);
-        Ok(())
-    }
-
     // Swaps out the current arena (from where we allocate memory) with a new
     // arena from the one that can get memory from the provided `node`. If no
     // arena for the current `node` exists, we create a new arena.
@@ -172,9 +139,14 @@ impl PerCoreMemory {
         {
             if arenas[node].is_none() {
                 if node == SHARED_AFFINITY {
-                    panic!("Shared mem arena cannot be initialized on the fly, instead call add_shared_arena");
-                }
+                    #[cfg(feature = "rackscale")]
+                    {
+                        arenas[node] = Some(PerCoreAllocatorState::new(node));
+                    }
 
+                    #[cfg(not(feature = "rackscale"))]
+                    panic!("Shared memory allocators are only supported for rackscale client/controllers");
+                }
                 arenas[node] = Some(PerCoreAllocatorState::new(node));
             }
             debug_assert!(arenas[node].is_some());

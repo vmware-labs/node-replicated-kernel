@@ -276,12 +276,20 @@ impl KernelAllocator {
                 (pcm.pgmanager.unwrap(), pcm.pmem_manager(), affinity)
             }
         };
-        let mut ncache = gmanager.node_caches[affinity].lock();
+
         // Make sure we don't overflow the FrameCacheSmall
         let needed_base_pages =
             core::cmp::min(mem_manager.spare_base_page_capacity(), needed_base_pages);
         let needed_large_pages =
             core::cmp::min(mem_manager.spare_large_page_capacity(), needed_large_pages);
+
+        #[cfg(feature = "rackscale")]
+        if affinity == SHARED_AFFINITY {
+            drop(mem_manager);
+            return KernelAllocator::try_refill_shmem(needed_base_pages, needed_large_pages);
+        }
+
+        let mut ncache = gmanager.node_caches[affinity].lock();
 
         for _i in 0..needed_base_pages {
             let frame = ncache.allocate_base_page()?;
@@ -295,6 +303,46 @@ impl KernelAllocator {
             mem_manager
                 .grow_large_pages(&[frame])
                 .expect("We ensure to not overfill the FrameCacheSmall above.");
+        }
+
+        Ok(())
+    }
+
+    /// Try to refill the shmem allocator
+    #[cfg(feature = "rackscale")]
+    pub(crate) fn try_refill_shmem(
+        needed_base_pages: usize,
+        needed_large_pages: usize,
+    ) -> Result<(), KError> {
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+        {
+            use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
+
+            let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+            let mut mem_manager = pcm.try_mem_manager()?;
+            let mut shmem_manager = CONTROLLER_AFFINITY_SHMEM.lock();
+
+            for _i in 0..needed_base_pages {
+                let base_page = shmem_manager
+                    .allocate_base_page()
+                    .expect("Controller is out of affinity shmem");
+                mem_manager
+                    .grow_base_pages(&[base_page])
+                    .expect("We ensure to not overfill the FrameCacheSmall above.");
+            }
+
+            for _i in 0..needed_large_pages {
+                let large_page = shmem_manager
+                    .allocate_large_page()
+                    .expect("Controller is out of affinity shmem");
+                mem_manager
+                    .grow_large_pages(&[large_page])
+                    .expect("We ensure to not overfill the FrameCacheSmall above.");
+            }
+        } else {
+            panic!("CANNOT (RE)FILL SHMEM FOR CLIENTS");
         }
 
         Ok(())

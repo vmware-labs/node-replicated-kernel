@@ -371,25 +371,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Make sure our BSP core has a reference to GlobalMemory
     dyn_mem.set_global_pmem(&global_memory_static);
+    core::mem::forget(dyn_mem);
 
     #[cfg(feature = "rackscale")]
     {
-        use crate::transport::shmem::{get_affinity_shmem, SHMEM_DEVICE};
+        use crate::transport::shmem::SHMEM_DEVICE;
         lazy_static::initialize(&SHMEM_DEVICE);
 
         if crate::CMDLINE
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            let shmem_region = get_affinity_shmem();
-            let frame = shmem_region.get_frame(SHMEM_DEVICE.region.base);
-            log::info!("Shmem allocator frame is: {:?}", frame);
-            dyn_mem
-                .add_shared_arena(frame)
-                .expect("Failed to add shmem mem arena");
+            use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
+            lazy_static::initialize(&CONTROLLER_AFFINITY_SHMEM);
         }
     }
-    core::mem::forget(dyn_mem);
 
     unsafe { vspace::init_large_objects_pml4() };
 

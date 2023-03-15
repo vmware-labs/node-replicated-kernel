@@ -21,9 +21,21 @@ use crate::arch::rackscale::processops::core_work::CoreWorkRes;
 use crate::fallible_string::FallibleString;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
+use crate::transport::shmem::SHMEM_DEVICE;
+
+/// Global state about the local rackscale client
+lazy_static! {
+    pub(crate) static ref CONTROLLER_AFFINITY_SHMEM: Arc<Mutex<Box<FrameCacheMemslice>>> =
+        Arc::new(Mutex::new(
+            SHMEM_DEVICE
+                .region
+                .get_shmem_manager()
+                .expect("Failed to fetch shmem manager for controller shmem.")
+        ));
+}
 
 /// A cache of pages
-/// TODO: think about how we should constrain this?
+/// TODO(rackscale): think about how we should constrain this?
 ///
 /// Used to allocate remote memory (in large chunks)
 pub(crate) type FrameCacheMemslice = MCache<2048, 2048>;

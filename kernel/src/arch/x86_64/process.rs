@@ -27,7 +27,6 @@ use x86::{controlregs, Ring};
 use crate::arch::kcb::per_core_mem;
 use crate::error::{KError, KResult};
 use crate::fs::{fd::FileDescriptorEntry, MAX_FILES_PER_PROCESS};
-use crate::memory::detmem::DA;
 use crate::memory::vspace::{AddressSpace, MapAction};
 use crate::memory::{paddr_to_kernel_vaddr, Frame, KernelAllocator, MemType, PAddr, VAddr};
 use crate::nrproc::NrProcess;
@@ -133,14 +132,21 @@ lazy_static! {
         }
 
         for pid in 0..MAX_PROCESSES {
-            let da = DA::new().expect("Can't initialize process deterministic memory allocator");
+            #[cfg(feature = "rackscale")]
+            let allocator = crate::memory::shmemalloc::ShmemAlloc();
+
+            #[cfg(not(feature = "rackscale"))]
+            let allocator = crate::memory::detmem::DA::new().expect("Can't initialize process deterministic memory allocator");
+
             for node in 0..numa_nodes {
                 let pcm = per_core_mem();
                 pcm.set_mem_affinity(node as atopology::NodeId).expect("Can't change affinity");
                 debug_assert!(!numa_cache[node].is_full());
 
-                let p = Box::try_new(Ring3Process::new(pid, Box::new(da.clone())).expect("Can't create process during init")).expect("Not enough memory to initialize processes");
-                let nrp = NrProcess::new(p, Box::new(da.clone()));
+                let p = Box::try_new(Ring3Process::new(pid, Box::new(allocator.clone()))
+                    .expect("Can't create process during init"))
+                    .expect("Not enough memory to initialize processes");
+                let nrp = NrProcess::new(p, Box::new(allocator.clone()));
 
                 numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(&PROCESS_LOGS[pid], nrp));
 

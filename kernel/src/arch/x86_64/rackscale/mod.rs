@@ -11,6 +11,7 @@ pub(crate) mod controller_state;
 pub(crate) mod dcm;
 pub(crate) mod fileops;
 pub(crate) mod get_process_logs;
+pub(crate) mod get_shmem_frames;
 pub(crate) mod kernelrpc;
 pub(crate) mod processops;
 pub(crate) mod registration;
@@ -58,3 +59,5 @@ pub(crate) const MAKE_PROCESS_HANDLER: RPCHandler<ControllerState> =
     processops::make_process::handle_make_process;
 pub(crate) const GET_PROCESS_LOGS_HANDLER: RPCHandler<ControllerState> =
     get_process_logs::handle_get_process_logs;
+pub(crate) const GET_SHMEM_FRAMES_HANDLER: RPCHandler<ControllerState> =
+    get_shmem_frames::handle_get_shmem_frames;

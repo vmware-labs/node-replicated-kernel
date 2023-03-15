@@ -177,6 +177,8 @@ pub enum KError {
     InvalidRpcType,
     /// Rackscale: Unable to perform DCM transaction (faulty message?)
     DCMError,
+    /// Rackscale: No shared memory available to fulfill request
+    DCMNotEnoughMemory,
     /// Rackscale: An RPC error occurred in the RPC framework
     #[cfg(feature = "rackscale")]
     RackscaleRPCError { err: rpc::rpc::RPCError },

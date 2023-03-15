@@ -318,6 +318,7 @@ impl KernelAllocator {
             .get()
             .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
+            // Refill from controller affinity shmem as needed.
             use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
 
             let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
@@ -342,7 +343,62 @@ impl KernelAllocator {
                     .expect("We ensure to not overfill the FrameCacheSmall above.");
             }
         } else {
-            panic!("CANNOT (RE)FILL SHMEM FOR CLIENTS");
+            // We only request at large page granularity
+            use crate::arch::rackscale::client_state::CLIENT_STATE;
+            use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
+
+            let mut total_needed_pages = needed_large_pages;
+            if needed_base_pages > 0 {
+                total_needed_pages += 1;
+            }
+
+            // Refill by asking DCM for memory.
+            {
+                let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+                // We shouldn't call an RPC while using shmem as memory allocator.
+                // So use current node
+                pcm.set_mem_affinity(*crate::environment::NODE_ID)
+                    .expect("Can't change affinity");
+            }
+
+            // Query controller (DCM) to get frames of shmem
+            let large_shmem_frames = {
+                let mut client = CLIENT_STATE.rpc_client.lock();
+                rpc_get_shmem_frames(&mut **client, None, total_needed_pages)?
+            };
+
+            // Reset to shmem manager
+            let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+            pcm.set_mem_affinity(SHARED_AFFINITY)
+                .expect("Can't change affinity");
+            let mut mem_manager = pcm.try_mem_manager()?;
+
+            // Grow large pages
+            for i in 0..needed_large_pages {
+                mem_manager
+                    .grow_large_pages(&[large_shmem_frames[i]])
+                    .expect("We ensure to not overfill the FrameCacheSmall above.");
+            }
+
+            // Grow base pages
+            if needed_base_pages > 0 {
+                // Add needed base pages + however many will fit, to reduce memory we lose here.
+                let mut base_page_iter = large_shmem_frames[total_needed_pages - 1].into_iter();
+                let base_pages_to_add =
+                    core::cmp::min(base_page_iter.len(), mem_manager.spare_base_page_capacity());
+                for _i in 0..base_pages_to_add {
+                    let frame = base_page_iter
+                        .next()
+                        .expect("needed base frames should all fit within one large frame");
+                    mem_manager
+                        .grow_base_pages(&[frame])
+                        .expect("We ensure to not overfill the FrameCacheSmall above.");
+                }
+                log::warn!(
+                    "Losing {:?} base pages of shared memory",
+                    base_page_iter.len()
+                );
+            }
         }
 
         Ok(())

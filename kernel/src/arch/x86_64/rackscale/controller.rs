@@ -200,4 +200,10 @@ fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
             &GET_PROCESS_LOGS_HANDLER,
         )
         .unwrap();
+    server
+        .register(
+            KernelRpc::GetShmemFrames as RPCType,
+            &GET_SHMEM_FRAMES_HANDLER,
+        )
+        .unwrap();
 }

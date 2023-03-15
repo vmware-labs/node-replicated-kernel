@@ -167,6 +167,10 @@ impl ControllerState {
         self.client_states_by_dcm_node_id.get(&dcm_node_id).unwrap()
     }
 
+    pub(crate) fn machine_id_to_dcm_node_id(&self, machine_id: MachineId) -> DCMNodeId {
+        *self.machine_id_to_dcm_node_id.get(&machine_id).unwrap()
+    }
+
     pub(crate) fn get_client_state_by_machine_id(
         &self,
         machine_id: MachineId,

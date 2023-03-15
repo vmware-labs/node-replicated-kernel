@@ -28,6 +28,7 @@ use crate::arch::rackscale::controller_state::FrameCacheMemslice;
 use crate::fallible_string::TryString;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
 
+pub(crate) mod affinity_alloc;
 pub(crate) mod node_registration;
 pub(crate) mod resource_alloc;
 pub(crate) mod resource_release;
@@ -45,8 +46,10 @@ pub(crate) enum DCMOps {
     ResourceAlloc = 2,
     /// Release a resource to DCM
     ResourceRelease = 3,
+    /// Request shmem of a certain affinity (not for process use)
+    AffinityAlloc = 4,
 
-    Unknown = 4,
+    Unknown = 5,
 }
 
 impl From<RPCType> for DCMOps {
@@ -56,6 +59,7 @@ impl From<RPCType> for DCMOps {
             1 => DCMOps::RegisterNode,
             2 => DCMOps::ResourceAlloc,
             3 => DCMOps::ResourceRelease,
+            4 => DCMOps::AffinityAlloc,
             _ => DCMOps::Unknown,
         }
     }

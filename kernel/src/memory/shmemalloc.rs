@@ -9,10 +9,7 @@ use core::alloc::Layout;
 use core::alloc::{AllocError, Allocator};
 use core::ptr::NonNull;
 
-#[cfg(feature = "rackscale")]
 use crate::arch::kcb::per_core_mem;
-
-#[cfg(feature = "rackscale")]
 use crate::memory::SHARED_AFFINITY;
 
 //use crate::arch::kcb::per_core_mem;
@@ -23,7 +20,6 @@ pub(crate) struct ShmemAlloc();
 
 unsafe impl Allocator for ShmemAlloc {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        #[cfg(feature = "rackscale")]
         let affinity = {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();
@@ -43,19 +39,15 @@ unsafe impl Allocator for ShmemAlloc {
             Err(AllocError)
         };
 
-        #[cfg(feature = "rackscale")]
-        {
-            // Return to previous affinity
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(affinity)
-                .expect("Can't change affinity");
-        }
+        // Return to previous affinity
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(affinity)
+            .expect("Can't change affinity");
 
         ret
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        #[cfg(feature = "rackscale")]
         let affinity = {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();
@@ -68,12 +60,9 @@ unsafe impl Allocator for ShmemAlloc {
         // dealloc just goes to the underlying allocator
         dealloc(ptr.as_ptr(), layout);
 
-        #[cfg(feature = "rackscale")]
-        {
-            // Return to previous affinity
-            let pcm = per_core_mem();
-            pcm.set_mem_affinity(affinity)
-                .expect("Can't change affinity");
-        }
+        // Return to previous affinity
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(affinity)
+            .expect("Can't change affinity");
     }
 }

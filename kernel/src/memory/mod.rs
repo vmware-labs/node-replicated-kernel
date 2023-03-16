@@ -40,7 +40,10 @@ pub mod frame;
 pub mod global;
 pub mod mcache;
 pub mod per_core;
+
+#[cfg(feature = "rackscale")]
 pub mod shmemalloc;
+
 pub mod utils;
 pub mod vspace;
 #[cfg(test)]

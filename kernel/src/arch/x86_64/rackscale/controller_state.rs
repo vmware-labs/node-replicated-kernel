@@ -21,15 +21,14 @@ use crate::arch::rackscale::processops::core_work::CoreWorkRes;
 use crate::fallible_string::FallibleString;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
-use crate::transport::shmem::SHMEM_DEVICE;
+use crate::transport::shmem::{get_affinity_shmem, SHMEM_DEVICE};
 
 /// Global state about the local rackscale client
 lazy_static! {
     pub(crate) static ref CONTROLLER_AFFINITY_SHMEM: Arc<Mutex<Box<FrameCacheMemslice>>> =
         Arc::new(Mutex::new(
-            SHMEM_DEVICE
-                .region
-                .get_shmem_manager()
+            get_affinity_shmem()
+                .get_shmem_manager(SHMEM_DEVICE.region.base)
                 .expect("Failed to fetch shmem manager for controller shmem.")
         ));
 }

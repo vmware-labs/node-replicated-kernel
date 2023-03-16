@@ -50,9 +50,9 @@ impl ShmemRegion {
         )
     }
 
-    pub(crate) fn get_shmem_manager(&self) -> Option<Box<FrameCacheMemslice>> {
+    pub(crate) fn get_shmem_manager(&self, frame_offset: u64) -> Option<Box<FrameCacheMemslice>> {
         if self.size > 0 {
-            let frame = self.get_frame(0);
+            let frame = self.get_frame(frame_offset);
             let mut shmem_cache = Box::new(FrameCacheMemslice::new(SHARED_AFFINITY));
             shmem_cache.populate_2m_first(frame);
             Some(shmem_cache)
@@ -365,6 +365,11 @@ pub(crate) fn init_shmem_rpc(
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn get_affinity_shmem() -> ShmemRegion {
+    get_affinity_shmem_by_mid(*crate::environment::MACHINE_ID)
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
     let mut base_offset = 0;
     let mut size = SHMEM_DEVICE.region.size;
 
@@ -385,7 +390,7 @@ pub(crate) fn get_affinity_shmem() -> ShmemRegion {
         (size / BASE_PAGE_SIZE as u64) / *crate::environment::NUM_MACHINES as u64;
     let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
 
-    base_offset += size_per_worker * (*crate::environment::MACHINE_ID) as u64;
+    base_offset += size_per_worker * (machine_id as u64) as u64;
     log::info!(
         "Shmem affinity region: offset={:x}, size={:x}, range: [{:X}-{:X}]",
         base_offset,

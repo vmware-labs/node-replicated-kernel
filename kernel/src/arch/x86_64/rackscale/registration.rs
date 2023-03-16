@@ -128,7 +128,7 @@ pub(crate) fn register_client(
         );
 
         // Create shmem memory manager
-        let shmem_manager = req.shmem_region.get_shmem_manager();
+        let shmem_manager = req.shmem_region.get_shmem_manager(0);
         log::info!(
             "Created shmem manager on behalf of client {:?}: {:?}",
             req.machine_id,

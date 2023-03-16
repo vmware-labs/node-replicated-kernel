@@ -146,10 +146,11 @@ fn create_process_table(
         let allocator = DA::new().expect("Can't initialize process deterministic memory allocator");
 
         for node in 0..numa_nodes {
+            debug_assert!(!numa_cache[node].is_full());
+
             let pcm = per_core_mem();
             pcm.set_mem_affinity(node as atopology::NodeId)
                 .expect("Can't change affinity");
-            debug_assert!(!numa_cache[node].is_full());
 
             let p = Box::try_new(
                 Ring3Process::new(pid, Box::new(allocator.clone()))
@@ -163,13 +164,13 @@ fn create_process_table(
                 nrp,
             ));
 
+            pcm.set_mem_affinity(0 as atopology::NodeId)
+                .expect("Can't change affinity");
             debug_assert_eq!(
                 *crate::environment::NODE_ID,
                 0,
                 "Expect initialization to happen on node 0."
             );
-            pcm.set_mem_affinity(0 as atopology::NodeId)
-                .expect("Can't change affinity");
         }
     }
 

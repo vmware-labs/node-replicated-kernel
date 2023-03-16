@@ -391,7 +391,7 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
     let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
 
     base_offset += size_per_worker * (machine_id as u64) as u64;
-    log::info!(
+    log::debug!(
         "Shmem affinity region: offset={:x}, size={:x}, range: [{:X}-{:X}]",
         base_offset,
         size_per_worker,
@@ -402,4 +402,38 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
         base: base_offset,
         size: size_per_worker,
     }
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn is_shmem_frame(frame: Frame, is_affinity: bool, is_kaddr: bool) -> bool {
+    is_shmem_addr(frame.base.as_u64(), is_affinity, is_kaddr)
+        && is_shmem_addr(
+            frame.base.as_u64() + (frame.size as u64),
+            is_affinity,
+            is_kaddr,
+        )
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn is_shmem_addr(addr: u64, is_affinity: bool, is_kaddr: bool) -> bool {
+    let offset = if is_kaddr { KERNEL_BASE } else { 0 };
+
+    let (shmem_start, shmem_size) = if is_affinity {
+        let frame = get_affinity_shmem().get_frame(SHMEM_DEVICE.region.base + offset);
+        (frame.base.as_u64(), frame.size as u64)
+    } else {
+        let mut shmem_offset = 0;
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.transport == Transport::Shmem)
+        {
+            let num_workers = (*crate::environment::NUM_MACHINES - 1) as u64;
+            shmem_offset = SHMEM_TRANSPORT_SIZE * num_workers;
+        }
+        (
+            SHMEM_DEVICE.region.base + offset + shmem_offset,
+            SHMEM_DEVICE.region.size - shmem_offset,
+        )
+    };
+    addr >= shmem_start && addr <= shmem_start + shmem_size
 }

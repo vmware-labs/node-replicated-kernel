@@ -11,6 +11,7 @@ use core::ptr::NonNull;
 
 use crate::arch::kcb::per_core_mem;
 use crate::memory::SHARED_AFFINITY;
+use crate::transport::shmem::is_shmem_addr;
 
 //use crate::arch::kcb::per_core_mem;
 //use crate::memory::per_core::SHARED_AFFINITY;
@@ -30,6 +31,10 @@ unsafe impl Allocator for ShmemAlloc {
         };
 
         let ptr = unsafe { alloc(layout) };
+
+        // TODO(rackscale performance): should probably be debug_assert
+        assert!(is_shmem_addr(ptr as u64, true, true));
+
         let ret = if !ptr.is_null() {
             Ok(unsafe {
                 let nptr = NonNull::new_unchecked(ptr);
@@ -48,6 +53,9 @@ unsafe impl Allocator for ShmemAlloc {
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        // TODO(rackscale performance): should probably be debug_assert
+        assert!(is_shmem_addr(ptr.as_ptr() as u64, true, true));
+
         let affinity = {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();

@@ -180,6 +180,14 @@ impl Frame {
     pub(crate) fn kernel_vaddr(&self) -> VAddr {
         paddr_to_kernel_vaddr(self.base)
     }
+
+    /// Check if a frame fits inside the current frame
+    #[allow(unused)]
+    pub(crate) fn is_subframe(&self, frame: Frame) -> bool {
+        frame.base.as_u64() >= self.base.as_u64()
+            && frame.base.as_u64() + (frame.size as u64) <= self.base.as_u64() + self.size as u64
+            && self.affinity == frame.affinity
+    }
 }
 
 pub(crate) struct IntoBasePageIter {
@@ -327,6 +335,16 @@ mod tests {
     fn frame_end() {
         let f = Frame::new(PAddr::from(0x1000), 4096 * 10, 0);
         assert_eq!(f.end(), PAddr::from(4096 * 10 + 0x1000));
+    }
+
+    #[test]
+    fn subframe() {
+        let frame = Frame::new(PAddr::from(0x1000), 4096 * 10, 0);
+        let subframe = Frame::new(PAddr::from(0x1000 + 4096), 4096, 0);
+        assert!(frame.is_subframe(subframe));
+
+        let not_subframe = Frame::new(PAddr::from(0x1000 + 4096 * 8), 4096 * 4, 0);
+        assert!(!frame.is_subframe(not_subframe));
     }
 
     #[test]

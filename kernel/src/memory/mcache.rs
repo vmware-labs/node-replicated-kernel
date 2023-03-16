@@ -283,6 +283,21 @@ impl<const BP: usize, const LP: usize> PhysicalPageProvider for MCache<BP, LP> {
         assert_eq!(frame.base % LARGE_PAGE_SIZE, 0);
         assert_eq!(frame.affinity, self.node);
 
+        // TODO(rackscale performance): should be debug only
+        #[cfg(feature = "rackscale")]
+        {
+            use crate::transport::shmem::is_shmem_frame;
+
+            // Attempt to disallow mixing shmem/not shmem
+            if self.node == SHARED_AFFINITY {
+                assert!(is_shmem_frame(frame, false, false) || is_shmem_frame(frame, false, true));
+            } else {
+                assert!(
+                    !is_shmem_frame(frame, false, false) && !is_shmem_frame(frame, false, true)
+                );
+            }
+        }
+
         self.large_page_addresses
             .try_push(frame.base)
             .map_err(|_e| KError::CacheFull)

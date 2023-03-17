@@ -53,7 +53,6 @@ pub unsafe extern "C" fn rumpcomp_pci_confread(
         reg,
         *value
     );
-
     0
 }
 
@@ -65,6 +64,18 @@ pub unsafe extern "C" fn rumpcomp_pci_confwrite(
     reg: c_int,
     value: c_uint,
 ) -> c_int {
+    // Device 4 is the ivshmem device set by run.py
+    if dev == 0x6 {
+        warn!(
+            "Skipping rumpcomp_pci_confwrite of ivshmem device ({:#x} {:#x} {:#x}) reg({:#x}) = value({:#x})",
+            bus,
+            dev,
+            fun,
+            reg,
+            value
+        );
+        return 0;
+    }
     trace!(
         "rumpcomp_pci_confwrite ({:#x} {:#x} {:#x}) reg({:#x}) = value({:#x})",
         bus,

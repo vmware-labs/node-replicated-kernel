@@ -5,7 +5,6 @@
 
 import argparse
 import os
-from pickletools import ArgumentDescriptor
 import sys
 import pathlib
 import shutil
@@ -39,6 +38,8 @@ CARGO_NOSTD_BUILD_ARGS = ["-Z", "build-std=core,alloc",
                           "-Z", "build-std-features=compiler-builtins-mem"]
 ARCH = "x86_64"
 
+# Start at 5, since we assume ivshmem is 4
+IVSHMEM_DEVICE_ADDR = 6
 
 def get_network_config(workers):
     """
@@ -359,7 +360,7 @@ def run_qemu(args):
     Run the kernel on a QEMU instance.
     """
 
-    from plumbum.cmd import sudo, tunctl, ifconfig, corealloc
+    from plumbum.cmd import sudo, corealloc
     from plumbum.machines import LocalCommand
     from packaging import version
 
@@ -407,7 +408,8 @@ def run_qemu(args):
                           'isa-debug-exit,iobase=0xf4,iosize=0x04']
 
     if args.qemu_ivshmem:
-        qemu_default_args += ['-device', 'ivshmem-doorbell,vectors=2,chardev=id']
+        # If you change the the device addr, you must change it in vibrio::rumprt::dev
+        qemu_default_args += ['-device', 'ivshmem-doorbell,vectors=2,chardev=id,addr={}'.format(IVSHMEM_DEVICE_ADDR)]
         qemu_default_args += [
             '-chardev',
             'socket,path={},id=id'.format(args.qemu_shmem_path)
@@ -580,7 +582,6 @@ def detect_baremetal_shutdown(lb):
 
 
 def run_baremetal(args):
-    from plumbum.cmd import sudo, tunctl, ifconfig
 
     # Need to find a config file ${args.machine}.toml
     cfg_file = SCRIPT_PATH / "{}.toml".format(args.machine)

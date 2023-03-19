@@ -30,7 +30,15 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PAddr, VAddr, KERNEL_BASE};
 use crate::prelude::overlaps;
-use crate::{nr, nrproc, round_up};
+use crate::{nrproc, round_up};
+
+#[cfg(feature = "rackscale")]
+use {
+    crate::arch::rackscale::client_state::CLIENT_STATE,
+    crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames,
+    crate::arch::rackscale::processops::make_process::rpc_make_process,
+    crate::memory::SHARED_AFFINITY,
+};
 
 /// Process ID.
 pub(crate) type Pid = usize;
@@ -255,10 +263,6 @@ impl elfloader::ElfLoader for DataSecAllocator {
                     .get()
                     .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
                 {
-                    use crate::arch::rackscale::client_state::CLIENT_STATE;
-                    use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
-                    use crate::memory::SHARED_AFFINITY;
-
                     // We don't want to call an RPC while using shared affinity, so set to local core.
                     let reset_affinity = {
                         let pcm = per_core_mem();
@@ -449,7 +453,39 @@ impl elfloader::ElfLoader for DataSecAllocator {
 /// Parse & relocate ELF
 /// Create an initial VSpace
 pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
-    KernelAllocator::try_refill_tcache(7, 1, MemType::Mem)?;
+    #[cfg(feature = "rackscale")]
+    let (pid, affinity) = if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        let mut client = CLIENT_STATE.rpc_client.lock();
+        let pid = rpc_make_process(&mut **client)?;
+        let pcm = per_core_mem();
+        let affinity = { pcm.physical_memory.borrow().affinity };
+        pcm.set_mem_affinity(SHARED_AFFINITY)
+            .expect("Can't change affinity");
+        (pid, affinity)
+    } else {
+        panic!("make_process() not implemented for rackscale controller");
+    };
+
+    // Allocate a new process
+    #[cfg(not(feature = "rackscale"))]
+    let pid = {
+        let pid = crate::nr::NR_REPLICA.get().map_or(
+            Err(KError::ReplicaNotSet),
+            |(replica, token)| {
+                let response = replica.execute_mut(crate::nr::Op::AllocatePid, *token)?;
+                if let crate::nr::NodeResult::PidAllocated(pid) = response {
+                    Ok(pid)
+                } else {
+                    Err(KError::ProcessLoadingFailed)
+                }
+            },
+        )?;
+        KernelAllocator::try_refill_tcache(7, 1, MemType::Mem)?;
+        pid
+    };
 
     // Lookup binary of the process
     let mut mod_file = None;
@@ -484,9 +520,8 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
     };
 
     let mut data_sec_loader = DataSecAllocator {
-        // TODO(rackscale): fix this.
         #[cfg(feature = "rackscale")]
-        pid: 0,
+        pid,
 
         offset,
         frames: Vec::try_with_capacity(MAX_WRITEABLE_SECTIONS_PER_PROCESS)?,
@@ -500,39 +535,20 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
         "TODO(error-handlin): Maybe reject ELF files with more?"
     );
 
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        use crate::arch::rackscale::client_state::CLIENT_STATE;
-        use crate::arch::rackscale::processops::make_process::rpc_make_process;
+    cnrfs::MlnrKernelNode::add_process(pid).expect("TODO(error-handling): revert state");
+    crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)
+        .expect("TODO(error-handling): revert state properly");
 
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        let pid = rpc_make_process(&mut **client)?;
-        // Since the pid is globally unique we know it will be locally unique too, and we can create a new process with it
-        // We need to do this so that crate::arch::process::current_pid() continue to work.
-        cnrfs::MlnrKernelNode::add_process(pid).expect("TODO(error-handling): revert state");
-        crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)
-            .expect("TODO(error-handling): revert state properly");
-        return Ok(pid);
+    #[cfg(feature = "rackscale")]
+    {
+        if affinity != SHARED_AFFINITY {
+            let pcm = per_core_mem();
+            pcm.set_mem_affinity(affinity)
+                .expect("Can't change affinity");
+        }
     }
 
-    // Allocate a new process
-    nr::NR_REPLICA
-        .get()
-        .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-            let response = replica.execute_mut(nr::Op::AllocatePid, *token)?;
-            if let nr::NodeResult::PidAllocated(pid) = response {
-                cnrfs::MlnrKernelNode::add_process(pid)
-                    .expect("TODO(error-handling): revert state");
-                crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)
-                    .expect("TODO(error-handling): revert state properly");
-                Ok(pid)
-            } else {
-                Err(KError::ProcessLoadingFailed)
-            }
-        })
+    Ok(pid)
 }
 
 /// Create dispatchers for a given Pid to run on a NUMA node.

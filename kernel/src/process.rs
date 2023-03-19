@@ -203,6 +203,9 @@ pub(crate) trait Executor {
 
 /// An elfloader implementation that only loads the writeable sections of the program.
 struct DataSecAllocator {
+    #[cfg(feature = "rackscale")]
+    pid: Pid,
+
     offset: VAddr,
     frames: Vec<(usize, Frame)>,
 }
@@ -246,24 +249,78 @@ impl elfloader::ElfLoader for DataSecAllocator {
                     size_page
                 );
                 let large_pages = size_page / LARGE_PAGE_SIZE;
-                KernelAllocator::try_refill_tcache(0, large_pages, MemType::Mem)
-                    .expect("Refill didn't work");
 
-                let pcm = per_core_mem();
-                let mut pmanager = pcm.mem_manager();
-                for i in 0..large_pages {
-                    let frame = pmanager
-                        .allocate_large_page()
-                        .expect("We refilled so allocation should work.");
+                #[cfg(feature = "rackscale")]
+                if crate::CMDLINE
+                    .get()
+                    .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+                {
+                    use crate::arch::rackscale::client_state::CLIENT_STATE;
+                    use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
+                    use crate::memory::SHARED_AFFINITY;
 
-                    trace!(
-                        "add to self.frames  (elf_va={:#x}, pa={:#x})",
-                        page_base.as_usize() + i * LARGE_PAGE_SIZE,
-                        frame.base
-                    );
+                    // We don't want to call an RPC while using shared affinity, so set to local core.
+                    let reset_affinity = {
+                        let pcm = per_core_mem();
+                        let affinity = { pcm.physical_memory.borrow().affinity };
+                        if affinity == SHARED_AFFINITY {
+                            // TODO(rackscale): change affinity to current core rather than use shmem
+                            pcm.set_mem_affinity(kpi::system::mtid_from_gtid(
+                                *crate::environment::CORE_ID,
+                            ))
+                            .expect("Can't change affinity");
+                            true
+                        } else {
+                            false
+                        }
+                    };
 
-                    self.frames
-                        .push((page_base.as_usize() + i * LARGE_PAGE_SIZE, frame));
+                    let mut client = CLIENT_STATE.rpc_client.lock();
+                    let shmem_frames =
+                        rpc_get_shmem_frames(&mut **client, Some(self.pid), large_pages)
+                            .expect("Failed to get shmem frames for elf loading");
+
+                    // Restore affinity
+                    if reset_affinity {
+                        let pcm = per_core_mem();
+                        pcm.set_mem_affinity(SHARED_AFFINITY)
+                            .expect("Can't change affinity");
+                    }
+
+                    for i in 0..large_pages {
+                        self.frames
+                            .push((page_base.as_usize() + i * LARGE_PAGE_SIZE, shmem_frames[i]));
+                        log::info!(
+                            "add to self.frames  (elf_va={:#x}, pa={:#x})",
+                            page_base.as_usize() + i * LARGE_PAGE_SIZE,
+                            shmem_frames[i].base
+                        );
+                    }
+                } else {
+                    panic!("make_process() for rackscale controller not implemented");
+                }
+
+                #[cfg(not(feature = "rackscale"))]
+                {
+                    KernelAllocator::try_refill_tcache(0, large_pages, MemType::Mem)
+                        .expect("Refill didn't work");
+
+                    let pcm = per_core_mem();
+                    let mut pmanager = pcm.mem_manager();
+                    for i in 0..large_pages {
+                        let frame = pmanager
+                            .allocate_large_page()
+                            .expect("We refilled so allocation should work.");
+
+                        trace!(
+                            "add to self.frames  (elf_va={:#x}, pa={:#x})",
+                            page_base.as_usize() + i * LARGE_PAGE_SIZE,
+                            frame.base
+                        );
+
+                        self.frames
+                            .push((page_base.as_usize() + i * LARGE_PAGE_SIZE, frame));
+                    }
                 }
             }
         }
@@ -427,6 +484,10 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
     };
 
     let mut data_sec_loader = DataSecAllocator {
+        // TODO(rackscale): fix this.
+        #[cfg(feature = "rackscale")]
+        pid: 0,
+
         offset,
         frames: Vec::try_with_capacity(MAX_WRITEABLE_SECTIONS_PER_PROCESS)?,
     };

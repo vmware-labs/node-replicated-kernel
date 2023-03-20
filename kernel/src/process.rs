@@ -269,10 +269,8 @@ impl elfloader::ElfLoader for DataSecAllocator {
                         let affinity = { pcm.physical_memory.borrow().affinity };
                         if affinity == SHARED_AFFINITY {
                             // TODO(rackscale): change affinity to current core rather than use shmem
-                            pcm.set_mem_affinity(kpi::system::mtid_from_gtid(
-                                *crate::environment::CORE_ID,
-                            ))
-                            .expect("Can't change affinity");
+                            pcm.set_mem_affinity(*crate::environment::NODE_ID)
+                                .expect("Can't change affinity");
                             true
                         } else {
                             false

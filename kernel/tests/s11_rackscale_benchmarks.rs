@@ -22,6 +22,10 @@ use testutils::helpers::{
 };
 use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
 
+// TODO: all of these benchmarks need to be edited in order to be faster
+// similar to how the regular rackscale tests were/are.
+// Namely, the controller needs to signal to the client when it's done to avoid timeout waits when possible.
+
 #[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]

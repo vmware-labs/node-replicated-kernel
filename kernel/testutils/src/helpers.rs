@@ -4,6 +4,9 @@
 use std::fs::remove_file;
 use std::io::ErrorKind;
 use std::process;
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::thread;
+use std::time::Duration;
 
 use rexpect::errors::*;
 use rexpect::process::wait::WaitStatus;
@@ -22,6 +25,9 @@ pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:
 /// Shmem related default values
 pub const SHMEM_PATH: &str = "ivshmem-file";
 pub const SHMEM_SIZE: u64 = 512;
+
+/// Delay between invoking version of nrk in rackscale tests
+pub const CLIENT_BUILD_DELAY: u64 = 5_000;
 
 /// Sets up network interfaces and bridge for rackscale mode
 ///
@@ -152,4 +158,22 @@ pub fn spawn_ping() -> Result<rexpect::session::PtySession> {
 #[allow(unused)]
 pub fn spawn_nc(port: u16) -> Result<rexpect::session::PtySession> {
     spawn(format!("nc 172.31.0.10 {}", port).as_str(), Some(20000))
+}
+
+pub fn wait_for_client_termination<T>(rx: &Receiver<()>) -> bool {
+    loop {
+        thread::sleep(Duration::from_millis(250));
+        match rx.try_recv() {
+            Ok(_) | Err(TryRecvError::Disconnected) => {
+                println!("Terminating.");
+                break;
+            }
+            Err(TryRecvError::Empty) => {}
+        }
+    }
+    true
+}
+
+pub fn notify_controller_of_termination(tx: &Sender<()>) {
+    let _ = tx.send(());
 }

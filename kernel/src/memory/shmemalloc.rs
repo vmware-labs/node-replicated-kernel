@@ -24,7 +24,7 @@ unsafe impl Allocator for ShmemAlloc {
         let affinity = {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();
-            let affinity = pcm.persistent_memory.borrow().affinity;
+            let affinity = pcm.physical_memory.borrow().affinity;
             pcm.set_mem_affinity(SHARED_AFFINITY)
                 .expect("Can't change affinity");
             affinity
@@ -59,7 +59,7 @@ unsafe impl Allocator for ShmemAlloc {
         let affinity = {
             // We want to allocate the logs in shared memory
             let pcm = per_core_mem();
-            let affinity = pcm.persistent_memory.borrow().affinity;
+            let affinity = pcm.physical_memory.borrow().affinity;
             pcm.set_mem_affinity(SHARED_AFFINITY)
                 .expect("Can't change affinity");
             affinity

@@ -410,10 +410,32 @@ impl KernelAllocator {
             // We only request at large page granularity
             use crate::arch::rackscale::client_state::CLIENT_STATE;
             use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
+            use crate::memory::backends::{AllocatorStatistics, GrowBackend};
 
-            let mut total_needed_pages = needed_large_pages;
-            if needed_base_pages > 0 {
-                total_needed_pages += 1;
+            let mut total_needed_large_pages = needed_large_pages;
+            let mut total_needed_base_pages = needed_base_pages;
+
+            // Take base pages from the per-client base page cache is possible
+            if total_needed_base_pages > 0 {
+                let mut bp_manager = CLIENT_STATE.base_pages.lock();
+                let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+                let mut mem_manager = pcm.try_mem_manager()?;
+
+                let base_pages_to_alloc =
+                    core::cmp::min(bp_manager.free_base_pages(), total_needed_base_pages);
+                for _i in 0..base_pages_to_alloc {
+                    let frame = bp_manager
+                        .allocate_base_page()
+                        .expect("We ensure there is capabity in the FrameCacheBase above");
+                    assert!(is_shmem_frame(frame, true, false));
+                    mem_manager
+                        .grow_base_pages(&[frame])
+                        .expect("We ensure not the overflow the FrameCacheSmall above");
+                }
+                total_needed_base_pages -= base_pages_to_alloc;
+                if total_needed_base_pages > 0 {
+                    total_needed_large_pages += 1;
+                }
             }
 
             // Refill by asking DCM for memory.
@@ -428,7 +450,7 @@ impl KernelAllocator {
             // Query controller (DCM) to get frames of shmem
             let large_shmem_frames = {
                 let mut client = CLIENT_STATE.rpc_client.lock();
-                rpc_get_shmem_frames(&mut **client, None, total_needed_pages)?
+                rpc_get_shmem_frames(&mut **client, None, total_needed_large_pages)?
             };
 
             // Reset to shmem manager
@@ -448,17 +470,18 @@ impl KernelAllocator {
             }
 
             // Grow base pages
-            if needed_base_pages > 0 {
+            if total_needed_base_pages > 0 {
                 // Add needed base pages + however many will fit, to reduce memory we lose here.
 
                 // TODO(rackscale performance): should be debug assert
                 assert!(is_shmem_frame(
-                    large_shmem_frames[total_needed_pages - 1],
+                    large_shmem_frames[total_needed_large_pages - 1],
                     true,
                     false
                 ));
 
-                let mut base_page_iter = large_shmem_frames[total_needed_pages - 1].into_iter();
+                let mut base_page_iter =
+                    large_shmem_frames[total_needed_large_pages - 1].into_iter();
                 let base_pages_to_add =
                     core::cmp::min(base_page_iter.len(), mem_manager.spare_base_page_capacity());
                 for _i in 0..base_pages_to_add {
@@ -473,10 +496,30 @@ impl KernelAllocator {
                         .grow_base_pages(&[frame])
                         .expect("We ensure to not overfill the FrameCacheSmall above.");
                 }
-                log::error!(
-                    "Losing {:?} base pages of shared memory. Oh well.",
-                    base_page_iter.len()
-                );
+
+                // Add any remaining base pages to the cache, if there's space.
+                let mut bp_manager = CLIENT_STATE.base_pages.lock();
+                let base_pages_to_save =
+                    core::cmp::min(base_page_iter.len(), bp_manager.spare_base_page_capacity());
+                for _i in 0..base_pages_to_save {
+                    let frame = base_page_iter
+                        .next()
+                        .expect("needed base frames should all fit within one large frame");
+
+                    // TODO(rackscale performance): should be debug assert
+                    assert!(is_shmem_frame(frame, true, false));
+
+                    bp_manager
+                        .grow_base_pages(&[frame])
+                        .expect("We ensure not to overfill the FrameCacheBase above.");
+                }
+
+                if base_page_iter.len() > 0 {
+                    log::error!(
+                        "Losing {:?} base pages of shared memory. Oh well.",
+                        base_page_iter.len()
+                    );
+                }
             }
         }
 

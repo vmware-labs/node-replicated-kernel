@@ -3,9 +3,11 @@
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use arrayvec::ArrayVec;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::{Lazy, Mutex};
+use static_assertions as sa;
 
 use kpi::process::FrameId;
 use rpc::api::{RPCClient, RPCHandler, RegistrationHandler};
@@ -17,7 +19,17 @@ use crate::arch::rackscale::processops::core_work::rpc_core_work;
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fs::NrLock;
+use crate::memory::{mcache::MCache, LARGE_PAGE_SIZE, SHARED_AFFINITY};
+use crate::process::MAX_PROCESSES;
 use crate::transport::shmem::SHMEM_DEVICE;
+
+/// A cache of base pages
+/// TODO(rackscale): think about how we should constrain this?
+///
+/// Used locally on the client, since only large pages are allocated by the controller.
+pub(crate) type FrameCacheBase = MCache<2048, 0>;
+sa::const_assert!(core::mem::size_of::<FrameCacheBase>() <= LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheBase>() <= LARGE_PAGE_SIZE);
 
 /// This is the state the client records about itself
 pub(crate) struct ClientState {
@@ -26,6 +38,12 @@ pub(crate) struct ClientState {
 
     /// Mapping between local frame IDs and remote memory address space ID.
     frame_map: NrLock<HashMap<FrameId, DCMNodeId>>,
+
+    /// Used to store affinity base pages
+    pub(crate) base_pages: Arc<Mutex<FrameCacheBase>>,
+
+    /// Used to store base pages allocated to a process
+    pub(crate) per_process_base_pages: Arc<Mutex<ArrayVec<FrameCacheBase, MAX_PROCESSES>>>,
 }
 
 impl ClientState {
@@ -51,9 +69,16 @@ impl ClientState {
             ))
         };
 
+        let mut per_process_base_pages = ArrayVec::new();
+        for i in 0..MAX_PROCESSES {
+            per_process_base_pages.push(FrameCacheBase::new(SHARED_AFFINITY));
+        }
+
         ClientState {
             rpc_client,
             frame_map: NrLock::default(),
+            base_pages: Arc::new(Mutex::new(FrameCacheBase::new(SHARED_AFFINITY))),
+            per_process_base_pages: Arc::new(Mutex::new(per_process_base_pages)),
         }
     }
 

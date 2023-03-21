@@ -15,6 +15,8 @@ use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 
 // This isn't truly a syscall, but we'll reuse some infrastructure/types.
+// TODO(rackscale, performance): could partition pids across clients
+// to avoid this RPC call.
 pub(crate) fn rpc_make_process(rpc_client: &mut dyn RPCClient) -> Result<usize, KError> {
     debug!("MakeProcess()");
 

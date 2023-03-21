@@ -24,7 +24,7 @@ pub const DHCP_ACK_MATCH: &'static str = "DHCPACK on 172.31.0.10 to 56:b4:44:e9:
 
 /// Shmem related default values
 pub const SHMEM_PATH: &str = "ivshmem-file";
-pub const SHMEM_SIZE: u64 = 512;
+pub const SHMEM_SIZE: usize = 1024;
 
 /// Delay between invoking version of nrk in rackscale tests
 pub const CLIENT_BUILD_DELAY: u64 = 5_000;
@@ -52,7 +52,7 @@ pub fn setup_network(num_nodes: usize) {
 /// Spawns a qemu shmem server.
 ///
 /// The server must run before any nrk instance runs.
-pub fn spawn_shmem_server(filename: &str, filelen: u64) -> Result<rexpect::session::PtySession> {
+pub fn spawn_shmem_server(filename: &str, filelen: usize) -> Result<rexpect::session::PtySession> {
     // Delete any straggler files
     let _ignore = remove_file(filename);
 

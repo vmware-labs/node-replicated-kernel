@@ -127,11 +127,7 @@ pub(crate) fn handle_allocate_physical(
             .as_mut()
             .expect("No shmem manager found for client");
 
-        if size <= BASE_PAGE_SIZE as u64 {
-            manager.allocate_base_page()
-        } else {
-            manager.allocate_large_page()
-        }
+        manager.allocate_large_page()
     };
 
     let res = match ret {

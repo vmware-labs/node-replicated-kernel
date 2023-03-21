@@ -1,15 +1,21 @@
 use alloc::boxed::Box;
 use alloc::string::String;
+use alloc::vec::Vec;
 
+use fallible_collections::{FallibleVec, FallibleVecGlobal};
 use kpi::io::{FileFlags, FileModes};
 
+use crate::arch::kcb::try_per_core_mem;
 use crate::arch::process::{current_pid, Ring3Process};
-use crate::error::KResult;
+use crate::error::{KError, KResult};
 use crate::fs::fd::FileDescriptor;
-use crate::memory::Frame;
+use crate::memory::backends::{AllocatorStatistics, GrowBackend, PhysicalPageProvider};
+use crate::memory::{vspace::MapAction, Frame, VAddr, SHARED_AFFINITY};
 use crate::nrproc;
 use crate::process::{KernArcBuffer, UserSlice};
-use crate::syscalls::{FsDispatch, ProcessDispatch, SystemCallDispatch, SystemDispatch};
+use crate::syscalls::{
+    FsDispatch, ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch,
+};
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
 use super::client_state::CLIENT_STATE;
@@ -25,14 +31,195 @@ use super::processops::print::rpc_log;
 use super::processops::release_physical::rpc_release_physical;
 use super::processops::request_core::rpc_request_core;
 use super::systemops::get_hardware_threads::rpc_get_hardware_threads;
+use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
+
+use crate::nrproc::NrProcess;
+use crate::transport::shmem::is_shmem_frame;
 
 pub(crate) struct Arch86LwkSystemCall {
     pub(crate) local: Arch86SystemCall,
 }
 
 impl SystemCallDispatch<u64> for Arch86LwkSystemCall {}
-// Use x86 syscall processing for not yet implemented systems:
-impl Arch86VSpaceDispatch for Arch86LwkSystemCall {}
+
+impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
+    fn map_mem(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        // Implementation mostly copied from map_generic in x86 syscalls.rs
+        let base = VAddr::from(base);
+        let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
+        let (bp, lp) = crate::memory::utils::size_to_pages(size as usize);
+        let mut frames = Vec::try_with_capacity(bp + lp)?;
+        let pid = crate::arch::process::current_pid()?;
+
+        let mut total_needed_large_pages = lp;
+        let mut total_needed_base_pages = bp;
+
+        // TODO(apihell): This `paddr` is bogus, it will return the PAddr of the
+        // first frame mapped but if you map multiple Frames, no chance getting that
+        // Better would be a function to request physically consecutive DMA memory
+        // or use IO-MMU translation (see also rumpuser_pci_dmalloc)
+        // also better to just return what NR replies with...
+        let mut paddr = None;
+        let mut total_len = 0;
+
+        if total_needed_base_pages > 0 {
+            let mut bp_cache = CLIENT_STATE.per_process_base_pages.lock();
+            let mut per_process_bp_cache = &mut bp_cache[pid];
+            let base_pages_from_cache = core::cmp::min(
+                per_process_bp_cache.free_base_pages(),
+                total_needed_base_pages,
+            );
+
+            // Take base pages from the per-client, per-pid base page cache is possible
+            for _i in 0..base_pages_from_cache {
+                let frame = per_process_bp_cache
+                    .allocate_base_page()
+                    .expect("We ensure there is capabity in the FrameCacheBase above");
+
+                // TODO(rackscale performance): should be debug assert
+                assert!(is_shmem_frame(frame, false, false));
+
+                total_len += frame.size;
+                if paddr.is_none() {
+                    paddr = Some(frame.base);
+                }
+
+                frames
+                    .try_push(frame)
+                    .expect("Can't fail see `try_with_capacity`");
+            }
+
+            total_needed_base_pages -= base_pages_from_cache;
+
+            // We'll have to allocate another large page to fulfill the request for base pages
+            if total_needed_base_pages > 0 {
+                total_needed_large_pages += 1;
+            }
+        }
+
+        let affinity = {
+            // We shouldn't call an RPC while using shmem as memory allocator.
+            // So use current node affinity
+            let affinity = { pcm.physical_memory.borrow().affinity };
+            if affinity == SHARED_AFFINITY {
+                pcm.set_mem_affinity(*crate::environment::NODE_ID)
+                    .expect("Can't change affinity");
+                Some(affinity)
+            } else {
+                None
+            }
+        };
+
+        // Query controller (DCM) to get frames of shmem
+        let mut allocated_frames = {
+            let mut client = CLIENT_STATE.rpc_client.lock();
+            rpc_get_shmem_frames(&mut **client, Some(pid), total_needed_large_pages)?
+        };
+
+        // Reset to shmem manager
+        if let Some(affinity) = affinity {
+            pcm.set_mem_affinity(SHARED_AFFINITY)
+                .expect("Can't change affinity");
+        }
+
+        for i in 0..lp {
+            // TODO(rackscale performance): should be debug assert
+            assert!(is_shmem_frame(allocated_frames[i], false, false));
+
+            total_len += allocated_frames[i].size;
+            unsafe { allocated_frames[i].zero() };
+            frames
+                .try_push(allocated_frames[i])
+                .expect("Can't fail see `try_with_capacity`");
+            if paddr.is_none() {
+                paddr = Some(allocated_frames[i].base);
+            }
+        }
+
+        // Grow base pages
+        if total_needed_base_pages > 0 {
+            // TODO(rackscale performance): should be debug assert
+            assert!(is_shmem_frame(allocated_frames[lp], false, false));
+
+            let mut base_page_iter = allocated_frames[lp].into_iter();
+            for _i in 0..total_needed_base_pages {
+                let mut frame = base_page_iter
+                    .next()
+                    .expect("needed base frames should all fit within one large frame");
+
+                // TODO(rackscale performance): should be debug assert
+                assert!(is_shmem_frame(frame, false, false));
+
+                total_len += frame.size;
+                unsafe { frame.zero() };
+                if paddr.is_none() {
+                    paddr = Some(frame.base);
+                }
+                frames
+                    .try_push(frame)
+                    .expect("Can't fail see `try_with_capacity`");
+            }
+
+            // Add any remaining base pages to the cache, if there's space.
+            let mut bp_cache = CLIENT_STATE.per_process_base_pages.lock();
+            let mut per_process_bp_cache = &mut bp_cache[pid];
+            let base_pages_to_save = core::cmp::min(
+                base_page_iter.len(),
+                per_process_bp_cache.spare_base_page_capacity(),
+            );
+
+            for _i in 0..base_pages_to_save {
+                let frame = base_page_iter
+                    .next()
+                    .expect("needed base frames should all fit within one large frame");
+
+                // TODO(rackscale performance): should be debug assert
+                assert!(is_shmem_frame(frame, false, false));
+
+                per_process_bp_cache
+                    .grow_base_pages(&[frame])
+                    .expect("We ensure not to overfill the FrameCacheBase above.");
+            }
+
+            if base_page_iter.len() > 0 {
+                log::error!(
+                    "Losing {:?} base pages of shared memoryn allocated to process {:?}. Oh well.",
+                    base_page_iter.len(),
+                    pid,
+                );
+            }
+        }
+
+        NrProcess::<Ring3Process>::map_frames(current_pid()?, base, frames, MapAction::write())
+            .expect("Can't map memory");
+
+        Ok((paddr.unwrap().as_u64(), total_len as u64))
+    }
+
+    fn map_pmem(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        self.local.map_pmem(base, size)
+    }
+
+    fn map_device(&self, base: u64, size: u64) -> Result<(u64, u64), KError> {
+        self.local.map_device(base, size)
+    }
+
+    fn map_frame_id(&self, base: u64, frame_id: u64) -> Result<(u64, u64), KError> {
+        self.local.map_frame_id(base, frame_id)
+    }
+
+    fn unmap_mem(&self, base: u64) -> Result<(u64, u64), KError> {
+        self.local.unmap_mem(base)
+    }
+
+    fn unmap_pmem(&self, base: u64) -> Result<(u64, u64), KError> {
+        self.local.unmap_pmem(base)
+    }
+
+    fn identify(&self, addr: u64) -> Result<(u64, u64), KError> {
+        self.local.identify(addr)
+    }
+}
 
 impl SystemDispatch<u64> for Arch86LwkSystemCall {
     fn get_hardware_threads(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> KResult<(u64, u64)> {
@@ -76,6 +263,8 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn read_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
+        // TODO(rackscale, performance): this is a long time to hold the read lock. May be better
+        // to do this with an extra copy instead.
         nrproc::NrProcess::<Ring3Process>::userspace_exec_slice_mut(
             uslice,
             Box::try_new(move |ubuf: &mut [u8]| {
@@ -86,6 +275,8 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn write_at(&self, fd: FileDescriptor, uslice: UserSlice, offset: i64) -> KResult<(u64, u64)> {
+        // TODO(rackscale, performance): this copy may not be truly necessary since it's already
+        // copied from userspace into the shmem/socket buffer in the RPC call
         let kernslice = KernArcBuffer::try_from(uslice)?;
         let mut client = CLIENT_STATE.rpc_client.lock();
         rpc_writeat(&mut **client, uslice.pid, fd, offset, &*kernslice.buffer).map_err(|e| e.into())

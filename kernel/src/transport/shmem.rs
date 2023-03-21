@@ -12,10 +12,9 @@ use spin::Mutex;
 
 #[cfg(feature = "rpc")]
 use {
-    crate::arch::rackscale::controller_state::FrameCacheMemslice,
     crate::cmdline::Transport,
     crate::error::{KError, KResult},
-    crate::memory::{Frame, SHARED_AFFINITY},
+    crate::memory::{mcache::MCache, Frame, SHARED_AFFINITY},
     alloc::boxed::Box,
     kpi::system::MachineId,
     rpc::rpc::MAX_BUFF_LEN,
@@ -50,12 +49,16 @@ impl ShmemRegion {
         )
     }
 
-    pub(crate) fn get_shmem_manager(&self, frame_offset: u64) -> Option<Box<FrameCacheMemslice>> {
+    pub(crate) fn get_shmem_manager<const BP: usize, const LP: usize>(
+        &self,
+        frame_offset: u64,
+    ) -> Option<Box<MCache<BP, LP>>> {
         if self.size > 0 {
             let frame = self.get_frame(frame_offset);
-            let mut shmem_cache = Box::new(FrameCacheMemslice::new(SHARED_AFFINITY));
-            shmem_cache.populate_2m_first(frame);
-            Some(shmem_cache)
+            Some(Box::new(MCache::<BP, LP>::new_with_frame(
+                SHARED_AFFINITY,
+                frame,
+            )))
         } else {
             None
         }
@@ -391,7 +394,7 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
     let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
 
     base_offset += size_per_worker * (machine_id as u64) as u64;
-    log::debug!(
+    log::trace!(
         "Shmem affinity region: offset={:x}, size={:x}, range: [{:X}-{:X}]",
         base_offset,
         size_per_worker,

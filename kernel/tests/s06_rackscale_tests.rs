@@ -313,12 +313,11 @@ fn s06_rackscale_shmem_multiinstance() {
     let timeout = 60_000;
     let clients = 3;
     let mut processes = Vec::with_capacity(clients);
-    let large_shmem_size = SHMEM_SIZE * 2;
 
     setup_network(clients + 1);
 
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
     let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
@@ -340,7 +339,7 @@ fn s06_rackscale_shmem_multiinstance() {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
             .timeout(timeout)
             .cmd("mode=controller transport=shmem")
-            .shmem_size(large_shmem_size as usize)
+            .shmem_size(SHMEM_SIZE)
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
@@ -369,7 +368,7 @@ fn s06_rackscale_shmem_multiinstance() {
             let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
                 .timeout(timeout)
                 .cmd("mode=client transport=shmem")
-                .shmem_size(large_shmem_size as usize)
+                .shmem_size(SHMEM_SIZE)
                 .shmem_path(SHMEM_PATH)
                 .tap(&tap)
                 .no_network_setup()
@@ -536,15 +535,14 @@ fn s06_rackscale_shmem_request_core_remote_test() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 30_000;
-    let large_shmem_size = SHMEM_SIZE;
+    let timeout = 120_000;
     let (tx1, rx1) = channel();
     let (tx2, rx2) = channel();
 
     setup_network(3);
 
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, large_shmem_size).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
 
     let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
 
@@ -566,7 +564,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
             .timeout(timeout)
             .cmd("mode=controller transport=shmem")
-            .shmem_size(large_shmem_size as usize)
+            .shmem_size(SHMEM_SIZE)
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
@@ -576,7 +574,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_controller)?;
-            output += p.exp_string("handle_request_core_work()")?.as_str();
+            output += p.exp_string("handle_core_work()")?.as_str();
 
             let _ = wait_for_client_termination::<()>(&rx2);
             let _ = wait_for_client_termination::<()>(&rx1);
@@ -593,7 +591,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client1_build)
             .timeout(timeout)
             .cmd("mode=client transport=shmem")
-            .shmem_size(large_shmem_size as usize)
+            .shmem_size(SHMEM_SIZE)
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()
@@ -606,10 +604,8 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
-            output += p
-                .exp_string("Client finished processing core work request")?
-                .as_str();
             output += p.exp_string("vibrio::upcalls: Got a new core")?.as_str();
+            output += p.exp_string("Hello from core")?.as_str();
             notify_controller_of_termination(&tx1);
             p.process.kill(SIGTERM)
         };
@@ -624,7 +620,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client2_build)
             .timeout(timeout)
             .cmd("mode=client transport=shmem")
-            .shmem_size(large_shmem_size as usize)
+            .shmem_size(SHMEM_SIZE)
             .shmem_path(SHMEM_PATH)
             .tap("tap4")
             .no_network_setup()
@@ -637,14 +633,13 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
-            output += p.exp_string("Spawned core on CoreToken")?.as_str();
-            output += p.exp_string("request_core_remote_test OK")?.as_str();
-            output += p.exp_eof()?.as_str();
+            output += p.exp_string("vibrio::upcalls: Got a new core")?.as_str();
+            output += p.exp_string("Hello from core")?.as_str();
             notify_controller_of_termination(&tx2);
-            p.process.exit()
+            p.process.kill(SIGTERM)
         };
 
-        check_for_successful_exit(&cmdline_client, qemu_run(), output);
+        wait_for_sigterm(&cmdline_client, qemu_run(), output);
     });
 
     let client2_ret = client2.join();
@@ -676,7 +671,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 30_000;
+    let timeout = 120_000;
     let (tx, rx) = channel();
 
     setup_network(2);

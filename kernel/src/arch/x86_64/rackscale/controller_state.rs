@@ -25,7 +25,7 @@ use crate::transport::shmem::{get_affinity_shmem, SHMEM_DEVICE};
 
 /// Global state about the local rackscale client
 lazy_static! {
-    pub(crate) static ref CONTROLLER_AFFINITY_SHMEM: Arc<Mutex<Box<FrameCacheMemslice>>> =
+    pub(crate) static ref CONTROLLER_AFFINITY_SHMEM: Arc<Mutex<Box<FrameCacheShmem>>> =
         Arc::new(Mutex::new(
             get_affinity_shmem()
                 .get_shmem_manager(SHMEM_DEVICE.region.base)
@@ -37,9 +37,17 @@ lazy_static! {
 /// TODO(rackscale): think about how we should constrain this?
 ///
 /// Used to allocate remote memory (in large chunks)
-pub(crate) type FrameCacheMemslice = MCache<2048, 2048>;
+pub(crate) type FrameCacheMemslice = MCache<0, 2048>;
 sa::const_assert!(core::mem::size_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
 sa::const_assert!(core::mem::align_of::<FrameCacheMemslice>() <= LARGE_PAGE_SIZE);
+
+/// A cache of pages
+/// TODO(rackscale): think about how we should constrain this?
+///
+/// Used locally on the controller for, for instance, base logs.
+pub(crate) type FrameCacheShmem = MCache<2048, 2048>;
+sa::const_assert!(core::mem::size_of::<FrameCacheShmem>() <= LARGE_PAGE_SIZE);
+sa::const_assert!(core::mem::align_of::<FrameCacheShmem>() <= LARGE_PAGE_SIZE);
 
 /// This is the state the controller records about each client
 pub(crate) struct PerClientState {

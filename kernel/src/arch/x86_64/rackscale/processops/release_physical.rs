@@ -14,7 +14,7 @@ use crate::error::{KError, KResult};
 use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
-use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE, SHARED_AFFINITY};
+use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE, SHARED_AFFINITY};
 use crate::nrproc::NrProcess;
 
 use super::super::client_state::CLIENT_STATE;
@@ -98,13 +98,14 @@ pub(crate) fn handle_release_physical(
         }
     };
     debug!(
-        "AllocPhysical(frame_base={:x?}, frame_size={:?}), dcm_node_id={:?}",
+        "ReleasePhysical(frame_base={:x?}, frame_size={:?}), dcm_node_id={:?}",
         req.frame_base, req.frame_size, req.node_id
     );
 
+    // we only allocate in large frames, so let's also deallocate in large frames.
     let frame = Frame::new(
         PAddr::from(req.frame_base),
-        req.frame_size as usize,
+        LARGE_PAGE_SIZE, //req.frame_size as usize,
         SHARED_AFFINITY,
     );
 
@@ -115,12 +116,7 @@ pub(crate) fn handle_release_physical(
             .shmem_manager
             .as_mut()
             .expect("No shmem manager found for client");
-
-        if req.frame_size <= BASE_PAGE_SIZE as u64 {
-            manager.release_base_page(frame)
-        } else {
-            manager.release_large_page(frame)
-        }
+        manager.release_large_page(frame)
     };
 
     // Construct result. For success, both DCM and the manager need to release the memory

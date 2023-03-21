@@ -18,7 +18,6 @@ use crate::nr;
 use crate::nr::KernelNode;
 
 use super::super::controller_state::ControllerState;
-use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 
 #[derive(Debug)]

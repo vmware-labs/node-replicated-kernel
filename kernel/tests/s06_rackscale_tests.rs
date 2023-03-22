@@ -535,11 +535,11 @@ fn s06_rackscale_shmem_request_core_remote_test() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 240_000;
-    let (tx1, rx1) = channel();
-    let (tx2, rx2) = channel();
+    let timeout = 180_000;
 
     setup_network(3);
+    let (tx1, rx1) = channel();
+    let (tx2, rx2) = channel();
 
     let mut shmem_server =
         spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
@@ -574,10 +574,15 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_controller)?;
-            output += p.exp_string("handle_core_work()")?.as_str();
 
-            let _ = wait_for_client_termination::<()>(&rx2);
-            let _ = wait_for_client_termination::<()>(&rx1);
+            // Could be in either order, so we won't specify core number
+            output += p.exp_string("Hello from core")?.as_str();
+            output += p.exp_string("Hello from core")?.as_str();
+
+            // Notify each client it's okay to shutdown
+            notify_controller_of_termination(&tx1);
+            notify_controller_of_termination(&tx2);
+
             p.process.kill(SIGTERM)
         };
 
@@ -605,12 +610,13 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
             output += p
-                .exp_string(
-                    "vibrio::upcalls: Got a new core (4294967297 -> 25) assigned to us.\r\r",
-                )?
+                .exp_string("vibrio::upcalls: Got a new core (4294967297 -> 25) assigned to us.")?
                 .as_str();
-            output += p.exp_string("Hello from core 25\r\r")?.as_str();
-            notify_controller_of_termination(&tx1);
+            output += p.exp_string("Hello from core 25")?.as_str();
+
+            // Wait for controller to terminate
+            let _ = wait_for_client_termination::<()>(&rx1);
+
             p.process.kill(SIGTERM)
         };
 
@@ -638,10 +644,13 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
             output += p
-                .exp_string("Got a new core (8589934593 -> 49) assigned to us.\r\r")?
+                .exp_string("Got a new core (8589934593 -> 49) assigned to us.")?
                 .as_str();
-            output += p.exp_string("Hello from core 49\r\r")?.as_str();
-            notify_controller_of_termination(&tx2);
+            output += p.exp_string("Hello from core 49")?.as_str();
+
+            // Wait for controller to terminate
+            let _ = wait_for_client_termination::<()>(&rx2);
+
             p.process.kill(SIGTERM)
         };
 

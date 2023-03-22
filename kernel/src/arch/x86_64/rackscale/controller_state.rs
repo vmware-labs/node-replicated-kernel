@@ -6,7 +6,6 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::RefCell;
 use fallible_collections::FallibleVecGlobal;
 use hashbrown::HashMap;
 use kpi::system::MachineId;
@@ -19,7 +18,6 @@ use kpi::system::CpuThread;
 use crate::arch::rackscale::dcm::DCMNodeId;
 use crate::arch::rackscale::processops::core_work::CoreWorkRes;
 use crate::arch::MAX_CORES;
-use crate::fallible_string::FallibleString;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
 use crate::process::MAX_PROCESSES;
@@ -67,9 +65,6 @@ pub(crate) struct PerClientState {
 
     /// A list of outstanding core assignments that need to be handled by the remote host
     pub(crate) core_assignments: VecDeque<CoreWorkRes>,
-
-    /// Used to control serial prints from the client
-    print_buffer: RefCell<String>,
 }
 
 impl PerClientState {
@@ -83,60 +78,6 @@ impl PerClientState {
             shmem_manager,
             hw_threads,
             core_assignments: VecDeque::with_capacity(3 as usize),
-            print_buffer: RefCell::new(
-                String::try_with_capacity(128)
-                    .expect("Not enough memory to initialize per-client state"),
-            ),
-        }
-    }
-
-    /// This is mostly copied from arch/x86_64/serial.rs
-    /// A poor mans line buffer scheme
-    ///
-    /// Buffers things until there is a newline in the `buffer` OR we've
-    /// exhausted the available `print_buffer` space, then print everything out.
-    pub(crate) fn buffered_print(&self, buffer: &str) {
-        // A poor mans line buffer scheme:
-        match self.print_buffer.try_borrow_mut() {
-            Ok(mut kbuf) => match buffer.find("\n") {
-                Some(idx) => {
-                    let (low, high) = buffer.split_at(idx + 1);
-
-                    // Remove last character, which should be the newline since log already has a return.
-                    let low_print = if low.len() > 0 {
-                        &low[0..low.len() - 1]
-                    } else {
-                        low
-                    };
-                    log::info!("Client{}: {}{}", self.machine_id, kbuf, low_print);
-                    kbuf.clear();
-
-                    // Avoid realloc of the kbuf if capacity can't fit `high`
-                    // kbuf.len() will be 0 but we keep it for robustness
-                    if high.len() <= kbuf.capacity() - kbuf.len() {
-                        kbuf.push_str(high);
-                    } else {
-                        log::info!("Client{}: {}", self.machine_id, high);
-                    }
-                }
-                None => {
-                    // Avoid realloc of the kbuf if capacity can't fit `buffer`
-                    if buffer.len() > kbuf.capacity() - kbuf.len() {
-                        log::info!("Client{}: {}{}", self.machine_id, kbuf, buffer);
-                        kbuf.clear();
-                    } else {
-                        kbuf.push_str(buffer);
-                    }
-                }
-            },
-            // BorrowMutError can happen (e.g., we're in a panic interrupt
-            // handler or in the gdb debug handler while we were printing in the
-            // kernel code) so we just print the current buffer to have some
-            // output which might get mangled with other output but mangled
-            // output is still better than no output, am I right?
-            Err(_e) => {
-                log::info!("Client{}: {}", self.machine_id, buffer);
-            }
         }
     }
 }

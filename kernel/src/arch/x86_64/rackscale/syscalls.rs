@@ -329,7 +329,6 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
 
 impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn log(&self, uslice: UserSlice) -> KResult<(u64, u64)> {
-        self.local.log(uslice)?;
         let msg: String = uslice.try_into()?;
         let mut client = CLIENT_STATE.rpc_client.lock();
         rpc_log(&mut **client, msg).map_err(|e| e.into())

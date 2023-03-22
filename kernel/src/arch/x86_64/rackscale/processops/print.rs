@@ -4,6 +4,7 @@
 use core::fmt::Debug;
 
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
+use alloc::string::String;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 
@@ -11,6 +12,7 @@ use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
+use super::super::client_state::CLIENT_STATE;
 use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
 use crate::arch::serial::SerialControl;
@@ -24,34 +26,36 @@ pub(crate) struct LogReq {
 }
 unsafe_abomonate!(LogReq: machine_id);
 
-pub(crate) fn rpc_log<P: AsRef<[u8]> + Debug>(
-    rpc_client: &mut dyn RPCClient,
-    msg: P,
-) -> Result<(u64, u64), KError> {
-    // Construct request data
-    let req = LogReq {
-        machine_id: *crate::environment::MACHINE_ID,
-    };
-    let mut req_data = [0u8; core::mem::size_of::<LogReq>()];
-    unsafe { encode(&req, &mut (&mut req_data).as_mut()) }.expect("Failed to encode log request");
+pub(crate) fn rpc_log(rpc_client: &mut dyn RPCClient, msg: String) -> Result<(u64, u64), KError> {
+    if let Some(print_str) = CLIENT_STATE.buffered_print(&msg) {
+        // Construct request data
+        let req = LogReq {
+            machine_id: *crate::environment::MACHINE_ID,
+        };
+        let mut req_data = [0u8; core::mem::size_of::<LogReq>()];
+        unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
+            .expect("Failed to encode log request");
 
-    // Construct result buffer and call RPC
-    let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
-    rpc_client.call(
-        KernelRpc::Log as RPCType,
-        &[&req_data, msg.as_ref()],
-        &mut [&mut res_data],
-    )?;
+        // Construct result buffer and call RPC
+        let mut res_data = [0u8; core::mem::size_of::<KResult<(u64, u64)>>()];
+        rpc_client.call(
+            KernelRpc::Log as RPCType,
+            &[&req_data, print_str.as_ref()],
+            &mut [&mut res_data],
+        )?;
 
-    // Decode and return the result
-    if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
-        if remaining.len() > 0 {
-            Err(KError::from(RPCError::ExtraData))
+        // Decode and return the result
+        if let Some((res, remaining)) = unsafe { decode::<KResult<(u64, u64)>>(&mut res_data) } {
+            if remaining.len() > 0 {
+                Err(KError::from(RPCError::ExtraData))
+            } else {
+                *res
+            }
         } else {
-            *res
+            Err(KError::from(RPCError::MalformedResponse))
         }
     } else {
-        Err(KError::from(RPCError::MalformedResponse))
+        Ok((0, 0))
     }
 }
 
@@ -66,10 +70,7 @@ pub(crate) fn handle_log(
         match core::str::from_utf8(
             &remaining[0..(hdr.msg_len as usize - core::mem::size_of::<LogReq>())],
         ) {
-            Ok(msg_str) => {
-                let mut client_state = state.get_client_state_by_machine_id(res.machine_id).lock();
-                client_state.buffered_print(msg_str);
-            }
+            Ok(msg_str) => log::info!("Remote Log: client={} {}", res.machine_id, msg_str),
             Err(e) => log::warn!(
                 "log: invalid UTF-8 string: {:?}",
                 &payload[0..hdr.msg_len as usize]

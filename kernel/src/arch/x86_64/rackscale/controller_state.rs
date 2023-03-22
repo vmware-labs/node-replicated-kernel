@@ -18,10 +18,15 @@ use kpi::system::CpuThread;
 
 use crate::arch::rackscale::dcm::DCMNodeId;
 use crate::arch::rackscale::processops::core_work::CoreWorkRes;
+use crate::arch::MAX_CORES;
 use crate::fallible_string::FallibleString;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
+use crate::process::MAX_PROCESSES;
 use crate::transport::shmem::{get_affinity_shmem, SHMEM_DEVICE};
+
+/// Set at roughly the size needed for the logs + log replicas * 2 (for controller with single core)
+pub(crate) const CONTROLLER_SHMEM_SIZE: u64 = LARGE_PAGE_SIZE as u64 * 100;
 
 /// Global state about the local rackscale client
 lazy_static! {

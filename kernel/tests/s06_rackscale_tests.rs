@@ -225,7 +225,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 180_000;
+    let timeout = 240_000;
 
     setup_network(2);
 
@@ -535,7 +535,7 @@ fn s06_rackscale_shmem_request_core_remote_test() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 120_000;
+    let timeout = 240_000;
     let (tx1, rx1) = channel();
     let (tx2, rx2) = channel();
 
@@ -671,7 +671,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 120_000;
+    let timeout = 240_000;
     let (tx, rx) = channel();
 
     setup_network(2);

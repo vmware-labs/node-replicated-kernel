@@ -30,7 +30,7 @@ fn s06_rackscale_phys_alloc_test() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 180_000;
+    let timeout = 120_000;
 
     setup_network(2);
 
@@ -604,8 +604,12 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
-            output += p.exp_string("vibrio::upcalls: Got a new core")?.as_str();
-            output += p.exp_string("Hello from core")?.as_str();
+            output += p
+                .exp_string(
+                    "vibrio::upcalls: Got a new core (4294967297 -> 25) assigned to us.\r\r",
+                )?
+                .as_str();
+            output += p.exp_string("Hello from core 25\r\r")?.as_str();
             notify_controller_of_termination(&tx1);
             p.process.kill(SIGTERM)
         };
@@ -633,8 +637,10 @@ fn s06_rackscale_shmem_request_core_remote_test() {
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
-            output += p.exp_string("vibrio::upcalls: Got a new core")?.as_str();
-            output += p.exp_string("Hello from core")?.as_str();
+            output += p
+                .exp_string("Got a new core (8589934593 -> 49) assigned to us.\r\r")?
+                .as_str();
+            output += p.exp_string("Hello from core 49\r\r")?.as_str();
             notify_controller_of_termination(&tx2);
             p.process.kill(SIGTERM)
         };
@@ -671,7 +677,7 @@ fn rackscale_userspace_rumprt_fs(is_shmem: bool) {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 240_000;
+    let timeout = 120_000;
     let (tx, rx) = channel();
 
     setup_network(2);

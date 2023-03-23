@@ -80,7 +80,7 @@ pub(crate) fn rpc_get_shmem_frames(
                         return Err(RPCError::MalformedResponse.into());
                     }
                     for i in 0..num_frames {
-                        let frame = regions[i].get_frame(SHMEM_DEVICE.region.base);
+                        let frame = regions[i].get_frame(0);
                         frames.push(frame);
                     }
                 } else {

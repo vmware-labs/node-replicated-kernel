@@ -60,7 +60,7 @@ pub(crate) fn rpc_get_proccess_logs(
 
         let mut logs = Box::new(ArrayVec::new());
         for i in 0..ret.len() {
-            let log_ptr = paddr_to_kernel_vaddr(PAddr::from(ret[i] + SHMEM_DEVICE.region.base));
+            let log_ptr = paddr_to_kernel_vaddr(PAddr::from(ret[i]));
             let local_log_arc = unsafe {
                 Arc::from_raw(log_ptr.as_u64()
                     as *const Log<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>)
@@ -105,7 +105,7 @@ pub(crate) fn handle_get_process_logs(
                 as *const Log<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>)
                 as u64,
         ));
-        logs[i] = arc_log_paddr.as_u64() - SHMEM_DEVICE.region.base;
+        logs[i] = arc_log_paddr.as_u64();
     }
 
     // Reset mem allocator to use per core memory again

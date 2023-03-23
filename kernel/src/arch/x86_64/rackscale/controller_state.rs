@@ -31,7 +31,7 @@ lazy_static! {
     pub(crate) static ref CONTROLLER_AFFINITY_SHMEM: Arc<Mutex<Box<FrameCacheShmem>>> =
         Arc::new(Mutex::new(
             get_affinity_shmem()
-                .get_shmem_manager(SHMEM_DEVICE.region.base)
+                .get_shmem_manager(0)
                 .expect("Failed to fetch shmem manager for controller shmem.")
         ));
 }

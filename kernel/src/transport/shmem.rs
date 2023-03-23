@@ -374,7 +374,7 @@ pub(crate) fn get_affinity_shmem() -> ShmemRegion {
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
-    let mut base_offset = 0;
+    let mut base = SHMEM_DEVICE.region.base;
     let mut size = SHMEM_DEVICE.region.size;
 
     if crate::CMDLINE
@@ -383,7 +383,7 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
     {
         let num_workers = (*crate::environment::NUM_MACHINES - 1) as u64;
         // Offset base to ignore shmem used for client transports
-        base_offset += SHMEM_TRANSPORT_SIZE * num_workers;
+        base += SHMEM_TRANSPORT_SIZE * num_workers;
 
         // Remove amount used for transport from the size
         size = core::cmp::max(0, size - SHMEM_TRANSPORT_SIZE * num_workers);
@@ -392,21 +392,21 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
     // Controller gets a set amount of shmem
     if machine_id == 0 {
         log::debug!(
-            "Shmem affinity region: offset={:x}, size={:x}, range: [{:X}-{:X}]",
-            base_offset,
+            "Shmem affinity region: base={:x}, size={:x}, range: [{:X}-{:X}]",
+            base,
             CONTROLLER_SHMEM_SIZE,
-            base_offset,
-            base_offset + CONTROLLER_SHMEM_SIZE,
+            base,
+            base + CONTROLLER_SHMEM_SIZE - 1,
         );
         return ShmemRegion {
-            base: base_offset,
+            base,
             size: CONTROLLER_SHMEM_SIZE,
         };
     }
 
     // Adjust for controller
     debug_assert!(size >= CONTROLLER_SHMEM_SIZE);
-    base_offset += CONTROLLER_SHMEM_SIZE;
+    base += CONTROLLER_SHMEM_SIZE;
     size -= CONTROLLER_SHMEM_SIZE;
 
     // Align on base page boundaries
@@ -414,17 +414,17 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
         (size / BASE_PAGE_SIZE as u64) / (*crate::environment::NUM_MACHINES as u64 - 1);
     let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
 
-    base_offset += size_per_worker * (machine_id as u64 - 1) as u64;
+    base += size_per_worker * (machine_id as u64 - 1) as u64;
     log::debug!(
-        "Shmem affinity region: offset={:x}, size={:x}, range: [{:X}-{:X}]",
-        base_offset,
+        "Shmem affinity region: base={:x}, size={:x}, range: [{:X}-{:X}]",
+        base,
         size_per_worker,
-        base_offset,
-        base_offset + size_per_worker,
+        base,
+        base + size_per_worker - 1,
     );
 
     ShmemRegion {
-        base: base_offset,
+        base,
         size: size_per_worker,
     }
 }
@@ -433,7 +433,7 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
 pub(crate) fn is_shmem_frame(frame: Frame, is_affinity: bool, is_kaddr: bool) -> bool {
     is_shmem_addr(frame.base.as_u64(), is_affinity, is_kaddr)
         && is_shmem_addr(
-            frame.base.as_u64() + (frame.size as u64),
+            frame.base.as_u64() + (frame.size as u64) - 1,
             is_affinity,
             is_kaddr,
         )
@@ -444,7 +444,7 @@ pub(crate) fn is_shmem_addr(addr: u64, is_affinity: bool, is_kaddr: bool) -> boo
     let offset = if is_kaddr { KERNEL_BASE } else { 0 };
 
     let (shmem_start, shmem_size) = if is_affinity {
-        let frame = get_affinity_shmem().get_frame(SHMEM_DEVICE.region.base + offset);
+        let frame = get_affinity_shmem().get_frame(offset);
         (frame.base.as_u64(), frame.size as u64)
     } else {
         let mut shmem_offset = 0;

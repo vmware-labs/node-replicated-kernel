@@ -18,7 +18,7 @@ use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};
 use crate::nrproc::NrProcess;
-use crate::transport::shmem::{ShmemRegion, SHMEM_DEVICE};
+use crate::transport::shmem::{is_shmem_frame, ShmemRegion};
 
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
@@ -72,11 +72,16 @@ pub(crate) fn rpc_allocate_physical(
                 base: *frame_base,
                 size,
             };
-            let frame = shmem_region.get_frame(SHMEM_DEVICE.region.base);
+            let frame = shmem_region.get_frame(0);
+
+            // TODO(rackscale performance): should be debug assert
+            assert!(is_shmem_frame(frame, false, false));
+
             debug!(
                 "AllocatePhysical() mapping base from {:x?} to {:?}",
                 *frame_base, frame,
             );
+
             let fid = NrProcess::<Ring3Process>::allocate_frame_to_process(pid, frame)?;
 
             // Add frame mapping to client map
@@ -120,30 +125,21 @@ pub(crate) fn handle_allocate_physical(
     debug!("Received node assignment from DCM: node {:?}", dcm_node_id);
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
-    let ret = {
+    let frame = {
         let mut client_state = state.get_client_state_by_dcm_node_id(dcm_node_id).lock();
         let mut manager = client_state
             .shmem_manager
             .as_mut()
             .expect("No shmem manager found for client");
 
-        manager.allocate_large_page()
+        manager
+            .allocate_large_page()
+            .expect("DCM should ensure we have a frame to allocate here.")
     };
 
-    let res = match ret {
-        Ok(frame) => {
-            debug!("Shmem Frame: {:?}", frame);
-            // Should technically be Ok((fid as u64, frame.base.as_u64()))
-            // We return node_id here, but it should really be an AS (address space)
-            // identifier, (most likely). This works for now because there is only
-            // 1 AS per node.
-            Ok((dcm_node_id, frame.base.as_u64()))
-        }
-        Err(kerror) => {
-            debug!("Failed to allocate physical frame: {:?}", kerror);
-            Err(kerror)
-        }
-    };
-    construct_ret(hdr, payload, res);
+    // TODO(rackscale performance): should be debug assert
+    assert!(is_shmem_frame(frame, false, false));
+
+    construct_ret(hdr, payload, Ok((dcm_node_id, frame.base.as_u64())));
     Ok(state)
 }

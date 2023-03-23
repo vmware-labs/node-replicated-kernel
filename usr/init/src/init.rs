@@ -210,6 +210,51 @@ fn request_core_remote_test() {
     }
 }
 
+fn rackscale_shootdown_test() {
+    use x86::bits64::paging::BASE_PAGE_SIZE;
+
+    // Create base for the mapping
+    let base: u64 = 0x0510_0000_0000;
+
+    // Get machine ID and machine thread ID
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let current_mid = kpi::system::mid_from_gtid(current_gtid);
+    let current_mtid = kpi::system::mtid_from_gtid(current_gtid);
+
+    // Only trigger shootdown from one machine
+    if current_mid == 1 && current_mtid == 0 {
+        // Test allocation by checking to see if we can map it okay
+        unsafe {
+            // Allocate a base page of physical memory
+            let (frame_id, paddr) = vibrio::syscalls::PhysicalMemory::allocate_base_page()
+                .expect("Failed to get physical memory base page");
+            info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
+
+            // Map the frame
+            vibrio::syscalls::VSpace::map_frame(frame_id, base).expect("Failed to map base page");
+            let slice: &mut [u8] = from_raw_parts_mut(base as *mut u8, BASE_PAGE_SIZE);
+            for i in slice.iter_mut() {
+                *i = 0xb;
+            }
+            assert_eq!(slice[99], 0xb);
+
+            // Unmap the frame to trigger a TLB shootdown
+            info!("About to trigger shootdown by calling unmap()");
+            vibrio::syscalls::VSpace::unmap(base, BASE_PAGE_SIZE as u64)
+                .expect("Unmap syscall failed");
+        }
+        info!("rackscale_shootdown_test OK");
+    } else {
+        info!("Waiting for shootdown");
+    }
+
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_mtid);
+    loop {
+        s.run(&scb);
+    }
+}
+
 fn scheduler_smp_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
@@ -873,6 +918,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-request-core-remote")]
     request_core_remote_test();
+
+    #[cfg(feature = "test-rackscale-shootdown")]
+    rackscale_shootdown_test();
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();

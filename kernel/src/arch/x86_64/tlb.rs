@@ -209,8 +209,9 @@ fn send_ipi_multicast(ldr: u32) {
 /// Takes the `TlbFlushHandle` and figures out what cores it needs to send an IPI to.
 /// It divides IPIs into clusters to avoid overhead of sending IPIs individually.
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
-pub(crate) fn shootdown(handle: TlbFlushHandle) {
+pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
     let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
+    let handle = &handles[kpi::system::mid_from_gtid(*crate::environment::CORE_ID)];
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
     // Cluster ID (LDR[31:16]) is the address of the destination cluster

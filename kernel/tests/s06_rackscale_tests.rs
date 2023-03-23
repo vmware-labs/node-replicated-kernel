@@ -408,6 +408,148 @@ fn s06_rackscale_shmem_multiinstance() {
 
 #[cfg(not(feature = "baremetal"))]
 #[test]
+fn s06_rackscale_shmem_shootdown_test() {
+    use std::sync::Arc;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let timeout = 120_000;
+    let clients = 2;
+    let mut processes = Vec::with_capacity(clients);
+
+    setup_network(clients + 1);
+
+    let mut shmem_server =
+        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+    let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
+
+    // client 1 to controller
+    let (tx, rx) = channel();
+
+    let rx_mut = Arc::new(Mutex::new(rx));
+
+    let build = Arc::new(
+        BuildArgs::default()
+            .module("init")
+            .user_feature("test-rackscale-shootdown")
+            .kernel_feature("shmem")
+            .kernel_feature("ethernet")
+            .kernel_feature("rackscale")
+            .release()
+            .build(),
+    );
+
+    let controller_build = build.clone();
+    let controller_rx_mut = rx_mut.clone();
+    let controller = std::thread::spawn(move || {
+        let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &controller_build)
+            .timeout(timeout)
+            .cmd("mode=controller transport=shmem")
+            .shmem_size(SHMEM_SIZE)
+            .shmem_path(SHMEM_PATH)
+            .tap("tap0")
+            .no_network_setup()
+            .workers(clients + 1)
+            .use_vmxnet3();
+
+        let output = String::new();
+        let qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_controller)?;
+
+            // Wait for the shootdown client to complete
+            let rx = controller_rx_mut.lock();
+            wait_for_client_termination::<()>(&rx);
+
+            p.process.kill(SIGTERM)
+        };
+
+        wait_for_sigterm(&cmdline_controller, qemu_run(), output);
+    });
+
+    let build2 = build.clone();
+    let shootdown_client = std::thread::spawn(move || {
+        sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
+        let tap = format!("tap{}", 2 * 1);
+        let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
+            .timeout(timeout)
+            .cmd("mode=client transport=shmem")
+            .shmem_size(SHMEM_SIZE)
+            .shmem_path(SHMEM_PATH)
+            .tap(&tap)
+            .no_network_setup()
+            .workers(clients + 1)
+            .nobuild()
+            .use_vmxnet3();
+        let mut output = String::new();
+        let mut qemu_run = || -> Result<WaitStatus> {
+            let mut p = spawn_nrk(&cmdline_client)?;
+            output += p.exp_string("rackscale_shootdown_test OK")?.as_str();
+            output += p.exp_eof()?.as_str();
+
+            // Notify all other clients & controller we are done.
+            for _i in 0..clients {
+                notify_controller_of_termination(&tx);
+            }
+            p.process.kill(SIGTERM)
+        };
+
+        wait_for_sigterm(&cmdline_client, qemu_run(), output);
+    });
+
+    for i in 2..=clients {
+        let tap = format!("tap{}", 2 * i);
+        let client_build = build.clone();
+        let my_rx_mut = rx_mut.clone();
+        let client = std::thread::spawn(move || {
+            sleep(Duration::from_millis(i as u64 * CLIENT_BUILD_DELAY));
+            let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &client_build)
+                .timeout(timeout)
+                .cmd("mode=client transport=shmem")
+                .shmem_size(SHMEM_SIZE)
+                .shmem_path(SHMEM_PATH)
+                .tap(&tap)
+                .no_network_setup()
+                .workers(clients + 1)
+                .nobuild()
+                .use_vmxnet3();
+
+            let mut output = String::new();
+            let mut qemu_run = || -> Result<WaitStatus> {
+                let mut p = spawn_nrk(&cmdline_client)?;
+                sleep(Duration::from_millis(30_000));
+                output += p.exp_eof()?.as_str();
+
+                // Wait for the shootdown client to complete
+                let rx = my_rx_mut.lock();
+                wait_for_client_termination::<()>(&rx);
+
+                p.process.kill(SIGTERM)
+            };
+
+            wait_for_sigterm(&cmdline_client, qemu_run(), output);
+        });
+        processes.push(client);
+    }
+
+    let mut client_rets = Vec::with_capacity(clients);
+    for p in processes {
+        client_rets.push(p.join());
+    }
+    let controller_ret = controller.join();
+    let shootdown_client_ret = shootdown_client.join();
+
+    let _ignore = shmem_server.send_control('c');
+    let _ignore = dcm.send_control('c');
+
+    for ret in client_rets {
+        ret.unwrap();
+    }
+    controller_ret.unwrap();
+    shootdown_client_ret.unwrap();
+}
+
+#[cfg(not(feature = "baremetal"))]
+#[test]
 fn s06_rackscale_shmem_userspace_multicore_test() {
     rackscale_userspace_multicore_test(true);
 }

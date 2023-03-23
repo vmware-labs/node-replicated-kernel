@@ -48,6 +48,7 @@ test-fs-prop = []
 test-pmem-alloc = []
 test-phys-alloc = []
 test-request-core-remote = []
+test-rackscale-shootdown = []
 
 # Simple micro-benchmarks
 bench-vmops = []

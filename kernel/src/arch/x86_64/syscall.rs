@@ -347,10 +347,11 @@ pub(crate) trait Arch86VSpaceDispatch {
         let base = VAddr::from(base);
         let pid = current_pid()?;
 
-        let handle = NrProcess::<Ring3Process>::unmap(pid, base)?;
-        let va: u64 = handle.vaddr.as_u64();
-        let sz: u64 = handle.size as u64;
-        super::tlb::shootdown(handle);
+        let handles = NrProcess::<Ring3Process>::unmap(pid, base)?;
+        // There is - always - at least one machine so safe to index in at 0
+        let va: u64 = handles[0].vaddr.as_u64();
+        let sz: u64 = handles[0].size as u64;
+        super::tlb::shootdown(handles);
 
         Ok((va, sz))
     }

@@ -100,7 +100,7 @@ pub(crate) enum ProcessResult<E: Executor> {
     Executor(Box<E>),
     ExecutorsCreated(usize),
     MappedFrameId(PAddr, usize),
-    Unmapped(TlbFlushHandle),
+    Unmapped(Vec<TlbFlushHandle>),
     Resolved(PAddr, MapAction),
     FrameId(usize),
     Frame(Frame),
@@ -215,7 +215,7 @@ impl<P: Process> NrProcess<P> {
         }
     }
 
-    pub(crate) fn unmap(pid: Pid, base: VAddr) -> Result<TlbFlushHandle, KError> {
+    pub(crate) fn unmap(pid: Pid, base: VAddr) -> Result<Vec<TlbFlushHandle>, KError> {
         debug_assert!(pid < MAX_PROCESSES, "Invalid PID");
 
         let node = *crate::environment::NODE_ID;
@@ -566,29 +566,28 @@ where
             }
 
             ProcessOpMut::MemUnmap(vaddr) => {
-                let mut shootdown_handle = self.process.vspace_mut().unmap(vaddr)?;
+                let shootdown_handle = self.process.vspace_mut().unmap(vaddr)?;
                 if shootdown_handle.flags.is_aliasable() {
                     self.process
                         .remove_frame_mapping(shootdown_handle.paddr, shootdown_handle.vaddr)
                         .expect("is_aliasable implies this op can't fail");
                 }
 
+                let num_machines = *crate::environment::NUM_MACHINES;
+                let mut shootdown_handles = Vec::try_with_capacity(num_machines)
+                    .expect("not enough memory to make shootdown vector");
+                for _i in 0..num_machines {
+                    shootdown_handles.push(shootdown_handle.clone())
+                }
+
                 // Figure out which cores are running our current process
                 // (this is where we send IPIs later)
                 for (gtid, _eid) in self.active_cores.iter() {
-                    if kpi::system::mid_from_gtid(*gtid) == *crate::environment::MACHINE_ID {
-                        shootdown_handle.add_core(kpi::system::mtid_from_gtid(*gtid));
-                    } else {
-                        // TODO(rackscale) - need figure out how to do remote shootdown
-                        log::error!(
-                            "Cannot send shootdown to remote core: {:?}:{:?}",
-                            kpi::system::mid_from_gtid(*gtid),
-                            kpi::system::mtid_from_gtid(*gtid)
-                        );
-                    }
+                    shootdown_handles[kpi::system::mid_from_gtid(*gtid)]
+                        .add_core(kpi::system::mtid_from_gtid(*gtid));
                 }
 
-                Ok(ProcessResult::Unmapped(shootdown_handle))
+                Ok(ProcessResult::Unmapped(shootdown_handles))
             }
 
             ProcessOpMut::AssignExecutor(gtid, region) => {

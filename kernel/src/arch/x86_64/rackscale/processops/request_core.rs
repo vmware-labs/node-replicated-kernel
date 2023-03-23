@@ -21,6 +21,8 @@ use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
 use super::super::processops::core_work::CoreWorkRes;
+use crate::arch::irq::REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR;
+use crate::transport::shmem::SHMEM_DEVICE;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RequestCoreReq {
@@ -126,6 +128,14 @@ pub(crate) fn handle_request_core(
                 entry_point: core_req.entry_point,
             };
             client_state.core_assignments.push_back(res);
+
+            // send remote core work interrupt to the chosen node.
+            // TODO(rackscale, correctness): how do we ensure that the core is actually ready???
+            // should probably call on client, and then have client wait for signal from core.
+            SHMEM_DEVICE.set_doorbell(
+                REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR,
+                client_state.machine_id.try_into().unwrap(),
+            );
         }
         gtid
     };

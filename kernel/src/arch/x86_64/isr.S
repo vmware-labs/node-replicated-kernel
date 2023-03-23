@@ -229,7 +229,9 @@ isr_handler 45
 isr_handler 46
 isr_handler 47
 
-/* qemu shmem interrupt, may (or may not) be used */
+/* remote TLB work interrupt, used in rackscale build*/
+isr_handler 248
+/* remote core work interrupt, used in rackscale build*/
 isr_handler 249
 
 /* The MLNR gc interrupt */

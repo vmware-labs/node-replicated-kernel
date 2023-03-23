@@ -804,6 +804,7 @@ pub(crate) fn cxl_read() {
 /// Test cxl device in the kernel.
 #[cfg(all(feature = "integration-test", target_arch = "x86_64"))]
 pub(crate) fn shmem_interruptor() {
+    use crate::arch::irq::REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR;
     use crate::transport::shmem::SHMEM_DEVICE;
 
     lazy_static::initialize(&SHMEM_DEVICE);
@@ -815,7 +816,7 @@ pub(crate) fn shmem_interruptor() {
             SHMEM_DEVICE.id - 1,
             1
         );
-        SHMEM_DEVICE.set_doorbell(1, SHMEM_DEVICE.id - 1);
+        SHMEM_DEVICE.set_doorbell(REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR, SHMEM_DEVICE.id - 1);
     }
     shutdown(ExitReason::Ok);
 }
@@ -826,13 +827,18 @@ pub(crate) fn shmem_interruptee() {
     use core::hint::spin_loop;
     use core::time::Duration;
 
-    use crate::arch::irq::SHMEM_VECTOR;
+    use crate::arch::irq::{
+        REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR, REMOTE_CORE_WORK_PENDING_VECTOR,
+    };
     use crate::transport::shmem::SHMEM_DEVICE;
 
     lazy_static::initialize(&SHMEM_DEVICE);
 
-    SHMEM_DEVICE.enable_msix_vector(0, 0, SHMEM_VECTOR);
-    SHMEM_DEVICE.enable_msix_vector(1, 0, SHMEM_VECTOR);
+    SHMEM_DEVICE.enable_msix_vector(
+        REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR as usize,
+        0,
+        REMOTE_CORE_WORK_PENDING_VECTOR,
+    );
 
     let start = rawtime::Instant::now();
     crate::arch::irq::enable();

@@ -211,7 +211,26 @@ fn send_ipi_multicast(ldr: u32) {
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
 pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
     let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
-    let handle = &handles[kpi::system::mid_from_gtid(*crate::environment::CORE_ID)];
+    let my_mid = kpi::system::mid_from_gtid(*crate::environment::CORE_ID);
+    let handle = &handles[my_mid];
+
+    #[cfg(feature = "rackscale")]
+    {
+        use crate::arch::irq::REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR;
+        use crate::transport::shmem::SHMEM_DEVICE;
+
+        for i in 0..handles.len() {
+            if i != my_mid {
+                // TODO: should be !handles... but opposite for ease of testing at the moment.
+                if handles[i].core_map.is_empty() {
+                    // TODO: add handles[i] to queue for machine
+                    log::warn!("Need to send TLB flush to remote machine id={:?}", i);
+                    SHMEM_DEVICE
+                        .set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, i.try_into().unwrap());
+                }
+            }
+        }
+    }
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
     // Cluster ID (LDR[31:16]) is the address of the destination cluster

@@ -409,7 +409,7 @@ def run_qemu(args):
 
     if args.qemu_ivshmem:
         # If you change the the device addr, you must change it in vibrio::rumprt::dev
-        qemu_default_args += ['-device', 'ivshmem-doorbell,vectors=2,chardev=id,addr={}'.format(IVSHMEM_DEVICE_ADDR)]
+        qemu_default_args += ['-device', 'ivshmem-doorbell,vectors=3,chardev=id,addr={}'.format(IVSHMEM_DEVICE_ADDR)]
         qemu_default_args += [
             '-chardev',
             'socket,path={},id=id'.format(args.qemu_shmem_path)

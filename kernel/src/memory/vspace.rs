@@ -69,6 +69,11 @@ impl CoreBitMap {
             self.high.set_bit(bit, value);
         }
     }
+
+    #[allow(unused)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.low == 0u128 && self.high == 0u128
+    }
 }
 
 pub(crate) struct CoreBitMapIter(CoreBitMap);

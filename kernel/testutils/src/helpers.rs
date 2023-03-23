@@ -61,7 +61,7 @@ pub fn spawn_shmem_server(filename: &str, filelen: usize) -> Result<rexpect::ses
         "ivshmem-server -F -S {} -l {} -n {} ",
         filename,
         filelen * 1024 * 1024,
-        2, // number of vectors
+        3, // number of vectors
     );
     eprintln!("Invoke shmem server: {}", cmd);
     spawn(&cmd, None)

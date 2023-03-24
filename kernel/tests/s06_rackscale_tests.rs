@@ -484,7 +484,6 @@ fn s06_rackscale_shmem_shootdown_test() {
         let mut qemu_run = || -> Result<WaitStatus> {
             let mut p = spawn_nrk(&cmdline_client)?;
             output += p.exp_string("rackscale_shootdown_test OK")?.as_str();
-            output += p.exp_eof()?.as_str();
 
             // Notify all other clients & controller we are done.
             for _i in 0..clients {
@@ -516,8 +515,6 @@ fn s06_rackscale_shmem_shootdown_test() {
             let mut output = String::new();
             let mut qemu_run = || -> Result<WaitStatus> {
                 let mut p = spawn_nrk(&cmdline_client)?;
-                sleep(Duration::from_millis(30_000));
-                output += p.exp_eof()?.as_str();
 
                 // Wait for the shootdown client to complete
                 let rx = my_rx_mut.lock();

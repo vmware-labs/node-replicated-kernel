@@ -408,8 +408,8 @@ impl KernelAllocator {
             }
         } else {
             // We only request at large page granularity
-            use crate::arch::rackscale::client_state::CLIENT_STATE;
             use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
+            use crate::arch::rackscale::CLIENT_STATE;
             use crate::memory::backends::{AllocatorStatistics, GrowBackend};
 
             let mut total_needed_large_pages = needed_large_pages;

@@ -90,7 +90,7 @@ lazy_static! {
         } else {
             // Get location of the logs from the controller, who will created them in shared memory
             use crate::arch::rackscale::get_process_logs::rpc_get_proccess_logs;
-            use crate::arch::rackscale::client_state::CLIENT_STATE;
+            use crate::arch::rackscale::CLIENT_STATE;
             let mut client = CLIENT_STATE.rpc_client.lock();
             return rpc_get_proccess_logs(&mut **client).unwrap();
         }

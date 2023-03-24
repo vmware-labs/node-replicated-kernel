@@ -212,6 +212,7 @@ fn send_ipi_multicast(ldr: u32) {
 pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
     let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
     let my_mid = kpi::system::mid_from_gtid(*crate::environment::CORE_ID);
+
     let handle = &handles[my_mid];
 
     #[cfg(feature = "rackscale")]
@@ -219,15 +220,17 @@ pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
         use crate::arch::irq::REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR;
         use crate::transport::shmem::SHMEM_DEVICE;
 
-        for i in 0..handles.len() {
+        // Skip the first one - that's the controller
+        for i in 1..handles.len() {
             if i != my_mid {
-                // TODO: should be !handles... but opposite for ease of testing at the moment.
-                if handles[i].core_map.is_empty() {
-                    // TODO: add handles[i] to queue for machine
-                    log::warn!("Need to send TLB flush to remote machine id={:?}", i);
-                    SHMEM_DEVICE
-                        .set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, i.try_into().unwrap());
-                }
+                // TODO: add handles[i] to queue for machine
+                log::warn!(
+                    "Need to send TLB flush to remote machine id={:?}, is_empty={:?}",
+                    i,
+                    handles[i].core_map.is_empty()
+                );
+                SHMEM_DEVICE
+                    .set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, i.try_into().unwrap());
             }
         }
     }
@@ -297,9 +300,17 @@ pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
     shootdown.process();
 
     // Wait synchronously on cores to complete
+
+    // start time = now
     while !shootdowns.is_empty() {
         shootdowns.drain_filter(|s| s.is_acknowledged());
+        // if duration > SOME_TIME
+        // enable interrupts
         core::hint::spin_loop();
+
+        // if interrupts enabled
+        // disable interrupts
+        // reset duration
     }
 
     trace!("done with all shootdowns");

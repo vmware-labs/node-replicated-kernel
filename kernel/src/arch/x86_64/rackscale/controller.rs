@@ -22,7 +22,6 @@ use crate::arch::rackscale::dcm::*;
 use crate::arch::rackscale::processops::request_core::RequestCoreReq;
 use crate::cmdline::Transport;
 use crate::error::KError;
-use crate::fs::{cnrfs, NrLock};
 use crate::memory::backends::AllocatorStatistics;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;

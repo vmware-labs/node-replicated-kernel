@@ -17,11 +17,11 @@ use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE, SHARED_AFFINITY};
 use crate::nrproc::NrProcess;
 
-use super::super::client_state::CLIENT_STATE;
-use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_release::dcm_resource_release;
 use super::super::dcm::{DCMNodeId, DCM_INTERFACE};
 use super::super::kernelrpc::*;
+use super::super::ControllerState;
+use super::super::CLIENT_STATE;
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
 use crate::transport::shmem::SHMEM_DEVICE;

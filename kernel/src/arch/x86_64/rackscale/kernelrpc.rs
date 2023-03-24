@@ -13,7 +13,6 @@ use log::{debug, error};
 use rpc::rpc::*;
 
 use crate::error::{KError, KResult};
-use crate::fs::{cnrfs, NrLock};
 use crate::nr;
 use crate::process::Pid;
 

@@ -18,7 +18,6 @@ use crate::syscalls::{
 };
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
-use super::client_state::CLIENT_STATE;
 use super::fileops::close::rpc_close;
 use super::fileops::delete::rpc_delete;
 use super::fileops::getinfo::rpc_getinfo;
@@ -31,6 +30,7 @@ use super::processops::print::rpc_log;
 use super::processops::release_physical::rpc_release_physical;
 use super::processops::request_core::rpc_request_core;
 use super::systemops::get_hardware_threads::rpc_get_hardware_threads;
+use super::CLIENT_STATE;
 use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
 
 use crate::nrproc::NrProcess;

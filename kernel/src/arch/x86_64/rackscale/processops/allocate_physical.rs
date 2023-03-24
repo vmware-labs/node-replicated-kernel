@@ -11,9 +11,8 @@ use rpc::RPCClient;
 
 use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
-use crate::arch::rackscale::client_state::CLIENT_STATE;
+use crate::arch::rackscale::CLIENT_STATE;
 use crate::error::{KError, KResult};
-use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, BASE_PAGE_SIZE};

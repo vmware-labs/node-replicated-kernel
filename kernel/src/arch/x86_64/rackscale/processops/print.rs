@@ -12,13 +12,12 @@ use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use super::super::client_state::CLIENT_STATE;
 use super::super::controller_state::ControllerState;
 use super::super::kernelrpc::*;
+use super::super::CLIENT_STATE;
 use crate::arch::serial::SerialControl;
 use crate::error::{KError, KResult};
 use crate::fallible_string::TryString;
-use crate::fs::cnrfs;
 
 #[derive(Debug)]
 pub(crate) struct LogReq {

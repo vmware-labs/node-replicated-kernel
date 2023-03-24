@@ -56,6 +56,16 @@ impl VSpace {
     ) -> Result<(), KError> {
         Ok(())
     }
+
+    pub(crate) fn map_identity_with_offset(
+        &mut self,
+        at_offset: PAddr,
+        pbase: PAddr,
+        size: usize,
+        rights: MapAction,
+    ) -> Result<(), KError> {
+        Ok(())
+    }
 }
 
 impl AddressSpace for VSpace {

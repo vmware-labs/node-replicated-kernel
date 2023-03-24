@@ -20,8 +20,10 @@ pub(crate) mod systemops;
 
 pub(crate) use self::kernelrpc::KernelRpc;
 
-use crate::arch::rackscale::controller_state::ControllerState;
-use crate::arch::rackscale::registration::register_client;
+pub(crate) use self::client_state::CLIENT_STATE;
+
+use self::controller_state::ControllerState;
+use self::registration::register_client;
 
 // Re-export client registration
 pub(crate) const CLIENT_REGISTRAR: RegistrationHandler<ControllerState> = register_client;

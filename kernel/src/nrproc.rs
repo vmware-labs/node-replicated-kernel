@@ -573,6 +573,7 @@ where
                         .expect("is_aliasable implies this op can't fail");
                 }
 
+                // Ignore controller in rackscale, but create shootdown for all clients
                 let num_machines = *crate::environment::NUM_MACHINES;
                 let mut shootdown_handles = Vec::try_with_capacity(num_machines)
                     .expect("not enough memory to make shootdown vector");

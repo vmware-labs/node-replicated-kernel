@@ -580,7 +580,7 @@ unsafe fn remote_core_work_handler(_a: &ExceptionArguments) {
         .get()
         .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
     {
-        use crate::arch::rackscale::client_state::CLIENT_STATE;
+        use crate::arch::rackscale::CLIENT_STATE;
         CLIENT_STATE.client_get_work();
     } else {
         panic!("Should not receive remote core work interrupt in controller");
@@ -760,7 +760,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // If we have an active process we should do scheduler activations:
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
-        if a.vector > 30 && a.vector < 249 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
+        if a.vector > 30 && a.vector < 248 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
             log::info!("handle_generic_exception {:?}", a);
 
             let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();

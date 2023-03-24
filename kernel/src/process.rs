@@ -32,12 +32,11 @@ use crate::memory::{Frame, KernelAllocator, PAddr, VAddr, KERNEL_BASE};
 use crate::prelude::overlaps;
 use crate::{nrproc, round_up};
 
-#[cfg(feature = "rackscale")]
+#[cfg(all(feature = "rackscale", target_arch = "x86_64"))]
 use {
-    crate::arch::rackscale::client_state::CLIENT_STATE,
     crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames,
     crate::arch::rackscale::processops::make_process::rpc_make_process,
-    crate::memory::SHARED_AFFINITY,
+    crate::arch::rackscale::CLIENT_STATE, crate::memory::SHARED_AFFINITY,
 };
 
 /// Process ID.

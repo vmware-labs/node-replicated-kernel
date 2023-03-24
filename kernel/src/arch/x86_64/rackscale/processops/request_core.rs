@@ -11,8 +11,6 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use crate::error::{KError, KResult};
-use crate::fs::cnrfs::MlnrKernelNode;
-use crate::fs::{cnrfs, NrLock};
 use crate::memory::VAddr;
 use crate::nr;
 use crate::nr::KernelNode;

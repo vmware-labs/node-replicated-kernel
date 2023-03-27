@@ -126,3 +126,38 @@ fn s04_userspace_rumprt_fs() {
 
     check_for_successful_exit(&cmdline, qemu_run(), output);
 }
+
+/*
+/// Tests a flurry of shootdowns for multiple threads.
+///
+/// Makes sure all the shootdowns are sufficiently handled.
+#[cfg(not(feature = "baremetal"))]
+#[test]
+fn s04_userspace_concurrent_shootdowns() {
+    let machine = Machine::determine();
+    let num_cores: usize = 3; //machine.max_cores();
+    let build = BuildArgs::default()
+        .user_feature("test-concurrent-shootdown")
+        .build();
+    let cmdline = RunnerArgs::new_with_build("userspace-smp", &build)
+        .cores(num_cores)
+        .memory(4096 * 2)
+        .timeout(60_000);
+
+    let mut output = String::new();
+    let mut qemu_run = || -> Result<WaitStatus> {
+        let mut p = spawn_nrk(&cmdline)?;
+
+        for _i in 0..num_cores {
+            // TODO: detect success
+            let r = p.exp_regex(r#"init: Hello from core (\d+)"#)?;
+            output += r.0.as_str();
+            output += r.1.as_str();
+        }
+
+        p.process.kill(SIGTERM)
+    };
+
+    wait_for_sigterm(&cmdline, qemu_run(), output);
+}
+*/

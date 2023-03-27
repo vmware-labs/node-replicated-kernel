@@ -49,6 +49,7 @@ test-pmem-alloc = []
 test-phys-alloc = []
 test-request-core-remote = []
 test-rackscale-shootdown = []
+test-concurrent-shootdown = []
 
 # Simple micro-benchmarks
 bench-vmops = []

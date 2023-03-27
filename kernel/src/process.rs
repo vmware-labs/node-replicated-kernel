@@ -163,7 +163,7 @@ impl FrameManagement for ProcessFrames {
                 if frame.base == paddr && *refcnt > 0 {
                     *refcnt -= 1;
                     return Ok(());
-                } else {
+                } else if frame.base == paddr {
                     panic!("Can't call remove_frame_mapping on 0 refcnt frame");
                 }
             }

@@ -303,14 +303,11 @@ pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
 
     // start time = now
     while !shootdowns.is_empty() {
-        shootdowns.drain_filter(|s| s.is_acknowledged());
-        // if duration > SOME_TIME
-        // enable interrupts
-        core::hint::spin_loop();
+        // Make progress on our work while we wait for others
+        dequeue(my_mtid);
 
-        // if interrupts enabled
-        // disable interrupts
-        // reset duration
+        shootdowns.drain_filter(|s| s.is_acknowledged());
+        core::hint::spin_loop();
     }
 
     trace!("done with all shootdowns");

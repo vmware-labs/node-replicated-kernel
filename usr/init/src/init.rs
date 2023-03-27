@@ -255,6 +255,95 @@ fn rackscale_shootdown_test() {
     }
 }
 
+fn concurrent_shootdown_test() {
+    use x86::bits64::paging::BASE_PAGE_SIZE;
+
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
+    let threads = vibrio::syscalls::System::threads().expect("Can't get system topology");
+    log::info!("There are {:?} threads", threads.len());
+
+    // Get machine ID and machine thread ID
+    let current_gtid = vibrio::syscalls::System::core_id().expect("Can't get core id");
+    let current_mid = kpi::system::mid_from_gtid(current_gtid);
+    let current_mtid = kpi::system::mtid_from_gtid(current_gtid);
+
+    if current_mid == 0 && current_mtid == 0 {
+        for thread in threads {
+            if thread.id != current_gtid {
+                let r = vibrio::syscalls::Process::request_core(
+                    thread.id,
+                    VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+                );
+                match r {
+                    Ok(ctoken) => {
+                        info!("Spawned core on {:?} <-> {}", ctoken, thread.id);
+                    }
+                    Err(_e) => {
+                        panic!("Failed to spawn to core {}", thread.id);
+                    }
+                }
+
+                s.spawn(
+                    32 * 4096,
+                    move |_| {
+                        // Get machine ID and machine thread ID
+                        let current_gtid =
+                            vibrio::syscalls::System::core_id().expect("Can't get core id");
+                        let current_mid = kpi::system::mid_from_gtid(current_gtid);
+                        let current_mtid = kpi::system::mtid_from_gtid(current_gtid);
+
+                        // Create base for the mapping - assume 32 cores per machine, max
+                        // TODO: update the bases for rackscale
+                        let base: u64 = 0x0510_0000_0000 + (current_mtid * BASE_PAGE_SIZE) as u64;
+                        log::info!("What is the base? {:x}", base);
+
+                        // Test allocation by checking to see if we can map it okay
+                        unsafe {
+                            // Allocate a base page of physical memory
+                            let (frame_id, paddr) =
+                                vibrio::syscalls::PhysicalMemory::allocate_base_page()
+                                    .expect("Failed to get physical memory base page");
+                            info!("base frame id={:?}, paddr={:?}", frame_id, paddr);
+
+                            // Map the frame and unmap it to trigger a shootdown
+                            for i in 0..10 {
+                                vibrio::syscalls::VSpace::map_frame(frame_id, base)
+                                    .expect("Failed to map base page");
+
+                                log::info!("About to unmap {:x}", base);
+                                vibrio::syscalls::VSpace::unmap(base, BASE_PAGE_SIZE as u64)
+                                    .expect("Unmap syscall failed");
+                                log::info!(
+                                    "Unmapped successfully {:x} from thread {:?}",
+                                    base,
+                                    current_gtid
+                                );
+                            }
+
+                            // clean up after ourselves
+                            //vibrio::syscalls::PhysicalMemory::release_frame(frame_id);
+                        }
+                        log::info!(
+                            "Shootdown test complete from machine {:?} core {:?}",
+                            kpi::system::mid_from_gtid(thread.id),
+                            kpi::system::mid_from_gtid(thread.id)
+                        );
+                    },
+                    ptr::null_mut(),
+                    thread.id,
+                    None,
+                );
+            }
+        }
+    }
+
+    // Run scheduler on core 0
+    let scb: SchedulerControlBlock = SchedulerControlBlock::new(current_mtid);
+    loop {
+        s.run(&scb);
+    }
+}
+
 fn scheduler_smp_test() {
     let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
@@ -921,6 +1010,9 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "test-rackscale-shootdown")]
     rackscale_shootdown_test();
+
+    #[cfg(feature = "test-concurrent-shootdown")]
+    concurrent_shootdown_test();
 
     #[cfg(feature = "test-scheduler")]
     scheduler_test();

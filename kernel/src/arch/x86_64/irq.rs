@@ -600,28 +600,6 @@ unsafe fn remote_core_work_handler(_a: &ExceptionArguments) {
     }
 }
 
-/// Handler for remote TLB shootdown.
-///
-/// We currently use it to check for work from the controller
-unsafe fn remote_tlb_work_handler(_a: &ExceptionArguments) {
-    // If this is a rackscale client, check for work from the controller
-    #[cfg(feature = "rackscale")]
-    log::warn!("Received remote TLB shootdown request!");
-
-    #[cfg(not(feature = "rackscale"))]
-    panic!("Should not receive remote TLB shootdown interrupt in non-rackscale system");
-
-    if super::process::has_executor() {
-        // Return immediately
-        let kcb = get_kcb();
-        let r = kcb_iret_handle(kcb);
-        r.resume()
-    } else {
-        // Go to scheduler instead
-        crate::scheduler::schedule()
-    }
-}
-
 /// Handler for a general protection exception.
 ///
 /// TODO: Right now we terminate kernel.
@@ -840,7 +818,31 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         } else if a.vector == REMOTE_TLB_WORK_PENDING_VECTOR.into() {
-            remote_tlb_work_handler(&a);
+            // If this is a rackscale client, check for work from the controller
+            #[cfg(feature = "rackscale")]
+            if crate::CMDLINE
+                .get()
+                .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+            {
+                log::warn!("Received remote TLB shootdown request!");
+                let mid = kpi::system::mid_from_gtid(*crate::environment::CORE_ID);
+                super::tlb::remote_dequeue(mid);
+            } else {
+                panic!("Controller should not receive remote TLB shootdown interrupt");
+            }
+
+            #[cfg(not(feature = "rackscale"))]
+            panic!("Should not receive remote TLB shootdown interrupt in non-rackscale system");
+
+            if super::process::has_executor() {
+                // Return immediately
+                let kcb = get_kcb();
+                let r = kcb_iret_handle(kcb);
+                r.resume()
+            } else {
+                // Go to scheduler instead
+                crate::scheduler::schedule()
+            }
         } else if a.vector == REMOTE_CORE_WORK_PENDING_VECTOR.into() {
             remote_core_work_handler(&a);
         }

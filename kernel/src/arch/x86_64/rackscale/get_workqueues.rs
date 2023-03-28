@@ -12,14 +12,15 @@ use rpc::RPCClient;
 use super::controller_state::ControllerState;
 use super::kernelrpc::*;
 use crate::arch::kcb::per_core_mem;
-use crate::arch::tlb::{WorkItem, RACKSCALE_CLIENT_WORKQUEUES};
+use crate::arch::tlb::{Shootdown, RACKSCALE_CLIENT_WORKQUEUES};
 use crate::error::KResult;
+use crate::memory::vspace::TlbFlushHandle;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, SHARED_AFFINITY};
 
 // This isn't truly a syscall
 pub(crate) fn rpc_get_workqueues(
     rpc_client: &mut dyn RPCClient,
-) -> KResult<Arc<Vec<ArrayQueue<WorkItem>>>> {
+) -> KResult<Arc<Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>>> {
     // Construct result buffer and call RPC
     log::info!("Calling GetWorkqueues()");
 
@@ -41,8 +42,11 @@ pub(crate) fn rpc_get_workqueues(
         log::info!("Raw ptr is: {:x} (or maybe {:x}?)", *ret, ret);
         let queue_ptr = paddr_to_kernel_vaddr(PAddr::from(*ret));
         log::info!("Queue ptr is: {:x}", queue_ptr);
-        let local_workqueue_arc =
-            unsafe { Arc::from_raw(queue_ptr.as_u64() as *const Vec<ArrayQueue<WorkItem>>) };
+        let local_workqueue_arc = unsafe {
+            Arc::from_raw(
+                queue_ptr.as_u64() as *const Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>
+            )
+        };
         log::info!("Local workqueue arc is: {:?}", local_workqueue_arc);
 
         return Ok(local_workqueue_arc);
@@ -77,7 +81,8 @@ pub(crate) fn handle_get_workqueues(
     // To do this, we'll convert the kernel address to a physical address, and then change it to a shmem offset by subtracting the shmem base.
     // TODO(hunhoffe): try to simplify this
     let arc_workqueue_paddr = kernel_vaddr_to_paddr(VAddr::from_u64(
-        (*&client_workqueue_clone as *const Vec<ArrayQueue<WorkItem>>) as u64,
+        (*&client_workqueue_clone as *const Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>)
+            as u64,
     ));
     log::info!("Raw ptr is: {:x}", arc_workqueue_paddr);
 

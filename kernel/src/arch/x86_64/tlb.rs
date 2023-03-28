@@ -42,7 +42,7 @@ const REMOTE_WORKQUEUE_CAPACITY: usize = 4;
 
 #[cfg(feature = "rackscale")]
 lazy_static! {
-    pub(crate) static ref RACKSCALE_CLIENT_WORKQUEUES: Arc<Vec<ArrayQueue<WorkItem>>> = {
+    pub(crate) static ref RACKSCALE_CLIENT_WORKQUEUES: Arc<Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>> = {
         #[cfg(feature = "rackscale")]
         if crate::CMDLINE
             .get()
@@ -159,7 +159,9 @@ impl Shootdown {
 
 pub(crate) fn enqueue(mtid: kpi::system::MachineThreadId, s: WorkItem) {
     trace!("TLB enqueue shootdown msg {:?}", s);
-    let _ignore = IPI_WORKQUEUE[mtid as usize].push(s);
+    IPI_WORKQUEUE[mtid as usize]
+        .push(s)
+        .expect("No room in the queue for shootdown");
 }
 
 pub(crate) fn dequeue(mtid: kpi::system::MachineThreadId) {
@@ -171,6 +173,34 @@ pub(crate) fn dequeue(mtid: kpi::system::MachineThreadId) {
             }
             WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
         },
+        None => { /*IPI request was handled by eager_advance_fs_replica()*/ }
+    }
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn remote_enqueue(mid: kpi::system::MachineId, s: Arc<Shootdown>, h: TlbFlushHandle) {
+    // It is assumed that both the shootdown and the tlbflushhandle are allocated in shared memory
+    trace!(
+        "TLB remote_enqueue shootdown msg {:?} for machine {:?}",
+        s,
+        mid
+    );
+    // offset mid by one because we don't count the controller (mid=0)
+    RACKSCALE_CLIENT_WORKQUEUES[mid as usize - 1]
+        .push((s, h))
+        .expect("No room in the queue for remote shootdown");
+}
+
+#[cfg(feature = "rackscale")]
+pub(crate) fn remote_dequeue(mid: kpi::system::MachineId) {
+    // offset mid by one because we don't count the controller (mid=0)
+    match RACKSCALE_CLIENT_WORKQUEUES[mid as usize - 1].pop() {
+        Some((s, h)) => {
+            trace!("TLB remote channel got msg {:?}", s);
+            // Process locally, then mark as complete
+            shootdown(h);
+            s.acknowledge();
+        }
         None => { /*IPI request was handled by eager_advance_fs_replica()*/ }
     }
 }
@@ -259,31 +289,8 @@ fn send_ipi_multicast(ldr: u32) {
 /// Takes the `TlbFlushHandle` and figures out what cores it needs to send an IPI to.
 /// It divides IPIs into clusters to avoid overhead of sending IPIs individually.
 /// Finally, waits until all cores have acknowledged the IPI before it returns.
-pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
+pub(crate) fn shootdown(handle: TlbFlushHandle) {
     let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
-    let my_mid = kpi::system::mid_from_gtid(*crate::environment::CORE_ID);
-
-    let handle = &handles[my_mid];
-
-    #[cfg(feature = "rackscale")]
-    {
-        use crate::arch::irq::REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR;
-        use crate::transport::shmem::SHMEM_DEVICE;
-
-        // Skip the first one - that's the controller
-        for i in 1..handles.len() {
-            if i != my_mid {
-                // TODO: add handles[i] to queue for machine
-                log::warn!(
-                    "Need to send TLB flush to remote machine id={:?}, is_empty={:?}",
-                    i,
-                    handles[i].core_map.is_empty()
-                );
-                SHMEM_DEVICE
-                    .set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, i.try_into().unwrap());
-            }
-        }
-    }
 
     // We support up to 16 IPI clusters, this will address `16*16 = 256` cores
     // Cluster ID (LDR[31:16]) is the address of the destination cluster
@@ -351,7 +358,6 @@ pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
 
     // Wait synchronously on cores to complete
 
-    // start time = now
     while !shootdowns.is_empty() {
         // Make progress on our work while we wait for others
         dequeue(my_mtid);
@@ -363,8 +369,98 @@ pub(crate) fn shootdown(handles: Vec<TlbFlushHandle>) {
     trace!("done with all shootdowns");
 }
 
+/// Runs the rackscale TLB shootdown protocol.
+///
+/// Takes an array of `TlbFlushHandle`s and figures out what hosts it needs to send
+/// ivshmem interrupts to. Then, it completes a local shootdown protocol.
+/// Then, it waits for remote hosts to complete.
+/// It assumes that the TlbFlushHandles were allocated in shmem.
+#[cfg(feature = "rackscale")]
+pub(crate) fn remote_shootdown(handles: Vec<TlbFlushHandle>) {
+    use crate::arch::irq::REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR;
+    use crate::arch::kcb::per_core_mem;
+    use crate::memory::SHARED_AFFINITY;
+    use crate::transport::shmem::SHMEM_DEVICE;
+
+    let my_mtid = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
+    let my_mid = kpi::system::mid_from_gtid(*crate::environment::CORE_ID);
+
+    let handle = &handles[my_mid];
+
+    let mut remote_shootdowns: Vec<Arc<Shootdown>> = Vec::try_with_capacity(handles.len())
+        .expect("TODO(error-handling): ideally: no possible failure during shootdown");
+    let range = handle.vaddr.as_u64()..(handle.vaddr + handle.size).as_u64();
+
+    // Skip the first one - that's the controller and it doesn't have process replicas
+    // so it does not need shootdowns.
+    for i in 1..handles.len() {
+        // Skip the current machine - we will perform a shootdown locally.
+        if i != my_mid && !handles[i].core_map.is_empty() {
+            //Create a shootdown & clone in shared memory
+            let affinity = {
+                // TODO(rackscale, correctness): Would it ever happen that an interrupt will arrive while the pcm is held elsewhere?
+                // We want to allocate the logs in shared memory
+                let pcm = per_core_mem();
+                let affinity = pcm.physical_memory.borrow().affinity;
+                pcm.set_mem_affinity(SHARED_AFFINITY)
+                    .expect("Can't change affinity");
+                affinity
+            };
+
+            let shootdown = Arc::try_new(Shootdown::new(range.clone())).unwrap();
+            let shootdown_clone = shootdown.clone();
+
+            // Return to previous affinity
+            {
+                let pcm = per_core_mem();
+                pcm.set_mem_affinity(affinity)
+                    .expect("Can't change affinity");
+            }
+
+            // Add to queue to we can wait for it later
+            remote_shootdowns.push(shootdown);
+
+            // Add the shootdown/handle to the queue for the machine
+            remote_enqueue(i, shootdown_clone, handles[i].clone());
+
+            // Interrupt the remote machine
+            trace!(
+                "Sending TLB flush to remote machine id={:?}, is_empty={:?}",
+                i,
+                handles[i].core_map.is_empty()
+            );
+            SHMEM_DEVICE.set_doorbell(REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, i.try_into().unwrap());
+        }
+    }
+
+    // Perform local shootdown
+    shootdown(handles[my_mid].clone());
+
+    // Wait synchronously on other hsots to complete
+
+    while !remote_shootdowns.is_empty() {
+        // Make progress on our work while we wait for others
+        dequeue(my_mtid);
+        remote_dequeue(my_mid);
+
+        remote_shootdowns.drain_filter(|s| s.is_acknowledged());
+        core::hint::spin_loop();
+    }
+
+    trace!("done with all shootdowns");
+}
+
 pub(crate) fn advance_replica(mtid: kpi::system::MachineThreadId, log_id: usize) {
     trace!("Send AdvanceReplica IPI for {} to {}", log_id, mtid);
+
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        panic!("Clients should not need to advance_replica as this is for cnrfs exclusively");
+    }
+
     let apic_id = atopology::MACHINE_TOPOLOGY.threads[mtid as usize].apic_id();
 
     enqueue(mtid, WorkItem::AdvanceReplica(log_id));

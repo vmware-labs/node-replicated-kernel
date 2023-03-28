@@ -351,7 +351,13 @@ pub(crate) trait Arch86VSpaceDispatch {
         // There is - always - at least one machine so safe to index in at 0
         let va: u64 = handles[0].vaddr.as_u64();
         let sz: u64 = handles[0].size as u64;
-        super::tlb::shootdown(handles);
+
+        #[cfg(feature = "rackscale")]
+        super::tlb::remote_shootdown(handles);
+
+        // There will only be one handle in non-rackscale build
+        #[cfg(not(feature = "rackscale"))]
+        super::tlb::shootdown(handles[0].clone());
 
         Ok((va, sz))
     }

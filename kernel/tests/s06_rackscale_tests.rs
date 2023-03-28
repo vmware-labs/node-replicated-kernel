@@ -416,6 +416,7 @@ fn s06_rackscale_shmem_shootdown_test() {
     let timeout = 120_000;
     let clients = 2;
     let mut processes = Vec::with_capacity(clients);
+    let cores = 2;
 
     setup_network(clients + 1);
 
@@ -435,6 +436,7 @@ fn s06_rackscale_shmem_shootdown_test() {
             .kernel_feature("shmem")
             .kernel_feature("ethernet")
             .kernel_feature("rackscale")
+            .kernel_feature("test-rackscale-shootdown")
             .release()
             .build(),
     );
@@ -479,6 +481,7 @@ fn s06_rackscale_shmem_shootdown_test() {
             .no_network_setup()
             .workers(clients + 1)
             .nobuild()
+            .cores(cores)
             .use_vmxnet3();
         let mut output = String::new();
         let mut qemu_run = || -> Result<WaitStatus> {
@@ -510,20 +513,21 @@ fn s06_rackscale_shmem_shootdown_test() {
                 .no_network_setup()
                 .workers(clients + 1)
                 .nobuild()
+                .cores(cores)
                 .use_vmxnet3();
 
             let mut output = String::new();
             let mut qemu_run = || -> Result<WaitStatus> {
                 let mut p = spawn_nrk(&cmdline_client)?;
+                output += p.exp_string("Got a remote shootdown!")?.as_str();
 
                 // Wait for the shootdown client to complete
                 let rx = my_rx_mut.lock();
                 wait_for_client_termination::<()>(&rx);
 
-                p.process.kill(SIGTERM)
+                p.process.exit()
             };
-
-            wait_for_sigterm(&cmdline_client, qemu_run(), output);
+            check_for_successful_exit(&cmdline_client, qemu_run(), output);
         });
         processes.push(client);
     }

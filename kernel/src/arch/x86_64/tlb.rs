@@ -200,6 +200,18 @@ pub(crate) fn remote_dequeue(mid: kpi::system::MachineId) {
             // Process locally, then mark as complete
             shootdown(h);
             s.acknowledge();
+
+            #[cfg(feature = "test-rackscale-shootdown")]
+            {
+                use super::debug;
+                use crate::ExitReason;
+                use klogger::sprintln;
+
+                // Don't change this print stmt. without changing
+                // `s06_rackscale_shmem_shootdown_test` in tests/s06_rackscale_tests.rs:
+                sprintln!("Got a remote shootdown!");
+                debug::shutdown(ExitReason::Ok);
+            }
         }
         None => { /*IPI request was handled by eager_advance_fs_replica()*/ }
     }

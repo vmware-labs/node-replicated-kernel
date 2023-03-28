@@ -212,6 +212,7 @@ fn request_core_remote_test() {
 
 fn rackscale_shootdown_test() {
     use x86::bits64::paging::BASE_PAGE_SIZE;
+    let s = &vibrio::upcalls::PROCESS_SCHEDULER;
 
     // Create base for the mapping
     let base: u64 = 0x0510_0000_0000;
@@ -223,6 +224,35 @@ fn rackscale_shootdown_test() {
 
     // Only trigger shootdown from one machine
     if current_mid == 1 && current_mtid == 0 {
+        for _i in 0..2 {
+            let r = vibrio::syscalls::Process::request_core(
+                0, // this field does nothing in rackscale mode
+                VAddr::from(vibrio::upcalls::upcall_while_enabled as *const fn() as u64),
+            );
+
+            match r {
+                Ok(spawned_gtid) => {
+                    // Spawn process on core that was given to us in response to our request.
+                    info!("Spawned core {:?}", spawned_gtid);
+                    s.spawn(
+                        32 * 4096,
+                        move |_| {
+                            info!(
+                                "Hello from core {}",
+                                lineup::tls2::Environment::scheduler().core_id
+                            );
+                        },
+                        ptr::null_mut(),
+                        spawned_gtid.gtid() as usize,
+                        None,
+                    );
+                }
+                Err(_e) => {
+                    panic!("Failed to spawn core");
+                }
+            }
+        }
+
         // Test allocation by checking to see if we can map it okay
         unsafe {
             // Allocate a base page of physical memory

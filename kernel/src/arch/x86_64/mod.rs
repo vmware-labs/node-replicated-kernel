@@ -193,7 +193,11 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
         let local_ridx = args.replica.register().unwrap();
         crate::nr::NR_REPLICA.call_once(|| (args.replica.clone(), local_ridx));
         crate::nrproc::register_thread_with_process_replicas();
-        crate::fs::cnrfs::init_cnrfs_on_thread(args.fs_replica.clone());
+
+        // For rackscale, only the controller needs cnrfs
+        if let Some(core_fs_replica) = &args.fs_replica {
+            crate::fs::cnrfs::init_cnrfs_on_thread(core_fs_replica.clone());
+        }
 
         // Don't modify this line without adjusting `coreboot` integration test:
         info!(
@@ -418,16 +422,36 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
 
     // Starting to initialize file-system
-    info!("before alloc logs");
-    let fs_logs = crate::fs::cnrfs::allocate_logs();
-    info!("after alloc logs {}", fs_logs.len());
-    let fs_logs_cloned = fs_logs
-        .try_clone()
-        .expect("Not enough memory to initialize system");
-    info!("after fs logs cloned");
-    // Construct the first replica
-    let fs_replica = MlnrReplica::<MlnrKernelNode>::new(fs_logs_cloned);
-    crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+    #[cfg(not(feature = "rackscale"))]
+    let (fs_logs, fs_replica) = {
+        let fs_logs = crate::fs::cnrfs::allocate_logs();
+        let fs_logs_cloned = fs_logs
+            .try_clone()
+            .expect("Not enough memory to initialize system");
+        // Construct the first replica
+        let fs_replica = MlnrReplica::<MlnrKernelNode>::new(fs_logs_cloned);
+        crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+        (fs_logs, Some(fs_replica))
+    };
+
+    // For rackscale, only the controller needs cnrfs
+    #[cfg(feature = "rackscale")]
+    let (fs_logs, fs_replica) = if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+    {
+        let fs_logs = crate::fs::cnrfs::allocate_logs();
+        let fs_logs_cloned = fs_logs
+            .try_clone()
+            .expect("Not enough memory to initialize system");
+        // Construct the first replica
+        let fs_replica = MlnrReplica::<MlnrKernelNode>::new(fs_logs_cloned);
+        crate::fs::cnrfs::init_cnrfs_on_thread(fs_replica.clone());
+        (fs_logs, Some(fs_replica))
+    } else {
+        use alloc::vec::Vec;
+        (Vec::new(), None)
+    };
 
     // Intialize PCI
     crate::pci::init();
@@ -469,5 +493,16 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
 /// For cores that advances the replica eagerly. This avoids additional IPI costs.
 pub(crate) fn advance_fs_replica() {
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        log::trace!("Client does not have a fs replica");
+    } else {
+        tlb::eager_advance_fs_replica();
+    }
+
+    #[cfg(not(feature = "rackscale"))]
     tlb::eager_advance_fs_replica();
 }

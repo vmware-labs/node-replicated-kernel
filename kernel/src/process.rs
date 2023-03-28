@@ -25,12 +25,15 @@ use crate::arch::process::{current_pid, with_user_space_access_enabled, ArchProc
 use crate::arch::{Module, MAX_CORES};
 use crate::cmdline::CommandLineArguments;
 use crate::error::{KError, KResult};
-use crate::fs::{cnrfs, fd::FileDescriptorEntry};
+use crate::fs::fd::FileDescriptorEntry;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::vspace::AddressSpace;
 use crate::memory::{Frame, KernelAllocator, PAddr, VAddr, KERNEL_BASE};
 use crate::prelude::overlaps;
 use crate::{nrproc, round_up};
+
+#[cfg(not(feature = "rackscale"))]
+use crate::fs::cnrfs;
 
 #[cfg(all(feature = "rackscale", target_arch = "x86_64"))]
 use {
@@ -532,7 +535,9 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
         "TODO(error-handlin): Maybe reject ELF files with more?"
     );
 
+    #[cfg(not(feature = "rackscale"))]
     cnrfs::MlnrKernelNode::add_process(pid).expect("TODO(error-handling): revert state");
+
     crate::nrproc::NrProcess::<P>::load(pid, mod_file, data_frames)
         .expect("TODO(error-handling): revert state properly");
 

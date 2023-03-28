@@ -11,7 +11,6 @@ use rpc::rpc::*;
 use rpc::RPCClient;
 
 use crate::error::{KError, KResult};
-use crate::fs::cnrfs;
 use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE, SHARED_AFFINITY};

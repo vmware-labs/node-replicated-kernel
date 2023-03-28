@@ -59,7 +59,7 @@ pub(crate) struct AppCoreArgs {
     pub(super) node: atopology::NodeId,
     pub(super) _log: Arc<Log<'static, Op>>,
     pub(super) replica: Arc<Replica<'static, KernelNode>>,
-    pub(super) fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+    pub(super) fs_replica: Option<Arc<MlnrReplica<'static, MlnrKernelNode>>>,
 }
 
 /// Return the address range of `start_ap.S` as (start, end)
@@ -336,7 +336,7 @@ pub(super) fn boot_app_cores(
     log: Arc<Log<'static, Op>>,
     bsp_replica: Arc<Replica<'static, KernelNode>>,
     fs_logs: Vec<Arc<MlnrLog<'static, Modify>>>,
-    fs_replica: Arc<MlnrReplica<'static, MlnrKernelNode>>,
+    fs_replica: Option<Arc<MlnrReplica<'static, MlnrKernelNode>>>,
 ) {
     let bsp_thread = atopology::MACHINE_TOPOLOGY.current_thread();
     debug_assert_eq!(
@@ -356,8 +356,10 @@ pub(super) fn boot_app_cores(
     // Push the replica for node 0
     debug_assert!(replicas.capacity() >= 1, "No re-allocation.");
     replicas.push(bsp_replica);
-    debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
-    fs_replicas.push(fs_replica);
+    if let Some(node_0_fs_replica) = fs_replica {
+        debug_assert!(fs_replicas.capacity() >= 1, "No re-allocation.");
+        fs_replicas.push(node_0_fs_replica);
+    }
 
     let pcm = kcb::per_core_mem();
     for node in 1..numa_nodes {
@@ -367,12 +369,14 @@ pub(super) fn boot_app_cores(
         debug_assert!(replicas.capacity() > node, "No re-allocation.");
         replicas.push(Replica::<'static, KernelNode>::new(&log));
 
-        debug_assert!(fs_replicas.capacity() > node, "No re-allocation.");
-        fs_replicas.push(MlnrReplica::new(
-            fs_logs
-                .try_clone()
-                .expect("Not enough memory to initialize system"),
-        ));
+        if fs_replicas.len() > 0 {
+            debug_assert!(fs_replicas.capacity() > node, "No re-allocation.");
+            fs_replicas.push(MlnrReplica::new(
+                fs_logs
+                    .try_clone()
+                    .expect("Not enough memory to initialize system"),
+            ));
+        }
 
         pcm.set_mem_affinity(0).expect("Can't set affinity");
     }
@@ -413,6 +417,16 @@ pub(super) fn boot_app_cores(
         };
 
         let initialized: AtomicBool = AtomicBool::new(false);
+        let thread_fs_replica = if fs_replicas.len() > 0 {
+            Some(
+                fs_replicas[node as usize]
+                    .try_clone()
+                    .expect("Not enough memory to initialize system"),
+            )
+        } else {
+            None
+        };
+
         let arg: Arc<AppCoreArgs> = Arc::try_new(AppCoreArgs {
             _mem_region: mem_region,
             _pmem_region: pmem_region,
@@ -424,9 +438,7 @@ pub(super) fn boot_app_cores(
             replica: replicas[node as usize]
                 .try_clone()
                 .expect("Not enough memory to initialize system"),
-            fs_replica: fs_replicas[node as usize]
-                .try_clone()
-                .expect("Not enough memory to initialize system"),
+            fs_replica: thread_fs_replica,
         })
         .expect("Not enough memory to initialize system");
 

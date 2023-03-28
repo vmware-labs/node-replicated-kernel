@@ -192,6 +192,16 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
     {
         let local_ridx = args.replica.register().unwrap();
         crate::nr::NR_REPLICA.call_once(|| (args.replica.clone(), local_ridx));
+
+        #[cfg(feature = "rackscale")]
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+        {
+            crate::nrproc::register_thread_with_process_replicas();
+        }
+
+        #[cfg(not(feature = "rackscale"))]
         crate::nrproc::register_thread_with_process_replicas();
 
         // For rackscale, only the controller needs cnrfs
@@ -468,8 +478,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Initialize processes
     lazy_static::initialize(&process::PROCESS_LOGS);
-    lazy_static::initialize(&process::PROCESS_TABLE);
-    crate::nrproc::register_thread_with_process_replicas();
+
+    #[cfg(feature = "rackscale")]
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        lazy_static::initialize(&process::PROCESS_TABLE);
+        crate::nrproc::register_thread_with_process_replicas();
+    }
+
+    #[cfg(not(feature = "rackscale"))]
+    {
+        lazy_static::initialize(&process::PROCESS_TABLE);
+        crate::nrproc::register_thread_with_process_replicas();
+    }
 
     #[cfg(feature = "gdb")]
     {

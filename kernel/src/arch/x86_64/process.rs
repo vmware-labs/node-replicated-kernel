@@ -184,6 +184,13 @@ fn create_process_table(
     use crate::memory::shmemalloc::ShmemAlloc;
     use crate::memory::SHARED_AFFINITY;
 
+    if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+    {
+        panic!("The controller does not need process log replicas");
+    }
+
     // Want at least one replica...
     let numa_nodes = core::cmp::max(1, atopology::MACHINE_TOPOLOGY.num_nodes());
 

@@ -319,7 +319,6 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
 
     fn mkdir(&self, path: UserSlice, modes: FileModes) -> KResult<(u64, u64)> {
         let pid = path.pid;
-        log::info!("Calling mkdir system call??");
         let pathstring: String = path.try_into()?;
 
         let mut client = CLIENT_STATE.rpc_client.lock();

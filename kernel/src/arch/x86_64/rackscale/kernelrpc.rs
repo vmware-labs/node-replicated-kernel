@@ -62,11 +62,14 @@ pub(crate) enum KernelRpc {
     /// Spawn a process
     MakeProcess = 18,
 
-    /// send process logs pointers to client
+    /// send process logs reference to client
     GetProcessLogs = 19,
 
     /// request shmem frames
     GetShmemFrames = 20,
+
+    /// send workqueue reference to client
+    GetWorkqueues = 21,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -96,6 +99,7 @@ impl TryFrom<RPCType> for KernelRpc {
             18 => Ok(KernelRpc::MakeProcess),
             19 => Ok(KernelRpc::GetProcessLogs),
             20 => Ok(KernelRpc::GetShmemFrames),
+            21 => Ok(KernelRpc::GetWorkqueues),
             _ => Err(KError::InvalidRpcType),
         }
     }

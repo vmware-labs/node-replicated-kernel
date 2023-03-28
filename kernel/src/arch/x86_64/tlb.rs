@@ -37,6 +37,56 @@ use crate::{is_page_aligned, nr};
 // derived from the 32-bit local x2APIC ID: Logical x2APIC ID = [(x2APIC
 // ID[19:4] « 16) | (1 « x2APIC ID[3:0])]
 
+#[cfg(feature = "rackscale")]
+const REMOTE_WORKQUEUE_CAPACITY: usize = 4;
+
+#[cfg(feature = "rackscale")]
+lazy_static! {
+    pub(crate) static ref RACKSCALE_CLIENT_WORKQUEUES: Arc<Vec<ArrayQueue<WorkItem>>> = {
+        #[cfg(feature = "rackscale")]
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+        {
+            use crate::memory::SHARED_AFFINITY;
+            use crate::arch::kcb::per_core_mem;
+
+            // We want to allocate the queues in shared memory
+            let affinity = {
+                let pcm = per_core_mem();
+                let affinity = { pcm.physical_memory.borrow().affinity };
+                pcm.set_mem_affinity(SHARED_AFFINITY).expect("Can't change affinity");
+                affinity
+            };
+
+            let num_clients = *crate::environment::NUM_MACHINES - 1;
+            let mut channels =
+                Vec::try_with_capacity(num_clients).expect("Not enough memory to initialize system");
+            for _i in 0..num_clients {
+                // ArrayQueue does memory allocation on `new`, maybe have try_new,
+                // but this is fine since it's during initialization
+                channels.push(ArrayQueue::new(REMOTE_WORKQUEUE_CAPACITY));
+            }
+
+            let channels = Arc::new(channels);
+
+            // Reset mem allocator to use per core memory again
+            if affinity != SHARED_AFFINITY {
+                let pcm = per_core_mem();
+                pcm.set_mem_affinity(affinity).expect("Can't change affinity");
+            }
+
+            channels
+        } else {
+            // Get location of the work queues from the controller, who will have already created them in shared memory
+            use crate::arch::rackscale::get_workqueues::rpc_get_workqueues;
+            use crate::arch::rackscale::CLIENT_STATE;
+            let mut client = CLIENT_STATE.rpc_client.lock();
+            rpc_get_workqueues(&mut **client).expect("Failed to get shared memory workqueues from the controller")
+        }
+    };
+}
+
 const IPI_WORKQUEUE_CAPACITY: usize = 4;
 
 lazy_static! {

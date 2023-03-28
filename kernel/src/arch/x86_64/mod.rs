@@ -474,6 +474,15 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         // Force client instantiation - this must be done before the process
         // structures are initialized.
         lazy_static::initialize(&rackscale::client_state::CLIENT_STATE);
+    } else {
+        lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_INTERFACE);
+        log::info!("Controller initialized connection to DCM");
+    }
+
+    // Initialize the workqueues used for TLB shootdowns & advance replica requests
+    #[cfg(feature = "rackscale")]
+    {
+        lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
     }
 
     // Initialize processes

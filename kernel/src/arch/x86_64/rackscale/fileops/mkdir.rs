@@ -70,7 +70,6 @@ pub(crate) fn handle_mkdir(
     payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    log::info!("mkdir handler reached");
     // Parse request
     let (pid, modes) = match unsafe { decode::<MkDirReq>(payload) } {
         Some((req, _)) => (req.pid, req.modes),

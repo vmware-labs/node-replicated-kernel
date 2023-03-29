@@ -37,8 +37,11 @@ use crate::{is_page_aligned, nr};
 // derived from the 32-bit local x2APIC ID: Logical x2APIC ID = [(x2APIC
 // ID[19:4] « 16) | (1 « x2APIC ID[3:0])]
 
+// TODO(rackscale, correctness): upperbound should really be MAX_CORES * (MAX_MACHINES - 1)
+// The controller doesn't get or generate shootdowns, so decrement max_machines by 1
+// However, this creates a MapBig shmem allocations which isn't supported yet so we make it small.
 #[cfg(feature = "rackscale")]
-const REMOTE_WORKQUEUE_CAPACITY: usize = 4;
+const REMOTE_WORKQUEUE_CAPACITY: usize = 4 * (crate::arch::MAX_MACHINES - 1);
 
 #[cfg(feature = "rackscale")]
 lazy_static! {
@@ -87,7 +90,9 @@ lazy_static! {
     };
 }
 
-const IPI_WORKQUEUE_CAPACITY: usize = 4;
+// TODO(correctness): this workqueue is, at present, presumably unbounded. So let's just
+// make a large queue that in practice should be sufficient.
+const IPI_WORKQUEUE_CAPACITY: usize = crate::arch::MAX_CORES * crate::arch::MAX_MACHINES;
 
 lazy_static! {
     static ref IPI_WORKQUEUE: Vec<ArrayQueue<WorkItem>> = {

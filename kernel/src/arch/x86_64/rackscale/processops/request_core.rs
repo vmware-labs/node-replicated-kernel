@@ -88,7 +88,8 @@ pub(crate) fn handle_request_core(
         }
     };
 
-    let dcm_node_id = dcm_resource_alloc(core_req.pid, true);
+    let (dcm_node_ids, _) = dcm_resource_alloc(core_req.pid, 1, 0);
+    let dcm_node_id = dcm_node_ids[0];
     let gtid = {
         let mut client_state = state.get_client_state_by_dcm_node_id(dcm_node_id).lock();
 

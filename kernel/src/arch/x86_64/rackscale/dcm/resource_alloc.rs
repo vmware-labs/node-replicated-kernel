@@ -1,6 +1,8 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use alloc::vec::Vec;
+use fallible_collections::FallibleVecGlobal;
 use log::{debug, warn};
 use rpc::rpc::RPCType;
 use rpc::RPCClient;
@@ -105,11 +107,15 @@ impl ResourceAllocAssignment {
     }
 }
 
-pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> DCMNodeId {
+pub(crate) fn dcm_resource_alloc(
+    pid: usize,
+    cores: u64,
+    memslices: u64,
+) -> (Vec<DCMNodeId>, Vec<DCMNodeId>) {
     let req = ResourceAllocRequest {
         application: pid as u64,
-        cores: if is_core { 1 } else { 0 },
-        memslices: if is_core { 0 } else { 1 },
+        cores,
+        memslices,
     };
     let mut res = ResourceAllocResponse { alloc_id: 0 };
     let mut assignment = ResourceAllocAssignment {
@@ -131,25 +137,38 @@ pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> DCMNodeId {
         debug!("Received allocation id in response: {:?}", res.alloc_id);
     }
 
-    let mut received_allocation = false;
-    while !received_allocation {
+    let mut received_allocations = 0;
+    let mut dcm_node_for_cores =
+        Vec::try_with_capacity(cores as usize).expect("Failed to allocate memory");
+    let mut dcm_node_for_memslices =
+        Vec::try_with_capacity(memslices as usize).expect("Failed to allocate memory");
+    log::info!("Expecting {:?} allocations", cores + memslices);
+    while received_allocations < cores + memslices {
         {
             let mut my_iface = ETHERNET_IFACE.lock();
             let socket = my_iface.get_socket::<UdpSocket>(DCM_INTERFACE.lock().udp_handle);
             if socket.can_recv() {
                 match socket.recv_slice(unsafe { assignment.as_mut_bytes() }) {
                     Ok((_, endpoint)) => {
-                        debug!(
+                        log::info!(
                             "Received assignment: {:?} to node {:?}",
-                            assignment.alloc_id, assignment.node
+                            assignment.alloc_id,
+                            assignment.node
                         );
-                        if assignment.alloc_id != res.alloc_id {
-                            warn!("AllocIds do not match!");
+                        if assignment.alloc_id > res.alloc_id + cores + memslices
+                            || assignment.alloc_id < res.alloc_id
+                        {
+                            panic!("AllocIds do not match!");
                         }
                         socket
                             .send_slice(&[1u8], endpoint)
                             .expect("Failed to send UDP message to DCM");
-                        received_allocation = true;
+                        if assignment.alloc_id - res.alloc_id < cores {
+                            dcm_node_for_cores.push(assignment.node);
+                        } else {
+                            dcm_node_for_memslices.push(assignment.node);
+                        }
+                        received_allocations += 1;
                     }
                     Err(e) => {
                         debug!("Received nothing? {:?}", e);
@@ -167,5 +186,5 @@ pub(crate) fn dcm_resource_alloc(pid: usize, is_core: bool) -> DCMNodeId {
             }
         }
     }
-    return assignment.node;
+    (dcm_node_for_cores, dcm_node_for_memslices)
 }

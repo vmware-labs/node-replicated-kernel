@@ -22,7 +22,7 @@ pub(crate) fn rpc_get_workqueues(
     rpc_client: &mut dyn RPCClient,
 ) -> KResult<Arc<Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>>> {
     // Construct result buffer and call RPC
-    log::info!("Calling GetWorkqueues()");
+    log::debug!("Calling GetWorkqueues()");
 
     let mut res_data = [0u8; core::mem::size_of::<u64>()];
     rpc_client
@@ -32,23 +32,18 @@ pub(crate) fn rpc_get_workqueues(
             &mut [&mut res_data],
         )
         .unwrap();
-    log::info!("Called GetWorkQueues RPC");
 
     // Decode and return the result
     if let Some((ret, remaining)) = unsafe { decode::<u64>(&mut res_data) } {
         if remaining.len() > 0 {
             return Err(RPCError::ExtraData.into());
         }
-        log::info!("Raw ptr is: {:x} (or maybe {:x}?)", *ret, ret);
         let queue_ptr = paddr_to_kernel_vaddr(PAddr::from(*ret));
-        log::info!("Queue ptr is: {:x}", queue_ptr);
         let local_workqueue_arc = unsafe {
             Arc::from_raw(
                 queue_ptr.as_u64() as *const Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>
             )
         };
-        log::info!("Local workqueue arc is: {:?}", local_workqueue_arc);
-
         return Ok(local_workqueue_arc);
     } else {
         Err(RPCError::MalformedResponse.into())
@@ -61,7 +56,7 @@ pub(crate) fn handle_get_workqueues(
     mut payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    log::info!("Handling get_process_logs()");
+    log::debug!("Handling get_workqueues()");
 
     // We want to allocate clones of the workqueue arcs in shared memory
     let original_affinity = {
@@ -75,7 +70,6 @@ pub(crate) fn handle_get_workqueues(
     // Create a clone in shared memory, and get the raw representation of it
     // The clone increments the strong counter, and the into_raw consumes this clone of the arc.
     let client_workqueue_clone = Arc::into_raw(Arc::clone(&RACKSCALE_CLIENT_WORKQUEUES));
-    log::info!("Arc is: {:?}", client_workqueue_clone);
 
     // Send the raw pointer to the client clone address
     // To do this, we'll convert the kernel address to a physical address, and then change it to a shmem offset by subtracting the shmem base.
@@ -84,14 +78,12 @@ pub(crate) fn handle_get_workqueues(
         (*&client_workqueue_clone as *const Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>)
             as u64,
     ));
-    log::info!("Raw ptr is: {:x}", arc_workqueue_paddr);
 
     // Reset mem allocator to use original per core memory affinity again
     {
         let pcm = per_core_mem();
         pcm.set_mem_affinity(original_affinity)
             .expect("Can't change affinity");
-        log::info!("Finished initializing process logs in shmem");
     }
 
     // Modify header and write into output buffer

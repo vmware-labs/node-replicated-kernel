@@ -120,7 +120,8 @@ pub(crate) fn handle_allocate_physical(
     }
 
     // Let DCM choose node
-    let dcm_node_id = dcm_resource_alloc(pid, false);
+    let (_, dcm_node_ids) = dcm_resource_alloc(pid, 0, 1);
+    let dcm_node_id = dcm_node_ids[0];
     debug!("Received node assignment from DCM: node {:?}", dcm_node_id);
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?

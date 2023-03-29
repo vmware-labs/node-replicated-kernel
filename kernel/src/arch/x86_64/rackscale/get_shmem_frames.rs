@@ -147,8 +147,9 @@ pub(crate) fn handle_get_shmem_frames(
         // TODO(error-handling): what if only part of request is satisfied? How to rollback?
         // TODO(efficiency): should put requests in all at once, or something like that.
         // Let DCM choose node
-        for _i in 0..num_frames {
-            let dcm_node_id = dcm_resource_alloc(pid, false);
+        let (_, dcm_node_ids) = dcm_resource_alloc(pid, 0, num_frames as u64);
+        for i in 0..num_frames {
+            let dcm_node_id = dcm_node_ids[i];
             log::debug!("Received node assignment from DCM: node {:?}", dcm_node_id);
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?

@@ -91,8 +91,8 @@ lazy_static! {
 }
 
 // TODO(correctness): this workqueue is, at present, presumably unbounded. So let's just
-// make a large queue that in practice should be sufficient.
-const IPI_WORKQUEUE_CAPACITY: usize = crate::arch::MAX_CORES * crate::arch::MAX_MACHINES;
+// make a large queue that in practice should be (?) sufficient
+const IPI_WORKQUEUE_CAPACITY: usize = crate::arch::MAX_CORES * 4;
 
 lazy_static! {
     static ref IPI_WORKQUEUE: Vec<ArrayQueue<WorkItem>> = {

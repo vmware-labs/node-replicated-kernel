@@ -355,8 +355,8 @@ fn concurrent_shootdown_test() {
                         }
                         log::info!(
                             "Shootdown test complete from machine {:?} core {:?}",
-                            kpi::system::mid_from_gtid(thread.id),
-                            kpi::system::mid_from_gtid(thread.id)
+                            kpi::system::mid_from_gtid(current_mid),
+                            kpi::system::mid_from_gtid(current_mtid)
                         );
                     },
                     ptr::null_mut(),

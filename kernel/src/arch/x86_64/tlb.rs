@@ -92,7 +92,7 @@ lazy_static! {
 
 // TODO(correctness): this workqueue is, at present, presumably unbounded. So let's just
 // make a large queue that in practice should be (?) sufficient
-const IPI_WORKQUEUE_CAPACITY: usize = crate::arch::MAX_CORES * 4;
+const IPI_WORKQUEUE_CAPACITY: usize = crate::arch::MAX_CORES * 16;
 
 lazy_static! {
     static ref IPI_WORKQUEUE: Vec<ArrayQueue<WorkItem>> = {
@@ -170,15 +170,21 @@ pub(crate) fn enqueue(mtid: kpi::system::MachineThreadId, s: WorkItem) {
 }
 
 pub(crate) fn dequeue(mtid: kpi::system::MachineThreadId) {
-    match IPI_WORKQUEUE[mtid as usize].pop() {
-        Some(msg) => match msg {
-            WorkItem::Shootdown(s) => {
-                trace!("TLB channel got msg {:?}", s);
-                s.process();
+    loop {
+        match IPI_WORKQUEUE[mtid as usize].pop() {
+            Some(msg) => match msg {
+                WorkItem::Shootdown(s) => {
+                    trace!("TLB channel got msg {:?}", s);
+                    s.process();
+                }
+                WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
+            },
+            None =>
+            /*IPI request may be handled by eager_advance_fs_replica()*/
+            {
+                return
             }
-            WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
-        },
-        None => { /*IPI request was handled by eager_advance_fs_replica()*/ }
+        }
     }
 }
 
@@ -198,27 +204,29 @@ pub(crate) fn remote_enqueue(mid: kpi::system::MachineId, s: Arc<Shootdown>, h: 
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn remote_dequeue(mid: kpi::system::MachineId) {
-    // offset mid by one because we don't count the controller (mid=0)
-    match RACKSCALE_CLIENT_WORKQUEUES[mid as usize - 1].pop() {
-        Some((s, h)) => {
-            trace!("TLB remote channel got msg {:?}", s);
-            // Process locally, then mark as complete
-            shootdown(h);
-            s.acknowledge();
+    loop {
+        // offset mid by one because we don't count the controller (mid=0)
+        match RACKSCALE_CLIENT_WORKQUEUES[mid as usize - 1].pop() {
+            Some((s, h)) => {
+                trace!("TLB remote channel got msg {:?}", s);
+                // Process locally, then mark as complete
+                shootdown(h);
+                s.acknowledge();
 
-            #[cfg(feature = "test-rackscale-shootdown")]
-            {
-                use super::debug;
-                use crate::ExitReason;
-                use klogger::sprintln;
+                #[cfg(feature = "test-rackscale-shootdown")]
+                {
+                    use super::debug;
+                    use crate::ExitReason;
+                    use klogger::sprintln;
 
-                // Don't change this print stmt. without changing
-                // `s06_rackscale_shmem_shootdown_test` in tests/s06_rackscale_tests.rs:
-                sprintln!("Got a remote shootdown!");
-                debug::shutdown(ExitReason::Ok);
+                    // Don't change this print stmt. without changing
+                    // `s06_rackscale_shmem_shootdown_test` in tests/s06_rackscale_tests.rs:
+                    sprintln!("Got a remote shootdown!");
+                    debug::shutdown(ExitReason::Ok);
+                }
             }
+            None => return,
         }
-        None => { /*IPI request was handled by eager_advance_fs_replica()*/ }
     }
 }
 
@@ -239,31 +247,19 @@ fn advance_log(log_id: usize) {
 
 pub(crate) fn eager_advance_fs_replica() {
     let core_id = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
+    dequeue(core_id);
 
-    match IPI_WORKQUEUE[core_id].pop() {
-        Some(msg) => {
-            match &msg {
-                WorkItem::Shootdown(_s) => {
-                    // If its for TLB shootdown, insert it back into the queue.
-                    enqueue(core_id, msg)
-                }
-                WorkItem::AdvanceReplica(log_id) => advance_log(*log_id),
-            }
+    let cnrfs = crate::fs::cnrfs::CNRFS.borrow();
+    match cnrfs.as_ref() {
+        Some(replica) => {
+            let log_id = replica.1.id();
+            // Synchronize NR-replica
+            let _ignore = nr::KernelNode::synchronize();
+            // Synchronize Mlnr-replica.
+            advance_log(log_id);
         }
-        None => {
-            let cnrfs = crate::fs::cnrfs::CNRFS.borrow();
-            match cnrfs.as_ref() {
-                Some(replica) => {
-                    let log_id = replica.1.id();
-                    // Synchronize NR-replica
-                    let _ignore = nr::KernelNode::synchronize();
-                    // Synchronize Mlnr-replica.
-                    advance_log(log_id);
-                }
-                None => unreachable!("eager_advance_fs_replica: CNRFS not yet initialized!"),
-            };
-        }
-    }
+        None => unreachable!("eager_advance_fs_replica: CNRFS not yet initialized!"),
+    };
 }
 
 pub(crate) fn send_ipi_to_apic(apic_id: ApicId) {

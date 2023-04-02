@@ -12,21 +12,19 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+use std::sync::mpsc::channel;
 
 use rexpect::errors::*;
+use rexpect::process::signal::SIGTERM;
 use rexpect::process::wait::WaitStatus;
 
 use testutils::builder::BuildArgs;
 use testutils::helpers::{
-    setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server, SHMEM_PATH, SHMEM_SIZE,
+    notify_controller_of_termination, setup_network, spawn_dcm, spawn_nrk, spawn_shmem_server,
+    wait_for_client_termination, CLIENT_BUILD_DELAY, SHMEM_PATH, SHMEM_SIZE,
 };
-use testutils::runner_args::{check_for_successful_exit, RunnerArgs};
+use testutils::runner_args::{check_for_successful_exit, wait_for_sigterm, RunnerArgs};
 
-// TODO: all of these benchmarks need to be edited in order to be faster
-// similar to how the regular rackscale tests were/are.
-// Namely, the controller needs to signal to the client when it's done to avoid timeout waits when possible.
-
-#[ignore]
 #[test]
 #[cfg(not(feature = "baremetal"))]
 fn s11_rackscale_shmem_fxmark_benchmark() {
@@ -83,8 +81,11 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
     for benchmark in benchmarks {
         let open_files: Vec<usize> = open_files(benchmark, 1, 1);
         for &of in open_files.iter() {
+            let (tx, rx) = channel();
+
             let mut shmem_server =
                 spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+            let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
 
             let kernel_cmdline = format!(
                 "mode=client transport={} initargs={}X{}X{}",
@@ -122,20 +123,17 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
 
                 let mut output = String::new();
                 let mut qemu_run = || -> Result<WaitStatus> {
-                    let mut dcm = spawn_dcm(1, timeout)?;
                     let mut p = spawn_nrk(&cmdline_controller)?;
-                    output += p.exp_eof()?.as_str();
 
-                    dcm.send_control('c')?;
-                    p.process.exit()
+                    let _ = wait_for_client_termination::<()>(&rx);
+                    p.process.kill(SIGTERM)
                 };
-
-                let _ignore = qemu_run();
+                wait_for_sigterm(&cmdline_controller, qemu_run(), output);
             });
 
             let build2 = build.clone();
             let client = std::thread::spawn(move || {
-                sleep(Duration::from_millis(15_000));
+                sleep(Duration::from_millis(CLIENT_BUILD_DELAY));
                 let mut cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
                     .timeout(timeout)
                     .shmem_size(SHMEM_SIZE as usize)
@@ -195,15 +193,20 @@ fn rackscale_fxmark_benchmark(is_shmem: bool) {
                     }
 
                     output += p.exp_eof()?.as_str();
+                    notify_controller_of_termination(&tx);
                     p.process.exit()
                 };
                 check_for_successful_exit(&cmdline_client, qemu_run(cores), output);
             });
 
-            controller.join().unwrap();
-            client.join().unwrap();
+            let controller_ret = controller.join();
+            let client_ret = client.join();
 
             let _ignore = shmem_server.send_control('c');
+            let _ignore = dcm.send_control('c');
+
+            client_ret.unwrap();
+            controller_ret.unwrap();
         }
     }
 }

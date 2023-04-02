@@ -97,96 +97,98 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
             }
         }
 
-        let affinity = {
-            // We shouldn't call an RPC while using shmem as memory allocator.
-            // So use current node affinity
-            let affinity = { pcm.physical_memory.borrow().affinity };
-            if affinity == SHARED_AFFINITY {
-                pcm.set_mem_affinity(*crate::environment::NODE_ID)
-                    .expect("Can't change affinity");
-                Some(affinity)
-            } else {
-                None
-            }
-        };
-
-        // Query controller (DCM) to get frames of shmem
-        let mut allocated_frames = {
-            let mut client = CLIENT_STATE.rpc_client.lock();
-            rpc_get_shmem_frames(&mut **client, Some(pid), total_needed_large_pages)?
-        };
-
-        // Reset to shmem manager
-        if let Some(affinity) = affinity {
-            pcm.set_mem_affinity(SHARED_AFFINITY)
-                .expect("Can't change affinity");
-        }
-
-        for i in 0..lp {
-            // TODO(rackscale performance): should be debug assert
-            assert!(is_shmem_frame(allocated_frames[i], false, false));
-
-            total_len += allocated_frames[i].size;
-            unsafe { allocated_frames[i].zero() };
-            frames
-                .try_push(allocated_frames[i])
-                .expect("Can't fail see `try_with_capacity`");
-            if paddr.is_none() {
-                paddr = Some(allocated_frames[i].base);
-            }
-        }
-
-        // Grow base pages
-        if total_needed_base_pages > 0 {
-            // TODO(rackscale performance): should be debug assert
-            assert!(is_shmem_frame(allocated_frames[lp], false, false));
-
-            let mut base_page_iter = allocated_frames[lp].into_iter();
-            for _i in 0..total_needed_base_pages {
-                let mut frame = base_page_iter
-                    .next()
-                    .expect("needed base frames should all fit within one large frame");
-
-                // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(frame, false, false));
-
-                total_len += frame.size;
-                unsafe { frame.zero() };
-                if paddr.is_none() {
-                    paddr = Some(frame.base);
+        if total_needed_large_pages > 0 {
+            let affinity = {
+                // We shouldn't call an RPC while using shmem as memory allocator.
+                // So use current node affinity
+                let affinity = { pcm.physical_memory.borrow().affinity };
+                if affinity == SHARED_AFFINITY {
+                    pcm.set_mem_affinity(*crate::environment::NODE_ID)
+                        .expect("Can't change affinity");
+                    Some(affinity)
+                } else {
+                    None
                 }
-                frames
-                    .try_push(frame)
-                    .expect("Can't fail see `try_with_capacity`");
+            };
+
+            // Query controller (DCM) to get frames of shmem
+            let mut allocated_frames = {
+                let mut client = CLIENT_STATE.rpc_client.lock();
+                rpc_get_shmem_frames(&mut **client, Some(pid), total_needed_large_pages)?
+            };
+
+            // Reset to shmem manager
+            if let Some(affinity) = affinity {
+                pcm.set_mem_affinity(SHARED_AFFINITY)
+                    .expect("Can't change affinity");
             }
 
-            // Add any remaining base pages to the cache, if there's space.
-            let mut bp_cache = CLIENT_STATE.per_process_base_pages.lock();
-            let mut per_process_bp_cache = &mut bp_cache[pid];
-            let base_pages_to_save = core::cmp::min(
-                base_page_iter.len(),
-                per_process_bp_cache.spare_base_page_capacity(),
-            );
-
-            for _i in 0..base_pages_to_save {
-                let frame = base_page_iter
-                    .next()
-                    .expect("needed base frames should all fit within one large frame");
-
+            for i in 0..lp {
                 // TODO(rackscale performance): should be debug assert
-                assert!(is_shmem_frame(frame, false, false));
+                assert!(is_shmem_frame(allocated_frames[i], false, false));
 
-                per_process_bp_cache
-                    .grow_base_pages(&[frame])
-                    .expect("We ensure not to overfill the FrameCacheBase above.");
+                total_len += allocated_frames[i].size;
+                unsafe { allocated_frames[i].zero() };
+                frames
+                    .try_push(allocated_frames[i])
+                    .expect("Can't fail see `try_with_capacity`");
+                if paddr.is_none() {
+                    paddr = Some(allocated_frames[i].base);
+                }
             }
 
-            if base_page_iter.len() > 0 {
-                log::error!(
+            // Grow base pages
+            if total_needed_base_pages > 0 {
+                // TODO(rackscale performance): should be debug assert
+                assert!(is_shmem_frame(allocated_frames[lp], false, false));
+
+                let mut base_page_iter = allocated_frames[lp].into_iter();
+                for _i in 0..total_needed_base_pages {
+                    let mut frame = base_page_iter
+                        .next()
+                        .expect("needed base frames should all fit within one large frame");
+
+                    // TODO(rackscale performance): should be debug assert
+                    assert!(is_shmem_frame(frame, false, false));
+
+                    total_len += frame.size;
+                    unsafe { frame.zero() };
+                    if paddr.is_none() {
+                        paddr = Some(frame.base);
+                    }
+                    frames
+                        .try_push(frame)
+                        .expect("Can't fail see `try_with_capacity`");
+                }
+
+                // Add any remaining base pages to the cache, if there's space.
+                let mut bp_cache = CLIENT_STATE.per_process_base_pages.lock();
+                let mut per_process_bp_cache = &mut bp_cache[pid];
+                let base_pages_to_save = core::cmp::min(
+                    base_page_iter.len(),
+                    per_process_bp_cache.spare_base_page_capacity(),
+                );
+
+                for _i in 0..base_pages_to_save {
+                    let frame = base_page_iter
+                        .next()
+                        .expect("needed base frames should all fit within one large frame");
+
+                    // TODO(rackscale performance): should be debug assert
+                    assert!(is_shmem_frame(frame, false, false));
+
+                    per_process_bp_cache
+                        .grow_base_pages(&[frame])
+                        .expect("We ensure not to overfill the FrameCacheBase above.");
+                }
+
+                if base_page_iter.len() > 0 {
+                    log::error!(
                     "Losing {:?} base pages of shared memoryn allocated to process {:?}. Oh well.",
                     base_page_iter.len(),
                     pid,
                 );
+                }
             }
         }
 

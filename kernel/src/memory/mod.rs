@@ -436,6 +436,11 @@ impl KernelAllocator {
                 if total_needed_base_pages > 0 {
                     total_needed_large_pages += 1;
                 }
+
+                // We're done!
+                if total_needed_base_pages == 0 && total_needed_large_pages == 0 {
+                    return Ok(());
+                }
             }
 
             // Refill by asking DCM for memory.

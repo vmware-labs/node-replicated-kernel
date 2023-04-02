@@ -65,6 +65,8 @@ impl AffinityAllocRes {
 }
 
 pub(crate) fn dcm_affinity_alloc(node_id: DCMNodeId, num_memslices: usize) -> bool {
+    assert!(num_memslices > 0);
+
     let req = AffinityAllocReq {
         node_id,
         num_cores: 0,

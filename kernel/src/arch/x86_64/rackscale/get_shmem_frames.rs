@@ -34,7 +34,9 @@ pub(crate) fn rpc_get_shmem_frames(
     pid: Option<Pid>,
     num_frames: usize,
 ) -> KResult<Box<Vec<Frame>>> {
+    assert!(num_frames > 0);
     log::debug!("GetShmemFrames({:?})", num_frames);
+
     let machine_id = if pid.is_none() {
         Some(*crate::environment::MACHINE_ID)
     } else {
@@ -46,6 +48,7 @@ pub(crate) fn rpc_get_shmem_frames(
         pid,
         num_frames,
     };
+
     let mut req_data = [0u8; core::mem::size_of::<ShmemFrameReq>()];
     unsafe { encode(&req, &mut (&mut req_data).as_mut()) }
         .expect("Failed to encode shmem frame request");

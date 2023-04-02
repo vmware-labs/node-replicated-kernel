@@ -112,11 +112,14 @@ pub(crate) fn dcm_resource_alloc(
     cores: u64,
     memslices: u64,
 ) -> (Vec<DCMNodeId>, Vec<DCMNodeId>) {
+    assert!(cores > 0 || memslices > 0);
+
     let req = ResourceAllocRequest {
         application: pid as u64,
         cores,
         memslices,
     };
+
     let mut res = ResourceAllocResponse { alloc_id: 0 };
     let mut assignment = ResourceAllocAssignment {
         alloc_id: 0,

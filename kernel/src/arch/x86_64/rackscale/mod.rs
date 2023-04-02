@@ -53,14 +53,7 @@ pub(crate) const LOG_HANDLER: RPCHandler<ControllerState> = processops::print::h
 pub(crate) const GET_HARDWARE_THREADS_HANDLER: RPCHandler<ControllerState> =
     systemops::get_hardware_threads::handle_get_hardware_threads;
 
-// Client polls for work
-pub(crate) const REQUEST_CORE_WORK_HANDLER: RPCHandler<ControllerState> =
-    processops::core_work::handle_core_work;
-
 // there aren't syscalls, but are other operations
-// TODO(hunhoffe): move these to new clientops file??
-pub(crate) const MAKE_PROCESS_HANDLER: RPCHandler<ControllerState> =
-    processops::make_process::handle_make_process;
 pub(crate) const GET_PROCESS_LOGS_HANDLER: RPCHandler<ControllerState> =
     get_process_logs::handle_get_process_logs;
 pub(crate) const GET_SHMEM_FRAMES_HANDLER: RPCHandler<ControllerState> =

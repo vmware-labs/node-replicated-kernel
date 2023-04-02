@@ -1501,14 +1501,25 @@ impl FrameManagement for Ring3Process {
 /// - Finally we allocate a dispatcher to the current core (0) and start running the process
 #[cfg(target_os = "none")]
 pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
-    use crate::nr;
     use crate::process::make_process;
 
     let pid = make_process::<Ring3Process>(binary)?;
-    log::warn!("Pid is: {:?}", pid);
+
+    // Let the controller pick the initial core for the process
+    #[cfg(feature = "rackscale")]
+    {
+        use crate::arch::rackscale::processops::request_core::rpc_request_core;
+        use crate::arch::rackscale::CLIENT_STATE;
+
+        let mut client = CLIENT_STATE.rpc_client.lock();
+        let (_gtid, _) =
+            rpc_request_core(&mut **client, pid, true, INVALID_EXECUTOR_START.as_u64())
+                .expect("Failed to get core for newly spawned process");
+    }
 
     // Set current thread to run executor from our process (on the current core)
-    let _gtid = nr::KernelNode::allocate_core_to_process(
+    #[cfg(not(feature = "rackscale"))]
+    let _gtid = crate::nr::KernelNode::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
         Some(*crate::environment::NODE_ID),

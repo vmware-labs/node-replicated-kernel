@@ -18,33 +18,27 @@ use crate::nr::KernelNode;
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
-use super::super::processops::core_work::CoreWorkRes;
-use crate::arch::irq::REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR;
-use crate::transport::shmem::SHMEM_DEVICE;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RequestCoreReq {
     pub pid: usize,
-    pub machine_id: MachineId,
+    pub new_pid: bool,
     pub entry_point: u64,
 }
-unsafe_abomonate!(RequestCoreReq: pid, machine_id, entry_point);
+unsafe_abomonate!(RequestCoreReq: pid, new_pid, entry_point);
 
 pub(crate) fn rpc_request_core(
     rpc_client: &mut dyn RPCClient,
     pid: usize,
+    new_pid: bool,
     entry_point: u64,
 ) -> KResult<(u64, u64)> {
-    debug!(
-        "RequestCore({:?}, {:?})",
-        *crate::environment::MACHINE_ID,
-        entry_point
-    );
+    debug!("RequestCore({:?}, {:?}, {:?})", pid, new_pid, entry_point);
 
     // Construct request data
     let req = RequestCoreReq {
         pid,
-        machine_id: *crate::environment::MACHINE_ID,
+        new_pid,
         entry_point,
     };
     let mut req_data = [0u8; core::mem::size_of::<RequestCoreReq>()];
@@ -90,16 +84,19 @@ pub(crate) fn handle_request_core(
 
     let (dcm_node_ids, _) = dcm_resource_alloc(core_req.pid, 1, 0);
     let dcm_node_id = dcm_node_ids[0];
-    let gtid = {
+
+    let (gtid, gtid_affinity) = {
         let mut client_state = state.get_client_state_by_dcm_node_id(dcm_node_id).lock();
 
         // TODO(performance): controller chooses a core id - right now, sequentially for cores on the dcm_node_id.
         // it should really choose in a NUMA-aware fashion for the remote node.
         let mut gtid = None;
+        let mut gtid_affinity = None;
         for i in 0..client_state.hw_threads.len() {
             match client_state.hw_threads[i] {
                 (thread, false) => {
                     gtid = Some(thread.id);
+                    gtid_affinity = Some(thread.node_id);
                     client_state.hw_threads[i] = (thread, true);
                     break;
                 }
@@ -108,38 +105,37 @@ pub(crate) fn handle_request_core(
         }
         // gtid should always be found, as DCM should know if there are free threads or not.
         let gtid = gtid.expect("Failed to find free thread??");
-        log::debug!(
-            "Found unused thread: machine={:?}, gtid={:?}",
-            kpi::system::mid_from_gtid(gtid),
-            kpi::system::mtid_from_gtid(gtid)
-        );
-
-        // can handle request locally if same node otherwise must queue for remote node to handle
-        if kpi::system::mid_from_gtid(gtid) != core_req.machine_id {
-            log::debug!(
-                "Logged unfulfilled core assignment for hardware_id={:?}, dcm_node_id={:?}",
-                kpi::system::mid_from_gtid(gtid),
-                dcm_node_id
-            );
-            let res = CoreWorkRes {
-                pid: core_req.pid,
-                gtid: gtid,
-                entry_point: core_req.entry_point,
-            };
-            client_state.core_assignments.push_back(res);
-
-            // send remote core work interrupt to the chosen node.
-            // TODO(rackscale, correctness): how do we ensure that the core is actually ready???
-            // should probably call on client, and then have client wait for signal from core.
-            SHMEM_DEVICE.set_doorbell(
-                REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR,
-                client_state.machine_id.try_into().unwrap(),
-            );
-        }
-        gtid
+        let gtid_affinity = gtid_affinity.expect("Failed to find thread node affinity?");
+        (gtid, gtid_affinity)
     };
 
+    log::debug!(
+        "Found unused thread: machine={:?}, gtid={:?} node={:?}",
+        kpi::system::mid_from_gtid(gtid),
+        kpi::system::mtid_from_gtid(gtid),
+        gtid_affinity,
+    );
+
+    let ret = nr::KernelNode::allocate_core_to_process(
+        core_req.pid,
+        VAddr(core_req.entry_point),
+        Some(gtid_affinity),
+        Some(gtid),
+    );
+
+    match ret {
+        Ok(_) => {
+            if core_req.new_pid {
+                crate::fs::cnrfs::MlnrKernelNode::add_process(core_req.pid)
+                    .expect("TODO(rackscale, error-handling): revert state");
+            }
+            construct_ret(hdr, payload, Ok((gtid as u64, 0)));
+        }
+        Err(err) => {
+            construct_error_ret(hdr, payload, err);
+        }
+    }
+
     // Construct and return result
-    construct_ret(hdr, payload, Ok((gtid as u64, 0)));
     Ok(state)
 }

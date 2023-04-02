@@ -2,21 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use fallible_collections::FallibleVecGlobal;
 use hashbrown::HashMap;
-use kpi::system::MachineId;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use static_assertions as sa;
 
-use kpi::system::CpuThread;
+use kpi::system::{CpuThread, MachineId};
 
 use crate::arch::rackscale::dcm::DCMNodeId;
-use crate::arch::rackscale::processops::core_work::CoreWorkRes;
 use crate::arch::MAX_CORES;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
@@ -62,9 +59,6 @@ pub(crate) struct PerClientState {
 
     /// A list of the hardware threads belonging to this client and whether the thread is scheduler or not
     pub(crate) hw_threads: Vec<(CpuThread, bool)>,
-
-    /// A list of outstanding core assignments that need to be handled by the remote host
-    pub(crate) core_assignments: VecDeque<CoreWorkRes>,
 }
 
 impl PerClientState {
@@ -77,7 +71,6 @@ impl PerClientState {
             machine_id,
             shmem_manager,
             hw_threads,
-            core_assignments: VecDeque::with_capacity(3 as usize),
         }
     }
 }

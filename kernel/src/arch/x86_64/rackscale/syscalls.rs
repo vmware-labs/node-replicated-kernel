@@ -348,19 +348,7 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
     fn request_core(&self, _core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
         let mut client = CLIENT_STATE.rpc_client.lock();
         let pid = crate::arch::process::current_pid()?;
-        let ret = rpc_request_core(&mut **client, pid, entry_point).map_err(|e| e.into());
-
-        // request core locally if that's what was assigned this request
-        // otherwise, assume controller handled remote request.
-        if let Ok((gtid, n)) = ret {
-            if kpi::system::mid_from_gtid(gtid as usize) == *crate::environment::MACHINE_ID {
-                self.local.request_core(gtid, entry_point)
-            } else {
-                ret
-            }
-        } else {
-            ret
-        }
+        rpc_request_core(&mut **client, pid, false, entry_point).map_err(|e| e.into())
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {

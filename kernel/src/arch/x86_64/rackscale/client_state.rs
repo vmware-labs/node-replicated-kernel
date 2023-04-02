@@ -20,7 +20,6 @@ use rpc::client::Client;
 use rpc::rpc::{RPCError, RPCHeader};
 
 use crate::arch::rackscale::dcm::DCMNodeId;
-use crate::arch::rackscale::processops::core_work::rpc_core_work;
 use crate::cmdline::Transport;
 use crate::error::KError;
 use crate::fallible_string::FallibleString;
@@ -133,12 +132,6 @@ impl ClientState {
         let mut frame_map = self.frame_map.write();
         frame_map.remove(&fid).expect("Didn't find a frame for fid");
         Ok(())
-    }
-
-    // TODO(hunhoffe): get rid of this.
-    pub(crate) fn client_get_work(&self) -> () {
-        let mut client = self.rpc_client.lock();
-        rpc_core_work(&mut **client);
     }
 
     /// This is mostly copied from arch/x86_64/serial.rs

@@ -61,10 +61,8 @@ use super::process::{Ring0Resumer, Ring3Process, Ring3Resumer};
 use super::{debug, gdb, timer};
 
 // TODO(hunhoffe): probably not the right place for this but transport/shmem isn't always included.
-pub(crate) const REMOTE_TLB_WORK_PENDING_VECTOR: u8 = 248;
+pub(crate) const REMOTE_TLB_WORK_PENDING_VECTOR: u8 = 249;
 pub(crate) const REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR: u16 = 1;
-pub(crate) const REMOTE_CORE_WORK_PENDING_VECTOR: u8 = 249;
-pub(crate) const REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR: u16 = 2;
 
 /// The x2APIC driver of the current core.
 #[thread_local]
@@ -190,12 +188,6 @@ impl Default for IdtTable {
         idt_set!(
             table.0,
             REMOTE_TLB_WORK_PENDING_VECTOR as usize,
-            isr_handler248,
-            0
-        );
-        idt_set!(
-            table.0,
-            REMOTE_CORE_WORK_PENDING_VECTOR as usize,
             isr_handler249,
             0
         );
@@ -562,44 +554,6 @@ unsafe fn timer_handler(_a: &ExceptionArguments) {
     }
 }
 
-/// Handler for remote core work.
-///
-/// We currently use it to check for work from the controller
-unsafe fn remote_core_work_handler(_a: &ExceptionArguments) {
-    #[cfg(feature = "test-shmem")]
-    {
-        // Don't change this print stmt. without changing
-        // `s03_ivshmem_interrupt` in tests/s03_kernel_high_tests.rs:
-        sprintln!("Got a shmem interrupt");
-        debug::shutdown(ExitReason::Ok);
-    }
-
-    // If this is a rackscale client, check for work from the controller
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        use crate::arch::rackscale::CLIENT_STATE;
-        CLIENT_STATE.client_get_work();
-    } else {
-        panic!("Should not receive remote core work interrupt in controller");
-    }
-
-    #[cfg(not(feature = "rackscale"))]
-    panic!("Should not receive remote core work interrupt in non-rackscale system");
-
-    if super::process::has_executor() {
-        // Return immediately
-        let kcb = get_kcb();
-        let r = kcb_iret_handle(kcb);
-        r.resume()
-    } else {
-        // Go to scheduler instead
-        crate::scheduler::schedule()
-    }
-}
-
 /// Handler for a general protection exception.
 ///
 /// TODO: Right now we terminate kernel.
@@ -738,7 +692,7 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         // If we have an active process we should do scheduler activations:
         // TODO(scheduling): do proper masking based on some VCPU mask
         // TODO(scheduling): Currently don't deliver interrupts to process not currently running
-        if a.vector > 30 && a.vector < 248 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
+        if a.vector > 30 && a.vector < 249 && a.vector != debug::GDB_REMOTE_IRQ_VECTOR.into() {
             log::info!("handle_generic_exception {:?}", a);
 
             let mut pborrow = super::process::CURRENT_EXECUTOR.borrow_mut();
@@ -818,6 +772,14 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
         } else if a.vector == apic::TSC_TIMER_VECTOR.into() {
             timer_handler(&a);
         } else if a.vector == REMOTE_TLB_WORK_PENDING_VECTOR.into() {
+            #[cfg(feature = "test-shmem")]
+            {
+                // Don't change this print stmt. without changing
+                // `s03_ivshmem_interrupt` in tests/s03_kernel_high_tests.rs:
+                sprintln!("Got a shmem interrupt");
+                debug::shutdown(ExitReason::Ok);
+            }
+
             // If this is a rackscale client, check for work from the controller
             #[cfg(feature = "rackscale")]
             if crate::CMDLINE
@@ -843,8 +805,6 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 // Go to scheduler instead
                 crate::scheduler::schedule()
             }
-        } else if a.vector == REMOTE_CORE_WORK_PENDING_VECTOR.into() {
-            remote_core_work_handler(&a);
         }
 
         unhandled_irq(&a);

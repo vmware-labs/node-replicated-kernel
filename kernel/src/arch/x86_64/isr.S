@@ -230,8 +230,6 @@ isr_handler 46
 isr_handler 47
 
 /* remote TLB work interrupt, used in rackscale build*/
-isr_handler 248
-/* remote core work interrupt, used in rackscale build*/
 isr_handler 249
 
 /* The MLNR gc interrupt */

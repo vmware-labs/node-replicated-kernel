@@ -53,26 +53,20 @@ pub(crate) enum KernelRpc {
     /// Allocate a core for a process
     RequestCore = 15,
 
-    /// Request work (e.g., request cores) - used by client to ask controller for tasks
-    RequestWork = 16,
-
     /// Get the hardware threads for the rack
-    GetHardwareThreads = 17,
-
-    /// Spawn a process
-    MakeProcess = 18,
+    GetHardwareThreads = 16,
 
     /// send process logs reference to client
-    GetProcessLogs = 19,
+    GetProcessLogs = 17,
 
     /// request shmem frames
-    GetShmemFrames = 20,
+    GetShmemFrames = 18,
 
     /// send workqueue reference to client
-    GetWorkqueues = 21,
+    GetWorkqueues = 19,
 
     /// send nr log reference
-    GetNrLog,
+    GetNrLog = 20,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -97,13 +91,11 @@ impl TryFrom<RPCType> for KernelRpc {
             13 => Ok(KernelRpc::AllocatePhysical),
             15 => Ok(KernelRpc::ReleasePhysical),
             15 => Ok(KernelRpc::RequestCore),
-            16 => Ok(KernelRpc::RequestWork),
-            17 => Ok(KernelRpc::GetHardwareThreads),
-            18 => Ok(KernelRpc::MakeProcess),
-            19 => Ok(KernelRpc::GetProcessLogs),
-            20 => Ok(KernelRpc::GetShmemFrames),
-            21 => Ok(KernelRpc::GetWorkqueues),
-            22 => Ok(KernelRpc::GetNrLog),
+            16 => Ok(KernelRpc::GetHardwareThreads),
+            17 => Ok(KernelRpc::GetProcessLogs),
+            18 => Ok(KernelRpc::GetShmemFrames),
+            19 => Ok(KernelRpc::GetWorkqueues),
+            20 => Ok(KernelRpc::GetNrLog),
             _ => Err(KError::InvalidRpcType),
         }
     }

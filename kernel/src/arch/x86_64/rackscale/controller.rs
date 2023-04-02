@@ -162,9 +162,6 @@ fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
         .register(KernelRpc::Log as RPCType, &LOG_HANDLER)
         .unwrap();
     server
-        .register(KernelRpc::MakeProcess as RPCType, &MAKE_PROCESS_HANDLER)
-        .unwrap();
-    server
         .register(
             KernelRpc::AllocatePhysical as RPCType,
             &ALLOCATE_PHYSICAL_HANDLER,
@@ -179,14 +176,6 @@ fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
     server
         .register(KernelRpc::RequestCore as RPCType, &REQUEST_CORE_HANDLER)
         .unwrap();
-
-    server
-        .register(
-            KernelRpc::RequestWork as RPCType,
-            &REQUEST_CORE_WORK_HANDLER,
-        )
-        .unwrap();
-
     server
         .register(
             KernelRpc::GetHardwareThreads as RPCType,

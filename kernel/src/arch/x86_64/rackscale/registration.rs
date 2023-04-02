@@ -113,15 +113,10 @@ pub(crate) fn register_client(
         for hwthread in hw_threads {
             client_threads.push((*hwthread, false));
         }
-
-        // TODO(correctness): assume client is already running something on core zero (also below)
-        client_threads[0] = (client_threads[0].0, true);
-
         info!("client_threads: {:?}", client_threads);
 
         // Register client resources with DCM
-        // TODO(correctness): subtract 1 because assume client is already running something on core zero
-        let dcm_node_id = dcm_register_node(req.num_cores - 1, memslices);
+        let dcm_node_id = dcm_register_node(req.num_cores, memslices);
         info!(
             "Registered client DCM, assigned dcm_node_id={:?}",
             dcm_node_id

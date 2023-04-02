@@ -38,7 +38,6 @@ use crate::fs::cnrfs;
 #[cfg(all(feature = "rackscale", target_arch = "x86_64"))]
 use {
     crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames,
-    crate::arch::rackscale::processops::make_process::rpc_make_process,
     crate::arch::rackscale::CLIENT_STATE, crate::memory::SHARED_AFFINITY,
 };
 
@@ -453,41 +452,34 @@ impl elfloader::ElfLoader for DataSecAllocator {
 /// Parse & relocate ELF
 /// Create an initial VSpace
 pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KError> {
-    #[cfg(feature = "rackscale")]
-    let (pid, affinity) = if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        let mut client = CLIENT_STATE.rpc_client.lock();
-        let pid = rpc_make_process(&mut **client)?;
-        let pcm = per_core_mem();
-        let affinity = { pcm.physical_memory.borrow().affinity };
-        pcm.set_mem_affinity(SHARED_AFFINITY)
-            .expect("Can't change affinity");
-        (pid, affinity)
-    } else {
-        panic!("make_process() not implemented for rackscale controller");
-    };
-
     // Allocate a new process
-    #[cfg(not(feature = "rackscale"))]
-    let pid = {
-        let pid = crate::nr::NR_REPLICA.get().map_or(
-            Err(KError::ReplicaNotSet),
-            |(replica, token)| {
+    let pid =
+        crate::nr::NR_REPLICA
+            .get()
+            .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
                 let response = replica.execute_mut(crate::nr::Op::AllocatePid, *token)?;
                 if let crate::nr::NodeResult::PidAllocated(pid) = response {
                     Ok(pid)
                 } else {
                     Err(KError::ProcessLoadingFailed)
                 }
-            },
-        )?;
+            })?;
 
-        // TODO(rackscale): do this for rackscale as well.
-        KernelAllocator::try_refill_tcache(7, 1, MemType::Mem)?;
-        pid
+    #[cfg(feature = "rackscale")]
+    let affinity = if crate::CMDLINE
+        .get()
+        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+    {
+        let pcm = per_core_mem();
+        let affinity = { pcm.physical_memory.borrow().affinity };
+        pcm.set_mem_affinity(SHARED_AFFINITY)
+            .expect("Can't change affinity - TODO: how to rewind on error here?");
+        affinity
+    } else {
+        panic!("make_process() not implemented for rackscale controller");
     };
+
+    KernelAllocator::try_refill_tcache(7, 1, MemType::Mem)?;
 
     // Lookup binary of the process
     let mut mod_file = None;
@@ -500,6 +492,7 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
     }
 
     let mod_file = mod_file.ok_or(KError::BinaryNotFound { binary })?;
+    // TODO: How to rewind on error here?
     info!(
         "binary={} cmdline={} module={:?}",
         binary,

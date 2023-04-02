@@ -404,7 +404,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
             lazy_static::initialize(&CONTROLLER_AFFINITY_SHMEM);
         } else {
             use crate::arch::irq::{
-                REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR, REMOTE_CORE_WORK_PENDING_VECTOR,
                 REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, REMOTE_TLB_WORK_PENDING_VECTOR,
             };
 
@@ -413,11 +412,6 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
                 REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR as usize,
                 0,
                 REMOTE_TLB_WORK_PENDING_VECTOR,
-            );
-            SHMEM_DEVICE.enable_msix_vector(
-                REMOTE_CORE_WORK_PENDING_SHMEM_VECTOR as usize,
-                0,
-                REMOTE_CORE_WORK_PENDING_VECTOR,
             );
         }
     }

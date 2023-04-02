@@ -186,11 +186,11 @@ impl<T: Arch86ProcessDispatch> ProcessDispatch<u64> for T {
         let affinity = affinity.ok_or(KError::InvalidGlobalThreadId)?;
         let pid = current_pid()?;
 
-        let _mtid = nr::KernelNode::allocate_core_to_process(
+        let _gtid = nr::KernelNode::allocate_core_to_process(
             pid,
             VAddr::from(entry_point),
             Some(affinity),
-            Some(mtid),
+            Some(core_id as usize),
         )?;
 
         Ok((core_id, 0))

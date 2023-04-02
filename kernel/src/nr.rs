@@ -10,7 +10,9 @@ use log::{error, trace};
 use node_replication::{Dispatch, Replica, ReplicaToken};
 use spin::Once;
 
-use crate::arch::MAX_CORES;
+#[cfg(feature = "rackscale")]
+use lazy_static::lazy_static;
+
 use crate::error::KError;
 use crate::memory::VAddr;
 use crate::process::{Pid, MAX_PROCESSES};
@@ -19,9 +21,44 @@ use crate::process::{Pid, MAX_PROCESSES};
 #[thread_local]
 pub(crate) static NR_REPLICA: Once<(Arc<Replica<'static, KernelNode>>, ReplicaToken)> = Once::new();
 
+// Base nr log. The rackscale controller needs to save a reference to this, so it can give
+// clones to client so they can create replicas of their own.
+#[cfg(feature = "rackscale")]
+lazy_static! {
+    pub(crate) static ref NR_LOG: Arc<node_replication::Log<'static, Op>> = {
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+        {
+            use node_replication::Log;
+            use crate::arch::kcb::per_core_mem;
+            use crate::memory::{LARGE_PAGE_SIZE, SHARED_AFFINITY};
+
+            let pcm = per_core_mem();
+            pcm.set_mem_affinity(SHARED_AFFINITY)
+                .expect("Can't change affinity");
+
+            let log = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE)).expect("Not enough memory to initialize system");
+
+            // Reset mem allocator to use per core memory again
+            let pcm = per_core_mem();
+            pcm.set_mem_affinity(0 as atopology::NodeId)
+                .expect("Can't change affinity");
+
+            log
+        } else {
+            // Get location of the nr log from the controller, who will created them in shared memory
+            use crate::arch::rackscale::get_nr_log::rpc_get_nr_log;
+            use crate::arch::rackscale::CLIENT_STATE;
+            let mut client = CLIENT_STATE.rpc_client.lock();
+            rpc_get_nr_log(&mut **client).expect("Failed to get nr log from controller").clone()
+        }
+    };
+}
+
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub(crate) enum ReadOps {
-    CurrentProcess(kpi::system::MachineThreadId),
+    CurrentProcess(kpi::system::GlobalThreadId),
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -35,7 +72,7 @@ pub(crate) enum Op {
     SchedAllocateCore(
         Pid,
         Option<atopology::NodeId>,
-        Option<kpi::system::MachineThreadId>,
+        Option<kpi::system::GlobalThreadId>,
         VAddr,
     ),
 }
@@ -45,7 +82,7 @@ pub(crate) enum NodeResult {
     PidAllocated(Pid),
     PidReturned,
     CoreInfo(CoreInfo),
-    CoreAllocated(kpi::system::MachineThreadId),
+    CoreAllocated(kpi::system::GlobalThreadId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,14 +93,14 @@ pub(crate) struct CoreInfo {
 
 pub(crate) struct KernelNode {
     process_map: HashMap<Pid, ()>,
-    scheduler_map: HashMap<kpi::system::MachineThreadId, CoreInfo>,
+    scheduler_map: HashMap<kpi::system::GlobalThreadId, CoreInfo>,
 }
 
 impl Default for KernelNode {
     fn default() -> KernelNode {
         KernelNode {
             process_map: HashMap::new(),   // with_capacity(MAX_PROCESSES),
-            scheduler_map: HashMap::new(), // with_capacity(MAX_CORES),
+            scheduler_map: HashMap::new(), // with_capacity(MAX_CORES), or, for rackscale, with_capacity(MAX_CORES * MAX_MACHINES)
         }
     }
 }
@@ -82,16 +119,16 @@ impl KernelNode {
         pid: Pid,
         entry_point: VAddr,
         affinity: Option<atopology::NodeId>,
-        mtid: Option<kpi::system::MachineThreadId>,
-    ) -> Result<kpi::system::MachineThreadId, KError> {
+        gtid: Option<kpi::system::GlobalThreadId>,
+    ) -> Result<kpi::system::GlobalThreadId, KError> {
         NR_REPLICA
             .get()
             .map_or(Err(KError::ReplicaNotSet), |(replica, token)| {
-                let op = Op::SchedAllocateCore(pid, affinity, mtid, entry_point);
+                let op = Op::SchedAllocateCore(pid, affinity, gtid, entry_point);
                 let response = replica.execute_mut(op, *token);
 
                 match response {
-                    Ok(NodeResult::CoreAllocated(rmtid)) => Ok(rmtid),
+                    Ok(NodeResult::CoreAllocated(rgtid)) => Ok(rgtid),
                     Err(e) => Err(e),
                     Ok(_) => unreachable!("Got unexpected response"),
                 }
@@ -106,10 +143,11 @@ impl Dispatch for KernelNode {
 
     fn dispatch<'rop>(&self, op: Self::ReadOperation<'_>) -> Self::Response {
         match op {
-            ReadOps::CurrentProcess(mtid) => {
+            // TODO(rackscale): hmm how to make this different?
+            ReadOps::CurrentProcess(gtid) => {
                 let core_info = self
                     .scheduler_map
-                    .get(&mtid)
+                    .get(&gtid)
                     .ok_or(KError::NoExecutorForCore)?;
                 Ok(NodeResult::CoreInfo(*core_info))
             }
@@ -139,25 +177,26 @@ impl Dispatch for KernelNode {
                     Err(KError::NoProcessFoundForPid)
                 }
             },
-            Op::SchedAllocateCore(pid, _affinity, Some(mtid), entry_point) => {
-                assert!(mtid < MAX_CORES, "Invalid mtid");
+            Op::SchedAllocateCore(pid, _affinity, Some(gtid), entry_point) => {
+                #[cfg(not(feature = "rackscale"))]
+                assert!(gtid < crate::arch::MAX_CORES, "Invalid gtid");
 
-                match self.scheduler_map.get(&mtid) {
+                match self.scheduler_map.get(&gtid) {
                     Some(_cinfo) => Err(KError::CoreAlreadyAllocated),
                     None => {
-                        trace!("Op::SchedAllocateCore pid={}, mtid={}", pid, mtid);
+                        trace!("Op::SchedAllocateCore pid={}, gtid={}", pid, gtid);
 
                         self.scheduler_map.try_reserve(1)?;
                         let r = self
                             .scheduler_map
-                            .insert(mtid, CoreInfo { pid, entry_point });
+                            .insert(gtid, CoreInfo { pid, entry_point });
                         assert!(r.is_none(), "get() -> None");
 
-                        Ok(NodeResult::CoreAllocated(mtid))
+                        Ok(NodeResult::CoreAllocated(gtid))
                     }
                 }
             }
-            Op::SchedAllocateCore(_pid, _affinity, _mtid, _entry_point) => unimplemented!(),
+            Op::SchedAllocateCore(_pid, _affinity, _gtid, _entry_point) => unimplemented!(),
         }
     }
 }

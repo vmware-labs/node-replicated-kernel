@@ -1505,13 +1505,14 @@ pub(crate) fn spawn(binary: &'static str) -> Result<Pid, KError> {
     use crate::process::make_process;
 
     let pid = make_process::<Ring3Process>(binary)?;
+    log::warn!("Pid is: {:?}", pid);
 
     // Set current thread to run executor from our process (on the current core)
-    let _mtid = nr::KernelNode::allocate_core_to_process(
+    let _gtid = nr::KernelNode::allocate_core_to_process(
         pid,
         INVALID_EXECUTOR_START, // This VAddr is irrelevant as it is overriden later
         Some(*crate::environment::NODE_ID),
-        Some(kpi::system::mtid_from_gtid(*crate::environment::CORE_ID)),
+        Some(*crate::environment::CORE_ID),
     )?;
 
     Ok(pid)

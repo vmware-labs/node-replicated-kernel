@@ -29,15 +29,18 @@ use cnr::Replica as MlnrReplica;
 use fallible_collections::TryClone;
 use klogger::sprint;
 use log::{debug, error, info};
-use node_replication::{Log, Replica};
+use node_replication::Replica;
 use x86::{controlregs, cpuid};
+
+#[cfg(not(feature = "rackscale"))]
+use {crate::nr::Op, node_replication::Log};
 
 use crate::cmdline::CommandLineArguments;
 use crate::fs::cnrfs::MlnrKernelNode;
 use crate::memory::global::GlobalMemory;
 use crate::memory::mcache;
 use crate::memory::per_core::PerCoreMemory;
-use crate::nr::{KernelNode, Op};
+use crate::nr::KernelNode;
 use crate::ExitReason;
 
 use coreboot::AppCoreArgs;
@@ -232,6 +235,7 @@ pub(crate) fn start_app_core(args: Arc<AppCoreArgs>, initialized: &AtomicBool) {
 #[start]
 #[no_mangle]
 fn _start(argc: isize, _argv: *const *const u8) -> isize {
+    #[cfg(not(feature = "rackscale"))]
     use crate::memory::LARGE_PAGE_SIZE;
 
     // Very early init:
@@ -425,11 +429,15 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     // Create the global operation log and first replica and store it (needs
     // TLS)
-    let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
-        .expect("Not enough memory to initialize system");
-    let bsp_replica = Replica::<KernelNode>::new(&log);
-    let local_ridx = bsp_replica.register().unwrap();
-    crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
+    #[cfg(not(feature = "rackscale"))]
+    let (log, bsp_replica) = {
+        let log: Arc<Log<Op>> = Arc::try_new(Log::<Op>::new(LARGE_PAGE_SIZE))
+            .expect("Not enough memory to initialize system");
+        let bsp_replica = Replica::<KernelNode>::new(&log);
+        let local_ridx = bsp_replica.register().unwrap();
+        crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
+        (log, bsp_replica)
+    };
 
     // Starting to initialize file-system
     #[cfg(not(feature = "rackscale"))]
@@ -502,6 +510,21 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         lazy_static::initialize(&process::PROCESS_TABLE);
         crate::nrproc::register_thread_with_process_replicas();
     }
+
+    // For rackscale, only the controller is going to create the base log.
+    // All clients will use this to create replicas.
+    #[cfg(feature = "rackscale")]
+    let (log, bsp_replica) = {
+        use crate::nr::NR_LOG;
+
+        // this calls an RPC on the client, which is why we do this later in initialization than in non-rackscale
+        lazy_static::initialize(&NR_LOG);
+
+        let bsp_replica = Replica::<KernelNode>::new(&NR_LOG);
+        let local_ridx = bsp_replica.register().unwrap();
+        crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));
+        (&NR_LOG.clone(), bsp_replica)
+    };
 
     #[cfg(feature = "gdb")]
     {

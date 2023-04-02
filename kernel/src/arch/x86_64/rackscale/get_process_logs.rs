@@ -20,7 +20,6 @@ use crate::error::KError;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, SHARED_AFFINITY};
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
-use crate::transport::shmem::SHMEM_DEVICE;
 
 struct ProcessLogPtrs {
     logs: [u64; MAX_PROCESSES],
@@ -66,7 +65,7 @@ pub(crate) fn rpc_get_proccess_logs(
             logs.push(local_log_arc);
         }
 
-        return Ok(logs);
+        Ok(logs)
     } else {
         Err(RPCError::MalformedResponse.into())
     }
@@ -78,7 +77,7 @@ pub(crate) fn handle_get_process_logs(
     mut payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    log::info!("Handling get_process_logs()");
+    log::debug!("Handling get_process_logs()");
     let mut logs = [0u64; MAX_PROCESSES];
 
     // We want to allocate clones of the log arcs in shared memory
@@ -111,7 +110,6 @@ pub(crate) fn handle_get_process_logs(
         let pcm = per_core_mem();
         pcm.set_mem_affinity(original_affinity)
             .expect("Can't change affinity");
-        log::info!("Finished initializing process logs in shmem");
     }
 
     // Modify header and write into output buffer

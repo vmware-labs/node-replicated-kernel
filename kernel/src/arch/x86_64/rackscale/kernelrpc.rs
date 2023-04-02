@@ -70,6 +70,9 @@ pub(crate) enum KernelRpc {
 
     /// send workqueue reference to client
     GetWorkqueues = 21,
+
+    /// send nr log reference
+    GetNrLog,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -100,6 +103,7 @@ impl TryFrom<RPCType> for KernelRpc {
             19 => Ok(KernelRpc::GetProcessLogs),
             20 => Ok(KernelRpc::GetShmemFrames),
             21 => Ok(KernelRpc::GetWorkqueues),
+            22 => Ok(KernelRpc::GetNrLog),
             _ => Err(KError::InvalidRpcType),
         }
     }

@@ -483,6 +483,8 @@ pub(crate) fn make_process<P: Process>(binary: &'static str) -> Result<Pid, KErr
                 }
             },
         )?;
+
+        // TODO(rackscale): do this for rackscale as well.
         KernelAllocator::try_refill_tcache(7, 1, MemType::Mem)?;
         pid
     };

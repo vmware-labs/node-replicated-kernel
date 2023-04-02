@@ -85,7 +85,7 @@ pub(crate) fn rpc_core_work(rpc_client: &mut dyn RPCClient) -> () {
                 core_request.pid,
                 VAddr::from(core_request.entry_point),
                 Some(affinity),
-                Some(kpi::system::mtid_from_gtid(core_request.gtid)),
+                Some(core_request.gtid),
             )
             .expect("Failed to allocate core to process");
 

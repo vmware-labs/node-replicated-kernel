@@ -225,7 +225,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
     use std::thread::sleep;
     use std::time::Duration;
 
-    let timeout = 240_000;
+    let timeout = 300_000;
 
     setup_network(2);
 

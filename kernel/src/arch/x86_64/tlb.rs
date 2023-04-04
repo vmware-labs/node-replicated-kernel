@@ -62,16 +62,18 @@ lazy_static! {
                 affinity
             };
 
-            let num_clients = *crate::environment::NUM_MACHINES - 1;
-            let mut channels =
-                Vec::try_with_capacity(num_clients).expect("Not enough memory to initialize system");
-            for _i in 0..num_clients {
-                // ArrayQueue does memory allocation on `new`, maybe have try_new,
-                // but this is fine since it's during initialization
-                channels.push(ArrayQueue::new(REMOTE_WORKQUEUE_CAPACITY));
-            }
+            let channels = {
+                let num_clients = *crate::environment::NUM_MACHINES - 1;
+                let mut channels =
+                    Vec::try_with_capacity(num_clients).expect("Not enough memory to initialize system");
+                for _i in 0..num_clients {
+                    // ArrayQueue does memory allocation on `new`, maybe have try_new,
+                    // but this is fine since it's during initialization
+                    channels.push(ArrayQueue::new(REMOTE_WORKQUEUE_CAPACITY));
+                }
 
-            let channels = Arc::new(channels);
+                Arc::new(channels)
+            };
 
             // Reset mem allocator to use per core memory again
             if affinity != SHARED_AFFINITY {
@@ -176,33 +178,26 @@ impl Shootdown {
 
 pub(crate) fn enqueue(mtid: kpi::system::MachineThreadId, s: WorkItem) {
     trace!("TLB enqueue shootdown msg {:?}", s);
+    // TODO(fix, correctness): this is a hack because the queue keeps overflowing on fxmark
+    #[cfg(not(feature = "rackscale"))]
+    let _ignore = IPI_WORKQUEUE[mtid as usize].push(s);
 
     #[cfg(feature = "rackscale")]
     IPI_WORKQUEUE[mtid as usize]
         .push(s)
         .expect("No room in the queue for shootdown");
-
-    // TODO(fix, correctness): this is a hack because the queue keeps overflowing on fxmark
-    #[cfg(not(feature = "rackscale"))]
-    let _ret = IPI_WORKQUEUE[mtid as usize].push(s);
 }
 
 pub(crate) fn dequeue(mtid: kpi::system::MachineThreadId) {
-    loop {
-        match IPI_WORKQUEUE[mtid as usize].pop() {
-            Some(msg) => match msg {
-                WorkItem::Shootdown(s) => {
-                    trace!("TLB channel got msg {:?}", s);
-                    s.process();
-                }
-                WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
-            },
-            None =>
-            /*IPI request may be handled by eager_advance_fs_replica()*/
-            {
-                return
+    match IPI_WORKQUEUE[mtid as usize].pop() {
+        Some(msg) => match msg {
+            WorkItem::Shootdown(s) => {
+                trace!("TLB channel got msg {:?}", s);
+                s.process();
             }
-        }
+            WorkItem::AdvanceReplica(log_id) => advance_log(log_id),
+        },
+        None => { /*IPI request was handled by eager_advance_fs_replica()*/ }
     }
 }
 
@@ -222,17 +217,15 @@ pub(crate) fn remote_enqueue(mid: kpi::system::MachineId, s: Arc<Shootdown>, h: 
 
 #[cfg(feature = "rackscale")]
 pub(crate) fn remote_dequeue(mid: kpi::system::MachineId) {
-    loop {
-        // offset mid by one because we don't count the controller (mid=0)
-        match RACKSCALE_CLIENT_WORKQUEUES[mid as usize - 1].pop() {
-            Some((s, h)) => {
-                trace!("TLB remote channel got msg {:?}", s);
-                // Process locally, then mark as complete
-                shootdown(h);
-                s.acknowledge();
-            }
-            None => return,
+    // offset mid by one because we don't count the controller (mid=0)
+    match RACKSCALE_CLIENT_WORKQUEUES[mid as usize - 1].pop() {
+        Some((s, h)) => {
+            trace!("TLB remote channel got msg {:?}", s);
+            // Process locally, then mark as complete
+            shootdown(h);
+            s.acknowledge();
         }
+        None => return,
     }
 }
 
@@ -253,19 +246,31 @@ fn advance_log(log_id: usize) {
 
 pub(crate) fn eager_advance_fs_replica() {
     let core_id = kpi::system::mtid_from_gtid(*crate::environment::CORE_ID);
-    dequeue(core_id);
 
-    let cnrfs = crate::fs::cnrfs::CNRFS.borrow();
-    match cnrfs.as_ref() {
-        Some(replica) => {
-            let log_id = replica.1.id();
-            // Synchronize NR-replica
-            let _ignore = nr::KernelNode::synchronize();
-            // Synchronize Mlnr-replica.
-            advance_log(log_id);
+    match IPI_WORKQUEUE[core_id].pop() {
+        Some(msg) => {
+            match &msg {
+                WorkItem::Shootdown(_s) => {
+                    // If its for TLB shootdown, insert it back into the queue.
+                    enqueue(core_id, msg)
+                }
+                WorkItem::AdvanceReplica(log_id) => advance_log(*log_id),
+            }
         }
-        None => unreachable!("eager_advance_fs_replica: CNRFS not yet initialized!"),
-    };
+        None => {
+            let cnrfs = crate::fs::cnrfs::CNRFS.borrow();
+            match cnrfs.as_ref() {
+                Some(replica) => {
+                    let log_id = replica.1.id();
+                    // Synchronize NR-replica
+                    let _ignore = nr::KernelNode::synchronize();
+                    // Synchronize Mlnr-replica.
+                    advance_log(log_id);
+                }
+                None => unreachable!("eager_advance_fs_replica: CNRFS not yet initialized!"),
+            };
+        }
+    }
 }
 
 pub(crate) fn send_ipi_to_apic(apic_id: ApicId) {
@@ -376,7 +381,6 @@ pub(crate) fn shootdown(handle: TlbFlushHandle) {
     shootdown.process();
 
     // Wait synchronously on cores to complete
-
     while !shootdowns.is_empty() {
         // Make progress on our work while we wait for others
         dequeue(my_mtid);

@@ -24,7 +24,7 @@ pub(crate) struct LogReq {
 }
 unsafe_abomonate!(LogReq: machine_id);
 
-pub(crate) fn rpc_log(rpc_client: &mut dyn RPCClient, msg: String) -> Result<(u64, u64), KError> {
+pub(crate) fn rpc_log(rpc_client: &mut dyn RPCClient, msg: String) -> KResult<(u64, u64)> {
     if let Some(print_str) = SerialControl::buffered_print_and_return(&msg) {
         // Construct request data
         let req = LogReq {
@@ -68,7 +68,7 @@ pub(crate) fn handle_log(
         match core::str::from_utf8(
             &remaining[0..(hdr.msg_len as usize - core::mem::size_of::<LogReq>())],
         ) {
-            Ok(msg_str) => log::info!("Remote Log: client={} {}", res.machine_id, msg_str),
+            Ok(msg_str) => log::info!("RemoteLog({}) {}", res.machine_id, msg_str),
             Err(e) => log::warn!(
                 "log: invalid UTF-8 string: {:?}",
                 &payload[0..hdr.msg_len as usize]

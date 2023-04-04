@@ -1,8 +1,6 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use log::{debug, warn};
-
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
@@ -10,18 +8,17 @@ use kpi::system::MachineId;
 use rpc::rpc::*;
 use rpc::RPCClient;
 
-use crate::error::{KError, KResult};
-use crate::memory::VAddr;
-use crate::nr;
-use crate::nr::KernelNode;
-
 use super::super::controller_state::ControllerState;
 use super::super::dcm::resource_alloc::dcm_resource_alloc;
 use super::super::kernelrpc::*;
+use crate::error::{KError, KResult};
+use crate::memory::VAddr;
+use crate::nr::KernelNode;
+use crate::process::Pid;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RequestCoreReq {
-    pub pid: usize,
+    pub pid: Pid,
     pub new_pid: bool,
     pub entry_point: u64,
 }
@@ -29,11 +26,11 @@ unsafe_abomonate!(RequestCoreReq: pid, new_pid, entry_point);
 
 pub(crate) fn rpc_request_core(
     rpc_client: &mut dyn RPCClient,
-    pid: usize,
+    pid: Pid,
     new_pid: bool,
     entry_point: u64,
 ) -> KResult<(u64, u64)> {
-    debug!("RequestCore({:?}, {:?}, {:?})", pid, new_pid, entry_point);
+    log::debug!("RequestCore({:?}, {:?}, {:?})", pid, new_pid, entry_point);
 
     // Construct request data
     let req = RequestCoreReq {
@@ -57,7 +54,7 @@ pub(crate) fn rpc_request_core(
         if remaining.len() > 0 {
             return Err(KError::from(RPCError::ExtraData));
         }
-        debug!("RequestCore() {:?}", res);
+        log::debug!("RequestCore() {:?}", res);
         *res
     } else {
         Err(KError::from(RPCError::MalformedResponse))
@@ -70,13 +67,13 @@ pub(crate) fn handle_request_core(
     payload: &mut [u8],
     state: ControllerState,
 ) -> Result<ControllerState, RPCError> {
-    log::trace!("handle_request_core() start");
+    log::debug!("handle_request_core() start");
 
     // Parse request
     let core_req = match unsafe { decode::<RequestCoreReq>(payload) } {
         Some((req, _)) => req,
         None => {
-            warn!("Invalid payload for request: {:?}", hdr);
+            log::warn!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
@@ -116,7 +113,7 @@ pub(crate) fn handle_request_core(
         gtid_affinity,
     );
 
-    let ret = nr::KernelNode::allocate_core_to_process(
+    let ret = KernelNode::allocate_core_to_process(
         core_req.pid,
         VAddr(core_req.entry_point),
         Some(gtid_affinity),

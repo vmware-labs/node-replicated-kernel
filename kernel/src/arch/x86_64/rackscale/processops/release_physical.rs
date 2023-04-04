@@ -6,7 +6,6 @@ use core2::io::Result as IOResult;
 use core2::io::Write;
 use kpi::process::FrameId;
 use kpi::FileOperation;
-use log::{debug, error, warn};
 use rpc::rpc::*;
 use rpc::RPCClient;
 
@@ -15,19 +14,18 @@ use crate::fs::fd::FileDescriptor;
 use crate::memory::backends::PhysicalPageProvider;
 use crate::memory::{Frame, PAddr, LARGE_PAGE_SIZE, SHARED_AFFINITY};
 use crate::nrproc::NrProcess;
+use crate::process::Pid;
 
 use super::super::dcm::resource_release::dcm_resource_release;
 use super::super::dcm::{DCMNodeId, DCM_INTERFACE};
 use super::super::kernelrpc::*;
 use super::super::ControllerState;
 use super::super::CLIENT_STATE;
-use crate::arch::process::current_pid;
 use crate::arch::process::Ring3Process;
-use crate::transport::shmem::SHMEM_DEVICE;
 
 #[derive(Debug)]
 pub(crate) struct ReleasePhysicalReq {
-    pub pid: usize,
+    pub pid: Pid,
     pub frame_base: u64,
     pub frame_size: u64,
     pub node_id: DCMNodeId,
@@ -37,10 +35,10 @@ unsafe_abomonate!(ReleasePhysicalReq: frame_base, frame_size, node_id);
 /// RPC to forward physical memory release to controller.
 pub(crate) fn rpc_release_physical(
     rpc_client: &mut dyn RPCClient,
-    pid: usize,
+    pid: Pid,
     frame_id: u64,
 ) -> KResult<(u64, u64)> {
-    debug!("ReleasePhysical({:?})", frame_id);
+    log::debug!("ReleasePhysical({:?})", frame_id);
 
     // Construct request data
     let node_id = CLIENT_STATE.get_frame_as(frame_id as FrameId)?;
@@ -91,14 +89,16 @@ pub(crate) fn handle_release_physical(
     let req = match unsafe { decode::<ReleasePhysicalReq>(payload) } {
         Some((req, _)) => req,
         _ => {
-            warn!("Invalid payload for request: {:?}", hdr);
+            log::error!("Invalid payload for request: {:?}", hdr);
             construct_error_ret(hdr, payload, KError::from(RPCError::MalformedRequest));
             return Ok(state);
         }
     };
-    debug!(
+    log::debug!(
         "ReleasePhysical(frame_base={:x?}, frame_size={:?}), dcm_node_id={:?}",
-        req.frame_base, req.frame_size, req.node_id
+        req.frame_base,
+        req.frame_size,
+        req.node_id
     );
 
     // we only allocate in large frames, so let's also deallocate in large frames.
@@ -123,16 +123,16 @@ pub(crate) fn handle_release_physical(
         Ok(()) => {
             // Tell DCM the resource is no longer being used
             if dcm_resource_release(req.node_id, req.pid, false) == 0 {
-                debug!("DCM release resource was successful");
+                log::debug!("DCM release resource was successful");
                 Ok((0, 0))
             } else {
-                error!("DCM release resource failed");
+                log::error!("DCM release resource failed");
                 // TODO: not sure if this is the best error to send
                 Err(KError::DCMError)
             }
         }
         Err(kerror) => {
-            error!("Manager failed to release physical frame: {:?}", kerror);
+            log::error!("Manager failed to release physical frame: {:?}", kerror);
             Err(kerror)
         }
     };

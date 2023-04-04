@@ -6,15 +6,10 @@ use core::convert::TryFrom;
 use abomonation::{encode, unsafe_abomonate, Abomonation};
 use core2::io::Result as IOResult;
 use core2::io::Write;
-use hashbrown::HashMap;
-use lazy_static::lazy_static;
-use log::{debug, error};
 
 use rpc::rpc::*;
 
 use crate::error::{KError, KResult};
-use crate::nr;
-use crate::process::Pid;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]

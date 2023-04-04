@@ -16,6 +16,7 @@ use crate::process::{KernArcBuffer, UserSlice};
 use crate::syscalls::{
     FsDispatch, ProcessDispatch, SystemCallDispatch, SystemDispatch, VSpaceDispatch,
 };
+use crate::transport::shmem::is_shmem_frame;
 
 use super::super::syscall::{Arch86SystemCall, Arch86SystemDispatch, Arch86VSpaceDispatch};
 use super::fileops::close::rpc_close;
@@ -33,9 +34,6 @@ use super::systemops::get_hardware_threads::rpc_get_hardware_threads;
 use super::CLIENT_STATE;
 use crate::arch::rackscale::get_shmem_frames::rpc_get_shmem_frames;
 
-use crate::nrproc::NrProcess;
-use crate::transport::shmem::is_shmem_frame;
-
 pub(crate) struct Arch86LwkSystemCall {
     pub(crate) local: Arch86SystemCall,
 }
@@ -49,7 +47,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
         let pcm = try_per_core_mem().ok_or(KError::KcbUnavailable)?;
         let (bp, lp) = crate::memory::utils::size_to_pages(size as usize);
         let mut frames = Vec::try_with_capacity(bp + lp)?;
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
 
         let mut total_needed_large_pages = lp;
         let mut total_needed_base_pages = bp;
@@ -98,30 +96,11 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
         }
 
         if total_needed_large_pages > 0 {
-            let affinity = {
-                // We shouldn't call an RPC while using shmem as memory allocator.
-                // So use current node affinity
-                let affinity = { pcm.physical_memory.borrow().affinity };
-                if affinity == SHARED_AFFINITY {
-                    pcm.set_mem_affinity(*crate::environment::NODE_ID)
-                        .expect("Can't change affinity");
-                    Some(affinity)
-                } else {
-                    None
-                }
-            };
-
             // Query controller (DCM) to get frames of shmem
             let mut allocated_frames = {
                 let mut client = CLIENT_STATE.rpc_client.lock();
                 rpc_get_shmem_frames(&mut **client, Some(pid), total_needed_large_pages)?
             };
-
-            // Reset to shmem manager
-            if let Some(affinity) = affinity {
-                pcm.set_mem_affinity(SHARED_AFFINITY)
-                    .expect("Can't change affinity");
-            }
 
             for i in 0..lp {
                 // TODO(rackscale performance): should be debug assert
@@ -192,8 +171,13 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
             }
         }
 
-        NrProcess::<Ring3Process>::map_frames(current_pid()?, base, frames, MapAction::write())
-            .expect("Can't map memory");
+        nrproc::NrProcess::<Ring3Process>::map_frames(
+            current_pid()?,
+            base,
+            frames,
+            MapAction::write(),
+        )
+        .expect("Can't map memory");
 
         Ok((paddr.unwrap().as_u64(), total_len as u64))
     }
@@ -225,7 +209,7 @@ impl VSpaceDispatch<u64> for Arch86LwkSystemCall {
 
 impl SystemDispatch<u64> for Arch86LwkSystemCall {
     fn get_hardware_threads(&self, vaddr_buf: u64, vaddr_buf_len: u64) -> KResult<(u64, u64)> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         let mut client = CLIENT_STATE.rpc_client.lock();
         rpc_get_hardware_threads(&mut **client, pid, vaddr_buf, vaddr_buf_len).map_err(|e| e.into())
     }
@@ -285,7 +269,7 @@ impl FsDispatch<u64> for Arch86LwkSystemCall {
     }
 
     fn close(&self, fd: FileDescriptor) -> KResult<(u64, u64)> {
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         let mut client = CLIENT_STATE.rpc_client.lock();
         rpc_close(&mut **client, pid, fd).map_err(|e| e.into())
     }
@@ -349,19 +333,19 @@ impl ProcessDispatch<u64> for Arch86LwkSystemCall {
 
     fn request_core(&self, _core_id: u64, entry_point: u64) -> KResult<(u64, u64)> {
         let mut client = CLIENT_STATE.rpc_client.lock();
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         rpc_request_core(&mut **client, pid, false, entry_point).map_err(|e| e.into())
     }
 
     fn allocate_physical(&self, page_size: u64, affinity: u64) -> KResult<(u64, u64)> {
         let mut client = CLIENT_STATE.rpc_client.lock();
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         rpc_allocate_physical(&mut **client, pid, page_size, affinity).map_err(|e| e.into())
     }
 
     fn release_physical(&self, frame_id: u64) -> KResult<(u64, u64)> {
         let mut client = CLIENT_STATE.rpc_client.lock();
-        let pid = crate::arch::process::current_pid()?;
+        let pid = current_pid()?;
         rpc_release_physical(&mut **client, pid, frame_id).map_err(|e| e.into())
     }
 

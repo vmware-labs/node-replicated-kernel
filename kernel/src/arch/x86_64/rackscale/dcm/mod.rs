@@ -1,31 +1,22 @@
 // Copyright © 2022 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::borrow::BorrowMut;
-use core::cell::RefCell;
-use core::convert::TryFrom;
-use core::fmt::Debug;
-use core2::io::Result as IOResult;
-use core2::io::Write;
+
+use abomonation::{unsafe_abomonate, Abomonation};
 use lazy_static::lazy_static;
-use log::warn;
-use rpc::client::Client;
-use rpc::rpc::*;
-use rpc::transport::TCPTransport;
-use rpc::RPCClient;
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
 use smoltcp::wire::IpAddress;
 use spin::Mutex;
+
+use rpc::client::Client;
+use rpc::rpc::RPCType;
+use rpc::transport::TCPTransport;
 use vmxnet3::smoltcp::DevQueuePhy;
 
-use super::kernelrpc::*;
-use crate::arch::rackscale::controller_state::FrameCacheMemslice;
-use crate::fallible_string::TryString;
 use crate::transport::ethernet::{init_ethernet_rpc, ETHERNET_IFACE};
 
 pub(crate) mod affinity_alloc;

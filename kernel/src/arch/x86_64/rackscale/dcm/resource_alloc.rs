@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::vec::Vec;
+
 use fallible_collections::FallibleVecGlobal;
-use log::{debug, warn};
-use rpc::rpc::RPCType;
-use rpc::RPCClient;
 use smoltcp::socket::UdpSocket;
 use smoltcp::time::Instant;
+
+use rpc::rpc::RPCType;
+use rpc::RPCClient;
 
 use crate::transport::ethernet::ETHERNET_IFACE;
 
@@ -16,28 +17,17 @@ use super::{DCMNodeId, DCMOps, DCM_INTERFACE};
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct ResourceAllocRequest {
-    pub application: u64,
-    pub cores: u64,
-    pub memslices: u64,
+struct ResourceAllocRequest {
+    application: u64,
+    cores: u64,
+    memslices: u64,
 }
-pub const REQ_SIZE: usize = core::mem::size_of::<ResourceAllocRequest>();
+const REQ_SIZE: usize = core::mem::size_of::<ResourceAllocRequest>();
 
 impl ResourceAllocRequest {
     /// # Safety
     /// - `self` must be valid ResourceAllocRequest
-    pub unsafe fn as_mut_bytes(&mut self) -> &mut [u8; REQ_SIZE] {
-        ::core::slice::from_raw_parts_mut(
-            (self as *const ResourceAllocRequest) as *mut u8,
-            REQ_SIZE,
-        )
-        .try_into()
-        .expect("slice with incorrect length")
-    }
-
-    /// # Safety
-    /// - `self` must be valid ResourceAllocRequest
-    pub unsafe fn as_bytes(&self) -> &[u8; REQ_SIZE] {
+    unsafe fn as_bytes(&self) -> &[u8; REQ_SIZE] {
         ::core::slice::from_raw_parts((self as *const ResourceAllocRequest) as *const u8, REQ_SIZE)
             .try_into()
             .expect("slice with incorrect length")
@@ -46,10 +36,10 @@ impl ResourceAllocRequest {
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct ResourceAllocResponse {
-    pub alloc_id: u64,
+struct ResourceAllocResponse {
+    alloc_id: u64,
 }
-pub const RES_SIZE: usize = core::mem::size_of::<ResourceAllocResponse>();
+const RES_SIZE: usize = core::mem::size_of::<ResourceAllocResponse>();
 
 impl ResourceAllocResponse {
     /// # Safety
@@ -62,26 +52,15 @@ impl ResourceAllocResponse {
         .try_into()
         .expect("slice with incorrect length")
     }
-
-    /// # Safety
-    /// - `self` must be valid ResourceAllocResponse
-    pub unsafe fn as_bytes(&self) -> &[u8; RES_SIZE] {
-        ::core::slice::from_raw_parts(
-            (self as *const ResourceAllocResponse) as *const u8,
-            RES_SIZE,
-        )
-        .try_into()
-        .expect("slice with incorrect length")
-    }
 }
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct ResourceAllocAssignment {
-    pub alloc_id: u64,
-    pub node: DCMNodeId,
+struct ResourceAllocAssignment {
+    alloc_id: u64,
+    node: DCMNodeId,
 }
-pub const ALLOC_LEN: usize = core::mem::size_of::<ResourceAllocAssignment>();
+pub(crate) const ALLOC_LEN: usize = core::mem::size_of::<ResourceAllocAssignment>();
 
 impl ResourceAllocAssignment {
     /// # Safety
@@ -94,17 +73,6 @@ impl ResourceAllocAssignment {
         .try_into()
         .expect("slice with incorrect length")
     }
-
-    /// # Safety
-    /// - `self` must be valid ResourceAllocAssignment
-    pub unsafe fn as_bytes(&self) -> &[u8; ALLOC_LEN] {
-        ::core::slice::from_raw_parts(
-            (self as *const ResourceAllocAssignment) as *const u8,
-            ALLOC_LEN,
-        )
-        .try_into()
-        .expect("slice with incorrect length")
-    }
 }
 
 pub(crate) fn dcm_resource_alloc(
@@ -112,7 +80,14 @@ pub(crate) fn dcm_resource_alloc(
     cores: u64,
     memslices: u64,
 ) -> (Vec<DCMNodeId>, Vec<DCMNodeId>) {
+    // TODO(rackscale): make debug assert
     assert!(cores > 0 || memslices > 0);
+    log::debug!(
+        "Asking DCM for {:?} cores and {:?} memslices for pid {:?}",
+        cores,
+        memslices,
+        pid
+    );
 
     let req = ResourceAllocRequest {
         application: pid as u64,
@@ -137,15 +112,15 @@ pub(crate) fn dcm_resource_alloc(
                 unsafe { &mut [res.as_mut_bytes()] },
             )
             .expect("Failed to send resource alloc RPC to DCM");
-        debug!("Received allocation id in response: {:?}", res.alloc_id);
     }
+    log::debug!("Received allocation id in response: {:?}", res.alloc_id);
 
     let mut received_allocations = 0;
     let mut dcm_node_for_cores =
         Vec::try_with_capacity(cores as usize).expect("Failed to allocate memory");
     let mut dcm_node_for_memslices =
         Vec::try_with_capacity(memslices as usize).expect("Failed to allocate memory");
-    log::info!("Expecting {:?} allocations", cores + memslices);
+
     while received_allocations < cores + memslices {
         {
             let mut my_iface = ETHERNET_IFACE.lock();
@@ -153,7 +128,7 @@ pub(crate) fn dcm_resource_alloc(
             if socket.can_recv() {
                 match socket.recv_slice(unsafe { assignment.as_mut_bytes() }) {
                     Ok((_, endpoint)) => {
-                        log::info!(
+                        log::debug!(
                             "Received assignment: {:?} to node {:?}",
                             assignment.alloc_id,
                             assignment.node
@@ -174,7 +149,7 @@ pub(crate) fn dcm_resource_alloc(
                         received_allocations += 1;
                     }
                     Err(e) => {
-                        debug!("Received nothing? {:?}", e);
+                        log::debug!("Received nothing? {:?}", e);
                     }
                 }
             }
@@ -185,7 +160,7 @@ pub(crate) fn dcm_resource_alloc(
         )) {
             Ok(_) => {}
             Err(e) => {
-                warn!("poll error: {}", e);
+                log::warn!("poll error: {}", e);
             }
         }
     }

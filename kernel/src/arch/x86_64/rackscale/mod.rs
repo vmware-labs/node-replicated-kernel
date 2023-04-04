@@ -11,8 +11,8 @@ pub(crate) mod controller_state;
 pub(crate) mod dcm;
 pub(crate) mod fileops;
 pub(crate) mod get_nr_log;
-pub(crate) mod get_process_logs;
 pub(crate) mod get_shmem_frames;
+pub(crate) mod get_shmem_structure;
 pub(crate) mod get_workqueues;
 pub(crate) mod kernelrpc;
 pub(crate) mod processops;
@@ -54,8 +54,8 @@ pub(crate) const GET_HARDWARE_THREADS_HANDLER: RPCHandler<ControllerState> =
     systemops::get_hardware_threads::handle_get_hardware_threads;
 
 // there aren't syscalls, but are other operations
-pub(crate) const GET_PROCESS_LOGS_HANDLER: RPCHandler<ControllerState> =
-    get_process_logs::handle_get_process_logs;
+pub(crate) const GET_SHMEM_STRUCTURE_HANDLER: RPCHandler<ControllerState> =
+    get_shmem_structure::handle_get_shmem_structure;
 pub(crate) const GET_SHMEM_FRAMES_HANDLER: RPCHandler<ControllerState> =
     get_shmem_frames::handle_get_shmem_frames;
 pub(crate) const GET_WORKQUEUES_HANDLER: RPCHandler<ControllerState> =

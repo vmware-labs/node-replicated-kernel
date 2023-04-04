@@ -57,7 +57,7 @@ pub(crate) enum KernelRpc {
     GetHardwareThreads = 16,
 
     /// send process logs reference to client
-    GetProcessLogs = 17,
+    GetShmemStructure = 17,
 
     /// request shmem frames
     GetShmemFrames = 18,
@@ -92,7 +92,7 @@ impl TryFrom<RPCType> for KernelRpc {
             15 => Ok(KernelRpc::ReleasePhysical),
             15 => Ok(KernelRpc::RequestCore),
             16 => Ok(KernelRpc::GetHardwareThreads),
-            17 => Ok(KernelRpc::GetProcessLogs),
+            17 => Ok(KernelRpc::GetShmemStructure),
             18 => Ok(KernelRpc::GetShmemFrames),
             19 => Ok(KernelRpc::GetWorkqueues),
             20 => Ok(KernelRpc::GetNrLog),

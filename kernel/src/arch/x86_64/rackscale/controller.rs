@@ -158,8 +158,8 @@ fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
         .unwrap();
     server
         .register(
-            KernelRpc::GetProcessLogs as RPCType,
-            &GET_PROCESS_LOGS_HANDLER,
+            KernelRpc::GetShmemStructure as RPCType,
+            &GET_SHMEM_STRUCTURE_HANDLER,
         )
         .unwrap();
     server

@@ -89,10 +89,22 @@ lazy_static! {
             pcm.set_mem_affinity(SHARED_AFFINITY).expect("Can't change affinity");
         } else {
             // Get location of the logs from the controller, who will created them in shared memory
-            use crate::arch::rackscale::get_process_logs::rpc_get_proccess_logs;
+            use crate::arch::rackscale::get_shmem_structure::{rpc_get_shmem_structure, ShmemStructure};
             use crate::arch::rackscale::CLIENT_STATE;
+
+            let mut log_ptrs = [0u64; MAX_PROCESSES];
             let mut client = CLIENT_STATE.rpc_client.lock();
-            return rpc_get_proccess_logs(&mut **client).unwrap();
+            rpc_get_shmem_structure(&mut **client, ShmemStructure::NrProcLogs, &mut log_ptrs[..]).expect("Failed to get process log pointers");
+            let mut process_logs = Box::new(ArrayVec::new());
+            for i in 0..log_ptrs.len() {
+                let log_ptr = paddr_to_kernel_vaddr(PAddr::from(log_ptrs[i]));
+                let local_log_arc = unsafe {
+                    Arc::from_raw(log_ptr.as_u64()
+                        as *const Log<'static, <NrProcess<Ring3Process> as Dispatch>::WriteOperation>)
+                };
+                process_logs.push(local_log_arc);
+            }
+            return process_logs;
         }
 
         let process_logs = {

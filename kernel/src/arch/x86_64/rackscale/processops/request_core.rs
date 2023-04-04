@@ -86,7 +86,7 @@ pub(crate) fn handle_request_core(
     let dcm_node_id = dcm_node_ids[0];
 
     let (gtid, gtid_affinity) = {
-        let mut client_state = state.get_client_state_by_dcm_node_id(dcm_node_id).lock();
+        let mut client_state = state.get_client_state_by_dcm_id(dcm_node_id).lock();
 
         // TODO(performance): controller chooses a core id - right now, sequentially for cores on the dcm_node_id.
         // it should really choose in a NUMA-aware fashion for the remote node.

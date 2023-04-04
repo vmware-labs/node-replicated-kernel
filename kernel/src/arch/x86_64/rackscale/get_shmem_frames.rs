@@ -119,9 +119,9 @@ pub(crate) fn handle_get_shmem_frames(
 
     let mut regions = Vec::<ShmemRegion>::new();
 
-    if let Some(machine_id) = machine_id {
+    if let Some(mid) = machine_id {
         // Ask DCM to make sure we can safely take from the local allocators
-        let node_id = state.machine_id_to_dcm_node_id(machine_id);
+        let node_id = state.mid_to_dcm_id(mid);
         // TODO: if it fails, ask for memory from somewhere else??
         if !dcm_affinity_alloc(node_id, num_frames) {
             log::warn!("GetShmemFrames failed due to lack of memory");
@@ -131,7 +131,7 @@ pub(crate) fn handle_get_shmem_frames(
 
         // Take the frames from the local allocator
         {
-            let mut client_state = state.get_client_state_by_dcm_node_id(node_id).lock();
+            let mut client_state = state.get_client_state_by_dcm_id(node_id).lock();
             let mut manager = client_state
                 .shmem_manager
                 .as_mut()
@@ -147,16 +147,16 @@ pub(crate) fn handle_get_shmem_frames(
             }
         }
     } else if let Some(pid) = pid {
-        // TODO(error-handling): what if only part of request is satisfied? How to rollback?
-        // TODO(efficiency): should put requests in all at once, or something like that.
+        // TODO(rackscale, error-handling): what if only part of request is satisfied? How to rollback?
+        // TODO(rackscale, efficiency): should put requests in all at once, or something like that.
         // Let DCM choose node
-        let (_, dcm_node_ids) = dcm_resource_alloc(pid, 0, num_frames as u64);
+        let (_, dcm_ids) = dcm_resource_alloc(pid, 0, num_frames as u64);
         for i in 0..num_frames {
-            let dcm_node_id = dcm_node_ids[i];
-            log::debug!("Received node assignment from DCM: node {:?}", dcm_node_id);
+            let dcm_id = dcm_ids[i];
+            log::debug!("Received node assignment from DCM: node {:?}", dcm_id);
 
             // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
-            let mut client_state = state.get_client_state_by_dcm_node_id(dcm_node_id).lock();
+            let mut client_state = state.get_client_state_by_dcm_id(dcm_id).lock();
             let mut manager = client_state
                 .shmem_manager
                 .as_mut()

@@ -126,7 +126,7 @@ pub(crate) fn handle_allocate_physical(
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let frame = {
-        let mut client_state = state.get_client_state_by_dcm_node_id(dcm_node_id).lock();
+        let mut client_state = state.get_client_state_by_dcm_id(dcm_node_id).lock();
         let mut manager = client_state
             .shmem_manager
             .as_mut()

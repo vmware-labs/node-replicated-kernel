@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use fallible_collections::FallibleVecGlobal;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -14,14 +12,9 @@ use static_assertions as sa;
 use kpi::system::{CpuThread, MachineId};
 
 use crate::arch::rackscale::dcm::DCMNodeId;
-use crate::arch::MAX_CORES;
 use crate::memory::mcache::MCache;
 use crate::memory::LARGE_PAGE_SIZE;
-use crate::process::MAX_PROCESSES;
-use crate::transport::shmem::{get_affinity_shmem, SHMEM_DEVICE};
-
-/// Set at roughly the size needed for the logs + log replicas * 2 (for controller with single core)
-pub(crate) const CONTROLLER_SHMEM_SIZE: u64 = LARGE_PAGE_SIZE as u64 * 100;
+use crate::transport::shmem::get_affinity_shmem;
 
 /// Global state about the local rackscale client
 lazy_static! {
@@ -52,37 +45,38 @@ sa::const_assert!(core::mem::align_of::<FrameCacheShmem>() <= LARGE_PAGE_SIZE);
 /// This is the state the controller records about each client
 pub(crate) struct PerClientState {
     /// The client believes it has this ID
-    pub(crate) machine_id: MachineId,
+    pub(crate) mid: MachineId,
 
     /// Memory manager for the affinity shmem for the client
     pub(crate) shmem_manager: Option<Box<FrameCacheMemslice>>,
 
     /// A list of the hardware threads belonging to this client and whether the thread is scheduler or not
+    /// TODO(rackscale, performance): make this a core map??
     pub(crate) hw_threads: Vec<(CpuThread, bool)>,
 }
 
 impl PerClientState {
     pub(crate) fn new(
-        machine_id: MachineId,
+        mid: MachineId,
         shmem_manager: Option<Box<FrameCacheMemslice>>,
         hw_threads: Vec<(CpuThread, bool)>,
     ) -> PerClientState {
         PerClientState {
-            machine_id,
+            mid,
             shmem_manager,
             hw_threads,
         }
     }
 }
 
-/// This is the state of the controller, including on all clients
+/// This is the state of the controller, including all per-client state
 pub(crate) struct ControllerState {
-    /// Number of clients managed by this controller
+    /// Maximum number of clients managed by this controller
     max_clients: usize,
 
     /// State related to each client. We want fast lookup by both keys
-    client_states_by_dcm_node_id: HashMap<DCMNodeId, Arc<Mutex<PerClientState>>>,
-    machine_id_to_dcm_node_id: HashMap<MachineId, DCMNodeId>,
+    per_client_state: HashMap<DCMNodeId, Arc<Mutex<PerClientState>>>,
+    mid_to_dcm_id: HashMap<MachineId, DCMNodeId>,
 }
 
 impl ControllerState {
@@ -90,46 +84,41 @@ impl ControllerState {
         ControllerState {
             max_clients,
             // TODO(rackscale, memory): try_with_capacity??
-            client_states_by_dcm_node_id: HashMap::with_capacity(max_clients),
-            machine_id_to_dcm_node_id: HashMap::with_capacity(max_clients),
+            per_client_state: HashMap::with_capacity(max_clients),
+            mid_to_dcm_id: HashMap::with_capacity(max_clients),
         }
     }
 
-    pub(crate) fn add_client(&mut self, dcm_node_id: DCMNodeId, client_state: PerClientState) {
-        assert!(!self.client_states_by_dcm_node_id.contains_key(&dcm_node_id));
-        assert!(!self
-            .machine_id_to_dcm_node_id
-            .contains_key(&client_state.machine_id));
-        self.machine_id_to_dcm_node_id
-            .insert(client_state.machine_id, dcm_node_id);
-        self.client_states_by_dcm_node_id
-            .insert(dcm_node_id, Arc::new(Mutex::new(client_state)));
+    pub(crate) fn add_client(&mut self, dcm_id: DCMNodeId, client_state: PerClientState) {
+        assert!(!self.per_client_state.contains_key(&dcm_id));
+        assert!(!self.mid_to_dcm_id.contains_key(&client_state.mid));
+
+        self.mid_to_dcm_id.insert(client_state.mid, dcm_id);
+        self.per_client_state
+            .insert(dcm_id, Arc::new(Mutex::new(client_state)));
     }
 
-    pub(crate) fn get_client_state_by_dcm_node_id(
+    pub(crate) fn get_client_state_by_dcm_id(
         &self,
-        dcm_node_id: DCMNodeId,
+        dcm_id: DCMNodeId,
     ) -> &Arc<Mutex<PerClientState>> {
-        self.client_states_by_dcm_node_id.get(&dcm_node_id).unwrap()
+        self.per_client_state.get(&dcm_id).unwrap()
     }
 
-    pub(crate) fn machine_id_to_dcm_node_id(&self, machine_id: MachineId) -> DCMNodeId {
-        *self.machine_id_to_dcm_node_id.get(&machine_id).unwrap()
+    pub(crate) fn mid_to_dcm_id(&self, mid: MachineId) -> DCMNodeId {
+        *self.mid_to_dcm_id.get(&mid).unwrap()
     }
 
-    pub(crate) fn get_client_state_by_machine_id(
-        &self,
-        machine_id: MachineId,
-    ) -> &Arc<Mutex<PerClientState>> {
-        let dcm_node_id = self.machine_id_to_dcm_node_id.get(&machine_id).unwrap();
-        self.client_states_by_dcm_node_id.get(dcm_node_id).unwrap()
+    pub(crate) fn get_client_state_by_mid(&self, mid: MachineId) -> &Arc<Mutex<PerClientState>> {
+        let dcm_id = self.mid_to_dcm_id.get(&mid).unwrap();
+        self.per_client_state.get(dcm_id).unwrap()
     }
 
     // TODO(efficiency): allocates memory on the fly & also has nested loop
     // should be called sparingly or rewritten
     pub(crate) fn get_hardware_threads(&self) -> Vec<CpuThread> {
         let mut hw_threads = Vec::new();
-        for client_state in self.client_states_by_dcm_node_id.values() {
+        for client_state in self.per_client_state.values() {
             let state = client_state.lock();
             hw_threads
                 .try_reserve_exact(state.hw_threads.len())

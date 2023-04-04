@@ -12,7 +12,6 @@ use spin::Mutex;
 
 #[cfg(feature = "rpc")]
 use {
-    crate::arch::rackscale::controller_state::CONTROLLER_SHMEM_SIZE,
     crate::cmdline::Transport,
     crate::error::{KError, KResult},
     crate::memory::{mcache::MCache, Frame, SHARED_AFFINITY},
@@ -373,7 +372,7 @@ pub(crate) fn get_affinity_shmem() -> ShmemRegion {
 }
 
 #[cfg(feature = "rackscale")]
-pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
+pub(crate) fn get_affinity_shmem_by_mid(mid: MachineId) -> ShmemRegion {
     let mut base = SHMEM_DEVICE.region.base;
     let mut size = SHMEM_DEVICE.region.size;
 
@@ -389,33 +388,13 @@ pub(crate) fn get_affinity_shmem_by_mid(machine_id: MachineId) -> ShmemRegion {
         size = core::cmp::max(0, size - SHMEM_TRANSPORT_SIZE * num_workers);
     };
 
-    // Controller gets a set amount of shmem
-    if machine_id == 0 {
-        log::debug!(
-            "Shmem affinity region: base={:x}, size={:x}, range: [{:X}-{:X}]",
-            base,
-            CONTROLLER_SHMEM_SIZE,
-            base,
-            base + CONTROLLER_SHMEM_SIZE - 1,
-        );
-        return ShmemRegion {
-            base,
-            size: CONTROLLER_SHMEM_SIZE,
-        };
-    }
-
-    // Adjust for controller
-    debug_assert!(size >= CONTROLLER_SHMEM_SIZE);
-    base += CONTROLLER_SHMEM_SIZE;
-    size -= CONTROLLER_SHMEM_SIZE;
-
     // Align on base page boundaries
     let pages_per_worker =
-        (size / BASE_PAGE_SIZE as u64) / (*crate::environment::NUM_MACHINES as u64 - 1);
+        (size / BASE_PAGE_SIZE as u64) / (*crate::environment::NUM_MACHINES as u64);
     let size_per_worker = pages_per_worker * BASE_PAGE_SIZE as u64;
 
-    base += size_per_worker * (machine_id as u64 - 1) as u64;
-    log::debug!(
+    base += size_per_worker * (mid as u64) as u64;
+    log::trace!(
         "Shmem affinity region: base={:x}, size={:x}, range: [{:X}-{:X}]",
         base,
         size_per_worker,

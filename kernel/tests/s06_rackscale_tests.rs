@@ -226,11 +226,12 @@ fn s06_rackscale_shmem_fs_prop_test() {
     use std::time::Duration;
 
     let timeout = 300_000;
+    let shmem_size = SHMEM_SIZE * 2;
 
     setup_network(2);
 
     let mut shmem_server =
-        spawn_shmem_server(SHMEM_PATH, SHMEM_SIZE).expect("Failed to start shmem server");
+        spawn_shmem_server(SHMEM_PATH, shmem_size).expect("Failed to start shmem server");
     let mut dcm = spawn_dcm(1, timeout).expect("Failed to start DCM");
 
     let (tx, rx) = channel();
@@ -249,7 +250,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
         let cmdline_controller = RunnerArgs::new_with_build("userspace-smp", &build1)
             .timeout(timeout)
             .cmd("mode=controller")
-            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_size(shmem_size as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap0")
             .no_network_setup()
@@ -273,7 +274,7 @@ fn s06_rackscale_shmem_fs_prop_test() {
         let cmdline_client = RunnerArgs::new_with_build("userspace-smp", &build2)
             .timeout(timeout)
             .cmd("mode=client")
-            .shmem_size(SHMEM_SIZE as usize)
+            .shmem_size(shmem_size as usize)
             .shmem_path(SHMEM_PATH)
             .tap("tap2")
             .no_network_setup()

@@ -110,7 +110,7 @@ pub(crate) fn handle_release_physical(
 
     // TODO(error_handling): should handle errors gracefully here, maybe percolate to client?
     let ret = {
-        let mut client_state = state.get_client_state_by_dcm_node_id(req.node_id).lock();
+        let mut client_state = state.get_client_state_by_dcm_id(req.node_id).lock();
         let mut manager = client_state
             .shmem_manager
             .as_mut()

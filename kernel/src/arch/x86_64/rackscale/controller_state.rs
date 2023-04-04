@@ -89,7 +89,7 @@ impl ControllerState {
     pub(crate) fn new(max_clients: usize) -> ControllerState {
         ControllerState {
             max_clients,
-            // TODO(hunhoffe): try_with_capacity??
+            // TODO(rackscale, memory): try_with_capacity??
             client_states_by_dcm_node_id: HashMap::with_capacity(max_clients),
             machine_id_to_dcm_node_id: HashMap::with_capacity(max_clients),
         }

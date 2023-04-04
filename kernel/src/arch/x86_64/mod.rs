@@ -68,7 +68,7 @@ pub mod vspace;
 
 pub(crate) const MAX_NUMA_NODES: usize = 12;
 pub(crate) const MAX_CORES: usize = 192;
-pub(crate) const MAX_MACHINES: usize = u8::MAX as usize;
+pub(crate) const MAX_MACHINES: usize = 16;
 
 /// Make sure the machine supports what we require.
 fn assert_required_cpu_features() {
@@ -393,27 +393,33 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
 
     #[cfg(feature = "rackscale")]
     {
-        use crate::transport::shmem::SHMEM_DEVICE;
-        lazy_static::initialize(&SHMEM_DEVICE);
-
-        if crate::CMDLINE
-            .get()
-            .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
         {
-            use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
-            lazy_static::initialize(&CONTROLLER_AFFINITY_SHMEM);
-        } else {
-            use crate::arch::irq::{
-                REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, REMOTE_TLB_WORK_PENDING_VECTOR,
-            };
+            use crate::transport::shmem::SHMEM_DEVICE;
+            lazy_static::initialize(&SHMEM_DEVICE);
 
-            // Setup to receive interrupts
-            SHMEM_DEVICE.enable_msix_vector(
-                REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR as usize,
-                0,
-                REMOTE_TLB_WORK_PENDING_VECTOR,
-            );
+            if crate::CMDLINE
+                .get()
+                .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+            {
+                use crate::arch::rackscale::controller_state::CONTROLLER_AFFINITY_SHMEM;
+                lazy_static::initialize(&CONTROLLER_AFFINITY_SHMEM);
+                lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_INTERFACE);
+            } else {
+                use crate::arch::irq::{
+                    REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR, REMOTE_TLB_WORK_PENDING_VECTOR,
+                };
+
+                // Setup to receive interrupts
+                SHMEM_DEVICE.enable_msix_vector(
+                    REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR as usize,
+                    0,
+                    REMOTE_TLB_WORK_PENDING_VECTOR,
+                );
+                lazy_static::initialize(&rackscale::client_state::CLIENT_STATE);
+            }
         }
+        // Initialize the workqueues used for distributed TLB shootdowns
+        lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
     }
 
     unsafe { vspace::init_large_objects_pml4() };
@@ -468,36 +474,8 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
     // Intialize PCI
     crate::pci::init();
 
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        // Force client instantiation - this must be done before the process
-        // structures are initialized.
-        lazy_static::initialize(&rackscale::client_state::CLIENT_STATE);
-    } else {
-        lazy_static::initialize(&crate::arch::rackscale::dcm::DCM_INTERFACE);
-        log::info!("Controller initialized connection to DCM");
-    }
-
-    // Initialize the workqueues used for TLB shootdowns & advance replica requests
-    #[cfg(feature = "rackscale")]
-    {
-        lazy_static::initialize(&crate::arch::tlb::RACKSCALE_CLIENT_WORKQUEUES);
-    }
-
     // Initialize processes
     lazy_static::initialize(&process::PROCESS_LOGS);
-
-    #[cfg(feature = "rackscale")]
-    if crate::CMDLINE
-        .get()
-        .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
-    {
-        lazy_static::initialize(&process::PROCESS_TABLE);
-        crate::nrproc::register_thread_with_process_replicas();
-    }
 
     #[cfg(not(feature = "rackscale"))]
     {
@@ -505,15 +483,22 @@ fn _start(argc: isize, _argv: *const *const u8) -> isize {
         crate::nrproc::register_thread_with_process_replicas();
     }
 
-    // For rackscale, only the controller is going to create the base log.
-    // All clients will use this to create replicas.
     #[cfg(feature = "rackscale")]
     let (log, bsp_replica) = {
+        if crate::CMDLINE
+            .get()
+            .map_or(false, |c| c.mode == crate::cmdline::Mode::Client)
+        {
+            lazy_static::initialize(&process::PROCESS_TABLE);
+            crate::nrproc::register_thread_with_process_replicas();
+        }
         use crate::nr::NR_LOG;
 
         // this calls an RPC on the client, which is why we do this later in initialization than in non-rackscale
         lazy_static::initialize(&NR_LOG);
 
+        // For rackscale, only the controller is going to create the base log.
+        // All clients will use this to create replicas.
         let bsp_replica = Replica::<KernelNode>::new(&NR_LOG);
         let local_ridx = bsp_replica.register().unwrap();
         crate::nr::NR_REPLICA.call_once(|| (bsp_replica.clone(), local_ridx));

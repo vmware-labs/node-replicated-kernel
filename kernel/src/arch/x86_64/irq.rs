@@ -60,7 +60,7 @@ use super::memory::{PAddr, VAddr, BASE_PAGE_SIZE, KERNEL_BASE};
 use super::process::{Ring0Resumer, Ring3Process, Ring3Resumer};
 use super::{debug, gdb, timer};
 
-// TODO(hunhoffe): probably not the right place for this but transport/shmem isn't always included.
+// TODO(rackscale): probably not the right place for this but transport/shmem isn't always included.
 pub(crate) const REMOTE_TLB_WORK_PENDING_VECTOR: u8 = 249;
 pub(crate) const REMOTE_TLB_WORK_PENDING_SHMEM_VECTOR: u16 = 1;
 
@@ -760,7 +760,16 @@ pub extern "C" fn handle_generic_exception(a: ExceptionArguments) -> ! {
                 kcb_iret_handle(kcb).resume()
             } else {
                 loop {
+                    #[cfg(not(feature = "rackscale"))]
                     super::tlb::eager_advance_fs_replica();
+
+                    #[cfg(feature = "rackscale")]
+                    if crate::CMDLINE
+                        .get()
+                        .map_or(false, |c| c.mode == crate::cmdline::Mode::Controller)
+                    {
+                        super::tlb::eager_advance_fs_replica();
+                    }
 
                     // Reset a timer and sleep for some time
                     timer::set(timer::DEFAULT_TIMER_DEADLINE);

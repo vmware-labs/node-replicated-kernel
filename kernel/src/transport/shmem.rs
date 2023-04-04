@@ -141,7 +141,7 @@ impl ShmemDevice {
                 .map_identity_with_offset(
                     PAddr::from(KERNEL_BASE),
                     PAddr::from(register_region.address),
-                    // TODO(hunhoffe): this is a hack because the region is < BASE_PAGE_REGION
+                    // TODO(rackscale, correctness): this is a hack because the region is < BASE_PAGE_REGION but map assumes at least BASE_PAGE_SIZE
                     core::cmp::max(BASE_PAGE_SIZE, register_region.size as usize),
                     MapAction::kernel() | MapAction::write(),
                 )

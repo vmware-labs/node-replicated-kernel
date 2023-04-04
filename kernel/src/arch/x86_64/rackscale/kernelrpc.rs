@@ -61,12 +61,6 @@ pub(crate) enum KernelRpc {
 
     /// request shmem frames
     GetShmemFrames = 18,
-
-    /// send workqueue reference to client
-    GetWorkqueues = 19,
-
-    /// send nr log reference
-    GetNrLog = 20,
 }
 
 impl TryFrom<RPCType> for KernelRpc {
@@ -94,8 +88,6 @@ impl TryFrom<RPCType> for KernelRpc {
             16 => Ok(KernelRpc::GetHardwareThreads),
             17 => Ok(KernelRpc::GetShmemStructure),
             18 => Ok(KernelRpc::GetShmemFrames),
-            19 => Ok(KernelRpc::GetWorkqueues),
-            20 => Ok(KernelRpc::GetNrLog),
             _ => Err(KError::InvalidRpcType),
         }
     }

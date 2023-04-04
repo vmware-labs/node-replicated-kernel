@@ -12,7 +12,6 @@ pub(crate) mod dcm;
 pub(crate) mod fileops;
 pub(crate) mod get_shmem_frames;
 pub(crate) mod get_shmem_structure;
-pub(crate) mod get_workqueues;
 pub(crate) mod kernelrpc;
 pub(crate) mod processops;
 pub(crate) mod registration;
@@ -57,5 +56,3 @@ pub(crate) const GET_SHMEM_STRUCTURE_HANDLER: RPCHandler<ControllerState> =
     get_shmem_structure::handle_get_shmem_structure;
 pub(crate) const GET_SHMEM_FRAMES_HANDLER: RPCHandler<ControllerState> =
     get_shmem_frames::handle_get_shmem_frames;
-pub(crate) const GET_WORKQUEUES_HANDLER: RPCHandler<ControllerState> =
-    get_workqueues::handle_get_workqueues;

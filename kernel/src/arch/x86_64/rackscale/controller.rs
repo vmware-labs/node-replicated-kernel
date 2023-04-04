@@ -168,7 +168,4 @@ fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
             &GET_SHMEM_FRAMES_HANDLER,
         )
         .unwrap();
-    server
-        .register(KernelRpc::GetWorkqueues as RPCType, &GET_WORKQUEUES_HANDLER)
-        .unwrap();
 }

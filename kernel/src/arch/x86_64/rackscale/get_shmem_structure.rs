@@ -3,11 +3,11 @@
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-//use arrayvec::ArrayVec;
-//use core::fmt::Debug;
+use alloc::vec::Vec;
 use core2::io::Result as IOResult;
 use core2::io::Write;
 
+use crossbeam_queue::ArrayQueue;
 use node_replication::{Dispatch, Log};
 use rpc::rpc::*;
 use rpc::RPCClient;
@@ -16,7 +16,9 @@ use super::controller_state::ControllerState;
 use super::kernelrpc::*;
 use crate::arch::kcb::per_core_mem;
 use crate::arch::process::{Ring3Process, PROCESS_LOGS};
+use crate::arch::tlb::{Shootdown, RACKSCALE_CLIENT_WORKQUEUES};
 use crate::error::{KError, KResult};
+use crate::memory::vspace::TlbFlushHandle;
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, SHARED_AFFINITY};
 use crate::nr::{Op, NR_LOG};
 use crate::nrproc::NrProcess;
@@ -26,9 +28,9 @@ use crate::process::MAX_PROCESSES;
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
 #[repr(u8)]
 pub enum ShmemStructure {
-    /// User-space pointer is not valid
     NrProcLogs = 0,
     NrLog = 1,
+    WorkQueues = 2,
 }
 unsafe_abomonate!(ShmemStructure);
 
@@ -41,7 +43,7 @@ pub(crate) fn rpc_get_shmem_structure(
     log::debug!("Calling GetShmemStructure({:?})", shmem_structure);
     let res_size = match shmem_structure {
         ShmemStructure::NrProcLogs => core::mem::size_of::<[u64; MAX_PROCESSES]>(),
-        ShmemStructure::NrLog => core::mem::size_of::<[u64; 1]>(),
+        _ => core::mem::size_of::<[u64; 1]>(),
     };
 
     // Encode the request
@@ -64,7 +66,7 @@ pub(crate) fn rpc_get_shmem_structure(
             unsafe { decode::<[u64; MAX_PROCESSES]>(&mut res_data[..res_size]) }
                 .map(|(ret, remaining)| (&ret[..], remaining.len()))
         }
-        ShmemStructure::NrLog => unsafe { decode::<[u64; 1]>(&mut res_data[..res_size]) }
+        _ => unsafe { decode::<[u64; 1]>(&mut res_data[..res_size]) }
             .map(|(ret, remaining)| (&ret[..], remaining.len())),
     };
 
@@ -116,9 +118,9 @@ pub(crate) fn handle_get_shmem_structure(
                 // The clone increments the strong counter, and the into_raw consumes this clone of the arc.
                 let client_clone = Arc::into_raw(Arc::clone(&PROCESS_LOGS[i]));
 
-                // Send the raw pointer to the client clone address
-                // To do this, we'll convert the kernel address to a physical address, and then change it to a shmem offset by subtracting the shmem base.
-                // TODO(rackscale): try to simplify this
+                // Send the raw pointer to the client clone address. To do this, we'll convert the kernel address
+                // to a physical address, and then change it to a shmem offset by subtracting the shmem base.
+                // TODO(rackscale): try to simplify this, and below?
                 let arc_log_paddr = kernel_vaddr_to_paddr(VAddr::from_u64(
                     (*&client_clone
                         as *const Log<
@@ -134,26 +136,26 @@ pub(crate) fn handle_get_shmem_structure(
             hdr.msg_len = core::mem::size_of::<[u64; MAX_PROCESSES]>() as u64;
         }
         ShmemStructure::NrLog => {
-            // Create a clone in shared memory, and get the raw representation of it
-            // The clone increments the strong counter, and the into_raw consumes this clone of the arc.
             let log_clone = Arc::into_raw(Arc::clone(&NR_LOG));
-
-            // Send the raw pointer to the client clone address
-            // To do this, we'll convert the kernel address to a physical address, and then change it to a shmem offset by subtracting the shmem base.
-            // TODO(rackscale): try to simplify this
             let log_paddr =
                 kernel_vaddr_to_paddr(VAddr::from_u64((*&log_clone as *const Log<Op>) as u64))
                     .as_u64();
 
-            // Reset mem allocator to use per core memory again
-            {
-                let pcm = per_core_mem();
-                pcm.set_mem_affinity(original_affinity)
-                    .expect("Can't change affinity");
-            }
-
             // Modify header and write into output buffer
             unsafe { encode(&[log_paddr], &mut payload) }.unwrap();
+            hdr.msg_len = core::mem::size_of::<[u64; 1]>() as u64;
+        }
+        ShmemStructure::WorkQueues => {
+            let client_workqueue_clone = Arc::into_raw(Arc::clone(&RACKSCALE_CLIENT_WORKQUEUES));
+            let arc_workqueue_paddr = kernel_vaddr_to_paddr(VAddr::from_u64(
+                (*&client_workqueue_clone
+                    as *const Vec<ArrayQueue<(Arc<Shootdown>, TlbFlushHandle)>>)
+                    as u64,
+            ))
+            .as_u64();
+
+            // Modify header and write into output buffer
+            unsafe { encode(&[arc_workqueue_paddr], &mut payload) }.unwrap();
             hdr.msg_len = core::mem::size_of::<[u64; 1]>() as u64;
         }
     }

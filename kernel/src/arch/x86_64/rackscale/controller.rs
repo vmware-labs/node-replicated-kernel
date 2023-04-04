@@ -171,7 +171,4 @@ fn register_rpcs(server: &mut Box<dyn RPCServer<ControllerState>>) {
     server
         .register(KernelRpc::GetWorkqueues as RPCType, &GET_WORKQUEUES_HANDLER)
         .unwrap();
-    server
-        .register(KernelRpc::GetNrLog as RPCType, &GET_NR_LOG_HANDLER)
-        .unwrap();
 }

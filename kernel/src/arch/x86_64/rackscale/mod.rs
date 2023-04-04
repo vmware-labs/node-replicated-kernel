@@ -10,7 +10,6 @@ pub(crate) mod controller;
 pub(crate) mod controller_state;
 pub(crate) mod dcm;
 pub(crate) mod fileops;
-pub(crate) mod get_nr_log;
 pub(crate) mod get_shmem_frames;
 pub(crate) mod get_shmem_structure;
 pub(crate) mod get_workqueues;
@@ -60,4 +59,3 @@ pub(crate) const GET_SHMEM_FRAMES_HANDLER: RPCHandler<ControllerState> =
     get_shmem_frames::handle_get_shmem_frames;
 pub(crate) const GET_WORKQUEUES_HANDLER: RPCHandler<ControllerState> =
     get_workqueues::handle_get_workqueues;
-pub(crate) const GET_NR_LOG_HANDLER: RPCHandler<ControllerState> = get_nr_log::handle_get_nr_log;

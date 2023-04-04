@@ -18,60 +18,66 @@ use crate::arch::kcb::per_core_mem;
 use crate::arch::process::{Ring3Process, PROCESS_LOGS};
 use crate::error::{KError, KResult};
 use crate::memory::{kernel_vaddr_to_paddr, paddr_to_kernel_vaddr, PAddr, VAddr, SHARED_AFFINITY};
+use crate::nr::{Op, NR_LOG};
 use crate::nrproc::NrProcess;
 use crate::process::MAX_PROCESSES;
 
 /// Types of shared structures the client can request
-#[derive(Clone, Debug, Copy)]
+#[derive(Debug, Eq, PartialEq, PartialOrd, Clone, Copy)]
+#[repr(u8)]
 pub enum ShmemStructure {
     /// User-space pointer is not valid
-    NrProcLogs,
-    NrLog,
+    NrProcLogs = 0,
+    NrLog = 1,
 }
 unsafe_abomonate!(ShmemStructure);
 
 pub(crate) fn rpc_get_shmem_structure(
     rpc_client: &mut dyn RPCClient,
-    structure: ShmemStructure,
+    shmem_structure: ShmemStructure,
     ptrs: &mut [u64],
 ) -> KResult<()> {
     // Construct result buffer and call RPC
-    log::debug!("Calling GetShmemStructure({:?})", structure);
+    log::debug!("Calling GetShmemStructure({:?})", shmem_structure);
+    let res_size = match shmem_structure {
+        ShmemStructure::NrProcLogs => core::mem::size_of::<[u64; MAX_PROCESSES]>(),
+        ShmemStructure::NrLog => core::mem::size_of::<[u64; 1]>(),
+    };
 
     // Encode the request
     let mut req_data = [0u8; core::mem::size_of::<ShmemStructure>()];
-    unsafe { encode(&structure, &mut (&mut req_data).as_mut()) }
+    unsafe { encode(&shmem_structure, &mut (&mut req_data).as_mut()) }
         .expect("Failed to encode shmem structure request");
 
-    let mut res_data = match structure {
-        NrProcLogs => [0u8; core::mem::size_of::<[u64; MAX_PROCESSES]>()],
-        NrLog => panic!("NYI for this."),
-    };
-
+    // Make buffer max size of MAX_PROCESS (for NrProcLogs), 1 (for NrLog)
+    let mut res_data = [0u8; core::mem::size_of::<[u64; MAX_PROCESSES]>()];
     rpc_client
         .call(
             KernelRpc::GetShmemStructure as RPCType,
             &[&req_data],
-            &mut [&mut res_data],
+            &mut [&mut res_data[..res_size]],
         )
         .unwrap();
 
-    match structure {
-        NrProcLogs => {
-            // Decode and return the result
-            if let Some((ret, remaining)) = unsafe { decode::<[u64; MAX_PROCESSES]>(&mut res_data) }
-            {
-                if remaining.len() > 0 {
-                    Err(RPCError::ExtraData.into())
-                } else {
-                    ptrs.clone_from_slice(ret);
-                    Ok(())
-                }
-            } else {
-                Err(RPCError::MalformedResponse.into())
-            }
+    let decode_result = match shmem_structure {
+        ShmemStructure::NrProcLogs => {
+            unsafe { decode::<[u64; MAX_PROCESSES]>(&mut res_data[..res_size]) }
+                .map(|(ret, remaining)| (&ret[..], remaining.len()))
         }
-        NrLog => panic!("NYI for this."),
+        ShmemStructure::NrLog => unsafe { decode::<[u64; 1]>(&mut res_data[..res_size]) }
+            .map(|(ret, remaining)| (&ret[..], remaining.len())),
+    };
+
+    // Decode and return the result
+    if let Some((ret, remaining)) = decode_result {
+        if remaining > 0 {
+            Err(RPCError::ExtraData.into())
+        } else {
+            ptrs.clone_from_slice(&ret);
+            Ok(())
+        }
+    } else {
+        Err(RPCError::MalformedResponse.into())
     }
 }
 
@@ -102,7 +108,7 @@ pub(crate) fn handle_get_shmem_structure(
     };
 
     match shmem_structure {
-        NrProcLogs => {
+        ShmemStructure::NrProcLogs => {
             let mut logs = [0u64; MAX_PROCESSES];
 
             for i in 0..PROCESS_LOGS.len() {
@@ -112,7 +118,7 @@ pub(crate) fn handle_get_shmem_structure(
 
                 // Send the raw pointer to the client clone address
                 // To do this, we'll convert the kernel address to a physical address, and then change it to a shmem offset by subtracting the shmem base.
-                // TODO(hunhoffe): try to simplify this
+                // TODO(rackscale): try to simplify this
                 let arc_log_paddr = kernel_vaddr_to_paddr(VAddr::from_u64(
                     (*&client_clone
                         as *const Log<
@@ -125,9 +131,31 @@ pub(crate) fn handle_get_shmem_structure(
 
             // Modify header and write into output buffer
             unsafe { encode(&logs, &mut payload) }.unwrap();
-            hdr.msg_len = core::mem::size_of::<[usize; MAX_PROCESSES]>() as u64;
+            hdr.msg_len = core::mem::size_of::<[u64; MAX_PROCESSES]>() as u64;
         }
-        NrLog => panic!("NYI for this."),
+        ShmemStructure::NrLog => {
+            // Create a clone in shared memory, and get the raw representation of it
+            // The clone increments the strong counter, and the into_raw consumes this clone of the arc.
+            let log_clone = Arc::into_raw(Arc::clone(&NR_LOG));
+
+            // Send the raw pointer to the client clone address
+            // To do this, we'll convert the kernel address to a physical address, and then change it to a shmem offset by subtracting the shmem base.
+            // TODO(rackscale): try to simplify this
+            let log_paddr =
+                kernel_vaddr_to_paddr(VAddr::from_u64((*&log_clone as *const Log<Op>) as u64))
+                    .as_u64();
+
+            // Reset mem allocator to use per core memory again
+            {
+                let pcm = per_core_mem();
+                pcm.set_mem_affinity(original_affinity)
+                    .expect("Can't change affinity");
+            }
+
+            // Modify header and write into output buffer
+            unsafe { encode(&[log_paddr], &mut payload) }.unwrap();
+            hdr.msg_len = core::mem::size_of::<[u64; 1]>() as u64;
+        }
     }
 
     // Reset mem allocator to use per core memory again

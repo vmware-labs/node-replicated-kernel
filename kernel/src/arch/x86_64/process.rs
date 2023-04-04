@@ -95,15 +95,17 @@ lazy_static! {
             return rpc_get_proccess_logs(&mut **client).unwrap();
         }
 
-        let mut process_logs =
-            Box::try_new(ArrayVec::new()).expect("Can't initialize process log vector.");
-        for _pid in 0..MAX_PROCESSES {
-            let log = Arc::try_new(
-                Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(LARGE_PAGE_SIZE),
-            )
-            .expect("Can't initialize process logs, out of memory.");
-            process_logs.push(log);
-        }
+        let process_logs = {
+            let mut process_logs = Box::try_new(ArrayVec::new()).expect("Can't initialize process log vector.");
+            for _pid in 0..MAX_PROCESSES {
+                let log = Arc::try_new(
+                    Log::<<NrProcess<Ring3Process> as Dispatch>::WriteOperation>::new(LARGE_PAGE_SIZE),
+                )
+                .expect("Can't initialize process logs, out of memory.");
+                process_logs.push(log);
+            }
+            process_logs
+        };
 
         #[cfg(feature = "rackscale")]
         if crate::CMDLINE
@@ -208,34 +210,41 @@ fn create_process_table(
             .expect("Can't change affinity");
     }
 
-    let allocator = ShmemAlloc();
-    for pid in 0..MAX_PROCESSES {
-        for node in 0..numa_nodes {
-            debug_assert!(!numa_cache[node].is_full());
+    {
+        KernelAllocator::try_refill_tcache(0, MAX_PROCESSES * 5 * numa_nodes, MemType::Mem)
+            .expect("Trying to refill the tcache with shmem caused an error");
 
-            let p = Box::try_new(
-                Ring3Process::new(pid, Box::new(allocator.clone()))
-                    .expect("Can't create process during init"),
-            )
-            .expect("Not enough memory to initialize processes");
-            let nrp = NrProcess::new(p, Box::new(allocator.clone()));
+        let allocator = ShmemAlloc();
+        for pid in 0..MAX_PROCESSES {
+            for node in 0..numa_nodes {
+                debug_assert!(!numa_cache[node].is_full());
 
-            numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(
-                &PROCESS_LOGS[pid],
-                nrp,
-            ));
+                let p = Box::try_new(
+                    Ring3Process::new(pid, Box::new(allocator.clone()))
+                        .expect("Can't create process during init"),
+                )
+                .expect("Not enough memory to initialize processes");
+                let nrp = NrProcess::new(p, Box::new(allocator.clone()));
 
-            debug_assert_eq!(
-                *crate::environment::NODE_ID,
-                0,
-                "Expect initialization to happen on node 0."
-            );
+                numa_cache[node].push(Replica::<NrProcess<Ring3Process>>::with_data(
+                    &PROCESS_LOGS[pid],
+                    nrp,
+                ));
+
+                debug_assert_eq!(
+                    *crate::environment::NODE_ID,
+                    0,
+                    "Expect initialization to happen on node 0."
+                );
+            }
         }
     }
 
-    let pcm = per_core_mem();
-    pcm.set_mem_affinity(0 as atopology::NodeId)
-        .expect("Can't change affinity");
+    {
+        let pcm = per_core_mem();
+        pcm.set_mem_affinity(0 as atopology::NodeId)
+            .expect("Can't change affinity");
+    }
 
     numa_cache
 }

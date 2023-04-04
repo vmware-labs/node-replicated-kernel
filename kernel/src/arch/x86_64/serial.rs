@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 //! Print logic and line buffering.
-
-use alloc::string::String;
+use alloc::format;
+use alloc::string::{String, ToString};
 use core::cell::RefCell;
 
 use klogger::sprint;
@@ -83,6 +83,63 @@ impl SerialControl {
             Err(_e) => {
                 sprint!("{}", buffer);
             }
+        }
+    }
+
+    /// This is mostly copied from arch/x86_64/serial.rs
+    /// A poor mans line buffer scheme
+    ///
+    /// Buffers things until there is a newline in the `buffer` OR we've
+    /// exhausted the available `print_buffer` space, then print everything out.
+    /// Returns a string if everything is printed.
+    #[allow(unused)]
+    pub(crate) fn buffered_print_and_return(buffer: &str) -> Option<String> {
+        let mut ret = "".to_string();
+        // A poor mans line buffer scheme:
+        match PRINT_BUFFER.try_borrow_mut() {
+            Ok(mut kbuf) => match buffer.find("\n") {
+                Some(idx) => {
+                    let (low, high) = buffer.split_at(idx + 1);
+                    ret = format!("{}{}", kbuf, low);
+                    let _r = klogger::SERIAL_LINE_MUTEX.lock();
+                    sprint!("{}{}", kbuf, low);
+                    kbuf.clear();
+
+                    // Avoid realloc of the kbuf if capacity can't fit `high`
+                    // kbuf.len() will be 0 but we keep it for robustness
+                    if high.len() <= kbuf.capacity() - kbuf.len() {
+                        kbuf.push_str(high);
+                    } else {
+                        ret = format!("{}", high);
+                        sprint!("{}", high);
+                    }
+                }
+                None => {
+                    // Avoid realloc of the kbuf if capacity can't fit `buffer`
+                    if buffer.len() > kbuf.capacity() - kbuf.len() {
+                        ret = format!("{}{}", kbuf, buffer);
+                        let _r = klogger::SERIAL_LINE_MUTEX.lock();
+                        sprint!("{}{}", kbuf, buffer);
+                        kbuf.clear();
+                    } else {
+                        kbuf.push_str(buffer);
+                    }
+                }
+            },
+            // BorrowMutError can happen (e.g., we're in a panic interrupt
+            // handler or in the gdb debug handler while we were printing in the
+            // kernel code) so we just print the current buffer to have some
+            // output which might get mangled with other output but mangled
+            // output is still better than no output, am I right?
+            Err(_e) => {
+                sprint!("{}", buffer);
+            }
+        }
+
+        if ret.len() > 0 {
+            Some(ret)
+        } else {
+            None
         }
     }
 }

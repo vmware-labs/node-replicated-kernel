@@ -1,6 +1,5 @@
 // Copyright © 2022 University of Colorado and VMware Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0 OR MIT
-
 use core::fmt::Debug;
 
 use abomonation::{decode, encode, unsafe_abomonate, Abomonation};
@@ -26,7 +25,7 @@ pub(crate) struct LogReq {
 unsafe_abomonate!(LogReq: machine_id);
 
 pub(crate) fn rpc_log(rpc_client: &mut dyn RPCClient, msg: String) -> Result<(u64, u64), KError> {
-    if let Some(print_str) = CLIENT_STATE.buffered_print(&msg) {
+    if let Some(print_str) = SerialControl::buffered_print_and_return(&msg) {
         // Construct request data
         let req = LogReq {
             machine_id: *crate::environment::MACHINE_ID,

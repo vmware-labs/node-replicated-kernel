@@ -164,9 +164,15 @@ impl Shootdown {
 
 pub(crate) fn enqueue(mtid: kpi::system::MachineThreadId, s: WorkItem) {
     trace!("TLB enqueue shootdown msg {:?}", s);
+
+    #[cfg(feature = "rackscale")]
     IPI_WORKQUEUE[mtid as usize]
         .push(s)
         .expect("No room in the queue for shootdown");
+
+    // TODO(fix, correctness): this is a hack because the queue keeps overflowing on fxmark
+    #[cfg(not(feature = "rackscale"))]
+    let _ret = IPI_WORKQUEUE[mtid as usize].push(s);
 }
 
 pub(crate) fn dequeue(mtid: kpi::system::MachineThreadId) {
